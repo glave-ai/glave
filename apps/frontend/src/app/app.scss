@@ -6,7 +6,7 @@
 	color: var(--mat-sys-on-surface);
 }
 
-.app-header {
+.glave-header {
 	display: flex;
 	align-items: center;
 	gap: 2rem;
@@ -42,7 +42,7 @@
 	box-shadow: var(--glave-shadow-sm);
 }
 
-.app-nav {
+.glave-nav {
 	display: flex;
 	gap: 1.25rem;
 
@@ -68,7 +68,7 @@
 	}
 }
 
-.app-main {
+.glave-main {
 	flex: 1 1 auto;
 	min-height: 0;
 }
