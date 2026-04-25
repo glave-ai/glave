@@ -1,0 +1,323 @@
+<div class="page">
+	<header class="page-header">
+		<p class="eyebrow">Design system</p>
+		<h1>Foundations</h1>
+		<p class="lede">
+			A working showcase of Glave's design tokens and base components. Built on Angular
+			Material 21 with our own theme — graphite surfaces, iron-blue primary, oxidized copper
+			accent.
+		</p>
+	</header>
+
+	<section class="section">
+		<h2>Typography</h2>
+		<p class="section-note">
+			Inter Tight for display, Inter for UI and body, Newsreader available for long-form
+			documents (Manifesto, Constitution, blog).
+		</p>
+		<div class="type-scale">
+			@for (row of typeScale; track row.token) {
+				<div class="type-row">
+					<span class="type-token">{{ row.token }}</span>
+					<span class="type-sample" [style.font]="'var(--mat-sys-' + row.token + ')'">{{
+						row.sample
+					}}</span>
+				</div>
+			}
+			<div class="type-row">
+				<span class="type-token">serif (Newsreader)</span>
+				<span class="type-sample serif-sample">
+					In an era of unprecedented engineering capability, the question is no longer
+					whether we can build, but whether we should.
+				</span>
+			</div>
+			<div class="type-row">
+				<span class="type-token">monospace</span>
+				<span class="type-sample mono-sample"
+					>const audit = await glave.publish(report);</span
+				>
+			</div>
+		</div>
+	</section>
+
+	<section class="section">
+		<h2>Color</h2>
+		<div class="palette-group">
+			<h3>Graphite (neutral base)</h3>
+			<div class="swatch-row">
+				@for (s of graphite; track s.token) {
+					<div class="swatch">
+						<span
+							class="swatch-chip"
+							[style.background]="'var(' + s.token + ')'"
+						></span>
+						<span class="swatch-label">{{ s.name }}</span>
+					</div>
+				}
+			</div>
+		</div>
+
+		<div class="palette-group">
+			<h3>Iron-blue (primary)</h3>
+			<div class="swatch-row">
+				@for (s of palette.slice(0, 4); track s.token) {
+					<div class="swatch">
+						<span
+							class="swatch-chip"
+							[style.background]="'var(' + s.token + ')'"
+						></span>
+						<span class="swatch-label">{{ s.name }}</span>
+					</div>
+				}
+			</div>
+		</div>
+
+		<div class="palette-group">
+			<h3>Oxidized copper (accent / tertiary)</h3>
+			<div class="swatch-row">
+				@for (s of palette.slice(4); track s.token) {
+					<div class="swatch">
+						<span
+							class="swatch-chip"
+							[style.background]="'var(' + s.token + ')'"
+						></span>
+						<span class="swatch-label">{{ s.name }}</span>
+					</div>
+				}
+			</div>
+		</div>
+
+		<div class="palette-group">
+			<h3>Material system tokens (live)</h3>
+			<div class="swatch-row">
+				@for (s of systemColors; track s.token) {
+					<div class="swatch">
+						<span
+							class="swatch-chip swatch-chip--bordered"
+							[style.background]="'var(' + s.token + ')'"
+						></span>
+						<span class="swatch-label">{{ s.name }}</span>
+					</div>
+				}
+			</div>
+		</div>
+	</section>
+
+	<section class="section">
+		<h2>Buttons</h2>
+		<div class="row">
+			<button matButton="filled">Filled</button>
+			<button matButton="tonal">Tonal</button>
+			<button matButton="outlined">Outlined</button>
+			<button matButton>Text</button>
+			<button matButton="elevated">Elevated</button>
+			<button matButton="filled" disabled>Disabled</button>
+		</div>
+		<div class="row">
+			<button matButton="filled">
+				<mat-icon>arrow_forward</mat-icon>
+				Continue
+			</button>
+			<button matButton="outlined">
+				<mat-icon>download</mat-icon>
+				Export
+			</button>
+			<button matIconButton aria-label="Settings" matTooltip="Settings">
+				<mat-icon>settings</mat-icon>
+			</button>
+			<button matIconButton aria-label="More" [matMenuTriggerFor]="actionsMenu">
+				<mat-icon>more_horiz</mat-icon>
+			</button>
+			<mat-menu #actionsMenu="matMenu">
+				<button mat-menu-item><mat-icon>edit</mat-icon><span>Edit</span></button>
+				<button mat-menu-item>
+					<mat-icon>content_copy</mat-icon><span>Duplicate</span>
+				</button>
+				<mat-divider />
+				<button mat-menu-item><mat-icon>delete</mat-icon><span>Delete</span></button>
+			</mat-menu>
+		</div>
+	</section>
+
+	<section class="section">
+		<h2>Form controls</h2>
+		<div class="form-grid">
+			<mat-form-field appearance="outline">
+				<mat-label>Label</mat-label>
+				<input matInput [formControl]="demoText" />
+				<mat-hint>Helper text below the field.</mat-hint>
+			</mat-form-field>
+
+			<mat-form-field appearance="outline">
+				<mat-label>Disposition</mat-label>
+				<mat-select [formControl]="demoSelect">
+					<mat-option value="augment">Augment the user</mat-option>
+					<mat-option value="automate">Automate the task</mat-option>
+					<mat-option value="amplify">Amplify the signal</mat-option>
+				</mat-select>
+			</mat-form-field>
+
+			<mat-form-field appearance="outline">
+				<mat-label>Constitution excerpt</mat-label>
+				<textarea
+					matInput
+					rows="3"
+					placeholder="Section 1. Preservation of the Human Core…"
+				></textarea>
+			</mat-form-field>
+
+			<div class="control-stack">
+				<mat-checkbox [formControl]="demoCheckbox">I have reviewed the audit</mat-checkbox>
+				<mat-slide-toggle [formControl]="demoToggle"
+					>Publish to public record</mat-slide-toggle
+				>
+				<mat-radio-group [formControl]="demoRadio" class="radio-group">
+					<mat-radio-button value="light">Light</mat-radio-button>
+					<mat-radio-button value="dark">Dark</mat-radio-button>
+					<mat-radio-button value="system">Match system</mat-radio-button>
+				</mat-radio-group>
+			</div>
+		</div>
+	</section>
+
+	<section class="section">
+		<h2>Chips</h2>
+		<mat-chip-set>
+			<mat-chip>binding</mat-chip>
+			<mat-chip>guidance</mat-chip>
+			<mat-chip highlighted>ratified</mat-chip>
+			<mat-chip color="accent">draft</mat-chip>
+		</mat-chip-set>
+	</section>
+
+	<section class="section">
+		<h2>Tabs</h2>
+		<mat-tab-group>
+			<mat-tab label="Overview">
+				<div class="tab-body">
+					Overview content. Tabs render with our themed underline indicator.
+				</div>
+			</mat-tab>
+			<mat-tab label="Articles">
+				<div class="tab-body">Six articles, all binding except Article V (guidance).</div>
+			</mat-tab>
+			<mat-tab label="Audit history">
+				<div class="tab-body">Each annual audit appended, never overwritten.</div>
+			</mat-tab>
+		</mat-tab-group>
+	</section>
+
+	<section class="section">
+		<h2>Cards</h2>
+		<div class="card-grid">
+			<mat-card appearance="outlined">
+				<mat-card-header>
+					<mat-card-title>Augmentation</mat-card-title>
+					<mat-card-subtitle>Article I, Section 2</mat-card-subtitle>
+				</mat-card-header>
+				<mat-card-content>
+					Glave's models shall serve as instruments of human augmentation, not
+					replacements in domains that provide life with meaning.
+				</mat-card-content>
+				<mat-card-actions>
+					<button matButton>Read</button>
+				</mat-card-actions>
+			</mat-card>
+
+			<mat-card appearance="outlined">
+				<mat-card-header>
+					<mat-card-title>Stewardship</mat-card-title>
+					<mat-card-subtitle>Article III, Section 1</mat-card-subtitle>
+				</mat-card-header>
+				<mat-card-content>
+					The intelligence we distill is derived from the collective output of human
+					history. We are stewards, not proprietors.
+				</mat-card-content>
+				<mat-card-actions>
+					<button matButton>Read</button>
+				</mat-card-actions>
+			</mat-card>
+
+			<mat-card appearance="outlined">
+				<mat-card-header>
+					<mat-card-title>Veracity</mat-card-title>
+					<mat-card-subtitle>Article V, Section 2</mat-card-subtitle>
+				</mat-card-header>
+				<mat-card-content>
+					We communicate the capabilities and limitations of our systems with absolute
+					precision, particularly to those least equipped to audit our claims.
+				</mat-card-content>
+				<mat-card-actions>
+					<button matButton>Read</button>
+				</mat-card-actions>
+			</mat-card>
+		</div>
+	</section>
+
+	<section class="section">
+		<h2>Table</h2>
+		<table mat-table [dataSource]="articles" class="articles-table">
+			<ng-container matColumnDef="section">
+				<th mat-header-cell *matHeaderCellDef>Article</th>
+				<td mat-cell *matCellDef="let row">{{ row.section }}</td>
+			</ng-container>
+			<ng-container matColumnDef="title">
+				<th mat-header-cell *matHeaderCellDef>Title</th>
+				<td mat-cell *matCellDef="let row">{{ row.title }}</td>
+			</ng-container>
+			<ng-container matColumnDef="scope">
+				<th mat-header-cell *matHeaderCellDef>Scope</th>
+				<td mat-cell *matCellDef="let row">
+					<mat-chip [highlighted]="row.scope === 'binding'">{{ row.scope }}</mat-chip>
+				</td>
+			</ng-container>
+			<ng-container matColumnDef="updated">
+				<th mat-header-cell *matHeaderCellDef>Updated</th>
+				<td mat-cell *matCellDef="let row">{{ row.updated }}</td>
+			</ng-container>
+			<ng-container matColumnDef="actions">
+				<th mat-header-cell *matHeaderCellDef aria-label="Actions"></th>
+				<td mat-cell *matCellDef="let row">
+					<button matIconButton [attr.aria-label]="'More actions for ' + row.title">
+						<mat-icon>more_horiz</mat-icon>
+					</button>
+				</td>
+			</ng-container>
+			<tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+			<tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+		</table>
+	</section>
+
+	<section class="section">
+		<h2>Feedback</h2>
+		<div class="row">
+			<button matButton="filled" (click)="openDialog()">Open dialog</button>
+			<button matButton="tonal" (click)="showSnack()">Show snackbar</button>
+			<button matButton="outlined" (click)="increment()">Increment ({{ counter() }})</button>
+		</div>
+		<div class="progress-stack">
+			<mat-progress-bar mode="determinate" [value]="42"></mat-progress-bar>
+			<mat-progress-bar mode="indeterminate"></mat-progress-bar>
+			<mat-spinner diameter="32"></mat-spinner>
+		</div>
+	</section>
+
+	<section class="section">
+		<h2>Long-form (serif)</h2>
+		<article class="prose">
+			<p class="prose-eyebrow">Excerpt — Constitution, Preamble</p>
+			<h3>Humanity is not a transitional state.</h3>
+			<p>
+				We build in an era where the obsolescence of human utility is frequently presented
+				as inevitable. The advancement of artificial intelligence shall be judged by history
+				on a single, uncompromising metric: whether it expands human capability, liberty,
+				and connection, or diminishes it.
+			</p>
+			<p>
+				This Constitution binds the entity known as Glave to that judgment. It dictates our
+				architectural priorities, our operational hierarchy, our commercial mandates, and
+				our moral obligations.
+			</p>
+		</article>
+	</section>
+</div>
