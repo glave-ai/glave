@@ -1,0 +1,64 @@
+<section class="hero" aria-labelledby="hero-heading">
+	<div class="hero-copy">
+		<p class="eyebrow">Glave</p>
+		<h1 id="hero-heading">Humane, affordable intelligence.</h1>
+		<p class="subhead">
+			Tools that expand what people can do — not what replaces them. Built so the user remains
+			the principal, and the machine is the instrument.
+		</p>
+		<div class="cta-row">
+			<a matButton="filled" routerLink="/chat">Try Chat</a>
+			<a matButton="outlined" routerLink="/api">Read the API</a>
+		</div>
+	</div>
+
+	<div class="hero-visual">
+		<img
+			ngSrc="/images/hero.webp"
+			width="1920"
+			height="1071"
+			alt="A craftsperson's workbench in soft north-window light: open notebook with handwritten technical sketches, drafting tools, and an oxidized copper protractor."
+			priority
+			sizes="100vw"
+		/>
+	</div>
+</section>
+
+<section class="tiles" aria-label="What we're building">
+	<p class="band-eyebrow">What we're building</p>
+	<div class="tile-grid">
+		@for (t of tiles; track t.href) {
+			<a class="tile" [routerLink]="t.href" [attr.aria-label]="t.title">
+				<div class="tile-image">
+					<img
+						[ngSrc]="t.image"
+						width="1200"
+						height="896"
+						[alt]="t.alt"
+						loading="lazy"
+						sizes="(max-width: 720px) 100vw, 33vw"
+					/>
+				</div>
+				<div class="tile-body">
+					<p class="tile-eyebrow">{{ t.eyebrow }}</p>
+					<h3 class="tile-title">{{ t.title }}</h3>
+					<p class="tile-blurb">{{ t.blurb }}</p>
+					<span class="tile-link">Learn →</span>
+				</div>
+			</a>
+		}
+	</div>
+</section>
+
+<section class="manifesto" aria-labelledby="manifesto-heading">
+	<div class="manifesto-inner">
+		<p class="band-eyebrow">From the Manifesto</p>
+		<h2 id="manifesto-heading" class="manifesto-quote">
+			We believe artificial intelligence should serve people. Not markets first. Not
+			institutions first. Not power first. People.
+		</h2>
+		<p class="manifesto-link">
+			<a routerLink="/legal">Read the Manifesto and Constitution →</a>
+		</p>
+	</div>
+</section>

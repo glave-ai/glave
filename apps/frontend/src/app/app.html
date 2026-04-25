@@ -4,10 +4,18 @@
 		<span class="brand-name">Glave</span>
 	</a>
 	<nav class="glave-nav" aria-label="Primary">
-		<a routerLink="/foundations" routerLinkActive="active">Foundations</a>
+		<a routerLink="/api" routerLinkActive="active">API</a>
+		<a routerLink="/docs" routerLinkActive="active">Docs</a>
+		<a routerLink="/chat" routerLinkActive="active">Chat</a>
+		<a routerLink="/blog" routerLinkActive="active">Blog</a>
 	</nav>
+	<div class="glave-actions">
+		<a class="header-cta" routerLink="/chat">Try Chat</a>
+	</div>
 </header>
 
 <main class="glave-main">
 	<router-outlet />
 </main>
+
+<glave-footer />
