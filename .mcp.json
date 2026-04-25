@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
+      "env": {}
+    },
+    "cshel-image-tools": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/seashell86/cshel-image-tools",
+        "cshel-image-tools"
+      ],
+      "env": {}
+    }
+  }
+}
