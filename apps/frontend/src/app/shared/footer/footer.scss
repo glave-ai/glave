@@ -93,6 +93,22 @@
 	}
 }
 
+.colophon {
+	max-width: 1100px;
+	margin: 0 auto;
+	padding: 0 1.5rem 1.25rem;
+	font-family: 'Newsreader', Georgia, serif;
+	font-style: italic;
+	font-size: 0.9375rem;
+	line-height: 1.5;
+	color: var(--mat-sys-on-surface-variant);
+
+	em {
+		font-style: italic;
+		color: var(--mat-sys-on-surface);
+	}
+}
+
 .footer-bottom {
 	max-width: 1100px;
 	margin: 0 auto;

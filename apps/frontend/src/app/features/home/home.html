@@ -1,7 +1,16 @@
 <section class="hero" aria-labelledby="hero-heading">
+	<div class="hero-grid" aria-hidden="true"></div>
+
 	<div class="hero-copy">
-		<p class="eyebrow">Glave</p>
-		<h1 id="hero-heading">Humane, affordable intelligence.</h1>
+		<p class="eyebrow">
+			<span class="eyebrow-rule" aria-hidden="true"></span>
+			<span class="eyebrow-text">Glave</span>
+		</p>
+		<h1 id="hero-heading" class="hero-heading">
+			<span class="word" style="--glave-stagger: 0">Humane,</span>
+			<span class="word" style="--glave-stagger: 1">affordable</span>
+			<span class="word italic" style="--glave-stagger: 2"><em>intelligence.</em></span>
+		</h1>
 		<p class="subhead">
 			Tools that expand what people can do — not what replaces them. Built so the user remains
 			the principal, and the machine is the instrument.
@@ -24,11 +33,16 @@
 	</div>
 </section>
 
-<section class="tiles" aria-label="What we're building">
-	<p class="band-eyebrow">What we're building</p>
+<section class="tiles" aria-label="What we're building" glaveReveal>
+	<p class="band-eyebrow"><span class="rule" aria-hidden="true">──</span>What we're building</p>
 	<div class="tile-grid">
-		@for (t of tiles; track t.href) {
-			<a class="tile" [routerLink]="t.href" [attr.aria-label]="t.title">
+		@for (t of tiles; track t.href; let i = $index) {
+			<a
+				class="tile"
+				[class.featured]="i === 0"
+				[routerLink]="t.href"
+				[attr.aria-label]="t.title"
+			>
 				<div class="tile-image">
 					<img
 						[ngSrc]="t.image"
@@ -36,27 +50,82 @@
 						height="896"
 						[alt]="t.alt"
 						loading="lazy"
-						sizes="(max-width: 720px) 100vw, 33vw"
+						sizes="(max-width: 720px) 100vw, (max-width: 1100px) 50vw, 33vw"
 					/>
 				</div>
 				<div class="tile-body">
-					<p class="tile-eyebrow">{{ t.eyebrow }}</p>
+					<p class="tile-eyebrow">
+						<span class="num">{{ t.number }}</span>
+						<span class="slash" aria-hidden="true">/</span>
+						<span>{{ t.eyebrow }}</span>
+					</p>
 					<h3 class="tile-title">{{ t.title }}</h3>
 					<p class="tile-blurb">{{ t.blurb }}</p>
-					<span class="tile-link">Learn →</span>
+					<span class="tile-link">
+						<span>Learn</span>
+						<svg
+							class="tile-arrow"
+							viewBox="0 0 32 12"
+							aria-hidden="true"
+							focusable="false"
+						>
+							<path d="M0 6 H28 M22 1 L29 6 L22 11" />
+						</svg>
+					</span>
 				</div>
 			</a>
 		}
 	</div>
 </section>
 
-<section class="manifesto" aria-labelledby="manifesto-heading">
+<section class="notes" aria-labelledby="notes-heading" glaveReveal>
+	<div class="notes-inner">
+		<header class="notes-header">
+			<p class="band-eyebrow"><span class="rule" aria-hidden="true">──</span>From the work</p>
+			<h2 id="notes-heading" class="notes-heading">Recent notes.</h2>
+		</header>
+		<ol class="notes-list">
+			@for (n of notes; track n.title) {
+				<li class="note">
+					<p class="note-meta">
+						<span class="note-num">{{ n.number }}</span>
+						<span class="note-date">{{ n.date }}</span>
+					</p>
+					<h3 class="note-title">{{ n.title }}</h3>
+					<p class="note-blurb">{{ n.blurb }}</p>
+				</li>
+			}
+		</ol>
+	</div>
+</section>
+
+<section class="manifesto" aria-labelledby="manifesto-heading" glaveReveal>
+	<div class="manifesto-diagram" aria-hidden="true">
+		<svg viewBox="0 0 600 600" xmlns="http://www.w3.org/2000/svg" focusable="false">
+			<g fill="none" stroke="currentColor" stroke-width="1">
+				<circle cx="300" cy="300" r="280" />
+				<circle cx="300" cy="300" r="220" />
+				<circle cx="300" cy="300" r="160" />
+				<circle cx="300" cy="300" r="100" stroke-dasharray="2 4" />
+				<line x1="20" y1="300" x2="580" y2="300" />
+				<line x1="300" y1="20" x2="300" y2="580" />
+				<line x1="100" y1="100" x2="500" y2="500" stroke-dasharray="2 6" />
+				<line x1="500" y1="100" x2="100" y2="500" stroke-dasharray="2 6" />
+			</g>
+		</svg>
+	</div>
+
 	<div class="manifesto-inner">
-		<p class="band-eyebrow">From the Manifesto</p>
-		<h2 id="manifesto-heading" class="manifesto-quote">
-			We believe artificial intelligence should serve people. Not markets first. Not
-			institutions first. Not power first. People.
-		</h2>
+		<p class="band-eyebrow">
+			<span class="rule" aria-hidden="true">──</span>From the Manifesto
+		</p>
+		<blockquote class="manifesto-block">
+			<span class="manifesto-glyph" aria-hidden="true">“</span>
+			<h2 id="manifesto-heading" class="manifesto-quote">
+				We believe artificial intelligence should serve people. Not markets first. Not
+				institutions first. Not power first. <em>People.</em>
+			</h2>
+		</blockquote>
 		<p class="manifesto-link">
 			<a routerLink="/legal">Read the Manifesto and Constitution →</a>
 		</p>
