@@ -1,4 +1,4 @@
-# Titan Manifesto
+# Glave Manifesto
 
 We believe artificial intelligence should serve people.
 
