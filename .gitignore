@@ -1,0 +1,12 @@
+# QA / browser tooling artifacts
+.playwright-mcp/
+tmp/
+/*.png
+/*.jpg
+/*.jpeg
+
+# Claude Code local state (project skills/settings stay tracked)
+.claude/worktrees/
+
+# macOS
+.DS_Store
