@@ -20,6 +20,6 @@ describe('App', () => {
 		fixture.detectChanges();
 		const compiled = fixture.nativeElement as HTMLElement;
 		expect(compiled.querySelector('.brand-name')?.textContent).toContain('Glave');
-		expect(compiled.querySelector('.glave-nav a')?.textContent).toContain('Foundations');
+		expect(compiled.querySelector('.glave-nav a')?.textContent).toContain('API');
 	});
 });

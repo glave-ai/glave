@@ -64,7 +64,13 @@ npm start          # dev server on http://localhost:4200
 
 | Path           | Description                                                          |
 | -------------- | -------------------------------------------------------------------- |
-| `/foundations` | Live design-system reference: tokens, typography, colors, components |
+| `/`            | Homepage — hero, product tiles (API/Chat/Docs/Blog), Manifesto       |
+| `/api`         | API surface — placeholder until the reference lands                  |
+| `/docs`        | Documentation — placeholder                                          |
+| `/chat`        | Chat surface — placeholder                                           |
+| `/blog`        | Blog — placeholder                                                   |
+| `/legal`       | Legal documents (Manifesto, Constitution, audit) — placeholder       |
+| `/foundations` | Internal design-system reference: tokens, typography, components     |
 
 ---
 
@@ -87,5 +93,6 @@ npm start          # dev server on http://localhost:4200
 
 ## Status
 
-Early. The frontend has an app shell, the Foundations design-system
-showcase route, and not much else yet. Expect rapid change.
+Early. The frontend ships a homepage, lazy-loaded placeholder pages for
+each product surface (API, Docs, Chat, Blog, Legal), and the
+Foundations design-system reference. Expect rapid change.
