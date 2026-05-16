@@ -9,6 +9,7 @@ The `sacred/` folder holds the canonical principles. This folder translates thos
 - [AutoResearch Notes](./research/autoresearch.md): what Karpathy's AutoResearch pattern implies for an autonomous model-improvement loop.
 - [Meta-Harness Notes](./research/meta-harnesses.md): how to build an evaluation system that grades models, judges, data transforms, and regressions.
 - [Data Transform Loop](./research/data-transform-loop.md): how public data becomes curated training signal through stronger teachers, audits, and self-iteration.
+- [Flywheel Start](./flywheel-start.md): the first practical lap for harness, adapters, evals, and local data.
 - [Hope Seed Spec](./hope-seed-spec.md): the first behavioral specification for the model line.
 
 ## Working Thesis
