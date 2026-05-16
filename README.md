@@ -11,8 +11,6 @@ that govern this work are codified, not aspirational; they live in
   building.
 - **[Constitution](./sacred/CONSTITUTION.md)** — the binding articles
   that govern architectural, operational, and commercial decisions.
-- **[Context](./context/README.md)** — the working research wiki for model,
-  data, and harness design.
 
 If you're trying to understand a design or product call, start there.
 The code in this repo is the materialization of those documents, not a
@@ -24,20 +22,16 @@ substitute for them.
 
 ```
 .
-├── context/            # Working research wiki for model, data, and harness design
 └── sacred/             # Canonical documents (Manifesto, Constitution)
 ```
 
-Today the repo holds two things: the canonical text and the working
-research context. Product surfaces will come later, after the model,
-data, and evaluation flywheel have earned them.
+Today the repo holds the canonical text. Product surfaces will come later,
+after the model, data, and evaluation flywheel have earned them.
 
 ---
 
 ## Conventions
 
-- **Context first:** model, data, harness, and evaluation ideas should
-  land in `context/` before becoming canonical.
 - **Sacred is binding:** do not alter `sacred/` casually. Promote ideas
   there only after they have stabilized.
 - **Plain text:** prefer Markdown for research, specs, rubrics, eval
