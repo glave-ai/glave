@@ -1,6 +1,7 @@
 # QA / browser tooling artifacts
 .playwright-mcp/
 tmp/
+untracked/
 /*.png
 /*.jpg
 /*.jpeg
