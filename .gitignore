@@ -12,3 +12,4 @@ untracked/
 # macOS
 .DS_Store
 .env
+/refs/
