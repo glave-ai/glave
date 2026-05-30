@@ -85,6 +85,7 @@ pub struct ModelAgent {
     max_turns: u32,
     max_tokens: u64,
     keep_recent: usize,
+    sub_turns: u32,
 }
 
 impl ModelAgent {
@@ -95,8 +96,53 @@ impl ModelAgent {
             max_turns: env_parse("GLAVE_MAX_TURNS", 20),
             max_tokens: env_parse("GLAVE_MAX_TOKENS", 120_000),
             keep_recent: env_parse("GLAVE_KEEP_RECENT", 6),
+            sub_turns: env_parse("GLAVE_SUB_TURNS", 6),
         }
     }
+
+    /// Run a read-only research subagent in its own context and return its
+    /// summary. Shares the runtime (read access) but cannot edit — only
+    /// `read`/`grep`/`glob`. Bounded by `sub_turns`.
+    fn run_subagent(
+        &self,
+        rt: &mut dyn WorkspaceRuntime,
+        task: &TaskSpec,
+        subtask: &str,
+    ) -> Result<String> {
+        let mut messages = vec![
+            Message::new("system", subagent_system()),
+            Message::new("user", subtask.to_string()),
+        ];
+        let mut viewed = BTreeSet::new();
+        for _ in 0..self.sub_turns {
+            let c = self.provider.complete(&messages)?;
+            messages.push(Message::new("assistant", c.content.clone()));
+            match tools::parse(&c.content) {
+                Some(call) if is_readonly(&call) => {
+                    let obs = tools::execute(&call, rt, task, &mut viewed)?;
+                    messages.push(Message::new("user", obs));
+                }
+                // No tool (or an edit/other attempt): the content is the answer.
+                _ => return Ok(c.content.trim().to_string()),
+            }
+        }
+        Ok("(subagent reached its turn budget without concluding)".to_string())
+    }
+}
+
+/// Tools a research subagent may use — strictly read-only.
+fn is_readonly(call: &ToolCall) -> bool {
+    matches!(
+        call,
+        ToolCall::Read { .. } | ToolCall::Grep { .. } | ToolCall::Glob { .. }
+    )
+}
+
+fn subagent_system() -> String {
+    "You are a research subagent. Investigate the question using <read .../>, \
+     <grep .../>, and <glob .../> ONLY — you cannot edit files or run tests. When \
+     you have the answer, reply with a concise summary and NO tool tag."
+        .to_string()
 }
 
 /// Stub for an elided tool observation. Stable text so compaction is idempotent.
@@ -163,6 +209,16 @@ impl Agent for ModelAgent {
                 Some(ToolCall::Submit) => {
                     trace.emit(RunEvent::agent_action(run_id, "submit", None, None))?;
                     break;
+                }
+                Some(ToolCall::Subagent { task: subtask }) => {
+                    let summary = self.run_subagent(rt, task, &subtask)?;
+                    trace.emit(RunEvent::agent_action(
+                        run_id,
+                        "subagent",
+                        None,
+                        Some(subtask.clone()),
+                    ))?;
+                    messages.push(Message::new("user", format!("SUBAGENT RESULT:\n{summary}")));
                 }
                 Some(call) => match self.policy.decide(&call) {
                     // Autonomous eval: Ask is treated as Deny — zero HIL.
@@ -304,6 +360,7 @@ fn system_prompt() -> String {
      - <grep pattern=\"REGEX\"/> or <grep pattern=\"REGEX\" glob=\"*.go\"/> — search file contents (git-aware)\n\
      - <glob pattern=\"GLOB\"/> — find files by name (git-aware)\n\
      - <run_tests/> — run the tests and see the result\n\
+     - <subagent>QUESTION</subagent> — spawn a read-only research subagent to investigate; only its summary returns to you (keeps your context lean)\n\
      - <submit/> — when the failing test passes\n\
      Only edit files within the workspace. Read a file before editing it. Keep changes minimal."
         .to_string()
@@ -618,5 +675,56 @@ mod tests {
         let once = user_obs(&m).join("|");
         compact_history(&mut m, 2);
         assert_eq!(user_obs(&m).join("|"), once);
+    }
+
+    #[test]
+    fn is_readonly_allows_only_read_grep_glob() {
+        assert!(is_readonly(&ToolCall::Read { path: "f".into(), offset: None, limit: None }));
+        assert!(is_readonly(&ToolCall::Grep { pattern: "x".into(), glob: None }));
+        assert!(is_readonly(&ToolCall::Glob { pattern: "*".into() }));
+        assert!(!is_readonly(&ToolCall::Create { path: "f".into(), content: "c".into() }));
+        assert!(!is_readonly(&ToolCall::RunTests));
+    }
+
+    #[test]
+    fn subagent_runs_then_main_submits() -> Result<()> {
+        // main spawns a subagent; sub reads then answers; main submits.
+        let provider = Box::new(InMemoryProvider::new(vec![
+            "<subagent>where is the bug?</subagent>",
+            "<read path=\"src/main.rs\"/>",
+            "The bug is on line 1.",
+            "<submit/>",
+        ]));
+        let policy = Box::new(AutonomousPolicy::new(&["src/main.rs".to_string()]));
+        let mut agent = ModelAgent::new(provider, policy);
+        let mut rt = InMemoryRuntime::new().with_file("src/main.rs", "BUG");
+        let mut sink = InMemorySink::default();
+        let task = task_for("rust")?;
+
+        agent.act(&mut rt, &task, "run-sub", &mut sink)?;
+
+        assert_eq!(count_action(&sink.events, "subagent"), 1);
+        assert_eq!(count_action(&sink.events, "submit"), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn subagent_cannot_edit_the_workspace() -> Result<()> {
+        // The subagent attempts a str_replace; it must not change the file.
+        let provider = Box::new(InMemoryProvider::new(vec![
+            "<subagent>fix it yourself</subagent>",
+            "<str_replace path=\"src/main.rs\"><search>\nBUG\n</search><replace>\nFIXED\n</replace></str_replace>",
+            "<submit/>",
+        ]));
+        let policy = Box::new(AutonomousPolicy::new(&["src/main.rs".to_string()]));
+        let mut agent = ModelAgent::new(provider, policy);
+        let mut rt = InMemoryRuntime::new().with_file("src/main.rs", "BUG");
+        let mut sink = InMemorySink::default();
+        let task = task_for("rust")?;
+
+        agent.act(&mut rt, &task, "run-sub", &mut sink)?;
+
+        assert_eq!(rt.file("src/main.rs").map(String::as_str), Some("BUG")); // untouched
+        Ok(())
     }
 }

@@ -59,6 +59,7 @@ impl Policy for AutonomousPolicy {
             | ToolCall::Grep { .. }
             | ToolCall::Glob { .. }
             | ToolCall::RunTests
+            | ToolCall::Subagent { .. }
             | ToolCall::Submit => Decision::Allow,
         }
     }

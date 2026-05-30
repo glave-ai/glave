@@ -45,6 +45,12 @@ pub enum ToolCall {
     },
     /// Run the task's oracle and report pass/fail.
     RunTests,
+    /// Spawn a read-only research subagent on a focused question; its summary
+    /// returns as the observation. A context-compression worker — the main
+    /// agent's context never sees the subagent's exploration, only its answer.
+    Subagent {
+        task: String,
+    },
     /// Declare completion.
     Submit,
 }
@@ -59,6 +65,7 @@ impl ToolCall {
             ToolCall::Grep { .. } => "grep",
             ToolCall::Glob { .. } => "glob",
             ToolCall::RunTests => "run_tests",
+            ToolCall::Subagent { .. } => "subagent",
             ToolCall::Submit => "submit",
         }
     }
@@ -83,6 +90,7 @@ pub fn parse(s: &str) -> Option<ToolCall> {
         ("grep", s.find("<grep")),
         ("glob", s.find("<glob")),
         ("run_tests", s.find("<run_tests")),
+        ("subagent", s.find("<subagent")),
         ("submit", s.find("<submit")),
     ]
     .into_iter()
@@ -98,6 +106,7 @@ pub fn parse(s: &str) -> Option<ToolCall> {
         "grep" => parse_grep(s),
         "glob" => parse_glob(s),
         "run_tests" => Some(ToolCall::RunTests),
+        "subagent" => parse_subagent(s),
         "submit" => Some(ToolCall::Submit),
         _ => None,
     }
@@ -146,6 +155,20 @@ fn parse_create(s: &str) -> Option<ToolCall> {
         path,
         content: unwrap_block(rest.get(open..close)?),
     })
+}
+
+fn parse_subagent(s: &str) -> Option<ToolCall> {
+    let rest = s.get(s.find("<subagent")?..)?;
+    let open = rest.find('>')?.checked_add(1)?;
+    let close = rest.find("</subagent>")?;
+    if close < open {
+        return None;
+    }
+    let task = rest.get(open..close)?.trim().to_string();
+    if task.is_empty() {
+        return None;
+    }
+    Some(ToolCall::Subagent { task })
 }
 
 fn parse_bash(s: &str) -> Option<ToolCall> {
@@ -284,6 +307,10 @@ pub fn execute(
                 if v.pass_to_pass_ok { "PASS" } else { "FAIL" },
                 clip(&v.f2p_output, 2000)
             ))
+        }
+        // Handled in the agent loop (needs the model provider); never reached here.
+        ToolCall::Subagent { .. } => {
+            Ok("ERROR: subagent is dispatched by the agent loop".to_string())
         }
         ToolCall::Submit => Ok("submitted".to_string()),
     }

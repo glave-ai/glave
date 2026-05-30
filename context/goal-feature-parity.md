@@ -29,7 +29,7 @@ ending in `submit`. Costs API → run at track boundaries, not every feature.
 ### Engine track
 - [x] **Compaction** — history eviction; no-op for short tasks, bounds long ones.
       Built *with* the regression gate, since context changes burned us before.
-- [ ] **Subagents** — budgeted sub-context workers (builds on registry + compaction)
+- [x] **Subagents** — budgeted sub-context workers (builds on registry + compaction)
 
 ## Stop condition
 All items implemented + tested + regression-green, or a surfaced blocker.
@@ -54,3 +54,8 @@ All items implemented + tested + regression-green, or a surfaced blocker.
   turns; idempotent. 4 unit tests. REAL regression: grpc-go solved with ~20
   observations (compaction active, ~14 stubbed) — no regression. Real qwen
   benchmark also re-confirmed on bytes after the parity features.
+- Subagents — `<subagent>Q</subagent>` spawns a read-only research worker
+  (read/grep/glob only, `GLAVE_SUB_TURNS` budget) in its own context; only its
+  summary returns to the main loop. 3 tests (readonly set, runs-then-submits,
+  cannot-edit). Real regression: bytes still solves with the tool present.
+  >>> ENGINE TRACK COMPLETE.
