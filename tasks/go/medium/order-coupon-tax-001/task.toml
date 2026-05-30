@@ -1,0 +1,25 @@
+id = "go-order-coupon-tax-001"
+language = "go"
+archetype = "bug-fix-in-context"
+difficulty = "medium"
+codebase_size = "medium"
+editable_surface = ["**/*.go"]
+
+[provenance]
+source = "authored"
+contamination = "none"
+calibration = false
+
+[image]
+base = "glave/go-base:latest"
+workdir = "/work"
+
+[oracle]
+fail_to_pass = "cp /oracle/total_test.go order/ && go test -run '^TestCouponReducesTaxableAmount$' ./order"
+pass_to_pass = "cp /oracle/total_test.go order/ && go test -run '^(TestSubtotalUnchanged|TestTaxNoCoupon)$' ./order"
+
+[resource]
+mem_mb = 512
+cpus = 1.0
+pids = 256
+network = "none"
