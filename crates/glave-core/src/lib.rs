@@ -8,6 +8,7 @@
 pub mod agent;
 pub mod capability;
 pub mod event;
+pub mod mcp;
 pub mod oracle;
 pub mod policy;
 pub mod ports;
@@ -21,6 +22,7 @@ pub mod testkit;
 
 pub use capability::{Capability, CapabilityKind, CapabilityRegistry, LexicalSelector, Selector};
 pub use event::RunEvent;
+pub use mcp::{McpClient, McpServerConfig, McpTool, McpTransport, StdioTransport};
 pub use oracle::Verdict;
 pub use sinks::{InMemorySink, JsonlSink};
 pub use policy::{AutonomousPolicy, Decision, Policy};
