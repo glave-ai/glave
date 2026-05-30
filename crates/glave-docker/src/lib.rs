@@ -142,10 +142,18 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
 }
 
 fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
+    const SKIP: [&str; 5] = ["vendor", "target", "node_modules", ".git", ".cargo"];
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let p = entry.path();
         if p.is_dir() {
+            let name = p
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if SKIP.contains(&name.as_str()) {
+                continue;
+            }
             walk(root, &p, out)?;
         } else if let Ok(rel) = p.strip_prefix(root) {
             out.push(rel.to_string_lossy().replace('\\', "/"));

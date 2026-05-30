@@ -20,3 +20,5 @@ untracked/
 # Eval run artifacts (local; retention policy TBD)
 /.runs/
 /traces/
+/.ingest-scratch/
+/.ingest/
