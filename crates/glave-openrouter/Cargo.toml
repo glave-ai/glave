@@ -1,0 +1,15 @@
+[package]
+name = "glave-openrouter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenRouter ModelProvider adapter"
+
+[dependencies]
+glave-core.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
+
+[lints]
+workspace = true

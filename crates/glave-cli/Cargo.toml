@@ -1,0 +1,22 @@
+[package]
+name = "glave-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Glave CLI — composition root wiring core + adapters"
+
+[[bin]]
+name = "glave"
+path = "src/main.rs"
+
+[dependencies]
+glave-core.workspace = true
+glave-openrouter.workspace = true
+glave-docker.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+uuid.workspace = true
+dotenvy.workspace = true
+
+[lints]
+workspace = true

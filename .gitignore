@@ -15,7 +15,7 @@ untracked/
 /refs/
 
 # Rust build output
-harness/target/
+/target/
 
 # Eval run artifacts (local; retention policy TBD)
 /.runs/

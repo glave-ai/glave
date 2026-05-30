@@ -1,25 +1,21 @@
-//! Flat-file JSONL trace. Every event carries the run id so the two halves of a
-//! run (this runner half now; the gateway/model half in slice 2) join cleanly.
-//! Append-only, one event per line.
+//! The trace event schema — a compounding asset. Run-id-correlated, append-only,
+//! one event per line when written by a JSONL sink.
 
-use anyhow::{Context, Result};
 use serde::Serialize;
-use std::fs::{create_dir_all, File, OpenOptions};
-use std::io::{BufWriter, Write};
-use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::oracle::Verdict;
+use crate::ports::Completion;
 use crate::task::TaskSpec;
 
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
+        .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
         .unwrap_or(0)
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "event")]
 pub enum RunEvent {
     #[serde(rename = "run.started")]
@@ -32,6 +28,20 @@ pub enum RunEvent {
         difficulty: String,
         agent: String,
         harness_sha: String,
+    },
+    #[serde(rename = "model.turn")]
+    ModelTurn {
+        run_id: String,
+        ts_ms: u64,
+        turn: u32,
+        model: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        reasoning_tokens: u64,
+        cost_usd: f64,
+        content: String,
     },
     #[serde(rename = "agent.action")]
     AgentAction {
@@ -87,6 +97,21 @@ impl RunEvent {
         }
     }
 
+    pub fn model_turn(run_id: &str, turn: u32, c: &Completion) -> Self {
+        RunEvent::ModelTurn {
+            run_id: run_id.to_string(),
+            ts_ms: now_ms(),
+            turn,
+            model: c.model.clone(),
+            provider: c.provider.clone(),
+            prompt_tokens: c.prompt_tokens,
+            completion_tokens: c.completion_tokens,
+            reasoning_tokens: c.reasoning_tokens,
+            cost_usd: c.cost_usd,
+            content: c.content.clone(),
+        }
+    }
+
     pub fn agent_action(
         run_id: &str,
         action: &str,
@@ -110,6 +135,23 @@ impl RunEvent {
             prompt_tokens: 0,
             completion_tokens: 0,
             cost_usd: 0.0,
+        }
+    }
+
+    pub fn cost_usage_total(
+        run_id: &str,
+        model: &str,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        cost_usd: f64,
+    ) -> Self {
+        RunEvent::CostUsage {
+            run_id: run_id.to_string(),
+            ts_ms: now_ms(),
+            model: Some(model.to_string()),
+            prompt_tokens,
+            completion_tokens,
+            cost_usd,
         }
     }
 
@@ -141,40 +183,8 @@ fn harness_sha() -> String {
         .output()
         .ok()
         .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string())
-}
-
-pub struct Trace {
-    writer: BufWriter<File>,
-    path: PathBuf,
-}
-
-impl Trace {
-    pub fn new(run_id: &str) -> Result<Self> {
-        let dir = PathBuf::from("traces");
-        create_dir_all(&dir)?;
-        let path = dir.join(format!("{run_id}.jsonl"));
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .with_context(|| format!("opening trace {}", path.display()))?;
-        Ok(Self {
-            writer: BufWriter::new(file),
-            path,
-        })
-    }
-
-    pub fn emit(&mut self, ev: RunEvent) -> Result<()> {
-        let line = serde_json::to_string(&ev)?;
-        self.writer.write_all(line.as_bytes())?;
-        self.writer.write_all(b"\n")?;
-        self.writer.flush()?;
-        Ok(())
-    }
-
-    pub fn path(&self) -> &PathBuf {
-        &self.path
-    }
+        .map_or_else(
+            || "unknown".to_string(),
+            |o| String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        )
 }

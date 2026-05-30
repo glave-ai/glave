@@ -1,31 +1,16 @@
-//! Workspace runtime — the seam that lets the agent act on a sandbox without
-//! knowing whether it's Docker, Firecracker, or a remote cloud worker.
+//! Docker `WorkspaceRuntime` adapter — the only crate that drives untrusted
+//! execution, so it's also the security blast-radius boundary.
 //!
-//! Slice 1 ships the Docker implementation. A future Firecracker/cloud backend
-//! implements the same trait, so neither the agent nor the oracle changes.
+//! Ephemeral container per task, workspace bind-mounted read-write and the oracle
+//! read-only, no network, resource-capped. A future Firecracker/remote adapter
+//! implements the same `WorkspaceRuntime` port without touching the core.
 
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::task::TaskSpec;
+use glave_core::{ExecResult, TaskSpec, WorkspaceRuntime};
 
-pub struct ExecResult {
-    pub exit_code: i32,
-    pub stdout: String,
-    pub stderr: String,
-}
-
-pub trait WorkspaceRuntime {
-    fn read_file(&self, rel: &str) -> Result<String>;
-    fn write_file(&mut self, rel: &str, contents: &str) -> Result<()>;
-    fn list_files(&self) -> Result<Vec<String>>;
-    /// Run a shell command in the workspace dir inside the sandbox.
-    fn run(&self, cmd: &str) -> Result<ExecResult>;
-}
-
-/// Docker-backed runtime: an ephemeral container with the workspace bind-mounted
-/// read-write and the oracle bind-mounted read-only (tamper-proof), no network.
 pub struct DockerRuntime {
     container: String,
     host_work: PathBuf,
@@ -34,8 +19,6 @@ pub struct DockerRuntime {
 
 impl DockerRuntime {
     pub fn prepare(task: &TaskSpec, run_id: &str) -> Result<Self> {
-        // Host-side mutable workspace, kept under the repo so Docker Desktop /
-        // Colima reliably shares it into the VM.
         let cwd = std::env::current_dir()?;
         let host_work = cwd.join(".runs").join(run_id).join("work");
         std::fs::create_dir_all(&host_work)?;
@@ -62,10 +45,16 @@ impl DockerRuntime {
                 &task.resource.network,
                 "--memory",
                 &mem,
+                "--memory-swap",
+                &mem, // no swap: OOM-kill rather than eat the VM
                 "--cpus",
                 &cpus,
                 "--pids-limit",
                 &pids,
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
                 "-v",
                 &work_mount,
                 "-v",
@@ -94,16 +83,13 @@ impl DockerRuntime {
         })
     }
 
-    pub fn cleanup(&mut self) -> Result<()> {
+    pub fn cleanup(&mut self) {
         let _ = Command::new("docker")
             .args(["rm", "-f", &self.container])
             .output();
-        // Remove the run's host workspace; keep the parent .runs/<id> empty dir
-        // out of the way by removing it too.
         if let Some(run_dir) = self.host_work.parent() {
             let _ = std::fs::remove_dir_all(run_dir);
         }
-        Ok(())
     }
 }
 
