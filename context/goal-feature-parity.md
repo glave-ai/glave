@@ -52,11 +52,13 @@ All items implemented + tested + regression-green, or a surfaced blocker.
   `parse_capability`) + `expand_command()` with `$ARGUMENTS` substitution; 4 tests.
   Mechanism is library-side; the interactive slash surface lands with the product
   CLI (the autonomous eval has no invocation trigger).
-- Compaction — `compact_history()` stubs tool observations older than the last
-  `keep_recent` (env `GLAVE_KEEP_RECENT`, default 6); preserves system/task/model
-  turns; idempotent. 4 unit tests. REAL regression: grpc-go solved with ~20
-  observations (compaction active, ~14 stubbed) — no regression. Real qwen
-  benchmark also re-confirmed on bytes after the parity features.
+- Compaction — token-window based (least destructive). `compact_to_fit()` fires
+  only when the real `prompt_tokens` reaches 95% of `GLAVE_CONTEXT_WINDOW`
+  (default 128k, qwen); below that the whole transcript is kept. When it fires it
+  elides the OLDEST tool observations oldest-first, only down to 70%, preserving
+  system/task/all-model-turns and recent observations. Observations are
+  recoverable (re-read/grep/run). 3 unit tests. REAL regression: grpc-go solves
+  with GLAVE_CONTEXT_WINDOW=16000 forcing repeated mid-run compaction.
 - Subagents — `<subagent>Q</subagent>` spawns a read-only research worker
   (read/grep/glob only, `GLAVE_SUB_TURNS` budget) in its own context; only its
   summary returns to the main loop. 3 tests (readonly set, runs-then-submits,
