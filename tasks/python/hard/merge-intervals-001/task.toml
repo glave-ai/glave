@@ -1,0 +1,25 @@
+id = "py-merge-intervals-001"
+language = "python"
+archetype = "bug-fix-in-context"
+difficulty = "high"
+codebase_size = "small"
+editable_surface = ["**/*.py"]
+
+[provenance]
+source = "authored"
+contamination = "none"
+calibration = false
+
+[image]
+base = "glave/python-base:latest"
+workdir = "/work"
+
+[oracle]
+fail_to_pass = "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/work python -m pytest -q -p no:cacheprovider /oracle/test_intervals.py::test_nested_interval"
+pass_to_pass = "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/work python -m pytest -q -p no:cacheprovider /oracle/test_intervals.py::test_simple_overlap /oracle/test_intervals.py::test_no_overlap"
+
+[resource]
+mem_mb = 256
+cpus = 1.0
+pids = 256
+network = "none"
