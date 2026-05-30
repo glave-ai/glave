@@ -84,6 +84,7 @@ pub struct ModelAgent {
     policy: Box<dyn Policy>,
     max_turns: u32,
     max_tokens: u64,
+    keep_recent: usize,
 }
 
 impl ModelAgent {
@@ -93,6 +94,32 @@ impl ModelAgent {
             policy,
             max_turns: env_parse("GLAVE_MAX_TURNS", 20),
             max_tokens: env_parse("GLAVE_MAX_TOKENS", 120_000),
+            keep_recent: env_parse("GLAVE_KEEP_RECENT", 6),
+        }
+    }
+}
+
+/// Stub for an elided tool observation. Stable text so compaction is idempotent.
+const ELIDED: &str = "[earlier tool output elided to save context — re-read/grep if you need it]";
+
+/// Bound context growth: keep the system + initial messages and the model's own
+/// turns intact, but collapse tool observations older than the most recent
+/// `keep_recent` to a stub. The model has already acted on them and can re-fetch
+/// via `read`/`grep`. No-op while observations are within the window.
+fn compact_history(messages: &mut [Message], keep_recent: usize) {
+    let obs: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .skip(2) // preserve system prompt + initial task message
+        .filter(|(_, m)| m.role == "user" && m.content != ELIDED)
+        .map(|(i, _)| i)
+        .collect();
+    let Some(to_stub) = obs.len().checked_sub(keep_recent) else {
+        return;
+    };
+    for &i in obs.iter().take(to_stub) {
+        if let Some(m) = messages.get_mut(i) {
+            m.content = ELIDED.to_string();
         }
     }
 }
@@ -123,6 +150,7 @@ impl Agent for ModelAgent {
         let mut total_cost = 0.0f64;
 
         for turn in 1..=self.max_turns {
+            compact_history(&mut messages, self.keep_recent);
             let c = self.provider.complete(&messages)?;
             total_prompt += c.prompt_tokens;
             total_completion += c.completion_tokens;
@@ -538,5 +566,57 @@ mod tests {
         let out = initial_user(&rt, &statement_task("integer decoding is wrong")?)?;
         assert!(!out.contains("RELEVANT SKILLS"), "irrelevant skill dropped: {out}");
         Ok(())
+    }
+
+    /// Build [system, task, (assistant, observation) × n].
+    fn convo(n: usize) -> Vec<Message> {
+        let mut m = vec![Message::new("system", "S"), Message::new("user", "TASK")];
+        for i in 0..n {
+            m.push(Message::new("assistant", format!("act{i}")));
+            m.push(Message::new("user", format!("obs{i}")));
+        }
+        m
+    }
+
+    fn user_obs(m: &[Message]) -> Vec<&str> {
+        // observations are user messages after the initial task message
+        m.iter()
+            .filter(|x| x.role == "user")
+            .skip(1)
+            .map(|x| x.content.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn compaction_is_noop_within_window() {
+        let mut m = convo(4);
+        compact_history(&mut m, 6);
+        assert_eq!(user_obs(&m), ["obs0", "obs1", "obs2", "obs3"]);
+    }
+
+    #[test]
+    fn compaction_stubs_oldest_keeps_recent() {
+        let mut m = convo(5);
+        compact_history(&mut m, 2);
+        assert_eq!(user_obs(&m), [ELIDED, ELIDED, ELIDED, "obs3", "obs4"]);
+    }
+
+    #[test]
+    fn compaction_preserves_system_task_and_assistants() {
+        let mut m = convo(5);
+        compact_history(&mut m, 2);
+        assert_eq!(m.first().map(|x| x.content.as_str()), Some("S"));
+        assert_eq!(m.get(1).map(|x| x.content.as_str()), Some("TASK"));
+        let acts: Vec<&str> = m.iter().filter(|x| x.role == "assistant").map(|x| x.content.as_str()).collect();
+        assert_eq!(acts, ["act0", "act1", "act2", "act3", "act4"]);
+    }
+
+    #[test]
+    fn compaction_is_idempotent() {
+        let mut m = convo(5);
+        compact_history(&mut m, 2);
+        let once = user_obs(&m).join("|");
+        compact_history(&mut m, 2);
+        assert_eq!(user_obs(&m).join("|"), once);
     }
 }

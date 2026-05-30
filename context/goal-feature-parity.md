@@ -27,7 +27,7 @@ ending in `submit`. Costs API → run at track boundaries, not every feature.
 - [x] **Commands** — registry-backed canned prompts/workflows
 - [ ] **MCP** — external tool client (heaviest; protocol work)
 ### Engine track
-- [ ] **Compaction** — history eviction; no-op for short tasks, bounds long ones.
+- [x] **Compaction** — history eviction; no-op for short tasks, bounds long ones.
       Built *with* the regression gate, since context changes burned us before.
 - [ ] **Subagents** — budgeted sub-context workers (builds on registry + compaction)
 
@@ -49,3 +49,8 @@ All items implemented + tested + regression-green, or a surfaced blocker.
   `parse_capability`) + `expand_command()` with `$ARGUMENTS` substitution; 4 tests.
   Mechanism is library-side; the interactive slash surface lands with the product
   CLI (the autonomous eval has no invocation trigger).
+- Compaction — `compact_history()` stubs tool observations older than the last
+  `keep_recent` (env `GLAVE_KEEP_RECENT`, default 6); preserves system/task/model
+  turns; idempotent. 4 unit tests. REAL regression: grpc-go solved with ~20
+  observations (compaction active, ~14 stubbed) — no regression. Real qwen
+  benchmark also re-confirmed on bytes after the parity features.
