@@ -25,7 +25,11 @@ ending in `submit`. Costs API → run at track boundaries, not every feature.
 - [x] **Capability registry + selector** — lexical/BM25 substrate for the below
 - [x] **Skills** — registry-backed reusable capability packages
 - [x] **Commands** — registry-backed canned prompts/workflows
-- [ ] **MCP** — external tool client (heaviest; protocol work)
+- [ ] **MCP** — external tool client (heaviest). SURFACED FOR DECISION, not built
+      autonomously: an MCP server is untrusted code, so *where it runs* is a moat-
+      boundary security call. Brain-side risks IP/key exfiltration; actuator-side
+      (in the sandbox) is safer but complicates routing. Needs a human decision
+      before implementation (per the edit-surface rule + stop condition).
 ### Engine track
 - [x] **Compaction** — history eviction; no-op for short tasks, bounds long ones.
       Built *with* the regression gate, since context changes burned us before.
@@ -59,3 +63,7 @@ All items implemented + tested + regression-green, or a surfaced blocker.
   summary returns to the main loop. 3 tests (readonly set, runs-then-submits,
   cannot-edit). Real regression: bytes still solves with the tool present.
   >>> ENGINE TRACK COMPLETE.
+- STOP: 6/7 built (engine track complete; parity track complete except MCP).
+  MCP surfaced for a trust-model decision (above). 35 new unit tests, clippy 0
+  throughout, 3 real qwen regressions (bytes ×2, grpc-go with compaction active)
+  all SOLVED. Awaiting the MCP trust-model call before the final feature.
