@@ -175,7 +175,9 @@ fn system_prompt() -> String {
      - <view path=\"FILE\"/> or <view path=\"FILE\" range=\"START-END\"/> — read a file (with line numbers)\n\
      - <str_replace path=\"FILE\"><search>\\nEXACT EXISTING TEXT\\n</search><replace>\\nNEW TEXT\\n</replace></str_replace> — replace an exact, unique snippet (view the file first)\n\
      - <create path=\"FILE\">\\nFULL CONTENT\\n</create> — create or overwrite a file\n\
-     - <bash>COMMAND</bash> — run a shell command (search, build, delete files, …)\n\
+     - <bash>COMMAND</bash> — run a shell command (build, delete files, …)\n\
+     - <grep pattern=\"REGEX\"/> or <grep pattern=\"REGEX\" glob=\"*.go\"/> — search file contents (git-aware)\n\
+     - <glob pattern=\"GLOB\"/> — find files by name (git-aware)\n\
      - <run_tests/> — run the tests and see the result\n\
      - <submit/> — when the failing test passes\n\
      Only edit files within the workspace. View a file before editing it. Keep changes minimal."
