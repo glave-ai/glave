@@ -51,6 +51,12 @@ pub enum ToolCall {
     Subagent {
         task: String,
     },
+    /// Call a tool on a configured MCP server with JSON arguments.
+    Mcp {
+        server: String,
+        tool: String,
+        args: String,
+    },
     /// Declare completion.
     Submit,
 }
@@ -66,6 +72,7 @@ impl ToolCall {
             ToolCall::Glob { .. } => "glob",
             ToolCall::RunTests => "run_tests",
             ToolCall::Subagent { .. } => "subagent",
+            ToolCall::Mcp { .. } => "mcp",
             ToolCall::Submit => "submit",
         }
     }
@@ -91,6 +98,7 @@ pub fn parse(s: &str) -> Option<ToolCall> {
         ("glob", s.find("<glob")),
         ("run_tests", s.find("<run_tests")),
         ("subagent", s.find("<subagent")),
+        ("mcp", s.find("<mcp")),
         ("submit", s.find("<submit")),
     ]
     .into_iter()
@@ -107,6 +115,7 @@ pub fn parse(s: &str) -> Option<ToolCall> {
         "glob" => parse_glob(s),
         "run_tests" => Some(ToolCall::RunTests),
         "subagent" => parse_subagent(s),
+        "mcp" => parse_mcp(s),
         "submit" => Some(ToolCall::Submit),
         _ => None,
     }
@@ -155,6 +164,19 @@ fn parse_create(s: &str) -> Option<ToolCall> {
         path,
         content: unwrap_block(rest.get(open..close)?),
     })
+}
+
+fn parse_mcp(s: &str) -> Option<ToolCall> {
+    let rest = s.get(s.find("<mcp")?..)?;
+    let server = extract_attr(rest, "server")?;
+    let tool = extract_attr(rest, "tool")?;
+    let open = rest.find('>')?.checked_add(1)?;
+    let close = rest.find("</mcp>")?;
+    if close < open {
+        return None;
+    }
+    let args = rest.get(open..close)?.trim().to_string();
+    Some(ToolCall::Mcp { server, tool, args })
 }
 
 fn parse_subagent(s: &str) -> Option<ToolCall> {
@@ -308,10 +330,11 @@ pub fn execute(
                 clip(&v.f2p_output, 2000)
             ))
         }
-        // Handled in the agent loop (needs the model provider); never reached here.
+        // Handled in the agent loop (need provider / MCP hub); never reached here.
         ToolCall::Subagent { .. } => {
             Ok("ERROR: subagent is dispatched by the agent loop".to_string())
         }
+        ToolCall::Mcp { .. } => Ok("ERROR: mcp is dispatched by the agent loop".to_string()),
         ToolCall::Submit => Ok("submitted".to_string()),
     }
 }
@@ -357,4 +380,48 @@ fn clip(s: &str, max: usize) -> String {
 /// Single-quote a string for safe inclusion in a `sh -c` command.
 fn sq(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_read_with_offset_and_limit() {
+        let call = parse("<read path=\"a.rs\" offset=\"10\" limit=\"40\"/>");
+        assert!(matches!(call, Some(ToolCall::Read { offset: Some(10), limit: Some(40), .. })));
+    }
+
+    #[test]
+    fn parse_read_defaults_to_none() {
+        let call = parse("<read path=\"a.rs\"/>");
+        assert!(matches!(call, Some(ToolCall::Read { offset: None, limit: None, .. })));
+    }
+
+    #[test]
+    fn parse_subagent_extracts_task() {
+        let call = parse("<subagent>find the bug</subagent>");
+        assert!(matches!(&call, Some(ToolCall::Subagent { task }) if task == "find the bug"));
+    }
+
+    #[test]
+    fn parse_mcp_extracts_server_tool_args() {
+        let call = parse("<mcp server=\"web\" tool=\"search\">{\"q\":\"x\"}</mcp>");
+        assert!(matches!(
+            &call,
+            Some(ToolCall::Mcp { server, tool, args })
+                if server == "web" && tool == "search" && args == "{\"q\":\"x\"}"
+        ));
+    }
+
+    #[test]
+    fn parse_picks_earliest_tag() {
+        let call = parse("noise <read path=\"a\"/> then <submit/>");
+        assert_eq!(call.map(|c| c.name()), Some("read"));
+    }
+
+    #[test]
+    fn str_replace_requires_path() {
+        assert!(parse("<str_replace><search>\na\n</search><replace>\nb\n</replace></str_replace>").is_none());
+    }
 }

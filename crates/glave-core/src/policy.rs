@@ -60,6 +60,7 @@ impl Policy for AutonomousPolicy {
             | ToolCall::Glob { .. }
             | ToolCall::RunTests
             | ToolCall::Subagent { .. }
+            | ToolCall::Mcp { .. }
             | ToolCall::Submit => Decision::Allow,
         }
     }

@@ -25,11 +25,10 @@ ending in `submit`. Costs API → run at track boundaries, not every feature.
 - [x] **Capability registry + selector** — lexical/BM25 substrate for the below
 - [x] **Skills** — registry-backed reusable capability packages
 - [x] **Commands** — registry-backed canned prompts/workflows
-- [ ] **MCP** — external tool client (heaviest). SURFACED FOR DECISION, not built
-      autonomously: an MCP server is untrusted code, so *where it runs* is a moat-
-      boundary security call. Brain-side risks IP/key exfiltration; actuator-side
-      (in the sandbox) is safer but complicates routing. Needs a human decision
-      before implementation (per the edit-surface rule + stop condition).
+- [x] **MCP** — external tool client. DECISION: operator-configured servers are
+      trusted, run brain-side (standard `.mcp.json` model). Client core (config,
+      JSON-RPC, transport port, stdio adapter, McpHub) + agent wiring (`<mcp>`
+      tool, catalog, dispatch). Untrusted/actuator-sandboxed MCP deferred.
 ### Engine track
 - [x] **Compaction** — history eviction; no-op for short tasks, bounds long ones.
       Built *with* the regression gate, since context changes burned us before.
@@ -63,7 +62,15 @@ All items implemented + tested + regression-green, or a surfaced blocker.
   summary returns to the main loop. 3 tests (readonly set, runs-then-submits,
   cannot-edit). Real regression: bytes still solves with the tool present.
   >>> ENGINE TRACK COMPLETE.
-- STOP: 6/7 built (engine track complete; parity track complete except MCP).
-  MCP surfaced for a trust-model decision (above). 35 new unit tests, clippy 0
-  throughout, 3 real qwen regressions (bytes ×2, grpc-go with compaction active)
-  all SOLVED. Awaiting the MCP trust-model call before the final feature.
+- MCP — trust-model decision (operator-configured = trusted, brain-side). Client
+  core: `load_config`/`parse_config`, `McpTransport` port, `McpClient`
+  (initialize/list/call), `StdioTransport` (newline JSON-RPC, kills child on
+  drop), `McpHub` (connect/catalog/route). Agent wiring: `<mcp server tool>args`
+  tool + loop dispatch + catalog message; opt-in (no `.glave/mcp.json` = no-op).
+  11 tests incl. a REAL python mock-server integration test + a hub-via-config
+  test. Eval-safe (bytes re-confirmed SOLVED; first run was edge variance).
+  >>> PARITY TRACK COMPLETE.
+
+>>> GOAL COMPLETE: all 7 features built, tested, regression-gated. ~50 unit tests,
+clippy 0 throughout, real qwen regressions green (bytes, grpc-go w/ compaction).
+Next (separate): multi-trial scoring to measure on the now-complete harness.
