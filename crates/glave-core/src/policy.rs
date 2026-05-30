@@ -54,7 +54,7 @@ impl Policy for AutonomousPolicy {
                     Decision::Deny(format!("{path} is outside the editable surface"))
                 }
             }
-            ToolCall::View { .. }
+            ToolCall::Read { .. }
             | ToolCall::Bash { .. }
             | ToolCall::Grep { .. }
             | ToolCall::Glob { .. }
