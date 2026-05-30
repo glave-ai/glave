@@ -75,7 +75,7 @@ impl Agent for SolveAgent {
     }
 }
 
-/// The real model-driven agent: drives the tool grammar (view / str_replace /
+/// The real model-driven agent: drives the tool grammar (read / str_replace /
 /// create / bash / run_tests / submit) through the mediation policy, bounded by
 /// turn and token budgets.
 pub struct ModelAgent {
@@ -265,20 +265,20 @@ fn system_prompt() -> String {
     "You are a coding agent. Fix the workspace so the failing test passes without \
      breaking the previously-passing tests. Respond with EXACTLY ONE action per \
      message, using these tags:\n\
-     - <view path=\"FILE\"/> or <view path=\"FILE\" range=\"START-END\"/> — read a file (with line numbers)\n\
-     - <str_replace path=\"FILE\"><search>\\nEXACT EXISTING TEXT\\n</search><replace>\\nNEW TEXT\\n</replace></str_replace> — replace an exact, unique snippet (view the file first)\n\
+     - <read path=\"FILE\"/> or <read path=\"FILE\" offset=\"N\" limit=\"M\"/> — read a file with line numbers (bounded by default; offset = first line, limit = max lines)\n\
+     - <str_replace path=\"FILE\"><search>\\nEXACT EXISTING TEXT\\n</search><replace>\\nNEW TEXT\\n</replace></str_replace> — replace an exact, unique snippet (read the file first)\n\
      - <create path=\"FILE\">\\nFULL CONTENT\\n</create> — create or overwrite a file\n\
      - <bash>COMMAND</bash> — run a shell command (build, delete files, …)\n\
      - <grep pattern=\"REGEX\"/> or <grep pattern=\"REGEX\" glob=\"*.go\"/> — search file contents (git-aware)\n\
      - <glob pattern=\"GLOB\"/> — find files by name (git-aware)\n\
      - <run_tests/> — run the tests and see the result\n\
      - <submit/> — when the failing test passes\n\
-     Only edit files within the workspace. View a file before editing it. Keep changes minimal."
+     Only edit files within the workspace. Read a file before editing it. Keep changes minimal."
         .to_string()
 }
 
 fn help_text() -> String {
-    "No valid action found. Respond with exactly one of: <view .../>, \
+    "No valid action found. Respond with exactly one of: <read .../>, \
      <str_replace ...>, <create ...>, <bash>...</bash>, <run_tests/>, <submit/>."
         .to_string()
 }
@@ -292,7 +292,7 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
     ));
     out.push_str(&spec_section(task));
 
-    out.push_str("Workspace files (use <view> to read them, <grep>/<glob> to navigate):\n");
+    out.push_str("Workspace files (use <read> to read them, <grep>/<glob> to navigate):\n");
     let mut files = rt.list_files()?;
     files.sort();
     for f in files.iter().take(FILE_CAP) {

@@ -12,10 +12,12 @@ use crate::task::TaskSpec;
 
 #[derive(Debug, Clone)]
 pub enum ToolCall {
-    /// Ranged read with line numbers.
-    View {
+    /// Paginated read with line numbers, bounded by default (offset = first
+    /// line, 1-based; limit = max lines). A file under the limit comes whole.
+    Read {
         path: String,
-        range: Option<(usize, usize)>,
+        offset: Option<usize>,
+        limit: Option<usize>,
     },
     /// Replace an exact, unique snippet (read-before-edit enforced).
     StrReplace {
@@ -50,7 +52,7 @@ pub enum ToolCall {
 impl ToolCall {
     pub fn name(&self) -> &'static str {
         match self {
-            ToolCall::View { .. } => "view",
+            ToolCall::Read { .. } => "read",
             ToolCall::StrReplace { .. } => "str_replace",
             ToolCall::Create { .. } => "create",
             ToolCall::Bash { .. } => "bash",
@@ -63,7 +65,7 @@ impl ToolCall {
 
     pub fn path(&self) -> Option<String> {
         match self {
-            ToolCall::View { path, .. }
+            ToolCall::Read { path, .. }
             | ToolCall::StrReplace { path, .. }
             | ToolCall::Create { path, .. } => Some(path.clone()),
             _ => None,
@@ -76,7 +78,7 @@ pub fn parse(s: &str) -> Option<ToolCall> {
     let kind = [
         ("str_replace", s.find("<str_replace")),
         ("create", s.find("<create")),
-        ("view", s.find("<view")),
+        ("read", s.find("<read")),
         ("bash", s.find("<bash")),
         ("grep", s.find("<grep")),
         ("glob", s.find("<glob")),
@@ -91,7 +93,7 @@ pub fn parse(s: &str) -> Option<ToolCall> {
     match kind {
         "str_replace" => parse_str_replace(s),
         "create" => parse_create(s),
-        "view" => parse_view(s),
+        "read" => parse_read(s),
         "bash" => parse_bash(s),
         "grep" => parse_grep(s),
         "glob" => parse_glob(s),
@@ -124,16 +126,12 @@ pub fn parse_creates(s: &str) -> Vec<(String, String)> {
     out
 }
 
-fn parse_view(s: &str) -> Option<ToolCall> {
-    let rest = s.get(s.find("<view")?..)?;
+fn parse_read(s: &str) -> Option<ToolCall> {
+    let rest = s.get(s.find("<read")?..)?;
     let path = extract_attr(rest, "path")?;
-    let range = extract_attr(rest, "range").and_then(|r| parse_range(&r));
-    Some(ToolCall::View { path, range })
-}
-
-fn parse_range(r: &str) -> Option<(usize, usize)> {
-    let (a, b) = r.split_once('-')?;
-    Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+    let offset = extract_attr(rest, "offset").and_then(|v| v.trim().parse().ok());
+    let limit = extract_attr(rest, "limit").and_then(|v| v.trim().parse().ok());
+    Some(ToolCall::Read { path, offset, limit })
 }
 
 fn parse_create(s: &str) -> Option<ToolCall> {
@@ -215,10 +213,10 @@ pub fn execute(
     viewed: &mut BTreeSet<String>,
 ) -> Result<String> {
     match call {
-        ToolCall::View { path, range } => match rt.read_file(path) {
+        ToolCall::Read { path, offset, limit } => match rt.read_file(path) {
             Ok(content) => {
                 viewed.insert(path.clone());
-                Ok(render_view(&content, *range))
+                Ok(render_read(&content, *offset, *limit))
             }
             Err(e) => Ok(format!("ERROR: cannot read {path}: {e}")),
         },
@@ -229,14 +227,14 @@ pub fn execute(
         }
         ToolCall::StrReplace { path, old, new } => {
             if !viewed.contains(path) {
-                return Ok(format!("ERROR: view {path} before editing it"));
+                return Ok(format!("ERROR: read {path} before editing it"));
             }
             let content = match rt.read_file(path) {
                 Ok(c) => c,
                 Err(e) => return Ok(format!("ERROR: cannot read {path}: {e}")),
             };
             match content.matches(old.as_str()).count() {
-                0 => Ok("ERROR: <search> text not found exactly; re-view and copy it precisely".to_string()),
+                0 => Ok("ERROR: <search> text not found exactly; re-read and copy it precisely".to_string()),
                 1 => {
                     let updated = content.replacen(old.as_str(), new, 1);
                     rt.write_file(path, &updated)?;
@@ -291,10 +289,15 @@ pub fn execute(
     }
 }
 
-fn render_view(content: &str, range: Option<(usize, usize)>) -> String {
+/// Default read window when the model gives no `limit` — bounds context so a
+/// large file can't flood it; a file under this size still comes back whole.
+const READ_DEFAULT_LIMIT: usize = 250;
+
+fn render_read(content: &str, offset: Option<usize>, limit: Option<usize>) -> String {
     let total = content.lines().count();
-    let (start, end) = range.unwrap_or((1, total));
-    let start = start.max(1);
+    let start = offset.unwrap_or(1).max(1);
+    let lim = limit.unwrap_or(READ_DEFAULT_LIMIT).max(1);
+    let end = start.saturating_add(lim).saturating_sub(1).min(total);
     let mut out = String::new();
     for (idx, line) in content.lines().enumerate() {
         let n = idx + 1;
@@ -303,7 +306,13 @@ fn render_view(content: &str, range: Option<(usize, usize)>) -> String {
         }
     }
     if out.is_empty() {
-        out.push_str("(empty range or file)\n");
+        return format!("(file has {total} lines; offset {start} is past the end)\n");
+    }
+    if start > 1 || end < total {
+        out.push_str(&format!(
+            "[lines {start}-{end} of {total}; read offset={} to continue, or grep to jump]\n",
+            end.saturating_add(1)
+        ));
     }
     out
 }
