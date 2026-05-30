@@ -13,3 +13,10 @@ untracked/
 .DS_Store
 .env
 /refs/
+
+# Rust build output
+harness/target/
+
+# Eval run artifacts (local; retention policy TBD)
+/.runs/
+/traces/
