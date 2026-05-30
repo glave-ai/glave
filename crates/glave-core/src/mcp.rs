@@ -194,6 +194,74 @@ impl Drop for StdioTransport {
     }
 }
 
+/// Connects every configured server and routes tool calls by server name. Owns
+/// the live clients for a task's duration; dropping it kills the server processes.
+pub struct McpHub {
+    clients: Vec<(String, McpClient<StdioTransport>)>,
+    tools: Vec<McpTool>,
+}
+
+impl McpHub {
+    /// Connect every server in `.glave/mcp.json`. A server that fails to spawn or
+    /// handshake is skipped (logged), never fatal — MCP is opt-in.
+    #[must_use]
+    pub fn connect(rt: &dyn WorkspaceRuntime) -> Self {
+        let mut clients = Vec::new();
+        let mut tools = Vec::new();
+        for cfg in load_config(rt) {
+            match Self::connect_one(&cfg) {
+                Ok((client, mut ts)) => {
+                    tools.append(&mut ts);
+                    clients.push((cfg.name, client));
+                }
+                Err(e) => eprintln!("MCP server {} unavailable: {e}", cfg.name),
+            }
+        }
+        Self { clients, tools }
+    }
+
+    fn connect_one(cfg: &McpServerConfig) -> Result<(McpClient<StdioTransport>, Vec<McpTool>)> {
+        let transport = StdioTransport::spawn(cfg)?;
+        let mut client = McpClient::new(&cfg.name, transport);
+        client.initialize()?;
+        let tools = client.list_tools()?;
+        Ok((client, tools))
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.clients.is_empty()
+    }
+
+    #[must_use]
+    pub fn tools(&self) -> &[McpTool] {
+        &self.tools
+    }
+
+    /// Prompt catalog of available tools + the call syntax.
+    #[must_use]
+    pub fn catalog(&self) -> String {
+        let mut out = String::from(
+            "MCP TOOLS available — call with <mcp server=\"S\" tool=\"T\">{json args}</mcp>:\n",
+        );
+        for t in &self.tools {
+            out.push_str(&format!("- {}/{} — {}\n", t.server, t.name, t.description));
+        }
+        out
+    }
+
+    /// Route a tool call to the named server.
+    pub fn call(&mut self, server: &str, tool: &str, args: &Value) -> Result<String> {
+        let client = self
+            .clients
+            .iter_mut()
+            .find(|(n, _)| n == server)
+            .map(|(_, c)| c)
+            .ok_or_else(|| anyhow!("no MCP server named '{server}'"))?;
+        client.call_tool(tool, args)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,6 +391,52 @@ for line in sys.stdin:\n\
         assert_eq!(tools.first().map(|t| t.name.as_str()), Some("echo"));
         let out = client.call_tool("echo", &json!({"hi": 1}))?;
         assert!(out.contains("echo:"), "real server echoed: {out}");
+        let _ = std::fs::remove_file(&path);
+        Ok(())
+    }
+
+    const MOCK_SERVER: &str = r#"import sys, json
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    msg = json.loads(line)
+    mid = msg.get("id")
+    if mid is None:
+        continue
+    method = msg.get("method")
+    if method == "initialize":
+        res = {"protocolVersion": "2024-11-05"}
+    elif method == "tools/list":
+        res = {"tools": [{"name": "echo", "description": "echoes input"}]}
+    elif method == "tools/call":
+        args = msg.get("params", {}).get("arguments", {})
+        res = {"content": [{"type": "text", "text": "echo:" + json.dumps(args)}]}
+    else:
+        res = {}
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": mid, "result": res}) + "\n")
+    sys.stdout.flush()
+"#;
+
+    #[test]
+    fn hub_connects_lists_and_calls_via_config() -> Result<()> {
+        use crate::testkit::InMemoryRuntime;
+        let path = std::env::temp_dir().join(format!("glave_mcp_hub_{}.py", std::process::id()));
+        std::fs::write(&path, MOCK_SERVER)?;
+        let p = path.to_string_lossy();
+        let json_cfg =
+            format!(r#"{{"servers":{{"mock":{{"command":"python3","args":["{p}"]}}}}}}"#);
+        let rt = InMemoryRuntime::new().with_file(".glave/mcp.json", &json_cfg);
+
+        let mut hub = McpHub::connect(&rt);
+        if hub.is_empty() {
+            eprintln!("skipping MCP hub test: python3 unavailable");
+            let _ = std::fs::remove_file(&path);
+            return Ok(());
+        }
+        assert!(hub.catalog().contains("mock/echo"), "catalog: {}", hub.catalog());
+        let out = hub.call("mock", "echo", &json!({"x": 1}))?;
+        assert!(out.contains("echo:"), "hub call: {out}");
         let _ = std::fs::remove_file(&path);
         Ok(())
     }

@@ -4,6 +4,7 @@
 //! `Policy`.
 
 use anyhow::Result;
+use serde_json::Value;
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -186,10 +187,14 @@ impl Agent for ModelAgent {
         run_id: &str,
         trace: &mut dyn TraceSink,
     ) -> Result<()> {
+        let mut mcp = crate::mcp::McpHub::connect(&*rt);
         let mut messages = vec![
             Message::new("system", system_prompt()),
             Message::new("user", initial_user(&*rt, task)?),
         ];
+        if !mcp.is_empty() {
+            messages.push(Message::new("user", mcp.catalog()));
+        }
         let mut viewed = BTreeSet::new();
         let mut total_prompt = 0u64;
         let mut total_completion = 0u64;
@@ -219,6 +224,19 @@ impl Agent for ModelAgent {
                         Some(subtask.clone()),
                     ))?;
                     messages.push(Message::new("user", format!("SUBAGENT RESULT:\n{summary}")));
+                }
+                Some(ToolCall::Mcp { server, tool, args }) => {
+                    let parsed: Value = serde_json::from_str(&args).unwrap_or(Value::Null);
+                    let obs = mcp
+                        .call(&server, &tool, &parsed)
+                        .unwrap_or_else(|e| format!("MCP ERROR: {e}"));
+                    trace.emit(RunEvent::agent_action(
+                        run_id,
+                        "mcp",
+                        Some(format!("{server}/{tool}")),
+                        None,
+                    ))?;
+                    messages.push(Message::new("user", obs));
                 }
                 Some(call) => match self.policy.decide(&call) {
                     // Autonomous eval: Ask is treated as Deny — zero HIL.
