@@ -128,35 +128,54 @@ fn tokenize(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// Load skills from `.glave/skills/*.md` in the workspace. Skills are opt-in:
-/// a missing dir or unreadable files yield an empty list.
+/// Load skills from `.glave/skills/*.md`. Opt-in: a missing dir or unreadable
+/// files yield an empty list.
 pub fn load_skills(rt: &dyn WorkspaceRuntime) -> Vec<Capability> {
+    load_dir(rt, ".glave/skills", CapabilityKind::Skill)
+}
+
+/// Load commands from `.glave/commands/*.md` (same file format as skills).
+pub fn load_commands(rt: &dyn WorkspaceRuntime) -> Vec<Capability> {
+    load_dir(rt, ".glave/commands", CapabilityKind::Command)
+}
+
+/// Expand a named command's body into a prompt, substituting `$ARGUMENTS`.
+/// Returns `None` if no command by that name is present.
+pub fn expand_command(commands: &[Capability], name: &str, args: &str) -> Option<String> {
+    commands
+        .iter()
+        .find(|c| c.kind == CapabilityKind::Command && c.name == name)
+        .map(|c| c.body.replace("$ARGUMENTS", args))
+}
+
+fn load_dir(rt: &dyn WorkspaceRuntime, dir: &str, kind: CapabilityKind) -> Vec<Capability> {
     let Ok(files) = rt.list_files() else {
         return Vec::new();
     };
+    let prefix = format!("{dir}/");
     let mut paths: Vec<String> = files
         .into_iter()
         .filter(|f| {
-            f.starts_with(".glave/skills/")
+            f.starts_with(&prefix)
                 && Path::new(f).extension().is_some_and(|e| e.eq_ignore_ascii_case("md"))
         })
         .collect();
     paths.sort();
     paths
         .iter()
-        .filter_map(|p| rt.read_file(p).ok().map(|c| parse_skill(&skill_name(p), &c)))
+        .filter_map(|p| rt.read_file(p).ok().map(|c| parse_capability(kind, &cap_name(p), &c)))
         .collect()
 }
 
-fn skill_name(path: &str) -> String {
+fn cap_name(path: &str) -> String {
     let file = path.rsplit('/').next().unwrap_or(path);
     file.strip_suffix(".md").unwrap_or(file).to_string()
 }
 
-/// Parse a skill file: optional `---`-delimited frontmatter carrying a
+/// Parse a capability file: optional `---`-delimited frontmatter carrying a
 /// `description:` line; the remainder is the body. With no frontmatter, the
 /// first non-empty line is the description and the whole file is the body.
-pub fn parse_skill(name: &str, content: &str) -> Capability {
+pub fn parse_capability(kind: CapabilityKind, name: &str, content: &str) -> Capability {
     let mut description = String::new();
     let mut body = content.trim();
     if let Some(after_open) = content.strip_prefix("---") {
@@ -177,7 +196,7 @@ pub fn parse_skill(name: &str, content: &str) -> Capability {
             .trim()
             .to_string();
     }
-    Capability::new(CapabilityKind::Skill, name, &description, body)
+    Capability::new(kind, name, &description, body)
 }
 
 /// Split the text after an opening `---` into (frontmatter, body) at the next
@@ -271,7 +290,8 @@ mod tests {
 
     #[test]
     fn parse_skill_with_frontmatter() {
-        let cap = parse_skill(
+        let cap = parse_capability(
+            CapabilityKind::Skill,
             "fmt",
             "---\ndescription: Format Rust code\n---\nRun cargo fmt then check.",
         );
@@ -283,9 +303,51 @@ mod tests {
 
     #[test]
     fn parse_skill_without_frontmatter_uses_first_line() {
-        let cap = parse_skill("notes", "Do the thing carefully.\nThen verify.");
+        let cap = parse_capability(
+            CapabilityKind::Skill,
+            "notes",
+            "Do the thing carefully.\nThen verify.",
+        );
         assert_eq!(cap.description, "Do the thing carefully.");
         assert_eq!(cap.body, "Do the thing carefully.\nThen verify.");
+    }
+
+    #[test]
+    fn load_commands_finds_command_markdown_with_kind() {
+        use crate::testkit::InMemoryRuntime;
+        let rt = InMemoryRuntime::new()
+            .with_file(".glave/commands/review.md", "---\ndescription: review a PR\n---\nReview $ARGUMENTS")
+            .with_file(".glave/skills/fmt.md", "format code");
+        let cmds = load_commands(&rt);
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds.first().map(|c| c.kind), Some(CapabilityKind::Command));
+        assert_eq!(cmds.first().map(|c| c.name.as_str()), Some("review"));
+    }
+
+    #[test]
+    fn expand_command_substitutes_arguments() {
+        let cmds = vec![Capability::new(
+            CapabilityKind::Command,
+            "review",
+            "review a PR",
+            "Review the diff in $ARGUMENTS and report bugs.",
+        )];
+        assert_eq!(
+            expand_command(&cmds, "review", "src/lib.rs"),
+            Some("Review the diff in src/lib.rs and report bugs.".to_string())
+        );
+    }
+
+    #[test]
+    fn expand_command_unknown_name_is_none() {
+        let cmds = vec![Capability::new(CapabilityKind::Command, "review", "d", "b")];
+        assert_eq!(expand_command(&cmds, "deploy", ""), None);
+    }
+
+    #[test]
+    fn expand_command_without_placeholder_returns_body() {
+        let cmds = vec![Capability::new(CapabilityKind::Command, "ci", "d", "run the full suite")];
+        assert_eq!(expand_command(&cmds, "ci", "ignored"), Some("run the full suite".to_string()));
     }
 
     #[test]
