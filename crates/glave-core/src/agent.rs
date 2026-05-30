@@ -90,10 +90,18 @@ impl ModelAgent {
         Self {
             provider,
             policy,
-            max_turns: 14,
-            max_tokens: 120_000,
+            max_turns: env_parse("GLAVE_MAX_TURNS", 20),
+            max_tokens: env_parse("GLAVE_MAX_TOKENS", 120_000),
         }
     }
+}
+
+/// Read a numeric tuning knob from the environment, falling back to a default.
+fn env_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 impl Agent for ModelAgent {
@@ -146,7 +154,10 @@ impl Agent for ModelAgent {
                 },
             }
 
-            if total_prompt + total_completion >= self.max_tokens {
+            // Budget on completion (generated) tokens only. Cumulative prompt
+            // counts re-sent history every turn — cheap under caching, and it
+            // tripped the limit long before the model was actually done.
+            if total_completion >= self.max_tokens {
                 trace.emit(RunEvent::agent_action(
                     run_id,
                     "budget_stop",
