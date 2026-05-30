@@ -1,14 +1,14 @@
-//! The oracle — the verdict mechanism. Two-sided, behavior-based:
+//! The oracle — two-sided, behavior-based verdict.
 //!   FAIL_TO_PASS  the targeted tests must now pass
 //!   PASS_TO_PASS  the previously-passing tests must stay passing
-//! A task is "solved" only if both hold. Verdict is by exit code per group —
-//! deterministic and parser-free.
+//! Verdict is by exit code per group: deterministic, parser-free.
 
 use anyhow::Result;
 
-use crate::runtime::WorkspaceRuntime;
+use crate::ports::WorkspaceRuntime;
 use crate::task::TaskSpec;
 
+#[allow(dead_code)] // p2p_output surfaced in richer failure traces later
 pub struct Verdict {
     pub fail_to_pass_ok: bool,
     pub pass_to_pass_ok: bool,

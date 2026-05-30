@@ -1,0 +1,48 @@
+# Glave monorepo — econo-frontier AI lab. The eval harness is the first domain;
+# inference / training / serving / knowledge slot in as sibling crates later.
+[workspace]
+resolver = "2"
+members = [
+    "crates/glave-core",
+    "crates/glave-openrouter",
+    "crates/glave-docker",
+    "crates/glave-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+# Strict, disagreeable safety posture, shared by every crate.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+doc_markdown = "allow"
+module_name_repetitions = "allow"
+struct_field_names = "allow"
+format_push_string = "allow"
+must_use_candidate = "allow"   # #[must_use] ceremony, not safety
+missing_errors_doc = "allow"   # # Errors doc sections, not safety
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unwrap_in_result = "deny"
+indexing_slicing = "deny"
+string_slice = "deny"
+
+[workspace.dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+uuid = { version = "1", features = ["v4"] }
+clap = { version = "4", features = ["derive"] }
+ureq = { version = "2", features = ["json"] }
+dotenvy = "0.15"
+glave-core = { path = "crates/glave-core" }
+glave-openrouter = { path = "crates/glave-openrouter" }
+glave-docker = { path = "crates/glave-docker" }

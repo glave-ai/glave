@@ -1,0 +1,19 @@
+[package]
+name = "glave-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Glave core — domain, ports, and application logic (the brain)"
+
+[features]
+# Exposes in-memory fakes for downstream crates' tests.
+test-util = []
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+[lints]
+workspace = true

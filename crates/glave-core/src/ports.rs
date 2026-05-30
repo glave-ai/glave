@@ -1,0 +1,62 @@
+//! Ports — the trait seams. Real adapters (OpenRouter, Docker, …) implement
+//! these in their own crates; in-memory fakes implement them for tests.
+
+use anyhow::Result;
+
+use crate::event::RunEvent;
+
+/// A chat message handed to a model provider.
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub role: String,
+    pub content: String,
+}
+
+impl Message {
+    pub fn new(role: &str, content: impl Into<String>) -> Self {
+        Self {
+            role: role.to_string(),
+            content: content.into(),
+        }
+    }
+}
+
+/// One completion plus the accounting that makes cost-per-correct measurable.
+#[derive(Debug, Clone, Default)]
+pub struct Completion {
+    pub content: String,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    /// Reasoning tokens (subset of completion) — the cost lever, tracked alone.
+    pub reasoning_tokens: u64,
+    pub cost_usd: f64,
+    pub model: String,
+    pub provider: Option<String>,
+}
+
+/// Port: a swappable model backend (OpenRouter now; vLLM / our own inference later).
+pub trait ModelProvider {
+    fn complete(&self, messages: &[Message]) -> Result<Completion>;
+    fn model_id(&self) -> &str;
+}
+
+/// Result of running a command in the sandbox.
+pub struct ExecResult {
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+/// Port: a swappable execution substrate (Docker now; Firecracker / remote later).
+pub trait WorkspaceRuntime {
+    fn read_file(&self, rel: &str) -> Result<String>;
+    fn write_file(&mut self, rel: &str, contents: &str) -> Result<()>;
+    fn list_files(&self) -> Result<Vec<String>>;
+    /// Run a shell command in the workspace dir inside the sandbox.
+    fn run(&self, cmd: &str) -> Result<ExecResult>;
+}
+
+/// Port: a swappable trace destination (JSONL file now; DB / remote later).
+pub trait TraceSink {
+    fn emit(&mut self, event: RunEvent) -> Result<()>;
+}
