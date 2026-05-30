@@ -56,6 +56,9 @@ enum Cmd {
         /// Output task directory (e.g. .ingest/rust/bytes-0).
         #[arg(long)]
         out: PathBuf,
+        /// Source language recipe (rust, go).
+        #[arg(long, default_value = "rust")]
+        lang: String,
     },
     /// Score a task-set: the harnessed model, optionally vs a frontier model in
     /// the same harness (armed vs armed).
@@ -91,8 +94,8 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Validate { task } => validate(&task),
-        Cmd::Ingest { dataset, index, out } => {
-            ingest::ingest(&ingest::IngestArgs { dataset: &dataset, index, out: &out })
+        Cmd::Ingest { dataset, index, out, lang } => {
+            ingest::ingest(&ingest::IngestArgs { dataset: &dataset, index, out: &out, lang: &lang })
         }
         Cmd::Score {
             tasks,

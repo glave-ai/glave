@@ -240,7 +240,8 @@ fn oneshot_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
     out.push_str("Current files:\n\n");
     let mut files = rt.list_files()?;
     files.sort();
-    for f in &files {
+    // One-shot dumps full contents; cap hard so a large repo can't blow context.
+    for f in files.iter().take(25) {
         if let Ok(src) = rt.read_file(f) {
             out.push_str(&format!("--- {f} ---\n{src}\n\n"));
         }
@@ -272,6 +273,7 @@ fn help_text() -> String {
 }
 
 fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
+    const FILE_CAP: usize = 60;
     let mut out = String::new();
     out.push_str(&format!(
         "TASK: {} ({} / {})\n\n",
@@ -279,14 +281,20 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
     ));
     out.push_str(&spec_section(task));
 
-    out.push_str("Workspace files (use <view> to read them):\n");
+    out.push_str("Workspace files (use <view> to read them, <grep>/<glob> to navigate):\n");
     let mut files = rt.list_files()?;
     files.sort();
-    for f in &files {
+    for f in files.iter().take(FILE_CAP) {
         out.push_str(&format!("- {f}\n"));
     }
+    let extra = files.len().saturating_sub(FILE_CAP);
+    if extra > 0 {
+        out.push_str(&format!(
+            "- … (+{extra} more files; use <glob>/<grep> to find what you need)\n"
+        ));
+    }
 
-    out.push_str("\nBegin. View the relevant file, fix it, run the tests, then submit.");
+    out.push_str("\nBegin. Find the relevant file, fix it, run the tests, then submit.");
     Ok(out)
 }
 
