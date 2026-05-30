@@ -1,0 +1,25 @@
+id = "go-csv-quote-001"
+language = "go"
+archetype = "bug-fix-in-context"
+difficulty = "high"
+codebase_size = "small"
+editable_surface = ["**/*.go"]
+
+[provenance]
+source = "authored"
+contamination = "none"
+calibration = false
+
+[image]
+base = "glave/go-base:latest"
+workdir = "/work"
+
+[oracle]
+fail_to_pass = "cp /oracle/csv_test.go . && go test -run '^TestQuotedComma$' ."
+pass_to_pass = "cp /oracle/csv_test.go . && go test -run '^TestPlainFields$' ."
+
+[resource]
+mem_mb = 512
+cpus = 1.0
+pids = 256
+network = "none"
