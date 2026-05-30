@@ -32,6 +32,7 @@ impl DockerRuntime {
         let mem = format!("{}m", task.resource.mem_mb);
         let cpus = task.resource.cpus.to_string();
         let pids = task.resource.pids.to_string();
+        let network = secure_network(&task.resource.network);
         let work_mount = format!("{}:{}", work_abs.display(), task.image.workdir);
         let oracle_mount = format!("{}:/oracle:ro", oracle_abs.display());
 
@@ -42,7 +43,7 @@ impl DockerRuntime {
                 "--name",
                 &container,
                 "--network",
-                &task.resource.network,
+                &network,
                 "--memory",
                 &mem,
                 "--memory-swap",
@@ -124,6 +125,22 @@ impl WorkspaceRuntime for DockerRuntime {
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         })
     }
+}
+
+/// Fail-closed network policy. The no-exfil guarantee must not depend on the
+/// task file being honest, so a non-"none" request is honored only with an
+/// explicit operator opt-in (`GLAVE_ALLOW_NETWORK`); otherwise it's forced off.
+fn secure_network(requested: &str) -> String {
+    if requested == "none" {
+        return "none".to_string();
+    }
+    if std::env::var("GLAVE_ALLOW_NETWORK").is_ok() {
+        return requested.to_string();
+    }
+    eprintln!(
+        "WARN: task requested network={requested:?}; forcing 'none' (set GLAVE_ALLOW_NETWORK to override)"
+    );
+    "none".to_string()
 }
 
 fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
