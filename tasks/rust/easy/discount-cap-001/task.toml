@@ -1,0 +1,24 @@
+id = "rust-discount-cap-001"
+language = "rust"
+archetype = "bug-fix-in-context"
+difficulty = "easy"
+editable_surface = ["src/**/*.rs"]
+
+[provenance]
+source = "authored"
+contamination = "none"
+calibration = false
+
+[image]
+base = "glave/rust-base:latest"
+workdir = "/work"
+
+[oracle]
+fail_to_pass = "mkdir -p tests && cp /oracle/integration_test.rs tests/ && cargo test --test integration_test -- discount_capped"
+pass_to_pass = "mkdir -p tests && cp /oracle/integration_test.rs tests/ && cargo test --test integration_test -- no_discount half_off"
+
+[resource]
+mem_mb = 1024
+cpus = 2.0
+pids = 512
+network = "none"
