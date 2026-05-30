@@ -74,6 +74,9 @@ enum Cmd {
         /// Also run the no-tools one-shot probe (a control, not a fair baseline).
         #[arg(long)]
         with_bare: bool,
+        /// Trials per task — solve-rate over N runs beats noisy single shots.
+        #[arg(long, default_value_t = 1)]
+        trials: usize,
     },
 }
 
@@ -102,7 +105,8 @@ fn main() -> Result<()> {
             model,
             baseline,
             with_bare,
-        } => score(&tasks, &resolve_model(model), baseline.as_deref(), with_bare),
+            trials,
+        } => score(&tasks, &resolve_model(model), baseline.as_deref(), with_bare, trials),
     }
 }
 
@@ -184,6 +188,44 @@ enum Mode {
     Harness,
 }
 
+/// Aggregate over task × trial runs for one model.
+#[derive(Default)]
+struct Agg {
+    solved: usize,
+    runs: usize,
+    cost: f64,
+}
+
+impl Agg {
+    fn add(&mut self, solved: usize, runs: usize, cost: f64) {
+        self.solved += solved;
+        self.runs += runs;
+        self.cost += cost;
+    }
+    fn rate(&self) -> f64 {
+        if self.runs == 0 {
+            0.0
+        } else {
+            self.solved as f64 / self.runs as f64
+        }
+    }
+}
+
+/// Run a task `trials` times sequentially (one container at a time — the host
+/// can't fan out); return (passes, total cost).
+fn run_trials(task_dir: &Path, model: &str, mode: Mode, trials: usize) -> Result<(usize, f64)> {
+    let mut solved = 0usize;
+    let mut cost = 0.0f64;
+    for _ in 0..trials {
+        let s = run_one(task_dir, model, mode)?;
+        if s.solved {
+            solved += 1;
+        }
+        cost += s.cost;
+    }
+    Ok((solved, cost))
+}
+
 /// Run one task with one model in one mode; read back outcome + cost.
 fn run_one(task_dir: &Path, model: &str, mode: Mode) -> Result<Stat> {
     let task = TaskSpec::load(task_dir)?;
@@ -213,73 +255,78 @@ fn run_one(task_dir: &Path, model: &str, mode: Mode) -> Result<Stat> {
     })
 }
 
-fn score(task_paths: &[PathBuf], model: &str, baseline: Option<&str>, with_bare: bool) -> Result<()> {
+fn score(
+    task_paths: &[PathBuf],
+    model: &str,
+    baseline: Option<&str>,
+    with_bare: bool,
+    trials: usize,
+) -> Result<()> {
     let tasks = discover_tasks(task_paths)?;
     if tasks.is_empty() {
         return Err(anyhow!("no tasks found under the given path(s)"));
     }
+    let trials = trials.max(1);
     println!(
-        "scoring {} task(s): {model} (armed){}{}\n",
+        "scoring {} task(s) x {trials} trial(s): {model} (armed){}{}\n",
         tasks.len(),
         baseline.map_or_else(String::new, |b| format!(" vs {b} (armed)")),
         if with_bare { " [+bare probe]" } else { "" }
     );
 
-    let mut q_solved = 0usize;
-    let mut q_cost = 0.0f64;
-    let mut f_solved = 0usize;
-    let mut f_cost = 0.0f64;
-    let mut b_solved = 0usize;
-    let mut b_cost = 0.0f64;
+    let mut q = Agg::default();
+    let mut f = Agg::default();
+    let mut b = Agg::default();
 
     for t in &tasks {
         let id = task_name(t);
-        let q = run_one(t, model, Mode::Harness)?;
-        if q.solved {
-            q_solved += 1;
-        }
-        q_cost += q.cost;
-        let mut line = format!("{:<34} {:>14}", clip_id(&id, 34), mark(q.solved));
+        let (qs, qc) = run_trials(t, model, Mode::Harness, trials)?;
+        q.add(qs, trials, qc);
+        let mut line = format!("{:<34} {:>10}", clip_id(&id, 34), format!("{qs}/{trials}"));
 
-        if let Some(b) = baseline {
-            let f = run_one(t, b, Mode::Harness)?;
-            if f.solved {
-                f_solved += 1;
-            }
-            f_cost += f.cost;
-            line.push_str(&format!(" {:>14}", mark(f.solved)));
+        if let Some(bl) = baseline {
+            let (fs, fc) = run_trials(t, bl, Mode::Harness, trials)?;
+            f.add(fs, trials, fc);
+            line.push_str(&format!(" {:>10}", format!("{fs}/{trials}")));
         }
         if with_bare {
-            let bare = run_one(t, model, Mode::Bare)?;
-            if bare.solved {
-                b_solved += 1;
-            }
-            b_cost += bare.cost;
-            line.push_str(&format!(" {:>6}", mark(bare.solved)));
+            let (bs, bc) = run_trials(t, model, Mode::Bare, trials)?;
+            b.add(bs, trials, bc);
+            line.push_str(&format!(" {:>8}", format!("{bs}/{trials}")));
         }
         println!("{line}");
     }
 
-    let n = tasks.len();
-    println!("\n--- scorecard ---");
+    println!("\n--- scorecard ({trials} trial(s)/task) ---");
     println!(
-        "  {model} (armed):  {q_solved}/{n} solved   ${q_cost:.4}   $/correct {}",
-        per_correct(q_cost, q_solved)
+        "  {model} (armed):  {}/{} passed ({:.0}%)   ${:.4}   $/correct {}",
+        q.solved,
+        q.runs,
+        q.rate() * 100.0,
+        q.cost,
+        per_correct(q.cost, q.solved)
     );
-    if let Some(b) = baseline {
+    if let Some(bl) = baseline {
         println!(
-            "  {b} (armed):  {f_solved}/{n} solved   ${f_cost:.4}   $/correct {}",
-            per_correct(f_cost, f_solved)
+            "  {bl} (armed):  {}/{} passed ({:.0}%)   ${:.4}   $/correct {}",
+            f.solved,
+            f.runs,
+            f.rate() * 100.0,
+            f.cost,
+            per_correct(f.cost, f.solved)
         );
         println!("  --- promise vs frontier ---");
-        match (q_solved, f_solved) {
-            (_, 0) => println!("  relative success: n/a (frontier solved 0)"),
-            (q, f) => println!(
-                "  relative success: {:.0}% of frontier",
-                ratio(q, f) * 100.0
-            ),
+        if f.rate() > 0.0 {
+            println!(
+                "  relative success: {:.0}% of frontier  (pass-rate {:.0}% vs {:.0}%)",
+                q.rate() / f.rate() * 100.0,
+                q.rate() * 100.0,
+                f.rate() * 100.0
+            );
+        } else {
+            println!("  relative success: n/a (frontier passed 0)");
         }
-        match (per_correct_val(q_cost, q_solved), per_correct_val(f_cost, f_solved)) {
+        match (per_correct_val(q.cost, q.solved), per_correct_val(f.cost, f.solved)) {
             (Some(qp), Some(fp)) if fp > 0.0 => println!(
                 "  relative $/correct: {:.1}% of frontier   (frontier costs {:.0}x more)",
                 qp / fp * 100.0,
@@ -289,25 +336,9 @@ fn score(task_paths: &[PathBuf], model: &str, baseline: Option<&str>, with_bare:
         }
     }
     if with_bare {
-        println!("  bare (one-shot probe):  {b_solved}/{n} solved   ${b_cost:.4}");
+        println!("  bare (one-shot probe):  {}/{} passed   ${:.4}", b.solved, b.runs, b.cost);
     }
     Ok(())
-}
-
-fn mark(solved: bool) -> &'static str {
-    if solved {
-        "SOLVED"
-    } else {
-        "—"
-    }
-}
-
-fn ratio(a: usize, b: usize) -> f64 {
-    if b == 0 {
-        0.0
-    } else {
-        a as f64 / b as f64
-    }
 }
 
 fn per_correct(cost: f64, solved: usize) -> String {
