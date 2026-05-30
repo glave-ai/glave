@@ -247,6 +247,9 @@ fn oneshot_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
         "TASK: {} ({} / {})\n\n",
         task.archetype, task.language, task.difficulty
     ));
+    if let Some(guidance) = project_guidance(rt) {
+        out.push_str(&format!("PROJECT NOTES (HOPE.md) — follow these:\n{guidance}\n\n"));
+    }
     out.push_str(&spec_section(task));
     out.push_str("Current files:\n\n");
     let mut files = rt.list_files()?;
@@ -290,6 +293,9 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
         "TASK: {} ({} / {})\n\n",
         task.archetype, task.language, task.difficulty
     ));
+    if let Some(guidance) = project_guidance(rt) {
+        out.push_str(&format!("PROJECT NOTES (HOPE.md) — follow these:\n{guidance}\n\n"));
+    }
     out.push_str(&spec_section(task));
 
     out.push_str("Workspace files (use <read> to read them, <grep>/<glob> to navigate):\n");
@@ -307,6 +313,21 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
 
     out.push_str("\nBegin. Find the relevant file, fix it, run the tests, then submit.");
     Ok(out)
+}
+
+/// Project-level guidance the agent should honor — the `HOPE.md` convention,
+/// our analog of `CLAUDE.md`. Read from the workspace root (or `.glave/HOPE.md`);
+/// missing or empty yields `None`.
+fn project_guidance(rt: &dyn WorkspaceRuntime) -> Option<String> {
+    for path in ["HOPE.md", ".glave/HOPE.md"] {
+        if let Ok(content) = rt.read_file(path) {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// The spec shown to the agent: the held issue statement for ingested tasks, or
@@ -401,6 +422,60 @@ mod tests {
 
         assert_eq!(rt.file("secret.py").map(String::as_str), Some("a")); // unchanged
         assert_eq!(count_action(&sink.events, "denied"), 1);
+        Ok(())
+    }
+
+    fn task_for(lang: &str) -> Result<TaskSpec> {
+        TaskSpec::from_toml(&format!(
+            "id = \"t\"\nlanguage = \"{lang}\"\narchetype = \"a\"\ndifficulty = \"easy\"\n\
+             statement = \"do the thing\"\n[image]\nbase = \"x\"\n[oracle]\nfail_to_pass = \"true\"\n"
+        ))
+    }
+
+    #[test]
+    fn hope_guidance_injected_when_present() -> Result<()> {
+        let rt = InMemoryRuntime::new()
+            .with_file("HOPE.md", "Always run the linter.")
+            .with_file("src/main.rs", "fn main() {}");
+        let out = initial_user(&rt, &task_for("rust")?)?;
+        assert!(out.contains("PROJECT NOTES (HOPE.md)"), "header present: {out}");
+        assert!(out.contains("Always run the linter."), "content present: {out}");
+        Ok(())
+    }
+
+    #[test]
+    fn hope_guidance_absent_when_no_file() -> Result<()> {
+        let rt = InMemoryRuntime::new().with_file("src/main.rs", "fn main() {}");
+        let out = initial_user(&rt, &task_for("rust")?)?;
+        assert!(!out.contains("PROJECT NOTES"), "no HOPE section: {out}");
+        Ok(())
+    }
+
+    #[test]
+    fn hope_guidance_empty_file_is_ignored() {
+        let rt = InMemoryRuntime::new().with_file("HOPE.md", "   \n  \n");
+        assert_eq!(project_guidance(&rt), None);
+    }
+
+    #[test]
+    fn hope_guidance_falls_back_to_dot_glave() {
+        let rt = InMemoryRuntime::new().with_file(".glave/HOPE.md", "nested guidance");
+        assert_eq!(project_guidance(&rt).as_deref(), Some("nested guidance"));
+    }
+
+    #[test]
+    fn hope_guidance_prefers_root_over_dot_glave() {
+        let rt = InMemoryRuntime::new()
+            .with_file("HOPE.md", "root")
+            .with_file(".glave/HOPE.md", "nested");
+        assert_eq!(project_guidance(&rt).as_deref(), Some("root"));
+    }
+
+    #[test]
+    fn hope_guidance_reaches_oneshot_too() -> Result<()> {
+        let rt = InMemoryRuntime::new().with_file("HOPE.md", "one-shot guidance");
+        let out = oneshot_user(&rt, &task_for("python")?)?;
+        assert!(out.contains("one-shot guidance"), "oneshot includes HOPE: {out}");
         Ok(())
     }
 }
