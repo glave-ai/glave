@@ -20,6 +20,7 @@ pub mod testkit;
 
 pub use event::RunEvent;
 pub use oracle::Verdict;
+pub use sinks::{InMemorySink, JsonlSink};
 pub use policy::{AutonomousPolicy, Decision, Policy};
 pub use ports::{Completion, ExecResult, Message, ModelProvider, TraceSink, WorkspaceRuntime};
 pub use task::TaskSpec;

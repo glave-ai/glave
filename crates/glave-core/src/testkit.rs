@@ -5,8 +5,7 @@ use anyhow::{anyhow, Result};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::event::RunEvent;
-use crate::ports::{Completion, ExecResult, Message, ModelProvider, TraceSink, WorkspaceRuntime};
+use crate::ports::{Completion, ExecResult, Message, ModelProvider, WorkspaceRuntime};
 
 /// Returns scripted completions in order — deterministic, zero network, zero cost.
 pub struct InMemoryProvider {
@@ -92,16 +91,3 @@ impl WorkspaceRuntime for InMemoryRuntime {
     }
 }
 
-/// Collects emitted events for assertions.
-#[derive(Default)]
-pub struct InMemorySink {
-    pub events: Vec<RunEvent>,
-}
-
-impl TraceSink for InMemorySink {
-    #[allow(clippy::needless_pass_by_value)]
-    fn emit(&mut self, event: RunEvent) -> Result<()> {
-        self.events.push(event);
-        Ok(())
-    }
-}
