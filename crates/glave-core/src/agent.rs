@@ -85,7 +85,7 @@ pub struct ModelAgent {
     policy: Box<dyn Policy>,
     max_turns: u32,
     max_tokens: u64,
-    keep_recent: usize,
+    context_window: u64,
     sub_turns: u32,
 }
 
@@ -96,7 +96,7 @@ impl ModelAgent {
             policy,
             max_turns: env_parse("GLAVE_MAX_TURNS", 20),
             max_tokens: env_parse("GLAVE_MAX_TOKENS", 120_000),
-            keep_recent: env_parse("GLAVE_KEEP_RECENT", 6),
+            context_window: env_parse("GLAVE_CONTEXT_WINDOW", 128_000),
             sub_turns: env_parse("GLAVE_SUB_TURNS", 6),
         }
     }
@@ -146,27 +146,28 @@ fn subagent_system() -> String {
         .to_string()
 }
 
-/// Stub for an elided tool observation. Stable text so compaction is idempotent.
+/// Stub for an elided tool observation. Stable text so compaction is idempotent,
+/// and it reminds the model the content is recoverable.
 const ELIDED: &str = "[earlier tool output elided to save context — re-read/grep if you need it]";
 
-/// Bound context growth: keep the system + initial messages and the model's own
-/// turns intact, but collapse tool observations older than the most recent
-/// `keep_recent` to a stub. The model has already acted on them and can re-fetch
-/// via `read`/`grep`. No-op while observations are within the window.
-fn compact_history(messages: &mut [Message], keep_recent: usize) {
-    let obs: Vec<usize> = messages
-        .iter()
-        .enumerate()
-        .skip(2) // preserve system prompt + initial task message
-        .filter(|(_, m)| m.role == "user" && m.content != ELIDED)
-        .map(|(i, _)| i)
-        .collect();
-    let Some(to_stub) = obs.len().checked_sub(keep_recent) else {
+/// Reclaim context by eliding the OLDEST tool observations (oldest first), only
+/// until the estimated size is back under `target_tokens`. The system prompt,
+/// the task, and every model turn are never touched — only tool outputs, which
+/// are recoverable (re-read / re-grep / re-run). Least destructive: nothing is
+/// elided while under budget, and recent observations are preserved.
+fn compact_to_fit(messages: &mut [Message], current_tokens: u64, target_tokens: u64) {
+    let mut over = current_tokens.saturating_sub(target_tokens);
+    if over == 0 {
         return;
-    };
-    for &i in obs.iter().take(to_stub) {
-        if let Some(m) = messages.get_mut(i) {
+    }
+    for m in messages.iter_mut().skip(2) {
+        if over == 0 {
+            break;
+        }
+        if m.role == "user" && m.content != ELIDED {
+            let freed = u64::try_from(m.content.len()).unwrap_or(u64::MAX) / 4; // ~chars per token
             m.content = ELIDED.to_string();
+            over = over.saturating_sub(freed);
         }
     }
 }
@@ -201,7 +202,6 @@ impl Agent for ModelAgent {
         let mut total_cost = 0.0f64;
 
         for turn in 1..=self.max_turns {
-            compact_history(&mut messages, self.keep_recent);
             let c = self.provider.complete(&messages)?;
             total_prompt += c.prompt_tokens;
             total_completion += c.completion_tokens;
@@ -255,6 +255,13 @@ impl Agent for ModelAgent {
                         messages.push(Message::new("user", obs));
                     }
                 },
+            }
+
+            // Compaction: fire only as the real context (qwen ~128k) nears the
+            // window. Below ~95% we keep the whole transcript — least destructive.
+            if c.prompt_tokens >= self.context_window.saturating_mul(95) / 100 {
+                let target = self.context_window.saturating_mul(70) / 100;
+                compact_to_fit(&mut messages, c.prompt_tokens, target);
             }
 
             // Budget on completion (generated) tokens only. Cumulative prompt
@@ -643,56 +650,49 @@ mod tests {
         Ok(())
     }
 
-    /// Build [system, task, (assistant, observation) × n].
-    fn convo(n: usize) -> Vec<Message> {
+    /// [system, task, (assistant, sized-observation) × n]. Each observation is
+    /// `obs_chars` long (~obs_chars/4 estimated tokens).
+    fn sized_convo(n: usize, obs_chars: usize) -> Vec<Message> {
         let mut m = vec![Message::new("system", "S"), Message::new("user", "TASK")];
         for i in 0..n {
             m.push(Message::new("assistant", format!("act{i}")));
-            m.push(Message::new("user", format!("obs{i}")));
+            m.push(Message::new("user", "x".repeat(obs_chars)));
         }
         m
     }
 
-    fn user_obs(m: &[Message]) -> Vec<&str> {
-        // observations are user messages after the initial task message
+    fn obs_elided(m: &[Message]) -> Vec<bool> {
         m.iter()
             .filter(|x| x.role == "user")
-            .skip(1)
-            .map(|x| x.content.as_str())
+            .skip(1) // skip the task message
+            .map(|x| x.content == ELIDED)
             .collect()
     }
 
     #[test]
-    fn compaction_is_noop_within_window() {
-        let mut m = convo(4);
-        compact_history(&mut m, 6);
-        assert_eq!(user_obs(&m), ["obs0", "obs1", "obs2", "obs3"]);
+    fn compaction_noop_when_under_target() {
+        let mut m = sized_convo(5, 400); // ~500 tok
+        compact_to_fit(&mut m, 100, 200); // already under target
+        assert_eq!(obs_elided(&m), [false, false, false, false, false]);
     }
 
     #[test]
-    fn compaction_stubs_oldest_keeps_recent() {
-        let mut m = convo(5);
-        compact_history(&mut m, 2);
-        assert_eq!(user_obs(&m), [ELIDED, ELIDED, ELIDED, "obs3", "obs4"]);
+    fn compaction_evicts_oldest_only_to_target() {
+        // 5 observations of ~100 tokens each (~500 total); free 300 -> evict 3 oldest.
+        let mut m = sized_convo(5, 400);
+        compact_to_fit(&mut m, 500, 200);
+        assert_eq!(obs_elided(&m), [true, true, true, false, false]);
     }
 
     #[test]
-    fn compaction_preserves_system_task_and_assistants() {
-        let mut m = convo(5);
-        compact_history(&mut m, 2);
+    fn compaction_preserves_system_task_and_model_turns() {
+        let mut m = sized_convo(5, 400);
+        compact_to_fit(&mut m, 500, 0); // evict everything possible
         assert_eq!(m.first().map(|x| x.content.as_str()), Some("S"));
         assert_eq!(m.get(1).map(|x| x.content.as_str()), Some("TASK"));
-        let acts: Vec<&str> = m.iter().filter(|x| x.role == "assistant").map(|x| x.content.as_str()).collect();
-        assert_eq!(acts, ["act0", "act1", "act2", "act3", "act4"]);
-    }
-
-    #[test]
-    fn compaction_is_idempotent() {
-        let mut m = convo(5);
-        compact_history(&mut m, 2);
-        let once = user_obs(&m).join("|");
-        compact_history(&mut m, 2);
-        assert_eq!(user_obs(&m).join("|"), once);
+        let acts: Vec<&str> =
+            m.iter().filter(|x| x.role == "assistant").map(|x| x.content.as_str()).collect();
+        assert_eq!(acts, ["act0", "act1", "act2", "act3", "act4"]); // model turns untouched
     }
 
     #[test]
