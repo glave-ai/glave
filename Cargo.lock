@@ -265,6 +265,7 @@ dependencies = [
  "glave-core",
  "glave-docker",
  "glave-openrouter",
+ "serde_json",
  "uuid",
 ]
 
