@@ -1,12 +1,17 @@
 //! Agents. Deterministic stubs (noop/solve) + the real model-driven loop. All
 //! implement one trait and depend only on ports, so each is testable with fakes.
+//! The model agent drives the typed tool grammar (`tools`) through a mediation
+//! `Policy`.
 
 use anyhow::Result;
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::event::RunEvent;
+use crate::policy::{Decision, Policy};
 use crate::ports::{Message, ModelProvider, TraceSink, WorkspaceRuntime};
 use crate::task::TaskSpec;
+use crate::tools::{self, ToolCall};
 
 pub trait Agent {
     fn act(
@@ -70,29 +75,25 @@ impl Agent for SolveAgent {
     }
 }
 
-/// The real model-driven agent: read -> edit -> run-tests -> submit over a tiny
-/// XML action grammar, bounded by turn and token budgets.
+/// The real model-driven agent: drives the tool grammar (view / str_replace /
+/// create / bash / run_tests / submit) through the mediation policy, bounded by
+/// turn and token budgets.
 pub struct ModelAgent {
     provider: Box<dyn ModelProvider>,
+    policy: Box<dyn Policy>,
     max_turns: u32,
     max_tokens: u64,
 }
 
 impl ModelAgent {
-    pub fn new(provider: Box<dyn ModelProvider>) -> Self {
+    pub fn new(provider: Box<dyn ModelProvider>, policy: Box<dyn Policy>) -> Self {
         Self {
             provider,
-            max_turns: 10,
-            max_tokens: 80_000,
+            policy,
+            max_turns: 14,
+            max_tokens: 120_000,
         }
     }
-}
-
-enum Action {
-    Read(String),
-    Write { path: String, content: String },
-    RunTests,
-    Submit,
 }
 
 impl Agent for ModelAgent {
@@ -107,6 +108,7 @@ impl Agent for ModelAgent {
             Message::new("system", system_prompt()),
             Message::new("user", initial_user(&*rt, task)?),
         ];
+        let mut viewed = BTreeSet::new();
         let mut total_prompt = 0u64;
         let mut total_completion = 0u64;
         let mut total_cost = 0.0f64;
@@ -119,45 +121,29 @@ impl Agent for ModelAgent {
             trace.emit(RunEvent::model_turn(run_id, turn, &c))?;
             messages.push(Message::new("assistant", c.content.clone()));
 
-            match parse_action(&c.content) {
-                Some(Action::Submit) => {
+            match tools::parse(&c.content) {
+                None => messages.push(Message::new("user", help_text())),
+                Some(ToolCall::Submit) => {
                     trace.emit(RunEvent::agent_action(run_id, "submit", None, None))?;
                     break;
                 }
-                Some(Action::Read(path)) => {
-                    trace.emit(RunEvent::agent_action(run_id, "read", Some(path.clone()), None))?;
-                    let obs = match rt.read_file(&path) {
-                        Ok(s) => format!("<file path=\"{path}\">\n{s}\n</file>"),
-                        Err(e) => format!("ERROR reading {path}: {e}"),
-                    };
-                    messages.push(Message::new("user", obs));
-                }
-                Some(Action::Write { path, content }) => {
-                    rt.write_file(&path, &content)?;
-                    trace.emit(RunEvent::agent_action(
-                        run_id,
-                        "write_file",
-                        Some(path.clone()),
-                        None,
-                    ))?;
-                    messages.push(Message::new(
-                        "user",
-                        format!("wrote {path} ({} bytes)", content.len()),
-                    ));
-                }
-                Some(Action::RunTests) => {
-                    trace.emit(RunEvent::agent_action(run_id, "run_tests", None, None))?;
-                    let obs = run_tests(&*rt, task)?;
-                    messages.push(Message::new("user", obs));
-                }
-                None => {
-                    messages.push(Message::new(
-                        "user",
-                        "No valid action found. Respond with exactly one of: \
-                         <read path=\"...\"/>, <write path=\"...\">CONTENT</write>, \
-                         <run_tests/>, <submit/>.",
-                    ));
-                }
+                Some(call) => match self.policy.decide(&call) {
+                    // Autonomous eval: Ask is treated as Deny — zero HIL.
+                    Decision::Deny(reason) | Decision::Ask(reason) => {
+                        trace.emit(RunEvent::agent_action(
+                            run_id,
+                            "denied",
+                            call.path(),
+                            Some(reason.clone()),
+                        ))?;
+                        messages.push(Message::new("user", format!("DENIED: {reason}")));
+                    }
+                    Decision::Allow => {
+                        let obs = tools::execute(&call, rt, task, &mut viewed)?;
+                        trace.emit(RunEvent::agent_action(run_id, call.name(), call.path(), None))?;
+                        messages.push(Message::new("user", obs));
+                    }
+                },
             }
 
             if total_prompt + total_completion >= self.max_tokens {
@@ -183,14 +169,22 @@ impl Agent for ModelAgent {
 }
 
 fn system_prompt() -> String {
-    "You are a coding agent. Fix the workspace code so the failing test passes \
-     without breaking the previously-passing tests. Respond with EXACTLY ONE \
-     action per message, using these tags:\n\
-     - <read path=\"FILE\"/> to read a workspace file\n\
-     - <write path=\"FILE\">FULL NEW FILE CONTENT</write> to overwrite a file\n\
-     - <run_tests/> to run the tests and see the result\n\
-     - <submit/> when you believe the failing test now passes\n\
-     Only edit files in the workspace. Do not edit the tests. Keep changes minimal."
+    "You are a coding agent. Fix the workspace so the failing test passes without \
+     breaking the previously-passing tests. Respond with EXACTLY ONE action per \
+     message, using these tags:\n\
+     - <view path=\"FILE\"/> or <view path=\"FILE\" range=\"START-END\"/> — read a file (with line numbers)\n\
+     - <str_replace path=\"FILE\"><search>\\nEXACT EXISTING TEXT\\n</search><replace>\\nNEW TEXT\\n</replace></str_replace> — replace an exact, unique snippet (view the file first)\n\
+     - <create path=\"FILE\">\\nFULL CONTENT\\n</create> — create or overwrite a file\n\
+     - <bash>COMMAND</bash> — run a shell command (search, build, delete files, …)\n\
+     - <run_tests/> — run the tests and see the result\n\
+     - <submit/> — when the failing test passes\n\
+     Only edit files within the workspace. View a file before editing it. Keep changes minimal."
+        .to_string()
+}
+
+fn help_text() -> String {
+    "No valid action found. Respond with exactly one of: <view .../>, \
+     <str_replace ...>, <create ...>, <bash>...</bash>, <run_tests/>, <submit/>."
         .to_string()
 }
 
@@ -210,71 +204,15 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
         }
     }
 
-    out.push_str("Editable workspace files:\n\n");
-    for f in rt.list_files()? {
-        if let Ok(src) = rt.read_file(&f) {
-            out.push_str(&format!("--- {f} ---\n{src}\n\n"));
-        }
+    out.push_str("Workspace files (use <view> to read them):\n");
+    let mut files = rt.list_files()?;
+    files.sort();
+    for f in &files {
+        out.push_str(&format!("- {f}\n"));
     }
 
-    out.push_str("Respond with one action. Call <submit/> once the failing test passes.");
+    out.push_str("\nBegin. View the relevant file, fix it, run the tests, then submit.");
     Ok(out)
-}
-
-fn run_tests(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
-    let v = crate::oracle::evaluate(rt, task)?;
-    Ok(format!(
-        "TEST RESULTS\nFAIL_TO_PASS: {}\nPASS_TO_PASS: {}\n--- output ---\n{}",
-        if v.fail_to_pass_ok { "PASS" } else { "FAIL" },
-        if v.pass_to_pass_ok { "PASS" } else { "FAIL" },
-        v.f2p_output.chars().take(2000).collect::<String>()
-    ))
-}
-
-fn parse_action(s: &str) -> Option<Action> {
-    let kind = [
-        ("write", s.find("<write")),
-        ("read", s.find("<read")),
-        ("run_tests", s.find("<run_tests")),
-        ("submit", s.find("<submit")),
-    ]
-    .into_iter()
-    .filter_map(|(k, i)| i.map(|i| (k, i)))
-    .min_by_key(|(_, i)| *i)?
-    .0;
-
-    match kind {
-        "write" => parse_write(s),
-        "read" => {
-            let start = s.find("<read")?;
-            extract_attr(s.get(start..)?, "path").map(Action::Read)
-        }
-        "run_tests" => Some(Action::RunTests),
-        "submit" => Some(Action::Submit),
-        _ => None,
-    }
-}
-
-fn parse_write(s: &str) -> Option<Action> {
-    let start = s.find("<write")?;
-    let rest = s.get(start..)?;
-    let path = extract_attr(rest, "path")?;
-    let open_end = rest.find('>')?.checked_add(1)?;
-    let close = rest.find("</write>")?;
-    if close < open_end {
-        return None;
-    }
-    let body = rest.get(open_end..close)?;
-    let content = body.strip_prefix('\n').unwrap_or(body).to_string();
-    Some(Action::Write { path, content })
-}
-
-fn extract_attr(s: &str, attr: &str) -> Option<String> {
-    let key = format!("{attr}=\"");
-    let start = s.find(&key)?.checked_add(key.len())?;
-    let rest = s.get(start..)?;
-    let end = rest.find('"')?;
-    Some(rest.get(..end)?.to_string())
 }
 
 fn collect(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
@@ -293,6 +231,7 @@ fn collect(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::policy::AutonomousPolicy;
     use crate::testkit::{InMemoryProvider, InMemoryRuntime, InMemorySink};
 
     fn count_action(events: &[RunEvent], action: &str) -> usize {
@@ -303,12 +242,13 @@ mod tests {
     }
 
     #[test]
-    fn model_agent_writes_then_submits() -> Result<()> {
+    fn model_agent_creates_then_submits() -> Result<()> {
         let provider = Box::new(InMemoryProvider::new(vec![
-            "<write path=\"solver.py\">FIXED</write>",
+            "<create path=\"solver.py\">\nFIXED\n</create>",
             "<submit/>",
         ]));
-        let mut agent = ModelAgent::new(provider);
+        let policy = Box::new(AutonomousPolicy::new(&[]));
+        let mut agent = ModelAgent::new(provider, policy);
         let mut rt = InMemoryRuntime::new().with_file("solver.py", "BUGGY");
         let mut sink = InMemorySink::default();
         let task = TaskSpec::from_toml(
@@ -319,8 +259,31 @@ mod tests {
         agent.act(&mut rt, &task, "run-test", &mut sink)?;
 
         assert_eq!(rt.file("solver.py").map(String::as_str), Some("FIXED"));
-        assert_eq!(count_action(&sink.events, "write_file"), 1);
+        assert_eq!(count_action(&sink.events, "create"), 1);
         assert_eq!(count_action(&sink.events, "submit"), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn edit_outside_editable_surface_is_denied() -> Result<()> {
+        // str_replace on a file outside the editable surface must be denied.
+        let provider = Box::new(InMemoryProvider::new(vec![
+            "<str_replace path=\"secret.py\"><search>\na\n</search><replace>\nb\n</replace></str_replace>",
+            "<submit/>",
+        ]));
+        let policy = Box::new(AutonomousPolicy::new(&["solver.py".to_string()]));
+        let mut agent = ModelAgent::new(provider, policy);
+        let mut rt = InMemoryRuntime::new().with_file("secret.py", "a");
+        let mut sink = InMemorySink::default();
+        let task = TaskSpec::from_toml(
+            "id = \"t\"\nlanguage = \"python\"\narchetype = \"a\"\ndifficulty = \"easy\"\n\
+             [image]\nbase = \"x\"\n[oracle]\nfail_to_pass = \"true\"\n",
+        )?;
+
+        agent.act(&mut rt, &task, "run-test", &mut sink)?;
+
+        assert_eq!(rt.file("secret.py").map(String::as_str), Some("a")); // unchanged
+        assert_eq!(count_action(&sink.events, "denied"), 1);
         Ok(())
     }
 }

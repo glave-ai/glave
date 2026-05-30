@@ -10,7 +10,7 @@ use std::process::Command;
 use glave_core::agent::{Agent, ModelAgent, NoopAgent, SolveAgent};
 use glave_core::run::run_task;
 use glave_core::sinks::JsonlSink;
-use glave_core::{ModelProvider, TaskSpec};
+use glave_core::{AutonomousPolicy, ModelProvider, TaskSpec};
 use glave_docker::DockerRuntime;
 use glave_openrouter::{reasoning_effort, OpenRouterProvider};
 
@@ -98,7 +98,11 @@ fn do_run(task_dir: &Path, kind: AgentKind, model: &str) -> Result<bool> {
         AgentKind::Model => {
             let provider = OpenRouterProvider::from_env(model.to_string())?;
             let label = format!("model:{} reasoning={}", provider.model_id(), reasoning_effort());
-            (Box::new(ModelAgent::new(Box::new(provider))), label)
+            let policy = Box::new(AutonomousPolicy::new(&task.editable_surface));
+            (
+                Box::new(ModelAgent::new(Box::new(provider), policy)),
+                label,
+            )
         }
     };
 
