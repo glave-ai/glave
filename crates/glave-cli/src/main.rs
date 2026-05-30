@@ -1,6 +1,8 @@
 //! Glave CLI — the composition root. Wires concrete adapters (Docker runtime,
 //! OpenRouter provider, JSONL sink) into the core's orchestration.
 
+mod ingest;
+
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::{Path, PathBuf};
@@ -43,6 +45,18 @@ enum Cmd {
         /// Path to the task directory.
         task: PathBuf,
     },
+    /// Ingest a real dataset instance (Multi-SWE-bench) into a runnable task.
+    Ingest {
+        /// Path to the dataset .jsonl file.
+        #[arg(long)]
+        dataset: PathBuf,
+        /// 0-based instance index within the file.
+        #[arg(long, default_value_t = 0)]
+        index: usize,
+        /// Output task directory (e.g. .ingest/rust/bytes-0).
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Score a task-set: the harnessed model, optionally vs a frontier model in
     /// the same harness (armed vs armed).
     Score {
@@ -77,6 +91,9 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Validate { task } => validate(&task),
+        Cmd::Ingest { dataset, index, out } => {
+            ingest::ingest(&ingest::IngestArgs { dataset: &dataset, index, out: &out })
+        }
         Cmd::Score {
             tasks,
             model,

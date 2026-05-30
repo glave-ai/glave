@@ -15,6 +15,7 @@ glave-openrouter.workspace = true
 glave-docker.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+serde_json.workspace = true
 uuid.workspace = true
 dotenvy.workspace = true
 
