@@ -17,6 +17,11 @@ pub struct TaskSpec {
     pub language: String,
     pub archetype: String,
     pub difficulty: String,
+    /// Codebase size tier (small/medium/large) — navigation/context load,
+    /// roughly orthogonal to logical difficulty. Recorded so the scorecard can
+    /// break results down by size.
+    #[serde(default = "default_size")]
+    pub codebase_size: String,
 
     /// Globs (relative to workspace/) the agent is permitted to modify.
     #[serde(default)]
@@ -54,6 +59,10 @@ pub struct Image {
 
 fn default_workdir() -> String {
     "/work".to_string()
+}
+
+fn default_size() -> String {
+    "small".to_string()
 }
 
 #[derive(Debug, Deserialize)]
