@@ -7,6 +7,7 @@ use anyhow::Result;
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::capability::{self, CapabilityRegistry, LexicalSelector, Selector};
 use crate::event::RunEvent;
 use crate::policy::{Decision, Policy};
 use crate::ports::{Message, ModelProvider, TraceSink, WorkspaceRuntime};
@@ -298,6 +299,24 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
     }
     out.push_str(&spec_section(task));
 
+    // Registry-backed skills: surface only those the selector finds relevant to
+    // the task, not the whole catalog. No `.glave/skills/` -> no section.
+    let skills = capability::load_skills(rt);
+    if !skills.is_empty() {
+        let mut registry = CapabilityRegistry::new();
+        for s in skills {
+            registry.register(s);
+        }
+        let query = format!("{} {} {}", task.statement, task.archetype, task.language);
+        let picked = LexicalSelector.select(&registry, &query, 3);
+        if !picked.is_empty() {
+            out.push_str("RELEVANT SKILLS:\n");
+            for cap in picked {
+                out.push_str(&format!("## {} — {}\n{}\n\n", cap.name, cap.description, cap.body));
+            }
+        }
+    }
+
     out.push_str("Workspace files (use <read> to read them, <grep>/<glob> to navigate):\n");
     let mut files = rt.list_files()?;
     files.sort();
@@ -476,6 +495,48 @@ mod tests {
         let rt = InMemoryRuntime::new().with_file("HOPE.md", "one-shot guidance");
         let out = oneshot_user(&rt, &task_for("python")?)?;
         assert!(out.contains("one-shot guidance"), "oneshot includes HOPE: {out}");
+        Ok(())
+    }
+
+    fn statement_task(statement: &str) -> Result<TaskSpec> {
+        TaskSpec::from_toml(&format!(
+            "id = \"t\"\nlanguage = \"rust\"\narchetype = \"real-issue\"\ndifficulty = \"easy\"\n\
+             statement = \"{statement}\"\n[image]\nbase = \"x\"\n[oracle]\nfail_to_pass = \"true\"\n"
+        ))
+    }
+
+    #[test]
+    fn relevant_skill_is_injected() -> Result<()> {
+        let rt = InMemoryRuntime::new()
+            .with_file(
+                ".glave/skills/decode.md",
+                "---\ndescription: fix integer decoding and sign extension bugs\n---\nCheck the shift width.",
+            )
+            .with_file("src/main.rs", "fn main() {}");
+        let out = initial_user(&rt, &statement_task("integer decoding is wrong")?)?;
+        assert!(out.contains("RELEVANT SKILLS"), "skills section: {out}");
+        assert!(out.contains("Check the shift width."), "skill body injected: {out}");
+        Ok(())
+    }
+
+    #[test]
+    fn no_skills_dir_means_no_section() -> Result<()> {
+        let rt = InMemoryRuntime::new().with_file("src/main.rs", "fn main() {}");
+        let out = initial_user(&rt, &statement_task("integer decoding is wrong")?)?;
+        assert!(!out.contains("RELEVANT SKILLS"), "no skills section: {out}");
+        Ok(())
+    }
+
+    #[test]
+    fn irrelevant_skill_is_not_injected() -> Result<()> {
+        let rt = InMemoryRuntime::new()
+            .with_file(
+                ".glave/skills/deploy.md",
+                "---\ndescription: deploy kubernetes manifests to production\n---\nkubectl apply.",
+            )
+            .with_file("src/main.rs", "fn main() {}");
+        let out = initial_user(&rt, &statement_task("integer decoding is wrong")?)?;
+        assert!(!out.contains("RELEVANT SKILLS"), "irrelevant skill dropped: {out}");
         Ok(())
     }
 }
