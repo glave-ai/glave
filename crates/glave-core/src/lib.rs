@@ -6,6 +6,7 @@
 //! client/server moat boundary and full testability are enforced by the compiler.
 
 pub mod agent;
+pub mod capability;
 pub mod event;
 pub mod oracle;
 pub mod policy;
@@ -18,6 +19,7 @@ pub mod tools;
 #[cfg(any(test, feature = "test-util"))]
 pub mod testkit;
 
+pub use capability::{Capability, CapabilityKind, CapabilityRegistry, LexicalSelector, Selector};
 pub use event::RunEvent;
 pub use oracle::Verdict;
 pub use sinks::{InMemorySink, JsonlSink};

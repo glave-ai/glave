@@ -22,7 +22,7 @@ ending in `submit`. Costs API → run at track boundaries, not every feature.
 ## Build order (cheap/foundational first, heaviest last)
 ### Parity track
 - [x] **HOPE.md** — repo guidance (CLAUDE.md analog) folded into agent context
-- [ ] **Capability registry + selector** — lexical/BM25 substrate for the below
+- [x] **Capability registry + selector** — lexical/BM25 substrate for the below
 - [ ] **Skills** — registry-backed reusable capability packages
 - [ ] **Commands** — registry-backed canned prompts/workflows
 - [ ] **MCP** — external tool client (heaviest; protocol work)
@@ -38,3 +38,7 @@ All items implemented + tested + regression-green, or a surfaced blocker.
 - (start) bounded `read`, completion-only budget, fail-closed network — already landed.
 - HOPE.md — `project_guidance()` reads `HOPE.md`/`.glave/HOPE.md` into initial_user
   + oneshot; 6 unit tests; regression green (both tasks discriminate).
+- Capability registry + selector — `capability.rs`: Capability/CapabilityKind,
+  CapabilityRegistry, Selector port + LexicalSelector (name-weighted token
+  overlap, deterministic, zero-score dropped); 8 unit tests. Skills/commands/MCP
+  populate + query it next.
