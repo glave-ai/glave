@@ -4,6 +4,9 @@
 //! instead of all of them. Lexical scoring now; an embedding-based selector can
 //! implement the same [`Selector`] port later without touching callers.
 
+use crate::ports::WorkspaceRuntime;
+use std::path::Path;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapabilityKind {
     Skill,
@@ -125,6 +128,68 @@ fn tokenize(s: &str) -> Vec<String> {
         .collect()
 }
 
+/// Load skills from `.glave/skills/*.md` in the workspace. Skills are opt-in:
+/// a missing dir or unreadable files yield an empty list.
+pub fn load_skills(rt: &dyn WorkspaceRuntime) -> Vec<Capability> {
+    let Ok(files) = rt.list_files() else {
+        return Vec::new();
+    };
+    let mut paths: Vec<String> = files
+        .into_iter()
+        .filter(|f| {
+            f.starts_with(".glave/skills/")
+                && Path::new(f).extension().is_some_and(|e| e.eq_ignore_ascii_case("md"))
+        })
+        .collect();
+    paths.sort();
+    paths
+        .iter()
+        .filter_map(|p| rt.read_file(p).ok().map(|c| parse_skill(&skill_name(p), &c)))
+        .collect()
+}
+
+fn skill_name(path: &str) -> String {
+    let file = path.rsplit('/').next().unwrap_or(path);
+    file.strip_suffix(".md").unwrap_or(file).to_string()
+}
+
+/// Parse a skill file: optional `---`-delimited frontmatter carrying a
+/// `description:` line; the remainder is the body. With no frontmatter, the
+/// first non-empty line is the description and the whole file is the body.
+pub fn parse_skill(name: &str, content: &str) -> Capability {
+    let mut description = String::new();
+    let mut body = content.trim();
+    if let Some(after_open) = content.strip_prefix("---") {
+        if let Some((fm, rest)) = split_frontmatter(after_open) {
+            for line in fm.lines() {
+                if let Some(d) = line.trim().strip_prefix("description:") {
+                    description = d.trim().to_string();
+                }
+            }
+            body = rest.trim();
+        }
+    }
+    if description.is_empty() {
+        description = body
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+    }
+    Capability::new(CapabilityKind::Skill, name, &description, body)
+}
+
+/// Split the text after an opening `---` into (frontmatter, body) at the next
+/// line that is `---`.
+fn split_frontmatter(after_open: &str) -> Option<(&str, &str)> {
+    let s = after_open.strip_prefix('\n').unwrap_or(after_open);
+    let idx = s.find("\n---")?;
+    let fm = s.get(..idx)?;
+    let rest = s.get(idx + "\n---".len()..)?;
+    Some((fm, rest))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,5 +267,45 @@ mod tests {
     fn ties_break_by_name_deterministically() {
         let r = reg(&[("zebra", "test"), ("alpha", "test")]);
         assert_eq!(names(&LexicalSelector.select(&r, "test", 5)), ["alpha", "zebra"]);
+    }
+
+    #[test]
+    fn parse_skill_with_frontmatter() {
+        let cap = parse_skill(
+            "fmt",
+            "---\ndescription: Format Rust code\n---\nRun cargo fmt then check.",
+        );
+        assert_eq!(cap.kind, CapabilityKind::Skill);
+        assert_eq!(cap.name, "fmt");
+        assert_eq!(cap.description, "Format Rust code");
+        assert_eq!(cap.body, "Run cargo fmt then check.");
+    }
+
+    #[test]
+    fn parse_skill_without_frontmatter_uses_first_line() {
+        let cap = parse_skill("notes", "Do the thing carefully.\nThen verify.");
+        assert_eq!(cap.description, "Do the thing carefully.");
+        assert_eq!(cap.body, "Do the thing carefully.\nThen verify.");
+    }
+
+    #[test]
+    fn load_skills_finds_only_skill_markdown() {
+        use crate::testkit::InMemoryRuntime;
+        let rt = InMemoryRuntime::new()
+            .with_file(".glave/skills/fmt.md", "---\ndescription: format code\n---\nbody")
+            .with_file(".glave/skills/lint.md", "lint the code")
+            .with_file(".glave/skills/readme.txt", "ignored: wrong ext")
+            .with_file("src/main.rs", "fn main() {}");
+        let skills = load_skills(&rt);
+        let mut got: Vec<&str> = skills.iter().map(|c| c.name.as_str()).collect();
+        got.sort_unstable();
+        assert_eq!(got, ["fmt", "lint"]);
+    }
+
+    #[test]
+    fn load_skills_empty_without_dir() {
+        use crate::testkit::InMemoryRuntime;
+        let rt = InMemoryRuntime::new().with_file("src/main.rs", "fn main() {}");
+        assert!(load_skills(&rt).is_empty());
     }
 }

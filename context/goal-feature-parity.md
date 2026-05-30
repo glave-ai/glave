@@ -23,7 +23,7 @@ ending in `submit`. Costs API → run at track boundaries, not every feature.
 ### Parity track
 - [x] **HOPE.md** — repo guidance (CLAUDE.md analog) folded into agent context
 - [x] **Capability registry + selector** — lexical/BM25 substrate for the below
-- [ ] **Skills** — registry-backed reusable capability packages
+- [x] **Skills** — registry-backed reusable capability packages
 - [ ] **Commands** — registry-backed canned prompts/workflows
 - [ ] **MCP** — external tool client (heaviest; protocol work)
 ### Engine track
@@ -42,3 +42,6 @@ All items implemented + tested + regression-green, or a surfaced blocker.
   CapabilityRegistry, Selector port + LexicalSelector (name-weighted token
   overlap, deterministic, zero-score dropped); 8 unit tests. Skills/commands/MCP
   populate + query it next.
+- Skills — `load_skills()` reads `.glave/skills/*.md` (frontmatter `description:`
+  + body), agent selects top-3 relevant by task statement into a RELEVANT SKILLS
+  section; 4 capability + 3 agent tests. Opt-in: no dir -> no behavior change.
