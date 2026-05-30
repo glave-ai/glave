@@ -1,0 +1,28 @@
+id = "py-fix-failing-test-001"
+language = "python"
+archetype = "fix-failing-test"
+difficulty = "easy"
+editable_surface = ["**/*.py"]
+
+[provenance]
+source = "authored"
+contamination = "none"
+calibration = false
+
+[image]
+base = "glave/python-base:latest"
+workdir = "/work"
+
+[oracle]
+command = "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/work python -m pytest -q -p no:cacheprovider"
+fail_to_pass = ["/oracle/test_solver.py::test_even_length"]
+pass_to_pass = [
+    "/oracle/test_solver.py::test_odd_length",
+    "/oracle/test_solver.py::test_single",
+]
+
+[resource]
+mem_mb = 256
+cpus = 1.0
+pids = 256
+network = "none"
