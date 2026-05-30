@@ -2,7 +2,6 @@
 //! implement one trait and depend only on ports, so each is testable with fakes.
 
 use anyhow::Result;
-use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::event::RunEvent;
@@ -202,15 +201,12 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
         task.archetype, task.language, task.difficulty
     ));
 
-    let mut seen = BTreeSet::new();
-    for node in &task.oracle.fail_to_pass {
-        let file = node.split("::").next().unwrap_or(node);
-        let base = file.trim_start_matches("/oracle/");
-        if !seen.insert(base.to_string()) {
-            continue;
-        }
-        if let Ok(src) = std::fs::read_to_string(task.oracle_dir().join(base)) {
-            out.push_str(&format!("--- failing test: {base} ---\n{src}\n\n"));
+    let mut specs = Vec::new();
+    let _ = collect(&task.oracle_dir(), &task.oracle_dir(), &mut specs);
+    specs.sort();
+    for rel in specs {
+        if let Ok(src) = std::fs::read_to_string(task.oracle_dir().join(&rel)) {
+            out.push_str(&format!("--- test: {rel} ---\n{src}\n\n"));
         }
     }
 
@@ -317,7 +313,7 @@ mod tests {
         let mut sink = InMemorySink::default();
         let task = TaskSpec::from_toml(
             "id = \"t\"\nlanguage = \"python\"\narchetype = \"a\"\ndifficulty = \"easy\"\n\
-             [image]\nbase = \"x\"\n[oracle]\ncommand = \"true\"\nfail_to_pass = []\n",
+             [image]\nbase = \"x\"\n[oracle]\nfail_to_pass = \"true\"\n",
         )?;
 
         agent.act(&mut rt, &task, "run-test", &mut sink)?;

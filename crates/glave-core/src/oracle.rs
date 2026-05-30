@@ -20,20 +20,19 @@ pub struct Verdict {
 }
 
 pub fn evaluate(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<Verdict> {
-    let f2p_cmd = format!("{} {}", task.oracle.command, task.oracle.fail_to_pass.join(" "));
-    let f2p = rt.run(&f2p_cmd)?;
+    let f2p = rt.run(&task.oracle.fail_to_pass)?;
     let fail_to_pass_ok = f2p.exit_code == 0;
 
-    let (pass_to_pass_ok, p2p_exit, p2p_output) = if task.oracle.pass_to_pass.is_empty() {
-        (true, None, None)
-    } else {
-        let cmd = format!("{} {}", task.oracle.command, task.oracle.pass_to_pass.join(" "));
-        let r = rt.run(&cmd)?;
-        (
-            r.exit_code == 0,
-            Some(r.exit_code),
-            Some(merge(&r.stdout, &r.stderr)),
-        )
+    let (pass_to_pass_ok, p2p_exit, p2p_output) = match &task.oracle.pass_to_pass {
+        None => (true, None, None),
+        Some(cmd) => {
+            let r = rt.run(cmd)?;
+            (
+                r.exit_code == 0,
+                Some(r.exit_code),
+                Some(merge(&r.stdout, &r.stderr)),
+            )
+        }
     };
 
     Ok(Verdict {

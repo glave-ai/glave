@@ -58,11 +58,14 @@ fn default_workdir() -> String {
 
 #[derive(Debug, Deserialize)]
 pub struct Oracle {
-    /// Base test command run in the container; selected node ids are appended.
-    pub command: String,
-    pub fail_to_pass: Vec<String>,
+    /// Full shell command (run in the sandbox) for the FAIL_TO_PASS check:
+    /// must exit non-zero on the buggy workspace, zero once fixed.
+    /// Language-agnostic — each task encodes its own runner invocation.
+    pub fail_to_pass: String,
+    /// Full shell command for the PASS_TO_PASS check (previously-passing tests
+    /// must stay green). Optional.
     #[serde(default)]
-    pub pass_to_pass: Vec<String>,
+    pub pass_to_pass: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

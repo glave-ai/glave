@@ -1,0 +1,24 @@
+id = "go-config-bool-001"
+language = "go"
+archetype = "bug-fix-in-context"
+difficulty = "easy"
+editable_surface = ["**/*.go"]
+
+[provenance]
+source = "authored"
+contamination = "none"
+calibration = false
+
+[image]
+base = "glave/go-base:latest"
+workdir = "/work"
+
+[oracle]
+fail_to_pass = "cp /oracle/config_test.go . && go test -run '^TestDebugFalseDisablesDebug$' ."
+pass_to_pass = "cp /oracle/config_test.go . && go test -run '^(TestDefaults|TestPortAndTimeout)$' ."
+
+[resource]
+mem_mb = 512
+cpus = 1.0
+pids = 256
+network = "none"
