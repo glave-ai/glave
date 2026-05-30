@@ -27,6 +27,7 @@ struct_field_names = "allow"
 format_push_string = "allow"
 must_use_candidate = "allow"   # #[must_use] ceremony, not safety
 missing_errors_doc = "allow"   # # Errors doc sections, not safety
+cast_precision_loss = "allow"  # usize->f64 for averages is fine
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"

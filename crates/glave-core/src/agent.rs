@@ -168,6 +168,94 @@ impl Agent for ModelAgent {
     }
 }
 
+/// One-shot agent (the "bare" baseline): a single model call, no tools, no
+/// iteration. Shows the failing test + current files, asks for corrected file(s)
+/// as <create> blocks, applies them. Measures the raw model.
+pub struct OneShotAgent {
+    provider: Box<dyn ModelProvider>,
+}
+
+impl OneShotAgent {
+    pub fn new(provider: Box<dyn ModelProvider>) -> Self {
+        Self { provider }
+    }
+}
+
+impl Agent for OneShotAgent {
+    fn act(
+        &mut self,
+        rt: &mut dyn WorkspaceRuntime,
+        task: &TaskSpec,
+        run_id: &str,
+        trace: &mut dyn TraceSink,
+    ) -> Result<()> {
+        let messages = vec![
+            Message::new("system", oneshot_system()),
+            Message::new("user", oneshot_user(&*rt, task)?),
+        ];
+        let c = self.provider.complete(&messages)?;
+        trace.emit(RunEvent::model_turn(run_id, 1, &c))?;
+
+        let creates = tools::parse_creates(&c.content);
+        if creates.is_empty() {
+            trace.emit(RunEvent::agent_action(
+                run_id,
+                "no_edit",
+                None,
+                Some("no <create> block in response".to_string()),
+            ))?;
+        } else {
+            for (path, content) in creates {
+                rt.write_file(&path, &content)?;
+                trace.emit(RunEvent::agent_action(run_id, "create", Some(path), None))?;
+            }
+        }
+
+        trace.emit(RunEvent::cost_usage_total(
+            run_id,
+            self.provider.model_id(),
+            c.prompt_tokens,
+            c.completion_tokens,
+            c.cost_usd,
+        ))?;
+        Ok(())
+    }
+}
+
+fn oneshot_system() -> String {
+    "You are given a failing test and the current source files. In ONE reply, \
+     output the corrected version of every file you need to change, each as:\n\
+     <create path=\"FILE\">\\nFULL NEW FILE CONTENT\\n</create>\n\
+     Output nothing else. You have no tools and no second turn."
+        .to_string()
+}
+
+fn oneshot_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "TASK: {} ({} / {})\n\nA test is FAILING and defines the required behavior.\n\n",
+        task.archetype, task.language, task.difficulty
+    ));
+    let mut specs = Vec::new();
+    let _ = collect(&task.oracle_dir(), &task.oracle_dir(), &mut specs);
+    specs.sort();
+    for rel in specs {
+        if let Ok(src) = std::fs::read_to_string(task.oracle_dir().join(&rel)) {
+            out.push_str(&format!("--- test: {rel} ---\n{src}\n\n"));
+        }
+    }
+    out.push_str("Current files:\n\n");
+    let mut files = rt.list_files()?;
+    files.sort();
+    for f in &files {
+        if let Ok(src) = rt.read_file(f) {
+            out.push_str(&format!("--- {f} ---\n{src}\n\n"));
+        }
+    }
+    out.push_str("Output the corrected file(s) as <create> block(s), nothing else.");
+    Ok(out)
+}
+
 fn system_prompt() -> String {
     "You are a coding agent. Fix the workspace so the failing test passes without \
      breaking the previously-passing tests. Respond with EXACTLY ONE action per \
@@ -234,7 +322,8 @@ fn collect(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
 mod tests {
     use super::*;
     use crate::policy::AutonomousPolicy;
-    use crate::testkit::{InMemoryProvider, InMemoryRuntime, InMemorySink};
+    use crate::sinks::InMemorySink;
+    use crate::testkit::{InMemoryProvider, InMemoryRuntime};
 
     fn count_action(events: &[RunEvent], action: &str) -> usize {
         events

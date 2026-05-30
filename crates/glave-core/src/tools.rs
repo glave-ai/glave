@@ -101,6 +101,29 @@ pub fn parse(s: &str) -> Option<ToolCall> {
     }
 }
 
+/// Parse all `<create>` blocks in a response (the one-shot agent may rewrite
+/// several files in a single reply).
+pub fn parse_creates(s: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut rest = s;
+    while let Some(start) = rest.find("<create") {
+        let Some(chunk) = rest.get(start..) else {
+            break;
+        };
+        if let Some(ToolCall::Create { path, content }) = parse_create(chunk) {
+            out.push((path, content));
+        }
+        let advance = chunk
+            .find("</create>")
+            .map_or(chunk.len(), |c| c + "</create>".len());
+        let Some(next) = chunk.get(advance..) else {
+            break;
+        };
+        rest = next;
+    }
+    out
+}
+
 fn parse_view(s: &str) -> Option<ToolCall> {
     let rest = s.get(s.find("<view")?..)?;
     let path = extract_attr(rest, "path")?;
