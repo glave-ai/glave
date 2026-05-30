@@ -22,6 +22,11 @@ pub struct TaskSpec {
     /// break results down by size.
     #[serde(default = "default_size")]
     pub codebase_size: String,
+    /// Problem statement (issue text) for ingested real-world tasks. When set,
+    /// it's shown to the agent as the spec (the oracle test is held). Empty for
+    /// authored tasks, which show their oracle tests as the spec.
+    #[serde(default)]
+    pub statement: String,
 
     /// Globs (relative to workspace/) the agent is permitted to modify.
     #[serde(default)]

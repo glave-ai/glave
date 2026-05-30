@@ -233,17 +233,10 @@ fn oneshot_system() -> String {
 fn oneshot_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
     let mut out = String::new();
     out.push_str(&format!(
-        "TASK: {} ({} / {})\n\nA test is FAILING and defines the required behavior.\n\n",
+        "TASK: {} ({} / {})\n\n",
         task.archetype, task.language, task.difficulty
     ));
-    let mut specs = Vec::new();
-    let _ = collect(&task.oracle_dir(), &task.oracle_dir(), &mut specs);
-    specs.sort();
-    for rel in specs {
-        if let Ok(src) = std::fs::read_to_string(task.oracle_dir().join(&rel)) {
-            out.push_str(&format!("--- test: {rel} ---\n{src}\n\n"));
-        }
-    }
+    out.push_str(&spec_section(task));
     out.push_str("Current files:\n\n");
     let mut files = rt.list_files()?;
     files.sort();
@@ -281,18 +274,10 @@ fn help_text() -> String {
 fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
     let mut out = String::new();
     out.push_str(&format!(
-        "TASK: {} ({} / {})\n\nA test is currently FAILING and defines the required behavior.\n\n",
+        "TASK: {} ({} / {})\n\n",
         task.archetype, task.language, task.difficulty
     ));
-
-    let mut specs = Vec::new();
-    let _ = collect(&task.oracle_dir(), &task.oracle_dir(), &mut specs);
-    specs.sort();
-    for rel in specs {
-        if let Ok(src) = std::fs::read_to_string(task.oracle_dir().join(&rel)) {
-            out.push_str(&format!("--- test: {rel} ---\n{src}\n\n"));
-        }
-    }
+    out.push_str(&spec_section(task));
 
     out.push_str("Workspace files (use <view> to read them):\n");
     let mut files = rt.list_files()?;
@@ -303,6 +288,28 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
 
     out.push_str("\nBegin. View the relevant file, fix it, run the tests, then submit.");
     Ok(out)
+}
+
+/// The spec shown to the agent: the held issue statement for ingested tasks, or
+/// the oracle test files for authored tasks.
+fn spec_section(task: &TaskSpec) -> String {
+    if task.statement.is_empty() {
+        let mut out = String::from("A test is FAILING and defines the required behavior.\n\n");
+        let mut specs = Vec::new();
+        let _ = collect(&task.oracle_dir(), &task.oracle_dir(), &mut specs);
+        specs.sort();
+        for rel in specs {
+            if let Ok(src) = std::fs::read_to_string(task.oracle_dir().join(&rel)) {
+                out.push_str(&format!("--- test: {rel} ---\n{src}\n\n"));
+            }
+        }
+        out
+    } else {
+        format!(
+            "Fix the issue below. A held test verifies the fix; use <run_tests/> to check.\n\n--- issue ---\n{}\n\n",
+            task.statement
+        )
+    }
 }
 
 fn collect(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
