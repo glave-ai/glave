@@ -1,6 +1,5 @@
 //! Glave CLI — the composition root. Wires concrete adapters (Docker runtime,
-//! OpenRouter provider, JSONL sink) into the core's orchestration. This is the
-//! only place that knows about all three.
+//! OpenRouter provider, JSONL sink) into the core's orchestration.
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -36,8 +35,6 @@ enum Cmd {
         task: PathBuf,
         #[arg(long, value_enum, default_value_t = AgentKind::Solve)]
         agent: AgentKind,
-        /// OpenRouter model slug for `--agent model`
-        /// (else GLAVE_MODEL env, else the built-in default).
         #[arg(long)]
         model: Option<String>,
     },
@@ -46,12 +43,20 @@ enum Cmd {
         /// Path to the task directory.
         task: PathBuf,
     },
-    /// Score a task-set: bare (one-shot) vs +harness; report solve rate, $, lift.
+    /// Score a task-set: the harnessed model, optionally vs a frontier model in
+    /// the same harness (armed vs armed).
     Score {
         /// Task dirs, or directories to walk for tasks (e.g. `tasks/`).
         tasks: Vec<PathBuf>,
+        /// The model under test (default: the built-in econo model).
         #[arg(long)]
         model: Option<String>,
+        /// Frontier model to compare against, run in the SAME harness.
+        #[arg(long)]
+        baseline: Option<String>,
+        /// Also run the no-tools one-shot probe (a control, not a fair baseline).
+        #[arg(long)]
+        with_bare: bool,
     },
 }
 
@@ -72,7 +77,12 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Validate { task } => validate(&task),
-        Cmd::Score { tasks, model } => score(&tasks, &resolve_model(model)),
+        Cmd::Score {
+            tasks,
+            model,
+            baseline,
+            with_bare,
+        } => score(&tasks, &resolve_model(model), baseline.as_deref(), with_bare),
     }
 }
 
@@ -99,7 +109,6 @@ fn build_base(lang: &str) -> Result<()> {
 fn do_run(task_dir: &Path, kind: AgentKind, model: &str) -> Result<bool> {
     let task = TaskSpec::load(task_dir)?;
     let run_id = uuid::Uuid::new_v4().to_string();
-
     let (mut agent, label): (Box<dyn Agent>, String) = match kind {
         AgentKind::Noop => (Box::new(NoopAgent), "stub:noop".to_string()),
         AgentKind::Solve => (Box::new(SolveAgent), "stub:solve".to_string()),
@@ -107,18 +116,14 @@ fn do_run(task_dir: &Path, kind: AgentKind, model: &str) -> Result<bool> {
             let provider = OpenRouterProvider::from_env(model.to_string())?;
             let label = format!("model:{} reasoning={}", provider.model_id(), reasoning_effort());
             let policy = Box::new(AutonomousPolicy::new(&task.editable_surface));
-            (
-                Box::new(ModelAgent::new(Box::new(provider), policy)),
-                label,
-            )
+            (Box::new(ModelAgent::new(Box::new(provider), policy)), label)
         }
     };
 
     let mut rt = DockerRuntime::prepare(&task, &run_id).context("preparing docker runtime")?;
     let mut sink = JsonlSink::create(Path::new("traces"), &run_id)?;
-
     let outcome = run_task(&task, &run_id, &label, agent.as_mut(), &mut rt, &mut sink);
-    rt.cleanup(); // best-effort teardown regardless of outcome
+    rt.cleanup();
     let verdict = outcome?;
 
     println!(
@@ -153,23 +158,29 @@ struct Stat {
     cost: f64,
 }
 
-/// Run one task in one config (bare one-shot, or +harness) and read back the
-/// outcome + cost from an in-memory trace.
-fn run_config(task_dir: &Path, model: &str, harness: bool) -> Result<Stat> {
+#[derive(Copy, Clone)]
+enum Mode {
+    Bare,
+    Harness,
+}
+
+/// Run one task with one model in one mode; read back outcome + cost.
+fn run_one(task_dir: &Path, model: &str, mode: Mode) -> Result<Stat> {
     let task = TaskSpec::load(task_dir)?;
     let run_id = uuid::Uuid::new_v4().to_string();
     let provider = OpenRouterProvider::from_env(model.to_string())?;
-    let (mut agent, label): (Box<dyn Agent>, String) = if harness {
-        let policy = Box::new(AutonomousPolicy::new(&task.editable_surface));
-        (
-            Box::new(ModelAgent::new(Box::new(provider), policy)),
-            format!("+harness:{model}"),
-        )
-    } else {
-        (
+    let (mut agent, label): (Box<dyn Agent>, String) = match mode {
+        Mode::Harness => {
+            let policy = Box::new(AutonomousPolicy::new(&task.editable_surface));
+            (
+                Box::new(ModelAgent::new(Box::new(provider), policy)),
+                format!("harness:{model}"),
+            )
+        }
+        Mode::Bare => (
             Box::new(OneShotAgent::new(Box::new(provider))),
             format!("bare:{model}"),
-        )
+        ),
     };
     let mut rt = DockerRuntime::prepare(&task, &run_id).context("preparing docker runtime")?;
     let mut sink = InMemorySink::default();
@@ -182,73 +193,118 @@ fn run_config(task_dir: &Path, model: &str, harness: bool) -> Result<Stat> {
     })
 }
 
-fn score(task_paths: &[PathBuf], model: &str) -> Result<()> {
+fn score(task_paths: &[PathBuf], model: &str, baseline: Option<&str>, with_bare: bool) -> Result<()> {
     let tasks = discover_tasks(task_paths)?;
     if tasks.is_empty() {
         return Err(anyhow!("no tasks found under the given path(s)"));
     }
-    println!("scoring {} task(s) on {model}: bare (one-shot) vs +harness\n", tasks.len());
-    println!("{:<40} {:>9} {:>9}", "task", "bare", "+harness");
+    println!(
+        "scoring {} task(s): {model} (armed){}{}\n",
+        tasks.len(),
+        baseline.map_or_else(String::new, |b| format!(" vs {b} (armed)")),
+        if with_bare { " [+bare probe]" } else { "" }
+    );
 
-    let mut bare_solved = 0usize;
-    let mut harn_solved = 0usize;
-    let mut bare_cost = 0.0f64;
-    let mut harn_cost = 0.0f64;
+    let mut q_solved = 0usize;
+    let mut q_cost = 0.0f64;
+    let mut f_solved = 0usize;
+    let mut f_cost = 0.0f64;
+    let mut b_solved = 0usize;
+    let mut b_cost = 0.0f64;
 
     for t in &tasks {
-        let id = t
-            .file_name()
-            .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
-        let b = run_config(t, model, false)?;
-        let h = run_config(t, model, true)?;
-        if b.solved {
-            bare_solved += 1;
+        let id = task_name(t);
+        let q = run_one(t, model, Mode::Harness)?;
+        if q.solved {
+            q_solved += 1;
         }
-        if h.solved {
-            harn_solved += 1;
+        q_cost += q.cost;
+        let mut line = format!("{:<34} {:>14}", clip_id(&id, 34), mark(q.solved));
+
+        if let Some(b) = baseline {
+            let f = run_one(t, b, Mode::Harness)?;
+            if f.solved {
+                f_solved += 1;
+            }
+            f_cost += f.cost;
+            line.push_str(&format!(" {:>14}", mark(f.solved)));
         }
-        bare_cost += b.cost;
-        harn_cost += h.cost;
-        println!(
-            "{:<40} {:>9} {:>9}",
-            clip_id(&id, 40),
-            if b.solved { "SOLVED" } else { "—" },
-            if h.solved { "SOLVED" } else { "—" }
-        );
+        if with_bare {
+            let bare = run_one(t, model, Mode::Bare)?;
+            if bare.solved {
+                b_solved += 1;
+            }
+            b_cost += bare.cost;
+            line.push_str(&format!(" {:>6}", mark(bare.solved)));
+        }
+        println!("{line}");
     }
 
     let n = tasks.len();
-    println!("\n--- scorecard ({model}) ---");
+    println!("\n--- scorecard ---");
     println!(
-        "  bare:     {bare_solved}/{n} solved   ${bare_cost:.4}   $/correct {}",
-        per_correct(bare_cost, bare_solved)
+        "  {model} (armed):  {q_solved}/{n} solved   ${q_cost:.4}   $/correct {}",
+        per_correct(q_cost, q_solved)
     );
-    println!(
-        "  +harness: {harn_solved}/{n} solved   ${harn_cost:.4}   $/correct {}",
-        per_correct(harn_cost, harn_solved)
-    );
-    println!(
-        "  harness lift: +{} solved   {}",
-        harn_solved.saturating_sub(bare_solved),
-        cost_ratio(harn_cost, bare_cost)
-    );
+    if let Some(b) = baseline {
+        println!(
+            "  {b} (armed):  {f_solved}/{n} solved   ${f_cost:.4}   $/correct {}",
+            per_correct(f_cost, f_solved)
+        );
+        println!("  --- promise vs frontier ---");
+        match (q_solved, f_solved) {
+            (_, 0) => println!("  relative success: n/a (frontier solved 0)"),
+            (q, f) => println!(
+                "  relative success: {:.0}% of frontier",
+                ratio(q, f) * 100.0
+            ),
+        }
+        match (per_correct_val(q_cost, q_solved), per_correct_val(f_cost, f_solved)) {
+            (Some(qp), Some(fp)) if fp > 0.0 => println!(
+                "  relative $/correct: {:.1}% of frontier   (frontier costs {:.0}x more)",
+                qp / fp * 100.0,
+                fp / qp
+            ),
+            _ => println!("  relative $/correct: n/a"),
+        }
+    }
+    if with_bare {
+        println!("  bare (one-shot probe):  {b_solved}/{n} solved   ${b_cost:.4}");
+    }
     Ok(())
 }
 
-fn per_correct(cost: f64, solved: usize) -> String {
-    if solved == 0 {
-        "n/a".to_string()
+fn mark(solved: bool) -> &'static str {
+    if solved {
+        "SOLVED"
     } else {
-        format!("${:.4}", cost / solved as f64)
+        "—"
     }
 }
 
-fn cost_ratio(harn: f64, bare: f64) -> String {
-    if bare <= 0.0 {
-        String::new()
+fn ratio(a: usize, b: usize) -> f64 {
+    if b == 0 {
+        0.0
     } else {
-        format!("({:.1}x the cost)", harn / bare)
+        a as f64 / b as f64
     }
+}
+
+fn per_correct(cost: f64, solved: usize) -> String {
+    per_correct_val(cost, solved).map_or_else(|| "n/a".to_string(), |v| format!("${v:.4}"))
+}
+
+fn per_correct_val(cost: f64, solved: usize) -> Option<f64> {
+    if solved == 0 {
+        None
+    } else {
+        Some(cost / solved as f64)
+    }
+}
+
+fn task_name(t: &Path) -> String {
+    t.file_name()
+        .map_or_else(String::new, |s| s.to_string_lossy().into_owned())
 }
 
 fn clip_id(s: &str, max: usize) -> String {
