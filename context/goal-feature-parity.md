@@ -24,7 +24,7 @@ ending in `submit`. Costs API → run at track boundaries, not every feature.
 - [x] **HOPE.md** — repo guidance (CLAUDE.md analog) folded into agent context
 - [x] **Capability registry + selector** — lexical/BM25 substrate for the below
 - [x] **Skills** — registry-backed reusable capability packages
-- [ ] **Commands** — registry-backed canned prompts/workflows
+- [x] **Commands** — registry-backed canned prompts/workflows
 - [ ] **MCP** — external tool client (heaviest; protocol work)
 ### Engine track
 - [ ] **Compaction** — history eviction; no-op for short tasks, bounds long ones.
@@ -45,3 +45,7 @@ All items implemented + tested + regression-green, or a surfaced blocker.
 - Skills — `load_skills()` reads `.glave/skills/*.md` (frontmatter `description:`
   + body), agent selects top-3 relevant by task statement into a RELEVANT SKILLS
   section; 4 capability + 3 agent tests. Opt-in: no dir -> no behavior change.
+- Commands — `load_commands()` (`.glave/commands/*.md`, generalized `load_dir` +
+  `parse_capability`) + `expand_command()` with `$ARGUMENTS` substitution; 4 tests.
+  Mechanism is library-side; the interactive slash surface lands with the product
+  CLI (the autonomous eval has no invocation trigger).
