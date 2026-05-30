@@ -3,6 +3,6 @@
 FROM rust:alpine
 
 ENV CARGO_NET_OFFLINE=true
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache musl-dev ripgrep
 WORKDIR /work
 CMD ["tail", "-f", "/dev/null"]

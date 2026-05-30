@@ -1,6 +1,6 @@
 //! The action grammar — the typed tool surface the model drives, modeled on
-//! Anthropic's text-editor + bash tools. Model output is parsed into a typed
-//! `ToolCall`, mediated by a `Policy`, then executed against the
+//! Anthropic's text-editor + bash + grep/glob tools. Model output is parsed into
+//! a typed `ToolCall`, mediated by a `Policy`, then executed against the
 //! `WorkspaceRuntime` port. Read-before-edit and exact-unique-match are enforced.
 
 use anyhow::Result;
@@ -28,9 +28,18 @@ pub enum ToolCall {
         path: String,
         content: String,
     },
-    /// Run a shell command in the sandbox (covers delete, search, build, …).
+    /// Run a shell command in the sandbox (covers delete, build, …).
     Bash {
         cmd: String,
+    },
+    /// Search file contents (ripgrep, git-aware).
+    Grep {
+        pattern: String,
+        glob: Option<String>,
+    },
+    /// Find files by glob (ripgrep, git-aware).
+    Glob {
+        pattern: String,
     },
     /// Run the task's oracle and report pass/fail.
     RunTests,
@@ -45,6 +54,8 @@ impl ToolCall {
             ToolCall::StrReplace { .. } => "str_replace",
             ToolCall::Create { .. } => "create",
             ToolCall::Bash { .. } => "bash",
+            ToolCall::Grep { .. } => "grep",
+            ToolCall::Glob { .. } => "glob",
             ToolCall::RunTests => "run_tests",
             ToolCall::Submit => "submit",
         }
@@ -67,6 +78,8 @@ pub fn parse(s: &str) -> Option<ToolCall> {
         ("create", s.find("<create")),
         ("view", s.find("<view")),
         ("bash", s.find("<bash")),
+        ("grep", s.find("<grep")),
+        ("glob", s.find("<glob")),
         ("run_tests", s.find("<run_tests")),
         ("submit", s.find("<submit")),
     ]
@@ -80,6 +93,8 @@ pub fn parse(s: &str) -> Option<ToolCall> {
         "create" => parse_create(s),
         "view" => parse_view(s),
         "bash" => parse_bash(s),
+        "grep" => parse_grep(s),
+        "glob" => parse_glob(s),
         "run_tests" => Some(ToolCall::RunTests),
         "submit" => Some(ToolCall::Submit),
         _ => None,
@@ -124,6 +139,19 @@ fn parse_bash(s: &str) -> Option<ToolCall> {
         return None;
     }
     Some(ToolCall::Bash { cmd })
+}
+
+fn parse_grep(s: &str) -> Option<ToolCall> {
+    let rest = s.get(s.find("<grep")?..)?;
+    let pattern = extract_attr(rest, "pattern")?;
+    let glob = extract_attr(rest, "glob");
+    Some(ToolCall::Grep { pattern, glob })
+}
+
+fn parse_glob(s: &str) -> Option<ToolCall> {
+    let rest = s.get(s.find("<glob")?..)?;
+    let pattern = extract_attr(rest, "pattern")?;
+    Some(ToolCall::Glob { pattern })
 }
 
 fn parse_str_replace(s: &str) -> Option<ToolCall> {
@@ -204,6 +232,29 @@ pub fn execute(
                 clip(&merge(&r.stdout, &r.stderr), 4000)
             ))
         }
+        ToolCall::Grep { pattern, glob } => {
+            let mut cmd = String::from("rg --line-number --no-heading --color never");
+            if let Some(g) = glob {
+                cmd.push_str(&format!(" -g {}", sq(g)));
+            }
+            cmd.push_str(&format!(" -e {}", sq(pattern)));
+            let r = rt.run(&cmd)?;
+            let out = clip(&merge(&r.stdout, &r.stderr), 4000);
+            Ok(if out.trim().is_empty() {
+                "no matches".to_string()
+            } else {
+                out
+            })
+        }
+        ToolCall::Glob { pattern } => {
+            let r = rt.run(&format!("rg --files -g {}", sq(pattern)))?;
+            let out = clip(&merge(&r.stdout, &r.stderr), 4000);
+            Ok(if out.trim().is_empty() {
+                "no files match".to_string()
+            } else {
+                out
+            })
+        }
         ToolCall::RunTests => {
             let v = oracle::evaluate(&*rt, task)?;
             Ok(format!(
@@ -242,4 +293,9 @@ fn merge(stdout: &str, stderr: &str) -> String {
 
 fn clip(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
+}
+
+/// Single-quote a string for safe inclusion in a `sh -c` command.
+fn sq(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }

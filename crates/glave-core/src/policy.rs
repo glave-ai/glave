@@ -56,6 +56,8 @@ impl Policy for AutonomousPolicy {
             }
             ToolCall::View { .. }
             | ToolCall::Bash { .. }
+            | ToolCall::Grep { .. }
+            | ToolCall::Glob { .. }
             | ToolCall::RunTests
             | ToolCall::Submit => Decision::Allow,
         }

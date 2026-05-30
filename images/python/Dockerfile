@@ -3,6 +3,7 @@
 # at run time (no per-task build).
 FROM python:3.12-alpine
 
+RUN apk add --no-cache ripgrep
 RUN pip install --no-cache-dir "pytest==8.*"
 
 WORKDIR /work
