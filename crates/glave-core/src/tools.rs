@@ -45,10 +45,12 @@ pub enum ToolCall {
     },
     /// Run the task's oracle and report pass/fail.
     RunTests,
-    /// Spawn a read-only research subagent on a focused question; its summary
-    /// returns as the observation. A context-compression worker — the main
-    /// agent's context never sees the subagent's exploration, only its answer.
+    /// Spawn a research subagent on a focused question; its summary returns as
+    /// the observation. A context-compression worker — the main agent's context
+    /// never sees the exploration, only the answer. `name` selects a configured
+    /// agent type (`.glave/agents/*.md`); `None` is the default read-only researcher.
     Subagent {
+        name: Option<String>,
         task: String,
     },
     /// Call a tool on a configured MCP server with JSON arguments.
@@ -181,6 +183,7 @@ fn parse_mcp(s: &str) -> Option<ToolCall> {
 
 fn parse_subagent(s: &str) -> Option<ToolCall> {
     let rest = s.get(s.find("<subagent")?..)?;
+    let name = extract_attr(rest, "name");
     let open = rest.find('>')?.checked_add(1)?;
     let close = rest.find("</subagent>")?;
     if close < open {
@@ -190,7 +193,7 @@ fn parse_subagent(s: &str) -> Option<ToolCall> {
     if task.is_empty() {
         return None;
     }
-    Some(ToolCall::Subagent { task })
+    Some(ToolCall::Subagent { name, task })
 }
 
 fn parse_bash(s: &str) -> Option<ToolCall> {
@@ -401,7 +404,7 @@ mod tests {
     #[test]
     fn parse_subagent_extracts_task() {
         let call = parse("<subagent>find the bug</subagent>");
-        assert!(matches!(&call, Some(ToolCall::Subagent { task }) if task == "find the bug"));
+        assert!(matches!(&call, Some(ToolCall::Subagent { task, .. }) if task == "find the bug"));
     }
 
     #[test]

@@ -75,4 +75,19 @@ All items implemented + tested + regression-green, or a surfaced blocker.
 
 >>> GOAL COMPLETE: all 7 features built, tested, regression-gated. ~50 unit tests,
 clippy 0 throughout, real qwen regressions green (bytes, grpc-go w/ compaction).
-Next (separate): multi-trial scoring to measure on the now-complete harness.
+Then: multi-trial scoring (`--trials`) — first stable read qwen 5/6 (bytes 2/3,
+grpc-go 3/3), $/correct $0.068.
+
+## Parity deepening (working skeletons -> true Claude Code parity)
+The 7 above are credible foundations, not full parity. Closing the gap:
+- [x] **Subagents -> configurable named agent types** — `.glave/agents/*.md`
+      (frontmatter `description:` + `tools:` allowlist; body = system prompt).
+      `<subagent name="X">task</subagent>` runs that type; read-only gated (a
+      `tools:` list can only NARROW the read-only set — editing subagents need
+      policy plumbing). Default (no name) = the built-in researcher. 7 tests.
+- [ ] **Skills** -> bundled scripts/files + progressive disclosure + per-skill allowed-tools
+- [ ] **Commands** -> `$1/$2` positional, `!bash`, `@file`, frontmatter, namespacing, invocation surface
+- [ ] **Hooks** -> pre/post tool-use hooks (currently absent entirely)
+- [ ] **MCP** -> SSE/HTTP transports, resources + prompts, auth
+- [ ] **HOPE.md** -> hierarchical (project/user/nested) + `@imports`
+- [ ] (later) per-agent **model** override needs a provider-factory port (core can't construct providers)
