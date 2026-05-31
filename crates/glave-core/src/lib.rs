@@ -20,7 +20,9 @@ pub mod tools;
 #[cfg(any(test, feature = "test-util"))]
 pub mod testkit;
 
-pub use capability::{Capability, CapabilityKind, CapabilityRegistry, LexicalSelector, Selector};
+pub use capability::{
+    AgentDef, Capability, CapabilityKind, CapabilityRegistry, LexicalSelector, Selector,
+};
 pub use event::RunEvent;
 pub use mcp::{McpClient, McpHub, McpServerConfig, McpTool, McpTransport, StdioTransport};
 pub use oracle::Verdict;

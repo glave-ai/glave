@@ -101,17 +101,30 @@ impl ModelAgent {
         }
     }
 
-    /// Run a read-only research subagent in its own context and return its
-    /// summary. Shares the runtime (read access) but cannot edit — only
-    /// `read`/`grep`/`glob`. Bounded by `sub_turns`.
+    /// Run a research subagent in its own context and return its summary. A
+    /// `name` selects a configured agent type (`.glave/agents/*.md`) — its own
+    /// system prompt + (read-only) tool allowlist; `None` is the default
+    /// researcher. Subagents are read-only and cannot edit. Bounded by `sub_turns`.
     fn run_subagent(
         &self,
         rt: &mut dyn WorkspaceRuntime,
         task: &TaskSpec,
+        name: Option<&str>,
         subtask: &str,
     ) -> Result<String> {
+        let (system, allow): (String, Vec<String>) = match name {
+            Some(n) => match crate::capability::load_agents(rt).into_iter().find(|d| d.name == n) {
+                Some(def) => (def.prompt, def.tools),
+                None => {
+                    return Ok(format!(
+                        "ERROR: no agent type '{n}' (define it in .glave/agents/{n}.md)"
+                    ))
+                }
+            },
+            None => (subagent_system(), Vec::new()),
+        };
         let mut messages = vec![
-            Message::new("system", subagent_system()),
+            Message::new("system", system),
             Message::new("user", subtask.to_string()),
         ];
         let mut viewed = BTreeSet::new();
@@ -119,11 +132,11 @@ impl ModelAgent {
             let c = self.provider.complete(&messages)?;
             messages.push(Message::new("assistant", c.content.clone()));
             match tools::parse(&c.content) {
-                Some(call) if is_readonly(&call) => {
+                Some(call) if subagent_tool_allowed(&call, &allow) => {
                     let obs = tools::execute(&call, rt, task, &mut viewed)?;
                     messages.push(Message::new("user", obs));
                 }
-                // No tool (or an edit/other attempt): the content is the answer.
+                // No tool (or a disallowed/edit attempt): the content is the answer.
                 _ => return Ok(c.content.trim().to_string()),
             }
         }
@@ -137,6 +150,13 @@ fn is_readonly(call: &ToolCall) -> bool {
         call,
         ToolCall::Read { .. } | ToolCall::Grep { .. } | ToolCall::Glob { .. }
     )
+}
+
+/// A subagent tool call is permitted if it's read-only AND (no allowlist, or the
+/// allowlist names it). An agent's `tools:` frontmatter can only *narrow* the
+/// read-only set — it can't grant edit/test powers (that needs policy plumbing).
+fn subagent_tool_allowed(call: &ToolCall, allow: &[String]) -> bool {
+    is_readonly(call) && (allow.is_empty() || allow.iter().any(|t| t == call.name()))
 }
 
 fn subagent_system() -> String {
@@ -215,12 +235,12 @@ impl Agent for ModelAgent {
                     trace.emit(RunEvent::agent_action(run_id, "submit", None, None))?;
                     break;
                 }
-                Some(ToolCall::Subagent { task: subtask }) => {
-                    let summary = self.run_subagent(rt, task, &subtask)?;
+                Some(ToolCall::Subagent { name, task: subtask }) => {
+                    let summary = self.run_subagent(rt, task, name.as_deref(), &subtask)?;
                     trace.emit(RunEvent::agent_action(
                         run_id,
                         "subagent",
-                        None,
+                        name.clone(),
                         Some(subtask.clone()),
                     ))?;
                     messages.push(Message::new("user", format!("SUBAGENT RESULT:\n{summary}")));
@@ -385,7 +405,7 @@ fn system_prompt() -> String {
      - <grep pattern=\"REGEX\"/> or <grep pattern=\"REGEX\" glob=\"*.go\"/> — search file contents (git-aware)\n\
      - <glob pattern=\"GLOB\"/> — find files by name (git-aware)\n\
      - <run_tests/> — run the tests and see the result\n\
-     - <subagent>QUESTION</subagent> — spawn a read-only research subagent to investigate; only its summary returns to you (keeps your context lean)\n\
+     - <subagent name=\"TYPE\">QUESTION</subagent> (or <subagent>QUESTION</subagent>) — delegate to a research subagent: a named type (listed under SUBAGENT TYPES) or the default read-only researcher; only its summary returns to you (keeps your context lean)\n\
      - <submit/> — when the failing test passes\n\
      Only edit files within the workspace. Read a file before editing it. Keep changes minimal."
         .to_string()
@@ -425,6 +445,15 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
                 out.push_str(&format!("## {} — {}\n{}\n\n", cap.name, cap.description, cap.body));
             }
         }
+    }
+
+    let agents = capability::load_agents(rt);
+    if !agents.is_empty() {
+        out.push_str("SUBAGENT TYPES (delegate with <subagent name=\"NAME\">task</subagent>):\n");
+        for a in &agents {
+            out.push_str(&format!("- {} — {}\n", a.name, a.description));
+        }
+        out.push('\n');
     }
 
     out.push_str("Workspace files (use <read> to read them, <grep>/<glob> to navigate):\n");
@@ -743,6 +772,66 @@ mod tests {
         agent.act(&mut rt, &task, "run-sub", &mut sink)?;
 
         assert_eq!(rt.file("src/main.rs").map(String::as_str), Some("BUG")); // untouched
+        Ok(())
+    }
+
+    #[test]
+    fn subagent_tool_allowed_defaults_to_readonly() {
+        let read = ToolCall::Read { path: "f".into(), offset: None, limit: None };
+        let edit = ToolCall::Create { path: "f".into(), content: "c".into() };
+        assert!(subagent_tool_allowed(&read, &[])); // read-only allowed
+        assert!(!subagent_tool_allowed(&edit, &[])); // edits never allowed
+    }
+
+    #[test]
+    fn subagent_allowlist_narrows_the_readonly_set() {
+        let read = ToolCall::Read { path: "f".into(), offset: None, limit: None };
+        let grep = ToolCall::Grep { pattern: "x".into(), glob: None };
+        let allow = vec!["grep".to_string()];
+        assert!(!subagent_tool_allowed(&read, &allow)); // not in allowlist
+        assert!(subagent_tool_allowed(&grep, &allow));
+    }
+
+    #[test]
+    fn named_subagent_type_runs() -> Result<()> {
+        let provider = Box::new(InMemoryProvider::new(vec![
+            "<subagent name=\"explorer\">where?</subagent>",
+            "<read path=\"src/main.rs\"/>",
+            "It is in main.",
+            "<submit/>",
+        ]));
+        let policy = Box::new(AutonomousPolicy::new(&["src/main.rs".to_string()]));
+        let mut agent = ModelAgent::new(provider, policy);
+        let mut rt = InMemoryRuntime::new().with_file("src/main.rs", "BUG").with_file(
+            ".glave/agents/explorer.md",
+            "---\ndescription: explores code\ntools: read\n---\nYou explore.",
+        );
+        let mut sink = InMemorySink::default();
+        let task = task_for("rust")?;
+
+        agent.act(&mut rt, &task, "run-named", &mut sink)?;
+
+        assert_eq!(count_action(&sink.events, "subagent"), 1);
+        assert_eq!(count_action(&sink.events, "submit"), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn unknown_subagent_type_does_not_crash() -> Result<()> {
+        let provider = Box::new(InMemoryProvider::new(vec![
+            "<subagent name=\"ghost\">do it</subagent>",
+            "<submit/>",
+        ]));
+        let policy = Box::new(AutonomousPolicy::new(&[]));
+        let mut agent = ModelAgent::new(provider, policy);
+        let mut rt = InMemoryRuntime::new().with_file("src/main.rs", "x");
+        let mut sink = InMemorySink::default();
+        let task = task_for("rust")?;
+
+        agent.act(&mut rt, &task, "run-ghost", &mut sink)?;
+
+        assert_eq!(count_action(&sink.events, "subagent"), 1); // handled, returned an error summary
+        assert_eq!(count_action(&sink.events, "submit"), 1);
         Ok(())
     }
 }

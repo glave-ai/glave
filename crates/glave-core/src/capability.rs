@@ -209,6 +209,68 @@ fn split_frontmatter(after_open: &str) -> Option<(&str, &str)> {
     Some((fm, rest))
 }
 
+/// A configurable subagent type (the Claude-Code `.claude/agents` analog): its
+/// own system prompt, tool allowlist, and trigger description. An empty `tools`
+/// list means "use the caller's default allowlist".
+#[derive(Debug, Clone)]
+pub struct AgentDef {
+    pub name: String,
+    pub description: String,
+    pub tools: Vec<String>,
+    pub prompt: String,
+}
+
+/// Load agent definitions from `.glave/agents/*.md`.
+pub fn load_agents(rt: &dyn WorkspaceRuntime) -> Vec<AgentDef> {
+    let Ok(files) = rt.list_files() else {
+        return Vec::new();
+    };
+    let mut paths: Vec<String> = files
+        .into_iter()
+        .filter(|f| {
+            f.starts_with(".glave/agents/")
+                && Path::new(f).extension().is_some_and(|e| e.eq_ignore_ascii_case("md"))
+        })
+        .collect();
+    paths.sort();
+    paths
+        .iter()
+        .filter_map(|p| rt.read_file(p).ok().map(|c| parse_agent(&cap_name(p), &c)))
+        .collect()
+}
+
+/// Parse an agent file: frontmatter `description:` and `tools:` (comma-separated
+/// tool names); the body is the agent's system prompt.
+pub fn parse_agent(name: &str, content: &str) -> AgentDef {
+    let mut description = String::new();
+    let mut tools = Vec::new();
+    let mut prompt = content.trim();
+    if let Some(after_open) = content.strip_prefix("---") {
+        if let Some((fm, rest)) = split_frontmatter(after_open) {
+            for line in fm.lines() {
+                let line = line.trim();
+                if let Some(d) = line.strip_prefix("description:") {
+                    description = d.trim().to_string();
+                } else if let Some(t) = line.strip_prefix("tools:") {
+                    tools = t
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect();
+                }
+            }
+            prompt = rest.trim();
+        }
+    }
+    AgentDef {
+        name: name.to_string(),
+        description,
+        tools,
+        prompt: prompt.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,5 +431,36 @@ mod tests {
         use crate::testkit::InMemoryRuntime;
         let rt = InMemoryRuntime::new().with_file("src/main.rs", "fn main() {}");
         assert!(load_skills(&rt).is_empty());
+    }
+
+    #[test]
+    fn parse_agent_reads_description_tools_and_prompt() {
+        let a = parse_agent(
+            "reviewer",
+            "---\ndescription: reviews code for bugs\ntools: read, grep\n---\nYou are a careful reviewer.",
+        );
+        assert_eq!(a.name, "reviewer");
+        assert_eq!(a.description, "reviews code for bugs");
+        assert_eq!(a.tools, vec!["read".to_string(), "grep".to_string()]);
+        assert_eq!(a.prompt, "You are a careful reviewer.");
+    }
+
+    #[test]
+    fn parse_agent_without_tools_is_empty() {
+        let a = parse_agent("x", "---\ndescription: d\n---\nbe helpful");
+        assert!(a.tools.is_empty());
+        assert_eq!(a.prompt, "be helpful");
+    }
+
+    #[test]
+    fn load_agents_finds_agent_markdown() {
+        use crate::testkit::InMemoryRuntime;
+        let rt = InMemoryRuntime::new()
+            .with_file(".glave/agents/reviewer.md", "---\ndescription: review\ntools: read\n---\nReview.")
+            .with_file("src/main.rs", "fn main() {}");
+        let agents = load_agents(&rt);
+        assert_eq!(agents.len(), 1);
+        assert_eq!(agents.first().map(|a| a.name.as_str()), Some("reviewer"));
+        assert_eq!(agents.first().map(|a| a.tools.clone()), Some(vec!["read".to_string()]));
     }
 }
