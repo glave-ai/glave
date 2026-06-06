@@ -4,6 +4,7 @@
 use anyhow::Result;
 
 use crate::event::RunEvent;
+use crate::task::TaskSpec;
 
 /// A chat message handed to a model provider.
 #[derive(Debug, Clone)]
@@ -59,4 +60,17 @@ pub trait WorkspaceRuntime {
 /// Port: a swappable trace destination (JSONL file now; DB / remote later).
 pub trait TraceSink {
     fn emit(&mut self, event: RunEvent) -> Result<()>;
+}
+
+/// Port: mints a `ModelProvider` for a given model id. Per-call / per-agent
+/// model selection, routing, and fallback live behind this — the gateway is its
+/// real implementation. `Send + Sync` so one factory serves every concurrent run.
+pub trait ProviderFactory: Send + Sync {
+    fn create(&self, model: &str) -> Result<Box<dyn ModelProvider>>;
+}
+
+/// Port: prepares a fresh, isolated `WorkspaceRuntime` for one run. The returned
+/// runtime cleans up its own resources on drop.
+pub trait RuntimeFactory: Send + Sync {
+    fn prepare(&self, task: &TaskSpec, run_id: &str) -> Result<Box<dyn WorkspaceRuntime>>;
 }

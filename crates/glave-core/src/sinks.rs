@@ -45,6 +45,17 @@ impl TraceSink for JsonlSink {
     }
 }
 
+/// Discards every event. For runs where only the engine's returned outcome
+/// matters (e.g. scoring), so events don't accumulate in memory.
+#[derive(Default)]
+pub struct NullSink;
+
+impl TraceSink for NullSink {
+    fn emit(&mut self, _event: RunEvent) -> Result<()> {
+        Ok(())
+    }
+}
+
 /// Collects events in memory and reports a run's outcome + cost. Used by the
 /// scorer (and by tests).
 #[derive(Default)]

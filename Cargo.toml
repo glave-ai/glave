@@ -6,6 +6,7 @@ members = [
     "crates/glave-core",
     "crates/glave-openrouter",
     "crates/glave-docker",
+    "crates/glave-serve",
     "crates/glave-cli",
 ]
 
@@ -44,6 +45,10 @@ uuid = { version = "1", features = ["v4"] }
 clap = { version = "4", features = ["derive"] }
 ureq = { version = "2", features = ["json"] }
 dotenvy = "0.15"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"] }
+axum = "0.7"
+tokio-stream = "0.1"
 glave-core = { path = "crates/glave-core" }
 glave-openrouter = { path = "crates/glave-openrouter" }
 glave-docker = { path = "crates/glave-docker" }
+glave-serve = { path = "crates/glave-serve" }

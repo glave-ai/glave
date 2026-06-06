@@ -6,7 +6,7 @@
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 
-use glave_core::{Completion, Message, ModelProvider};
+use glave_core::{Completion, Message, ModelProvider, ProviderFactory};
 
 /// Reasoning effort: "high" | "medium" | "low" | "off". Default high.
 pub fn reasoning_effort() -> String {
@@ -23,17 +23,49 @@ pub struct OpenRouterProvider {
 }
 
 impl OpenRouterProvider {
-    pub fn from_env(model: String) -> Result<Self> {
-        let api_key = std::env::var("OPENROUTER_API_KEY")
-            .context("OPENROUTER_API_KEY not set (expected in .env)")?;
-        Ok(Self {
+    #[must_use]
+    pub fn new(api_key: String, model: String) -> Self {
+        Self {
             api_key,
             base_url: "https://openrouter.ai/api/v1".to_string(),
             model,
             temperature: 0.0, // pinned for run-to-run comparability
             max_tokens: 8192, // headroom for reasoning + the action
             reasoning: reasoning_effort(),
-        })
+        }
+    }
+
+    pub fn from_env(model: String) -> Result<Self> {
+        Ok(Self::new(api_key_from_env()?, model))
+    }
+}
+
+fn api_key_from_env() -> Result<String> {
+    std::env::var("OPENROUTER_API_KEY").context("OPENROUTER_API_KEY not set (expected in .env)")
+}
+
+/// Mints OpenRouter providers per model. The API key is read from the env at
+/// construction if present; a missing key only surfaces as an error when a model
+/// is actually requested — so stub-agent runs (e.g. `validate`) need no key. A
+/// server should still verify the key at startup before accepting traffic.
+pub struct OpenRouterFactory {
+    api_key: Option<String>,
+}
+
+impl OpenRouterFactory {
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self { api_key: std::env::var("OPENROUTER_API_KEY").ok() }
+    }
+}
+
+impl ProviderFactory for OpenRouterFactory {
+    fn create(&self, model: &str) -> Result<Box<dyn ModelProvider>> {
+        let key = self
+            .api_key
+            .clone()
+            .context("OPENROUTER_API_KEY not set (expected in .env)")?;
+        Ok(Box::new(OpenRouterProvider::new(key, model.to_string())))
     }
 }
 
