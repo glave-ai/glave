@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)] // data contract: fields consumed across later phases
 pub struct TaskSpec {
     pub id: String,
@@ -44,7 +44,7 @@ pub struct TaskSpec {
     pub dir: PathBuf,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[allow(dead_code)] // provenance/calibration consumed by the eval scorer later
 pub struct Provenance {
     #[serde(default)]
@@ -55,7 +55,7 @@ pub struct Provenance {
     pub calibration: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Image {
     pub base: String,
     #[serde(default = "default_workdir")]
@@ -70,7 +70,7 @@ fn default_size() -> String {
     "small".to_string()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Oracle {
     /// Full shell command (run in the sandbox) for the FAIL_TO_PASS check:
     /// must exit non-zero on the buggy workspace, zero once fixed.
@@ -82,7 +82,7 @@ pub struct Oracle {
     pub pass_to_pass: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)] // measured_peak_mb consumed by the parallel scheduler later
 pub struct Resource {
     #[serde(default = "default_mem")]

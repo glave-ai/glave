@@ -7,13 +7,13 @@ use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 
-use glave_core::agent::{Agent, ModelAgent, NoopAgent, OneShotAgent, SolveAgent};
-use glave_core::run::run_task;
-use glave_core::sinks::{InMemorySink, JsonlSink};
-use glave_core::{AutonomousPolicy, ModelProvider, TaskSpec};
-use glave_docker::DockerRuntime;
-use glave_openrouter::{reasoning_effort, OpenRouterProvider};
+use glave_core::engine::{AgentSpec, RunEngine, RunRequest};
+use glave_core::sinks::{JsonlSink, NullSink};
+use glave_core::TaskSpec;
+use glave_docker::DockerRuntimeFactory;
+use glave_openrouter::OpenRouterFactory;
 
 const DEFAULT_MODEL: &str = "qwen/qwen3.6-27b";
 
@@ -60,6 +60,13 @@ enum Cmd {
         #[arg(long, default_value = "rust")]
         lang: String,
     },
+    /// Run the agent-run API server — the brain, server-side. Clients POST a
+    /// task to /v1/runs and receive the run streamed as SSE.
+    Serve {
+        /// Address to bind (host:port).
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        addr: String,
+    },
     /// Score a task-set: the harnessed model, optionally vs a frontier model in
     /// the same harness (armed vs armed).
     Score {
@@ -100,6 +107,10 @@ fn main() -> Result<()> {
         Cmd::Ingest { dataset, index, out, lang } => {
             ingest::ingest(&ingest::IngestArgs { dataset: &dataset, index, out: &out, lang: &lang })
         }
+        Cmd::Serve { addr } => {
+            let socket = addr.parse().context("parsing --addr (expected host:port)")?;
+            glave_serve::serve_blocking(socket, build_engine())
+        }
         Cmd::Score {
             tasks,
             model,
@@ -113,6 +124,15 @@ fn main() -> Result<()> {
 fn resolve_model(flag: Option<String>) -> String {
     flag.or_else(|| std::env::var("GLAVE_MODEL").ok())
         .unwrap_or_else(|| DEFAULT_MODEL.to_string())
+}
+
+/// The single run engine the whole CLI shares: OpenRouter providers + Docker
+/// sandboxes behind the core's factory ports.
+fn build_engine() -> RunEngine {
+    RunEngine::new(
+        Arc::new(OpenRouterFactory::from_env()),
+        Arc::new(DockerRuntimeFactory),
+    )
 }
 
 fn build_base(lang: &str) -> Result<()> {
@@ -133,29 +153,25 @@ fn build_base(lang: &str) -> Result<()> {
 fn do_run(task_dir: &Path, kind: AgentKind, model: &str) -> Result<bool> {
     let task = TaskSpec::load(task_dir)?;
     let run_id = uuid::Uuid::new_v4().to_string();
-    let (mut agent, label): (Box<dyn Agent>, String) = match kind {
-        AgentKind::Noop => (Box::new(NoopAgent), "stub:noop".to_string()),
-        AgentKind::Solve => (Box::new(SolveAgent), "stub:solve".to_string()),
-        AgentKind::Model => {
-            let provider = OpenRouterProvider::from_env(model.to_string())?;
-            let label = format!("model:{} reasoning={}", provider.model_id(), reasoning_effort());
-            let policy = Box::new(AutonomousPolicy::new(&task.editable_surface));
-            (Box::new(ModelAgent::new(Box::new(provider), policy)), label)
-        }
+    let agent = match kind {
+        AgentKind::Noop => AgentSpec::Noop,
+        AgentKind::Solve => AgentSpec::Solve,
+        AgentKind::Model => AgentSpec::Model { model: model.to_string() },
     };
-
-    let mut rt = DockerRuntime::prepare(&task, &run_id).context("preparing docker runtime")?;
     let mut sink = JsonlSink::create(Path::new("traces"), &run_id)?;
-    let outcome = run_task(&task, &run_id, &label, agent.as_mut(), &mut rt, &mut sink);
-    rt.cleanup();
-    let verdict = outcome?;
+    let req = RunRequest { run_id, task, agent };
+    let outcome = build_engine().execute(&req, &mut sink)?;
 
     println!(
         "task={} agent={} solved={} (f2p_ok={}, p2p_ok={})",
-        task.id, label, verdict.solved, verdict.fail_to_pass_ok, verdict.pass_to_pass_ok
+        outcome.task_id,
+        outcome.agent_label,
+        outcome.solved,
+        outcome.fail_to_pass_ok,
+        outcome.pass_to_pass_ok
     );
     println!("trace: {}", sink.path().display());
-    Ok(verdict.solved)
+    Ok(outcome.solved)
 }
 
 fn validate(task_dir: &Path) -> Result<()> {
@@ -213,11 +229,17 @@ impl Agg {
 
 /// Run a task `trials` times sequentially (one container at a time — the host
 /// can't fan out); return (passes, total cost).
-fn run_trials(task_dir: &Path, model: &str, mode: Mode, trials: usize) -> Result<(usize, f64)> {
+fn run_trials(
+    engine: &RunEngine,
+    task_dir: &Path,
+    model: &str,
+    mode: Mode,
+    trials: usize,
+) -> Result<(usize, f64)> {
     let mut solved = 0usize;
     let mut cost = 0.0f64;
     for _ in 0..trials {
-        let s = run_one(task_dir, model, mode)?;
+        let s = run_one(engine, task_dir, model, mode)?;
         if s.solved {
             solved += 1;
         }
@@ -226,32 +248,23 @@ fn run_trials(task_dir: &Path, model: &str, mode: Mode, trials: usize) -> Result
     Ok((solved, cost))
 }
 
-/// Run one task with one model in one mode; read back outcome + cost.
-fn run_one(task_dir: &Path, model: &str, mode: Mode) -> Result<Stat> {
+/// Run one task with one model in one mode via the engine; only the outcome
+/// (solved + cost) is needed, so trace events are discarded.
+fn run_one(engine: &RunEngine, task_dir: &Path, model: &str, mode: Mode) -> Result<Stat> {
     let task = TaskSpec::load(task_dir)?;
-    let run_id = uuid::Uuid::new_v4().to_string();
-    let provider = OpenRouterProvider::from_env(model.to_string())?;
-    let (mut agent, label): (Box<dyn Agent>, String) = match mode {
-        Mode::Harness => {
-            let policy = Box::new(AutonomousPolicy::new(&task.editable_surface));
-            (
-                Box::new(ModelAgent::new(Box::new(provider), policy)),
-                format!("harness:{model}"),
-            )
-        }
-        Mode::Bare => (
-            Box::new(OneShotAgent::new(Box::new(provider))),
-            format!("bare:{model}"),
-        ),
+    let agent = match mode {
+        Mode::Harness => AgentSpec::Model { model: model.to_string() },
+        Mode::Bare => AgentSpec::OneShot { model: model.to_string() },
     };
-    let mut rt = DockerRuntime::prepare(&task, &run_id).context("preparing docker runtime")?;
-    let mut sink = InMemorySink::default();
-    let outcome = run_task(&task, &run_id, &label, agent.as_mut(), &mut rt, &mut sink);
-    rt.cleanup();
-    outcome?;
+    let req = RunRequest {
+        run_id: uuid::Uuid::new_v4().to_string(),
+        task,
+        agent,
+    };
+    let outcome = engine.execute(&req, &mut NullSink)?;
     Ok(Stat {
-        solved: sink.solved(),
-        cost: sink.cost_usd(),
+        solved: outcome.solved,
+        cost: outcome.cost_usd,
     })
 }
 
@@ -274,23 +287,24 @@ fn score(
         if with_bare { " [+bare probe]" } else { "" }
     );
 
+    let engine = build_engine();
     let mut q = Agg::default();
     let mut f = Agg::default();
     let mut b = Agg::default();
 
     for t in &tasks {
         let id = task_name(t);
-        let (qs, qc) = run_trials(t, model, Mode::Harness, trials)?;
+        let (qs, qc) = run_trials(&engine, t, model, Mode::Harness, trials)?;
         q.add(qs, trials, qc);
         let mut line = format!("{:<34} {:>10}", clip_id(&id, 34), format!("{qs}/{trials}"));
 
         if let Some(bl) = baseline {
-            let (fs, fc) = run_trials(t, bl, Mode::Harness, trials)?;
+            let (fs, fc) = run_trials(&engine, t, bl, Mode::Harness, trials)?;
             f.add(fs, trials, fc);
             line.push_str(&format!(" {:>10}", format!("{fs}/{trials}")));
         }
         if with_bare {
-            let (bs, bc) = run_trials(t, model, Mode::Bare, trials)?;
+            let (bs, bc) = run_trials(&engine, t, model, Mode::Bare, trials)?;
             b.add(bs, trials, bc);
             line.push_str(&format!(" {:>8}", format!("{bs}/{trials}")));
         }

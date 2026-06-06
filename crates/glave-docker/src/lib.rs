@@ -9,7 +9,7 @@ use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use glave_core::{ExecResult, TaskSpec, WorkspaceRuntime};
+use glave_core::{ExecResult, RuntimeFactory, TaskSpec, WorkspaceRuntime};
 
 pub struct DockerRuntime {
     container: String,
@@ -84,13 +84,28 @@ impl DockerRuntime {
         })
     }
 
-    pub fn cleanup(&mut self) {
+}
+
+impl Drop for DockerRuntime {
+    /// Best-effort RAII cleanup: kill the container and remove the run dir. Runs
+    /// at the end of every run — including the error path — so a failed run can
+    /// never leak a container or a workspace copy.
+    fn drop(&mut self) {
         let _ = Command::new("docker")
             .args(["rm", "-f", &self.container])
             .output();
         if let Some(run_dir) = self.host_work.parent() {
             let _ = std::fs::remove_dir_all(run_dir);
         }
+    }
+}
+
+/// Mints a fresh ephemeral Docker sandbox per run.
+pub struct DockerRuntimeFactory;
+
+impl RuntimeFactory for DockerRuntimeFactory {
+    fn prepare(&self, task: &TaskSpec, run_id: &str) -> Result<Box<dyn WorkspaceRuntime>> {
+        Ok(Box::new(DockerRuntime::prepare(task, run_id)?))
     }
 }
 

@@ -1,0 +1,21 @@
+[package]
+name = "glave-serve"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Glave serving layer — the user↔brain agent-run API (streamed)"
+
+[dependencies]
+glave-core.workspace = true
+glave-openrouter.workspace = true
+glave-docker.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+tokio.workspace = true
+axum.workspace = true
+tokio-stream.workspace = true
+
+[lints]
+workspace = true
