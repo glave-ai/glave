@@ -28,6 +28,14 @@ A remote adapter implementing the same port is the cloud split — no core chang
 - **Ephemeral.** Container + run dir destroyed after each task.
 - **No host shell injection.** `Command` arg arrays, not a host shell, carry model
   commands; they execute only inside the container via `docker exec sh -c`.
+- **File-path confinement.** Model-supplied paths (`read`/`create`/`str_replace`)
+  resolve through `safe_join`: relative + normal components only, and the closest
+  existing ancestor must canonicalize within the workspace — defeating `../`
+  traversal *and* symlink escape. (The file IO runs host-side, so this matters.)
+- **MCP trust.** Workspace-provided MCP config (`.glave/mcp.json`) is off unless
+  the operator sets `GLAVE_TRUST_WORKSPACE_MCP`, so an untrusted repo can't spawn
+  brain-side processes; spawned servers get a scrubbed env (no secrets leak in).
+  The trusted path is operator-supplied configs via `McpHub::from_configs`.
 
 ## Known gaps / roadmap (in priority order)
 
