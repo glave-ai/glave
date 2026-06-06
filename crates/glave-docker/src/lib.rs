@@ -5,8 +5,8 @@
 //! read-only, no network, resource-capped. A future Firecracker/remote adapter
 //! implements the same `WorkspaceRuntime` port without touching the core.
 
-use anyhow::{anyhow, Context, Result};
-use std::path::{Path, PathBuf};
+use anyhow::{anyhow, bail, Context, Result};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use glave_core::{ExecResult, RuntimeFactory, TaskSpec, WorkspaceRuntime};
@@ -111,16 +111,16 @@ impl RuntimeFactory for DockerRuntimeFactory {
 
 impl WorkspaceRuntime for DockerRuntime {
     fn read_file(&self, rel: &str) -> Result<String> {
-        let p = self.host_work.join(rel);
-        std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))
+        let p = safe_join(&self.host_work, rel)?;
+        std::fs::read_to_string(&p).with_context(|| format!("reading {rel}"))
     }
 
     fn write_file(&mut self, rel: &str, contents: &str) -> Result<()> {
-        let p = self.host_work.join(rel);
+        let p = safe_join(&self.host_work, rel)?;
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&p, contents).with_context(|| format!("writing {}", p.display()))
+        std::fs::write(&p, contents).with_context(|| format!("writing {rel}"))
     }
 
     fn list_files(&self) -> Result<Vec<String>> {
@@ -139,6 +139,50 @@ impl WorkspaceRuntime for DockerRuntime {
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         })
+    }
+}
+
+/// Resolve a model-supplied relative path strictly within `base`, defeating both
+/// path traversal and symlink escape. The model controls these paths, and the
+/// file IO runs in the trusted host process (not the container) — so without
+/// this, `../../.env` or a symlink planted via `<bash>` would read/write host
+/// files. `base` must already be canonical (it is: `prepare` canonicalizes it).
+///
+/// Rules: the path must be relative with only normal components (no `..`, no
+/// root/prefix), AND the closest existing ancestor of the resolved path must
+/// canonicalize to within `base` (this catches a symlink that points outside).
+fn safe_join(base: &Path, rel: &str) -> Result<PathBuf> {
+    let p = Path::new(rel);
+    if p.is_absolute() {
+        bail!("path must be relative, not '{rel}'");
+    }
+    for comp in p.components() {
+        if !matches!(comp, Component::Normal(_) | Component::CurDir) {
+            bail!("path may not contain '..' or absolute segments: '{rel}'");
+        }
+    }
+    let joined = base.join(p);
+    let resolved = closest_existing(&joined)
+        .canonicalize()
+        .with_context(|| format!("resolving path '{rel}'"))?;
+    if !resolved.starts_with(base) {
+        bail!("path '{rel}' escapes the workspace");
+    }
+    Ok(joined)
+}
+
+/// The deepest ancestor of `p` (or `p` itself) that exists on disk — so a
+/// not-yet-created file is validated against its real parent directory.
+fn closest_existing(p: &Path) -> PathBuf {
+    let mut cur = p;
+    loop {
+        if cur.exists() {
+            return cur.to_path_buf();
+        }
+        match cur.parent() {
+            Some(parent) => cur = parent,
+            None => return cur.to_path_buf(),
+        }
     }
 }
 
@@ -192,4 +236,58 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A unique, canonical temp dir to stand in for a run's `host_work`.
+    fn base(tag: &str) -> Result<PathBuf> {
+        let dir = std::env::temp_dir().join(format!("glave_safejoin_{}_{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir)?;
+        dir.canonicalize().map_err(Into::into)
+    }
+
+    #[test]
+    fn allows_normal_relative_paths() -> Result<()> {
+        let b = base("ok")?;
+        let p = safe_join(&b, "src/buf/buf_impl.rs")?;
+        assert!(p.starts_with(&b));
+        assert!(safe_join(&b, "Cargo.toml").is_ok());
+        let _ = std::fs::remove_dir_all(&b);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_parent_traversal() -> Result<()> {
+        let b = base("dotdot")?;
+        assert!(safe_join(&b, "../secret").is_err());
+        assert!(safe_join(&b, "../../.env").is_err());
+        assert!(safe_join(&b, "a/../../b").is_err());
+        let _ = std::fs::remove_dir_all(&b);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_absolute_paths() -> Result<()> {
+        let b = base("abs")?;
+        assert!(safe_join(&b, "/etc/passwd").is_err());
+        let _ = std::fs::remove_dir_all(&b);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_escape() -> Result<()> {
+        let b = base("symlink")?;
+        // Plant a symlink inside the workspace pointing outside it (the kind a
+        // model could create via `<bash> ln -s` through the bind mount).
+        std::os::unix::fs::symlink("/etc", b.join("escape"))?;
+        // Reading through it must be rejected — it canonicalizes outside `base`.
+        assert!(safe_join(&b, "escape/passwd").is_err());
+        let _ = std::fs::remove_dir_all(&b);
+        Ok(())
+    }
 }

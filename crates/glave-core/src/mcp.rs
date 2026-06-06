@@ -33,8 +33,18 @@ pub struct McpTool {
     pub description: String,
 }
 
-/// Read `.glave/mcp.json` from the workspace. Missing/invalid -> no servers.
+/// Read MCP server config from the workspace's `.glave/mcp.json`.
+///
+/// SECURITY: the workspace is untrusted — it can be an ingested or attacker-
+/// controlled repo. Spawning processes from a workspace-provided config is
+/// remote code execution on the trusted brain, so it is **off by default**;
+/// the operator must explicitly opt into trusting this workspace via
+/// `GLAVE_TRUST_WORKSPACE_MCP`. (Operator-sourced config — the proper model —
+/// arrives with the config/gateway work and bypasses this entirely.)
 pub fn load_config(rt: &dyn WorkspaceRuntime) -> Vec<McpServerConfig> {
+    if std::env::var("GLAVE_TRUST_WORKSPACE_MCP").is_err() {
+        return Vec::new();
+    }
     rt.read_file(".glave/mcp.json")
         .map(|raw| parse_config(&raw))
         .unwrap_or_default()
@@ -135,6 +145,10 @@ impl StdioTransport {
     pub fn spawn(cfg: &McpServerConfig) -> Result<Self> {
         let mut child = Command::new(&cfg.command)
             .args(&cfg.args)
+            // SECURITY: don't leak brain secrets (e.g. model API keys) into the
+            // server's environment — pass only a minimal env so it still resolves.
+            .env_clear()
+            .env("PATH", std::env::var("PATH").unwrap_or_default())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -204,15 +218,23 @@ pub struct McpHub {
 impl McpHub {
     /// Connect every server in `.glave/mcp.json`. A server that fails to spawn or
     /// handshake is skipped (logged), never fatal — MCP is opt-in.
+    /// Connect to whatever servers the (gated) workspace config names. Secure by
+    /// default: an untrusted workspace yields no servers (see [`load_config`]).
     #[must_use]
     pub fn connect(rt: &dyn WorkspaceRuntime) -> Self {
+        Self::from_configs(&load_config(rt))
+    }
+
+    /// Connect to an explicit, operator-trusted set of servers.
+    #[must_use]
+    pub fn from_configs(configs: &[McpServerConfig]) -> Self {
         let mut clients = Vec::new();
         let mut tools = Vec::new();
-        for cfg in load_config(rt) {
-            match Self::connect_one(&cfg) {
+        for cfg in configs {
+            match Self::connect_one(cfg) {
                 Ok((client, mut ts)) => {
                     tools.append(&mut ts);
-                    clients.push((cfg.name, client));
+                    clients.push((cfg.name.clone(), client));
                 }
                 Err(e) => eprintln!("MCP server {} unavailable: {e}", cfg.name),
             }
@@ -419,16 +441,16 @@ for line in sys.stdin:
 "#;
 
     #[test]
-    fn hub_connects_lists_and_calls_via_config() -> Result<()> {
-        use crate::testkit::InMemoryRuntime;
+    fn hub_connects_lists_and_calls_from_configs() -> Result<()> {
         let path = std::env::temp_dir().join(format!("glave_mcp_hub_{}.py", std::process::id()));
         std::fs::write(&path, MOCK_SERVER)?;
-        let p = path.to_string_lossy();
-        let json_cfg =
-            format!(r#"{{"servers":{{"mock":{{"command":"python3","args":["{p}"]}}}}}}"#);
-        let rt = InMemoryRuntime::new().with_file(".glave/mcp.json", &json_cfg);
+        let cfg = McpServerConfig {
+            name: "mock".to_string(),
+            command: "python3".to_string(),
+            args: vec![path.to_string_lossy().into_owned()],
+        };
 
-        let mut hub = McpHub::connect(&rt);
+        let mut hub = McpHub::from_configs(std::slice::from_ref(&cfg));
         if hub.is_empty() {
             eprintln!("skipping MCP hub test: python3 unavailable");
             let _ = std::fs::remove_file(&path);
@@ -439,5 +461,15 @@ for line in sys.stdin:
         assert!(out.contains("echo:"), "hub call: {out}");
         let _ = std::fs::remove_file(&path);
         Ok(())
+    }
+
+    #[test]
+    fn load_config_ignores_untrusted_workspace_by_default() {
+        use crate::testkit::InMemoryRuntime;
+        // No GLAVE_TRUST_WORKSPACE_MCP is set in tests, so a workspace-provided
+        // (potentially malicious) config must be ignored — no RCE by default.
+        let rt = InMemoryRuntime::new()
+            .with_file(".glave/mcp.json", r#"{"servers":{"x":{"command":"evil"}}}"#);
+        assert!(load_config(&rt).is_empty());
     }
 }
