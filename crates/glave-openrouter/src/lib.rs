@@ -10,7 +10,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 
-use glave_core::{Completion, Message, ModelProvider, ProviderFactory};
+use glave_core::{tool_specs, Completion, Message, ModelProvider, ProviderFactory, ToolCallRequest};
 
 /// Reasoning effort: "high" | "medium" | "low" | "off". Default high.
 pub fn reasoning_effort() -> String {
@@ -63,15 +63,27 @@ impl OpenRouterProvider {
     }
 
     fn request_body(&self, messages: &[Message]) -> Value {
-        let msgs: Vec<Value> = messages
-            .iter()
-            .map(|m| json!({"role": m.role, "content": m.content}))
+        let msgs: Vec<Value> = messages.iter().map(message_json).collect();
+        let tools: Vec<Value> = tool_specs()
+            .into_iter()
+            .map(|s| {
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": s.name,
+                        "description": s.description,
+                        "parameters": s.parameters,
+                    }
+                })
+            })
             .collect();
         let mut body = json!({
             "model": self.model,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "messages": msgs,
+            "tools": tools,
+            "tool_choice": "auto",
             "usage": { "include": true },
         });
         let reasoning_on = !matches!(self.reasoning.as_str(), "off" | "none" | "");
@@ -114,11 +126,58 @@ fn retry_after(resp: &ureq::Response) -> Option<Duration> {
         .map(Duration::from_secs)
 }
 
+/// Serialize a `Message` into the OpenAI chat shape, carrying the native
+/// tool-calling envelope: an assistant turn with `tool_calls`, or a `tool`-role
+/// result keyed by `tool_call_id`, or a plain message.
+fn message_json(m: &Message) -> Value {
+    if !m.tool_calls.is_empty() {
+        let calls: Vec<Value> = m
+            .tool_calls
+            .iter()
+            .map(|tc| {
+                json!({
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.name, "arguments": tc.arguments}
+                })
+            })
+            .collect();
+        return json!({"role": m.role, "content": m.content, "tool_calls": calls});
+    }
+    if let Some(id) = &m.tool_call_id {
+        return json!({"role": m.role, "content": m.content, "tool_call_id": id});
+    }
+    json!({"role": m.role, "content": m.content})
+}
+
+/// Extract the structured `tool_calls` from a response message.
+fn parse_tool_calls(v: &Value) -> Vec<ToolCallRequest> {
+    let Some(arr) = v.pointer("/choices/0/message/tool_calls").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|tc| {
+            let id = tc.get("id").and_then(Value::as_str)?;
+            let name = tc.pointer("/function/name").and_then(Value::as_str)?;
+            let args = tc
+                .pointer("/function/arguments")
+                .and_then(Value::as_str)
+                .unwrap_or("{}");
+            Some(ToolCallRequest {
+                id: id.to_string(),
+                name: name.to_string(),
+                arguments: args.to_string(),
+            })
+        })
+        .collect()
+}
+
 /// Parse an OpenRouter chat-completion response into a `Completion`.
 fn parse_completion(v: &Value, fallback_model: &str) -> Result<Completion> {
     let str_at = |ptr: &str| v.pointer(ptr).and_then(Value::as_str);
     let u64_at = |ptr: &str| v.pointer(ptr).and_then(Value::as_u64).unwrap_or(0);
 
+    let tool_calls = parse_tool_calls(v);
     let content = str_at("/choices/0/message/content").unwrap_or("");
     let reasoning_text = str_at("/choices/0/message/reasoning").unwrap_or("");
     let content = if content.trim().is_empty() {
@@ -126,15 +185,13 @@ fn parse_completion(v: &Value, fallback_model: &str) -> Result<Completion> {
     } else {
         content
     };
-    if content.trim().is_empty() {
-        bail!("empty completion (no content or reasoning): {v}");
+    if content.trim().is_empty() && tool_calls.is_empty() {
+        bail!("empty completion (no content, reasoning, or tool calls): {v}");
     }
 
     Ok(Completion {
         content: content.to_string(),
-        // Parsing of native `tool_calls` from the response is wired in the
-        // integration step; for now the harness still drives via text tags.
-        tool_calls: Vec::new(),
+        tool_calls,
         prompt_tokens: u64_at("/usage/prompt_tokens"),
         completion_tokens: u64_at("/usage/completion_tokens"),
         reasoning_tokens: u64_at("/usage/completion_tokens_details/reasoning_tokens"),
@@ -290,5 +347,62 @@ mod tests {
     fn parse_completion_errors_on_empty() {
         let empty = json!({"choices": [{"message": {"content": ""}}]});
         assert!(parse_completion(&empty, "m").is_err());
+    }
+
+    #[test]
+    fn message_json_serializes_the_three_shapes() {
+        let asst = Message::assistant_with_tool_calls(
+            "",
+            vec![ToolCallRequest {
+                id: "call_1".to_string(),
+                name: "bash".to_string(),
+                arguments: r#"{"cmd":"ls"}"#.to_string(),
+            }],
+        );
+        let at = |v: &Value, p: &str| v.pointer(p).and_then(Value::as_str).map(String::from);
+        let v = message_json(&asst);
+        assert_eq!(at(&v, "/role").as_deref(), Some("assistant"));
+        assert_eq!(at(&v, "/tool_calls/0/id").as_deref(), Some("call_1"));
+        assert_eq!(at(&v, "/tool_calls/0/type").as_deref(), Some("function"));
+        assert_eq!(at(&v, "/tool_calls/0/function/name").as_deref(), Some("bash"));
+
+        let res = message_json(&Message::tool_result("call_1", "files..."));
+        assert_eq!(at(&res, "/role").as_deref(), Some("tool"));
+        assert_eq!(at(&res, "/tool_call_id").as_deref(), Some("call_1"));
+        assert_eq!(at(&res, "/content").as_deref(), Some("files..."));
+
+        let plain = message_json(&Message::new("user", "hi"));
+        assert_eq!(at(&plain, "/role").as_deref(), Some("user"));
+        assert!(plain.get("tool_calls").is_none());
+        assert!(plain.get("tool_call_id").is_none());
+    }
+
+    #[test]
+    fn parse_tool_calls_reads_structured_calls() {
+        let v = json!({
+            "choices": [{"message": {"content": null, "tool_calls": [
+                {"id": "call_9", "type": "function",
+                 "function": {"name": "read", "arguments": "{\"path\":\"a.rs\"}"}}
+            ]}}]
+        });
+        let calls = parse_tool_calls(&v);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls.first().map(|c| c.id.as_str()), Some("call_9"));
+        assert_eq!(calls.first().map(|c| c.name.as_str()), Some("read"));
+        assert_eq!(calls.first().map(|c| c.arguments.as_str()), Some(r#"{"path":"a.rs"}"#));
+    }
+
+    #[test]
+    fn parse_completion_accepts_tool_calls_with_empty_content() -> Result<()> {
+        let v = json!({
+            "model": "m",
+            "choices": [{"message": {"content": "", "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "submit", "arguments": "{}"}}
+            ]}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1}
+        });
+        let c = parse_completion(&v, "m")?;
+        assert_eq!(c.tool_calls.len(), 1); // empty content OK when tool_calls present
+        Ok(())
     }
 }

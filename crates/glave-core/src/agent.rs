@@ -130,14 +130,25 @@ impl ModelAgent {
         let mut viewed = BTreeSet::new();
         for _ in 0..self.sub_turns {
             let c = self.provider.complete(&messages)?;
-            messages.push(Message::new("assistant", c.content.clone()));
-            match tools::parse(&c.content) {
-                Some(call) if subagent_tool_allowed(&call, &allow) => {
-                    let obs = tools::execute(&call, rt, task, &mut viewed)?;
-                    messages.push(Message::new("user", obs));
-                }
-                // No tool (or a disallowed/edit attempt): the content is the answer.
-                _ => return Ok(c.content.trim().to_string()),
+            // No tool calls: the content is the subagent's answer.
+            if c.tool_calls.is_empty() {
+                return Ok(c.content.trim().to_string());
+            }
+            messages.push(Message::assistant_with_tool_calls(
+                c.content.clone(),
+                c.tool_calls.clone(),
+            ));
+            for tc in &c.tool_calls {
+                let obs = match ToolCall::from_call(&tc.name, &tc.arguments) {
+                    Ok(call) if subagent_tool_allowed(&call, &allow) => {
+                        tools::execute(&call, rt, task, &mut viewed)?
+                    }
+                    Ok(_) => {
+                        "ERROR: subagents are read-only — use read, grep, or glob only".to_string()
+                    }
+                    Err(e) => format!("ERROR: invalid arguments: {e}"),
+                };
+                messages.push(Message::tool_result(tc.id.clone(), obs));
             }
         }
         Ok("(subagent reached its turn budget without concluding)".to_string())
@@ -160,9 +171,9 @@ fn subagent_tool_allowed(call: &ToolCall, allow: &[String]) -> bool {
 }
 
 fn subagent_system() -> String {
-    "You are a research subagent. Investigate the question using <read .../>, \
-     <grep .../>, and <glob .../> ONLY — you cannot edit files or run tests. When \
-     you have the answer, reply with a concise summary and NO tool tag."
+    "You are a research subagent. Investigate the question using the read, grep, and \
+     glob tools ONLY — you cannot edit files or run tests. When you have the answer, \
+     reply with a concise summary and no further tool calls."
         .to_string()
 }
 
@@ -184,7 +195,10 @@ fn compact_to_fit(messages: &mut [Message], current_tokens: u64, target_tokens: 
         if over == 0 {
             break;
         }
-        if m.role == "user" && m.content != ELIDED {
+        // Elide tool-result *content* (the big observations). Content-elision keeps
+        // the message — and its tool_call_id — so the assistant→tool pairing the
+        // API requires is never broken. (Removing messages would be; we don't.)
+        if m.role == "tool" && m.content != ELIDED {
             let freed = u64::try_from(m.content.len()).unwrap_or(u64::MAX) / 4; // ~chars per token
             m.content = ELIDED.to_string();
             over = over.saturating_sub(freed);
@@ -201,6 +215,7 @@ fn env_parse<T: std::str::FromStr>(key: &str, default: T) -> T {
 }
 
 impl Agent for ModelAgent {
+    #[allow(clippy::too_many_lines)] // the turn loop's inline tool dispatch reads best as one unit
     fn act(
         &mut self,
         rt: &mut dyn WorkspaceRuntime,
@@ -221,60 +236,87 @@ impl Agent for ModelAgent {
         let mut total_completion = 0u64;
         let mut total_cost = 0.0f64;
 
-        for turn in 1..=self.max_turns {
+        'outer: for turn in 1..=self.max_turns {
             let c = self.provider.complete(&messages)?;
             total_prompt += c.prompt_tokens;
             total_completion += c.completion_tokens;
             total_cost += c.cost_usd;
             trace.emit(RunEvent::model_turn(run_id, turn, &c))?;
-            messages.push(Message::new("assistant", c.content.clone()));
 
-            match tools::parse(&c.content) {
-                None => messages.push(Message::new("user", help_text())),
-                Some(ToolCall::Submit) => {
-                    trace.emit(RunEvent::agent_action(run_id, "submit", None, None))?;
-                    break;
+            if c.tool_calls.is_empty() {
+                // No action taken — keep the text and nudge toward a tool / submit.
+                messages.push(Message::new("assistant", c.content.clone()));
+                messages.push(Message::new("user", help_text()));
+            } else {
+                // Append the assistant turn carrying the calls, then a tool result
+                // for EACH call — the API requires every tool_call_id be answered.
+                messages.push(Message::assistant_with_tool_calls(
+                    c.content.clone(),
+                    c.tool_calls.clone(),
+                ));
+                for tc in &c.tool_calls {
+                    let obs = match ToolCall::from_call(&tc.name, &tc.arguments) {
+                        Ok(ToolCall::Submit) => {
+                            trace.emit(RunEvent::agent_action(run_id, "submit", None, None))?;
+                            break 'outer;
+                        }
+                        Ok(ToolCall::Subagent { name, task: subtask }) => {
+                            let summary = self.run_subagent(rt, task, name.as_deref(), &subtask)?;
+                            trace.emit(RunEvent::agent_action(
+                                run_id,
+                                "subagent",
+                                name.clone(),
+                                Some(subtask.clone()),
+                            ))?;
+                            format!("SUBAGENT RESULT:\n{summary}")
+                        }
+                        Ok(ToolCall::Mcp { server, tool, args }) => {
+                            let parsed: Value = serde_json::from_str(&args).unwrap_or(Value::Null);
+                            let result = mcp
+                                .call(&server, &tool, &parsed)
+                                .unwrap_or_else(|e| format!("MCP ERROR: {e}"));
+                            trace.emit(RunEvent::agent_action(
+                                run_id,
+                                "mcp",
+                                Some(format!("{server}/{tool}")),
+                                None,
+                            ))?;
+                            result
+                        }
+                        Ok(call) => match self.policy.decide(&call) {
+                            // Autonomous eval: Ask is treated as Deny — zero HIL.
+                            Decision::Deny(reason) | Decision::Ask(reason) => {
+                                trace.emit(RunEvent::agent_action(
+                                    run_id,
+                                    "denied",
+                                    call.path(),
+                                    Some(reason.clone()),
+                                ))?;
+                                format!("DENIED: {reason}")
+                            }
+                            Decision::Allow => {
+                                let result = tools::execute(&call, rt, task, &mut viewed)?;
+                                trace.emit(RunEvent::agent_action(
+                                    run_id,
+                                    call.name(),
+                                    call.path(),
+                                    None,
+                                ))?;
+                                result
+                            }
+                        },
+                        Err(e) => {
+                            trace.emit(RunEvent::agent_action(
+                                run_id,
+                                "invalid_args",
+                                Some(tc.name.clone()),
+                                Some(e.to_string()),
+                            ))?;
+                            format!("ERROR: invalid arguments for tool '{}': {e}", tc.name)
+                        }
+                    };
+                    messages.push(Message::tool_result(tc.id.clone(), obs));
                 }
-                Some(ToolCall::Subagent { name, task: subtask }) => {
-                    let summary = self.run_subagent(rt, task, name.as_deref(), &subtask)?;
-                    trace.emit(RunEvent::agent_action(
-                        run_id,
-                        "subagent",
-                        name.clone(),
-                        Some(subtask.clone()),
-                    ))?;
-                    messages.push(Message::new("user", format!("SUBAGENT RESULT:\n{summary}")));
-                }
-                Some(ToolCall::Mcp { server, tool, args }) => {
-                    let parsed: Value = serde_json::from_str(&args).unwrap_or(Value::Null);
-                    let obs = mcp
-                        .call(&server, &tool, &parsed)
-                        .unwrap_or_else(|e| format!("MCP ERROR: {e}"));
-                    trace.emit(RunEvent::agent_action(
-                        run_id,
-                        "mcp",
-                        Some(format!("{server}/{tool}")),
-                        None,
-                    ))?;
-                    messages.push(Message::new("user", obs));
-                }
-                Some(call) => match self.policy.decide(&call) {
-                    // Autonomous eval: Ask is treated as Deny — zero HIL.
-                    Decision::Deny(reason) | Decision::Ask(reason) => {
-                        trace.emit(RunEvent::agent_action(
-                            run_id,
-                            "denied",
-                            call.path(),
-                            Some(reason.clone()),
-                        ))?;
-                        messages.push(Message::new("user", format!("DENIED: {reason}")));
-                    }
-                    Decision::Allow => {
-                        let obs = tools::execute(&call, rt, task, &mut viewed)?;
-                        trace.emit(RunEvent::agent_action(run_id, call.name(), call.path(), None))?;
-                        messages.push(Message::new("user", obs));
-                    }
-                },
             }
 
             // Compaction: fire only as the real context (qwen ~128k) nears the
@@ -396,24 +438,19 @@ fn oneshot_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
 
 fn system_prompt() -> String {
     "You are a coding agent. Fix the workspace so the failing test passes without \
-     breaking the previously-passing tests. Respond with EXACTLY ONE action per \
-     message, using these tags:\n\
-     - <read path=\"FILE\"/> or <read path=\"FILE\" offset=\"N\" limit=\"M\"/> — read a file with line numbers (bounded by default; offset = first line, limit = max lines)\n\
-     - <str_replace path=\"FILE\"><search>\\nEXACT EXISTING TEXT\\n</search><replace>\\nNEW TEXT\\n</replace></str_replace> — replace an exact, unique snippet (read the file first)\n\
-     - <create path=\"FILE\">\\nFULL CONTENT\\n</create> — create or overwrite a file\n\
-     - <bash>COMMAND</bash> — run a shell command (build, delete files, …)\n\
-     - <grep pattern=\"REGEX\"/> or <grep pattern=\"REGEX\" glob=\"*.go\"/> — search file contents (git-aware)\n\
-     - <glob pattern=\"GLOB\"/> — find files by name (git-aware)\n\
-     - <run_tests/> — run the tests and see the result\n\
-     - <subagent name=\"TYPE\">QUESTION</subagent> (or <subagent>QUESTION</subagent>) — delegate to a research subagent: a named type (listed under SUBAGENT TYPES) or the default read-only researcher; only its summary returns to you (keeps your context lean)\n\
-     - <submit/> — when the failing test passes\n\
-     Only edit files within the workspace. Read a file before editing it. Keep changes minimal."
+     breaking the previously-passing tests. Use the provided tools to read, search, \
+     edit files, run shell commands, and run the tests. Read a file before editing \
+     it; keep changes minimal and confined to the workspace. Call `run_tests` to \
+     check your work, and call `submit` once the failing test passes. You may \
+     delegate focused investigation to the `subagent` tool — only its summary \
+     returns to you, keeping your context lean. You may issue several tool calls in \
+     one turn when they are independent."
         .to_string()
 }
 
 fn help_text() -> String {
-    "No valid action found. Respond with exactly one of: <read .../>, \
-     <str_replace ...>, <create ...>, <bash>...</bash>, <run_tests/>, <submit/>."
+    "No tool call in your last message. Call a tool to act on the workspace, or call \
+     `submit` once the failing test passes."
         .to_string()
 }
 
@@ -449,14 +486,14 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
 
     let agents = capability::load_agents(rt);
     if !agents.is_empty() {
-        out.push_str("SUBAGENT TYPES (delegate with <subagent name=\"NAME\">task</subagent>):\n");
+        out.push_str("SUBAGENT TYPES (delegate via the subagent tool's `name`):\n");
         for a in &agents {
             out.push_str(&format!("- {} — {}\n", a.name, a.description));
         }
         out.push('\n');
     }
 
-    out.push_str("Workspace files (use <read> to read them, <grep>/<glob> to navigate):\n");
+    out.push_str("Workspace files (use read to open them, grep/glob to navigate):\n");
     let mut files = rt.list_files()?;
     files.sort();
     for f in files.iter().take(FILE_CAP) {
@@ -465,7 +502,7 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
     let extra = files.len().saturating_sub(FILE_CAP);
     if extra > 0 {
         out.push_str(&format!(
-            "- … (+{extra} more files; use <glob>/<grep> to find what you need)\n"
+            "- … (+{extra} more files; use glob/grep to find what you need)\n"
         ));
     }
 
@@ -539,9 +576,9 @@ mod tests {
 
     #[test]
     fn model_agent_creates_then_submits() -> Result<()> {
-        let provider = Box::new(InMemoryProvider::new(vec![
-            "<create path=\"solver.py\">\nFIXED\n</create>",
-            "<submit/>",
+        let provider = Box::new(InMemoryProvider::with_tool_calls(vec![
+            vec![("create", r#"{"path":"solver.py","content":"FIXED"}"#)],
+            vec![("submit", "{}")],
         ]));
         let policy = Box::new(AutonomousPolicy::new(&[]));
         let mut agent = ModelAgent::new(provider, policy);
@@ -563,9 +600,9 @@ mod tests {
     #[test]
     fn edit_outside_editable_surface_is_denied() -> Result<()> {
         // str_replace on a file outside the editable surface must be denied.
-        let provider = Box::new(InMemoryProvider::new(vec![
-            "<str_replace path=\"secret.py\"><search>\na\n</search><replace>\nb\n</replace></str_replace>",
-            "<submit/>",
+        let provider = Box::new(InMemoryProvider::with_tool_calls(vec![
+            vec![("str_replace", r#"{"path":"secret.py","old":"a","new":"b"}"#)],
+            vec![("submit", "{}")],
         ]));
         let policy = Box::new(AutonomousPolicy::new(&["solver.py".to_string()]));
         let mut agent = ModelAgent::new(provider, policy);
@@ -679,21 +716,20 @@ mod tests {
         Ok(())
     }
 
-    /// [system, task, (assistant, sized-observation) × n]. Each observation is
-    /// `obs_chars` long (~obs_chars/4 estimated tokens).
+    /// [system, task, (assistant, sized tool-observation) × n]. Each observation
+    /// is `obs_chars` long (~obs_chars/4 estimated tokens).
     fn sized_convo(n: usize, obs_chars: usize) -> Vec<Message> {
         let mut m = vec![Message::new("system", "S"), Message::new("user", "TASK")];
         for i in 0..n {
             m.push(Message::new("assistant", format!("act{i}")));
-            m.push(Message::new("user", "x".repeat(obs_chars)));
+            m.push(Message::tool_result(format!("c{i}"), "x".repeat(obs_chars)));
         }
         m
     }
 
     fn obs_elided(m: &[Message]) -> Vec<bool> {
         m.iter()
-            .filter(|x| x.role == "user")
-            .skip(1) // skip the task message
+            .filter(|x| x.role == "tool")
             .map(|x| x.content == ELIDED)
             .collect()
     }
@@ -736,11 +772,11 @@ mod tests {
     #[test]
     fn subagent_runs_then_main_submits() -> Result<()> {
         // main spawns a subagent; sub reads then answers; main submits.
-        let provider = Box::new(InMemoryProvider::new(vec![
-            "<subagent>where is the bug?</subagent>",
-            "<read path=\"src/main.rs\"/>",
-            "The bug is on line 1.",
-            "<submit/>",
+        let provider = Box::new(InMemoryProvider::with_tool_calls(vec![
+            vec![("subagent", r#"{"task":"where is the bug?"}"#)], // main: spawn
+            vec![("read", r#"{"path":"src/main.rs"}"#)],           // sub: read
+            vec![],                                                // sub: no call -> answer
+            vec![("submit", "{}")],                                // main: submit
         ]));
         let policy = Box::new(AutonomousPolicy::new(&["src/main.rs".to_string()]));
         let mut agent = ModelAgent::new(provider, policy);
@@ -758,10 +794,11 @@ mod tests {
     #[test]
     fn subagent_cannot_edit_the_workspace() -> Result<()> {
         // The subagent attempts a str_replace; it must not change the file.
-        let provider = Box::new(InMemoryProvider::new(vec![
-            "<subagent>fix it yourself</subagent>",
-            "<str_replace path=\"src/main.rs\"><search>\nBUG\n</search><replace>\nFIXED\n</replace></str_replace>",
-            "<submit/>",
+        let provider = Box::new(InMemoryProvider::with_tool_calls(vec![
+            vec![("subagent", r#"{"task":"fix it yourself"}"#)], // main: spawn
+            vec![("str_replace", r#"{"path":"src/main.rs","old":"BUG","new":"FIXED"}"#)], // sub: tries to edit (blocked)
+            vec![],                                              // sub: gives up
+            vec![("submit", "{}")],                              // main: submit
         ]));
         let policy = Box::new(AutonomousPolicy::new(&["src/main.rs".to_string()]));
         let mut agent = ModelAgent::new(provider, policy);
@@ -794,11 +831,11 @@ mod tests {
 
     #[test]
     fn named_subagent_type_runs() -> Result<()> {
-        let provider = Box::new(InMemoryProvider::new(vec![
-            "<subagent name=\"explorer\">where?</subagent>",
-            "<read path=\"src/main.rs\"/>",
-            "It is in main.",
-            "<submit/>",
+        let provider = Box::new(InMemoryProvider::with_tool_calls(vec![
+            vec![("subagent", r#"{"name":"explorer","task":"where?"}"#)], // main: named subagent
+            vec![("read", r#"{"path":"src/main.rs"}"#)],                  // sub: read
+            vec![],                                                       // sub: answer
+            vec![("submit", "{}")],                                       // main: submit
         ]));
         let policy = Box::new(AutonomousPolicy::new(&["src/main.rs".to_string()]));
         let mut agent = ModelAgent::new(provider, policy);
@@ -818,9 +855,9 @@ mod tests {
 
     #[test]
     fn unknown_subagent_type_does_not_crash() -> Result<()> {
-        let provider = Box::new(InMemoryProvider::new(vec![
-            "<subagent name=\"ghost\">do it</subagent>",
-            "<submit/>",
+        let provider = Box::new(InMemoryProvider::with_tool_calls(vec![
+            vec![("subagent", r#"{"name":"ghost","task":"do it"}"#)], // unknown type -> early error, no sub turn
+            vec![("submit", "{}")],                                   // main: submit
         ]));
         let policy = Box::new(AutonomousPolicy::new(&[]));
         let mut agent = ModelAgent::new(provider, policy);
