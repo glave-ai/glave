@@ -219,7 +219,6 @@ fn task_toml(
 language = "{lang_name}"
 archetype = "real-issue"
 difficulty = "high"
-codebase_size = "medium"
 editable_surface = {editable}
 statement = '''
 {statement}

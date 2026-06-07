@@ -142,12 +142,12 @@ fn message_json(m: &Message) -> Value {
                 })
             })
             .collect();
-        return json!({"role": m.role, "content": m.content, "tool_calls": calls});
+        return json!({"role": m.role.as_str(), "content": m.content, "tool_calls": calls});
     }
     if let Some(id) = &m.tool_call_id {
-        return json!({"role": m.role, "content": m.content, "tool_call_id": id});
+        return json!({"role": m.role.as_str(), "content": m.content, "tool_call_id": id});
     }
-    json!({"role": m.role, "content": m.content})
+    json!({"role": m.role.as_str(), "content": m.content})
 }
 
 /// Extract the structured `tool_calls` from a response message.
@@ -373,7 +373,7 @@ mod tests {
         assert_eq!(at(&res, "/tool_call_id").as_deref(), Some("call_1"));
         assert_eq!(at(&res, "/content").as_deref(), Some("files..."));
 
-        let plain = message_json(&Message::new("user", "hi"));
+        let plain = message_json(&Message::user("hi"));
         assert_eq!(at(&plain, "/role").as_deref(), Some("user"));
         assert!(plain.get("tool_calls").is_none());
         assert!(plain.get("tool_call_id").is_none());

@@ -11,17 +11,11 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)] // data contract: fields consumed across later phases
 pub struct TaskSpec {
     pub id: String,
     pub language: String,
     pub archetype: String,
     pub difficulty: String,
-    /// Codebase size tier (small/medium/large) — navigation/context load,
-    /// roughly orthogonal to logical difficulty. Recorded so the scorecard can
-    /// break results down by size.
-    #[serde(default = "default_size")]
-    pub codebase_size: String,
     /// Problem statement (issue text) for ingested real-world tasks. When set,
     /// it's shown to the agent as the spec (the oracle test is held). Empty for
     /// authored tasks, which show their oracle tests as the spec.
@@ -32,8 +26,6 @@ pub struct TaskSpec {
     #[serde(default)]
     pub editable_surface: Vec<String>,
 
-    #[serde(default)]
-    pub provenance: Provenance,
     pub image: Image,
     pub oracle: Oracle,
     #[serde(default)]
@@ -42,17 +34,6 @@ pub struct TaskSpec {
     /// Filled in at load time; not part of the TOML.
     #[serde(skip)]
     pub dir: PathBuf,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-#[allow(dead_code)] // provenance/calibration consumed by the eval scorer later
-pub struct Provenance {
-    #[serde(default)]
-    pub source: String,
-    #[serde(default)]
-    pub contamination: String,
-    #[serde(default)]
-    pub calibration: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -64,10 +45,6 @@ pub struct Image {
 
 fn default_workdir() -> String {
     "/work".to_string()
-}
-
-fn default_size() -> String {
-    "small".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -83,7 +60,6 @@ pub struct Oracle {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[allow(dead_code)] // measured_peak_mb consumed by the parallel scheduler later
 pub struct Resource {
     #[serde(default = "default_mem")]
     pub mem_mb: u64,
@@ -93,8 +69,6 @@ pub struct Resource {
     pub pids: u64,
     #[serde(default = "default_network")]
     pub network: String,
-    #[serde(default)]
-    pub measured_peak_mb: Option<u64>,
 }
 
 impl Default for Resource {
@@ -104,7 +78,6 @@ impl Default for Resource {
             cpus: default_cpus(),
             pids: default_pids(),
             network: default_network(),
-            measured_peak_mb: None,
         }
     }
 }

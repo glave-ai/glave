@@ -8,7 +8,6 @@ use anyhow::Result;
 use crate::ports::WorkspaceRuntime;
 use crate::task::TaskSpec;
 
-#[allow(dead_code)] // p2p_output surfaced in richer failure traces later
 pub struct Verdict {
     pub fail_to_pass_ok: bool,
     pub pass_to_pass_ok: bool,
@@ -16,22 +15,17 @@ pub struct Verdict {
     pub f2p_exit: i32,
     pub p2p_exit: Option<i32>,
     pub f2p_output: String,
-    pub p2p_output: Option<String>,
 }
 
 pub fn evaluate(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<Verdict> {
     let f2p = rt.run(&task.oracle.fail_to_pass)?;
     let fail_to_pass_ok = f2p.exit_code == 0;
 
-    let (pass_to_pass_ok, p2p_exit, p2p_output) = match &task.oracle.pass_to_pass {
-        None => (true, None, None),
+    let (pass_to_pass_ok, p2p_exit) = match &task.oracle.pass_to_pass {
+        None => (true, None),
         Some(cmd) => {
             let r = rt.run(cmd)?;
-            (
-                r.exit_code == 0,
-                Some(r.exit_code),
-                Some(merge(&r.stdout, &r.stderr)),
-            )
+            (r.exit_code == 0, Some(r.exit_code))
         }
     };
 
@@ -42,7 +36,6 @@ pub fn evaluate(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<Verdict> {
         f2p_exit: f2p.exit_code,
         p2p_exit,
         f2p_output: merge(&f2p.stdout, &f2p.stderr),
-        p2p_output,
     })
 }
 
