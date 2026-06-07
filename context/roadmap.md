@@ -133,3 +133,33 @@ each is coupled to a larger piece, not a standalone fix:
   for now. Going to a DB/object store is a `TraceSink` adapter, not a brain change
   — it belongs with the **commercial layer** (where per-tenant metering lives),
   not before the product that needs it.
+- **Native search (drop `rg` from images)** — `grep`/`glob` currently shell out
+  to `rg` in the sandbox, so the base images carry ripgrep. Move them to native
+  Rust via ripgrep's own crates (`grep`, `ignore`, `globset`) as a
+  `WorkspaceRuntime` op that searches where the files live (Docker: the host
+  bind-mount; local-client: locally) and returns only matches. Owned,
+  network-efficient, runtime-agnostic, and it lets us drop `rg` from all images.
+  **Bundle with the local-client build** (same crate code runs client-side).
+
+## Next up: prove the thesis (the measurement)
+
+Everything is staged; this is the next focused effort (a multi-hour curation +
+validation grind — deserves fresh focus):
+
+- **Decided:** frontier baseline = **Opus 4.8, high reasoning** via OpenRouter
+  (`anthropic/claude-opus-4.8`; both legs run the same harness at the same
+  reasoning — fair armed-vs-armed; the Opus leg is the real $ cost).
+- **Task bar:** real, recent (2026, non-contaminated) merged PRs from established
+  real-usage repos, with a held test, contained — **weighted to everyday work**
+  (Django bug / React component / script level), a *few* harder for spread. NOT
+  skewed hard (over-taxing difficulty understates the pitch). No toy/AI-slop repos.
+- **Languages:** all 4 (Python, Go, Rust, TypeScript) — ingest now supports them;
+  base images built (rust 1.44GB, ts 485MB, python 384MB; go builds on demand).
+- **Sequence:** (1) VALIDATE py/ts gating end-to-end first — the `derive`/`vendor`
+  logic (pytest oracle, in-container venv, npm install) is unverified until a real
+  task gates; expect dep-iteration. (2) Curate ~10 tasks (spread, 4 langs),
+  validate-gate each (noop fails / solve passes — zero-HIL). (3) `glave score
+  <tasks> --baseline anthropic/claude-opus-4.8 --trials 1-2` → the `$/correct`.
+- **Disk-safe:** bounded base images; per-task vendored deps cleanable; containers
+  `rm -f -v` (no leftovers). Clean: `docker rm -fv $(docker ps -aq --filter
+  name=glave) 2>/dev/null; rm -rf .runs .ingest`.
