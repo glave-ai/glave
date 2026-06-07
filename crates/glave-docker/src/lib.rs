@@ -94,8 +94,10 @@ impl Drop for DockerRuntime {
     /// at the end of every run — including the error path — so a failed run can
     /// never leak a container or a workspace copy.
     fn drop(&mut self) {
+        // -v also reaps any anonymous volume, so a run leaves nothing behind
+        // (we bind-mount rather than use volumes, but this guarantees it).
         let _ = Command::new("docker")
-            .args(["rm", "-f", &self.container])
+            .args(["rm", "-f", "-v", &self.container])
             .output();
         if let Some(run_dir) = self.host_work.parent() {
             let _ = std::fs::remove_dir_all(run_dir);
