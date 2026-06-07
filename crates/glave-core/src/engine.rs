@@ -11,7 +11,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use serde::Serialize;
 
-use crate::agent::{Agent, ModelAgent, NoopAgent, OneShotAgent, SolveAgent};
+use crate::agent::{Agent, ModelAgent, NoopAgent, SolveAgent};
 use crate::event::RunEvent;
 use crate::policy::AutonomousPolicy;
 use crate::ports::{ProviderFactory, RuntimeFactory, TraceSink};
@@ -23,8 +23,6 @@ use crate::task::TaskSpec;
 pub enum AgentSpec {
     /// The full harnessed agent on the given model — the product path.
     Model { model: String },
-    /// The no-tools one-shot probe — a control, not a fair baseline.
-    OneShot { model: String },
     /// Stub: apply the reference solution (for the oracle discrimination check).
     Solve,
     /// Stub: change nothing (for the oracle discrimination check).
@@ -104,10 +102,6 @@ impl RunEngine {
                 let provider = self.providers.create(model)?;
                 let policy = Box::new(AutonomousPolicy::new(&task.editable_surface));
                 (Box::new(ModelAgent::new(provider, policy)), format!("model:{model}"))
-            }
-            AgentSpec::OneShot { model } => {
-                let provider = self.providers.create(model)?;
-                (Box::new(OneShotAgent::new(provider)), format!("bare:{model}"))
             }
             AgentSpec::Solve => (Box::new(SolveAgent), "stub:solve".to_string()),
             AgentSpec::Noop => (Box::new(NoopAgent), "stub:noop".to_string()),

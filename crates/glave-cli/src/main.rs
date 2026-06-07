@@ -78,9 +78,6 @@ enum Cmd {
         /// Frontier model to compare against, run in the SAME harness.
         #[arg(long)]
         baseline: Option<String>,
-        /// Also run the no-tools one-shot probe (a control, not a fair baseline).
-        #[arg(long)]
-        with_bare: bool,
         /// Trials per task — solve-rate over N runs beats noisy single shots.
         #[arg(long, default_value_t = 1)]
         trials: usize,
@@ -115,9 +112,8 @@ fn main() -> Result<()> {
             tasks,
             model,
             baseline,
-            with_bare,
             trials,
-        } => score(&tasks, &resolve_model(model), baseline.as_deref(), with_bare, trials),
+        } => score(&tasks, &resolve_model(model), baseline.as_deref(), trials),
     }
 }
 
@@ -198,12 +194,6 @@ struct Stat {
     cost: f64,
 }
 
-#[derive(Copy, Clone)]
-enum Mode {
-    Bare,
-    Harness,
-}
-
 /// Aggregate over task × trial runs for one model.
 #[derive(Default)]
 struct Agg {
@@ -233,13 +223,12 @@ fn run_trials(
     engine: &RunEngine,
     task_dir: &Path,
     model: &str,
-    mode: Mode,
     trials: usize,
 ) -> Result<(usize, f64)> {
     let mut solved = 0usize;
     let mut cost = 0.0f64;
     for _ in 0..trials {
-        let s = run_one(engine, task_dir, model, mode)?;
+        let s = run_one(engine, task_dir, model)?;
         if s.solved {
             solved += 1;
         }
@@ -250,16 +239,12 @@ fn run_trials(
 
 /// Run one task with one model in one mode via the engine; only the outcome
 /// (solved + cost) is needed, so trace events are discarded.
-fn run_one(engine: &RunEngine, task_dir: &Path, model: &str, mode: Mode) -> Result<Stat> {
+fn run_one(engine: &RunEngine, task_dir: &Path, model: &str) -> Result<Stat> {
     let task = TaskSpec::load(task_dir)?;
-    let agent = match mode {
-        Mode::Harness => AgentSpec::Model { model: model.to_string() },
-        Mode::Bare => AgentSpec::OneShot { model: model.to_string() },
-    };
     let req = RunRequest {
         run_id: uuid::Uuid::new_v4().to_string(),
         task,
-        agent,
+        agent: AgentSpec::Model { model: model.to_string() },
     };
     let outcome = engine.execute(&req, &mut NullSink)?;
     Ok(Stat {
@@ -272,7 +257,6 @@ fn score(
     task_paths: &[PathBuf],
     model: &str,
     baseline: Option<&str>,
-    with_bare: bool,
     trials: usize,
 ) -> Result<()> {
     let tasks = discover_tasks(task_paths)?;
@@ -281,32 +265,25 @@ fn score(
     }
     let trials = trials.max(1);
     println!(
-        "scoring {} task(s) x {trials} trial(s): {model} (armed){}{}\n",
+        "scoring {} task(s) x {trials} trial(s): {model} (armed){}\n",
         tasks.len(),
         baseline.map_or_else(String::new, |b| format!(" vs {b} (armed)")),
-        if with_bare { " [+bare probe]" } else { "" }
     );
 
     let engine = build_engine();
     let mut q = Agg::default();
     let mut f = Agg::default();
-    let mut b = Agg::default();
 
     for t in &tasks {
         let id = task_name(t);
-        let (qs, qc) = run_trials(&engine, t, model, Mode::Harness, trials)?;
+        let (qs, qc) = run_trials(&engine, t, model, trials)?;
         q.add(qs, trials, qc);
         let mut line = format!("{:<34} {:>10}", clip_id(&id, 34), format!("{qs}/{trials}"));
 
         if let Some(bl) = baseline {
-            let (fs, fc) = run_trials(&engine, t, bl, Mode::Harness, trials)?;
+            let (fs, fc) = run_trials(&engine, t, bl, trials)?;
             f.add(fs, trials, fc);
             line.push_str(&format!(" {:>10}", format!("{fs}/{trials}")));
-        }
-        if with_bare {
-            let (bs, bc) = run_trials(&engine, t, model, Mode::Bare, trials)?;
-            b.add(bs, trials, bc);
-            line.push_str(&format!(" {:>8}", format!("{bs}/{trials}")));
         }
         println!("{line}");
     }
@@ -348,9 +325,6 @@ fn score(
             ),
             _ => println!("  relative $/correct: n/a"),
         }
-    }
-    if with_bare {
-        println!("  bare (one-shot probe):  {}/{} passed   ${:.4}", b.solved, b.runs, b.cost);
     }
     Ok(())
 }

@@ -84,7 +84,6 @@ fn default_model() -> String {
 enum AgentKind {
     #[default]
     Model,
-    Oneshot,
     Solve,
     Noop,
 }
@@ -93,7 +92,6 @@ impl AgentKind {
     fn into_spec(self, model: &str) -> AgentSpec {
         match self {
             AgentKind::Model => AgentSpec::Model { model: model.to_string() },
-            AgentKind::Oneshot => AgentSpec::OneShot { model: model.to_string() },
             AgentKind::Solve => AgentSpec::Solve,
             AgentKind::Noop => AgentSpec::Noop,
         }
@@ -220,7 +218,6 @@ mod tests {
     #[test]
     fn agent_kind_maps_to_spec() {
         assert!(matches!(AgentKind::Model.into_spec("m"), AgentSpec::Model { .. }));
-        assert!(matches!(AgentKind::Oneshot.into_spec("m"), AgentSpec::OneShot { .. }));
         assert!(matches!(AgentKind::Solve.into_spec("m"), AgentSpec::Solve));
         assert!(matches!(AgentKind::Noop.into_spec("m"), AgentSpec::Noop));
     }
