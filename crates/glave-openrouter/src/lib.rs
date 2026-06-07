@@ -172,8 +172,9 @@ fn parse_tool_calls(v: &Value) -> Vec<ToolCallRequest> {
         .collect()
 }
 
-/// Parse an OpenRouter chat-completion response into a `Completion`.
-fn parse_completion(v: &Value, fallback_model: &str) -> Result<Completion> {
+/// Parse an OpenRouter chat-completion response into a `Completion`. Infallible:
+/// an empty/odd message becomes an empty `Completion` the agent loop nudges.
+fn parse_completion(v: &Value, fallback_model: &str) -> Completion {
     let str_at = |ptr: &str| v.pointer(ptr).and_then(Value::as_str);
     let u64_at = |ptr: &str| v.pointer(ptr).and_then(Value::as_u64).unwrap_or(0);
 
@@ -185,11 +186,10 @@ fn parse_completion(v: &Value, fallback_model: &str) -> Result<Completion> {
     } else {
         content
     };
-    if content.trim().is_empty() && tool_calls.is_empty() {
-        bail!("empty completion (no content, reasoning, or tool calls): {v}");
-    }
+    // An empty turn (no content, no tool calls — the model just "stopped") is a
+    // no-op the agent loop nudges, not a fatal error. Return it as-is.
 
-    Ok(Completion {
+    Completion {
         content: content.to_string(),
         tool_calls,
         prompt_tokens: u64_at("/usage/prompt_tokens"),
@@ -198,7 +198,7 @@ fn parse_completion(v: &Value, fallback_model: &str) -> Result<Completion> {
         cost_usd: v.pointer("/usage/cost").and_then(Value::as_f64).unwrap_or(0.0),
         model: str_at("/model").unwrap_or(fallback_model).to_string(),
         provider: str_at("/provider").map(String::from),
-    })
+    }
 }
 
 impl ModelProvider for OpenRouterProvider {
@@ -220,7 +220,7 @@ impl ModelProvider for OpenRouterProvider {
             match resp {
                 Ok(r) => {
                     let v: Value = r.into_json().context("parsing OpenRouter response")?;
-                    return parse_completion(&v, &self.model);
+                    return Ok(parse_completion(&v, &self.model));
                 }
                 // Retryable HTTP statuses (rate-limit / provider overload): back off.
                 Err(ureq::Error::Status(code, r)) => {
@@ -314,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_completion_reads_content_and_usage() -> Result<()> {
+    fn parse_completion_reads_content_and_usage() {
         let v = json!({
             "model": "qwen/qwen3.6-27b",
             "provider": "Together",
@@ -324,7 +324,7 @@ mod tests {
                 "completion_tokens_details": {"reasoning_tokens": 3}
             }
         });
-        let c = parse_completion(&v, "fallback")?;
+        let c = parse_completion(&v, "fallback");
         assert_eq!(c.content, "hello");
         assert_eq!(c.prompt_tokens, 10);
         assert_eq!(c.completion_tokens, 5);
@@ -332,21 +332,23 @@ mod tests {
         assert!((c.cost_usd - 0.0012).abs() < 1e-9);
         assert_eq!(c.model, "qwen/qwen3.6-27b");
         assert_eq!(c.provider.as_deref(), Some("Together"));
-        Ok(())
     }
 
     #[test]
-    fn parse_completion_falls_back_to_reasoning() -> Result<()> {
+    fn parse_completion_falls_back_to_reasoning() {
         let v = json!({"choices": [{"message": {"content": "", "reasoning": "thinking"}}]});
-        let c = parse_completion(&v, "m")?;
+        let c = parse_completion(&v, "m");
         assert_eq!(c.content, "thinking");
-        Ok(())
     }
 
     #[test]
-    fn parse_completion_errors_on_empty() {
-        let empty = json!({"choices": [{"message": {"content": ""}}]});
-        assert!(parse_completion(&empty, "m").is_err());
+    fn parse_completion_tolerates_empty_turn() {
+        // A model can return an empty message (content null, no tool calls — it
+        // just "stopped"); that's a no-op the loop nudges, not a fatal error.
+        let empty = json!({"choices": [{"message": {"content": null}}]});
+        let c = parse_completion(&empty, "m");
+        assert!(c.content.is_empty());
+        assert!(c.tool_calls.is_empty());
     }
 
     #[test]
@@ -393,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_completion_accepts_tool_calls_with_empty_content() -> Result<()> {
+    fn parse_completion_accepts_tool_calls_with_empty_content() {
         let v = json!({
             "model": "m",
             "choices": [{"message": {"content": "", "tool_calls": [
@@ -401,8 +403,7 @@ mod tests {
             ]}}],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1}
         });
-        let c = parse_completion(&v, "m")?;
+        let c = parse_completion(&v, "m");
         assert_eq!(c.tool_calls.len(), 1); // empty content OK when tool_calls present
-        Ok(())
     }
 }
