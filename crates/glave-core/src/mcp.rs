@@ -13,7 +13,9 @@
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::time::{Duration, Instant};
 
 use crate::ports::WorkspaceRuntime;
 
@@ -134,11 +136,19 @@ impl<T: McpTransport> McpClient<T> {
 }
 
 /// Real transport: newline-delimited JSON-RPC over a child process's stdio.
+fn env_u64(key: &str, default: u64) -> u64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 pub struct StdioTransport {
     child: Child,
     stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    lines: Receiver<String>,
     next_id: u64,
+    read_timeout: Duration,
 }
 
 impl StdioTransport {
@@ -156,7 +166,34 @@ impl StdioTransport {
             .with_context(|| format!("spawning MCP server {}", cfg.name))?;
         let stdin = child.stdin.take().ok_or_else(|| anyhow!("MCP server has no stdin"))?;
         let stdout = child.stdout.take().ok_or_else(|| anyhow!("MCP server has no stdout"))?;
-        Ok(Self { child, stdin, stdout: BufReader::new(stdout), next_id: 1 })
+
+        // Read on a dedicated thread so a silent/hung server can't block the
+        // agent: the request path waits on the channel with a deadline, not on a
+        // raw blocking read. The thread exits when the child's stdout closes —
+        // which Drop forces by killing the child.
+        let (tx, rx) = mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            loop {
+                let mut line = String::new();
+                match reader.read_line(&mut line) {
+                    Ok(0) | Err(_) => break, // EOF or read error: close the channel
+                    Ok(_) => {
+                        if tx.send(line).is_err() {
+                            break; // receiver gone (transport dropped)
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(Self {
+            child,
+            stdin,
+            lines: rx,
+            next_id: 1,
+            read_timeout: Duration::from_secs(env_u64("GLAVE_MCP_TIMEOUT_SECS", 30)),
+        })
     }
 
     fn send(&mut self, msg: &Value) -> Result<()> {
@@ -167,14 +204,25 @@ impl StdioTransport {
         Ok(())
     }
 
-    /// Read lines until the response with `id` arrives; skip notifications and
-    /// mismatched ids.
+    /// Wait for the response with `id`, skipping notifications and mismatched
+    /// ids, up to the read deadline. A silent server fails the request rather
+    /// than hanging the agent forever.
     fn read_response(&mut self, id: u64) -> Result<Value> {
+        let deadline = Instant::now() + self.read_timeout;
         loop {
-            let mut line = String::new();
-            if self.stdout.read_line(&mut line)? == 0 {
-                bail!("MCP server closed the connection");
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                bail!("MCP request timed out after {}s", self.read_timeout.as_secs());
             }
+            let line = match self.lines.recv_timeout(remaining) {
+                Ok(line) => line,
+                Err(RecvTimeoutError::Timeout) => {
+                    bail!("MCP request timed out after {}s", self.read_timeout.as_secs())
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    bail!("MCP server closed the connection")
+                }
+            };
             let Ok(v) = serde_json::from_str::<Value>(line.trim()) else {
                 continue;
             };
