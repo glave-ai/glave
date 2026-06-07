@@ -376,26 +376,20 @@ pub fn execute(
             ))
         }
         ToolCall::Grep { pattern, glob } => {
-            let mut cmd = String::from("rg --line-number --no-heading --color never");
-            if let Some(g) = glob {
-                cmd.push_str(&format!(" -g {}", sq(g)));
-            }
-            cmd.push_str(&format!(" -e {}", sq(pattern)));
-            let r = rt.run(&cmd)?;
-            let out = clip(&merge(&r.stdout, &r.stderr), 4000);
-            Ok(if out.trim().is_empty() {
+            // Native, git-aware search via the runtime — no sandbox `rg`.
+            let matches = rt.grep(pattern, glob.as_deref())?;
+            Ok(if matches.is_empty() {
                 "no matches".to_string()
             } else {
-                out
+                clip(&matches.join("\n"), 4000)
             })
         }
         ToolCall::Glob { pattern } => {
-            let r = rt.run(&format!("rg --files -g {}", sq(pattern)))?;
-            let out = clip(&merge(&r.stdout, &r.stderr), 4000);
-            Ok(if out.trim().is_empty() {
+            let files = rt.find(pattern)?;
+            Ok(if files.is_empty() {
                 "no files match".to_string()
             } else {
-                out
+                clip(&files.join("\n"), 4000)
             })
         }
         ToolCall::RunTests => {
@@ -454,10 +448,6 @@ fn clip(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
 
-/// Single-quote a string for safe inclusion in a `sh -c` command.
-fn sq(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
 
 #[cfg(test)]
 mod tests {

@@ -2,7 +2,8 @@
 # at run time (compile-after-edit); stdlib is prebuilt in the base.
 FROM golang:alpine
 
-RUN apk add --no-cache ripgrep git
+# grep/glob are native (ripgrep crates in the harness) — no rg binary needed.
+RUN apk add --no-cache git
 ENV GOPROXY=off
 WORKDIR /work
 CMD ["tail", "-f", "/dev/null"]

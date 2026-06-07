@@ -9,6 +9,9 @@ description = "Docker WorkspaceRuntime adapter (sandboxed, untrusted-execution b
 glave-core.workspace = true
 anyhow.workspace = true
 wait-timeout.workspace = true
+grep.workspace = true
+ignore.workspace = true
+globset.workspace = true
 
 [lints]
 workspace = true

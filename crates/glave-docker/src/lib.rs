@@ -139,6 +139,94 @@ impl WorkspaceRuntime for DockerRuntime {
         command.args(["exec", "-w", &self.workdir, &self.container, "sh", "-c", cmd]);
         run_with_timeout(command, self.exec_timeout).context("docker exec")
     }
+
+    // Search runs natively over the host bind-mount (no `rg` in the sandbox), so
+    // it's self-sufficient and identical to what the local client will run.
+    fn grep(&self, pattern: &str, file_glob: Option<&str>) -> Result<Vec<String>> {
+        search::grep(&self.host_work, pattern, file_glob)
+    }
+
+    fn find(&self, glob: &str) -> Result<Vec<String>> {
+        search::find(&self.host_work, glob)
+    }
+}
+
+/// Native, git-aware code search via ripgrep's own crates — no `rg` binary.
+/// Respects `.gitignore` and skips vendoring/build dirs, so the agent searches
+/// real source like a developer would. The same logic will run client-side.
+mod search {
+    use anyhow::{anyhow, Result};
+    use globset::Glob;
+    use grep::regex::RegexMatcher;
+    use grep::searcher::sinks::UTF8;
+    use grep::searcher::SearcherBuilder;
+    use ignore::WalkBuilder;
+    use std::path::Path;
+
+    const SKIP: [&str; 6] = ["vendor", "target", "node_modules", ".git", ".cargo", ".venv"];
+
+    fn walk(root: &Path) -> ignore::Walk {
+        WalkBuilder::new(root)
+            .hidden(false) // show dotfiles; .gitignore + SKIP still prune
+            .require_git(false) // honor .gitignore even before the repo is a git checkout
+            .filter_entry(|e| e.file_name().to_str().is_none_or(|n| !SKIP.contains(&n)))
+            .build()
+    }
+
+    pub fn grep(root: &Path, pattern: &str, file_glob: Option<&str>) -> Result<Vec<String>> {
+        let matcher =
+            RegexMatcher::new(pattern).map_err(|e| anyhow!("invalid search pattern: {e}"))?;
+        let glob = file_glob
+            .map(|g| Glob::new(g).map(|g| g.compile_matcher()))
+            .transpose()
+            .map_err(|e| anyhow!("invalid file glob: {e}"))?;
+        let mut searcher = SearcherBuilder::new().line_number(true).build();
+        let mut out = Vec::new();
+        for entry in walk(root) {
+            let Ok(entry) = entry else { continue };
+            if !entry.file_type().is_some_and(|t| t.is_file()) {
+                continue;
+            }
+            let path = entry.path();
+            let rel = path.strip_prefix(root).unwrap_or(path);
+            if let Some(g) = &glob {
+                if !g.is_match(rel) {
+                    continue;
+                }
+            }
+            let rel_disp = rel.display().to_string();
+            // Per-file errors (binary / non-UTF8) are skipped, not fatal.
+            let _ = searcher.search_path(
+                &matcher,
+                path,
+                UTF8(|lnum, line| {
+                    out.push(format!("{rel_disp}:{lnum}:{}", line.trim_end()));
+                    Ok(true)
+                }),
+            );
+        }
+        Ok(out)
+    }
+
+    pub fn find(root: &Path, glob: &str) -> Result<Vec<String>> {
+        let matcher = Glob::new(glob)
+            .map_err(|e| anyhow!("invalid glob: {e}"))?
+            .compile_matcher();
+        let mut out = Vec::new();
+        for entry in walk(root) {
+            let Ok(entry) = entry else { continue };
+            if !entry.file_type().is_some_and(|t| t.is_file()) {
+                continue;
+            }
+            let path = entry.path();
+            let rel = path.strip_prefix(root).unwrap_or(path);
+            if matcher.is_match(rel) {
+                out.push(rel.display().to_string());
+            }
+        }
+        out.sort();
+        Ok(out)
+    }
 }
 
 /// Resolve a model-supplied relative path strictly within `base`, defeating both
@@ -364,6 +452,35 @@ mod tests {
         );
         assert_eq!(r.exit_code, -1);
         assert!(r.stderr.contains("timed out"), "stderr: {}", r.stderr);
+        Ok(())
+    }
+
+    #[test]
+    fn search_is_regex_glob_and_gitignore_aware() -> Result<()> {
+        let b = base("search")?;
+        std::fs::create_dir_all(b.join("src"))?;
+        std::fs::write(b.join("src/lib.rs"), "fn alpha() {}\nfn beta() {}\n")?;
+        std::fs::write(b.join("src/util.rs"), "fn alpha_two() {}\n")?;
+        std::fs::create_dir_all(b.join("target"))?;
+        std::fs::write(b.join("target/junk.rs"), "fn alpha() {}\n")?; // vendoring dir -> skipped
+        std::fs::write(b.join(".gitignore"), "secret.rs\n")?;
+        std::fs::write(b.join("secret.rs"), "fn alpha() {}\n")?; // gitignored -> skipped
+
+        // Regex with a word boundary: matches `fn alpha()` but not `fn alpha_two()`.
+        let hits = search::grep(&b, r"fn alpha\b", None)?;
+        assert!(hits.iter().any(|h| h.starts_with("src/lib.rs:")), "hits: {hits:?}");
+        assert!(!hits.iter().any(|h| h.contains("src/util.rs")), "word boundary: {hits:?}");
+        assert!(!hits.iter().any(|h| h.contains("target/")), "vendoring dir skipped");
+        assert!(!hits.iter().any(|h| h.contains("secret.rs")), "gitignore respected");
+
+        // Glob filter restricts which files are searched.
+        let lib_only = search::grep(&b, "alpha", Some("**/lib.rs"))?;
+        assert!(lib_only.iter().all(|h| h.contains("lib.rs")), "glob filter: {lib_only:?}");
+
+        let found = search::find(&b, "**/*.rs")?;
+        assert!(found.iter().any(|f| f == "src/lib.rs"));
+        assert!(!found.iter().any(|f| f.contains("target/") || f.contains("secret.rs")));
+        let _ = std::fs::remove_dir_all(&b);
         Ok(())
     }
 }
