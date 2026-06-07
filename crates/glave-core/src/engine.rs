@@ -181,10 +181,10 @@ mod tests {
     struct FixedProviderFactory;
     impl ProviderFactory for FixedProviderFactory {
         fn create(&self, _model: &str) -> Result<Box<dyn crate::ports::ModelProvider>> {
-            // Scripted: edit the file, then submit.
-            Ok(Box::new(InMemoryProvider::new(vec![
-                "<create path=\"solver.py\">\nFIXED\n</create>",
-                "<submit/>",
+            // Scripted native tool calls: create the file, then submit.
+            Ok(Box::new(InMemoryProvider::with_tool_calls(vec![
+                vec![("create", r#"{"path":"solver.py","content":"FIXED"}"#)],
+                vec![("submit", "{}")],
             ])))
         }
     }
