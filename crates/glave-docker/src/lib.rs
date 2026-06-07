@@ -6,8 +6,12 @@
 //! implements the same `WorkspaceRuntime` port without touching the core.
 
 use anyhow::{anyhow, bail, Context, Result};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::Duration;
+
+use wait_timeout::ChildExt;
 
 use glave_core::{ExecResult, RuntimeFactory, TaskSpec, WorkspaceRuntime};
 
@@ -15,6 +19,7 @@ pub struct DockerRuntime {
     container: String,
     host_work: PathBuf,
     workdir: String,
+    exec_timeout: Duration,
 }
 
 impl DockerRuntime {
@@ -36,51 +41,49 @@ impl DockerRuntime {
         let work_mount = format!("{}:{}", work_abs.display(), task.image.workdir);
         let oracle_mount = format!("{}:/oracle:ro", oracle_abs.display());
 
-        let out = Command::new("docker")
-            .args([
-                "run",
-                "-d",
-                "--name",
-                &container,
-                "--network",
-                &network,
-                "--memory",
-                &mem,
-                "--memory-swap",
-                &mem, // no swap: OOM-kill rather than eat the VM
-                "--cpus",
-                &cpus,
-                "--pids-limit",
-                &pids,
-                "--cap-drop",
-                "ALL",
-                "--security-opt",
-                "no-new-privileges",
-                "-v",
-                &work_mount,
-                "-v",
-                &oracle_mount,
-                "-w",
-                &task.image.workdir,
-                &task.image.base,
-                "tail",
-                "-f",
-                "/dev/null",
-            ])
-            .output()
-            .context("docker run")?;
-
-        if !out.status.success() {
-            return Err(anyhow!(
-                "docker run failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            ));
+        let mut run_cmd = Command::new("docker");
+        run_cmd.args([
+            "run",
+            "-d",
+            "--name",
+            &container,
+            "--network",
+            &network,
+            "--memory",
+            &mem,
+            "--memory-swap",
+            &mem, // no swap: OOM-kill rather than eat the VM
+            "--cpus",
+            &cpus,
+            "--pids-limit",
+            &pids,
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "-v",
+            &work_mount,
+            "-v",
+            &oracle_mount,
+            "-w",
+            &task.image.workdir,
+            &task.image.base,
+            "tail",
+            "-f",
+            "/dev/null",
+        ]);
+        // Bounded so a stuck image pull / daemon hang can't wedge a run forever.
+        let run_timeout = Duration::from_secs(env_u64("GLAVE_RUN_TIMEOUT_SECS", 120));
+        let out = run_with_timeout(run_cmd, run_timeout).context("docker run")?;
+        if out.exit_code != 0 {
+            return Err(anyhow!("docker run failed: {}", out.stderr.trim()));
         }
 
         Ok(Self {
             container,
             host_work: work_abs,
             workdir: task.image.workdir.clone(),
+            exec_timeout: Duration::from_secs(env_u64("GLAVE_EXEC_TIMEOUT_SECS", 300)),
         })
     }
 
@@ -130,15 +133,9 @@ impl WorkspaceRuntime for DockerRuntime {
     }
 
     fn run(&self, cmd: &str) -> Result<ExecResult> {
-        let out = Command::new("docker")
-            .args(["exec", "-w", &self.workdir, &self.container, "sh", "-c", cmd])
-            .output()
-            .context("docker exec")?;
-        Ok(ExecResult {
-            exit_code: out.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-        })
+        let mut command = Command::new("docker");
+        command.args(["exec", "-w", &self.workdir, &self.container, "sh", "-c", cmd]);
+        run_with_timeout(command, self.exec_timeout).context("docker exec")
     }
 }
 
@@ -184,6 +181,56 @@ fn closest_existing(p: &Path) -> PathBuf {
             None => return cur.to_path_buf(),
         }
     }
+}
+
+fn env_u64(key: &str, default: u64) -> u64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+/// Run a command with a wall-clock deadline, capturing output. On timeout the
+/// child is killed and the result carries exit code -1 plus a timeout note — so
+/// a model command that hangs (`sleep infinity`, an infinite-loop test) can't
+/// wedge a run forever; it surfaces as a failed command the agent/oracle handles.
+///
+/// stdout/stderr are drained on dedicated threads so the child can't deadlock on
+/// a full pipe buffer while we wait.
+fn run_with_timeout(mut cmd: Command, timeout: Duration) -> Result<ExecResult> {
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().context("spawning command")?;
+
+    let mut out_pipe = child.stdout.take();
+    let mut err_pipe = child.stderr.take();
+    let out_handle = std::thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(p) = out_pipe.as_mut() {
+            let _ = p.read_to_string(&mut buf);
+        }
+        buf
+    });
+    let err_handle = std::thread::spawn(move || {
+        let mut buf = String::new();
+        if let Some(p) = err_pipe.as_mut() {
+            let _ = p.read_to_string(&mut buf);
+        }
+        buf
+    });
+
+    let status = child.wait_timeout(timeout).context("waiting for command")?;
+    let timed_out = status.is_none();
+    if timed_out {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    let stdout = out_handle.join().unwrap_or_default();
+    let mut stderr = err_handle.join().unwrap_or_default();
+    let exit_code = status.and_then(|s| s.code()).unwrap_or(-1);
+    if timed_out {
+        stderr.push_str(&format!("\n[glave] command timed out after {}s", timeout.as_secs()));
+    }
+    Ok(ExecResult { exit_code, stdout, stderr })
 }
 
 /// Fail-closed network policy. The no-exfil guarantee must not depend on the
@@ -288,6 +335,33 @@ mod tests {
         // Reading through it must be rejected — it canonicalizes outside `base`.
         assert!(safe_join(&b, "escape/passwd").is_err());
         let _ = std::fs::remove_dir_all(&b);
+        Ok(())
+    }
+
+    #[test]
+    fn run_with_timeout_captures_output_and_exit_code() -> Result<()> {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "echo out; echo err 1>&2; exit 3"]);
+        let r = run_with_timeout(cmd, Duration::from_secs(10))?;
+        assert_eq!(r.exit_code, 3);
+        assert!(r.stdout.contains("out"), "stdout: {}", r.stdout);
+        assert!(r.stderr.contains("err"), "stderr: {}", r.stderr);
+        Ok(())
+    }
+
+    #[test]
+    fn run_with_timeout_kills_on_deadline() -> Result<()> {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "sleep 30"]);
+        let start = std::time::Instant::now();
+        let r = run_with_timeout(cmd, Duration::from_millis(300))?;
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "should have been killed promptly, took {:?}",
+            start.elapsed()
+        );
+        assert_eq!(r.exit_code, -1);
+        assert!(r.stderr.contains("timed out"), "stderr: {}", r.stderr);
         Ok(())
     }
 }
