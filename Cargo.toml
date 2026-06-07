@@ -49,6 +49,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net"]
 axum = "0.7"
 tokio-stream = "0.1"
 wait-timeout = "0.2"
+grep = "0.3"
+ignore = "0.4"
+globset = "0.4"
 glave-core = { path = "crates/glave-core" }
 glave-openrouter = { path = "crates/glave-openrouter" }
 glave-docker = { path = "crates/glave-docker" }

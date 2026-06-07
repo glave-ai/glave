@@ -121,5 +121,27 @@ impl WorkspaceRuntime for InMemoryRuntime {
             stderr: String::new(),
         })
     }
+
+    // Simplified fake: substring match (the real runtime uses regex via ripgrep).
+    fn grep(&self, pattern: &str, file_glob: Option<&str>) -> Result<Vec<String>> {
+        let glob = file_glob.and_then(|g| glob::Pattern::new(g).ok());
+        let mut out = Vec::new();
+        for (path, content) in &self.files {
+            if glob.as_ref().is_some_and(|g| !g.matches(path)) {
+                continue;
+            }
+            for (i, line) in content.lines().enumerate() {
+                if line.contains(pattern) {
+                    out.push(format!("{path}:{}:{line}", i + 1));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    fn find(&self, glob: &str) -> Result<Vec<String>> {
+        let g = glob::Pattern::new(glob).map_err(|e| anyhow!("invalid glob: {e}"))?;
+        Ok(self.files.keys().filter(|p| g.matches(p)).cloned().collect())
+    }
 }
 

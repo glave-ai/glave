@@ -127,6 +127,12 @@ pub trait WorkspaceRuntime {
     fn list_files(&self) -> Result<Vec<String>>;
     /// Run a shell command in the workspace dir inside the sandbox.
     fn run(&self, cmd: &str) -> Result<ExecResult>;
+    /// Search file contents (git-aware) — implemented natively by each runtime
+    /// where the files live, so we never depend on a sandbox `rg`. Returns
+    /// `path:line:text` lines; `file_glob` optionally restricts which files.
+    fn grep(&self, pattern: &str, file_glob: Option<&str>) -> Result<Vec<String>>;
+    /// Find files by glob (git-aware). Returns matching workspace-relative paths.
+    fn find(&self, glob: &str) -> Result<Vec<String>>;
 }
 
 /// Port: a swappable trace destination (JSONL file now; DB / remote later).

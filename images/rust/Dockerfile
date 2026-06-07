@@ -3,6 +3,7 @@
 FROM rust:alpine
 
 ENV CARGO_NET_OFFLINE=true
-RUN apk add --no-cache musl-dev ripgrep git
+# grep/glob are native (ripgrep crates in the harness) — no rg binary needed.
+RUN apk add --no-cache musl-dev git
 WORKDIR /work
 CMD ["tail", "-f", "/dev/null"]
