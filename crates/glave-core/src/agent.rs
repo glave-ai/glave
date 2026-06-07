@@ -11,7 +11,7 @@ use std::path::Path;
 use crate::capability::{self, CapabilityRegistry, LexicalSelector, Selector};
 use crate::event::RunEvent;
 use crate::policy::{Decision, Policy};
-use crate::ports::{Message, ModelProvider, TraceSink, WorkspaceRuntime};
+use crate::ports::{Message, ModelProvider, Role, TraceSink, WorkspaceRuntime};
 use crate::task::TaskSpec;
 use crate::tools::{self, ToolCall};
 
@@ -124,8 +124,8 @@ impl ModelAgent {
             None => (subagent_system(), Vec::new()),
         };
         let mut messages = vec![
-            Message::new("system", system),
-            Message::new("user", subtask.to_string()),
+            Message::system(system),
+            Message::user(subtask.to_string()),
         ];
         let mut viewed = BTreeSet::new();
         for _ in 0..self.sub_turns {
@@ -198,7 +198,7 @@ fn compact_to_fit(messages: &mut [Message], current_tokens: u64, target_tokens: 
         // Elide tool-result *content* (the big observations). Content-elision keeps
         // the message — and its tool_call_id — so the assistant→tool pairing the
         // API requires is never broken. (Removing messages would be; we don't.)
-        if m.role == "tool" && m.content != ELIDED {
+        if m.role == Role::Tool && m.content != ELIDED {
             let freed = u64::try_from(m.content.len()).unwrap_or(u64::MAX) / 4; // ~chars per token
             m.content = ELIDED.to_string();
             over = over.saturating_sub(freed);
@@ -225,11 +225,11 @@ impl Agent for ModelAgent {
     ) -> Result<()> {
         let mut mcp = crate::mcp::McpHub::connect(&*rt);
         let mut messages = vec![
-            Message::new("system", system_prompt()),
-            Message::new("user", initial_user(&*rt, task)?),
+            Message::system(system_prompt()),
+            Message::user(initial_user(&*rt, task)?),
         ];
         if !mcp.is_empty() {
-            messages.push(Message::new("user", mcp.catalog()));
+            messages.push(Message::user(mcp.catalog()));
         }
         let mut viewed = BTreeSet::new();
         let mut total_prompt = 0u64;
@@ -245,8 +245,8 @@ impl Agent for ModelAgent {
 
             if c.tool_calls.is_empty() {
                 // No action taken — keep the text and nudge toward a tool / submit.
-                messages.push(Message::new("assistant", c.content.clone()));
-                messages.push(Message::new("user", help_text()));
+                messages.push(Message::assistant(c.content.clone()));
+                messages.push(Message::user(help_text()));
             } else {
                 // Append the assistant turn carrying the calls, then a tool result
                 // for EACH call — the API requires every tool_call_id be answered.
@@ -626,9 +626,9 @@ mod tests {
     /// [system, task, (assistant, sized tool-observation) × n]. Each observation
     /// is `obs_chars` long (~obs_chars/4 estimated tokens).
     fn sized_convo(n: usize, obs_chars: usize) -> Vec<Message> {
-        let mut m = vec![Message::new("system", "S"), Message::new("user", "TASK")];
+        let mut m = vec![Message::system("S"), Message::user("TASK")];
         for i in 0..n {
-            m.push(Message::new("assistant", format!("act{i}")));
+            m.push(Message::assistant(format!("act{i}")));
             m.push(Message::tool_result(format!("c{i}"), "x".repeat(obs_chars)));
         }
         m
@@ -636,7 +636,7 @@ mod tests {
 
     fn obs_elided(m: &[Message]) -> Vec<bool> {
         m.iter()
-            .filter(|x| x.role == "tool")
+            .filter(|x| x.role == Role::Tool)
             .map(|x| x.content == ELIDED)
             .collect()
     }
@@ -663,7 +663,7 @@ mod tests {
         assert_eq!(m.first().map(|x| x.content.as_str()), Some("S"));
         assert_eq!(m.get(1).map(|x| x.content.as_str()), Some("TASK"));
         let acts: Vec<&str> =
-            m.iter().filter(|x| x.role == "assistant").map(|x| x.content.as_str()).collect();
+            m.iter().filter(|x| x.role == Role::Assistant).map(|x| x.content.as_str()).collect();
         assert_eq!(acts, ["act0", "act1", "act2", "act3", "act4"]); // model turns untouched
     }
 

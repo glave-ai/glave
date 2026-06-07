@@ -31,7 +31,7 @@ pub use oracle::Verdict;
 pub use sinks::{InMemorySink, JsonlSink, NullSink};
 pub use policy::{AutonomousPolicy, Decision, Policy};
 pub use ports::{
-    Completion, ExecResult, Message, ModelProvider, ProviderFactory, RuntimeFactory,
+    Completion, ExecResult, Message, ModelProvider, ProviderFactory, Role, RuntimeFactory,
     ToolCallRequest, TraceSink, WorkspaceRuntime,
 };
 pub use task::TaskSpec;

@@ -16,21 +16,52 @@ pub struct ToolCallRequest {
     pub arguments: String,
 }
 
+/// The author of a chat message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Role {
+    System,
+    User,
+    Assistant,
+    Tool,
+}
+
+impl Role {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::System => "system",
+            Role::User => "user",
+            Role::Assistant => "assistant",
+            Role::Tool => "tool",
+        }
+    }
+}
+
 /// A chat message handed to a model provider. Carries the native tool-calling
 /// envelope: an assistant turn may include `tool_calls`; a `tool`-role result
 /// names the `tool_call_id` it answers.
 #[derive(Debug, Clone)]
 pub struct Message {
-    pub role: String,
+    pub role: Role,
     pub content: String,
     pub tool_calls: Vec<ToolCallRequest>,
     pub tool_call_id: Option<String>,
 }
 
 impl Message {
-    pub fn new(role: &str, content: impl Into<String>) -> Self {
+    pub fn system(content: impl Into<String>) -> Self {
+        Self::plain(Role::System, content)
+    }
+    pub fn user(content: impl Into<String>) -> Self {
+        Self::plain(Role::User, content)
+    }
+    pub fn assistant(content: impl Into<String>) -> Self {
+        Self::plain(Role::Assistant, content)
+    }
+
+    fn plain(role: Role, content: impl Into<String>) -> Self {
         Self {
-            role: role.to_string(),
+            role,
             content: content.into(),
             tool_calls: Vec::new(),
             tool_call_id: None,
@@ -43,7 +74,7 @@ impl Message {
         tool_calls: Vec<ToolCallRequest>,
     ) -> Self {
         Self {
-            role: "assistant".to_string(),
+            role: Role::Assistant,
             content: content.into(),
             tool_calls,
             tool_call_id: None,
@@ -53,7 +84,7 @@ impl Message {
     /// A `tool`-role result answering a specific tool call by id.
     pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
-            role: "tool".to_string(),
+            role: Role::Tool,
             content: content.into(),
             tool_calls: Vec::new(),
             tool_call_id: Some(tool_call_id.into()),
