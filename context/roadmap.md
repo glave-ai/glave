@@ -114,3 +114,22 @@ promotion. **This is the product.**
   validation gate).
 - When to add the `insert` tool, the escalation route, the parallel runner.
 - Trace retention policy.
+
+## Known debt (deferred, by design)
+
+Type-design review (2026-06) resolved the cheap warts in-place — `Message.role`
+is now a `Role` enum, and write-only fields (`codebase_size`, `provenance` field,
+`measured_peak_mb`, `p2p_output`) are gone. Two are deliberately deferred because
+each is coupled to a larger piece, not a standalone fix:
+
+- **Trace enrichment** — the trace records the model's *output* + action names,
+  but not the *observations it saw*, the *prompts sent*, or the *harness config*.
+  The shape (append-only event log) is right; it needs enrichment to be a
+  replayable flywheel dataset. **Blocked on `HarnessConfig`**: real config-
+  attribution needs a config object to stamp (the tunable surface is still
+  hardcoded/env). Do trace-enrichment + `HarnessConfig` together as one
+  flywheel-foundation pass (audit items #4 + #5), when we prioritize the flywheel.
+- **Durable storage** — traces are local JSONL files; tasks are local dirs. Fine
+  for now. Going to a DB/object store is a `TraceSink` adapter, not a brain change
+  — it belongs with the **commercial layer** (where per-tenant metering lives),
+  not before the product that needs it.
