@@ -27,6 +27,8 @@ pub struct IngestArgs<'a> {
 enum Lang {
     Rust,
     Go,
+    Python,
+    Typescript,
 }
 
 impl Lang {
@@ -34,7 +36,9 @@ impl Lang {
         match s {
             "rust" => Ok(Self::Rust),
             "go" => Ok(Self::Go),
-            other => bail!("unsupported language `{other}` (have: rust, go)"),
+            "python" | "py" => Ok(Self::Python),
+            "typescript" | "ts" => Ok(Self::Typescript),
+            other => bail!("unsupported language `{other}` (have: rust, go, python, typescript)"),
         }
     }
 
@@ -42,6 +46,8 @@ impl Lang {
         match self {
             Self::Rust => "rust",
             Self::Go => "go",
+            Self::Python => "python",
+            Self::Typescript => "typescript",
         }
     }
 
@@ -49,6 +55,8 @@ impl Lang {
         match self {
             Self::Rust => "glave/rust-base:latest",
             Self::Go => "glave/go-base:latest",
+            Self::Python => "glave/python-base:latest",
+            Self::Typescript => "glave/typescript-base:latest",
         }
     }
 }
@@ -153,6 +161,47 @@ fn derive(lang: Lang, test_patch: &str, fix_files: &[String]) -> Result<Derived>
                 ),
             })
         }
+        Lang::Python => {
+            let testfile = test_files
+                .iter()
+                .find(|f| has_ext(f, "py"))
+                .ok_or_else(|| anyhow!("python: need a .py file in test_patch"))?;
+            let testdir = testfile.rsplit_once('/').map_or(".", |(d, _)| d);
+            // Deps live in an in-container venv at /work/.venv (see `vendor`); the
+            // editable install makes the repo source the importable package, so the
+            // agent's edits change what the test sees.
+            Ok(Derived {
+                editable: dirs.iter().map(|d| format!("{d}/**/*.py")).collect(),
+                fail_to_pass: format!(
+                    "git apply --check /oracle/test.patch 2>/dev/null && git apply /oracle/test.patch; .venv/bin/python -m pytest -q {testfile}"
+                ),
+                pass_to_pass: format!(
+                    "git apply --check /oracle/test.patch 2>/dev/null && git apply /oracle/test.patch; .venv/bin/python -m pytest -q {testdir}"
+                ),
+            })
+        }
+        Lang::Typescript => {
+            let testfile = test_files
+                .iter()
+                .find(|f| ["ts", "tsx", "js", "jsx"].into_iter().any(|e| has_ext(f, e)))
+                .ok_or_else(|| anyhow!("typescript: need a .ts/.tsx/.js test file in test_patch"))?;
+            // glob crate has no brace expansion -> one editable pattern per extension.
+            let editable = dirs
+                .iter()
+                .flat_map(|d| {
+                    ["ts", "tsx", "js", "jsx"]
+                        .iter()
+                        .map(move |e| format!("{d}/**/*.{e}"))
+                })
+                .collect();
+            Ok(Derived {
+                editable,
+                fail_to_pass: format!(
+                    "git apply --check /oracle/test.patch 2>/dev/null && git apply /oracle/test.patch; npx --no-install jest {testfile} || npx --no-install vitest run {testfile}"
+                ),
+                pass_to_pass: "npx --no-install jest || npx --no-install vitest run".to_string(),
+            })
+        }
     }
 }
 
@@ -173,6 +222,32 @@ fn vendor(lang: Lang, ws: &Path, ws_s: &str) -> Result<()> {
         }
         Lang::Go => {
             run("go", &["-C", ws_s, "mod", "vendor"])?;
+        }
+        Lang::Python => {
+            // Host (mac) can't build Linux wheels, so vendor INSIDE the image into a
+            // venv at /work/.venv — reusable at eval (same image, same /work mount).
+            // Network is available at ingest; the eval run is offline against .venv.
+            // Editable install (-e .) makes the repo source the importable package.
+            let mount = format!("{ws_s}:/work");
+            run(
+                "docker",
+                &[
+                    "run", "--rm", "-v", &mount, "-w", "/work", Lang::Python.image(), "sh", "-c",
+                    "python -m venv .venv && .venv/bin/pip install -q -U pip \
+                     && .venv/bin/pip install -q -e . pytest",
+                ],
+            )?;
+        }
+        Lang::Typescript => {
+            // Native node modules must be built for Linux -> install inside the image.
+            let mount = format!("{ws_s}:/work");
+            run(
+                "docker",
+                &[
+                    "run", "--rm", "-v", &mount, "-w", "/work", Lang::Typescript.image(), "sh",
+                    "-c", "npm ci || npm install",
+                ],
+            )?;
         }
     }
     Ok(())
@@ -259,6 +334,13 @@ fn sval<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
     v.get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("instance missing string field `{key}`"))
+}
+
+/// Case-insensitive file-extension check (clippy-friendly; patch paths vary).
+fn has_ext(path: impl AsRef<str>, ext: &str) -> bool {
+    std::path::Path::new(path.as_ref())
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case(ext))
 }
 
 /// New-file paths touched by a unified diff (the `+++ b/<path>` lines).
