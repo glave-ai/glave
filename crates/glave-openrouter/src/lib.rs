@@ -132,6 +132,9 @@ fn parse_completion(v: &Value, fallback_model: &str) -> Result<Completion> {
 
     Ok(Completion {
         content: content.to_string(),
+        // Parsing of native `tool_calls` from the response is wired in the
+        // integration step; for now the harness still drives via text tags.
+        tool_calls: Vec::new(),
         prompt_tokens: u64_at("/usage/prompt_tokens"),
         completion_tokens: u64_at("/usage/completion_tokens"),
         reasoning_tokens: u64_at("/usage/completion_tokens_details/reasoning_tokens"),
