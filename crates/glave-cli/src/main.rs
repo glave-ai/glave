@@ -131,6 +131,25 @@ fn build_engine() -> RunEngine {
     )
 }
 
+/// Fairness check: warn loudly if a model leg ran with reasoning configured but
+/// produced zero reasoning tokens — the provider silently ignored it, which makes
+/// the comparison unfair. Stub agents (noop/solve) don't call a model, so skip.
+fn check_reasoning(agent_label: &str, reasoning_tokens: u64) {
+    if !agent_label.starts_with("model:") {
+        return;
+    }
+    let on = !matches!(
+        std::env::var("GLAVE_REASONING").as_deref().unwrap_or("high"),
+        "off" | "none" | ""
+    );
+    if on && reasoning_tokens == 0 {
+        eprintln!(
+            "WARNING: {agent_label} produced 0 reasoning tokens while reasoning is ON \
+             — the provider may be ignoring it; this leg's comparison is unfair."
+        );
+    }
+}
+
 fn build_base(lang: &str) -> Result<()> {
     let ctx = Path::new("images").join(lang);
     let tag = format!("glave/{lang}-base:latest");
@@ -159,13 +178,15 @@ fn do_run(task_dir: &Path, kind: AgentKind, model: &str) -> Result<bool> {
     let outcome = build_engine().execute(&req, &mut sink)?;
 
     println!(
-        "task={} agent={} solved={} (f2p_ok={}, p2p_ok={})",
+        "task={} agent={} solved={} (f2p_ok={}, p2p_ok={}) reasoning_tokens={}",
         outcome.task_id,
         outcome.agent_label,
         outcome.solved,
         outcome.fail_to_pass_ok,
-        outcome.pass_to_pass_ok
+        outcome.pass_to_pass_ok,
+        outcome.reasoning_tokens
     );
+    check_reasoning(&outcome.agent_label, outcome.reasoning_tokens);
     println!("trace: {}", sink.path().display());
     Ok(outcome.solved)
 }
@@ -247,6 +268,7 @@ fn run_one(engine: &RunEngine, task_dir: &Path, model: &str) -> Result<Stat> {
         agent: AgentSpec::Model { model: model.to_string() },
     };
     let outcome = engine.execute(&req, &mut NullSink)?;
+    check_reasoning(&outcome.agent_label, outcome.reasoning_tokens);
     Ok(Stat {
         solved: outcome.solved,
         cost: outcome.cost_usd,

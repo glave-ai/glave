@@ -50,6 +50,9 @@ pub struct RunOutcome {
     pub cost_usd: f64,
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
+    /// Reasoning tokens summed across turns. Zero here while reasoning is
+    /// configured "on" means the provider silently ignored it — an unfair leg.
+    pub reasoning_tokens: u64,
 }
 
 /// Holds the factories that mint a fresh provider and runtime per run. Cheap to
@@ -93,6 +96,7 @@ impl RunEngine {
             cost_usd: tap.cost_usd,
             prompt_tokens: tap.prompt_tokens,
             completion_tokens: tap.completion_tokens,
+            reasoning_tokens: tap.reasoning_tokens,
         })
     }
 
@@ -121,6 +125,7 @@ struct OutcomeTap<'a> {
     cost_usd: f64,
     prompt_tokens: u64,
     completion_tokens: u64,
+    reasoning_tokens: u64,
 }
 
 impl<'a> OutcomeTap<'a> {
@@ -133,6 +138,7 @@ impl<'a> OutcomeTap<'a> {
             cost_usd: 0.0,
             prompt_tokens: 0,
             completion_tokens: 0,
+            reasoning_tokens: 0,
         }
     }
 }
@@ -159,6 +165,9 @@ impl TraceSink for OutcomeTap<'_> {
                 self.cost_usd += *cost_usd;
                 self.prompt_tokens += *prompt_tokens;
                 self.completion_tokens += *completion_tokens;
+            }
+            RunEvent::ModelTurn { reasoning_tokens, .. } => {
+                self.reasoning_tokens += *reasoning_tokens;
             }
             _ => {}
         }
