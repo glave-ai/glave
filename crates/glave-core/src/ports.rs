@@ -6,11 +6,25 @@ use anyhow::Result;
 use crate::event::RunEvent;
 use crate::task::TaskSpec;
 
-/// A chat message handed to a model provider.
+/// A structured tool call the model requested (native function-calling): a
+/// stable `id`, the tool `name`, and raw JSON `arguments` as the provider returns
+/// them. The id correlates the call with its `tool`-role result message.
+#[derive(Debug, Clone)]
+pub struct ToolCallRequest {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
+/// A chat message handed to a model provider. Carries the native tool-calling
+/// envelope: an assistant turn may include `tool_calls`; a `tool`-role result
+/// names the `tool_call_id` it answers.
 #[derive(Debug, Clone)]
 pub struct Message {
     pub role: String,
     pub content: String,
+    pub tool_calls: Vec<ToolCallRequest>,
+    pub tool_call_id: Option<String>,
 }
 
 impl Message {
@@ -18,6 +32,31 @@ impl Message {
         Self {
             role: role.to_string(),
             content: content.into(),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+        }
+    }
+
+    /// An assistant turn that issued tool calls (content may be empty).
+    pub fn assistant_with_tool_calls(
+        content: impl Into<String>,
+        tool_calls: Vec<ToolCallRequest>,
+    ) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: content.into(),
+            tool_calls,
+            tool_call_id: None,
+        }
+    }
+
+    /// A `tool`-role result answering a specific tool call by id.
+    pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: "tool".to_string(),
+            content: content.into(),
+            tool_calls: Vec::new(),
+            tool_call_id: Some(tool_call_id.into()),
         }
     }
 }
@@ -26,6 +65,8 @@ impl Message {
 #[derive(Debug, Clone, Default)]
 pub struct Completion {
     pub content: String,
+    /// Structured tool calls the model made this turn (native tool-calling).
+    pub tool_calls: Vec<ToolCallRequest>,
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
     /// Reasoning tokens (subset of completion) — the cost lever, tracked alone.
