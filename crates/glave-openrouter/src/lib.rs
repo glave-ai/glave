@@ -92,8 +92,32 @@ impl OpenRouterProvider {
                 obj.insert("reasoning".to_string(), json!({ "effort": self.reasoning }));
             }
         }
+
+        // Pin provider + quantization for reproducible, like-for-like runs on open
+        // models (e.g. DeepInfra / fp8 — the quant we'd actually serve). Skipped
+        // for single-source closed models (Claude/GPT/Gemini): no provider/quant
+        // choice, and allow_fallbacks:false would wrongly fail them.
+        if let Ok(provider) = std::env::var("GLAVE_PROVIDER") {
+            if !is_single_provider(&self.model) {
+                let mut pin = json!({ "only": [provider], "allow_fallbacks": false });
+                if let (Some(obj), Ok(quant)) = (pin.as_object_mut(), std::env::var("GLAVE_QUANT")) {
+                    obj.insert("quantizations".to_string(), json!([quant]));
+                }
+                if let Some(obj) = body.as_object_mut() {
+                    obj.insert("provider".to_string(), pin);
+                }
+            }
+        }
         body
     }
+}
+
+/// Closed, single-source models — no provider/quant choice to pin.
+/// (`google/gemma*` is open and serve-able by many providers, so not matched.)
+fn is_single_provider(model: &str) -> bool {
+    model.starts_with("anthropic/")
+        || model.starts_with("openai/")
+        || model.starts_with("google/gemini")
 }
 
 fn api_key_from_env() -> Result<String> {
