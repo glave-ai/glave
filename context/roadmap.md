@@ -133,13 +133,12 @@ each is coupled to a larger piece, not a standalone fix:
   for now. Going to a DB/object store is a `TraceSink` adapter, not a brain change
   — it belongs with the **commercial layer** (where per-tenant metering lives),
   not before the product that needs it.
-- **Native search (drop `rg` from images)** — `grep`/`glob` currently shell out
-  to `rg` in the sandbox, so the base images carry ripgrep. Move them to native
-  Rust via ripgrep's own crates (`grep`, `ignore`, `globset`) as a
-  `WorkspaceRuntime` op that searches where the files live (Docker: the host
-  bind-mount; local-client: locally) and returns only matches. Owned,
-  network-efficient, runtime-agnostic, and it lets us drop `rg` from all images.
-  **Bundle with the local-client build** (same crate code runs client-side).
+- **Native search — DONE on the eval side** (`de41d3d`). `grep`/`glob` are now a
+  `WorkspaceRuntime` op implemented in Rust via ripgrep's crates (`grep`,
+  `ignore`, `globset`) over the host bind-mount — gitignore-aware, vendoring-
+  skipping, `rg` dropped from all 4 images. Live-verified (qwen solved bytes-auto
+  using native grep). *Remaining for full eval↔product parity:* the local-client
+  reuses the same module (extract to a shared crate when the client is built).
 
 ## Next up: prove the thesis (the measurement)
 
