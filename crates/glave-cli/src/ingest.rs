@@ -483,15 +483,31 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Reconstruct a pytest node-id from a junit `<testcase>` the same way at compute
-/// time and grade time, so the stored ids match the live results.
-const PY_PARSE: &str = r#"
+/// Shared: run the suite to junit XML, then parse it to a {node_id: passed} map.
+/// Node-ids are reconstructed exactly from the testcase `file` attribute (so
+/// class-based `file::Class::test` and parametrized ids match pytest's own and
+/// SWE-bench's format); a classname fallback covers older junit without `file`.
+/// failure/error → fail; skipped/xfail ignored. Identical at compute & grade time.
+const PY_COMMON: &str = r#"
+def run_suite(test_root, tag):
+    rep = "/tmp/" + tag + ".xml"
+    subprocess.run([".venv/bin/python", "-m", "pytest", test_root,
+                    "--junitxml=" + rep, "--tb=no", "-q", "-p", "no:cacheprovider"],
+                   cwd="/work", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return rep
+
 def parse(rep):
     out = {}
     if not os.path.exists(rep):
         return out
     for tc in ET.parse(rep).getroot().iter("testcase"):
-        nid = tc.get("classname", "").replace(".", "/") + ".py::" + tc.get("name", "")
+        name, cls, fname = tc.get("name", ""), tc.get("classname", ""), tc.get("file")
+        if fname and fname.endswith(".py"):
+            module = fname[:-3].replace("/", ".")
+            klass = cls[len(module):].lstrip(".") if cls.startswith(module) else ""
+            nid = fname + "::" + (klass + "::" + name if klass else name)
+        else:
+            nid = cls.replace(".", "/") + ".py::" + name
         kinds = {c.tag for c in tc}
         if "skipped" in kinds:
             continue
@@ -502,18 +518,10 @@ def parse(rep):
 /// Ingest-time: diff per-test results at base vs base+fix → write f2p/p2p lists.
 const COMPUTE_PY_BODY: &str = r#"
 TEST_ROOT = sys.argv[1]
-
-def run_suite(tag):
-    rep = "/tmp/" + tag + ".xml"
-    subprocess.run([".venv/bin/python", "-m", "pytest", TEST_ROOT,
-                    "--junitxml=" + rep, "-q", "--tb=no", "-p", "no:cacheprovider"],
-                   cwd="/work", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return rep
-
 subprocess.run(["git", "apply", "/oracle/test.patch"], cwd="/work")
-base = parse(run_suite("base"))
+base = parse(run_suite(TEST_ROOT, "base"))
 subprocess.run("cp -a /solution/. /work/", shell=True, cwd="/work")
-fix = parse(run_suite("fix"))
+fix = parse(run_suite(TEST_ROOT, "fix"))
 
 touched = set(re.findall(r"^\+\+\+ b/(.+?)\s*$", open("/oracle/test.patch").read(), re.M))
 def in_patch(nid):
@@ -531,12 +539,7 @@ sys.stderr.write("computed F2P=%d P2P=%d regressed=%d\n" % (len(f2p), len(p2p), 
 /// Grade-time: run the suite once, then verify every id in the list passed.
 const CHECK_PY_BODY: &str = r#"
 TEST_ROOT, ID_FILE = sys.argv[1], sys.argv[2]
-rep = "/tmp/check.xml"
-subprocess.run([".venv/bin/python", "-m", "pytest", TEST_ROOT,
-                "--junitxml=" + rep, "-q", "--tb=no", "-p", "no:cacheprovider"],
-               cwd="/work", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-res = parse(rep)
+res = parse(run_suite(TEST_ROOT, "check"))
 ids = [l.strip() for l in open(ID_FILE) if l.strip()]
 missing = [i for i in ids if res.get(i) is not True]
 if missing:
@@ -548,7 +551,7 @@ sys.exit(0)
 "#;
 
 fn py_script(body: &str) -> String {
-    format!("import subprocess, sys, os, re, xml.etree.ElementTree as ET\n{PY_PARSE}\n{body}")
+    format!("import subprocess, sys, os, re, xml.etree.ElementTree as ET\n{PY_COMMON}\n{body}")
 }
 
 fn compute_py() -> String {
