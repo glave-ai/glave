@@ -186,14 +186,29 @@ regressed.** (Reference: the two-run junit-diff prototype, this session.)
 *together*, parse junit, check the stored F2P/P2P ids in the results — do NOT
 re-run subsets in isolation (ordering/state matters; click has state leakage).
 
-**Implementation plan (next focused build — ruler-critical, build it correct):**
-- Per-language machine-readable results: pytest `--junitxml`; go `test -json`;
-  rust via nextest junit; jest `--json` / vitest `--reporter=json`.
-- Ingest: 2 runs → compute lists → store `oracle/f2p.txt` + `oracle/p2p.txt`.
-  Lean: a per-language check script in the oracle dir runs suite + parses + checks
-  the list + exits 0/1, so the harness oracle stays exit-code-based (no Rust junit
-  parser, no oracle-mechanism change).
+**Status — Python DONE + logic-certified** (`06d986f`, `7ce41bb`):
+- ingest `compute_oracle` runs the suite twice (base, base+fix) on a throwaway
+  copy of the vendored workspace, diffs junit results, writes `oracle/f2p.txt`
+  (test_patch-scoped red→green) + `oracle/p2p.txt` (green→green) + `check_oracle.py`.
+- grade: oracle commands call the check script (run suite once, verify stored ids
+  passed) — exit-code based, no harness change. Node-ids reconstructed from the
+  junit `file=` attribute → exact (params + class-based), matches pytest/SWE-bench.
+- click-3533 (fresh task) gates: F2P=2, P2P=1558, noop UNSOLVED, solve SOLVED.
+
+**SWE-bench cross-check — logic certified, env boundary found:**
+- For flask-5014, SWE-bench's *verified* FAIL_TO_PASS = `test_empty_name_not_allowed`,
+  and our test_patch-scoping targets *exactly* that test → our F2P-selection logic
+  agrees with verified ground truth.
+- **Env-fidelity wall:** SWE-bench instances are pinned to specific old python/dep
+  versions (`environment_setup_commit`). Our modern image (py3.12) makes old suites
+  error out (deprecations-as-errors), so we can't reproduce their *execution*
+  verdicts without replicating their per-instance env — significant, anti-self-
+  sufficiency work. **This reinforces fresh tasks:** recent PRs run clean in our
+  modern env (click), are uncontaminated, and self-certify via the gate. Old
+  SWE-bench is both contaminated *and* env-stale → not for the measurement.
+  Execution-level cross-check (env-replication) is deferred, not needed.
+
+**Remaining:**
+- Extend compute/check to go (`test -json`), rust (nextest junit), ts
+  (jest `--json` / vitest `--reporter=json`). Python is the template.
 - Flakiness: run base ≥2× at ingest, keep only stably-green in P2P.
-- **SWE-bench cross-check:** run instances that ship verified F2P/P2P through our
-  computation; confirm match → certifies the machinery (model-free, so
-  contamination is irrelevant) BEFORE trusting it on fresh tasks.
