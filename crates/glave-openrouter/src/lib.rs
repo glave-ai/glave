@@ -45,17 +45,24 @@ impl OpenRouterProvider {
             .timeout_connect(connect)
             .timeout_read(read)
             .build();
+        let reasoning = reasoning_effort();
+        let reasoning_on = !matches!(reasoning.as_str(), "off" | "none" | "");
         Self {
             agent,
             api_key,
             base_url: "https://openrouter.ai/api/v1".to_string(),
             model,
-            temperature: 0.0, // pinned for run-to-run comparability
+            // Reasoning REQUIRES temperature 1.0 for Anthropic (extended thinking
+            // is silently disabled otherwise) and is recommended for reasoning
+            // generally; both legs use the same value so the comparison is fair,
+            // with run-to-run variance absorbed by --trials. Without reasoning,
+            // pin 0.0 for determinism.
+            temperature: if reasoning_on { 1.0 } else { 0.0 },
             // Per-turn output cap. Generous because, for Anthropic, thinking
             // tokens count against this — too low silently throttles high-effort
             // reasoning (and can truncate a large edit). Env-tunable.
             max_tokens: env_u64("GLAVE_MAX_TOKENS", 32000),
-            reasoning: reasoning_effort(),
+            reasoning,
             max_retries: u32::try_from(env_u64("GLAVE_HTTP_MAX_RETRIES", 3)).unwrap_or(3),
             base_backoff: Duration::from_secs(1),
         }
