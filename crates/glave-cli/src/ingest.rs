@@ -105,6 +105,10 @@ pub fn ingest(args: &IngestArgs) -> Result<()> {
 
     extract_solution(&ws, out, fix_patch, &fix_files)?;
 
+    // Compute SWE-bench-grade F2P/P2P by diffing per-test results at base vs
+    // base+fix (Python now; other langs keep their whole-suite oracle for now).
+    compute_oracle(lang, out, test_patch)?;
+
     let id = format!("{repo}-{}", args.index);
     let statement = format!("{title}\n\n{body}").trim().replace("'''", "''");
     std::fs::write(
@@ -166,17 +170,18 @@ fn derive(lang: Lang, test_patch: &str, fix_files: &[String]) -> Result<Derived>
                 .iter()
                 .find(|f| has_ext(f, "py"))
                 .ok_or_else(|| anyhow!("python: need a .py file in test_patch"))?;
-            let testdir = testfile.rsplit_once('/').map_or(".", |(d, _)| d);
+            let root = test_root(testfile);
             // Deps live in an in-container venv at /work/.venv (see `vendor`); the
             // editable install makes the repo source the importable package, so the
-            // agent's edits change what the test sees.
+            // agent's edits change what the test sees. The oracle is the *computed*
+            // F2P/P2P lists (see `compute_oracle`): run the suite, check the list.
             Ok(Derived {
                 editable: dirs.iter().map(|d| format!("{d}/**/*.py")).collect(),
                 fail_to_pass: format!(
-                    "git apply --check /oracle/test.patch 2>/dev/null && git apply /oracle/test.patch; .venv/bin/python -m pytest -q {testfile}"
+                    "git apply --check /oracle/test.patch 2>/dev/null && git apply /oracle/test.patch; .venv/bin/python /oracle/check_oracle.py {root} /oracle/f2p.txt"
                 ),
                 pass_to_pass: format!(
-                    "git apply --check /oracle/test.patch 2>/dev/null && git apply /oracle/test.patch; .venv/bin/python -m pytest -q {testdir}"
+                    "git apply --check /oracle/test.patch 2>/dev/null && git apply /oracle/test.patch; .venv/bin/python /oracle/check_oracle.py {root} /oracle/p2p.txt"
                 ),
             })
         }
@@ -276,6 +281,58 @@ fn extract_solution(ws: &Path, out: &Path, fix_patch: &str, fix_files: &[String]
     let _ = std::fs::remove_dir_all(&soltmp);
     let _ = std::fs::remove_file(&fixpath);
     Ok(())
+}
+
+/// Compute SWE-bench-grade F2P/P2P test-id lists by running the suite twice (base,
+/// then base+fix) on a throwaway copy of the vendored workspace, and write them +
+/// the check script into `oracle/`. The check script (run at grade time) executes
+/// the suite once and verifies the stored ids — robust to env-broken tests and to
+/// inter-test state. Python only for now; other languages keep their existing
+/// whole-suite oracle until their per-test result parsers land.
+fn compute_oracle(lang: Lang, out: &Path, test_patch: &str) -> Result<()> {
+    if !matches!(lang, Lang::Python) {
+        return Ok(());
+    }
+    let root = patch_files(test_patch)
+        .first()
+        .map_or_else(|| "tests".to_string(), |f| test_root(f));
+
+    let oracle = out.join("oracle");
+    std::fs::write(oracle.join("check_oracle.py"), check_py())?;
+    std::fs::write(oracle.join("compute_oracle.py"), compute_py())?;
+
+    // Copy the vendored workspace so the real one stays pristine at base.
+    let tmp = out.join(".computetmp");
+    let _ = std::fs::remove_dir_all(&tmp);
+    copy_dir(&out.join("workspace"), &tmp)?;
+
+    let tmp_mount = format!("{}:/work", tmp.to_string_lossy());
+    let oracle_mount = format!("{}:/oracle", oracle.to_string_lossy());
+    let sol_mount = format!("{}:/solution:ro", out.join("solution").to_string_lossy());
+    run(
+        "docker",
+        &[
+            "run", "--rm", "-v", &tmp_mount, "-v", &oracle_mount, "-v", &sol_mount, "-w", "/work",
+            lang.image(), "sh", "-c", &format!(".venv/bin/python /oracle/compute_oracle.py {root}"),
+        ],
+    )?;
+
+    let _ = std::fs::remove_dir_all(&tmp);
+    let _ = std::fs::remove_file(oracle.join("compute_oracle.py")); // keep oracle/ lean
+
+    // The task must discriminate: a non-empty FAIL_TO_PASS is required.
+    let f2p = std::fs::read_to_string(oracle.join("f2p.txt")).unwrap_or_default();
+    if f2p.split_whitespace().next().is_none() {
+        bail!("compute produced an empty FAIL_TO_PASS — task does not discriminate");
+    }
+    println!("  computed F2P/P2P lists -> oracle/f2p.txt, oracle/p2p.txt");
+    Ok(())
+}
+
+/// The top-level directory of a test file (`tests/test_x.py` → `tests`), i.e. what
+/// pytest runs as the suite; the file itself if it sits at the repo root.
+fn test_root(testfile: &str) -> String {
+    testfile.split_once('/').map_or(testfile, |(d, _)| d).to_string()
 }
 
 fn task_toml(
@@ -411,11 +468,93 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
         let entry = entry?;
         let from = entry.path();
         let to = dst.join(entry.file_name());
-        if from.is_dir() {
+        let ft = entry.file_type()?; // does NOT follow symlinks
+        if ft.is_symlink() {
+            // Preserve venv symlinks (bin/python → container interpreter) verbatim.
+            let target = std::fs::read_link(&from)?;
+            let _ = std::fs::remove_file(&to);
+            std::os::unix::fs::symlink(&target, &to)?;
+        } else if ft.is_dir() {
             copy_dir(&from, &to)?;
         } else {
             std::fs::copy(&from, &to)?;
         }
     }
     Ok(())
+}
+
+/// Reconstruct a pytest node-id from a junit `<testcase>` the same way at compute
+/// time and grade time, so the stored ids match the live results.
+const PY_PARSE: &str = r#"
+def parse(rep):
+    out = {}
+    if not os.path.exists(rep):
+        return out
+    for tc in ET.parse(rep).getroot().iter("testcase"):
+        nid = tc.get("classname", "").replace(".", "/") + ".py::" + tc.get("name", "")
+        kinds = {c.tag for c in tc}
+        if "skipped" in kinds:
+            continue
+        out[nid] = not ({"failure", "error"} & kinds)
+    return out
+"#;
+
+/// Ingest-time: diff per-test results at base vs base+fix → write f2p/p2p lists.
+const COMPUTE_PY_BODY: &str = r#"
+TEST_ROOT = sys.argv[1]
+
+def run_suite(tag):
+    rep = "/tmp/" + tag + ".xml"
+    subprocess.run([".venv/bin/python", "-m", "pytest", TEST_ROOT,
+                    "--junitxml=" + rep, "-q", "--tb=no", "-p", "no:cacheprovider"],
+                   cwd="/work", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return rep
+
+subprocess.run(["git", "apply", "/oracle/test.patch"], cwd="/work")
+base = parse(run_suite("base"))
+subprocess.run("cp -a /solution/. /work/", shell=True, cwd="/work")
+fix = parse(run_suite("fix"))
+
+touched = set(re.findall(r"^\+\+\+ b/(.+?)\s*$", open("/oracle/test.patch").read(), re.M))
+def in_patch(nid):
+    return nid.split("::", 1)[0] in touched
+
+f2p = sorted(k for k in base if base[k] is False and fix.get(k) is True and in_patch(k))
+p2p = sorted(k for k in base if base[k] is True and fix.get(k) is True)
+broke = sorted(k for k in base if base[k] is True and fix.get(k) is False)
+
+open("/oracle/f2p.txt", "w").write("\n".join(f2p) + "\n")
+open("/oracle/p2p.txt", "w").write("\n".join(p2p) + "\n")
+sys.stderr.write("computed F2P=%d P2P=%d regressed=%d\n" % (len(f2p), len(p2p), len(broke)))
+"#;
+
+/// Grade-time: run the suite once, then verify every id in the list passed.
+const CHECK_PY_BODY: &str = r#"
+TEST_ROOT, ID_FILE = sys.argv[1], sys.argv[2]
+rep = "/tmp/check.xml"
+subprocess.run([".venv/bin/python", "-m", "pytest", TEST_ROOT,
+                "--junitxml=" + rep, "-q", "--tb=no", "-p", "no:cacheprovider"],
+               cwd="/work", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+res = parse(rep)
+ids = [l.strip() for l in open(ID_FILE) if l.strip()]
+missing = [i for i in ids if res.get(i) is not True]
+if missing:
+    sys.stderr.write("%d/%d required tests not passing:\n" % (len(missing), len(ids)))
+    for m in missing[:10]:
+        sys.stderr.write("  " + m + "\n")
+    sys.exit(1)
+sys.exit(0)
+"#;
+
+fn py_script(body: &str) -> String {
+    format!("import subprocess, sys, os, re, xml.etree.ElementTree as ET\n{PY_PARSE}\n{body}")
+}
+
+fn compute_py() -> String {
+    py_script(COMPUTE_PY_BODY)
+}
+
+fn check_py() -> String {
+    py_script(CHECK_PY_BODY)
 }
