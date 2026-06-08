@@ -51,7 +51,10 @@ impl OpenRouterProvider {
             base_url: "https://openrouter.ai/api/v1".to_string(),
             model,
             temperature: 0.0, // pinned for run-to-run comparability
-            max_tokens: 8192, // headroom for reasoning + the action
+            // Per-turn output cap. Generous because, for Anthropic, thinking
+            // tokens count against this — too low silently throttles high-effort
+            // reasoning (and can truncate a large edit). Env-tunable.
+            max_tokens: env_u64("GLAVE_MAX_TOKENS", 32000),
             reasoning: reasoning_effort(),
             max_retries: u32::try_from(env_u64("GLAVE_HTTP_MAX_RETRIES", 3)).unwrap_or(3),
             base_backoff: Duration::from_secs(1),
