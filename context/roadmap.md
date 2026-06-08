@@ -212,3 +212,44 @@ re-run subsets in isolation (ordering/state matters; click has state leakage).
 - Extend compute/check to go (`test -json`), rust (nextest junit), ts
   (jest `--json` / vitest `--reporter=json`). Python is the template.
 - Flakiness: run base ≥2× at ingest, keep only stably-green in P2P.
+
+### First measurement — read + decisions (this session)
+
+**Result (n=3 Python, 1 trial, FAIR run after fixes):** qwen 2/3 (67%) @ $/correct
+$0.054 vs Opus 3/3 (100%) @ $0.465 → **qwen ~9× cheaper**, 67% relative success.
+Both solve the 2 easy tasks; Opus alone solves the harder one (click). Value prop
+intact and directionally supported; NOT proven (n=3 swings 33% per task).
+
+**Eval-rigor fixes landed (each caught by the reasoning check):**
+- Provider/quant pin (`GLAVE_PROVIDER`/`GLAVE_QUANT` → DeepInfra/fp8, no fallback).
+- `reasoning_tokens > 0` fairness check (earned its keep 3×).
+- `max_tokens` 8192 → 32000 env-tunable (Anthropic thinking counts against it).
+- **Reasoning REQUIRES temperature 1.0** — temp 0 silently disables Anthropic
+  extended thinking. Now reasoning-on ⇒ temp 1.0 both legs.
+
+**Key learnings:**
+- `effort:high` is a CEILING not a floor — gave Opus a 6000-tok budget, it used 6.
+  Opus reasons *adaptively*; barely needs it on everyday-easy tasks (good: means
+  the tasks aren't over-taxed). qwen reasons *harder* (401 tok) than Opus (~0).
+- The check over-warns: it can't tell "reasoning disabled (bug)" from "model chose
+  not to think (fine)." Refine to validate config-compatibility (temp=1 for
+  Anthropic), not token-count.
+
+**DECISION — escalation PARKED (do NOT build yet):** routing the hard tail to a
+frontier model is a crutch (removes the flywheel pressure that improves the
+engine), anti-self-sufficiency (paying/depending on the frontier we undercut),
+premature (product machinery before the engine is proven), and muddies $/correct.
+Hard tasks are *fuel* (signal to improve harness/Hope), not a fallback. Degrade
+honestly or grind harder on the cheap model — never rent the frontier. Revisit
+only with paying customers + a proven engine + real hard-tail demand.
+
+### NEXT (the focused grind, fresh) — scale to a number you can stand behind
+
+1. **Stable baseline:** curate ~10–15 everyday tasks (Python ready/certified —
+   start there), **2–3 trials each** to kill temp=1 noise → a `$/correct` +
+   relative-success that isn't hostage to one task. Guard the ruler before the
+   optimizer.
+2. **Breadth:** extend the differential oracle to Go/Rust/TS (Python is template).
+3. **Then the levers (only after a stable baseline):** harness improvements (where
+   does qwen fail — friction or capability?), LoRA/Hope (brevity → cheaper;
+   calibration → solves more). NOT escalation.
