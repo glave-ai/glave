@@ -501,13 +501,18 @@ def parse(rep):
     if not os.path.exists(rep):
         return out
     for tc in ET.parse(rep).getroot().iter("testcase"):
-        name, cls, fname = tc.get("name", ""), tc.get("classname", ""), tc.get("file")
-        if fname and fname.endswith(".py"):
-            module = fname[:-3].replace("/", ".")
-            klass = cls[len(module):].lstrip(".") if cls.startswith(module) else ""
-            nid = fname + "::" + (klass + "::" + name if klass else name)
-        else:
-            nid = cls.replace(".", "/") + ".py::" + name
+        name, cls = tc.get("name", ""), tc.get("classname", "")
+        # Split classname into module path vs class: by Python convention the
+        # first Capitalized component starts the class (junit often omits file=).
+        mod, klass = [], []
+        for p in cls.split("."):
+            if klass or p[:1].isupper():
+                klass.append(p)
+            else:
+                mod.append(p)
+        fname = tc.get("file")
+        path = fname if (fname and fname.endswith(".py")) else "/".join(mod) + ".py"
+        nid = path + "::" + ("::".join(klass + [name]) if klass else name)
         kinds = {c.tag for c in tc}
         if "skipped" in kinds:
             continue
