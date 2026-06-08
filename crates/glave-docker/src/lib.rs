@@ -345,7 +345,17 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
         let entry = entry?;
         let from = entry.path();
         let to = dst.join(entry.file_name());
-        if from.is_dir() {
+        // `file_type()` here does NOT follow symlinks (it's the entry's own type).
+        let ft = entry.file_type()?;
+        if ft.is_symlink() {
+            // Preserve symlinks verbatim. An in-container venv symlinks
+            // `bin/python` to the container interpreter — a target that doesn't
+            // exist on the host but is valid again once `/work` is remounted.
+            // Following it (the old behavior) errored with "No such file".
+            let target = std::fs::read_link(&from)?;
+            let _ = std::fs::remove_file(&to);
+            std::os::unix::fs::symlink(&target, &to)?;
+        } else if ft.is_dir() {
             copy_dir(&from, &to)?;
         } else {
             std::fs::copy(&from, &to)?;
@@ -355,7 +365,7 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
 }
 
 fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
-    const SKIP: [&str; 5] = ["vendor", "target", "node_modules", ".git", ".cargo"];
+    const SKIP: [&str; 6] = ["vendor", "target", "node_modules", ".git", ".cargo", ".venv"];
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let p = entry.path();
