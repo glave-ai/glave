@@ -162,3 +162,38 @@ validation grind — deserves fresh focus):
 - **Disk-safe:** bounded base images; per-task vendored deps cleanable; containers
   `rm -f -v` (no leftovers). Clean: `docker rm -fv $(docker ps -aq --filter
   name=glave) 2>/dev/null; rm -rf .runs .ingest`.
+
+### Oracle: differential F2P/P2P — design VALIDATED (prototype on click-3533)
+
+The naive oracle (f2p = run the touched test file; p2p = run the *whole* suite via
+exit code) is too brittle: real suites have env-broken tests (no TTY/`less` pager)
+that fail regardless of the fix, so p2p fails even for the correct solution
+(click p2p wrongly failed). Fix = compute SWE-bench-style **explicit test lists**
+by *diffing per-test results* at base vs base+fix:
+
+1. Run suite at base + test_patch (buggy) → junit → `results_base`.
+2. Run suite at base + test_patch + solution (fixed) → junit → `results_fix`.
+3. **F2P** = tests in files *touched by test_patch* that are red@base & green@fix.
+   Scope to test_patch files — else collateral/state-leak tests bloat it
+   (click: 74 → 2 with scoping). This was the critical catch.
+4. **P2P** = tests green@base & green@fix. Env-broken (red@both) auto-excluded;
+   the gold fix must regress 0.
+
+Prototype result on click-3533: **F2P=2, P2P=1558, 24 env-broken excluded, 0
+regressed.** (Reference: the two-run junit-diff prototype, this session.)
+
+**Grade-time** (SWE-bench-faithful, robust to state-leakage): run the suite
+*together*, parse junit, check the stored F2P/P2P ids in the results — do NOT
+re-run subsets in isolation (ordering/state matters; click has state leakage).
+
+**Implementation plan (next focused build — ruler-critical, build it correct):**
+- Per-language machine-readable results: pytest `--junitxml`; go `test -json`;
+  rust via nextest junit; jest `--json` / vitest `--reporter=json`.
+- Ingest: 2 runs → compute lists → store `oracle/f2p.txt` + `oracle/p2p.txt`.
+  Lean: a per-language check script in the oracle dir runs suite + parses + checks
+  the list + exits 0/1, so the harness oracle stays exit-code-based (no Rust junit
+  parser, no oracle-mechanism change).
+- Flakiness: run base ≥2× at ingest, keep only stably-green in P2P.
+- **SWE-bench cross-check:** run instances that ship verified F2P/P2P through our
+  computation; confirm match → certifies the machinery (model-free, so
+  contamination is irrelevant) BEFORE trusting it on fresh tasks.
