@@ -238,8 +238,14 @@ fn vendor(lang: Lang, ws: &Path, ws_s: &str) -> Result<()> {
                 "docker",
                 &[
                     "run", "--rm", "-v", &mount, "-w", "/work", Lang::Python.image(), "sh", "-c",
-                    "python -m venv .venv && .venv/bin/pip install -q -U pip \
-                     && .venv/bin/pip install -q -e . pytest",
+                    // Install the project + its declared test extra (hypothesis,
+                    // pretend, freezegun, … live there for many projects), trying
+                    // the common extra names, then pytest. Without the test deps
+                    // the full suite collection-errors and the oracle sees 0 tests.
+                    "python -m venv .venv && .venv/bin/pip install -q -U pip && { \
+                     .venv/bin/pip install -q -e '.[test]' || .venv/bin/pip install -q -e '.[tests]' \
+                     || .venv/bin/pip install -q -e '.[dev]' || .venv/bin/pip install -q -e .; } \
+                     && .venv/bin/pip install -q pytest",
                 ],
             )?;
         }
@@ -491,8 +497,11 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
 const PY_COMMON: &str = r#"
 def run_suite(test_root, tag):
     rep = "/tmp/" + tag + ".xml"
+    # continue-on-collection-errors: a test file that can't import (a missing test
+    # dep in our lean env) shouldn't abort the whole suite — run what collects.
     subprocess.run([".venv/bin/python", "-m", "pytest", test_root,
-                    "--junitxml=" + rep, "--tb=no", "-q", "-p", "no:cacheprovider"],
+                    "--junitxml=" + rep, "--tb=no", "-q",
+                    "--continue-on-collection-errors", "-p", "no:cacheprovider"],
                    cwd="/work", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return rep
 
