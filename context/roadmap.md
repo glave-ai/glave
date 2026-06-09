@@ -243,6 +243,51 @@ Hard tasks are *fuel* (signal to improve harness/Hope), not a fallback. Degrade
 honestly or grind harder on the cheap model — never rent the frontier. Revisit
 only with paying customers + a proven engine + real hard-tail demand.
 
+### Session 2 — gradient built + the turn-budget discovery (NOT yet a final number)
+
+**Built:** 11-task gated Python gradient (click ×2, moreit ×2, packaging ×3, pint ×2,
+arrow, tabulate — diverse real-bug tasks). Curation attrition learned: pure-Python
+only (compiled Rust/C exts don't `pip install`), need a `.py` test in test_patch
+(sqlglot uses `.sql` fixtures — dead), bug must manifest in py3.12. Gate rate ~1-in-3,
+higher when mining libs already proven to install.
+
+**Robustness fixes (a model's bad regex crashed the whole scorecard):** tool errors
+are now recoverable (fed back to the model, never fatal); a per-trial error counts
+unsolved + continues (one task can't abort the run). `f2f1871`, `93fdde4`.
+
+**THE KEY FINDING — qwen fails on BUDGET, not capability.** Scorecard showed qwen
+0/2 on click tasks; traced it → qwen hit the **20-turn cap** over-exploring (14 of 20
+actions were grep/read, never reached `submit`). Re-ran the same task at **40 turns →
+qwen SOLVED it** (explored, edited, tested, submitted). So the "gap" is largely
+**harness headroom**, not model incapability — the harness lever, demonstrated live.
+The measurement at 20 turns badly understates qwen. *No final number yet* — runs were
+killed (crash bug, then this finding, then user EOD). Re-run at a fair budget is the
+first move next session.
+
+**Design decisions this session (all parked, nothing built):**
+- **Bound on COST/tokens, not turns.** Turn cap is a crude proxy that severs progress;
+  a per-task token/cost budget is cost-aligned, portable across models, and meaningful.
+  Add a no-progress detector + a generous hard-stop as safety. *Do this before re-run.*
+- **LoRA for harness-native tool-use** (extends Hope's brevity purpose): train on our
+  own traces so the model explores efficiently, submits reliably, emits valid tool
+  inputs → fewer turns → cheaper AND more successful. Attacks success, not just cost.
+  Data = the traces. This is the flywheel proper.
+- **Baseline caching:** cache the expensive Opus leg keyed on
+  `model + task_content + config + run_shaping_code_hash` (hash only run-shaping files:
+  agent/tools/policy/prompts/request-builder — NOT ingest/search/infra). Auto-enforces
+  fairness: caches through model/config swaps (cheap model iteration), refreshes Opus
+  only when harness code changes. Escape hatches: `--refresh-baseline`, `rm` the file,
+  always label cached-vs-fresh. **Cloud/parallel = speed; caching = cost (orthogonal).**
+- **Execution backend:** `CloudRuntime` adapter (fits the `WorkspaceRuntime` port).
+  Burst-droplet first (reuse Docker, 30-wide eval); serverless containers
+  (Fargate=Firecracker / Cloud Run=gVisor — *more* isolated than laptop Docker, serves
+  the untrusted-code constraint) for the product. On this 16GB Mac: ~3 now, ~6 at 1GB/
+  container, ~10 if Docker gets more RAM. OpenRouter rate-limits + disk are the next caps.
+
+**Provisional read (n=3, FAIR, temp-fixed — superseded by the budget finding):**
+qwen 2/3 @ $/correct $0.054 vs Opus 3/3 @ $0.465 → ~9× cheaper. With the turn-budget
+fix, qwen's success should rise materially.
+
 ### NEXT (the focused grind, fresh) — scale to a number you can stand behind
 
 1. **Stable baseline:** curate ~10–15 everyday tasks (Python ready/certified —
