@@ -84,7 +84,7 @@ pub struct ModelAgent {
     provider: Box<dyn ModelProvider>,
     policy: Box<dyn Policy>,
     max_turns: u32,
-    max_tokens: u64,
+    token_budget: u64,
     context_window: u64,
     sub_turns: u32,
 }
@@ -94,8 +94,12 @@ impl ModelAgent {
         Self {
             provider,
             policy,
-            max_turns: env_parse("GLAVE_MAX_TURNS", 20),
-            max_tokens: env_parse("GLAVE_MAX_TOKENS", 120_000),
+            // The REAL bound is the output-token budget — it's cost-aligned and
+            // comparable across models. The turn cap is a pure runaway backstop;
+            // a tight cap severs runs mid-progress (a 20-turn cap made the cheap
+            // model "fail" tasks it solves with room to work).
+            max_turns: env_parse("GLAVE_MAX_TURNS", 100),
+            token_budget: env_parse("GLAVE_TOKEN_BUDGET", 100_000),
             context_window: env_parse("GLAVE_CONTEXT_WINDOW", 128_000),
             sub_turns: env_parse("GLAVE_SUB_TURNS", 6),
         }
@@ -345,12 +349,12 @@ impl Agent for ModelAgent {
             // Budget on completion (generated) tokens only. Cumulative prompt
             // counts re-sent history every turn — cheap under caching, and it
             // tripped the limit long before the model was actually done.
-            if total_completion >= self.max_tokens {
+            if total_completion >= self.token_budget {
                 trace.emit(RunEvent::agent_action(
                     run_id,
                     "budget_stop",
                     None,
-                    Some(format!("token budget {} reached", self.max_tokens)),
+                    Some(format!("token budget {} reached", self.token_budget)),
                 ))?;
                 break;
             }
