@@ -86,6 +86,10 @@ enum Cmd {
         /// Ignore the cached baseline and re-run (re-pay) the frontier leg.
         #[arg(long)]
         refresh_baseline: bool,
+        /// Concurrent task workers. Each run's container reserves the task's
+        /// [resource] memory (2GB default), so size this to Docker's RAM.
+        #[arg(long, default_value_t = 1)]
+        jobs: usize,
     },
 }
 
@@ -119,12 +123,14 @@ fn main() -> Result<()> {
             baseline,
             trials,
             refresh_baseline,
+            jobs,
         } => score(
             &tasks,
             &resolve_model(model),
             baseline.as_deref(),
             trials,
             refresh_baseline,
+            jobs,
         ),
     }
 }
@@ -269,6 +275,7 @@ fn run_trials(engine: &RunEngine, task_dir: &Path, model: &str, trials: usize) -
 
 /// Baseline trials via the cache: reuse what's already paid for, run only the
 /// shortfall, persist the union. Returns the trials plus a provenance label.
+/// A failed cache WRITE only warns — the measured data is still real.
 fn baseline_trials(
     engine: &RunEngine,
     cache: &BaselineCache,
@@ -276,7 +283,7 @@ fn baseline_trials(
     model: &str,
     want: usize,
     refresh: bool,
-) -> Result<(Vec<Trial>, &'static str)> {
+) -> (Vec<Trial>, &'static str) {
     let cached = if refresh { None } else { cache.lookup(model, task_dir) };
     let created = cached.as_ref().map_or_else(now_unix, |c| c.created_unix);
     let mut trials = cached.map(|c| c.trials).unwrap_or_default();
@@ -289,10 +296,13 @@ fn baseline_trials(
     };
     if trials.len() < want {
         trials.extend(run_trials(engine, task_dir, model, want - trials.len()));
-        cache.store(model, task_dir, &task_name(task_dir), trials.clone(), created)?;
+        if let Err(e) = cache.store(model, task_dir, &task_name(task_dir), trials.clone(), created)
+        {
+            eprintln!("  WARNING: baseline cache write failed (results kept): {e}");
+        }
     }
     trials.truncate(want);
-    Ok((trials, label))
+    (trials, label)
 }
 
 fn now_unix() -> u64 {
@@ -320,50 +330,113 @@ fn run_one(engine: &RunEngine, task_dir: &Path, model: &str) -> Result<Trial> {
     })
 }
 
+/// One task's measured row, produced by a (possibly concurrent) worker.
+struct Row {
+    q_solved: usize,
+    q_runs: usize,
+    q_cost: f64,
+    baseline: Option<(usize, usize, f64, &'static str)>,
+}
+
+/// Measure one task end to end (both legs) and print its line. Infallible by
+/// design: per-trial errors are already absorbed as unsolved inside run_trials.
+fn score_task(
+    engine: &RunEngine,
+    cache: &BaselineCache,
+    t: &Path,
+    model: &str,
+    baseline: Option<&str>,
+    trials: usize,
+    refresh_baseline: bool,
+) -> Row {
+    let qt = run_trials(engine, t, model, trials);
+    let qs = qt.iter().filter(|t| t.solved).count();
+    let mut line = format!(
+        "{:<34} {:>10}",
+        clip_id(&task_name(t), 34),
+        format!("{qs}/{trials}")
+    );
+
+    let baseline = baseline.map(|bl| {
+        let (ft, label) = baseline_trials(engine, cache, t, bl, trials, refresh_baseline);
+        let fs = ft.iter().filter(|t| t.solved).count();
+        line.push_str(&format!(" {:>10}", format!("{fs}/{trials}")));
+        if label != "fresh" {
+            line.push_str(&format!("  ({label})"));
+        }
+        (fs, ft.len(), ft.iter().map(|t| t.cost).sum(), label)
+    });
+    println!("{line}");
+
+    Row {
+        q_solved: qs,
+        q_runs: qt.len(),
+        q_cost: qt.iter().map(|t| t.cost).sum(),
+        baseline,
+    }
+}
+
 fn score(
     task_paths: &[PathBuf],
     model: &str,
     baseline: Option<&str>,
     trials: usize,
     refresh_baseline: bool,
+    jobs: usize,
 ) -> Result<()> {
     let tasks = discover_tasks(task_paths)?;
     if tasks.is_empty() {
         return Err(anyhow!("no tasks found under the given path(s)"));
     }
     let trials = trials.max(1);
+    let jobs = jobs.clamp(1, tasks.len().max(1));
     println!(
-        "scoring {} task(s) x {trials} trial(s): {model} (armed){}\n",
+        "scoring {} task(s) x {trials} trial(s){}: {model} (armed){}\n",
         tasks.len(),
+        if jobs > 1 {
+            format!(" across {jobs} workers (rows complete out of order)")
+        } else {
+            String::new()
+        },
         baseline.map_or_else(String::new, |b| format!(" vs {b} (armed)")),
     );
 
     let engine = build_engine();
     let cache = BaselineCache::new(PathBuf::from("cache/baselines"));
+
+    // Worker pool: an atomic cursor hands out tasks; rows stream back over a
+    // channel. The engine was built Send+Sync for concurrent server requests —
+    // this is the same property paying off for the eval. Each run's container
+    // reserves the task's [resource] memory, so size --jobs to Docker's RAM.
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let (tx, rx) = std::sync::mpsc::channel::<Row>();
+    std::thread::scope(|s| {
+        for _ in 0..jobs {
+            let tx = tx.clone();
+            let (next, engine, cache, tasks) = (&next, &engine, &cache, &tasks);
+            s.spawn(move || loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let Some(t) = tasks.get(i) else { break };
+                let row = score_task(engine, cache, t, model, baseline, trials, refresh_baseline);
+                if tx.send(row).is_err() {
+                    break;
+                }
+            });
+        }
+    });
+    drop(tx);
+
     let mut q = Agg::default();
     let mut f = Agg::default();
     let mut cached_legs = 0usize;
-
-    for t in &tasks {
-        let id = task_name(t);
-        let qt = run_trials(&engine, t, model, trials);
-        let qs = qt.iter().filter(|t| t.solved).count();
-        q.add(qs, qt.len(), qt.iter().map(|t| t.cost).sum());
-        let mut line = format!("{:<34} {:>10}", clip_id(&id, 34), format!("{qs}/{trials}"));
-
-        if let Some(bl) = baseline {
-            let (ft, label) = baseline_trials(&engine, &cache, t, bl, trials, refresh_baseline)?;
-            let fs = ft.iter().filter(|t| t.solved).count();
-            f.add(fs, ft.len(), ft.iter().map(|t| t.cost).sum());
+    for row in rx {
+        q.add(row.q_solved, row.q_runs, row.q_cost);
+        if let Some((fs, fr, fc, label)) = row.baseline {
+            f.add(fs, fr, fc);
             if label == "cached" {
                 cached_legs += 1;
             }
-            line.push_str(&format!(" {:>10}", format!("{fs}/{trials}")));
-            if label != "fresh" {
-                line.push_str(&format!("  ({label})"));
-            }
         }
-        println!("{line}");
     }
     if baseline.is_some() && cached_legs > 0 {
         println!(
