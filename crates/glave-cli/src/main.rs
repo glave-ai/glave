@@ -245,7 +245,7 @@ fn run_trials(
     task_dir: &Path,
     model: &str,
     trials: usize,
-) -> Result<(usize, f64)> {
+) -> (usize, f64) {
     let mut solved = 0usize;
     let mut cost = 0.0f64;
     for trial in 0..trials {
@@ -265,7 +265,7 @@ fn run_trials(
             ),
         }
     }
-    Ok((solved, cost))
+    (solved, cost)
 }
 
 /// Run one task with one model in one mode via the engine; only the outcome
@@ -308,12 +308,12 @@ fn score(
 
     for t in &tasks {
         let id = task_name(t);
-        let (qs, qc) = run_trials(&engine, t, model, trials)?;
+        let (qs, qc) = run_trials(&engine, t, model, trials);
         q.add(qs, trials, qc);
         let mut line = format!("{:<34} {:>10}", clip_id(&id, 34), format!("{qs}/{trials}"));
 
         if let Some(bl) = baseline {
-            let (fs, fc) = run_trials(&engine, t, bl, trials)?;
+            let (fs, fc) = run_trials(&engine, t, bl, trials);
             f.add(fs, trials, fc);
             line.push_str(&format!(" {:>10}", format!("{fs}/{trials}")));
         }
