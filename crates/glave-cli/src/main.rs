@@ -10,7 +10,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use glave_core::engine::{AgentSpec, RunEngine, RunRequest};
-use glave_core::sinks::{JsonlSink, NullSink};
+use glave_core::sinks::JsonlSink;
 use glave_core::TaskSpec;
 use glave_docker::DockerRuntimeFactory;
 use glave_openrouter::OpenRouterFactory;
@@ -277,7 +277,10 @@ fn run_one(engine: &RunEngine, task_dir: &Path, model: &str) -> Result<Stat> {
         task,
         agent: AgentSpec::Model { model: model.to_string() },
     };
-    let outcome = engine.execute(&req, &mut NullSink)?;
+    // Keep the trace: measurement runs are exactly the data the flywheel mines
+    // (debugging failures, and LoRA training pairs from successful attempts).
+    let mut sink = JsonlSink::create(Path::new("traces"), &req.run_id)?;
+    let outcome = engine.execute(&req, &mut sink)?;
     check_reasoning(&outcome.agent_label, outcome.reasoning_tokens);
     Ok(Stat {
         solved: outcome.solved,
