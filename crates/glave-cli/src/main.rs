@@ -1,9 +1,11 @@
 //! Glave CLI — the composition root. Wires concrete adapters (Docker runtime,
 //! OpenRouter provider, JSONL sink) into the core's orchestration.
 
+mod baseline_cache;
 mod ingest;
 
 use anyhow::{anyhow, Context, Result};
+use baseline_cache::{BaselineCache, Trial};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -81,6 +83,9 @@ enum Cmd {
         /// Trials per task — solve-rate over N runs beats noisy single shots.
         #[arg(long, default_value_t = 1)]
         trials: usize,
+        /// Ignore the cached baseline and re-run (re-pay) the frontier leg.
+        #[arg(long)]
+        refresh_baseline: bool,
     },
 }
 
@@ -113,7 +118,14 @@ fn main() -> Result<()> {
             model,
             baseline,
             trials,
-        } => score(&tasks, &resolve_model(model), baseline.as_deref(), trials),
+            refresh_baseline,
+        } => score(
+            &tasks,
+            &resolve_model(model),
+            baseline.as_deref(),
+            trials,
+            refresh_baseline,
+        ),
     }
 }
 
@@ -210,11 +222,6 @@ fn validate(task_dir: &Path) -> Result<()> {
     }
 }
 
-struct Stat {
-    solved: bool,
-    cost: f64,
-}
-
 /// Aggregate over task × trial runs for one model.
 #[derive(Default)]
 struct Agg {
@@ -240,49 +247,74 @@ impl Agg {
 
 /// Run a task `trials` times sequentially (one container at a time — the host
 /// can't fan out); return (passes, total cost).
-fn run_trials(
-    engine: &RunEngine,
-    task_dir: &Path,
-    model: &str,
-    trials: usize,
-) -> (usize, f64) {
-    let mut solved = 0usize;
-    let mut cost = 0.0f64;
+fn run_trials(engine: &RunEngine, task_dir: &Path, model: &str, trials: usize) -> Vec<Trial> {
+    let mut out = Vec::with_capacity(trials);
     for trial in 0..trials {
         // A single trial erroring (infra hiccup, model/provider glitch) must not
         // abort the scorecard — count it as unsolved and press on.
         match run_one(engine, task_dir, model) {
-            Ok(s) => {
-                if s.solved {
-                    solved += 1;
-                }
-                cost += s.cost;
+            Ok(t) => out.push(t),
+            Err(e) => {
+                eprintln!(
+                    "  WARNING: {} trial {}/{trials} errored (counted unsolved): {e}",
+                    task_name(task_dir),
+                    trial + 1
+                );
+                out.push(Trial { solved: false, cost: 0.0 });
             }
-            Err(e) => eprintln!(
-                "  WARNING: {} trial {}/{trials} errored (counted unsolved): {e}",
-                task_name(task_dir),
-                trial + 1
-            ),
         }
     }
-    (solved, cost)
+    out
 }
 
-/// Run one task with one model in one mode via the engine; only the outcome
-/// (solved + cost) is needed, so trace events are discarded.
-fn run_one(engine: &RunEngine, task_dir: &Path, model: &str) -> Result<Stat> {
+/// Baseline trials via the cache: reuse what's already paid for, run only the
+/// shortfall, persist the union. Returns the trials plus a provenance label.
+fn baseline_trials(
+    engine: &RunEngine,
+    cache: &BaselineCache,
+    task_dir: &Path,
+    model: &str,
+    want: usize,
+    refresh: bool,
+) -> Result<(Vec<Trial>, &'static str)> {
+    let cached = if refresh { None } else { cache.lookup(model, task_dir) };
+    let created = cached.as_ref().map_or_else(now_unix, |c| c.created_unix);
+    let mut trials = cached.map(|c| c.trials).unwrap_or_default();
+    let label = if trials.len() >= want {
+        "cached"
+    } else if trials.is_empty() {
+        "fresh"
+    } else {
+        "topped-up"
+    };
+    if trials.len() < want {
+        trials.extend(run_trials(engine, task_dir, model, want - trials.len()));
+        cache.store(model, task_dir, &task_name(task_dir), trials.clone(), created)?;
+    }
+    trials.truncate(want);
+    Ok((trials, label))
+}
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// Run one task with one model via the engine, keeping the trace: measurement
+/// runs are exactly the data the flywheel mines (debugging failures, and LoRA
+/// training pairs from successful attempts).
+fn run_one(engine: &RunEngine, task_dir: &Path, model: &str) -> Result<Trial> {
     let task = TaskSpec::load(task_dir)?;
     let req = RunRequest {
         run_id: uuid::Uuid::new_v4().to_string(),
         task,
         agent: AgentSpec::Model { model: model.to_string() },
     };
-    // Keep the trace: measurement runs are exactly the data the flywheel mines
-    // (debugging failures, and LoRA training pairs from successful attempts).
     let mut sink = JsonlSink::create(Path::new("traces"), &req.run_id)?;
     let outcome = engine.execute(&req, &mut sink)?;
     check_reasoning(&outcome.agent_label, outcome.reasoning_tokens);
-    Ok(Stat {
+    Ok(Trial {
         solved: outcome.solved,
         cost: outcome.cost_usd,
     })
@@ -293,6 +325,7 @@ fn score(
     model: &str,
     baseline: Option<&str>,
     trials: usize,
+    refresh_baseline: bool,
 ) -> Result<()> {
     let tasks = discover_tasks(task_paths)?;
     if tasks.is_empty() {
@@ -306,21 +339,37 @@ fn score(
     );
 
     let engine = build_engine();
+    let cache = BaselineCache::new(PathBuf::from("cache/baselines"));
     let mut q = Agg::default();
     let mut f = Agg::default();
+    let mut cached_legs = 0usize;
 
     for t in &tasks {
         let id = task_name(t);
-        let (qs, qc) = run_trials(&engine, t, model, trials);
-        q.add(qs, trials, qc);
+        let qt = run_trials(&engine, t, model, trials);
+        let qs = qt.iter().filter(|t| t.solved).count();
+        q.add(qs, qt.len(), qt.iter().map(|t| t.cost).sum());
         let mut line = format!("{:<34} {:>10}", clip_id(&id, 34), format!("{qs}/{trials}"));
 
         if let Some(bl) = baseline {
-            let (fs, fc) = run_trials(&engine, t, bl, trials);
-            f.add(fs, trials, fc);
+            let (ft, label) = baseline_trials(&engine, &cache, t, bl, trials, refresh_baseline)?;
+            let fs = ft.iter().filter(|t| t.solved).count();
+            f.add(fs, ft.len(), ft.iter().map(|t| t.cost).sum());
+            if label == "cached" {
+                cached_legs += 1;
+            }
             line.push_str(&format!(" {:>10}", format!("{fs}/{trials}")));
+            if label != "fresh" {
+                line.push_str(&format!("  ({label})"));
+            }
         }
         println!("{line}");
+    }
+    if baseline.is_some() && cached_legs > 0 {
+        println!(
+            "\n  note: {cached_legs}/{} baseline leg(s) reused from cache (--refresh-baseline to re-run)",
+            tasks.len()
+        );
     }
 
     println!("\n--- scorecard ({trials} trial(s)/task) ---");
