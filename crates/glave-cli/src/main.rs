@@ -248,12 +248,22 @@ fn run_trials(
 ) -> Result<(usize, f64)> {
     let mut solved = 0usize;
     let mut cost = 0.0f64;
-    for _ in 0..trials {
-        let s = run_one(engine, task_dir, model)?;
-        if s.solved {
-            solved += 1;
+    for trial in 0..trials {
+        // A single trial erroring (infra hiccup, model/provider glitch) must not
+        // abort the scorecard — count it as unsolved and press on.
+        match run_one(engine, task_dir, model) {
+            Ok(s) => {
+                if s.solved {
+                    solved += 1;
+                }
+                cost += s.cost;
+            }
+            Err(e) => eprintln!(
+                "  WARNING: {} trial {}/{trials} errored (counted unsolved): {e}",
+                task_name(task_dir),
+                trial + 1
+            ),
         }
-        cost += s.cost;
     }
     Ok((solved, cost))
 }

@@ -141,7 +141,10 @@ impl ModelAgent {
             for tc in &c.tool_calls {
                 let obs = match ToolCall::from_call(&tc.name, &tc.arguments) {
                     Ok(call) if subagent_tool_allowed(&call, &allow) => {
-                        tools::execute(&call, rt, task, &mut viewed)?
+                        // Recoverable: a failed tool (e.g. bad regex) feeds the
+                        // error back, never crashes the subagent.
+                        tools::execute(&call, rt, task, &mut viewed)
+                            .unwrap_or_else(|e| format!("ERROR: tool '{}' failed: {e}", call.name()))
                     }
                     Ok(_) => {
                         "ERROR: subagents are read-only — use read, grep, or glob only".to_string()
@@ -294,16 +297,29 @@ impl Agent for ModelAgent {
                                 ))?;
                                 format!("DENIED: {reason}")
                             }
-                            Decision::Allow => {
-                                let result = tools::execute(&call, rt, task, &mut viewed)?;
-                                trace.emit(RunEvent::agent_action(
-                                    run_id,
-                                    call.name(),
-                                    call.path(),
-                                    None,
-                                ))?;
-                                result
-                            }
+                            // A tool that fails on bad input (e.g. an invalid regex
+                            // pattern) is RECOVERABLE — feed the error back so the
+                            // model can retry. It must never crash the run.
+                            Decision::Allow => match tools::execute(&call, rt, task, &mut viewed) {
+                                Ok(result) => {
+                                    trace.emit(RunEvent::agent_action(
+                                        run_id,
+                                        call.name(),
+                                        call.path(),
+                                        None,
+                                    ))?;
+                                    result
+                                }
+                                Err(e) => {
+                                    trace.emit(RunEvent::agent_action(
+                                        run_id,
+                                        "tool_error",
+                                        call.path(),
+                                        Some(e.to_string()),
+                                    ))?;
+                                    format!("ERROR: tool '{}' failed: {e}", call.name())
+                                }
+                            },
                         },
                         Err(e) => {
                             trace.emit(RunEvent::agent_action(
