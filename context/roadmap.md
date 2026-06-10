@@ -288,6 +288,34 @@ first move next session.
 qwen 2/3 @ $/correct $0.054 vs Opus 3/3 @ $0.465 → ~9× cheaper. With the turn-budget
 fix, qwen's success should rise materially.
 
+### ★ THE BLIND NUMBER (2026-06-09) — first defensible measurement
+
+Sealed harness (no /oracle in the agent container, no run_tests, repro/ scratch,
+reproduce-first prompts — `6b364df`), 11 tasks × 2 trials, qwen (DeepInfra/fp8,
+reasoning, temp 1) vs Opus 4.8 (reasoning, temp 1), both armed, jobs=3:
+
+- **qwen 20/22 (91%) @ $/correct $0.196 vs Opus 19/22 (86%) @ $1.173**
+- Headline cut: relative success **105%**, relative $/correct **16.7%** (6×).
+- **Conservative cut (drop contamination-flagged arrow-1224**, Oct-2025 merge,
+  where qwen 2/2 vs Opus 0/2 — the memorization signature): **qwen 90% vs Opus
+  95% → ~95% of frontier success at ~1/6 the $/correct.** Quote THIS one.
+- Failure anatomy: all 5 failures = submitted confidently, p2p green, f2p red —
+  "repro'd a subtly different behavior than the maintainer specified." No
+  crashes, no budget-stops, 0 errored trials; 20 policy denials (guardrail held);
+  17 invalid_args (recovered). Models wrote named repro tests (repro/test_*.py).
+- Context numbers: the UNSEALED sweep (run_tests + one observed oracle-peek run)
+  was 22/22 vs 22/22 @ 6.5× — recorded as the with-feedback upper bound only.
+- Promise scoreboard: success half (≥90% of frontier) **MET** blind. Cost half:
+  17% vs the 3–5% target — the remaining 3–5× comes from Hope brevity tuning +
+  owned serving (qwen reasons ~400 tok where Opus uses ~6; 35-min meanders;
+  17 invalid calls — all measured LoRA targets now).
+
+**Trust posture:** oracle sealed by construction (grade() runs in a separate
+ephemeral container mounted only at grade time); trace audit caught one run
+reading /oracle pre-seal (qwen, pint) — that class is now physically impossible.
+Known audit gap promoted to requirement: traces don't record bash bodies/tool
+arguments → argument-enrichment goes in with the results store.
+
 ### NEXT (the focused grind, fresh) — scale to a number you can stand behind
 
 1. **Stable baseline:** curate ~10–15 everyday tasks (Python ready/certified —
