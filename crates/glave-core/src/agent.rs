@@ -78,7 +78,7 @@ impl Agent for SolveAgent {
 }
 
 /// The real model-driven agent: drives the tool grammar (read / str_replace /
-/// create / bash / run_tests / submit) through the mediation policy, bounded by
+/// create / bash / submit) through the mediation policy, bounded by
 /// turn and token budgets.
 pub struct ModelAgent {
     provider: Box<dyn ModelProvider>,
@@ -372,14 +372,17 @@ impl Agent for ModelAgent {
 }
 
 fn system_prompt() -> String {
-    "You are a coding agent. Fix the workspace so the failing test passes without \
-     breaking the previously-passing tests. Use the provided tools to read, search, \
-     edit files, run shell commands, and run the tests. Read a file before editing \
-     it; keep changes minimal and confined to the workspace. Call `run_tests` to \
-     check your work, and call `submit` once the failing test passes. You may \
-     delegate focused investigation to the `subagent` tool — only its summary \
-     returns to you, keeping your context lean. You may issue several tool calls in \
-     one turn when they are independent."
+    "You are a coding agent. Fix the reported issue without breaking existing \
+     behavior. The test that demonstrates this bug does NOT exist in the workspace \
+     — your fix is verified against a held test after you submit, so work like an \
+     engineer: REPRODUCE the issue first (write your own small test or script \
+     under `repro/`), fix the code, verify your reproduction now passes (run it \
+     with `bash`), and run the relevant existing tests to check for regressions. \
+     Read a file before editing it; keep changes minimal. Call `submit` when \
+     you are confident the fix is correct and regression-free. You may delegate \
+     focused investigation to the `subagent` tool — only its summary returns to \
+     you, keeping your context lean. You may issue several tool calls in one turn \
+     when they are independent."
         .to_string()
 }
 
@@ -476,7 +479,8 @@ fn spec_section(task: &TaskSpec) -> String {
         out
     } else {
         format!(
-            "Fix the issue below. A held test verifies the fix; use <run_tests/> to check.\n\n--- issue ---\n{}\n\n",
+            "Fix the issue below. A held test (not visible to you) verifies the fix \
+             after you submit — reproduce the issue yourself to be sure.\n\n--- issue ---\n{}\n\n",
             task.statement
         )
     }
@@ -693,7 +697,7 @@ mod tests {
         assert!(is_readonly(&ToolCall::Grep { pattern: "x".into(), glob: None }));
         assert!(is_readonly(&ToolCall::Glob { pattern: "*".into() }));
         assert!(!is_readonly(&ToolCall::Create { path: "f".into(), content: "c".into() }));
-        assert!(!is_readonly(&ToolCall::RunTests));
+        assert!(!is_readonly(&ToolCall::Submit));
     }
 
     #[test]

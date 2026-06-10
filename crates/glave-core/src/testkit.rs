@@ -122,6 +122,10 @@ impl WorkspaceRuntime for InMemoryRuntime {
         })
     }
 
+    fn grade(&self, cmd: &str) -> Result<ExecResult> {
+        self.run(cmd)
+    }
+
     // Simplified fake: substring match (the real runtime uses regex via ripgrep).
     fn grep(&self, pattern: &str, file_glob: Option<&str>) -> Result<Vec<String>> {
         let glob = file_glob.and_then(|g| glob::Pattern::new(g).ok());

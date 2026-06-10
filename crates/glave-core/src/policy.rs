@@ -34,6 +34,12 @@ impl AutonomousPolicy {
     }
 
     fn path_editable(&self, path: &str) -> bool {
+        // `repro/` is the agent's scratch space for its OWN reproduction tests —
+        // always writable, so "write a repro first" is possible without opening
+        // the existing test suite to tampering (tests/ stays read-only).
+        if path.starts_with("repro/") {
+            return true;
+        }
         if self.editable.is_empty() {
             return true;
         }
@@ -58,7 +64,6 @@ impl Policy for AutonomousPolicy {
             | ToolCall::Bash { .. }
             | ToolCall::Grep { .. }
             | ToolCall::Glob { .. }
-            | ToolCall::RunTests
             | ToolCall::Subagent { .. }
             | ToolCall::Mcp { .. }
             | ToolCall::Submit => Decision::Allow,

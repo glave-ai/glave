@@ -18,13 +18,15 @@ pub struct Verdict {
 }
 
 pub fn evaluate(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<Verdict> {
-    let f2p = rt.run(&task.oracle.fail_to_pass)?;
+    // `grade`, not `run`: the oracle executes outside the agent's sandbox (the
+    // agent's container has no /oracle), so the held tests stay sealed until now.
+    let f2p = rt.grade(&task.oracle.fail_to_pass)?;
     let fail_to_pass_ok = f2p.exit_code == 0;
 
     let (pass_to_pass_ok, p2p_exit) = match &task.oracle.pass_to_pass {
         None => (true, None),
         Some(cmd) => {
-            let r = rt.run(cmd)?;
+            let r = rt.grade(cmd)?;
             (r.exit_code == 0, Some(r.exit_code))
         }
     };
