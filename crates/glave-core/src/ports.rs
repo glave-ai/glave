@@ -127,6 +127,11 @@ pub trait WorkspaceRuntime {
     fn list_files(&self) -> Result<Vec<String>>;
     /// Run a shell command in the workspace dir inside the sandbox.
     fn run(&self, cmd: &str) -> Result<ExecResult>;
+    /// Run an ORACLE command at grade time. Isolated from the agent's sandbox
+    /// (a separate ephemeral container with the oracle mounted) so the held
+    /// tests are unreachable during the run — the agent must never be able to
+    /// read or invoke the grader.
+    fn grade(&self, cmd: &str) -> Result<ExecResult>;
     /// Search file contents (git-aware) — implemented natively by each runtime
     /// where the files live, so we never depend on a sandbox `rg`. Returns
     /// `path:line:text` lines; `file_glob` optionally restricts which files.

@@ -20,6 +20,12 @@ pub struct DockerRuntime {
     host_work: PathBuf,
     workdir: String,
     exec_timeout: Duration,
+    /// Everything `grade` needs to spin its own ephemeral container: the agent's
+    /// container deliberately has NO oracle mount (the held tests must be
+    /// unreachable during the run), so grading runs separately.
+    image: String,
+    oracle_dir: PathBuf,
+    network: String,
 }
 
 impl DockerRuntime {
@@ -39,8 +45,11 @@ impl DockerRuntime {
         let pids = task.resource.pids.to_string();
         let network = secure_network(&task.resource.network);
         let work_mount = format!("{}:{}", work_abs.display(), task.image.workdir);
-        let oracle_mount = format!("{}:/oracle:ro", oracle_abs.display());
 
+        // NOTE: the agent's container gets NO /oracle mount — the held tests and
+        // grading scripts must be unreachable during the run (a model has been
+        // observed going looking for them). Grading runs in a separate ephemeral
+        // container; see `grade`.
         let mut run_cmd = Command::new("docker");
         run_cmd.args([
             "run",
@@ -63,8 +72,6 @@ impl DockerRuntime {
             "no-new-privileges",
             "-v",
             &work_mount,
-            "-v",
-            &oracle_mount,
             "-w",
             &task.image.workdir,
             &task.image.base,
@@ -84,6 +91,9 @@ impl DockerRuntime {
             host_work: work_abs,
             workdir: task.image.workdir.clone(),
             exec_timeout: Duration::from_secs(env_u64("GLAVE_EXEC_TIMEOUT_SECS", 300)),
+            image: task.image.base.clone(),
+            oracle_dir: oracle_abs,
+            network,
         })
     }
 
@@ -138,6 +148,38 @@ impl WorkspaceRuntime for DockerRuntime {
         let mut command = Command::new("docker");
         command.args(["exec", "-w", &self.workdir, &self.container, "sh", "-c", cmd]);
         run_with_timeout(command, self.exec_timeout).context("docker exec")
+    }
+
+    /// Grade-time oracle execution in a FRESH ephemeral container (`--rm`) that
+    /// mounts the workspace plus /oracle read-only. The agent's own container
+    /// never sees /oracle, so the held tests are unreachable during the run;
+    /// this one exists only after the agent is done, for the length of one
+    /// command, with no network.
+    fn grade(&self, cmd: &str) -> Result<ExecResult> {
+        let work_mount = format!("{}:{}", self.host_work.display(), self.workdir);
+        let oracle_mount = format!("{}:/oracle:ro", self.oracle_dir.display());
+        let mut command = Command::new("docker");
+        command.args([
+            "run",
+            "--rm",
+            "--network",
+            &self.network,
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "-v",
+            &work_mount,
+            "-v",
+            &oracle_mount,
+            "-w",
+            &self.workdir,
+            &self.image,
+            "sh",
+            "-c",
+            cmd,
+        ]);
+        run_with_timeout(command, self.exec_timeout).context("docker grade run")
     }
 
     // Search runs natively over the host bind-mount (no `rg` in the sandbox), so

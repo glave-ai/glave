@@ -8,7 +8,6 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
-use crate::oracle;
 use crate::ports::WorkspaceRuntime;
 use crate::task::TaskSpec;
 
@@ -45,8 +44,6 @@ pub enum ToolCall {
     Glob {
         pattern: String,
     },
-    /// Run the task's oracle and report pass/fail.
-    RunTests,
     /// Spawn a research subagent on a focused question; its summary returns as
     /// the observation. A context-compression worker — the main agent's context
     /// never sees the exploration, only the answer. `name` selects a configured
@@ -74,7 +71,6 @@ impl ToolCall {
             ToolCall::Bash { .. } => "bash",
             ToolCall::Grep { .. } => "grep",
             ToolCall::Glob { .. } => "glob",
-            ToolCall::RunTests => "run_tests",
             ToolCall::Subagent { .. } => "subagent",
             ToolCall::Mcp { .. } => "mcp",
             ToolCall::Submit => "submit",
@@ -123,7 +119,6 @@ impl ToolCall {
                 let a: GlobArgs = serde_json::from_str(args)?;
                 ToolCall::Glob { pattern: a.pattern }
             }
-            "run_tests" => ToolCall::RunTests,
             "subagent" => {
                 let a: SubagentArgs = serde_json::from_str(args)?;
                 ToolCall::Subagent { name: a.name, task: a.task }
@@ -289,11 +284,6 @@ pub fn tool_specs() -> Vec<ToolSpec> {
             }),
         },
         ToolSpec {
-            name: "run_tests",
-            description: "Run the task's oracle and report pass/fail.",
-            parameters: json!({"type": "object", "properties": {}}),
-        },
-        ToolSpec {
             name: "subagent",
             description: "Spawn a focused research subagent; only its summary returns to you.",
             parameters: json!({
@@ -331,7 +321,7 @@ pub fn tool_specs() -> Vec<ToolSpec> {
 pub fn execute(
     call: &ToolCall,
     rt: &mut dyn WorkspaceRuntime,
-    task: &TaskSpec,
+    _task: &TaskSpec,
     viewed: &mut BTreeSet<String>,
 ) -> Result<String> {
     match call {
@@ -391,15 +381,6 @@ pub fn execute(
             } else {
                 clip(&files.join("\n"), 4000)
             })
-        }
-        ToolCall::RunTests => {
-            let v = oracle::evaluate(&*rt, task)?;
-            Ok(format!(
-                "TEST RESULTS\nFAIL_TO_PASS: {}\nPASS_TO_PASS: {}\n---\n{}",
-                if v.fail_to_pass_ok { "PASS" } else { "FAIL" },
-                if v.pass_to_pass_ok { "PASS" } else { "FAIL" },
-                clip(&v.f2p_output, 2000)
-            ))
         }
         // Handled in the agent loop (need provider / MCP hub); never reached here.
         ToolCall::Subagent { .. } => {
@@ -478,8 +459,9 @@ mod tests {
 
     #[test]
     fn from_call_handles_no_arg_tools() -> Result<()> {
-        assert!(matches!(ToolCall::from_call("run_tests", "")?, ToolCall::RunTests));
         assert!(matches!(ToolCall::from_call("submit", "{}")?, ToolCall::Submit));
+        // run_tests is GONE from the surface: the oracle is sealed from the agent.
+        assert!(ToolCall::from_call("run_tests", "").is_err());
         Ok(())
     }
 
@@ -492,8 +474,7 @@ mod tests {
     fn tool_specs_cover_every_variant() {
         let names: Vec<&str> = tool_specs().iter().map(|s| s.name).collect();
         for n in [
-            "read", "str_replace", "create", "bash", "grep", "glob", "run_tests", "subagent",
-            "mcp", "submit",
+            "read", "str_replace", "create", "bash", "grep", "glob", "subagent", "mcp", "submit",
         ] {
             assert!(names.contains(&n), "missing spec: {n}");
         }
