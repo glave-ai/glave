@@ -274,7 +274,7 @@ fn run_trials(engine: &RunEngine, task_dir: &Path, model: &str, trials: usize) -
 }
 
 /// Baseline trials via the cache: reuse what's already paid for, run only the
-/// shortfall, persist the union. Returns the trials plus a provenance label.
+/// shortfall, append the new trials. Returns the trials plus a provenance label.
 /// A failed cache WRITE only warns — the measured data is still real.
 fn baseline_trials(
     engine: &RunEngine,
@@ -284,9 +284,10 @@ fn baseline_trials(
     want: usize,
     refresh: bool,
 ) -> (Vec<Trial>, &'static str) {
-    let cached = if refresh { None } else { cache.lookup(model, task_dir) };
-    let created = cached.as_ref().map_or_else(now_unix, |c| c.created_unix);
-    let mut trials = cached.map(|c| c.trials).unwrap_or_default();
+    if refresh {
+        cache.clear(model, task_dir); // re-pay: drop the old cached lines first
+    }
+    let mut trials = cache.lookup(model, task_dir);
     let label = if trials.len() >= want {
         "cached"
     } else if trials.is_empty() {
@@ -295,20 +296,14 @@ fn baseline_trials(
         "topped-up"
     };
     if trials.len() < want {
-        trials.extend(run_trials(engine, task_dir, model, want - trials.len()));
-        if let Err(e) = cache.store(model, task_dir, &task_name(task_dir), trials.clone(), created)
-        {
+        let run = run_trials(engine, task_dir, model, want - trials.len());
+        if let Err(e) = cache.append(model, task_dir, &run) {
             eprintln!("  WARNING: baseline cache write failed (results kept): {e}");
         }
+        trials.extend(run);
     }
     trials.truncate(want);
     (trials, label)
-}
-
-fn now_unix() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
 }
 
 /// Run one task with one model via the engine, keeping the trace: measurement

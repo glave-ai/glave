@@ -58,9 +58,12 @@ impl OpenRouterProvider {
             // with run-to-run variance absorbed by --trials. Without reasoning,
             // pin 0.0 for determinism.
             temperature: if reasoning_on { 1.0 } else { 0.0 },
-            // Per-turn output cap. Generous because, for Anthropic, thinking
-            // tokens count against this — too low silently throttles high-effort
-            // reasoning (and can truncate a large edit). Env-tunable.
+            // GLAVE_MAX_TOKENS = the PER-REQUEST (per-turn) output cap sent to
+            // the API. Distinct from GLAVE_TOKEN_BUDGET (agent.rs), which bounds
+            // a whole run's TOTAL output across all turns — don't confuse them:
+            // setting this expecting a run-wide budget will surprise you.
+            // Generous because, for Anthropic, thinking tokens count against this
+            // — too low silently throttles high-effort reasoning. Env-tunable.
             max_tokens: env_u64("GLAVE_MAX_TOKENS", 32000),
             reasoning,
             max_retries: u32::try_from(env_u64("GLAVE_HTTP_MAX_RETRIES", 3)).unwrap_or(3),

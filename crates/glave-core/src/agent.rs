@@ -99,6 +99,9 @@ impl ModelAgent {
             // a tight cap severs runs mid-progress (a 20-turn cap made the cheap
             // model "fail" tasks it solves with room to work).
             max_turns: env_parse("GLAVE_MAX_TURNS", 100),
+            // GLAVE_TOKEN_BUDGET = total output tokens across a WHOLE run (all
+            // turns). Distinct from GLAVE_MAX_TOKENS (glave-openrouter), the
+            // per-request cap — don't conflate them.
             token_budget: env_parse("GLAVE_TOKEN_BUDGET", 100_000),
             context_window: env_parse("GLAVE_CONTEXT_WINDOW", 128_000),
             sub_turns: env_parse("GLAVE_SUB_TURNS", 6),
