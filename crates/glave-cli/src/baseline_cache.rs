@@ -16,11 +16,19 @@
 //! a fresh armed-vs-armed baseline. Conservative by design — it may re-run on a
 //! trivial code edit, never the reverse.
 //!
-//! Escape hatches: `--refresh-baseline`, or delete `cache/baselines/`.
+//! **Format & concurrency:** each task's cache is an append-only JSONL file, one
+//! `Trial` per line. `append` opens with `O_APPEND` and writes the batch in a
+//! single `write_all`, which POSIX makes atomic — so two workers persisting
+//! trials of the *same* baseline task (which the planned task×trial fan-out will
+//! do) can't clobber each other. No read-modify-write, no lock file.
+//!
+//! Escape hatches: `--refresh-baseline` (clears the file first), or delete
+//! `cache/baselines/`.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Run-shaping source, embedded at compile time — the binary's run behavior can
@@ -34,15 +42,17 @@ const RUN_SHAPING_SRC: [&str; 5] = [
     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../glave-openrouter/src/lib.rs")),
 ];
 
-/// Env knobs that shape a run, captured by value (unset hashes differently from
-/// set-to-default on purpose — cheaper than duplicating default logic here).
+/// Env knobs that shape a run, captured by value. Both token vars matter and are
+/// distinct: `GLAVE_TOKEN_BUDGET` is the agent's total output-token budget;
+/// `GLAVE_MAX_TOKENS` is the OpenRouter per-request output cap. Changing either
+/// changes the run, so both belong in the key.
 const RUN_SHAPING_ENV: [&str; 6] = [
     "GLAVE_REASONING",
     "GLAVE_PROVIDER",
     "GLAVE_QUANT",
     "GLAVE_TOKEN_BUDGET",
-    "GLAVE_MAX_TURNS",
     "GLAVE_MAX_TOKENS",
+    "GLAVE_MAX_TURNS",
 ];
 
 /// One paid-for baseline trial: did it solve, and what did it cost.
@@ -50,15 +60,6 @@ const RUN_SHAPING_ENV: [&str; 6] = [
 pub struct Trial {
     pub solved: bool,
     pub cost: f64,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct CachedBaseline {
-    pub model: String,
-    pub task_id: String,
-    /// Unix seconds when first written — shown so a stale reference is visible.
-    pub created_unix: u64,
-    pub trials: Vec<Trial>,
 }
 
 pub struct BaselineCache {
@@ -71,32 +72,44 @@ impl BaselineCache {
         Self { dir }
     }
 
-    /// Cached trials for this (model, task, config, code) — `None` if never paid.
-    pub fn lookup(&self, model: &str, task_dir: &Path) -> Option<CachedBaseline> {
-        let bytes = std::fs::read(self.path(model, task_dir)).ok()?;
-        serde_json::from_slice(&bytes).ok()
+    /// Trials already paid for this (model, task, config, code), oldest first.
+    /// A truncated/garbled line is skipped rather than failing the read — the
+    /// worst case is re-running a trial, never a crash.
+    pub fn lookup(&self, model: &str, task_dir: &Path) -> Vec<Trial> {
+        let Ok(text) = std::fs::read_to_string(self.path(model, task_dir)) else {
+            return Vec::new();
+        };
+        text.lines()
+            .filter_map(|l| serde_json::from_str::<Trial>(l).ok())
+            .collect()
     }
 
-    /// Persist trials (overwrites; callers append to what `lookup` returned).
-    pub fn store(
-        &self,
-        model: &str,
-        task_dir: &Path,
-        task_id: &str,
-        trials: Vec<Trial>,
-        created_unix: u64,
-    ) -> Result<()> {
+    /// Append freshly-run trials. Atomic under `O_APPEND` (one `write_all` of a
+    /// small batch), so concurrent appenders for the same task don't interleave.
+    pub fn append(&self, model: &str, task_dir: &Path, trials: &[Trial]) -> Result<()> {
+        if trials.is_empty() {
+            return Ok(());
+        }
         std::fs::create_dir_all(&self.dir)?;
-        let entry = CachedBaseline {
-            model: model.to_string(),
-            task_id: task_id.to_string(),
-            created_unix,
-            trials,
-        };
+        let mut batch = String::new();
+        for t in trials {
+            batch.push_str(&serde_json::to_string(t)?);
+            batch.push('\n');
+        }
         let path = self.path(model, task_dir);
-        std::fs::write(&path, serde_json::to_vec_pretty(&entry)?)
-            .with_context(|| format!("writing baseline cache {}", path.display()))?;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .with_context(|| format!("opening baseline cache {}", path.display()))?;
+        f.write_all(batch.as_bytes())
+            .with_context(|| format!("appending baseline cache {}", path.display()))?;
         Ok(())
+    }
+
+    /// Discard a task's cached baseline (used by `--refresh-baseline`).
+    pub fn clear(&self, model: &str, task_dir: &Path) {
+        let _ = std::fs::remove_file(self.path(model, task_dir));
     }
 
     fn path(&self, model: &str, task_dir: &Path) -> PathBuf {
@@ -104,7 +117,7 @@ impl BaselineCache {
             .chars()
             .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
             .collect();
-        self.dir.join(format!("{slug}-{:016x}.json", key(model, task_dir)))
+        self.dir.join(format!("{slug}-{:016x}.jsonl", key(model, task_dir)))
     }
 }
 
@@ -151,23 +164,31 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_and_task_sensitivity() -> Result<()> {
+    fn append_lookup_clear_and_task_sensitivity() -> Result<()> {
         let base = std::env::temp_dir().join(format!("glave-bc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
         let task = task_fixture(&base)?;
         let cache = BaselineCache::new(base.join("cache"));
 
-        assert!(cache.lookup("m/x", &task).is_none());
-        cache.store("m/x", &task, "t", vec![Trial { solved: true, cost: 0.5 }], 1)?;
-        let hit = cache
-            .lookup("m/x", &task)
-            .ok_or_else(|| anyhow::anyhow!("expected a cached entry"))?;
-        assert_eq!(hit.trials.len(), 1);
-        assert!(hit.trials.first().is_some_and(|t| t.solved));
+        assert!(cache.lookup("m/x", &task).is_empty());
+        cache.append("m/x", &task, &[Trial { solved: true, cost: 0.5 }])?;
+        // A second append accumulates (the top-up path) — no clobber.
+        cache.append("m/x", &task, &[Trial { solved: false, cost: 0.3 }])?;
+        let hit = cache.lookup("m/x", &task);
+        assert_eq!(hit.len(), 2);
+        assert!(hit.first().is_some_and(|t| t.solved));
+        assert!(hit.get(1).is_some_and(|t| !t.solved));
 
         // A different model misses; a changed oracle (the ruler!) misses.
-        assert!(cache.lookup("m/y", &task).is_none());
+        assert!(cache.lookup("m/y", &task).is_empty());
         std::fs::write(task.join("oracle/f2p.txt"), "tests/a.py::t2\n")?;
-        assert!(cache.lookup("m/x", &task).is_none());
+        assert!(cache.lookup("m/x", &task).is_empty());
+
+        // clear discards.
+        std::fs::write(task.join("oracle/f2p.txt"), "tests/a.py::t1\n")?; // back to the cached key
+        assert_eq!(cache.lookup("m/x", &task).len(), 2);
+        cache.clear("m/x", &task);
+        assert!(cache.lookup("m/x", &task).is_empty());
 
         let _ = std::fs::remove_dir_all(&base);
         Ok(())

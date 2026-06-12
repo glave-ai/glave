@@ -20,12 +20,18 @@ pub struct DockerRuntime {
     host_work: PathBuf,
     workdir: String,
     exec_timeout: Duration,
-    /// Everything `grade` needs to spin its own ephemeral container: the agent's
+    /// What `grade` needs to spin its own ephemeral container: the agent's
     /// container deliberately has NO oracle mount (the held tests must be
     /// unreachable during the run), so grading runs separately.
     image: String,
     oracle_dir: PathBuf,
-    network: String,
+}
+
+/// The security hardening every container we spawn must share — the sandbox
+/// boundary. Applied to both the agent's run container and the ephemeral grade
+/// container so the two can never drift apart.
+fn harden(cmd: &mut Command) {
+    cmd.args(["--cap-drop", "ALL", "--security-opt", "no-new-privileges"]);
 }
 
 impl DockerRuntime {
@@ -66,10 +72,9 @@ impl DockerRuntime {
             &cpus,
             "--pids-limit",
             &pids,
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges",
+        ]);
+        harden(&mut run_cmd);
+        run_cmd.args([
             "-v",
             &work_mount,
             "-w",
@@ -93,7 +98,6 @@ impl DockerRuntime {
             exec_timeout: Duration::from_secs(env_u64("GLAVE_EXEC_TIMEOUT_SECS", 300)),
             image: task.image.base.clone(),
             oracle_dir: oracle_abs,
-            network,
         })
     }
 
@@ -151,23 +155,20 @@ impl WorkspaceRuntime for DockerRuntime {
     }
 
     /// Grade-time oracle execution in a FRESH ephemeral container (`--rm`) that
-    /// mounts the workspace plus /oracle read-only. The agent's own container
-    /// never sees /oracle, so the held tests are unreachable during the run;
-    /// this one exists only after the agent is done, for the length of one
-    /// command, with no network.
+    /// mounts the agent's edited workspace plus /oracle read-only. The agent's
+    /// own container never sees /oracle, so the held tests are unreachable during
+    /// the run; this one exists only after the agent is done, for one command,
+    /// with `--network none` (grading is deterministic and never needs egress,
+    /// regardless of what the agent run was allowed). NOTE: this is a fresh
+    /// container — any env the agent `export`ed mid-run is gone; the oracle
+    /// commands must be self-contained (ours invoke `.venv/bin/python` directly).
     fn grade(&self, cmd: &str) -> Result<ExecResult> {
         let work_mount = format!("{}:{}", self.host_work.display(), self.workdir);
         let oracle_mount = format!("{}:/oracle:ro", self.oracle_dir.display());
         let mut command = Command::new("docker");
+        command.args(["run", "--rm", "--network", "none"]);
+        harden(&mut command);
         command.args([
-            "run",
-            "--rm",
-            "--network",
-            &self.network,
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges",
             "-v",
             &work_mount,
             "-v",
