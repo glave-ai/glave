@@ -3,12 +3,13 @@
 //! the network reliability layer: connect/read timeouts plus bounded retry
 //! with exponential backoff that honors `Retry-After`.
 //!
-//! One transport, two [`Dialect`]s of the same OpenAI chat API:
-//! - **OpenRouter** — the multi-vendor broker; requests carry broker-only
+//! One transport, two [`ServerKind`]s — both speak the OpenAI chat API, each
+//! with its own extensions riding on it:
+//! - **OpenRouter** — the multi-vendor broker; requests carry broker
 //!   extensions (metered cost, reasoning effort, provider pinning).
-//! - **OpenAiCompat** — the first-party rail: a model named `glave/<served>`
-//!   routes to the self-hosted endpoint at `GLAVE_BASE_URL` (vLLM / RunPod)
-//!   with `GLAVE_API_KEY`, speaking pure-spec requests.
+//! - **SelfHosted** — the first-party rail: a model named `glave/<served>`
+//!   routes to the endpoint at `GLAVE_BASE_URL` (vLLM / RunPod) with
+//!   `GLAVE_API_KEY`, carrying vLLM extensions instead and imputed cost.
 //!
 //! Only the explicitly-prefixed model reroutes — a frontier baseline in the
 //! same run still goes to OpenRouter, so a scorecard's two legs can't cross
@@ -33,23 +34,24 @@ fn env_u64(key: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
-/// Which dialect of the OpenAI chat-completions API the endpoint speaks.
+/// What's on the other end of the connection. Both kinds speak the OpenAI
+/// chat-completions API — they differ in which *extensions* ride on it.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Dialect {
-    /// openrouter.ai — the multi-vendor broker. Accepts broker-only request
-    /// extensions: `usage.include` (metered cost), `reasoning` effort,
-    /// provider/quant pinning.
+enum ServerKind {
+    /// openrouter.ai — the multi-vendor broker. Accepts broker extensions:
+    /// `usage.include` (metered cost), `reasoning` effort, provider/quant
+    /// pinning.
     OpenRouter,
-    /// A plain OpenAI-compatible server (vLLM behind `GLAVE_BASE_URL`):
-    /// pure-spec requests, plus vLLM's own `chat_template_kwargs`.
-    OpenAiCompat,
+    /// Our own endpoint (vLLM behind `GLAVE_BASE_URL`): vLLM extensions
+    /// (`chat_template_kwargs`) and no billing meter, so cost is imputed.
+    SelfHosted,
 }
 
 pub struct ChatProvider {
     agent: ureq::Agent,
     api_key: String,
     base_url: String,
-    dialect: Dialect,
+    kind: ServerKind,
     /// The model id as the rest of the system knows it — traces, labels,
     /// cache keys: e.g. `glave/qwen3.6-27b` or `anthropic/claude-opus-4.8`.
     model: String,
@@ -68,7 +70,7 @@ impl ChatProvider {
     pub fn openrouter(api_key: String, model: String) -> Self {
         let wire_model = model.clone();
         let base_url = "https://openrouter.ai/api/v1".to_string();
-        Self::build(api_key, model, wire_model, base_url, Dialect::OpenRouter)
+        Self::build(api_key, model, wire_model, base_url, ServerKind::OpenRouter)
     }
 
     /// The first-party rail: a self-hosted OpenAI-compatible endpoint
@@ -76,7 +78,7 @@ impl ChatProvider {
     /// the server's served name.
     #[must_use]
     pub fn self_hosted(api_key: String, model: String, wire_model: String, base_url: String) -> Self {
-        Self::build(api_key, model, wire_model, base_url, Dialect::OpenAiCompat)
+        Self::build(api_key, model, wire_model, base_url, ServerKind::SelfHosted)
     }
 
     fn build(
@@ -84,7 +86,7 @@ impl ChatProvider {
         model: String,
         wire_model: String,
         base_url: String,
-        dialect: Dialect,
+        kind: ServerKind,
     ) -> Self {
         let connect = Duration::from_secs(env_u64("GLAVE_HTTP_CONNECT_SECS", 10));
         let read = Duration::from_secs(env_u64("GLAVE_HTTP_READ_SECS", 300));
@@ -98,7 +100,7 @@ impl ChatProvider {
             agent,
             api_key,
             base_url,
-            dialect,
+            kind,
             model,
             wire_model,
             // Reasoning REQUIRES temperature 1.0 for Anthropic (extended thinking
@@ -150,10 +152,10 @@ impl ChatProvider {
         let Some(obj) = body.as_object_mut() else { return body };
         let reasoning_on = !matches!(self.reasoning.as_str(), "off" | "none" | "");
 
-        match self.dialect {
+        match self.kind {
             // Self-hosted reasoning models (qwen3.6) think by default and have
             // no effort knob; "off" maps to the chat template's escape hatch.
-            Dialect::OpenAiCompat => {
+            ServerKind::SelfHosted => {
                 if !reasoning_on {
                     obj.insert(
                         "chat_template_kwargs".to_string(),
@@ -161,7 +163,7 @@ impl ChatProvider {
                     );
                 }
             }
-            Dialect::OpenRouter => {
+            ServerKind::OpenRouter => {
                 obj.insert("usage".to_string(), json!({ "include": true }));
                 if reasoning_on {
                     obj.insert("reasoning".to_string(), json!({ "effort": self.reasoning }));
@@ -346,7 +348,7 @@ impl ModelProvider for ChatProvider {
                 Ok(r) => {
                     let v: Value = r.into_json().context("parsing chat-completion response")?;
                     let mut c = parse_completion(&v, &self.model);
-                    if self.dialect == Dialect::OpenAiCompat {
+                    if self.kind == ServerKind::SelfHosted {
                         impute_cost(&mut c);
                     }
                     return Ok(c);
