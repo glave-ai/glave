@@ -2,8 +2,13 @@
 //!
 //! Owns reasoning control (enabled + measured), cost metering, and the network
 //! reliability layer: connect/read timeouts plus bounded retry with exponential
-//! backoff that honors `Retry-After`. Repoint to a local vLLM or a frontier leg
-//! by swapping this adapter; the core never changes.
+//! backoff that honors `Retry-After`.
+//!
+//! Also serves self-hosted OpenAI-compatible endpoints (vLLM / RunPod): a model
+//! named `local/<served-name>` routes to `GLAVE_BASE_URL` with `GLAVE_API_KEY`,
+//! skipping OpenRouter-only request fields. Only the explicitly-prefixed model
+//! is rerouted — a frontier baseline in the same run still goes to OpenRouter,
+//! so a scorecard's two legs can't cross wires.
 
 use std::time::Duration;
 
@@ -29,6 +34,9 @@ pub struct OpenRouterProvider {
     api_key: String,
     base_url: String,
     model: String,
+    /// True for openrouter.ai; false for a self-hosted OpenAI-compatible
+    /// endpoint, where OpenRouter-only request fields are skipped.
+    openrouter: bool,
     temperature: f64,
     max_tokens: u64,
     reasoning: String,
@@ -39,6 +47,18 @@ pub struct OpenRouterProvider {
 impl OpenRouterProvider {
     #[must_use]
     pub fn new(api_key: String, model: String) -> Self {
+        Self::with_base(api_key, model, "https://openrouter.ai/api/v1".to_string(), true)
+    }
+
+    /// A self-hosted OpenAI-compatible endpoint (vLLM / RunPod). Same chat
+    /// shape; omits OpenRouter-only fields (`usage.include`, `reasoning`
+    /// effort, provider pinning) that such servers may reject or misread.
+    #[must_use]
+    pub fn self_hosted(api_key: String, model: String, base_url: String) -> Self {
+        Self::with_base(api_key, model, base_url, false)
+    }
+
+    fn with_base(api_key: String, model: String, base_url: String, openrouter: bool) -> Self {
         let connect = Duration::from_secs(env_u64("GLAVE_HTTP_CONNECT_SECS", 10));
         let read = Duration::from_secs(env_u64("GLAVE_HTTP_READ_SECS", 300));
         let agent = ureq::AgentBuilder::new()
@@ -50,8 +70,9 @@ impl OpenRouterProvider {
         Self {
             agent,
             api_key,
-            base_url: "https://openrouter.ai/api/v1".to_string(),
+            base_url,
             model,
+            openrouter,
             // Reasoning REQUIRES temperature 1.0 for Anthropic (extended thinking
             // is silently disabled otherwise) and is recommended for reasoning
             // generally; both legs use the same value so the comparison is fair,
@@ -97,13 +118,25 @@ impl OpenRouterProvider {
             "messages": msgs,
             "tools": tools,
             "tool_choice": "auto",
-            "usage": { "include": true },
         });
+        let Some(obj) = body.as_object_mut() else { return body };
         let reasoning_on = !matches!(self.reasoning.as_str(), "off" | "none" | "");
-        if reasoning_on {
-            if let Some(obj) = body.as_object_mut() {
-                obj.insert("reasoning".to_string(), json!({ "effort": self.reasoning }));
+
+        if !self.openrouter {
+            // Self-hosted reasoning models (qwen3.6) think by default and have
+            // no effort knob; "off" maps to the chat template's escape hatch.
+            if !reasoning_on {
+                obj.insert(
+                    "chat_template_kwargs".to_string(),
+                    json!({ "enable_thinking": false }),
+                );
             }
+            return body;
+        }
+
+        obj.insert("usage".to_string(), json!({ "include": true }));
+        if reasoning_on {
+            obj.insert("reasoning".to_string(), json!({ "effort": self.reasoning }));
         }
 
         // Pin provider + quantization for reproducible, like-for-like runs on open
@@ -113,12 +146,10 @@ impl OpenRouterProvider {
         if let Ok(provider) = std::env::var("GLAVE_PROVIDER") {
             if !is_single_provider(&self.model) {
                 let mut pin = json!({ "only": [provider], "allow_fallbacks": false });
-                if let (Some(obj), Ok(quant)) = (pin.as_object_mut(), std::env::var("GLAVE_QUANT")) {
-                    obj.insert("quantizations".to_string(), json!([quant]));
+                if let (Some(p), Ok(quant)) = (pin.as_object_mut(), std::env::var("GLAVE_QUANT")) {
+                    p.insert("quantizations".to_string(), json!([quant]));
                 }
-                if let Some(obj) = body.as_object_mut() {
-                    obj.insert("provider".to_string(), pin);
-                }
+                obj.insert("provider".to_string(), pin);
             }
         }
         body
@@ -217,7 +248,11 @@ fn parse_completion(v: &Value, fallback_model: &str) -> Completion {
 
     let tool_calls = parse_tool_calls(v);
     let content = str_at("/choices/0/message/content").unwrap_or("");
-    let reasoning_text = str_at("/choices/0/message/reasoning").unwrap_or("");
+    // OpenRouter surfaces thinking as `reasoning`; vLLM's reasoning parsers
+    // (e.g. qwen3) as `reasoning_content`.
+    let reasoning_text = str_at("/choices/0/message/reasoning")
+        .or_else(|| str_at("/choices/0/message/reasoning_content"))
+        .unwrap_or("");
     let content = if content.trim().is_empty() {
         reasoning_text
     } else {
@@ -238,6 +273,27 @@ fn parse_completion(v: &Value, fallback_model: &str) -> Completion {
     }
 }
 
+/// A self-hosted endpoint reports no `usage.cost` (there's no per-token bill —
+/// we rent the GPU). So that $/correct still computes, impute cost from env
+/// prices in USD per **million** tokens: `GLAVE_PRICE_IN` / `GLAVE_PRICE_OUT`,
+/// derived offline from rental $/s ÷ measured throughput. Never overrides a
+/// real metered cost.
+fn impute_cost(c: &mut Completion) {
+    if c.cost_usd != 0.0 {
+        return;
+    }
+    let price = |key| std::env::var(key).ok().and_then(|v: String| v.parse::<f64>().ok());
+    let (Some(input), Some(output)) = (price("GLAVE_PRICE_IN"), price("GLAVE_PRICE_OUT")) else {
+        return;
+    };
+    c.cost_usd = per_mtok(c.prompt_tokens, input) + per_mtok(c.completion_tokens, output);
+}
+
+#[allow(clippy::cast_precision_loss)] // token counts are far below 2^52
+fn per_mtok(tokens: u64, usd_per_mtok: f64) -> f64 {
+    usd_per_mtok * (tokens as f64) / 1_000_000.0
+}
+
 impl ModelProvider for OpenRouterProvider {
     fn complete(&self, messages: &[Message]) -> Result<Completion> {
         let body = self.request_body(messages);
@@ -256,8 +312,12 @@ impl ModelProvider for OpenRouterProvider {
 
             match resp {
                 Ok(r) => {
-                    let v: Value = r.into_json().context("parsing OpenRouter response")?;
-                    return Ok(parse_completion(&v, &self.model));
+                    let v: Value = r.into_json().context("parsing chat-completion response")?;
+                    let mut c = parse_completion(&v, &self.model);
+                    if !self.openrouter {
+                        impute_cost(&mut c);
+                    }
+                    return Ok(c);
                 }
                 // Retryable HTTP statuses (rate-limit / provider overload): back off.
                 Err(ureq::Error::Status(code, r)) => {
@@ -306,6 +366,22 @@ impl OpenRouterFactory {
 
 impl ProviderFactory for OpenRouterFactory {
     fn create(&self, model: &str) -> Result<Box<dyn ModelProvider>> {
+        // `local/<served-name>` → the self-hosted endpoint. Only this prefix
+        // reroutes; every other model (e.g. the frontier baseline leg of the
+        // same scorecard run) still goes to OpenRouter.
+        if let Some(served) = model.strip_prefix("local/") {
+            let base_url = std::env::var("GLAVE_BASE_URL").context(
+                "GLAVE_BASE_URL not set (required for local/* models; e.g. \
+                 https://api.runpod.ai/v2/<endpoint-id>/openai/v1)",
+            )?;
+            // vLLM itself doesn't authenticate by default; RunPod does.
+            let key = std::env::var("GLAVE_API_KEY").unwrap_or_default();
+            return Ok(Box::new(OpenRouterProvider::self_hosted(
+                key,
+                served.to_string(),
+                base_url,
+            )));
+        }
         let key = self
             .api_key
             .clone()
@@ -376,6 +452,61 @@ mod tests {
         let v = json!({"choices": [{"message": {"content": "", "reasoning": "thinking"}}]});
         let c = parse_completion(&v, "m");
         assert_eq!(c.content, "thinking");
+    }
+
+    #[test]
+    fn parse_completion_reads_vllm_reasoning_content() {
+        // vLLM's reasoning parsers emit `reasoning_content`, not `reasoning`.
+        let v = json!({"choices": [{"message": {"content": "", "reasoning_content": "vllm-think"}}]});
+        let c = parse_completion(&v, "m");
+        assert_eq!(c.content, "vllm-think");
+    }
+
+    #[test]
+    fn self_hosted_body_omits_openrouter_only_fields() {
+        let p = OpenRouterProvider::self_hosted(String::new(), "m".into(), "http://h/v1".into());
+        let body = p.request_body(&[Message::user("hi")]);
+        assert!(body.get("usage").is_none(), "usage.include is OpenRouter-only");
+        assert!(body.get("reasoning").is_none(), "effort knob is OpenRouter-only");
+        assert!(body.get("provider").is_none(), "provider pin is OpenRouter-only");
+        // Core OpenAI shape intact.
+        assert!(body.get("tools").is_some());
+        assert!(body.get("temperature").is_some());
+    }
+
+    #[test]
+    fn openrouter_body_keeps_usage_include() {
+        let p = OpenRouterProvider::new(String::new(), "m".into());
+        let body = p.request_body(&[Message::user("hi")]);
+        assert_eq!(body.pointer("/usage/include"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn self_hosted_reasoning_off_disables_thinking_via_template() {
+        let mut p =
+            OpenRouterProvider::self_hosted(String::new(), "m".into(), "http://h/v1".into());
+        p.reasoning = "off".to_string();
+        let body = p.request_body(&[Message::user("hi")]);
+        assert_eq!(
+            body.pointer("/chat_template_kwargs/enable_thinking"),
+            Some(&json!(false))
+        );
+    }
+
+    #[test]
+    fn impute_cost_prices_tokens_and_never_overrides_metered() {
+        let mtok = per_mtok(2_000_000, 0.5);
+        assert!((mtok - 1.0).abs() < 1e-9);
+        // A metered cost is left alone regardless of env.
+        let mut c = parse_completion(
+            &json!({
+                "choices": [{"message": {"content": "x"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "cost": 0.7}
+            }),
+            "m",
+        );
+        impute_cost(&mut c);
+        assert!((c.cost_usd - 0.7).abs() < 1e-9);
     }
 
     #[test]
