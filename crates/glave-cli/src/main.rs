@@ -15,7 +15,7 @@ use glave_core::engine::{AgentSpec, RunEngine, RunRequest};
 use glave_core::sinks::JsonlSink;
 use glave_core::TaskSpec;
 use glave_docker::DockerRuntimeFactory;
-use glave_openrouter::OpenRouterFactory;
+use glave_openrouter::ChatProviderFactory;
 
 const DEFAULT_MODEL: &str = "qwen/qwen3.6-27b";
 
@@ -144,7 +144,7 @@ fn resolve_model(flag: Option<String>) -> String {
 /// sandboxes behind the core's factory ports.
 fn build_engine() -> RunEngine {
     RunEngine::new(
-        Arc::new(OpenRouterFactory::from_env()),
+        Arc::new(ChatProviderFactory::from_env()),
         Arc::new(DockerRuntimeFactory),
     )
 }
