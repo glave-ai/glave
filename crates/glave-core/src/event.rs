@@ -42,6 +42,8 @@ pub enum RunEvent {
         reasoning_tokens: u64,
         cost_usd: f64,
         content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reasoning: Option<String>,
     },
     #[serde(rename = "agent.action")]
     AgentAction {
@@ -109,6 +111,7 @@ impl RunEvent {
             reasoning_tokens: c.reasoning_tokens,
             cost_usd: c.cost_usd,
             content: c.content.clone(),
+            reasoning: c.reasoning.clone(),
         }
     }
 

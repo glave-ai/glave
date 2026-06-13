@@ -96,6 +96,11 @@ impl Message {
 #[derive(Debug, Clone, Default)]
 pub struct Completion {
     pub content: String,
+    /// The model's reasoning/thinking text this turn, when the server surfaces it
+    /// (OpenRouter `reasoning`, vLLM `reasoning_content`). Kept separate from
+    /// `content` so it's captured uniformly regardless of how each server frames
+    /// it on the wire — the core never sees the per-provider shape.
+    pub reasoning: Option<String>,
     /// Structured tool calls the model made this turn (native tool-calling).
     pub tool_calls: Vec<ToolCallRequest>,
     pub prompt_tokens: u64,

@@ -148,7 +148,20 @@ fn key(model: &str, task_dir: &Path) -> u64 {
 
 fn file_hash(h: &mut impl Hasher, path: &Path) {
     path.file_name().hash(h);
-    std::fs::read(path).unwrap_or_default().hash(h);
+    // Tag read success vs failure so an *unreadable* file can't hash identically
+    // to an empty or missing one. Otherwise a silently-unreadable oracle file
+    // would collide keys and could reuse a stale baseline; a distinct tag makes
+    // it a cache miss instead — the safe direction (re-run, never wrongly reuse).
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            0u8.hash(h);
+            bytes.hash(h);
+        }
+        Err(e) => {
+            1u8.hash(h);
+            format!("{:?}", e.kind()).hash(h);
+        }
+    }
 }
 
 #[cfg(test)]

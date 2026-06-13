@@ -281,17 +281,32 @@ impl Agent for ModelAgent {
                             format!("SUBAGENT RESULT:\n{summary}")
                         }
                         Ok(ToolCall::Mcp { server, tool, args }) => {
-                            let parsed: Value = serde_json::from_str(&args).unwrap_or(Value::Null);
-                            let result = mcp
-                                .call(&server, &tool, &parsed)
-                                .unwrap_or_else(|e| format!("MCP ERROR: {e}"));
-                            trace.emit(RunEvent::agent_action(
-                                run_id,
-                                "mcp",
-                                Some(format!("{server}/{tool}")),
-                                None,
-                            ))?;
-                            result
+                            // Malformed tool-call arguments are a model error worth
+                            // surfacing (and tracing) so the model can correct — not
+                            // silently coercing bad JSON to null and calling anyway.
+                            match serde_json::from_str::<Value>(&args) {
+                                Ok(parsed) => {
+                                    let result = mcp
+                                        .call(&server, &tool, &parsed)
+                                        .unwrap_or_else(|e| format!("MCP ERROR: {e}"));
+                                    trace.emit(RunEvent::agent_action(
+                                        run_id,
+                                        "mcp",
+                                        Some(format!("{server}/{tool}")),
+                                        None,
+                                    ))?;
+                                    result
+                                }
+                                Err(e) => {
+                                    trace.emit(RunEvent::agent_action(
+                                        run_id,
+                                        "mcp",
+                                        Some(format!("{server}/{tool}")),
+                                        Some(format!("invalid JSON arguments: {e}")),
+                                    ))?;
+                                    format!("MCP ERROR: tool arguments were not valid JSON: {e}")
+                                }
+                            }
                         }
                         Ok(call) => match self.policy.decide(&call) {
                             // Autonomous eval: Ask is treated as Deny — zero HIL.
