@@ -310,6 +310,7 @@ fn parse_completion(v: &Value, fallback_model: &str) -> Completion {
     // no-op the agent loop nudges, not a fatal error. Return it as-is.
     Completion {
         content: content.to_string(),
+        reasoning: (!reasoning_text.is_empty()).then(|| reasoning_text.to_string()),
         tool_calls,
         prompt_tokens: u64_at("/usage/prompt_tokens"),
         completion_tokens: u64_at("/usage/completion_tokens"),
@@ -318,6 +319,15 @@ fn parse_completion(v: &Value, fallback_model: &str) -> Completion {
         model: str_at("/model").unwrap_or(fallback_model).to_string(),
         provider: str_at("/provider").map(String::from),
     }
+}
+
+/// A response that produced output (content or tool calls) but carries no
+/// `usage` block is malformed: recording it as $0 / 0-tokens would make a real,
+/// paid turn look free and silently corrupt cost-per-correct. An empty "stopped"
+/// turn legitimately needs no accounting, so it isn't flagged.
+fn missing_accounting(v: &Value, c: &Completion) -> bool {
+    let produced_output = !c.content.is_empty() || !c.tool_calls.is_empty();
+    produced_output && v.pointer("/usage").is_none()
 }
 
 /// A self-hosted endpoint reports no `usage.cost` (there's no per-token bill —
@@ -361,6 +371,12 @@ impl ModelProvider for ChatProvider {
                 Ok(r) => {
                     let v: Value = r.into_json().context("parsing chat-completion response")?;
                     let mut c = parse_completion(&v, &self.model);
+                    // Measurement integrity: refuse a turn that produced output but
+                    // carries no usage accounting — recording it as free would
+                    // silently poison cost-per-correct.
+                    if missing_accounting(&v, &c) {
+                        bail!("model {} produced output with no usage accounting", self.model);
+                    }
                     if self.kind == ServerKind::SelfHosted {
                         impute_cost(&mut c);
                     }
@@ -548,6 +564,47 @@ mod tests {
         });
         let c = parse_completion(&v, "m");
         assert_eq!(c.reasoning_tokens, 7);
+    }
+
+    #[test]
+    fn reasoning_text_captured_in_its_own_field_separate_from_content() {
+        let v = json!({
+            "choices": [{"message": {"content": "the answer", "reasoning_content": "thinking out loud"}}],
+            "usage": {"completion_tokens": 5}
+        });
+        let c = parse_completion(&v, "m");
+        assert_eq!(c.content, "the answer");
+        assert_eq!(c.reasoning.as_deref(), Some("thinking out loud"));
+    }
+
+    #[test]
+    fn reasoning_field_is_none_when_absent() {
+        let v = json!({"choices": [{"message": {"content": "hi"}}], "usage": {"completion_tokens": 2}});
+        let c = parse_completion(&v, "m");
+        assert!(c.reasoning.is_none());
+    }
+
+    #[test]
+    fn output_without_usage_block_is_flagged() {
+        // A real generation with no usage accounting → flagged (would record free).
+        let v = json!({"choices": [{"message": {"content": "real work"}}]});
+        let c = parse_completion(&v, "m");
+        assert!(missing_accounting(&v, &c));
+    }
+
+    #[test]
+    fn output_with_usage_block_is_accepted() {
+        let v = json!({"choices": [{"message": {"content": "real work"}}], "usage": {"completion_tokens": 3}});
+        let c = parse_completion(&v, "m");
+        assert!(!missing_accounting(&v, &c));
+    }
+
+    #[test]
+    fn empty_stopped_turn_needs_no_accounting() {
+        // A no-op "stopped" turn (no content, no tool calls) legitimately has no usage.
+        let v = json!({"choices": [{"message": {"content": ""}}]});
+        let c = parse_completion(&v, "m");
+        assert!(!missing_accounting(&v, &c));
     }
 
     fn glave_rail(model: &str, wire: &str) -> ChatProvider {
