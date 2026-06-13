@@ -292,15 +292,28 @@ fn parse_completion(v: &Value, fallback_model: &str) -> Completion {
     } else {
         content
     };
+    // Reasoning-token accounting differs by server: OpenRouter/Anthropic itemize
+    // it in usage; vLLM emits reasoning *text* but folds its count into
+    // completion_tokens without breaking it out. When the count isn't itemized
+    // yet reasoning text was produced, estimate it (~4 chars/token) so the
+    // fairness check — which keys on reasoning_tokens > 0 — doesn't false-alarm
+    // on a self-hosted server that genuinely reasoned. Cost is unaffected: it
+    // bills completion_tokens, which already includes the reasoning.
+    let reasoning_tokens = match u64_at("/usage/completion_tokens_details/reasoning_tokens") {
+        0 if !reasoning_text.is_empty() => {
+            u64::try_from(reasoning_text.chars().count() / 4).unwrap_or(u64::MAX).max(1)
+        }
+        n => n,
+    };
+
     // An empty turn (no content, no tool calls — the model just "stopped") is a
     // no-op the agent loop nudges, not a fatal error. Return it as-is.
-
     Completion {
         content: content.to_string(),
         tool_calls,
         prompt_tokens: u64_at("/usage/prompt_tokens"),
         completion_tokens: u64_at("/usage/completion_tokens"),
-        reasoning_tokens: u64_at("/usage/completion_tokens_details/reasoning_tokens"),
+        reasoning_tokens,
         cost_usd: v.pointer("/usage/cost").and_then(Value::as_f64).unwrap_or(0.0),
         model: str_at("/model").unwrap_or(fallback_model).to_string(),
         provider: str_at("/provider").map(String::from),
@@ -499,6 +512,42 @@ mod tests {
         let v = json!({"choices": [{"message": {"content": "", "reasoning_content": "vllm-think"}}]});
         let c = parse_completion(&v, "m");
         assert_eq!(c.content, "vllm-think");
+    }
+
+    #[test]
+    fn reasoning_tokens_estimated_when_text_present_but_unitemized() {
+        // vLLM: reasoning text present, no itemized reasoning_tokens → estimate,
+        // so the fairness check sees that reasoning genuinely happened.
+        let v = json!({
+            "choices": [{"message": {"content": "the answer", "reasoning_content": "let me work through this"}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 20}
+        });
+        let c = parse_completion(&v, "m");
+        assert!(c.reasoning_tokens > 0, "reasoning text → estimated count");
+        assert_eq!(c.content, "the answer", "non-empty content is not clobbered");
+    }
+
+    #[test]
+    fn reasoning_tokens_stay_zero_when_no_reasoning() {
+        // Genuinely no reasoning (no text, no itemized count) → 0, so the
+        // fairness check still fires on a server that silently stopped reasoning.
+        let v = json!({
+            "choices": [{"message": {"content": "the answer"}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 3}
+        });
+        let c = parse_completion(&v, "m");
+        assert_eq!(c.reasoning_tokens, 0);
+    }
+
+    #[test]
+    fn itemized_reasoning_tokens_are_not_overwritten() {
+        // When the server DOES itemize (OpenRouter/Anthropic), keep its number.
+        let v = json!({
+            "choices": [{"message": {"content": "hi", "reasoning": "deliberating"}}],
+            "usage": {"completion_tokens": 9, "completion_tokens_details": {"reasoning_tokens": 7}}
+        });
+        let c = parse_completion(&v, "m");
+        assert_eq!(c.reasoning_tokens, 7);
     }
 
     fn glave_rail(model: &str, wire: &str) -> ChatProvider {
