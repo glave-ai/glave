@@ -179,13 +179,15 @@ impl SessionStore {
     /// composes its parent's first `at` messages, then its own — the prefix is
     /// recomputed, never read from the fork's own file.
     pub fn load(&self, id: &str) -> Result<Session> {
-        safe_id(id)?;
         self.load_guarded(id, &mut Vec::new())
     }
 
     /// Replay with a `chain` of ancestor ids, so a fork cycle or runaway chain
     /// errors instead of recursing into a stack overflow.
     fn load_guarded(&self, id: &str, chain: &mut Vec<String>) -> Result<Session> {
+        // Validate EVERY id — including a fork `parent` deserialized from a file
+        // header — so a planted parent pointer can't escape the store root.
+        safe_id(id)?;
         if chain.iter().any(|p| p == id) {
             bail!("session fork cycle at {id:?} ({})", chain.join(" -> "));
         }
@@ -546,6 +548,25 @@ mod tests {
         // load must succeed, dropping only the torn line.
         let loaded = store.load("t")?;
         assert_eq!(contents(&loaded), ["intact"]);
+        let _ = std::fs::remove_dir_all(&root);
+        Ok(())
+    }
+
+    #[test]
+    fn load_rejects_traversal_via_fork_parent() -> Result<()> {
+        let root = tmp_root("forktrav");
+        let store = SessionStore::new(&root);
+        std::fs::create_dir_all(&root)?;
+        // Clean entry id, but the header points the fork parent OUTSIDE root —
+        // the recursive load must validate it too, not just the entry id.
+        std::fs::write(
+            root.join("evil.jsonl"),
+            "{\"kind\":\"started\",\"forked_from\":{\"parent\":\"../escape\",\"at\":0}}\n",
+        )?;
+        assert!(
+            store.load("evil").is_err(),
+            "a fork parent that escapes root must be rejected"
+        );
         let _ = std::fs::remove_dir_all(&root);
         Ok(())
     }
