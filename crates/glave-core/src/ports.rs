@@ -1,10 +1,12 @@
 //! Ports — the trait seams. Real adapters (OpenRouter, Docker, …) implement
 //! these in their own crates; in-memory fakes implement them for tests.
 
+use std::path::Path;
+
 use anyhow::Result;
 
 use crate::event::RunEvent;
-use crate::task::TaskSpec;
+use crate::runtime::Plan;
 
 /// A structured tool call the model requested (native function-calling): a
 /// stable `id`, the tool `name`, and raw JSON `arguments` as the provider returns
@@ -184,9 +186,12 @@ pub trait ProviderFactory: Send + Sync {
 }
 
 /// Port: prepares a fresh, isolated [`EvalRuntime`] for one eval run (workspace +
-/// grader). The returned runtime cleans up its own resources on drop.
+/// grader) from a [`Plan`] plus the oracle dir. The `Plan` carries the workspace
+/// recipe only; the oracle reaches the grader through `oracle`, never the plan,
+/// so the agent's workspace can't see the held tests. The returned runtime
+/// cleans up its own resources on drop.
 pub trait RuntimeFactory: Send + Sync {
-    fn prepare(&self, task: &TaskSpec, run_id: &str) -> Result<Box<dyn EvalRuntime>>;
+    fn prepare(&self, plan: &Plan, oracle: &Path, run_id: &str) -> Result<Box<dyn EvalRuntime>>;
 }
 
 #[cfg(test)]

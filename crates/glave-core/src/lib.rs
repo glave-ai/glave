@@ -30,7 +30,7 @@ pub use capability::{
 pub use engine::{AgentSpec, RunEngine, RunOutcome, RunRequest};
 pub use event::RunEvent;
 pub use local::LocalRuntime;
-pub use runtime::{open_runtime, Location};
+pub use runtime::{open, Plan, Place, Sandbox, Source};
 pub use mcp::{McpClient, McpHub, McpServerConfig, McpTool, McpTransport, StdioTransport};
 pub use oracle::Verdict;
 pub use policy::{AutonomousPolicy, Decision, Policy};

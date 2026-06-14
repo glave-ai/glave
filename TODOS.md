@@ -28,7 +28,7 @@
 | # | Change | State | Commit |
 |---|--------|-------|--------|
 | 1 | Workspace / Grader split (CALIBRATION UNIT) | ✅ **done — green, awaiting review** | see `git log` (seal-the-oracle) |
-| 2 | `Plan` construction seam | ☐ not started | — |
+| 2 | `Plan` construction seam | ✅ **done — green** | see `git log` (Plan seam) |
 | 3 | Session engine (event-sourced, local) | ☐ not started | — |
 | 4 | Interactive `glave` loop | ☐ not started | — |
 
@@ -92,13 +92,57 @@ If it lands clean, the depth + rhythm is validated and we mass-produce #2–4 in
 
 ---
 
-## Change 2 — `Plan` construction seam  ·  *(flesh out to full depth after #1 calibrates)*
-- [ ] Replace `Location` + `open_runtime` (`runtime.rs`) AND `RuntimeFactory::prepare(task,…)` with one `Plan`:
-  `Direct { folder }` → LocalRuntime (in-place, no container); `Sandboxed { place, source, box }` → container
-  (`place = Local | Cloud`-stub; `source` = materialization, CopyFrom(path) for eval; `box` = image+resources).
-- [ ] Product constructor `open(plan) -> Result<Box<dyn Workspace>>`; exhaustive match, Cloud arm bails clearly.
-- [ ] Eval edge builds the `EvalRuntime` from a `Plan::Sandboxed` + maps `TaskSpec → Plan` THERE; oracle dir goes
-  only into the `Grader`, never the Plan/Workspace. Invariant: no domain type (TaskSpec) in any port or in `open`.
+## Change 2 — `Plan` construction seam  ·  **full depth**
+
+**Goal:** one `Plan` sum-type expresses the knob (where/how a workspace runs); remove `TaskSpec`
+from the `RuntimeFactory` port (the leak); product `open(Plan)` returns a grader-free `Workspace`;
+the oracle reaches the grader by a separate path, never the plan.
+
+**Current state (verified):**
+- `runtime.rs`: `Location { LocalMachine, Cloud }` + `open_runtime(Location, &Path) -> Box<dyn Workspace>`.
+  Callers: only its own tests + the lib.rs export (NOT used by engine/CLI yet — it's the product seam).
+- `ports.rs`: `RuntimeFactory::prepare(&TaskSpec, run_id) -> Box<dyn EvalRuntime>` — the leak.
+- `engine.rs:82`: `self.runtimes.prepare(&req.task, &req.run_id)` — the one real caller (the eval engine).
+- `docker/lib.rs`: `DockerRuntime::prepare(&TaskSpec, run_id)` reads workspace_dir/oracle_dir/image/resource off TaskSpec.
+- Layering: glave-core builds `LocalRuntime` (in-core) but NOT `DockerRuntime` (glave-docker → glave-core, not the
+  reverse). So `open()` handles `Direct` only; the sandbox is built behind the injected `RuntimeFactory`.
+
+**Design:**
+- `runtime.rs`: `Plan::Direct { folder }` | `Plan::Sandboxed { place, source, sandbox }`; `Place { Local, Cloud }`;
+  `Source { CopyFrom(PathBuf) }`; `Sandbox { image, workdir, mem_mb, cpus, pids, network }`. `Cloud` lives ONLY under
+  `Sandboxed` → "direct cloud" unrepresentable. No oracle anywhere in `Plan` (seal).
+- `open(plan) -> Box<dyn Workspace>` (product): Direct → LocalRuntime; Sandboxed → bail (container/cloud deferred).
+- `RuntimeFactory::prepare(plan: &Plan, oracle: &Path, run_id) -> Box<dyn EvalRuntime>`: TaskSpec gone; oracle is a
+  plain path routed ONLY to the grader.
+- `engine.rs` maps `TaskSpec → Plan` at the eval edge (`eval_plan(task)`), passes `task.oracle_dir()` separately.
+
+**Edits (done):**
+- [x] `runtime.rs`: `Location`/`open_runtime` → `Plan`/`Place`/`Source`/`Sandbox` + `open(&Plan)`; tests rewritten.
+- [x] `ports.rs`: `RuntimeFactory::prepare(&Plan, &Path, &str)`; dropped `TaskSpec` import; added `runtime::Plan` + `std::path::Path`.
+- [x] `docker/lib.rs`: `DockerRuntime::prepare(source, sandbox, oracle, run_id)`; factory matches the `Plan`
+  (Sandboxed{Local} → build; Cloud/Direct → bail). Imports Plan/Place/Source/Sandbox + `bail`; TaskSpec dropped.
+- [x] `engine.rs`: `eval_plan(&TaskSpec) -> Plan` at the eval edge; `prepare(&plan, &oracle, run_id)`; test factory sig updated.
+- [x] `lib.rs`: exports `open, Plan, Place, Sandbox, Source` (dropped `open_runtime, Location`).
+
+**Invariant:**
+- [x] `grep TaskSpec crates/glave-core/src/ports.rs` → **zero** — no domain type crosses the port or `open`.
+- [x] Illegal states unrepresentable: `Cloud` only under `Sandboxed`; `Plan` carries no oracle.
+
+**Acceptance:**
+- [x] clippy -D warnings clean; `cargo test` green (95 unit + 1 seal doctest).
+- [x] Eval path intact: engine `execute` tests pass through the reshaped seam (TaskSpec→Plan→factory→grade).
+- [x] Checkpoint commit (below).
+
+**Decisions & gotchas:**
+- Kept the product (`open`) and eval (`RuntimeFactory`) constructors **parallel, not unified** — they return
+  different types (`Box<dyn Workspace>` vs `Box<dyn EvalRuntime>`) and only eval needs an oracle, so one function
+  would mean an awkward `Option<oracle>` + a varying return. The shared `Plan` type IS the unification (the "one knob").
+- **Layering forced the split point:** glave-core can't build `DockerRuntime` (wrong dep direction), so `open()`
+  handles `Direct` and bails on `Sandboxed`; the container is built behind the injected factory. Correct + expected.
+- `Plan` lives in `runtime.rs`; `ports.rs` references `crate::runtime::Plan`. Intra-crate module cross-ref — fine
+  in Rust (cycles only matter across crates).
+- `Source` is a 1-variant enum (`CopyFrom`) on purpose — it names the materialization strategy + marks the
+  extension seam (clone-from-git later) rather than passing a bare `PathBuf`.
 
 ## Change 3 — Session engine (event-sourced, local)  ·  *(flesh out after #1)*
 - [ ] Session = UUID + append-only RunEvent log; transcript REBUILT by replay, never stored; **log events, not requests**.
