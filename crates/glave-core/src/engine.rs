@@ -206,7 +206,7 @@ mod tests {
             &self,
             _task: &TaskSpec,
             _run_id: &str,
-        ) -> Result<Box<dyn crate::ports::WorkspaceRuntime>> {
+        ) -> Result<Box<dyn crate::ports::EvalRuntime>> {
             Ok(Box::new(
                 InMemoryRuntime::new().with_file("solver.py", "BUGGY"),
             ))

@@ -1,14 +1,14 @@
 //! The action grammar — the typed tool surface the model drives, modeled on
 //! Anthropic's text-editor + bash + grep/glob tools. Model output is parsed into
 //! a typed `ToolCall`, mediated by a `Policy`, then executed against the
-//! `WorkspaceRuntime` port. Read-before-edit and exact-unique-match are enforced.
+//! `Workspace` port. Read-before-edit and exact-unique-match are enforced.
 
 use anyhow::{bail, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
-use crate::ports::WorkspaceRuntime;
+use crate::ports::Workspace;
 use crate::task::TaskSpec;
 
 #[derive(Debug, Clone)]
@@ -332,7 +332,7 @@ pub fn tool_specs() -> Vec<ToolSpec> {
 /// fed back to the model.
 pub fn execute(
     call: &ToolCall,
-    rt: &mut dyn WorkspaceRuntime,
+    rt: &mut dyn Workspace,
     _task: &TaskSpec,
     viewed: &mut BTreeSet<String>,
 ) -> Result<String> {

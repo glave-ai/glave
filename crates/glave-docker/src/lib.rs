@@ -1,9 +1,9 @@
-//! Docker `WorkspaceRuntime` adapter — the only crate that drives untrusted
+//! Docker `Workspace`/`Grader` adapter — the only crate that drives untrusted
 //! execution, so it's also the security blast-radius boundary.
 //!
 //! Ephemeral container per task, workspace bind-mounted read-write and the oracle
 //! read-only, no network, resource-capped. A future Firecracker/remote adapter
-//! implements the same `WorkspaceRuntime` port without touching the core.
+//! implements the same `Workspace`/`Grader` ports without touching the core.
 //!
 //! Host-side primitives — path safety, command exec, git-aware search — live in
 //! `glave_core::hostfs`, shared verbatim with the local client's `LocalRuntime`
@@ -15,7 +15,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use glave_core::hostfs;
-use glave_core::{ExecResult, RuntimeFactory, TaskSpec, WorkspaceRuntime};
+use glave_core::{EvalRuntime, ExecResult, Grader, RuntimeFactory, TaskSpec, Workspace};
 
 pub struct DockerRuntime {
     container: String,
@@ -124,12 +124,12 @@ impl Drop for DockerRuntime {
 pub struct DockerRuntimeFactory;
 
 impl RuntimeFactory for DockerRuntimeFactory {
-    fn prepare(&self, task: &TaskSpec, run_id: &str) -> Result<Box<dyn WorkspaceRuntime>> {
+    fn prepare(&self, task: &TaskSpec, run_id: &str) -> Result<Box<dyn EvalRuntime>> {
         Ok(Box::new(DockerRuntime::prepare(task, run_id)?))
     }
 }
 
-impl WorkspaceRuntime for DockerRuntime {
+impl Workspace for DockerRuntime {
     fn read_file(&self, rel: &str) -> Result<String> {
         let p = hostfs::safe_join(&self.host_work, rel)?;
         std::fs::read_to_string(&p).with_context(|| format!("reading {rel}"))
@@ -161,14 +161,29 @@ impl WorkspaceRuntime for DockerRuntime {
         hostfs::run_with_timeout(command, self.exec_timeout).context("docker exec")
     }
 
-    /// Grade-time oracle execution in a FRESH ephemeral container (`--rm`) that
-    /// mounts the agent's edited workspace plus /oracle read-only. The agent's
-    /// own container never sees /oracle, so the held tests are unreachable during
-    /// the run; this one exists only after the agent is done, for one command,
-    /// with `--network none` (grading is deterministic and never needs egress,
-    /// regardless of what the agent run was allowed). NOTE: this is a fresh
-    /// container — any env the agent `export`ed mid-run is gone; the oracle
-    /// commands must be self-contained (ours invoke `.venv/bin/python` directly).
+    // Search runs natively over the host bind-mount (no `rg` in the sandbox), so
+    // it's self-sufficient and identical to what the local client runs.
+    fn grep(&self, pattern: &str, file_glob: Option<&str>) -> Result<Vec<String>> {
+        hostfs::grep(&self.host_work, pattern, file_glob)
+    }
+
+    fn find(&self, glob: &str) -> Result<Vec<String>> {
+        hostfs::find(&self.host_work, glob)
+    }
+}
+
+/// Grade-time oracle execution — kept off [`Workspace`] so the agent (which only
+/// ever holds a `Workspace`) can never reach the held tests. With this, the
+/// `DockerRuntime` is a full `EvalRuntime` (workspace + grader) for the eval path.
+impl Grader for DockerRuntime {
+    /// A FRESH ephemeral container (`--rm`) that mounts the agent's edited
+    /// workspace plus /oracle read-only. The agent's own container never sees
+    /// /oracle, so the held tests are unreachable during the run; this one exists
+    /// only after the agent is done, for one command, with `--network none`
+    /// (grading is deterministic and never needs egress, regardless of what the
+    /// agent run was allowed). NOTE: this is a fresh container — any env the agent
+    /// `export`ed mid-run is gone; the oracle commands must be self-contained
+    /// (ours invoke `.venv/bin/python` directly).
     fn grade(&self, cmd: &str) -> Result<ExecResult> {
         let work_mount = format!("{}:{}", self.host_work.display(), self.workdir);
         let oracle_mount = format!("{}:/oracle:ro", self.oracle_dir.display());
@@ -188,16 +203,6 @@ impl WorkspaceRuntime for DockerRuntime {
             cmd,
         ]);
         hostfs::run_with_timeout(command, self.exec_timeout).context("docker grade run")
-    }
-
-    // Search runs natively over the host bind-mount (no `rg` in the sandbox), so
-    // it's self-sufficient and identical to what the local client runs.
-    fn grep(&self, pattern: &str, file_glob: Option<&str>) -> Result<Vec<String>> {
-        hostfs::grep(&self.host_work, pattern, file_glob)
-    }
-
-    fn find(&self, glob: &str) -> Result<Vec<String>> {
-        hostfs::find(&self.host_work, glob)
     }
 }
 

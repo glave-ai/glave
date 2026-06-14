@@ -11,14 +11,14 @@ use std::path::Path;
 use crate::capability::{self, CapabilityRegistry, LexicalSelector, Selector};
 use crate::event::RunEvent;
 use crate::policy::{Decision, Policy};
-use crate::ports::{Message, ModelProvider, Role, TraceSink, WorkspaceRuntime};
+use crate::ports::{Message, ModelProvider, Role, TraceSink, Workspace};
 use crate::task::TaskSpec;
 use crate::tools::{self, ToolCall};
 
 pub trait Agent {
     fn act(
         &mut self,
-        rt: &mut dyn WorkspaceRuntime,
+        rt: &mut dyn Workspace,
         task: &TaskSpec,
         run_id: &str,
         trace: &mut dyn TraceSink,
@@ -31,7 +31,7 @@ pub struct NoopAgent;
 impl Agent for NoopAgent {
     fn act(
         &mut self,
-        _rt: &mut dyn WorkspaceRuntime,
+        _rt: &mut dyn Workspace,
         _task: &TaskSpec,
         run_id: &str,
         trace: &mut dyn TraceSink,
@@ -53,7 +53,7 @@ pub struct SolveAgent;
 impl Agent for SolveAgent {
     fn act(
         &mut self,
-        rt: &mut dyn WorkspaceRuntime,
+        rt: &mut dyn Workspace,
         task: &TaskSpec,
         run_id: &str,
         trace: &mut dyn TraceSink,
@@ -114,7 +114,7 @@ impl ModelAgent {
     /// researcher. Subagents are read-only and cannot edit. Bounded by `sub_turns`.
     fn run_subagent(
         &self,
-        rt: &mut dyn WorkspaceRuntime,
+        rt: &mut dyn Workspace,
         task: &TaskSpec,
         name: Option<&str>,
         subtask: &str,
@@ -229,7 +229,7 @@ impl Agent for ModelAgent {
     #[allow(clippy::too_many_lines)] // the turn loop's inline tool dispatch reads best as one unit
     fn act(
         &mut self,
-        rt: &mut dyn WorkspaceRuntime,
+        rt: &mut dyn Workspace,
         task: &TaskSpec,
         run_id: &str,
         trace: &mut dyn TraceSink,
@@ -414,7 +414,7 @@ fn help_text() -> String {
         .to_string()
 }
 
-fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
+fn initial_user(rt: &dyn Workspace, task: &TaskSpec) -> Result<String> {
     const FILE_CAP: usize = 60;
     let mut out = String::new();
     out.push_str(&format!(
@@ -478,7 +478,7 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
 /// Project-level guidance the agent should honor — the `HOPE.md` convention,
 /// our analog of `CLAUDE.md`. Read from the workspace root (or `.glave/HOPE.md`);
 /// missing or empty yields `None`.
-fn project_guidance(rt: &dyn WorkspaceRuntime) -> Option<String> {
+fn project_guidance(rt: &dyn Workspace) -> Option<String> {
     for path in ["HOPE.md", ".glave/HOPE.md"] {
         if let Ok(content) = rt.read_file(path) {
             let trimmed = content.trim();

@@ -11,7 +11,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 
 use crate::hostfs;
-use crate::ports::{ExecResult, WorkspaceRuntime};
+use crate::ports::{ExecResult, Workspace};
 
 pub struct LocalRuntime {
     /// Canonical workspace root — `safe_join` requires a canonical base so
@@ -33,7 +33,7 @@ impl LocalRuntime {
     }
 }
 
-impl WorkspaceRuntime for LocalRuntime {
+impl Workspace for LocalRuntime {
     fn read_file(&self, rel: &str) -> Result<String> {
         let p = hostfs::safe_join(&self.root, rel)?;
         std::fs::read_to_string(&p).with_context(|| format!("reading {rel}"))
@@ -55,12 +55,6 @@ impl WorkspaceRuntime for LocalRuntime {
         let mut command = Command::new("sh");
         command.current_dir(&self.root).args(["-c", cmd]);
         hostfs::run_with_timeout(command, self.exec_timeout).context("local command")
-    }
-
-    /// No separate grader on the local rail — the product does work, it doesn't
-    /// grade. Kept for the port; runs in place like `run`.
-    fn grade(&self, cmd: &str) -> Result<ExecResult> {
-        self.run(cmd)
     }
 
     fn grep(&self, pattern: &str, file_glob: Option<&str>) -> Result<Vec<String>> {

@@ -17,7 +17,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-use crate::ports::WorkspaceRuntime;
+use crate::ports::Workspace;
 
 /// One configured MCP server.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,7 +43,7 @@ pub struct McpTool {
 /// the operator must explicitly opt into trusting this workspace via
 /// `GLAVE_TRUST_WORKSPACE_MCP`. (Operator-sourced config — the proper model —
 /// arrives with the config/gateway work and bypasses this entirely.)
-pub fn load_config(rt: &dyn WorkspaceRuntime) -> Vec<McpServerConfig> {
+pub fn load_config(rt: &dyn Workspace) -> Vec<McpServerConfig> {
     if std::env::var("GLAVE_TRUST_WORKSPACE_MCP").is_err() {
         return Vec::new();
     }
@@ -314,7 +314,7 @@ impl McpHub {
     /// Connect to whatever servers the (gated) workspace config names. Secure by
     /// default: an untrusted workspace yields no servers (see [`load_config`]).
     #[must_use]
-    pub fn connect(rt: &dyn WorkspaceRuntime) -> Self {
+    pub fn connect(rt: &dyn Workspace) -> Self {
         Self::from_configs(&load_config(rt))
     }
 
