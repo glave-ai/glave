@@ -29,7 +29,7 @@
 |---|--------|-------|--------|
 | 1 | Workspace / Grader split (CALIBRATION UNIT) | ✅ **done — green, awaiting review** | see `git log` (seal-the-oracle) |
 | 2 | `Plan` construction seam | ✅ **done — green** | see `git log` (Plan seam) |
-| 3 | Session engine (event-sourced, local) | ☐ not started | — |
+| 3 | Session engine (event-sourced, local) | ✅ **done — green** | see `git log` (session engine) |
 | 4 | Interactive `glave` loop | ☐ not started | — |
 
 Order by value 1 → 2 → 3 → 4. If time runs short, truncate the REPL polish (4), NEVER engine or tests.
@@ -144,13 +144,48 @@ the oracle reaches the grader by a separate path, never the plan.
 - `Source` is a 1-variant enum (`CopyFrom`) on purpose — it names the materialization strategy + marks the
   extension seam (clone-from-git later) rather than passing a bare `PathBuf`.
 
-## Change 3 — Session engine (event-sourced, local)  ·  *(flesh out after #1)*
-- [ ] Session = UUID + append-only RunEvent log; transcript REBUILT by replay, never stored; **log events, not requests**.
-- [ ] Replay reconstructs the EXACT `Message` array (user / assistant-with-tool_calls / tool results) — add
-  message-level events if RunEvent today is observability-shaped, not resume-shaped.
-- [ ] Store append-only → `~/.glave/sessions/<project>/<session_id>.jsonl` (reuse `JsonlSink`); load = replay.
-- [ ] Fork = new session with `(parent_session_id, fork_index)` + own events; replay = parent[0..index] + own
-  (pointer, not copy, not content-addressing). Invariant: write→reload round-trips the transcript exactly.
+## Change 3 — Session engine (event-sourced, local)  ·  **full depth**
+
+**Goal:** a session = UUID + append-only log; the transcript is REBUILT by replay (never stored as a
+snapshot); persisted to `~/.glave/sessions/<project>/<id>.jsonl`; fork = pointer (parent, index) + own.
+
+**Current state (verified):**
+- `event.rs`: `RunEvent` is `#[derive(Serialize)]` only (NO Deserialize) + observability-shaped (`ModelTurn` =
+  tokens+content, `AgentAction` = action/path/detail). It **cannot** rebuild a transcript and can't be read back.
+- `sinks.rs`: `JsonlSink` is `TraceSink` (RunEvent-typed, write-only, flush-per-emit).
+- `ports.rs`: `Message`/`Role`/`ToolCallRequest` derive only Debug/Clone — **not** serde-serializable yet.
+
+**Design decision:** a **dedicated `SessionEvent`** (Serialize + Deserialize, wrapping real `Message`s), NOT an
+extension of `RunEvent`. Reason: RunEvent is observability + Serialize-only; conversation-reconstruction needs the
+structured messages and round-trip (de)serialization. Two concerns, two logs (the RunEvent trace stays as-is).
+
+**Edits (done):**
+- [x] `ports.rs`: `Message` + `ToolCallRequest` derive `Serialize, Deserialize, PartialEq`; `Role` derives serde
+  (+ `rename_all = "snake_case"`). Added the serde import.
+- [x] new `session.rs`: `SessionEvent` (`Started { forked_from }` | `Message(Message)`), `ForkPoint`, pure `Session`
+  (`new`/`push`/`transcript`/`fork`/`own_messages`), and `SessionStore` (`save`/`append_message`/`load` + recursive
+  fork composition; `default_root` = `~/.glave/sessions`).
+- [x] `lib.rs`: `pub mod session;` + exports `Session, SessionStore, SessionEvent, ForkPoint`.
+- [x] Lints satisfied — `.iter().take(n)` / `.skip(n)`, no indexing/slicing/unwrap.
+
+**Invariant:**
+- [x] Round-trip proven (`save_then_load_round_trips_the_transcript`): N messages incl. tool_calls/tool_call_id reload identical.
+- [x] Fork is a POINTER (`fork_replays_parent_prefix_plus_own`): fork file = `Started` + 1 own line (NOT the 2 inherited);
+  replay = parent[0..2] + own; parent untouched. Clamp covered.
+
+**Acceptance:**
+- [x] clippy -D warnings clean; `cargo test` green — 4 new session tests (round-trip, incremental, fork, clamp) pass.
+- [x] Checkpoint commit (below).
+
+**Decisions & gotchas:**
+- Dedicated `SessionEvent` (NOT extending `RunEvent`): RunEvent is observability + `Serialize`-only and can't rebuild a
+  transcript; the session log needs structured messages + round-trip (de)serialization. Two concerns, two logs.
+- `SessionEvent` is serde **internally-tagged** (`tag="kind"`) with a newtype `Message(Message)` variant — works
+  because `Message` serializes as a struct/map; the round-trip test confirms it.
+- Fork prefix is **recomputed from the parent on load**, never written to the fork's file → true pointer semantics
+  (verified by counting the fork file's lines).
+- `save` (full, truncating) + `append_message` (incremental, durable) both provided: the loop will `save` once on
+  create, then `append_message` per turn (wired in #4).
 
 ## Change 4 — Interactive `glave` loop  ·  *(flesh out after #1)*
 - [ ] Bare `glave` → interactive session in cwd; resolve project via `.glave/project.json` (create if absent);

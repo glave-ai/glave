@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
 use crate::event::RunEvent;
 use crate::runtime::Plan;
@@ -11,7 +12,7 @@ use crate::runtime::Plan;
 /// A structured tool call the model requested (native function-calling): a
 /// stable `id`, the tool `name`, and raw JSON `arguments` as the provider returns
 /// them. The id correlates the call with its `tool`-role result message.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolCallRequest {
     pub id: String,
     pub name: String,
@@ -19,7 +20,8 @@ pub struct ToolCallRequest {
 }
 
 /// The author of a chat message.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Role {
     System,
     User,
@@ -42,7 +44,7 @@ impl Role {
 /// A chat message handed to a model provider. Carries the native tool-calling
 /// envelope: an assistant turn may include `tool_calls`; a `tool`-role result
 /// names the `tool_call_id` it answers.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     pub role: Role,
     pub content: String,
