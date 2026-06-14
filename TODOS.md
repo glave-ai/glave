@@ -265,7 +265,10 @@ product loop + session robustness). Fixed in three green gates:
   the battle-tested eval path; do it as its own reviewed change, not a fix-sweep.
 - **Polish** — `append_message` re-opens per message (O(messages) syscalls); per-turn `to_vec` + clone churn.
   Micro-optimizations, not worth the churn yet.
-- **`ModelTurn` live run** — still needs a live-endpoint test.
+- **`ModelTurn` live run** — ✅ validated by OpenRouter dogfood (`glave chat -p "…"` on this repo): the model
+  drove list/read tools over the real workspace, answered accurately, and the session persisted + round-trips.
+- **Auto-ignore the marker** — `glave` should append `.glave/` to the project's `.gitignore` when it creates the
+  marker (done manually here for this repo). Small product polish.
 
 ## Deferred — do NOT build this round
 cloud execution impl · OS-sandbox · cross-device sync · billing · MCP-beyond-existing · live scorecard run.
