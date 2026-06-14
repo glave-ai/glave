@@ -23,3 +23,7 @@ untracked/
 /.ingest-scratch/
 /.ingest/
 /cache/
+
+# Glave product state: the per-project marker (sessions live in ~/.glave).
+# Gitignored by default — a team-shared marker is a later feature.
+/.glave/
