@@ -9,13 +9,15 @@
 //! `glave_core::hostfs`, shared verbatim with the local client's `LocalRuntime`
 //! so the two runtimes can never drift apart on those behaviors.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
 use glave_core::hostfs;
-use glave_core::{EvalRuntime, ExecResult, Grader, RuntimeFactory, TaskSpec, Workspace};
+use glave_core::{
+    EvalRuntime, ExecResult, Grader, Place, Plan, RuntimeFactory, Sandbox, Source, Workspace,
+};
 
 pub struct DockerRuntime {
     container: String,
@@ -37,22 +39,22 @@ fn harden(cmd: &mut Command) {
 }
 
 impl DockerRuntime {
-    pub fn prepare(task: &TaskSpec, run_id: &str) -> Result<Self> {
+    pub fn prepare(source: &Path, sandbox: &Sandbox, oracle: &Path, run_id: &str) -> Result<Self> {
         let cwd = std::env::current_dir()?;
         let host_work = cwd.join(".runs").join(run_id).join("work");
         std::fs::create_dir_all(&host_work)?;
-        copy_dir(&task.workspace_dir(), &host_work).context("copying workspace into run dir")?;
+        copy_dir(source, &host_work).context("copying workspace into run dir")?;
 
         let work_abs = std::fs::canonicalize(&host_work)?;
-        let oracle_abs = std::fs::canonicalize(task.oracle_dir())
-            .with_context(|| format!("canonicalizing {}", task.oracle_dir().display()))?;
+        let oracle_abs = std::fs::canonicalize(oracle)
+            .with_context(|| format!("canonicalizing {}", oracle.display()))?;
 
         let container = format!("glave_{}", run_id.replace('-', ""));
-        let mem = format!("{}m", task.resource.mem_mb);
-        let cpus = task.resource.cpus.to_string();
-        let pids = task.resource.pids.to_string();
-        let network = secure_network(&task.resource.network);
-        let work_mount = format!("{}:{}", work_abs.display(), task.image.workdir);
+        let mem = format!("{}m", sandbox.mem_mb);
+        let cpus = sandbox.cpus.to_string();
+        let pids = sandbox.pids.to_string();
+        let network = secure_network(&sandbox.network);
+        let work_mount = format!("{}:{}", work_abs.display(), sandbox.workdir);
 
         // NOTE: the agent's container gets NO /oracle mount — the held tests and
         // grading scripts must be unreachable during the run (a model has been
@@ -80,8 +82,8 @@ impl DockerRuntime {
             "-v",
             &work_mount,
             "-w",
-            &task.image.workdir,
-            &task.image.base,
+            &sandbox.workdir,
+            &sandbox.image,
             "tail",
             "-f",
             "/dev/null",
@@ -96,9 +98,9 @@ impl DockerRuntime {
         Ok(Self {
             container,
             host_work: work_abs,
-            workdir: task.image.workdir.clone(),
+            workdir: sandbox.workdir.clone(),
             exec_timeout: Duration::from_secs(hostfs::env_u64("GLAVE_EXEC_TIMEOUT_SECS", 300)),
-            image: task.image.base.clone(),
+            image: sandbox.image.clone(),
             oracle_dir: oracle_abs,
         })
     }
@@ -124,8 +126,19 @@ impl Drop for DockerRuntime {
 pub struct DockerRuntimeFactory;
 
 impl RuntimeFactory for DockerRuntimeFactory {
-    fn prepare(&self, task: &TaskSpec, run_id: &str) -> Result<Box<dyn EvalRuntime>> {
-        Ok(Box::new(DockerRuntime::prepare(task, run_id)?))
+    fn prepare(&self, plan: &Plan, oracle: &Path, run_id: &str) -> Result<Box<dyn EvalRuntime>> {
+        match plan {
+            Plan::Sandboxed {
+                place: Place::Local,
+                source: Source::CopyFrom(src),
+                sandbox,
+            } => Ok(Box::new(DockerRuntime::prepare(src, sandbox, oracle, run_id)?)),
+            Plan::Sandboxed {
+                place: Place::Cloud,
+                ..
+            } => bail!("cloud sandbox execution isn't built yet"),
+            Plan::Direct { .. } => bail!("eval requires a sandboxed plan, got Direct"),
+        }
     }
 }
 

@@ -15,6 +15,7 @@ use crate::agent::{Agent, ModelAgent, NoopAgent, SolveAgent};
 use crate::event::RunEvent;
 use crate::policy::AutonomousPolicy;
 use crate::ports::{ProviderFactory, RuntimeFactory, TraceSink};
+use crate::runtime::{Plan, Place, Sandbox, Source};
 use crate::run::run_task;
 use crate::task::TaskSpec;
 
@@ -79,7 +80,11 @@ impl RunEngine {
     /// up when it drops at the end of this call — including on the error path.
     pub fn execute(&self, req: &RunRequest, sink: &mut dyn TraceSink) -> Result<RunOutcome> {
         let (mut agent, label) = self.build_agent(&req.agent, &req.task)?;
-        let mut rt = self.runtimes.prepare(&req.task, &req.run_id)?;
+        // TaskSpec -> Plan at the eval edge; the oracle dir is passed alongside,
+        // never inside the plan, so it reaches only the grader.
+        let plan = eval_plan(&req.task);
+        let oracle = req.task.oracle_dir();
+        let mut rt = self.runtimes.prepare(&plan, &oracle, &req.run_id)?;
         let mut tap = OutcomeTap::new(sink);
         let verdict = run_task(
             &req.task,
@@ -117,6 +122,23 @@ impl RunEngine {
             AgentSpec::Noop => (Box::new(NoopAgent), "stub:noop".to_string()),
         };
         Ok(built)
+    }
+}
+
+/// Map a task to its eval [`Plan`] — the `TaskSpec → Plan` boundary lives HERE,
+/// at the eval edge, so no domain type ever crosses the `RuntimeFactory` port.
+fn eval_plan(task: &TaskSpec) -> Plan {
+    Plan::Sandboxed {
+        place: Place::Local,
+        source: Source::CopyFrom(task.workspace_dir()),
+        sandbox: Sandbox {
+            image: task.image.base.clone(),
+            workdir: task.image.workdir.clone(),
+            mem_mb: task.resource.mem_mb,
+            cpus: task.resource.cpus,
+            pids: task.resource.pids,
+            network: task.resource.network.clone(),
+        },
     }
 }
 
@@ -204,7 +226,8 @@ mod tests {
     impl RuntimeFactory for FixedRuntimeFactory {
         fn prepare(
             &self,
-            _task: &TaskSpec,
+            _plan: &Plan,
+            _oracle: &std::path::Path,
             _run_id: &str,
         ) -> Result<Box<dyn crate::ports::EvalRuntime>> {
             Ok(Box::new(
