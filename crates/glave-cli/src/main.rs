@@ -15,8 +15,8 @@ use std::sync::Arc;
 use glave_core::engine::{AgentSpec, RunEngine, RunRequest};
 use glave_core::sinks::JsonlSink;
 use glave_core::{
-    open, step, AutonomousPolicy, Decision, Message, ModelProvider, Plan, Policy, ProviderFactory,
-    Role, Session, SessionStore, TaskSpec, ToolCall, Turn, Workspace,
+    open, step, Decision, Message, ModelProvider, Plan, Policy, ProviderFactory, Role, Session,
+    SessionStore, TaskSpec, ToolCall, Turn, Workspace,
 };
 use glave_docker::DockerRuntimeFactory;
 use glave_openrouter::ChatProviderFactory;
@@ -596,20 +596,45 @@ it; keep changes minimal and say what you did. Be concise.";
 /// fresh UUID) if absent. Identity is a UUID, never the path — the folder can be
 /// renamed or moved and the session history still belongs to the same project.
 fn resolve_or_create_project(root: &Path) -> Result<String> {
-    let marker = root.join(".glave").join("project.json");
-    if let Ok(raw) = std::fs::read_to_string(&marker) {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) {
-            if let Some(id) = value.get("project_id").and_then(serde_json::Value::as_str) {
-                return Ok(id.to_string());
-            }
+    let dir = root.join(".glave");
+    let marker = dir.join("project.json");
+    // An EXISTING marker is authoritative: parse it strictly and error on a
+    // malformed/unsafe id rather than silently minting a NEW project id (which
+    // would orphan all prior session history under the old id).
+    if marker.exists() {
+        let raw = std::fs::read_to_string(&marker)
+            .with_context(|| format!("reading {}", marker.display()))?;
+        let value: serde_json::Value = serde_json::from_str(&raw)
+            .with_context(|| format!("project marker {} is not valid JSON", marker.display()))?;
+        let id = value
+            .get("project_id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| anyhow!("project marker {} has no project_id", marker.display()))?;
+        if !is_safe_component(id) {
+            return Err(anyhow!(
+                "project marker {} has an unsafe project_id {id:?}",
+                marker.display()
+            ));
         }
+        return Ok(id.to_string());
     }
+    // No marker yet: mint one and write it ATOMICALLY (temp + rename) so a crash
+    // mid-write can't leave a half-written marker that silently re-IDs later.
     let id = uuid::Uuid::new_v4().to_string();
-    std::fs::create_dir_all(root.join(".glave")).context("creating .glave")?;
-    let body = serde_json::json!({ "project_id": id });
-    std::fs::write(&marker, format!("{}\n", serde_json::to_string_pretty(&body)?))
-        .with_context(|| format!("writing {}", marker.display()))?;
+    std::fs::create_dir_all(&dir).context("creating .glave")?;
+    let body = serde_json::to_string_pretty(&serde_json::json!({ "project_id": id }))?;
+    let tmp = dir.join("project.json.tmp");
+    std::fs::write(&tmp, format!("{body}\n")).with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::rename(&tmp, &marker).with_context(|| format!("finalizing {}", marker.display()))?;
     Ok(id)
+}
+
+/// A safe single path component: no separators, no `..`/`.`, not empty, not
+/// absolute — keeps a project/session id from escaping its root dir.
+fn is_safe_component(s: &str) -> bool {
+    use std::path::Component;
+    let mut comps = std::path::Path::new(s).components();
+    matches!(comps.next(), Some(Component::Normal(_))) && comps.next().is_none() && !s.is_empty()
 }
 
 /// A model-driven [`Turn`]: calls the provider over the transcript and runs the
@@ -618,8 +643,53 @@ fn resolve_or_create_project(root: &Path) -> Result<String> {
 /// is a later hardening (see TODOS). Subagent/MCP are deferred for chat.
 struct ModelTurn {
     provider: Box<dyn ModelProvider>,
-    policy: AutonomousPolicy,
+    policy: Box<dyn Policy>,
+    /// An interactive REPL can prompt the human on `Ask`; one-shot (`-p`) can't,
+    /// so `Ask` becomes a refusal there.
+    interactive: bool,
     max_steps: u32,
+}
+
+/// The local-product mediation policy. The repo is trusted (edits/reads/normal
+/// shell are allowed; git is the undo), but clearly-destructive shell is gated
+/// behind `Ask` so the REPL can confirm with the human first. INTERIM only — the
+/// real boundary is the OS sandbox (deferred); a determined prompt-injection can
+/// phrase around a heuristic, so this is not airtight.
+struct ProductPolicy;
+
+impl Policy for ProductPolicy {
+    fn decide(&self, call: &ToolCall) -> Decision {
+        match call {
+            ToolCall::Bash { cmd } if is_destructive_bash(cmd) => {
+                Decision::Ask(format!("potentially destructive: `{cmd}`"))
+            }
+            _ => Decision::Allow,
+        }
+    }
+}
+
+/// Heuristic denylist of clearly-destructive / irreversible shell. Conservative
+/// on purpose (a false positive just prompts) — interim, not a security boundary.
+fn is_destructive_bash(cmd: &str) -> bool {
+    const DANGER: &[&str] = &[
+        "rm -rf", "rm -fr", "rm -r ", "rmdir ", "mkfs", " dd ", "dd if=", ":(){",
+        "shred ", "> /dev/sd", "sudo ", "chmod -r", "chown -r", "git push",
+        "git reset --hard", "git clean -", "| sh", "|sh", "| bash", "|bash",
+    ];
+    let lower = cmd.to_lowercase();
+    DANGER.iter().any(|p| lower.contains(p))
+}
+
+/// Ask the human (interactive REPL) to confirm a gated command. Anything but an
+/// explicit yes is a no.
+fn confirm(prompt: &str) -> bool {
+    eprint!("\n⚠  {prompt}\n   run it? [y/N] ");
+    let _ = std::io::stderr().flush();
+    let mut answer = String::new();
+    if std::io::stdin().read_line(&mut answer).is_err() {
+        return false;
+    }
+    matches!(answer.trim(), "y" | "Y" | "yes" | "Yes")
 }
 
 impl Turn for ModelTurn {
@@ -654,9 +724,12 @@ impl Turn for ModelTurn {
                             glave_core::tools::execute(&parsed, workspace, &mut viewed)
                                 .unwrap_or_else(|e| format!("ERROR: {e}"))
                         }
-                        Decision::Deny(reason) | Decision::Ask(reason) => {
-                            format!("DENIED: {reason}")
+                        Decision::Ask(reason) if self.interactive && confirm(&reason) => {
+                            glave_core::tools::execute(&parsed, workspace, &mut viewed)
+                                .unwrap_or_else(|e| format!("ERROR: {e}"))
                         }
+                        Decision::Ask(reason) => format!("DECLINED ({reason}) — not run"),
+                        Decision::Deny(reason) => format!("DENIED: {reason}"),
                     },
                     Err(e) => format!("ERROR: invalid arguments: {e}"),
                 };
@@ -699,9 +772,11 @@ fn chat(prompt: Option<String>, resume: Option<String>, model: &str) -> Result<(
     };
 
     let provider = ChatProviderFactory::from_env().create(model)?;
+    let interactive = prompt.is_none();
     let mut turn = ModelTurn {
         provider,
-        policy: AutonomousPolicy::new(&[]),
+        policy: Box::new(ProductPolicy),
+        interactive,
         max_steps: 50,
     };
     eprintln!(

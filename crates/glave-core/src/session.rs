@@ -13,7 +13,7 @@ use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::ports::{Message, Workspace};
@@ -134,6 +134,7 @@ impl SessionStore {
     /// Write a session from scratch: the `Started` header (carrying any fork
     /// origin) plus its OWN messages. Truncates an existing file.
     pub fn save(&self, session: &Session) -> Result<()> {
+        safe_id(&session.id)?;
         create_dir_all(&self.root)
             .with_context(|| format!("creating session dir {}", self.root.display()))?;
         let path = self.path(&session.id);
@@ -153,6 +154,7 @@ impl SessionStore {
 
     /// Append one message to a session's log on disk (incremental, durable).
     pub fn append_message(&self, id: &str, message: &Message) -> Result<()> {
+        safe_id(id)?;
         create_dir_all(&self.root)
             .with_context(|| format!("creating session dir {}", self.root.display()))?;
         let path = self.path(id);
@@ -170,6 +172,7 @@ impl SessionStore {
     /// composes its parent's first `at` messages, then its own — the prefix is
     /// recomputed, never read from the fork's own file.
     pub fn load(&self, id: &str) -> Result<Session> {
+        safe_id(id)?;
         let path = self.path(id);
         let file = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
         let mut forked_from: Option<ForkPoint> = None;
@@ -240,6 +243,18 @@ pub fn step(
         store.append_message(session.id(), message)?;
     }
     Ok(replies)
+}
+
+/// Reject a session id that isn't a single safe path component, so a
+/// caller-supplied id (e.g. a `--resume` value — this store is public API) can't
+/// escape `root` via `..`, a separator, or an absolute path.
+fn safe_id(id: &str) -> Result<()> {
+    use std::path::Component;
+    let mut comps = std::path::Path::new(id).components();
+    match (comps.next(), comps.next()) {
+        (Some(Component::Normal(c)), None) if !c.is_empty() => Ok(()),
+        _ => bail!("invalid session id {id:?}: must be a single path component"),
+    }
 }
 
 fn write_event(writer: &mut impl Write, event: &SessionEvent) -> Result<()> {
@@ -439,5 +454,17 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
         Ok(())
+    }
+
+    #[test]
+    fn rejects_unsafe_session_ids() {
+        let store = SessionStore::new(std::env::temp_dir().join("glave-safeid"));
+        for bad in ["../escape", "a/b", "/abs", "..", ".", ""] {
+            assert!(store.load(bad).is_err(), "load must reject {bad:?}");
+            assert!(
+                store.append_message(bad, &Message::user("x")).is_err(),
+                "append must reject {bad:?}"
+            );
+        }
     }
 }
