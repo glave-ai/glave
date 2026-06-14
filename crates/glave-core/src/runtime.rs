@@ -1,5 +1,5 @@
 //! Runtime selection — the one product-facing knob ([`Location`]) mapped to a
-//! concrete [`WorkspaceRuntime`]. This is the *only* place that knows local from
+//! concrete [`Workspace`]. This is the *only* place that knows local from
 //! cloud; everything downstream (the agent loop, the tools) is handed the result
 //! and stays location-blind.
 //!
@@ -17,7 +17,7 @@ use std::path::Path;
 use anyhow::{bail, Result};
 
 use crate::local::LocalRuntime;
-use crate::ports::WorkspaceRuntime;
+use crate::ports::Workspace;
 
 /// Where the agent's actions execute — the single choice the product exposes.
 /// Whether execution is sandboxed, and how the workspace is materialized, both
@@ -35,7 +35,7 @@ pub enum Location {
 /// Open the runtime for a session, then hand it off — the caller never learns
 /// which kind it got. `workspace` is the folder to operate on (local today;
 /// cloud will carry its own materialization when that arm is filled).
-pub fn open_runtime(location: Location, workspace: &Path) -> Result<Box<dyn WorkspaceRuntime>> {
+pub fn open_runtime(location: Location, workspace: &Path) -> Result<Box<dyn Workspace>> {
     match location {
         Location::LocalMachine => Ok(Box::new(LocalRuntime::open(workspace)?)),
         // The seam is here on purpose: only this arm needs building. The port is

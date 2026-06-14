@@ -4,7 +4,7 @@
 //! instead of all of them. Lexical scoring now; an embedding-based selector can
 //! implement the same [`Selector`] port later without touching callers.
 
-use crate::ports::WorkspaceRuntime;
+use crate::ports::Workspace;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,12 +130,12 @@ fn tokenize(s: &str) -> Vec<String> {
 
 /// Load skills from `.glave/skills/*.md`. Opt-in: a missing dir or unreadable
 /// files yield an empty list.
-pub fn load_skills(rt: &dyn WorkspaceRuntime) -> Vec<Capability> {
+pub fn load_skills(rt: &dyn Workspace) -> Vec<Capability> {
     load_dir(rt, ".glave/skills", CapabilityKind::Skill)
 }
 
 /// Load commands from `.glave/commands/*.md` (same file format as skills).
-pub fn load_commands(rt: &dyn WorkspaceRuntime) -> Vec<Capability> {
+pub fn load_commands(rt: &dyn Workspace) -> Vec<Capability> {
     load_dir(rt, ".glave/commands", CapabilityKind::Command)
 }
 
@@ -148,7 +148,7 @@ pub fn expand_command(commands: &[Capability], name: &str, args: &str) -> Option
         .map(|c| c.body.replace("$ARGUMENTS", args))
 }
 
-fn load_dir(rt: &dyn WorkspaceRuntime, dir: &str, kind: CapabilityKind) -> Vec<Capability> {
+fn load_dir(rt: &dyn Workspace, dir: &str, kind: CapabilityKind) -> Vec<Capability> {
     let Ok(files) = rt.list_files() else {
         return Vec::new();
     };
@@ -227,7 +227,7 @@ pub struct AgentDef {
 }
 
 /// Load agent definitions from `.glave/agents/*.md`.
-pub fn load_agents(rt: &dyn WorkspaceRuntime) -> Vec<AgentDef> {
+pub fn load_agents(rt: &dyn Workspace) -> Vec<AgentDef> {
     let Ok(files) = rt.list_files() else {
         return Vec::new();
     };

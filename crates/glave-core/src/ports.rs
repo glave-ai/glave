@@ -125,18 +125,26 @@ pub struct ExecResult {
     pub stderr: String,
 }
 
-/// Port: a swappable execution substrate (Docker now; Firecracker / remote later).
-pub trait WorkspaceRuntime {
+/// Port: the workspace the agent acts in — read, edit, run, search. This is the
+/// WHOLE surface the agent ever touches. It deliberately has **no `grade`**: the
+/// held oracle tests are unreachable from here, so the oracle-seal is a compiler
+/// guarantee rather than a convention. (Docker now; Firecracker / remote later.)
+///
+/// The seal, enforced as a compile-fail doctest — grading through the agent's
+/// handle must NOT compile. If anyone re-adds `grade` to `Workspace` (re-exposing
+/// the held tests to the agent), this starts compiling and the test fails:
+/// ```compile_fail
+/// # use glave_core::Workspace;
+/// fn tries_to_grade(w: &dyn Workspace) {
+///     w.grade("pytest"); // no such method on `Workspace` — that is the seal
+/// }
+/// ```
+pub trait Workspace {
     fn read_file(&self, rel: &str) -> Result<String>;
     fn write_file(&mut self, rel: &str, contents: &str) -> Result<()>;
     fn list_files(&self) -> Result<Vec<String>>;
     /// Run a shell command in the workspace dir inside the sandbox.
     fn run(&self, cmd: &str) -> Result<ExecResult>;
-    /// Run an ORACLE command at grade time. Isolated from the agent's sandbox
-    /// (a separate ephemeral container with the oracle mounted) so the held
-    /// tests are unreachable during the run — the agent must never be able to
-    /// read or invoke the grader.
-    fn grade(&self, cmd: &str) -> Result<ExecResult>;
     /// Search file contents (git-aware) — implemented natively by each runtime
     /// where the files live, so we never depend on a sandbox `rg`. Returns
     /// `path:line:text` lines; `file_glob` optionally restricts which files.
@@ -144,6 +152,24 @@ pub trait WorkspaceRuntime {
     /// Find files by glob (git-aware). Returns matching workspace-relative paths.
     fn find(&self, glob: &str) -> Result<Vec<String>>;
 }
+
+/// Port: ORACLE execution at grade time — **eval-only, never handed to the
+/// agent**. Runs the held tests outside the agent's sandbox (a separate
+/// ephemeral container with the oracle mounted) so they stay sealed until
+/// grading. Kept off [`Workspace`] on purpose: the agent has no `Grader`, so it
+/// cannot read or invoke the grader — the compiler enforces the seal.
+pub trait Grader {
+    fn grade(&self, cmd: &str) -> Result<ExecResult>;
+}
+
+/// A runtime usable for an EVAL run: both the agent's [`Workspace`] AND the
+/// [`Grader`]. The eval path needs both from one object; the product path needs
+/// only `Workspace`. Blanket-implemented, so any type that is both is an
+/// `EvalRuntime` automatically. Trait upcasting then lets one
+/// `&mut dyn EvalRuntime` hand the agent a `&mut dyn Workspace` and the oracle a
+/// `&dyn Grader` — without the agent ever gaining `grade`.
+pub trait EvalRuntime: Workspace + Grader {}
+impl<T: Workspace + Grader> EvalRuntime for T {}
 
 /// Port: a swappable trace destination (JSONL file now; DB / remote later).
 pub trait TraceSink {
@@ -157,8 +183,28 @@ pub trait ProviderFactory: Send + Sync {
     fn create(&self, model: &str) -> Result<Box<dyn ModelProvider>>;
 }
 
-/// Port: prepares a fresh, isolated `WorkspaceRuntime` for one run. The returned
-/// runtime cleans up its own resources on drop.
+/// Port: prepares a fresh, isolated [`EvalRuntime`] for one eval run (workspace +
+/// grader). The returned runtime cleans up its own resources on drop.
 pub trait RuntimeFactory: Send + Sync {
-    fn prepare(&self, task: &TaskSpec, run_id: &str) -> Result<Box<dyn WorkspaceRuntime>>;
+    fn prepare(&self, task: &TaskSpec, run_id: &str) -> Result<Box<dyn EvalRuntime>>;
+}
+
+#[cfg(test)]
+mod seal {
+    //! Oracle seal, locked at compile time. The agent only ever receives a
+    //! [`Workspace`], which has no `grade`; grading is reachable solely through
+    //! [`Grader`], a capability the agent is never handed. If someone moved
+    //! `grade` onto `Workspace` (re-exposing the held tests to the agent), the
+    //! intent encoded below would be broken — keep grading on `Grader` only.
+    use super::*;
+
+    #[allow(dead_code)]
+    fn agent_sees_only_workspace(_w: &mut dyn Workspace) {
+        // `_w.grade(...)` intentionally does not exist — that is the seal.
+    }
+
+    #[allow(dead_code)]
+    fn grading_requires_the_grader(g: &dyn Grader) -> Result<ExecResult> {
+        g.grade("true")
+    }
 }

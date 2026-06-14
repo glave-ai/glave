@@ -35,8 +35,8 @@ pub use mcp::{McpClient, McpHub, McpServerConfig, McpTool, McpTransport, StdioTr
 pub use oracle::Verdict;
 pub use policy::{AutonomousPolicy, Decision, Policy};
 pub use ports::{
-    Completion, ExecResult, Message, ModelProvider, ProviderFactory, Role, RuntimeFactory,
-    ToolCallRequest, TraceSink, WorkspaceRuntime,
+    Completion, EvalRuntime, ExecResult, Grader, Message, ModelProvider, ProviderFactory, Role,
+    RuntimeFactory, ToolCallRequest, TraceSink, Workspace,
 };
 pub use sinks::{InMemorySink, JsonlSink, NullSink};
 pub use task::TaskSpec;

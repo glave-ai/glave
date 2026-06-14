@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::ports::{
-    Completion, ExecResult, Message, ModelProvider, ToolCallRequest, WorkspaceRuntime,
+    Completion, ExecResult, Grader, Message, ModelProvider, ToolCallRequest, Workspace,
 };
 
 /// Returns scripted completions in order — deterministic, zero network, zero cost.
@@ -100,7 +100,7 @@ impl Default for InMemoryRuntime {
     }
 }
 
-impl WorkspaceRuntime for InMemoryRuntime {
+impl Workspace for InMemoryRuntime {
     fn read_file(&self, rel: &str) -> Result<String> {
         self.files
             .get(rel)
@@ -120,10 +120,6 @@ impl WorkspaceRuntime for InMemoryRuntime {
             stdout: String::new(),
             stderr: String::new(),
         })
-    }
-
-    fn grade(&self, cmd: &str) -> Result<ExecResult> {
-        self.run(cmd)
     }
 
     // Simplified fake: substring match (the real runtime uses regex via ripgrep).
@@ -151,5 +147,14 @@ impl WorkspaceRuntime for InMemoryRuntime {
             .filter(|p| g.matches(p))
             .cloned()
             .collect())
+    }
+}
+
+/// The eval-side grader for the fake: grading just runs the command (the held
+/// tests are scripted via `set_run_exit`). Kept off `Workspace` so the fake mirrors
+/// the real seal — only the eval path, holding an `EvalRuntime`, can grade.
+impl Grader for InMemoryRuntime {
+    fn grade(&self, cmd: &str) -> Result<ExecResult> {
+        self.run(cmd)
     }
 }

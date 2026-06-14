@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 
-use crate::ports::WorkspaceRuntime;
+use crate::ports::Grader;
 use crate::task::TaskSpec;
 
 pub struct Verdict {
@@ -17,16 +17,16 @@ pub struct Verdict {
     pub f2p_output: String,
 }
 
-pub fn evaluate(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<Verdict> {
+pub fn evaluate(grader: &dyn Grader, task: &TaskSpec) -> Result<Verdict> {
     // `grade`, not `run`: the oracle executes outside the agent's sandbox (the
     // agent's container has no /oracle), so the held tests stay sealed until now.
-    let f2p = rt.grade(&task.oracle.fail_to_pass)?;
+    let f2p = grader.grade(&task.oracle.fail_to_pass)?;
     let fail_to_pass_ok = f2p.exit_code == 0;
 
     let (pass_to_pass_ok, p2p_exit) = match &task.oracle.pass_to_pass {
         None => (true, None),
         Some(cmd) => {
-            let r = rt.grade(cmd)?;
+            let r = grader.grade(cmd)?;
             (r.exit_code == 0, Some(r.exit_code))
         }
     };

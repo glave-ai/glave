@@ -19,7 +19,7 @@
   `try_from(...).unwrap_or(...)` (the mandated idiom, not a wart).
 
 ## Decisions (baked defaults)
-- Branch: `product/local-runtime` (continue; merge when green).
+- Branch: `product/agent-surface` (off main; merge when green).
 - Session storage: `~/.glave/sessions/<project>/`.
 - Interim local safety: raw-direct + guard irreversible ops (OS-sandbox deferred).
 - Offline only — InMemory for all tests, no live model. Live scorecard = a separate human-triggered step.
@@ -27,7 +27,7 @@
 ## Status
 | # | Change | State | Commit |
 |---|--------|-------|--------|
-| 1 | Workspace / Grader split (CALIBRATION UNIT) | ☐ not started | — |
+| 1 | Workspace / Grader split (CALIBRATION UNIT) | ✅ **done — green, awaiting review** | see `git log` (seal-the-oracle) |
 | 2 | `Plan` construction seam | ☐ not started | — |
 | 3 | Session engine (event-sourced, local) | ☐ not started | — |
 | 4 | Interactive `glave` loop | ☐ not started | — |
@@ -52,43 +52,43 @@ If it lands clean, the depth + rhythm is validated and we mass-produce #2–4 in
 - Call chain: engine `execute` builds rt via `RuntimeFactory::prepare` → `run.rs` `run_task` drives the
   agent over rt, then calls `oracle::evaluate(rt, task)`.
 
-**Edits (check off as done):**
-- [ ] `ports.rs`: replace `WorkspaceRuntime` with:
-  - `pub trait Workspace { read_file; write_file(&mut self,…); list_files; run; grep; find }` — the 6 agent methods, **no grade**.
-  - `pub trait Grader { fn grade(&self, cmd: &str) -> Result<ExecResult>; }` — eval-only.
-  - `pub trait EvalRuntime: Workspace + Grader {}` + blanket `impl<T: Workspace + Grader> EvalRuntime for T {}`
-    — the eval path needs both views from one object. (Relies on **trait upcasting** → needs **Rust ≥ 1.86**;
-    run `rustc --version` and record it in Decisions. Fallback if older: make `run_task` generic
-    `<R: Workspace + Grader>` instead of using `dyn EvalRuntime`.)
-- [ ] `local.rs`: `impl Workspace for LocalRuntime` — **delete the `grade` method** (the local product never grades).
-- [ ] `docker/lib.rs`: `impl Workspace for DockerRuntime` (the 6) + `impl Grader for DockerRuntime`
-  (move `grade` here, body unchanged). DockerRuntime then auto-satisfies `EvalRuntime` via the blanket impl.
-- [ ] `testkit` (`InMemoryRuntime`): `impl Workspace` + `impl Grader` so eval/discrimination tests keep working.
-- [ ] `oracle.rs`: change `evaluate(rt: &dyn WorkspaceRuntime, …)` → `evaluate(grader: &dyn Grader, …)`.
-- [ ] `run.rs` (**READ IT FIRST**): `run_task` takes the eval runtime as `&mut dyn EvalRuntime`; hand the
-  **Workspace** view to the agent (upcast `rt as &mut dyn Workspace`) and the **Grader** view to
-  `oracle::evaluate` (upcast `rt as &dyn Grader`).
-- [ ] `engine.rs` + `ports.rs RuntimeFactory`: `prepare(...) -> Result<Box<dyn EvalRuntime>>` for now.
-  (Change #2 will replace `RuntimeFactory` with `Plan` — here just widen the return type so the split lands.)
-- [ ] `lib.rs`: export `Workspace`, `Grader`, `EvalRuntime`; remove the `WorkspaceRuntime` export.
-- [ ] `grep -rn WorkspaceRuntime` across the workspace and fix every remaining reference
-  (glave-serve, glave-cli, glave-docker, all tests).
+**Edits (done):**
+- [x] `ports.rs`: replaced `WorkspaceRuntime` with `Workspace` (6 agent methods, **no grade**), `Grader`
+  (grade only), and `pub trait EvalRuntime: Workspace + Grader {}` + blanket impl. Added a `compile_fail`
+  doctest on `Workspace` + a `#[cfg(test)] mod seal`.
+- [x] `local.rs`: `impl Workspace for LocalRuntime` — grade method deleted (local product never grades).
+- [x] `docker/lib.rs`: `impl Workspace for DockerRuntime` + separate `impl Grader for DockerRuntime`
+  (grade moved verbatim). Auto-satisfies `EvalRuntime`. Factory returns `Box<dyn EvalRuntime>`.
+- [x] `testkit` (`InMemoryRuntime`): split into `impl Workspace` + `impl Grader`.
+- [x] `oracle.rs`: `evaluate(grader: &dyn Grader, …)`; the two `.grade(…)` call sites updated.
+- [x] `run.rs`: `run_task` takes `&mut dyn EvalRuntime`; upcasts `&mut *rt` → `&mut dyn Workspace` for the
+  agent and `&*rt` → `&dyn Grader` for the oracle.
+- [x] `engine.rs` + `ports.rs RuntimeFactory`: `prepare(...) -> Result<Box<dyn EvalRuntime>>`.
+- [x] `lib.rs`: exports `Workspace`, `Grader`, `EvalRuntime`; `WorkspaceRuntime` removed.
+- [x] `mcp.rs`, `capability.rs`, `tools.rs`, `agent.rs`: read-only/agent consumers renamed to `&dyn Workspace`.
+- [x] `grep -rn WorkspaceRuntime` → **zero references remain** (fully migrated).
 
 **Invariant — the whole point:**
-- [ ] The agent (`agent.rs` ModelAgent + tools) and the future product loop receive **only** `&mut dyn Workspace`.
-  `Workspace` has no `grade`, so the agent literally cannot reach the oracle — enforced by the compiler.
-- [ ] Prove it: a test/assertion that the agent path never names `Grader` (e.g. a `trybuild` compile-fail that
-  `<dyn Workspace>::grade` does not resolve, or at minimum confirm `agent.rs` imports `Workspace`, never `Grader`).
+- [x] The agent + tools receive **only** `&mut dyn Workspace`; `Workspace` has no `grade`, so the agent
+  cannot reach the oracle — compiler-enforced.
+- [x] Proven by a zero-dep `compile_fail` doctest on `Workspace` (grading through the agent handle does not
+  compile). `grep Grader crates/glave-core/src/agent.rs` → none. (Chose the doctest over `trybuild` to avoid
+  a network dep + brittle `.stderr` goldens; it fails loudly if `grade` is ever re-added to `Workspace`.)
 
 **Acceptance for change 1:**
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings` clean.
-- [ ] `cargo test` green across all crates.
-- [ ] Oracle discrimination still works (Solve solves, Noop doesn't) through the `Grader` path.
-- [ ] Checkpoint commit: `Workspace/Grader split: seal the oracle from the agent by type`.
+- [x] `cargo clippy --all-targets --all-features -- -D warnings` clean.
+- [x] `cargo test` green: 95 unit + 1 seal doctest, 0 failures.
+- [x] Oracle discrimination still works (Solve/Noop) through the `Grader` path — glave-core suite green.
+- [x] Checkpoint commit (below).
 
-**Decisions & gotchas (fill in as you go):**
-- _(rustc version + whether trait upcasting was used or the generic fallback)_
-- _(anything surprising in run.rs / glave-cli wiring)_
+**Decisions & gotchas:**
+- **rustc 1.93.0** → trait upcasting is stable, so the `EvalRuntime` supertrait + `&mut *rt`/`&*rt` upcasts
+  compiled first try. No generic-`run_task` fallback needed.
+- `grade` had **exactly one caller** (`oracle::evaluate`), so the split was clean — no scattered grade calls.
+- Seal proof = `compile_fail` doctest, **not** trybuild (see Invariant note). If we later want hard
+  `.stderr`-pinned negatives, trybuild is the upgrade — deferred, not blocking.
+- Refactor was mechanical + wide (12 files) but type-driven: the compiler caught every site; clippy + tests
+  both green on the first full build after edits.
 
 ---
 
