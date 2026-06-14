@@ -13,10 +13,14 @@ use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::ports::{Message, Workspace};
+
+/// Hard cap on fork-chain depth — a backstop against a pathological or corrupt
+/// chain even when there's no outright cycle.
+const MAX_FORK_DEPTH: usize = 128;
 
 /// One appended fact in a session's log. Replaying these in order reconstructs
 /// the conversation transcript.
@@ -132,7 +136,10 @@ impl SessionStore {
     }
 
     /// Write a session from scratch: the `Started` header (carrying any fork
-    /// origin) plus its OWN messages. Truncates an existing file.
+    /// origin) plus its OWN messages. Truncates an existing file. CONTRACT: call
+    /// once to initialize a session (new or freshly forked), then use
+    /// `append_message`. Calling `save` after out-of-band appends would truncate
+    /// and lose them — the in-memory `Session` is treated as the sole authority.
     pub fn save(&self, session: &Session) -> Result<()> {
         safe_id(&session.id)?;
         create_dir_all(&self.root)
@@ -173,26 +180,64 @@ impl SessionStore {
     /// recomputed, never read from the fork's own file.
     pub fn load(&self, id: &str) -> Result<Session> {
         safe_id(id)?;
+        self.load_guarded(id, &mut Vec::new())
+    }
+
+    /// Replay with a `chain` of ancestor ids, so a fork cycle or runaway chain
+    /// errors instead of recursing into a stack overflow.
+    fn load_guarded(&self, id: &str, chain: &mut Vec<String>) -> Result<Session> {
+        if chain.iter().any(|p| p == id) {
+            bail!("session fork cycle at {id:?} ({})", chain.join(" -> "));
+        }
+        if chain.len() >= MAX_FORK_DEPTH {
+            bail!("session fork chain too deep (>{MAX_FORK_DEPTH}) at {id:?}");
+        }
         let path = self.path(id);
         let file = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
         let mut forked_from: Option<ForkPoint> = None;
         let mut own: Vec<Message> = Vec::new();
-        for line in BufReader::new(file).lines() {
+        let mut seen_message = false;
+        let mut lines = BufReader::new(file).lines().peekable();
+        while let Some(line) = lines.next() {
             let line = line.context("reading session line")?;
             if line.trim().is_empty() {
                 continue;
             }
-            match serde_json::from_str::<SessionEvent>(&line)
-                .with_context(|| format!("parsing session event in {}", path.display()))?
-            {
-                SessionEvent::Started { forked_from: f } => forked_from = f,
-                SessionEvent::Message(m) => own.push(m),
+            let event: SessionEvent = match serde_json::from_str(&line) {
+                Ok(ev) => ev,
+                Err(e) => {
+                    // Tolerate a torn LAST line (a crash mid-append); a parse
+                    // error anywhere earlier is real corruption, so surface it.
+                    if lines.peek().is_none() {
+                        eprintln!(
+                            "WARN: dropping unparsable trailing line in {} ({e})",
+                            path.display()
+                        );
+                        break;
+                    }
+                    return Err(anyhow!("parsing session event in {}: {e}", path.display()));
+                }
+            };
+            match event {
+                // The header is only meaningful as the FIRST record; ignore a
+                // stray later one (corruption / concatenated files).
+                SessionEvent::Started { forked_from: f } => {
+                    if !seen_message && forked_from.is_none() {
+                        forked_from = f;
+                    }
+                }
+                SessionEvent::Message(m) => {
+                    seen_message = true;
+                    own.push(m);
+                }
             }
         }
 
         let (mut messages, inherited) = match &forked_from {
             Some(fork) => {
-                let parent = self.load(&fork.parent)?;
+                chain.push(id.to_string());
+                let parent = self.load_guarded(&fork.parent, chain)?;
+                chain.pop();
                 let at = fork.at.min(parent.messages.len());
                 let prefix: Vec<Message> = parent.messages.iter().take(at).cloned().collect();
                 (prefix, at)
@@ -233,14 +278,16 @@ pub fn step(
     turn: &mut dyn Turn,
     user_input: &str,
 ) -> Result<Vec<Message>> {
+    // Persist THEN reflect in memory, so a failed write never leaves the
+    // in-memory transcript ahead of disk (which would corrupt a later resume).
     let user = Message::user(user_input);
-    session.push(user.clone());
     store.append_message(session.id(), &user)?;
+    session.push(user);
 
     let replies = turn.respond(session.transcript(), workspace)?;
     for message in &replies {
-        session.push(message.clone());
         store.append_message(session.id(), message)?;
+        session.push(message.clone());
     }
     Ok(replies)
 }
@@ -466,5 +513,40 @@ mod tests {
                 "append must reject {bad:?}"
             );
         }
+    }
+
+    #[test]
+    fn load_detects_fork_cycle() -> Result<()> {
+        let root = tmp_root("cycle");
+        let store = SessionStore::new(&root);
+        std::fs::create_dir_all(&root)?;
+        // A session whose fork parent is itself: must error, not recurse forever.
+        std::fs::write(
+            root.join("loop.jsonl"),
+            "{\"kind\":\"started\",\"forked_from\":{\"parent\":\"loop\",\"at\":0}}\n",
+        )?;
+        assert!(store.load("loop").is_err());
+        let _ = std::fs::remove_dir_all(&root);
+        Ok(())
+    }
+
+    #[test]
+    fn load_tolerates_torn_trailing_line() -> Result<()> {
+        use std::io::Write;
+        let root = tmp_root("torn");
+        let store = SessionStore::new(&root);
+        store.save(&Session::new("t"))?;
+        store.append_message("t", &Message::user("intact"))?;
+        // Simulate a crash mid-append: a partial trailing record (no newline).
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(root.join("t.jsonl"))?;
+        f.write_all(b"{\"kind\":\"message\",\"role\":\"assi")?;
+        drop(f);
+        // load must succeed, dropping only the torn line.
+        let loaded = store.load("t")?;
+        assert_eq!(contents(&loaded), ["intact"]);
+        let _ = std::fs::remove_dir_all(&root);
+        Ok(())
     }
 }
