@@ -700,10 +700,19 @@ impl Turn for ModelTurn {
     ) -> Result<Vec<Message>> {
         let mut convo = transcript.to_vec();
         let mut produced = Vec::new();
-        let mut viewed = std::collections::BTreeSet::new();
+        // read-before-edit is enforced in tools::execute; seed it from the prior
+        // transcript so a file read in an earlier turn still counts this turn.
+        let mut viewed = seed_viewed(transcript);
         for _ in 0..self.max_steps {
             let completion = self.provider.complete(&convo)?;
             if completion.tool_calls.is_empty() {
+                if completion.content.trim().is_empty() {
+                    // Empty stopped turn: nudge rather than record a blank reply.
+                    convo.push(Message::user(
+                        "(empty response — call a tool, or give your answer)",
+                    ));
+                    continue;
+                }
                 produced.push(Message::assistant(completion.content));
                 return Ok(produced);
             }
@@ -713,9 +722,13 @@ impl Turn for ModelTurn {
             );
             convo.push(assistant.clone());
             produced.push(assistant);
+            let mut submitted = false;
             for call in &completion.tool_calls {
                 let observation = match ToolCall::from_call(&call.name, &call.arguments) {
-                    Ok(ToolCall::Submit) => "(done)".to_string(),
+                    Ok(ToolCall::Submit) => {
+                        submitted = true;
+                        "(done)".to_string()
+                    }
                     Ok(ToolCall::Subagent { .. } | ToolCall::Mcp { .. }) => {
                         "(subagent / mcp aren't available in interactive chat yet)".to_string()
                     }
@@ -737,9 +750,38 @@ impl Turn for ModelTurn {
                 convo.push(result.clone());
                 produced.push(result);
             }
+            // Every tool_call was answered (the API requires it) and the model
+            // called submit — the turn is complete.
+            if submitted {
+                return Ok(produced);
+            }
         }
+        // Ran out of steps mid-work — signal it instead of truncating silently.
+        produced.push(Message::assistant(format!(
+            "(reached the {}-step limit for this turn — ask me to continue)",
+            self.max_steps
+        )));
         Ok(produced)
     }
+}
+
+/// Seed the read-before-edit set from a session's prior transcript, so a file
+/// read in an earlier turn still counts as "read" this turn (tools::execute
+/// requires a read before an edit). Scans assistant `read` tool calls.
+fn seed_viewed(transcript: &[Message]) -> std::collections::BTreeSet<String> {
+    let mut viewed = std::collections::BTreeSet::new();
+    for message in transcript {
+        for call in &message.tool_calls {
+            if call.name == "read" {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&call.arguments) {
+                    if let Some(path) = value.get("path").and_then(serde_json::Value::as_str) {
+                        viewed.insert(path.to_string());
+                    }
+                }
+            }
+        }
+    }
+    viewed
 }
 
 /// Print the assistant's user-visible text from a turn's messages (tool traffic
