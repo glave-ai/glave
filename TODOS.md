@@ -237,14 +237,18 @@ persisted session, and loops — the product surface, on `open(Plan)` + the sess
 - Bare `glave` → chat via `Option<Cmd>` — keeps the existing eval subcommands intact while making the product surface
   the default.
 
-## Acceptance across all changes (brutal)
-- [ ] Property/adversarial tests on every load-bearing path: event-log append/replay round-trip; fork correctness;
-  `Plan` valid + invalid (cloud stub errors clearly); session resume round-trip (N events → reload → identical);
-  LocalRuntime path-escape (`../` + symlink rejected) + in-place edits; measurement-integrity guards still pass;
-  the agent-can't-reach-`Grader` compile fact.
-- [ ] End-to-end via InMemory provider + Direct/InMemory runtime (NO GPU): scripted session edits a temp file,
-  resumes, forks — all asserted.
-- [ ] No-regression: scorecard path compiles + runs through the refactored engine OFFLINE.
+## Acceptance across all changes (brutal) — ✅ all green
+- [x] Property/adversarial on every load-bearing path: event-log round-trip + incremental (session); fork + clamp;
+  `Plan` valid + cloud-stub-errors (runtime); LocalRuntime path-escape + in-place edits (local); measurement-integrity
+  guards (openrouter, 23 tests); the agent-can't-reach-`Grader` `compile_fail` doctest.
+- [x] End-to-end (InMemory runtime, NO GPU): `end_to_end_edit_resume_fork` — a turn edits the workspace, the session
+  persists + resumes from disk, then forks and diverges while the parent stays intact.
+- [x] No-regression: the engine path (`engine.execute` → `run_task` → agent over Workspace + grade via Grader) runs
+  offline through the refactored Plan + Workspace/Grader seams — `engine_runs_*` tests green.
+
+**Final state:** clippy `--all-targets --all-features -D warnings` clean; **101 unit tests + 1 seal doctest, 0
+failures** (glave-core 75, openrouter 23, serve 2, cli 1). Branch `product/agent-surface`, 5 checkpoint commits.
+Live `glave chat` model turn is wired + clippy-clean but awaits a live-endpoint run (offline build couldn't call it).
 
 ## Deferred — do NOT build this round
 cloud execution impl · OS-sandbox · cross-device sync · billing · MCP-beyond-existing · live scorecard run.

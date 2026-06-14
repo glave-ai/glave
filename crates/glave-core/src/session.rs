@@ -384,4 +384,60 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         Ok(())
     }
+
+    /// A turn that actually edits the workspace — proves the loop + a tool-using
+    /// turn + persistence + resume + fork compose end to end (no model, no GPU).
+    struct EditingTurn;
+    impl Turn for EditingTurn {
+        fn respond(
+            &mut self,
+            transcript: &[Message],
+            workspace: &mut dyn Workspace,
+        ) -> Result<Vec<Message>> {
+            let last = transcript.last().map_or_else(String::new, |m| m.content.clone());
+            workspace.write_file("notes.txt", &format!("did: {last}"))?;
+            Ok(vec![Message::assistant(format!("wrote notes.txt for: {last}"))])
+        }
+    }
+
+    #[test]
+    fn end_to_end_edit_resume_fork() -> Result<()> {
+        use crate::testkit::InMemoryRuntime;
+        let root = tmp_root("e2e");
+        let store = SessionStore::new(&root);
+        let mut ws = InMemoryRuntime::new();
+
+        // 1) a session that edits the workspace.
+        let mut session = Session::new("e2e");
+        store.save(&session)?;
+        step(&mut session, &store, &mut ws, &mut EditingTurn, "first task")?;
+        assert_eq!(
+            ws.file("notes.txt").map(String::as_str),
+            Some("did: first task")
+        );
+
+        // 2) resume from disk — the transcript is intact.
+        let resumed = store.load("e2e")?;
+        assert_eq!(
+            contents(&resumed),
+            ["first task", "wrote notes.txt for: first task"]
+        );
+
+        // 3) fork at the user message (index 1), diverge, and persist.
+        let mut forked = resumed.fork("e2e-fork", 1);
+        store.save(&forked)?;
+        step(&mut forked, &store, &mut ws, &mut EditingTurn, "other task")?;
+        assert_eq!(
+            contents(&store.load("e2e-fork")?),
+            ["first task", "other task", "wrote notes.txt for: other task"]
+        );
+        // The parent's transcript is untouched by the fork.
+        assert_eq!(
+            contents(&store.load("e2e")?),
+            ["first task", "wrote notes.txt for: first task"]
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+        Ok(())
+    }
 }
