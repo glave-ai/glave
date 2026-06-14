@@ -27,31 +27,21 @@ pub enum ToolCall {
         new: String,
     },
     /// Create or overwrite a whole file.
-    Create {
-        path: String,
-        content: String,
-    },
+    Create { path: String, content: String },
     /// Run a shell command in the sandbox (covers delete, build, …).
-    Bash {
-        cmd: String,
-    },
+    Bash { cmd: String },
     /// Search file contents (ripgrep, git-aware).
     Grep {
         pattern: String,
         glob: Option<String>,
     },
     /// Find files by glob (ripgrep, git-aware).
-    Glob {
-        pattern: String,
-    },
+    Glob { pattern: String },
     /// Spawn a research subagent on a focused question; its summary returns as
     /// the observation. A context-compression worker — the main agent's context
     /// never sees the exploration, only the answer. `name` selects a configured
     /// agent type (`.glave/agents/*.md`); `None` is the default read-only researcher.
-    Subagent {
-        name: Option<String>,
-        task: String,
-    },
+    Subagent { name: Option<String>, task: String },
     /// Call a tool on a configured MCP server with JSON arguments.
     Mcp {
         server: String,
@@ -97,15 +87,26 @@ impl ToolCall {
         let call = match name {
             "read" => {
                 let a: ReadArgs = serde_json::from_str(args)?;
-                ToolCall::Read { path: a.path, offset: a.offset, limit: a.limit }
+                ToolCall::Read {
+                    path: a.path,
+                    offset: a.offset,
+                    limit: a.limit,
+                }
             }
             "str_replace" => {
                 let a: StrReplaceArgs = serde_json::from_str(args)?;
-                ToolCall::StrReplace { path: a.path, old: a.old, new: a.new }
+                ToolCall::StrReplace {
+                    path: a.path,
+                    old: a.old,
+                    new: a.new,
+                }
             }
             "create" => {
                 let a: CreateArgs = serde_json::from_str(args)?;
-                ToolCall::Create { path: a.path, content: a.content }
+                ToolCall::Create {
+                    path: a.path,
+                    content: a.content,
+                }
             }
             "bash" => {
                 let a: BashArgs = serde_json::from_str(args)?;
@@ -113,7 +114,10 @@ impl ToolCall {
             }
             "grep" => {
                 let a: GrepArgs = serde_json::from_str(args)?;
-                ToolCall::Grep { pattern: a.pattern, glob: a.glob }
+                ToolCall::Grep {
+                    pattern: a.pattern,
+                    glob: a.glob,
+                }
             }
             "glob" => {
                 let a: GlobArgs = serde_json::from_str(args)?;
@@ -121,7 +125,10 @@ impl ToolCall {
             }
             "subagent" => {
                 let a: SubagentArgs = serde_json::from_str(args)?;
-                ToolCall::Subagent { name: a.name, task: a.task }
+                ToolCall::Subagent {
+                    name: a.name,
+                    task: a.task,
+                }
             }
             "mcp" => {
                 let a: McpArgs = serde_json::from_str(args)?;
@@ -130,7 +137,11 @@ impl ToolCall {
                 } else {
                     a.args.to_string()
                 };
-                ToolCall::Mcp { server: a.server, tool: a.tool, args: mcp_args }
+                ToolCall::Mcp {
+                    server: a.server,
+                    tool: a.tool,
+                    args: mcp_args,
+                }
             }
             "submit" => ToolCall::Submit,
             other => bail!("unknown tool: {other}"),
@@ -217,7 +228,8 @@ pub fn tool_specs() -> Vec<ToolSpec> {
     vec![
         ToolSpec {
             name: "read",
-            description: "Read a file with line numbers. Bounded by default; pass offset/limit to page.",
+            description:
+                "Read a file with line numbers. Bounded by default; pass offset/limit to page.",
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -325,7 +337,11 @@ pub fn execute(
     viewed: &mut BTreeSet<String>,
 ) -> Result<String> {
     match call {
-        ToolCall::Read { path, offset, limit } => match rt.read_file(path) {
+        ToolCall::Read {
+            path,
+            offset,
+            limit,
+        } => match rt.read_file(path) {
             Ok(content) => {
                 viewed.insert(path.clone());
                 Ok(render_read(&content, *offset, *limit))
@@ -429,7 +445,6 @@ fn clip(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -439,7 +454,14 @@ mod tests {
     #[test]
     fn from_call_parses_typed_args() -> Result<()> {
         let c = ToolCall::from_call("read", r#"{"path":"a.rs","offset":10,"limit":40}"#)?;
-        assert!(matches!(c, ToolCall::Read { offset: Some(10), limit: Some(40), .. }));
+        assert!(matches!(
+            c,
+            ToolCall::Read {
+                offset: Some(10),
+                limit: Some(40),
+                ..
+            }
+        ));
         let c = ToolCall::from_call("bash", r#"{"cmd":"cargo test"}"#)?;
         assert!(matches!(&c, ToolCall::Bash { cmd } if cmd == "cargo test"));
         Ok(())
@@ -459,7 +481,10 @@ mod tests {
 
     #[test]
     fn from_call_handles_no_arg_tools() -> Result<()> {
-        assert!(matches!(ToolCall::from_call("submit", "{}")?, ToolCall::Submit));
+        assert!(matches!(
+            ToolCall::from_call("submit", "{}")?,
+            ToolCall::Submit
+        ));
         // run_tests is GONE from the surface: the oracle is sealed from the agent.
         assert!(ToolCall::from_call("run_tests", "").is_err());
         Ok(())
@@ -474,7 +499,15 @@ mod tests {
     fn tool_specs_cover_every_variant() {
         let names: Vec<&str> = tool_specs().iter().map(|s| s.name).collect();
         for n in [
-            "read", "str_replace", "create", "bash", "grep", "glob", "subagent", "mcp", "submit",
+            "read",
+            "str_replace",
+            "create",
+            "bash",
+            "grep",
+            "glob",
+            "subagent",
+            "mcp",
+            "submit",
         ] {
             assert!(names.contains(&n), "missing spec: {n}");
         }

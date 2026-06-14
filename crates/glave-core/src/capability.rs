@@ -157,13 +157,19 @@ fn load_dir(rt: &dyn WorkspaceRuntime, dir: &str, kind: CapabilityKind) -> Vec<C
         .into_iter()
         .filter(|f| {
             f.starts_with(&prefix)
-                && Path::new(f).extension().is_some_and(|e| e.eq_ignore_ascii_case("md"))
+                && Path::new(f)
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("md"))
         })
         .collect();
     paths.sort();
     paths
         .iter()
-        .filter_map(|p| rt.read_file(p).ok().map(|c| parse_capability(kind, &cap_name(p), &c)))
+        .filter_map(|p| {
+            rt.read_file(p)
+                .ok()
+                .map(|c| parse_capability(kind, &cap_name(p), &c))
+        })
         .collect()
 }
 
@@ -229,7 +235,9 @@ pub fn load_agents(rt: &dyn WorkspaceRuntime) -> Vec<AgentDef> {
         .into_iter()
         .filter(|f| {
             f.starts_with(".glave/agents/")
-                && Path::new(f).extension().is_some_and(|e| e.eq_ignore_ascii_case("md"))
+                && Path::new(f)
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("md"))
         })
         .collect();
     paths.sort();
@@ -297,7 +305,9 @@ mod tests {
     #[test]
     fn no_overlap_query_selects_nothing() {
         let r = reg(&[("formatter", "format source code")]);
-        assert!(LexicalSelector.select(&r, "deploy kubernetes", 5).is_empty());
+        assert!(LexicalSelector
+            .select(&r, "deploy kubernetes", 5)
+            .is_empty());
     }
 
     #[test]
@@ -312,7 +322,10 @@ mod tests {
             ("formatter", "format and lint source code"),
             ("deployer", "ship containers to production"),
         ]);
-        assert_eq!(names(&LexicalSelector.select(&r, "lint my code", 5)), ["formatter"]);
+        assert_eq!(
+            names(&LexicalSelector.select(&r, "lint my code", 5)),
+            ["formatter"]
+        );
     }
 
     #[test]
@@ -323,31 +336,35 @@ mod tests {
             ("migrate", "unrelated words here"),
         ]);
         assert_eq!(
-            names(&LexicalSelector.select(&r, "migrate", 5)).first().copied(),
+            names(&LexicalSelector.select(&r, "migrate", 5))
+                .first()
+                .copied(),
             Some("migrate")
         );
     }
 
     #[test]
     fn top_k_limits_results() {
-        let r = reg(&[
-            ("a", "test code"),
-            ("b", "test code"),
-            ("c", "test code"),
-        ]);
+        let r = reg(&[("a", "test code"), ("b", "test code"), ("c", "test code")]);
         assert_eq!(LexicalSelector.select(&r, "test", 2).len(), 2);
     }
 
     #[test]
     fn tokenize_is_case_and_punctuation_insensitive() {
         let r = reg(&[("runner", "Run the Tests")]);
-        assert_eq!(names(&LexicalSelector.select(&r, "RUN-TESTS!!", 5)), ["runner"]);
+        assert_eq!(
+            names(&LexicalSelector.select(&r, "RUN-TESTS!!", 5)),
+            ["runner"]
+        );
     }
 
     #[test]
     fn ties_break_by_name_deterministically() {
         let r = reg(&[("zebra", "test"), ("alpha", "test")]);
-        assert_eq!(names(&LexicalSelector.select(&r, "test", 5)), ["alpha", "zebra"]);
+        assert_eq!(
+            names(&LexicalSelector.select(&r, "test", 5)),
+            ["alpha", "zebra"]
+        );
     }
 
     #[test]
@@ -378,7 +395,10 @@ mod tests {
     fn load_commands_finds_command_markdown_with_kind() {
         use crate::testkit::InMemoryRuntime;
         let rt = InMemoryRuntime::new()
-            .with_file(".glave/commands/review.md", "---\ndescription: review a PR\n---\nReview $ARGUMENTS")
+            .with_file(
+                ".glave/commands/review.md",
+                "---\ndescription: review a PR\n---\nReview $ARGUMENTS",
+            )
             .with_file(".glave/skills/fmt.md", "format code");
         let cmds = load_commands(&rt);
         assert_eq!(cmds.len(), 1);
@@ -408,15 +428,26 @@ mod tests {
 
     #[test]
     fn expand_command_without_placeholder_returns_body() {
-        let cmds = vec![Capability::new(CapabilityKind::Command, "ci", "d", "run the full suite")];
-        assert_eq!(expand_command(&cmds, "ci", "ignored"), Some("run the full suite".to_string()));
+        let cmds = vec![Capability::new(
+            CapabilityKind::Command,
+            "ci",
+            "d",
+            "run the full suite",
+        )];
+        assert_eq!(
+            expand_command(&cmds, "ci", "ignored"),
+            Some("run the full suite".to_string())
+        );
     }
 
     #[test]
     fn load_skills_finds_only_skill_markdown() {
         use crate::testkit::InMemoryRuntime;
         let rt = InMemoryRuntime::new()
-            .with_file(".glave/skills/fmt.md", "---\ndescription: format code\n---\nbody")
+            .with_file(
+                ".glave/skills/fmt.md",
+                "---\ndescription: format code\n---\nbody",
+            )
             .with_file(".glave/skills/lint.md", "lint the code")
             .with_file(".glave/skills/readme.txt", "ignored: wrong ext")
             .with_file("src/main.rs", "fn main() {}");
@@ -456,11 +487,17 @@ mod tests {
     fn load_agents_finds_agent_markdown() {
         use crate::testkit::InMemoryRuntime;
         let rt = InMemoryRuntime::new()
-            .with_file(".glave/agents/reviewer.md", "---\ndescription: review\ntools: read\n---\nReview.")
+            .with_file(
+                ".glave/agents/reviewer.md",
+                "---\ndescription: review\ntools: read\n---\nReview.",
+            )
             .with_file("src/main.rs", "fn main() {}");
         let agents = load_agents(&rt);
         assert_eq!(agents.len(), 1);
         assert_eq!(agents.first().map(|a| a.name.as_str()), Some("reviewer"));
-        assert_eq!(agents.first().map(|a| a.tools.clone()), Some(vec!["read".to_string()]));
+        assert_eq!(
+            agents.first().map(|a| a.tools.clone()),
+            Some(vec!["read".to_string()])
+        );
     }
 }

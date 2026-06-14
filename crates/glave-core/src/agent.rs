@@ -120,7 +120,10 @@ impl ModelAgent {
         subtask: &str,
     ) -> Result<String> {
         let (system, allow): (String, Vec<String>) = match name {
-            Some(n) => match crate::capability::load_agents(rt).into_iter().find(|d| d.name == n) {
+            Some(n) => match crate::capability::load_agents(rt)
+                .into_iter()
+                .find(|d| d.name == n)
+            {
                 Some(def) => (def.prompt, def.tools),
                 None => {
                     return Ok(format!(
@@ -130,10 +133,7 @@ impl ModelAgent {
             },
             None => (subagent_system(), Vec::new()),
         };
-        let mut messages = vec![
-            Message::system(system),
-            Message::user(subtask.to_string()),
-        ];
+        let mut messages = vec![Message::system(system), Message::user(subtask.to_string())];
         let mut viewed = BTreeSet::new();
         for _ in 0..self.sub_turns {
             let c = self.provider.complete(&messages)?;
@@ -150,8 +150,9 @@ impl ModelAgent {
                     Ok(call) if subagent_tool_allowed(&call, &allow) => {
                         // Recoverable: a failed tool (e.g. bad regex) feeds the
                         // error back, never crashes the subagent.
-                        tools::execute(&call, rt, task, &mut viewed)
-                            .unwrap_or_else(|e| format!("ERROR: tool '{}' failed: {e}", call.name()))
+                        tools::execute(&call, rt, task, &mut viewed).unwrap_or_else(|e| {
+                            format!("ERROR: tool '{}' failed: {e}", call.name())
+                        })
                     }
                     Ok(_) => {
                         "ERROR: subagents are read-only — use read, grep, or glob only".to_string()
@@ -270,7 +271,10 @@ impl Agent for ModelAgent {
                             trace.emit(RunEvent::agent_action(run_id, "submit", None, None))?;
                             break 'outer;
                         }
-                        Ok(ToolCall::Subagent { name, task: subtask }) => {
+                        Ok(ToolCall::Subagent {
+                            name,
+                            task: subtask,
+                        }) => {
                             let summary = self.run_subagent(rt, task, name.as_deref(), &subtask)?;
                             trace.emit(RunEvent::agent_action(
                                 run_id,
@@ -418,7 +422,9 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
         task.archetype, task.language, task.difficulty
     ));
     if let Some(guidance) = project_guidance(rt) {
-        out.push_str(&format!("PROJECT NOTES (HOPE.md) — follow these:\n{guidance}\n\n"));
+        out.push_str(&format!(
+            "PROJECT NOTES (HOPE.md) — follow these:\n{guidance}\n\n"
+        ));
     }
     out.push_str(&spec_section(task));
 
@@ -435,7 +441,10 @@ fn initial_user(rt: &dyn WorkspaceRuntime, task: &TaskSpec) -> Result<String> {
         if !picked.is_empty() {
             out.push_str("RELEVANT SKILLS:\n");
             for cap in picked {
-                out.push_str(&format!("## {} — {}\n{}\n\n", cap.name, cap.description, cap.body));
+                out.push_str(&format!(
+                    "## {} — {}\n{}\n\n",
+                    cap.name, cap.description, cap.body
+                ));
             }
         }
     }
@@ -590,8 +599,14 @@ mod tests {
             .with_file("HOPE.md", "Always run the linter.")
             .with_file("src/main.rs", "fn main() {}");
         let out = initial_user(&rt, &task_for("rust")?)?;
-        assert!(out.contains("PROJECT NOTES (HOPE.md)"), "header present: {out}");
-        assert!(out.contains("Always run the linter."), "content present: {out}");
+        assert!(
+            out.contains("PROJECT NOTES (HOPE.md)"),
+            "header present: {out}"
+        );
+        assert!(
+            out.contains("Always run the linter."),
+            "content present: {out}"
+        );
         Ok(())
     }
 
@@ -640,7 +655,10 @@ mod tests {
             .with_file("src/main.rs", "fn main() {}");
         let out = initial_user(&rt, &statement_task("integer decoding is wrong")?)?;
         assert!(out.contains("RELEVANT SKILLS"), "skills section: {out}");
-        assert!(out.contains("Check the shift width."), "skill body injected: {out}");
+        assert!(
+            out.contains("Check the shift width."),
+            "skill body injected: {out}"
+        );
         Ok(())
     }
 
@@ -661,7 +679,10 @@ mod tests {
             )
             .with_file("src/main.rs", "fn main() {}");
         let out = initial_user(&rt, &statement_task("integer decoding is wrong")?)?;
-        assert!(!out.contains("RELEVANT SKILLS"), "irrelevant skill dropped: {out}");
+        assert!(
+            !out.contains("RELEVANT SKILLS"),
+            "irrelevant skill dropped: {out}"
+        );
         Ok(())
     }
 
@@ -704,17 +725,32 @@ mod tests {
         compact_to_fit(&mut m, 500, 0); // evict everything possible
         assert_eq!(m.first().map(|x| x.content.as_str()), Some("S"));
         assert_eq!(m.get(1).map(|x| x.content.as_str()), Some("TASK"));
-        let acts: Vec<&str> =
-            m.iter().filter(|x| x.role == Role::Assistant).map(|x| x.content.as_str()).collect();
+        let acts: Vec<&str> = m
+            .iter()
+            .filter(|x| x.role == Role::Assistant)
+            .map(|x| x.content.as_str())
+            .collect();
         assert_eq!(acts, ["act0", "act1", "act2", "act3", "act4"]); // model turns untouched
     }
 
     #[test]
     fn is_readonly_allows_only_read_grep_glob() {
-        assert!(is_readonly(&ToolCall::Read { path: "f".into(), offset: None, limit: None }));
-        assert!(is_readonly(&ToolCall::Grep { pattern: "x".into(), glob: None }));
-        assert!(is_readonly(&ToolCall::Glob { pattern: "*".into() }));
-        assert!(!is_readonly(&ToolCall::Create { path: "f".into(), content: "c".into() }));
+        assert!(is_readonly(&ToolCall::Read {
+            path: "f".into(),
+            offset: None,
+            limit: None
+        }));
+        assert!(is_readonly(&ToolCall::Grep {
+            pattern: "x".into(),
+            glob: None
+        }));
+        assert!(is_readonly(&ToolCall::Glob {
+            pattern: "*".into()
+        }));
+        assert!(!is_readonly(&ToolCall::Create {
+            path: "f".into(),
+            content: "c".into()
+        }));
         assert!(!is_readonly(&ToolCall::Submit));
     }
 
@@ -745,7 +781,10 @@ mod tests {
         // The subagent attempts a str_replace; it must not change the file.
         let provider = Box::new(InMemoryProvider::with_tool_calls(vec![
             vec![("subagent", r#"{"task":"fix it yourself"}"#)], // main: spawn
-            vec![("str_replace", r#"{"path":"src/main.rs","old":"BUG","new":"FIXED"}"#)], // sub: tries to edit (blocked)
+            vec![(
+                "str_replace",
+                r#"{"path":"src/main.rs","old":"BUG","new":"FIXED"}"#,
+            )], // sub: tries to edit (blocked)
             vec![],                                              // sub: gives up
             vec![("submit", "{}")],                              // main: submit
         ]));
@@ -763,16 +802,30 @@ mod tests {
 
     #[test]
     fn subagent_tool_allowed_defaults_to_readonly() {
-        let read = ToolCall::Read { path: "f".into(), offset: None, limit: None };
-        let edit = ToolCall::Create { path: "f".into(), content: "c".into() };
+        let read = ToolCall::Read {
+            path: "f".into(),
+            offset: None,
+            limit: None,
+        };
+        let edit = ToolCall::Create {
+            path: "f".into(),
+            content: "c".into(),
+        };
         assert!(subagent_tool_allowed(&read, &[])); // read-only allowed
         assert!(!subagent_tool_allowed(&edit, &[])); // edits never allowed
     }
 
     #[test]
     fn subagent_allowlist_narrows_the_readonly_set() {
-        let read = ToolCall::Read { path: "f".into(), offset: None, limit: None };
-        let grep = ToolCall::Grep { pattern: "x".into(), glob: None };
+        let read = ToolCall::Read {
+            path: "f".into(),
+            offset: None,
+            limit: None,
+        };
+        let grep = ToolCall::Grep {
+            pattern: "x".into(),
+            glob: None,
+        };
         let allow = vec!["grep".to_string()];
         assert!(!subagent_tool_allowed(&read, &allow)); // not in allowlist
         assert!(subagent_tool_allowed(&grep, &allow));
@@ -788,10 +841,12 @@ mod tests {
         ]));
         let policy = Box::new(AutonomousPolicy::new(&["src/main.rs".to_string()]));
         let mut agent = ModelAgent::new(provider, policy);
-        let mut rt = InMemoryRuntime::new().with_file("src/main.rs", "BUG").with_file(
-            ".glave/agents/explorer.md",
-            "---\ndescription: explores code\ntools: read\n---\nYou explore.",
-        );
+        let mut rt = InMemoryRuntime::new()
+            .with_file("src/main.rs", "BUG")
+            .with_file(
+                ".glave/agents/explorer.md",
+                "---\ndescription: explores code\ntools: read\n---\nYou explore.",
+            );
         let mut sink = InMemorySink::default();
         let task = task_for("rust")?;
 

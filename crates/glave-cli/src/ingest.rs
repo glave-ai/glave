@@ -94,7 +94,15 @@ pub fn ingest(args: &IngestArgs) -> Result<()> {
     let ws_s = ws.to_string_lossy().into_owned();
 
     // clone @ sha (keep .git: the oracle applies/reverts patches against it)
-    run("git", &["clone", "--quiet", &format!("https://github.com/{org}/{repo}"), &ws_s])?;
+    run(
+        "git",
+        &[
+            "clone",
+            "--quiet",
+            &format!("https://github.com/{org}/{repo}"),
+            &ws_s,
+        ],
+    )?;
     run("git", &["-C", &ws_s, "checkout", "--quiet", sha])?;
 
     vendor(lang, &ws, &ws_s)?;
@@ -116,7 +124,11 @@ pub fn ingest(args: &IngestArgs) -> Result<()> {
         task_toml(&id, lang, &statement, org, repo, sha, &derived),
     )?;
 
-    println!("ingested {org}/{repo}@{sha} ({}) -> {}", lang.name(), out.display());
+    println!(
+        "ingested {org}/{repo}@{sha} ({}) -> {}",
+        lang.name(),
+        out.display()
+    );
     println!("  editable: {}", derived.editable.join(", "));
     println!("  fail_to_pass: {}", derived.fail_to_pass);
     Ok(())
@@ -188,8 +200,14 @@ fn derive(lang: Lang, test_patch: &str, fix_files: &[String]) -> Result<Derived>
         Lang::Typescript => {
             let testfile = test_files
                 .iter()
-                .find(|f| ["ts", "tsx", "js", "jsx"].into_iter().any(|e| has_ext(f, e)))
-                .ok_or_else(|| anyhow!("typescript: need a .ts/.tsx/.js test file in test_patch"))?;
+                .find(|f| {
+                    ["ts", "tsx", "js", "jsx"]
+                        .into_iter()
+                        .any(|e| has_ext(f, e))
+                })
+                .ok_or_else(|| {
+                    anyhow!("typescript: need a .ts/.tsx/.js test file in test_patch")
+                })?;
             // glob crate has no brace expansion -> one editable pattern per extension.
             let editable = dirs
                 .iter()
@@ -217,7 +235,10 @@ fn vendor(lang: Lang, ws: &Path, ws_s: &str) -> Result<()> {
             append(&ws.join("Cargo.toml"), "\n[workspace]\n")?;
             let manifest = ws.join("Cargo.toml").to_string_lossy().into_owned();
             let vendor_dir = ws.join("vendor").to_string_lossy().into_owned();
-            run("cargo", &["vendor", "--manifest-path", &manifest, &vendor_dir])?;
+            run(
+                "cargo",
+                &["vendor", "--manifest-path", &manifest, &vendor_dir],
+            )?;
             std::fs::create_dir_all(ws.join(".cargo"))?;
             std::fs::write(
                 ws.join(".cargo/config.toml"),
@@ -255,8 +276,16 @@ fn vendor(lang: Lang, ws: &Path, ws_s: &str) -> Result<()> {
             run(
                 "docker",
                 &[
-                    "run", "--rm", "-v", &mount, "-w", "/work", Lang::Typescript.image(), "sh",
-                    "-c", "npm ci || npm install",
+                    "run",
+                    "--rm",
+                    "-v",
+                    &mount,
+                    "-w",
+                    "/work",
+                    Lang::Typescript.image(),
+                    "sh",
+                    "-c",
+                    "npm ci || npm install",
                 ],
             )?;
         }
@@ -273,7 +302,9 @@ fn extract_solution(ws: &Path, out: &Path, fix_patch: &str, fix_files: &[String]
     }
     let fixpath = out.join(".fix.patch");
     std::fs::write(&fixpath, fix_patch)?;
-    let fixabs = std::fs::canonicalize(&fixpath)?.to_string_lossy().into_owned();
+    let fixabs = std::fs::canonicalize(&fixpath)?
+        .to_string_lossy()
+        .into_owned();
     let soltmp_s = soltmp.to_string_lossy().into_owned();
     run("git", &["-C", &soltmp_s, "init", "--quiet"])?;
     run("git", &["-C", &soltmp_s, "apply", &fixabs])?;
@@ -282,7 +313,8 @@ fn extract_solution(ws: &Path, out: &Path, fix_patch: &str, fix_files: &[String]
         if let Some(parent) = dst.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::copy(soltmp.join(f), &dst).with_context(|| format!("copying solution file {f}"))?;
+        std::fs::copy(soltmp.join(f), &dst)
+            .with_context(|| format!("copying solution file {f}"))?;
     }
     let _ = std::fs::remove_dir_all(&soltmp);
     let _ = std::fs::remove_file(&fixpath);
@@ -318,8 +350,20 @@ fn compute_oracle(lang: Lang, out: &Path, test_patch: &str) -> Result<()> {
     run(
         "docker",
         &[
-            "run", "--rm", "-v", &tmp_mount, "-v", &oracle_mount, "-v", &sol_mount, "-w", "/work",
-            lang.image(), "sh", "-c", &format!(".venv/bin/python /oracle/compute_oracle.py {root}"),
+            "run",
+            "--rm",
+            "-v",
+            &tmp_mount,
+            "-v",
+            &oracle_mount,
+            "-v",
+            &sol_mount,
+            "-w",
+            "/work",
+            lang.image(),
+            "sh",
+            "-c",
+            &format!(".venv/bin/python /oracle/compute_oracle.py {root}"),
         ],
     )?;
 
@@ -338,7 +382,10 @@ fn compute_oracle(lang: Lang, out: &Path, test_patch: &str) -> Result<()> {
 /// The top-level directory of a test file (`tests/test_x.py` → `tests`), i.e. what
 /// pytest runs as the suite; the file itself if it sits at the repo root.
 fn test_root(testfile: &str) -> String {
-    testfile.split_once('/').map_or(testfile, |(d, _)| d).to_string()
+    testfile
+        .split_once('/')
+        .map_or(testfile, |(d, _)| d)
+        .to_string()
 }
 
 fn task_toml(
@@ -351,7 +398,8 @@ fn task_toml(
     d: &Derived,
 ) -> String {
     let editable = toml_array(&d.editable);
-    let (lang_name, image, f2p, p2p) = (lang.name(), lang.image(), &d.fail_to_pass, &d.pass_to_pass);
+    let (lang_name, image, f2p, p2p) =
+        (lang.name(), lang.image(), &d.fail_to_pass, &d.pass_to_pass);
     format!(
         r#"id = "{id}"
 language = "{lang_name}"
@@ -454,7 +502,10 @@ fn run(cmd: &str, args: &[&str]) -> Result<()> {
         .output()
         .with_context(|| format!("running {cmd}"))?;
     if !out.status.success() {
-        bail!("{cmd} failed: {}", String::from_utf8_lossy(&out.stderr).trim());
+        bail!(
+            "{cmd} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
     }
     Ok(())
 }

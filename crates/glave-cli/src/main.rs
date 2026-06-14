@@ -110,11 +110,21 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Validate { task } => validate(&task),
-        Cmd::Ingest { dataset, index, out, lang } => {
-            ingest::ingest(&ingest::IngestArgs { dataset: &dataset, index, out: &out, lang: &lang })
-        }
+        Cmd::Ingest {
+            dataset,
+            index,
+            out,
+            lang,
+        } => ingest::ingest(&ingest::IngestArgs {
+            dataset: &dataset,
+            index,
+            out: &out,
+            lang: &lang,
+        }),
         Cmd::Serve { addr } => {
-            let socket = addr.parse().context("parsing --addr (expected host:port)")?;
+            let socket = addr
+                .parse()
+                .context("parsing --addr (expected host:port)")?;
             glave_serve::serve_blocking(socket, build_engine())
         }
         Cmd::Score {
@@ -157,7 +167,9 @@ fn check_reasoning(agent_label: &str, reasoning_tokens: u64) {
         return;
     }
     let on = !matches!(
-        std::env::var("GLAVE_REASONING").as_deref().unwrap_or("high"),
+        std::env::var("GLAVE_REASONING")
+            .as_deref()
+            .unwrap_or("high"),
         "off" | "none" | ""
     );
     if on && reasoning_tokens == 0 {
@@ -189,10 +201,16 @@ fn do_run(task_dir: &Path, kind: AgentKind, model: &str) -> Result<bool> {
     let agent = match kind {
         AgentKind::Noop => AgentSpec::Noop,
         AgentKind::Solve => AgentSpec::Solve,
-        AgentKind::Model => AgentSpec::Model { model: model.to_string() },
+        AgentKind::Model => AgentSpec::Model {
+            model: model.to_string(),
+        },
     };
     let mut sink = JsonlSink::create(Path::new("traces"), &run_id)?;
-    let req = RunRequest { run_id, task, agent };
+    let req = RunRequest {
+        run_id,
+        task,
+        agent,
+    };
     let outcome = build_engine().execute(&req, &mut sink)?;
 
     println!(
@@ -216,8 +234,14 @@ fn validate(task_dir: &Path) -> Result<()> {
     let solve_solved = do_run(task_dir, AgentKind::Solve, "")?;
 
     println!("\n--- discrimination check ---");
-    println!("  noop  -> {}", if noop_solved { "SOLVED" } else { "UNSOLVED" });
-    println!("  solve -> {}", if solve_solved { "SOLVED" } else { "UNSOLVED" });
+    println!(
+        "  noop  -> {}",
+        if noop_solved { "SOLVED" } else { "UNSOLVED" }
+    );
+    println!(
+        "  solve -> {}",
+        if solve_solved { "SOLVED" } else { "UNSOLVED" }
+    );
     if !noop_solved && solve_solved {
         println!("\nOK: oracle discriminates (noop fails, solve passes). Task is well-formed.");
         Ok(())
@@ -266,7 +290,10 @@ fn run_trials(engine: &RunEngine, task_dir: &Path, model: &str, trials: usize) -
                     task_name(task_dir),
                     trial + 1
                 );
-                out.push(Trial { solved: false, cost: 0.0 });
+                out.push(Trial {
+                    solved: false,
+                    cost: 0.0,
+                });
             }
         }
     }
@@ -314,7 +341,9 @@ fn run_one(engine: &RunEngine, task_dir: &Path, model: &str) -> Result<Trial> {
     let req = RunRequest {
         run_id: uuid::Uuid::new_v4().to_string(),
         task,
-        agent: AgentSpec::Model { model: model.to_string() },
+        agent: AgentSpec::Model {
+            model: model.to_string(),
+        },
     };
     let mut sink = JsonlSink::create(Path::new("traces"), &req.run_id)?;
     let outcome = engine.execute(&req, &mut sink)?;
@@ -469,7 +498,10 @@ fn score(
         } else {
             println!("  relative success: n/a (frontier passed 0)");
         }
-        match (per_correct_val(q.cost, q.solved), per_correct_val(f.cost, f.solved)) {
+        match (
+            per_correct_val(q.cost, q.solved),
+            per_correct_val(f.cost, f.solved),
+        ) {
             (Some(qp), Some(fp)) if fp > 0.0 => println!(
                 "  relative $/correct: {:.1}% of frontier   (frontier costs {:.0}x more)",
                 qp / fp * 100.0,

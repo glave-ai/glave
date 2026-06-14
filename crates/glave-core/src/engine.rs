@@ -67,7 +67,10 @@ pub struct RunEngine {
 impl RunEngine {
     #[must_use]
     pub fn new(providers: Arc<dyn ProviderFactory>, runtimes: Arc<dyn RuntimeFactory>) -> Self {
-        Self { providers, runtimes }
+        Self {
+            providers,
+            runtimes,
+        }
     }
 
     /// Run one task to completion. Every trace event is forwarded to `sink`
@@ -105,7 +108,10 @@ impl RunEngine {
             AgentSpec::Model { model } => {
                 let provider = self.providers.create(model)?;
                 let policy = Box::new(AutonomousPolicy::new(&task.editable_surface));
-                (Box::new(ModelAgent::new(provider, policy)), format!("model:{model}"))
+                (
+                    Box::new(ModelAgent::new(provider, policy)),
+                    format!("model:{model}"),
+                )
             }
             AgentSpec::Solve => (Box::new(SolveAgent), "stub:solve".to_string()),
             AgentSpec::Noop => (Box::new(NoopAgent), "stub:noop".to_string()),
@@ -166,7 +172,9 @@ impl TraceSink for OutcomeTap<'_> {
                 self.prompt_tokens += *prompt_tokens;
                 self.completion_tokens += *completion_tokens;
             }
-            RunEvent::ModelTurn { reasoning_tokens, .. } => {
+            RunEvent::ModelTurn {
+                reasoning_tokens, ..
+            } => {
                 self.reasoning_tokens += *reasoning_tokens;
             }
             _ => {}
@@ -214,11 +222,16 @@ mod tests {
 
     #[test]
     fn engine_runs_and_returns_structured_outcome() -> Result<()> {
-        let engine = RunEngine::new(Arc::new(FixedProviderFactory), Arc::new(FixedRuntimeFactory));
+        let engine = RunEngine::new(
+            Arc::new(FixedProviderFactory),
+            Arc::new(FixedRuntimeFactory),
+        );
         let req = RunRequest {
             run_id: "r1".to_string(),
             task: task()?,
-            agent: AgentSpec::Model { model: "any".to_string() },
+            agent: AgentSpec::Model {
+                model: "any".to_string(),
+            },
         };
         let mut sink = InMemorySink::default();
         let outcome = engine.execute(&req, &mut sink)?;
@@ -228,13 +241,19 @@ mod tests {
         // `fail_to_pass = "true"` always passes, so the run is solved.
         assert!(outcome.solved);
         // Events were also forwarded to the caller's sink, not swallowed.
-        assert!(sink.events.iter().any(|e| matches!(e, RunEvent::RunCompleted { .. })));
+        assert!(sink
+            .events
+            .iter()
+            .any(|e| matches!(e, RunEvent::RunCompleted { .. })));
         Ok(())
     }
 
     #[test]
     fn engine_outcome_matches_forwarded_sink() -> Result<()> {
-        let engine = RunEngine::new(Arc::new(FixedProviderFactory), Arc::new(FixedRuntimeFactory));
+        let engine = RunEngine::new(
+            Arc::new(FixedProviderFactory),
+            Arc::new(FixedRuntimeFactory),
+        );
         let req = RunRequest {
             run_id: "r2".to_string(),
             task: task()?,

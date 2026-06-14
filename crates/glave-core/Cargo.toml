@@ -15,6 +15,10 @@ serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 glob = "0.3"
+wait-timeout.workspace = true
+grep.workspace = true
+ignore.workspace = true
+globset.workspace = true
 
 [lints]
 workspace = true

@@ -68,9 +68,17 @@ pub fn parse_config(raw: &str) -> Vec<McpServerConfig> {
             let args = cfg
                 .get("args")
                 .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default();
-            Some(McpServerConfig { name: name.clone(), command, args })
+            Some(McpServerConfig {
+                name: name.clone(),
+                command,
+                args,
+            })
         })
         .collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -91,7 +99,10 @@ pub struct McpClient<T: McpTransport> {
 
 impl<T: McpTransport> McpClient<T> {
     pub fn new(server: &str, transport: T) -> Self {
-        Self { server: server.to_string(), transport }
+        Self {
+            server: server.to_string(),
+            transport,
+        }
     }
 
     /// `initialize` request + `initialized` notification.
@@ -104,34 +115,56 @@ impl<T: McpTransport> McpClient<T> {
                 "clientInfo": {"name": "glave", "version": "0"}
             }),
         )?;
-        self.transport.notify("notifications/initialized", json!({}))
+        self.transport
+            .notify("notifications/initialized", json!({}))
     }
 
     pub fn list_tools(&mut self) -> Result<Vec<McpTool>> {
         let res = self.transport.request("tools/list", json!({}))?;
-        let tools = res.get("tools").and_then(Value::as_array).cloned().unwrap_or_default();
+        let tools = res
+            .get("tools")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         Ok(tools
             .iter()
             .filter_map(|t| {
                 let name = t.get("name").and_then(Value::as_str)?.to_string();
-                let description =
-                    t.get("description").and_then(Value::as_str).unwrap_or("").to_string();
-                Some(McpTool { server: self.server.clone(), name, description })
+                let description = t
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                Some(McpTool {
+                    server: self.server.clone(),
+                    name,
+                    description,
+                })
             })
             .collect())
     }
 
     /// Call a tool; flatten the `content` text blocks into a single string.
     pub fn call_tool(&mut self, name: &str, args: &Value) -> Result<String> {
-        let res =
-            self.transport.request("tools/call", json!({"name": name, "arguments": args.clone()}))?;
-        let blocks = res.get("content").and_then(Value::as_array).cloned().unwrap_or_default();
+        let res = self.transport.request(
+            "tools/call",
+            json!({"name": name, "arguments": args.clone()}),
+        )?;
+        let blocks = res
+            .get("content")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         let text = blocks
             .iter()
             .filter_map(|c| c.get("text").and_then(Value::as_str))
             .collect::<Vec<_>>()
             .join("\n");
-        Ok(if text.is_empty() { res.to_string() } else { text })
+        Ok(if text.is_empty() {
+            res.to_string()
+        } else {
+            text
+        })
     }
 }
 
@@ -164,8 +197,14 @@ impl StdioTransport {
             .stderr(Stdio::null())
             .spawn()
             .with_context(|| format!("spawning MCP server {}", cfg.name))?;
-        let stdin = child.stdin.take().ok_or_else(|| anyhow!("MCP server has no stdin"))?;
-        let stdout = child.stdout.take().ok_or_else(|| anyhow!("MCP server has no stdout"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow!("MCP server has no stdin"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow!("MCP server has no stdout"))?;
 
         // Read on a dedicated thread so a silent/hung server can't block the
         // agent: the request path waits on the channel with a deadline, not on a
@@ -212,12 +251,18 @@ impl StdioTransport {
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                bail!("MCP request timed out after {}s", self.read_timeout.as_secs());
+                bail!(
+                    "MCP request timed out after {}s",
+                    self.read_timeout.as_secs()
+                );
             }
             let line = match self.lines.recv_timeout(remaining) {
                 Ok(line) => line,
                 Err(RecvTimeoutError::Timeout) => {
-                    bail!("MCP request timed out after {}s", self.read_timeout.as_secs())
+                    bail!(
+                        "MCP request timed out after {}s",
+                        self.read_timeout.as_secs()
+                    )
                 }
                 Err(RecvTimeoutError::Disconnected) => {
                     bail!("MCP server closed the connection")
@@ -345,7 +390,10 @@ mod tests {
     impl FakeTransport {
         fn new(responses: Vec<(&str, Value)>) -> Self {
             Self {
-                responses: responses.into_iter().map(|(m, v)| (m.to_string(), v)).collect(),
+                responses: responses
+                    .into_iter()
+                    .map(|(m, v)| (m.to_string(), v))
+                    .collect(),
                 methods: Vec::new(),
             }
         }
@@ -372,8 +420,14 @@ mod tests {
         );
         assert_eq!(cfg.len(), 2);
         assert_eq!(cfg.first().map(|c| c.name.as_str()), Some("abc"));
-        assert_eq!(cfg.get(1).map(|c| (c.name.as_str(), c.command.as_str())), Some(("zed", "z")));
-        assert_eq!(cfg.get(1).map(|c| c.args.clone()), Some(vec!["--x".to_string()]));
+        assert_eq!(
+            cfg.get(1).map(|c| (c.name.as_str(), c.command.as_str())),
+            Some(("zed", "z"))
+        );
+        assert_eq!(
+            cfg.get(1).map(|c| c.args.clone()),
+            Some(vec!["--x".to_string()])
+        );
     }
 
     #[test]
@@ -385,10 +439,16 @@ mod tests {
 
     #[test]
     fn initialize_sends_request_then_notification() -> Result<()> {
-        let t = FakeTransport::new(vec![("initialize", json!({"protocolVersion": "2024-11-05"}))]);
+        let t = FakeTransport::new(vec![(
+            "initialize",
+            json!({"protocolVersion": "2024-11-05"}),
+        )]);
         let mut client = McpClient::new("srv", t);
         client.initialize()?;
-        assert_eq!(client.transport.methods, ["initialize", "notify:notifications/initialized"]);
+        assert_eq!(
+            client.transport.methods,
+            ["initialize", "notify:notifications/initialized"]
+        );
         Ok(())
     }
 
@@ -401,8 +461,12 @@ mod tests {
         let mut client = McpClient::new("srv", t);
         let tools = client.list_tools()?;
         assert_eq!(tools.len(), 2);
-        assert_eq!(tools.first().map(|t| (t.name.as_str(), t.description.as_str(), t.server.as_str())),
-                   Some(("search", "search the web", "srv")));
+        assert_eq!(
+            tools
+                .first()
+                .map(|t| (t.name.as_str(), t.description.as_str(), t.server.as_str())),
+            Some(("search", "search the web", "srv"))
+        );
         assert_eq!(tools.get(1).map(|t| t.description.as_str()), Some("")); // missing desc -> empty
         Ok(())
     }
@@ -414,7 +478,10 @@ mod tests {
             json!({"content": [{"type": "text", "text": "line1"}, {"type": "text", "text": "line2"}]}),
         )]);
         let mut client = McpClient::new("srv", t);
-        assert_eq!(client.call_tool("search", &json!({"q": "x"}))?, "line1\nline2");
+        assert_eq!(
+            client.call_tool("search", &json!({"q": "x"}))?,
+            "line1\nline2"
+        );
         Ok(())
     }
 
@@ -504,7 +571,11 @@ for line in sys.stdin:
             let _ = std::fs::remove_file(&path);
             return Ok(());
         }
-        assert!(hub.catalog().contains("mock/echo"), "catalog: {}", hub.catalog());
+        assert!(
+            hub.catalog().contains("mock/echo"),
+            "catalog: {}",
+            hub.catalog()
+        );
         let out = hub.call("mock", "echo", &json!({"x": 1}))?;
         assert!(out.contains("echo:"), "hub call: {out}");
         let _ = std::fs::remove_file(&path);
