@@ -145,7 +145,11 @@ impl WorkspaceRuntime for InMemoryRuntime {
 
     fn find(&self, glob: &str) -> Result<Vec<String>> {
         let g = glob::Pattern::new(glob).map_err(|e| anyhow!("invalid glob: {e}"))?;
-        Ok(self.files.keys().filter(|p| g.matches(p)).cloned().collect())
+        Ok(self
+            .files
+            .keys()
+            .filter(|p| g.matches(p))
+            .cloned()
+            .collect())
     }
 }
-

@@ -35,11 +35,26 @@ use std::path::{Path, PathBuf};
 /// only change if these change (which rebuilds the binary and moves the hash).
 /// Grow this list when a new file starts shaping runs.
 const RUN_SHAPING_SRC: [&str; 5] = [
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../glave-core/src/agent.rs")),
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../glave-core/src/tools.rs")),
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../glave-core/src/policy.rs")),
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../glave-core/src/capability.rs")),
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../glave-openrouter/src/lib.rs")),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../glave-core/src/agent.rs"
+    )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../glave-core/src/tools.rs"
+    )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../glave-core/src/policy.rs"
+    )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../glave-core/src/capability.rs"
+    )),
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../glave-openrouter/src/lib.rs"
+    )),
 ];
 
 /// Env knobs that shape a run, captured by value. Both token vars matter and are
@@ -117,7 +132,8 @@ impl BaselineCache {
             .chars()
             .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
             .collect();
-        self.dir.join(format!("{slug}-{:016x}.jsonl", key(model, task_dir)))
+        self.dir
+            .join(format!("{slug}-{:016x}.jsonl", key(model, task_dir)))
     }
 }
 
@@ -184,9 +200,23 @@ mod tests {
         let cache = BaselineCache::new(base.join("cache"));
 
         assert!(cache.lookup("m/x", &task).is_empty());
-        cache.append("m/x", &task, &[Trial { solved: true, cost: 0.5 }])?;
+        cache.append(
+            "m/x",
+            &task,
+            &[Trial {
+                solved: true,
+                cost: 0.5,
+            }],
+        )?;
         // A second append accumulates (the top-up path) — no clobber.
-        cache.append("m/x", &task, &[Trial { solved: false, cost: 0.3 }])?;
+        cache.append(
+            "m/x",
+            &task,
+            &[Trial {
+                solved: false,
+                cost: 0.3,
+            }],
+        )?;
         let hit = cache.lookup("m/x", &task);
         assert_eq!(hit.len(), 2);
         assert!(hit.first().is_some_and(|t| t.solved));

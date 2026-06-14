@@ -106,8 +106,8 @@ impl TaskSpec {
         let toml_path = dir.join("task.toml");
         let raw = std::fs::read_to_string(&toml_path)
             .with_context(|| format!("reading {}", toml_path.display()))?;
-        let mut spec = Self::from_toml(&raw)
-            .with_context(|| format!("parsing {}", toml_path.display()))?;
+        let mut spec =
+            Self::from_toml(&raw).with_context(|| format!("parsing {}", toml_path.display()))?;
         spec.dir = dir.to_path_buf();
         Ok(spec)
     }

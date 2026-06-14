@@ -427,9 +427,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "glob",
+ "globset",
+ "grep",
+ "ignore",
  "serde",
  "serde_json",
  "toml",
+ "wait-timeout",
 ]
 
 [[package]]
@@ -438,10 +442,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "glave-core",
- "globset",
- "grep",
- "ignore",
- "wait-timeout",
 ]
 
 [[package]]

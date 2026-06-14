@@ -9,6 +9,8 @@ pub mod agent;
 pub mod capability;
 pub mod engine;
 pub mod event;
+pub mod hostfs;
+pub mod local;
 pub mod mcp;
 pub mod oracle;
 pub mod policy;
@@ -26,13 +28,14 @@ pub use capability::{
 };
 pub use engine::{AgentSpec, RunEngine, RunOutcome, RunRequest};
 pub use event::RunEvent;
+pub use local::LocalRuntime;
 pub use mcp::{McpClient, McpHub, McpServerConfig, McpTool, McpTransport, StdioTransport};
 pub use oracle::Verdict;
-pub use sinks::{InMemorySink, JsonlSink, NullSink};
 pub use policy::{AutonomousPolicy, Decision, Policy};
 pub use ports::{
     Completion, ExecResult, Message, ModelProvider, ProviderFactory, Role, RuntimeFactory,
     ToolCallRequest, TraceSink, WorkspaceRuntime,
 };
+pub use sinks::{InMemorySink, JsonlSink, NullSink};
 pub use task::TaskSpec;
 pub use tools::{tool_specs, ToolCall, ToolSpec};

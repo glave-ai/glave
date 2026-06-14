@@ -20,7 +20,9 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
 
-use glave_core::{tool_specs, Completion, Message, ModelProvider, ProviderFactory, ToolCallRequest};
+use glave_core::{
+    tool_specs, Completion, Message, ModelProvider, ProviderFactory, ToolCallRequest,
+};
 
 /// Reasoning effort: "high" | "medium" | "low" | "off". Default high.
 pub fn reasoning_effort() -> String {
@@ -77,7 +79,12 @@ impl ChatProvider {
     /// (vLLM / RunPod). `model` is the public `glave/…` id; `wire_model` is
     /// the server's served name.
     #[must_use]
-    pub fn self_hosted(api_key: String, model: String, wire_model: String, base_url: String) -> Self {
+    pub fn self_hosted(
+        api_key: String,
+        model: String,
+        wire_model: String,
+        base_url: String,
+    ) -> Self {
         Self::build(api_key, model, wire_model, base_url, ServerKind::SelfHosted)
     }
 
@@ -149,7 +156,9 @@ impl ChatProvider {
             "tools": tools,
             "tool_choice": "auto",
         });
-        let Some(obj) = body.as_object_mut() else { return body };
+        let Some(obj) = body.as_object_mut() else {
+            return body;
+        };
         let reasoning_on = !matches!(self.reasoning.as_str(), "off" | "none" | "");
 
         match self.kind {
@@ -254,7 +263,10 @@ fn message_json(m: &Message) -> Value {
 
 /// Extract the structured `tool_calls` from a response message.
 fn parse_tool_calls(v: &Value) -> Vec<ToolCallRequest> {
-    let Some(arr) = v.pointer("/choices/0/message/tool_calls").and_then(Value::as_array) else {
+    let Some(arr) = v
+        .pointer("/choices/0/message/tool_calls")
+        .and_then(Value::as_array)
+    else {
         return Vec::new();
     };
     arr.iter()
@@ -300,9 +312,9 @@ fn parse_completion(v: &Value, fallback_model: &str) -> Completion {
     // on a self-hosted server that genuinely reasoned. Cost is unaffected: it
     // bills completion_tokens, which already includes the reasoning.
     let reasoning_tokens = match u64_at("/usage/completion_tokens_details/reasoning_tokens") {
-        0 if !reasoning_text.is_empty() => {
-            u64::try_from(reasoning_text.chars().count() / 4).unwrap_or(u64::MAX).max(1)
-        }
+        0 if !reasoning_text.is_empty() => u64::try_from(reasoning_text.chars().count() / 4)
+            .unwrap_or(u64::MAX)
+            .max(1),
         n => n,
     };
 
@@ -315,7 +327,10 @@ fn parse_completion(v: &Value, fallback_model: &str) -> Completion {
         prompt_tokens: u64_at("/usage/prompt_tokens"),
         completion_tokens: u64_at("/usage/completion_tokens"),
         reasoning_tokens,
-        cost_usd: v.pointer("/usage/cost").and_then(Value::as_f64).unwrap_or(0.0),
+        cost_usd: v
+            .pointer("/usage/cost")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0),
         model: str_at("/model").unwrap_or(fallback_model).to_string(),
         provider: str_at("/provider").map(String::from),
     }
@@ -339,7 +354,11 @@ fn impute_cost(c: &mut Completion) {
     if c.cost_usd != 0.0 {
         return;
     }
-    let price = |key| std::env::var(key).ok().and_then(|v: String| v.parse::<f64>().ok());
+    let price = |key| {
+        std::env::var(key)
+            .ok()
+            .and_then(|v: String| v.parse::<f64>().ok())
+    };
     let (Some(input), Some(output)) = (price("GLAVE_PRICE_IN"), price("GLAVE_PRICE_OUT")) else {
         return;
     };
@@ -375,7 +394,10 @@ impl ModelProvider for ChatProvider {
                     // carries no usage accounting — recording it as free would
                     // silently poison cost-per-correct.
                     if missing_accounting(&v, &c) {
-                        bail!("model {} produced output with no usage accounting", self.model);
+                        bail!(
+                            "model {} produced output with no usage accounting",
+                            self.model
+                        );
                     }
                     if self.kind == ServerKind::SelfHosted {
                         impute_cost(&mut c);
@@ -401,7 +423,11 @@ impl ModelProvider for ChatProvider {
                         attempt += 1;
                         continue;
                     }
-                    bail!("request to {} failed after {} attempts: {e}", self.base_url, attempt + 1);
+                    bail!(
+                        "request to {} failed after {} attempts: {e}",
+                        self.base_url,
+                        attempt + 1
+                    );
                 }
             }
         }
@@ -425,7 +451,9 @@ pub struct ChatProviderFactory {
 impl ChatProviderFactory {
     #[must_use]
     pub fn from_env() -> Self {
-        Self { api_key: std::env::var("OPENROUTER_API_KEY").ok() }
+        Self {
+            api_key: std::env::var("OPENROUTER_API_KEY").ok(),
+        }
     }
 }
 
@@ -491,7 +519,10 @@ mod tests {
             backoff_delay(0, Some(Duration::from_secs(5)), base, cap),
             Duration::from_secs(5)
         );
-        assert_eq!(backoff_delay(0, Some(Duration::from_secs(120)), base, cap), cap);
+        assert_eq!(
+            backoff_delay(0, Some(Duration::from_secs(120)), base, cap),
+            cap
+        );
     }
 
     #[test]
@@ -525,7 +556,8 @@ mod tests {
     #[test]
     fn parse_completion_reads_vllm_reasoning_content() {
         // vLLM's reasoning parsers emit `reasoning_content`, not `reasoning`.
-        let v = json!({"choices": [{"message": {"content": "", "reasoning_content": "vllm-think"}}]});
+        let v =
+            json!({"choices": [{"message": {"content": "", "reasoning_content": "vllm-think"}}]});
         let c = parse_completion(&v, "m");
         assert_eq!(c.content, "vllm-think");
     }
@@ -540,7 +572,10 @@ mod tests {
         });
         let c = parse_completion(&v, "m");
         assert!(c.reasoning_tokens > 0, "reasoning text → estimated count");
-        assert_eq!(c.content, "the answer", "non-empty content is not clobbered");
+        assert_eq!(
+            c.content, "the answer",
+            "non-empty content is not clobbered"
+        );
     }
 
     #[test]
@@ -579,7 +614,8 @@ mod tests {
 
     #[test]
     fn reasoning_field_is_none_when_absent() {
-        let v = json!({"choices": [{"message": {"content": "hi"}}], "usage": {"completion_tokens": 2}});
+        let v =
+            json!({"choices": [{"message": {"content": "hi"}}], "usage": {"completion_tokens": 2}});
         let c = parse_completion(&v, "m");
         assert!(c.reasoning.is_none());
     }
@@ -608,16 +644,30 @@ mod tests {
     }
 
     fn glave_rail(model: &str, wire: &str) -> ChatProvider {
-        ChatProvider::self_hosted(String::new(), model.into(), wire.into(), "http://h/v1".into())
+        ChatProvider::self_hosted(
+            String::new(),
+            model.into(),
+            wire.into(),
+            "http://h/v1".into(),
+        )
     }
 
     #[test]
     fn self_hosted_body_omits_openrouter_only_fields() {
         let p = glave_rail("glave/m", "m");
         let body = p.request_body(&[Message::user("hi")]);
-        assert!(body.get("usage").is_none(), "usage.include is OpenRouter-only");
-        assert!(body.get("reasoning").is_none(), "effort knob is OpenRouter-only");
-        assert!(body.get("provider").is_none(), "provider pin is OpenRouter-only");
+        assert!(
+            body.get("usage").is_none(),
+            "usage.include is OpenRouter-only"
+        );
+        assert!(
+            body.get("reasoning").is_none(),
+            "effort knob is OpenRouter-only"
+        );
+        assert!(
+            body.get("provider").is_none(),
+            "provider pin is OpenRouter-only"
+        );
         // Core OpenAI shape intact.
         assert!(body.get("tools").is_some());
         assert!(body.get("temperature").is_some());
@@ -693,7 +743,10 @@ mod tests {
         assert_eq!(at(&v, "/role").as_deref(), Some("assistant"));
         assert_eq!(at(&v, "/tool_calls/0/id").as_deref(), Some("call_1"));
         assert_eq!(at(&v, "/tool_calls/0/type").as_deref(), Some("function"));
-        assert_eq!(at(&v, "/tool_calls/0/function/name").as_deref(), Some("bash"));
+        assert_eq!(
+            at(&v, "/tool_calls/0/function/name").as_deref(),
+            Some("bash")
+        );
 
         let res = message_json(&Message::tool_result("call_1", "files..."));
         assert_eq!(at(&res, "/role").as_deref(), Some("tool"));
@@ -718,7 +771,10 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls.first().map(|c| c.id.as_str()), Some("call_9"));
         assert_eq!(calls.first().map(|c| c.name.as_str()), Some("read"));
-        assert_eq!(calls.first().map(|c| c.arguments.as_str()), Some(r#"{"path":"a.rs"}"#));
+        assert_eq!(
+            calls.first().map(|c| c.arguments.as_str()),
+            Some(r#"{"path":"a.rs"}"#)
+        );
     }
 
     #[test]

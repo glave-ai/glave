@@ -86,7 +86,10 @@ mod tests {
     fn editable_surface_gates_edits() {
         let p = AutonomousPolicy::new(&["**/*.go".to_string()]);
         assert!(matches!(p.decide(&create("config.go")), Decision::Allow));
-        assert!(matches!(p.decide(&create("order/total.go")), Decision::Allow));
+        assert!(matches!(
+            p.decide(&create("order/total.go")),
+            Decision::Allow
+        ));
         assert!(matches!(p.decide(&create("secret.py")), Decision::Deny(_)));
     }
 

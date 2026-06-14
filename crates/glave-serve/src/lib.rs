@@ -91,7 +91,9 @@ enum AgentKind {
 impl AgentKind {
     fn into_spec(self, model: &str) -> AgentSpec {
         match self {
-            AgentKind::Model => AgentSpec::Model { model: model.to_string() },
+            AgentKind::Model => AgentSpec::Model {
+                model: model.to_string(),
+            },
             AgentKind::Solve => AgentSpec::Solve,
             AgentKind::Noop => AgentSpec::Noop,
         }
@@ -105,7 +107,8 @@ async fn run_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(body): Json<RunBody>,
-) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>>, (StatusCode, String)> {
+) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>>, (StatusCode, String)>
+{
     authorize(&headers, &state.api_key)?;
 
     let task = TaskSpec::load(Path::new(&body.task_dir))
@@ -148,7 +151,10 @@ fn authorize(headers: &HeaderMap, expected: &str) -> Result<(), (StatusCode, Str
         .and_then(|s| s.strip_prefix("Bearer "));
     match token {
         Some(t) if ct_eq(t, expected) => Ok(()),
-        _ => Err((StatusCode::UNAUTHORIZED, "missing or invalid bearer token".to_string())),
+        _ => Err((
+            StatusCode::UNAUTHORIZED,
+            "missing or invalid bearer token".to_string(),
+        )),
     }
 }
 
@@ -217,7 +223,10 @@ mod tests {
 
     #[test]
     fn agent_kind_maps_to_spec() {
-        assert!(matches!(AgentKind::Model.into_spec("m"), AgentSpec::Model { .. }));
+        assert!(matches!(
+            AgentKind::Model.into_spec("m"),
+            AgentSpec::Model { .. }
+        ));
         assert!(matches!(AgentKind::Solve.into_spec("m"), AgentSpec::Solve));
         assert!(matches!(AgentKind::Noop.into_spec("m"), AgentSpec::Noop));
     }
