@@ -32,7 +32,7 @@ pub use engine::{AgentSpec, RunEngine, RunOutcome, RunRequest};
 pub use event::RunEvent;
 pub use local::LocalRuntime;
 pub use runtime::{open, Plan, Place, Sandbox, Source};
-pub use session::{ForkPoint, Session, SessionEvent, SessionStore};
+pub use session::{step, ForkPoint, Session, SessionEvent, SessionStore, Turn};
 pub use mcp::{McpClient, McpHub, McpServerConfig, McpTool, McpTransport, StdioTransport};
 pub use oracle::Verdict;
 pub use policy::{AutonomousPolicy, Decision, Policy};

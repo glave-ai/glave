@@ -115,7 +115,6 @@ impl ModelAgent {
     fn run_subagent(
         &self,
         rt: &mut dyn Workspace,
-        task: &TaskSpec,
         name: Option<&str>,
         subtask: &str,
     ) -> Result<String> {
@@ -150,7 +149,7 @@ impl ModelAgent {
                     Ok(call) if subagent_tool_allowed(&call, &allow) => {
                         // Recoverable: a failed tool (e.g. bad regex) feeds the
                         // error back, never crashes the subagent.
-                        tools::execute(&call, rt, task, &mut viewed).unwrap_or_else(|e| {
+                        tools::execute(&call, rt, &mut viewed).unwrap_or_else(|e| {
                             format!("ERROR: tool '{}' failed: {e}", call.name())
                         })
                     }
@@ -275,7 +274,7 @@ impl Agent for ModelAgent {
                             name,
                             task: subtask,
                         }) => {
-                            let summary = self.run_subagent(rt, task, name.as_deref(), &subtask)?;
+                            let summary = self.run_subagent(rt, name.as_deref(), &subtask)?;
                             trace.emit(RunEvent::agent_action(
                                 run_id,
                                 "subagent",
@@ -326,7 +325,7 @@ impl Agent for ModelAgent {
                             // A tool that fails on bad input (e.g. an invalid regex
                             // pattern) is RECOVERABLE — feed the error back so the
                             // model can retry. It must never crash the run.
-                            Decision::Allow => match tools::execute(&call, rt, task, &mut viewed) {
+                            Decision::Allow => match tools::execute(&call, rt, &mut viewed) {
                                 Ok(result) => {
                                     trace.emit(RunEvent::agent_action(
                                         run_id,
