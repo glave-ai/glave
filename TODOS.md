@@ -30,7 +30,7 @@
 | 1 | Workspace / Grader split (CALIBRATION UNIT) | ✅ **done — green, awaiting review** | see `git log` (seal-the-oracle) |
 | 2 | `Plan` construction seam | ✅ **done — green** | see `git log` (Plan seam) |
 | 3 | Session engine (event-sourced, local) | ✅ **done — green** | see `git log` (session engine) |
-| 4 | Interactive `glave` loop | ☐ not started | — |
+| 4 | Interactive `glave` loop | ✅ **done — green** | see `git log` (interactive loop) |
 
 Order by value 1 → 2 → 3 → 4. If time runs short, truncate the REPL polish (4), NEVER engine or tests.
 
@@ -187,12 +187,55 @@ structured messages and round-trip (de)serialization. Two concerns, two logs (th
 - `save` (full, truncating) + `append_message` (incremental, durable) both provided: the loop will `save` once on
   create, then `append_message` per turn (wired in #4).
 
-## Change 4 — Interactive `glave` loop  ·  *(flesh out after #1)*
-- [ ] Bare `glave` → interactive session in cwd; resolve project via `.glave/project.json` (create if absent);
-  create or resume a session.
-- [ ] Loop: read → append → run engine w/ Direct runtime (LocalRuntime on cwd) → stream RunEvents → append → repeat.
-- [ ] `-p "…"` / positional = one-shot; `--resume <id>` / `-c` = continue-last. Autonomous-by-default via
-  AutonomousPolicy; gate irreversible ops. Thin line-based REPL — the engine is the substance.
+## Change 4 — Interactive `glave` loop  ·  **full depth**
+
+**Goal:** a `glave chat` that opens the cwd as a `Direct` workspace, drives a model turn over a
+persisted session, and loops — the product surface, on `open(Plan)` + the session engine.
+
+**Current state (verified):**
+- glave-cli is a clap subcommand harness (BuildBase/Run/Validate/Ingest/Serve/Score); no interactive path.
+- `ModelAgent::act` is eval-coupled (`TaskSpec`, oracle, bug-fix system prompt) — not reusable as-is for chat.
+- `tools::execute(call, rt, _task: &TaskSpec, viewed)` takes an UNUSED `&TaskSpec` — a latent leak.
+- `AutonomousPolicy::new(&[])` = allow-all (empty editable surface) — the right local-product default.
+
+**Design:**
+- glave-core `session.rs`: a `Turn` trait (`respond(transcript, workspace) -> Vec<Message>`) — the seam
+  between the loop and whatever drives a turn (a model in the product, a fake in tests) — and a `step`
+  driver (record user msg → `respond` → append + persist all). Pure + offline-testable.
+- `tools::execute`: drop the unused `&TaskSpec` param (+ update agent.rs's 2 callers).
+- glave-cli `chat`: resolve/create `.glave/project.json` (uuid); `open(Plan::Direct{cwd})`; `SessionStore`
+  rooted at `~/.glave/sessions/<project>`; new-or-`--resume` session seeded with a product system prompt;
+  REPL read→`step`→print; `-p` one-shot. A `ModelTurn` (provider + AutonomousPolicy(&[]) + tool loop)
+  implements `Turn`.
+
+**Edits (done):**
+- [x] `tools.rs`: dropped the unused `_task: &TaskSpec` from `execute` + its import. `agent.rs`: 2 callers updated, and
+  `run_subagent`'s now-unused `task` param removed (caught by clippy).
+- [x] `session.rs`: `Turn` trait + `step(...) -> Vec<Message>` (record user → respond → append + persist all) + test.
+- [x] `lib.rs`: exports `Turn`, `step`.
+- [x] glave-cli: `cmd: Option<Cmd>` (bare `glave` → chat) + `Chat` subcommand; `resolve_or_create_project` (UUID
+  marker); `ModelTurn` (provider + AutonomousPolicy(&[]) + tool loop); REPL (`/exit`, EOF) + `-p` one-shot.
+
+**Invariant:**
+- [x] The loop drives the agent over a `Box<dyn Workspace>` from `open(Plan::Direct{cwd})` — no grader, no TaskSpec.
+- [x] `step` round-trips offline (`step_records_user_then_turn_and_persists`): user + turn persist, reload in order.
+
+**Acceptance:**
+- [x] clippy -D warnings clean; `cargo test` green (loop step test passes).
+- [x] `glave --help` / `glave chat --help` confirm the wiring (bare `glave` → chat; `-p`/`--resume`/`--model`).
+      Live model turn exercised by the human (offline run can't reach the endpoint).
+- [x] Checkpoint commit (below).
+
+**Decisions & gotchas:**
+- The product turn is a **new `Turn` seam**, NOT `ModelAgent` (which is eval-coupled: TaskSpec, oracle, bug-fix
+  prompt). The loop core is model-agnostic + offline-tested; `ModelTurn` (the real provider-backed turn) is wired and
+  clippy-clean but **not live-tested in this offline run** — validate it live against the endpoint.
+- Dropped the unused `&TaskSpec` from `tools::execute` so the product turn runs tools without a fake task — a real
+  de-leak, not just plumbing.
+- Local product policy = `AutonomousPolicy::new(&[])` (allow-all): the local repo is trusted (the OS-sandbox rung is
+  the deferred hardening). Subagent/MCP are explicitly deferred in chat (print a "not available yet" note).
+- Bare `glave` → chat via `Option<Cmd>` — keeps the existing eval subcommands intact while making the product surface
+  the default.
 
 ## Acceptance across all changes (brutal)
 - [ ] Property/adversarial tests on every load-bearing path: event-log append/replay round-trip; fork correctness;

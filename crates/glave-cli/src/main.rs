@@ -7,27 +7,46 @@ mod ingest;
 use anyhow::{anyhow, Context, Result};
 use baseline_cache::{BaselineCache, Trial};
 use clap::{Parser, Subcommand, ValueEnum};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
 use glave_core::engine::{AgentSpec, RunEngine, RunRequest};
 use glave_core::sinks::JsonlSink;
-use glave_core::TaskSpec;
+use glave_core::{
+    open, step, AutonomousPolicy, Decision, Message, ModelProvider, Plan, Policy, ProviderFactory,
+    Role, Session, SessionStore, TaskSpec, ToolCall, Turn, Workspace,
+};
 use glave_docker::DockerRuntimeFactory;
 use glave_openrouter::ChatProviderFactory;
 
 const DEFAULT_MODEL: &str = "qwen/qwen3.6-27b";
 
 #[derive(Parser)]
-#[command(name = "glave", about = "Glave eval harness")]
+#[command(
+    name = "glave",
+    about = "Glave — the coding agent (bare `glave` opens an interactive session)"
+)]
 struct Cli {
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Interactive product session: the agent works on the current folder. This
+    /// is also what bare `glave` runs.
+    Chat {
+        /// One-shot: run a single prompt and exit (otherwise interactive).
+        #[arg(short = 'p', long)]
+        prompt: Option<String>,
+        /// Resume a session by id (otherwise start a new one).
+        #[arg(long)]
+        resume: Option<String>,
+        #[arg(long)]
+        model: Option<String>,
+    },
     /// Build a per-language base image (docker build).
     BuildBase {
         #[arg(long, default_value = "python")]
@@ -104,37 +123,44 @@ fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::BuildBase { lang } => build_base(&lang),
-        Cmd::Run { task, agent, model } => {
+        // Bare `glave` opens an interactive session in the current folder.
+        None => chat(None, None, &resolve_model(None)),
+        Some(Cmd::Chat {
+            prompt,
+            resume,
+            model,
+        }) => chat(prompt, resume, &resolve_model(model)),
+        Some(Cmd::BuildBase { lang }) => build_base(&lang),
+        Some(Cmd::Run { task, agent, model }) => {
             do_run(&task, agent, &resolve_model(model))?;
             Ok(())
         }
-        Cmd::Validate { task } => validate(&task),
-        Cmd::Ingest {
+        Some(Cmd::Validate { task }) => validate(&task),
+        Some(Cmd::Ingest {
             dataset,
             index,
             out,
             lang,
-        } => ingest::ingest(&ingest::IngestArgs {
+        }) => ingest::ingest(&ingest::IngestArgs {
             dataset: &dataset,
             index,
             out: &out,
             lang: &lang,
         }),
-        Cmd::Serve { addr } => {
+        Some(Cmd::Serve { addr }) => {
             let socket = addr
                 .parse()
                 .context("parsing --addr (expected host:port)")?;
             glave_serve::serve_blocking(socket, build_engine())
         }
-        Cmd::Score {
+        Some(Cmd::Score {
             tasks,
             model,
             baseline,
             trials,
             refresh_baseline,
             jobs,
-        } => score(
+        }) => score(
             &tasks,
             &resolve_model(model),
             baseline.as_deref(),
@@ -555,6 +581,159 @@ fn walk_tasks(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
             if p.is_dir() {
                 walk_tasks(&p, out)?;
             }
+        }
+    }
+    Ok(())
+}
+
+// ---- interactive product session (`glave` / `glave chat`) ----
+
+const SYSTEM_PROMPT: &str = "You are Glave, a coding agent working in the user's project on their \
+machine. Use the tools to read, search, edit files, and run commands. Read a file before editing \
+it; keep changes minimal and say what you did. Be concise.";
+
+/// Resolve the project id from `.glave/project.json`, creating the marker (a
+/// fresh UUID) if absent. Identity is a UUID, never the path — the folder can be
+/// renamed or moved and the session history still belongs to the same project.
+fn resolve_or_create_project(root: &Path) -> Result<String> {
+    let marker = root.join(".glave").join("project.json");
+    if let Ok(raw) = std::fs::read_to_string(&marker) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Some(id) = value.get("project_id").and_then(serde_json::Value::as_str) {
+                return Ok(id.to_string());
+            }
+        }
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    std::fs::create_dir_all(root.join(".glave")).context("creating .glave")?;
+    let body = serde_json::json!({ "project_id": id });
+    std::fs::write(&marker, format!("{}\n", serde_json::to_string_pretty(&body)?))
+        .with_context(|| format!("writing {}", marker.display()))?;
+    Ok(id)
+}
+
+/// A model-driven [`Turn`]: calls the provider over the transcript and runs the
+/// requested tools against the workspace, bounded by `max_steps`. The local
+/// product trusts the workspace, so the policy is allow-all; the OS-sandbox rung
+/// is a later hardening (see TODOS). Subagent/MCP are deferred for chat.
+struct ModelTurn {
+    provider: Box<dyn ModelProvider>,
+    policy: AutonomousPolicy,
+    max_steps: u32,
+}
+
+impl Turn for ModelTurn {
+    fn respond(
+        &mut self,
+        transcript: &[Message],
+        workspace: &mut dyn Workspace,
+    ) -> Result<Vec<Message>> {
+        let mut convo = transcript.to_vec();
+        let mut produced = Vec::new();
+        let mut viewed = std::collections::BTreeSet::new();
+        for _ in 0..self.max_steps {
+            let completion = self.provider.complete(&convo)?;
+            if completion.tool_calls.is_empty() {
+                produced.push(Message::assistant(completion.content));
+                return Ok(produced);
+            }
+            let assistant = Message::assistant_with_tool_calls(
+                completion.content.clone(),
+                completion.tool_calls.clone(),
+            );
+            convo.push(assistant.clone());
+            produced.push(assistant);
+            for call in &completion.tool_calls {
+                let observation = match ToolCall::from_call(&call.name, &call.arguments) {
+                    Ok(ToolCall::Submit) => "(done)".to_string(),
+                    Ok(ToolCall::Subagent { .. } | ToolCall::Mcp { .. }) => {
+                        "(subagent / mcp aren't available in interactive chat yet)".to_string()
+                    }
+                    Ok(parsed) => match self.policy.decide(&parsed) {
+                        Decision::Allow => {
+                            glave_core::tools::execute(&parsed, workspace, &mut viewed)
+                                .unwrap_or_else(|e| format!("ERROR: {e}"))
+                        }
+                        Decision::Deny(reason) | Decision::Ask(reason) => {
+                            format!("DENIED: {reason}")
+                        }
+                    },
+                    Err(e) => format!("ERROR: invalid arguments: {e}"),
+                };
+                let result = Message::tool_result(call.id.clone(), observation);
+                convo.push(result.clone());
+                produced.push(result);
+            }
+        }
+        Ok(produced)
+    }
+}
+
+/// Print the assistant's user-visible text from a turn's messages (tool traffic
+/// stays in the session log).
+fn print_replies(replies: &[Message]) {
+    for m in replies {
+        if m.role == Role::Assistant && !m.content.trim().is_empty() {
+            println!("{}", m.content.trim());
+        }
+    }
+}
+
+/// Bare `glave` (and `glave chat`): open the cwd as a Direct workspace, drive a
+/// model turn over a persisted session, and loop.
+fn chat(prompt: Option<String>, resume: Option<String>, model: &str) -> Result<()> {
+    let cwd = std::env::current_dir().context("getting current dir")?;
+    let project = resolve_or_create_project(&cwd)?;
+    let store = SessionStore::new(SessionStore::default_root()?.join(&project));
+    let mut workspace = open(&Plan::Direct { folder: cwd })?;
+
+    let mut session = if let Some(id) = resume {
+        store
+            .load(&id)
+            .with_context(|| format!("resuming session {id}"))?
+    } else {
+        let mut s = Session::new(uuid::Uuid::new_v4().to_string());
+        s.push(Message::system(SYSTEM_PROMPT));
+        store.save(&s)?;
+        s
+    };
+
+    let provider = ChatProviderFactory::from_env().create(model)?;
+    let mut turn = ModelTurn {
+        provider,
+        policy: AutonomousPolicy::new(&[]),
+        max_steps: 50,
+    };
+    eprintln!(
+        "glave · project {project} · session {} · {model}",
+        session.id()
+    );
+
+    if let Some(p) = prompt {
+        let replies = step(&mut session, &store, workspace.as_mut(), &mut turn, &p)?;
+        print_replies(&replies);
+        return Ok(());
+    }
+
+    eprintln!("interactive — type a request, or /exit to quit.");
+    let stdin = std::io::stdin();
+    loop {
+        eprint!("\n› ");
+        let _ = std::io::stderr().flush();
+        let mut line = String::new();
+        if stdin.read_line(&mut line).context("reading input")? == 0 {
+            break; // EOF (Ctrl-D)
+        }
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line == "/exit" || line == "/quit" {
+            break;
+        }
+        match step(&mut session, &store, workspace.as_mut(), &mut turn, line) {
+            Ok(replies) => print_replies(&replies),
+            Err(e) => eprintln!("error: {e}"),
         }
     }
     Ok(())

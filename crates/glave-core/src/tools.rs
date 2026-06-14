@@ -9,7 +9,6 @@ use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
 use crate::ports::Workspace;
-use crate::task::TaskSpec;
 
 #[derive(Debug, Clone)]
 pub enum ToolCall {
@@ -333,7 +332,6 @@ pub fn tool_specs() -> Vec<ToolSpec> {
 pub fn execute(
     call: &ToolCall,
     rt: &mut dyn Workspace,
-    _task: &TaskSpec,
     viewed: &mut BTreeSet<String>,
 ) -> Result<String> {
     match call {

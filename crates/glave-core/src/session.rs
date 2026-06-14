@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::ports::Message;
+use crate::ports::{Message, Workspace};
 
 /// One appended fact in a session's log. Replaying these in order reconstructs
 /// the conversation transcript.
@@ -207,6 +207,41 @@ impl SessionStore {
     }
 }
 
+/// The seam between the session loop and whatever drives a turn — a model agent
+/// in the product, a scripted fake in tests. Given the transcript so far and the
+/// workspace, it returns the messages to append (the assistant turn + any tool
+/// results). It never grades and never sees a `TaskSpec`.
+pub trait Turn {
+    fn respond(
+        &mut self,
+        transcript: &[Message],
+        workspace: &mut dyn Workspace,
+    ) -> Result<Vec<Message>>;
+}
+
+/// One step of the session loop: record the user's message, produce a turn over
+/// the workspace, then append + persist everything (the user message first, so a
+/// crash mid-turn still leaves the prompt recorded). Returns the messages the
+/// turn produced, for the caller to display.
+pub fn step(
+    session: &mut Session,
+    store: &SessionStore,
+    workspace: &mut dyn Workspace,
+    turn: &mut dyn Turn,
+    user_input: &str,
+) -> Result<Vec<Message>> {
+    let user = Message::user(user_input);
+    session.push(user.clone());
+    store.append_message(session.id(), &user)?;
+
+    let replies = turn.respond(session.transcript(), workspace)?;
+    for message in &replies {
+        session.push(message.clone());
+        store.append_message(session.id(), message)?;
+    }
+    Ok(replies)
+}
+
 fn write_event(writer: &mut impl Write, event: &SessionEvent) -> Result<()> {
     let line = serde_json::to_string(event).context("serializing session event")?;
     writer.write_all(line.as_bytes())?;
@@ -313,5 +348,40 @@ mod tests {
         let fork = parent.fork("f", 99);
         assert_eq!(fork.transcript().len(), 1);
         assert_eq!(fork.forked_from().map(|f| f.at), Some(1));
+    }
+
+    /// A deterministic turn: reads the workspace + echoes the last user message,
+    /// so the loop is exercised with zero model calls.
+    struct ScriptedTurn;
+    impl Turn for ScriptedTurn {
+        fn respond(
+            &mut self,
+            transcript: &[Message],
+            workspace: &mut dyn Workspace,
+        ) -> Result<Vec<Message>> {
+            let files = workspace.list_files()?.len();
+            let last = transcript.last().map_or_else(String::new, |m| m.content.clone());
+            Ok(vec![Message::assistant(format!("ack:{last}:files={files}"))])
+        }
+    }
+
+    #[test]
+    fn step_records_user_then_turn_and_persists() -> Result<()> {
+        use crate::testkit::InMemoryRuntime;
+        let root = tmp_root("loop");
+        let store = SessionStore::new(&root);
+        let mut ws = InMemoryRuntime::new().with_file("a.txt", "x");
+        let mut session = Session::new("loop1");
+        store.save(&session)?;
+
+        let replies = step(&mut session, &store, &mut ws, &mut ScriptedTurn, "hello")?;
+        assert_eq!(replies.len(), 1);
+
+        // Reload: the user message and the produced turn persisted, in order.
+        let loaded = store.load("loop1")?;
+        assert_eq!(contents(&loaded), ["hello", "ack:hello:files=1"]);
+
+        let _ = std::fs::remove_dir_all(&root);
+        Ok(())
     }
 }
