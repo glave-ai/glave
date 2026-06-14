@@ -250,6 +250,23 @@ persisted session, and loops — the product surface, on `open(Plan)` + the sess
 failures** (glave-core 75, openrouter 23, serve 2, cli 1). Branch `product/agent-surface`, 5 checkpoint commits.
 Live `glave chat` model turn is wired + clippy-clean but awaits a live-endpoint run (offline build couldn't call it).
 
+## Review fixes (local max-effort code-review, 2026-06-14)
+Local review surfaced 15 findings (the refactor itself = **zero** regressions; bugs clustered in the new
+product loop + session robustness). Fixed in three green gates:
+- **Gate A — security** (`aeb82c4`): session-id + project-id path-component validation; atomic marker write +
+  no silent re-ID; destructive-bash gated behind `Ask`/human-confirm (interim — OS-sandbox is the real boundary).
+- **Gate B — product loop** (`2a36622`): submit ends the turn; `viewed` seeded from transcript; empty-turn nudge;
+  step-budget signal.
+- **Gate C — session robustness** (`1992b53`): fork cycle/depth guard; tolerate a torn trailing line; header-first;
+  persist-then-push in `step`; `save` initialize-once contract.
+
+**Deferred (deliberate, tracked):**
+- **#13 — extract a shared agent loop** so `ModelTurn` stops duplicating `ModelAgent`. The deep fix, but it churns
+  the battle-tested eval path; do it as its own reviewed change, not a fix-sweep.
+- **Polish** — `append_message` re-opens per message (O(messages) syscalls); per-turn `to_vec` + clone churn.
+  Micro-optimizations, not worth the churn yet.
+- **`ModelTurn` live run** — still needs a live-endpoint test.
+
 ## Deferred — do NOT build this round
 cloud execution impl · OS-sandbox · cross-device sync · billing · MCP-beyond-existing · live scorecard run.
 Spot a real follow-up? Note it here, don't build it.
