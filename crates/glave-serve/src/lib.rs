@@ -13,6 +13,7 @@
 //! env-backed store — the [`ApiKeyStore`] seam makes a real account DB a clean swap.
 
 use std::convert::Infallible;
+use std::io::Write;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -39,8 +40,9 @@ pub fn serve_blocking(
     providers: Arc<dyn ProviderFactory>,
 ) -> Result<()> {
     let keys: Arc<dyn ApiKeyStore> = Arc::new(StaticKeyStore::from_env()?);
+    let meter = build_meter();
     let runtime = tokio::runtime::Runtime::new().context("starting tokio runtime")?;
-    runtime.block_on(run(addr, engine, providers, keys))
+    runtime.block_on(run(addr, engine, providers, keys, meter))
 }
 
 #[derive(Clone)]
@@ -48,6 +50,7 @@ struct AppState {
     engine: RunEngine,
     providers: Arc<dyn ProviderFactory>,
     keys: Arc<dyn ApiKeyStore>,
+    meter: Arc<dyn MeterSink>,
 }
 
 async fn run(
@@ -55,6 +58,7 @@ async fn run(
     engine: RunEngine,
     providers: Arc<dyn ProviderFactory>,
     keys: Arc<dyn ApiKeyStore>,
+    meter: Arc<dyn MeterSink>,
 ) -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
@@ -64,6 +68,7 @@ async fn run(
             engine,
             providers,
             keys,
+            meter,
         });
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -224,6 +229,81 @@ fn authenticate(
             "missing or invalid bearer token".to_string(),
         )),
     }
+}
+
+/// Port: a durable sink for per-request usage — the billing substrate. Best-effort
+/// (a meter write never fails the user's request).
+trait MeterSink: Send + Sync {
+    fn record(&self, event: &MeterEvent);
+}
+
+/// One billable unit of usage, keyed to the tenant.
+#[derive(Serialize)]
+struct MeterEvent {
+    id: String,
+    tenant: String,
+    model: String,
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    total_tokens: u64,
+    cost_usd: f64,
+    created: u64,
+}
+
+/// No-op meter (metering not configured). Usage still appears in the request log.
+struct NullMeter;
+impl MeterSink for NullMeter {
+    fn record(&self, _event: &MeterEvent) {}
+}
+
+/// v0 meter: one JSON line per request appended to a file. A DB-backed meter is a
+/// clean swap behind [`MeterSink`].
+struct JsonlMeter {
+    file: std::sync::Mutex<std::fs::File>,
+}
+
+impl JsonlMeter {
+    fn open(path: &str) -> Result<Self> {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .with_context(|| format!("opening meter file {path}"))?;
+        Ok(Self {
+            file: std::sync::Mutex::new(file),
+        })
+    }
+}
+
+impl MeterSink for JsonlMeter {
+    fn record(&self, event: &MeterEvent) {
+        let line = match serde_json::to_string(event) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("meter: encode failed: {e}");
+                return;
+            }
+        };
+        if let Ok(mut f) = self.file.lock() {
+            if let Err(e) = writeln!(f, "{line}") {
+                eprintln!("meter: write failed: {e}");
+            }
+        }
+    }
+}
+
+/// Build the meter from the env: durable JSONL when `GLAVE_METER_FILE` is set,
+/// otherwise a no-op (usage still shows in the request log).
+fn build_meter() -> Arc<dyn MeterSink> {
+    let path = std::env::var("GLAVE_METER_FILE").unwrap_or_default();
+    if path.is_empty() {
+        return Arc::new(NullMeter);
+    }
+    match JsonlMeter::open(&path) {
+        Ok(m) => return Arc::new(m),
+        Err(e) => eprintln!("metering disabled — cannot open meter file: {e}"),
+    }
+    Arc::new(NullMeter)
 }
 
 fn ct_eq(a: &str, b: &str) -> bool {
@@ -452,6 +532,17 @@ async fn chat_completions(
     let created = created_unix();
     let total = completion.prompt_tokens + completion.completion_tokens;
 
+    state.meter.record(&MeterEvent {
+        id: id.clone(),
+        tenant: tenant.clone(),
+        model: public_model.clone(),
+        prompt_tokens: completion.prompt_tokens,
+        completion_tokens: completion.completion_tokens,
+        total_tokens: total,
+        cost_usd: completion.cost_usd,
+        created,
+    });
+
     if stream {
         let chunk = ChatChunk {
             id,
@@ -622,5 +713,36 @@ mod tests {
             assert_eq!(first.role, Role::System);
             assert!(first.content.contains("Hope"));
         }
+    }
+
+    #[test]
+    fn jsonl_meter_appends_a_usage_record() {
+        let mut path = std::env::temp_dir();
+        path.push(format!("glave_meter_test_{}.jsonl", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let path_str = path.to_string_lossy().to_string();
+
+        let meter = JsonlMeter::open(&path_str);
+        assert!(meter.is_ok());
+        if let Ok(m) = meter {
+            m.record(&MeterEvent {
+                id: "chatcmpl-x".to_string(),
+                tenant: "acct_1".to_string(),
+                model: "hope".to_string(),
+                prompt_tokens: 1,
+                completion_tokens: 2,
+                total_tokens: 3,
+                cost_usd: 0.01,
+                created: 0,
+            });
+        }
+
+        let contents = std::fs::read_to_string(&path);
+        assert!(contents.is_ok());
+        if let Ok(c) = contents {
+            assert!(c.contains("\"tenant\":\"acct_1\""));
+            assert!(c.contains("\"total_tokens\":3"));
+        }
+        let _ = std::fs::remove_file(&path);
     }
 }
