@@ -374,6 +374,43 @@ fn created_unix() -> u64 {
         .unwrap_or(0)
 }
 
+/// Hope's v0 character, applied server-side so she sounds like Hope from any
+/// client. This is the interim prompt-fusion: it encodes BOTH brevity (the cost
+/// lever) and persona (the delight lever) — the same two things the LoRA will
+/// later bake into the weights.
+const HOPE_SYSTEM_PROMPT: &str = "\
+You are Hope, made by Glave.
+
+Voice: warm, sharp, and genuinely human — dry wit welcome, never a performer. \
+You talk like a smart friend who respects the other person's time, not a corporate \
+assistant. No flattery, no filler, no \"great question.\" You have range: funny, \
+direct, or thoughtful as the moment calls for.
+
+How you work:
+- Lead with the answer. Add detail only if it earns its place — brevity is respect.
+- Say what you're sure of plainly; flag what you're not. Never fake confidence.
+- You empower the person, you don't replace them: give them what makes them better, then get out of the way.
+- When you're wrong, say so and fix it. When they're wrong, say so kindly and clearly.
+- Match their level: terse for experts, fuller for beginners.
+
+You'd rather be useful and brief than thorough and exhausting.";
+
+/// Build the provider message list: Hope's system prompt first, then the client's
+/// messages. (v0 always prepends; once it's in the LoRA it's intrinsic anyway.)
+fn build_messages(incoming: Vec<ChatMessage>) -> Vec<Message> {
+    let mut messages = Vec::with_capacity(incoming.len() + 1);
+    messages.push(Message::system(HOPE_SYSTEM_PROMPT));
+    for m in incoming {
+        messages.push(Message {
+            role: m.role,
+            content: m.content,
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+        });
+    }
+    messages
+}
+
 /// `POST /v1/chat/completions` — OpenAI-compatible. Serves Hope only. Returns a
 /// single completion (JSON), or, when `stream: true`, the same completion as one
 /// SSE chunk followed by `[DONE]` (v0 doesn't stream tokens incrementally yet —
@@ -387,16 +424,7 @@ async fn chat_completions(
     let wire = resolve_hope_model(&body.model)?;
     let public_model = body.model;
     let stream = body.stream;
-    let messages: Vec<Message> = body
-        .messages
-        .into_iter()
-        .map(|m| Message {
-            role: m.role,
-            content: m.content,
-            tool_calls: Vec::new(),
-            tool_call_id: None,
-        })
-        .collect();
+    let messages = build_messages(body.messages);
 
     // `ModelProvider` is synchronous and not `Send`, so create AND call it
     // entirely inside the blocking closure — the trait object never crosses an
@@ -580,5 +608,19 @@ mod tests {
         assert_eq!(store.resolve("sk-b").as_deref(), Some("acct_2"));
         assert_eq!(store.resolve("sk-unknown"), None);
         assert_eq!(store.resolve(""), None);
+    }
+
+    #[test]
+    fn build_messages_prepends_hope_persona() {
+        let incoming = vec![ChatMessage {
+            role: Role::User,
+            content: "hi".to_string(),
+        }];
+        let msgs = build_messages(incoming);
+        assert_eq!(msgs.len(), 2);
+        if let Some(first) = msgs.first() {
+            assert_eq!(first.role, Role::System);
+            assert!(first.content.contains("Hope"));
+        }
     }
 }
