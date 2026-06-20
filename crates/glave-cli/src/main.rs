@@ -151,7 +151,9 @@ fn main() -> Result<()> {
             let socket = addr
                 .parse()
                 .context("parsing --addr (expected host:port)")?;
-            glave_serve::serve_blocking(socket, build_engine())
+            let providers: Arc<dyn glave_core::ProviderFactory> =
+                Arc::new(ChatProviderFactory::from_env());
+            glave_serve::serve_blocking(socket, build_engine(), providers)
         }
         Some(Cmd::Score {
             tasks,

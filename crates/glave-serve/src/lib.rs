@@ -21,36 +21,52 @@ use anyhow::{Context, Result};
 use axum::extract::{Json, State};
 use axum::http::{header::AUTHORIZATION, HeaderMap, StatusCode};
 use axum::response::sse::{Event, Sse};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 
 use glave_core::engine::{AgentSpec, RunEngine, RunOutcome, RunRequest};
-use glave_core::{RunEvent, TaskSpec, TraceSink};
+use glave_core::{Message, ProviderFactory, Role, RunEvent, TaskSpec, TraceSink};
 
 /// Build the server and run it to completion on a multi-threaded runtime.
 /// Blocks. Fails fast if the bearer token isn't configured.
-pub fn serve_blocking(addr: SocketAddr, engine: RunEngine) -> Result<()> {
+pub fn serve_blocking(
+    addr: SocketAddr,
+    engine: RunEngine,
+    providers: Arc<dyn ProviderFactory>,
+) -> Result<()> {
     let api_key: Arc<str> = std::env::var("GLAVE_API_KEY")
         .context("GLAVE_API_KEY must be set — the bearer token clients authenticate with")?
         .into();
     let runtime = tokio::runtime::Runtime::new().context("starting tokio runtime")?;
-    runtime.block_on(run(addr, engine, api_key))
+    runtime.block_on(run(addr, engine, providers, api_key))
 }
 
 #[derive(Clone)]
 struct AppState {
     engine: RunEngine,
+    providers: Arc<dyn ProviderFactory>,
     api_key: Arc<str>,
 }
 
-async fn run(addr: SocketAddr, engine: RunEngine, api_key: Arc<str>) -> Result<()> {
+async fn run(
+    addr: SocketAddr,
+    engine: RunEngine,
+    providers: Arc<dyn ProviderFactory>,
+    api_key: Arc<str>,
+) -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/runs", post(run_handler))
-        .with_state(AppState { engine, api_key });
+        .route("/v1/chat/completions", post(chat_completions))
+        .with_state(AppState {
+            engine,
+            providers,
+            api_key,
+        });
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding {addr}"))?;
@@ -208,6 +224,204 @@ impl TraceSink for ChannelSink {
     }
 }
 
+// ---- OpenAI-compatible chat completions (`POST /v1/chat/completions`) --------
+//
+// The commodity / distribution surface: any OpenAI client works by pointing its
+// `base_url` here. We serve ONLY Hope (`model` must be a `hope*` id) — this is
+// our model reaching every harness, never a proxy for arbitrary models. v0 is
+// plain chat (no tool-calling yet); the wire model the alias resolves to is
+// OpenRouter qwen today and our own endpoint once `GLAVE_MODEL` points at it.
+
+#[derive(Deserialize)]
+struct ChatRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    #[serde(default)]
+    stream: bool,
+    // Other OpenAI params (temperature, max_tokens, …) are accepted and ignored:
+    // serde drops unknown fields, keeping us wire-compatible.
+}
+
+#[derive(Deserialize)]
+struct ChatMessage {
+    role: Role,
+    #[serde(default)]
+    content: String,
+}
+
+#[derive(Serialize)]
+struct ChatResponse {
+    id: String,
+    object: &'static str,
+    created: u64,
+    model: String,
+    choices: Vec<ChatChoice>,
+    usage: Usage,
+}
+
+#[derive(Serialize)]
+struct ChatChoice {
+    index: u32,
+    message: ChatRespMessage,
+    finish_reason: &'static str,
+}
+
+#[derive(Serialize)]
+struct ChatRespMessage {
+    role: &'static str,
+    content: String,
+}
+
+#[derive(Serialize)]
+struct Usage {
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    total_tokens: u64,
+}
+
+#[derive(Serialize)]
+struct ChatChunk {
+    id: String,
+    object: &'static str,
+    created: u64,
+    model: String,
+    choices: Vec<ChatChunkChoice>,
+}
+
+#[derive(Serialize)]
+struct ChatChunkChoice {
+    index: u32,
+    delta: ChatRespMessage,
+    finish_reason: &'static str,
+}
+
+/// Public model ids this endpoint accepts. We serve ONLY Hope, so anything else
+/// is a 400 — we never become a pass-through proxy for arbitrary models. The
+/// aliases all resolve to one wire model today; pinned versions diverge once we
+/// ship more than one.
+fn resolve_hope_model(public: &str) -> Result<String, (StatusCode, String)> {
+    match public {
+        "hope" | "hope-latest" | "hope-1" => Ok(hope_wire_model()),
+        other => Err((
+            StatusCode::BAD_REQUEST,
+            format!("unknown model '{other}': this endpoint serves hope, hope-latest, hope-1"),
+        )),
+    }
+}
+
+/// The wire model the Hope alias resolves to: OpenRouter qwen by default (the v0
+/// bridge), or our own `glave/…` endpoint when `GLAVE_MODEL` is set.
+fn hope_wire_model() -> String {
+    std::env::var("GLAVE_MODEL").unwrap_or_else(|_| "qwen/qwen3.6-27b".to_string())
+}
+
+fn created_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// `POST /v1/chat/completions` — OpenAI-compatible. Serves Hope only. Returns a
+/// single completion (JSON), or, when `stream: true`, the same completion as one
+/// SSE chunk followed by `[DONE]` (v0 doesn't stream tokens incrementally yet —
+/// the provider port is non-streaming — but the wire shape is compatible).
+async fn chat_completions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<ChatRequest>,
+) -> Result<Response, (StatusCode, String)> {
+    authorize(&headers, &state.api_key)?;
+    let wire = resolve_hope_model(&body.model)?;
+    let public_model = body.model;
+    let stream = body.stream;
+    let messages: Vec<Message> = body
+        .messages
+        .into_iter()
+        .map(|m| Message {
+            role: m.role,
+            content: m.content,
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+        })
+        .collect();
+
+    // `ModelProvider` is synchronous and not `Send`, so create AND call it
+    // entirely inside the blocking closure — the trait object never crosses an
+    // await point. The factory (Arc, Send + Sync) and the messages do.
+    let providers = state.providers.clone();
+    let completion = tokio::task::spawn_blocking(move || -> Result<_> {
+        let provider = providers.create(&wire)?;
+        provider.complete(&messages)
+    })
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("model task panicked: {e}"),
+        )
+    })?
+    .map_err(|e| (StatusCode::BAD_GATEWAY, format!("model error: {e}")))?;
+
+    eprintln!(
+        "chat.completions model={public_model} prompt={} completion={} cost=${:.4}",
+        completion.prompt_tokens, completion.completion_tokens, completion.cost_usd
+    );
+
+    let id = format!("chatcmpl-{}", uuid::Uuid::new_v4());
+    let created = created_unix();
+    let total = completion.prompt_tokens + completion.completion_tokens;
+
+    if stream {
+        let chunk = ChatChunk {
+            id,
+            object: "chat.completion.chunk",
+            created,
+            model: public_model,
+            choices: vec![ChatChunkChoice {
+                index: 0,
+                delta: ChatRespMessage {
+                    role: "assistant",
+                    content: completion.content,
+                },
+                finish_reason: "stop",
+            }],
+        };
+        let chunk_event = Event::default().json_data(&chunk).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("encoding chunk: {e}"),
+            )
+        })?;
+        let events = vec![
+            Ok::<Event, Infallible>(chunk_event),
+            Ok::<Event, Infallible>(Event::default().data("[DONE]")),
+        ];
+        Ok(Sse::new(tokio_stream::iter(events)).into_response())
+    } else {
+        let resp = ChatResponse {
+            id,
+            object: "chat.completion",
+            created,
+            model: public_model,
+            choices: vec![ChatChoice {
+                index: 0,
+                message: ChatRespMessage {
+                    role: "assistant",
+                    content: completion.content,
+                },
+                finish_reason: "stop",
+            }],
+            usage: Usage {
+                prompt_tokens: completion.prompt_tokens,
+                completion_tokens: completion.completion_tokens,
+                total_tokens: total,
+            },
+        };
+        Ok(Json(resp).into_response())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,5 +443,76 @@ mod tests {
         ));
         assert!(matches!(AgentKind::Solve.into_spec("m"), AgentSpec::Solve));
         assert!(matches!(AgentKind::Noop.into_spec("m"), AgentSpec::Noop));
+    }
+
+    #[test]
+    fn resolve_hope_accepts_aliases_and_rejects_others() {
+        assert!(resolve_hope_model("hope").is_ok());
+        assert!(resolve_hope_model("hope-latest").is_ok());
+        assert!(resolve_hope_model("hope-1").is_ok());
+        // We serve only Hope — arbitrary models are rejected, never proxied.
+        assert!(resolve_hope_model("gpt-4o").is_err());
+        assert!(resolve_hope_model("qwen/qwen3.6-27b").is_err());
+    }
+
+    #[test]
+    fn chat_request_parses_openai_shape_and_ignores_unknown_fields() {
+        let json = r#"{"model":"hope","messages":[{"role":"system","content":"s"},{"role":"user","content":"hi"}],"temperature":0.7,"max_tokens":64,"stream":true}"#;
+        let parsed = serde_json::from_str::<ChatRequest>(json);
+        assert!(parsed.is_ok());
+        if let Ok(req) = parsed {
+            assert_eq!(req.model, "hope");
+            assert_eq!(req.messages.len(), 2);
+            assert!(req.stream);
+        }
+    }
+
+    #[test]
+    fn chat_response_serializes_to_openai_shape() {
+        let resp = ChatResponse {
+            id: "chatcmpl-x".to_string(),
+            object: "chat.completion",
+            created: 0,
+            model: "hope".to_string(),
+            choices: vec![ChatChoice {
+                index: 0,
+                message: ChatRespMessage {
+                    role: "assistant",
+                    content: "hello".to_string(),
+                },
+                finish_reason: "stop",
+            }],
+            usage: Usage {
+                prompt_tokens: 3,
+                completion_tokens: 2,
+                total_tokens: 5,
+            },
+        };
+        let val = serde_json::to_value(&resp);
+        assert!(val.is_ok());
+        if let Ok(v) = val {
+            assert_eq!(
+                v.get("object").and_then(|x| x.as_str()),
+                Some("chat.completion")
+            );
+            let msg = v
+                .get("choices")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("message"));
+            assert_eq!(
+                msg.and_then(|m| m.get("content")).and_then(|x| x.as_str()),
+                Some("hello")
+            );
+            assert_eq!(
+                msg.and_then(|m| m.get("role")).and_then(|x| x.as_str()),
+                Some("assistant")
+            );
+            assert_eq!(
+                v.get("usage")
+                    .and_then(|u| u.get("total_tokens"))
+                    .and_then(serde_json::Value::as_u64),
+                Some(5)
+            );
+        }
     }
 }
