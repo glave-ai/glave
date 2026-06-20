@@ -273,3 +273,20 @@ product loop + session robustness). Fixed in three green gates:
 ## Deferred — do NOT build this round
 cloud execution impl · OS-sandbox · cross-device sync · billing · MCP-beyond-existing · live scorecard run.
 Spot a real follow-up? Note it here, don't build it.
+
+---
+
+## Strategy locked (2026-06-20) — full detail in memory: `product-architecture` v3 + `glave-go-to-market` v3
+A long strategy session converged. Durable resolutions (summary; memory is source of truth):
+- **Moat = $/correct ratio + the improvement engine** (sealed-oracle RSI flywheel). Cheapness = the WEDGE, not the moat.
+- **Product = managed agents that run anywhere** (the empty "cheap + pervasive" quadrant). CLI = front door; the fleet = the product. MVP = repo URL → cloud box → PR.
+- **Own the model, NOT model-agnostic.** Harness = commodity (client-side; brain-proxy killed). All energy → the model-SYSTEM (weights + serving + fusion + KB + flywheel), not weights alone.
+- **API:** OpenAI-compat completions (distribution) + our own agents/runs API (moat).
+- **Storing ≠ training:** cloud-default custody + processed-not-retained + opt-in training (incentivized) + metering-only API.
+- **5 irreversible contracts** to nail before public: OAI-compat completions · own agents API · model versioning (`hope-N` + `latest`) · workspace = UUID identity + mutable location · auth + pricing (token / run). Discipline: small stable core + explicitly-beta periphery.
+
+### Next build — two tracks
+- **Track A — the bet (model-system; GPU/ops; Chris-led):** close ONE flywheel lap — brevity/tone LoRA on owned/dogfood data → re-score $/correct **blind** on the existing ruler. Turns "self-improving (designed)" → "demonstrated." Oracle quality = the ceiling.
+- **Track B — code (in-repo; Claude-led):**
+  1. **OpenAI-compatible `/v1/chat/completions` in `glave-serve`** (routes to the Hope endpoint). Smallest real CONTRACT; makes Hope usable from any harness (distribution) + enables dogfooding on real Hope (feeds Track A); forces 3 of the 5 contracts (versioning + auth + token meter). ← recommended first.
+  2. Then: repo→cloud→PR managed-agent MVP (`Plan::Sandboxed{Cloud}` + `Source::CloneGit` + git-push tool).
