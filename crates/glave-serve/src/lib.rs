@@ -9,8 +9,8 @@
 //!
 //! Two deliberate v1 simplifications, called out so they aren't mistaken for the
 //! final shape: (1) the task is loaded from a server-side `task_dir` rather than
-//! the client uploading a workspace; (2) auth is a single shared bearer token,
-//! not per-tenant keys. Both are behind the auth wall and both are clean swaps.
+//! the client uploading a workspace; (2) API keys map to tenant ids via a static
+//! env-backed store — the [`ApiKeyStore`] seam makes a real account DB a clean swap.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -38,25 +38,23 @@ pub fn serve_blocking(
     engine: RunEngine,
     providers: Arc<dyn ProviderFactory>,
 ) -> Result<()> {
-    let api_key: Arc<str> = std::env::var("GLAVE_API_KEY")
-        .context("GLAVE_API_KEY must be set — the bearer token clients authenticate with")?
-        .into();
+    let keys: Arc<dyn ApiKeyStore> = Arc::new(StaticKeyStore::from_env()?);
     let runtime = tokio::runtime::Runtime::new().context("starting tokio runtime")?;
-    runtime.block_on(run(addr, engine, providers, api_key))
+    runtime.block_on(run(addr, engine, providers, keys))
 }
 
 #[derive(Clone)]
 struct AppState {
     engine: RunEngine,
     providers: Arc<dyn ProviderFactory>,
-    api_key: Arc<str>,
+    keys: Arc<dyn ApiKeyStore>,
 }
 
 async fn run(
     addr: SocketAddr,
     engine: RunEngine,
     providers: Arc<dyn ProviderFactory>,
-    api_key: Arc<str>,
+    keys: Arc<dyn ApiKeyStore>,
 ) -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
@@ -65,7 +63,7 @@ async fn run(
         .with_state(AppState {
             engine,
             providers,
-            api_key,
+            keys,
         });
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -125,7 +123,7 @@ async fn run_handler(
     Json(body): Json<RunBody>,
 ) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>>, (StatusCode, String)>
 {
-    authorize(&headers, &state.api_key)?;
+    authenticate(&headers, state.keys.as_ref())?;
 
     let task = TaskSpec::load(Path::new(&body.task_dir))
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("loading task: {e}")))?;
@@ -159,15 +157,69 @@ async fn run_handler(
     Ok(Sse::new(stream))
 }
 
-/// Constant-time bearer-token check (length leak only, which is standard).
-fn authorize(headers: &HeaderMap, expected: &str) -> Result<(), (StatusCode, String)> {
+/// Port: resolves a bearer token to its tenant/account id. The static env-backed
+/// impl below is v0; a real account DB is a clean swap behind this seam.
+trait ApiKeyStore: Send + Sync {
+    fn resolve(&self, token: &str) -> Option<String>;
+}
+
+/// v0 key store: `(key, tenant)` pairs from the environment. `GLAVE_API_KEYS`
+/// carries comma-separated `key:tenant` pairs (a bare `key` maps to `default`);
+/// the legacy single `GLAVE_API_KEY` is still honored as `default`.
+struct StaticKeyStore {
+    entries: Vec<(String, String)>,
+}
+
+impl StaticKeyStore {
+    fn from_env() -> Result<Self> {
+        let mut entries = Vec::new();
+        if let Ok(raw) = std::env::var("GLAVE_API_KEYS") {
+            for pair in raw.split(',') {
+                let pair = pair.trim();
+                if pair.is_empty() {
+                    continue;
+                }
+                match pair.split_once(':') {
+                    Some((k, t)) => entries.push((k.trim().to_string(), t.trim().to_string())),
+                    None => entries.push((pair.to_string(), "default".to_string())),
+                }
+            }
+        }
+        if let Ok(k) = std::env::var("GLAVE_API_KEY") {
+            if !k.is_empty() {
+                entries.push((k, "default".to_string()));
+            }
+        }
+        if entries.is_empty() {
+            anyhow::bail!(
+                "no API keys configured — set GLAVE_API_KEYS (key:tenant,…) or GLAVE_API_KEY"
+            );
+        }
+        Ok(Self { entries })
+    }
+}
+
+impl ApiKeyStore for StaticKeyStore {
+    fn resolve(&self, token: &str) -> Option<String> {
+        self.entries
+            .iter()
+            .find_map(|(key, tenant)| ct_eq(token, key).then(|| tenant.clone()))
+    }
+}
+
+/// Authenticate the request: pull the bearer token and resolve it to a tenant id,
+/// or 401. Constant-time key compare (length leak only, which is standard).
+fn authenticate(
+    headers: &HeaderMap,
+    keys: &dyn ApiKeyStore,
+) -> Result<String, (StatusCode, String)> {
     let token = headers
         .get(AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "));
-    match token {
-        Some(t) if ct_eq(t, expected) => Ok(()),
-        _ => Err((
+    match token.and_then(|t| keys.resolve(t)) {
+        Some(tenant) => Ok(tenant),
+        None => Err((
             StatusCode::UNAUTHORIZED,
             "missing or invalid bearer token".to_string(),
         )),
@@ -331,7 +383,7 @@ async fn chat_completions(
     headers: HeaderMap,
     Json(body): Json<ChatRequest>,
 ) -> Result<Response, (StatusCode, String)> {
-    authorize(&headers, &state.api_key)?;
+    let tenant = authenticate(&headers, state.keys.as_ref())?;
     let wire = resolve_hope_model(&body.model)?;
     let public_model = body.model;
     let stream = body.stream;
@@ -364,7 +416,7 @@ async fn chat_completions(
     .map_err(|e| (StatusCode::BAD_GATEWAY, format!("model error: {e}")))?;
 
     eprintln!(
-        "chat.completions model={public_model} prompt={} completion={} cost=${:.4}",
+        "chat.completions tenant={tenant} model={public_model} prompt={} completion={} cost=${:.4}",
         completion.prompt_tokens, completion.completion_tokens, completion.cost_usd
     );
 
@@ -514,5 +566,19 @@ mod tests {
                 Some(5)
             );
         }
+    }
+
+    #[test]
+    fn static_key_store_resolves_keys_to_tenants() {
+        let store = StaticKeyStore {
+            entries: vec![
+                ("sk-a".to_string(), "acct_1".to_string()),
+                ("sk-b".to_string(), "acct_2".to_string()),
+            ],
+        };
+        assert_eq!(store.resolve("sk-a").as_deref(), Some("acct_1"));
+        assert_eq!(store.resolve("sk-b").as_deref(), Some("acct_2"));
+        assert_eq!(store.resolve("sk-unknown"), None);
+        assert_eq!(store.resolve(""), None);
     }
 }
