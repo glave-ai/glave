@@ -19,8 +19,14 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use axum::extract::{Json, State};
-use axum::http::{header::AUTHORIZATION, HeaderMap, StatusCode};
+use axum::body::Body;
+use axum::extract::{Json, Request, State};
+use axum::http::header::{
+    ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN,
+    ACCESS_CONTROL_MAX_AGE, AUTHORIZATION,
+};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -64,6 +70,7 @@ async fn run(
         .route("/health", get(health))
         .route("/v1/runs", post(run_handler))
         .route("/v1/chat/completions", post(chat_completions))
+        .layer(middleware::from_fn(cors_mw))
         .with_state(AppState {
             engine,
             providers,
@@ -79,6 +86,34 @@ async fn run(
 
 async fn health() -> &'static str {
     "ok"
+}
+
+/// Permissive CORS so the browser web app can call the API cross-origin. `*` is
+/// fine here because auth is a bearer token, not cookies. Tighten the allowed
+/// origin via config for production.
+async fn cors_mw(req: Request, next: Next) -> Response {
+    if req.method() == Method::OPTIONS {
+        let mut resp = Response::new(Body::empty());
+        *resp.status_mut() = StatusCode::NO_CONTENT;
+        apply_cors(resp.headers_mut());
+        return resp;
+    }
+    let mut resp = next.run(req).await;
+    apply_cors(resp.headers_mut());
+    resp
+}
+
+fn apply_cors(headers: &mut HeaderMap) {
+    headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    headers.insert(
+        ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("GET, POST, OPTIONS"),
+    );
+    headers.insert(
+        ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("authorization, content-type"),
+    );
+    headers.insert(ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static("86400"));
 }
 
 #[derive(Deserialize)]
@@ -614,6 +649,20 @@ mod tests {
         ));
         assert!(matches!(AgentKind::Solve.into_spec("m"), AgentSpec::Solve));
         assert!(matches!(AgentKind::Noop.into_spec("m"), AgentSpec::Noop));
+    }
+
+    #[test]
+    fn cors_headers_are_applied() {
+        let mut h = HeaderMap::new();
+        apply_cors(&mut h);
+        assert_eq!(
+            h.get(ACCESS_CONTROL_ALLOW_ORIGIN)
+                .and_then(|v| v.to_str().ok()),
+            Some("*")
+        );
+        assert!(h.get(ACCESS_CONTROL_ALLOW_METHODS).is_some());
+        assert!(h.get(ACCESS_CONTROL_ALLOW_HEADERS).is_some());
+        assert!(h.get(ACCESS_CONTROL_MAX_AGE).is_some());
     }
 
     #[test]
