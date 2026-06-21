@@ -1,0 +1,102 @@
+// Hope — dawn gold. Angular Material 3 theming via `mat.theme()`, with the brand
+// identity applied over Material's `--mat-sys-*` system variables (light + warm
+// dusk). The prebuilt orange/violet palettes are only a base; the overrides below
+// carry our locked palette. See the root CLAUDE.md "Design" section.
+@use '@angular/material' as mat;
+
+// Brand tokens — use these directly in our own (non-Material) components.
+:root {
+  --hope-gold-tint: #fcefcf;
+  --hope-gold-soft: #f7d384;
+  --hope-gold: #efb13c;
+  --hope-gold-strong: #b07512;
+  --hope-gold-deep: #6e4d12;
+  --hope-on-gold: #3d2a06;
+
+  --hope-page: #fbf8f1;
+  --hope-surface: #fffdf8;
+  --hope-border: #e9e1d2;
+  --hope-muted: #8c7e68;
+  --hope-ink: #2e2519;
+
+  --hope-accent: #7e63c4;
+
+  --hope-success: #4e9a4e;
+  --hope-warning: #dd6b2a;
+  --hope-error: #c8443b;
+  --hope-info: #3e7bc2;
+}
+
+html {
+  height: 100%;
+  color-scheme: light;
+
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$orange-palette,
+        tertiary: mat.$violet-palette,
+      ),
+      typography: Roboto,
+      density: 0,
+    )
+  );
+
+  // Dawn gold over Material's system variables — light mode.
+  --mat-sys-primary: #efb13c;
+  --mat-sys-on-primary: #3d2a06;
+  --mat-sys-primary-container: #fcefcf;
+  --mat-sys-on-primary-container: #6e4d12;
+  --mat-sys-tertiary: #7e63c4;
+  --mat-sys-on-tertiary: #ffffff;
+  --mat-sys-tertiary-container: #ece4f8;
+  --mat-sys-on-tertiary-container: #3a2a66;
+  --mat-sys-background: #fbf8f1;
+  --mat-sys-on-background: #2e2519;
+  --mat-sys-surface: #fffdf8;
+  --mat-sys-surface-container: #fbf8f1;
+  --mat-sys-surface-container-low: #fffdf8;
+  --mat-sys-surface-container-high: #f5efe2;
+  --mat-sys-on-surface: #2e2519;
+  --mat-sys-on-surface-variant: #8c7e68;
+  --mat-sys-outline: #b7ac98;
+  --mat-sys-outline-variant: #e9e1d2;
+  --mat-sys-error: #c8443b;
+  --mat-sys-on-error: #ffffff;
+}
+
+// Warm dusk — dark mode (never cold black).
+@media (prefers-color-scheme: dark) {
+  html {
+    color-scheme: dark;
+
+    --mat-sys-primary: #efb13c;
+    --mat-sys-on-primary: #3d2a06;
+    --mat-sys-primary-container: #5a3f10;
+    --mat-sys-on-primary-container: #fcefcf;
+    --mat-sys-tertiary: #b49be8;
+    --mat-sys-on-tertiary: #2a1d4d;
+    --mat-sys-tertiary-container: #43386b;
+    --mat-sys-on-tertiary-container: #ece4f8;
+    --mat-sys-background: #211a12;
+    --mat-sys-on-background: #f2e9d8;
+    --mat-sys-surface: #2c241a;
+    --mat-sys-surface-container: #271f16;
+    --mat-sys-surface-container-low: #211a12;
+    --mat-sys-surface-container-high: #362d20;
+    --mat-sys-on-surface: #f2e9d8;
+    --mat-sys-on-surface-variant: #b0a18a;
+    --mat-sys-outline: #897e6a;
+    --mat-sys-outline-variant: #443a2c;
+    --mat-sys-error: #e2837b;
+    --mat-sys-on-error: #2a0f0d;
+  }
+}
+
+body {
+  background-color: var(--mat-sys-background);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+  margin: 0;
+  height: 100%;
+}
