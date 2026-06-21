@@ -1,0 +1,98 @@
+:host {
+  display: block;
+  min-height: 100dvh;
+}
+
+.hope {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 3rem 1.25rem 2rem;
+  min-height: 100dvh;
+  box-sizing: border-box;
+}
+
+.presence {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0 0.5rem;
+}
+
+.orb {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 42%,
+    #fff6dc 0%,
+    var(--hope-gold-soft) 38%,
+    var(--hope-gold) 70%,
+    transparent 100%
+  );
+  animation: breathe 5.5s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+.thread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.bubble {
+  margin: 0;
+  max-width: 82%;
+  padding: 0.75rem 1rem;
+  border-radius: 16px;
+  line-height: 1.5;
+}
+
+.bubble--hope {
+  align-self: flex-start;
+  background: var(--mat-sys-surface-container);
+  color: var(--mat-sys-on-surface);
+  border: 1px solid var(--mat-sys-outline-variant);
+}
+
+.bubble--you {
+  align-self: flex-end;
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-on-primary-container);
+}
+
+.composer {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.composer__field {
+  flex: 1;
+}
+
+.composer__send {
+  height: 56px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb {
+    animation: none;
+  }
+}
