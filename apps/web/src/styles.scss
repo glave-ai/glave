@@ -1,10 +1,34 @@
 // Hope — dawn gold. Angular Material 3 theming via `mat.theme()`, with the brand
-// identity applied over Material's `--mat-sys-*` system variables (light + warm
-// dusk). The prebuilt orange/violet palettes are only a base; the overrides below
-// carry our locked palette. See the root CLAUDE.md "Design" section.
+// identity applied over Material's `--mat-sys-*` system variables. Light is the
+// hero; dark is a near-neutral warm dusk (a faint warm undertone, NOT brown).
+// The dark palette is shared by the system-preference media query and the manual
+// `[data-theme]` toggle. See the root CLAUDE.md "Design" section.
 @use '@angular/material' as mat;
 
-// Brand tokens — use these directly in our own (non-Material) components.
+@mixin hope-dark {
+  color-scheme: dark;
+  --mat-sys-primary: #efb13c;
+  --mat-sys-on-primary: #3d2a06;
+  --mat-sys-primary-container: #4a3712;
+  --mat-sys-on-primary-container: #fbe7b0;
+  --mat-sys-tertiary: #b49be8;
+  --mat-sys-on-tertiary: #2a1d4d;
+  --mat-sys-tertiary-container: #3b3160;
+  --mat-sys-on-tertiary-container: #ece4f8;
+  --mat-sys-background: #141210;
+  --mat-sys-on-background: #ece6db;
+  --mat-sys-surface: #1a1813;
+  --mat-sys-surface-container: #1e1b15;
+  --mat-sys-surface-container-low: #141210;
+  --mat-sys-surface-container-high: #272318;
+  --mat-sys-on-surface: #ece6db;
+  --mat-sys-on-surface-variant: #a79f92;
+  --mat-sys-outline: #6f675b;
+  --mat-sys-outline-variant: #2c2820;
+  --mat-sys-error: #e2837b;
+  --mat-sys-on-error: #2a0f0d;
+}
+
 :root {
   --hope-gold-tint: #fcefcf;
   --hope-gold-soft: #f7d384;
@@ -12,15 +36,12 @@
   --hope-gold-strong: #b07512;
   --hope-gold-deep: #6e4d12;
   --hope-on-gold: #3d2a06;
-
   --hope-page: #fbf8f1;
   --hope-surface: #fffdf8;
   --hope-border: #e9e1d2;
   --hope-muted: #8c7e68;
   --hope-ink: #2e2519;
-
   --hope-accent: #7e63c4;
-
   --hope-success: #4e9a4e;
   --hope-warning: #dd6b2a;
   --hope-error: #c8443b;
@@ -42,7 +63,7 @@ html {
     )
   );
 
-  // Dawn gold over Material's system variables — light mode.
+  // Dawn gold over Material's system variables — light mode (the hero).
   --mat-sys-primary: #efb13c;
   --mat-sys-on-primary: #3d2a06;
   --mat-sys-primary-container: #fcefcf;
@@ -54,9 +75,9 @@ html {
   --mat-sys-background: #fbf8f1;
   --mat-sys-on-background: #2e2519;
   --mat-sys-surface: #fffdf8;
-  --mat-sys-surface-container: #fbf8f1;
+  --mat-sys-surface-container: #f5efe2;
   --mat-sys-surface-container-low: #fffdf8;
-  --mat-sys-surface-container-high: #f5efe2;
+  --mat-sys-surface-container-high: #efe7d6;
   --mat-sys-on-surface: #2e2519;
   --mat-sys-on-surface-variant: #8c7e68;
   --mat-sys-outline: #b7ac98;
@@ -65,32 +86,16 @@ html {
   --mat-sys-on-error: #ffffff;
 }
 
-// Warm dusk — dark mode (never cold black).
+// Auto dark from the system preference, unless the user forced light.
 @media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-
-    --mat-sys-primary: #efb13c;
-    --mat-sys-on-primary: #3d2a06;
-    --mat-sys-primary-container: #5a3f10;
-    --mat-sys-on-primary-container: #fcefcf;
-    --mat-sys-tertiary: #b49be8;
-    --mat-sys-on-tertiary: #2a1d4d;
-    --mat-sys-tertiary-container: #43386b;
-    --mat-sys-on-tertiary-container: #ece4f8;
-    --mat-sys-background: #211a12;
-    --mat-sys-on-background: #f2e9d8;
-    --mat-sys-surface: #2c241a;
-    --mat-sys-surface-container: #271f16;
-    --mat-sys-surface-container-low: #211a12;
-    --mat-sys-surface-container-high: #362d20;
-    --mat-sys-on-surface: #f2e9d8;
-    --mat-sys-on-surface-variant: #b0a18a;
-    --mat-sys-outline: #897e6a;
-    --mat-sys-outline-variant: #443a2c;
-    --mat-sys-error: #e2837b;
-    --mat-sys-on-error: #2a0f0d;
+  html:not([data-theme='light']) {
+    @include hope-dark;
   }
+}
+
+// Manual override from the in-app toggle.
+html[data-theme='dark'] {
+  @include hope-dark;
 }
 
 body {
