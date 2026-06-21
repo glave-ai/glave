@@ -20,6 +20,9 @@
         <div class="say say--you">{{ msg.text }}</div>
       }
     }
+    @if (sending()) {
+      <div class="say say--hope thinking" aria-label="Hope is thinking">…</div>
+    }
   </section>
 
   <div class="composer">
@@ -33,6 +36,13 @@
         (keyup.enter)="send()"
       />
     </mat-form-field>
-    <button mat-flat-button class="composer__send" (click)="send()">Ask Hope</button>
+    <button
+      mat-flat-button
+      class="composer__send"
+      [disabled]="sending()"
+      (click)="send()"
+    >
+      Ask Hope
+    </button>
   </div>
 </main>
