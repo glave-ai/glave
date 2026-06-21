@@ -101,6 +101,22 @@
   color: var(--mat-sys-on-surface);
 }
 
+.thinking {
+  color: var(--mat-sys-on-surface-variant);
+  letter-spacing: 0.15em;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .composer {
   position: sticky;
   bottom: 0;
@@ -121,7 +137,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .orb {
+  .orb,
+  .thinking {
     animation: none;
   }
 }
