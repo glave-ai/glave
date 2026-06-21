@@ -1,3 +1,12 @@
+<button
+  type="button"
+  class="theme-toggle"
+  (click)="toggleTheme()"
+  [attr.aria-label]="dark() ? 'Switch to light mode' : 'Switch to dark mode'"
+>
+  {{ dark() ? '☀' : '☾' }}
+</button>
+
 <main class="hope">
   <div class="presence" aria-hidden="true">
     <div class="orb"></div>
@@ -5,13 +14,11 @@
 
   <section class="thread" aria-live="polite">
     @for (msg of messages(); track $index) {
-      <p
-        class="bubble"
-        [class.bubble--you]="msg.from === 'you'"
-        [class.bubble--hope]="msg.from === 'hope'"
-      >
-        {{ msg.text }}
-      </p>
+      @if (msg.from === 'hope') {
+        <div class="say say--hope">{{ msg.text }}</div>
+      } @else {
+        <div class="say say--you">{{ msg.text }}</div>
+      }
     }
   </section>
 
