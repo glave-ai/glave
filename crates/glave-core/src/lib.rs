@@ -5,6 +5,7 @@
 //! ports — never on a concrete model provider or execution backend — so both the
 //! client/server moat boundary and full testability are enforced by the compiler.
 
+pub mod accounts;
 pub mod agent;
 pub mod capability;
 pub mod engine;
@@ -25,6 +26,7 @@ pub mod tools;
 #[cfg(any(test, feature = "test-util"))]
 pub mod testkit;
 
+pub use accounts::{resolve_login, AccountStore, Identity, Membership, Org, OrgRole, User};
 pub use capability::{
     AgentDef, Capability, CapabilityKind, CapabilityRegistry, LexicalSelector, Selector,
 };
