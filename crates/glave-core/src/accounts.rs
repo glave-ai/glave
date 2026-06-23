@@ -55,13 +55,15 @@ pub struct Membership {
     pub role: OrgRole,
 }
 
-/// Port: persistence for accounts. Postgres implements this in production; the
-/// in-memory store backs offline tests. The product depends only on this seam.
+/// Port: persistence for accounts. Methods take `&self` — the *database* is the
+/// mutable state, not the handle — so a single store can be shared (`Arc`) across
+/// concurrent requests. Postgres implements this in production; the in-memory
+/// store backs offline tests.
 pub trait AccountStore {
     fn user_by_identity(&self, provider: &str, subject: &str) -> Result<Option<User>>;
     fn user_by_verified_email(&self, email: &str) -> Result<Option<User>>;
-    fn create_user(&mut self, email: &str, name: Option<&str>) -> Result<User>;
-    fn add_identity(&mut self, identity: Identity) -> Result<()>;
+    fn create_user(&self, email: &str, name: Option<&str>) -> Result<User>;
+    fn add_identity(&self, identity: Identity) -> Result<()>;
 }
 
 /// Resolve a successful authentication to a [`User`] — the one place login from
@@ -74,7 +76,7 @@ pub trait AccountStore {
 /// Unverified emails never link — they always take path 3. That guard is what
 /// stops "I made a Google account with your email" from hijacking your account.
 pub fn resolve_login(
-    store: &mut dyn AccountStore,
+    store: &dyn AccountStore,
     provider: &str,
     subject: &str,
     email: &str,
@@ -105,87 +107,90 @@ pub fn resolve_login(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
 
     #[derive(Default)]
     struct InMemoryAccounts {
-        users: Vec<User>,
-        identities: Vec<Identity>,
-        next: usize,
+        users: RefCell<Vec<User>>,
+        identities: RefCell<Vec<Identity>>,
+        next: RefCell<usize>,
     }
 
     impl AccountStore for InMemoryAccounts {
         fn user_by_identity(&self, provider: &str, subject: &str) -> Result<Option<User>> {
-            let found = self
-                .identities
+            let identities = self.identities.borrow();
+            let users = self.users.borrow();
+            let found = identities
                 .iter()
                 .find(|i| i.provider == provider && i.subject == subject)
-                .and_then(|i| self.users.iter().find(|u| u.id == i.user_id))
+                .and_then(|i| users.iter().find(|u| u.id == i.user_id))
                 .cloned();
             Ok(found)
         }
 
         fn user_by_verified_email(&self, email: &str) -> Result<Option<User>> {
-            let reachable = self
-                .identities
+            let identities = self.identities.borrow();
+            let reachable = identities
                 .iter()
                 .any(|i| i.email == email && i.email_verified);
             if !reachable {
                 return Ok(None);
             }
-            Ok(self.users.iter().find(|u| u.email == email).cloned())
+            Ok(self.users.borrow().iter().find(|u| u.email == email).cloned())
         }
 
-        fn create_user(&mut self, email: &str, name: Option<&str>) -> Result<User> {
-            self.next += 1;
+        fn create_user(&self, email: &str, name: Option<&str>) -> Result<User> {
+            let mut next = self.next.borrow_mut();
+            *next += 1;
             let user = User {
-                id: format!("user-{}", self.next),
+                id: format!("user-{}", *next),
                 email: email.to_string(),
                 name: name.map(str::to_string),
             };
-            self.users.push(user.clone());
+            self.users.borrow_mut().push(user.clone());
             Ok(user)
         }
 
-        fn add_identity(&mut self, identity: Identity) -> Result<()> {
-            self.identities.push(identity);
+        fn add_identity(&self, identity: Identity) -> Result<()> {
+            self.identities.borrow_mut().push(identity);
             Ok(())
         }
     }
 
     #[test]
     fn returning_login_reuses_the_same_user() {
-        let mut store = InMemoryAccounts::default();
-        let first = resolve_login(&mut store, "google", "sub-1", "a@acme.com", true);
-        let second = resolve_login(&mut store, "google", "sub-1", "a@acme.com", true);
+        let store = InMemoryAccounts::default();
+        let first = resolve_login(&store, "google", "sub-1", "a@acme.com", true);
+        let second = resolve_login(&store, "google", "sub-1", "a@acme.com", true);
         assert!(first.is_ok() && second.is_ok());
         assert_eq!(first.ok().map(|u| u.id), second.ok().map(|u| u.id));
-        assert_eq!(store.users.len(), 1);
+        assert_eq!(store.users.borrow().len(), 1);
     }
 
     #[test]
     fn verified_email_links_a_new_provider_to_the_same_user() {
-        let mut store = InMemoryAccounts::default();
-        let _ = resolve_login(&mut store, "google", "g-1", "a@acme.com", true);
-        let linked = resolve_login(&mut store, "saml:acme", "s-1", "a@acme.com", true);
+        let store = InMemoryAccounts::default();
+        let _ = resolve_login(&store, "google", "g-1", "a@acme.com", true);
+        let linked = resolve_login(&store, "saml:acme", "s-1", "a@acme.com", true);
         assert!(linked.is_ok());
-        assert_eq!(store.users.len(), 1);
-        assert_eq!(store.identities.len(), 2);
+        assert_eq!(store.users.borrow().len(), 1);
+        assert_eq!(store.identities.borrow().len(), 2);
     }
 
     #[test]
     fn unverified_email_never_links() {
-        let mut store = InMemoryAccounts::default();
-        let _ = resolve_login(&mut store, "google", "g-1", "a@acme.com", true);
-        let other = resolve_login(&mut store, "github", "h-1", "a@acme.com", false);
+        let store = InMemoryAccounts::default();
+        let _ = resolve_login(&store, "google", "g-1", "a@acme.com", true);
+        let other = resolve_login(&store, "github", "h-1", "a@acme.com", false);
         assert!(other.is_ok());
-        assert_eq!(store.users.len(), 2);
+        assert_eq!(store.users.borrow().len(), 2);
     }
 
     #[test]
     fn new_person_creates_a_user() {
-        let mut store = InMemoryAccounts::default();
-        let created = resolve_login(&mut store, "google", "g-9", "new@x.com", true);
+        let store = InMemoryAccounts::default();
+        let created = resolve_login(&store, "google", "g-9", "new@x.com", true);
         assert!(created.is_ok());
-        assert_eq!(store.users.len(), 1);
+        assert_eq!(store.users.borrow().len(), 1);
     }
 }

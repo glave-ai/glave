@@ -171,7 +171,7 @@ impl AccountStore for PgAccountStore {
         Ok(row.map(|r| row_to_user(&r)))
     }
 
-    fn create_user(&mut self, email: &str, name: Option<&str>) -> Result<User> {
+    fn create_user(&self, email: &str, name: Option<&str>) -> Result<User> {
         let id = uuid::Uuid::new_v4().to_string();
         let mut conn = self.pool.get().context("pg conn")?;
         conn.execute(
@@ -186,7 +186,7 @@ impl AccountStore for PgAccountStore {
         })
     }
 
-    fn add_identity(&mut self, identity: Identity) -> Result<()> {
+    fn add_identity(&self, identity: Identity) -> Result<()> {
         let mut conn = self.pool.get().context("pg conn")?;
         conn.execute(
             "INSERT INTO identities (provider, subject, email, email_verified, user_id)
@@ -227,18 +227,18 @@ mod tests {
 
     #[test]
     fn pg_login_resolution_matches_the_domain_rules() {
-        let Some(mut store) = fresh_store() else {
+        let Some(store) = fresh_store() else {
             return;
         };
-        let first = resolve_login(&mut store, "google", "g-1", "a@acme.com", true);
-        let second = resolve_login(&mut store, "google", "g-1", "a@acme.com", true);
+        let first = resolve_login(&store, "google", "g-1", "a@acme.com", true);
+        let second = resolve_login(&store, "google", "g-1", "a@acme.com", true);
         assert!(first.is_ok() && second.is_ok());
         assert_eq!(first.ok().map(|u| u.id), second.ok().map(|u| u.id));
 
-        let linked = resolve_login(&mut store, "saml:acme", "s-1", "a@acme.com", true);
+        let linked = resolve_login(&store, "saml:acme", "s-1", "a@acme.com", true);
         assert!(linked.is_ok());
 
-        let separate = resolve_login(&mut store, "github", "h-1", "a@acme.com", false);
+        let separate = resolve_login(&store, "github", "h-1", "a@acme.com", false);
         assert!(separate.is_ok());
         assert_ne!(
             linked.ok().map(|u| u.id),
@@ -249,7 +249,7 @@ mod tests {
 
     #[test]
     fn pg_passwordless_flow_issues_verifies_and_sessions() {
-        let Some(mut store) = fresh_store() else {
+        let Some(store) = fresh_store() else {
             return;
         };
         let email = "person@acme.com";
@@ -269,7 +269,7 @@ mod tests {
             "codes are single-use"
         );
 
-        let user = resolve_login(&mut store, "email", email, email, true);
+        let user = resolve_login(&store, "email", email, email, true);
         assert!(user.is_ok());
         let Ok(user) = user else {
             return;

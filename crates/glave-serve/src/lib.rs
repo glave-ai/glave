@@ -23,7 +23,7 @@ use axum::body::Body;
 use axum::extract::{Json, Request, State};
 use axum::http::header::{
     ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN,
-    ACCESS_CONTROL_MAX_AGE, AUTHORIZATION,
+    ACCESS_CONTROL_MAX_AGE, AUTHORIZATION, COOKIE, SET_COOKIE,
 };
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
@@ -36,7 +36,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 
 use glave_core::engine::{AgentSpec, RunEngine, RunOutcome, RunRequest};
-use glave_core::{Message, ProviderFactory, Role, RunEvent, TaskSpec, TraceSink};
+use glave_core::{
+    resolve_login, Message, ProviderFactory, Role, RunEvent, TaskSpec, TraceSink, User,
+};
 
 pub mod pg;
 
@@ -49,8 +51,22 @@ pub fn serve_blocking(
 ) -> Result<()> {
     let keys: Arc<dyn ApiKeyStore> = Arc::new(StaticKeyStore::from_env()?);
     let meter = build_meter();
+    let accounts = build_accounts()?;
     let runtime = tokio::runtime::Runtime::new().context("starting tokio runtime")?;
-    runtime.block_on(run(addr, engine, providers, keys, meter))
+    runtime.block_on(run(addr, engine, providers, keys, meter, accounts))
+}
+
+/// Build the accounts store from `GLAVE_DATABASE_URL` (and run migrations). When
+/// unset, auth is simply unavailable (the auth endpoints return 503) — the rest
+/// of the server still runs.
+fn build_accounts() -> Result<Option<Arc<pg::PgAccountStore>>> {
+    let url = std::env::var("GLAVE_DATABASE_URL").unwrap_or_default();
+    if url.is_empty() {
+        return Ok(None);
+    }
+    let store = pg::PgAccountStore::connect(&url).context("connecting accounts DB")?;
+    store.migrate().context("migrating accounts DB")?;
+    Ok(Some(Arc::new(store)))
 }
 
 #[derive(Clone)]
@@ -59,6 +75,7 @@ struct AppState {
     providers: Arc<dyn ProviderFactory>,
     keys: Arc<dyn ApiKeyStore>,
     meter: Arc<dyn MeterSink>,
+    accounts: Option<Arc<pg::PgAccountStore>>,
 }
 
 async fn run(
@@ -67,17 +84,23 @@ async fn run(
     providers: Arc<dyn ProviderFactory>,
     keys: Arc<dyn ApiKeyStore>,
     meter: Arc<dyn MeterSink>,
+    accounts: Option<Arc<pg::PgAccountStore>>,
 ) -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/v1/runs", post(run_handler))
         .route("/v1/chat/completions", post(chat_completions))
+        .route("/auth/otp/start", post(auth_otp_start))
+        .route("/auth/otp/verify", post(auth_otp_verify))
+        .route("/auth/me", get(auth_me))
+        .route("/auth/logout", post(auth_logout))
         .layer(middleware::from_fn(cors_mw))
         .with_state(AppState {
             engine,
             providers,
             keys,
             meter,
+            accounts,
         });
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -630,9 +653,171 @@ async fn chat_completions(
     }
 }
 
+// ---- Auth: passwordless OTP login + sessions --------------------------------
+//
+// Wraps the PgAccountStore auth flow. Sessions are HttpOnly cookies. The store is
+// sync, so each handler runs it on a blocking thread. Available only when
+// GLAVE_DATABASE_URL is configured; otherwise these return 503.
+
+const SESSION_COOKIE: &str = "glave_session";
+
+#[derive(Deserialize)]
+struct OtpStart {
+    email: String,
+}
+
+#[derive(Deserialize)]
+struct OtpVerify {
+    email: String,
+    code: String,
+}
+
+#[derive(Serialize)]
+struct OtpStartResponse {
+    sent: bool,
+    /// Present only when GLAVE_DEV_OTP is set — lets dev skip email delivery.
+    dev_code: Option<String>,
+}
+
+#[derive(Serialize)]
+struct MeResponse {
+    id: String,
+    email: String,
+}
+
+fn internal<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
+    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+}
+
+fn accounts_store(state: &AppState) -> Result<Arc<pg::PgAccountStore>, (StatusCode, String)> {
+    state.accounts.clone().ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "auth not configured (set GLAVE_DATABASE_URL)".to_string(),
+    ))
+}
+
+fn session_token(headers: &HeaderMap) -> Option<String> {
+    let cookies = headers.get(COOKIE)?.to_str().ok()?;
+    cookies
+        .split(';')
+        .filter_map(|kv| kv.trim().split_once('='))
+        .find(|(k, _)| *k == SESSION_COOKIE)
+        .map(|(_, v)| v.to_string())
+}
+
+fn session_cookie(token: &str, max_age: u32) -> String {
+    format!("{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age}")
+}
+
+/// `POST /auth/otp/start` — mint a one-time code for the email. v0 logs it (and
+/// returns it when `GLAVE_DEV_OTP` is set); real email delivery comes later.
+async fn auth_otp_start(
+    State(state): State<AppState>,
+    Json(body): Json<OtpStart>,
+) -> Result<Json<OtpStartResponse>, (StatusCode, String)> {
+    let store = accounts_store(&state)?;
+    let email = body.email;
+    let code = tokio::task::spawn_blocking(move || store.issue_otp(&email))
+        .await
+        .map_err(internal)?
+        .map_err(internal)?;
+    eprintln!("auth: otp code (dev) = {code}");
+    let dev_code = std::env::var("GLAVE_DEV_OTP").is_ok().then_some(code);
+    Ok(Json(OtpStartResponse {
+        sent: true,
+        dev_code,
+    }))
+}
+
+/// `POST /auth/otp/verify` — consume the code, resolve/create the user, mint a
+/// session, and set the HttpOnly session cookie.
+async fn auth_otp_verify(
+    State(state): State<AppState>,
+    Json(body): Json<OtpVerify>,
+) -> Result<Response, (StatusCode, String)> {
+    let store = accounts_store(&state)?;
+    let OtpVerify { email, code } = body;
+    let result = tokio::task::spawn_blocking(move || -> Result<Option<(User, String)>> {
+        if !store.verify_otp(&email, &code)? {
+            return Ok(None);
+        }
+        let user = resolve_login(store.as_ref(), "email", &email, &email, true)?;
+        let token = store.create_session(&user.id)?;
+        Ok(Some((user, token)))
+    })
+    .await
+    .map_err(internal)?
+    .map_err(internal)?;
+
+    match result {
+        Some((user, token)) => {
+            let mut resp = Json(MeResponse {
+                id: user.id,
+                email: user.email,
+            })
+            .into_response();
+            let cookie =
+                HeaderValue::from_str(&session_cookie(&token, 2_592_000)).map_err(internal)?;
+            resp.headers_mut().insert(SET_COOKIE, cookie);
+            Ok(resp)
+        }
+        None => Err((StatusCode::UNAUTHORIZED, "invalid or expired code".to_string())),
+    }
+}
+
+/// `GET /auth/me` — resolve the session cookie to the current user.
+async fn auth_me(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<MeResponse>, (StatusCode, String)> {
+    let store = accounts_store(&state)?;
+    let token =
+        session_token(&headers).ok_or((StatusCode::UNAUTHORIZED, "no session".to_string()))?;
+    let user = tokio::task::spawn_blocking(move || store.session_user(&token))
+        .await
+        .map_err(internal)?
+        .map_err(internal)?;
+    match user {
+        Some(u) => Ok(Json(MeResponse {
+            id: u.id,
+            email: u.email,
+        })),
+        None => Err((StatusCode::UNAUTHORIZED, "session expired".to_string())),
+    }
+}
+
+/// `POST /auth/logout` — end the session and clear the cookie.
+async fn auth_logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, (StatusCode, String)> {
+    let store = accounts_store(&state)?;
+    if let Some(token) = session_token(&headers) {
+        let _ = tokio::task::spawn_blocking(move || store.delete_session(&token)).await;
+    }
+    let mut resp = StatusCode::NO_CONTENT.into_response();
+    let cookie = HeaderValue::from_str(&session_cookie("", 0)).map_err(internal)?;
+    resp.headers_mut().insert(SET_COOKIE, cookie);
+    Ok(resp)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_cookie_sets_and_parses() {
+        let cookie = session_cookie("tok-123", 2_592_000);
+        assert!(cookie.contains("glave_session=tok-123"));
+        assert!(cookie.contains("HttpOnly"));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            COOKIE,
+            HeaderValue::from_static("foo=bar; glave_session=tok-123; x=y"),
+        );
+        assert_eq!(session_token(&headers).as_deref(), Some("tok-123"));
+        assert_eq!(session_token(&HeaderMap::new()), None);
+    }
 
     #[test]
     fn ct_eq_matches_only_equal_strings() {
