@@ -1,0 +1,19 @@
+# Disposable local dependencies for dev + integration tests.
+# Postgres backs the accounts/auth store (the AccountStore Postgres adapter).
+#   docker compose up -d postgres
+#   GLAVE_TEST_PG='postgres://glave:glave@localhost:55432/glave' cargo test -p glave-serve
+#   docker compose down -v        # throw it away
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: glave
+      POSTGRES_PASSWORD: glave
+      POSTGRES_DB: glave
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glave"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
