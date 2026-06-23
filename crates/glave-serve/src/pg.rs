@@ -43,9 +43,89 @@ impl PgAccountStore {
                  PRIMARY KEY (provider, subject)
              );
              CREATE INDEX IF NOT EXISTS identities_verified_email_idx
-                 ON identities (email) WHERE email_verified;",
+                 ON identities (email) WHERE email_verified;
+             CREATE TABLE IF NOT EXISTS otp_codes (
+                 email      TEXT NOT NULL,
+                 code       TEXT NOT NULL,
+                 expires_at TIMESTAMPTZ NOT NULL,
+                 used       BOOLEAN NOT NULL DEFAULT FALSE
+             );
+             CREATE TABLE IF NOT EXISTS sessions (
+                 token      TEXT PRIMARY KEY,
+                 user_id    TEXT NOT NULL REFERENCES users(id),
+                 expires_at TIMESTAMPTZ NOT NULL
+             );",
         )
         .context("running migrations")?;
+        Ok(())
+    }
+}
+
+/// Passwordless login + sessions. Concrete (not on the `AccountStore` port) — this
+/// is auth-flow state, used by the serve handlers. Expiry is handled in SQL
+/// (`NOW()`), so no time crate. v0 stores the code/token as-is; hash them in prod.
+impl PgAccountStore {
+    /// Mint a 6-digit one-time code for `email` (valid 10 min). The caller delivers
+    /// it (email in prod; logged in dev). Returned so dev can use it directly.
+    pub fn issue_otp(&self, email: &str) -> Result<String> {
+        let code = format!("{:06}", uuid::Uuid::new_v4().as_u128() % 1_000_000);
+        let mut conn = self.pool.get().context("pg conn")?;
+        conn.execute(
+            "INSERT INTO otp_codes (email, code, expires_at)
+             VALUES ($1, $2, NOW() + INTERVAL '10 minutes')",
+            &[&email, &code],
+        )
+        .context("insert otp")?;
+        Ok(code)
+    }
+
+    /// Consume a code: true iff it's the right code for `email`, unused, unexpired.
+    /// Marks it used atomically, so it's strictly single-use.
+    pub fn verify_otp(&self, email: &str, code: &str) -> Result<bool> {
+        let mut conn = self.pool.get().context("pg conn")?;
+        let rows = conn
+            .query(
+                "UPDATE otp_codes SET used = TRUE
+                 WHERE email = $1 AND code = $2 AND used = FALSE AND expires_at > NOW()
+                 RETURNING email",
+                &[&email, &code],
+            )
+            .context("verify otp")?;
+        Ok(!rows.is_empty())
+    }
+
+    /// Create a 30-day session for a user; returns the opaque token.
+    pub fn create_session(&self, user_id: &str) -> Result<String> {
+        let token = uuid::Uuid::new_v4().to_string();
+        let mut conn = self.pool.get().context("pg conn")?;
+        conn.execute(
+            "INSERT INTO sessions (token, user_id, expires_at)
+             VALUES ($1, $2, NOW() + INTERVAL '30 days')",
+            &[&token, &user_id],
+        )
+        .context("insert session")?;
+        Ok(token)
+    }
+
+    /// Resolve a session token to its user, if the session is live.
+    pub fn session_user(&self, token: &str) -> Result<Option<User>> {
+        let mut conn = self.pool.get().context("pg conn")?;
+        let row = conn
+            .query_opt(
+                "SELECT u.id, u.email, u.name
+                 FROM users u JOIN sessions s ON s.user_id = u.id
+                 WHERE s.token = $1 AND s.expires_at > NOW()",
+                &[&token],
+            )
+            .context("query session_user")?;
+        Ok(row.map(|r| row_to_user(&r)))
+    }
+
+    /// End a session (logout).
+    pub fn delete_session(&self, token: &str) -> Result<()> {
+        let mut conn = self.pool.get().context("pg conn")?;
+        conn.execute("DELETE FROM sessions WHERE token = $1", &[&token])
+            .context("delete session")?;
         Ok(())
     }
 }
@@ -136,7 +216,10 @@ mod tests {
         let url = std::env::var("GLAVE_TEST_PG").ok()?;
         let store = PgAccountStore::connect(&url).ok()?;
         if let Ok(mut conn) = store.pool.get() {
-            let _ = conn.batch_execute("DROP TABLE IF EXISTS identities; DROP TABLE IF EXISTS users;");
+            let _ = conn.batch_execute(
+                "DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS identities; \
+                 DROP TABLE IF EXISTS otp_codes; DROP TABLE IF EXISTS users;",
+            );
         }
         store.migrate().ok()?;
         Some(store)
@@ -161,6 +244,52 @@ mod tests {
             linked.ok().map(|u| u.id),
             separate.ok().map(|u| u.id),
             "unverified email must not link to the existing user"
+        );
+    }
+
+    #[test]
+    fn pg_passwordless_flow_issues_verifies_and_sessions() {
+        let Some(mut store) = fresh_store() else {
+            return;
+        };
+        let email = "person@acme.com";
+
+        let issued = store.issue_otp(email);
+        assert!(issued.is_ok());
+        let Ok(code) = issued else {
+            return;
+        };
+
+        let wrong = if code == "000001" { "000002" } else { "000001" };
+        assert_eq!(store.verify_otp(email, wrong).ok(), Some(false), "wrong code rejected");
+        assert_eq!(store.verify_otp(email, &code).ok(), Some(true), "right code accepted");
+        assert_eq!(
+            store.verify_otp(email, &code).ok(),
+            Some(false),
+            "codes are single-use"
+        );
+
+        let user = resolve_login(&mut store, "email", email, email, true);
+        assert!(user.is_ok());
+        let Ok(user) = user else {
+            return;
+        };
+
+        let token = store.create_session(&user.id);
+        assert!(token.is_ok());
+        let Ok(token) = token else {
+            return;
+        };
+
+        assert_eq!(
+            store.session_user(&token).ok().flatten().map(|u| u.id),
+            Some(user.id.clone()),
+            "live session resolves to the user"
+        );
+        assert!(store.delete_session(&token).is_ok());
+        assert!(
+            matches!(store.session_user(&token), Ok(None)),
+            "deleted session resolves to nobody"
         );
     }
 }
