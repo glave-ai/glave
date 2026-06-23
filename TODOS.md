@@ -290,3 +290,23 @@ A long strategy session converged. Durable resolutions (summary; memory is sourc
 - **Track B — code (in-repo; Claude-led):**
   1. **OpenAI-compatible `/v1/chat/completions` in `glave-serve`** (routes to the Hope endpoint). Smallest real CONTRACT; makes Hope usable from any harness (distribution) + enables dogfooding on real Hope (feeds Track A); forces 3 of the 5 contracts (versioning + auth + token meter). ← recommended first.
   2. Then: repo→cloud→PR managed-agent MVP (`Plan::Sandboxed{Cloud}` + `Source::CloneGit` + git-push tool).
+
+---
+
+## Auth — decision locked (2026-06-21)
+**Lightweight Rust auth + a seam.** Don't roll crypto (assemble vetted crates); don't haul a full IdP now.
+- **DB owns the user** (`users` / `identities` / `orgs` in Postgres). An external IdP/SSO is NOT the source of truth — mirror logins in.
+- **Build now** (Rust, in-DB, behind a port): passwordless OTP / magic-link + Google/Microsoft social + sessions + orgs/roles/invites + domain-capture. Serves B2C + SMB→mid-market B2B fully (Google/MS login = de-facto SSO for Workspace/365).
+- **Defer SAML / enterprise-SSO** behind the seam → WorkOS-style drop-in (or Zitadel as a SAML gateway) the day an enterprise's procurement demands it. NOT before. Avoid the Zitadel/SAML rabbit hole — that's the real stall risk.
+- **Account linking:** returning login by `(provider, subject)`; cross-provider link by **verified** email only (takeover guard); org by verified email domain.
+- **Testing:** disposable docker-compose / testcontainers for real-deps integration (Postgres, any IdP later); fast mocked-at-the-seam unit tests for the bulk.
+
+### Build flow (reordered — auth is now the foundation phase)
+1. ✅ accounts domain + `AccountStore` seam + `resolve_login` (InMemory + tested) — committed `3cd7678`.
+2. Postgres adapter for `AccountStore` (+ migrations) — the real DB the product needs.
+3. Sessions + lean auth flows (OTP / magic-link + Google/MS social) in `glave-serve`, behind the seam.
+4. Web app login (Angular) → drop the localStorage-key stopgap.
+5. Orgs / memberships / invites + domain-capture. SAML deferred behind the seam.
+
+### Shipped this session (web + serve)
+OAI-compat `/v1/chat/completions` · per-tenant API keys · Hope system-prompt · metering · CORS · Angular dawn-gold app (light/dark toggle, Hope-in-serif) · `HopeService` wired to the live endpoint.
