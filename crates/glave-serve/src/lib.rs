@@ -38,6 +38,8 @@ use tokio_stream::StreamExt;
 use glave_core::engine::{AgentSpec, RunEngine, RunOutcome, RunRequest};
 use glave_core::{Message, ProviderFactory, Role, RunEvent, TaskSpec, TraceSink};
 
+pub mod pg;
+
 /// Build the server and run it to completion on a multi-threaded runtime.
 /// Blocks. Fails fast if the bearer token isn't configured.
 pub fn serve_blocking(
