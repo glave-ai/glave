@@ -5,7 +5,10 @@
 //! type mapping trivial.
 
 use anyhow::{Context, Result};
-use glave_core::{AccountStore, Identity, User};
+use glave_core::{
+    personal_account_name, Account, AccountKind, AccountRole, AccountStore, Identity, Membership,
+    User,
+};
 use postgres::NoTls;
 use r2d2::Pool;
 use r2d2_postgres::PostgresConnectionManager;
@@ -54,6 +57,23 @@ impl PgAccountStore {
                  token      TEXT PRIMARY KEY,
                  user_id    TEXT NOT NULL REFERENCES users(id),
                  expires_at TIMESTAMPTZ NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS accounts (
+                 id                     TEXT PRIMARY KEY,
+                 name                   TEXT NOT NULL,
+                 kind                   TEXT NOT NULL DEFAULT 'personal',
+                 verified_domains       TEXT[] NOT NULL DEFAULT '{}',
+                 billing_contact_user_id TEXT REFERENCES users(id),
+                 -- One personal account per user: the idempotency key for
+                 -- ensure_personal_account. NULL for team accounts.
+                 personal_owner_user_id TEXT UNIQUE REFERENCES users(id),
+                 deleted_at             TIMESTAMPTZ
+             );
+             CREATE TABLE IF NOT EXISTS memberships (
+                 account_id TEXT NOT NULL REFERENCES accounts(id),
+                 user_id    TEXT NOT NULL REFERENCES users(id),
+                 role       TEXT NOT NULL,
+                 PRIMARY KEY (account_id, user_id)
              );",
         )
         .context("running migrations")?;
@@ -138,6 +158,40 @@ fn row_to_user(row: &postgres::Row) -> User {
     }
 }
 
+/// Maps an `accounts` row selected as `(id, name, kind, verified_domains,
+/// billing_contact_user_id)`. Unknown `kind` falls back to `Personal` (the safe,
+/// least-privileged default).
+fn row_to_account(row: &postgres::Row) -> Account {
+    let kind = match row.get::<_, String>(2).as_str() {
+        "team" => AccountKind::Team,
+        _ => AccountKind::Personal,
+    };
+    Account {
+        id: row.get(0),
+        name: row.get(1),
+        kind,
+        verified_domains: row.get(3),
+        billing_contact_user_id: row.get(4),
+    }
+}
+
+/// Stored role string → [`AccountRole`]. Unknown values fall back to `Member` (the
+/// least-privileged role).
+fn role_from_str(role: &str) -> AccountRole {
+    match role {
+        "owner" => AccountRole::Owner,
+        _ => AccountRole::Member,
+    }
+}
+
+/// [`AccountRole`] → its stored string form.
+fn role_to_str(role: AccountRole) -> &'static str {
+    match role {
+        AccountRole::Owner => "owner",
+        AccountRole::Member => "member",
+    }
+}
+
 impl AccountStore for PgAccountStore {
     fn user_by_identity(&self, provider: &str, subject: &str) -> Result<Option<User>> {
         let mut conn = self.pool.get().context("pg conn")?;
@@ -203,6 +257,82 @@ impl AccountStore for PgAccountStore {
         .context("insert identity")?;
         Ok(())
     }
+
+    fn ensure_personal_account(&self, owner: &User) -> Result<Account> {
+        let mut conn = self.pool.get().context("pg conn")?;
+        let mut tx = conn.transaction().context("begin tx")?;
+        let id = uuid::Uuid::new_v4().to_string();
+        let name = personal_account_name(owner);
+        // Idempotent on personal_owner_user_id: a concurrent/duplicate first login
+        // can't mint a second personal account.
+        tx.execute(
+            "INSERT INTO accounts (id, name, kind, billing_contact_user_id, personal_owner_user_id)
+             VALUES ($1, $2, 'personal', $3, $3)
+             ON CONFLICT (personal_owner_user_id) DO NOTHING",
+            &[&id, &name, &owner.id],
+        )
+        .context("insert personal account")?;
+        // Load the canonical row (existing or just-created).
+        let row = tx
+            .query_one(
+                "SELECT id, name, kind, verified_domains, billing_contact_user_id
+                 FROM accounts WHERE personal_owner_user_id = $1",
+                &[&owner.id],
+            )
+            .context("load personal account")?;
+        let account = row_to_account(&row);
+        tx.execute(
+            "INSERT INTO memberships (account_id, user_id, role)
+             VALUES ($1, $2, 'owner')
+             ON CONFLICT (account_id, user_id) DO NOTHING",
+            &[&account.id, &owner.id],
+        )
+        .context("insert owner membership")?;
+        tx.commit().context("commit personal account")?;
+        Ok(account)
+    }
+
+    fn accounts_for_user(&self, user_id: &str) -> Result<Vec<(Account, AccountRole)>> {
+        let mut conn = self.pool.get().context("pg conn")?;
+        let rows = conn
+            .query(
+                "SELECT a.id, a.name, a.kind, a.verified_domains, a.billing_contact_user_id, m.role
+                 FROM accounts a
+                 JOIN memberships m ON m.account_id = a.id
+                 WHERE m.user_id = $1 AND a.deleted_at IS NULL",
+                &[&user_id],
+            )
+            .context("query accounts_for_user")?;
+        let out = rows
+            .iter()
+            .map(|r| (row_to_account(r), role_from_str(&r.get::<_, String>(5))))
+            .collect();
+        Ok(out)
+    }
+
+    fn membership(&self, account_id: &str, user_id: &str) -> Result<Option<AccountRole>> {
+        let mut conn = self.pool.get().context("pg conn")?;
+        let row = conn
+            .query_opt(
+                "SELECT role FROM memberships WHERE account_id = $1 AND user_id = $2",
+                &[&account_id, &user_id],
+            )
+            .context("query membership")?;
+        Ok(row.map(|r| role_from_str(&r.get::<_, String>(0))))
+    }
+
+    fn add_membership(&self, membership: Membership) -> Result<()> {
+        let role = role_to_str(membership.role);
+        let mut conn = self.pool.get().context("pg conn")?;
+        conn.execute(
+            "INSERT INTO memberships (account_id, user_id, role)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (account_id, user_id) DO NOTHING",
+            &[&membership.account_id, &membership.user_id, &role],
+        )
+        .context("insert membership")?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -217,7 +347,8 @@ mod tests {
         let store = PgAccountStore::connect(&url).ok()?;
         if let Ok(mut conn) = store.pool.get() {
             let _ = conn.batch_execute(
-                "DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS identities; \
+                "DROP TABLE IF EXISTS memberships; DROP TABLE IF EXISTS accounts; \
+                 DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS identities; \
                  DROP TABLE IF EXISTS otp_codes; DROP TABLE IF EXISTS users;",
             );
         }
@@ -290,6 +421,32 @@ mod tests {
         assert!(
             matches!(store.session_user(&token), Ok(None)),
             "deleted session resolves to nobody"
+        );
+    }
+
+    #[test]
+    fn pg_personal_account_is_provisioned_once() {
+        let Some(store) = fresh_store() else {
+            return;
+        };
+        let Ok(user) = resolve_login(&store, "email", "p@acme.com", "p@acme.com", true) else {
+            return;
+        };
+        let first = store.ensure_personal_account(&user).ok().map(|a| a.id);
+        let second = store.ensure_personal_account(&user).ok().map(|a| a.id);
+        assert_eq!(first, second, "ensure is idempotent — one personal account");
+        assert!(first.is_some());
+
+        let account_id = first.unwrap_or_default();
+        assert_eq!(
+            store.membership(&account_id, &user.id).ok().flatten(),
+            Some(AccountRole::Owner),
+            "the creator is the sole Owner of their personal account"
+        );
+        assert_eq!(
+            store.accounts_for_user(&user.id).ok().map(|v| v.len()),
+            Some(1),
+            "exactly one account membership"
         );
     }
 }

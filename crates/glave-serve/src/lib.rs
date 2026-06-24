@@ -37,7 +37,8 @@ use tokio_stream::StreamExt;
 
 use glave_core::engine::{AgentSpec, RunEngine, RunOutcome, RunRequest};
 use glave_core::{
-    resolve_login, Message, ProviderFactory, Role, RunEvent, TaskSpec, TraceSink, User,
+    resolve_login, AccountStore, Message, ProviderFactory, Role, RunEvent, TaskSpec, TraceSink,
+    User,
 };
 
 pub mod pg;
@@ -742,6 +743,9 @@ async fn auth_otp_verify(
             return Ok(None);
         }
         let user = resolve_login(store.as_ref(), "email", &email, &email, true)?;
+        // Every user has a home: provision their personal account on first login
+        // (idempotent, so returning logins are a no-op).
+        store.ensure_personal_account(&user)?;
         let token = store.create_session(&user.id)?;
         Ok(Some((user, token)))
     })
