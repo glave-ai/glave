@@ -26,7 +26,10 @@ pub mod tools;
 #[cfg(any(test, feature = "test-util"))]
 pub mod testkit;
 
-pub use accounts::{resolve_login, AccountStore, Identity, Membership, Org, OrgRole, User};
+pub use accounts::{
+    personal_account_name, resolve_login, Account, AccountKind, AccountRole, AccountStore, Identity,
+    Membership, User,
+};
 pub use capability::{
     AgentDef, Capability, CapabilityKind, CapabilityRegistry, LexicalSelector, Selector,
 };
