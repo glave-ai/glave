@@ -369,6 +369,29 @@ async fn record_usage_best_effort(
     }
 }
 
+/// Enforce spend limits before any model work. No-op when no DB is configured.
+/// Returns 402 Payment Required (not 429 — this is a budget gate, not a rate limit,
+/// so clients shouldn't blindly retry) with a typed reason when blocked.
+async fn enforce_spend(
+    state: &AppState,
+    account: &str,
+    actor: Option<&str>,
+) -> Result<(), (StatusCode, String)> {
+    let Some(accounts) = state.accounts.clone() else {
+        return Ok(());
+    };
+    let acc = account.to_string();
+    let act = actor.map(str::to_string);
+    let decision = tokio::task::spawn_blocking(move || accounts.check_spend(&acc, act.as_deref()))
+        .await
+        .map_err(internal)?
+        .map_err(internal)?;
+    match decision {
+        pg::SpendDecision::Allow => Ok(()),
+        pg::SpendDecision::Deny(reason) => Err((StatusCode::PAYMENT_REQUIRED, reason.message())),
+    }
+}
+
 /// Port: a durable sink for per-request usage — the billing substrate. Best-effort
 /// (a meter write never fails the user's request).
 trait MeterSink: Send + Sync {
@@ -642,6 +665,7 @@ async fn chat_completions(
     Json(body): Json<ChatRequest>,
 ) -> Result<Response, (StatusCode, String)> {
     let (account, actor) = authorize_chat(&state, &headers).await?;
+    enforce_spend(&state, &account, actor.as_deref()).await?;
     let wire = resolve_hope_model(&body.model)?;
     let public_model = body.model;
     let stream = body.stream;
