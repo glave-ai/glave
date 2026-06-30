@@ -1,48 +1,16 @@
-<button
-  type="button"
-  class="theme-toggle"
-  (click)="toggleTheme()"
-  [attr.aria-label]="dark() ? 'Switch to light mode' : 'Switch to dark mode'"
->
-  {{ dark() ? '☀' : '☾' }}
-</button>
-
-<main class="hope">
-  <div class="presence" aria-hidden="true">
-    <div class="orb"></div>
-  </div>
-
-  <section class="thread" aria-live="polite">
-    @for (msg of messages(); track $index) {
-      @if (msg.from === 'hope') {
-        <div class="say say--hope">{{ msg.text }}</div>
-      } @else {
-        <div class="say say--you">{{ msg.text }}</div>
-      }
-    }
-    @if (sending()) {
-      <div class="say say--hope thinking" aria-label="Hope is thinking">…</div>
-    }
-  </section>
-
-  <div class="composer">
-    <mat-form-field appearance="outline" class="composer__field">
-      <mat-label>Talk to Hope</mat-label>
-      <input
-        matInput
-        #box
-        [value]="draft()"
-        (input)="draft.set(box.value)"
-        (keyup.enter)="send()"
-      />
-    </mat-form-field>
-    <button
-      mat-flat-button
-      class="composer__send"
-      [disabled]="sending()"
-      (click)="send()"
-    >
-      Ask Hope
-    </button>
-  </div>
-</main>
+@switch (status()) {
+  @case ('loading') {
+    <main class="gate-loading">
+      <div class="presence" aria-hidden="true">
+        <div class="orb"></div>
+      </div>
+      <p class="gate-loading__text" role="status" aria-live="polite">One moment…</p>
+    </main>
+  }
+  @case ('authed') {
+    <app-hope-chat />
+  }
+  @default {
+    <app-login />
+  }
+}

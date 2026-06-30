@@ -9,7 +9,7 @@
 //!
 //! Two deliberate v1 simplifications, called out so they aren't mistaken for the
 //! final shape: (1) the task is loaded from a server-side `task_dir` rather than
-//! the client uploading a workspace; (2) API keys map to tenant ids via a static
+//! the client uploading a workspace; (2) API keys map to account ids via a static
 //! env-backed store — the [`ApiKeyStore`] seam makes a real account DB a clean swap.
 
 use std::convert::Infallible;
@@ -37,8 +37,8 @@ use tokio_stream::StreamExt;
 
 use glave_core::engine::{AgentSpec, RunEngine, RunOutcome, RunRequest};
 use glave_core::{
-    resolve_login, AccountStore, Message, ProviderFactory, Role, RunEvent, TaskSpec, TraceSink,
-    User,
+    resolve_login, AccountKind, AccountStore, Message, ProviderFactory, Role, RunEvent, TaskSpec,
+    TraceSink, User,
 };
 
 pub mod pg;
@@ -189,7 +189,7 @@ async fn run_handler(
     Json(body): Json<RunBody>,
 ) -> Result<Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>>, (StatusCode, String)>
 {
-    authenticate(&headers, state.keys.as_ref())?;
+    authorize_chat(&state, &headers).await?;
 
     let task = TaskSpec::load(Path::new(&body.task_dir))
         .map_err(|e| (StatusCode::BAD_REQUEST, format!("loading task: {e}")))?;
@@ -223,15 +223,16 @@ async fn run_handler(
     Ok(Sse::new(stream))
 }
 
-/// Port: resolves a bearer token to its tenant/account id. The static env-backed
-/// impl below is v0; a real account DB is a clean swap behind this seam.
+/// Port: resolves a bearer token to its account id. The static env-backed impl
+/// below is v0; a real (DB-backed, account-bound) key store is a clean swap here.
 trait ApiKeyStore: Send + Sync {
     fn resolve(&self, token: &str) -> Option<String>;
 }
 
-/// v0 key store: `(key, tenant)` pairs from the environment. `GLAVE_API_KEYS`
-/// carries comma-separated `key:tenant` pairs (a bare `key` maps to `default`);
-/// the legacy single `GLAVE_API_KEY` is still honored as `default`.
+/// v0 key store: `(key, account_id)` pairs from the environment. `GLAVE_API_KEYS`
+/// carries comma-separated `key:account_id` pairs — a bare key with no account is a
+/// configuration error (no silent default). The legacy single `GLAVE_API_KEY` binds
+/// to `GLAVE_API_KEY_ACCOUNT`, or to a clearly-marked placeholder with a warning.
 struct StaticKeyStore {
     entries: Vec<(String, String)>,
 }
@@ -246,19 +247,32 @@ impl StaticKeyStore {
                     continue;
                 }
                 match pair.split_once(':') {
-                    Some((k, t)) => entries.push((k.trim().to_string(), t.trim().to_string())),
-                    None => entries.push((pair.to_string(), "default".to_string())),
+                    Some((k, a)) => entries.push((k.trim().to_string(), a.trim().to_string())),
+                    None => anyhow::bail!(
+                        "GLAVE_API_KEYS entry {pair:?} has no account — use key:account_id \
+                         (a bare key is rejected; there is no silent default)"
+                    ),
                 }
             }
         }
         if let Ok(k) = std::env::var("GLAVE_API_KEY") {
             if !k.is_empty() {
-                entries.push((k, "default".to_string()));
+                let account = std::env::var("GLAVE_API_KEY_ACCOUNT").unwrap_or_default();
+                let account = if account.is_empty() {
+                    eprintln!(
+                        "warning: GLAVE_API_KEY set without GLAVE_API_KEY_ACCOUNT — billing to \
+                         placeholder account 'default' (not a real account; set the var)"
+                    );
+                    "default".to_string()
+                } else {
+                    account
+                };
+                entries.push((k, account));
             }
         }
         if entries.is_empty() {
             anyhow::bail!(
-                "no API keys configured — set GLAVE_API_KEYS (key:tenant,…) or GLAVE_API_KEY"
+                "no API keys configured — set GLAVE_API_KEYS (key:account_id,…) or GLAVE_API_KEY"
             );
         }
         Ok(Self { entries })
@@ -269,27 +283,58 @@ impl ApiKeyStore for StaticKeyStore {
     fn resolve(&self, token: &str) -> Option<String> {
         self.entries
             .iter()
-            .find_map(|(key, tenant)| ct_eq(token, key).then(|| tenant.clone()))
+            .find_map(|(key, account)| ct_eq(token, key).then(|| account.clone()))
     }
 }
 
-/// Authenticate the request: pull the bearer token and resolve it to a tenant id,
-/// or 401. Constant-time key compare (length leak only, which is standard).
-fn authenticate(
-    headers: &HeaderMap,
-    keys: &dyn ApiKeyStore,
-) -> Result<String, (StatusCode, String)> {
-    let token = headers
+/// Extract the bearer token from the `Authorization` header, if present.
+fn bearer_token(headers: &HeaderMap) -> Option<String> {
+    headers
         .get(AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "));
-    match token.and_then(|t| keys.resolve(t)) {
-        Some(tenant) => Ok(tenant),
-        None => Err((
-            StatusCode::UNAUTHORIZED,
-            "missing or invalid bearer token".to_string(),
-        )),
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(str::to_string)
+}
+
+/// Authorize a chat request via EITHER a bearer API key (programmatic clients) OR a
+/// session cookie (the web app). Returns the billing `account_id` and, for session
+/// auth, the acting user id (attribution). A bearer key takes precedence; constant-
+/// time key compare happens in the key store.
+async fn authorize_chat(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(String, Option<String>), (StatusCode, String)> {
+    // 1. Programmatic: bearer API key → its account.
+    if let Some(account) = bearer_token(headers).and_then(|t| state.keys.resolve(&t)) {
+        return Ok((account, None));
     }
+    // 2. Web app: session cookie → user → their personal account.
+    if let (Some(token), Some(store)) = (session_token(headers), state.accounts.clone()) {
+        let lookup = store.clone();
+        let user = tokio::task::spawn_blocking(move || lookup.session_user(&token))
+            .await
+            .map_err(internal)?
+            .map_err(internal)?;
+        if let Some(user) = user {
+            let uid = user.id.clone();
+            let accounts = tokio::task::spawn_blocking(move || store.accounts_for_user(&uid))
+                .await
+                .map_err(internal)?
+                .map_err(internal)?;
+            let account = accounts
+                .iter()
+                .find(|(a, _)| a.kind == AccountKind::Personal)
+                .or_else(|| accounts.first())
+                .map(|(a, _)| a.id.clone());
+            if let Some(account) = account {
+                return Ok((account, Some(user.id)));
+            }
+        }
+    }
+    Err((
+        StatusCode::UNAUTHORIZED,
+        "missing or invalid credentials (bearer token or session)".to_string(),
+    ))
 }
 
 /// Port: a durable sink for per-request usage — the billing substrate. Best-effort
@@ -298,11 +343,14 @@ trait MeterSink: Send + Sync {
     fn record(&self, event: &MeterEvent);
 }
 
-/// One billable unit of usage, keyed to the tenant.
+/// One billable unit of usage, attributed to an `account_id` (the billing scope)
+/// and, when the call came from a logged-in user, the acting user (`actor_user_id`).
 #[derive(Serialize)]
 struct MeterEvent {
     id: String,
-    tenant: String,
+    account_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actor_user_id: Option<String>,
     model: String,
     prompt_tokens: u64,
     completion_tokens: u64,
@@ -561,7 +609,7 @@ async fn chat_completions(
     headers: HeaderMap,
     Json(body): Json<ChatRequest>,
 ) -> Result<Response, (StatusCode, String)> {
-    let tenant = authenticate(&headers, state.keys.as_ref())?;
+    let (account, actor) = authorize_chat(&state, &headers).await?;
     let wire = resolve_hope_model(&body.model)?;
     let public_model = body.model;
     let stream = body.stream;
@@ -585,7 +633,7 @@ async fn chat_completions(
     .map_err(|e| (StatusCode::BAD_GATEWAY, format!("model error: {e}")))?;
 
     eprintln!(
-        "chat.completions tenant={tenant} model={public_model} prompt={} completion={} cost=${:.4}",
+        "chat.completions account={account} model={public_model} prompt={} completion={} cost=${:.4}",
         completion.prompt_tokens, completion.completion_tokens, completion.cost_usd
     );
 
@@ -595,7 +643,8 @@ async fn chat_completions(
 
     state.meter.record(&MeterEvent {
         id: id.clone(),
-        tenant: tenant.clone(),
+        account_id: account,
+        actor_user_id: actor,
         model: public_model.clone(),
         prompt_tokens: completion.prompt_tokens,
         completion_tokens: completion.completion_tokens,
@@ -928,7 +977,7 @@ mod tests {
     }
 
     #[test]
-    fn static_key_store_resolves_keys_to_tenants() {
+    fn static_key_store_resolves_keys_to_accounts() {
         let store = StaticKeyStore {
             entries: vec![
                 ("sk-a".to_string(), "acct_1".to_string()),
@@ -967,7 +1016,8 @@ mod tests {
         if let Ok(m) = meter {
             m.record(&MeterEvent {
                 id: "chatcmpl-x".to_string(),
-                tenant: "acct_1".to_string(),
+                account_id: "acct_1".to_string(),
+                actor_user_id: Some("user-1".to_string()),
                 model: "hope".to_string(),
                 prompt_tokens: 1,
                 completion_tokens: 2,
@@ -980,7 +1030,8 @@ mod tests {
         let contents = std::fs::read_to_string(&path);
         assert!(contents.is_ok());
         if let Ok(c) = contents {
-            assert!(c.contains("\"tenant\":\"acct_1\""));
+            assert!(c.contains("\"account_id\":\"acct_1\""));
+            assert!(c.contains("\"actor_user_id\":\"user-1\""));
             assert!(c.contains("\"total_tokens\":3"));
         }
         let _ = std::fs::remove_file(&path);
