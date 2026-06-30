@@ -43,6 +43,52 @@ impl SpendPeriod {
             SpendPeriod::AllTime => None,
         }
     }
+
+    /// Parse a stored limit period. A limit is always windowed (day/month); an
+    /// unknown/missing value defaults to monthly.
+    fn from_unit(unit: &str) -> SpendPeriod {
+        match unit {
+            "day" => SpendPeriod::Day,
+            _ => SpendPeriod::Month,
+        }
+    }
+
+    /// The stored form for a limit period. `AllTime` isn't a valid limit window, so
+    /// it collapses to monthly.
+    fn limit_unit(self) -> &'static str {
+        match self {
+            SpendPeriod::Day => "day",
+            SpendPeriod::Month | SpendPeriod::AllTime => "month",
+        }
+    }
+}
+
+/// Outcome of a pre-request spend check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpendDecision {
+    Allow,
+    Deny(SpendDenyReason),
+}
+
+/// Why a request was blocked. Checked org-cap first, then per-member. (The prepaid
+/// balance — the hard cap — joins here in the credits step.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpendDenyReason {
+    OrgBudget,
+    PersonalLimit,
+}
+
+impl SpendDenyReason {
+    pub fn message(self) -> String {
+        match self {
+            SpendDenyReason::OrgBudget => {
+                "the organization's spending limit has been reached".to_string()
+            }
+            SpendDenyReason::PersonalLimit => {
+                "your personal spending limit has been reached".to_string()
+            }
+        }
+    }
 }
 
 pub struct PgAccountStore {
@@ -124,7 +170,15 @@ impl PgAccountStore {
              CREATE INDEX IF NOT EXISTS usage_events_account_time_idx
                  ON usage_events (account_id, created_at);
              CREATE INDEX IF NOT EXISTS usage_events_member_time_idx
-                 ON usage_events (account_id, actor_user_id, created_at);",
+                 ON usage_events (account_id, actor_user_id, created_at);
+             -- Spend limits (both optional; NULL = unlimited). Org cap on the
+             -- account, per-member cap on the membership. Added idempotently so an
+             -- existing dev DB upgrades in place. The hard cap (prepaid balance)
+             -- lands in the credits step.
+             ALTER TABLE accounts    ADD COLUMN IF NOT EXISTS spend_limit  DOUBLE PRECISION;
+             ALTER TABLE accounts    ADD COLUMN IF NOT EXISTS spend_period TEXT;
+             ALTER TABLE memberships ADD COLUMN IF NOT EXISTS spend_limit  DOUBLE PRECISION;
+             ALTER TABLE memberships ADD COLUMN IF NOT EXISTS spend_period TEXT;",
         )
         .context("running migrations")?;
         Ok(())
@@ -214,6 +268,109 @@ impl PgAccountStore {
                 .context("query member_spend")?,
         };
         Ok(row.get(0))
+    }
+}
+
+/// Map a `(spend_limit, spend_period)` row to a limit, or `None` when unlimited.
+fn row_to_limit(row: &postgres::Row) -> Option<(f64, SpendPeriod)> {
+    let amount: Option<f64> = row.get(0);
+    let unit: Option<String> = row.get(1);
+    amount.map(|a| (a, unit.as_deref().map_or(SpendPeriod::Month, SpendPeriod::from_unit)))
+}
+
+/// Split an optional limit into nullable SQL params.
+fn split_limit(limit: Option<(f64, SpendPeriod)>) -> (Option<f64>, Option<&'static str>) {
+    match limit {
+        Some((amount, period)) => (Some(amount), Some(period.limit_unit())),
+        None => (None, None),
+    }
+}
+
+/// Spend limits — read, set, and enforce. Org cap on the account, per-member cap on
+/// the membership; both NULL = unlimited (the default).
+impl PgAccountStore {
+    pub fn account_limit(&self, account_id: &str) -> Result<Option<(f64, SpendPeriod)>> {
+        let mut conn = self.pool.get().context("pg conn")?;
+        let row = conn
+            .query_opt(
+                "SELECT spend_limit, spend_period FROM accounts
+                 WHERE id = $1 AND deleted_at IS NULL",
+                &[&account_id],
+            )
+            .context("query account_limit")?;
+        Ok(row.as_ref().and_then(row_to_limit))
+    }
+
+    pub fn member_limit(
+        &self,
+        account_id: &str,
+        user_id: &str,
+    ) -> Result<Option<(f64, SpendPeriod)>> {
+        let mut conn = self.pool.get().context("pg conn")?;
+        let row = conn
+            .query_opt(
+                "SELECT spend_limit, spend_period FROM memberships
+                 WHERE account_id = $1 AND user_id = $2",
+                &[&account_id, &user_id],
+            )
+            .context("query member_limit")?;
+        Ok(row.as_ref().and_then(row_to_limit))
+    }
+
+    pub fn set_account_limit(
+        &self,
+        account_id: &str,
+        limit: Option<(f64, SpendPeriod)>,
+    ) -> Result<()> {
+        let (amount, unit) = split_limit(limit);
+        let mut conn = self.pool.get().context("pg conn")?;
+        conn.execute(
+            "UPDATE accounts SET spend_limit = $2, spend_period = $3 WHERE id = $1",
+            &[&account_id, &amount, &unit],
+        )
+        .context("update account_limit")?;
+        Ok(())
+    }
+
+    pub fn set_member_limit(
+        &self,
+        account_id: &str,
+        user_id: &str,
+        limit: Option<(f64, SpendPeriod)>,
+    ) -> Result<()> {
+        let (amount, unit) = split_limit(limit);
+        let mut conn = self.pool.get().context("pg conn")?;
+        conn.execute(
+            "UPDATE memberships SET spend_limit = $3, spend_period = $4
+             WHERE account_id = $1 AND user_id = $2",
+            &[&account_id, &user_id, &amount, &unit],
+        )
+        .context("update member_limit")?;
+        Ok(())
+    }
+
+    /// Pre-request check: is this `(account, member)` within its spend limits? Org
+    /// cap is checked first, then the per-member cap. Spend is compared against the
+    /// already-recorded period total, so a request can overshoot by at most one
+    /// completion (we meter after serving).
+    pub fn check_spend(
+        &self,
+        account_id: &str,
+        actor_user_id: Option<&str>,
+    ) -> Result<SpendDecision> {
+        if let Some((limit, period)) = self.account_limit(account_id)? {
+            if self.account_spend(account_id, period)? >= limit {
+                return Ok(SpendDecision::Deny(SpendDenyReason::OrgBudget));
+            }
+        }
+        if let Some(actor) = actor_user_id {
+            if let Some((limit, period)) = self.member_limit(account_id, actor)? {
+                if self.member_spend(account_id, actor, period)? >= limit {
+                    return Ok(SpendDecision::Deny(SpendDenyReason::PersonalLimit));
+                }
+            }
+        }
+        Ok(SpendDecision::Allow)
     }
 }
 
@@ -640,6 +797,47 @@ mod tests {
 
         let other = store.account_spend("acct-2", SpendPeriod::Month).ok();
         assert!(other.is_some_and(|t| close(t, 5.0)), "acct-2 is isolated");
+    }
+
+    #[test]
+    fn pg_spend_limits_gate_requests() {
+        let Some((store, _guard)) = fresh_store() else {
+            return;
+        };
+        let Ok(user) = resolve_login(&store, "email", "lim@acme.com", "lim@acme.com", true) else {
+            return;
+        };
+        let Ok(account) = store.ensure_personal_account(&user) else {
+            return;
+        };
+        let aid = account.id.as_str();
+        let uid = user.id.as_str();
+
+        // No limits set → allow.
+        assert_eq!(store.check_spend(aid, Some(uid)).ok(), Some(SpendDecision::Allow));
+
+        // Spend $1, then a $0.50 personal monthly cap → personal limit blocks.
+        assert!(store.record_usage(aid, Some(uid), "hope", 10, 10, 1.0).is_ok());
+        assert!(store.set_member_limit(aid, uid, Some((0.50, SpendPeriod::Month))).is_ok());
+        assert_eq!(
+            store.check_spend(aid, Some(uid)).ok(),
+            Some(SpendDecision::Deny(SpendDenyReason::PersonalLimit)),
+        );
+
+        // Raise the personal cap above spend → allowed again.
+        assert!(store.set_member_limit(aid, uid, Some((5.0, SpendPeriod::Month))).is_ok());
+        assert_eq!(store.check_spend(aid, Some(uid)).ok(), Some(SpendDecision::Allow));
+
+        // Org cap below spend → org budget blocks (checked first).
+        assert!(store.set_account_limit(aid, Some((0.50, SpendPeriod::Month))).is_ok());
+        assert_eq!(
+            store.check_spend(aid, Some(uid)).ok(),
+            Some(SpendDecision::Deny(SpendDenyReason::OrgBudget)),
+        );
+
+        // Clear the org cap → back under the personal cap → allow.
+        assert!(store.set_account_limit(aid, None).is_ok());
+        assert_eq!(store.check_spend(aid, Some(uid)).ok(), Some(SpendDecision::Allow));
     }
 
     #[test]
