@@ -7,12 +7,24 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ErrorStateMatcher } from '@angular/material/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { AuthService } from './auth';
 
 type Step = 'email' | 'code';
+
+/**
+ * Show an error only once the field has been touched and is actually wrong — never
+ * on a pristine/empty field, and never just because the form was submitted. Warm,
+ * not scolding (the brand): we don't flag you before you've had a fair go.
+ */
+class TouchedErrorMatcher implements ErrorStateMatcher {
+  isErrorState(control: FormControl | null): boolean {
+    return !!control && control.invalid && control.touched;
+  }
+}
 
 @Component({
   selector: 'app-login',
@@ -37,6 +49,7 @@ type Step = 'email' | 'code';
               autocomplete="email"
               inputmode="email"
               [formControl]="email"
+              [errorStateMatcher]="matcher"
               (keyup.enter)="sendCode()"
             />
             @if (email.touched && email.invalid) {
@@ -76,6 +89,7 @@ type Step = 'email' | 'code';
               inputmode="numeric"
               maxlength="6"
               [formControl]="code"
+              [errorStateMatcher]="matcher"
               (keyup.enter)="signIn()"
             />
             @if (code.touched && code.invalid) {
@@ -244,6 +258,7 @@ export class Login implements AfterViewInit {
   protected readonly error = signal('');
   protected readonly devCode = signal<string | null>(null);
   protected readonly emailValue = signal('');
+  protected readonly matcher = new TouchedErrorMatcher();
 
   protected readonly email = new FormControl('', {
     nonNullable: true,
@@ -259,11 +274,16 @@ export class Login implements AfterViewInit {
   }
 
   protected async sendCode(): Promise<void> {
+    const address = this.email.value.trim();
+    // An empty field gets a gentle nudge (focus), never a red error.
+    if (!address) {
+      this.emailInput()?.nativeElement.focus();
+      return;
+    }
     this.email.markAsTouched();
     if (this.email.invalid || this.sending()) {
       return;
     }
-    const address = this.email.value.trim();
     this.sending.set(true);
     this.error.set('');
     try {
@@ -284,6 +304,10 @@ export class Login implements AfterViewInit {
   }
 
   protected async signIn(): Promise<void> {
+    if (!this.code.value.trim()) {
+      this.codeInput()?.nativeElement.focus();
+      return;
+    }
     this.code.markAsTouched();
     if (this.code.invalid || this.sending()) {
       return;
