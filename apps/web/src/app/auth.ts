@@ -11,7 +11,6 @@ export type AuthStatus = 'loading' | 'authed' | 'anon';
 
 interface OtpStartResponse {
   readonly sent: boolean;
-  readonly dev_code: string | null;
 }
 
 /// Passwordless session auth against the Glave backend. The session is an
@@ -38,16 +37,16 @@ export class AuthService {
     }
   }
 
-  /// Step one: ask Hope to send a code to this email.
-  async startOtp(email: string): Promise<{ sent: boolean; devCode: string | null }> {
-    const res = await firstValueFrom(
+  /// Step one: ask Hope to send a code to this email. The code is delivered out of
+  /// band (server log in dev, email later) — never returned here.
+  async startOtp(email: string): Promise<void> {
+    await firstValueFrom(
       this.http.post<OtpStartResponse>(
         '/auth/otp/start',
         { email },
         { withCredentials: true },
       ),
     );
-    return { sent: res.sent, devCode: res.dev_code };
   }
 
   /// Step two: hand back the code to claim the session cookie.

@@ -725,8 +725,6 @@ struct OtpVerify {
 #[derive(Serialize)]
 struct OtpStartResponse {
     sent: bool,
-    /// Present only when GLAVE_DEV_OTP is set — lets dev skip email delivery.
-    dev_code: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -759,24 +757,26 @@ fn session_cookie(token: &str, max_age: u32) -> String {
     format!("{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age}")
 }
 
-/// `POST /auth/otp/start` — mint a one-time code for the email. v0 logs it (and
-/// returns it when `GLAVE_DEV_OTP` is set); real email delivery comes later.
+/// `POST /auth/otp/start` — mint a one-time code for the email. The code is NEVER
+/// returned over HTTP or shown in the UI; it travels a side channel only. Today
+/// that channel is the server log (dev), gated behind `GLAVE_DEV_OTP`; real email
+/// delivery comes later. A secret in the client/response would be an auth-bypass
+/// footgun the moment that flag leaked into a deployed environment.
 async fn auth_otp_start(
     State(state): State<AppState>,
     Json(body): Json<OtpStart>,
 ) -> Result<Json<OtpStartResponse>, (StatusCode, String)> {
     let store = accounts_store(&state)?;
     let email = body.email;
+    let log_email = email.clone();
     let code = tokio::task::spawn_blocking(move || store.issue_otp(&email))
         .await
         .map_err(internal)?
         .map_err(internal)?;
-    eprintln!("auth: otp code (dev) = {code}");
-    let dev_code = std::env::var("GLAVE_DEV_OTP").is_ok().then_some(code);
-    Ok(Json(OtpStartResponse {
-        sent: true,
-        dev_code,
-    }))
+    if std::env::var("GLAVE_DEV_OTP").is_ok() {
+        eprintln!("auth: dev OTP for {log_email} = {code}");
+    }
+    Ok(Json(OtpStartResponse { sent: true }))
 }
 
 /// `POST /auth/otp/verify` — consume the code, resolve/create the user, mint a
