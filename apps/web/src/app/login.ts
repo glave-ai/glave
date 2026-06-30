@@ -72,12 +72,6 @@ class TouchedErrorMatcher implements ErrorStateMatcher {
             I sent a 6-digit code to <strong>{{ emailValue() }}</strong>. Pop it in below.
           </p>
 
-          @if (devCode()) {
-            <p class="dev-hint">
-              Dev shortcut — your code is <code>{{ devCode() }}</code>.
-            </p>
-          }
-
           <mat-form-field appearance="outline" class="field">
             <mat-label>6-digit code</mat-label>
             <input
@@ -189,21 +183,6 @@ class TouchedErrorMatcher implements ErrorStateMatcher {
       color: var(--mat-sys-on-surface-variant);
     }
 
-    .dev-hint {
-      margin: 0 0 0.25rem;
-      font-size: 0.875rem;
-      color: var(--mat-sys-on-surface-variant);
-    }
-
-    .dev-hint code {
-      padding: 0.1rem 0.4rem;
-      border-radius: 6px;
-      background: var(--mat-sys-primary-container);
-      color: var(--mat-sys-on-primary-container);
-      font-weight: 600;
-      letter-spacing: 0.1em;
-    }
-
     .field {
       width: 100%;
       text-align: start;
@@ -254,7 +233,6 @@ export class Login implements AfterViewInit {
   protected readonly step = signal<Step>('email');
   protected readonly sending = signal(false);
   protected readonly error = signal('');
-  protected readonly devCode = signal<string | null>(null);
   protected readonly emailValue = signal('');
   protected readonly matcher = new TouchedErrorMatcher();
 
@@ -297,12 +275,8 @@ export class Login implements AfterViewInit {
     this.sending.set(true);
     this.error.set('');
     try {
-      const { devCode } = await this.auth.startOtp(address);
+      await this.auth.startOtp(address);
       this.emailValue.set(address);
-      this.devCode.set(devCode);
-      if (devCode) {
-        this.code.setValue(devCode);
-      }
       this.step.set('code');
       // Wait a tick so the code field renders before we move focus to it.
       queueMicrotask(() => this.codeInput()?.nativeElement.focus());
@@ -335,7 +309,6 @@ export class Login implements AfterViewInit {
 
   protected backToEmail(): void {
     this.error.set('');
-    this.devCode.set(null);
     this.code.reset('');
     this.step.set('email');
     queueMicrotask(() => this.emailInput()?.nativeElement.focus());
