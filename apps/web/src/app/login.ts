@@ -36,7 +36,7 @@ class TouchedErrorMatcher implements ErrorStateMatcher {
       </div>
 
       @if (step() === 'email') {
-        <form class="card" (ngSubmit)="sendCode()">
+        <form class="card" (submit)="submitEmail($event)">
           <h1 class="hi">Hi, I'm Hope.</h1>
           <p class="lede">What's your email? I'll send you a code to get you in.</p>
 
@@ -50,7 +50,6 @@ class TouchedErrorMatcher implements ErrorStateMatcher {
               inputmode="email"
               [formControl]="email"
               [errorStateMatcher]="matcher"
-              (keyup.enter)="sendCode()"
             />
             @if (email.touched && email.invalid) {
               <mat-error>Could you double-check that email?</mat-error>
@@ -67,7 +66,7 @@ class TouchedErrorMatcher implements ErrorStateMatcher {
           </button>
         </form>
       } @else {
-        <form class="card" (ngSubmit)="signIn()">
+        <form class="card" (submit)="submitCode($event)">
           <h1 class="hi">Check your inbox.</h1>
           <p class="lede">
             I sent a 6-digit code to <strong>{{ emailValue() }}</strong>. Pop it in below.
@@ -90,7 +89,6 @@ class TouchedErrorMatcher implements ErrorStateMatcher {
               maxlength="6"
               [formControl]="code"
               [errorStateMatcher]="matcher"
-              (keyup.enter)="signIn()"
             />
             @if (code.touched && code.invalid) {
               <mat-error>That should be the 6 digits I sent you.</mat-error>
@@ -271,6 +269,18 @@ export class Login implements AfterViewInit {
 
   ngAfterViewInit(): void {
     this.emailInput()?.nativeElement.focus();
+  }
+
+  // Stop the browser's native form submit (which would reload the page and bounce
+  // us back to the email step) before running our own logic.
+  protected submitEmail(event: Event): void {
+    event.preventDefault();
+    void this.sendCode();
+  }
+
+  protected submitCode(event: Event): void {
+    event.preventDefault();
+    void this.signIn();
   }
 
   protected async sendCode(): Promise<void> {
