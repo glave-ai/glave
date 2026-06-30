@@ -337,6 +337,38 @@ async fn authorize_chat(
     ))
 }
 
+/// Append one completion to the usage ledger, best-effort: a metering hiccup is
+/// logged but never fails the user's request. No-op when no DB is configured.
+async fn record_usage_best_effort(
+    accounts: Option<Arc<pg::PgAccountStore>>,
+    account: String,
+    actor: Option<String>,
+    model: String,
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    cost_usd: f64,
+) {
+    let Some(accounts) = accounts else {
+        return;
+    };
+    let recorded = tokio::task::spawn_blocking(move || {
+        accounts.record_usage(
+            &account,
+            actor.as_deref(),
+            &model,
+            prompt_tokens,
+            completion_tokens,
+            cost_usd,
+        )
+    })
+    .await;
+    match recorded {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => eprintln!("usage: record failed: {e}"),
+        Err(e) => eprintln!("usage: record task failed: {e}"),
+    }
+}
+
 /// Port: a durable sink for per-request usage — the billing substrate. Best-effort
 /// (a meter write never fails the user's request).
 trait MeterSink: Send + Sync {
@@ -640,6 +672,17 @@ async fn chat_completions(
     let id = format!("chatcmpl-{}", uuid::Uuid::new_v4());
     let created = created_unix();
     let total = completion.prompt_tokens + completion.completion_tokens;
+
+    record_usage_best_effort(
+        state.accounts.clone(),
+        account.clone(),
+        actor.clone(),
+        public_model.clone(),
+        completion.prompt_tokens,
+        completion.completion_tokens,
+        completion.cost_usd,
+    )
+    .await;
 
     state.meter.record(&MeterEvent {
         id: id.clone(),
