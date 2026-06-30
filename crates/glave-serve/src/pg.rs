@@ -26,6 +26,25 @@ fn hash_secret(secret: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// Window for a spend aggregate. `Day`/`Month` align to the calendar via SQL
+/// `date_trunc`; `AllTime` has no lower bound.
+#[derive(Clone, Copy)]
+pub enum SpendPeriod {
+    Day,
+    Month,
+    AllTime,
+}
+
+impl SpendPeriod {
+    fn trunc_unit(self) -> Option<&'static str> {
+        match self {
+            SpendPeriod::Day => Some("day"),
+            SpendPeriod::Month => Some("month"),
+            SpendPeriod::AllTime => None,
+        }
+    }
+}
+
 pub struct PgAccountStore {
     pool: PgPool,
 }
@@ -85,10 +104,116 @@ impl PgAccountStore {
                  user_id    TEXT NOT NULL REFERENCES users(id),
                  role       TEXT NOT NULL,
                  PRIMARY KEY (account_id, user_id)
-             );",
+             );
+             -- Append-only usage ledger (the billing source of truth). account_id is
+             -- plain TEXT for now (no FK): session usage carries a real account id,
+             -- but bearer-API-key usage carries the env tenant label until keys bind
+             -- to real account rows. cost_usd stays f64 here — exact-money integer
+             -- conversion happens at the charge boundary (MoR), not in the ledger.
+             CREATE TABLE IF NOT EXISTS usage_events (
+                 id                TEXT PRIMARY KEY,
+                 account_id        TEXT NOT NULL,
+                 actor_user_id     TEXT,
+                 model             TEXT NOT NULL,
+                 prompt_tokens     BIGINT NOT NULL,
+                 completion_tokens BIGINT NOT NULL,
+                 total_tokens      BIGINT NOT NULL,
+                 cost_usd          DOUBLE PRECISION NOT NULL,
+                 created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+             );
+             CREATE INDEX IF NOT EXISTS usage_events_account_time_idx
+                 ON usage_events (account_id, created_at);
+             CREATE INDEX IF NOT EXISTS usage_events_member_time_idx
+                 ON usage_events (account_id, actor_user_id, created_at);",
         )
         .context("running migrations")?;
         Ok(())
+    }
+}
+
+/// Usage metering — the billing ledger and its aggregates. Inherent (not on the
+/// `AccountStore` port): this is serving/billing state, like the auth-flow methods.
+impl PgAccountStore {
+    /// Append one usage event to the ledger.
+    pub fn record_usage(
+        &self,
+        account_id: &str,
+        actor_user_id: Option<&str>,
+        model: &str,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        cost_usd: f64,
+    ) -> Result<()> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let prompt = i64::try_from(prompt_tokens).unwrap_or(i64::MAX);
+        let completion = i64::try_from(completion_tokens).unwrap_or(i64::MAX);
+        let total = prompt.saturating_add(completion);
+        let mut conn = self.pool.get().context("pg conn")?;
+        conn.execute(
+            "INSERT INTO usage_events
+                 (id, account_id, actor_user_id, model, prompt_tokens, completion_tokens, total_tokens, cost_usd)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            &[
+                &id,
+                &account_id,
+                &actor_user_id,
+                &model,
+                &prompt,
+                &completion,
+                &total,
+                &cost_usd,
+            ],
+        )
+        .context("insert usage_event")?;
+        Ok(())
+    }
+
+    /// Total spend (USD) for an account within `period`.
+    pub fn account_spend(&self, account_id: &str, period: SpendPeriod) -> Result<f64> {
+        let mut conn = self.pool.get().context("pg conn")?;
+        let row = match period.trunc_unit() {
+            Some(unit) => conn
+                .query_one(
+                    "SELECT COALESCE(SUM(cost_usd), 0.0) FROM usage_events
+                     WHERE account_id = $1 AND created_at >= date_trunc($2, NOW())",
+                    &[&account_id, &unit],
+                )
+                .context("query account_spend")?,
+            None => conn
+                .query_one(
+                    "SELECT COALESCE(SUM(cost_usd), 0.0) FROM usage_events WHERE account_id = $1",
+                    &[&account_id],
+                )
+                .context("query account_spend")?,
+        };
+        Ok(row.get(0))
+    }
+
+    /// Total spend (USD) for one member of an account within `period`.
+    pub fn member_spend(
+        &self,
+        account_id: &str,
+        actor_user_id: &str,
+        period: SpendPeriod,
+    ) -> Result<f64> {
+        let mut conn = self.pool.get().context("pg conn")?;
+        let row = match period.trunc_unit() {
+            Some(unit) => conn
+                .query_one(
+                    "SELECT COALESCE(SUM(cost_usd), 0.0) FROM usage_events
+                     WHERE account_id = $1 AND actor_user_id = $2 AND created_at >= date_trunc($3, NOW())",
+                    &[&account_id, &actor_user_id, &unit],
+                )
+                .context("query member_spend")?,
+            None => conn
+                .query_one(
+                    "SELECT COALESCE(SUM(cost_usd), 0.0) FROM usage_events
+                     WHERE account_id = $1 AND actor_user_id = $2",
+                    &[&account_id, &actor_user_id],
+                )
+                .context("query member_spend")?,
+        };
+        Ok(row.get(0))
     }
 }
 
@@ -386,23 +511,34 @@ mod tests {
 
     // Runs only when GLAVE_TEST_PG points at a Postgres (e.g. via the dev compose).
     // Without it the test no-ops, so `cargo test` stays DB-free.
-    fn fresh_store() -> Option<PgAccountStore> {
+    // The gated tests share one database and each resets it (DROP + migrate), so
+    // they must run serially — cargo runs tests in parallel by default. This lock
+    // serializes them regardless of `--test-threads`; the guard rides along with
+    // the store so it's held for the whole test.
+    fn pg_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn fresh_store() -> Option<(PgAccountStore, std::sync::MutexGuard<'static, ()>)> {
+        let guard = pg_lock();
         let url = std::env::var("GLAVE_TEST_PG").ok()?;
         let store = PgAccountStore::connect(&url).ok()?;
         if let Ok(mut conn) = store.pool.get() {
             let _ = conn.batch_execute(
-                "DROP TABLE IF EXISTS memberships; DROP TABLE IF EXISTS accounts; \
-                 DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS identities; \
-                 DROP TABLE IF EXISTS otp_codes; DROP TABLE IF EXISTS users;",
+                "DROP TABLE IF EXISTS usage_events; DROP TABLE IF EXISTS memberships; \
+                 DROP TABLE IF EXISTS accounts; DROP TABLE IF EXISTS sessions; \
+                 DROP TABLE IF EXISTS identities; DROP TABLE IF EXISTS otp_codes; \
+                 DROP TABLE IF EXISTS users;",
             );
         }
         store.migrate().ok()?;
-        Some(store)
+        Some((store, guard))
     }
 
     #[test]
     fn pg_login_resolution_matches_the_domain_rules() {
-        let Some(store) = fresh_store() else {
+        let Some((store, _guard)) = fresh_store() else {
             return;
         };
         let first = resolve_login(&store, "google", "g-1", "a@acme.com", true);
@@ -424,7 +560,7 @@ mod tests {
 
     #[test]
     fn pg_passwordless_flow_issues_verifies_and_sessions() {
-        let Some(store) = fresh_store() else {
+        let Some((store, _guard)) = fresh_store() else {
             return;
         };
         let email = "person@acme.com";
@@ -480,8 +616,35 @@ mod tests {
     }
 
     #[test]
+    fn pg_usage_records_and_aggregates_per_account_and_member() {
+        let Some((store, _guard)) = fresh_store() else {
+            return;
+        };
+        // Two members of one account, plus an API-key (no actor) event.
+        assert!(store.record_usage("acct-1", Some("user-1"), "hope", 100, 50, 0.01).is_ok());
+        assert!(store.record_usage("acct-1", Some("user-2"), "hope", 200, 100, 0.02).is_ok());
+        assert!(store.record_usage("acct-1", None, "hope", 10, 5, 0.001).is_ok());
+        // A different account must not bleed into acct-1's totals.
+        assert!(store.record_usage("acct-2", Some("user-1"), "hope", 999, 999, 5.0).is_ok());
+
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+
+        let acct = store.account_spend("acct-1", SpendPeriod::Month).ok();
+        assert!(acct.is_some_and(|t| close(t, 0.031)), "account total = 0.01+0.02+0.001");
+
+        let member = store.member_spend("acct-1", "user-1", SpendPeriod::Month).ok();
+        assert!(member.is_some_and(|t| close(t, 0.01)), "only user-1's spend in acct-1");
+
+        let all = store.account_spend("acct-1", SpendPeriod::AllTime).ok();
+        assert!(all.is_some_and(|t| close(t, 0.031)), "all-time matches this month here");
+
+        let other = store.account_spend("acct-2", SpendPeriod::Month).ok();
+        assert!(other.is_some_and(|t| close(t, 5.0)), "acct-2 is isolated");
+    }
+
+    #[test]
     fn pg_personal_account_is_provisioned_once() {
-        let Some(store) = fresh_store() else {
+        let Some((store, _guard)) = fresh_store() else {
             return;
         };
         let Ok(user) = resolve_login(&store, "email", "p@acme.com", "p@acme.com", true) else {
