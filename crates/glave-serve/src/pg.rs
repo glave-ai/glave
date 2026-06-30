@@ -12,8 +12,19 @@ use glave_core::{
 use postgres::NoTls;
 use r2d2::Pool;
 use r2d2_postgres::PostgresConnectionManager;
+use sha2::{Digest, Sha256};
 
 type PgPool = Pool<PostgresConnectionManager<NoTls>>;
+
+/// Hash a secret (OTP code or session token) for storage. The DB only ever holds
+/// the hash, so a leaked dump can't be replayed — the plaintext lives only in the
+/// user's cookie (session) or inbox (OTP). SHA-256 is appropriate here: session
+/// tokens are 128-bit random UUIDs, and OTP codes are short-lived + single-use.
+fn hash_secret(secret: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(secret.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
 
 pub struct PgAccountStore {
     pool: PgPool,
@@ -90,10 +101,11 @@ impl PgAccountStore {
     pub fn issue_otp(&self, email: &str) -> Result<String> {
         let code = format!("{:06}", uuid::Uuid::new_v4().as_u128() % 1_000_000);
         let mut conn = self.pool.get().context("pg conn")?;
+        // The `code` column stores the HASH, not the plaintext code.
         conn.execute(
             "INSERT INTO otp_codes (email, code, expires_at)
              VALUES ($1, $2, NOW() + INTERVAL '10 minutes')",
-            &[&email, &code],
+            &[&email, &hash_secret(&code)],
         )
         .context("insert otp")?;
         Ok(code)
@@ -108,7 +120,7 @@ impl PgAccountStore {
                 "UPDATE otp_codes SET used = TRUE
                  WHERE email = $1 AND code = $2 AND used = FALSE AND expires_at > NOW()
                  RETURNING email",
-                &[&email, &code],
+                &[&email, &hash_secret(code)],
             )
             .context("verify otp")?;
         Ok(!rows.is_empty())
@@ -118,10 +130,11 @@ impl PgAccountStore {
     pub fn create_session(&self, user_id: &str) -> Result<String> {
         let token = uuid::Uuid::new_v4().to_string();
         let mut conn = self.pool.get().context("pg conn")?;
+        // The `token` column stores the HASH; the plaintext lives only in the cookie.
         conn.execute(
             "INSERT INTO sessions (token, user_id, expires_at)
              VALUES ($1, $2, NOW() + INTERVAL '30 days')",
-            &[&token, &user_id],
+            &[&hash_secret(&token), &user_id],
         )
         .context("insert session")?;
         Ok(token)
@@ -135,7 +148,7 @@ impl PgAccountStore {
                 "SELECT u.id, u.email, u.name
                  FROM users u JOIN sessions s ON s.user_id = u.id
                  WHERE s.token = $1 AND s.expires_at > NOW()",
-                &[&token],
+                &[&hash_secret(token)],
             )
             .context("query session_user")?;
         Ok(row.map(|r| row_to_user(&r)))
@@ -144,7 +157,7 @@ impl PgAccountStore {
     /// End a session (logout).
     pub fn delete_session(&self, token: &str) -> Result<()> {
         let mut conn = self.pool.get().context("pg conn")?;
-        conn.execute("DELETE FROM sessions WHERE token = $1", &[&token])
+        conn.execute("DELETE FROM sessions WHERE token = $1", &[&hash_secret(token)])
             .context("delete session")?;
         Ok(())
     }
@@ -256,6 +269,37 @@ impl AccountStore for PgAccountStore {
         )
         .context("insert identity")?;
         Ok(())
+    }
+
+    fn create_user_with_identity(
+        &self,
+        email: &str,
+        name: Option<&str>,
+        provider: &str,
+        subject: &str,
+        email_verified: bool,
+    ) -> Result<User> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let mut conn = self.pool.get().context("pg conn")?;
+        let mut tx = conn.transaction().context("begin tx")?;
+        tx.execute(
+            "INSERT INTO users (id, email, name) VALUES ($1, $2, $3)",
+            &[&id, &email, &name],
+        )
+        .context("insert user")?;
+        tx.execute(
+            "INSERT INTO identities (provider, subject, email, email_verified, user_id)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (provider, subject) DO NOTHING",
+            &[&provider, &subject, &email, &email_verified, &id],
+        )
+        .context("insert identity")?;
+        tx.commit().context("commit new user")?;
+        Ok(User {
+            id,
+            email: email.to_string(),
+            name: name.map(str::to_string),
+        })
     }
 
     fn ensure_personal_account(&self, owner: &User) -> Result<Account> {
@@ -390,6 +434,17 @@ mod tests {
         let Ok(code) = issued else {
             return;
         };
+
+        // The plaintext code must never be stored — only its hash.
+        if let Ok(mut conn) = store.pool.get() {
+            if let Ok(rows) = conn.query("SELECT code FROM otp_codes WHERE email = $1", &[&email]) {
+                if let Some(row) = rows.first() {
+                    let stored: String = row.get(0);
+                    assert_ne!(stored, code, "OTP code is hashed at rest, not plaintext");
+                    assert_eq!(stored, hash_secret(&code), "stored value is the SHA-256 hash");
+                }
+            }
+        }
 
         let wrong = if code == "000001" { "000002" } else { "000001" };
         assert_eq!(store.verify_otp(email, wrong).ok(), Some(false), "wrong code rejected");

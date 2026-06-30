@@ -1,0 +1,149 @@
+:host {
+  display: block;
+  position: relative;
+  min-height: 100dvh;
+}
+
+.controls {
+  position: absolute;
+  top: 1rem;
+  right: 1.25rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.control {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--mat-sys-outline-variant);
+  background: transparent;
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.control:hover {
+  background: var(--mat-sys-surface-container-high);
+  color: var(--mat-sys-on-surface);
+}
+
+.hope {
+  display: flex;
+  flex-direction: column;
+  max-width: 760px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding: 0 1.25rem;
+  box-sizing: border-box;
+}
+
+.presence {
+  display: flex;
+  justify-content: center;
+  padding: 2.5rem 0 1.5rem;
+}
+
+.orb {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 45%,
+    rgba(255, 247, 224, 0.95) 0%,
+    rgba(247, 211, 132, 0.82) 32%,
+    rgba(239, 177, 60, 0.45) 60%,
+    rgba(239, 177, 60, 0) 80%
+  );
+  filter: blur(4px);
+  animation: breathe 6s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+}
+
+.thread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  padding-bottom: 1.5rem;
+}
+
+.say {
+  margin: 0;
+  line-height: 1.7;
+}
+
+.say--hope {
+  align-self: stretch;
+  max-width: 65ch;
+  font-family: ui-serif, Georgia, 'Times New Roman', serif;
+  font-size: 1.125rem;
+  color: var(--mat-sys-on-surface);
+}
+
+.say--you {
+  align-self: flex-end;
+  max-width: 78%;
+  padding: 0.75rem 1.1rem;
+  border-radius: 18px;
+  background: var(--mat-sys-surface-container-high);
+  color: var(--mat-sys-on-surface);
+}
+
+.thinking {
+  color: var(--mat-sys-on-surface-variant);
+  letter-spacing: 0.15em;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.composer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 0 1.25rem;
+  background: var(--mat-sys-background);
+}
+
+.composer__field {
+  flex: 1;
+}
+
+.composer__send {
+  height: 56px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb,
+  .thinking {
+    animation: none;
+  }
+}

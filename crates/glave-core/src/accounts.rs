@@ -99,6 +99,18 @@ pub trait AccountStore {
     fn create_user(&self, email: &str, name: Option<&str>) -> Result<User>;
     fn add_identity(&self, identity: Identity) -> Result<()>;
 
+    /// Create a brand-new user **and** their first identity in one atomic unit, so a
+    /// crash between the two can't leave a user with no way to log in. Used by
+    /// [`resolve_login`]'s new-user path (the adapter wraps it in a transaction).
+    fn create_user_with_identity(
+        &self,
+        email: &str,
+        name: Option<&str>,
+        provider: &str,
+        subject: &str,
+        email_verified: bool,
+    ) -> Result<User>;
+
     /// Return the user's personal [`Account`], creating it (plus the sole `Owner`
     /// membership, with the user as billing contact) on first call. **Idempotent**:
     /// one human keeps exactly one personal account, so a double-submitted login or
@@ -144,18 +156,21 @@ pub fn resolve_login(
     } else {
         None
     };
-    let user = match existing {
-        Some(user) => user,
-        None => store.create_user(email, None)?,
-    };
-    store.add_identity(Identity {
-        provider: provider.to_string(),
-        subject: subject.to_string(),
-        email: email.to_string(),
-        email_verified,
-        user_id: user.id.clone(),
-    })?;
-    Ok(user)
+    match existing {
+        // Cross-provider bridge: link this new identity to the existing user.
+        Some(user) => {
+            store.add_identity(Identity {
+                provider: provider.to_string(),
+                subject: subject.to_string(),
+                email: email.to_string(),
+                email_verified,
+                user_id: user.id.clone(),
+            })?;
+            Ok(user)
+        }
+        // Brand-new person: user + first identity created atomically.
+        None => store.create_user_with_identity(email, None, provider, subject, email_verified),
+    }
 }
 
 #[cfg(test)]
@@ -225,6 +240,25 @@ mod tests {
         fn add_identity(&self, identity: Identity) -> Result<()> {
             self.identities.borrow_mut().push(identity);
             Ok(())
+        }
+
+        fn create_user_with_identity(
+            &self,
+            email: &str,
+            name: Option<&str>,
+            provider: &str,
+            subject: &str,
+            email_verified: bool,
+        ) -> Result<User> {
+            let user = self.create_user(email, name)?;
+            self.add_identity(Identity {
+                provider: provider.to_string(),
+                subject: subject.to_string(),
+                email: email.to_string(),
+                email_verified,
+                user_id: user.id.clone(),
+            })?;
+            Ok(user)
         }
 
         fn ensure_personal_account(&self, owner: &User) -> Result<Account> {
