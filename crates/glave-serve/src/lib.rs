@@ -19,7 +19,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{Json, Request, State};
 use axum::http::header::{
     ACCESS_CONTROL_ALLOW_HEADERS, ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN,
@@ -37,8 +37,8 @@ use tokio_stream::StreamExt;
 
 use glave_core::engine::{AgentSpec, RunEngine, RunOutcome, RunRequest};
 use glave_core::{
-    resolve_login, AccountKind, AccountStore, Message, ProviderFactory, Role, RunEvent, TaskSpec,
-    TraceSink, User,
+    resolve_login, Account, AccountKind, AccountRole, AccountStore, Message, ProviderFactory, Role,
+    RunEvent, TaskSpec, TraceSink, User,
 };
 
 pub mod pg;
@@ -53,8 +53,9 @@ pub fn serve_blocking(
     let keys: Arc<dyn ApiKeyStore> = Arc::new(StaticKeyStore::from_env()?);
     let meter = build_meter();
     let accounts = build_accounts()?;
+    let payments = build_payments();
     let runtime = tokio::runtime::Runtime::new().context("starting tokio runtime")?;
-    runtime.block_on(run(addr, engine, providers, keys, meter, accounts))
+    runtime.block_on(run(addr, engine, providers, keys, meter, accounts, payments))
 }
 
 /// Build the accounts store from `GLAVE_DATABASE_URL` (and run migrations). When
@@ -70,6 +71,51 @@ fn build_accounts() -> Result<Option<Arc<pg::PgAccountStore>>> {
     Ok(Some(Arc::new(store)))
 }
 
+/// One completed purchase, normalized across payment providers.
+struct CreditEvent {
+    account_id: String,
+    /// The provider's transaction id → `external_ref` (webhook idempotency).
+    order_id: String,
+    amount_micros: i64,
+    reason: String,
+}
+
+/// Port: a payment provider (Merchant of Record). The billing brain — ledger,
+/// limits, balance — knows nothing about which one; every provider is a swap behind
+/// this seam. Card data never touches us: the provider hosts checkout.
+trait PaymentProvider: Send + Sync {
+    /// Is a real provider configured? (So the endpoints can 503 cleanly.)
+    fn configured(&self) -> bool;
+    /// Verify + parse an inbound webhook. `Ok(Some)` = a credit event to apply;
+    /// `Ok(None)` = a valid but irrelevant event; `Err` = verification/parse failure.
+    fn parse_webhook(&self, headers: &HeaderMap, body: &[u8]) -> Result<Option<CreditEvent>>;
+    /// A hosted checkout / card-on-file URL to buy `amount_micros` of credits.
+    fn checkout_url(&self, account_id: &str, amount_micros: i64) -> Result<String>;
+}
+
+/// Default when no provider is configured: checkout/card-on-file is unavailable and
+/// webhooks are rejected. The rest of the server runs. A real impl (e.g. Polar) is
+/// a drop-in behind [`PaymentProvider`].
+struct NoPayments;
+
+impl PaymentProvider for NoPayments {
+    fn configured(&self) -> bool {
+        false
+    }
+    fn parse_webhook(&self, _headers: &HeaderMap, _body: &[u8]) -> Result<Option<CreditEvent>> {
+        anyhow::bail!("no payment provider configured")
+    }
+    fn checkout_url(&self, _account_id: &str, _amount_micros: i64) -> Result<String> {
+        anyhow::bail!("no payment provider configured")
+    }
+}
+
+/// Select the payment provider from the environment. Only `NoPayments` for now; a
+/// real MoR (Polar) slots in here once its keys are set, with zero change elsewhere.
+fn build_payments() -> Arc<dyn PaymentProvider> {
+    Arc::new(NoPayments)
+}
+
 #[derive(Clone)]
 struct AppState {
     engine: RunEngine,
@@ -77,6 +123,7 @@ struct AppState {
     keys: Arc<dyn ApiKeyStore>,
     meter: Arc<dyn MeterSink>,
     accounts: Option<Arc<pg::PgAccountStore>>,
+    payments: Arc<dyn PaymentProvider>,
 }
 
 async fn run(
@@ -86,6 +133,7 @@ async fn run(
     keys: Arc<dyn ApiKeyStore>,
     meter: Arc<dyn MeterSink>,
     accounts: Option<Arc<pg::PgAccountStore>>,
+    payments: Arc<dyn PaymentProvider>,
 ) -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
@@ -95,6 +143,10 @@ async fn run(
         .route("/auth/otp/verify", post(auth_otp_verify))
         .route("/auth/me", get(auth_me))
         .route("/auth/logout", post(auth_logout))
+        .route("/billing/status", get(billing_status))
+        .route("/billing/limit", post(billing_set_limit))
+        .route("/billing/checkout", post(billing_checkout))
+        .route("/billing/webhook", post(billing_webhook))
         .layer(middleware::from_fn(cors_mw))
         .with_state(AppState {
             engine,
@@ -102,6 +154,7 @@ async fn run(
             keys,
             meter,
             accounts,
+            payments,
         });
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -921,9 +974,239 @@ async fn auth_logout(
     Ok(resp)
 }
 
+/// A user together with the accounts they belong to (and their role in each).
+type UserAccounts = (User, Vec<(Account, AccountRole)>);
+
+/// Resolve the session cookie to the user, their account, and their role. Uses the
+/// personal account for now (account switching comes with teams). 401 if no session.
+async fn session_account(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(User, Account, AccountRole), (StatusCode, String)> {
+    let store = accounts_store(state)?;
+    let token =
+        session_token(headers).ok_or((StatusCode::UNAUTHORIZED, "no session".to_string()))?;
+    let resolved = tokio::task::spawn_blocking(move || -> Result<Option<UserAccounts>> {
+        match store.session_user(&token)? {
+            Some(user) => {
+                let accounts = store.accounts_for_user(&user.id)?;
+                Ok(Some((user, accounts)))
+            }
+            None => Ok(None),
+        }
+    })
+    .await
+    .map_err(internal)?
+    .map_err(internal)?;
+    let (user, accounts) =
+        resolved.ok_or((StatusCode::UNAUTHORIZED, "session expired".to_string()))?;
+    let (account, role) = accounts
+        .into_iter()
+        .find(|(a, _)| a.kind == AccountKind::Personal)
+        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "no account".to_string()))?;
+    Ok((user, account, role))
+}
+
+#[derive(Serialize)]
+struct BillingStatus {
+    account_id: String,
+    role: String,
+    balance_usd: f64,
+    org_limit_usd: Option<f64>,
+    member_limit_usd: Option<f64>,
+}
+
+/// `GET /billing/status` — balance + limits for the caller's account.
+async fn billing_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<BillingStatus>, (StatusCode, String)> {
+    let (user, account, role) = session_account(&state, &headers).await?;
+    let store = accounts_store(&state)?;
+    let account_id = account.id.clone();
+    let uid = user.id;
+    let (balance, org, member) =
+        tokio::task::spawn_blocking(move || -> Result<(i64, Option<f64>, Option<f64>)> {
+            Ok((
+                store.account_balance_micros(&account_id)?,
+                store.account_limit(&account_id)?.map(|(a, _)| a),
+                store.member_limit(&account_id, &uid)?.map(|(a, _)| a),
+            ))
+        })
+        .await
+        .map_err(internal)?
+        .map_err(internal)?;
+    Ok(Json(BillingStatus {
+        account_id: account.id,
+        role: role_str(role).to_string(),
+        balance_usd: pg::micros_to_usd(balance),
+        org_limit_usd: org,
+        member_limit_usd: member,
+    }))
+}
+
+#[derive(Deserialize)]
+struct SetLimitBody {
+    scope: String,
+    user_id: Option<String>,
+    amount_usd: Option<f64>,
+    period: Option<String>,
+}
+
+/// `POST /billing/limit` — set an org or per-member spend limit (Owner only). A null
+/// `amount_usd` clears the limit (unlimited).
+async fn billing_set_limit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<SetLimitBody>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let (_, account, role) = session_account(&state, &headers).await?;
+    if role != AccountRole::Owner {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "only an owner can set spend limits".to_string(),
+        ));
+    }
+    let store = accounts_store(&state)?;
+    let account_id = account.id;
+    let period = match body.period.as_deref() {
+        Some("day") => pg::SpendPeriod::Day,
+        _ => pg::SpendPeriod::Month,
+    };
+    let limit = body.amount_usd.map(|a| (a, period));
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        match body.scope.as_str() {
+            "org" => store.set_account_limit(&account_id, limit),
+            "member" => {
+                let uid = body
+                    .user_id
+                    .ok_or_else(|| anyhow::anyhow!("member scope requires user_id"))?;
+                store.set_member_limit(&account_id, &uid, limit)
+            }
+            other => anyhow::bail!("unknown scope {other:?}"),
+        }
+    })
+    .await
+    .map_err(internal)?
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+struct CheckoutBody {
+    amount_usd: f64,
+}
+
+#[derive(Serialize)]
+struct CheckoutResponse {
+    url: String,
+}
+
+/// `POST /billing/checkout` — a hosted checkout / card-on-file URL for buying
+/// credits (provider-specific). 503 when no provider is configured.
+async fn billing_checkout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<CheckoutBody>,
+) -> Result<Json<CheckoutResponse>, (StatusCode, String)> {
+    let (_, account, _) = session_account(&state, &headers).await?;
+    if !state.payments.configured() {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "payments not configured".to_string(),
+        ));
+    }
+    let amount_micros = pg::usd_to_micros(body.amount_usd);
+    let payments = state.payments.clone();
+    let account_id = account.id;
+    let url = tokio::task::spawn_blocking(move || payments.checkout_url(&account_id, amount_micros))
+        .await
+        .map_err(internal)?
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(CheckoutResponse { url }))
+}
+
+/// `POST /billing/webhook` — the payment provider tells us a purchase completed.
+/// Provider verifies + parses; we credit the balance idempotently. 503 when no
+/// provider is configured.
+async fn billing_webhook(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<StatusCode, (StatusCode, String)> {
+    if !state.payments.configured() {
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "payments not configured".to_string(),
+        ));
+    }
+    let event = state
+        .payments
+        .parse_webhook(&headers, body.as_ref())
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    if let Some(event) = event {
+        let store = accounts_store(&state)?;
+        tokio::task::spawn_blocking(move || {
+            store.add_credits(
+                &event.account_id,
+                event.amount_micros,
+                &event.reason,
+                Some(&event.order_id),
+            )
+        })
+        .await
+        .map_err(internal)?
+        .map_err(internal)?;
+    }
+    Ok(StatusCode::OK)
+}
+
+/// The stored/wire form of a role.
+fn role_str(role: AccountRole) -> &'static str {
+    match role {
+        AccountRole::Owner => "owner",
+        AccountRole::Member => "member",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stand-in provider proving the [`PaymentProvider`] seam is real and swappable
+    /// without touching the billing brain.
+    struct MockPayments;
+    impl PaymentProvider for MockPayments {
+        fn configured(&self) -> bool {
+            true
+        }
+        fn parse_webhook(&self, _h: &HeaderMap, _b: &[u8]) -> Result<Option<CreditEvent>> {
+            Ok(Some(CreditEvent {
+                account_id: "acct-1".to_string(),
+                order_id: "ord-1".to_string(),
+                amount_micros: 10_000_000,
+                reason: "purchase".to_string(),
+            }))
+        }
+        fn checkout_url(&self, account_id: &str, amount_micros: i64) -> Result<String> {
+            Ok(format!(
+                "https://pay.example/checkout?account={account_id}&micros={amount_micros}"
+            ))
+        }
+    }
+
+    #[test]
+    fn payment_provider_seam_normalizes_events() {
+        let p = MockPayments;
+        assert!(p.configured());
+        let event = p.parse_webhook(&HeaderMap::new(), b"{}").ok().flatten();
+        assert_eq!(
+            event.map(|e| (e.account_id, e.order_id, e.amount_micros)),
+            Some(("acct-1".to_string(), "ord-1".to_string(), 10_000_000)),
+        );
+        let url = p.checkout_url("acct-1", 11_000_000).ok();
+        assert!(url.is_some_and(|u| u.contains("account=acct-1") && u.contains("11000000")));
+    }
 
     #[test]
     fn session_cookie_sets_and_parses() {

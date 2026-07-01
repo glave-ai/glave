@@ -104,7 +104,7 @@ impl SpendDenyReason {
     clippy::cast_sign_loss,
     clippy::cast_precision_loss
 )]
-fn usd_to_micros(usd: f64) -> i64 {
+pub fn usd_to_micros(usd: f64) -> i64 {
     let micros = (usd * 1_000_000.0).round();
     if !micros.is_finite() {
         return 0;
@@ -116,6 +116,13 @@ fn usd_to_micros(usd: f64) -> i64 {
         return i64::MIN;
     }
     micros as i64
+}
+
+/// Micro-dollars (i64) → USD (f64), for display only. Precision loss is fine here
+/// — the exact value stays integer in the ledger.
+#[allow(clippy::cast_precision_loss)]
+pub fn micros_to_usd(micros: i64) -> f64 {
+    micros as f64 / 1_000_000.0
 }
 
 pub struct PgAccountStore {
