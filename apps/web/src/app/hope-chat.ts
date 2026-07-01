@@ -3,6 +3,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { AuthService } from './auth';
+import { BillingPanel } from './billing';
 import { HopeService } from './hope';
 import { ThemeService } from './theme';
 
@@ -11,9 +12,11 @@ interface Message {
   readonly text: string;
 }
 
+type View = 'chat' | 'billing';
+
 @Component({
   selector: 'app-hope-chat',
-  imports: [MatFormFieldModule, MatInputModule, MatButtonModule],
+  imports: [MatFormFieldModule, MatInputModule, MatButtonModule, BillingPanel],
   templateUrl: './hope-chat.html',
   styleUrl: './hope-chat.scss',
 })
@@ -22,6 +25,7 @@ export class HopeChat {
   private readonly auth = inject(AuthService);
   private readonly theme = inject(ThemeService);
 
+  protected readonly view = signal<View>('chat');
   protected readonly draft = signal('');
   protected readonly sending = signal(false);
   protected readonly dark = this.theme.dark;
@@ -54,6 +58,14 @@ export class HopeChat {
     } finally {
       this.sending.set(false);
     }
+  }
+
+  protected openBilling(): void {
+    this.view.set('billing');
+  }
+
+  protected showChat(): void {
+    this.view.set('chat');
   }
 
   protected toggleTheme(): void {
