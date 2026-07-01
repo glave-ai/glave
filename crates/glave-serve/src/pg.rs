@@ -70,10 +70,11 @@ pub enum SpendDecision {
     Deny(SpendDenyReason),
 }
 
-/// Why a request was blocked. Checked org-cap first, then per-member. (The prepaid
-/// balance — the hard cap — joins here in the credits step.)
+/// Why a request was blocked. The prepaid balance (the hard cap) is checked first,
+/// then the org cap, then the per-member cap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpendDenyReason {
+    OutOfCredits,
     OrgBudget,
     PersonalLimit,
 }
@@ -81,6 +82,9 @@ pub enum SpendDenyReason {
 impl SpendDenyReason {
     pub fn message(self) -> String {
         match self {
+            SpendDenyReason::OutOfCredits => {
+                "out of credits — top up to keep going".to_string()
+            }
             SpendDenyReason::OrgBudget => {
                 "the organization's spending limit has been reached".to_string()
             }
@@ -89,6 +93,29 @@ impl SpendDenyReason {
             }
         }
     }
+}
+
+/// USD (f64) → micro-dollars (i64). This is the single conversion at the f64 usage
+/// boundary; money is integer micros everywhere past here (the credit ledger and
+/// balance), so rounding drift can't accumulate. Rounds to nearest; clamps to the
+/// i64 range (usage costs are dollars, so the clamp is purely defensive).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
+fn usd_to_micros(usd: f64) -> i64 {
+    let micros = (usd * 1_000_000.0).round();
+    if !micros.is_finite() {
+        return 0;
+    }
+    if micros >= i64::MAX as f64 {
+        return i64::MAX;
+    }
+    if micros <= i64::MIN as f64 {
+        return i64::MIN;
+    }
+    micros as i64
 }
 
 pub struct PgAccountStore {
@@ -178,7 +205,21 @@ impl PgAccountStore {
              ALTER TABLE accounts    ADD COLUMN IF NOT EXISTS spend_limit  DOUBLE PRECISION;
              ALTER TABLE accounts    ADD COLUMN IF NOT EXISTS spend_period TEXT;
              ALTER TABLE memberships ADD COLUMN IF NOT EXISTS spend_limit  DOUBLE PRECISION;
-             ALTER TABLE memberships ADD COLUMN IF NOT EXISTS spend_period TEXT;",
+             ALTER TABLE memberships ADD COLUMN IF NOT EXISTS spend_period TEXT;
+             -- Prepaid credits ledger (append-only), money as integer micro-dollars.
+             -- Positive = purchase/grant; balance = SUM(credits) - usage. external_ref
+             -- is the MoR transaction id, UNIQUE so a webhook retry can't double-credit
+             -- (NULL for internal grants — Postgres treats NULLs as distinct).
+             CREATE TABLE IF NOT EXISTS credit_ledger (
+                 id            TEXT PRIMARY KEY,
+                 account_id    TEXT NOT NULL,
+                 amount_micros BIGINT NOT NULL,
+                 reason        TEXT NOT NULL,
+                 external_ref  TEXT UNIQUE,
+                 created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+             );
+             CREATE INDEX IF NOT EXISTS credit_ledger_account_idx
+                 ON credit_ledger (account_id);",
         )
         .context("running migrations")?;
         Ok(())
@@ -358,6 +399,14 @@ impl PgAccountStore {
         account_id: &str,
         actor_user_id: Option<&str>,
     ) -> Result<SpendDecision> {
+        // Hard cap first: a prepaid account (one that has ever bought credits) can't
+        // go below zero. Accounts that never bought credits (free/dev) skip this.
+        let credits = self.account_credits_micros(account_id)?;
+        if credits > 0
+            && credits <= usd_to_micros(self.account_spend(account_id, SpendPeriod::AllTime)?)
+        {
+            return Ok(SpendDecision::Deny(SpendDenyReason::OutOfCredits));
+        }
         if let Some((limit, period)) = self.account_limit(account_id)? {
             if self.account_spend(account_id, period)? >= limit {
                 return Ok(SpendDecision::Deny(SpendDenyReason::OrgBudget));
@@ -371,6 +420,51 @@ impl PgAccountStore {
             }
         }
         Ok(SpendDecision::Allow)
+    }
+}
+
+/// Prepaid credits — the balance is the hard spend cap. Money is integer
+/// micro-dollars; the MoR (checkout + webhook) fills this ledger in the next step.
+impl PgAccountStore {
+    /// Add credits (or an adjustment). Idempotent on `external_ref`: a MoR webhook
+    /// retry with the same transaction id can't double-credit.
+    pub fn add_credits(
+        &self,
+        account_id: &str,
+        amount_micros: i64,
+        reason: &str,
+        external_ref: Option<&str>,
+    ) -> Result<()> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let mut conn = self.pool.get().context("pg conn")?;
+        conn.execute(
+            "INSERT INTO credit_ledger (id, account_id, amount_micros, reason, external_ref)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (external_ref) DO NOTHING",
+            &[&id, &account_id, &amount_micros, &reason, &external_ref],
+        )
+        .context("insert credit_ledger")?;
+        Ok(())
+    }
+
+    /// Total credits ever added to an account (micro-dollars).
+    pub fn account_credits_micros(&self, account_id: &str) -> Result<i64> {
+        let mut conn = self.pool.get().context("pg conn")?;
+        let row = conn
+            .query_one(
+                "SELECT COALESCE(SUM(amount_micros), 0)::BIGINT FROM credit_ledger
+                 WHERE account_id = $1",
+                &[&account_id],
+            )
+            .context("query account_credits")?;
+        Ok(row.get(0))
+    }
+
+    /// Remaining prepaid balance (micro-dollars) = credits − all-time usage.
+    pub fn account_balance_micros(&self, account_id: &str) -> Result<i64> {
+        let credits = self.account_credits_micros(account_id)?;
+        let used = usd_to_micros(self.account_spend(account_id, SpendPeriod::AllTime)?);
+        Ok(credits.saturating_sub(used))
     }
 }
 
@@ -683,10 +777,10 @@ mod tests {
         let store = PgAccountStore::connect(&url).ok()?;
         if let Ok(mut conn) = store.pool.get() {
             let _ = conn.batch_execute(
-                "DROP TABLE IF EXISTS usage_events; DROP TABLE IF EXISTS memberships; \
-                 DROP TABLE IF EXISTS accounts; DROP TABLE IF EXISTS sessions; \
-                 DROP TABLE IF EXISTS identities; DROP TABLE IF EXISTS otp_codes; \
-                 DROP TABLE IF EXISTS users;",
+                "DROP TABLE IF EXISTS credit_ledger; DROP TABLE IF EXISTS usage_events; \
+                 DROP TABLE IF EXISTS memberships; DROP TABLE IF EXISTS accounts; \
+                 DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS identities; \
+                 DROP TABLE IF EXISTS otp_codes; DROP TABLE IF EXISTS users;",
             );
         }
         store.migrate().ok()?;
@@ -797,6 +891,39 @@ mod tests {
 
         let other = store.account_spend("acct-2", SpendPeriod::Month).ok();
         assert!(other.is_some_and(|t| close(t, 5.0)), "acct-2 is isolated");
+    }
+
+    #[test]
+    fn pg_prepaid_balance_is_the_hard_cap() {
+        let Some((store, _guard)) = fresh_store() else {
+            return;
+        };
+        let acc = "acct-credits";
+
+        // A free account (never bought credits) is NOT gated by balance.
+        assert_eq!(store.check_spend(acc, None).ok(), Some(SpendDecision::Allow));
+
+        // Grant $1.00, spend $0.40 → $0.60 left, still allowed.
+        assert!(store.add_credits(acc, 1_000_000, "grant", None).is_ok());
+        assert_eq!(store.account_balance_micros(acc).ok(), Some(1_000_000));
+        assert!(store.record_usage(acc, None, "hope", 1, 1, 0.40).is_ok());
+        assert_eq!(store.account_balance_micros(acc).ok(), Some(600_000));
+        assert_eq!(store.check_spend(acc, None).ok(), Some(SpendDecision::Allow));
+
+        // Spend past the balance → out of credits.
+        assert!(store.record_usage(acc, None, "hope", 1, 1, 0.70).is_ok());
+        assert!(store.account_balance_micros(acc).ok().is_some_and(|b| b <= 0));
+        assert_eq!(
+            store.check_spend(acc, None).ok(),
+            Some(SpendDecision::Deny(SpendDenyReason::OutOfCredits)),
+        );
+
+        // Webhook idempotency: same external_ref twice credits once.
+        assert!(store.add_credits(acc, 5_000_000, "purchase", Some("mor-tx-1")).is_ok());
+        assert!(store.add_credits(acc, 5_000_000, "purchase", Some("mor-tx-1")).is_ok());
+        assert_eq!(store.account_credits_micros(acc).ok(), Some(6_000_000));
+        // Balance restored → allowed again.
+        assert_eq!(store.check_spend(acc, None).ok(), Some(SpendDecision::Allow));
     }
 
     #[test]
