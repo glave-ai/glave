@@ -2,6 +2,15 @@
   <button
     type="button"
     class="control"
+    (click)="openBilling()"
+    aria-label="Credits and spending"
+    title="Credits and spending"
+  >
+    ⛁
+  </button>
+  <button
+    type="button"
+    class="control"
     (click)="logout()"
     aria-label="Sign out"
     title="Sign out"
@@ -18,42 +27,49 @@
   </button>
 </div>
 
-<main class="hope">
-  <div class="presence" aria-hidden="true">
-    <div class="orb"></div>
-  </div>
+@switch (view()) {
+  @case ('billing') {
+    <app-billing-panel (dismissed)="showChat()" />
+  }
+  @default {
+    <main class="hope">
+      <div class="presence" aria-hidden="true">
+        <div class="orb"></div>
+      </div>
 
-  <section class="thread" aria-live="polite">
-    @for (msg of messages(); track $index) {
-      @if (msg.from === 'hope') {
-        <div class="say say--hope">{{ msg.text }}</div>
-      } @else {
-        <div class="say say--you">{{ msg.text }}</div>
-      }
-    }
-    @if (sending()) {
-      <div class="say say--hope thinking" aria-label="Hope is thinking">…</div>
-    }
-  </section>
+      <section class="thread" aria-live="polite">
+        @for (msg of messages(); track $index) {
+          @if (msg.from === 'hope') {
+            <div class="say say--hope">{{ msg.text }}</div>
+          } @else {
+            <div class="say say--you">{{ msg.text }}</div>
+          }
+        }
+        @if (sending()) {
+          <div class="say say--hope thinking" aria-label="Hope is thinking">…</div>
+        }
+      </section>
 
-  <div class="composer">
-    <mat-form-field appearance="outline" class="composer__field">
-      <mat-label>Talk to Hope</mat-label>
-      <input
-        matInput
-        #box
-        [value]="draft()"
-        (input)="draft.set(box.value)"
-        (keyup.enter)="send()"
-      />
-    </mat-form-field>
-    <button
-      mat-flat-button
-      class="composer__send"
-      [disabled]="sending()"
-      (click)="send()"
-    >
-      Ask Hope
-    </button>
-  </div>
-</main>
+      <div class="composer">
+        <mat-form-field appearance="outline" class="composer__field">
+          <mat-label>Talk to Hope</mat-label>
+          <input
+            matInput
+            #box
+            [value]="draft()"
+            (input)="draft.set(box.value)"
+            (keyup.enter)="send()"
+          />
+        </mat-form-field>
+        <button
+          mat-flat-button
+          class="composer__send"
+          [disabled]="sending()"
+          (click)="send()"
+        >
+          Ask Hope
+        </button>
+      </div>
+    </main>
+  }
+}
