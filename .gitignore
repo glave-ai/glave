@@ -1,0 +1,32 @@
+# QA / browser tooling artifacts
+.playwright-mcp/
+tmp/
+untracked/
+/*.png
+/*.jpg
+/*.jpeg
+
+# Claude Code local state (project skills/settings stay tracked)
+.claude/worktrees/
+
+# macOS
+.DS_Store
+.env
+/refs/
+
+# Rust build output
+/target/
+
+# Eval run artifacts (local; retention policy TBD)
+/.runs/
+/traces/
+/.ingest-scratch/
+/.ingest/
+/cache/
+
+# Glave product state: the per-project marker (sessions live in ~/.glave).
+# Gitignored by default — a team-shared marker is a later feature.
+/.glave/
+
+# local dev (scripts/dev.sh) pids + logs
+.dev/
