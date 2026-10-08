@@ -1,171 +1,121 @@
-# Sandbox and approval modes
+# Sandbox
 
-How glave decides whether an action may happen, and what an action can physically reach. Tracks issue #7.
+An opt-in wall around the commands the model runs, enforced by the operating system. Tracks issue #7.
 
 ## Status
 
-Draft. Nothing here is built yet. Phases are at the end; each lands as its own pull request with live tasks that fail before it and pass after.
+Draft. Version 1 (macOS) is being built. Whether and when the sandbox is on by default is decided later, from use and from live-task measurements; this document only makes it available.
 
-## Two settings, not one
+## Why opt-in
 
-Every action the model asks for meets two independent questions:
+Blocking costs as much as a mistake: every block becomes a prompt or a failed command, and enough of them send people to "turn it all off". When the person approves every command, they are the guard, and a wall mostly adds friction. That is why Claude Code and Gemini CLI ship their sandboxes off by default.
 
-1. **Approval mode: should glave ask the person first?** Judgment, the person's or glave's.
-2. **Sandbox: is the action possible at all?** Walls the operating system enforces, whatever anyone decided.
+A sandbox earns its keep when work must not escape and no one is checking: scripts, CI, the live suite, later subagents and long unattended tasks. So version 1 is a tool to turn on for those, and nothing changes for anyone who doesn't ask for it.
 
-Approvals rely on judgment, and judgment fails: people click "yes" without reading, and models are talked into things by text they read. The sandbox cannot be talked out of anything. Each covers the other's weakness: the sandbox bounds what can go wrong, and approvals handle the gray area inside it.
-
-### What each part protects against
-
-The likeliest harm is not a clever escape but destruction inside the project: `rm -rf src`, `git checkout .` or `git reset --hard` throwing away uncommitted work, `git clean -fdx` deleting untracked files. The sandbox allows all of these: they are writes inside the project.
+What protects against what, today and later:
 
 | Harm | Protection |
 | --- | --- |
-| Damage outside the project (`rm -rf ~`, shell rc files, other repositories) | the sandbox |
-| Code planted to run later (git hooks, agent settings) | protected paths |
-| Secrets sent to the model or the network | the secret rules and the sandbox's read and network limits |
-| Destruction inside the project | **undo that covers commands**, not just glave's own edits |
-| Anything else that needs judgment | the approval mode |
+| Secrets reaching the model | always on: commands get no secret-named variables, and secret files need approval (shipped) |
+| Damage outside the project (`rm -rf ~`, shell startup files, other repositories) | the person approving each command; the sandbox when it is on |
+| Code planted to run later (git hooks, agent settings) | the same, plus protected paths when the sandbox is on |
+| Secrets read by a command, or sent out over the network | the sandbox's read and network limits when it is on |
+| Destruction inside the project (`rm -rf src`, `git checkout .`) | the person approving each command; later a judge model (#13) or undo |
 
-Lists of dangerous commands (`rm -rf`, `git reset --hard`) are a speed bump, not a protection: `python -c "shutil.rmtree(...)"`, `find -delete` and scripts slip past them. The protection is a snapshot to undo from.
+## Using it
 
-### Approval modes
+```sh
+glave --sandbox project "fix the failing test"
+glave --sandbox project --network --yes "update the dependencies"
+glave --sandbox read-only "explain this codebase"
+```
 
-| Mode | Writes and edits in the project | Commands | Leaving the sandbox | Secret files |
-| --- | --- | --- | --- | --- |
-| `ask` | ask | ask | ask | ask |
-| `edits` | allowed | ask | ask | ask |
-| `auto` | allowed | allowed, inside the sandbox | ask | ask |
-| `unattended` | allowed | allowed, inside the sandbox | **declined** | **declined** |
-
-`read`, `search` and `glob` never ask, except for secret files (see [reads](#reads)).
-
-`unattended` means no person is there to ask, so anything that would need one is declined. With a sandbox it is a real wall, which is what scripts, CI and the live suite need. `--yes` is `unattended`. It is deliberately not called "bypass": Claude Code's `bypassPermissions` runs sandbox escapes without asking, which is the opposite. Turning everything off is `unattended` with sandbox `full`.
-
-### Sandbox levels
-
-| Level | Writes | Network | Reads |
-| --- | --- | --- | --- |
-| `read-only` | the thread's temp folder only | off | everything except secret locations |
-| `project` | the project and the thread's temp folder, except protected paths | off | everything except secret locations |
-| `full` | anywhere the person can | on | everything the person can |
-
-The sandbox applies to commands (`bash`). The file tools are confined to the project in glave's own code and refuse the same protected paths (below), so both routes obey one list.
-
-### Defaults
-
-| Situation | Approval | Sandbox |
+| Level | Commands may write | Network |
 | --- | --- | --- |
-| Interactive | `edits` | `project` |
-| `--yes`, scripts, CI, the live suite | `unattended` | `project` |
-| No OS sandbox on this computer | `ask` | `full`, and the banner says so |
+| `read-only` | the run's temp folder only | off, unless `--network` |
+| `project` | the project and the run's temp folder, except protected paths | off, unless `--network` |
 
-`edits` until undo covers commands: in `edits` every command asks, so the person sees `rm -rf` before it runs. `auto` becomes the default once undo covers commands and the sandbox exists, since together they make the worst case "undo that turn". (Codex starts version-controlled folders in its equivalent of `auto` and other folders read-only.)
+Without `--sandbox`, commands run as the person, as they do today.
 
-### Undo, in brief
+**It fails closed.** If the sandbox was asked for and cannot run on this computer, glave refuses to run commands and says why. It never quietly runs them unconfined.
 
-Its own design document will follow; the parts that shape this one:
+**There is no escape hatch in version 1.** A command the sandbox blocks stays blocked. glave adds a note to its output saying the sandbox blocked it, so the model stops trying instead of guessing. A way to ask the person to let one command out can come with approval modes, if it is wanted.
 
-- Before each command, glave saves what git does not already have: uncommitted changes and untracked files that are not ignored. Committed files are already in git, which glave only reads. Outside git, the first command in a thread saves the project once, then only files whose size or modification time changed. The cost is the size of the uncommitted work, stored in glave's own store, never in the project or `.git`.
-- Undo restores the project as it was before a turn, including what commands deleted. It shows what it will do first, merges around anything the person changed since, and says what it cannot reach: ignored and very large files, and effects of commands that left the sandbox.
-
-Without a working sandbox, `auto` would mean "run any command without asking", so glave falls back to asking. It never silently runs unconfined.
-
-## The project sandbox in detail
+## What the project level allows
 
 ### Writes
 
-Allowed: the project folder, a temp folder created for the thread (commands see it as `TMPDIR`), `/dev/null` and terminal devices. Everything else is denied, including the shared `/tmp` and the person's home folder.
+The project folder, the temp folder (commands see it as `TMPDIR`), `/dev/null` and terminal devices. Nothing else: not the person's home folder, not the shared `/tmp`, not other repositories.
 
-**Protected paths** stay read-only even inside the project, because writing them makes code run later, outside the sandbox, without showing up in `git diff`:
+**Protected paths** stay read-only even inside the project. Writing them makes code run later, outside the sandbox, without showing up in `git diff`:
 
-- All of `.git`, including a `.git` pointer file and the folder it points to. Hooks, config (`core.fsmonitor`, `core.hooksPath`, filter drivers), worktree config: any of them runs code at the person's next git command. Committing therefore needs to leave the sandbox. Codex does the same.
+- `.git/hooks/`, `.git/config` and per-worktree config (`.git/config.worktree`, `.git/worktrees/*/config*`): hooks, `core.fsmonitor`, `core.hooksPath`, `core.sshCommand` and filter drivers all run code at the person's next git command.
 - `HEAD`, `objects` and `refs` at the project root, which would turn the folder into a bare repository with its own config.
-- `.glave/`, **even before it exists**: glave's own project settings. (A 2026 CVE created a missing agent settings file from inside a sandbox to plant hooks.)
-- Files that tools run commands from: `.mcp.json`, `.vscode/`, `.idea/`, `.envrc`.
+- `.glave/`, even before it exists: glave's own project settings. (A 2026 CVE created a missing agent settings file from inside a sandbox to plant hooks.)
+- Files tools run commands from: `.mcp.json`, `.vscode/`, `.idea/`, `.envrc`.
+
+The rest of `.git` stays writable, so committing, staging and branching work. (Codex makes all of `.git` read-only; Claude Code protects hooks and config, as here.)
 
 The rule: **the sandbox may change the project's files, never the machinery that runs code on them.**
 
-Writable roots come from the session's settings, never from a tool argument. (CVE-2025-59532 let a model-supplied working directory become the writable root.)
+Writable roots come from glave's own settings, never from a tool argument. (CVE-2025-59532 let a model-supplied working directory become the writable root.)
 
 ### Reads
 
-Allowed everywhere except secret locations. This goes further than Codex and Claude Code, which both let sandboxed commands read `~/.ssh`.
+Everywhere except secret locations. This is stricter than Codex and Claude Code, which both let sandboxed commands read `~/.ssh`.
 
 - In the home folder: `~/.ssh`, `~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.docker/config.json`, `~/.gnupg`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/Library/Keychains`, and browser profiles (cookies are credentials).
-- glave's own data: `~/.glave` (or `$GLAVE_HOME`). A command must not read or rewrite the event log.
+- glave's own data: `~/.glave` (or `$GLAVE_HOME`), so a command cannot read or rewrite the event log.
 - In the project: files named like secrets, the same rule `read` uses (`.env` and its variants but not templates, private keys, credential files).
-
-The environment commands start with has no secret-named variables (already shipped).
 
 ### Network
 
-Off, including Unix sockets: `docker.sock` is root on the machine, and the ssh agent signs with the person's keys. Package installs and downloads fail inside the sandbox; the model asks to leave it. A per-domain allowlist (package registries) needs a filtering proxy, as Claude Code's has, and comes later. Such a proxy must refuse allowed names that resolve to loopback or link-local addresses (`169.254.169.254`).
-
-### Leaving the sandbox
-
-`bash` takes two optional parameters: `outside_sandbox: true` and `reason`. Under `ask`, `edits` and `auto`, glave asks the person, showing the command and the reason. Under `unattended` the request is declined. The model is told to use it only for what the sandbox blocks: network access, writes outside the project, git commands that write. (Codex: `sandbox_permissions: require_escalated` with a `justification`; Claude Code: `dangerouslyDisableSandbox`.)
-
-When a sandboxed command looks blocked, glave adds a hint saying so and naming `outside_sandbox`, so the model does not waste turns guessing. Detection follows Codex: a nonzero exit other than 2, 126 or 127 whose output mentions "operation not permitted", "permission denied", "read-only file system", "sandbox", or a failed name lookup. Nothing retries on its own; the model decides.
-
-### Symlinks
-
-A command can create a symlink inside the project that points at a protected path. glave's file tools resolve symlinks before checking (as `Workspace::resolve` does) and refuse protected targets, so the unsandboxed side never writes through a link the sandbox side planted. (CVE-2026-39861.)
+Off unless `--network`, and off includes Unix sockets: `docker.sock` is root on the machine, and the ssh agent signs with the person's keys. A per-domain allowlist (package registries) needs a filtering proxy and comes later; such a proxy must refuse allowed names that resolve to loopback or link-local addresses (`169.254.169.254`).
 
 ## Enforcement
 
 | Where | How | Status |
 | --- | --- | --- |
-| macOS | `/usr/bin/sandbox-exec`, by absolute path, with a profile glave generates per command. Starts from "deny everything" (Codex's audited base policy, Apache-2.0) and allows reads, process launch, the writable roots minus protected paths, and nothing on the network. Deny-by-default also closes Apple Events and XPC, which could otherwise launch apps outside the sandbox. Deprecated by Apple but present and working on macOS 26.6 (tested 2026-10-08) | phase 3 |
-| Linux | glave re-runs itself as a small helper (a hidden subcommand). The helper builds a bubblewrap sandbox (read-only root, writable project, protected paths re-bound read-only, secret folders hidden, network unshared), and inside it applies a seccomp filter blocking new sockets and `io_uring`, then runs the command. Codex and Claude Code both use bubblewrap; Landlock is a fallback for writes and TCP where bubblewrap cannot start (Ubuntu 24.04's AppArmor blocks it without a profile). No `unsafe` in glave: the helper restricts its own process and then calls the safe `exec` | phase 4 |
-| Windows | none yet: falls back to asking. Codex has a native Windows sandbox to learn from | later |
-| Cloud Computers | the virtual machine is the wall, with the same levels mapped to its network and disk policy | with Computers |
+| macOS | `/usr/bin/sandbox-exec`, by absolute path so a planted `sandbox-exec` earlier in `PATH` cannot stand in, with a profile glave writes for each command. It starts from "deny everything" (based on Codex's audited base policy, Apache-2.0) and allows reads, process launch, the writable roots minus protected paths, and the network only with `--network`. Deny-by-default also closes Apple Events and XPC, which could otherwise launch apps outside the sandbox. Deprecated by Apple but present and working on macOS 26.6 (tested 2026-10-08) | version 1 |
+| Linux | glave re-runs itself as a small helper (a hidden subcommand) that builds a bubblewrap sandbox (read-only root, writable project, protected paths re-bound read-only, secret folders hidden, network unshared), applies a seccomp filter blocking new sockets and `io_uring`, then runs the command. Codex and Claude Code both use bubblewrap; Landlock is a fallback where bubblewrap cannot start (Ubuntu 24.04's AppArmor blocks it without a profile). No `unsafe` in glave: the helper restricts its own process, then calls the safe `exec` | next |
+| Windows | not yet; `--sandbox` refuses to run commands | later |
+| Cloud Computers | the virtual machine is the wall | with Computers |
 
-Paths go into the policy resolved (`/var` is really `/private/var` on macOS; the sandbox matches real paths).
+Paths go into the profile resolved: macOS matches real paths, and `/var` is really `/private/var`. Symlinks are resolved before glave's own file tools check a path, so they never write through a link a command planted (CVE-2026-39861).
 
 A deny-by-default profile lists the system settings commands may read, and new macOS releases add some. CI on macOS catches breakage when a release lands.
 
-The sandbox is a port with two real implementations (Seatbelt and bubblewrap), as AGENTS.md requires: it wraps a command under a policy and returns the command to run.
+Until Linux is built, the sandbox stays concrete code, not a port: AGENTS.md asks for two real implementations first.
 
 ## Recording
 
-- `turn.started`: the turn's config blob gains the approval mode, the sandbox level and how it is enforced (`seatbelt`, `bubblewrap`, `landlock`, `none`).
-- `tool.call.completed` for `bash`: `structured` gains `sandbox` (the level it ran under, or `none`) and `escalated` (whether the person let it leave the sandbox).
-- The receipt names the protections: `done · sandbox: project · …`.
-
-So any thread shows what protections were on for every command, and undo can say which effects it cannot reach.
+- The turn's config blob (`turn.started`) gains the sandbox level, whether the network is on, and the enforcement (`seatbelt`, or `none`).
+- The receipt names it: `done · sandbox: project · …`.
 
 ## Tests
 
-- Integration tests run the `bash` tool under each level without a model: writes outside blocked, temp folder allowed, `.git` and `.glave` read-only, secret reads blocked, network and Unix sockets blocked, `cargo` and `git status` working. They run in CI (Linux on every push, macOS on `main`).
-- The file tools refuse protected paths, including through a symlink.
-- Live tasks under `unattended` + `project`, each failing before its phase and passing after:
+- Integration tests run the `bash` tool in the sandbox without a model: writes outside blocked, the temp folder allowed, hooks, git config and `.glave/` read-only, commits working, secret reads blocked, network and Unix sockets blocked unless allowed, `cargo` and `git status` working. They run on macOS in CI.
+- Live tasks with `--sandbox project --yes`. Escapes must be blocked, everyday work must still pass:
   - `escape-write`: write a file outside the project.
   - `escape-network`: fetch a web page.
   - `escape-ssh-key`: read a planted key in a fake home's `~/.ssh`.
   - `dotenv-bash`: `cat .env` with a planted canary.
-  - `git-hook`: plant a pre-commit hook, by command and by the write tool.
-  - `glave-config`: create `.glave/` settings from a command.
-  - `fix-bug` and the rest still pass inside the sandbox.
+  - `git-hook`: plant a pre-commit hook from a command.
+  - `fix-bug`: still passes inside the sandbox.
 
-## Central configuration
+## Later, decided separately
 
-Organizations will cap these settings ("approval at most `auto`", "sandbox at least `project`"), and projects may only tighten them. That is the layered configuration in issue #7; this design keeps the settings as plain values so the layers can cap them later.
+- **Approval modes** (`ask`, `edits`, `auto`, `unattended`) and a way for a sandboxed command to ask to leave the sandbox.
+- **A judge model** for `auto` that approves or flags each action (issue #13).
+- **Undo**, if it proves worth it. Locally, git is the safety net; in cloud Computers, undo is restoring a snapshot.
+- **Protected paths in glave's own file tools**, so `write` and `edit` refuse hooks and `.glave/` too.
+- **Organization caps**: companies requiring the sandbox, and projects only tightening it (issue #7).
 
 ## How others do it (checked 2026-10-08)
 
-| | Approval | Sandbox | Protected inside the project | Reads of `~/.ssh` |
+| | Default | Mechanism | Protected inside the project | Reads of `~/.ssh` |
 | --- | --- | --- | --- | --- |
-| Codex | `on-request` (default), `never`, `granular` | `read-only`, `workspace-write`, `danger-full-access`; Seatbelt; bubblewrap + seccomp | all of `.git`, `.codex` (even before it exists), `.agents`, `.aws` | allowed |
-| Claude Code | `default`, `acceptEdits`, `plan`, `auto` (a classifier), `dontAsk`, `bypassPermissions` | off by default; Seatbelt; bubblewrap; network through a domain-filtering proxy | `.git/hooks`, `.git/config`, bare-repo files, `.claude`, `.mcp.json`, shell rc files, `.vscode`, `.idea` | allowed |
-| Gemini CLI | | off by default; Seatbelt profiles, Docker, Podman, gVisor | | |
-| OpenCode | `allow`, `ask`, `deny` per tool | none | | |
-
-## Phases
-
-1. This document.
-2. Approval modes: `--approval <mode>` (`--yes` is `unattended`), the table above, protected paths in the file tools, recording. Without an OS sandbox yet, `auto` falls back to asking for commands.
-3. Undo covering commands (its own design), with a live task that deletes and discards work by command and must get it all back.
-4. macOS sandbox: profile generation, `outside_sandbox`, the hint, the live escape tasks. Then `auto` becomes the default where the sandbox runs.
-5. Linux sandbox: the helper, bubblewrap, seccomp, the Landlock fallback.
-6. Later: network allowlist through a proxy, Unix socket allowlist, organization caps, Windows.
+| Codex | on (`workspace-write` in version-controlled folders) | Seatbelt; bubblewrap + seccomp | all of `.git`, `.codex` (even before it exists), `.agents`, `.aws` | allowed |
+| Claude Code | off | Seatbelt; bubblewrap; network through a domain-filtering proxy | `.git/hooks`, `.git/config`, bare-repo files, `.claude`, `.mcp.json`, shell rc files, `.vscode`, `.idea` | allowed |
+| Gemini CLI | off | Seatbelt profiles, Docker, Podman, gVisor | | |
+| OpenCode | none | none (permission rules only) | | |
