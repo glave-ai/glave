@@ -20,7 +20,7 @@ glave-harness.workspace = true
 glave-ports.workspace = true
 glave-provider-openai.workspace = true
 glave-store-sqlite.workspace = true
-tokio = { workspace = true, features = ["fs", "rt", "time"] }
+tokio = { workspace = true, features = ["fs", "rt", "signal", "sync", "time"] }
 uuid.workspace = true
 
 [dev-dependencies]

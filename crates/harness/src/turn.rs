@@ -2,7 +2,7 @@
 
 use glave_event::{
     CallId, Currency, MessageAdded, ModelRef, Money, Outcome, Part, Role, StopReason, TokenCounts,
-    ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted,
+    ToolCallRequested, TurnEnded, TurnStarted,
 };
 use glave_ports::{
     BlobStore, Completion, Delta, EventLog, Message, ModelProvider, ModelRequest, ToolCall,
@@ -10,14 +10,18 @@ use glave_ports::{
 };
 use serde::Serialize;
 
-use crate::approval::{
-    ApprovalMode, ApprovalRequest, Approver, Decision, no_one_there, reads_secret, summarize,
-};
+use crate::approval::{ApprovalMode, Approver};
+use crate::calls::NOT_RUN;
+use crate::cancel::Cancel;
 use crate::compaction::{Measured, chars, responded};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::repeats::Repeats;
 use crate::sandbox::{Prepared, Recorded};
-use crate::tools::{Tool, ToolOutcome, specs};
+use crate::tools::{ToolOutcome, specs};
+
+/// What the model is told after a cancelled turn, as Codex tells it.
+const CANCELLED: &str = "[The person cancelled this turn on purpose. A command that was stopped \
+     may have done part of its work.]";
 
 /// What the person sees while a turn runs. Never stored.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,11 +99,14 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Runs one turn. Live progress goes to `live`; everything durable goes to the log.
+    /// Runs one turn. Live progress goes to `live`; everything durable goes to the log. Once
+    /// `cancel` fires, the turn stops at its next step, ends any running command, and is
+    /// recorded as cancelled, leaving the thread ready for the next turn.
     pub async fn run_turn(
         &self,
         thread: &mut Thread,
         prompt: &str,
+        cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
         let tools = specs();
@@ -107,15 +114,22 @@ where
         let mut summary = TurnSummary::started();
         let mut repeats = Repeats::default();
         summary.outcome = loop {
+            if cancel.is_cancelled() {
+                break Outcome::Cancelled;
+            }
             if summary.model_calls >= self.settings.max_steps {
                 break Outcome::LimitReached;
             }
-            if let Some(compaction) = self.compact_if_needed(thread, &tools, live).await? {
+            if let Some(compaction) = self.compact_if_needed(thread, &tools, cancel, live).await? {
                 summary.model_calls = summary.model_calls.saturating_add(1);
                 tally(&mut summary, &compaction);
             }
+            // Asking the model writes nothing, so it can be dropped when the turn is cancelled.
+            let Some(asked) = cancel.run(self.ask_model(thread, &tools, live)).await else {
+                break Outcome::Cancelled;
+            };
             summary.model_calls = summary.model_calls.saturating_add(1);
-            let completion = match self.ask_model(thread, &tools, live).await {
+            let completion = match asked {
                 Ok(completion) => completion,
                 Err(error) => {
                     self.end(thread, Outcome::Failed).await?;
@@ -133,19 +147,41 @@ where
                 break outcome_of(completion.stop);
             }
             for call in calls {
-                let outcome = if repeats.refuse(&call) {
+                // Every call gets a result, so the thread stays valid after a cancel.
+                let outcome = if cancel.is_cancelled() {
+                    ToolOutcome::error(NOT_RUN)
+                } else if repeats.refuse(&call) {
                     ToolOutcome::error(
                         "You made this exact call several times in a row. Change your approach.",
                     )
                 } else {
-                    self.call_tool(thread, &call, live).await
+                    self.call_tool(thread, &call, cancel, live).await
                 };
                 summary.tool_calls = summary.tool_calls.saturating_add(1);
                 self.record_result(thread, call.call_id, outcome).await?;
             }
         };
+        if summary.outcome == Outcome::Cancelled {
+            self.note_cancelled(thread).await?;
+        }
         self.end(thread, summary.outcome).await?;
         Ok(summary)
+    }
+
+    /// Tells the model, from the next turn on, that the person cancelled this one.
+    async fn note_cancelled(&self, thread: &mut Thread) -> Result<(), HarnessError> {
+        let parts = vec![Part::Text {
+            text: CANCELLED.to_owned(),
+        }];
+        let mut events = Vec::new();
+        let message = MessageAdded {
+            role: Role::User,
+            parts: parts.clone(),
+        };
+        self.stage(thread, &mut events, &message)?;
+        self.commit(thread, events).await?;
+        thread.messages.push(Message::User { parts });
+        Ok(())
     }
 
     /// Stores the turn's configuration, then records `turn.started` and the person's message.
@@ -261,94 +297,6 @@ where
             tool_calls: calls.clone(),
         });
         Ok(calls)
-    }
-
-    /// Runs one tool call, asking the person first when it would change anything or show the
-    /// model a secret file.
-    async fn call_tool(
-        &self,
-        thread: &mut Thread,
-        call: &ToolCall,
-        live: &mut (dyn FnMut(Live) + Send),
-    ) -> ToolOutcome {
-        let Some(tool) = Tool::named(&call.tool) else {
-            let names: Vec<&str> = Tool::ALL.iter().map(|tool| tool.name()).collect();
-            return ToolOutcome::error(format!(
-                "There is no tool named {:?}. The tools are {}.",
-                call.tool,
-                names.join(", ")
-            ));
-        };
-        let summary = summarize(tool, &call.arguments);
-        let secret = reads_secret(&self.workspace, tool, &call.arguments).await;
-        if (self.settings.approval.asks_for(tool) || secret) && !thread.allowed.contains(&tool) {
-            let request = ApprovalRequest {
-                tool,
-                summary: if secret {
-                    format!("{summary} (this file usually holds secrets; the model would see them)")
-                } else {
-                    summary.clone()
-                },
-                secret,
-            };
-            let decision = self.approver.decide(&request).await;
-            if matches!(decision, Decision::Deny | Decision::Unavailable) {
-                live(Live::ToolDeclined {
-                    summary: summary.clone(),
-                    no_one_there: decision == Decision::Unavailable,
-                });
-            }
-            match decision {
-                Decision::AllowOnce => {}
-                Decision::AllowForThread => {
-                    thread.allowed.insert(tool);
-                }
-                Decision::Deny if secret => {
-                    return ToolOutcome::error(
-                        "Reading this file was declined: it usually holds secrets such as keys or passwords. Do not try to get its contents another way. If you need a specific value, ask the person for it.",
-                    );
-                }
-                Decision::Deny => {
-                    return ToolOutcome::error(
-                        "The person declined this action. Ask them what they would like instead, or take a different approach.",
-                    );
-                }
-                Decision::Unavailable => return ToolOutcome::error(no_one_there(secret)),
-            }
-        }
-        live(Live::ToolStarted {
-            summary: summary.clone(),
-        });
-        let outcome = tool.run(&call.arguments, &self.workspace).await;
-        live(Live::ToolFinished {
-            summary,
-            is_error: outcome.is_error,
-        });
-        outcome
-    }
-
-    async fn record_result(
-        &self,
-        thread: &mut Thread,
-        call_id: CallId,
-        outcome: ToolOutcome,
-    ) -> Result<(), HarnessError> {
-        let output = vec![Part::Text { text: outcome.text }];
-        let completed = ToolCallCompleted {
-            call_id: call_id.clone(),
-            is_error: outcome.is_error,
-            output: output.clone(),
-            structured: None,
-        };
-        let mut events = Vec::new();
-        self.stage(thread, &mut events, &completed)?;
-        self.commit(thread, events).await?;
-        thread.messages.push(Message::Tool {
-            call_id,
-            is_error: outcome.is_error,
-            output,
-        });
-        Ok(())
     }
 }
 

@@ -8,6 +8,7 @@ use serde_json::json;
 
 use super::workspace::Workspace;
 use super::{Tool, ToolOutcome};
+use crate::cancel::Cancel;
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
@@ -38,7 +39,7 @@ impl Session {
 
     fn call(&self, tool: Tool, arguments: serde_json::Value) -> ToolOutcome {
         let arguments = Arguments::Json(serde_json::from_value(arguments).unwrap());
-        block_on(tool.run(&arguments, &self.workspace))
+        block_on(tool.run(&arguments, &self.workspace, &Cancel::new()))
     }
 }
 
@@ -244,7 +245,10 @@ fn bad_arguments_are_explained_to_the_model() {
                 .text
                 .contains("The arguments for write are invalid")
     );
-    let malformed =
-        block_on(Tool::Read.run(&Arguments::Malformed("{\"path\": ".into()), &s.workspace));
+    let malformed = block_on(Tool::Read.run(
+        &Arguments::Malformed("{\"path\": ".into()),
+        &s.workspace,
+        &Cancel::new(),
+    ));
     assert!(malformed.is_error && malformed.text.contains("not valid JSON"));
 }

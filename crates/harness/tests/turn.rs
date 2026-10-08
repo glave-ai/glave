@@ -10,7 +10,7 @@ mod support;
 mod scripted {
     use super::support::*;
     use glave_event::{Body, Outcome, Part, RawEvent, StopReason};
-    use glave_harness::{AllowAll, Live, conversation};
+    use glave_harness::{AllowAll, Cancel, Live, conversation};
     use glave_ports::{EventLog, MemoryLog, OrgId, Scope, SpaceId};
     use serde_json::json;
 
@@ -30,7 +30,9 @@ mod scripted {
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let mut seen = Vec::new();
             let summary = harness
-                .run_turn(&mut thread, "make hello.txt", &mut |live| seen.push(live))
+                .run_turn(&mut thread, "make hello.txt", &Cancel::new(), &mut |live| {
+                    seen.push(live);
+                })
                 .await
                 .unwrap();
 
@@ -80,7 +82,7 @@ mod scripted {
             let harness = harness(&dir, answers, Refuse).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "clean up", &mut |_| {})
+                .run_turn(&mut thread, "clean up", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
             let declined = thread.messages().iter().any(|m| {
@@ -119,7 +121,7 @@ mod scripted {
                     harness_on(&dir, answers, Refuse, MemoryLog::new(), 1, settings).await;
                 let mut thread = harness.start_thread(scope()).await.unwrap();
                 harness
-                    .run_turn(&mut thread, "go", &mut |_| {})
+                    .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})
                     .await
                     .unwrap();
             });
@@ -164,7 +166,7 @@ mod scripted {
             let harness = harness(&dir, answers, AllowAll).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "say hello", &mut |_| {})
+                .run_turn(&mut thread, "say hello", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
             assert!(
@@ -203,7 +205,7 @@ mod scripted {
             let harness = harness(&dir, answers, AllowAll).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "run it", &mut |_| {})
+                .run_turn(&mut thread, "run it", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
             let Some(glave_ports::Message::Tool {
@@ -241,7 +243,7 @@ mod scripted {
             let harness = harness(&dir, answers, AllowAll).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "loop", &mut |_| {})
+                .run_turn(&mut thread, "loop", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
             let errors = thread
@@ -261,7 +263,7 @@ mod scripted {
             let harness = harness(&dir, first, AllowAll).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "hi", &mut |_| {})
+                .run_turn(&mut thread, "hi", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
 
@@ -281,7 +283,7 @@ mod scripted {
             assert_eq!(resumed.messages(), thread.messages());
 
             resumed_harness
-                .run_turn(&mut resumed, "again", &mut |_| {})
+                .run_turn(&mut resumed, "again", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
             let events = events(resumed_harness.log(), thread.id).await;
@@ -309,7 +311,7 @@ mod scripted {
             let harness = harness(&dir, answers, AllowAll).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "go", &mut |_| {})
+                .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
 

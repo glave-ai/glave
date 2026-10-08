@@ -17,6 +17,8 @@ use serde_json::{Value, json};
 
 use workspace::Workspace;
 
+use crate::cancel::Cancel;
+
 /// What a tool call produced, as the model will see it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolOutcome {
@@ -152,8 +154,13 @@ impl Tool {
     }
 
     /// Runs the tool with the model's arguments. Every failure becomes an error the model can
-    /// read and act on; nothing here aborts the turn.
-    pub(crate) async fn run(self, arguments: &Arguments, workspace: &Workspace) -> ToolOutcome {
+    /// read and act on; nothing here aborts the turn. A command stops when `cancel` fires.
+    pub(crate) async fn run(
+        self,
+        arguments: &Arguments,
+        workspace: &Workspace,
+        cancel: &Cancel,
+    ) -> ToolOutcome {
         match self {
             Self::Search => match parse(self, arguments) {
                 Ok(args) => search::search(workspace, args).await,
@@ -176,7 +183,7 @@ impl Tool {
                 Err(outcome) => outcome,
             },
             Self::Bash => match parse(self, arguments) {
-                Ok(args) => bash::bash(workspace, args).await,
+                Ok(args) => bash::bash(workspace, args, cancel).await,
                 Err(outcome) => outcome,
             },
         }

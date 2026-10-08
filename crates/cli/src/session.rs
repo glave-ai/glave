@@ -7,8 +7,8 @@ use std::process::ExitCode;
 use anyhow::Context as _;
 use glave_event::Outcome;
 use glave_harness::{
-    AGENTS_MD, Approver, Harness, NoOneToAsk, OsEntropy, Parts, Sandbox, Settings, SystemClock,
-    Thread, Workspace, agents_md,
+    AGENTS_MD, Approver, Cancel, Harness, HarnessError, NoOneToAsk, OsEntropy, Parts, Sandbox,
+    Settings, SystemClock, Thread, Workspace, agents_md,
 };
 use glave_ports::EventLog;
 use glave_provider_openai::OpenAiCompatible;
@@ -17,8 +17,9 @@ use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 use crate::args::{self, Action, Args, USAGE};
 use crate::config::{self, Endpoint};
 use crate::home;
+use crate::input::{CtrlC, Input};
 use crate::system::random_uuid;
-use crate::terminal::{AskInTerminal, Printer, read_line};
+use crate::terminal::{AskInTerminal, Printer};
 
 type Glave<A> = Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, A>;
 
@@ -93,11 +94,13 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         settings,
         instructions: instructions.map(|loaded| loaded.files).unwrap_or_default(),
     };
+    let input = Input::start();
     // Ask in the terminal when there is one; otherwise no one is there to answer.
     if std::io::stdin().is_terminal() {
-        session(&args, &endpoint, wiring, AskInTerminal::new()).await
+        let approver = AskInTerminal::new(input.clone());
+        session(&args, &endpoint, wiring, approver, input).await
     } else {
-        session(&args, &endpoint, wiring, NoOneToAsk).await
+        session(&args, &endpoint, wiring, NoOneToAsk, input).await
     }
 }
 
@@ -116,6 +119,7 @@ async fn session<A: Approver>(
     endpoint: &Endpoint,
     wiring: Wiring,
     approver: A,
+    input: Input,
 ) -> anyhow::Result<ExitCode> {
     let root = wiring.workspace.root().to_owned();
     let instruction_files = wiring.instructions;
@@ -150,50 +154,78 @@ async fn session<A: Approver>(
         None => (harness.start_thread(scope).await?, "new thread"),
     };
     let mut printer = Printer::new(&endpoint.model, protections(args));
-    let mut code = ExitCode::SUCCESS;
-    if args.prompt.is_empty() {
+    let code = if args.prompt.is_empty() {
         let folder = root.display().to_string();
         let note = match named(&instruction_files) {
             Some(files) => format!("{note} · following {files}"),
             None => note.to_owned(),
         };
         printer.banner(&endpoint.model, &endpoint.provider.provider, &folder, &note);
-        loop {
-            printer.ask();
-            let Some(line) = read_line().await else { break };
-            let line = line.trim();
-            if line == "/exit" {
-                break;
-            }
-            if line == "/compact" {
-                let result = harness
-                    .compact(&mut thread, &mut |live| printer.live(live))
-                    .await;
-                if let Err(error) = result {
-                    printer.error(&error.to_string());
-                }
-                continue;
-            }
-            if !line.is_empty() {
-                code = turn(&harness, &mut thread, line, &mut printer, endpoint.local).await;
-            }
-        }
+        converse(&harness, &mut thread, &input, &mut printer, endpoint.local).await
     } else {
-        code = turn(
+        turn(
             &harness,
             &mut thread,
             &args.prompt,
             &mut printer,
             endpoint.local,
         )
-        .await;
-    }
+        .await
+    };
     if let Some(path) = &args.events {
         export(harness.log(), &thread, path).await?;
     }
     Ok(code)
 }
 
+/// The interactive session: each line typed is a turn, until `/exit`, the end of input, or
+/// Ctrl-C at the prompt. Ctrl-C during a turn or `/compact` cancels just that.
+async fn converse<A: Approver>(
+    harness: &Glave<A>,
+    thread: &mut Thread,
+    input: &Input,
+    printer: &mut Printer,
+    local: bool,
+) -> ExitCode {
+    let mut code = ExitCode::SUCCESS;
+    loop {
+        printer.ask();
+        let interrupt = Cancel::new();
+        let typed = {
+            let _ctrl_c = CtrlC::cancels(&interrupt);
+            interrupt.run(input.line()).await
+        };
+        let Some(Some(line)) = typed else {
+            println!();
+            break;
+        };
+        let line = line.trim();
+        if line == "/exit" {
+            break;
+        }
+        if line == "/compact" {
+            let cancel = Cancel::new();
+            let _ctrl_c = CtrlC::cancels(&cancel);
+            match harness
+                .compact(thread, &cancel, &mut |live| printer.live(live))
+                .await
+            {
+                Ok(_) => {}
+                Err(HarnessError::Cancelled) => {
+                    printer.error("compaction cancelled; the thread is as it was");
+                }
+                Err(error) => printer.error(&error.to_string()),
+            }
+            continue;
+        }
+        if !line.is_empty() {
+            code = turn(harness, thread, line, printer, local).await;
+        }
+    }
+    code
+}
+
+/// Runs one turn, which Ctrl-C cancels, and prints its receipt.
 async fn turn<A: Approver>(
     harness: &Glave<A>,
     thread: &mut Thread,
@@ -201,16 +233,19 @@ async fn turn<A: Approver>(
     printer: &mut Printer,
     local: bool,
 ) -> ExitCode {
+    let cancel = Cancel::new();
+    let _ctrl_c = CtrlC::cancels(&cancel);
     let result = harness
-        .run_turn(thread, prompt, &mut |live| printer.live(live))
+        .run_turn(thread, prompt, &cancel, &mut |live| printer.live(live))
         .await;
     match result {
         Ok(summary) => {
             printer.receipt(&summary, local);
-            if summary.outcome == Outcome::Completed {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
+            match summary.outcome {
+                Outcome::Completed => ExitCode::SUCCESS,
+                // As shells report a program stopped by Ctrl-C.
+                Outcome::Cancelled => ExitCode::from(130),
+                _ => ExitCode::FAILURE,
             }
         }
         Err(error) => {

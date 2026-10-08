@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use glave_harness::{
-    Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox, Settings, SystemClock, Workspace,
+    Cancel, Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox, Settings, SystemClock, Workspace,
     agents_md,
 };
 use glave_ports::{EventLog, MemoryBlobs, MemoryLog, OrgId, Scope, SpaceId};
@@ -218,16 +218,21 @@ async fn converse(
                 .map_err(fail)?;
         }
         let _ = write!(transcript, "\n> {prompt}\n");
-        let left = deadline.saturating_duration_since(Instant::now());
+        // Past the deadline the turn is cancelled, so it still ends cleanly in the log.
+        let cancel = Cancel::new();
+        let _deadline = Deadline::cancels(&cancel, deadline);
         let mut show = |live| note(&mut transcript, live);
-        match tokio::time::timeout(left, harness.run_turn(&mut thread, prompt, &mut show)).await {
-            Ok(Ok(_)) => {}
-            Ok(Err(err)) => {
-                failures.push(format!("turn {} failed: {err}", index + 1));
+        match harness
+            .run_turn(&mut thread, prompt, &cancel, &mut show)
+            .await
+        {
+            Ok(_) if cancel.is_cancelled() => {
+                failures.push(format!("took longer than {}s", task.timeout.as_secs()));
                 break;
             }
-            Err(_) => {
-                failures.push(format!("took longer than {}s", task.timeout.as_secs()));
+            Ok(_) => {}
+            Err(err) => {
+                failures.push(format!("turn {} failed: {err}", index + 1));
                 break;
             }
         }
@@ -247,6 +252,25 @@ async fn converse(
         lines.push('\n');
     }
     Ok((lines, transcript, failures))
+}
+
+/// Cancels a [`Cancel`] at a deadline, for as long as this lives.
+struct Deadline(tokio::task::JoinHandle<()>);
+
+impl Deadline {
+    fn cancels(cancel: &Cancel, at: Instant) -> Self {
+        let cancel = cancel.clone();
+        Self(tokio::spawn(async move {
+            tokio::time::sleep_until(at.into()).await;
+            cancel.cancel();
+        }))
+    }
+}
+
+impl Drop for Deadline {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 /// Appends what happened to the readable transcript.

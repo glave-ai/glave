@@ -8,6 +8,8 @@ use std::io::{IsTerminal as _, Write as _};
 use glave_event::{Currency, Money, Outcome};
 use glave_harness::{ApprovalRequest, Approver, Decision, Live, TurnSummary};
 
+use crate::input::Input;
+
 const GREEN: &str = "\x1b[32m";
 const CYAN: &str = "\x1b[36m";
 const YELLOW: &str = "\x1b[33m";
@@ -29,20 +31,6 @@ fn paint(color: bool, code: &str, text: &str) -> String {
 
 fn flush() {
     let _ = std::io::stdout().flush();
-}
-
-/// Reads one line from the terminal without blocking the async runtime.
-pub async fn read_line() -> Option<String> {
-    tokio::task::spawn_blocking(|| {
-        let mut line = String::new();
-        match std::io::stdin().read_line(&mut line) {
-            Ok(0) | Err(_) => None,
-            Ok(_) => Some(line),
-        }
-    })
-    .await
-    .ok()
-    .flatten()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,12 +211,14 @@ impl Printer {
 /// Asks the person in the terminal before anything changes.
 pub struct AskInTerminal {
     color: bool,
+    input: Input,
 }
 
 impl AskInTerminal {
-    pub fn new() -> Self {
+    pub fn new(input: Input) -> Self {
         Self {
             color: color_enabled(),
+            input,
         }
     }
 }
@@ -243,7 +233,9 @@ impl Approver for AskInTerminal {
         async move {
             print!("{prompt}");
             flush();
-            match read_line()
+            match self
+                .input
+                .line()
                 .await
                 .map(|answer| answer.trim().to_ascii_lowercase())
                 .as_deref()

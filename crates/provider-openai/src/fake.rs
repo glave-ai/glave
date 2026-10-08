@@ -7,8 +7,9 @@ use std::fmt::Write as _;
 use std::io::{BufRead as _, BufReader, Read as _, Write as IoWrite};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
@@ -19,6 +20,9 @@ pub enum Reply {
     Stream(Vec<Value>),
     /// An error status with this body.
     Status(u16, String),
+    /// No answer at all: the request is held open until the client hangs up, like a model
+    /// that never starts.
+    Stall,
 }
 
 impl Reply {
@@ -54,10 +58,13 @@ pub struct Received {
 
 type Shared<T> = Arc<Mutex<T>>;
 
+/// The requests received so far, and a signal for each new one.
+type Log = Arc<(Mutex<Vec<Received>>, Condvar)>;
+
 /// The running server. Dropping it stops the server and waits for its thread.
 pub struct FakeServer {
     url: String,
-    received: Shared<Vec<Received>>,
+    received: Log,
     stop: Arc<AtomicBool>,
     address: std::net::SocketAddr,
     thread: Option<JoinHandle<()>>,
@@ -70,7 +77,7 @@ impl FakeServer {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let address = listener.local_addr()?;
         let replies: Shared<VecDeque<Reply>> = Arc::new(Mutex::new(replies.into()));
-        let received: Shared<Vec<Received>> = Arc::new(Mutex::new(Vec::new()));
+        let received: Log = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
         let stop = Arc::new(AtomicBool::new(false));
         let thread = {
             let (replies, received, stop) = (replies, Arc::clone(&received), Arc::clone(&stop));
@@ -103,9 +110,21 @@ impl FakeServer {
     /// The requests received so far, in order.
     pub fn received(&self) -> Vec<Received> {
         self.received
+            .0
             .lock()
             .map(|received| received.clone())
             .unwrap_or_default()
+    }
+
+    /// Waits until `count` requests have arrived, or `limit` has passed; whether they did.
+    pub fn wait_for_requests(&self, count: usize, limit: Duration) -> bool {
+        let (requests, arrived) = &*self.received;
+        let Ok(guard) = requests.lock() else {
+            return false;
+        };
+        arrived
+            .wait_timeout_while(guard, limit, |requests| requests.len() < count)
+            .is_ok_and(|(requests, _)| requests.len() >= count)
     }
 }
 
@@ -123,7 +142,7 @@ impl Drop for FakeServer {
 fn serve(
     stream: TcpStream,
     replies: &Shared<VecDeque<Reply>>,
-    received: &Shared<Vec<Received>>,
+    received: &Log,
 ) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut length = 0_usize;
@@ -147,17 +166,24 @@ fn serve(
     }
     let mut body = vec![0_u8; length];
     reader.read_exact(&mut body)?;
-    if let Ok(mut received) = received.lock() {
-        received.push(Received {
-            authorization,
-            body: serde_json::from_slice(&body).unwrap_or(Value::Null),
-        });
-    }
     let reply = replies
         .lock()
         .ok()
         .and_then(|mut replies| replies.pop_front())
         .unwrap_or_else(|| Reply::Status(500, "the fake server ran out of replies".into()));
+    let (requests, arrived) = &**received;
+    if let Ok(mut requests) = requests.lock() {
+        requests.push(Received {
+            authorization,
+            body: serde_json::from_slice(&body).unwrap_or(Value::Null),
+        });
+        arrived.notify_all();
+    }
+    if matches!(reply, Reply::Stall) {
+        // Wait for the client to hang up; a read of nothing means it did.
+        let _ = reader.read(&mut [0_u8; 1]);
+        return Ok(());
+    }
     respond(stream, &reply)
 }
 
@@ -172,6 +198,7 @@ fn respond(mut stream: TcpStream, reply: &Reply) -> std::io::Result<()> {
             (200, "text/event-stream", body)
         }
         Reply::Status(status, body) => (*status, "application/json", body.clone()),
+        Reply::Stall => return Ok(()),
     };
     IoWrite::write_fmt(
         &mut stream,
