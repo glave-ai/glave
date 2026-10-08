@@ -15,7 +15,7 @@ mod model;
 mod scope;
 
 pub use blob::{BlobError, BlobStore, digest};
-pub use log::{EventLog, LogError};
+pub use log::{EventLog, LogError, check_append};
 pub use memory::{MemoryBlobs, MemoryLog};
 pub use model::{
     Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, RequestedCall,

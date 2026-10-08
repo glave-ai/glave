@@ -30,6 +30,13 @@ pub trait EventLog: Send + Sync {
         after: Option<Seq>,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send;
+
+    /// The threads in `scope`, most recently written first, at most `limit` of them.
+    fn threads(
+        &self,
+        scope: &Scope,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send;
 }
 
 /// Why an append or a read failed.
@@ -59,7 +66,7 @@ pub enum LogError {
 
 /// Checks that `events` all belong to one thread and continue its numbering after `last`.
 /// Every implementation applies this rule; it lives here so they apply it identically.
-pub(crate) fn check_append(last: Option<Seq>, events: &[RawEvent]) -> Result<(), LogError> {
+pub fn check_append(last: Option<Seq>, events: &[RawEvent]) -> Result<(), LogError> {
     let Some(first) = events.first() else {
         return Ok(());
     };
