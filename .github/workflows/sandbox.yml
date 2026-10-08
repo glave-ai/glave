@@ -26,7 +26,7 @@ jobs:
       # Fail, never skip, if the sandbox is unavailable on the runner.
       GLAVE_REQUIRE_SANDBOX: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
