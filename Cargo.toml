@@ -37,10 +37,14 @@ allow_attributes = "forbid"    # no #[allow] at all; see AGENTS.md for #[expect]
 allow_attributes_without_reason = "deny"
 
 [workspace.dependencies]
+glave-event = { path = "crates/event" }
+glave-ports = { path = "crates/ports" }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
+sha2 = "0.11"
 thiserror = "2"
+tokio = { version = "1", default-features = false }
 uuid = { version = "1", default-features = false, features = ["std", "serde"] }
 
 # Day-to-day builds: file and line numbers in backtraces, no full debug info

@@ -1,5 +1,7 @@
 //! References to content stored once by hash, such as large tool outputs and turn configs.
 
+use std::fmt::Write as _;
+
 use serde::{Deserialize, Serialize};
 
 use crate::error::InvalidValue;
@@ -24,6 +26,16 @@ impl Sha256 {
                 "must be 64 lowercase hexadecimal digits",
             ))
         }
+    }
+
+    /// Formats a raw 32-byte digest, which is always valid.
+    pub fn from_digest(digest: [u8; 32]) -> Self {
+        let mut hex = String::with_capacity(64);
+        for byte in digest {
+            // Writing to a String cannot fail.
+            let _ = write!(hex, "{byte:02x}");
+        }
+        Self(hex)
     }
 
     pub fn as_str(&self) -> &str {
@@ -65,5 +77,17 @@ mod tests {
         assert!(Sha256::new(good.to_uppercase()).is_err());
         assert!(Sha256::new("abc").is_err());
         assert!(Sha256::new(good.replace('9', "g")).is_err());
+    }
+
+    #[test]
+    fn raw_digests_format_as_lowercase_hex() {
+        let mut raw = [0u8; 32];
+        raw[0] = 0xab;
+        raw[31] = 0x0f;
+        let digest = Sha256::from_digest(raw);
+        assert_eq!(digest.as_str().len(), 64);
+        assert!(digest.as_str().starts_with("ab00"));
+        assert!(digest.as_str().ends_with("000f"));
+        assert!(Sha256::new(digest.as_str()).is_ok());
     }
 }
