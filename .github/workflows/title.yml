@@ -1,0 +1,25 @@
+name: title
+
+# Squash merges make a pull request's title its commit on main, so titles follow the
+# conventional format: type(scope): summary.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: The title is a conventional commit message
+        env:
+          # Passed as data, never pasted into the script, so a title cannot run commands.
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if printf '%s' "$TITLE" | grep -Eq '^(feat|fix|test|docs|chore|refactor|perf|ci|build|revert)(\([a-z0-9-]+\))?!?: [^ ]'; then
+            echo "ok: $TITLE"
+          else
+            echo "::error::Titles become the commit on main, so they read type(scope): summary, such as 'fix(harness): refuse writes through dangling links'. This one is: $TITLE"
+            exit 1
+          fi
