@@ -9,6 +9,17 @@ use super::*;
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
 
+/// Whether to run the sandbox tests here. Where CI expects a sandbox (`GLAVE_REQUIRE_SANDBOX`),
+/// its absence fails the test instead of skipping it, so a test never passes vacuously.
+fn enforced() -> bool {
+    let available = Sandbox::available();
+    assert!(
+        available || std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none(),
+        "GLAVE_REQUIRE_SANDBOX is set but the sandbox is not available here"
+    );
+    available
+}
+
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -65,7 +76,7 @@ fn without_a_sandbox_on_this_computer_preparing_fails() {
 
 #[test]
 fn writes_stay_in_the_project_and_temp_folder() {
-    if !Sandbox::available() {
+    if !enforced() {
         return;
     }
     let dir = scratch("writes");
@@ -98,7 +109,7 @@ fn writes_stay_in_the_project_and_temp_folder() {
 
 #[test]
 fn commits_work_but_hooks_config_and_settings_are_protected() {
-    if !Sandbox::available() {
+    if !enforced() {
         return;
     }
     let dir = scratch("git");
@@ -132,7 +143,7 @@ fn commits_work_but_hooks_config_and_settings_are_protected() {
 
 #[test]
 fn secret_locations_are_unreadable() {
-    if !Sandbox::available() {
+    if !enforced() {
         return;
     }
     let dir = scratch("secrets");
@@ -172,7 +183,7 @@ fn secret_locations_are_unreadable() {
 
 #[test]
 fn the_network_is_off_unless_allowed() {
-    if !Sandbox::available() {
+    if !enforced() {
         return;
     }
     let dir = scratch("network");
@@ -197,7 +208,7 @@ fn the_network_is_off_unless_allowed() {
 
 #[test]
 fn everyday_tools_still_work() {
-    if !Sandbox::available() {
+    if !enforced() {
         return;
     }
     let dir = scratch("tools");

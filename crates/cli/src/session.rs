@@ -1,10 +1,11 @@
 //! Wiring the harness together and running one turn or an interactive session.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use anyhow::Context as _;
 use glave_event::Outcome;
-use glave_harness::{AllowAll, Approver, Harness, Parts, Settings, Thread, Workspace};
+use glave_harness::{AllowAll, Approver, Harness, Parts, Sandbox, Settings, Thread, Workspace};
 use glave_ports::EventLog;
 use glave_provider_openai::OpenAiCompatible;
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
@@ -58,8 +59,21 @@ pub fn main() -> ExitCode {
 async fn run(args: Args) -> anyhow::Result<ExitCode> {
     let endpoint = config::endpoint(args.model.clone())?;
     let provider = OpenAiCompatible::new(endpoint.provider.clone())?;
-    let workspace = Workspace::open(std::env::current_dir()?, std::env::vars_os()).await?;
-    let store = Store::open(home::database().await?).await?;
+    let mut workspace = Workspace::open(std::env::current_dir()?, std::env::vars_os()).await?;
+    let database = home::database().await?;
+    if let Some(level) = args.sandbox {
+        let sandbox = Sandbox {
+            level,
+            network: args.network,
+            home: std::env::var_os("HOME").map(PathBuf::from),
+            glave_home: database.parent().map(Path::to_path_buf),
+        };
+        workspace = workspace
+            .with_sandbox(&sandbox)
+            .await
+            .context("--sandbox was asked for, so glave will not run commands without it")?;
+    }
+    let store = Store::open(database).await?;
     let settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
     let wiring = Wiring {
         provider,
@@ -119,7 +133,7 @@ async fn session<A: Approver>(
         ),
         None => (harness.start_thread(scope).await?, "new thread"),
     };
-    let mut printer = Printer::new(&endpoint.model);
+    let mut printer = Printer::new(&endpoint.model, protections(args));
     let mut code = ExitCode::SUCCESS;
     if args.prompt.is_empty() {
         let folder = root.display().to_string();
@@ -187,4 +201,12 @@ async fn export<L: EventLog>(log: &L, thread: &Thread, path: &Path) -> anyhow::R
     }
     tokio::fs::write(path, lines).await?;
     Ok(())
+}
+
+/// The protections commands run under, for the banner and receipts: `sandbox: project`.
+fn protections(args: &Args) -> Option<String> {
+    args.sandbox.map(|level| {
+        let network = if args.network { " + network" } else { "" };
+        format!("sandbox: {}{network}", level.name())
+    })
 }

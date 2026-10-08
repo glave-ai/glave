@@ -30,6 +30,8 @@ jobs:
   macos:
     if: github.event_name != 'pull_request'
     runs-on: macos-latest
+    env:
+      GLAVE_REQUIRE_SANDBOX: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Install the pinned toolchain (rust-toolchain.toml)
