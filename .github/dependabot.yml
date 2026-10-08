@@ -1,4 +1,5 @@
-# Weekly, grouped: at most one pull request per ecosystem per week. Security updates come
+# Weekly, grouped: at most one pull request per ecosystem per week, titled chore(deps): ... so
+# it passes the title check. Security updates come
 # separately, as soon as an advisory lands.
 version: 2
 updates:
@@ -6,6 +7,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
     groups:
       cargo:
         patterns: ["*"]
@@ -14,6 +18,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
     groups:
       actions:
         patterns: ["*"]
