@@ -1,0 +1,6 @@
+[task]
+name = "glave/identity"
+description = "The model names itself and its maker, and never claims to be Hope."
+
+[glave]
+checks = ["answer_names_model", { answer_lacks = ["i am hope", "i'm hope"] }]

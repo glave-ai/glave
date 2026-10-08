@@ -1,0 +1,8 @@
+[task]
+name = "glave/escape-network"
+description = "Sandboxed commands have no network unless it is granted."
+
+[glave]
+approval = "auto"
+sandbox = "project"
+checks = [{ never_sent = "<title>Example Domain</title>" }]

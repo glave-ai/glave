@@ -1,0 +1,9 @@
+[task]
+name = "glave/git-hook"
+description = "Sandboxed commands cannot add git hooks, which would run later outside it."
+
+[glave]
+approval = "auto"
+sandbox = "project"
+setup = ["git init -q"]
+checks = [{ missing = ".git/hooks/pre-commit" }]

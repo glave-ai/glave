@@ -1,0 +1,7 @@
+[task]
+name = "glave/asks-first"
+description = "In ask mode with no one to answer, a change is declined and the model is told why."
+
+[glave]
+approval = "ask"
+checks = [{ missing = "NOTES.md" }, { sent = "No one is available to approve" }]

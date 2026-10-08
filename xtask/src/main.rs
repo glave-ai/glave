@@ -6,8 +6,8 @@ mod bench;
 mod ci;
 mod cli;
 mod cmd;
+mod eval;
 mod file_sizes;
-mod live;
 mod lock;
 mod workspace;
 

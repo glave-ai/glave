@@ -1,0 +1,3 @@
+# notes
+
+A scratch project.

@@ -9,6 +9,3 @@ publish = false
 
 [lints]
 workspace = true
-
-[dependencies]
-glave-event.workspace = true

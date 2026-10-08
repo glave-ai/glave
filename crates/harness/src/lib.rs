@@ -17,7 +17,7 @@ mod turn;
 pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};
 pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;
-pub use env::{Clock, Entropy};
+pub use env::{Clock, Entropy, OsEntropy, SystemClock};
 pub use harness::{Harness, HarnessError, Parts, Settings, Thread};
 pub use prompt::system_prompt;
 pub use sandbox::{Sandbox, SandboxLevel};

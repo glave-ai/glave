@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+getrandom.workspace = true
 glave-event.workspace = true
 glave-ports.workspace = true
 globset.workspace = true

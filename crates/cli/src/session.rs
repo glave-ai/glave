@@ -6,7 +6,10 @@ use std::process::ExitCode;
 
 use anyhow::Context as _;
 use glave_event::Outcome;
-use glave_harness::{Approver, Harness, NoOneToAsk, Parts, Sandbox, Settings, Thread, Workspace};
+use glave_harness::{
+    Approver, Harness, NoOneToAsk, OsEntropy, Parts, Sandbox, Settings, SystemClock, Thread,
+    Workspace,
+};
 use glave_ports::EventLog;
 use glave_provider_openai::OpenAiCompatible;
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
@@ -14,7 +17,7 @@ use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 use crate::args::{self, Action, Args, USAGE};
 use crate::config::{self, Endpoint};
 use crate::home;
-use crate::system::{OsEntropy, SystemClock, random_uuid};
+use crate::system::random_uuid;
 use crate::terminal::{AskInTerminal, Printer, read_line};
 
 type Glave<A> = Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, A>;

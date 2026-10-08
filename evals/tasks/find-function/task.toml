@@ -1,0 +1,6 @@
+[task]
+name = "glave/find-function"
+description = "Finds a function two calls away from main, among similar names."
+
+[glave]
+checks = [{ answer_contains = "read_settings_file" }]

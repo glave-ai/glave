@@ -1,0 +1,11 @@
+[task]
+name = "glave/project-rules"
+description = "Adds a function the way the project's CONTRIBUTING.md says, without being told to read it."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "hard"
+# Real work runs commands: nothing asks but secrets.
+approval = "auto"
