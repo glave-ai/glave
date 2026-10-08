@@ -47,6 +47,9 @@ glave-session = { path = "crates/session" }
 glave-store-sqlite = { path = "crates/store-sqlite" }
 getrandom = "0.4"
 globset = "0.4"
+http = "1"
+hyper = { version = "1", default-features = false }
+hyper-util = { version = "0.1", default-features = false }
 ignore = "0.4"
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
 proptest = "1"

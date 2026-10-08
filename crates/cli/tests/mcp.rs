@@ -64,6 +64,7 @@ mod mcp {
                 "mcp__tests__fail",
                 "mcp__tests__slow",
                 "mcp__tests__env",
+                "mcp__tests__header",
                 "mcp__tests__flood",
             ]
         );

@@ -17,18 +17,43 @@ required-features = ["test-server"]
 name = "server"
 required-features = ["test-server"]
 
+[[test]]
+name = "http"
+required-features = ["test-server"]
+
 [dependencies]
 glave-event.workspace = true
 glave-ports.workspace = true
-rmcp = { workspace = true, features = ["client", "transport-child-process"] }
+# Header types for rmcp's HTTP transport, which does not re-export them.
+http.workspace = true
+rmcp = { workspace = true, features = [
+    "client",
+    "reqwest",
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+] }
+# Named only to find why an HTTP server could not be reached; rmcp already uses it.
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["process", "rt", "sync", "time"] }
+# Only for the test server.
+hyper = { workspace = true, optional = true, features = ["http1", "server"] }
+hyper-util = { workspace = true, optional = true, features = ["service", "tokio"] }
 
 [features]
 # A small MCP server on stdio, for tests in this and other crates.
-test-server = ["rmcp/server", "rmcp/transport-io", "tokio/io-std", "tokio/macros"]
+test-server = [
+    "dep:hyper",
+    "dep:hyper-util",
+    "rmcp/server",
+    "rmcp/transport-io",
+    "rmcp/transport-streamable-http-server",
+    "tokio/io-std",
+    "tokio/macros",
+    "tokio/net",
+]
 
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }

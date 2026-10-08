@@ -1,7 +1,7 @@
 //! One MCP server as a tool source. It starts in the background the moment it is made, so
 //! glave never waits for a server it has not asked anything yet; its first listing waits for it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -11,8 +11,10 @@ use glave_event::Arguments;
 use glave_ports::{
     BoxFuture, Cancellation, ToolError, ToolInfo, ToolOutput, ToolSource, unless_cancelled,
 };
+use http::{HeaderName, HeaderValue};
 use rmcp::service::RoleClient;
-use rmcp::transport::{IntoTransport, TokioChildProcess};
+use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
+use rmcp::transport::{IntoTransport, StreamableHttpClientTransport, TokioChildProcess};
 use tokio::process::Command;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -62,8 +64,8 @@ pub struct McpServer {
 }
 
 impl McpServer {
-    /// Starts the server `config` describes, in `dir`. A program gets the few `PASSED_ON`
-    /// variables from `environment`, then its own.
+    /// Starts the server `config` describes: a program in `dir`, which gets the few
+    /// `PASSED_ON` variables from `environment`, then its own; or a server at a URL.
     pub fn start(
         name: &str,
         config: &ServerConfig,
@@ -71,39 +73,53 @@ impl McpServer {
         dir: &Path,
         limits: Limits,
     ) -> Self {
-        match config {
-            ServerConfig::Stdio { command, args, env } => {
-                let mut process = Command::new(command);
-                // If glave goes without closing it, the server goes too.
-                process
-                    .args(args)
-                    .current_dir(dir)
-                    .env_clear()
-                    .kill_on_drop(true);
-                for variable in PASSED_ON {
-                    if let Some(value) = environment.get(*variable) {
-                        process.env(variable, value);
-                    }
-                }
-                process.envs(env);
-                let spawned = TokioChildProcess::builder(process)
-                    .stderr(Stdio::null())
-                    .spawn();
-                match spawned {
-                    Ok((transport, _)) => Self::connect(name, transport, limits),
-                    Err(err) => Self::failed(
-                        name,
-                        McpError::start(name, format!("could not run {command}: {err}")),
-                        limits,
-                    ),
-                }
-            }
-            ServerConfig::Http { .. } => Self::failed(
-                name,
-                McpError::start(name, "glave cannot reach MCP servers over HTTP yet"),
-                limits,
-            ),
+        if tokio::runtime::Handle::try_current().is_err() {
+            let error = McpError::start(name, "glave started it outside its async runtime");
+            return Self::failed(name, error, limits);
         }
+        let started = match config {
+            ServerConfig::Stdio { command, args, env } => {
+                let process = process(command, args, env, environment, dir);
+                Self::program(name, process, command, limits)
+            }
+            ServerConfig::Http { url, headers } => Self::http(name, url, headers, limits),
+        };
+        started.unwrap_or_else(|error| Self::failed(name, error, limits))
+    }
+
+    fn program(
+        name: &str,
+        process: Command,
+        command: &str,
+        limits: Limits,
+    ) -> Result<Self, McpError> {
+        let (transport, _) = TokioChildProcess::builder(process)
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|err| McpError::start(name, format!("could not run {command}: {err}")))?;
+        Ok(Self::connect(name, transport, limits))
+    }
+
+    /// A server over Streamable HTTP, sent `headers` with every request. A header's value is
+    /// never shown, since it is often a key.
+    fn http(
+        name: &str,
+        url: &str,
+        headers: &BTreeMap<String, String>,
+        limits: Limits,
+    ) -> Result<Self, McpError> {
+        let mut sent = HashMap::new();
+        for (header, value) in headers {
+            let header_name = HeaderName::try_from(header.as_str())
+                .map_err(|_| McpError::start(name, format!("{header:?} is not a header name")))?;
+            let header_value = HeaderValue::try_from(value.as_str()).map_err(|_| {
+                McpError::start(name, format!("the value of header {header} is not valid"))
+            })?;
+            sent.insert(header_name, header_value);
+        }
+        let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(sent);
+        let transport = StreamableHttpClientTransport::from_config(config);
+        Ok(Self::connect(name, transport, limits))
     }
 
     /// Starts talking MCP over `transport`.
@@ -214,6 +230,30 @@ impl McpServer {
             None => ToolOutput::text(true, "[stopped: the person cancelled the turn]"),
         }
     }
+}
+
+/// The program for a server, with only the environment it should have. If glave goes
+/// without closing it, the server goes too.
+fn process(
+    command: &str,
+    args: &[String],
+    env: &BTreeMap<String, String>,
+    environment: &BTreeMap<String, String>,
+    dir: &Path,
+) -> Command {
+    let mut process = Command::new(command);
+    process
+        .args(args)
+        .current_dir(dir)
+        .env_clear()
+        .kill_on_drop(true);
+    for variable in PASSED_ON {
+        if let Some(value) = environment.get(*variable) {
+            process.env(variable, value);
+        }
+    }
+    process.envs(env);
+    process
 }
 
 impl Drop for McpServer {

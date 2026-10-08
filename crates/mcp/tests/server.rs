@@ -112,6 +112,7 @@ mod server {
                     ("mcp__tests__fail", Effect::Runs, false),
                     ("mcp__tests__slow", Effect::Runs, false),
                     ("mcp__tests__env", Effect::Runs, false),
+                    ("mcp__tests__header", Effect::Runs, false),
                     ("mcp__tests__flood", Effect::Runs, false),
                 ]
             );
@@ -225,7 +226,7 @@ mod server {
         block_on(async {
             let server = launch("tests", &stdio(SERVER, &[], &[]), Limits::default());
             let tools = server.tools().await.unwrap();
-            assert_eq!(tools.len(), 5);
+            assert_eq!(tools.len(), 6);
             server.close().await;
         });
     }
@@ -256,14 +257,8 @@ mod server {
             let listed = missing.tools().await.unwrap_err();
             assert!(listed.to_string().contains("could not run"), "{listed}");
             let mute = launch("mute", &stdio("true", &[], &[]), Limits::default());
-            start_error(&mute, mute.started().await);
-            let web = ServerConfig::Http {
-                url: "https://example.com/mcp".into(),
-                headers: BTreeMap::new(),
-            };
-            let remote = launch("web", &web, Limits::default());
-            let why = start_error(&remote, remote.started().await);
-            assert!(why.contains("HTTP"), "{why}");
+            let why = start_error(&mute, mute.started().await);
+            assert_eq!(why, "it exited or closed the connection before answering");
         });
     }
 
