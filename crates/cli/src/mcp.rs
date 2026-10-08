@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Context as _;
-use glave_mcp::{Limits, McpServer};
+use glave_mcp::{Limits, McpServer, Resources};
 use glave_ports::ToolSource;
 
 use crate::terminal::Printer;
@@ -59,12 +59,15 @@ impl Servers {
         })
     }
 
-    /// The servers as tool sources, in the order of their names.
+    /// The servers as tool sources, in the order of their names, then their resources.
     pub fn sources(&self) -> Vec<Arc<dyn ToolSource>> {
-        self.servers
+        let mut sources: Vec<Arc<dyn ToolSource>> = self
+            .servers
             .iter()
             .map(|server| Arc::clone(server) as Arc<dyn ToolSource>)
-            .collect()
+            .collect();
+        sources.push(Arc::new(Resources::new(self.servers.clone())));
+        sources
     }
 
     /// The servers' names, in order.

@@ -68,6 +68,8 @@ mod mcp {
                 "mcp__tests__grow",
                 "mcp__tests__listed",
                 "mcp__tests__flood",
+                "list_mcp_resources",
+                "read_mcp_resource",
             ]
         );
         let results = said(&received[1].body, "tool");

@@ -12,7 +12,8 @@ use glave_ports::{
     Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSpec, unless_cancelled,
 };
 use rmcp::model::{
-    CallToolRequest, CallToolRequestParams, ClientRequest, ProtocolVersion, ServerResult,
+    CallToolRequest, CallToolRequestParams, ClientRequest, ProtocolVersion,
+    ReadResourceRequestParams, Resource, ResourceContents, ServerResult,
 };
 use rmcp::service::{
     ClientLifecycleMode, ClientServiceExt as _, Peer, PeerRequestOptions, RoleClient,
@@ -26,6 +27,9 @@ use crate::client::{Client, watch_tools};
 use crate::names::exposed;
 use crate::output::output;
 use crate::reason::reason;
+
+/// What the model is told when the person cancels the turn mid-call.
+pub(crate) const CANCELLED: &str = "[stopped: the person cancelled the turn]";
 
 /// An open connection.
 pub(crate) struct Connection {
@@ -181,6 +185,45 @@ impl Connection {
         Ok(infos)
     }
 
+    /// Whether the server offers resources.
+    pub(crate) fn has_resources(&self) -> bool {
+        self.peer
+            .peer_info()
+            .is_some_and(|info| info.capabilities.resources.is_some())
+    }
+
+    /// The server's resources, within `limit` unless cancelled first.
+    pub(crate) async fn resources(
+        &self,
+        cancel: &dyn Cancellation,
+        limit: Duration,
+    ) -> Result<Vec<Resource>, String> {
+        let listed = tokio::time::timeout(limit, self.peer.list_all_resources());
+        match unless_cancelled(cancel, listed).await {
+            Some(Ok(Ok(resources))) => Ok(resources),
+            Some(Ok(Err(err))) => Err(format!("{}: {err}", self.name)),
+            Some(Err(_)) => Err(format!("{} did not answer within {limit:?}.", self.name)),
+            None => Err(CANCELLED.to_owned()),
+        }
+    }
+
+    /// The contents of the resource at `uri`, within `limit` unless cancelled first.
+    pub(crate) async fn read(
+        &self,
+        uri: &str,
+        cancel: &dyn Cancellation,
+        limit: Duration,
+    ) -> Result<Vec<ResourceContents>, String> {
+        let params = ReadResourceRequestParams::new(uri);
+        let read = tokio::time::timeout(limit, self.peer.read_resource(params));
+        match unless_cancelled(cancel, read).await {
+            Some(Ok(Ok(result))) => Ok(result.contents),
+            Some(Ok(Err(err))) => Err(format!("{}: {err}", self.name)),
+            Some(Err(_)) => Err(format!("{} did not answer within {limit:?}.", self.name)),
+            None => Err(CANCELLED.to_owned()),
+        }
+    }
+
     /// Calls the tool the model knows as `name`, for at most `limit`.
     pub(crate) async fn call(
         &self,
@@ -232,7 +275,7 @@ impl Connection {
                 let _ = handle
                     .cancel(Some("cancelled by the person".to_owned()))
                     .await;
-                ToolOutput::text(true, "[stopped: the person cancelled the turn]")
+                ToolOutput::text(true, CANCELLED)
             }
         }
     }

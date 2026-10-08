@@ -25,6 +25,10 @@ required-features = ["test-server"]
 name = "changes"
 required-features = ["test-server"]
 
+[[test]]
+name = "resources"
+required-features = ["test-server"]
+
 [dependencies]
 glave-event.workspace = true
 glave-ports.workspace = true

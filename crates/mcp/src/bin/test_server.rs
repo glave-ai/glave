@@ -5,7 +5,8 @@
 //! Its tools: `echo` (read-only), `fail`, `slow` (waits until the call is cancelled), `env`
 //! (whether a variable reached it), `header` (what a request header was), `grow` (adds the
 //! tool `extra` and says the tools changed), `listed` (how often its tools were listed) and
-//! `flood` (more output than a model should be given).
+//! `flood` (more output than a model should be given). Its resources: `test://greeting`
+//! (text) and `test://logo` (binary).
 
 use std::io::Write as _;
 use std::process::ExitCode;
@@ -16,8 +17,9 @@ use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, DiscoverRequestMethod,
-    DiscoverResult, JsonObject, ListToolsResult, PaginatedRequestParams, ServerCapabilities,
-    ServerConfig, SubscriptionFilter, Tool, ToolAnnotations,
+    DiscoverResult, JsonObject, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
+    ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
+    ResourceContents, ServerCapabilities, ServerConfig, SubscriptionFilter, Tool, ToolAnnotations,
 };
 use rmcp::service::{RequestContext, RoleServer, SubscriptionContext, SubscriptionSink};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -100,6 +102,7 @@ impl ServerHandler for TestServer {
             ServerCapabilities::builder()
                 .enable_tools()
                 .enable_tool_list_changed()
+                .enable_resources()
                 .build(),
         )
     }
@@ -144,6 +147,42 @@ impl ServerHandler for TestServer {
             tools: self.tools(),
             ..Default::default()
         }))
+    }
+
+    fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListResourcesResult, ErrorData>> + Send + '_ {
+        let greeting = Resource::new("test://greeting", "greeting")
+            .with_mime_type("text/plain")
+            .with_description("A friendly line.");
+        let logo = Resource::new("test://logo", "logo").with_mime_type("image/png");
+        std::future::ready(Ok(ListResourcesResult {
+            resources: vec![greeting, logo],
+            ..Default::default()
+        }))
+    }
+
+    fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ReadResourceResponse, ErrorData>> + Send + '_ {
+        let contents =
+            match request.uri.as_str() {
+                "test://greeting" => Ok(ResourceContents::text(
+                    "hello from a resource",
+                    "test://greeting",
+                )),
+                "test://logo" => Ok(ResourceContents::blob("iVBORw0KGgo=", "test://logo")
+                    .with_mime_type("image/png")),
+                other => Err(ErrorData::resource_not_found(
+                    format!("no resource {other}"),
+                    None,
+                )),
+            };
+        std::future::ready(contents.map(|content| ReadResourceResult::new(vec![content]).into()))
     }
 
     async fn call_tool(

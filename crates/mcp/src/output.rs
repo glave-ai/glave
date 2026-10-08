@@ -19,17 +19,22 @@ pub fn output(result: &CallToolResult) -> ToolOutput {
     if texts.is_empty() {
         texts.push("(no output)".to_owned());
     }
-    let text = texts.join("\n");
+    ToolOutput {
+        is_error: result.is_error.unwrap_or(false),
+        parts: vec![Part::Text {
+            text: cut(texts.join("\n")),
+        }],
+    }
+}
+
+/// `text`, cut to what one result may give the model.
+pub(crate) fn cut(text: String) -> String {
     let total = text.chars().count();
-    let text = if total > MAX_CHARS {
+    if total > MAX_CHARS {
         let kept: String = text.chars().take(MAX_CHARS).collect();
         format!("{kept}\n[cut short: {total} characters, only the first {MAX_CHARS} shown]")
     } else {
         text
-    };
-    ToolOutput {
-        is_error: result.is_error.unwrap_or(false),
-        parts: vec![Part::Text { text }],
     }
 }
 

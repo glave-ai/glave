@@ -21,7 +21,7 @@ use tokio::task::JoinHandle;
 
 use crate::McpError;
 use crate::config::ServerConfig;
-use crate::connection::Connection;
+use crate::connection::{CANCELLED, Connection};
 
 /// Variables a server's process starts with, beyond its own configured ones. Nothing else from
 /// glave's environment reaches it, so neither do glave's keys.
@@ -159,6 +159,11 @@ impl McpServer {
         }
     }
 
+    /// The longest one call may take.
+    pub(crate) fn call_limit(&self) -> Duration {
+        self.call_limit
+    }
+
     /// The server's name, as configured.
     pub fn name(&self) -> &str {
         &self.name
@@ -174,7 +179,8 @@ impl McpServer {
         self.connection().await.map(|_| ())
     }
 
-    async fn connection(&self) -> Result<Arc<Connection>, McpError> {
+    /// The connection, once started.
+    pub(crate) async fn connection(&self) -> Result<Arc<Connection>, McpError> {
         let mut state = self.state.clone();
         let settled = state
             .wait_for(|state| !matches!(state, State::Starting))
@@ -227,7 +233,7 @@ impl McpServer {
                     .await
             }
             Some(Err(err)) => ToolOutput::text(true, err.to_string()),
-            None => ToolOutput::text(true, "[stopped: the person cancelled the turn]"),
+            None => ToolOutput::text(true, CANCELLED),
         }
     }
 }
