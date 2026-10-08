@@ -260,9 +260,11 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> ToolOutcome {
         let Some(tool) = Tool::named(&call.tool) else {
+            let names: Vec<&str> = Tool::ALL.iter().map(|tool| tool.name()).collect();
             return ToolOutcome::error(format!(
-                "There is no tool named {:?}. The tools are read, write, edit and bash.",
-                call.tool
+                "There is no tool named {:?}. The tools are {}.",
+                call.tool,
+                names.join(", ")
             ));
         };
         let summary = summarize(tool, &call.arguments);

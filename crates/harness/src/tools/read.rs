@@ -1,10 +1,11 @@
-//! `read`: a file with numbered lines, or a folder's entries.
+//! `read`: a file with numbered lines, or a folder's entries apart from what git ignores.
 
 use std::fmt::Write as _;
 
 use serde::Deserialize;
 
 use super::ToolOutcome;
+use super::walk;
 use super::workspace::Workspace;
 
 /// Most lines returned by one read.
@@ -106,7 +107,7 @@ fn cut_line(line: &str) -> String {
 }
 
 /// A NUL byte, or more than 30% control bytes, in the first 4 KiB.
-fn looks_binary(bytes: &[u8]) -> bool {
+pub(crate) fn looks_binary(bytes: &[u8]) -> bool {
     let head = bytes.get(..4_096).unwrap_or(bytes);
     if head.contains(&0) {
         return true;
@@ -119,32 +120,26 @@ fn looks_binary(bytes: &[u8]) -> bool {
 }
 
 async fn list(path: &std::path::Path, shown: &str) -> ToolOutcome {
-    let mut entries = match tokio::fs::read_dir(path).await {
-        Ok(entries) => entries,
-        Err(e) => return ToolOutcome::error(format!("Could not list {shown}: {e}")),
+    let dir = path.to_owned();
+    let (names, left_out) = match tokio::task::spawn_blocking(move || walk::entries(&dir)).await {
+        Ok(Ok(listed)) => listed,
+        Ok(Err(e)) => return ToolOutcome::error(format!("Could not list {shown}: {e}")),
+        Err(_) => return ToolOutcome::error(format!("Could not list {shown}.")),
     };
-    let mut names = Vec::new();
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let mut name = entry.file_name().to_string_lossy().into_owned();
-        if entry.file_type().await.is_ok_and(|kind| kind.is_dir()) {
-            name.push('/');
-        }
-        names.push(name);
-    }
-    names.sort();
     let total = names.len();
-    let mut out = names
-        .into_iter()
-        .take(MAX_ENTRIES)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let mut lines: Vec<String> = names.into_iter().take(MAX_ENTRIES).collect();
     if total > MAX_ENTRIES {
-        let _ = write!(out, "\n({MAX_ENTRIES} of {total} entries shown)");
+        lines.push(format!("({MAX_ENTRIES} of {total} entries shown)"));
     }
-    if out.is_empty() {
-        out = "(empty folder)".into();
+    if left_out > 0 {
+        lines.push(format!(
+            "({left_out} more that git ignores, such as build output; read them by name if needed)"
+        ));
     }
-    ToolOutcome::ok(out)
+    if lines.is_empty() {
+        return ToolOutcome::ok("(empty folder)");
+    }
+    ToolOutcome::ok(lines.join("\n"))
 }
 
 #[cfg(test)]
