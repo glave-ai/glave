@@ -119,4 +119,39 @@ mod tests {
         let chunk = vec![b'x'; MAX_LINE + 1];
         assert!(decoder.push(&chunk).is_err());
     }
+
+    proptest::proptest! {
+        /// However the network splits a stream into chunks, it decodes to the same events,
+        /// including multibyte characters cut in half.
+        #[test]
+        fn any_chunking_decodes_the_same_events(
+            payloads in proptest::collection::vec("[a-zA-Z0-9é漢🙂{}:,\\[\\]][a-zA-Z0-9é漢🙂 {}:,]{0,30}", 0..8),
+            cuts in proptest::collection::vec(proptest::prelude::any::<usize>(), 0..12),
+        ) {
+            let stream: String = payloads.iter().map(|payload| ["data: ", payload, "\n\n"].concat()).collect();
+            let bytes = stream.as_bytes();
+            let mut points: Vec<usize> = cuts.iter().map(|cut| cut % (bytes.len() + 1)).collect();
+            points.sort_unstable();
+            let mut chunks = Vec::new();
+            let mut start = 0;
+            for point in points {
+                chunks.push(&bytes[start..point]);
+                start = point;
+            }
+            chunks.push(&bytes[start..]);
+            proptest::prop_assert_eq!(decode(&chunks), payloads);
+        }
+
+        /// Whatever bytes arrive, the decoder answers or refuses; it never panics.
+        #[test]
+        fn arbitrary_bytes_never_panic(
+            chunks in proptest::collection::vec(proptest::collection::vec(proptest::prelude::any::<u8>(), 0..64), 0..8),
+        ) {
+            let mut decoder = SseDecoder::default();
+            for chunk in &chunks {
+                let _ = decoder.push(chunk);
+            }
+            let _ = decoder.finish();
+        }
+    }
 }

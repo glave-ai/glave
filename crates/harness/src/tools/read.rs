@@ -183,4 +183,34 @@ mod tests {
         assert!(looks_binary(b"\x7fELF\x00\x01"));
         assert!(!looks_binary("hello, wörld\n\ttabbed\r\n".as_bytes()));
     }
+
+    proptest::proptest! {
+        /// Any page of any file numbers its lines consecutively from the offset asked for, and
+        /// a page past the end is refused, never empty or wrong.
+        #[test]
+        fn pages_number_lines_consecutively(
+            lines in proptest::collection::vec("[a-z ]{0,20}", 0..60),
+            offset in 1_usize..80,
+            limit in 1_usize..80,
+        ) {
+            let text: String = lines.iter().map(|line| [line.as_str(), "\n"].concat()).collect();
+            let out = numbered(&text, Some(offset), Some(limit));
+            if lines.is_empty() {
+                proptest::prop_assert_eq!(out.text, "(empty file)");
+                return Ok(());
+            }
+            if offset > lines.len() {
+                proptest::prop_assert!(out.is_error);
+                return Ok(());
+            }
+            let numbers: Vec<usize> = out
+                .text
+                .lines()
+                .filter_map(|line| line.split_once('\t'))
+                .map(|(number, _)| number.parse().unwrap())
+                .collect();
+            let last = (offset + limit - 1).min(lines.len());
+            proptest::prop_assert_eq!(numbers, (offset..=last).collect::<Vec<_>>());
+        }
+    }
 }
