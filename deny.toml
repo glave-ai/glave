@@ -15,6 +15,9 @@ allow = [
     "CC0-1.0",
     "Unicode-3.0",
     "MPL-2.0",
+    # Permissive data license (Linux Foundation) on Mozilla's root-certificate bundle, used
+    # by rustls when the OS trust store is unavailable. No copyleft.
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.9
 unused-allowed-license = "allow"

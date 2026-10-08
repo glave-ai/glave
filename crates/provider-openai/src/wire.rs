@@ -1,0 +1,306 @@
+//! The chat completions wire format: glave's neutral request in, OpenAI's JSON out, and the
+//! shape of each streamed chunk coming back.
+
+use glave_event::{Arguments, Part};
+use glave_ports::{Message, ModelRequest, ToolSpec};
+use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
+
+#[derive(Debug, Serialize)]
+pub(crate) struct ChatRequest<'a> {
+    model: &'a str,
+    messages: Vec<WireMessage<'a>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<WireTool<'a>>,
+    stream: bool,
+    stream_options: StreamOptions,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+struct StreamOptions {
+    include_usage: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "role", rename_all = "snake_case")]
+enum WireMessage<'a> {
+    System {
+        content: &'a str,
+    },
+    User {
+        content: String,
+    },
+    Assistant {
+        content: Option<String>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        tool_calls: Vec<WireToolCall<'a>>,
+    },
+    Tool {
+        tool_call_id: &'a str,
+        content: String,
+    },
+}
+
+#[derive(Debug, Serialize)]
+struct WireToolCall<'a> {
+    id: &'a str,
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: WireFunctionCall<'a>,
+}
+
+#[derive(Debug, Serialize)]
+struct WireFunctionCall<'a> {
+    name: &'a str,
+    arguments: String,
+}
+
+#[derive(Debug, Serialize)]
+struct WireTool<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: &'a ToolSpec,
+}
+
+/// Builds the request body for a streaming chat completion.
+pub(crate) fn chat_request(request: &ModelRequest) -> ChatRequest<'_> {
+    let mut messages = Vec::with_capacity(request.messages.len().saturating_add(1));
+    if !request.system.is_empty() {
+        messages.push(WireMessage::System {
+            content: &request.system,
+        });
+    }
+    messages.extend(request.messages.iter().map(wire_message));
+    ChatRequest {
+        model: &request.model,
+        messages,
+        tools: request
+            .tools
+            .iter()
+            .map(|function| WireTool {
+                kind: "function",
+                function,
+            })
+            .collect(),
+        stream: true,
+        stream_options: StreamOptions {
+            include_usage: true,
+        },
+        max_tokens: request.max_output_tokens,
+    }
+}
+
+fn wire_message(message: &Message) -> WireMessage<'_> {
+    match message {
+        Message::User { parts } => WireMessage::User {
+            content: text_of(parts),
+        },
+        Message::Assistant { parts, tool_calls } => {
+            let text = text_of(parts);
+            WireMessage::Assistant {
+                content: (!text.is_empty()).then_some(text),
+                tool_calls: tool_calls
+                    .iter()
+                    .map(|call| WireToolCall {
+                        id: call.call_id.as_str(),
+                        kind: "function",
+                        function: WireFunctionCall {
+                            name: &call.tool,
+                            arguments: arguments_text(&call.arguments),
+                        },
+                    })
+                    .collect(),
+            }
+        }
+        Message::Tool {
+            call_id, output, ..
+        } => WireMessage::Tool {
+            tool_call_id: call_id.as_str(),
+            content: text_of(output),
+        },
+    }
+}
+
+/// The text parts of a message, joined. Reasoning is not sent back through this API, and
+/// files are named rather than inlined until attachments are supported.
+fn text_of(parts: &[Part]) -> String {
+    let mut text = String::new();
+    for part in parts {
+        let piece = match part {
+            Part::Text { text } => text.as_str(),
+            Part::File { name, .. } => name.as_deref().unwrap_or("[file]"),
+            Part::Reasoning { .. } => continue,
+        };
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(piece);
+    }
+    text
+}
+
+fn arguments_text(arguments: &Arguments) -> String {
+    match arguments {
+        Arguments::Json(map) => serde_json::to_string(map).unwrap_or_else(|_| "{}".to_owned()),
+        Arguments::Malformed(raw) => raw.clone(),
+    }
+}
+
+/// One streamed chunk. Providers add fields freely, so unknown fields are ignored.
+#[derive(Debug, Deserialize)]
+pub(crate) struct Chunk {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub choices: Vec<Choice>,
+    /// Kept raw so the provider's exact numbers (and a reported cost) survive.
+    #[serde(default)]
+    pub usage: Option<Box<RawValue>>,
+    #[serde(default)]
+    pub error: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Choice {
+    #[serde(default)]
+    pub delta: Option<ChoiceDelta>,
+    #[serde(default)]
+    pub finish_reason: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct ChoiceDelta {
+    #[serde(default)]
+    pub content: Option<String>,
+    /// Reasoning text, as llama.cpp and vLLM name it.
+    #[serde(default)]
+    pub reasoning_content: Option<String>,
+    /// Reasoning text, as OpenRouter and Ollama name it.
+    #[serde(default)]
+    pub reasoning: Option<String>,
+    #[serde(default)]
+    pub tool_calls: Option<Vec<ToolCallDelta>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ToolCallDelta {
+    #[serde(default)]
+    pub index: Option<u32>,
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub function: Option<FunctionDelta>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct FunctionDelta {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub arguments: Option<String>,
+}
+
+/// The usage object: token counts, plus the cost OpenRouter reports, kept as its exact
+/// decimal text.
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct WireUsage {
+    #[serde(default)]
+    pub prompt_tokens: u64,
+    #[serde(default)]
+    pub completion_tokens: u64,
+    #[serde(default)]
+    pub prompt_tokens_details: Option<PromptDetails>,
+    #[serde(default)]
+    pub completion_tokens_details: Option<CompletionDetails>,
+    #[serde(default)]
+    pub cost: Option<Box<RawValue>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct PromptDetails {
+    #[serde(default)]
+    pub cached_tokens: Option<u64>,
+    #[serde(default)]
+    pub cache_write_tokens: Option<u64>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct CompletionDetails {
+    #[serde(default)]
+    pub reasoning_tokens: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glave_event::CallId;
+    use glave_ports::ToolCall;
+    use serde_json::json;
+
+    #[test]
+    fn a_request_has_the_chat_completions_shape() {
+        let request = ModelRequest {
+            model: "gemma-4-12b".into(),
+            system: "Be brief.".into(),
+            messages: vec![
+                Message::User {
+                    parts: vec![Part::Text {
+                        text: "list files".into(),
+                    }],
+                },
+                Message::Assistant {
+                    parts: vec![Part::Reasoning {
+                        text: Some("think".into()),
+                        opaque: None,
+                    }],
+                    tool_calls: vec![ToolCall {
+                        call_id: CallId::new("call_4").unwrap(),
+                        tool: "bash".into(),
+                        arguments: Arguments::Json(
+                            json!({"command": "ls"}).as_object().unwrap().clone(),
+                        ),
+                    }],
+                },
+                Message::Tool {
+                    call_id: CallId::new("call_4").unwrap(),
+                    is_error: false,
+                    output: vec![Part::Text {
+                        text: "README.md".into(),
+                    }],
+                },
+            ],
+            tools: vec![ToolSpec {
+                name: "bash".into(),
+                description: "Run a command.".into(),
+                parameters: json!({"type": "object"}),
+            }],
+            max_output_tokens: Some(1024),
+        };
+        let body = serde_json::to_value(chat_request(&request)).unwrap();
+        assert_eq!(
+            body,
+            json!({
+                "model": "gemma-4-12b",
+                "messages": [
+                    {"role": "system", "content": "Be brief."},
+                    {"role": "user", "content": "list files"},
+                    {"role": "assistant", "content": null, "tool_calls": [
+                        {"id": "call_4", "type": "function",
+                         "function": {"name": "bash", "arguments": "{\"command\":\"ls\"}"}}
+                    ]},
+                    {"role": "tool", "tool_call_id": "call_4", "content": "README.md"}
+                ],
+                "tools": [{"type": "function", "function": {
+                    "name": "bash", "description": "Run a command.", "parameters": {"type": "object"}
+                }}],
+                "stream": true,
+                "stream_options": {"include_usage": true},
+                "max_tokens": 1024
+            })
+        );
+    }
+}

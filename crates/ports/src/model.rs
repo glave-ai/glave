@@ -3,7 +3,7 @@
 
 use std::future::Future;
 
-use glave_event::{Arguments, CallId, ModelRef, Part, StopReason, Usage};
+use glave_event::{Arguments, CallId, Cost, ModelRef, Part, StopReason, Usage};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
@@ -82,6 +82,8 @@ pub struct Completion {
     pub stop: StopReason,
     pub provider_stop: Option<String>,
     pub usage: Usage,
+    /// The cost the provider itself reported, when it reports one (OpenRouter does).
+    pub cost: Option<Cost>,
 }
 
 /// A tool call the model just asked for. The harness gives it a glave call id when it

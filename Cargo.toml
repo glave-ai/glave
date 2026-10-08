@@ -39,7 +39,9 @@ allow_attributes_without_reason = "deny"
 [workspace.dependencies]
 glave-event = { path = "crates/event" }
 glave-ports = { path = "crates/ports" }
+glave-provider-openai = { path = "crates/provider-openai" }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.11"
