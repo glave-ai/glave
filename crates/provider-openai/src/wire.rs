@@ -16,11 +16,28 @@ pub(crate) struct ChatRequest<'a> {
     stream_options: StreamOptions,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    /// OpenRouter's automatic prompt caching: it moves the cache point forward as the
+    /// conversation grows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_control: Option<CacheControl>,
 }
 
 #[derive(Debug, Serialize)]
 struct StreamOptions {
     include_usage: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheControl {
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
+/// Whether to ask for automatic prompt caching. Anthropic caches only what a request marks,
+/// unlike OpenAI's automatic caching, so without it every call repays the whole prefix.
+/// OpenRouter's top-level marker covers Anthropic models; other servers get the plain request.
+pub(crate) fn caches_automatically(provider: &str, model: &str) -> bool {
+    provider == "openrouter" && model.starts_with("anthropic/")
 }
 
 #[derive(Debug, Serialize)]
@@ -65,7 +82,7 @@ struct WireTool<'a> {
 }
 
 /// Builds the request body for a streaming chat completion.
-pub(crate) fn chat_request(request: &ModelRequest) -> ChatRequest<'_> {
+pub(crate) fn chat_request(request: &ModelRequest, cache: bool) -> ChatRequest<'_> {
     let mut messages = Vec::with_capacity(request.messages.len().saturating_add(1));
     if !request.system.is_empty() {
         messages.push(WireMessage::System {
@@ -89,6 +106,7 @@ pub(crate) fn chat_request(request: &ModelRequest) -> ChatRequest<'_> {
             include_usage: true,
         },
         max_tokens: request.max_output_tokens,
+        cache_control: cache.then_some(CacheControl { kind: "ephemeral" }),
     }
 }
 
@@ -280,7 +298,7 @@ mod tests {
             }],
             max_output_tokens: Some(1024),
         };
-        let body = serde_json::to_value(chat_request(&request)).unwrap();
+        let body = serde_json::to_value(chat_request(&request, false)).unwrap();
         assert_eq!(
             body,
             json!({
@@ -301,6 +319,35 @@ mod tests {
                 "stream_options": {"include_usage": true},
                 "max_tokens": 1024
             })
+        );
+    }
+
+    #[test]
+    fn automatic_caching_is_asked_for_only_where_it_works() {
+        assert!(caches_automatically(
+            "openrouter",
+            "anthropic/claude-haiku-5.5"
+        ));
+        assert!(!caches_automatically("openrouter", "openai/gpt-6.1-sol"));
+        assert!(!caches_automatically("openrouter", "google/gemma-4-31b-it"));
+        assert!(!caches_automatically(
+            "anthropic",
+            "anthropic/claude-haiku-5.5"
+        ));
+        assert!(!caches_automatically("ollama", "gemma4:12b"));
+        let request = ModelRequest {
+            model: "anthropic/claude-haiku-5.5".into(),
+            system: String::new(),
+            messages: Vec::new(),
+            tools: Vec::new(),
+            max_output_tokens: None,
+        };
+        let cached = serde_json::to_value(chat_request(&request, true)).unwrap();
+        assert_eq!(cached["cache_control"], json!({"type": "ephemeral"}));
+        let plain = serde_json::to_value(chat_request(&request, false)).unwrap();
+        assert!(
+            plain.get("cache_control").is_none(),
+            "other servers get today's request"
         );
     }
 }

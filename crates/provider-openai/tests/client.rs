@@ -74,6 +74,27 @@ mod over_http {
     }
 
     #[test]
+    fn anthropic_models_through_openrouter_ask_for_caching() {
+        let server = FakeServer::start(vec![Reply::text("ok"), Reply::text("ok")]).unwrap();
+        let openrouter = OpenAiCompatible::new(Config {
+            base_url: server.url().to_owned(),
+            api_key: None,
+            provider: "openrouter".into(),
+        })
+        .unwrap();
+        let mut anthropic = request();
+        anthropic.model = "anthropic/claude-haiku-5.5".into();
+        block_on(openrouter.complete(&anthropic, &mut |_| {})).unwrap();
+        block_on(openrouter.complete(&request(), &mut |_| {})).unwrap();
+        let received = server.received();
+        assert_eq!(
+            received[0].body["cache_control"],
+            json!({"type": "ephemeral"})
+        );
+        assert!(received[1].body.get("cache_control").is_none());
+    }
+
+    #[test]
     fn no_key_means_no_authorization_header() {
         let server = FakeServer::start(vec![Reply::text("ok")]).unwrap();
         let (result, _) = ask(&provider(server.url(), None));
