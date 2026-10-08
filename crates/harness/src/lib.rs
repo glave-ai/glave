@@ -3,6 +3,7 @@
 //! step is recorded as events, so the log alone can rebuild and resume any thread.
 
 mod approval;
+mod ask;
 mod builtins;
 mod calls;
 mod cancel;
@@ -24,6 +25,7 @@ mod toolset;
 mod turn;
 
 pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};
+pub use ask::{ASK, Choice, Question, QuestionRequest};
 pub use cancel::Cancel;
 pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;

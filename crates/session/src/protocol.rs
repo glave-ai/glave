@@ -3,7 +3,7 @@
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
 use glave_event::{CallId, Money, Outcome, RawEvent, Seq, ThreadId, TokenCounts};
-use glave_harness::{Live, TurnSummary};
+use glave_harness::{Live, Question, TurnSummary};
 use glave_ports::Failure;
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +44,13 @@ pub enum Request {
         thread: ThreadId,
         approval: CallId,
         decision: Answer,
+    },
+    /// Answers the model's questions: one answer for each, in order.
+    #[serde(rename = "question/answer")]
+    QuestionAnswer {
+        thread: ThreadId,
+        question: CallId,
+        answers: Vec<String>,
     },
 }
 
@@ -182,6 +189,11 @@ pub enum Update {
     CompactionFailed {
         error: String,
     },
+    /// The model asked the person questions; answer with `question/answer`.
+    Asked {
+        question: CallId,
+        questions: Vec<Question>,
+    },
 }
 
 impl From<Live> for Update {
@@ -218,6 +230,10 @@ impl From<Live> for Update {
                 after_tokens,
             },
             Live::CompactionFailed(error) => Self::CompactionFailed { error },
+            Live::Asked { call_id, questions } => Self::Asked {
+                question: call_id,
+                questions,
+            },
         }
     }
 }
@@ -244,6 +260,7 @@ pub mod code {
     pub const TURN_RUNNING: i64 = -32002;
     pub const NO_TURN: i64 = -32003;
     pub const NO_APPROVAL: i64 = -32004;
+    pub const NO_QUESTION: i64 = -32006;
     pub const CANCELLED: i64 = -32005;
     pub const PROVIDER: i64 = -32020;
 }

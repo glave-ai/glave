@@ -1,13 +1,14 @@
-//! Approvals answered through the API: the harness asks, the question is already in the log
-//! (`approval.requested`), and the turn waits until a client answers with `approval/decide`.
-//! With no client that can answer, as in a script, every question is answered "no one there".
+//! Approvals and questions answered through the API: the harness asks, the question is already
+//! in the log (`approval.requested`, or the `ask` call), and the turn waits until a client
+//! answers with `approval/decide` or `question/answer`. With no client that can answer, as in a
+//! script, every approval is answered "no one there" and `ask` is not offered.
 
 use std::collections::HashMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::{CallId, ThreadId};
-use glave_harness::{ApprovalRequest, Approver, Decision};
+use glave_harness::{ApprovalRequest, Approver, Decision, QuestionRequest};
 use tokio::sync::oneshot;
 
 use crate::protocol::{Answer, ApiError, code};
@@ -23,12 +24,14 @@ pub enum Answering {
 }
 
 type Pending = HashMap<(ThreadId, CallId), oneshot::Sender<Decision>>;
+type Questions = HashMap<(ThreadId, CallId), oneshot::Sender<Vec<String>>>;
 
 /// The approvals waiting for an answer.
 #[derive(Clone)]
 pub(crate) struct Approvals {
     answering: Answering,
     pending: Arc<Mutex<Pending>>,
+    questions: Arc<Mutex<Questions>>,
 }
 
 impl Approvals {
@@ -36,6 +39,7 @@ impl Approvals {
         Self {
             answering,
             pending: Arc::new(Mutex::new(HashMap::new())),
+            questions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -72,18 +76,73 @@ impl Approvals {
         })
     }
 
+    fn questions(&self) -> std::sync::MutexGuard<'_, Questions> {
+        self.questions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Answers the questions of call `question` in `thread`.
+    pub(crate) fn respond(
+        &self,
+        thread: ThreadId,
+        question: &CallId,
+        answers: Vec<String>,
+    ) -> Result<(), ApiError> {
+        let unknown = || {
+            ApiError::new(
+                code::NO_QUESTION,
+                format!("no question {} is waiting", question.as_str()),
+            )
+        };
+        let waiting = self
+            .questions()
+            .remove(&(thread, question.clone()))
+            .ok_or_else(unknown)?;
+        waiting.send(answers).map_err(|_| unknown())
+    }
+
     /// Whether `thread` has a turn paused for an answer.
     pub(crate) fn waiting(&self, thread: ThreadId) -> bool {
         self.pending().keys().any(|(waiting, _)| *waiting == thread)
+            || self
+                .questions()
+                .keys()
+                .any(|(waiting, _)| *waiting == thread)
     }
 
     /// Forgets `thread`'s questions once its turn has ended.
     pub(crate) fn forget(&self, thread: ThreadId) {
         self.pending().retain(|(waiting, _), _| *waiting != thread);
+        self.questions()
+            .retain(|(waiting, _), _| *waiting != thread);
     }
 }
 
 impl Approver for Approvals {
+    fn can_answer(&self) -> bool {
+        self.answering == Answering::Clients
+    }
+
+    fn answer(
+        &self,
+        request: &QuestionRequest,
+    ) -> impl Future<Output = Option<Vec<String>>> + Send {
+        let receiver = (self.answering == Answering::Clients).then(|| {
+            let (sender, receiver) = oneshot::channel();
+            self.questions()
+                .insert((request.thread, request.call_id.clone()), sender);
+            receiver
+        });
+        async move {
+            match receiver {
+                // Questions dropped without answers are unanswered.
+                Some(receiver) => receiver.await.ok(),
+                None => None,
+            }
+        }
+    }
+
     fn decide(&self, request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
         let receiver = match self.answering {
             Answering::NoOne => None,

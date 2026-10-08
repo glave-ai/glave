@@ -30,8 +30,9 @@ Every request may carry `params._meta.protocol`, the protocol version the client
 | `turn/cancel` | `thread` | `{}` once the running turn, or compaction, has ended as cancelled |
 | `thread/compact` | `thread` | `before_tokens`, `after_tokens` |
 | `approval/decide` | `thread`; `approval` (its id); `decision`: `allow_once`, `allow_for_thread` or `deny` | `{}`; the paused turn continues |
+| `question/answer` | `thread`; `question` (the `ask` call's id); `answers`, one string for each question, in order | `{}`; the paused turn continues |
 
-A **thread summary** has `id` and `status`: `idle`, `running` or `waiting` (a turn is paused for an approval). Titles, creation and update times arrive with a threads view built from the log.
+A **thread summary** has `id` and `status`: `idle`, `running` or `waiting` (a turn is paused for an approval or an answer). Titles, creation and update times arrive with a threads view built from the log.
 
 A **turn result** has `outcome` (`completed`, `cancelled`, `failed`, `interrupted`, `limit_reached`), `model_calls`, `tool_calls`, `tokens` and `cost` as in `events.md`.
 
@@ -44,7 +45,7 @@ Two kinds, sent while a turn runs or a client watches:
 | Method | Params | Kept |
 | --- | --- | --- |
 | `thread/event` | `thread`; `event`, a stored event with its `seq` | Yes: it is in the log, and `thread/events` returns it again |
-| `turn/live` | `thread`; `update`: `text` or `reasoning` (a fragment), `tool_started`, `tool_finished`, `waiting`, `retrying`, `compacted` | No: live updates are for showing progress, never replayed |
+| `turn/live` | `thread`; `update`: `text` or `reasoning` (a fragment), `tool_started`, `tool_finished`, `waiting`, `retrying`, `compacted`, `asked` | No: live updates are for showing progress, never replayed |
 
 A client that only shows the conversation needs `thread/event` alone. Rebuilding a thread from `thread/events` and then following `thread/watch` gives exactly the same state as having watched from the start.
 
@@ -58,6 +59,14 @@ A tool call that needs the person records `approval.requested` (`approval`, `cal
 - With no client that can answer, as in a script, the server decides on its behalf as `approvals.md` describes ("no one at the keyboard").
 
 These are the approval events `events.md` deferred; they arrive with this API at version 1.
+
+## Questions
+
+When a client can answer, the model is offered `ask`: up to four questions, each with optional choices (`label`, `description`) and `multiple` when more than one may be picked. The questions are the `ask` call's arguments, so the log keeps them in `tool.call.requested`. Once the turn is waiting for the answers it sends `turn/live` with `asked` (`question`, the call's id, and `questions`); any client may then answer with `question/answer`. The answers become the call's result.
+
+- An answer for a question that is not waiting is refused with `-32006`.
+- Cancelling the paused turn ends the call unanswered, and the turn as cancelled.
+- With no client that can answer, `ask` is not offered at all.
 
 ## Turns
 
@@ -76,6 +85,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32003` | No turn is running in this thread |
 | `-32004` | No such approval is pending |
 | `-32005` | The operation was cancelled, such as a compaction stopped by `turn/cancel` |
+| `-32006` | No such question is waiting |
 | `-32010` | Unsupported protocol version; `data.supported` lists the spoken ones |
 | `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
 

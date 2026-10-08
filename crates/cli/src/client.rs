@@ -8,13 +8,14 @@ use std::process::ExitCode;
 use std::task::Poll;
 use std::time::Duration;
 
-use glave_event::{Body, Outcome, ThreadId, decode};
-use glave_harness::Cancel;
+use glave_event::{Body, CallId, Outcome, ThreadId, decode};
+use glave_harness::{Cancel, Question};
 use glave_provider_openai::OpenAiCompatible;
-use glave_session::protocol::{Answer, ApiError, Notification, Reply, Request, code};
+use glave_session::protocol::{Answer, ApiError, Notification, Reply, Request, Update, code};
 use glave_session::{Server, TurnItem};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 
+use crate::asking;
 use crate::config::{self, Endpoint};
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
@@ -98,6 +99,14 @@ impl Client<'_> {
     /// person pressed Ctrl-C instead of answering.
     async fn note(&self, note: &Notification, printer: &mut Printer, interrupt: &Cancel) -> bool {
         match note {
+            Notification::Live {
+                update:
+                    Update::Asked {
+                        question,
+                        questions,
+                    },
+                ..
+            } => self.answer(question, questions, printer, interrupt).await,
             Notification::Live { update, .. } => {
                 printer.update(update.clone());
                 false
@@ -135,6 +144,34 @@ impl Client<'_> {
                 false
             }
         }
+    }
+
+    /// Puts the model's questions to the person and sends the answers. True when the person
+    /// pressed Ctrl-C instead of answering.
+    async fn answer(
+        &self,
+        question: &CallId,
+        questions: &[Question],
+        printer: &mut Printer,
+        interrupt: &Cancel,
+    ) -> bool {
+        let mut answers = Vec::with_capacity(questions.len());
+        for asked in questions {
+            printer.ask_question(asked);
+            let Some(line) = interrupt.run(self.input.line()).await else {
+                return true;
+            };
+            answers.push(asking::answer(asked, line.as_deref().unwrap_or_default()));
+        }
+        let answer = Request::QuestionAnswer {
+            thread: self.thread,
+            question: question.clone(),
+            answers,
+        };
+        if let Err(error) = self.server.request(answer).await {
+            printer.error(&error.to_string());
+        }
+        false
     }
 
     /// Asks the server to cancel the turn; true once asked, so it is asked only once.
