@@ -37,10 +37,12 @@ allow_attributes = "forbid"    # no #[allow] at all; see AGENTS.md for #[expect]
 allow_attributes_without_reason = "deny"
 
 [workspace.dependencies]
+anyhow = "1"
 glave-event = { path = "crates/event" }
 glave-harness = { path = "crates/harness" }
 glave-ports = { path = "crates/ports" }
 glave-provider-openai = { path = "crates/provider-openai" }
+getrandom = "0.4"
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2"] }
 serde = { version = "1", features = ["derive"] }
