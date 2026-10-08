@@ -30,6 +30,9 @@ pub enum Check {
     OneThread,
     /// This text never appears in the thread's events, so it never reached the model.
     NeverSent(String),
+    /// No command printed this text. For text the model may know and write itself, such as a
+    /// public page's title, where only a command's output proves it got through.
+    NeverPrinted(String),
     /// This text appears in the thread's events: the model was told it.
     Sent(String),
     /// An event of this type was recorded, such as `thread.compacted`.
@@ -86,6 +89,9 @@ impl Check {
             }),
             Self::NeverSent(text) => holds(!cx.events.contains(text.as_str()), || {
                 format!("{text:?} reached the model")
+            }),
+            Self::NeverPrinted(text) => holds(!cx.trace.printed.contains(text.as_str()), || {
+                format!("a command printed {text:?}")
             }),
         }
     }
@@ -226,6 +232,15 @@ mod tests {
             "a test changed"
         );
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn only_command_output_counts_as_printed() {
+        let mut trace = answering("From memory, the title is <title>Example Domain</title>.");
+        let check = Check::NeverPrinted("<title>Example Domain</title>".into());
+        assert_eq!(judge(&check, &trace), Ok(()), "the model may say it");
+        trace.printed = "<html><title>Example Domain</title>".into();
+        assert!(judge(&check, &trace).is_err(), "a command may not print it");
     }
 
     #[test]

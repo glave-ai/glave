@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use glave_event::{Body, Outcome, Part, RawEvent, Role, decode};
+use glave_event::{Body, CallId, Outcome, Part, RawEvent, Role, decode};
 
 /// The facts a task is graded on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +21,8 @@ pub struct Trace {
     pub outcomes: Vec<Outcome>,
     /// The text of the last assistant message in the last turn.
     pub answer: String,
+    /// Everything commands printed back: the output of every `bash` call.
+    pub printed: String,
 }
 
 impl Default for Trace {
@@ -37,6 +39,7 @@ impl Default for Trace {
             cost_micros: Some(0),
             outcomes: Vec::new(),
             answer: String::new(),
+            printed: String::new(),
         }
     }
 }
@@ -45,6 +48,7 @@ impl Default for Trace {
 pub fn parse(jsonl: &str) -> Result<Trace, String> {
     let mut trace = Trace::default();
     let mut threads = HashSet::new();
+    let mut commands = HashSet::new();
     for (index, line) in jsonl.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
@@ -52,14 +56,15 @@ pub fn parse(jsonl: &str) -> Result<Trace, String> {
         let bad = |err: glave_event::DecodeError| format!("event line {}: {err}", index + 1);
         let event = decode(RawEvent::from_json(line).map_err(bad)?).map_err(bad)?;
         threads.insert(event.header.thread);
-        trace.add(event.body);
+        trace.add(event.body, &mut commands);
     }
     trace.threads = threads.len();
     Ok(trace)
 }
 
 impl Trace {
-    fn add(&mut self, body: Body) {
+    /// Adds one event. `commands` holds the ids of `bash` calls seen so far.
+    fn add(&mut self, body: Body, commands: &mut HashSet<CallId>) {
         match body {
             Body::TurnStarted(_) => {
                 self.turns = self.turns.saturating_add(1);
@@ -68,9 +73,20 @@ impl Trace {
             Body::MessageAdded(message) if message.role == Role::Assistant => {
                 self.answer = text_of(&message.parts);
             }
-            Body::ToolCallRequested(_) => self.tool_calls = self.tool_calls.saturating_add(1),
-            Body::ToolCallCompleted(done) if done.is_error => {
-                self.tool_errors = self.tool_errors.saturating_add(1);
+            Body::ToolCallRequested(call) => {
+                self.tool_calls = self.tool_calls.saturating_add(1);
+                if call.tool == "bash" {
+                    commands.insert(call.call_id);
+                }
+            }
+            Body::ToolCallCompleted(done) => {
+                if done.is_error {
+                    self.tool_errors = self.tool_errors.saturating_add(1);
+                }
+                if commands.contains(&done.call_id) {
+                    self.printed.push_str(&text_of(&done.output));
+                    self.printed.push('\n');
+                }
             }
             Body::ModelResponded(response) => {
                 self.model_calls = self.model_calls.saturating_add(1);
@@ -132,6 +148,7 @@ mod tests {
                 cost_micros: Some(4_200),
                 outcomes: vec![Outcome::Completed],
                 answer: "Moved 214 files into 6 folders.".to_owned(),
+                printed: "README.md\nsrc\n".to_owned(),
             }
         );
     }

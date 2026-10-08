@@ -228,9 +228,11 @@ where
             .checked_sub(1)
             .and_then(|seq| Seq::new(seq).ok())
             .ok_or_else(|| HarnessError::Event("there is nothing to compact".into()))?;
-        let parts = vec![Part::Text {
+        // The project's instructions open the restarted conversation, as they opened the first.
+        let mut parts = self.instruction_parts().unwrap_or_default();
+        parts.push(Part::Text {
             text: restart_text(&summary, thread.request.as_deref()),
-        }];
+        });
         let mut events = Vec::new();
         self.stage(thread, &mut events, &responded(&completion))?;
         let compacted = ThreadCompacted {

@@ -15,11 +15,9 @@ use crate::approval::{
 };
 use crate::compaction::{Measured, chars, responded};
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::repeats::Repeats;
 use crate::sandbox::{Prepared, Recorded};
 use crate::tools::{Tool, ToolOutcome, specs};
-
-/// The same call this many times in a row is refused, so a stuck model changes course.
-const REPEAT_LIMIT: u32 = 3;
 
 /// What the person sees while a turn runs. Never stored.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,27 +71,6 @@ impl TurnSummary {
             }),
             estimated: false,
         }
-    }
-}
-
-/// Tracks identical consecutive tool calls, so a stuck model is told to change course.
-#[derive(Default)]
-struct Repeats {
-    last: Option<String>,
-    count: u32,
-}
-
-impl Repeats {
-    /// Notes `call`; true when it is the same call too many times in a row.
-    fn refuse(&mut self, call: &ToolCall) -> bool {
-        let signature = format!("{}{:?}", call.tool, call.arguments);
-        if self.last.as_deref() == Some(signature.as_str()) {
-            self.count = self.count.saturating_add(1);
-        } else {
-            self.last = Some(signature);
-            self.count = 1;
-        }
-        self.count >= REPEAT_LIMIT
     }
 }
 
@@ -196,9 +173,15 @@ where
             provider: self.settings.provider.clone(),
             name: self.settings.model.clone(),
         };
-        let parts = vec![Part::Text {
+        // A new thread opens with the project's instructions.
+        let opening = thread.messages.is_empty();
+        let mut parts = self
+            .instruction_parts()
+            .filter(|_| opening)
+            .unwrap_or_default();
+        parts.push(Part::Text {
             text: prompt.to_owned(),
-        }];
+        });
         let mut events = Vec::new();
         self.stage(thread, &mut events, &TurnStarted { model, config })?;
         let message = MessageAdded {

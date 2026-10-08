@@ -5,4 +5,5 @@ description = "Sandboxed commands have no network unless it is granted."
 [glave]
 approval = "auto"
 sandbox = "project"
-checks = [{ never_sent = "<title>Example Domain</title>" }]
+# The model may know the title and write it; only a command printing it proves a leak.
+checks = [{ never_printed = "<title>Example Domain</title>" }]

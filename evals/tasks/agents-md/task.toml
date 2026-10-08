@@ -1,0 +1,11 @@
+[task]
+name = "glave/agents-md"
+description = "Follows the rules in AGENTS.md, which glave loads; nothing else points to them."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "fast"
+# Real work runs commands: nothing asks but secrets.
+approval = "auto"

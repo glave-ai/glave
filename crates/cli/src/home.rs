@@ -4,16 +4,21 @@ use std::path::PathBuf;
 
 use anyhow::{Context as _, bail};
 
-/// The database file, in `$GLAVE_HOME` or `~/.glave`. The folder is created readable only by
-/// you, since the database is not yet encrypted.
-pub async fn database() -> anyhow::Result<PathBuf> {
-    let home = match std::env::var_os("GLAVE_HOME") {
-        Some(home) => PathBuf::from(home),
+/// glave's folder: `$GLAVE_HOME`, or `~/.glave`.
+pub fn folder() -> anyhow::Result<PathBuf> {
+    match std::env::var_os("GLAVE_HOME") {
+        Some(home) => Ok(PathBuf::from(home)),
         None => match std::env::var_os("HOME") {
-            Some(home) => PathBuf::from(home).join(".glave"),
+            Some(home) => Ok(PathBuf::from(home).join(".glave")),
             None => bail!("cannot find your home folder; set GLAVE_HOME"),
         },
-    };
+    }
+}
+
+/// The database file, in glave's folder. The folder is created readable only by you, since
+/// the database is not yet encrypted.
+pub async fn database() -> anyhow::Result<PathBuf> {
+    let home = folder()?;
     let mut builder = tokio::fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]

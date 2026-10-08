@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use glave_harness::{
     Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox, Settings, SystemClock, Workspace,
+    agents_md,
 };
 use glave_ports::{EventLog, MemoryBlobs, MemoryLog, OrgId, Scope, SpaceId};
 use glave_provider_openai::{Config, OpenAiCompatible};
@@ -143,15 +144,15 @@ pub async fn attempt(
     Ok(attempt)
 }
 
-/// Sends every turn, each after the first to a thread resumed from the log, and returns the
-/// events as JSON Lines, a readable transcript, and anything that stopped the conversation.
-async fn converse(
+/// The harness for one attempt, wired in-process: a real provider, an in-memory log, the
+/// workspace (sandboxed when the task asks) and no one to approve anything.
+async fn wire(
     setup: &Setup,
     task: &Task,
     model: &str,
     environment: &Environment,
     root: &Path,
-) -> Result<(String, String, Vec<String>), EvalError> {
+) -> Result<Harness<OpenAiCompatible, MemoryLog, MemoryBlobs, NoOneToAsk>, EvalError> {
     let mut workspace = Workspace::open(root, environment.clone())
         .await
         .map_err(EvalError::io("open", root))?;
@@ -170,6 +171,10 @@ async fn converse(
     let provider = OpenAiCompatible::new(setup.endpoint.clone())
         .map_err(|err| EvalError::Setup(err.to_string()))?;
     let mut settings = Settings::new(model, setup.endpoint.provider.clone());
+    settings.instructions = agents_md(root, None)
+        .await
+        .map_err(EvalError::io("read the instructions in", root))?
+        .map(|loaded| loaded.text);
     settings.approval = task.approval;
     if let Some(tokens) = task.context_window {
         settings.compaction.window_tokens = tokens;
@@ -183,7 +188,19 @@ async fn converse(
         entropy: Box::new(OsEntropy),
         workspace,
     };
-    let harness = Harness::new(parts, settings);
+    Ok(Harness::new(parts, settings))
+}
+
+/// Sends every turn, each after the first to a thread resumed from the log, and returns the
+/// events as JSON Lines, a readable transcript, and anything that stopped the conversation.
+async fn converse(
+    setup: &Setup,
+    task: &Task,
+    model: &str,
+    environment: &Environment,
+    root: &Path,
+) -> Result<(String, String, Vec<String>), EvalError> {
+    let harness = wire(setup, task, model, environment, root).await?;
     let scope = Scope {
         org: OrgId::from_uuid(uuid::Uuid::from_u128(1)),
         space: SpaceId::from_uuid(uuid::Uuid::from_u128(2)),
