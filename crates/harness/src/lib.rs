@@ -3,6 +3,8 @@
 //! step is recorded as events, so the log alone can rebuild and resume any thread.
 
 mod approval;
+mod calls;
+mod cancel;
 mod compaction;
 mod conversation;
 mod env;
@@ -17,6 +19,7 @@ mod tools;
 mod turn;
 
 pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};
+pub use cancel::Cancel;
 pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;
 pub use env::{Clock, Entropy, OsEntropy, SystemClock};

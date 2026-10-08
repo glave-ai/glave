@@ -10,6 +10,7 @@ use glave_ports::{
 };
 
 use crate::approval::Approver;
+use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::tools::specs;
 use crate::turn::Live;
@@ -155,6 +156,7 @@ where
         &self,
         thread: &mut Thread,
         tools: &[ToolSpec],
+        cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<Completion>, HarnessError> {
         let Compaction {
@@ -167,30 +169,34 @@ where
         if !full || thread.messages.len() < 3 {
             return Ok(None);
         }
-        match self.compact_with(thread, tools, live).await {
+        match self.compact_with(thread, tools, cancel, live).await {
             Ok(compacted) => Ok(Some(compacted.completion)),
             Err(HarnessError::Provider(error)) => {
                 live(Live::CompactionFailed(error.to_string()));
                 Ok(None)
             }
+            // The turn sees the cancel itself and stops.
+            Err(HarnessError::Cancelled) => Ok(None),
             Err(error) => Err(error),
         }
     }
 
     /// Summarizes the thread and restarts its conversation from the summary, whatever its size.
-    /// For `/compact`.
+    /// For `/compact`. Cancelling leaves the thread as it was.
     pub async fn compact(
         &self,
         thread: &mut Thread,
+        cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Compacted, HarnessError> {
-        self.compact_with(thread, &specs(), live).await
+        self.compact_with(thread, &specs(), cancel, live).await
     }
 
     async fn compact_with(
         &self,
         thread: &mut Thread,
         tools: &[ToolSpec],
+        cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Compacted, HarnessError> {
         let before_tokens = self.next_request_tokens(thread, tools);
@@ -209,7 +215,11 @@ where
             tools: tools.to_vec(),
             max_output_tokens: Some(SUMMARY_TOKENS),
         };
-        let completion = self.provider.complete(&request, &mut |_| {}).await?;
+        // Only the model call can be dropped: what follows writes to the log.
+        let completion = cancel
+            .run(self.provider.complete(&request, &mut |_| {}))
+            .await
+            .ok_or(HarnessError::Cancelled)??;
         let summary: Vec<&str> = completion
             .parts
             .iter()

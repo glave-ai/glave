@@ -89,7 +89,18 @@ pub(crate) fn chat_request(request: &ModelRequest, cache: bool) -> ChatRequest<'
             content: &request.system,
         });
     }
-    messages.extend(request.messages.iter().map(wire_message));
+    for message in request.messages.iter().map(wire_message) {
+        // Consecutive user messages become one. Strict chat templates (Gemma's among them)
+        // refuse two in a row, and a conversation has them after a cancelled turn or a
+        // compaction.
+        match (messages.last_mut(), message) {
+            (Some(WireMessage::User { content }), WireMessage::User { content: next }) => {
+                content.push_str("\n\n");
+                content.push_str(&next);
+            }
+            (_, message) => messages.push(message),
+        }
+    }
     ChatRequest {
         model: &request.model,
         messages,
@@ -319,6 +330,38 @@ mod tests {
                 "stream_options": {"include_usage": true},
                 "max_tokens": 1024
             })
+        );
+    }
+
+    #[test]
+    fn consecutive_user_messages_are_sent_as_one() {
+        let user = |text: &str| Message::User {
+            parts: vec![Part::Text { text: text.into() }],
+        };
+        let request = ModelRequest {
+            model: "gemma-4-12b".into(),
+            system: String::new(),
+            messages: vec![
+                user("summary"),
+                user("[cancelled]"),
+                user("next"),
+                Message::Assistant {
+                    parts: vec![Part::Text { text: "ok".into() }],
+                    tool_calls: Vec::new(),
+                },
+                user("last"),
+            ],
+            tools: Vec::new(),
+            max_output_tokens: None,
+        };
+        let body = serde_json::to_value(chat_request(&request, false)).unwrap();
+        assert_eq!(
+            body["messages"],
+            json!([
+                {"role": "user", "content": "summary\n\n[cancelled]\n\nnext"},
+                {"role": "assistant", "content": "ok"},
+                {"role": "user", "content": "last"}
+            ])
         );
     }
 

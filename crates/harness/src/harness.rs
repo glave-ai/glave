@@ -113,6 +113,8 @@ pub enum HarnessError {
     Event(String),
     #[error("thread {0} has no events in this space")]
     NotFound(ThreadId),
+    #[error("cancelled")]
+    Cancelled,
 }
 
 impl From<EncodeError> for HarnessError {

@@ -4,6 +4,7 @@
 mod args;
 mod config;
 mod home;
+mod input;
 mod session;
 mod system;
 mod terminal;

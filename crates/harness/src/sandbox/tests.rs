@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use glave_event::Arguments;
 
 use super::*;
+use crate::cancel::Cancel;
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
 
@@ -56,7 +57,7 @@ fn run_in(project: &Path, sandbox: Option<&Sandbox>, command: &str) -> crate::to
         if let Some(sandbox) = sandbox {
             workspace = workspace.with_sandbox(sandbox).await.unwrap();
         }
-        Tool::Bash.run(&arguments, &workspace).await
+        Tool::Bash.run(&arguments, &workspace, &Cancel::new()).await
     })
 }
 
@@ -284,7 +285,9 @@ fn the_file_tools_refuse_protected_paths_in_a_sandbox() {
                 let sandbox = sandbox(SandboxLevel::Project, false, &dir);
                 workspace = workspace.with_sandbox(&sandbox).await.unwrap();
             }
-            Tool::Write.run(&arguments, &workspace).await
+            Tool::Write
+                .run(&arguments, &workspace, &Cancel::new())
+                .await
         })
     };
     let refused = write(true, ".git/hooks/pre-commit");

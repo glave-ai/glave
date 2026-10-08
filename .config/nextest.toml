@@ -1,0 +1,3 @@
+# A test that hangs fails instead of holding CI forever: warned after 30 s, stopped after 2 min.
+[profile.default]
+slow-timeout = { period = "30s", terminate-after = 4 }

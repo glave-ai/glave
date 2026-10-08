@@ -12,6 +12,7 @@ use tokio::process::{Child, ChildStdout, Command};
 
 use super::ToolOutcome;
 use super::workspace::Workspace;
+use crate::cancel::Cancel;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
@@ -31,7 +32,7 @@ pub(crate) struct BashArgs {
     timeout_secs: Option<u64>,
 }
 
-pub(crate) async fn bash(workspace: &Workspace, args: BashArgs) -> ToolOutcome {
+pub(crate) async fn bash(workspace: &Workspace, args: BashArgs, cancel: &Cancel) -> ToolOutcome {
     if args.command.trim().is_empty() {
         return ToolOutcome::error("The command is empty.");
     }
@@ -50,13 +51,24 @@ pub(crate) async fn bash(workspace: &Workspace, args: BashArgs) -> ToolOutcome {
         .stdout
         .take()
         .map(|stdout| tokio::spawn(collect(stdout, Arc::clone(&captured))));
-    let waited = tokio::time::timeout(Duration::from_secs(limit), child.wait()).await;
+    let waited = cancel
+        .run(tokio::time::timeout(
+            Duration::from_secs(limit),
+            child.wait(),
+        ))
+        .await;
     let ending = match waited {
-        Ok(Ok(status)) => Ending::Exited(status.code()),
-        Ok(Err(e)) => return ToolOutcome::error(format!("Could not wait for the command: {e}")),
-        Err(_) => {
+        Some(Ok(Ok(status))) => Ending::Exited(status.code()),
+        Some(Ok(Err(e))) => {
+            return ToolOutcome::error(format!("Could not wait for the command: {e}"));
+        }
+        Some(Err(_)) => {
             stop(&mut child).await;
             Ending::TimedOut(limit)
+        }
+        None => {
+            stop(&mut child).await;
+            Ending::Cancelled
         }
     };
     if let Some(handle) = reader.as_mut()
@@ -65,15 +77,7 @@ pub(crate) async fn bash(workspace: &Workspace, args: BashArgs) -> ToolOutcome {
         handle.abort();
     }
     let output = captured.lock().map(|c| c.render()).unwrap_or_default();
-    let seconds = started.elapsed().as_secs_f64();
-    let footer = match ending {
-        Ending::Exited(Some(code)) => format!("[exit {code} · {seconds:.1} s]"),
-        Ending::Exited(None) => format!("[stopped by a signal · {seconds:.1} s]"),
-        Ending::TimedOut(limit) => format!(
-            "[killed after {limit} s; retry with a larger timeout_secs, or start long-running \
-             servers with: nohup <command> > log 2>&1 &]"
-        ),
-    };
+    let footer = footer(&ending, started.elapsed().as_secs_f64());
     let body = if output.is_empty() {
         "(no output)".to_owned()
     } else {
@@ -83,7 +87,7 @@ pub(crate) async fn bash(workspace: &Workspace, args: BashArgs) -> ToolOutcome {
     let mut text = format!("{}\n{footer}", body.trim_end_matches('\n'));
     let exit = match ending {
         Ending::Exited(code) => code,
-        Ending::TimedOut(_) => None,
+        Ending::TimedOut(_) | Ending::Cancelled => None,
     };
     if let Some(note) = workspace
         .sandbox()
@@ -135,13 +139,30 @@ fn command(workspace: &Workspace, script: &str) -> Command {
     command
 }
 
+/// The line after a command's output: how it ended and how long it took.
+fn footer(ending: &Ending, seconds: f64) -> String {
+    match *ending {
+        Ending::Exited(Some(code)) => format!("[exit {code} · {seconds:.1} s]"),
+        Ending::Exited(None) => format!("[stopped by a signal · {seconds:.1} s]"),
+        Ending::TimedOut(limit) => format!(
+            "[killed after {limit} s; retry with a larger timeout_secs, or start long-running \
+             servers with: nohup <command> > log 2>&1 &]"
+        ),
+        Ending::Cancelled => {
+            format!("[stopped after {seconds:.1} s: the person cancelled the turn]")
+        }
+    }
+}
+
 enum Ending {
     Exited(Option<i32>),
     TimedOut(u64),
+    /// The turn was cancelled while the command ran.
+    Cancelled,
 }
 
-/// Stops a timed-out command and everything it started: SIGTERM to its process group, then
-/// SIGKILL if it is still running after a grace period.
+/// Stops a timed-out or cancelled command and everything it started: SIGTERM to its process
+/// group, then SIGKILL if it is still running after a grace period.
 async fn stop(child: &mut Child) {
     #[cfg(unix)]
     if let Some(pid) = child.id() {
@@ -240,7 +261,7 @@ mod tests {
                 command: "env".into(),
                 timeout_secs: None,
             };
-            bash(&workspace, args).await
+            bash(&workspace, args, &Cancel::new()).await
         });
         assert!(
             outcome.text.contains("PLAIN_SETTING=visible"),

@@ -9,7 +9,7 @@ mod support;
 #[cfg(test)]
 mod compacting {
     use glave_event::{Part, StopReason};
-    use glave_harness::{AllowAll, Compaction, Live};
+    use glave_harness::{AllowAll, Cancel, Compaction, Live};
     use glave_ports::{MemoryLog, Message, ModelRequest};
     use serde_json::json;
 
@@ -67,9 +67,14 @@ mod compacting {
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let mut shown = Vec::new();
             let summary = harness
-                .run_turn(&mut thread, "what is in big.txt?", &mut |live| {
-                    shown.push(live);
-                })
+                .run_turn(
+                    &mut thread,
+                    "what is in big.txt?",
+                    &Cancel::new(),
+                    &mut |live| {
+                        shown.push(live);
+                    },
+                )
                 .await
                 .unwrap();
 
@@ -139,7 +144,7 @@ mod compacting {
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "read small.txt", &mut |_| {})
+                .run_turn(&mut thread, "read small.txt", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
             assert_eq!(requests(&seen).len(), 2);
@@ -160,10 +165,13 @@ mod compacting {
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "hello", &mut |_| {})
+                .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
-            let compacted = harness.compact(&mut thread, &mut |_| {}).await.unwrap();
+            let compacted = harness
+                .compact(&mut thread, &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
             assert!(compacted.after_tokens > 0);
             assert_eq!(thread.messages().len(), 1);
             assert!(text_of(&thread.messages()[0]).contains("We said hello."));
@@ -194,9 +202,14 @@ mod compacting {
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let mut shown = Vec::new();
             harness
-                .run_turn(&mut thread, "what is in big.txt?", &mut |live| {
-                    shown.push(live);
-                })
+                .run_turn(
+                    &mut thread,
+                    "what is in big.txt?",
+                    &Cancel::new(),
+                    &mut |live| {
+                        shown.push(live);
+                    },
+                )
                 .await
                 .unwrap();
             assert!(

@@ -30,7 +30,19 @@ mod glave_binary {
 
     /// `glave` with `args`, talking only to `server`, with nothing from the person's own setup.
     fn glave(place: &Place, server: &FakeServer, args: &[&str], stdin: &str) -> Output {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_glave"))
+        let mut child = start(place, server, args);
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(stdin.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    }
+
+    /// `glave` started with `args`, still running.
+    fn start(place: &Place, server: &FakeServer, args: &[&str]) -> std::process::Child {
+        Command::new(env!("CARGO_BIN_EXE_glave"))
             .args(args)
             .current_dir(&place.project)
             .env("GLAVE_BASE_URL", server.url())
@@ -43,14 +55,7 @@ mod glave_binary {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .unwrap();
-        child
-            .stdin
-            .take()
             .unwrap()
-            .write_all(stdin.as_bytes())
-            .unwrap();
-        child.wait_with_output().unwrap()
     }
 
     fn text(output: &Output) -> String {
@@ -131,6 +136,50 @@ mod glave_binary {
             "the person's file, then the project's, then the prompt: {first}"
         );
         assert!(!said(&server.received()[0].body, "system")[0].contains("Run make check."));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ctrl_c_cancels_the_turn_and_the_thread_carries_on() {
+        let place = place("ctrl-c");
+        let server = FakeServer::start(vec![Reply::Stall, Reply::text("Still here.")]).unwrap();
+        let events = place.project.join("../events.jsonl");
+        let events_arg = events.to_string_lossy().into_owned();
+        let child = start(
+            &place,
+            &server,
+            &["--model", "m", "--events", &events_arg, "think hard"],
+        );
+        assert!(
+            server.wait_for_requests(1, std::time::Duration::from_secs(30)),
+            "the model was asked"
+        );
+        let sent = Command::new("kill")
+            .args(["-INT", &child.id().to_string()])
+            .status()
+            .unwrap();
+        assert!(sent.success());
+        let output = child.wait_with_output().unwrap();
+        let shown = text(&output);
+        assert_eq!(output.status.code(), Some(130), "{shown}");
+        assert!(shown.contains("cancelled"), "{shown}");
+        let recorded = std::fs::read_to_string(&events).unwrap();
+        assert!(recorded.contains("\"outcome\":\"cancelled\""), "{recorded}");
+
+        let output = glave(
+            &place,
+            &server,
+            &["--model", "m", "--continue", "are you there?"],
+            "",
+        );
+        let shown = text(&output);
+        assert!(output.status.success(), "{shown}");
+        assert!(shown.contains("Still here."), "{shown}");
+        let asked = said(&server.received()[1].body, "user").join("\n");
+        assert!(
+            asked.contains("think hard") && asked.contains("cancelled this turn"),
+            "the next turn knows the last was cancelled: {asked}"
+        );
     }
 
     #[test]
@@ -331,9 +380,10 @@ mod glave_binary {
         );
         let after = &server.received()[2].body;
         let user = said(after, "user");
-        assert_eq!(user.len(), 2, "the summary, then the new question: {after}");
-        assert!(user[0].contains("We greeted each other."));
-        assert!(user[1].contains("what did I say?"));
+        // One message, as strict chat templates need: the summary, then the new question.
+        assert_eq!(user.len(), 1, "{after}");
+        let (_, later) = user[0].split_once("We greeted each other.").unwrap();
+        assert!(later.contains("what did I say?"), "{after}");
     }
 
     #[test]

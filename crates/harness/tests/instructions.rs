@@ -10,7 +10,7 @@ mod support;
 #[cfg(test)]
 mod instructions {
     use glave_event::{Part, StopReason};
-    use glave_harness::{AllowAll, Compaction, Settings, agents_md};
+    use glave_harness::{AllowAll, Cancel, Compaction, Settings, agents_md};
     use glave_ports::{MemoryLog, Message, ModelRequest};
     use serde_json::json;
 
@@ -57,16 +57,16 @@ mod instructions {
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, with_rules()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "hello", &mut |_| {})
+                .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
             harness
-                .run_turn(&mut thread, "and again", &mut |_| {})
+                .run_turn(&mut thread, "and again", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
             let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
             harness
-                .run_turn(&mut resumed, "back", &mut |_| {})
+                .run_turn(&mut resumed, "back", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
 
@@ -101,7 +101,7 @@ mod instructions {
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "hello", &mut |_| {})
+                .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
             assert_eq!(texts(&requests(&seen)[0].messages[0]), ["hello"]);
@@ -135,7 +135,12 @@ mod instructions {
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "what is in big.txt?", &mut |_| {})
+                .run_turn(
+                    &mut thread,
+                    "what is in big.txt?",
+                    &Cancel::new(),
+                    &mut |_| {},
+                )
                 .await
                 .unwrap();
             let sent = requests(&seen);
@@ -166,7 +171,7 @@ mod instructions {
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
-                .run_turn(&mut thread, "hello", &mut |_| {})
+                .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
             let first = texts(&requests(&seen)[0].messages[0]);
