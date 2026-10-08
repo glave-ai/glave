@@ -6,6 +6,7 @@ use std::io::{IsTerminal as _, Write as _};
 use std::time::Duration;
 
 use glave_event::{Currency, Money, Outcome};
+use glave_harness::Question;
 use glave_session::protocol::{TurnResult, Update};
 
 use crate::waiting::Waiting;
@@ -159,6 +160,8 @@ impl Printer {
             Update::CompactionFailed { error } => {
                 self.note(YELLOW, "could not compact the conversation:", &error);
             }
+            // Shown by the client, which answers it.
+            Update::Asked { .. } => {}
             Update::ToolFinished { is_error, .. } => {
                 if is_error {
                     println!("{}", paint(self.color, RED, "error"));
@@ -230,6 +233,14 @@ impl Printer {
             "\n\n{} {summary}\n  allow? [y] once  [a] always in this thread  [N] no › ",
             paint(self.color, YELLOW, "needs you")
         );
+        self.showing = Showing::Nothing;
+        flush();
+    }
+
+    /// One of the model's questions; the answer is typed next.
+    pub fn ask_question(&mut self, question: &Question) {
+        self.waiting.stop();
+        print!("{}", crate::asking::shown(self.color, question));
         self.showing = Showing::Nothing;
         flush();
     }
