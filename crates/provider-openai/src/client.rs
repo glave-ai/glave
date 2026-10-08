@@ -10,8 +10,8 @@ use crate::assemble::Assembler;
 use crate::sse::SseDecoder;
 use crate::wire::{caches_automatically, chat_request};
 
-/// How much of an error response body to keep in the error.
-const ERROR_BODY_CHARS: usize = 2_000;
+/// How much of an error message to keep.
+const ERROR_CHARS: usize = 500;
 
 /// Where and how to reach an OpenAI-compatible endpoint.
 #[derive(Clone)]
@@ -55,6 +55,11 @@ impl Config {
         })
     }
 
+    /// The server's host name, safe to show: never a user name or password from the URL.
+    pub fn host(&self) -> Option<String> {
+        host_of(&self.base_url)
+    }
+
     /// Whether the model runs on this computer, where a missing cost means $0.
     pub fn is_local(&self) -> bool {
         host_of(&self.base_url)
@@ -62,12 +67,12 @@ impl Config {
     }
 }
 
-/// The host part of an http(s) URL.
+/// The host part of an http(s) URL, without any user name or password in it.
 fn host_of(url: &str) -> Option<String> {
     let rest = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))?;
-    let authority = rest.split('/').next()?;
+    let authority = rest.split('/').next()?.rsplit('@').next()?;
     let host = match authority.rsplit_once(':') {
         Some((host, port)) if port.bytes().all(|b| b.is_ascii_digit()) => host,
         _ => authority,
@@ -125,7 +130,7 @@ impl ModelProvider for OpenAiCompatible {
             let body = response.text().await.unwrap_or_default();
             return Err(ProviderError::Http {
                 status: status.as_u16(),
-                body: body.chars().take(ERROR_BODY_CHARS).collect(),
+                body: message_of(&body),
             });
         }
         let mut decoder = SseDecoder::default();
@@ -153,8 +158,43 @@ impl OpenAiCompatible {
                 seconds: self.idle_timeout.as_secs(),
             }
         } else {
-            ProviderError::Transport(error.without_url().to_string())
+            ProviderError::Transport(cause_of(error))
         }
+    }
+}
+
+/// The message in an error body: `error.message` as OpenAI, OpenRouter and Ollama send it,
+/// or the body itself, on one line and cut short, rather than raw JSON.
+fn message_of(body: &str) -> String {
+    let parsed: Option<serde_json::Value> = serde_json::from_str(body).ok();
+    let message = parsed.as_ref().and_then(|value| {
+        [
+            value.pointer("/error/message"),
+            value.get("error"),
+            value.get("message"),
+            value.get("detail"),
+        ]
+        .into_iter()
+        .flatten()
+        .find_map(serde_json::Value::as_str)
+    });
+    let text = message.unwrap_or(body);
+    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    line.chars().take(ERROR_CHARS).collect()
+}
+
+/// What went wrong underneath a failed request, such as `Connection refused (os error 61)`:
+/// the innermost cause, which says more than "error sending request".
+fn cause_of(error: reqwest::Error) -> String {
+    let mut cause: &dyn std::error::Error = &error;
+    while let Some(inner) = cause.source() {
+        cause = inner;
+    }
+    let cause = cause.to_string();
+    if error.is_connect() && !cause.is_empty() {
+        cause
+    } else {
+        error.without_url().to_string()
     }
 }
 
@@ -181,6 +221,33 @@ mod tests {
         );
         assert_eq!(name("ftp://x"), None);
         assert_eq!(name("https://"), None);
+    }
+
+    #[test]
+    fn error_bodies_become_one_readable_line() {
+        assert_eq!(
+            message_of(
+                r#"{"error":{"message":"nosuch/x is not a valid model ID","code":400},"user_id":"u_1"}"#
+            ),
+            "nosuch/x is not a valid model ID"
+        );
+        assert_eq!(
+            message_of(r#"{"error":"model 'gemma9' not found"}"#),
+            "model 'gemma9' not found"
+        );
+        assert_eq!(message_of(r#"{"detail":"Not Found"}"#), "Not Found");
+        assert_eq!(
+            message_of("<html>\n  <body>Bad Gateway</body>\n</html>"),
+            "<html> <body>Bad Gateway</body> </html>"
+        );
+        assert_eq!(message_of(&"x".repeat(900)).len(), ERROR_CHARS);
+    }
+
+    #[test]
+    fn a_password_in_the_url_never_shows() {
+        let config = Config::for_url("https://me:hunter2@models.example.com/v1", None).unwrap();
+        assert_eq!(config.host().as_deref(), Some("models.example.com"));
+        assert_eq!(config.provider, "models.example.com");
     }
 
     #[test]

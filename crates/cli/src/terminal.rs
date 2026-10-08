@@ -106,7 +106,10 @@ impl Printer {
                 error,
             } => {
                 let error: String = error.chars().take(ERROR_CHARS).collect();
-                let detail = format!("· {error}; again in {} s ({retry} of {of})", wait.as_secs());
+                let detail = format!(
+                    "· {error}; again in {:.0} s ({retry} of {of})",
+                    wait.as_secs_f64()
+                );
                 self.note(YELLOW, "retrying", &detail);
             }
             Live::Text(text) => {
@@ -220,6 +223,12 @@ impl Printer {
             paint(self.color, DIM, &format!("· {line}"))
         );
         self.showing = Showing::Nothing;
+        flush();
+    }
+
+    /// What the person can change to fix the error just shown.
+    pub fn fix(&mut self, text: &str) {
+        println!("  {} {text}", paint(self.color, YELLOW, "fix:"));
         flush();
     }
 

@@ -135,12 +135,12 @@ mod over_http {
     }
 
     #[test]
-    fn an_error_status_keeps_its_code_and_a_bounded_body() {
+    fn an_error_status_keeps_its_code_and_the_message_alone() {
         let long = "x".repeat(5_000);
         let server = FakeServer::start(vec![
             Reply::Status(
                 401,
-                r#"{"error":{"message":"Missing Authentication header"}}"#.into(),
+                r#"{"error":{"message":"Missing Authentication header","code":401}}"#.into(),
             ),
             Reply::Status(500, long),
         ])
@@ -149,18 +149,14 @@ mod over_http {
         match ask(&provider).0 {
             Err(ProviderError::Http { status, body }) => {
                 assert_eq!(status, 401);
-                assert!(body.contains("Missing Authentication header"));
+                assert_eq!(body, "Missing Authentication header", "not raw JSON");
             }
             other => panic!("expected HTTP 401, got {other:?}"),
         }
         match ask(&provider).0 {
             Err(ProviderError::Http { status, body }) => {
                 assert_eq!(status, 500);
-                assert_eq!(
-                    body.chars().count(),
-                    2_000,
-                    "the body is cut, not the error"
-                );
+                assert_eq!(body.chars().count(), 500, "a long body is cut short");
             }
             other => panic!("expected HTTP 500, got {other:?}"),
         }
@@ -175,10 +171,13 @@ mod over_http {
             .unwrap()
             .port();
         let (result, _) = ask(&provider(&format!("http://127.0.0.1:{port}/v1"), None));
-        assert!(
-            matches!(result, Err(ProviderError::Transport(_))),
-            "{result:?}"
-        );
+        match result {
+            Err(ProviderError::Transport(cause)) => assert!(
+                cause.to_ascii_lowercase().contains("refused"),
+                "names what happened, not just that a request failed: {cause}"
+            ),
+            other => panic!("expected a transport error, got {other:?}"),
+        }
     }
 
     #[test]

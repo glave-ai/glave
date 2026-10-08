@@ -169,16 +169,9 @@ async fn session<A: Approver>(
             None => note.to_owned(),
         };
         printer.banner(&endpoint.model, &endpoint.provider.provider, &folder, &note);
-        converse(&harness, &mut thread, &input, &mut printer, endpoint.local).await
+        converse(&harness, &mut thread, &input, &mut printer, endpoint).await
     } else {
-        turn(
-            &harness,
-            &mut thread,
-            &args.prompt,
-            &mut printer,
-            endpoint.local,
-        )
-        .await
+        turn(&harness, &mut thread, &args.prompt, &mut printer, endpoint).await
     };
     if let Some(path) = &args.events {
         export(harness.log(), &thread, path).await?;
@@ -193,7 +186,7 @@ async fn converse<A: Approver>(
     thread: &mut Thread,
     input: &Input,
     printer: &mut Printer,
-    local: bool,
+    endpoint: &Endpoint,
 ) -> ExitCode {
     let mut code = ExitCode::SUCCESS;
     loop {
@@ -222,12 +215,12 @@ async fn converse<A: Approver>(
                 Err(HarnessError::Cancelled) => {
                     printer.error("compaction cancelled; the thread is as it was");
                 }
-                Err(error) => printer.error(&error.to_string()),
+                Err(error) => show_error(printer, &error, endpoint),
             }
             continue;
         }
         if !line.is_empty() {
-            code = turn(harness, thread, line, printer, local).await;
+            code = turn(harness, thread, line, printer, endpoint).await;
         }
     }
     code
@@ -239,7 +232,7 @@ async fn turn<A: Approver>(
     thread: &mut Thread,
     prompt: &str,
     printer: &mut Printer,
-    local: bool,
+    endpoint: &Endpoint,
 ) -> ExitCode {
     let cancel = Cancel::new();
     let _ctrl_c = CtrlC::cancels(&cancel);
@@ -251,7 +244,7 @@ async fn turn<A: Approver>(
     .await;
     match result {
         Ok(summary) => {
-            printer.receipt(&summary, local);
+            printer.receipt(&summary, endpoint.local);
             match summary.outcome {
                 Outcome::Completed => ExitCode::SUCCESS,
                 // As shells report a program stopped by Ctrl-C.
@@ -260,9 +253,19 @@ async fn turn<A: Approver>(
             }
         }
         Err(error) => {
-            printer.error(&error.to_string());
+            show_error(printer, &error, endpoint);
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Shows what failed and, when the person can fix it, what to change.
+fn show_error(printer: &mut Printer, error: &HarnessError, endpoint: &Endpoint) {
+    printer.error(&error.to_string());
+    if let HarnessError::Provider(failed) = error
+        && let Some(fix) = config::fix(failed.failure(), endpoint)
+    {
+        printer.fix(&fix);
     }
 }
 
