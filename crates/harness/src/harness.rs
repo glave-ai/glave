@@ -12,6 +12,7 @@ use glave_ports::{
 use thiserror::Error;
 
 use crate::approval::{ApprovalMode, Approver};
+use crate::compaction::{Compaction, Measured};
 use crate::env::{Clock, Entropy};
 use crate::prompt::system_prompt;
 use crate::tools::{Tool, workspace::Workspace};
@@ -26,6 +27,8 @@ pub struct Settings {
     pub system_prompt: String,
     /// How much to ask the person before acting.
     pub approval: ApprovalMode,
+    /// When to summarize a thread to keep it within the model's context window.
+    pub compaction: Compaction,
     /// Model calls allowed in one turn before it stops.
     pub max_steps: u32,
     pub max_output_tokens: Option<u32>,
@@ -41,6 +44,7 @@ impl Settings {
             model,
             provider,
             approval: ApprovalMode::default(),
+            compaction: Compaction::default(),
             max_steps: 50,
             max_output_tokens: None,
         }
@@ -79,6 +83,10 @@ pub struct Thread {
     pub(crate) next_seq: Seq,
     pub(crate) messages: Vec<Message>,
     pub(crate) allowed: HashSet<Tool>,
+    /// The size the provider last reported, for estimating the next request.
+    pub(crate) measured: Option<Measured>,
+    /// The person's latest request, kept word for word through a compaction.
+    pub(crate) request: Option<String>,
 }
 
 impl Thread {
@@ -153,6 +161,8 @@ where
             next_seq: Seq::FIRST,
             messages: Vec::new(),
             allowed: HashSet::new(),
+            measured: None,
+            request: None,
         };
         let mut events = Vec::new();
         let producer = Producer {

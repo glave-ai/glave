@@ -134,6 +134,33 @@ impl Printer {
                 );
                 self.showing = Showing::Nothing;
             }
+            Live::Compacted {
+                before_tokens,
+                after_tokens,
+            } => {
+                println!();
+                println!(
+                    "  {}",
+                    paint(
+                        self.color,
+                        DIM,
+                        &format!(
+                            "compacted the conversation to fit: ~{} → ~{} tokens",
+                            thousands(before_tokens),
+                            thousands(after_tokens)
+                        )
+                    )
+                );
+                self.showing = Showing::Nothing;
+            }
+            Live::CompactionFailed(error) => {
+                println!();
+                println!(
+                    "  {} {error}",
+                    paint(self.color, YELLOW, "could not compact the conversation:")
+                );
+                self.showing = Showing::Nothing;
+            }
             Live::ToolFinished { is_error, .. } => {
                 if is_error {
                     println!("{}", paint(self.color, RED, "error"));

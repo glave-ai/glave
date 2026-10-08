@@ -8,8 +8,8 @@ use serde_json::value::RawValue;
 use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeName};
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
-    MessageAdded, ModelResponded, ThreadStarted, ToolCallCompleted, ToolCallRequested, TurnEnded,
-    TurnStarted, message, model, thread, tool, turn,
+    MessageAdded, ModelResponded, ThreadCompacted, ThreadStarted, ToolCallCompleted,
+    ToolCallRequested, TurnEnded, TurnStarted, message, model, thread, tool, turn,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -24,6 +24,7 @@ pub trait Payload: Serialize + DeserializeOwned {
 /// example in `fixtures/<type>/v<version>.json`; the fixture tests fail if one is missing.
 pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (thread::TYPE, 1),
+    (thread::COMPACTED, 1),
     (turn::STARTED, 1),
     (message::TYPE, 1),
     (tool::REQUESTED, 1),
@@ -43,6 +44,7 @@ pub struct Event {
 #[derive(Debug, Clone)]
 pub enum Body {
     ThreadStarted(ThreadStarted),
+    ThreadCompacted(ThreadCompacted),
     TurnStarted(TurnStarted),
     MessageAdded(MessageAdded),
     ToolCallRequested(ToolCallRequested),
@@ -103,6 +105,9 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
     let data = &raw.data;
     let known = match raw.kind.as_str() {
         thread::TYPE => thread::decode(version, data).map(|r| r.map(Body::ThreadStarted)),
+        thread::COMPACTED => {
+            thread::decode_compacted(version, data).map(|r| r.map(Body::ThreadCompacted))
+        }
         turn::STARTED => turn::decode_started(version, data).map(|r| r.map(Body::TurnStarted)),
         message::TYPE => message::decode(version, data).map(|r| r.map(Body::MessageAdded)),
         tool::REQUESTED => {
@@ -141,6 +146,7 @@ impl Event {
         let header = self.header;
         match &self.body {
             Body::ThreadStarted(payload) => encode(header, payload),
+            Body::ThreadCompacted(payload) => encode(header, payload),
             Body::TurnStarted(payload) => encode(header, payload),
             Body::MessageAdded(payload) => encode(header, payload),
             Body::ToolCallRequested(payload) => encode(header, payload),

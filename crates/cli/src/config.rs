@@ -40,6 +40,23 @@ pub fn endpoint(model_flag: Option<String>) -> anyhow::Result<Endpoint> {
     })
 }
 
+/// The model's context window from `GLAVE_CONTEXT_WINDOW`, in tokens, when it is set.
+pub fn context_window() -> anyhow::Result<Option<u64>> {
+    match std::env::var("GLAVE_CONTEXT_WINDOW") {
+        Ok(text) => {
+            let tokens: u64 = text.trim().parse().with_context(|| {
+                format!("GLAVE_CONTEXT_WINDOW must be a number of tokens, not {text:?}")
+            })?;
+            anyhow::ensure!(
+                tokens >= 1_000,
+                "GLAVE_CONTEXT_WINDOW is too small: {tokens} tokens"
+            );
+            Ok(Some(tokens))
+        }
+        Err(_) => Ok(None),
+    }
+}
+
 /// The host part of an http(s) URL.
 fn host_of(url: &str) -> Option<String> {
     let rest = url

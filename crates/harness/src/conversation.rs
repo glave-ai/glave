@@ -1,10 +1,11 @@
 //! Rebuilding the conversation a model sees from a thread's events. The log alone is enough
-//! to resume a thread: nothing the model needs lives anywhere else.
+//! to resume a thread: nothing the model needs lives anywhere else. A compaction restarts the
+//! conversation from its summary; the events before it stay in the log.
 
 use glave_event::{Body, Event, Role};
 use glave_ports::{Message, ToolCall};
 
-/// The conversation recorded in `events`, in order.
+/// The conversation recorded in `events`, in order, from the latest compaction on.
 pub fn conversation(events: &[Event]) -> Vec<Message> {
     let mut messages: Vec<Message> = Vec::new();
     for event in events {
@@ -37,6 +38,12 @@ pub fn conversation(events: &[Event]) -> Vec<Message> {
                 is_error: completed.is_error,
                 output: completed.output.clone(),
             }),
+            Body::ThreadCompacted(compacted) => {
+                messages.clear();
+                messages.push(Message::User {
+                    parts: compacted.parts.clone(),
+                });
+            }
             Body::ThreadStarted(_)
             | Body::TurnStarted(_)
             | Body::ModelResponded(_)
