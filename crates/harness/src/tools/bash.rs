@@ -12,7 +12,7 @@ use tokio::process::{Child, ChildStdout, Command};
 
 use super::ToolOutcome;
 use super::workspace::Workspace;
-use crate::cancel::Cancel;
+use glave_ports::{Cancellation, unless_cancelled};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
@@ -32,7 +32,11 @@ pub(crate) struct BashArgs {
     timeout_secs: Option<u64>,
 }
 
-pub(crate) async fn bash(workspace: &Workspace, args: BashArgs, cancel: &Cancel) -> ToolOutcome {
+pub(crate) async fn bash(
+    workspace: &Workspace,
+    args: BashArgs,
+    cancel: &dyn Cancellation,
+) -> ToolOutcome {
     if args.command.trim().is_empty() {
         return ToolOutcome::error("The command is empty.");
     }
@@ -51,12 +55,11 @@ pub(crate) async fn bash(workspace: &Workspace, args: BashArgs, cancel: &Cancel)
         .stdout
         .take()
         .map(|stdout| tokio::spawn(collect(stdout, Arc::clone(&captured))));
-    let waited = cancel
-        .run(tokio::time::timeout(
-            Duration::from_secs(limit),
-            child.wait(),
-        ))
-        .await;
+    let waited = unless_cancelled(
+        cancel,
+        tokio::time::timeout(Duration::from_secs(limit), child.wait()),
+    )
+    .await;
     let ending = match waited {
         Some(Ok(Ok(status))) => Ending::Exited(status.code()),
         Some(Ok(Err(e))) => {
@@ -261,7 +264,7 @@ mod tests {
                 command: "env".into(),
                 timeout_secs: None,
             };
-            bash(&workspace, args, &Cancel::new()).await
+            bash(&workspace, args, &crate::cancel::Cancel::new()).await
         });
         assert!(
             outcome.text.contains("PLAIN_SETTING=visible"),

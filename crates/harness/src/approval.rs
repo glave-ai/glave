@@ -5,6 +5,7 @@ use std::future::{Future, ready};
 use std::path::Path;
 
 use glave_event::{Arguments, CallId, ThreadId};
+use glave_ports::Effect;
 use serde::Serialize;
 
 use crate::secrets::is_secret_file;
@@ -18,7 +19,10 @@ pub struct ApprovalRequest {
     pub thread: ThreadId,
     /// The call waiting, which is also the approval's id.
     pub call_id: CallId,
-    pub tool: Tool,
+    /// The tool's name.
+    pub tool: String,
+    /// What the tool does.
+    pub effect: Effect,
     pub summary: String,
     /// The model would see a file that usually holds secrets, such as `.env`. With no one to
     /// ask, these requests are declined.
@@ -56,12 +60,12 @@ impl ApprovalMode {
         }
     }
 
-    /// Whether `tool` needs the person's approval in this mode.
-    pub(crate) fn asks_for(self, tool: Tool) -> bool {
-        match tool {
-            Tool::Search | Tool::Glob | Tool::Read => false,
-            Tool::Write | Tool::Edit => self == Self::Ask,
-            Tool::Bash => self != Self::Auto,
+    /// Whether a tool with this effect needs the person's approval in this mode.
+    pub(crate) fn asks_for(self, effect: Effect) -> bool {
+        match effect {
+            Effect::Reads => false,
+            Effect::Changes => self == Self::Ask,
+            Effect::Runs => self != Self::Auto,
         }
     }
 }
@@ -201,14 +205,14 @@ mod tests {
     #[test]
     fn each_mode_asks_for_exactly_what_it_should() {
         use ApprovalMode::{Ask, Auto, Edits};
-        for tool in [Tool::Search, Tool::Glob, Tool::Read] {
-            assert!(!Ask.asks_for(tool) && !Edits.asks_for(tool) && !Auto.asks_for(tool));
-        }
-        for tool in [Tool::Write, Tool::Edit] {
-            assert!(Ask.asks_for(tool) && !Edits.asks_for(tool) && !Auto.asks_for(tool));
-        }
+        let reads = Effect::Reads;
+        assert!(!Ask.asks_for(reads) && !Edits.asks_for(reads) && !Auto.asks_for(reads));
+        let changes = Effect::Changes;
+        assert!(Ask.asks_for(changes) && !Edits.asks_for(changes) && !Auto.asks_for(changes));
         assert!(
-            Ask.asks_for(Tool::Bash) && Edits.asks_for(Tool::Bash) && !Auto.asks_for(Tool::Bash)
+            Ask.asks_for(Effect::Runs)
+                && Edits.asks_for(Effect::Runs)
+                && !Auto.asks_for(Effect::Runs)
         );
         assert_eq!(ApprovalMode::default(), Edits);
         for mode in [Ask, Edits, Auto] {
@@ -221,7 +225,8 @@ mod tests {
         let request = |secret| ApprovalRequest {
             thread: ThreadId::new(jiff::Timestamp::UNIX_EPOCH, [0; 10]).unwrap(),
             call_id: CallId::new("call_1").unwrap(),
-            tool: Tool::Read,
+            tool: "read".into(),
+            effect: Effect::Reads,
             summary: "read .env".into(),
             secret,
         };

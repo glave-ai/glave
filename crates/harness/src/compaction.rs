@@ -13,7 +13,6 @@ use glave_ports::{
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::tools::specs;
 use crate::turn::Live;
 
 /// When to compact a thread.
@@ -190,7 +189,8 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Compacted, HarnessError> {
-        self.compact_with(thread, &specs(), cancel, live).await
+        let tools = self.tools().await.specs;
+        self.compact_with(thread, &tools, cancel, live).await
     }
 
     async fn compact_with(

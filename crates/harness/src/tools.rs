@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 use workspace::Workspace;
 
-use crate::cancel::Cancel;
+use glave_ports::Cancellation;
 
 /// What a tool call produced, as the model will see it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,7 +87,7 @@ impl Tool {
         }
     }
 
-    fn spec(self) -> ToolSpec {
+    pub(crate) fn spec(self) -> ToolSpec {
         let (description, parameters) = match self {
             Self::Search => (
                 "Search file contents for a regular expression, like ripgrep. Shows matching \
@@ -159,7 +159,7 @@ impl Tool {
         self,
         arguments: &Arguments,
         workspace: &Workspace,
-        cancel: &Cancel,
+        cancel: &dyn Cancellation,
     ) -> ToolOutcome {
         match self {
             Self::Search => match parse(self, arguments) {
@@ -188,11 +188,6 @@ impl Tool {
             },
         }
     }
-}
-
-/// The specs offered to the model, in a stable order.
-pub fn specs() -> Vec<ToolSpec> {
-    Tool::ALL.iter().map(|tool| tool.spec()).collect()
 }
 
 fn parse<T: DeserializeOwned>(tool: Tool, arguments: &Arguments) -> Result<T, ToolOutcome> {

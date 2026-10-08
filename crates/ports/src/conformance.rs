@@ -1,5 +1,5 @@
-//! Conformance suites: the behavior every implementation of a storage port must show. Adapter
-//! crates enable the `conformance` feature and run these against their own implementation.
+//! Conformance suites: the behavior every implementation of a port must show. Adapter crates
+//! enable the `conformance` feature and run these against their own implementation.
 //! Each suite returns the first violation it finds as an error message.
 
 use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
@@ -227,4 +227,59 @@ pub async fn blob_store<B: BlobStore>(blobs: &B) -> Verdict {
         .await
         .map_err(|e| e.to_string())?;
     ensure(missing.is_none(), "unknown content must read as missing")
+}
+
+/// A cancellation that never fires, for calls the suite lets finish.
+struct NeverCancelled;
+
+impl crate::tools::Cancellation for NeverCancelled {
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+
+    fn cancelled(&self) -> crate::tools::BoxFuture<'_, ()> {
+        Box::pin(std::future::pending())
+    }
+}
+
+/// What every tool source must do: list tools with names a model can call (1 to 128 of
+/// `A-Za-z0-9_.-`, as MCP advises) and no name twice, give each an object schema, and answer a
+/// call to a tool it does not have with an error the model can read, never a failure.
+pub async fn tool_source(source: &dyn crate::tools::ToolSource) -> Verdict {
+    let tools = source.tools().await.map_err(|err| err.to_string())?;
+    let mut seen = std::collections::HashSet::new();
+    for tool in &tools {
+        let name = &tool.spec.name;
+        ensure(
+            !name.is_empty()
+                && name.len() <= 128
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b)),
+            &format!("tool name {name:?} is not one a model can call"),
+        )?;
+        ensure(
+            seen.insert(name.clone()),
+            &format!("{name:?} is listed twice"),
+        )?;
+        ensure(
+            tool.spec.parameters.get("type").and_then(|t| t.as_str()) == Some("object"),
+            &format!("{name:?} does not take an object"),
+        )?;
+    }
+    let missing = "conformance__no_such_tool";
+    ensure(
+        !seen.contains(missing),
+        "the suite's made-up tool name is taken",
+    )?;
+    let arguments = glave_event::Arguments::Json(serde_json::Map::new());
+    let output = source.call(missing, &arguments, &NeverCancelled).await;
+    ensure(
+        output.is_error,
+        "a call to a tool it does not have was not an error",
+    )?;
+    ensure(
+        !output.parts.is_empty(),
+        "the error for a missing tool says nothing",
+    )
 }

@@ -37,7 +37,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 Cargo.toml          workspace: lints, profiles, shared dependencies
 xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
-crates/ports/       glave-ports: event log, blob store and model provider ports, in-memory versions, conformance suites
+crates/ports/       glave-ports: event log, blob store, model provider and tool source ports, in-memory versions, conformance suites
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
 crates/store-sqlite/  glave-store-sqlite: the event log and blob store on one local SQLite file
 crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash), approvals, resume, AGENTS.md, the opt-in sandbox

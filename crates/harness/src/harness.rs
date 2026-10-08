@@ -1,6 +1,7 @@
 //! The harness: its parts, its settings, and how it records events.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use glave_event::{
     At, EncodeError, EventId, Header, InvalidValue, Part, Payload, Producer, RawEvent, Seq,
@@ -8,15 +9,18 @@ use glave_event::{
 };
 use glave_ports::{
     BlobError, BlobStore, EventLog, LogError, Message, ModelProvider, ProviderError, Scope,
+    ToolSource,
 };
 use thiserror::Error;
 
 use crate::approval::{ApprovalMode, Approver};
+use crate::builtins::Builtins;
 use crate::compaction::{Compaction, Measured};
 use crate::env::{Clock, Entropy};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
-use crate::tools::{Tool, workspace::Workspace};
+use crate::tools::workspace::Workspace;
+use crate::toolset::ToolSet;
 
 /// How the harness runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,7 +83,9 @@ pub struct Harness<P, L, B, A> {
     pub(crate) approver: A,
     pub(crate) clock: Box<dyn Clock>,
     pub(crate) entropy: Box<dyn Entropy>,
-    pub(crate) workspace: Workspace,
+    pub(crate) workspace: Arc<Workspace>,
+    /// Where tools come from: the built-in tools first, then any others, such as MCP servers.
+    pub(crate) sources: Vec<Arc<dyn ToolSource>>,
     pub(crate) settings: Settings,
 }
 
@@ -90,7 +96,8 @@ pub struct Thread {
     pub id: ThreadId,
     pub(crate) next_seq: Seq,
     pub(crate) messages: Vec<Message>,
-    pub(crate) allowed: HashSet<Tool>,
+    /// Tools the person allowed for the rest of the thread, by name.
+    pub(crate) allowed: HashSet<String>,
     /// The size the provider last reported, for estimating the next request.
     pub(crate) measured: Option<Measured>,
     /// The person's latest request, kept word for word through a compaction.
@@ -141,6 +148,7 @@ where
     A: Approver,
 {
     pub fn new(parts: Parts<P, L, B, A>, settings: Settings) -> Self {
+        let workspace = Arc::new(parts.workspace);
         Self {
             provider: parts.provider,
             log: parts.log,
@@ -148,9 +156,25 @@ where
             approver: parts.approver,
             clock: parts.clock,
             entropy: parts.entropy,
-            workspace: parts.workspace,
+            sources: vec![Arc::new(Builtins {
+                workspace: Arc::clone(&workspace),
+            })],
+            workspace,
             settings,
         }
+    }
+
+    /// Offers the tools of `sources` too, after the built-in ones. A tool keeps the first
+    /// source that names it.
+    #[must_use]
+    pub fn with_tools(mut self, sources: Vec<Arc<dyn ToolSource>>) -> Self {
+        self.sources.extend(sources);
+        self
+    }
+
+    /// The tools on offer now, from every source.
+    pub(crate) async fn tools(&self) -> ToolSet {
+        ToolSet::gather(&self.sources).await
     }
 
     pub fn workspace(&self) -> &Workspace {

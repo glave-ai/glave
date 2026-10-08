@@ -5,6 +5,7 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::task::Poll;
 
+use glave_ports::{BoxFuture, Cancellation};
 use tokio::sync::watch;
 
 /// A switch that cancels a turn. Clones share it, so one can go to whoever may cancel while
@@ -57,6 +58,16 @@ impl Cancel {
             work.as_mut().poll(cx).map(Some)
         })
         .await
+    }
+}
+
+impl Cancellation for Cancel {
+    fn is_cancelled(&self) -> bool {
+        Cancel::is_cancelled(self)
+    }
+
+    fn cancelled(&self) -> BoxFuture<'_, ()> {
+        Box::pin(Cancel::cancelled(self))
     }
 }
 
