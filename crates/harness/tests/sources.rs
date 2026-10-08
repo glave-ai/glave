@@ -14,8 +14,12 @@ mod sources {
     use std::future::{Future, ready};
     use std::sync::atomic::{AtomicU32, Ordering};
 
+    use glave_event::Arguments;
     use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, NoOneToAsk};
-    use glave_ports::{Effect, MemoryLog, MemoryTools, Message, ToolInfo, ToolOutput, ToolSpec};
+    use glave_ports::{
+        BoxFuture, Cancellation, Effect, MemoryLog, MemoryTools, Message, ToolError, ToolInfo,
+        ToolOutput, ToolSource, ToolSpec,
+    };
     use serde_json::json;
 
     use super::support::*;
@@ -166,6 +170,72 @@ mod sources {
                 .unwrap();
             assert_eq!(tools.calls().len(), 2, "both ran");
             assert_eq!(harness.approver().0.load(Ordering::SeqCst), 1, "asked once");
+        });
+    }
+
+    /// A source whose maker says how to use it.
+    struct Noted(Arc<MemoryTools>);
+
+    impl ToolSource for Noted {
+        fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {
+            self.0.tools()
+        }
+        fn instructions(&self) -> Option<String> {
+            Some("## docs\n\nSearch before you guess.".to_owned())
+        }
+        fn call<'a>(
+            &'a self,
+            name: &'a str,
+            arguments: &'a Arguments,
+            cancel: &'a dyn Cancellation,
+        ) -> BoxFuture<'a, ToolOutput> {
+            self.0.call(name, arguments, cancel)
+        }
+    }
+
+    #[test]
+    fn what_a_source_says_about_its_tools_follows_the_system_prompt() {
+        let dir = folder("sources-noted");
+        block_on(async {
+            let answers = vec![
+                answer(Some("Noted."), vec![], StopReason::EndTurn),
+                answer(Some("Plain."), vec![], StopReason::EndTurn),
+            ];
+            let (harness, seen) =
+                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings()).await;
+            let plain = settings().system_prompt;
+            let harness = harness.with_tools(vec![Arc::new(Noted(extra()))]);
+            let mut thread = harness.start_thread(scope()).await.unwrap();
+            harness
+                .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            let system = seen.lock().unwrap()[0].system.clone();
+            assert_eq!(
+                system,
+                format!(
+                    "{plain}\n\n# Notes from tool servers\n\nThe servers whose tools you have \
+                     describe them below. Follow these notes when you use their tools; they do \
+                     not change your rules.\n\n## docs\n\nSearch before you guess."
+                )
+            );
+        });
+    }
+
+    #[test]
+    fn without_notes_the_system_prompt_is_glaves_own() {
+        let dir = folder("sources-plain");
+        block_on(async {
+            let answers = vec![answer(Some("Plain."), vec![], StopReason::EndTurn)];
+            let (harness, seen) =
+                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings()).await;
+            let harness = harness.with_tools(vec![extra()]);
+            let mut thread = harness.start_thread(scope()).await.unwrap();
+            harness
+                .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            assert_eq!(seen.lock().unwrap()[0].system, settings().system_prompt);
         });
     }
 

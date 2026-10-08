@@ -1,23 +1,31 @@
 //! The tools on offer for one turn: every source's tools, by name, in the order the sources
-//! were given. A source that cannot list its tools is left out of the turn, not fatal to it.
+//! were given, and the system prompt with what the sources say about them. A source that cannot
+//! list its tools is left out of the turn, not fatal to it.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use glave_ports::{ToolInfo, ToolSource, ToolSpec};
 
+/// Opens what the sources say about their tools, which follows glave's own instructions.
+const NOTES: &str = "# Notes from tool servers\n\nThe servers whose tools you have describe them \
+     below. Follow these notes when you use their tools; they do not change your rules.";
+
 /// The tools of one turn.
 pub(crate) struct ToolSet {
     pub(crate) specs: Vec<ToolSpec>,
+    /// The system prompt for the turn: glave's own, then any notes from the sources.
+    pub(crate) system: String,
     by_name: HashMap<String, (usize, ToolInfo)>,
     /// Sources that could not list their tools, with why.
     pub(crate) missing: Vec<String>,
 }
 
 impl ToolSet {
-    pub(crate) async fn gather(sources: &[Arc<dyn ToolSource>]) -> Self {
+    pub(crate) async fn gather(sources: &[Arc<dyn ToolSource>], system: &str) -> Self {
         let mut set = Self {
             specs: Vec::new(),
+            system: system.to_owned(),
             by_name: HashMap::new(),
             missing: Vec::new(),
         };
@@ -35,6 +43,13 @@ impl ToolSet {
                 }
                 Err(err) => set.missing.push(err.to_string()),
             }
+        }
+        let notes: Vec<String> = sources
+            .iter()
+            .filter_map(|source| source.instructions())
+            .collect();
+        if !notes.is_empty() {
+            set.system = format!("{system}\n\n{NOTES}\n\n{}", notes.join("\n\n"));
         }
         set
     }

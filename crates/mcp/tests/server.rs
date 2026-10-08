@@ -120,6 +120,10 @@ mod server {
             );
             assert_eq!(tools[0].spec.description, "Say the text back.");
             assert_eq!(
+                server.instructions().as_deref(),
+                Some("## tests\n\nCall echo to repeat text; it costs nothing.")
+            );
+            assert_eq!(
                 tools[0].spec.parameters["properties"]["text"]["type"],
                 "string"
             );

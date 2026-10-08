@@ -105,6 +105,7 @@ impl ServerHandler for TestServer {
                 .enable_resources()
                 .build(),
         )
+        .with_instructions("Call echo to repeat text; it costs nothing.")
     }
 
     fn discover(

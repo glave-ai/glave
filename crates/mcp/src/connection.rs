@@ -185,6 +185,13 @@ impl Connection {
         Ok(infos)
     }
 
+    /// What the server says about using its tools, if anything.
+    pub(crate) fn instructions(&self) -> Option<String> {
+        let info = self.peer.peer_info()?;
+        let text = info.instructions.as_deref()?.trim();
+        (!text.is_empty()).then(|| text.to_owned())
+    }
+
     /// Whether the server offers resources.
     pub(crate) fn has_resources(&self) -> bool {
         self.peer

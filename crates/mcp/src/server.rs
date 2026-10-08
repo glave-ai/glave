@@ -275,9 +275,27 @@ impl Drop for McpServer {
     }
 }
 
+/// The most of a server's instructions the model is given.
+const INSTRUCTION_CHARS: usize = 4_000;
+
 impl ToolSource for McpServer {
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {
         Box::pin(self.list())
+    }
+
+    fn instructions(&self) -> Option<String> {
+        let State::Ready(connection) = &*self.state.borrow() else {
+            return None;
+        };
+        let text = connection.instructions()?;
+        let total = text.chars().count();
+        let text = if total > INSTRUCTION_CHARS {
+            let kept: String = text.chars().take(INSTRUCTION_CHARS).collect();
+            format!("{kept}\n[cut short: {total} characters]")
+        } else {
+            text
+        };
+        Some(format!("## {}\n\n{text}", self.name))
     }
 
     fn call<'a>(

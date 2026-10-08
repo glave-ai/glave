@@ -126,8 +126,7 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
         let toolset: ToolSet = self.tools().await;
-        let tools = toolset.specs.clone();
-        self.begin(thread, prompt, &tools).await?;
+        self.begin(thread, prompt, &toolset).await?;
         let mut summary = TurnSummary::started();
         let mut repeats = Repeats::default();
         summary.outcome = loop {
@@ -137,7 +136,10 @@ where
             if summary.model_calls >= self.settings.max_steps {
                 break Outcome::LimitReached;
             }
-            if let Some(compaction) = self.compact_if_needed(thread, &tools, cancel, live).await? {
+            if let Some(compaction) = self
+                .compact_if_needed(thread, &toolset, cancel, live)
+                .await?
+            {
                 summary.model_calls = summary.model_calls.saturating_add(1);
                 tally(&mut summary, &compaction);
             }
@@ -152,7 +154,7 @@ where
             };
             // Asking the model writes nothing, so it can be dropped when the turn is cancelled.
             let Some(asked) = cancel
-                .run(self.ask_model(thread, &tools, choice, live))
+                .run(self.ask_model(thread, &toolset, choice, live))
                 .await
             else {
                 break Outcome::Cancelled;
@@ -227,13 +229,13 @@ where
         &self,
         thread: &mut Thread,
         prompt: &str,
-        tools: &[ToolSpec],
+        offer: &ToolSet,
     ) -> Result<(), HarnessError> {
         let config = TurnConfig {
             model: &self.settings.model,
             provider: &self.settings.provider,
-            system: &self.settings.system_prompt,
-            tools,
+            system: &offer.system,
+            tools: &offer.specs,
             max_output_tokens: self.settings.max_output_tokens,
             approval: self.settings.approval,
             sandbox: self.workspace.sandbox().map(Prepared::recorded),
@@ -273,15 +275,15 @@ where
     async fn ask_model(
         &self,
         thread: &Thread,
-        tools: &[ToolSpec],
+        offer: &ToolSet,
         tool_choice: ToolChoice,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Completion, HarnessError> {
         let request = ModelRequest {
             model: self.settings.model.clone(),
-            system: self.settings.system_prompt.clone(),
+            system: offer.system.clone(),
             messages: thread.messages.clone(),
-            tools: tools.to_vec(),
+            tools: offer.specs.clone(),
             tool_choice,
             max_output_tokens: self.settings.max_output_tokens,
         };
