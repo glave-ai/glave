@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use glave_event::Outcome;
 use glave_harness::{ApprovalMode, SandboxLevel};
 use serde::Deserialize;
 
@@ -46,6 +47,10 @@ pub struct Task {
     pub env: BTreeMap<String, String>,
     pub checks: Vec<Check>,
     pub timeout: Duration,
+    /// Model calls one turn may make; the harness's default when unset.
+    pub max_steps: Option<u32>,
+    /// How every turn must end: completed, unless the task is about another ending.
+    pub outcome: Outcome,
 }
 
 /// How hard a task is: the fast tier runs on every change the model feels; the hard tier
@@ -113,6 +118,8 @@ struct Glave {
     turns: Vec<String>,
     #[serde(default)]
     checks: Vec<Check>,
+    max_steps: Option<u32>,
+    outcome: Option<Outcome>,
 }
 
 /// Loads the task in `dir`. Its paths are absolute, since the grader runs from the workspace.
@@ -173,6 +180,8 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         env: glave.env,
         checks: glave.checks,
         timeout,
+        max_steps: glave.max_steps,
+        outcome: glave.outcome.unwrap_or(Outcome::Completed),
     })
 }
 
@@ -225,6 +234,8 @@ mod tests {
             env = { HOME = "{dir}/home" }
             turns = ["And again."]
             checks = ["one_thread", { missing = "x.txt" }]
+            max_steps = 3
+            outcome = "limit_reached"
             "#,
             "Do it.\n",
         );
@@ -239,6 +250,8 @@ mod tests {
         assert_eq!(task.timeout, Duration::from_secs(90));
         assert_eq!(task.env.get("HOME").map(String::as_str), Some("{dir}/home"));
         assert_eq!(task.checks.len(), 2);
+        assert_eq!(task.max_steps, Some(3));
+        assert_eq!(task.outcome, Outcome::LimitReached);
     }
 
     #[test]
@@ -249,6 +262,7 @@ mod tests {
         assert_eq!(task.sandbox, None);
         assert_eq!(task.timeout, DEFAULT_TIMEOUT);
         assert_eq!(task.checks, []);
+        assert_eq!(task.outcome, Outcome::Completed);
     }
 
     #[test]

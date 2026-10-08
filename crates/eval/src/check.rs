@@ -97,12 +97,9 @@ impl Check {
     }
 }
 
-/// Every turn ended normally.
-pub fn completed(outcomes: &[Outcome]) -> Result<(), String> {
-    match outcomes
-        .iter()
-        .find(|outcome| **outcome != Outcome::Completed)
-    {
+/// Every turn ended as `expected`: normally, for most tasks.
+pub fn ended(expected: Outcome, outcomes: &[Outcome]) -> Result<(), String> {
+    match outcomes.iter().find(|outcome| **outcome != expected) {
         _ if outcomes.is_empty() => Err("no turn ended".to_owned()),
         Some(outcome) => Err(format!("a turn ended {outcome:?}")),
         None => Ok(()),
@@ -201,9 +198,14 @@ mod tests {
 
     #[test]
     fn every_turn_must_complete() {
+        let completed = |outcomes: &[Outcome]| ended(Outcome::Completed, outcomes);
         assert_eq!(completed(&[Outcome::Completed]), Ok(()));
         assert!(completed(&[Outcome::Completed, Outcome::LimitReached]).is_err());
         assert_eq!(completed(&[]), Err("no turn ended".to_owned()));
+        assert_eq!(
+            ended(Outcome::LimitReached, &[Outcome::LimitReached]),
+            Ok(())
+        );
     }
 
     #[test]

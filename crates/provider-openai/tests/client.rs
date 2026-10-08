@@ -4,7 +4,7 @@
 #[cfg(test)]
 mod over_http {
     use glave_event::{Arguments, Part, StopReason};
-    use glave_ports::{Message, ModelProvider, ModelRequest, ProviderError};
+    use glave_ports::{Message, ModelProvider, ModelRequest, ProviderError, ToolChoice};
     use glave_provider_openai::fake::{FakeServer, Reply};
     use glave_provider_openai::{Config, IDLE_TIMEOUT, OpenAiCompatible};
     use serde_json::json;
@@ -37,6 +37,7 @@ mod over_http {
                 }],
             }],
             tools: Vec::new(),
+            tool_choice: ToolChoice::Auto,
             max_output_tokens: None,
         }
     }
