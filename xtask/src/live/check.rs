@@ -24,12 +24,16 @@ pub enum Check {
     Kept(&'static str),
     /// The file does not exist.
     Missing(&'static str),
+    /// The file exists.
+    Exists(&'static str),
     /// This shell command succeeds in the project afterwards.
     Succeeds(&'static str),
     /// Every turn stayed in one thread.
     OneThread,
     /// This text never appears in the thread's events, so it never reached the model.
     NeverSent(&'static str),
+    /// This text appears in the thread's events: the model was told it.
+    Sent(&'static str),
 }
 
 /// What a check can look at.
@@ -71,6 +75,12 @@ impl Check {
             Self::Succeeds(command) => succeeds(cx, command),
             Self::OneThread => holds(cx.trace.threads == 1, || {
                 format!("the turns used {} threads", cx.trace.threads)
+            }),
+            Self::Exists(path) => holds(cx.project.join(path).exists(), || {
+                format!("{path} was not created")
+            }),
+            Self::Sent(text) => holds(cx.events.contains(text), || {
+                format!("{text:?} was never sent to the model")
             }),
             Self::NeverSent(text) => holds(!cx.events.contains(text), || {
                 format!("{text:?} reached the model")

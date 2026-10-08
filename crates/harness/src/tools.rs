@@ -85,11 +85,6 @@ impl Tool {
         }
     }
 
-    /// Whether the tool can change anything, and so needs the person's approval.
-    pub fn changes_things(self) -> bool {
-        !matches!(self, Self::Search | Self::Glob | Self::Read)
-    }
-
     fn spec(self) -> ToolSpec {
         let (description, parameters) = match self {
             Self::Search => (

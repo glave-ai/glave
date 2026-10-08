@@ -1,11 +1,12 @@
 //! Wiring the harness together and running one turn or an interactive session.
 
+use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::Context as _;
 use glave_event::Outcome;
-use glave_harness::{AllowAll, Approver, Harness, Parts, Sandbox, Settings, Thread, Workspace};
+use glave_harness::{Approver, Harness, NoOneToAsk, Parts, Sandbox, Settings, Thread, Workspace};
 use glave_ports::EventLog;
 use glave_provider_openai::OpenAiCompatible;
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
@@ -74,17 +75,19 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
             .context("--sandbox was asked for, so glave will not run commands without it")?;
     }
     let store = Store::open(database).await?;
-    let settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
+    let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
+    settings.approval = args.approval.unwrap_or_default();
     let wiring = Wiring {
         provider,
         store,
         workspace,
         settings,
     };
-    if args.yes {
-        session(&args, &endpoint, wiring, AllowAll).await
-    } else {
+    // Ask in the terminal when there is one; otherwise no one is there to answer.
+    if std::io::stdin().is_terminal() {
         session(&args, &endpoint, wiring, AskInTerminal::new()).await
+    } else {
+        session(&args, &endpoint, wiring, NoOneToAsk).await
     }
 }
 
@@ -204,9 +207,13 @@ async fn export<L: EventLog>(log: &L, thread: &Thread, path: &Path) -> anyhow::R
 }
 
 /// The protections commands run under, for the banner and receipts: `sandbox: project`.
-fn protections(args: &Args) -> Option<String> {
-    args.sandbox.map(|level| {
-        let network = if args.network { " + network" } else { "" };
-        format!("sandbox: {}{network}", level.name())
-    })
+fn protections(args: &Args) -> String {
+    let approval = format!("approval: {}", args.approval.unwrap_or_default().name());
+    match args.sandbox {
+        Some(level) => {
+            let network = if args.network { " + network" } else { "" };
+            format!("{approval} · sandbox: {}{network}", level.name())
+        }
+        None => approval,
+    }
 }
