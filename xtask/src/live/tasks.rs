@@ -63,7 +63,7 @@ pub const TASKS: &[Task] = &[
         checks: &[
             Check::Completed,
             Check::Succeeds("cargo test --quiet"),
-            Check::Unchanged("tests/stats.rs"),
+            Check::Kept("tests/stats.rs"),
         ],
     },
     Task {

@@ -19,8 +19,9 @@ pub enum Check {
     AnswerLacks(&'static [&'static str]),
     /// The final answer names the model that ran, by a word of its short name.
     AnswerNamesModel,
-    /// The file still holds exactly what the task started with.
-    Unchanged(&'static str),
+    /// The file still holds every line it started with, in order: new lines may be added (a
+    /// regression test), but nothing may be changed or removed (a weakened test).
+    Kept(&'static str),
     /// The file does not exist.
     Missing(&'static str),
     /// This shell command succeeds in the project afterwards.
@@ -63,7 +64,7 @@ impl Check {
                     format!("the answer names none of {words:?}")
                 })
             }
-            Self::Unchanged(path) => unchanged(cx, path),
+            Self::Kept(path) => kept(cx, path),
             Self::Missing(path) => holds(!cx.project.join(path).exists(), || {
                 format!("{path} was created")
             }),
@@ -93,7 +94,7 @@ fn completed(outcomes: &[Outcome]) -> Result<(), String> {
     }
 }
 
-fn unchanged(cx: &Context<'_>, path: &str) -> Result<(), String> {
+fn kept(cx: &Context<'_>, path: &str) -> Result<(), String> {
     let original = cx
         .files
         .iter()
@@ -102,7 +103,14 @@ fn unchanged(cx: &Context<'_>, path: &str) -> Result<(), String> {
         .ok_or_else(|| format!("{path} is not one of the task's files"))?;
     let now = std::fs::read_to_string(cx.project.join(path))
         .map_err(|err| format!("could not read {path}: {err}"))?;
-    holds(now == original, || format!("{path} was changed"))
+    let mut remaining = now.lines();
+    match original
+        .lines()
+        .find(|line| !remaining.any(|candidate| candidate == *line))
+    {
+        Some(line) => Err(format!("{path} lost or changed the line {:?}", line.trim())),
+        None => Ok(()),
+    }
 }
 
 fn succeeds(cx: &Context<'_>, command: &str) -> Result<(), String> {
@@ -196,6 +204,32 @@ mod tests {
         assert_eq!(
             judge(Check::Completed, &trace),
             Err("no turn ended".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_kept_file_may_grow_but_not_change() {
+        let dir = std::env::temp_dir().join(format!("glave-kept-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let files = [("t.rs", "fn a() {}\nfn b() {}\n")];
+        let trace = answering("done");
+        let judge_with = |contents: &str| {
+            std::fs::write(dir.join("t.rs"), contents).unwrap();
+            Check::Kept("t.rs").judge(&Context {
+                trace: &trace,
+                events: "",
+                project: &dir,
+                model: "m",
+                files: &files,
+                cargo_target: &dir,
+            })
+        };
+        assert_eq!(judge_with("fn a() {}\nfn new() {}\nfn b() {}\n"), Ok(()));
+        assert!(judge_with("fn a() {}\n").is_err(), "a test removed");
+        assert!(judge_with("fn b() {}\nfn a() {}\n").is_err(), "reordered");
+        assert!(
+            judge_with("fn a() { ignore }\nfn b() {}\n").is_err(),
+            "a test changed"
         );
     }
 
