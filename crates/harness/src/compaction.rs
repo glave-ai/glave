@@ -193,6 +193,13 @@ where
         }
     }
 
+    /// The longest summary to ask for: at most a quarter of the window, since servers count
+    /// the answer's room against the window too.
+    fn summary_tokens(&self) -> u32 {
+        let quarter = u32::try_from(self.window_tokens() / 4).unwrap_or(u32::MAX);
+        SUMMARY_TOKENS.min(quarter)
+    }
+
     /// Believes the window a too-long refusal states, for the rest of the session.
     pub(crate) fn learn_window(&self, refusal: &ProviderError) {
         if let Some(tokens) = stated_window(&refusal.to_string()) {
@@ -234,7 +241,7 @@ where
             messages,
             tools: offer.specs.clone(),
             tool_choice: ToolChoice::None,
-            max_output_tokens: Some(SUMMARY_TOKENS),
+            max_output_tokens: Some(self.summary_tokens()),
         };
         let completion = self.summarize(request, cancel).await?;
         let summary: Vec<&str> = completion

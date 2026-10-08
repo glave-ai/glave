@@ -126,6 +126,11 @@ mod too_long {
             // Turn one (2), the refused step, two summaries, and the step again.
             assert_eq!(seen.len(), 6);
             assert!(!removed(&seen[3]), "the first summary asks with everything");
+            assert_eq!(
+                seen[3].max_output_tokens,
+                Some(1_024),
+                "a summary leaves room in the window the refusal stated"
+            );
             assert!(removed(&seen[4]), "the second loses the oldest outputs");
             let restarted = format!("{:?}", seen[5].messages);
             assert_eq!(
