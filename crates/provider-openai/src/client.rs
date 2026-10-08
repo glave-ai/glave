@@ -8,7 +8,7 @@ use reqwest::header::CONTENT_TYPE;
 
 use crate::assemble::Assembler;
 use crate::sse::SseDecoder;
-use crate::wire::chat_request;
+use crate::wire::{caches_automatically, chat_request};
 
 /// How much of an error response body to keep in the error.
 const ERROR_BODY_CHARS: usize = 2_000;
@@ -53,7 +53,8 @@ impl ModelProvider for OpenAiCompatible {
         request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> Result<Completion, ProviderError> {
-        let body = serde_json::to_vec(&chat_request(request))
+        let cache = caches_automatically(&self.provider, &request.model);
+        let body = serde_json::to_vec(&chat_request(request, cache))
             .map_err(|e| ProviderError::Protocol(format!("could not encode the request: {e}")))?;
         let mut call = self
             .http
