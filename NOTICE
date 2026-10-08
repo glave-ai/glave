@@ -1,0 +1,8 @@
+glave
+Copyright 2026 Christopher Shelton
+
+This product includes macOS sandbox (Seatbelt) policies from OpenAI Codex
+(https://github.com/openai/codex), licensed under the Apache License 2.0:
+crates/harness/src/sandbox/base.sbpl, network.sbpl and preferences.sbpl.
+OpenAI Codex
+Copyright 2025 OpenAI

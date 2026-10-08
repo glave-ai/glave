@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use glave_harness::SandboxLevel;
+
 pub const USAGE: &str = "\
 glave: run hope, or any model, on the project in this folder
 
@@ -13,6 +15,9 @@ Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)
   --continue, -c     continue your last thread in this folder
   --yes              allow writes, edits and commands without asking
+  --sandbox <level>  run commands in the macOS sandbox: read-only, or project (writes only
+                     the project and temp folder); never reads secret locations
+  --network          let sandboxed commands use the network
   --events <file>    save the thread's events to this file as JSON Lines
   --help             show this help
   --version          show the version
@@ -39,6 +44,10 @@ pub struct Args {
     pub action: Action,
     pub model: Option<String>,
     pub yes: bool,
+    /// Run commands in the sandbox at this level.
+    pub sandbox: Option<SandboxLevel>,
+    /// Let sandboxed commands use the network.
+    pub network: bool,
     /// Continue the most recent thread in this folder instead of starting one.
     pub resume: bool,
     pub events: Option<PathBuf>,
@@ -57,6 +66,15 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
                 args.events = Some(PathBuf::from(rest.next().ok_or("--events needs a file")?));
             }
             "--yes" | "-y" => args.yes = true,
+            "--sandbox" => {
+                let level = rest
+                    .next()
+                    .ok_or("--sandbox needs a level: read-only or project")?;
+                args.sandbox = Some(SandboxLevel::named(&level).ok_or_else(|| {
+                    format!("unknown sandbox level {level:?}: use read-only or project")
+                })?);
+            }
+            "--network" => args.network = true,
             "--continue" | "-c" => args.resume = true,
             "--help" | "-h" => args.action = Action::Help,
             "--version" | "-V" => args.action = Action::Version,
@@ -64,6 +82,9 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             flag if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
             _ => words.push(argument),
         }
+    }
+    if args.network && args.sandbox.is_none() {
+        return Err("--network only applies with --sandbox".into());
     }
     args.prompt = words.join(" ");
     Ok(args)
@@ -83,6 +104,19 @@ mod tests {
         assert!(args.yes);
         assert_eq!(args.model.as_deref(), Some("m"));
         assert_eq!(args.prompt, "fix the test");
+    }
+
+    #[test]
+    fn the_sandbox_takes_a_level_and_optional_network() {
+        let args = parse_words(&["--sandbox", "project", "--network", "go"]).unwrap();
+        assert_eq!(args.sandbox, Some(SandboxLevel::Project));
+        assert!(args.network);
+        assert!(parse_words(&["--sandbox", "everything"]).is_err());
+        assert!(parse_words(&["--sandbox"]).is_err());
+        assert!(
+            parse_words(&["--network"]).is_err(),
+            "network needs a sandbox"
+        );
     }
 
     #[test]

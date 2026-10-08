@@ -1,0 +1,36 @@
+name: sandbox
+
+# The sandbox tests need macOS. macOS minutes cost 10x on private repos, so pull requests run
+# them only when they touch the sandbox or what it wraps. `main` runs them in the full macOS job.
+on:
+  pull_request:
+    paths:
+      - crates/harness/src/sandbox.rs
+      - crates/harness/src/sandbox/**
+      - crates/harness/src/tools/bash.rs
+      - crates/harness/src/tools/workspace.rs
+      - .github/workflows/sandbox.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandbox-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    env:
+      # Fail, never skip, if the sandbox is unavailable on the runner.
+      GLAVE_REQUIRE_SANDBOX: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo nextest run -p glave-harness
