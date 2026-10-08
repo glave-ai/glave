@@ -10,7 +10,7 @@ use glave_ports::{
 };
 use serde::Serialize;
 
-use crate::approval::{ApprovalRequest, Approver, Decision, summarize};
+use crate::approval::{ApprovalRequest, Approver, Decision, reads_secret, summarize};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::tools::{Tool, ToolOutcome, specs};
 
@@ -251,7 +251,8 @@ where
         Ok(calls)
     }
 
-    /// Runs one tool call, asking the person first when it would change anything.
+    /// Runs one tool call, asking the person first when it would change anything or show the
+    /// model a secret file.
     async fn call_tool(
         &self,
         thread: &mut Thread,
@@ -265,15 +266,26 @@ where
             ));
         };
         let summary = summarize(tool, &call.arguments);
-        if tool.changes_things() && !thread.allowed.contains(&tool) {
+        let secret = reads_secret(&self.workspace, tool, &call.arguments).await;
+        if (tool.changes_things() || secret) && !thread.allowed.contains(&tool) {
             let request = ApprovalRequest {
                 tool,
-                summary: summary.clone(),
+                summary: if secret {
+                    format!("{summary} (this file usually holds secrets; the model would see them)")
+                } else {
+                    summary.clone()
+                },
+                secret,
             };
             match self.approver.decide(&request).await {
                 Decision::AllowOnce => {}
                 Decision::AllowForThread => {
                     thread.allowed.insert(tool);
+                }
+                Decision::Deny if secret => {
+                    return ToolOutcome::error(
+                        "Reading this file was declined: it usually holds secrets such as keys or passwords. Do not try to get its contents another way. If you need a specific value, ask the person for it.",
+                    );
                 }
                 Decision::Deny => {
                     return ToolOutcome::error(

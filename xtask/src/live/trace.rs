@@ -1,7 +1,6 @@
-//! What a run did, read back from the thread's exported events.
+//! What a run did, read back from the thread's events as `glave --events` exports them.
 
 use std::collections::HashSet;
-use std::path::Path;
 
 use glave_event::{Body, Outcome, Part, RawEvent, Role, decode};
 
@@ -40,13 +39,6 @@ impl Default for Trace {
             answer: String::new(),
         }
     }
-}
-
-/// Reads a thread exported with `glave --events <file>`.
-pub fn load(path: &Path) -> Result<Trace, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|err| format!("glave wrote no events to {}: {err}", path.display()))?;
-    parse(&text)
 }
 
 /// Builds the trace from JSON Lines events.

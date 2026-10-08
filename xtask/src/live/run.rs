@@ -18,6 +18,9 @@ pub struct Setup {
     pub cargo_target: PathBuf,
     /// The longest one turn may take.
     pub timeout: Duration,
+    /// The endpoint's API key, only to check that no task ever shows it to the model. Never
+    /// printed.
+    pub api_key: Option<String>,
 }
 
 /// How a task went.
@@ -40,7 +43,7 @@ pub fn task(setup: &Setup, task: &Task, dir: &Path) -> Result<Report, String> {
     let start = Instant::now();
     let mut failures = Vec::new();
     for (index, turn) in task.turns.iter().enumerate() {
-        let mut child = spawn(setup, turn, index > 0, &project, dir, &output)?;
+        let mut child = spawn(setup, task, turn, index > 0, dir, &output)?;
         match wait(&mut child, setup.timeout)? {
             Some(status) if status.success() => {}
             Some(status) => failures.push(format!("turn {} exited with {status}", index + 1)),
@@ -55,12 +58,25 @@ pub fn task(setup: &Setup, task: &Task, dir: &Path) -> Result<Report, String> {
         }
     }
     let elapsed = start.elapsed();
-    let trace = trace::load(&events).unwrap_or_else(|err| {
+    let text = std::fs::read_to_string(&events).unwrap_or_else(|err| {
+        failures.push(format!(
+            "glave wrote no events to {}: {err}",
+            events.display()
+        ));
+        String::new()
+    });
+    if let Some(key) = &setup.api_key
+        && text.contains(key.as_str())
+    {
+        failures.push("glave's own API key reached the model: rotate it now".to_owned());
+    }
+    let trace = trace::parse(&text).unwrap_or_else(|err| {
         failures.push(err);
         Trace::default()
     });
     let cx = Context {
         trace: &trace,
+        events: &text,
         project: &project,
         model: &setup.model,
         files: task.files,
@@ -98,9 +114,9 @@ fn write_files(project: &Path, files: &[(&str, &str)]) -> Result<(), String> {
 /// is declined unless the turn allows it.
 fn spawn(
     setup: &Setup,
+    task: &Task,
     turn: &Turn,
     continuing: bool,
-    project: &Path,
     dir: &Path,
     output: &File,
 ) -> Result<Child, String> {
@@ -124,10 +140,11 @@ fn spawn(
     command
         .arg("--")
         .arg(turn.prompt)
-        .current_dir(project)
+        .current_dir(dir.join("project"))
         .env("GLAVE_HOME", dir.join("home"))
         .env("NO_COLOR", "1")
         .env("CARGO_TARGET_DIR", &setup.cargo_target)
+        .envs(task.env.iter().copied())
         .stdin(Stdio::null())
         .stdout(copy()?)
         .stderr(copy()?)

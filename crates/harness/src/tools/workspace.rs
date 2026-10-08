@@ -1,23 +1,33 @@
-//! The folder the tools act on: every path the model gives is confined to it, and it
-//! remembers what the model has read so writes and edits never act on a stale view.
+//! The folder the tools act on: every path the model gives is confined to it, commands run
+//! there without glave's secrets, and it remembers what the model has read so writes and
+//! edits never act on a stale view.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 
 use glave_event::Sha256;
 use glave_ports::digest;
 
-/// The project folder and what the model has seen of it.
+use crate::secrets::without_secrets;
+
+/// The project folder, the environment its commands run with, and what the model has seen.
 #[derive(Debug)]
 pub struct Workspace {
     root: PathBuf,
+    environment: Vec<(OsString, OsString)>,
     reads: Mutex<HashMap<PathBuf, Sha256>>,
 }
 
 impl Workspace {
-    /// Opens a workspace at `root`, which must be an existing directory.
-    pub async fn open(root: impl AsRef<Path>) -> std::io::Result<Self> {
+    /// Opens a workspace at `root`, which must be an existing directory. Commands run with
+    /// `environment` (usually glave's own) minus anything named like a secret, such as the
+    /// model provider's API key.
+    pub async fn open(
+        root: impl AsRef<Path>,
+        environment: impl IntoIterator<Item = (OsString, OsString)>,
+    ) -> std::io::Result<Self> {
         let root = tokio::fs::canonicalize(root).await?;
         if !tokio::fs::metadata(&root).await?.is_dir() {
             return Err(std::io::Error::new(
@@ -27,12 +37,18 @@ impl Workspace {
         }
         Ok(Self {
             root,
+            environment: without_secrets(environment),
             reads: Mutex::new(HashMap::new()),
         })
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The environment commands run with: never any secrets.
+    pub(crate) fn environment(&self) -> &[(OsString, OsString)] {
+        &self.environment
     }
 
     /// Resolves a path the model gave to one inside the workspace. Symlinks and `..` are
@@ -130,7 +146,7 @@ mod tests {
     fn paths_stay_inside_the_workspace() {
         let dir = scratch("confine");
         block_on(async {
-            let ws = Workspace::open(&dir).await.unwrap();
+            let ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
             let root = ws.root().to_owned();
             assert_eq!(
                 ws.resolve("src/main.rs").await.unwrap(),
@@ -160,7 +176,7 @@ mod tests {
         let dir = scratch("symlink");
         std::os::unix::fs::symlink(std::env::temp_dir(), dir.join("out")).unwrap();
         block_on(async {
-            let ws = Workspace::open(&dir).await.unwrap();
+            let ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
             assert!(ws.resolve("out/anything").await.is_err());
         });
     }
@@ -169,7 +185,7 @@ mod tests {
     fn changes_need_a_fresh_read() {
         let dir = scratch("fresh");
         block_on(async {
-            let ws = Workspace::open(&dir).await.unwrap();
+            let ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
             let file = ws.resolve("src/main.rs").await.unwrap();
             assert!(ws.check_fresh(&file, b"fn main() {}\n").is_err());
             ws.remember(&file, b"fn main() {}\n");

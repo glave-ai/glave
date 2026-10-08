@@ -27,11 +27,15 @@ pub enum Check {
     Succeeds(&'static str),
     /// Every turn stayed in one thread.
     OneThread,
+    /// This text never appears in the thread's events, so it never reached the model.
+    NeverSent(&'static str),
 }
 
 /// What a check can look at.
 pub struct Context<'a> {
     pub trace: &'a Trace,
+    /// The thread's events exactly as exported.
+    pub events: &'a str,
     pub project: &'a Path,
     pub model: &'a str,
     /// The task's starting files, to tell what changed.
@@ -66,6 +70,9 @@ impl Check {
             Self::Succeeds(command) => succeeds(cx, command),
             Self::OneThread => holds(cx.trace.threads == 1, || {
                 format!("the turns used {} threads", cx.trace.threads)
+            }),
+            Self::NeverSent(text) => holds(!cx.events.contains(text), || {
+                format!("{text:?} reached the model")
             }),
         }
     }
@@ -143,6 +150,7 @@ mod tests {
     fn judge(check: Check, trace: &Trace) -> Result<(), String> {
         check.judge(&Context {
             trace,
+            events: "",
             project: Path::new("/nonexistent"),
             model: "anthropic/claude-haiku-5.5",
             files: &[],

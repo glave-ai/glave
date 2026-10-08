@@ -8,6 +8,7 @@ mod env;
 mod harness;
 mod prompt;
 mod resume;
+mod secrets;
 mod tools;
 mod turn;
 
