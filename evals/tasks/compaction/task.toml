@@ -1,0 +1,9 @@
+[task]
+name = "glave/compaction"
+description = "A thread that outgrows a small window is compacted and still remembers."
+
+[glave]
+# A window small enough that reading the project fills it.
+context_window = 6000
+turns = ["What was the code word I gave you earlier? Reply with just the word."]
+checks = ["one_thread", { recorded = "thread.compacted" }, { answer_contains = "marigold-42" }]

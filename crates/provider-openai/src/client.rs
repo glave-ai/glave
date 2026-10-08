@@ -24,6 +24,49 @@ pub struct Config {
     pub provider: String,
 }
 
+impl Config {
+    /// The endpoint at `base_url`, named after its host: `openrouter`, `openai`, `ollama`,
+    /// `local` for other servers on this computer, otherwise the host itself. `None` when
+    /// `base_url` is not an http(s) URL.
+    pub fn for_url(base_url: impl Into<String>, api_key: Option<String>) -> Option<Self> {
+        let base_url = base_url.into();
+        let host = host_of(&base_url)?;
+        let provider = match host.as_str() {
+            "openrouter.ai" => "openrouter".to_owned(),
+            "api.openai.com" => "openai".to_owned(),
+            "localhost" | "127.0.0.1" | "[::1]" if base_url.contains(":11434") => {
+                "ollama".to_owned()
+            }
+            "localhost" | "127.0.0.1" | "[::1]" => "local".to_owned(),
+            _ => host,
+        };
+        Some(Self {
+            base_url,
+            api_key,
+            provider,
+        })
+    }
+
+    /// Whether the model runs on this computer, where a missing cost means $0.
+    pub fn is_local(&self) -> bool {
+        host_of(&self.base_url)
+            .is_some_and(|host| matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]"))
+    }
+}
+
+/// The host part of an http(s) URL.
+fn host_of(url: &str) -> Option<String> {
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))?;
+    let authority = rest.split('/').next()?;
+    let host = match authority.rsplit_once(':') {
+        Some((host, port)) if port.bytes().all(|b| b.is_ascii_digit()) => host,
+        _ => authority,
+    };
+    (!host.is_empty()).then(|| host.to_ascii_lowercase())
+}
+
 /// A model provider for any API that speaks OpenAI's chat completions protocol.
 pub struct OpenAiCompatible {
     http: reqwest::Client,
@@ -92,4 +135,38 @@ impl ModelProvider for OpenAiCompatible {
 
 fn transport(error: reqwest::Error) -> ProviderError {
     ProviderError::Transport(error.without_url().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn name(url: &str) -> Option<String> {
+        Config::for_url(url, None).map(|config| config.provider)
+    }
+
+    #[test]
+    fn endpoints_are_named_after_their_host() {
+        assert_eq!(
+            name("https://openrouter.ai/api/v1").as_deref(),
+            Some("openrouter")
+        );
+        assert_eq!(name("https://api.openai.com/v1").as_deref(), Some("openai"));
+        assert_eq!(name("http://localhost:11434/v1").as_deref(), Some("ollama"));
+        assert_eq!(name("http://127.0.0.1:8080/v1").as_deref(), Some("local"));
+        assert_eq!(
+            name("https://Models.Example.com:443/v1").as_deref(),
+            Some("models.example.com")
+        );
+        assert_eq!(name("ftp://x"), None);
+        assert_eq!(name("https://"), None);
+    }
+
+    #[test]
+    fn only_this_computer_is_local() {
+        let local = |url| Config::for_url(url, None).is_some_and(|config| config.is_local());
+        assert!(local("http://localhost:11434/v1"));
+        assert!(local("http://[::1]:8080/v1"));
+        assert!(!local("https://openrouter.ai/api/v1"));
+    }
 }

@@ -41,7 +41,9 @@ crates/ports/       glave-ports: event log, blob store and model provider ports,
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
 crates/store-sqlite/  glave-store-sqlite: the event log and blob store on one local SQLite file
 crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash), approvals, resume, the opt-in sandbox
+crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary
+evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 specs/              the contracts: events, the sandbox, approvals; tool calls, verbs and scopes, API surface planned
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main)
 ```
@@ -54,7 +56,7 @@ specs/              the contracts: events, the sandbox, approvals; tool calls, v
 cargo xtask ci          # the full gate; must pass before anything is "done"
 cargo xtask file-sizes  # line limits only
 cargo xtask bench       # benchmarks, alone on the machine (see Performance)
-cargo xtask live --model <id>   # glave on small tasks against a real model, graded (costs cents)
+cargo xtask eval        # the harness on evals/tasks against three real models, graded (costs cents)
 cargo fmt --all         # format
 cargo build --profile debugging   # full debug info, for a debugger
 ```
@@ -161,5 +163,5 @@ cargo build --profile debugging   # full debug info, for a debugger
 - Make the smallest change that does the job. Don't add crates, ports, dependencies or files the task doesn't need.
 - No TODO comments; note follow-ups in the pull request.
 - Run `cargo xtask ci` before saying something is done, and report failures as they are.
-- After changes the model will feel (prompt, tools, approvals, the loop), run `cargo xtask live` with `--repeat 3` and report pass rates. Load the endpoint from the environment first (`set -a; source .env; set +a`).
+- After changes the model will feel (prompt, tools, approvals, the loop), run `cargo xtask eval --repeat 3` (add `--tier all` for the hard tasks) and report pass rates per model. Load the endpoint from the environment first (`set -a; source .env; set +a`).
 - Ask before anything destructive or hard to undo.

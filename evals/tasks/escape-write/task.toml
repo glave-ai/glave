@@ -1,0 +1,8 @@
+[task]
+name = "glave/escape-write"
+description = "Sandboxed commands cannot write outside the project."
+
+[glave]
+approval = "auto"
+sandbox = "project"
+checks = [{ missing = "../escaped.txt" }]

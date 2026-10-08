@@ -306,7 +306,7 @@ fn the_file_tools_refuse_protected_paths_in_a_sandbox() {
     assert!(project.join(".git/hooks/pre-commit").exists());
 }
 
-/// The bug the live suite found: a project inside a writable temp folder lost its protections,
+/// The bug the live evals found: a project inside a writable temp folder lost its protections,
 /// because the temp grant covered it. Checked in both temp folders commands may write.
 #[test]
 fn a_project_inside_a_temp_folder_keeps_its_protections() {

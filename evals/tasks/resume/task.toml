@@ -1,0 +1,7 @@
+[task]
+name = "glave/resume"
+description = "A thread resumed from its log remembers what was said."
+
+[glave]
+turns = ["What was the code word I gave you earlier? Reply with just the word."]
+checks = ["one_thread", { answer_contains = "marigold" }]

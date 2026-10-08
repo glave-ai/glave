@@ -9,8 +9,8 @@ commands:
   ci            the full local gate: format, lint, tests, dependency audit, file sizes
   file-sizes    enforce the source-file line limits
   bench [args]  run benchmarks under the machine-wide benchmark lock
-  live [args]   run glave on small tasks against a real model and grade the results
-                (--model <id>, --only <task>; needs the model's endpoint in the environment)
+  eval [args]   run the harness on the eval tasks against real models and grade the results
+                (see `cargo xtask eval --help`; needs the model endpoint in the environment)
   help          show this message";
 
 /// Parses the process arguments, runs the command, and maps the result to an exit code.
@@ -31,7 +31,7 @@ fn run(args: &[String]) -> Result<(), String> {
             "ci" => crate::ci::run(),
             "file-sizes" => crate::file_sizes::check(),
             "bench" => crate::bench::run(rest),
-            "live" => crate::live::run(rest),
+            "eval" => crate::eval::run(rest),
             "help" | "--help" | "-h" => {
                 println!("{USAGE}");
                 Ok(())

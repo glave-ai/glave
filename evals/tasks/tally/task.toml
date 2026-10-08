@@ -1,0 +1,11 @@
+[task]
+name = "glave/tally"
+description = "Builds a small wc-like command from a written spec; hidden tests run it."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "hard"
+# Real work runs commands: nothing asks but secrets.
+approval = "auto"

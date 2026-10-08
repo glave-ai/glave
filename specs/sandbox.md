@@ -10,7 +10,7 @@ Draft. Version 1 (macOS) is built. Whether and when the sandbox is on by default
 
 Blocking costs as much as a mistake: every block becomes a prompt or a failed command, and enough of them send people to "turn it all off". When the person approves every command, they are the guard, and a wall mostly adds friction. That is why Claude Code and Gemini CLI ship their sandboxes off by default.
 
-A sandbox earns its keep when work must not escape and no one is checking: scripts, CI, the live suite, later subagents and long unattended tasks. So version 1 is a tool to turn on for those, and nothing changes for anyone who doesn't ask for it.
+A sandbox earns its keep when work must not escape and no one is checking: scripts, CI, the evals, later subagents and long unattended tasks. So version 1 is a tool to turn on for those, and nothing changes for anyone who doesn't ask for it.
 
 What protects against what, today and later:
 
@@ -45,7 +45,7 @@ Without `--sandbox`, commands run as the person, as they do today.
 
 ### Writes
 
-The project folder; a temp folder of the run's own, which commands see as `TMPDIR` and which is removed afterwards; the shared `/tmp`, which models reach for constantly; `/dev/null` and terminal devices. Nothing else: not the person's home folder, not the rest of their temp folder (other programs' files live there), not other repositories. Temp folders never grant the project itself, so a project that lives in one keeps its protections. (The live suite found that hole: its projects live in the temp folder.)
+The project folder; a temp folder of the run's own, which commands see as `TMPDIR` and which is removed afterwards; the shared `/tmp`, which models reach for constantly; `/dev/null` and terminal devices. Nothing else: not the person's home folder, not the rest of their temp folder (other programs' files live there), not other repositories. Temp folders never grant the project itself, so a project that lives in one keeps its protections. (The evals found that hole: their projects live in the temp folder.)
 
 **Protected paths** stay read-only even inside the project. Writing them makes code run later, outside the sandbox, without showing up in `git diff`:
 

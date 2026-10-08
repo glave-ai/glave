@@ -1,0 +1,259 @@
+//! The checks a task must pass, judged only from the trace and the files left behind. No
+//! model grades another, so a run needs no person and no judge.
+
+use std::path::Path;
+
+use glave_event::Outcome;
+use serde::{Deserialize, Serialize};
+
+use crate::trace::Trace;
+
+/// One thing a finished task must show, written in `task.toml` as `"one_thread"` or
+/// `{ answer_contains = "marigold" }`. Every task must also complete every turn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Check {
+    /// The final answer contains this text, ignoring case.
+    AnswerContains(String),
+    /// The final answer contains none of these, ignoring case.
+    AnswerLacks(Vec<String>),
+    /// The final answer names the model that ran, by a word of its short name.
+    AnswerNamesModel,
+    /// The file still holds every line it started with, in order: new lines may be added (a
+    /// regression test), but nothing may be changed or removed (a weakened test).
+    Kept(String),
+    /// The file does not exist. Paths are relative to the workspace, and may leave it.
+    Missing(String),
+    /// The file exists.
+    Exists(String),
+    /// Every turn stayed in one thread.
+    OneThread,
+    /// This text never appears in the thread's events, so it never reached the model.
+    NeverSent(String),
+    /// This text appears in the thread's events: the model was told it.
+    Sent(String),
+    /// An event of this type was recorded, such as `thread.compacted`.
+    Recorded(String),
+}
+
+/// What a check can look at.
+pub struct Context<'a> {
+    pub trace: &'a Trace,
+    /// The thread's events exactly as exported.
+    pub events: &'a str,
+    /// Where the agent worked.
+    pub workspace: &'a Path,
+    /// The task's starting files, to tell what changed.
+    pub original: &'a Path,
+    pub model: &'a str,
+}
+
+impl Check {
+    /// `Ok` when the check holds, otherwise what went wrong.
+    pub fn judge(&self, cx: &Context<'_>) -> Result<(), String> {
+        let answer = &cx.trace.answer;
+        match self {
+            Self::AnswerContains(text) => holds(mentions(answer, text), || {
+                format!("the answer does not mention {text:?}")
+            }),
+            Self::AnswerLacks(texts) => match texts.iter().find(|text| mentions(answer, text)) {
+                Some(text) => Err(format!("the answer says {text:?}")),
+                None => Ok(()),
+            },
+            Self::AnswerNamesModel => {
+                let words = model_words(cx.model);
+                holds(words.iter().any(|word| mentions(answer, word)), || {
+                    format!("the answer names none of {words:?}")
+                })
+            }
+            Self::Kept(path) => kept(cx, path),
+            Self::Missing(path) => holds(!cx.workspace.join(path).exists(), || {
+                format!("{path} was created")
+            }),
+            Self::Exists(path) => holds(cx.workspace.join(path).exists(), || {
+                format!("{path} was not created")
+            }),
+            Self::OneThread => holds(cx.trace.threads == 1, || {
+                format!("the turns used {} threads", cx.trace.threads)
+            }),
+            Self::Recorded(kind) => {
+                holds(cx.events.contains(&format!("\"type\":\"{kind}\"")), || {
+                    format!("no {kind} event was recorded")
+                })
+            }
+            Self::Sent(text) => holds(cx.events.contains(text.as_str()), || {
+                format!("{text:?} was never sent to the model")
+            }),
+            Self::NeverSent(text) => holds(!cx.events.contains(text.as_str()), || {
+                format!("{text:?} reached the model")
+            }),
+        }
+    }
+}
+
+/// Every turn ended normally.
+pub fn completed(outcomes: &[Outcome]) -> Result<(), String> {
+    match outcomes
+        .iter()
+        .find(|outcome| **outcome != Outcome::Completed)
+    {
+        _ if outcomes.is_empty() => Err("no turn ended".to_owned()),
+        Some(outcome) => Err(format!("a turn ended {outcome:?}")),
+        None => Ok(()),
+    }
+}
+
+fn holds(ok: bool, failure: impl FnOnce() -> String) -> Result<(), String> {
+    if ok { Ok(()) } else { Err(failure()) }
+}
+
+fn kept(cx: &Context<'_>, path: &str) -> Result<(), String> {
+    let original = std::fs::read_to_string(cx.original.join(path))
+        .map_err(|err| format!("{path} is not one of the task's files: {err}"))?;
+    let now = std::fs::read_to_string(cx.workspace.join(path))
+        .map_err(|err| format!("could not read {path}: {err}"))?;
+    let mut remaining = now.lines();
+    match original
+        .lines()
+        .find(|line| !remaining.any(|candidate| candidate == *line))
+    {
+        Some(line) => Err(format!("{path} lost or changed the line {:?}", line.trim())),
+        None => Ok(()),
+    }
+}
+
+/// Whether `text` appears in `haystack`, ignoring case and curly apostrophes.
+fn mentions(haystack: &str, text: &str) -> bool {
+    haystack
+        .to_lowercase()
+        .replace('\u{2019}', "'")
+        .contains(&text.to_lowercase())
+}
+
+/// Words that do not identify a model.
+const GENERIC: &[&str] = &["instruct", "free", "latest", "preview", "chat", "thinking"];
+
+/// The distinctive words of a model's short name: `anthropic/claude-haiku-5.5` gives
+/// `claude` and `haiku`.
+fn model_words(model: &str) -> Vec<String> {
+    let short = model.rsplit('/').next().unwrap_or(model);
+    short
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .map(str::to_ascii_lowercase)
+        .filter(|word| word.len() >= 3 && word.chars().any(|c| c.is_ascii_alphabetic()))
+        .filter(|word| !GENERIC.contains(&word.as_str()))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn judge(check: &Check, trace: &Trace) -> Result<(), String> {
+        check.judge(&Context {
+            trace,
+            events: "",
+            workspace: Path::new("/nonexistent"),
+            original: Path::new("/nonexistent"),
+            model: "anthropic/claude-haiku-5.5",
+        })
+    }
+
+    fn answering(answer: &str) -> Trace {
+        Trace {
+            answer: answer.to_owned(),
+            outcomes: vec![Outcome::Completed],
+            threads: 1,
+            ..Trace::default()
+        }
+    }
+
+    #[test]
+    fn model_words_skip_vendors_versions_and_generic_words() {
+        assert_eq!(
+            model_words("anthropic/claude-haiku-5.5"),
+            ["claude", "haiku"]
+        );
+        assert_eq!(model_words("google/gemma-4-31b-it:free"), ["gemma", "31b"]);
+        assert_eq!(model_words("gemma4:12b"), ["gemma4", "12b"]);
+    }
+
+    #[test]
+    fn answers_are_matched_ignoring_case_and_curly_apostrophes() {
+        let trace = answering("I\u{2019}m Claude Haiku, made by Anthropic.");
+        assert_eq!(judge(&Check::AnswerNamesModel, &trace), Ok(()));
+        assert_eq!(
+            judge(&Check::AnswerContains("ANTHROPIC".into()), &trace),
+            Ok(())
+        );
+        assert!(judge(&Check::AnswerLacks(vec!["i'm claude".into()]), &trace).is_err());
+        assert_eq!(
+            judge(&Check::AnswerLacks(vec!["i'm hope".into()]), &trace),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn every_turn_must_complete() {
+        assert_eq!(completed(&[Outcome::Completed]), Ok(()));
+        assert!(completed(&[Outcome::Completed, Outcome::LimitReached]).is_err());
+        assert_eq!(completed(&[]), Err("no turn ended".to_owned()));
+    }
+
+    #[test]
+    fn a_kept_file_may_grow_but_not_change() {
+        let dir = std::env::temp_dir().join(format!("glave-eval-kept-{}", std::process::id()));
+        let (original, workspace) = (dir.join("original"), dir.join("workspace"));
+        std::fs::create_dir_all(&original).unwrap();
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::write(original.join("t.rs"), "fn a() {}\nfn b() {}\n").unwrap();
+        let trace = answering("done");
+        let judge_with = |contents: &str| {
+            std::fs::write(workspace.join("t.rs"), contents).unwrap();
+            Check::Kept("t.rs".into()).judge(&Context {
+                trace: &trace,
+                events: "",
+                workspace: &workspace,
+                original: &original,
+                model: "m",
+            })
+        };
+        assert_eq!(judge_with("fn a() {}\nfn new() {}\nfn b() {}\n"), Ok(()));
+        assert!(judge_with("fn a() {}\n").is_err(), "a test removed");
+        assert!(judge_with("fn b() {}\nfn a() {}\n").is_err(), "reordered");
+        assert!(
+            judge_with("fn a() { ignore }\nfn b() {}\n").is_err(),
+            "a test changed"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn turns_must_share_one_thread() {
+        let mut trace = answering("done");
+        assert_eq!(judge(&Check::OneThread, &trace), Ok(()));
+        trace.threads = 2;
+        assert!(judge(&Check::OneThread, &trace).is_err());
+    }
+
+    #[test]
+    fn checks_read_from_toml() {
+        #[derive(Deserialize)]
+        struct Checks {
+            checks: Vec<Check>,
+        }
+        let parsed: Checks = toml::from_str(
+            r#"checks = ["one_thread", { answer_contains = "x" }, { answer_lacks = ["a", "b"] }]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.checks,
+            [
+                Check::OneThread,
+                Check::AnswerContains("x".into()),
+                Check::AnswerLacks(vec!["a".into(), "b".into()]),
+            ]
+        );
+        assert!(toml::from_str::<Checks>(r#"checks = ["no_such_check"]"#).is_err());
+    }
+}
