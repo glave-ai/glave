@@ -135,17 +135,28 @@ mod scripted {
         answers: Vec<Completion>,
         approver: A,
     ) -> Harness<Script, MemoryLog, MemoryBlobs, A> {
+        harness_on(dir, answers, approver, MemoryLog::new(), 1).await
+    }
+
+    /// A harness on a given log. `seed` keeps ids distinct between harnesses sharing a log.
+    async fn harness_on<L: EventLog, A: Approver>(
+        dir: &PathBuf,
+        answers: Vec<Completion>,
+        approver: A,
+        log: L,
+        seed: u64,
+    ) -> Harness<Script, L, MemoryBlobs, A> {
         let script = Script {
             answers: Mutex::new(answers.into()),
             seen: Mutex::new(Vec::new()),
         };
         let parts = Parts {
             provider: script,
-            log: MemoryLog::new(),
+            log,
             blobs: MemoryBlobs::new(),
             approver,
             clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
-            entropy: Box::new(Counting(AtomicU64::new(1))),
+            entropy: Box::new(Counting(AtomicU64::new(seed))),
             workspace: Workspace::open(dir).await.unwrap(),
         };
         Harness::new(parts, Settings::new("test-model", "script"))
@@ -372,6 +383,118 @@ mod scripted {
                 .filter(|m| matches!(m, glave_ports::Message::Tool { is_error: true, .. }))
                 .count();
             assert_eq!(errors, 1, "the third identical call is refused");
+        });
+    }
+
+    #[test]
+    fn a_resumed_thread_continues_where_it_left_off() {
+        let dir = folder("resume");
+        block_on(async {
+            let first = vec![answer(Some("Hello."), vec![], StopReason::EndTurn)];
+            let harness = harness(&dir, first, AllowAll).await;
+            let mut thread = harness.start_thread(scope()).await.unwrap();
+            harness
+                .run_turn(&mut thread, "hi", &mut |_| {})
+                .await
+                .unwrap();
+
+            let raw = harness
+                .log()
+                .read(&scope(), thread.id, None, usize::MAX)
+                .await
+                .unwrap();
+            let log = MemoryLog::new();
+            log.append(&scope(), &raw).await.unwrap();
+            let later = vec![answer(Some("Again."), vec![], StopReason::EndTurn)];
+            let resumed_harness = harness_on(&dir, later, AllowAll, log, 1_000).await;
+            let mut resumed = resumed_harness
+                .resume_thread(scope(), thread.id)
+                .await
+                .unwrap();
+            assert_eq!(resumed.messages(), thread.messages());
+
+            resumed_harness
+                .run_turn(&mut resumed, "again", &mut |_| {})
+                .await
+                .unwrap();
+            let events = events(resumed_harness.log(), thread.id).await;
+            let seqs: Vec<u64> = events.iter().map(|e| e.header.seq.get()).collect();
+            assert_eq!(
+                seqs,
+                (1..=u64::try_from(events.len()).unwrap()).collect::<Vec<_>>()
+            );
+            assert_eq!(conversation(&events), resumed.messages());
+        });
+    }
+
+    #[test]
+    fn resuming_after_a_crash_closes_what_was_left_open() {
+        let dir = folder("crash");
+        block_on(async {
+            let answers = vec![
+                answer(
+                    None,
+                    vec![("bash", json!({"command": "true"}))],
+                    StopReason::ToolUse,
+                ),
+                answer(Some("ok"), vec![], StopReason::EndTurn),
+            ];
+            let harness = harness(&dir, answers, AllowAll).await;
+            let mut thread = harness.start_thread(scope()).await.unwrap();
+            harness
+                .run_turn(&mut thread, "go", &mut |_| {})
+                .await
+                .unwrap();
+
+            // Keep only what was written before the tool finished: a crash mid-call.
+            let raw = harness
+                .log()
+                .read(&scope(), thread.id, None, usize::MAX)
+                .await
+                .unwrap();
+            let cut: Vec<RawEvent> = raw.into_iter().take(5).collect();
+            let log = MemoryLog::new();
+            log.append(&scope(), &cut).await.unwrap();
+            let resumed_harness = harness_on(&dir, vec![], AllowAll, log, 1_000).await;
+            let resumed = resumed_harness
+                .resume_thread(scope(), thread.id)
+                .await
+                .unwrap();
+
+            let events = events(resumed_harness.log(), thread.id).await;
+            assert_eq!(
+                kinds(&events),
+                [
+                    "thread.started",
+                    "turn.started",
+                    "message.added",
+                    "tool.call.requested",
+                    "model.responded",
+                    "tool.call.completed",
+                    "turn.ended",
+                ]
+            );
+            assert!(matches!(events.last().map(|e| &e.body),
+                Some(Body::TurnEnded(ended)) if ended.outcome == Outcome::Interrupted));
+            assert!(matches!(
+                resumed.messages().last(),
+                Some(glave_ports::Message::Tool { is_error: true, .. })
+            ));
+            assert_eq!(conversation(&events), resumed.messages());
+        });
+    }
+
+    #[test]
+    fn resuming_a_thread_that_does_not_exist_is_an_error() {
+        let dir = folder("missing");
+        block_on(async {
+            let harness = harness(&dir, vec![], AllowAll).await;
+            let thread = harness.start_thread(scope()).await.unwrap();
+            let elsewhere = Scope {
+                org: OrgId::from_uuid(uuid_like(9)),
+                space: SpaceId::from_uuid(uuid_like(9)),
+            };
+            assert!(harness.resume_thread(elsewhere, thread.id).await.is_err());
         });
     }
 }

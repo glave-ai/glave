@@ -7,6 +7,7 @@ mod conversation;
 mod env;
 mod harness;
 mod prompt;
+mod resume;
 mod tools;
 mod turn;
 
