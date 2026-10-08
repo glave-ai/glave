@@ -5,8 +5,8 @@ use glave_event::{
     ToolCallRequested, TurnEnded, TurnStarted,
 };
 use glave_ports::{
-    BlobStore, Completion, Delta, EventLog, Message, ModelProvider, ModelRequest, ToolCall,
-    ToolChoice, ToolOutput, ToolSpec,
+    BlobStore, Completion, Delta, EventLog, Failure, Message, ModelProvider, ModelRequest,
+    ProviderError, ToolCall, ToolChoice, ToolOutput, ToolSpec,
 };
 use std::time::Duration;
 
@@ -135,6 +135,8 @@ where
         self.begin(thread, prompt, &toolset).await?;
         let mut summary = TurnSummary::started();
         let mut repeats = Repeats::default();
+        // Whether this step was refused as too long once already.
+        let mut squeezed = false;
         summary.outcome = loop {
             if cancel.is_cancelled() {
                 break Outcome::Cancelled;
@@ -149,15 +151,8 @@ where
                 summary.model_calls = summary.model_calls.saturating_add(1);
                 tally(&mut summary, &compaction);
             }
-            // The last step allowed answers in text: what was done and what is left, as
-            // OpenCode asks for, rather than stopping mid-work without a word.
             let last = summary.model_calls.saturating_add(1) >= self.settings.max_steps;
-            let choice = if last {
-                self.add_note(thread, STEP_LIMIT).await?;
-                ToolChoice::None
-            } else {
-                ToolChoice::Auto
-            };
+            let choice = self.choice(thread, last).await?;
             // Asking the model writes nothing, so it can be dropped when the turn is cancelled.
             let Some(asked) = cancel
                 .run(self.ask_model(thread, &toolset, choice, live))
@@ -168,22 +163,28 @@ where
             summary.model_calls = summary.model_calls.saturating_add(1);
             let mut completion = match asked {
                 Ok(completion) => completion,
+                Err(HarnessError::Provider(refused))
+                    if refused.failure() == Failure::TooLong
+                        && !squeezed
+                        && thread.messages.len() >= 3 =>
+                {
+                    self.mark_full(thread, &refused);
+                    squeezed = true;
+                    continue;
+                }
                 Err(error) => {
                     self.end(thread, Outcome::Failed).await?;
                     return Err(error);
                 }
             };
+            squeezed = false;
             if last {
                 // Any call the model makes anyway is ignored, so none is left without a result.
                 completion.tool_calls.clear();
             }
             tally(&mut summary, &completion);
             let calls = self.record_response(thread, &completion).await?;
-            let reported = completion.usage.counts();
-            thread.measured = Some(Measured {
-                tokens: reported.input.saturating_add(reported.output),
-                chars: chars(&thread.messages),
-            });
+            measure(thread, &completion);
             if last {
                 break Outcome::LimitReached;
             }
@@ -228,6 +229,28 @@ where
         self.commit(thread, events).await?;
         thread.messages.push(Message::User { parts });
         Ok(())
+    }
+
+    /// The tools the model may call this step. The last step allowed answers in text: what
+    /// was done and what is left, as OpenCode asks for, rather than stopping mid-work without
+    /// a word.
+    async fn choice(&self, thread: &mut Thread, last: bool) -> Result<ToolChoice, HarnessError> {
+        if last {
+            self.add_note(thread, STEP_LIMIT).await?;
+            Ok(ToolChoice::None)
+        } else {
+            Ok(ToolChoice::Auto)
+        }
+    }
+
+    /// After a refusal as too long for the model: the thread counts as full, so the next step
+    /// compacts first and then tries again.
+    fn mark_full(&self, thread: &mut Thread, refused: &ProviderError) {
+        self.learn_window(refused);
+        thread.measured = Some(Measured {
+            tokens: u64::MAX,
+            chars: chars(&thread.messages),
+        });
     }
 
     /// Stores the turn's configuration, then records `turn.started` and the person's message.
@@ -397,4 +420,13 @@ fn tally(summary: &mut TurnSummary, completion: &Completion) {
         }),
         _ => None,
     };
+}
+
+/// Remembers the size the provider reported, for estimating the next request.
+fn measure(thread: &mut Thread, completion: &Completion) {
+    let reported = completion.usage.counts();
+    thread.measured = Some(Measured {
+        tokens: reported.input.saturating_add(reported.output),
+        chars: chars(&thread.messages),
+    });
 }
