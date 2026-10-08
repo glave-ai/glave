@@ -66,14 +66,14 @@ impl Printer {
         }
     }
 
-    pub fn banner(&self, model: &str, provider: &str, folder: &str) {
+    pub fn banner(&self, model: &str, provider: &str, folder: &str, note: &str) {
         println!(
             "{} {}",
             paint(self.color, GREEN, "hope"),
             paint(
                 self.color,
                 DIM,
-                &format!("· {model} via {provider} · {folder}")
+                &format!("· {model} via {provider} · {folder} · {note}")
             )
         );
         println!(

@@ -19,7 +19,9 @@ GLAVE_BASE_URL=https://openrouter.ai/api/v1 GLAVE_MODEL=<model id> GLAVE_API_KEY
   ./target/release/glave
 ```
 
-Without a prompt it starts a session where each line is a turn. It asks before writing, editing or running anything (`--yes` skips that), ends every turn with a receipt (calls, tokens, cost), and `--events file.jsonl` saves the thread's events. `glave --help` lists everything.
+Without a prompt it starts a session where each line is a turn. It asks before writing, editing or running anything (`--yes` skips that) and ends every turn with a receipt (calls, tokens, cost). Threads are kept in `~/.glave/glave.db` (or `$GLAVE_HOME`); `--continue` picks up your last thread in the current folder, and `--events file.jsonl` exports one. `glave --help` lists everything.
+
+The local database is not encrypted yet; its folder is readable only by you.
 
 ## Development
 
