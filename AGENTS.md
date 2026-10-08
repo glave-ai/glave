@@ -149,8 +149,10 @@ cargo build --profile debugging   # full debug info, for a debugger
 
 ## Git
 
-- One branch per change; merge through pull requests with CI green. Nobody pushes to `main` directly.
-- Small commits with conventional messages: `feat(gateway): ...`, `fix(log): ...`, `chore: ...`.
+- One branch per change, from `main`; merge through pull requests with CI green. Nobody pushes to `main` directly. Stack pull requests only when a change truly depends on unmerged work.
+- Pull requests are squash-merged: one commit on `main`, titled with the pull request's conventional title (`feat(gateway): ...`, `fix(log): ...`, `chore: ...`).
+- Every pull request links its issue: `Closes #N` when it finishes one, `Part of #N` when it doesn't. Work with no issue gets one first.
+- Branch names start with the change's type (`feat/`, `fix/`, `test/`, `docs/`, `chore/`); labels follow from them and from the files changed.
 - Never force-push a shared branch.
 
 ## Working here as an agent

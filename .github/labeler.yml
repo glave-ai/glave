@@ -1,0 +1,44 @@
+# Labels for pull requests: the area by the files changed, the type by the branch prefix.
+
+"area: harness":
+  - changed-files:
+      - any-glob-to-any-file: crates/harness/**
+"area: cli":
+  - changed-files:
+      - any-glob-to-any-file: crates/cli/**
+"area: provider":
+  - changed-files:
+      - any-glob-to-any-file: crates/provider-*/**
+"area: store":
+  - changed-files:
+      - any-glob-to-any-file: crates/store-*/**
+"area: event":
+  - changed-files:
+      - any-glob-to-any-file: [crates/event/**, crates/ports/**]
+"area: specs":
+  - changed-files:
+      - any-glob-to-any-file: specs/**
+"area: ci":
+  - changed-files:
+      - any-glob-to-any-file: [.github/**, xtask/**]
+security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - crates/harness/src/sandbox.rs
+          - crates/harness/src/sandbox/**
+          - crates/harness/src/secrets.rs
+          - crates/harness/src/approval.rs
+          - crates/harness/src/tools/workspace.rs
+          - specs/sandbox.md
+          - deny.toml
+
+enhancement:
+  - head-branch: ['^feat/']
+bug:
+  - head-branch: ['^fix/']
+testing:
+  - head-branch: ['^test/']
+documentation:
+  - head-branch: ['^docs/']
+chore:
+  - head-branch: ['^chore/']
