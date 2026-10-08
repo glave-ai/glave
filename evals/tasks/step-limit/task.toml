@@ -1,0 +1,9 @@
+[task]
+name = "glave/step-limit"
+description = "A turn cut off by its step limit ends with a text report of what was done and what is left."
+
+[glave]
+# Too few steps to read twelve files one at a time.
+max_steps = 4
+outcome = "limit_reached"
+checks = [{ answer_contains = "step limit" }]

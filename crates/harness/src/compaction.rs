@@ -6,7 +6,8 @@ use std::fmt::Write as _;
 
 use glave_event::{Arguments, ModelResponded, Part, Seq, ThreadCompacted};
 use glave_ports::{
-    BlobStore, Completion, EventLog, Message, ModelProvider, ModelRequest, ProviderError, ToolSpec,
+    BlobStore, Completion, EventLog, Message, ModelProvider, ModelRequest, ProviderError,
+    ToolChoice, ToolSpec,
 };
 
 use crate::approval::Approver;
@@ -213,6 +214,7 @@ where
             system: self.settings.system_prompt.clone(),
             messages,
             tools: tools.to_vec(),
+            tool_choice: ToolChoice::None,
             max_output_tokens: Some(SUMMARY_TOKENS),
         };
         // Only the model call can be dropped: what follows writes to the log.

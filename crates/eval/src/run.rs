@@ -14,7 +14,7 @@ use glave_ports::{EventLog, MemoryBlobs, MemoryLog, OrgId, Scope, SpaceId};
 use glave_provider_openai::{Config, OpenAiCompatible};
 use serde::{Deserialize, Serialize};
 
-use crate::check::{Context, completed};
+use crate::check::{Context, ended};
 use crate::error::EvalError;
 use crate::prepare::{Environment, Prepared, last_lines, prepare, script, tidy};
 use crate::task::Task;
@@ -112,7 +112,7 @@ pub async fn attempt(
         failures.push(err);
         Trace::default()
     });
-    failures.extend(completed(&trace.outcomes).err());
+    failures.extend(ended(task.outcome, &trace.outcomes).err());
     if let Some(test) = task.test_script() {
         let test = test.display().to_string();
         let output = script("bash", &[test.as_str()], &workspace, &environment).await;
@@ -176,6 +176,9 @@ async fn wire(
         .map_err(EvalError::io("read the instructions in", root))?
         .map(|loaded| loaded.text);
     settings.approval = task.approval;
+    if let Some(steps) = task.max_steps {
+        settings.max_steps = steps;
+    }
     if let Some(tokens) = task.context_window {
         settings.compaction.window_tokens = tokens;
     }

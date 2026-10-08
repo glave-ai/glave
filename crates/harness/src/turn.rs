@@ -6,7 +6,7 @@ use glave_event::{
 };
 use glave_ports::{
     BlobStore, Completion, Delta, EventLog, Message, ModelProvider, ModelRequest, ToolCall,
-    ToolSpec,
+    ToolChoice, ToolSpec,
 };
 use std::time::Duration;
 
@@ -24,6 +24,11 @@ use crate::tools::{ToolOutcome, specs};
 /// What the model is told after a cancelled turn, as Codex tells it.
 const CANCELLED: &str = "[The person cancelled this turn on purpose. A command that was stopped \
      may have done part of its work.]";
+
+/// What the model is told at the last step a turn allows.
+const STEP_LIMIT: &str = "[This turn has reached its step limit, so tools are off until the \
+     person's next message. Reply in text only: say that you reached the step limit, what you \
+     have done, what is left, and what to do next.]";
 
 /// What the person sees while a turn runs. Never stored.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,18 +140,34 @@ where
                 summary.model_calls = summary.model_calls.saturating_add(1);
                 tally(&mut summary, &compaction);
             }
+            // The last step allowed answers in text: what was done and what is left, as
+            // OpenCode asks for, rather than stopping mid-work without a word.
+            let last = summary.model_calls.saturating_add(1) >= self.settings.max_steps;
+            let choice = if last {
+                self.add_note(thread, STEP_LIMIT).await?;
+                ToolChoice::None
+            } else {
+                ToolChoice::Auto
+            };
             // Asking the model writes nothing, so it can be dropped when the turn is cancelled.
-            let Some(asked) = cancel.run(self.ask_model(thread, &tools, live)).await else {
+            let Some(asked) = cancel
+                .run(self.ask_model(thread, &tools, choice, live))
+                .await
+            else {
                 break Outcome::Cancelled;
             };
             summary.model_calls = summary.model_calls.saturating_add(1);
-            let completion = match asked {
+            let mut completion = match asked {
                 Ok(completion) => completion,
                 Err(error) => {
                     self.end(thread, Outcome::Failed).await?;
                     return Err(error);
                 }
             };
+            if last {
+                // Any call the model makes anyway is ignored, so none is left without a result.
+                completion.tool_calls.clear();
+            }
             tally(&mut summary, &completion);
             let calls = self.record_response(thread, &completion).await?;
             let reported = completion.usage.counts();
@@ -154,6 +175,9 @@ where
                 tokens: reported.input.saturating_add(reported.output),
                 chars: chars(&thread.messages),
             });
+            if last {
+                break Outcome::LimitReached;
+            }
             if calls.is_empty() {
                 break outcome_of(completion.stop);
             }
@@ -173,16 +197,16 @@ where
             }
         };
         if summary.outcome == Outcome::Cancelled {
-            self.note_cancelled(thread).await?;
+            self.add_note(thread, CANCELLED).await?;
         }
         self.end(thread, summary.outcome).await?;
         Ok(summary)
     }
 
-    /// Tells the model, from the next turn on, that the person cancelled this one.
-    async fn note_cancelled(&self, thread: &mut Thread) -> Result<(), HarnessError> {
+    /// Tells the model something about the turn itself, as a recorded user message.
+    async fn add_note(&self, thread: &mut Thread, note: &str) -> Result<(), HarnessError> {
         let parts = vec![Part::Text {
-            text: CANCELLED.to_owned(),
+            text: note.to_owned(),
         }];
         let mut events = Vec::new();
         let message = MessageAdded {
@@ -247,6 +271,7 @@ where
         &self,
         thread: &Thread,
         tools: &[ToolSpec],
+        tool_choice: ToolChoice,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Completion, HarnessError> {
         let request = ModelRequest {
@@ -254,6 +279,7 @@ where
             system: self.settings.system_prompt.clone(),
             messages: thread.messages.clone(),
             tools: tools.to_vec(),
+            tool_choice,
             max_output_tokens: self.settings.max_output_tokens,
         };
         let retries = self.settings.retries;

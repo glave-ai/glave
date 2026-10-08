@@ -26,8 +26,29 @@ pub struct ModelRequest {
     pub system: String,
     pub messages: Vec<Message>,
     pub tools: Vec<ToolSpec>,
+    /// Whether the model may call the tools on offer. They stay listed either way, since some
+    /// providers refuse a conversation that has tool calls but no tools.
+    #[serde(default, skip_serializing_if = "ToolChoice::is_auto")]
+    pub tool_choice: ToolChoice,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<u32>,
+}
+
+/// Whether a response may call tools.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolChoice {
+    /// The model decides.
+    #[default]
+    Auto,
+    /// Text only: no tool calls.
+    None,
+}
+
+impl ToolChoice {
+    pub fn is_auto(&self) -> bool {
+        *self == Self::Auto
+    }
 }
 
 /// One message of the conversation, in provider-neutral form.

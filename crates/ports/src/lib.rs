@@ -21,6 +21,6 @@ pub use log::{EventLog, LogError, check_append};
 pub use memory::{MemoryBlobs, MemoryLog};
 pub use model::{
     Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, RequestedCall,
-    ToolCall, ToolSpec,
+    ToolCall, ToolChoice, ToolSpec,
 };
 pub use scope::{OrgId, Scope, SpaceId};
