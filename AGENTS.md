@@ -44,7 +44,7 @@ crates/harness/     glave-harness: the agent loop, its six tools (search, glob, 
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
-specs/              the contracts: events, the sandbox, approvals; tool calls, verbs and scopes, API surface planned
+specs/              the contracts: events, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main)
 ```
 

@@ -114,7 +114,7 @@ Each of these is a later, separate decision, made when it is needed:
 - A per-event hash chain (`prev`) that makes receipts provable.
 - Trace ids on the envelope, for OpenTelemetry.
 - A `critical` flag, which lets older readers refuse an event they must not skip.
-- Event types for approvals, receipts, retention and holds. They arrive with the features that write them.
+- Event types for receipts, retention and holds. They arrive with the features that write them. (Approval events arrive with the session API; see `session.md`.)
 
 The envelope version exists so that any of these can be added without touching stored events.
 
