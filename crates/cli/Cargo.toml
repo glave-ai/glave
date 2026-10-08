@@ -27,5 +27,9 @@ uuid.workspace = true
 glave-provider-openai = { workspace = true, features = ["fake-server"] }
 serde_json.workspace = true
 
+[[bench]]
+name = "budgets"
+harness = false
+
 [lints]
 workspace = true

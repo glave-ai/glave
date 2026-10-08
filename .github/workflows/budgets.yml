@@ -1,0 +1,28 @@
+name: budgets
+
+# The performance budgets in AGENTS.md, measured on the release build after every merge to
+# main, weekly, and on demand. The numbers are wall-clock, but the budgets have room enough
+# (6-11x today) that a busy runner does not trip them; a real regression does.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: budgets-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo xtask bench --bench budgets
