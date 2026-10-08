@@ -190,7 +190,7 @@ where
                         "You made this exact call several times in a row. Change your approach.",
                     )
                 } else {
-                    self.call_tool(thread, &call, cancel, live).await
+                    self.call_tool(thread, &call, cancel, live).await?
                 };
                 summary.tool_calls = summary.tool_calls.saturating_add(1);
                 self.record_result(thread, call.call_id, outcome).await?;

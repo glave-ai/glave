@@ -1,15 +1,17 @@
 //! Continuing a recorded thread from the log alone, closing anything a crash left open.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use glave_event::{
-    Body, CallId, Event, Outcome, Part, Seq, ThreadId, ToolCallCompleted, TurnEnded, decode,
+    Body, CallId, Event, Outcome, Part, Seq, ThreadId, ToolCallCompleted, TurnEnded, Verdict,
+    decode,
 };
 use glave_ports::{BlobStore, EventLog, Message, ModelProvider, Scope};
 
 use crate::approval::Approver;
 use crate::conversation::conversation;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::tools::Tool;
 
 /// Events read per page while loading a thread.
 const PAGE: usize = 1_000;
@@ -39,7 +41,7 @@ where
             id,
             next_seq,
             messages: conversation(&events),
-            allowed: HashSet::new(),
+            allowed: allowed_for_thread(&events),
             measured: None,
             request: latest_request(&events),
         };
@@ -139,4 +141,27 @@ fn latest_request(events: &[Event]) -> Option<String> {
         }
         _ => None,
     })
+}
+
+/// The tools the person allowed for the rest of the thread, from its recorded approvals.
+fn allowed_for_thread(events: &[Event]) -> HashSet<Tool> {
+    let mut asked: HashMap<&CallId, &str> = HashMap::new();
+    let mut allowed = HashSet::new();
+    for event in events {
+        match &event.body {
+            Body::ApprovalRequested(requested) => {
+                asked.insert(&requested.call_id, requested.tool.as_str());
+            }
+            Body::ApprovalDecided(decided) if decided.decision == Verdict::AllowForThread => {
+                if let Some(tool) = asked
+                    .get(&decided.call_id)
+                    .and_then(|name| Tool::named(name))
+                {
+                    allowed.insert(tool);
+                }
+            }
+            _ => {}
+        }
+    }
+    allowed
 }

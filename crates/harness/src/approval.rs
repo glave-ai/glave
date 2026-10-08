@@ -4,7 +4,7 @@
 use std::future::{Future, ready};
 use std::path::Path;
 
-use glave_event::Arguments;
+use glave_event::{Arguments, CallId, ThreadId};
 use serde::Serialize;
 
 use crate::secrets::is_secret_file;
@@ -14,6 +14,10 @@ use crate::tools::workspace::Workspace;
 /// What the harness wants to do, in words the person can judge.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApprovalRequest {
+    /// The thread asking; with `call_id`, enough for anyone to answer it later.
+    pub thread: ThreadId,
+    /// The call waiting, which is also the approval's id.
+    pub call_id: CallId,
     pub tool: Tool,
     pub summary: String,
     /// The model would see a file that usually holds secrets, such as `.env`. With no one to
@@ -215,6 +219,8 @@ mod tests {
     #[test]
     fn with_no_one_to_ask_secrets_are_declined() {
         let request = |secret| ApprovalRequest {
+            thread: ThreadId::new(jiff::Timestamp::UNIX_EPOCH, [0; 10]).unwrap(),
+            call_id: CallId::new("call_1").unwrap(),
             tool: Tool::Read,
             summary: "read .env".into(),
             secret,
