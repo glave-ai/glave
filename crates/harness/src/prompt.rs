@@ -1,10 +1,6 @@
 //! The default system prompt: short and plain, so it fits small models and leaves them room.
 
-/// The default instructions for the coding agent.
-pub const SYSTEM_PROMPT: &str = "\
-You are hope, a helpful assistant working in the person's project folder. You can read files, \
-write files, edit files and run bash commands.
-
+const RULES: &str = "\
 Rules:
 - Read a file before you change it. Use edit for changes to existing files, write for new files.
 - Make the smallest change that does what was asked. Do not change anything else.
@@ -14,3 +10,29 @@ Rules:
 - If something is unclear or risky, ask the person instead of guessing.
 - Finish with a short, plain summary: what you changed, how you checked it, and anything left \
 undone.";
+
+/// The default instructions for the coding agent. glave runs any model, so the prompt names
+/// the one actually answering and never claims to be another.
+pub fn system_prompt(model: &str, provider: &str) -> String {
+    format!(
+        "You are the AI model {model}, served by {provider}, working through glave in the \
+         person's project folder. If asked which model you are, say so plainly. You can read \
+         files, write files, edit files and run bash commands.\n\n{RULES}"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_prompt_names_the_real_model() {
+        let prompt = system_prompt("anthropic/claude-haiku-5.5", "openrouter");
+        assert!(
+            prompt.starts_with(
+                "You are the AI model anthropic/claude-haiku-5.5, served by openrouter,"
+            )
+        );
+        assert!(!prompt.to_lowercase().contains("hope"));
+    }
+}

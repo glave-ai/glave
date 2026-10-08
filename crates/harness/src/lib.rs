@@ -15,7 +15,7 @@ pub use approval::{AllowAll, ApprovalRequest, Approver, Decision};
 pub use conversation::conversation;
 pub use env::{Clock, Entropy};
 pub use harness::{Harness, HarnessError, Parts, Settings, Thread};
-pub use prompt::SYSTEM_PROMPT;
+pub use prompt::system_prompt;
 pub use tools::workspace::Workspace;
 pub use tools::{Tool, ToolOutcome, specs};
 pub use turn::{Live, TurnSummary};

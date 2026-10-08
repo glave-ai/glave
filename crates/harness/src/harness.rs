@@ -13,7 +13,7 @@ use thiserror::Error;
 
 use crate::approval::Approver;
 use crate::env::{Clock, Entropy};
-use crate::prompt::SYSTEM_PROMPT;
+use crate::prompt::system_prompt;
 use crate::tools::{Tool, workspace::Workspace};
 
 /// How the harness runs.
@@ -30,11 +30,14 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// Settings for `model` at `provider`, with the default prompt naming that model.
     pub fn new(model: impl Into<String>, provider: impl Into<String>) -> Self {
+        let model = model.into();
+        let provider = provider.into();
         Self {
-            model: model.into(),
-            provider: provider.into(),
-            system_prompt: SYSTEM_PROMPT.to_owned(),
+            system_prompt: system_prompt(&model, &provider),
+            model,
+            provider,
             max_steps: 50,
             max_output_tokens: None,
         }

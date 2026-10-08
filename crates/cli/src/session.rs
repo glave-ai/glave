@@ -119,7 +119,7 @@ async fn session<A: Approver>(
         ),
         None => (harness.start_thread(scope).await?, "new thread"),
     };
-    let mut printer = Printer::new();
+    let mut printer = Printer::new(&endpoint.model);
     let mut code = ExitCode::SUCCESS;
     if args.prompt.is_empty() {
         let folder = root.display().to_string();
