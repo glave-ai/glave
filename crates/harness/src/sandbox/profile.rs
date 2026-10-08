@@ -111,16 +111,19 @@ fn reads(profile: &mut Profile, places: &Places) {
 }
 
 fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
+    profile.params.push(("ROOT".into(), places.root.clone()));
     profile.params.push(("TEMP".into(), places.temp.clone()));
+    // Temp folders never grant the project itself: a project that lives inside one keeps its
+    // protections, and at `read-only` stays unwritable.
     profile.text.push_str(
-        "; writes: the temp folder and output devices\n\
-         (allow file-write* (subpath (param \"TEMP\")))\n\
+        "; writes: the run's temp folder, /tmp and output devices, never the project through them\n\
+         (allow file-write* (require-all (subpath (param \"TEMP\")) (require-not (subpath (param \"ROOT\")))))\n\
+         (allow file-write* (require-all (subpath \"/private/tmp\") (require-not (subpath (param \"ROOT\")))))\n\
          (allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\") (regex #\"^/dev/fd/\"))\n",
     );
     if level != SandboxLevel::Project {
         return;
     }
-    profile.params.push(("ROOT".into(), places.root.clone()));
     profile
         .params
         .push(("GIT".into(), places.root.join(".git")));
@@ -220,7 +223,12 @@ mod tests {
     #[test]
     fn read_only_writes_only_the_temp_folder() {
         let profile = profile(&places(), SandboxLevel::ReadOnly, false);
-        assert_eq!(param(&profile, "ROOT"), None);
+        assert!(!profile.text.contains("; writes: the project"));
+        assert!(
+            profile
+                .text
+                .contains(r#"(require-not (subpath (param "ROOT")))"#)
+        );
         assert_eq!(
             param(&profile, "TEMP"),
             Some(Path::new("/private/var/folders/x/T"))

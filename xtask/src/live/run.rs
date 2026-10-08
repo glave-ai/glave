@@ -36,6 +36,19 @@ pub struct Report {
 pub fn task(setup: &Setup, task: &Task, dir: &Path) -> Result<Report, String> {
     let project = dir.join("project");
     write_files(&project, task.files)?;
+    for command in task.setup {
+        let status = Command::new("sh")
+            .args(["-c", command])
+            .current_dir(&project)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map_err(|err| format!("could not run setup `{command}`: {err}"))?;
+        if !status.success() {
+            return Err(format!("setup `{command}` failed ({status})"));
+        }
+    }
     let events = dir.join("events.jsonl");
     let transcript = dir.join("transcript.txt");
     let output = File::create(&transcript)
@@ -137,6 +150,7 @@ fn spawn(
     if continuing {
         command.arg("--continue");
     }
+    command.args(task.flags);
     command
         .arg("--")
         .arg(turn.prompt)
@@ -144,7 +158,11 @@ fn spawn(
         .env("GLAVE_HOME", dir.join("home"))
         .env("NO_COLOR", "1")
         .env("CARGO_TARGET_DIR", &setup.cargo_target)
-        .envs(task.env.iter().copied())
+        .envs(
+            task.env
+                .iter()
+                .map(|(name, value)| (*name, value.replace("{dir}", &dir.display().to_string()))),
+        )
         .stdin(Stdio::null())
         .stdout(copy()?)
         .stderr(copy()?)

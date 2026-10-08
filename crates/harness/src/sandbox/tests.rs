@@ -220,3 +220,165 @@ fn everyday_tools_still_work() {
     assert!(out.text.contains("tools-ok"), "{}", out.text);
     assert!(!out.is_error, "{}", out.text);
 }
+
+#[test]
+fn protected_paths_are_recognized_in_any_case() {
+    let root = Path::new("/p");
+    for path in [
+        ".git",
+        ".git/hooks/pre-commit",
+        ".GIT/Config",
+        ".git/config.worktree",
+        ".git/worktrees/w/config",
+        ".git/modules/m/hooks/post-checkout",
+        ".glave",
+        ".glave/settings.json",
+        "HEAD",
+        "refs/heads/main",
+        ".mcp.json",
+        ".vscode/tasks.json",
+        ".envrc",
+    ] {
+        assert!(is_protected(root, &root.join(path)), "{path}");
+    }
+    for path in [
+        ".git/index",
+        ".git/objects/ab/cdef",
+        ".git/refs/heads/main",
+        ".git/worktrees/w/HEAD",
+        ".gitignore",
+        ".github/workflows/ci.yml",
+        "head.txt",
+        "src/hooks/use.ts",
+    ] {
+        assert!(!is_protected(root, &root.join(path)), "{path}");
+    }
+    assert!(!is_protected(root, Path::new("/elsewhere/.git/hooks")));
+}
+
+#[test]
+fn the_file_tools_refuse_protected_paths_in_a_sandbox() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("file-tools");
+    let project = dir.join("project");
+    std::fs::create_dir_all(project.join(".git/hooks")).unwrap();
+    std::fs::write(project.join(".git/hooks/existing"), "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(
+        project.join(".git/hooks/existing"),
+        project.join("notes.txt"),
+    )
+    .unwrap();
+    let write = |sandboxed: bool, path: &str| {
+        let arguments = Arguments::Json(
+            serde_json::from_value(serde_json::json!({ "path": path, "content": "echo pwned\n" }))
+                .unwrap(),
+        );
+        block_on(async {
+            let mut workspace = Workspace::open(&project, std::env::vars_os())
+                .await
+                .unwrap();
+            if sandboxed {
+                let sandbox = sandbox(SandboxLevel::Project, false, &dir);
+                workspace = workspace.with_sandbox(&sandbox).await.unwrap();
+            }
+            Tool::Write.run(&arguments, &workspace).await
+        })
+    };
+    let refused = write(true, ".git/hooks/pre-commit");
+    assert!(refused.is_error && refused.text.contains("protected by the sandbox"));
+    assert!(!project.join(".git/hooks/pre-commit").exists());
+    let through_link = write(true, "notes.txt");
+    assert!(
+        through_link.is_error && through_link.text.contains("protected by the sandbox"),
+        "{}",
+        through_link.text
+    );
+    assert_eq!(
+        std::fs::read_to_string(project.join(".git/hooks/existing")).unwrap(),
+        "#!/bin/sh\n"
+    );
+    // Control: without the sandbox the same write goes through, so the refusal is the sandbox's.
+    let open = write(false, ".git/hooks/pre-commit");
+    assert!(!open.is_error, "{}", open.text);
+    assert!(project.join(".git/hooks/pre-commit").exists());
+}
+
+/// The bug the live suite found: a project inside a writable temp folder lost its protections,
+/// because the temp grant covered it. Checked in both temp folders commands may write.
+#[test]
+fn a_project_inside_a_temp_folder_keeps_its_protections() {
+    if !enforced() {
+        return;
+    }
+    let system_temp = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+    for base in [system_temp, PathBuf::from("/private/tmp")] {
+        let dir = base.join(format!("glave-sbx-in-temp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let project = dir.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let init = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&project)
+            .status()
+            .unwrap();
+        assert!(init.success());
+        let out = run(
+            &project,
+            &sandbox(SandboxLevel::Project, false, &dir),
+            "echo 'echo pwned' > .git/hooks/pre-commit; echo t > \"$TMPDIR/ok\" && echo temp-ok; true",
+        );
+        assert!(
+            !project.join(".git/hooks/pre-commit").exists(),
+            "{base:?}: {}",
+            out.text
+        );
+        assert!(out.text.contains("temp-ok"), "{}", out.text);
+        let read_only = run(
+            &project,
+            &sandbox(SandboxLevel::ReadOnly, false, &dir),
+            "echo x > inside.txt; true",
+        );
+        assert!(
+            !project.join("inside.txt").exists(),
+            "{base:?}: {}",
+            read_only.text
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[test]
+fn builds_with_dependencies_work_offline_in_the_sandbox() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("deps");
+    let project = dir.join("project");
+    std::fs::create_dir_all(project.join("src")).unwrap();
+    std::fs::write(
+        project.join("Cargo.toml"),
+        "[package]\nname = \"deps\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nserde = \"1\"\n\n[workspace]\n",
+    )
+    .unwrap();
+    std::fs::write(project.join("src/lib.rs"), "pub use serde;\n").unwrap();
+    let build = "CARGO_TARGET_DIR=target cargo build --offline --quiet && echo built";
+    // Control: outside the sandbox. Without serde in the local cache there is nothing to test.
+    let open = run_in(&project, None, build);
+    if !open.text.contains("built") {
+        eprintln!(
+            "skipped: serde is not in this machine's cargo cache: {}",
+            open.text
+        );
+        return;
+    }
+    std::fs::remove_dir_all(project.join("target")).unwrap();
+    let sandboxed = run(
+        &project,
+        &sandbox(SandboxLevel::Project, false, &dir),
+        build,
+    );
+    assert!(sandboxed.text.contains("built"), "{}", sandboxed.text);
+}

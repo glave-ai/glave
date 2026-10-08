@@ -15,7 +15,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::lock::{self, Mode};
 use run::{Report, Setup};
-use tasks::TASKS;
+use tasks::{SANDBOX_TASKS, TASKS};
 
 const USAGE: &str = "usage: cargo xtask live [--model <id>] [--only <task>] [--repeat <n>]";
 
@@ -56,8 +56,12 @@ pub fn run(args: &[String]) -> Result<(), String> {
     };
     let tasks: Vec<_> = TASKS
         .iter()
+        .chain(SANDBOX_TASKS.iter().filter(|_| glave_sandbox_available()))
         .filter(|task| only.as_deref().is_none_or(|only| task.name.contains(only)))
         .collect();
+    if !glave_sandbox_available() {
+        println!("(the sandbox tasks need the macOS sandbox, so they are skipped here)");
+    }
     if tasks.is_empty() {
         return Err(format!("no task matches {only:?}"));
     }
@@ -90,6 +94,11 @@ pub fn run(args: &[String]) -> Result<(), String> {
         }
     }
     summarize(&reports)
+}
+
+/// The sandbox tasks need the macOS sandbox; elsewhere they are left out, and say so.
+fn glave_sandbox_available() -> bool {
+    cfg!(target_os = "macos") && std::path::Path::new("/usr/bin/sandbox-exec").is_file()
 }
 
 fn options(args: &[String]) -> Result<Options, String> {
@@ -200,9 +209,10 @@ mod tests {
 
     #[test]
     fn task_names_are_unique() {
-        let mut names: Vec<_> = TASKS.iter().map(|task| task.name).collect();
+        let all: Vec<_> = TASKS.iter().chain(SANDBOX_TASKS).collect();
+        let mut names: Vec<_> = all.iter().map(|task| task.name).collect();
         names.sort_unstable();
         names.dedup();
-        assert_eq!(names.len(), TASKS.len());
+        assert_eq!(names.len(), all.len());
     }
 }

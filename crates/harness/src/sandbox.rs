@@ -113,9 +113,10 @@ impl Sandbox {
                 "the sandbox is not available on this computer (macOS only for now)",
             ));
         }
+        let temp = run_temp(&tokio::fs::canonicalize(std::env::temp_dir()).await?).await?;
         let places = Places {
             root: root.to_owned(),
-            temp: tokio::fs::canonicalize(std::env::temp_dir()).await?,
+            temp: temp.clone(),
             home: resolved(self.home.as_deref()).await,
             glave_home: resolved(self.glave_home.as_deref()).await,
         };
@@ -129,10 +130,29 @@ impl Sandbox {
         args.push("--".into());
         Ok(Prepared {
             args,
+            temp,
             level: self.level,
             network: self.network,
         })
     }
+}
+
+/// A temp folder of the run's own inside the system's, so commands cannot write other
+/// programs' temp files.
+async fn run_temp(system_temp: &Path) -> std::io::Result<PathBuf> {
+    let pid = std::process::id();
+    for attempt in 0_u32..1_000 {
+        let dir = system_temp.join(format!("glave-sandbox-{pid}-{attempt}"));
+        match tokio::fs::create_dir(&dir).await {
+            Ok(()) => return Ok(dir),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "could not make a temp folder for the sandbox",
+    ))
 }
 
 /// A path resolved if it exists; one that does not exist needs no protecting yet.
@@ -143,15 +163,21 @@ async fn resolved(path: Option<&Path>) -> Option<PathBuf> {
     }
 }
 
-/// A sandbox ready to wrap commands in one project.
-#[derive(Debug, Clone)]
+/// A sandbox ready to wrap commands in one project. Dropping it removes the run's temp folder.
+#[derive(Debug)]
 pub(crate) struct Prepared {
     args: Vec<OsString>,
+    temp: PathBuf,
     level: SandboxLevel,
     network: bool,
 }
 
 impl Prepared {
+    /// The run's own temp folder, which commands see as `TMPDIR`.
+    pub(crate) fn temp(&self) -> &Path {
+        &self.temp
+    }
+
     /// The program to run instead of the command, and the arguments that go before it.
     pub(crate) fn wrapper(&self) -> (&str, &[OsString]) {
         (SANDBOX_EXEC, &self.args)
@@ -194,6 +220,13 @@ impl Prepared {
              That cannot be lifted from inside; do the task another way or tell the person \
              what is needed.]"
         })
+    }
+}
+
+impl Drop for Prepared {
+    fn drop(&mut self) {
+        // Best effort: the folder is in the system's temp folder, which is cleaned anyway.
+        let _ = std::fs::remove_dir_all(&self.temp);
     }
 }
 

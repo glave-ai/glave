@@ -49,7 +49,11 @@ impl Workspace {
     /// Runs every command in `sandbox`. Fails if this computer cannot enforce it, so a
     /// requested sandbox is never quietly skipped.
     pub async fn with_sandbox(mut self, sandbox: &Sandbox) -> std::io::Result<Self> {
-        self.sandbox = Some(sandbox.prepare(&self.root).await?);
+        let prepared = sandbox.prepare(&self.root).await?;
+        self.environment.retain(|(name, _)| name != "TMPDIR");
+        self.environment
+            .push(("TMPDIR".into(), prepared.temp().as_os_str().to_owned()));
+        self.sandbox = Some(prepared);
         Ok(self)
     }
 
