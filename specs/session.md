@@ -22,16 +22,16 @@ Every request may carry `params._meta.protocol`, the protocol version the client
 | --- | --- | --- |
 | `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
 | `thread/start` | none | `thread`: a thread summary |
-| `thread/list` | optional `limit` (default 20), `before` (a thread id) | `threads`: summaries, newest first; `next`, when there are more |
+| `thread/list` | optional `limit` (default 20) | `threads`: summaries, newest first |
 | `thread/get` | `thread` | `thread`: its summary |
 | `thread/events` | `thread`; optional `after` (a `seq`), `limit` (default 500) | `events`: stored events in `seq` order, exactly as `events.md` defines them; `next`, when there are more |
 | `thread/watch` | `thread`; optional `after` | streams the thread's notifications from `after` on, until the client stops listening |
 | `turn/start` | `thread`; `prompt` | streams notifications while the turn runs, then answers with `turn`: how it ended and what it cost |
-| `turn/cancel` | `thread` | `{}` once the running turn has ended as cancelled |
+| `turn/cancel` | `thread` | `{}` once the running turn, or compaction, has ended as cancelled |
 | `thread/compact` | `thread` | `before_tokens`, `after_tokens` |
 | `approval/decide` | `thread`; `approval` (its id); `decision`: `allow_once`, `allow_for_thread` or `deny` | `{}`; the paused turn continues |
 
-A **thread summary** has `id`, `created`, `updated` (RFC 3339), `title` when there is one, and `status`: `idle`, `running` or `waiting` (a turn is paused for an approval).
+A **thread summary** has `id` and `status`: `idle`, `running` or `waiting` (a turn is paused for an approval). Titles, creation and update times arrive with a threads view built from the log.
 
 A **turn result** has `outcome` (`completed`, `cancelled`, `failed`, `interrupted`, `limit_reached`), `model_calls`, `tool_calls`, `tokens` and `cost` as in `events.md`.
 
@@ -75,6 +75,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32002` | A turn is already running in this thread |
 | `-32003` | No turn is running in this thread |
 | `-32004` | No such approval is pending |
+| `-32005` | The operation was cancelled, such as a compaction stopped by `turn/cancel` |
 | `-32010` | Unsupported protocol version; `data.supported` lists the spoken ones |
 | `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
 
@@ -89,6 +90,10 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | WebSocket | One JSON message per text frame | Clients that want one connection for many threads; later, realtime features | Required |
 
 A network listener never runs without authentication: there is no "add it later". Closing a streaming HTTP response stops only that stream; the turn goes on, and `thread/watch` picks it up again.
+
+## Status
+
+Version 1 in-process (`glave-session`, used by the CLI): every method but `thread/watch`, whose in-process form is `Server::watch`. Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted. Continuing a paused turn in another process, stdio, and the network transports come next.
 
 ## Later
 

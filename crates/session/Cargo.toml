@@ -1,0 +1,27 @@
+[package]
+name = "glave-session"
+description = "glave's session API: the one boundary every surface uses to run threads and turns, over any transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+glave-event.workspace = true
+glave-harness.workspace = true
+glave-ports.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "sync"] }
+
+[dev-dependencies]
+glave-store-sqlite.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+jiff.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true
