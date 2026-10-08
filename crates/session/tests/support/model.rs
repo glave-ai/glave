@@ -130,6 +130,7 @@ pub async fn server_on<L: EventLog + 'static>(
         ))),
         entropy: Box::new(Counting(AtomicU64::new(seed << 32))),
         workspace: Workspace::open(dir, std::env::vars_os()).await.unwrap(),
+        tools: Vec::new(),
     };
     Server::new(
         wiring,

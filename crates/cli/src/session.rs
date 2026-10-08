@@ -20,6 +20,7 @@ use crate::client::{Client, Glave};
 use crate::config::{self, Endpoint};
 use crate::home;
 use crate::input::{CtrlC, Input};
+use crate::mcp::Servers;
 use crate::system::random_uuid;
 use crate::terminal::Printer;
 
@@ -69,6 +70,7 @@ pub fn main() -> ExitCode {
 /// The server for this folder, and what the terminal needs to show it.
 struct Wired {
     server: Glave,
+    servers: Servers,
     endpoint: Endpoint,
     root: PathBuf,
     /// The instruction files the model is given, for the banner.
@@ -106,6 +108,7 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
         settings.compaction.window_tokens = window_tokens;
     }
     let root = workspace.root().to_owned();
+    let servers = Servers::start(&home::folder()?, &root).await?;
     let scope = store
         .local_scope(&root, random_uuid(), random_uuid())
         .await?;
@@ -116,9 +119,11 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
         clock: Box::new(SystemClock),
         entropy: Box::new(OsEntropy),
         workspace,
+        tools: servers.sources(),
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
+        servers,
         endpoint,
         root,
         files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
@@ -136,6 +141,7 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     let wired = wire(&args, answering).await?;
     let ran = session(&args, &wired, asks).await;
     wired.server.shutdown().await;
+    wired.servers.close().await;
     ran
 }
 
@@ -143,7 +149,9 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
 async fn serve(args: Args) -> anyhow::Result<ExitCode> {
     let wired = wire(&args, Answering::Clients).await?;
     let input = tokio::io::BufReader::new(tokio::io::stdin());
-    glave_session::rpc::serve(wired.server, input, tokio::io::stdout()).await?;
+    let served = glave_session::rpc::serve(wired.server, input, tokio::io::stdout()).await;
+    wired.servers.close().await;
+    served?;
     Ok(ExitCode::SUCCESS)
 }
 
@@ -151,6 +159,7 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
 async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitCode> {
     let Wired {
         server,
+        servers,
         endpoint,
         root,
         files,
@@ -163,13 +172,18 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         input: &input,
         endpoint,
         asks,
+        servers,
     };
     let mut printer = Printer::new(&endpoint.model, protections(args));
     let code = if args.prompt.is_empty() {
-        let note = match named(files) {
+        let mut note = match named(files) {
             Some(files) => format!("{note} · following {files}"),
             None => note.to_owned(),
         };
+        let names = servers.names();
+        if !names.is_empty() {
+            note = format!("{note} · MCP: {}", names.join(", "));
+        }
         let folder = root.display().to_string();
         printer.banner(&endpoint.model, &endpoint.provider.provider, &folder, &note);
         converse(&client, &mut printer).await
