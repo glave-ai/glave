@@ -1,7 +1,6 @@
 [workspace]
 resolver = "3"
-# Add "crates/*" here once the first crate exists (an empty glob is an error).
-members = ["xtask"]
+members = ["crates/*", "xtask"]
 
 [workspace.package]
 version = "0.0.0"
@@ -38,6 +37,11 @@ allow_attributes = "forbid"    # no #[allow] at all; see AGENTS.md for #[expect]
 allow_attributes_without_reason = "deny"
 
 [workspace.dependencies]
+jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+thiserror = "2"
+uuid = { version = "1", default-features = false, features = ["std", "serde"] }
 
 # Day-to-day builds: file and line numbers in backtraces, no full debug info
 # for dependencies. Roughly 40% smaller `target/` (measured on the legacy tree).
