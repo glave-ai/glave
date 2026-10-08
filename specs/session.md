@@ -1,0 +1,98 @@
+# Session API
+
+How every surface talks to the harness: the CLI, a desktop or web app, an editor, another program that embeds glave. Tracks issue #34. The events it carries are in `events.md`; what asks the person is in `approvals.md`.
+
+## Principles
+
+- **One protocol on every transport.** JSON-RPC 2.0, the format of MCP, A2A, ACP and LSP, over: in-process (the CLI), stdio, a Unix socket, HTTP with server-sent events, and WebSocket. The same conformance tests run over each. A transport changes how messages travel, never what they mean.
+- **No feature needs a particular transport.** Anything a client can do over WebSocket it can do over HTTP, perhaps with one more round trip.
+- **No state lives in a connection.** The log is the truth. A client that drops reconnects anywhere and asks for everything after the last `seq` it saw.
+- **Stateless hosting is real.** A server may keep an active thread in memory, or rebuild it from the log for every request; clients cannot tell the difference.
+- **The CLI is a client like any other.** It gets nothing the API does not offer.
+
+## Messages
+
+Standard JSON-RPC 2.0: requests carry `jsonrpc`, `id`, `method` and `params`; responses carry the same `id` and `result` or `error`; notifications have no `id`. Batches are not used.
+
+Every request may carry `params._meta.protocol`, the protocol version the client speaks (today `2026-10`). Without it, the server assumes the oldest version it supports. There is no handshake, so a stateless server needs no memory of the client. A server that does not speak the version answers with error `-32010` and the versions it does speak.
+
+## Methods
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
+| `thread/start` | none | `thread`: a thread summary |
+| `thread/list` | optional `limit` (default 20), `before` (a thread id) | `threads`: summaries, newest first; `next`, when there are more |
+| `thread/get` | `thread` | `thread`: its summary |
+| `thread/events` | `thread`; optional `after` (a `seq`), `limit` (default 500) | `events`: stored events in `seq` order, exactly as `events.md` defines them; `next`, when there are more |
+| `thread/watch` | `thread`; optional `after` | streams the thread's notifications from `after` on, until the client stops listening |
+| `turn/start` | `thread`; `prompt` | streams notifications while the turn runs, then answers with `turn`: how it ended and what it cost |
+| `turn/cancel` | `thread` | `{}` once the running turn has ended as cancelled |
+| `thread/compact` | `thread` | `before_tokens`, `after_tokens` |
+| `approval/decide` | `thread`; `approval` (its id); `decision`: `allow_once`, `allow_for_thread` or `deny` | `{}`; the paused turn continues |
+
+A **thread summary** has `id`, `created`, `updated` (RFC 3339), `title` when there is one, and `status`: `idle`, `running` or `waiting` (a turn is paused for an approval).
+
+A **turn result** has `outcome` (`completed`, `cancelled`, `failed`, `interrupted`, `limit_reached`), `model_calls`, `tool_calls`, `tokens` and `cost` as in `events.md`.
+
+Each server serves one workspace and one scope in version 1. Choosing among several workspaces arrives with issue #29; choosing a space arrives with organizations (issue #22).
+
+## Notifications
+
+Two kinds, sent while a turn runs or a client watches:
+
+| Method | Params | Kept |
+| --- | --- | --- |
+| `thread/event` | `thread`; `event`, a stored event with its `seq` | Yes: it is in the log, and `thread/events` returns it again |
+| `turn/live` | `thread`; `update`: `text` or `reasoning` (a fragment), `tool_started`, `tool_finished`, `waiting`, `retrying`, `compacted` | No: live updates are for showing progress, never replayed |
+
+A client that only shows the conversation needs `thread/event` alone. Rebuilding a thread from `thread/events` and then following `thread/watch` gives exactly the same state as having watched from the start.
+
+## Approvals
+
+A tool call that needs the person records `approval.requested` (`approval`, `call_id`, `tool`, `summary`, `secret`) and the turn pauses; the thread's status becomes `waiting`. Any client may answer with `approval/decide`, now or much later, from any transport. The answer is recorded as `approval.decided` (`approval`, `decision`), and the turn continues from the log, in whichever process receives it.
+
+- A decision for an approval that is not pending is refused with `-32004`.
+- `allow_for_thread` is recorded, so it survives resuming the thread.
+- Cancelling a paused turn denies its pending approval and ends the turn as cancelled.
+- With no client that can answer, as in a script, the server decides on its behalf as `approvals.md` describes ("no one at the keyboard").
+
+These are the approval events `events.md` deferred; they arrive with this API at version 1.
+
+## Turns
+
+- One turn runs per thread at a time. A second `turn/start` is refused with `-32002`. Queueing and steering a running turn come later.
+- A turn's notifications go to the client that started it and to every client watching the thread.
+- If the server stops mid-turn, the log ends without `turn.ended`. Resuming records the turn as `interrupted` and gives every unanswered tool call a result, so the thread continues.
+
+## Errors
+
+Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
+
+| Code | Meaning |
+| --- | --- |
+| `-32001` | No such thread |
+| `-32002` | A turn is already running in this thread |
+| `-32003` | No turn is running in this thread |
+| `-32004` | No such approval is pending |
+| `-32010` | Unsupported protocol version; `data.supported` lists the spoken ones |
+| `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
+
+## Transports
+
+| Transport | Framing | Who uses it | Authentication |
+| --- | --- | --- | --- |
+| In-process | Typed messages over a channel; nothing is serialized | The CLI; programs that link glave's crates | None: same process |
+| stdio | One JSON message per line (`glave serve --stdio`) | Programs that run glave as a child process | None: the parent started it |
+| Unix socket | One JSON message per line | Local clients of a long-running glave | File permissions on the socket |
+| HTTP + SSE | `POST` one request; the answer is JSON, or for streaming methods an `text/event-stream` of notifications ending with the response. The method is also sent as the `Glave-Method` header, so proxies and logs can see it | Web, desktop and remote clients | Required |
+| WebSocket | One JSON message per text frame | Clients that want one connection for many threads; later, realtime features | Required |
+
+A network listener never runs without authentication: there is no "add it later". Closing a streaming HTTP response stops only that stream; the turn goes on, and `thread/watch` picks it up again.
+
+## Later
+
+- WebSocket-only realtime channels, such as voice (issue #58), as optional features.
+- Steering and queueing turns.
+- ACP and A2A adapters, when a real client needs them.
+- A JSON Schema of every message, generated from the Rust types, and a TypeScript client generated from it.
