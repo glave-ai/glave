@@ -85,7 +85,13 @@ impl Resources {
         let Arguments::Json(arguments) = arguments else {
             return ToolOutput::text(true, "The arguments were not valid JSON.");
         };
-        let asked = |key: &str| arguments.get(key).and_then(|value| value.as_str());
+        // Some models fill an optional field with "", meaning they have no choice to make.
+        let asked = |key: &str| {
+            arguments
+                .get(key)
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.is_empty())
+        };
         let offering = self.offering().await;
         if let Some(chosen) = asked("server")
             && !offering.iter().any(|(server, _)| server.name() == chosen)

@@ -96,6 +96,12 @@ mod resources {
             );
             let chosen = call(&resources, "list_mcp_resources", json!({"server": "tests"})).await;
             assert_eq!(text(&chosen), text(&listed));
+            let blank = call(&resources, "list_mcp_resources", json!({"server": ""})).await;
+            assert_eq!(
+                text(&blank),
+                text(&listed),
+                "an empty server means every server"
+            );
         });
     }
 
