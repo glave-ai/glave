@@ -48,6 +48,7 @@ mod attempts {
         Setup {
             endpoint: Config::for_url(server.url(), Some(KEY.to_owned())).unwrap(),
             environment,
+            todo: false,
         }
     }
 
