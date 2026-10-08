@@ -449,6 +449,7 @@ dependencies = [
  "glave-harness",
  "glave-ports",
  "glave-provider-openai",
+ "glave-session",
  "glave-store-sqlite",
  "serde_json",
  "tokio",
@@ -529,6 +530,21 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "glave-session"
+version = "0.0.0"
+dependencies = [
+ "glave-event",
+ "glave-harness",
+ "glave-ports",
+ "glave-store-sqlite",
+ "jiff",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

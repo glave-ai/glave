@@ -1,32 +1,27 @@
-//! Wiring the harness together and running one turn or an interactive session.
+//! Wiring glave together: the session server on this computer's store and workspace, with
+//! the terminal as its client, for one turn or an interactive session.
 
-use std::future::{Future, poll_fn};
 use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
-use std::pin::pin;
 use std::process::ExitCode;
-use std::task::Poll;
-use std::time::Duration;
 
 use anyhow::Context as _;
-use glave_event::Outcome;
+use glave_event::ThreadId;
 use glave_harness::{
-    AGENTS_MD, Approver, Cancel, Harness, HarnessError, NoOneToAsk, OsEntropy, Parts, Sandbox,
-    Settings, SystemClock, Thread, Workspace, agents_md,
+    AGENTS_MD, Cancel, OsEntropy, Sandbox, Settings, SystemClock, Workspace, agents_md,
 };
-use glave_ports::EventLog;
 use glave_provider_openai::OpenAiCompatible;
-use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
+use glave_session::protocol::{Reply, Request};
+use glave_session::{Answering, Server, Wiring};
+use glave_store_sqlite::Store;
 
 use crate::args::{self, Action, Args, USAGE};
+use crate::client::{Client, Glave};
 use crate::config::{self, Endpoint};
 use crate::home;
 use crate::input::{CtrlC, Input};
 use crate::system::random_uuid;
-use crate::terminal::{AskInTerminal, Printer};
-use crate::waiting::Waiting;
-
-type Glave<A> = Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, A>;
+use crate::terminal::Printer;
 
 pub fn main() -> ExitCode {
     let args = match args::parse(std::env::args().skip(1)) {
@@ -95,106 +90,105 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     if let Some(window_tokens) = config::context_window()? {
         settings.compaction.window_tokens = window_tokens;
     }
-    let wiring = Wiring {
-        provider,
-        store,
-        workspace,
-        settings,
-        instructions: instructions.map(|loaded| loaded.files).unwrap_or_default(),
-    };
-    let input = Input::start();
-    // Ask in the terminal when there is one; otherwise no one is there to answer.
-    if std::io::stdin().is_terminal() {
-        let approver = AskInTerminal::new(input.clone());
-        session(&args, &endpoint, wiring, approver, input).await
-    } else {
-        session(&args, &endpoint, wiring, NoOneToAsk, input).await
-    }
-}
-
-/// What a session is built from.
-struct Wiring {
-    provider: OpenAiCompatible,
-    store: Store,
-    workspace: Workspace,
-    settings: Settings,
-    /// The instruction files the model is given, for the banner.
-    instructions: Vec<PathBuf>,
-}
-
-async fn session<A: Approver>(
-    args: &Args,
-    endpoint: &Endpoint,
-    wiring: Wiring,
-    approver: A,
-    input: Input,
-) -> anyhow::Result<ExitCode> {
-    let root = wiring.workspace.root().to_owned();
-    let instruction_files = wiring.instructions;
-    let scope = wiring
-        .store
+    let root = workspace.root().to_owned();
+    let scope = store
         .local_scope(&root, random_uuid(), random_uuid())
         .await?;
-    let parts = Parts {
-        provider: wiring.provider,
-        log: wiring.store.log(),
-        blobs: wiring.store.blobs(),
-        approver,
+    // Ask in the terminal when there is one; otherwise no one is there to answer.
+    let asks = std::io::stdin().is_terminal();
+    let answering = if asks {
+        Answering::Clients
+    } else {
+        Answering::NoOne
+    };
+    let wiring = Wiring {
+        provider,
+        log: store.log(),
+        blobs: store.blobs(),
         clock: Box::new(SystemClock),
         entropy: Box::new(OsEntropy),
-        workspace: wiring.workspace,
+        workspace,
     };
-    let harness: Glave<A> = Harness::new(parts, wiring.settings);
-    let latest = if args.resume {
-        harness.log().threads(&scope, 1).await?.first().copied()
-    } else {
-        None
-    };
-    let (mut thread, note) = match latest {
-        Some(id) => (
-            harness.resume_thread(scope, id).await?,
-            "continuing your last thread",
-        ),
-        None if args.resume => (
-            harness.start_thread(scope).await?,
-            "no earlier thread here; new thread",
-        ),
-        None => (harness.start_thread(scope).await?, "new thread"),
+    let server = Server::new(wiring, settings, scope, answering);
+    let files = instructions.map(|loaded| loaded.files).unwrap_or_default();
+    let ran = session(&args, &endpoint, &server, &root, &files, asks).await;
+    server.shutdown().await;
+    ran
+}
+
+/// Picks the thread, runs the turn or the session, and exports the events when asked.
+async fn session(
+    args: &Args,
+    endpoint: &Endpoint,
+    server: &Glave,
+    root: &Path,
+    files: &[PathBuf],
+    asks: bool,
+) -> anyhow::Result<ExitCode> {
+    let (thread, note) = pick_thread(server, args.resume).await?;
+    let input = Input::start();
+    let client = Client {
+        server,
+        thread,
+        input: &input,
+        endpoint,
+        asks,
     };
     let mut printer = Printer::new(&endpoint.model, protections(args));
     let code = if args.prompt.is_empty() {
-        let folder = root.display().to_string();
-        let note = match named(&instruction_files) {
+        let note = match named(files) {
             Some(files) => format!("{note} · following {files}"),
             None => note.to_owned(),
         };
+        let folder = root.display().to_string();
         printer.banner(&endpoint.model, &endpoint.provider.provider, &folder, &note);
-        converse(&harness, &mut thread, &input, &mut printer, endpoint).await
+        converse(&client, &mut printer).await
     } else {
-        turn(&harness, &mut thread, &args.prompt, &mut printer, endpoint).await
+        client.turn(&args.prompt, &mut printer).await
     };
     if let Some(path) = &args.events {
-        export(harness.log(), &thread, path).await?;
+        export(server, thread, path).await?;
     }
     Ok(code)
 }
 
+/// The thread to use: the newest one here with `--continue`, otherwise a new one.
+async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, &'static str)> {
+    if resume {
+        let latest = match server
+            .request(Request::ThreadList { limit: Some(1) })
+            .await?
+        {
+            Reply::Threads { threads } => threads.first().map(|thread| thread.id),
+            _ => None,
+        };
+        if let Some(thread) = latest {
+            // Loading it closes anything a crash left open.
+            server.request(Request::ThreadGet { thread }).await?;
+            return Ok((thread, "continuing your last thread"));
+        }
+    }
+    let note = if resume {
+        "no earlier thread here; new thread"
+    } else {
+        "new thread"
+    };
+    match server.request(Request::ThreadStart {}).await? {
+        Reply::Thread { thread } => Ok((thread.id, note)),
+        other => anyhow::bail!("the server answered thread/start with {other:?}"),
+    }
+}
+
 /// The interactive session: each line typed is a turn, until `/exit`, the end of input, or
 /// Ctrl-C at the prompt. Ctrl-C during a turn or `/compact` cancels just that.
-async fn converse<A: Approver>(
-    harness: &Glave<A>,
-    thread: &mut Thread,
-    input: &Input,
-    printer: &mut Printer,
-    endpoint: &Endpoint,
-) -> ExitCode {
+async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
     let mut code = ExitCode::SUCCESS;
     loop {
         printer.ask();
         let interrupt = Cancel::new();
         let typed = {
             let _ctrl_c = CtrlC::cancels(&interrupt);
-            interrupt.run(input.line()).await
+            interrupt.run(client.input.line()).await
         };
         let Some(Some(line)) = typed else {
             println!();
@@ -205,93 +199,37 @@ async fn converse<A: Approver>(
             break;
         }
         if line == "/compact" {
-            let cancel = Cancel::new();
-            let _ctrl_c = CtrlC::cancels(&cancel);
-            match harness
-                .compact(thread, &cancel, &mut |live| printer.live(live))
-                .await
-            {
-                Ok(_) => {}
-                Err(HarnessError::Cancelled) => {
-                    printer.error("compaction cancelled; the thread is as it was");
-                }
-                Err(error) => show_error(printer, &error, endpoint),
-            }
+            client.compact(printer).await;
             continue;
         }
         if !line.is_empty() {
-            code = turn(harness, thread, line, printer, endpoint).await;
+            code = client.turn(line, printer).await;
         }
     }
     code
 }
 
-/// Runs one turn, which Ctrl-C cancels, and prints its receipt.
-async fn turn<A: Approver>(
-    harness: &Glave<A>,
-    thread: &mut Thread,
-    prompt: &str,
-    printer: &mut Printer,
-    endpoint: &Endpoint,
-) -> ExitCode {
-    let cancel = Cancel::new();
-    let _ctrl_c = CtrlC::cancels(&cancel);
-    let waiting = printer.waiting();
-    let result = ticking(
-        harness.run_turn(thread, prompt, &cancel, &mut |live| printer.live(live)),
-        &waiting,
-    )
-    .await;
-    match result {
-        Ok(summary) => {
-            printer.receipt(&summary, endpoint.local);
-            match summary.outcome {
-                Outcome::Completed => ExitCode::SUCCESS,
-                // As shells report a program stopped by Ctrl-C.
-                Outcome::Cancelled => ExitCode::from(130),
-                _ => ExitCode::FAILURE,
-            }
-        }
-        Err(error) => {
-            show_error(printer, &error, endpoint);
-            ExitCode::FAILURE
-        }
-    }
-}
-
-/// Shows what failed and, when the person can fix it, what to change.
-fn show_error(printer: &mut Printer, error: &HarnessError, endpoint: &Endpoint) {
-    printer.error(&error.to_string());
-    if let HarnessError::Provider(failed) = error
-        && let Some(fix) = config::fix(failed.failure(), endpoint)
-    {
-        printer.fix(&fix);
-    }
-}
-
-/// Runs `work`, updating the waiting line once a second until it finishes.
-async fn ticking<T>(work: impl Future<Output = T>, waiting: &Waiting) -> T {
-    let mut work = pin!(work);
-    let mut clock = tokio::time::interval(Duration::from_secs(1));
-    poll_fn(|cx| {
-        if let Poll::Ready(value) = work.as_mut().poll(cx) {
-            return Poll::Ready(value);
-        }
-        while clock.poll_tick(cx).is_ready() {
-            waiting.tick();
-        }
-        Poll::Pending
-    })
-    .await
-}
-
 /// Writes the thread's events as JSON Lines, one event per line, exactly as stored.
-async fn export<L: EventLog>(log: &L, thread: &Thread, path: &Path) -> anyhow::Result<()> {
-    let events = log.read(&thread.scope, thread.id, None, usize::MAX).await?;
+async fn export(server: &Glave, thread: ThreadId, path: &Path) -> anyhow::Result<()> {
     let mut lines = String::new();
-    for event in &events {
-        lines.push_str(&event.to_json()?);
-        lines.push('\n');
+    let mut after = None;
+    loop {
+        let page = Request::ThreadEvents {
+            thread,
+            after,
+            limit: Some(5_000),
+        };
+        let Reply::Events { events, next } = server.request(page).await? else {
+            anyhow::bail!("the server answered thread/events with something else");
+        };
+        for event in &events {
+            lines.push_str(&event.to_json()?);
+            lines.push('\n');
+        }
+        match next {
+            Some(seq) => after = Some(seq),
+            None => break,
+        }
     }
     tokio::fs::write(path, lines).await?;
     Ok(())

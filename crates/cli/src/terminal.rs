@@ -2,13 +2,12 @@
 //! receipt that closes each turn. Every status starts with a word; color only reinforces it.
 
 use std::fmt::Write as _;
-use std::future::Future;
 use std::io::{IsTerminal as _, Write as _};
+use std::time::Duration;
 
 use glave_event::{Currency, Money, Outcome};
-use glave_harness::{ApprovalRequest, Approver, Decision, Live, TurnSummary};
+use glave_session::protocol::{TurnResult, Update};
 
-use crate::input::Input;
 use crate::waiting::Waiting;
 
 const GREEN: &str = "\x1b[32m";
@@ -95,43 +94,41 @@ impl Printer {
         flush();
     }
 
-    pub fn live(&mut self, live: Live) {
+    pub fn update(&mut self, update: Update) {
         self.waiting.stop();
-        match live {
-            Live::Waiting => self.waiting.start(),
-            Live::Retrying {
+        match update {
+            Update::Waiting => self.waiting.start(),
+            Update::Retrying {
                 retry,
                 of,
-                wait,
+                wait_ms,
                 error,
             } => {
                 let error: String = error.chars().take(ERROR_CHARS).collect();
-                let detail = format!(
-                    "· {error}; again in {:.0} s ({retry} of {of})",
-                    wait.as_secs_f64()
-                );
+                let seconds = Duration::from_millis(wait_ms).as_secs_f64();
+                let detail = format!("· {error}; again in {seconds:.0} s ({retry} of {of})");
                 self.note(YELLOW, "retrying", &detail);
             }
-            Live::Text(text) => {
+            Update::Text { text } => {
                 if self.showing != Showing::Text {
                     print!("\n{} ", paint(self.color, GREEN, &self.speaker));
                     self.showing = Showing::Text;
                 }
                 print!("{text}");
             }
-            Live::Reasoning(text) => {
+            Update::Reasoning { text } => {
                 if self.showing != Showing::Reasoning {
                     println!();
                     self.showing = Showing::Reasoning;
                 }
                 print!("{}", paint(self.color, DIM, &text));
             }
-            Live::ToolStarted { summary } => {
+            Update::ToolStarted { summary } => {
                 println!();
                 print!("  {} ", paint(self.color, DIM, &format!("{summary} …")));
                 self.showing = Showing::Nothing;
             }
-            Live::ToolDeclined {
+            Update::ToolDeclined {
                 summary,
                 no_one_there,
             } => {
@@ -148,7 +145,7 @@ impl Printer {
                 );
                 self.showing = Showing::Nothing;
             }
-            Live::Compacted {
+            Update::Compacted {
                 before_tokens,
                 after_tokens,
             } => {
@@ -159,10 +156,10 @@ impl Printer {
                 );
                 self.note(DIM, "compacted", &detail);
             }
-            Live::CompactionFailed(error) => {
+            Update::CompactionFailed { error } => {
                 self.note(YELLOW, "could not compact the conversation:", &error);
             }
-            Live::ToolFinished { is_error, .. } => {
+            Update::ToolFinished { is_error, .. } => {
                 if is_error {
                     println!("{}", paint(self.color, RED, "error"));
                 } else {
@@ -185,7 +182,7 @@ impl Printer {
     }
 
     /// The receipt that closes a turn: what happened and what it cost.
-    pub fn receipt(&mut self, summary: &TurnSummary, local: bool) {
+    pub fn receipt(&mut self, summary: &TurnResult, local: bool) {
         self.waiting.stop();
         let (word, color) = match summary.outcome {
             Outcome::Completed => ("done", CYAN),
@@ -226,6 +223,17 @@ impl Printer {
         flush();
     }
 
+    /// Asks the person about an action the model wants to take; the answer is typed next.
+    pub fn approval(&mut self, summary: &str) {
+        self.waiting.stop();
+        print!(
+            "\n\n{} {summary}\n  allow? [y] once  [a] always in this thread  [N] no › ",
+            paint(self.color, YELLOW, "needs you")
+        );
+        self.showing = Showing::Nothing;
+        flush();
+    }
+
     /// What the person can change to fix the error just shown.
     pub fn fix(&mut self, text: &str) {
         println!("  {} {text}", paint(self.color, YELLOW, "fix:"));
@@ -242,46 +250,6 @@ impl Printer {
 
 /// The most of an error shown on a retry line.
 const ERROR_CHARS: usize = 200;
-
-/// Asks the person in the terminal before anything changes.
-pub struct AskInTerminal {
-    color: bool,
-    input: Input,
-}
-
-impl AskInTerminal {
-    pub fn new(input: Input) -> Self {
-        Self {
-            color: color_enabled(),
-            input,
-        }
-    }
-}
-
-impl Approver for AskInTerminal {
-    fn decide(&self, request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
-        let prompt = format!(
-            "\n\n{} {}\n  allow? [y] once  [a] always in this thread  [N] no › ",
-            paint(self.color, YELLOW, "needs you"),
-            request.summary
-        );
-        async move {
-            print!("{prompt}");
-            flush();
-            match self
-                .input
-                .line()
-                .await
-                .map(|answer| answer.trim().to_ascii_lowercase())
-                .as_deref()
-            {
-                Some("y" | "yes") => Decision::AllowOnce,
-                Some("a" | "always") => Decision::AllowForThread,
-                _ => Decision::Deny,
-            }
-        }
-    }
-}
 
 /// A model's short name for labeling its answers: `anthropic/claude-haiku-5.5` is
 /// `claude-haiku-5.5`.

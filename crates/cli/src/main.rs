@@ -2,6 +2,7 @@
 //! folder, from the terminal.
 
 mod args;
+mod client;
 mod config;
 mod home;
 mod input;

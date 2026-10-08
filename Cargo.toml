@@ -42,6 +42,7 @@ glave-event = { path = "crates/event" }
 glave-harness = { path = "crates/harness" }
 glave-ports = { path = "crates/ports" }
 glave-provider-openai = { path = "crates/provider-openai" }
+glave-session = { path = "crates/session" }
 glave-store-sqlite = { path = "crates/store-sqlite" }
 getrandom = "0.4"
 globset = "0.4"

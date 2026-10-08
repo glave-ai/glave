@@ -19,6 +19,7 @@ glave-event.workspace = true
 glave-harness.workspace = true
 glave-ports.workspace = true
 glave-provider-openai.workspace = true
+glave-session.workspace = true
 glave-store-sqlite.workspace = true
 tokio = { workspace = true, features = ["fs", "rt", "signal", "sync", "time"] }
 uuid.workspace = true
