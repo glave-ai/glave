@@ -40,7 +40,7 @@ pub fn main() -> ExitCode {
             println!("glave {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
-        Action::Run => {}
+        Action::Run | Action::Serve => {}
     }
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -52,7 +52,12 @@ pub fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match runtime.block_on(run(args)) {
+    let ran = if args.action == Action::Serve {
+        runtime.block_on(serve(args))
+    } else {
+        runtime.block_on(run(args))
+    };
+    match ran {
         Ok(code) => code,
         Err(error) => {
             eprintln!("glave: {error:#}");
@@ -61,7 +66,17 @@ pub fn main() -> ExitCode {
     }
 }
 
-async fn run(args: Args) -> anyhow::Result<ExitCode> {
+/// The server for this folder, and what the terminal needs to show it.
+struct Wired {
+    server: Glave,
+    endpoint: Endpoint,
+    root: PathBuf,
+    /// The instruction files the model is given, for the banner.
+    files: Vec<PathBuf>,
+}
+
+/// Builds the session server on this computer's store and the current folder.
+async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
     let mut endpoint = config::endpoint(args.model.clone())?;
     if let Some(idle) = config::idle_timeout()? {
         endpoint.provider.idle_timeout = idle;
@@ -94,13 +109,6 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     let scope = store
         .local_scope(&root, random_uuid(), random_uuid())
         .await?;
-    // Ask in the terminal when there is one; otherwise no one is there to answer.
-    let asks = std::io::stdin().is_terminal();
-    let answering = if asks {
-        Answering::Clients
-    } else {
-        Answering::NoOne
-    };
     let wiring = Wiring {
         provider,
         log: store.log(),
@@ -109,22 +117,44 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         entropy: Box::new(OsEntropy),
         workspace,
     };
-    let server = Server::new(wiring, settings, scope, answering);
-    let files = instructions.map(|loaded| loaded.files).unwrap_or_default();
-    let ran = session(&args, &endpoint, &server, &root, &files, asks).await;
-    server.shutdown().await;
+    Ok(Wired {
+        server: Server::new(wiring, settings, scope, answering),
+        endpoint,
+        root,
+        files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
+    })
+}
+
+async fn run(args: Args) -> anyhow::Result<ExitCode> {
+    // Ask in the terminal when there is one; otherwise no one is there to answer.
+    let asks = std::io::stdin().is_terminal();
+    let answering = if asks {
+        Answering::Clients
+    } else {
+        Answering::NoOne
+    };
+    let wired = wire(&args, answering).await?;
+    let ran = session(&args, &wired, asks).await;
+    wired.server.shutdown().await;
     ran
 }
 
+/// Serves the session API to the program that started glave, until its input ends.
+async fn serve(args: Args) -> anyhow::Result<ExitCode> {
+    let wired = wire(&args, Answering::Clients).await?;
+    let input = tokio::io::BufReader::new(tokio::io::stdin());
+    glave_session::rpc::serve(wired.server, input, tokio::io::stdout()).await?;
+    Ok(ExitCode::SUCCESS)
+}
+
 /// Picks the thread, runs the turn or the session, and exports the events when asked.
-async fn session(
-    args: &Args,
-    endpoint: &Endpoint,
-    server: &Glave,
-    root: &Path,
-    files: &[PathBuf],
-    asks: bool,
-) -> anyhow::Result<ExitCode> {
+async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitCode> {
+    let Wired {
+        server,
+        endpoint,
+        root,
+        files,
+    } = wired;
     let (thread, note) = pick_thread(server, args.resume).await?;
     let input = Input::start();
     let client = Client {
