@@ -8,8 +8,9 @@ use serde_json::value::RawValue;
 use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeName};
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
-    MessageAdded, ModelResponded, ThreadCompacted, ThreadStarted, ToolCallCompleted,
-    ToolCallRequested, TurnEnded, TurnStarted, message, model, thread, tool, turn,
+    ApprovalDecided, ApprovalRequested, MessageAdded, ModelResponded, ThreadCompacted,
+    ThreadStarted, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, approval, message,
+    model, thread, tool, turn,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -31,6 +32,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (tool::COMPLETED, 1),
     (model::TYPE, 1),
     (turn::ENDED, 1),
+    (approval::REQUESTED, 1),
+    (approval::DECIDED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -51,6 +54,8 @@ pub enum Body {
     ToolCallCompleted(ToolCallCompleted),
     ModelResponded(ModelResponded),
     TurnEnded(TurnEnded),
+    ApprovalRequested(ApprovalRequested),
+    ApprovalDecided(ApprovalDecided),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -118,6 +123,12 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         }
         model::TYPE => model::decode(version, data).map(|r| r.map(Body::ModelResponded)),
         turn::ENDED => turn::decode_ended(version, data).map(|r| r.map(Body::TurnEnded)),
+        approval::REQUESTED => {
+            approval::decode_requested(version, data).map(|r| r.map(Body::ApprovalRequested))
+        }
+        approval::DECIDED => {
+            approval::decode_decided(version, data).map(|r| r.map(Body::ApprovalDecided))
+        }
         _ => None,
     };
     let body = match known {
@@ -153,6 +164,8 @@ impl Event {
             Body::ToolCallCompleted(payload) => encode(header, payload),
             Body::ModelResponded(payload) => encode(header, payload),
             Body::TurnEnded(payload) => encode(header, payload),
+            Body::ApprovalRequested(payload) => encode(header, payload),
+            Body::ApprovalDecided(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,

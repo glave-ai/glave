@@ -162,6 +162,11 @@ where
         &self.log
     }
 
+    /// Who is asked before anything changes.
+    pub fn approver(&self) -> &A {
+        &self.approver
+    }
+
     /// Starts a new thread in `scope` and records `thread.started`.
     pub async fn start_thread(&self, scope: Scope) -> Result<Thread, HarnessError> {
         let id = ThreadId::new(self.clock.now(), self.entropy.bytes())?;
@@ -197,6 +202,17 @@ where
             .instructions
             .as_ref()
             .map(|text| vec![Part::Text { text: text.clone() }])
+    }
+
+    /// Records one event on its own.
+    pub(crate) async fn record<T: Payload>(
+        &self,
+        thread: &mut Thread,
+        payload: &T,
+    ) -> Result<(), HarnessError> {
+        let mut events = Vec::new();
+        self.stage(thread, &mut events, payload)?;
+        self.commit(thread, events).await
     }
 
     /// The `seq` the next staged event will get.

@@ -48,6 +48,8 @@ pub fn conversation(events: &[Event]) -> Vec<Message> {
             | Body::TurnStarted(_)
             | Body::ModelResponded(_)
             | Body::TurnEnded(_)
+            | Body::ApprovalRequested(_)
+            | Body::ApprovalDecided(_)
             | Body::Unknown(_) => {}
         }
     }

@@ -21,7 +21,8 @@ pub use error::{DecodeError, EncodeError, InvalidValue};
 pub use id::{CallId, EventId, ThreadId};
 pub use money::{Currency, Money};
 pub use payload::{
-    Arguments, Cost, ForkPoint, MessageAdded, ModelRef, ModelResponded, Opaque, Outcome, Part,
-    Producer, Role, StopReason, ThreadCompacted, ThreadStarted, TokenCounts, ToolCallCompleted,
-    ToolCallRequested, TurnEnded, TurnStarted, Usage,
+    ApprovalDecided, ApprovalRequested, Arguments, Cost, ForkPoint, MessageAdded, ModelRef,
+    ModelResponded, Opaque, Outcome, Part, Producer, Role, StopReason, ThreadCompacted,
+    ThreadStarted, TokenCounts, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted,
+    Usage, Verdict,
 };

@@ -29,6 +29,8 @@ So `auto` without a terminal never stops for a question, and `ask` or `edits` wi
 
 Each turn's configuration (`turn.started`) records the mode, and the banner and every receipt name it: `done · approval: edits · …`.
 
+Every question is recorded with its answer: `approval.requested`, then `approval.decided`, before the call's result (`events.md`). So the log shows who allowed what, and "always in this thread" survives resuming the thread. The question carries the thread and call it is about, so a client of the session API can answer it later (`session.md`).
+
 ## Later
 
 - A judge model that decides in `auto` instead of the person (issue #13).

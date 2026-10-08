@@ -81,6 +81,8 @@ All types below are at version 1.
 | `tool.call.completed` | A tool call finished | `call_id`; `is_error`; `output` parts; optional `structured` result |
 | `model.responded` | A model response finished | `model`; optional `response_id`; `stop`; optional `provider_stop`; `usage`; optional `cost`. Content-free |
 | `turn.ended` | A turn ends | `outcome`: `completed`, `cancelled`, `failed`, `interrupted` or `limit_reached` |
+| `approval.requested` | A tool call waits for the person | `call_id` (also the approval's id); `tool`; `summary`, as the person is shown it; `secret`, true when the call would show the model a file that usually holds secrets |
+| `approval.decided` | The person, or glave on their behalf, answered | `call_id`; `decision`: `allow_once`, `allow_for_thread`, `deny`, `no_one_there` (nothing to ask, so the call did not run) or `cancelled` (the turn was cancelled while it waited) |
 | `thread.compacted` | The conversation was summarized to fit the model's context window | `through`, the last `seq` the summary covers; `parts`, the message the conversation restarts from (the summary and the person's latest request). Rebuilding a conversation starts from the latest one; earlier events stay in the log |
 
 Details shared by several types:
