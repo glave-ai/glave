@@ -13,6 +13,7 @@ use std::time::Duration;
 use serde::Serialize;
 
 use crate::approval::{ApprovalMode, Approver};
+use crate::ask::Question;
 use crate::calls::NOT_RUN;
 use crate::cancel::Cancel;
 use crate::compaction::{Measured, chars, responded};
@@ -54,6 +55,11 @@ pub enum Live {
     },
     /// A needed compaction failed; the turn goes on without it.
     CompactionFailed(String),
+    /// The model asked the person questions, and the turn waits for the answers.
+    Asked {
+        call_id: CallId,
+        questions: Vec<Question>,
+    },
     /// The model was asked, and nothing has come back yet.
     Waiting,
     /// A model call failed in a way that may pass, and is tried again after `wait`.

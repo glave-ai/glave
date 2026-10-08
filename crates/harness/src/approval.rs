@@ -8,6 +8,7 @@ use glave_event::{Arguments, CallId, ThreadId};
 use glave_ports::Effect;
 use serde::Serialize;
 
+use crate::ask::QuestionRequest;
 use crate::secrets::is_secret_file;
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
@@ -85,6 +86,21 @@ pub enum Decision {
 /// one is there when it has none.
 pub trait Approver: Send + Sync {
     fn decide(&self, request: &ApprovalRequest) -> impl Future<Output = Decision> + Send;
+
+    /// Whether someone can answer questions; `ask` is offered only then.
+    fn can_answer(&self) -> bool {
+        false
+    }
+
+    /// Puts `request`'s questions to the person: one answer for each, or `None` when no one
+    /// answered. The question is waiting once this returns, before the future is awaited.
+    fn answer(
+        &self,
+        request: &QuestionRequest,
+    ) -> impl Future<Output = Option<Vec<String>>> + Send {
+        let _ = request;
+        ready(None)
+    }
 }
 
 /// For runs with no one at the keyboard: every request is answered "no one is here".

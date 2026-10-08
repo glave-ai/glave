@@ -305,6 +305,10 @@ fn note(transcript: &mut String, live: Live) {
         Live::Retrying {
             retry, of, error, ..
         } => writeln!(transcript, "[retry {retry} of {of}] {error}"),
+        Live::Asked { questions, .. } => {
+            let asked: Vec<&str> = questions.iter().map(|q| q.question.as_str()).collect();
+            writeln!(transcript, "[asked] {}", asked.join(" / "))
+        }
         Live::Reasoning(_) | Live::ToolFinished { .. } | Live::Waiting => Ok(()),
     };
 }
