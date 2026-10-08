@@ -4,11 +4,12 @@
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 use glave_harness::{
-    Cancel, Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox, Settings, SystemClock, Workspace,
-    agents_md,
+    Cancel, Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox, Settings, SystemClock, Todo,
+    Workspace, agents_md,
 };
 use glave_ports::{EventLog, MemoryBlobs, MemoryLog, OrgId, Scope, SpaceId};
 use glave_provider_openai::{Config, OpenAiCompatible};
@@ -26,6 +27,8 @@ pub struct Setup {
     pub endpoint: Config,
     /// The environment commands start from, before the task's own and minus secrets.
     pub environment: Vec<(OsString, OsString)>,
+    /// Whether the model is offered the todo list, to measure what it does.
+    pub todo: bool,
 }
 
 /// How one attempt went.
@@ -191,7 +194,12 @@ async fn wire(
         entropy: Box::new(OsEntropy),
         workspace,
     };
-    Ok(Harness::new(parts, settings))
+    let harness = Harness::new(parts, settings);
+    Ok(if setup.todo {
+        harness.with_tools(vec![Arc::new(Todo)])
+    } else {
+        harness
+    })
 }
 
 /// Sends every turn, each after the first to a thread resumed from the log, and returns the

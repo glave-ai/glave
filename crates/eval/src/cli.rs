@@ -33,7 +33,8 @@ options:
   --concurrency <n>    attempts at once (default 6)
   --max-cost <dollars> start nothing new once this much is spent (default 2)
   --baseline <file>    an earlier report.json to compare with
-  --tasks <folder>     where the tasks are (default evals/tasks)";
+  --tasks <folder>     where the tasks are (default evals/tasks)
+  --todo               offer the model the todo list";
 
 /// The parsed command line.
 #[derive(Debug, PartialEq)]
@@ -46,6 +47,7 @@ struct Options {
     max_cost_micros: i64,
     baseline: Option<PathBuf>,
     tasks: PathBuf,
+    todo: bool,
 }
 
 pub fn main() -> ExitCode {
@@ -86,6 +88,7 @@ fn run(options: &Options) -> Result<bool, String> {
     let setup = Arc::new(Setup {
         endpoint,
         environment: std::env::vars_os().collect(),
+        todo: options.todo,
     });
     let attempts = options
         .repeat
@@ -213,6 +216,7 @@ fn options(args: &[String]) -> Result<Options, String> {
         max_cost_micros: 2_000_000,
         baseline: None,
         tasks: PathBuf::from("evals/tasks"),
+        todo: false,
     };
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -240,6 +244,7 @@ fn options(args: &[String]) -> Result<Options, String> {
             "--max-cost" => options.max_cost_micros = micros(&value()?)?,
             "--baseline" => options.baseline = Some(PathBuf::from(value()?)),
             "--tasks" => options.tasks = PathBuf::from(value()?),
+            "--todo" => options.todo = true,
             other => return Err(format!("unknown option {other}\n{USAGE}")),
         }
     }
@@ -313,6 +318,7 @@ mod tests {
             "old.json",
             "--tasks",
             "t",
+            "--todo",
         ])
         .unwrap();
         assert_eq!(
@@ -326,6 +332,7 @@ mod tests {
                 max_cost_micros: 500_000,
                 baseline: Some("old.json".into()),
                 tasks: "t".into(),
+                todo: true,
             }
         );
     }
