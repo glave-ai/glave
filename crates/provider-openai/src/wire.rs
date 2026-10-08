@@ -23,6 +23,17 @@ pub(crate) struct ChatRequest<'a> {
     /// conversation grows.
     #[serde(skip_serializing_if = "Option::is_none")]
     cache_control: Option<CacheControl>,
+    /// For OpenRouter: context compression off. On by default for models with a window of 8k
+    /// tokens or less, it silently cuts the middle of a prompt that is too long; refused
+    /// instead, glave compacts in the open, recorded in the log.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    plugins: Vec<Plugin>,
+}
+
+#[derive(Debug, Serialize)]
+struct Plugin {
+    id: &'static str,
+    enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -84,8 +95,9 @@ struct WireTool<'a> {
     function: &'a ToolSpec,
 }
 
-/// Builds the request body for a streaming chat completion.
-pub(crate) fn chat_request(request: &ModelRequest, cache: bool) -> ChatRequest<'_> {
+/// Builds the request body for a streaming chat completion to `provider`.
+pub(crate) fn chat_request<'a>(request: &'a ModelRequest, provider: &str) -> ChatRequest<'a> {
+    let cache = caches_automatically(provider, &request.model);
     let mut messages = Vec::with_capacity(request.messages.len().saturating_add(1));
     if !request.system.is_empty() {
         messages.push(WireMessage::System {
@@ -123,6 +135,14 @@ pub(crate) fn chat_request(request: &ModelRequest, cache: bool) -> ChatRequest<'
             .then_some("none"),
         max_tokens: request.max_output_tokens,
         cache_control: cache.then_some(CacheControl { kind: "ephemeral" }),
+        plugins: if provider == "openrouter" {
+            vec![Plugin {
+                id: "context-compression",
+                enabled: false,
+            }]
+        } else {
+            Vec::new()
+        },
     }
 }
 
