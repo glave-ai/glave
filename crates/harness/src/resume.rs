@@ -11,7 +11,6 @@ use glave_ports::{BlobStore, EventLog, Message, ModelProvider, Scope};
 use crate::approval::Approver;
 use crate::conversation::conversation;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::tools::Tool;
 
 /// Events read per page while loading a thread.
 const PAGE: usize = 1_000;
@@ -144,7 +143,7 @@ fn latest_request(events: &[Event]) -> Option<String> {
 }
 
 /// The tools the person allowed for the rest of the thread, from its recorded approvals.
-fn allowed_for_thread(events: &[Event]) -> HashSet<Tool> {
+fn allowed_for_thread(events: &[Event]) -> HashSet<String> {
     let mut asked: HashMap<&CallId, &str> = HashMap::new();
     let mut allowed = HashSet::new();
     for event in events {
@@ -153,11 +152,8 @@ fn allowed_for_thread(events: &[Event]) -> HashSet<Tool> {
                 asked.insert(&requested.call_id, requested.tool.as_str());
             }
             Body::ApprovalDecided(decided) if decided.decision == Verdict::AllowForThread => {
-                if let Some(tool) = asked
-                    .get(&decided.call_id)
-                    .and_then(|name| Tool::named(name))
-                {
-                    allowed.insert(tool);
+                if let Some(tool) = asked.get(&decided.call_id) {
+                    allowed.insert((*tool).to_owned());
                 }
             }
             _ => {}

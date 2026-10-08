@@ -1,6 +1,6 @@
 [package]
 name = "glave-ports"
-description = "glave's ports: the event log, blob store and model provider interfaces, with in-memory implementations and conformance suites"
+description = "glave's ports: the event log, blob store, model provider and tool source interfaces, with in-memory implementations and conformance suites"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

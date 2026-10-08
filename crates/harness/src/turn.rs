@@ -6,7 +6,7 @@ use glave_event::{
 };
 use glave_ports::{
     BlobStore, Completion, Delta, EventLog, Message, ModelProvider, ModelRequest, ToolCall,
-    ToolChoice, ToolSpec,
+    ToolChoice, ToolOutput, ToolSpec,
 };
 use std::time::Duration;
 
@@ -19,7 +19,7 @@ use crate::compaction::{Measured, chars, responded};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::repeats::Repeats;
 use crate::sandbox::{Prepared, Recorded};
-use crate::tools::{ToolOutcome, specs};
+use crate::toolset::ToolSet;
 
 /// What the model is told after a cancelled turn, as Codex tells it.
 const CANCELLED: &str = "[The person cancelled this turn on purpose. A command that was stopped \
@@ -125,7 +125,8 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
-        let tools = specs();
+        let toolset: ToolSet = self.tools().await;
+        let tools = toolset.specs.clone();
         self.begin(thread, prompt, &tools).await?;
         let mut summary = TurnSummary::started();
         let mut repeats = Repeats::default();
@@ -184,13 +185,15 @@ where
             for call in calls {
                 // Every call gets a result, so the thread stays valid after a cancel.
                 let outcome = if cancel.is_cancelled() {
-                    ToolOutcome::error(NOT_RUN)
+                    ToolOutput::text(true, NOT_RUN)
                 } else if repeats.refuse(&call) {
-                    ToolOutcome::error(
+                    ToolOutput::text(
+                        true,
                         "You made this exact call several times in a row. Change your approach.",
                     )
                 } else {
-                    self.call_tool(thread, &call, cancel, live).await?
+                    self.call_tool(thread, &call, &toolset, cancel, live)
+                        .await?
                 };
                 summary.tool_calls = summary.tool_calls.saturating_add(1);
                 self.record_result(thread, call.call_id, outcome).await?;

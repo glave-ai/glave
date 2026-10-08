@@ -1,13 +1,13 @@
 //! Running one of the model's tool calls: asking the person when the call needs it, running
 //! the tool, and recording its result.
 
-use glave_event::{ApprovalDecided, ApprovalRequested, CallId, Part, ToolCallCompleted, Verdict};
-use glave_ports::{BlobStore, EventLog, Message, ModelProvider, ToolCall};
+use glave_event::{ApprovalDecided, ApprovalRequested, CallId, ToolCallCompleted, Verdict};
+use glave_ports::{BlobStore, EventLog, Message, ModelProvider, ToolCall, ToolOutput};
 
-use crate::approval::{ApprovalRequest, Approver, Decision, no_one_there, reads_secret, summarize};
+use crate::approval::{ApprovalRequest, Approver, Decision, no_one_there};
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::tools::{Tool, ToolOutcome};
+use crate::toolset::ToolSet;
 use crate::turn::Live;
 
 /// The result of a tool call the turn never ran because the person cancelled it.
@@ -27,30 +27,39 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Runs one tool call, asking the person first when it would change anything or show the
-    /// model a secret file.
+    /// Runs one tool call, asking the person first when its effect needs them in this mode or
+    /// when its source says it does (a read of a secret file).
     pub(crate) async fn call_tool(
         &self,
         thread: &mut Thread,
         call: &ToolCall,
+        tools: &ToolSet,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<ToolOutcome, HarnessError> {
-        let Some(tool) = Tool::named(&call.tool) else {
-            let names: Vec<&str> = Tool::ALL.iter().map(|tool| tool.name()).collect();
-            return Ok(ToolOutcome::error(format!(
-                "There is no tool named {:?}. The tools are {}.",
-                call.tool,
-                names.join(", ")
-            )));
+    ) -> Result<ToolOutput, HarnessError> {
+        let Some((index, info)) = tools.get(&call.tool) else {
+            return Ok(ToolOutput::text(
+                true,
+                format!(
+                    "There is no tool named {:?}. The tools are {}.",
+                    call.tool,
+                    tools.names().join(", ")
+                ),
+            ));
         };
-        let summary = summarize(tool, &call.arguments);
-        let secret = reads_secret(&self.workspace, tool, &call.arguments).await;
-        if (self.settings.approval.asks_for(tool) || secret) && !thread.allowed.contains(&tool) {
+        let Some(source) = self.sources.get(index) else {
+            return Ok(ToolOutput::text(true, format!("{:?} is gone", call.tool)));
+        };
+        let name = info.spec.name.as_str();
+        let summary = source.describe(name, &call.arguments);
+        let secret = source.needs_person(name, &call.arguments).await;
+        let asks = self.settings.approval.asks_for(info.effect) || secret;
+        if asks && !thread.allowed.contains(name) {
             let request = ApprovalRequest {
                 thread: thread.id,
                 call_id: call.call_id.clone(),
-                tool,
+                tool: name.to_owned(),
+                effect: info.effect,
                 summary: if secret {
                     format!("{summary} (this file usually holds secrets; the model would see them)")
                 } else {
@@ -65,12 +74,12 @@ where
         live(Live::ToolStarted {
             summary: summary.clone(),
         });
-        let outcome = tool.run(&call.arguments, &self.workspace, cancel).await;
+        let output = source.call(name, &call.arguments, cancel).await;
         live(Live::ToolFinished {
             summary,
-            is_error: outcome.is_error,
+            is_error: output.is_error,
         });
-        Ok(outcome)
+        Ok(output)
     }
 
     /// Asks the person about `request`, recording the question and the answer. `None` when the
@@ -81,10 +90,10 @@ where
         request: &ApprovalRequest,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
-    ) -> Result<Option<ToolOutcome>, HarnessError> {
+    ) -> Result<Option<ToolOutput>, HarnessError> {
         let asked = ApprovalRequested {
             call_id: request.call_id.clone(),
-            tool: request.tool.name().to_owned(),
+            tool: request.tool.clone(),
             summary: request.summary.clone(),
             secret: request.secret,
         };
@@ -105,22 +114,25 @@ where
         Ok(match verdict {
             Verdict::AllowOnce => None,
             Verdict::AllowForThread => {
-                thread.allowed.insert(request.tool);
+                thread.allowed.insert(request.tool.clone());
                 None
             }
-            Verdict::Cancelled => Some(ToolOutcome::error(NOT_RUN)),
+            Verdict::Cancelled => Some(ToolOutput::text(true, NOT_RUN)),
             Verdict::Deny | Verdict::NoOneThere => {
                 live(Live::ToolDeclined {
                     summary: request.summary.clone(),
                     no_one_there: verdict == Verdict::NoOneThere,
                 });
-                Some(ToolOutcome::error(if verdict == Verdict::NoOneThere {
-                    no_one_there(request.secret)
-                } else if request.secret {
-                    DECLINED_SECRET
-                } else {
-                    DECLINED
-                }))
+                Some(ToolOutput::text(
+                    true,
+                    if verdict == Verdict::NoOneThere {
+                        no_one_there(request.secret)
+                    } else if request.secret {
+                        DECLINED_SECRET
+                    } else {
+                        DECLINED
+                    },
+                ))
             }
         })
     }
@@ -129,9 +141,9 @@ where
         &self,
         thread: &mut Thread,
         call_id: CallId,
-        outcome: ToolOutcome,
+        outcome: ToolOutput,
     ) -> Result<(), HarnessError> {
-        let output = vec![Part::Text { text: outcome.text }];
+        let output = outcome.parts;
         let completed = ToolCallCompleted {
             call_id: call_id.clone(),
             is_error: outcome.is_error,

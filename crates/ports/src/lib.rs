@@ -14,13 +14,18 @@ mod log;
 mod memory;
 mod model;
 mod scope;
+mod tools;
 
 pub use blob::{BlobError, BlobStore, digest};
 pub use failure::Failure;
 pub use log::{EventLog, LogError, check_append};
-pub use memory::{MemoryBlobs, MemoryLog};
+pub use memory::{MemoryBlobs, MemoryLog, MemoryTools};
 pub use model::{
     Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, RequestedCall,
     ToolCall, ToolChoice, ToolSpec,
 };
 pub use scope::{OrgId, Scope, SpaceId};
+pub use tools::{
+    BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource, describe_call,
+    unless_cancelled,
+};

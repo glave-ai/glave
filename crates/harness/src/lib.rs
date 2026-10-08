@@ -3,6 +3,7 @@
 //! step is recorded as events, so the log alone can rebuild and resume any thread.
 
 mod approval;
+mod builtins;
 mod calls;
 mod cancel;
 mod compaction;
@@ -17,6 +18,7 @@ mod retry;
 mod sandbox;
 mod secrets;
 mod tools;
+mod toolset;
 mod turn;
 
 pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};
@@ -30,5 +32,5 @@ pub use prompt::system_prompt;
 pub use retry::Retries;
 pub use sandbox::{Sandbox, SandboxLevel};
 pub use tools::workspace::Workspace;
-pub use tools::{Tool, ToolOutcome, specs};
+pub use tools::{Tool, ToolOutcome};
 pub use turn::{Live, TurnSummary};
