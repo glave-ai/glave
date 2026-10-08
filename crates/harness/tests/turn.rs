@@ -157,7 +157,7 @@ mod scripted {
             approver,
             clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
             entropy: Box::new(Counting(AtomicU64::new(seed))),
-            workspace: Workspace::open(dir).await.unwrap(),
+            workspace: Workspace::open(dir, std::env::vars_os()).await.unwrap(),
         };
         Harness::new(parts, Settings::new("test-model", "script"))
     }

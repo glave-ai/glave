@@ -58,7 +58,7 @@ pub fn main() -> ExitCode {
 async fn run(args: Args) -> anyhow::Result<ExitCode> {
     let endpoint = config::endpoint(args.model.clone())?;
     let provider = OpenAiCompatible::new(endpoint.provider.clone())?;
-    let workspace = Workspace::open(std::env::current_dir()?).await?;
+    let workspace = Workspace::open(std::env::current_dir()?, std::env::vars_os()).await?;
     let store = Store::open(home::database().await?).await?;
     let settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
     let wiring = Wiring {

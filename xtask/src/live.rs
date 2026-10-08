@@ -50,6 +50,9 @@ pub fn run(args: &[String]) -> Result<(), String> {
         model,
         cargo_target: base.join("cargo-target"),
         timeout: Duration::from_secs(300),
+        api_key: std::env::var("GLAVE_API_KEY")
+            .ok()
+            .filter(|key| key.len() >= 8),
     };
     let tasks: Vec<_> = TASKS
         .iter()

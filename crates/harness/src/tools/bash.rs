@@ -44,6 +44,13 @@ pub(crate) async fn bash(workspace: &Workspace, args: BashArgs) -> ToolOutcome {
         .arg("-c")
         .arg(format!("exec 2>&1\n{}", args.command))
         .current_dir(workspace.root())
+        .env_clear()
+        .envs(
+            workspace
+                .environment()
+                .iter()
+                .map(|(name, value)| (name, value)),
+        )
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -183,6 +190,44 @@ impl Captured {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn block_on<F: std::future::Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(future)
+    }
+
+    #[test]
+    fn commands_never_see_secrets() {
+        let dir = std::env::temp_dir().join(format!("glave-bash-env-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut environment: Vec<_> = std::env::vars_os()
+            .filter(|(name, _)| name == "PATH")
+            .collect();
+        environment.push(("GLAVE_API_KEY".into(), "sk-not-a-real-key".into()));
+        environment.push(("PLAIN_SETTING".into(), "visible".into()));
+        let outcome = block_on(async {
+            let workspace = Workspace::open(&dir, environment).await.unwrap();
+            let args = BashArgs {
+                command: "env".into(),
+                timeout_secs: None,
+            };
+            bash(&workspace, args).await
+        });
+        assert!(
+            outcome.text.contains("PLAIN_SETTING=visible"),
+            "{}",
+            outcome.text
+        );
+        assert!(
+            !outcome.text.contains("sk-not-a-real-key"),
+            "{}",
+            outcome.text
+        );
+        assert!(!outcome.text.contains("GLAVE_API_KEY"), "{}", outcome.text);
+    }
 
     #[test]
     fn long_output_keeps_head_and_tail() {
