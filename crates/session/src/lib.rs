@@ -6,6 +6,7 @@ mod approvals;
 mod held;
 mod hub;
 pub mod protocol;
+pub mod rpc;
 mod server;
 mod turn;
 

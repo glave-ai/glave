@@ -93,7 +93,7 @@ A network listener never runs without authentication: there is no "add it later"
 
 ## Status
 
-Version 1 in-process (`glave-session`, used by the CLI): every method but `thread/watch`, whose in-process form is `Server::watch`. Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted. Continuing a paused turn in another process, stdio, and the network transports come next.
+Version 1, in-process (`glave-session`, used by the CLI) and over stdio (`glave serve --stdio`, the same server through `rpc::serve`; one conformance suite runs over both): every method but `thread/watch`, whose in-process form is `Server::watch`. Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted. Continuing a paused turn in another process, and the network transports, come next.
 
 ## Later
 

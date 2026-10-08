@@ -10,6 +10,8 @@ glave: run hope, or any model, on the project in this folder
 Usage:
   glave [options] [prompt...]   run one turn with this prompt
   glave [options]               start a session; each line you type is a turn
+  glave serve --stdio [options] serve the session API (JSON-RPC 2.0, one message per line)
+                                to the program that started glave
 
 Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)
@@ -47,6 +49,8 @@ In a session, /compact summarizes the thread now, and /exit leaves.";
 pub enum Action {
     #[default]
     Run,
+    /// Serve the session API to another program over stdin and stdout.
+    Serve,
     Help,
     Version,
 }
@@ -72,7 +76,10 @@ pub struct Args {
 pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut args = Args::default();
     let mut words = Vec::new();
-    let mut rest = arguments.into_iter();
+    let mut rest = arguments.into_iter().peekable();
+    // `serve` is a subcommand only as the first word; a prompt starting with it goes after `--`.
+    let serving = rest.next_if(|first| first == "serve").is_some();
+    let mut stdio = false;
     while let Some(argument) = rest.next() {
         match argument.as_str() {
             "--model" => args.model = Some(rest.next().ok_or("--model needs a name")?),
@@ -97,6 +104,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
                 })?);
             }
             "--network" => args.network = true,
+            "--stdio" if serving => stdio = true,
             "--continue" | "-c" => args.resume = true,
             "--help" | "-h" => args.action = Action::Help,
             "--version" | "-V" => args.action = Action::Version,
@@ -109,6 +117,17 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
         return Err("--network only applies with --sandbox".into());
     }
     args.prompt = words.join(" ");
+    if serving && args.action == Action::Run {
+        if !stdio {
+            return Err("glave serve needs a transport: --stdio".into());
+        }
+        if !args.prompt.is_empty() || args.resume || args.events.is_some() {
+            return Err(
+                "glave serve takes no prompt, --continue or --events: clients choose".into(),
+            );
+        }
+        args.action = Action::Serve;
+    }
     Ok(args)
 }
 
@@ -138,6 +157,24 @@ mod tests {
         assert!(
             parse_words(&["--network"]).is_err(),
             "network needs a sandbox"
+        );
+    }
+
+    #[test]
+    fn serve_is_a_subcommand_only_as_the_first_word() {
+        let serve = parse_words(&["serve", "--stdio", "--approval", "auto"]).unwrap();
+        assert_eq!(serve.action, Action::Serve);
+        assert_eq!(serve.approval, Some(ApprovalMode::Auto));
+        assert!(parse_words(&["serve"]).unwrap_err().contains("--stdio"));
+        assert!(parse_words(&["serve", "--stdio", "hello"]).is_err());
+        assert!(
+            parse_words(&["--stdio"]).is_err(),
+            "only serve takes --stdio"
+        );
+        let prompt = parse_words(&["--", "serve", "the", "page"]).unwrap();
+        assert_eq!(
+            (prompt.action, prompt.prompt.as_str()),
+            (Action::Run, "serve the page")
         );
     }
 
