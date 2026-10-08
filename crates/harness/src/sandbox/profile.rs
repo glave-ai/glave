@@ -5,7 +5,7 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use super::SandboxLevel;
+use super::{PROTECTED, SandboxLevel};
 
 const BASE: &str = include_str!("base.sbpl");
 const PREFERENCES: &str = include_str!("preferences.sbpl");
@@ -32,22 +32,6 @@ const HOME_SECRETS: &[&str] = &[
     "Library/Application Support/Microsoft Edge",
     "Library/Application Support/Arc",
     "Library/Application Support/Firefox",
-];
-
-/// Inside the project: paths that make code run later. Never writable from the sandbox, even
-/// before they exist.
-const PROTECTED: &[&str] = &[
-    ".git/hooks",
-    ".git/config",
-    ".git/config.worktree",
-    "HEAD",
-    "objects",
-    "refs",
-    ".glave",
-    ".mcp.json",
-    ".vscode",
-    ".idea",
-    ".envrc",
 ];
 
 /// Secret files by name, the rule the read tool uses: env files, unless templates...

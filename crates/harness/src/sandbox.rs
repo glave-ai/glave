@@ -14,6 +14,50 @@ use profile::{Places, profile};
 /// The only `sandbox-exec` trusted: an earlier one in `PATH` could be planted.
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
+/// Inside the project: paths that make code run later, outside the sandbox. Neither commands
+/// nor glave's file tools may change them in a sandbox, even before they exist.
+pub(crate) const PROTECTED: &[&str] = &[
+    ".git/hooks",
+    ".git/config",
+    ".git/config.worktree",
+    "HEAD",
+    "objects",
+    "refs",
+    ".glave",
+    ".mcp.json",
+    ".vscode",
+    ".idea",
+    ".envrc",
+];
+
+/// Whether `path` (resolved) is one of the project's protected paths. Compared without case:
+/// macOS folders usually ignore it, so `.GIT/hooks` is `.git/hooks`.
+pub(crate) fn is_protected(root: &Path, path: &Path) -> bool {
+    let Ok(relative) = path.strip_prefix(root) else {
+        return false;
+    };
+    let relative = PathBuf::from(relative.to_string_lossy().to_lowercase());
+    let parts: Vec<String> = relative
+        .iter()
+        .map(|part| part.to_string_lossy().into_owned())
+        .collect();
+    let nested_git_runs_code = match parts.as_slice() {
+        [git, kind, _, rest @ ..] => {
+            git == ".git"
+                && (kind == "worktrees" || kind == "modules")
+                && rest.first().is_some_and(|part| {
+                    ["hooks", "config", "config.worktree"].contains(&part.as_str())
+                })
+        }
+        _ => false,
+    };
+    relative == Path::new(".git")
+        || nested_git_runs_code
+        || PROTECTED
+            .iter()
+            .any(|protected| relative.starts_with(protected.to_lowercase()))
+}
+
 /// Where sandboxed commands may write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]

@@ -12,7 +12,7 @@ pub(crate) struct WriteArgs {
 }
 
 pub(crate) async fn write(workspace: &Workspace, args: WriteArgs) -> ToolOutcome {
-    let path = match workspace.resolve(&args.path).await {
+    let path = match workspace.resolve_for_change(&args.path).await {
         Ok(path) => path,
         Err(message) => return ToolOutcome::error(message),
     };

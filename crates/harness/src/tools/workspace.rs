@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use glave_event::Sha256;
 use glave_ports::digest;
 
-use crate::sandbox::{Prepared, Sandbox};
+use crate::sandbox::{Prepared, Sandbox, is_protected};
 use crate::secrets::without_secrets;
 
 /// The project folder, the environment and sandbox its commands run with, and what the model
@@ -77,6 +77,14 @@ impl Workspace {
         let mut existing = candidate.as_path();
         let mut tail = Vec::new();
         while !tokio::fs::try_exists(existing).await.unwrap_or(false) {
+            // A link to something that does not exist yet: writing to it would create its
+            // target, wherever that is, so its target cannot be checked here. Refuse it.
+            if tokio::fs::symlink_metadata(existing).await.is_ok() {
+                return Err(format!(
+                    "{path} goes through a link to something that does not exist, so it cannot \
+                     be checked to stay inside the workspace."
+                ));
+            }
             let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
                 return Err(format!("{path} cannot be resolved."));
             };
@@ -105,6 +113,21 @@ impl Workspace {
                 self.root.display()
             ))
         }
+    }
+
+    /// Resolves a path the model wants to change. In a sandbox, paths that make code run later
+    /// (git hooks and config, glave's settings) are refused here too, so the file tools cannot
+    /// do what commands may not. Symlinks are resolved first, so a planted link is caught.
+    pub(crate) async fn resolve_for_change(&self, path: &str) -> Result<PathBuf, String> {
+        let resolved = self.resolve(path).await?;
+        if self.sandbox.is_some() && is_protected(&self.root, &resolved) {
+            return Err(format!(
+                "{} is protected by the sandbox: changing it could make code run later, outside \
+                 the sandbox. Ask the person to change it themselves.",
+                self.show(&resolved)
+            ));
+        }
+        Ok(resolved)
     }
 
     /// The path as the model should see it: relative to the workspace.
@@ -194,6 +217,22 @@ mod tests {
         block_on(async {
             let ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
             assert!(ws.resolve("out/anything").await.is_err());
+        });
+    }
+
+    /// A link whose target does not exist yet looks like a new file inside the project, but
+    /// writing to it would create the target, wherever that is.
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlinks_are_refused() {
+        let dir = scratch("dangling");
+        let outside = std::env::temp_dir().join(format!("glave-ws-escape-{}", std::process::id()));
+        let _ = std::fs::remove_file(&outside);
+        std::os::unix::fs::symlink(&outside, dir.join("escape")).unwrap();
+        block_on(async {
+            let ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
+            assert!(ws.resolve("escape").await.is_err());
+            assert!(ws.resolve("escape/deeper.txt").await.is_err());
         });
     }
 
