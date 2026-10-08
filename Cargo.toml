@@ -38,6 +38,7 @@ allow_attributes_without_reason = "deny"
 
 [workspace.dependencies]
 glave-event = { path = "crates/event" }
+glave-harness = { path = "crates/harness" }
 glave-ports = { path = "crates/ports" }
 glave-provider-openai = { path = "crates/provider-openai" }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
