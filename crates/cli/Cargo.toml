@@ -1,0 +1,27 @@
+[package]
+name = "glave"
+description = "The glave command: run hope, or any model, on your project from the terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "glave"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+getrandom.workspace = true
+glave-event.workspace = true
+glave-harness.workspace = true
+glave-ports.workspace = true
+glave-provider-openai.workspace = true
+jiff.workspace = true
+tokio = { workspace = true, features = ["fs", "rt", "time"] }
+uuid.workspace = true
+
+[lints]
+workspace = true

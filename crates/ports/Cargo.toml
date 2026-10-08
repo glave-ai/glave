@@ -1,0 +1,28 @@
+[package]
+name = "glave-ports"
+description = "glave's ports: the event log, blob store and model provider interfaces, with in-memory implementations and conformance suites"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# Exposes the conformance suites so adapter crates can run them in their own tests.
+conformance = []
+
+[dependencies]
+glave-event.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+jiff.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+
+[lints]
+workspace = true
