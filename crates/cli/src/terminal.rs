@@ -56,20 +56,23 @@ enum Showing {
 pub struct Printer {
     color: bool,
     showing: Showing,
+    /// Who the answers come from: the model's own name, never one it is not.
+    speaker: String,
 }
 
 impl Printer {
-    pub fn new() -> Self {
+    pub fn new(model: &str) -> Self {
         Self {
             color: color_enabled(),
             showing: Showing::Nothing,
+            speaker: speaker(model).to_owned(),
         }
     }
 
     pub fn banner(&self, model: &str, provider: &str, folder: &str, note: &str) {
         println!(
             "{} {}",
-            paint(self.color, GREEN, "hope"),
+            paint(self.color, GREEN, "glave"),
             paint(
                 self.color,
                 DIM,
@@ -91,7 +94,7 @@ impl Printer {
         match live {
             Live::Text(text) => {
                 if self.showing != Showing::Text {
-                    print!("\n{} ", paint(self.color, GREEN, "hope"));
+                    print!("\n{} ", paint(self.color, GREEN, &self.speaker));
                     self.showing = Showing::Text;
                 }
                 print!("{text}");
@@ -201,6 +204,12 @@ impl Approver for AskInTerminal {
     }
 }
 
+/// A model's short name for labeling its answers: `anthropic/claude-haiku-5.5` is
+/// `claude-haiku-5.5`.
+fn speaker(model: &str) -> &str {
+    model.rsplit('/').next().unwrap_or(model)
+}
+
 fn plural(count: u64) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
@@ -239,6 +248,12 @@ fn format_money(money: Money) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn answers_are_labeled_with_the_model_name() {
+        assert_eq!(speaker("anthropic/claude-haiku-5.5"), "claude-haiku-5.5");
+        assert_eq!(speaker("gemma4:12b"), "gemma4:12b");
+    }
 
     #[test]
     fn numbers_and_money_read_well() {
