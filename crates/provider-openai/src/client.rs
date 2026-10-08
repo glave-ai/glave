@@ -22,7 +22,14 @@ pub struct Config {
     pub api_key: Option<String>,
     /// A short name recorded with every response, such as `openrouter` or `ollama`.
     pub provider: String,
+    /// How long the server may send nothing, before or during its answer, before the request
+    /// fails as timed out.
+    pub idle_timeout: Duration,
 }
+
+/// The default idle timeout, as Codex sets it: long enough for a local model to read a long
+/// prompt before its first token.
+pub const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 impl Config {
     /// The endpoint at `base_url`, named after its host: `openrouter`, `openai`, `ollama`,
@@ -44,6 +51,7 @@ impl Config {
             base_url,
             api_key,
             provider,
+            idle_timeout: IDLE_TIMEOUT,
         })
     }
 
@@ -73,12 +81,15 @@ pub struct OpenAiCompatible {
     endpoint: String,
     api_key: Option<String>,
     provider: String,
+    idle_timeout: Duration,
 }
 
 impl OpenAiCompatible {
     pub fn new(config: Config) -> Result<Self, ProviderError> {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
+            // Each read may wait this long: for the first token, and between the rest.
+            .read_timeout(config.idle_timeout)
             .build()
             .map_err(|e| ProviderError::Transport(e.to_string()))?;
         Ok(Self {
@@ -86,6 +97,7 @@ impl OpenAiCompatible {
             endpoint: format!("{}/chat/completions", config.base_url.trim_end_matches('/')),
             api_key: config.api_key,
             provider: config.provider,
+            idle_timeout: config.idle_timeout,
         })
     }
 }
@@ -107,7 +119,7 @@ impl ModelProvider for OpenAiCompatible {
         if let Some(key) = &self.api_key {
             call = call.bearer_auth(key);
         }
-        let mut response = call.send().await.map_err(transport)?;
+        let mut response = call.send().await.map_err(|e| self.failed(e))?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
@@ -118,7 +130,7 @@ impl ModelProvider for OpenAiCompatible {
         }
         let mut decoder = SseDecoder::default();
         let mut assembler = Assembler::new(&self.provider, &request.model);
-        'stream: while let Some(bytes) = response.chunk().await.map_err(transport)? {
+        'stream: while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
             for data in decoder.push(&bytes)? {
                 if data == "[DONE]" {
                     break 'stream;
@@ -133,8 +145,17 @@ impl ModelProvider for OpenAiCompatible {
     }
 }
 
-fn transport(error: reqwest::Error) -> ProviderError {
-    ProviderError::Transport(error.without_url().to_string())
+impl OpenAiCompatible {
+    /// What a failed request means: a silence past the idle timeout, or a broken connection.
+    fn failed(&self, error: reqwest::Error) -> ProviderError {
+        if error.is_timeout() {
+            ProviderError::Timeout {
+                seconds: self.idle_timeout.as_secs(),
+            }
+        } else {
+            ProviderError::Transport(error.without_url().to_string())
+        }
+    }
 }
 
 #[cfg(test)]

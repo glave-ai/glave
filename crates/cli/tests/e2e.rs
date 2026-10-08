@@ -1,81 +1,19 @@
-//! The real `glave` binary, end to end, against a fake model server on 127.0.0.1: what a person
-//! runs, what they see, what reaches the model, and what lands on disk.
+//! The real `glave` binary, end to end, against a fake model server on 127.0.0.1: one-shot
+//! runs, what a person sees, what reaches the model, and what lands on disk.
+
+#[cfg(test)]
+#[path = "support/binary.rs"]
+mod support;
 
 #[cfg(test)]
 mod glave_binary {
-    use std::io::Write as _;
-    use std::path::{Path, PathBuf};
-    use std::process::{Command, Output, Stdio};
+    use std::path::Path;
+    use std::process::Command;
 
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::{Value, json};
 
-    /// A project folder and a glave home for one test, inside the system temp folder.
-    struct Place {
-        project: PathBuf,
-        home: PathBuf,
-    }
-
-    fn place(name: &str) -> Place {
-        let dir = std::env::temp_dir().join(format!("glave-e2e-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let project = dir.join("project");
-        std::fs::create_dir_all(&project).unwrap();
-        std::fs::write(project.join("README.md"), "# demo\n").unwrap();
-        Place {
-            project,
-            home: dir.join("home"),
-        }
-    }
-
-    /// `glave` with `args`, talking only to `server`, with nothing from the person's own setup.
-    fn glave(place: &Place, server: &FakeServer, args: &[&str], stdin: &str) -> Output {
-        let mut child = start(place, server, args);
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(stdin.as_bytes())
-            .unwrap();
-        child.wait_with_output().unwrap()
-    }
-
-    /// `glave` started with `args`, still running.
-    fn start(place: &Place, server: &FakeServer, args: &[&str]) -> std::process::Child {
-        Command::new(env!("CARGO_BIN_EXE_glave"))
-            .args(args)
-            .current_dir(&place.project)
-            .env("GLAVE_BASE_URL", server.url())
-            .env("GLAVE_HOME", &place.home)
-            .env("GLAVE_API_KEY", "sk-e2e-test")
-            .env("NO_COLOR", "1")
-            .env_remove("GLAVE_MODEL")
-            .env_remove("GLAVE_PROVIDER")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap()
-    }
-
-    fn text(output: &Output) -> String {
-        format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        )
-    }
-
-    /// The text of every message of `role` in a request the model received.
-    fn said(body: &Value, role: &str) -> Vec<String> {
-        body["messages"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|message| message["role"] == role)
-            .map(|message| message["content"].to_string())
-            .collect()
-    }
+    use super::support::*;
 
     #[test]
     fn a_one_shot_question_gets_an_answer_and_a_receipt() {
@@ -106,79 +44,6 @@ mod glave_binary {
         assert_eq!(
             received[0].authorization.as_deref(),
             Some("Bearer sk-e2e-test")
-        );
-    }
-
-    #[test]
-    fn agents_md_from_the_project_and_the_person_reaches_the_model() {
-        let place = place("agents-md");
-        std::fs::write(place.project.join("AGENTS.md"), "Run make check.\n").unwrap();
-        std::fs::create_dir_all(&place.home).unwrap();
-        std::fs::write(place.home.join("AGENTS.md"), "Answer briefly.\n").unwrap();
-        let server = FakeServer::start(vec![Reply::text("Hi.")]).unwrap();
-        let output = glave(&place, &server, &["--model", "m"], "hello\n/exit\n");
-        let shown = text(&output);
-        assert!(output.status.success(), "{shown}");
-        assert!(
-            shown.contains("following ") && shown.contains("AGENTS.md"),
-            "the banner names the files: {shown}"
-        );
-        let first = said(&server.received()[0].body, "user").join("\n");
-        let order = [
-            "# AGENTS.md instructions",
-            "Answer briefly.",
-            "Run make check.",
-            "hello",
-        ]
-        .map(|text| first.find(text).unwrap_or(usize::MAX));
-        assert!(
-            order.windows(2).all(|pair| pair[0] < pair[1]),
-            "the person's file, then the project's, then the prompt: {first}"
-        );
-        assert!(!said(&server.received()[0].body, "system")[0].contains("Run make check."));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn ctrl_c_cancels_the_turn_and_the_thread_carries_on() {
-        let place = place("ctrl-c");
-        let server = FakeServer::start(vec![Reply::Stall, Reply::text("Still here.")]).unwrap();
-        let events = place.project.join("../events.jsonl");
-        let events_arg = events.to_string_lossy().into_owned();
-        let child = start(
-            &place,
-            &server,
-            &["--model", "m", "--events", &events_arg, "think hard"],
-        );
-        assert!(
-            server.wait_for_requests(1, std::time::Duration::from_secs(30)),
-            "the model was asked"
-        );
-        let sent = Command::new("kill")
-            .args(["-INT", &child.id().to_string()])
-            .status()
-            .unwrap();
-        assert!(sent.success());
-        let output = child.wait_with_output().unwrap();
-        let shown = text(&output);
-        assert_eq!(output.status.code(), Some(130), "{shown}");
-        assert!(shown.contains("cancelled"), "{shown}");
-        let recorded = std::fs::read_to_string(&events).unwrap();
-        assert!(recorded.contains("\"outcome\":\"cancelled\""), "{recorded}");
-
-        let output = glave(
-            &place,
-            &server,
-            &["--model", "m", "--continue", "are you there?"],
-            "",
-        );
-        let shown = text(&output);
-        assert!(output.status.success(), "{shown}");
-        assert!(shown.contains("Still here."), "{shown}");
-        let asked = said(&server.received()[1].body, "user").join("\n");
-        assert!(
-            asked.contains("think hard") && asked.contains("cancelled this turn"),
-            "the next turn knows the last was cancelled: {asked}"
         );
     }
 
@@ -314,79 +179,6 @@ mod glave_binary {
     }
 
     #[test]
-    fn continue_picks_up_the_last_thread_and_a_new_run_starts_fresh() {
-        let place = place("continue");
-        let server = FakeServer::start(vec![
-            Reply::text("Noted: marigold."),
-            Reply::text("It was marigold."),
-            Reply::text("Hello."),
-        ])
-        .unwrap();
-        let first = glave(&place, &server, &["--model", "m", "remember marigold"], "");
-        assert!(first.status.success(), "{}", text(&first));
-        let second = glave(&place, &server, &["--model", "m", "-c", "what word?"], "");
-        assert!(second.status.success(), "{}", text(&second));
-        let third = glave(&place, &server, &["--model", "m", "hi"], "");
-        assert!(third.status.success(), "{}", text(&third));
-        let received = server.received();
-        let resumed = &received[1].body;
-        assert!(said(resumed, "user")[0].contains("remember marigold"));
-        assert!(said(resumed, "assistant")[0].contains("Noted: marigold."));
-        assert!(said(resumed, "user")[1].contains("what word?"));
-        let fresh = &received[2].body;
-        assert_eq!(said(fresh, "user").len(), 1, "a new thread: {fresh}");
-    }
-
-    #[test]
-    fn an_interactive_session_reads_lines_until_exit() {
-        let place = place("interactive");
-        let server = FakeServer::start(vec![Reply::text("Hi there.")]).unwrap();
-        let output = glave(
-            &place,
-            &server,
-            &["--model", "fake-model"],
-            "hello\n/exit\n",
-        );
-        let shown = text(&output);
-        assert!(output.status.success(), "{shown}");
-        assert!(
-            shown.contains("glave · fake-model via local ·"),
-            "the banner names the model and where it is served: {shown}"
-        );
-        assert!(shown.contains("Hi there."), "{shown}");
-        assert_eq!(server.received().len(), 1);
-    }
-
-    #[test]
-    fn slash_compact_summarizes_the_session() {
-        let place = place("compact");
-        let server = FakeServer::start(vec![
-            Reply::text("Hi there."),
-            Reply::text("We greeted each other."),
-            Reply::text("You said hello."),
-        ])
-        .unwrap();
-        let output = glave(
-            &place,
-            &server,
-            &["--model", "m"],
-            "hello\n/compact\nwhat did I say?\n/exit\n",
-        );
-        let shown = text(&output);
-        assert!(output.status.success(), "{shown}");
-        assert!(
-            shown.contains("compacted the conversation to fit"),
-            "{shown}"
-        );
-        let after = &server.received()[2].body;
-        let user = said(after, "user");
-        // One message, as strict chat templates need: the summary, then the new question.
-        assert_eq!(user.len(), 1, "{after}");
-        let (_, later) = user[0].split_once("We greeted each other.").unwrap();
-        assert!(later.contains("what did I say?"), "{after}");
-    }
-
-    #[test]
     fn a_refused_key_fails_the_run_and_says_why() {
         let place = place("refused");
         let server = FakeServer::start(vec![Reply::Status(
@@ -399,6 +191,44 @@ mod glave_binary {
         let shown = text(&output);
         assert!(shown.contains("401"), "{shown}");
         assert!(shown.contains("Missing Authentication header"), "{shown}");
+    }
+
+    #[test]
+    fn a_failure_that_may_pass_is_retried_and_shown() {
+        let place = place("retry");
+        let server = FakeServer::start(vec![
+            Reply::Status(503, r#"{"error":{"message":"overloaded"}}"#.into()),
+            Reply::text("Answered after all."),
+        ])
+        .unwrap();
+        let output = glave(&place, &server, &["--model", "m", "hi"], "");
+        let shown = text(&output);
+        assert!(output.status.success(), "{shown}");
+        assert!(shown.contains("retrying"), "{shown}");
+        assert!(shown.contains("(1 of 4)"), "{shown}");
+        assert!(shown.contains("Answered after all."), "{shown}");
+        assert_eq!(server.received().len(), 2);
+    }
+
+    #[test]
+    fn a_bad_idle_timeout_is_refused_before_anything_runs() {
+        let place = place("idle");
+        let server = FakeServer::start(Vec::new()).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_glave"))
+            .args(["--model", "m", "hi"])
+            .current_dir(&place.project)
+            .env("GLAVE_BASE_URL", server.url())
+            .env("GLAVE_HOME", &place.home)
+            .env("GLAVE_IDLE_TIMEOUT", "soon")
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(
+            text(&output).contains("GLAVE_IDLE_TIMEOUT must be a number of seconds"),
+            "{}",
+            text(&output)
+        );
+        assert!(server.received().is_empty());
     }
 
     #[test]

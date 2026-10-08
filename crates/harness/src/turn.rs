@@ -8,6 +8,8 @@ use glave_ports::{
     BlobStore, Completion, Delta, EventLog, Message, ModelProvider, ModelRequest, ToolCall,
     ToolSpec,
 };
+use std::time::Duration;
+
 use serde::Serialize;
 
 use crate::approval::{ApprovalMode, Approver};
@@ -47,6 +49,15 @@ pub enum Live {
     },
     /// A needed compaction failed; the turn goes on without it.
     CompactionFailed(String),
+    /// The model was asked, and nothing has come back yet.
+    Waiting,
+    /// A model call failed in a way that may pass, and is tried again after `wait`.
+    Retrying {
+        retry: u32,
+        of: u32,
+        wait: Duration,
+        error: String,
+    },
 }
 
 /// What a turn did and what it cost.
@@ -245,11 +256,30 @@ where
             tools: tools.to_vec(),
             max_output_tokens: self.settings.max_output_tokens,
         };
-        let mut forward = |delta: Delta| match delta {
-            Delta::Text(text) => live(Live::Text(text)),
-            Delta::Reasoning(text) => live(Live::Reasoning(text)),
-        };
-        Ok(self.provider.complete(&request, &mut forward).await?)
+        let retries = self.settings.retries;
+        let mut retry = 0;
+        loop {
+            live(Live::Waiting);
+            let mut forward = |delta: Delta| match delta {
+                Delta::Text(text) => live(Live::Text(text)),
+                Delta::Reasoning(text) => live(Live::Reasoning(text)),
+            };
+            match self.provider.complete(&request, &mut forward).await {
+                Ok(completion) => return Ok(completion),
+                Err(error) if error.is_transient() && retry < retries.attempts => {
+                    retry += 1;
+                    let wait = retries.wait(retry, self.entropy.bytes());
+                    live(Live::Retrying {
+                        retry,
+                        of: retries.attempts,
+                        wait,
+                        error: error.to_string(),
+                    });
+                    tokio::time::sleep(wait).await;
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
     }
 
     /// Records `turn.ended`.

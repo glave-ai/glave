@@ -1,5 +1,7 @@
 //! Where the model is, from the environment. Keys come only from the environment, never files.
 
+use std::time::Duration;
+
 use anyhow::{Context as _, bail};
 use glave_provider_openai::Config;
 
@@ -34,6 +36,20 @@ pub fn endpoint(model_flag: Option<String>) -> anyhow::Result<Endpoint> {
         provider,
         model,
     })
+}
+
+/// How long the model may send nothing, from `GLAVE_IDLE_TIMEOUT` in seconds, when it is set.
+pub fn idle_timeout() -> anyhow::Result<Option<Duration>> {
+    match std::env::var("GLAVE_IDLE_TIMEOUT") {
+        Ok(text) => {
+            let seconds: u64 = text.trim().parse().with_context(|| {
+                format!("GLAVE_IDLE_TIMEOUT must be a number of seconds, not {text:?}")
+            })?;
+            anyhow::ensure!(seconds >= 1, "GLAVE_IDLE_TIMEOUT must be at least 1 second");
+            Ok(Some(Duration::from_secs(seconds)))
+        }
+        Err(_) => Ok(None),
+    }
 }
 
 /// The model's context window from `GLAVE_CONTEXT_WINDOW`, in tokens, when it is set.

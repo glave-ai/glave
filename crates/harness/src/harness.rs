@@ -15,6 +15,7 @@ use crate::approval::{ApprovalMode, Approver};
 use crate::compaction::{Compaction, Measured};
 use crate::env::{Clock, Entropy};
 use crate::prompt::system_prompt;
+use crate::retry::Retries;
 use crate::tools::{Tool, workspace::Workspace};
 
 /// How the harness runs.
@@ -32,6 +33,8 @@ pub struct Settings {
     pub approval: ApprovalMode,
     /// When to summarize a thread to keep it within the model's context window.
     pub compaction: Compaction,
+    /// How a model call that fails in a way that may pass is tried again.
+    pub retries: Retries,
     /// Model calls allowed in one turn before it stops.
     pub max_steps: u32,
     pub max_output_tokens: Option<u32>,
@@ -49,6 +52,7 @@ impl Settings {
             provider,
             approval: ApprovalMode::default(),
             compaction: Compaction::default(),
+            retries: Retries::default(),
             max_steps: 50,
             max_output_tokens: None,
         }

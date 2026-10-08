@@ -107,4 +107,39 @@ pub enum ProviderError {
     /// The provider's response did not follow its own protocol.
     #[error("the model provider sent a malformed response: {0}")]
     Protocol(String),
+    /// The provider sent nothing for this long, before or during its answer.
+    #[error("the model provider sent nothing for {seconds} s")]
+    Timeout { seconds: u64 },
+}
+
+impl ProviderError {
+    /// Whether trying again may work: a rate limit, a server error, a broken connection or a
+    /// silence. A refused key, an unknown model or a malformed answer fails the same way again.
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::Http { status, .. } => *status == 429 || (500..=599).contains(status),
+            Self::Transport(_) | Self::Timeout { .. } => true,
+            Self::Protocol(_) => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_failures_that_may_pass_next_time_are_transient() {
+        let http = |status| ProviderError::Http {
+            status,
+            body: String::new(),
+        };
+        assert!(http(429).is_transient(), "rate limited");
+        assert!(http(500).is_transient() && http(503).is_transient());
+        assert!(ProviderError::Transport("reset".into()).is_transient());
+        assert!(ProviderError::Timeout { seconds: 300 }.is_transient());
+        assert!(!http(401).is_transient(), "a refused key stays refused");
+        assert!(!http(404).is_transient(), "an unknown model stays unknown");
+        assert!(!ProviderError::Protocol("bad json".into()).is_transient());
+    }
 }

@@ -35,7 +35,8 @@ impl ModelProvider for Script {
         if let Some(Part::Text { text }) = next.as_ref().and_then(|c| c.parts.first()) {
             on_delta(Delta::Text(text.clone()));
         }
-        ready(next.ok_or_else(|| ProviderError::Transport("script exhausted".into())))
+        // Not a transient error, so a test that runs out never waits through retries.
+        ready(next.ok_or_else(|| ProviderError::Protocol("script exhausted".into())))
     }
 }
 

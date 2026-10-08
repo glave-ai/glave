@@ -9,19 +9,20 @@ use glave_event::{Currency, Money, Outcome};
 use glave_harness::{ApprovalRequest, Approver, Decision, Live, TurnSummary};
 
 use crate::input::Input;
+use crate::waiting::Waiting;
 
 const GREEN: &str = "\x1b[32m";
 const CYAN: &str = "\x1b[36m";
 const YELLOW: &str = "\x1b[33m";
 const RED: &str = "\x1b[31m";
-const DIM: &str = "\x1b[2m";
+pub const DIM: &str = "\x1b[2m";
 const RESET: &str = "\x1b[0m";
 
 fn color_enabled() -> bool {
     std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
 }
 
-fn paint(color: bool, code: &str, text: &str) -> String {
+pub fn paint(color: bool, code: &str, text: &str) -> String {
     if color {
         format!("{code}{text}{RESET}")
     } else {
@@ -29,7 +30,7 @@ fn paint(color: bool, code: &str, text: &str) -> String {
     }
 }
 
-fn flush() {
+pub fn flush() {
     let _ = std::io::stdout().flush();
 }
 
@@ -48,16 +49,26 @@ pub struct Printer {
     speaker: String,
     /// The protections in force, such as `approval: edits · sandbox: project`.
     protections: String,
+    waiting: Waiting,
 }
 
 impl Printer {
     pub fn new(model: &str, protections: String) -> Self {
+        let color = color_enabled();
+        let speaker = speaker(model).to_owned();
         Self {
-            color: color_enabled(),
+            color,
             showing: Showing::Nothing,
-            speaker: speaker(model).to_owned(),
+            waiting: Waiting::new(color, &speaker),
+            speaker,
             protections,
         }
+    }
+
+    /// The line that counts the seconds while the model has not answered, for a clock to
+    /// update.
+    pub fn waiting(&self) -> Waiting {
+        self.waiting.clone()
     }
 
     pub fn banner(&self, model: &str, provider: &str, folder: &str, note: &str) {
@@ -85,7 +96,19 @@ impl Printer {
     }
 
     pub fn live(&mut self, live: Live) {
+        self.waiting.stop();
         match live {
+            Live::Waiting => self.waiting.start(),
+            Live::Retrying {
+                retry,
+                of,
+                wait,
+                error,
+            } => {
+                let error: String = error.chars().take(ERROR_CHARS).collect();
+                let detail = format!("· {error}; again in {} s ({retry} of {of})", wait.as_secs());
+                self.note(YELLOW, "retrying", &detail);
+            }
             Live::Text(text) => {
                 if self.showing != Showing::Text {
                     print!("\n{} ", paint(self.color, GREEN, &self.speaker));
@@ -126,28 +149,15 @@ impl Printer {
                 before_tokens,
                 after_tokens,
             } => {
-                println!();
-                println!(
-                    "  {}",
-                    paint(
-                        self.color,
-                        DIM,
-                        &format!(
-                            "compacted the conversation to fit: ~{} → ~{} tokens",
-                            thousands(before_tokens),
-                            thousands(after_tokens)
-                        )
-                    )
+                let detail = format!(
+                    "the conversation to fit: ~{} → ~{} tokens",
+                    thousands(before_tokens),
+                    thousands(after_tokens)
                 );
-                self.showing = Showing::Nothing;
+                self.note(DIM, "compacted", &detail);
             }
             Live::CompactionFailed(error) => {
-                println!();
-                println!(
-                    "  {} {error}",
-                    paint(self.color, YELLOW, "could not compact the conversation:")
-                );
-                self.showing = Showing::Nothing;
+                self.note(YELLOW, "could not compact the conversation:", &error);
             }
             Live::ToolFinished { is_error, .. } => {
                 if is_error {
@@ -160,8 +170,20 @@ impl Printer {
         flush();
     }
 
+    /// A line of its own about the turn: a word in `color`, then dim detail.
+    fn note(&mut self, color: &str, word: &str, detail: &str) {
+        println!();
+        println!(
+            "  {} {}",
+            paint(self.color, color, word),
+            paint(self.color, DIM, detail)
+        );
+        self.showing = Showing::Nothing;
+    }
+
     /// The receipt that closes a turn: what happened and what it cost.
     pub fn receipt(&mut self, summary: &TurnSummary, local: bool) {
+        self.waiting.stop();
         let (word, color) = match summary.outcome {
             Outcome::Completed => ("done", CYAN),
             Outcome::LimitReached => ("stopped at a limit", YELLOW),
@@ -202,11 +224,15 @@ impl Printer {
     }
 
     pub fn error(&mut self, message: &str) {
+        self.waiting.stop();
         println!("\n\n{} {message}", paint(self.color, RED, "error"));
         self.showing = Showing::Nothing;
         flush();
     }
 }
+
+/// The most of an error shown on a retry line.
+const ERROR_CHARS: usize = 200;
 
 /// Asks the person in the terminal before anything changes.
 pub struct AskInTerminal {

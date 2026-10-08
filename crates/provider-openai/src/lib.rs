@@ -12,4 +12,4 @@ pub mod fake;
 mod sse;
 mod wire;
 
-pub use client::{Config, OpenAiCompatible};
+pub use client::{Config, IDLE_TIMEOUT, OpenAiCompatible};

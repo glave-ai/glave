@@ -6,7 +6,7 @@ mod over_http {
     use glave_event::{Arguments, Part, StopReason};
     use glave_ports::{Message, ModelProvider, ModelRequest, ProviderError};
     use glave_provider_openai::fake::{FakeServer, Reply};
-    use glave_provider_openai::{Config, OpenAiCompatible};
+    use glave_provider_openai::{Config, IDLE_TIMEOUT, OpenAiCompatible};
     use serde_json::json;
 
     fn block_on<F: std::future::Future>(future: F) -> F::Output {
@@ -22,6 +22,7 @@ mod over_http {
             base_url: base_url.to_owned(),
             api_key: key.map(str::to_owned),
             provider: "fake".into(),
+            idle_timeout: IDLE_TIMEOUT,
         })
         .unwrap()
     }
@@ -74,12 +75,28 @@ mod over_http {
     }
 
     #[test]
+    fn a_server_that_sends_nothing_times_out() {
+        let server = FakeServer::start(vec![Reply::Stall]).unwrap();
+        let quick = OpenAiCompatible::new(Config {
+            base_url: server.url().to_owned(),
+            api_key: None,
+            provider: "fake".into(),
+            idle_timeout: std::time::Duration::from_millis(200),
+        })
+        .unwrap();
+        let error = block_on(quick.complete(&request(), &mut |_| {})).unwrap_err();
+        assert_eq!(error, ProviderError::Timeout { seconds: 0 });
+        assert!(error.is_transient(), "a silence is worth one more try");
+    }
+
+    #[test]
     fn anthropic_models_through_openrouter_ask_for_caching() {
         let server = FakeServer::start(vec![Reply::text("ok"), Reply::text("ok")]).unwrap();
         let openrouter = OpenAiCompatible::new(Config {
             base_url: server.url().to_owned(),
             api_key: None,
             provider: "openrouter".into(),
+            idle_timeout: IDLE_TIMEOUT,
         })
         .unwrap();
         let mut anthropic = request();
