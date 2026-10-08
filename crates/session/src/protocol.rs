@@ -194,6 +194,16 @@ pub enum Update {
         question: CallId,
         questions: Vec<Question>,
     },
+    /// A child thread started on a task; its notifications follow under its own thread.
+    TaskStarted {
+        task: ThreadId,
+        description: String,
+    },
+    /// A child's task is over; `ok` when it finished its work.
+    TaskEnded {
+        task: ThreadId,
+        ok: bool,
+    },
 }
 
 impl From<Live> for Update {
@@ -234,6 +244,16 @@ impl From<Live> for Update {
                 question: call_id,
                 questions,
             },
+            Live::TaskStarted {
+                thread,
+                description,
+            } => Self::TaskStarted {
+                task: thread,
+                description,
+            },
+            Live::TaskEnded { thread, ok } => Self::TaskEnded { task: thread, ok },
+            // Published under the child's thread; see `Server::start_turn`.
+            Live::Child { update, .. } => Self::from(*update),
         }
     }
 }

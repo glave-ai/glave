@@ -45,7 +45,9 @@ Two kinds, sent while a turn runs or a client watches:
 | Method | Params | Kept |
 | --- | --- | --- |
 | `thread/event` | `thread`; `event`, a stored event with its `seq` | Yes: it is in the log, and `thread/events` returns it again |
-| `turn/live` | `thread`; `update`: `text` or `reasoning` (a fragment), `tool_started`, `tool_finished`, `waiting`, `retrying`, `compacted`, `asked` | No: live updates are for showing progress, never replayed |
+| `turn/live` | `thread`; `update`: `text` or `reasoning` (a fragment), `tool_started`, `tool_finished`, `waiting`, `retrying`, `compacted`, `asked`, `task_started` (`task`, `description`), `task_ended` (`task`, `ok`) | No: live updates are for showing progress, never replayed |
+
+A thread's notifications include its running tasks': a child thread started by a `task` call sends its events and progress to whoever follows its parent too, each under the child's own `thread`. Its first event, `thread.started`, names the parent call, and `task_started` gives the task's description. A client answers a child's approval with the child's thread.
 
 A client that only shows the conversation needs `thread/event` alone. Rebuilding a thread from `thread/events` and then following `thread/watch` gives exactly the same state as having watched from the start.
 

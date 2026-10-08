@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use glave_event::{
-    At, EncodeError, EventId, Header, InvalidValue, Part, Payload, Producer, RawEvent, Seq,
-    ThreadId, ThreadStarted, encode,
+    At, EncodeError, EventId, Header, InvalidValue, ParentCall, Part, Payload, Producer, RawEvent,
+    Seq, ThreadId, ThreadStarted, encode,
 };
 use glave_ports::{
     BlobError, BlobStore, EventLog, LogError, Message, ModelProvider, ProviderError, Scope,
@@ -43,6 +43,8 @@ pub struct Settings {
     /// Model calls allowed in one turn before it stops.
     pub max_steps: u32,
     pub max_output_tokens: Option<u32>,
+    /// Whether the model may hand work to child threads with `task`.
+    pub tasks: bool,
 }
 
 impl Settings {
@@ -60,6 +62,7 @@ impl Settings {
             retries: Retries::default(),
             max_steps: 50,
             max_output_tokens: None,
+            tasks: false,
         }
     }
 }
@@ -182,6 +185,9 @@ where
         if self.approver.can_answer() {
             set.offer_ask();
         }
+        if self.settings.tasks {
+            set.offer_task();
+        }
         set
     }
 
@@ -201,6 +207,15 @@ where
 
     /// Starts a new thread in `scope` and records `thread.started`.
     pub async fn start_thread(&self, scope: Scope) -> Result<Thread, HarnessError> {
+        self.start_thread_from(scope, None).await
+    }
+
+    /// Starts a thread, recording the call in another thread that started it, if one did.
+    pub(crate) async fn start_thread_from(
+        &self,
+        scope: Scope,
+        parent: Option<ParentCall>,
+    ) -> Result<Thread, HarnessError> {
         let id = ThreadId::new(self.clock.now(), self.entropy.bytes())?;
         let mut thread = Thread {
             scope,
@@ -222,6 +237,7 @@ where
             &ThreadStarted {
                 producer,
                 fork: None,
+                parent,
             },
         )?;
         self.commit(&mut thread, events).await?;

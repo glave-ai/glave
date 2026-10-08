@@ -25,6 +25,7 @@ pub trait Payload: Serialize + DeserializeOwned {
 /// example in `fixtures/<type>/v<version>.json`; the fixture tests fail if one is missing.
 pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (thread::TYPE, 1),
+    (thread::TYPE, 2),
     (thread::COMPACTED, 1),
     (turn::STARTED, 1),
     (message::TYPE, 1),
@@ -224,6 +225,7 @@ mod tests {
                 version: "0.0.0".into(),
             },
             fork: None,
+            parent: None,
         };
         let raw = encode(header(), &payload).unwrap();
         assert_eq!(raw.kind.as_str(), "thread.started");

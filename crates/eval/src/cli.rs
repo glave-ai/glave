@@ -34,7 +34,8 @@ options:
   --max-cost <dollars> start nothing new once this much is spent (default 2)
   --baseline <file>    an earlier report.json to compare with
   --tasks <folder>     where the tasks are (default evals/tasks)
-  --todo               offer the model the todo list";
+  --todo               offer the model the todo list
+  --subagents          let the model hand work to child threads with task";
 
 /// The parsed command line.
 #[derive(Debug, PartialEq)]
@@ -48,6 +49,7 @@ struct Options {
     baseline: Option<PathBuf>,
     tasks: PathBuf,
     todo: bool,
+    subagents: bool,
 }
 
 pub fn main() -> ExitCode {
@@ -89,6 +91,7 @@ fn run(options: &Options) -> Result<bool, String> {
         endpoint,
         environment: std::env::vars_os().collect(),
         todo: options.todo,
+        subagents: options.subagents,
     });
     let attempts = options
         .repeat
@@ -217,6 +220,7 @@ fn options(args: &[String]) -> Result<Options, String> {
         baseline: None,
         tasks: PathBuf::from("evals/tasks"),
         todo: false,
+        subagents: false,
     };
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -245,6 +249,7 @@ fn options(args: &[String]) -> Result<Options, String> {
             "--baseline" => options.baseline = Some(PathBuf::from(value()?)),
             "--tasks" => options.tasks = PathBuf::from(value()?),
             "--todo" => options.todo = true,
+            "--subagents" => options.subagents = true,
             other => return Err(format!("unknown option {other}\n{USAGE}")),
         }
     }
@@ -319,6 +324,7 @@ mod tests {
             "--tasks",
             "t",
             "--todo",
+            "--subagents",
         ])
         .unwrap();
         assert_eq!(
@@ -333,6 +339,7 @@ mod tests {
                 baseline: Some("old.json".into()),
                 tasks: "t".into(),
                 todo: true,
+                subagents: true,
             }
         );
     }

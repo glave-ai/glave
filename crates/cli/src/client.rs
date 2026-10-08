@@ -99,6 +99,10 @@ impl Client<'_> {
     /// person pressed Ctrl-C instead of answering.
     async fn note(&self, note: &Notification, printer: &mut Printer, interrupt: &Cancel) -> bool {
         match note {
+            Notification::Live { thread, update } if *thread != self.thread => {
+                printer.child(*thread, update.clone());
+                false
+            }
             Notification::Live {
                 update:
                     Update::Asked {
@@ -111,7 +115,7 @@ impl Client<'_> {
                 printer.update(update.clone());
                 false
             }
-            Notification::Event { event, .. } => {
+            Notification::Event { thread, event } => {
                 let Ok(decoded) = decode(event.clone()) else {
                     return false;
                 };
@@ -121,7 +125,8 @@ impl Client<'_> {
                 if !self.asks {
                     return false;
                 }
-                printer.approval(&asked.summary);
+                // A task's child asks under its own thread.
+                printer.approval(&printer.labeled(*thread, &asked.summary));
                 let Some(line) = interrupt.run(self.input.line()).await else {
                     return true;
                 };
@@ -134,7 +139,7 @@ impl Client<'_> {
                     _ => Answer::Deny,
                 };
                 let decide = Request::ApprovalDecide {
-                    thread: self.thread,
+                    thread: *thread,
                     approval: asked.call_id,
                     decision,
                 };

@@ -49,6 +49,7 @@ mod attempts {
             endpoint: Config::for_url(server.url(), Some(KEY.to_owned())).unwrap(),
             environment,
             todo: false,
+            subagents: false,
         }
     }
 

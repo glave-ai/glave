@@ -1,11 +1,12 @@
 //! What the person sees in the terminal: the answer as it streams, approval prompts, and the
 //! receipt that closes each turn. Every status starts with a word; color only reinforces it.
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{IsTerminal as _, Write as _};
 use std::time::Duration;
 
-use glave_event::{Currency, Money, Outcome};
+use glave_event::{Currency, Money, Outcome, ThreadId};
 use glave_harness::Question;
 use glave_session::protocol::{TurnResult, Update};
 
@@ -50,6 +51,8 @@ pub struct Printer {
     /// The protections in force, such as `approval: edits · sandbox: project`.
     protections: String,
     waiting: Waiting,
+    /// The tasks running now, by their child thread, with what each is for.
+    tasks: HashMap<ThreadId, String>,
 }
 
 impl Printer {
@@ -60,6 +63,7 @@ impl Printer {
             color,
             showing: Showing::Nothing,
             waiting: Waiting::new(color, &speaker),
+            tasks: HashMap::new(),
             speaker,
             protections,
         }
@@ -162,6 +166,7 @@ impl Printer {
             }
             // Shown by the client, which answers it.
             Update::Asked { .. } => {}
+            Update::TaskStarted { .. } | Update::TaskEnded { .. } => self.task(update),
             Update::ToolFinished { is_error, .. } => {
                 if is_error {
                     println!("{}", paint(self.color, RED, "error"));
@@ -235,6 +240,73 @@ impl Printer {
         );
         self.showing = Showing::Nothing;
         flush();
+    }
+
+    /// A task starting or ending.
+    fn task(&mut self, update: Update) {
+        match update {
+            Update::TaskStarted { task, description } => {
+                println!();
+                println!("  {} {description}", paint(self.color, CYAN, "task"));
+                self.tasks.insert(task, description);
+            }
+            Update::TaskEnded { task, ok } => {
+                let description = self.tasks.remove(&task).unwrap_or_default();
+                let (color, word) = if ok {
+                    (CYAN, "task done")
+                } else {
+                    (RED, "task failed")
+                };
+                println!("  {} {description}", paint(self.color, color, word));
+            }
+            _ => {}
+        }
+        self.showing = Showing::Nothing;
+    }
+
+    /// What a task's child did, one finished step per line under the task's name. Its words
+    /// go to the parent, not here.
+    pub fn child(&mut self, task: ThreadId, update: Update) {
+        let Some(label) = self.tasks.get(&task) else {
+            return;
+        };
+        let step = match update {
+            Update::ToolFinished { summary, is_error } => {
+                format!("{summary} · {}", if is_error { "error" } else { "done" })
+            }
+            Update::ToolDeclined {
+                summary,
+                no_one_there,
+            } => {
+                let why = if no_one_there {
+                    "not run: no one here to approve it"
+                } else {
+                    "declined"
+                };
+                format!("{summary} · {why}")
+            }
+            Update::Retrying { retry, of, .. } => format!("retrying ({retry} of {of})"),
+            Update::Compacted { .. } => "compacted its conversation".to_owned(),
+            _ => return,
+        };
+        self.waiting.stop();
+        if self.showing != Showing::Nothing {
+            println!();
+        }
+        println!(
+            "    {}",
+            paint(self.color, DIM, &format!("↳ {label} · {step}"))
+        );
+        self.showing = Showing::Nothing;
+        flush();
+    }
+
+    /// `summary` with the task it comes from, when a task's child asks.
+    pub fn labeled(&self, task: ThreadId, summary: &str) -> String {
+        match self.tasks.get(&task) {
+            Some(label) => format!("[{label}] {summary}"),
+            None => summary.to_owned(),
+        }
     }
 
     /// One of the model's questions; the answer is typed next.

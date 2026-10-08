@@ -1,12 +1,12 @@
 //! One turn: the person's prompt, then model calls and tool calls until the model is done.
 
 use glave_event::{
-    CallId, Currency, MessageAdded, ModelRef, Money, Outcome, Part, Role, StopReason, TokenCounts,
-    ToolCallRequested, TurnEnded, TurnStarted,
+    CallId, Currency, MessageAdded, ModelRef, Money, Outcome, Part, Role, StopReason, ThreadId,
+    TokenCounts, ToolCallRequested, TurnEnded, TurnStarted,
 };
 use glave_ports::{
-    BlobStore, Completion, Delta, EventLog, Failure, Message, ModelProvider, ModelRequest,
-    ProviderError, ToolCall, ToolChoice, ToolOutput, ToolSpec,
+    BlobStore, BoxFuture, Completion, Delta, EventLog, Failure, Message, ModelProvider,
+    ModelRequest, ProviderError, ToolCall, ToolChoice, ToolSpec,
 };
 use std::time::Duration;
 
@@ -14,7 +14,6 @@ use serde::Serialize;
 
 use crate::approval::{ApprovalMode, Approver};
 use crate::ask::Question;
-use crate::calls::NOT_RUN;
 use crate::cancel::Cancel;
 use crate::compaction::{Measured, chars, responded};
 use crate::harness::{Harness, HarnessError, Thread};
@@ -60,6 +59,21 @@ pub enum Live {
         call_id: CallId,
         questions: Vec<Question>,
     },
+    /// A child thread started on a task.
+    TaskStarted {
+        thread: ThreadId,
+        description: String,
+    },
+    /// What a child doing a task shows, under the child's own thread.
+    Child {
+        thread: ThreadId,
+        update: Box<Live>,
+    },
+    /// A child's task is over; `ok` when it finished its work.
+    TaskEnded {
+        thread: ThreadId,
+        ok: bool,
+    },
     /// The model was asked, and nothing has come back yet.
     Waiting,
     /// A model call failed in a way that may pass, and is tried again after `wait`.
@@ -69,6 +83,13 @@ pub enum Live {
         wait: Duration,
         error: String,
     },
+}
+
+/// What a turn carries from step to step.
+pub(crate) struct Step {
+    pub(crate) toolset: ToolSet,
+    pub(crate) repeats: Repeats,
+    pub(crate) summary: TurnSummary,
 }
 
 /// What a turn did and what it cost.
@@ -132,35 +153,61 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
         let toolset: ToolSet = self.tools().await;
+        self.run_with(thread, prompt, toolset, cancel, live).await
+    }
+
+    /// Runs one turn with `toolset`. Boxed, so a child's turn can run inside its parent's.
+    pub(crate) fn run_with<'a>(
+        &'a self,
+        thread: &'a mut Thread,
+        prompt: &'a str,
+        toolset: ToolSet,
+        cancel: &'a Cancel,
+        live: &'a mut (dyn FnMut(Live) + Send),
+    ) -> BoxFuture<'a, Result<TurnSummary, HarnessError>> {
+        Box::pin(self.turn(thread, prompt, toolset, cancel, live))
+    }
+
+    async fn turn(
+        &self,
+        thread: &mut Thread,
+        prompt: &str,
+        toolset: ToolSet,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<TurnSummary, HarnessError> {
         self.begin(thread, prompt, &toolset).await?;
-        let mut summary = TurnSummary::started();
-        let mut repeats = Repeats::default();
+        let mut step = Step {
+            toolset,
+            repeats: Repeats::default(),
+            summary: TurnSummary::started(),
+        };
         // Whether this step was refused as too long once already.
         let mut squeezed = false;
-        summary.outcome = loop {
+        step.summary.outcome = loop {
             if cancel.is_cancelled() {
                 break Outcome::Cancelled;
             }
-            if summary.model_calls >= self.settings.max_steps {
+            if step.summary.model_calls >= self.settings.max_steps {
                 break Outcome::LimitReached;
             }
             if let Some(compaction) = self
-                .compact_if_needed(thread, &toolset, cancel, live)
+                .compact_if_needed(thread, &step.toolset, cancel, live)
                 .await?
             {
-                summary.model_calls = summary.model_calls.saturating_add(1);
-                tally(&mut summary, &compaction);
+                step.summary.model_calls = step.summary.model_calls.saturating_add(1);
+                tally(&mut step.summary, &compaction);
             }
-            let last = summary.model_calls.saturating_add(1) >= self.settings.max_steps;
+            let last = step.summary.model_calls.saturating_add(1) >= self.settings.max_steps;
             let choice = self.choice(thread, last).await?;
             // Asking the model writes nothing, so it can be dropped when the turn is cancelled.
             let Some(asked) = cancel
-                .run(self.ask_model(thread, &toolset, choice, live))
+                .run(self.ask_model(thread, &step.toolset, choice, live))
                 .await
             else {
                 break Outcome::Cancelled;
             };
-            summary.model_calls = summary.model_calls.saturating_add(1);
+            step.summary.model_calls = step.summary.model_calls.saturating_add(1);
             let mut completion = match asked {
                 Ok(completion) => completion,
                 Err(HarnessError::Provider(refused))
@@ -182,7 +229,7 @@ where
                 // Any call the model makes anyway is ignored, so none is left without a result.
                 completion.tool_calls.clear();
             }
-            tally(&mut summary, &completion);
+            tally(&mut step.summary, &completion);
             let calls = self.record_response(thread, &completion).await?;
             measure(thread, &completion);
             if last {
@@ -191,28 +238,14 @@ where
             if calls.is_empty() {
                 break outcome_of(completion.stop);
             }
-            for call in calls {
-                // Every call gets a result, so the thread stays valid after a cancel.
-                let outcome = if cancel.is_cancelled() {
-                    ToolOutput::text(true, NOT_RUN)
-                } else if repeats.refuse(&call) {
-                    ToolOutput::text(
-                        true,
-                        "You made this exact call several times in a row. Change your approach.",
-                    )
-                } else {
-                    self.call_tool(thread, &call, &toolset, cancel, live)
-                        .await?
-                };
-                summary.tool_calls = summary.tool_calls.saturating_add(1);
-                self.record_result(thread, call.call_id, outcome).await?;
-            }
+            self.run_calls(thread, &calls, &mut step, cancel, live)
+                .await?;
         };
-        if summary.outcome == Outcome::Cancelled {
+        if step.summary.outcome == Outcome::Cancelled {
             self.add_note(thread, CANCELLED).await?;
         }
-        self.end(thread, summary.outcome).await?;
-        Ok(summary)
+        self.end(thread, step.summary.outcome).await?;
+        Ok(step.summary)
     }
 
     /// Tells the model something about the turn itself, as a recorded user message.
@@ -402,6 +435,26 @@ fn outcome_of(stop: StopReason) -> Outcome {
         StopReason::Interrupted | StopReason::Cancelled => Outcome::Interrupted,
         StopReason::Error | StopReason::MalformedToolCall | StopReason::Pause => Outcome::Failed,
     }
+}
+
+/// Adds a child's work to its parent's turn: its calls, tokens and cost.
+pub(crate) fn absorb(summary: &mut TurnSummary, child: &TurnSummary) {
+    summary.model_calls = summary.model_calls.saturating_add(child.model_calls);
+    summary.tool_calls = summary.tool_calls.saturating_add(child.tool_calls);
+    let (total, more) = (&mut summary.tokens, &child.tokens);
+    total.input = total.input.saturating_add(more.input);
+    total.cache_read = total.cache_read.saturating_add(more.cache_read);
+    total.cache_write = total.cache_write.saturating_add(more.cache_write);
+    total.output = total.output.saturating_add(more.output);
+    total.reasoning = total.reasoning.saturating_add(more.reasoning);
+    summary.estimated |= child.estimated;
+    summary.cost = match (summary.cost, child.cost) {
+        (Some(sum), Some(cost)) if sum.currency == cost.currency => Some(Money {
+            micros: sum.micros.saturating_add(cost.micros),
+            currency: sum.currency,
+        }),
+        _ => None,
+    };
 }
 
 fn tally(summary: &mut TurnSummary, completion: &Completion) {
