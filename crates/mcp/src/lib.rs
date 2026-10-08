@@ -2,6 +2,7 @@
 //! official rmcp SDK. Its tools reach the model as `mcp__<server>__<tool>`; every call still goes
 //! through the harness, which asks the person by what the tool says it does.
 
+mod client;
 mod config;
 mod connection;
 mod error;

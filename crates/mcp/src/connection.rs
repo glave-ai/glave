@@ -1,9 +1,10 @@
 //! A connection to one MCP server through rmcp: opened with the newest protocol the server
-//! knows, its tools listed for the model, and calls made with a time limit and cancelled when
-//! the turn is.
+//! knows, its tools listed for the model and kept until the server says they changed, and calls
+//! made with a time limit and cancelled when the turn is.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, PoisonError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_event::Arguments;
@@ -18,8 +19,10 @@ use rmcp::service::{
     RunningService,
 };
 use rmcp::transport::IntoTransport;
+use tokio::task::JoinHandle;
 
 use crate::McpError;
+use crate::client::{Client, watch_tools};
 use crate::names::exposed;
 use crate::output::output;
 use crate::reason::reason;
@@ -29,9 +32,15 @@ pub(crate) struct Connection {
     name: String,
     peer: Peer<RoleClient>,
     /// The running connection, until it is closed.
-    service: Mutex<Option<RunningService<RoleClient, ()>>>,
+    service: Mutex<Option<RunningService<RoleClient, Client>>>,
+    /// The latest listing, kept until the server says its tools changed.
+    listed: Mutex<Option<Vec<ToolInfo>>>,
+    /// Set when the server says its tools changed.
+    stale: Arc<AtomicBool>,
     /// The model's name for each tool, to the server's, from the latest listing.
     named: Mutex<HashMap<String, String>>,
+    /// Hearing about changes from a server on the newer protocol, while connected.
+    watching: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Connection {
@@ -50,7 +59,10 @@ impl Connection {
             preferred_versions: vec![ProtocolVersion::V_2026_07_28],
             legacy_version: Some(ProtocolVersion::V_2025_11_25),
         };
-        let started = tokio::time::timeout(limit, ().serve_with_lifecycle(transport, lifecycle));
+        let stale = Arc::new(AtomicBool::new(false));
+        let client = Client::new(Arc::clone(&stale));
+        let started =
+            tokio::time::timeout(limit, client.serve_with_lifecycle(transport, lifecycle));
         let service = match started.await {
             Ok(Ok(service)) => service,
             Ok(Err(err)) => return Err(McpError::start(name, reason(&err))),
@@ -61,17 +73,35 @@ impl Connection {
                 ));
             }
         };
+        let peer = service.peer().clone();
+        let announces = peer.peer_info().is_some_and(|info| {
+            info.capabilities
+                .tools
+                .as_ref()
+                .is_some_and(|tools| tools.list_changed == Some(true))
+        });
+        let watching =
+            announces.then(|| tokio::spawn(watch_tools(peer.clone(), Arc::clone(&stale))));
         Ok(Self {
             name: name.to_owned(),
-            peer: service.peer().clone(),
+            peer,
             service: Mutex::new(Some(service)),
+            listed: Mutex::new(None),
+            stale,
             named: Mutex::new(HashMap::new()),
+            watching: Mutex::new(watching),
         })
     }
 
     /// Closes the connection: a server process has its input closed, and is killed if it has
     /// not exited within a few seconds.
     pub(crate) async fn close(&self) {
+        // A closed server offers nothing.
+        *self.listed.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        if let Some(watching) = self.stop_watching() {
+            // Once it is over, its subscription has told the server it is done.
+            let _ = watching.await;
+        }
         let service = self
             .service
             .lock()
@@ -83,12 +113,38 @@ impl Connection {
         }
     }
 
-    /// The server's tools as the model sees them. A tool that says it only reads may run
-    /// beside others and without asking; any other may change or run anything.
+    /// Stops hearing about changes, giving back the task to wait for.
+    fn stop_watching(&self) -> Option<JoinHandle<()>> {
+        let watching = self
+            .watching
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()?;
+        watching.abort();
+        Some(watching)
+    }
+
+    /// The server's tools as the model sees them, listed again only once the server says they
+    /// changed. A tool that says it only reads may run beside others and without asking; any
+    /// other may change or run anything.
     pub(crate) async fn list(&self) -> Result<Vec<ToolInfo>, ToolError> {
-        let tools = self.peer.list_all_tools().await.map_err(|err| ToolError {
-            source_name: self.name.clone(),
-            message: err.to_string(),
+        // Cleared before listing, so a change during the listing is listed next time.
+        let changed = self.stale.swap(false, Ordering::SeqCst);
+        if !changed
+            && let Some(listed) = self
+                .listed
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+        {
+            return Ok(listed);
+        }
+        let tools = self.peer.list_all_tools().await.map_err(|err| {
+            self.stale.store(true, Ordering::SeqCst);
+            ToolError {
+                source_name: self.name.clone(),
+                message: err.to_string(),
+            }
         })?;
         let mut named = HashMap::new();
         let mut infos = Vec::with_capacity(tools.len());
@@ -121,6 +177,7 @@ impl Connection {
             named.insert(model_name, tool.name.to_string());
         }
         *self.named.lock().unwrap_or_else(PoisonError::into_inner) = named;
+        *self.listed.lock().unwrap_or_else(PoisonError::into_inner) = Some(infos.clone());
         Ok(infos)
     }
 
@@ -178,5 +235,11 @@ impl Connection {
                 ToolOutput::text(true, "[stopped: the person cancelled the turn]")
             }
         }
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        let _ = self.stop_watching();
     }
 }

@@ -113,6 +113,8 @@ mod server {
                     ("mcp__tests__slow", Effect::Runs, false),
                     ("mcp__tests__env", Effect::Runs, false),
                     ("mcp__tests__header", Effect::Runs, false),
+                    ("mcp__tests__grow", Effect::Runs, false),
+                    ("mcp__tests__listed", Effect::Runs, false),
                     ("mcp__tests__flood", Effect::Runs, false),
                 ]
             );
@@ -226,7 +228,7 @@ mod server {
         block_on(async {
             let server = launch("tests", &stdio(SERVER, &[], &[]), Limits::default());
             let tools = server.tools().await.unwrap();
-            assert_eq!(tools.len(), 6);
+            assert_eq!(tools.len(), 8);
             server.close().await;
         });
     }
