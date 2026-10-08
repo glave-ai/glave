@@ -212,3 +212,6 @@ fn parse<T: DeserializeOwned>(tool: Tool, arguments: &Arguments) -> Result<T, To
         ))
     })
 }
+
+#[cfg(test)]
+mod tests;

@@ -21,6 +21,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "process", "rt", "time"] }
 
 [dev-dependencies]
+proptest.workspace = true
 uuid.workspace = true
 
 [lints]

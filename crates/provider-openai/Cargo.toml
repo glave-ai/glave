@@ -16,5 +16,17 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
+[features]
+# A fake OpenAI-compatible server on 127.0.0.1, for tests in this and other crates.
+fake-server = []
+
+[dev-dependencies]
+proptest.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+
+[[test]]
+name = "client"
+required-features = ["fake-server"]
+
 [lints]
 workspace = true

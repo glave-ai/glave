@@ -24,7 +24,7 @@ pub(crate) struct EditArgs {
 }
 
 pub(crate) async fn edit(workspace: &Workspace, args: EditArgs) -> ToolOutcome {
-    let path = match workspace.resolve(&args.path).await {
+    let path = match workspace.resolve_for_change(&args.path).await {
         Ok(path) => path,
         Err(message) => return ToolOutcome::error(message),
     };
