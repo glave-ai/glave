@@ -93,3 +93,32 @@ fn similar_but_different_text_is_not_matched() {
         Err(EditError::NotFound { .. })
     ));
 }
+
+proptest::proptest! {
+    /// A unique exact match is replaced once, in place, and the edit can be undone exactly.
+    #[test]
+    fn a_unique_match_is_replaced_and_can_be_undone(
+        prefix in "[a-z \n]{0,40}",
+        needle in "[A-Z]{3,8}",
+        suffix in "[a-z \n]{0,40}",
+        new in "[0-9]{1,8}",
+    ) {
+        let text = format!("{prefix}{needle}{suffix}");
+        let edited = apply(&text, &needle, &new, false).unwrap();
+        proptest::prop_assert_eq!(&edited.text, &format!("{prefix}{new}{suffix}"));
+        proptest::prop_assert_eq!(edited.replacements, 1);
+        let undone = apply(&edited.text, &new, &needle, false).unwrap();
+        proptest::prop_assert_eq!(undone.text, text);
+    }
+
+    /// Whatever the model sends, the matcher answers or refuses; it never panics.
+    #[test]
+    fn arbitrary_edits_never_panic(
+        text in "\\PC{0,200}",
+        old in "\\PC{0,20}",
+        new in "\\PC{0,20}",
+        all in proptest::prelude::any::<bool>(),
+    ) {
+        let _ = apply(&text, &old, &new, all);
+    }
+}
