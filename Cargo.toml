@@ -1,0 +1,62 @@
+[workspace]
+resolver = "3"
+# Add "crates/*" here once the first crate exists (an empty glob is an error).
+members = ["xtask"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+repository = "https://github.com/glave-ai/glave"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# Safety lints are "forbid": no attribute anywhere in the code can switch them off.
+# Tests get their exemptions only through clippy.toml, never through attributes.
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+doc_markdown = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"   # #[must_use] ceremony, not safety
+missing_errors_doc = "allow"   # `# Errors` doc sections, not safety
+unwrap_used = "forbid"
+expect_used = "forbid"
+panic = "forbid"
+unwrap_in_result = "forbid"
+indexing_slicing = "forbid"
+string_slice = "forbid"
+todo = "forbid"
+unimplemented = "forbid"
+dbg_macro = "forbid"
+exit = "forbid"                # return an ExitCode from main instead
+mod_module_files = "forbid"    # `foo.rs` + `foo/`, never `mod.rs`
+allow_attributes = "forbid"    # no #[allow] at all; see AGENTS.md for #[expect]
+allow_attributes_without_reason = "deny"
+
+[workspace.dependencies]
+
+# Day-to-day builds: file and line numbers in backtraces, no full debug info
+# for dependencies. Roughly 40% smaller `target/` (measured on the legacy tree).
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+# Full debug info for stepping through code: `cargo build --profile debugging`.
+[profile.debugging]
+inherits = "dev"
+debug = true
+
+[profile.debugging.package."*"]
+debug = true
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
