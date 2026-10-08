@@ -7,8 +7,8 @@ use std::process::ExitCode;
 use anyhow::Context as _;
 use glave_event::Outcome;
 use glave_harness::{
-    Approver, Harness, NoOneToAsk, OsEntropy, Parts, Sandbox, Settings, SystemClock, Thread,
-    Workspace,
+    AGENTS_MD, Approver, Harness, NoOneToAsk, OsEntropy, Parts, Sandbox, Settings, SystemClock,
+    Thread, Workspace, agents_md,
 };
 use glave_ports::EventLog;
 use glave_provider_openai::OpenAiCompatible;
@@ -79,6 +79,9 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     }
     let store = Store::open(database).await?;
     let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
+    let personal = home::folder()?.join(AGENTS_MD);
+    let instructions = agents_md(workspace.root(), Some(&personal)).await?;
+    settings.instructions = instructions.as_ref().map(|loaded| loaded.text.clone());
     settings.approval = args.approval.unwrap_or_default();
     if let Some(window_tokens) = config::context_window()? {
         settings.compaction.window_tokens = window_tokens;
@@ -88,6 +91,7 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         store,
         workspace,
         settings,
+        instructions: instructions.map(|loaded| loaded.files).unwrap_or_default(),
     };
     // Ask in the terminal when there is one; otherwise no one is there to answer.
     if std::io::stdin().is_terminal() {
@@ -103,6 +107,8 @@ struct Wiring {
     store: Store,
     workspace: Workspace,
     settings: Settings,
+    /// The instruction files the model is given, for the banner.
+    instructions: Vec<PathBuf>,
 }
 
 async fn session<A: Approver>(
@@ -112,6 +118,7 @@ async fn session<A: Approver>(
     approver: A,
 ) -> anyhow::Result<ExitCode> {
     let root = wiring.workspace.root().to_owned();
+    let instruction_files = wiring.instructions;
     let scope = wiring
         .store
         .local_scope(&root, random_uuid(), random_uuid())
@@ -146,7 +153,11 @@ async fn session<A: Approver>(
     let mut code = ExitCode::SUCCESS;
     if args.prompt.is_empty() {
         let folder = root.display().to_string();
-        printer.banner(&endpoint.model, &endpoint.provider.provider, &folder, note);
+        let note = match named(&instruction_files) {
+            Some(files) => format!("{note} · following {files}"),
+            None => note.to_owned(),
+        };
+        printer.banner(&endpoint.model, &endpoint.provider.provider, &folder, &note);
         loop {
             printer.ask();
             let Some(line) = read_line().await else { break };
@@ -219,6 +230,23 @@ async fn export<L: EventLog>(log: &L, thread: &Thread, path: &Path) -> anyhow::R
     }
     tokio::fs::write(path, lines).await?;
     Ok(())
+}
+
+/// The instruction files for the banner, with the home folder as `~`:
+/// `~/.glave/AGENTS.md, ~/code/app/AGENTS.md`.
+fn named(files: &[PathBuf]) -> Option<String> {
+    let names: Vec<String> = files
+        .iter()
+        .map(|file| {
+            std::env::var_os("HOME")
+                .and_then(|home| file.strip_prefix(home).ok())
+                .map_or_else(
+                    || file.display().to_string(),
+                    |rest| format!("~/{}", rest.display()),
+                )
+        })
+        .collect();
+    (!names.is_empty()).then(|| names.join(", "))
 }
 
 /// The protections commands run under, for the banner and receipts: `sandbox: project`.

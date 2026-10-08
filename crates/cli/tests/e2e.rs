@@ -105,6 +105,35 @@ mod glave_binary {
     }
 
     #[test]
+    fn agents_md_from_the_project_and_the_person_reaches_the_model() {
+        let place = place("agents-md");
+        std::fs::write(place.project.join("AGENTS.md"), "Run make check.\n").unwrap();
+        std::fs::create_dir_all(&place.home).unwrap();
+        std::fs::write(place.home.join("AGENTS.md"), "Answer briefly.\n").unwrap();
+        let server = FakeServer::start(vec![Reply::text("Hi.")]).unwrap();
+        let output = glave(&place, &server, &["--model", "m"], "hello\n/exit\n");
+        let shown = text(&output);
+        assert!(output.status.success(), "{shown}");
+        assert!(
+            shown.contains("following ") && shown.contains("AGENTS.md"),
+            "the banner names the files: {shown}"
+        );
+        let first = said(&server.received()[0].body, "user").join("\n");
+        let order = [
+            "# AGENTS.md instructions",
+            "Answer briefly.",
+            "Run make check.",
+            "hello",
+        ]
+        .map(|text| first.find(text).unwrap_or(usize::MAX));
+        assert!(
+            order.windows(2).all(|pair| pair[0] < pair[1]),
+            "the person's file, then the project's, then the prompt: {first}"
+        );
+        assert!(!said(&server.received()[0].body, "system")[0].contains("Run make check."));
+    }
+
+    #[test]
     fn with_yes_a_tool_call_changes_the_project() {
         let place = place("tool");
         let server = FakeServer::start(vec![

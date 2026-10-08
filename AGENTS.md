@@ -40,7 +40,7 @@ crates/event/       glave-event: the versioned event format (envelope, payloads,
 crates/ports/       glave-ports: event log, blob store and model provider ports, in-memory versions, conformance suites
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
 crates/store-sqlite/  glave-store-sqlite: the event log and blob store on one local SQLite file
-crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash), approvals, resume, the opt-in sandbox
+crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash), approvals, resume, AGENTS.md, the opt-in sandbox
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution

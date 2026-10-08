@@ -3,8 +3,8 @@
 use std::collections::HashSet;
 
 use glave_event::{
-    At, EncodeError, EventId, Header, InvalidValue, Payload, Producer, RawEvent, Seq, ThreadId,
-    ThreadStarted, encode,
+    At, EncodeError, EventId, Header, InvalidValue, Part, Payload, Producer, RawEvent, Seq,
+    ThreadId, ThreadStarted, encode,
 };
 use glave_ports::{
     BlobError, BlobStore, EventLog, LogError, Message, ModelProvider, ProviderError, Scope,
@@ -25,6 +25,9 @@ pub struct Settings {
     /// A short name for the provider, recorded with each turn, such as `openrouter`.
     pub provider: String,
     pub system_prompt: String,
+    /// The project's instructions (see [`crate::agents_md`]), sent at the start of every new
+    /// thread and again after a compaction.
+    pub instructions: Option<String>,
     /// How much to ask the person before acting.
     pub approval: ApprovalMode,
     /// When to summarize a thread to keep it within the model's context window.
@@ -41,6 +44,7 @@ impl Settings {
         let provider = provider.into();
         Self {
             system_prompt: system_prompt(&model, &provider),
+            instructions: None,
             model,
             provider,
             approval: ApprovalMode::default(),
@@ -179,6 +183,14 @@ where
         )?;
         self.commit(&mut thread, events).await?;
         Ok(thread)
+    }
+
+    /// The project's instructions as the opening part of a conversation, if there are any.
+    pub(crate) fn instruction_parts(&self) -> Option<Vec<Part>> {
+        self.settings
+            .instructions
+            .as_ref()
+            .map(|text| vec![Part::Text { text: text.clone() }])
     }
 
     /// The `seq` the next staged event will get.
