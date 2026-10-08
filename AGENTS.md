@@ -54,6 +54,7 @@ specs/              the contracts: events.md now; tool calls, verbs and scopes, 
 cargo xtask ci          # the full gate; must pass before anything is "done"
 cargo xtask file-sizes  # line limits only
 cargo xtask bench       # benchmarks, alone on the machine (see Performance)
+cargo xtask live --model <id>   # glave on small tasks against a real model, graded (costs cents)
 cargo fmt --all         # format
 cargo build --profile debugging   # full debug info, for a debugger
 ```
@@ -158,4 +159,5 @@ cargo build --profile debugging   # full debug info, for a debugger
 - Make the smallest change that does the job. Don't add crates, ports, dependencies or files the task doesn't need.
 - No TODO comments; note follow-ups in the pull request.
 - Run `cargo xtask ci` before saying something is done, and report failures as they are.
+- After changes the model will feel (prompt, tools, approvals, the loop), run `cargo xtask live` with `--repeat 3` and report pass rates. Load the endpoint from the environment first (`set -a; source .env; set +a`).
 - Ask before anything destructive or hard to undo.
