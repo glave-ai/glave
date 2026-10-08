@@ -39,7 +39,8 @@ xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
 crates/ports/       glave-ports: event log, blob store and model provider ports, in-memory versions, conformance suites
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
-crates/harness/     glave-harness: the agent loop, the four tools, approvals
+crates/store-sqlite/  glave-store-sqlite: the event log and blob store on one local SQLite file
+crates/harness/     glave-harness: the agent loop, the four tools, approvals, resume
 crates/cli/         glave: the command-line binary
 specs/              the contracts: events.md now; tool calls, verbs and scopes, API surface planned
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main)

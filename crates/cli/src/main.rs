@@ -3,6 +3,7 @@
 
 mod args;
 mod config;
+mod home;
 mod session;
 mod system;
 mod terminal;

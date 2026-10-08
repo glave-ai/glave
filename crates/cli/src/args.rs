@@ -11,6 +11,7 @@ Usage:
 
 Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)
+  --continue, -c     continue your last thread in this folder
   --yes              allow writes, edits and commands without asking
   --events <file>    save the thread's events to this file as JSON Lines
   --help             show this help
@@ -20,16 +21,27 @@ Environment:
   GLAVE_BASE_URL     an OpenAI-compatible API (default: http://localhost:11434/v1, Ollama)
   GLAVE_MODEL        the model name, such as gemma4:12b or an OpenRouter model id
   GLAVE_API_KEY      the API key, if the endpoint needs one
-  GLAVE_PROVIDER     a short name recorded with each response (default: from the URL)";
+  GLAVE_PROVIDER     a short name recorded with each response (default: from the URL)
+  GLAVE_HOME         where glave keeps its database (default: ~/.glave)";
+
+/// What to do.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    #[default]
+    Run,
+    Help,
+    Version,
+}
 
 /// What the person asked for.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Args {
+    pub action: Action,
     pub model: Option<String>,
     pub yes: bool,
+    /// Continue the most recent thread in this folder instead of starting one.
+    pub resume: bool,
     pub events: Option<PathBuf>,
-    pub help: bool,
-    pub version: bool,
     /// The one-shot prompt; empty starts an interactive session.
     pub prompt: String,
 }
@@ -45,8 +57,9 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
                 args.events = Some(PathBuf::from(rest.next().ok_or("--events needs a file")?));
             }
             "--yes" | "-y" => args.yes = true,
-            "--help" | "-h" => args.help = true,
-            "--version" | "-V" => args.version = true,
+            "--continue" | "-c" => args.resume = true,
+            "--help" | "-h" => args.action = Action::Help,
+            "--version" | "-V" => args.action = Action::Version,
             "--" => words.extend(rest.by_ref()),
             flag if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
             _ => words.push(argument),

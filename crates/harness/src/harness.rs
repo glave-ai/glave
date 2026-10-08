@@ -93,6 +93,8 @@ pub enum HarnessError {
     Provider(#[from] ProviderError),
     #[error("could not build an event: {0}")]
     Event(String),
+    #[error("thread {0} has no events in this space")]
+    NotFound(ThreadId),
 }
 
 impl From<EncodeError> for HarnessError {
