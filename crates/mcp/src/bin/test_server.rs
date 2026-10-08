@@ -1,16 +1,23 @@
-//! A small MCP server on standard input and output, for tests: `echo` (read-only), `fail`, `slow`
-//! (waits until the call is cancelled), `env` (says whether a variable reached it) and `flood`
-//! (more output than a model should be given). Built with the `test-server` feature.
+//! A small MCP server for tests, on standard input and output, or with `--http` over
+//! Streamable HTTP on a free local port that it prints first. Its tools: `echo` (read-only),
+//! `fail`, `slow` (waits until the call is cancelled), `env` (says whether a variable reached
+//! it), `header` (says what a request header was) and `flood` (more output than a model should
+//! be given). Built with the `test-server` feature.
 
+use std::io::Write as _;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use hyper_util::rt::TokioIo;
+use hyper_util::service::TowerToHyperService;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, JsonObject,
     ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool,
     ToolAnnotations,
 };
 use rmcp::service::{RequestContext, RoleServer};
+use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::{ErrorData, ServerHandler, ServiceExt as _};
 use serde_json::json;
 
@@ -31,6 +38,7 @@ fn tools() -> Vec<Tool> {
         Tool::new("fail", "Always fails.", schema(&none)),
         Tool::new("slow", "Waits until cancelled.", schema(&none)),
         Tool::new("env", "Whether a variable is set.", schema(&name)),
+        Tool::new("header", "A request header's value.", schema(&name)),
         Tool::new("flood", "Far too much text.", schema(&none)),
     ]
 }
@@ -80,6 +88,17 @@ impl ServerHandler for TestServer {
                 let set = std::env::var_os(&name).is_some();
                 CallToolResult::success(vec![ContentBlock::text(format!("{name} set: {set}"))])
             }
+            "header" => {
+                let name = argument(&request, "name");
+                let value = context
+                    .extensions
+                    .get::<http::request::Parts>()
+                    .and_then(|parts| parts.headers.get(name.as_str()))
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("(none)")
+                    .to_owned();
+                CallToolResult::success(vec![ContentBlock::text(format!("{name}: {value}"))])
+            }
             "flood" => CallToolResult::success(vec![ContentBlock::text("x".repeat(250_000))]),
             other => return Err(ErrorData::invalid_params(format!("no tool {other}"), None)),
         };
@@ -94,14 +113,43 @@ fn main() -> ExitCode {
     else {
         return ExitCode::FAILURE;
     };
+    let http = std::env::args().nth(1).as_deref() == Some("--http");
     let served = runtime.block_on(async {
-        let running = TestServer.serve(rmcp::transport::stdio()).await?;
-        running.waiting().await?;
-        Ok::<(), Box<dyn std::error::Error>>(())
+        if http {
+            serve_http().await
+        } else {
+            let running = TestServer.serve(rmcp::transport::stdio()).await?;
+            running.waiting().await?;
+            Ok(())
+        }
     });
     if served.is_ok() {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
+    }
+}
+
+/// Serves until killed, after printing its URL.
+async fn serve_http() -> Result<(), Box<dyn std::error::Error>> {
+    let service = StreamableHttpService::new(
+        || Ok(TestServer),
+        Arc::new(LocalSessionManager::default()),
+        StreamableHttpServerConfig::default(),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let mut out = std::io::stdout();
+    writeln!(out, "http://{}/mcp", listener.local_addr()?)?;
+    out.flush()?;
+    let mut connections = tokio::task::JoinSet::new();
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let service = TowerToHyperService::new(service.clone());
+        connections.spawn(async move {
+            let _ = hyper::server::conn::http1::Builder::new()
+                .serve_connection(TokioIo::new(stream), service)
+                .await;
+        });
+        while connections.try_join_next().is_some() {}
     }
 }

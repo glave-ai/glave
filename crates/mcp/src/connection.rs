@@ -22,6 +22,7 @@ use rmcp::transport::IntoTransport;
 use crate::McpError;
 use crate::names::exposed;
 use crate::output::output;
+use crate::reason::reason;
 
 /// An open connection.
 pub(crate) struct Connection {
@@ -52,7 +53,7 @@ impl Connection {
         let started = tokio::time::timeout(limit, ().serve_with_lifecycle(transport, lifecycle));
         let service = match started.await {
             Ok(Ok(service)) => service,
-            Ok(Err(err)) => return Err(McpError::start(name, err.to_string())),
+            Ok(Err(err)) => return Err(McpError::start(name, reason(&err))),
             Err(_) => {
                 return Err(McpError::start(
                     name,

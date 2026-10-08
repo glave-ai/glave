@@ -43,9 +43,10 @@ Environment:
 A new thread starts with your AGENTS.md (in GLAVE_HOME), then every AGENTS.md from the
 repository's root down to this folder.
 
-MCP servers in mcp.json, in the .mcp.json format ({\"mcpServers\": {\"name\": {\"command\": ...}}}),
-start with glave; their tools reach the model as mcp__<server>__<tool>. A server gets only
-the variables its settings name, so add keys there: \"env\": {\"TOKEN\": \"${TOKEN}\"}.
+MCP servers in mcp.json, in the .mcp.json format ({\"mcpServers\": {\"name\": {\"command\": ...}}}
+or {\"url\": ..., \"headers\": {...}}), start with glave; their tools reach the model as
+mcp__<server>__<tool>. A program gets only the variables its settings name, so add keys
+there: \"env\": {\"TOKEN\": \"${TOKEN}\"}.
 
 In a session, /compact summarizes the thread now, and /exit leaves.";
 

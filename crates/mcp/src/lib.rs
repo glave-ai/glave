@@ -7,6 +7,7 @@ mod connection;
 mod error;
 mod names;
 mod output;
+mod reason;
 mod server;
 
 pub use config::{ServerConfig, parse};
