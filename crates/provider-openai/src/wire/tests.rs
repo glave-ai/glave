@@ -45,7 +45,7 @@ fn a_request_has_the_chat_completions_shape() {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: Some(1024),
     };
-    let body = serde_json::to_value(chat_request(&request, false)).unwrap();
+    let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
         body,
         json!({
@@ -91,7 +91,7 @@ fn consecutive_user_messages_are_sent_as_one() {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
     };
-    let body = serde_json::to_value(chat_request(&request, false)).unwrap();
+    let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
         body["messages"],
         json!([
@@ -116,11 +116,11 @@ fn text_only_requests_keep_their_tools_and_say_none() {
         tool_choice: ToolChoice::None,
         max_output_tokens: None,
     };
-    let body = serde_json::to_value(chat_request(&request, false)).unwrap();
+    let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(body["tool_choice"], "none");
     assert_eq!(body["tools"].as_array().map(Vec::len), Some(1));
     request.tool_choice = ToolChoice::Auto;
-    let body = serde_json::to_value(chat_request(&request, false)).unwrap();
+    let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert!(
         body.get("tool_choice").is_none(),
         "the default stays unsaid"
@@ -148,11 +148,30 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
     };
-    let cached = serde_json::to_value(chat_request(&request, true)).unwrap();
+    let cached = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(cached["cache_control"], json!({"type": "ephemeral"}));
-    let plain = serde_json::to_value(chat_request(&request, false)).unwrap();
+    let plain = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert!(
         plain.get("cache_control").is_none(),
         "other servers get today's request"
     );
+}
+
+#[test]
+fn openrouter_is_told_not_to_cut_a_long_prompt() {
+    let request = ModelRequest {
+        model: "openai/gpt-6-luna".into(),
+        system: String::new(),
+        messages: Vec::new(),
+        tools: Vec::new(),
+        tool_choice: ToolChoice::Auto,
+        max_output_tokens: None,
+    };
+    let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
+    assert_eq!(
+        routed["plugins"],
+        json!([{"id": "context-compression", "enabled": false}])
+    );
+    let plain = serde_json::to_value(chat_request(&request, "openai")).unwrap();
+    assert!(plain.get("plugins").is_none());
 }
