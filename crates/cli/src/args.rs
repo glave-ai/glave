@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use glave_harness::SandboxLevel;
+use glave_harness::{ApprovalMode, SandboxLevel};
 
 pub const USAGE: &str = "\
 glave: run hope, or any model, on the project in this folder
@@ -14,7 +14,11 @@ Usage:
 Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)
   --continue, -c     continue your last thread in this folder
-  --yes              allow writes, edits and commands without asking
+  --approval <mode>  how much to ask before acting: ask (every change and command), edits
+                     (file changes go through, commands ask; the default), or auto
+                     (nothing asks but secret files). With no one at the keyboard, anything
+                     that would ask is declined
+  --yes, -y          the same as --approval auto
   --sandbox <level>  run commands in the macOS sandbox: read-only, or project (writes only
                      the project and temp folder); never reads secret locations
   --network          let sandboxed commands use the network
@@ -43,7 +47,8 @@ pub enum Action {
 pub struct Args {
     pub action: Action,
     pub model: Option<String>,
-    pub yes: bool,
+    /// How much to ask before acting; `edits` when not given.
+    pub approval: Option<ApprovalMode>,
     /// Run commands in the sandbox at this level.
     pub sandbox: Option<SandboxLevel>,
     /// Let sandboxed commands use the network.
@@ -65,7 +70,15 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--events" => {
                 args.events = Some(PathBuf::from(rest.next().ok_or("--events needs a file")?));
             }
-            "--yes" | "-y" => args.yes = true,
+            "--yes" | "-y" => args.approval = Some(ApprovalMode::Auto),
+            "--approval" => {
+                let mode = rest
+                    .next()
+                    .ok_or("--approval needs a mode: ask, edits or auto")?;
+                args.approval = Some(ApprovalMode::named(&mode).ok_or_else(|| {
+                    format!("unknown approval mode {mode:?}: use ask, edits or auto")
+                })?);
+            }
             "--sandbox" => {
                 let level = rest
                     .next()
@@ -101,7 +114,7 @@ mod tests {
     #[test]
     fn prompt_words_join_and_flags_parse() {
         let args = parse_words(&["--yes", "fix", "the", "--model", "m", "test"]).unwrap();
-        assert!(args.yes);
+        assert_eq!(args.approval, Some(ApprovalMode::Auto));
         assert_eq!(args.model.as_deref(), Some("m"));
         assert_eq!(args.prompt, "fix the test");
     }
@@ -117,6 +130,15 @@ mod tests {
             parse_words(&["--network"]).is_err(),
             "network needs a sandbox"
         );
+    }
+
+    #[test]
+    fn approval_modes_parse_and_yes_means_auto() {
+        assert_eq!(parse_words(&["hi"]).unwrap().approval, None);
+        let ask = parse_words(&["--approval", "ask", "hi"]).unwrap();
+        assert_eq!(ask.approval, Some(ApprovalMode::Ask));
+        assert!(parse_words(&["--approval", "bypass"]).is_err());
+        assert!(parse_words(&["--approval"]).is_err());
     }
 
     #[test]

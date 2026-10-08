@@ -13,7 +13,7 @@ mod secrets;
 mod tools;
 mod turn;
 
-pub use approval::{AllowAll, ApprovalRequest, Approver, Decision};
+pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};
 pub use conversation::conversation;
 pub use env::{Clock, Entropy};
 pub use harness::{Harness, HarnessError, Parts, Settings, Thread};

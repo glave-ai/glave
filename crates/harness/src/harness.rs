@@ -11,7 +11,7 @@ use glave_ports::{
 };
 use thiserror::Error;
 
-use crate::approval::Approver;
+use crate::approval::{ApprovalMode, Approver};
 use crate::env::{Clock, Entropy};
 use crate::prompt::system_prompt;
 use crate::tools::{Tool, workspace::Workspace};
@@ -24,6 +24,8 @@ pub struct Settings {
     /// A short name for the provider, recorded with each turn, such as `openrouter`.
     pub provider: String,
     pub system_prompt: String,
+    /// How much to ask the person before acting.
+    pub approval: ApprovalMode,
     /// Model calls allowed in one turn before it stops.
     pub max_steps: u32,
     pub max_output_tokens: Option<u32>,
@@ -38,6 +40,7 @@ impl Settings {
             system_prompt: system_prompt(&model, &provider),
             model,
             provider,
+            approval: ApprovalMode::default(),
             max_steps: 50,
             max_output_tokens: None,
         }

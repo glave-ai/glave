@@ -58,12 +58,12 @@ pub struct Printer {
     showing: Showing,
     /// Who the answers come from: the model's own name, never one it is not.
     speaker: String,
-    /// The protections commands run under, such as `sandbox: project`.
-    protections: Option<String>,
+    /// The protections in force, such as `approval: edits · sandbox: project`.
+    protections: String,
 }
 
 impl Printer {
-    pub fn new(model: &str, protections: Option<String>) -> Self {
+    pub fn new(model: &str, protections: String) -> Self {
         Self {
             color: color_enabled(),
             showing: Showing::Nothing,
@@ -79,12 +79,10 @@ impl Printer {
             paint(
                 self.color,
                 DIM,
-                &match &self.protections {
-                    Some(protections) => {
-                        format!("· {model} via {provider} · {folder} · {protections} · {note}")
-                    }
-                    None => format!("· {model} via {provider} · {folder} · {note}"),
-                }
+                &format!(
+                    "· {model} via {provider} · {folder} · {} · {note}",
+                    self.protections
+                )
             )
         );
         println!(
@@ -119,6 +117,23 @@ impl Printer {
                 print!("  {} ", paint(self.color, DIM, &format!("{summary} …")));
                 self.showing = Showing::Nothing;
             }
+            Live::ToolDeclined {
+                summary,
+                no_one_there,
+            } => {
+                let why = if no_one_there {
+                    "not run: no one here to approve it"
+                } else {
+                    "declined"
+                };
+                println!();
+                println!(
+                    "  {} {}",
+                    paint(self.color, DIM, &format!("{summary} …")),
+                    paint(self.color, YELLOW, why)
+                );
+                self.showing = Showing::Nothing;
+            }
             Live::ToolFinished { is_error, .. } => {
                 if is_error {
                     println!("{}", paint(self.color, RED, "error"));
@@ -140,11 +155,7 @@ impl Printer {
             Outcome::Failed => ("failed", RED),
         };
         let tokens = &summary.tokens;
-        let mut line = self
-            .protections
-            .as_ref()
-            .map(|protections| format!("{protections} · "))
-            .unwrap_or_default();
+        let mut line = format!("{} · ", self.protections);
         let _ = write!(
             line,
             "{} model call{} · {} tool call{} · {} tokens",

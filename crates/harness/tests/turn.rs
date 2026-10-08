@@ -135,7 +135,11 @@ mod scripted {
         answers: Vec<Completion>,
         approver: A,
     ) -> Harness<Script, MemoryLog, MemoryBlobs, A> {
-        harness_on(dir, answers, approver, MemoryLog::new(), 1).await
+        harness_on(dir, answers, approver, MemoryLog::new(), 1, settings()).await
+    }
+
+    fn settings() -> Settings {
+        Settings::new("test-model", "script")
     }
 
     /// A harness on a given log. `seed` keeps ids distinct between harnesses sharing a log.
@@ -145,6 +149,7 @@ mod scripted {
         approver: A,
         log: L,
         seed: u64,
+        settings: Settings,
     ) -> Harness<Script, L, MemoryBlobs, A> {
         let script = Script {
             answers: Mutex::new(answers.into()),
@@ -159,7 +164,7 @@ mod scripted {
             entropy: Box::new(Counting(AtomicU64::new(seed))),
             workspace: Workspace::open(dir, std::env::vars_os()).await.unwrap(),
         };
-        Harness::new(parts, Settings::new("test-model", "script"))
+        Harness::new(parts, settings)
     }
 
     async fn events<L: EventLog>(log: &L, thread: glave_event::ThreadId) -> Vec<Event> {
@@ -259,6 +264,42 @@ mod scripted {
             });
             assert!(declined);
         });
+    }
+
+    #[test]
+    fn the_approval_mode_decides_what_asks() {
+        use glave_harness::ApprovalMode;
+        for (mode, wrote, ran) in [
+            (ApprovalMode::Ask, false, false),
+            (ApprovalMode::Edits, true, false),
+            (ApprovalMode::Auto, true, true),
+        ] {
+            let dir = folder(&format!("mode-{}", mode.name()));
+            block_on(async {
+                let answers = vec![
+                    answer(
+                        None,
+                        vec![
+                            ("write", json!({"path": "notes.md", "content": "hi"})),
+                            ("bash", json!({"command": "touch ran.txt"})),
+                        ],
+                        StopReason::ToolUse,
+                    ),
+                    answer(Some("Done."), vec![], StopReason::EndTurn),
+                ];
+                let mut settings = settings();
+                settings.approval = mode;
+                let harness =
+                    harness_on(&dir, answers, Refuse, MemoryLog::new(), 1, settings).await;
+                let mut thread = harness.start_thread(scope()).await.unwrap();
+                harness
+                    .run_turn(&mut thread, "go", &mut |_| {})
+                    .await
+                    .unwrap();
+            });
+            assert_eq!(dir.join("notes.md").exists(), wrote, "{mode:?} write");
+            assert_eq!(dir.join("ran.txt").exists(), ran, "{mode:?} command");
+        }
     }
 
     #[test]
@@ -406,7 +447,7 @@ mod scripted {
             let log = MemoryLog::new();
             log.append(&scope(), &raw).await.unwrap();
             let later = vec![answer(Some("Again."), vec![], StopReason::EndTurn)];
-            let resumed_harness = harness_on(&dir, later, AllowAll, log, 1_000).await;
+            let resumed_harness = harness_on(&dir, later, AllowAll, log, 1_000, settings()).await;
             let mut resumed = resumed_harness
                 .resume_thread(scope(), thread.id)
                 .await
@@ -455,7 +496,7 @@ mod scripted {
             let cut: Vec<RawEvent> = raw.into_iter().take(5).collect();
             let log = MemoryLog::new();
             log.append(&scope(), &cut).await.unwrap();
-            let resumed_harness = harness_on(&dir, vec![], AllowAll, log, 1_000).await;
+            let resumed_harness = harness_on(&dir, vec![], AllowAll, log, 1_000, settings()).await;
             let resumed = resumed_harness
                 .resume_thread(scope(), thread.id)
                 .await

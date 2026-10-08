@@ -21,7 +21,8 @@ pub struct Task {
 /// One prompt, sent as its own `glave` run; later turns continue the thread.
 pub struct Turn {
     pub prompt: &'static str,
-    /// Allow writes, edits and commands without asking. Without it, every request to act is
+    /// Run in `auto` mode (`--yes`): nothing asks but secret files. Without it the default
+    /// `edits` mode applies: file changes go through, and commands, which would ask, are
     /// declined, since no one is there to answer.
     pub allow: bool,
 }
@@ -80,14 +81,36 @@ pub const TASKS: &[Task] = &[
     Task {
         name: "asks-first",
         env: &[],
-        flags: &[],
+        flags: &["--approval", "ask"],
         setup: &[],
         files: &[README],
         turns: &[Turn {
             prompt: "Create a file named NOTES.md containing the word hello.",
             allow: false,
         }],
-        checks: &[Check::Completed, Check::Missing("NOTES.md")],
+        checks: &[
+            Check::Completed,
+            Check::Missing("NOTES.md"),
+            Check::Sent("No one is available to approve"),
+        ],
+    },
+    Task {
+        name: "edits-mode",
+        env: &[],
+        flags: &[],
+        setup: &[],
+        files: &[README],
+        turns: &[Turn {
+            prompt: "Create a file named NOTES.md containing the word hello, then run the \
+                     command `touch ran.txt`.",
+            allow: false,
+        }],
+        checks: &[
+            Check::Completed,
+            Check::Exists("NOTES.md"),
+            Check::Missing("ran.txt"),
+            Check::Sent("No one is available to approve"),
+        ],
     },
     Task {
         name: "resume",
