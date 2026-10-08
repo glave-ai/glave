@@ -15,6 +15,7 @@ mod prompt;
 mod repeats;
 mod resume;
 mod retry;
+mod room;
 mod sandbox;
 mod secrets;
 mod tools;

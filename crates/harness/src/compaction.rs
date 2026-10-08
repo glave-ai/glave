@@ -5,14 +5,17 @@
 use std::fmt::Write as _;
 
 use glave_event::{Arguments, ModelResponded, Part, Seq, ThreadCompacted};
+use std::sync::atomic::Ordering;
+
 use glave_ports::{
-    BlobStore, Completion, EventLog, Message, ModelProvider, ModelRequest, ProviderError,
+    BlobStore, Completion, EventLog, Failure, Message, ModelProvider, ModelRequest, ProviderError,
     ToolChoice, ToolSpec,
 };
 
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::room::{stated_window, trim_oldest};
 use crate::toolset::ToolSet;
 use crate::turn::Live;
 
@@ -160,10 +163,8 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<Completion>, HarnessError> {
-        let Compaction {
-            window_tokens,
-            at_percent,
-        } = self.settings.compaction;
+        let at_percent = self.settings.compaction.at_percent;
+        let window_tokens = self.window_tokens();
         let tokens = next_request_tokens(thread, offer);
         let full =
             tokens.saturating_mul(100) >= window_tokens.saturating_mul(u64::from(at_percent));
@@ -182,6 +183,23 @@ where
         }
     }
 
+    /// The context window compaction aims for: the configured one, or the model's real one if a
+    /// refusal has stated a smaller one.
+    fn window_tokens(&self) -> u64 {
+        let configured = self.settings.compaction.window_tokens;
+        match self.learned_window.load(Ordering::Relaxed) {
+            0 => configured,
+            learned => configured.min(learned),
+        }
+    }
+
+    /// Believes the window a too-long refusal states, for the rest of the session.
+    pub(crate) fn learn_window(&self, refusal: &ProviderError) {
+        if let Some(tokens) = stated_window(&refusal.to_string()) {
+            self.learned_window.store(tokens, Ordering::Relaxed);
+        }
+    }
+
     /// Summarizes the thread and restarts its conversation from the summary, whatever its size.
     /// For `/compact`. Cancelling leaves the thread as it was.
     pub async fn compact(
@@ -194,7 +212,7 @@ where
         self.compact_with(thread, &offer, cancel, live).await
     }
 
-    async fn compact_with(
+    pub(crate) async fn compact_with(
         &self,
         thread: &mut Thread,
         offer: &ToolSet,
@@ -218,11 +236,7 @@ where
             tool_choice: ToolChoice::None,
             max_output_tokens: Some(SUMMARY_TOKENS),
         };
-        // Only the model call can be dropped: what follows writes to the log.
-        let completion = cancel
-            .run(self.provider.complete(&request, &mut |_| {}))
-            .await
-            .ok_or(HarnessError::Cancelled)??;
+        let completion = self.summarize(request, cancel).await?;
         let summary: Vec<&str> = completion
             .parts
             .iter()
@@ -266,6 +280,39 @@ where
             after_tokens,
             completion,
         })
+    }
+}
+
+impl<P, L, B, A> Harness<P, L, B, A>
+where
+    P: ModelProvider,
+    L: EventLog,
+    B: BlobStore,
+    A: Approver,
+{
+    /// Asks for the summary. A request refused as too long loses its oldest tool outputs and is
+    /// asked again, until it fits or there are none left to lose. Only the model call can be
+    /// dropped by a cancel: what follows it writes to the log.
+    async fn summarize(
+        &self,
+        mut request: ModelRequest,
+        cancel: &Cancel,
+    ) -> Result<Completion, HarnessError> {
+        loop {
+            let asked = cancel
+                .run(self.provider.complete(&request, &mut |_| {}))
+                .await
+                .ok_or(HarnessError::Cancelled)?;
+            match asked {
+                Err(error) if error.failure() == Failure::TooLong => {
+                    self.learn_window(&error);
+                    if !trim_oldest(&mut request.messages) {
+                        return Err(error.into());
+                    }
+                }
+                other => return Ok(other?),
+            }
+        }
     }
 }
 

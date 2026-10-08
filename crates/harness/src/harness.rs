@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use glave_event::{
     At, EncodeError, EventId, Header, InvalidValue, Part, Payload, Producer, RawEvent, Seq,
@@ -87,6 +88,8 @@ pub struct Harness<P, L, B, A> {
     /// Where tools come from: the built-in tools first, then any others, such as MCP servers.
     pub(crate) sources: Vec<Arc<dyn ToolSource>>,
     pub(crate) settings: Settings,
+    /// The model's real context window, once a refusal has stated it; 0 until then.
+    pub(crate) learned_window: AtomicU64,
 }
 
 /// One thread: where it is stored, where it continues, and the conversation so far.
@@ -161,6 +164,7 @@ where
             })],
             workspace,
             settings,
+            learned_window: AtomicU64::new(0),
         }
     }
 
