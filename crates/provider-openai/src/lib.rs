@@ -7,6 +7,8 @@
 
 mod assemble;
 mod client;
+#[cfg(feature = "fake-server")]
+pub mod fake;
 mod sse;
 mod wire;
 
