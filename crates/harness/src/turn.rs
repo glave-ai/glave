@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use crate::approval::{ApprovalRequest, Approver, Decision, reads_secret, summarize};
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::sandbox::{Prepared, Recorded};
 use crate::tools::{Tool, ToolOutcome, specs};
 
 /// The same call this many times in a row is refused, so a stuck model changes course.
@@ -84,6 +85,9 @@ struct TurnConfig<'a> {
     system: &'a str,
     tools: &'a [ToolSpec],
     max_output_tokens: Option<u32>,
+    /// The sandbox commands ran in; absent when there was none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sandbox: Option<Recorded>,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -150,6 +154,7 @@ where
             system: &self.settings.system_prompt,
             tools,
             max_output_tokens: self.settings.max_output_tokens,
+            sandbox: self.workspace.sandbox().map(Prepared::recorded),
         };
         let bytes = serde_json::to_vec(&config).map_err(|e| HarnessError::Event(e.to_string()))?;
         let config = self

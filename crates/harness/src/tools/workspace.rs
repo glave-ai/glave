@@ -10,13 +10,16 @@ use std::sync::Mutex;
 use glave_event::Sha256;
 use glave_ports::digest;
 
+use crate::sandbox::{Prepared, Sandbox};
 use crate::secrets::without_secrets;
 
-/// The project folder, the environment its commands run with, and what the model has seen.
+/// The project folder, the environment and sandbox its commands run with, and what the model
+/// has seen.
 #[derive(Debug)]
 pub struct Workspace {
     root: PathBuf,
     environment: Vec<(OsString, OsString)>,
+    sandbox: Option<Prepared>,
     reads: Mutex<HashMap<PathBuf, Sha256>>,
 }
 
@@ -38,8 +41,21 @@ impl Workspace {
         Ok(Self {
             root,
             environment: without_secrets(environment),
+            sandbox: None,
             reads: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Runs every command in `sandbox`. Fails if this computer cannot enforce it, so a
+    /// requested sandbox is never quietly skipped.
+    pub async fn with_sandbox(mut self, sandbox: &Sandbox) -> std::io::Result<Self> {
+        self.sandbox = Some(sandbox.prepare(&self.root).await?);
+        Ok(self)
+    }
+
+    /// The sandbox commands run in, if one was asked for.
+    pub(crate) fn sandbox(&self) -> Option<&Prepared> {
+        self.sandbox.as_ref()
     }
 
     pub fn root(&self) -> &Path {

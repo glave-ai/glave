@@ -39,28 +39,7 @@ pub(crate) async fn bash(workspace: &Workspace, args: BashArgs) -> ToolOutcome {
         .timeout_secs
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
         .clamp(1, MAX_TIMEOUT_SECS);
-    let mut command = Command::new("bash");
-    command
-        .arg("-c")
-        .arg(format!("exec 2>&1\n{}", args.command))
-        .current_dir(workspace.root())
-        .env_clear()
-        .envs(
-            workspace
-                .environment()
-                .iter()
-                .map(|(name, value)| (name, value)),
-        )
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .env("NO_COLOR", "1")
-        .env("TERM", "dumb")
-        .env("PAGER", "cat")
-        .env("GIT_PAGER", "cat")
-        .kill_on_drop(true);
-    #[cfg(unix)]
-    command.process_group(0);
+    let mut command = command(workspace, &args.command);
     let started = Instant::now();
     let mut child = match command.spawn() {
         Ok(child) => child,
@@ -101,12 +80,59 @@ pub(crate) async fn bash(workspace: &Workspace, args: BashArgs) -> ToolOutcome {
         output
     };
     let failed = !matches!(ending, Ending::Exited(Some(0)));
-    let text = format!("{}\n{footer}", body.trim_end_matches('\n'));
+    let mut text = format!("{}\n{footer}", body.trim_end_matches('\n'));
+    let exit = match ending {
+        Ending::Exited(code) => code,
+        Ending::TimedOut(_) => None,
+    };
+    if let Some(note) = workspace
+        .sandbox()
+        .and_then(|sandbox| sandbox.blocked_note(exit, &body))
+    {
+        text.push('\n');
+        text.push_str(note);
+    }
     if failed {
         ToolOutcome::error(text)
     } else {
         ToolOutcome::ok(text)
     }
+}
+
+/// `script` run by bash at the project root, in the sandbox if there is one, with the
+/// workspace's environment and output that reads well as text.
+fn command(workspace: &Workspace, script: &str) -> Command {
+    let mut command = match workspace.sandbox() {
+        Some(sandbox) => {
+            let (program, args) = sandbox.wrapper();
+            let mut command = Command::new(program);
+            command.args(args).arg("bash");
+            command
+        }
+        None => Command::new("bash"),
+    };
+    command
+        .arg("-c")
+        .arg(format!("exec 2>&1\n{script}"))
+        .current_dir(workspace.root())
+        .env_clear()
+        .envs(
+            workspace
+                .environment()
+                .iter()
+                .map(|(name, value)| (name, value)),
+        )
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .env("NO_COLOR", "1")
+        .env("TERM", "dumb")
+        .env("PAGER", "cat")
+        .env("GIT_PAGER", "cat")
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
+    command
 }
 
 enum Ending {
