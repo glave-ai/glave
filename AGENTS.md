@@ -36,8 +36,8 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 ```
 Cargo.toml          workspace: lints, profiles, shared dependencies
 xtask/              developer automation (`cargo xtask`)
-crates/             the libraries (none yet)
-specs/              the contracts: event format, tool calls, verbs and scopes, API surface (planned)
+crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
+specs/              the contracts: events.md now; tool calls, verbs and scopes, API surface planned
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main)
 ```
 

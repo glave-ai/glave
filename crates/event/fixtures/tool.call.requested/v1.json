@@ -1,0 +1,1 @@
+{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000004","thread":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10","seq":4,"at":"2026-10-07T21:14:01.300Z","type":"tool.call.requested","v":1,"data":{"call_id":"call_7","provider_call_id":"toolu_01A","tool":"bash","arguments":{"json":{"command":"ls"}}}}
