@@ -39,7 +39,7 @@ Without `--sandbox`, commands run as the person, as they do today.
 
 **It fails closed.** If the sandbox was asked for and cannot run on this computer, glave refuses to run commands and says why. It never quietly runs them unconfined.
 
-**There is no escape hatch in version 1.** A command the sandbox blocks stays blocked. glave adds a note to its output saying the sandbox blocked it, so the model stops trying instead of guessing. A way to ask the person to let one command out can come with approval modes, if it is wanted.
+**There is no escape hatch in version 1.** A command the sandbox blocks stays blocked. glave adds a note to its output saying the sandbox blocked it, so the model stops trying instead of guessing. A way to ask the person to let one command out may come later (`approvals.md`).
 
 ## What the project level allows
 
@@ -107,7 +107,6 @@ Until Linux is built, the sandbox stays concrete code, not a port: AGENTS.md ask
 
 ## Later, decided separately
 
-- **Approval modes** (`ask`, `edits`, `auto`, `unattended`) and a way for a sandboxed command to ask to leave the sandbox.
 - **A judge model** for `auto` that approves or flags each action (issue #13).
 - **Undo**, if it proves worth it. Locally, git is the safety net; in cloud Computers, undo is restoring a snapshot.
 - **Organization caps**: companies requiring the sandbox, and projects only tightening it (issue #7).

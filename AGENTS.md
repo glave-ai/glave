@@ -42,7 +42,7 @@ crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming prov
 crates/store-sqlite/  glave-store-sqlite: the event log and blob store on one local SQLite file
 crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash), approvals, resume, the opt-in sandbox
 crates/cli/         glave: the command-line binary
-specs/              the contracts: events.md now; tool calls, verbs and scopes, API surface planned
+specs/              the contracts: events, the sandbox, approvals; tool calls, verbs and scopes, API surface planned
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main)
 ```
 

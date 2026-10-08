@@ -1,10 +1,11 @@
-//! Asking the person before anything changes (writes, edits and commands) and before the
-//! model sees a file that usually holds secrets.
+//! Asking the person before acting: how much to ask (the approval mode), and always before the
+//! model sees a file that usually holds secrets. See `specs/approvals.md`.
 
 use std::future::{Future, ready};
 use std::path::Path;
 
 use glave_event::Arguments;
+use serde::Serialize;
 
 use crate::secrets::is_secret_file;
 use crate::tools::Tool;
@@ -20,6 +21,47 @@ pub struct ApprovalRequest {
     pub secret: bool,
 }
 
+/// How much glave asks before acting. Secret files ask in every mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ApprovalMode {
+    /// Ask before every change and every command.
+    Ask,
+    /// Changes to files in the project go through; commands ask.
+    #[default]
+    Edits,
+    /// Changes and commands go through: in the sandbox when it is on, as the person when not.
+    Auto,
+}
+
+impl ApprovalMode {
+    pub fn named(name: &str) -> Option<Self> {
+        match name {
+            "ask" => Some(Self::Ask),
+            "edits" => Some(Self::Edits),
+            "auto" => Some(Self::Auto),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::Edits => "edits",
+            Self::Auto => "auto",
+        }
+    }
+
+    /// Whether `tool` needs the person's approval in this mode.
+    pub(crate) fn asks_for(self, tool: Tool) -> bool {
+        match tool {
+            Tool::Search | Tool::Glob | Tool::Read => false,
+            Tool::Write | Tool::Edit => self == Self::Ask,
+            Tool::Bash => self != Self::Auto,
+        }
+    }
+}
+
 /// The person's answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
@@ -27,12 +69,24 @@ pub enum Decision {
     /// Allow this tool for the rest of the thread.
     AllowForThread,
     Deny,
+    /// No one is there to answer: glave runs without anyone at the keyboard.
+    Unavailable,
 }
 
-/// Decides whether an action may go ahead. The CLI asks in the terminal; tests and `--yes`
-/// allow everything.
+/// Decides whether an action may go ahead. The CLI asks in the terminal, or answers that no
+/// one is there when it has none.
 pub trait Approver: Send + Sync {
     fn decide(&self, request: &ApprovalRequest) -> impl Future<Output = Decision> + Send;
+}
+
+/// For runs with no one at the keyboard: every request is answered "no one is here".
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoOneToAsk;
+
+impl Approver for NoOneToAsk {
+    fn decide(&self, _request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
+        ready(Decision::Unavailable)
+    }
 }
 
 /// Allows every action without asking, except showing the model a secret file: with no one
@@ -123,6 +177,24 @@ mod tests {
             assert!(reads_secret(&workspace, Tool::Read, &read("notes.txt")).await);
             assert!(!reads_secret(&workspace, Tool::Bash, &read(".env")).await);
         });
+    }
+
+    #[test]
+    fn each_mode_asks_for_exactly_what_it_should() {
+        use ApprovalMode::{Ask, Auto, Edits};
+        for tool in [Tool::Search, Tool::Glob, Tool::Read] {
+            assert!(!Ask.asks_for(tool) && !Edits.asks_for(tool) && !Auto.asks_for(tool));
+        }
+        for tool in [Tool::Write, Tool::Edit] {
+            assert!(Ask.asks_for(tool) && !Edits.asks_for(tool) && !Auto.asks_for(tool));
+        }
+        assert!(
+            Ask.asks_for(Tool::Bash) && Edits.asks_for(Tool::Bash) && !Auto.asks_for(Tool::Bash)
+        );
+        assert_eq!(ApprovalMode::default(), Edits);
+        for mode in [Ask, Edits, Auto] {
+            assert_eq!(ApprovalMode::named(mode.name()), Some(mode));
+        }
     }
 
     #[test]

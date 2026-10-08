@@ -86,7 +86,7 @@ mod glave_binary {
         assert!(output.status.success(), "{shown}");
         assert!(shown.contains("The answer is 42."), "{shown}");
         assert!(
-            shown.contains("done · 1 model call · 0 tool calls"),
+            shown.contains("done · approval: edits · 1 model call · 0 tool calls"),
             "{shown}"
         );
         let received = server.received();
@@ -170,8 +170,44 @@ mod glave_binary {
     }
 
     #[test]
-    fn without_yes_and_no_one_to_ask_nothing_changes() {
-        let place = place("declined");
+    fn in_edits_mode_file_changes_land_but_commands_wait_for_a_person() {
+        let place = place("edits");
+        let server = FakeServer::start(vec![
+            Reply::tool_call(
+                "toolu_1",
+                "write",
+                &json!({"path": "notes.md", "content": "hello\n"}),
+            ),
+            Reply::tool_call("toolu_2", "bash", &json!({"command": "touch ran.txt"})),
+            Reply::text("Wrote notes.md; the command needs a person."),
+        ])
+        .unwrap();
+        let output = glave(
+            &place,
+            &server,
+            &["--model", "m", "write notes, then run it"],
+            "",
+        );
+        assert!(output.status.success(), "{}", text(&output));
+        assert!(place.project.join("notes.md").exists(), "edits go through");
+        assert!(!place.project.join("ran.txt").exists(), "commands wait");
+        assert!(
+            text(&output).contains("bash: touch ran.txt … not run: no one here to approve it"),
+            "the log shows what did not run: {}",
+            text(&output)
+        );
+        let third = &server.received()[2].body;
+        assert!(
+            said(third, "tool")
+                .iter()
+                .any(|result| result.contains("No one is available to approve")),
+            "the model learns no one is there: {third}"
+        );
+    }
+
+    #[test]
+    fn in_ask_mode_with_no_one_to_ask_nothing_changes() {
+        let place = place("ask");
         let server = FakeServer::start(vec![
             Reply::tool_call(
                 "toolu_1",
@@ -181,16 +217,22 @@ mod glave_binary {
             Reply::text("I could not write it."),
         ])
         .unwrap();
-        let output = glave(&place, &server, &["--model", "m", "write notes"], "");
+        let output = glave(
+            &place,
+            &server,
+            &["--model", "m", "--approval", "ask", "write notes"],
+            "",
+        );
         assert!(output.status.success(), "{}", text(&output));
         assert!(!place.project.join("notes.md").exists());
         let second = &server.received()[1].body;
         assert!(
             said(second, "tool")
                 .iter()
-                .any(|result| result.contains("declined")),
+                .any(|result| result.contains("No one is available to approve")),
             "{second}"
         );
+        assert!(text(&output).contains("approval: ask"));
     }
 
     #[test]

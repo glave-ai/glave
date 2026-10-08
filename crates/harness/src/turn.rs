@@ -10,7 +10,7 @@ use glave_ports::{
 };
 use serde::Serialize;
 
-use crate::approval::{ApprovalRequest, Approver, Decision, reads_secret, summarize};
+use crate::approval::{ApprovalMode, ApprovalRequest, Approver, Decision, reads_secret, summarize};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::sandbox::{Prepared, Recorded};
 use crate::tools::{Tool, ToolOutcome, specs};
@@ -23,8 +23,18 @@ const REPEAT_LIMIT: u32 = 3;
 pub enum Live {
     Text(String),
     Reasoning(String),
-    ToolStarted { summary: String },
-    ToolFinished { summary: String, is_error: bool },
+    ToolStarted {
+        summary: String,
+    },
+    ToolFinished {
+        summary: String,
+        is_error: bool,
+    },
+    /// An action that did not run: the person said no, or no one was there to ask.
+    ToolDeclined {
+        summary: String,
+        no_one_there: bool,
+    },
 }
 
 /// What a turn did and what it cost.
@@ -85,6 +95,7 @@ struct TurnConfig<'a> {
     system: &'a str,
     tools: &'a [ToolSpec],
     max_output_tokens: Option<u32>,
+    approval: ApprovalMode,
     /// The sandbox commands ran in; absent when there was none.
     #[serde(skip_serializing_if = "Option::is_none")]
     sandbox: Option<Recorded>,
@@ -154,6 +165,7 @@ where
             system: &self.settings.system_prompt,
             tools,
             max_output_tokens: self.settings.max_output_tokens,
+            approval: self.settings.approval,
             sandbox: self.workspace.sandbox().map(Prepared::recorded),
         };
         let bytes = serde_json::to_vec(&config).map_err(|e| HarnessError::Event(e.to_string()))?;
@@ -274,7 +286,7 @@ where
         };
         let summary = summarize(tool, &call.arguments);
         let secret = reads_secret(&self.workspace, tool, &call.arguments).await;
-        if (tool.changes_things() || secret) && !thread.allowed.contains(&tool) {
+        if (self.settings.approval.asks_for(tool) || secret) && !thread.allowed.contains(&tool) {
             let request = ApprovalRequest {
                 tool,
                 summary: if secret {
@@ -284,7 +296,14 @@ where
                 },
                 secret,
             };
-            match self.approver.decide(&request).await {
+            let decision = self.approver.decide(&request).await;
+            if matches!(decision, Decision::Deny | Decision::Unavailable) {
+                live(Live::ToolDeclined {
+                    summary: summary.clone(),
+                    no_one_there: decision == Decision::Unavailable,
+                });
+            }
+            match decision {
                 Decision::AllowOnce => {}
                 Decision::AllowForThread => {
                     thread.allowed.insert(tool);
@@ -299,6 +318,7 @@ where
                         "The person declined this action. Ask them what they would like instead, or take a different approach.",
                     );
                 }
+                Decision::Unavailable => return ToolOutcome::error(no_one_there(secret)),
             }
         }
         live(Live::ToolStarted {
@@ -367,4 +387,19 @@ fn tally(summary: &mut TurnSummary, completion: &Completion) {
         }),
         _ => None,
     };
+}
+
+/// What the model is told when an action needs a person and no one is at the keyboard: not to
+/// retry or work around it, and to say what is left for a person.
+fn no_one_there(secret: bool) -> &'static str {
+    if secret {
+        "No one is available to approve reading this file, which usually holds secrets: glave is \
+         running without anyone at the keyboard. Do not try to get its contents another way. \
+         Finish what you can without it, and say at the end which value a person must provide."
+    } else {
+        "No one is available to approve this action: glave is running without anyone at the \
+         keyboard, in a mode that needs approval for it. Do not retry it or do the same thing \
+         another way. Finish what you can without it, and say at the end what still needs a \
+         person (or that it can be run with --approval auto)."
+    }
 }
