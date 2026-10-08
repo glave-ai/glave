@@ -191,6 +191,37 @@ mod glave_binary {
         let shown = text(&output);
         assert!(shown.contains("401"), "{shown}");
         assert!(shown.contains("Missing Authentication header"), "{shown}");
+        assert!(!shown.contains(r#"{"error""#), "never raw JSON: {shown}");
+        assert!(
+            shown.contains("fix: 127.0.0.1 did not accept the key: check GLAVE_API_KEY"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn an_unknown_model_names_the_id_to_check() {
+        let place = place("unknown-model");
+        let server = FakeServer::start(vec![Reply::Status(
+            400,
+            r#"{"error":{"message":"nosuch/model is not a valid model ID","code":400}}"#.into(),
+        )])
+        .unwrap();
+        let output = glave(&place, &server, &["--model", "nosuch/model", "hi"], "");
+        assert!(!output.status.success());
+        let shown = text(&output);
+        assert!(
+            shown.contains("nosuch/model is not a valid model ID"),
+            "{shown}"
+        );
+        assert!(
+            shown.contains("fix: check the model id nosuch/model (--model or GLAVE_MODEL)"),
+            "{shown}"
+        );
+        assert_eq!(
+            server.received().len(),
+            1,
+            "not retried: it would fail again"
+        );
     }
 
     #[test]

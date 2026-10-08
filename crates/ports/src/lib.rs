@@ -9,12 +9,14 @@
 mod blob;
 #[cfg(any(test, feature = "conformance"))]
 pub mod conformance;
+mod failure;
 mod log;
 mod memory;
 mod model;
 mod scope;
 
 pub use blob::{BlobError, BlobStore, digest};
+pub use failure::Failure;
 pub use log::{EventLog, LogError, check_append};
 pub use memory::{MemoryBlobs, MemoryLog};
 pub use model::{

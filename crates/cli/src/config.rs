@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use anyhow::{Context as _, bail};
+use glave_ports::Failure;
 use glave_provider_openai::Config;
 
 const DEFAULT_BASE_URL: &str = "http://localhost:11434/v1";
@@ -38,6 +39,53 @@ pub fn endpoint(model_flag: Option<String>) -> anyhow::Result<Endpoint> {
     })
 }
 
+/// What to change when a model call fails in a way the person can fix, naming the setting.
+pub fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
+    let host = endpoint
+        .provider
+        .host()
+        .unwrap_or_else(|| "the server".to_owned());
+    let model = &endpoint.model;
+    Some(match failure {
+        Failure::Refused if endpoint.provider.api_key.is_none() => {
+            format!("{host} wants a key: set GLAVE_API_KEY")
+        }
+        Failure::Refused => format!("{host} did not accept the key: check GLAVE_API_KEY"),
+        Failure::NoCredit => {
+            format!("the account behind GLAVE_API_KEY has no credit left at {host}")
+        }
+        Failure::UnknownModel => format!(
+            "check the model id {model} (--model or GLAVE_MODEL), and that GLAVE_BASE_URL points \
+             at the right server ({host})"
+        ),
+        Failure::TooLong => "the conversation is longer than the model's context window: run \
+             /compact, start a new thread, or set GLAVE_CONTEXT_WINDOW to the model's real window"
+            .to_owned(),
+        Failure::RateLimited => format!(
+            "{host} is limiting requests even after 4 retries: wait a minute, or try another model"
+        ),
+        Failure::Unavailable => format!(
+            "{host} is failing on its side even after 4 retries: try again shortly, or another model"
+        ),
+        Failure::Unreachable if endpoint.local => {
+            format!("is the model server running on this computer? GLAVE_BASE_URL points at {host}")
+        }
+        Failure::Unreachable => {
+            format!(
+                "check the network, and that GLAVE_BASE_URL points at the right server ({host})"
+            )
+        }
+        Failure::Silent => format!(
+            "{model} sent nothing for {} s: a slow local model may need a larger GLAVE_IDLE_TIMEOUT",
+            endpoint.provider.idle_timeout.as_secs()
+        ),
+        Failure::Malformed => format!(
+            "the server at {host} may not speak OpenAI's chat completions API: check GLAVE_BASE_URL"
+        ),
+        Failure::Rejected => return None,
+    })
+}
+
 /// How long the model may send nothing, from `GLAVE_IDLE_TIMEOUT` in seconds, when it is set.
 pub fn idle_timeout() -> anyhow::Result<Option<Duration>> {
     match std::env::var("GLAVE_IDLE_TIMEOUT") {
@@ -66,5 +114,51 @@ pub fn context_window() -> anyhow::Result<Option<u64>> {
             Ok(Some(tokens))
         }
         Err(_) => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn endpoint(url: &str, key: Option<&str>) -> Endpoint {
+        let provider = Config::for_url(url, key.map(str::to_owned)).unwrap();
+        Endpoint {
+            local: provider.is_local(),
+            provider,
+            model: "anthropic/claude-haiku-5.5".into(),
+        }
+    }
+
+    #[test]
+    fn each_fix_names_the_setting_to_change() {
+        let remote = endpoint("https://openrouter.ai/api/v1", Some("sk-1"));
+        let fix = |failure| fix(failure, &remote).unwrap_or_default();
+        assert!(fix(Failure::Refused).contains("check GLAVE_API_KEY"));
+        assert!(fix(Failure::NoCredit).contains("no credit"));
+        assert!(fix(Failure::UnknownModel).contains("anthropic/claude-haiku-5.5"));
+        assert!(fix(Failure::UnknownModel).contains("GLAVE_MODEL"));
+        assert!(fix(Failure::TooLong).contains("/compact"));
+        assert!(fix(Failure::Unreachable).contains("GLAVE_BASE_URL"));
+        assert!(fix(Failure::Silent).contains("GLAVE_IDLE_TIMEOUT"));
+        assert!(fix(Failure::Silent).contains("300 s"));
+        assert!(fix(Failure::Malformed).contains("openrouter.ai"));
+        assert_eq!(
+            super::fix(Failure::Rejected, &remote),
+            None,
+            "the message says it all"
+        );
+        let keyless = endpoint("https://openrouter.ai/api/v1", None);
+        assert!(
+            super::fix(Failure::Refused, &keyless)
+                .unwrap()
+                .contains("set GLAVE_API_KEY")
+        );
+        let local = endpoint("http://localhost:11434/v1", None);
+        assert!(
+            super::fix(Failure::Unreachable, &local)
+                .unwrap()
+                .contains("running on this computer")
+        );
     }
 }
