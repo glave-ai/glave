@@ -116,10 +116,10 @@ mod http {
 
     #[test]
     fn an_http_server_passes_the_conformance_suite_and_gets_its_headers() {
-        let served = Served::start();
+        let listening = Served::start();
         block_on(async {
             let headers = [("Authorization", "Bearer test-token"), ("X-Team", "glave")];
-            let server = launch(&at(&served.url, &headers));
+            let server = launch(&at(&listening.url, &headers));
             assert_eq!(conformance::tool_source(&server).await, Ok(()));
             let mut seen = Vec::new();
             for name in ["authorization", "x-team"] {
@@ -133,9 +133,9 @@ mod http {
 
     #[test]
     fn a_cancelled_call_over_http_stops_and_the_server_keeps_working() {
-        let served = Served::start();
+        let listening = Served::start();
         block_on(async {
-            let server = launch(&at(&served.url, &[]));
+            let server = launch(&at(&listening.url, &[]));
             server.tools().await.unwrap();
             let none = arguments(json!({}));
             let stopped = server.call("mcp__web__slow", &none, &Already).await;
