@@ -94,9 +94,13 @@ impl Servers {
         }
     }
 
+    /// Closes every server side by side, so one slow to exit holds up no other.
     pub async fn close(&self) {
+        let mut closing = tokio::task::JoinSet::new();
         for server in &self.servers {
-            server.close().await;
+            let server = Arc::clone(server);
+            closing.spawn(async move { server.close().await });
         }
+        while closing.join_next().await.is_some() {}
     }
 }
