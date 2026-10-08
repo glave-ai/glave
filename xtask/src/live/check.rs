@@ -34,6 +34,8 @@ pub enum Check {
     NeverSent(&'static str),
     /// This text appears in the thread's events: the model was told it.
     Sent(&'static str),
+    /// An event of this type was recorded, such as `thread.compacted`.
+    Recorded(&'static str),
 }
 
 /// What a check can look at.
@@ -79,6 +81,11 @@ impl Check {
             Self::Exists(path) => holds(cx.project.join(path).exists(), || {
                 format!("{path} was not created")
             }),
+            Self::Recorded(kind) => {
+                holds(cx.events.contains(&format!("\"type\":\"{kind}\"")), || {
+                    format!("no {kind} event was recorded")
+                })
+            }
             Self::Sent(text) => holds(cx.events.contains(text), || {
                 format!("{text:?} was never sent to the model")
             }),

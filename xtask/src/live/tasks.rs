@@ -113,6 +113,31 @@ pub const TASKS: &[Task] = &[
         ],
     },
     Task {
+        name: "compaction",
+        // A window small enough that reading the project fills it.
+        env: &[("GLAVE_CONTEXT_WINDOW", "6000")],
+        flags: &[],
+        setup: &[],
+        files: LONG_FILES,
+        turns: &[
+            Turn {
+                prompt: "Remember this code word for later: marigold-42. Then read every file \
+                         in this project and tell me how many lines each one has.",
+                allow: false,
+            },
+            Turn {
+                prompt: "What was the code word I gave you earlier? Reply with just the word.",
+                allow: false,
+            },
+        ],
+        checks: &[
+            Check::Completed,
+            Check::OneThread,
+            Check::Recorded("thread.compacted"),
+            Check::AnswerContains("marigold-42"),
+        ],
+    },
+    Task {
         name: "resume",
         env: &[],
         flags: &[],
@@ -328,6 +353,14 @@ const INVENTORY: &[(&str, &str)] = &[
         "use crate::settings::Settings;\n\npub fn report(settings: &Settings) {\n    \
          println!(\"{}: alert below {}\", settings.warehouse, settings.low_stock);\n}\n",
     ),
+];
+
+/// Three files of numbered notes, each about 6,000 characters: together more than a 6,000-token
+/// window holds.
+const LONG_FILES: &[(&str, &str)] = &[
+    ("notes/a.txt", include_str!("long_notes.txt")),
+    ("notes/b.txt", include_str!("long_notes.txt")),
+    ("notes/c.txt", include_str!("long_notes.txt")),
 ];
 
 /// A crate whose median is wrong for an even count of values; its tests show it.

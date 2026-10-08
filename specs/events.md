@@ -81,6 +81,7 @@ All types below are at version 1.
 | `tool.call.completed` | A tool call finished | `call_id`; `is_error`; `output` parts; optional `structured` result |
 | `model.responded` | A model response finished | `model`; optional `response_id`; `stop`; optional `provider_stop`; `usage`; optional `cost`. Content-free |
 | `turn.ended` | A turn ends | `outcome`: `completed`, `cancelled`, `failed`, `interrupted` or `limit_reached` |
+| `thread.compacted` | The conversation was summarized to fit the model's context window | `through`, the last `seq` the summary covers; `parts`, the message the conversation restarts from (the summary and the person's latest request). Rebuilding a conversation starts from the latest one; earlier events stay in the log |
 
 Details shared by several types:
 
@@ -113,7 +114,7 @@ Each of these is a later, separate decision, made when it is needed:
 - A per-event hash chain (`prev`) that makes receipts provable.
 - Trace ids on the envelope, for OpenTelemetry.
 - A `critical` flag, which lets older readers refuse an event they must not skip.
-- Event types for approvals, receipts, compaction, retention and holds. They arrive with the features that write them.
+- Event types for approvals, receipts, retention and holds. They arrive with the features that write them.
 
 The envelope version exists so that any of these can be added without touching stored events.
 

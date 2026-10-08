@@ -1,8 +1,8 @@
 //! One turn: the person's prompt, then model calls and tool calls until the model is done.
 
 use glave_event::{
-    CallId, Currency, MessageAdded, ModelRef, ModelResponded, Money, Outcome, Part, Role,
-    StopReason, TokenCounts, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted,
+    CallId, Currency, MessageAdded, ModelRef, Money, Outcome, Part, Role, StopReason, TokenCounts,
+    ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted,
 };
 use glave_ports::{
     BlobStore, Completion, Delta, EventLog, Message, ModelProvider, ModelRequest, ToolCall,
@@ -10,7 +10,10 @@ use glave_ports::{
 };
 use serde::Serialize;
 
-use crate::approval::{ApprovalMode, ApprovalRequest, Approver, Decision, reads_secret, summarize};
+use crate::approval::{
+    ApprovalMode, ApprovalRequest, Approver, Decision, no_one_there, reads_secret, summarize,
+};
+use crate::compaction::{Measured, chars, responded};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::sandbox::{Prepared, Recorded};
 use crate::tools::{Tool, ToolOutcome, specs};
@@ -35,6 +38,13 @@ pub enum Live {
         summary: String,
         no_one_there: bool,
     },
+    /// The conversation was summarized to fit the context window; sizes are estimates.
+    Compacted {
+        before_tokens: u64,
+        after_tokens: u64,
+    },
+    /// A needed compaction failed; the turn goes on without it.
+    CompactionFailed(String),
 }
 
 /// What a turn did and what it cost.
@@ -123,6 +133,10 @@ where
             if summary.model_calls >= self.settings.max_steps {
                 break Outcome::LimitReached;
             }
+            if let Some(compaction) = self.compact_if_needed(thread, &tools, live).await? {
+                summary.model_calls = summary.model_calls.saturating_add(1);
+                tally(&mut summary, &compaction);
+            }
             summary.model_calls = summary.model_calls.saturating_add(1);
             let completion = match self.ask_model(thread, &tools, live).await {
                 Ok(completion) => completion,
@@ -133,6 +147,11 @@ where
             };
             tally(&mut summary, &completion);
             let calls = self.record_response(thread, &completion).await?;
+            let reported = completion.usage.counts();
+            thread.measured = Some(Measured {
+                tokens: reported.input.saturating_add(reported.output),
+                chars: chars(&thread.messages),
+            });
             if calls.is_empty() {
                 break outcome_of(completion.stop);
             }
@@ -189,6 +208,7 @@ where
         self.stage(thread, &mut events, &message)?;
         self.commit(thread, events).await?;
         thread.messages.push(Message::User { parts });
+        thread.request = Some(prompt.to_owned());
         Ok(())
     }
 
@@ -251,15 +271,7 @@ where
             self.stage(thread, &mut events, &payload)?;
             calls.push(call);
         }
-        let responded = ModelResponded {
-            model: completion.model.clone(),
-            response_id: completion.response_id.clone(),
-            stop: completion.stop,
-            provider_stop: completion.provider_stop.clone(),
-            usage: completion.usage.clone(),
-            cost: completion.cost.clone(),
-        };
-        self.stage(thread, &mut events, &responded)?;
+        self.stage(thread, &mut events, &responded(completion))?;
         self.commit(thread, events).await?;
         thread.messages.push(Message::Assistant {
             parts: completion.parts.clone(),
@@ -387,19 +399,4 @@ fn tally(summary: &mut TurnSummary, completion: &Completion) {
         }),
         _ => None,
     };
-}
-
-/// What the model is told when an action needs a person and no one is at the keyboard: not to
-/// retry or work around it, and to say what is left for a person.
-fn no_one_there(secret: bool) -> &'static str {
-    if secret {
-        "No one is available to approve reading this file, which usually holds secrets: glave is \
-         running without anyone at the keyboard. Do not try to get its contents another way. \
-         Finish what you can without it, and say at the end which value a person must provide."
-    } else {
-        "No one is available to approve this action: glave is running without anyone at the \
-         keyboard, in a mode that needs approval for it. Do not retry it or do the same thing \
-         another way. Finish what you can without it, and say at the end what still needs a \
-         person (or that it can be run with --approval auto)."
-    }
 }

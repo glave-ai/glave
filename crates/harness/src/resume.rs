@@ -40,6 +40,8 @@ where
             next_seq,
             messages: conversation(&events),
             allowed: HashSet::new(),
+            measured: None,
+            request: latest_request(&events),
         };
         self.repair(&mut thread, &events).await?;
         Ok(thread)
@@ -119,4 +121,22 @@ where
         }
         Ok(())
     }
+}
+
+/// The text of the person's latest message, kept word for word through a compaction.
+fn latest_request(events: &[Event]) -> Option<String> {
+    events.iter().rev().find_map(|event| match &event.body {
+        Body::MessageAdded(added) if added.role == glave_event::Role::User => {
+            let texts: Vec<&str> = added
+                .parts
+                .iter()
+                .filter_map(|part| match part {
+                    Part::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            Some(texts.join("\n"))
+        }
+        _ => None,
+    })
 }

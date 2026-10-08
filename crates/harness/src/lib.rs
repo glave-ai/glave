@@ -3,6 +3,7 @@
 //! step is recorded as events, so the log alone can rebuild and resume any thread.
 
 mod approval;
+mod compaction;
 mod conversation;
 mod env;
 mod harness;
@@ -14,6 +15,7 @@ mod tools;
 mod turn;
 
 pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};
+pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;
 pub use env::{Clock, Entropy};
 pub use harness::{Harness, HarnessError, Parts, Settings, Thread};

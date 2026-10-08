@@ -280,6 +280,34 @@ mod glave_binary {
     }
 
     #[test]
+    fn slash_compact_summarizes_the_session() {
+        let place = place("compact");
+        let server = FakeServer::start(vec![
+            Reply::text("Hi there."),
+            Reply::text("We greeted each other."),
+            Reply::text("You said hello."),
+        ])
+        .unwrap();
+        let output = glave(
+            &place,
+            &server,
+            &["--model", "m"],
+            "hello\n/compact\nwhat did I say?\n/exit\n",
+        );
+        let shown = text(&output);
+        assert!(output.status.success(), "{shown}");
+        assert!(
+            shown.contains("compacted the conversation to fit"),
+            "{shown}"
+        );
+        let after = &server.received()[2].body;
+        let user = said(after, "user");
+        assert_eq!(user.len(), 2, "the summary, then the new question: {after}");
+        assert!(user[0].contains("We greeted each other."));
+        assert!(user[1].contains("what did I say?"));
+    }
+
+    #[test]
     fn a_refused_key_fails_the_run_and_says_why() {
         let place = place("refused");
         let server = FakeServer::start(vec![Reply::Status(

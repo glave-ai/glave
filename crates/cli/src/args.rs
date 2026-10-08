@@ -31,7 +31,11 @@ Environment:
   GLAVE_MODEL        the model name, such as gemma4:12b or an OpenRouter model id
   GLAVE_API_KEY      the API key, if the endpoint needs one
   GLAVE_PROVIDER     a short name recorded with each response (default: from the URL)
-  GLAVE_HOME         where glave keeps its database (default: ~/.glave)";
+  GLAVE_HOME         where glave keeps its database (default: ~/.glave)
+  GLAVE_CONTEXT_WINDOW  the model's context window in tokens (default: 128000); glave
+                     summarizes a thread near 80% of it
+
+In a session, /compact summarizes the thread now, and /exit leaves.";
 
 /// What to do.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

@@ -104,6 +104,21 @@ impl Approver for AllowAll {
     }
 }
 
+/// What the model is told when an action needs a person and no one is at the keyboard: not to
+/// retry or work around it, and to say what is left for a person.
+pub(crate) fn no_one_there(secret: bool) -> &'static str {
+    if secret {
+        "No one is available to approve reading this file, which usually holds secrets: glave is \
+         running without anyone at the keyboard. Do not try to get its contents another way. \
+         Finish what you can without it, and say at the end which value a person must provide."
+    } else {
+        "No one is available to approve this action: glave is running without anyone at the \
+         keyboard, in a mode that needs approval for it. Do not retry it or do the same thing \
+         another way. Finish what you can without it, and say at the end what still needs a \
+         person (or that it can be run with --approval auto)."
+    }
+}
+
 /// Whether this call would show the model a secret file, judged by the path given and by the
 /// file it leads to, so a symlink with an innocent name is caught too.
 pub(crate) async fn reads_secret(workspace: &Workspace, tool: Tool, arguments: &Arguments) -> bool {

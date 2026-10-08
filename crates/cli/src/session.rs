@@ -77,6 +77,9 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     let store = Store::open(database).await?;
     let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
     settings.approval = args.approval.unwrap_or_default();
+    if let Some(window_tokens) = config::context_window()? {
+        settings.compaction.window_tokens = window_tokens;
+    }
     let wiring = Wiring {
         provider,
         store,
@@ -147,6 +150,15 @@ async fn session<A: Approver>(
             let line = line.trim();
             if line == "/exit" {
                 break;
+            }
+            if line == "/compact" {
+                let result = harness
+                    .compact(&mut thread, &mut |live| printer.live(live))
+                    .await;
+                if let Err(error) = result {
+                    printer.error(&error.to_string());
+                }
+                continue;
             }
             if !line.is_empty() {
                 code = turn(&harness, &mut thread, line, &mut printer, endpoint.local).await;
