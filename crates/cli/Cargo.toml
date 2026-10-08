@@ -24,5 +24,9 @@ jiff.workspace = true
 tokio = { workspace = true, features = ["fs", "rt", "time"] }
 uuid.workspace = true
 
+[dev-dependencies]
+glave-provider-openai = { workspace = true, features = ["fake-server"] }
+serde_json.workspace = true
+
 [lints]
 workspace = true

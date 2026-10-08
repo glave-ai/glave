@@ -412,6 +412,7 @@ dependencies = [
  "glave-provider-openai",
  "glave-store-sqlite",
  "jiff",
+ "serde_json",
  "tokio",
  "uuid",
 ]
