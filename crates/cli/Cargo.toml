@@ -17,6 +17,7 @@ anyhow.workspace = true
 getrandom.workspace = true
 glave-event.workspace = true
 glave-harness.workspace = true
+glave-mcp.workspace = true
 glave-ports.workspace = true
 glave-provider-openai.workspace = true
 glave-session.workspace = true

@@ -6,6 +6,7 @@ mod client;
 mod config;
 mod home;
 mod input;
+mod mcp;
 mod session;
 mod system;
 mod terminal;

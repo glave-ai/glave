@@ -240,6 +240,18 @@ impl Printer {
         flush();
     }
 
+    /// Something beside the turn that went wrong; the turn goes on without it.
+    pub fn warning(&mut self, message: &str) {
+        println!("{} {message}", paint(self.color, YELLOW, "warning"));
+        flush();
+    }
+
+    /// What glave is doing before the turn starts.
+    pub fn status(&mut self, message: &str) {
+        println!("{}", paint(self.color, DIM, message));
+        flush();
+    }
+
     pub fn error(&mut self, message: &str) {
         self.waiting.stop();
         println!("\n\n{} {message}", paint(self.color, RED, "error"));

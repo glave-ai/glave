@@ -17,6 +17,7 @@ use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 
 use crate::config::{self, Endpoint};
 use crate::input::{CtrlC, Input};
+use crate::mcp::Servers;
 use crate::terminal::Printer;
 use crate::waiting::Waiting;
 
@@ -31,11 +32,13 @@ pub struct Client<'a> {
     /// Whether approvals are asked in this terminal; without one, the server answers "no one
     /// there" itself.
     pub asks: bool,
+    pub servers: &'a Servers,
 }
 
 impl Client<'_> {
     /// Runs one turn, which Ctrl-C cancels, printing its progress and receipt.
     pub async fn turn(&self, prompt: &str, printer: &mut Printer) -> ExitCode {
+        self.servers.report(printer).await;
         let mut stream = match self.server.start_turn(self.thread, prompt).await {
             Ok(stream) => stream,
             Err(error) => {

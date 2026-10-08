@@ -1,0 +1,165 @@
+//! MCP servers as configured: the `.mcp.json` format Claude Code made the common one, read
+//! from `{"mcpServers": {"name": {...}}}`. `${VAR}` and `${VAR:-default}` in a server's command,
+//! arguments, environment, URL and headers are filled from the environment.
+
+use std::collections::BTreeMap;
+
+use serde::Deserialize;
+
+use crate::McpError;
+
+/// How to reach one server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServerConfig {
+    /// A program glave starts, speaking MCP on its standard input and output.
+    Stdio {
+        command: String,
+        args: Vec<String>,
+        env: BTreeMap<String, String>,
+    },
+    /// A server at a URL, over Streamable HTTP.
+    Http {
+        url: String,
+        headers: BTreeMap<String, String>,
+    },
+}
+
+#[derive(Deserialize)]
+struct File {
+    #[serde(rename = "mcpServers", default)]
+    servers: BTreeMap<String, Raw>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Raw {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    command: Option<String>,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+    url: Option<String>,
+    #[serde(default)]
+    headers: BTreeMap<String, String>,
+}
+
+/// Reads the servers in a `.mcp.json` file's text, filling `${VAR}` from `environment`.
+pub fn parse(
+    text: &str,
+    environment: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, ServerConfig>, McpError> {
+    let settings: File =
+        serde_json::from_str(text).map_err(|err| McpError::Config(err.to_string()))?;
+    let fill = |text: &str| expand(text, environment);
+    let mut servers = BTreeMap::new();
+    for (name, raw) in settings.servers {
+        let bad = |message: &str| McpError::Config(format!("server {name:?}: {message}"));
+        let config = match (raw.kind.as_deref(), raw.command, raw.url) {
+            (None | Some("stdio"), Some(command), None) => ServerConfig::Stdio {
+                command: fill(&command),
+                args: raw.args.iter().map(|arg| fill(arg)).collect(),
+                env: raw.env.iter().map(|(k, v)| (k.clone(), fill(v))).collect(),
+            },
+            (None | Some("http" | "streamable-http"), None, Some(url)) => ServerConfig::Http {
+                url: fill(&url),
+                headers: raw
+                    .headers
+                    .iter()
+                    .map(|(k, v)| (k.clone(), fill(v)))
+                    .collect(),
+            },
+            (Some("sse"), ..) => {
+                return Err(bad(
+                    "the old SSE transport is retired; use \"type\": \"http\"",
+                ));
+            }
+            (_, Some(_), Some(_)) => return Err(bad("give either a command or a url, not both")),
+            (_, None, None) => return Err(bad("give a command to run or a url")),
+            (Some(other), ..) => return Err(bad(&format!("unknown type {other:?}"))),
+        };
+        servers.insert(name, config);
+    }
+    Ok(servers)
+}
+
+/// `text` with every `${VAR}` and `${VAR:-default}` filled in; an unset variable without a
+/// default becomes empty.
+fn expand(text: &str, environment: &BTreeMap<String, String>) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("${") {
+        out.push_str(rest.get(..start).unwrap_or_default());
+        let after = rest.get(start + 2..).unwrap_or_default();
+        let Some(end) = after.find('}') else {
+            out.push_str(rest.get(start..).unwrap_or_default());
+            return out;
+        };
+        let inner = after.get(..end).unwrap_or_default();
+        let (name, default) = inner.split_once(":-").unwrap_or((inner, ""));
+        match environment.get(name).filter(|value| !value.is_empty()) {
+            Some(value) => out.push_str(value),
+            None => out.push_str(default),
+        }
+        rest = after.get(end + 1..).unwrap_or_default();
+    }
+    out.push_str(rest);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env() -> BTreeMap<String, String> {
+        BTreeMap::from([("TOKEN".to_owned(), "t0k".to_owned())])
+    }
+
+    #[test]
+    fn stdio_and_http_servers_read_with_variables_filled() {
+        let servers = parse(
+            r#"{"mcpServers": {
+                "docs": {"command": "docs-mcp", "args": ["--root", "${ROOT:-.}"], "env": {"KEY": "${TOKEN}"}},
+                "tracker": {"type": "http", "url": "https://mcp.example.com/mcp", "headers": {"Authorization": "Bearer ${TOKEN}"}}
+            }}"#,
+            &env(),
+        )
+        .unwrap();
+        assert_eq!(
+            servers["docs"],
+            ServerConfig::Stdio {
+                command: "docs-mcp".into(),
+                args: vec!["--root".into(), ".".into()],
+                env: BTreeMap::from([("KEY".into(), "t0k".into())]),
+            }
+        );
+        assert!(
+            matches!(&servers["tracker"], ServerConfig::Http { headers, .. }
+            if headers["Authorization"] == "Bearer t0k")
+        );
+    }
+
+    #[test]
+    fn mistakes_are_named() {
+        let error = |text: &str| parse(text, &env()).unwrap_err().to_string();
+        assert!(error(r#"{"mcpServers": {"a": {}}}"#).contains("give a command"));
+        assert!(
+            error(r#"{"mcpServers": {"a": {"command": "x", "url": "y"}}}"#).contains("not both")
+        );
+        assert!(error(r#"{"mcpServers": {"a": {"type": "sse", "url": "y"}}}"#).contains("retired"));
+        assert!(
+            error(r#"{"mcpServers": {"a": {"command": "x", "cwd": "/"}}}"#)
+                .contains("unknown field")
+        );
+    }
+
+    #[test]
+    fn variables_expand_and_unknown_ones_go_empty() {
+        let env = env();
+        assert_eq!(expand("a ${TOKEN} b", &env), "a t0k b");
+        assert_eq!(expand("${NOPE:-fallback}", &env), "fallback");
+        assert_eq!(expand("${NOPE}", &env), "");
+        assert_eq!(expand("unclosed ${TOKEN", &env), "unclosed ${TOKEN");
+    }
+}

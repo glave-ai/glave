@@ -33,7 +33,8 @@ Environment:
   GLAVE_MODEL        the model name, such as gemma4:12b or an OpenRouter model id
   GLAVE_API_KEY      the API key, if the endpoint needs one
   GLAVE_PROVIDER     a short name recorded with each response (default: from the URL)
-  GLAVE_HOME         where glave keeps its database and your own AGENTS.md (default: ~/.glave)
+  GLAVE_HOME         where glave keeps its database, your own AGENTS.md and mcp.json
+                     (default: ~/.glave)
   GLAVE_CONTEXT_WINDOW  the model's context window in tokens (default: 128000); glave
                      summarizes a thread near 80% of it
   GLAVE_IDLE_TIMEOUT    seconds the model may send nothing before a call fails (default:
@@ -41,6 +42,10 @@ Environment:
 
 A new thread starts with your AGENTS.md (in GLAVE_HOME), then every AGENTS.md from the
 repository's root down to this folder.
+
+MCP servers in mcp.json, in the .mcp.json format ({\"mcpServers\": {\"name\": {\"command\": ...}}}),
+start with glave; their tools reach the model as mcp__<server>__<tool>. A server gets only
+the variables its settings name, so add keys there: \"env\": {\"TOKEN\": \"${TOKEN}\"}.
 
 In a session, /compact summarizes the thread now, and /exit leaves.";
 

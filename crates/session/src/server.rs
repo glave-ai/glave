@@ -9,7 +9,7 @@ use glave_event::{Seq, ThreadId};
 use glave_harness::{
     Clock, Entropy, Harness, HarnessError, Parts, Settings, TurnSummary, Workspace,
 };
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, ToolSource};
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
@@ -32,6 +32,8 @@ pub struct Wiring<P, L, B> {
     pub clock: Box<dyn Clock>,
     pub entropy: Box<dyn Entropy>,
     pub workspace: Workspace,
+    /// Tools beside the built-in ones, such as MCP servers'.
+    pub tools: Vec<Arc<dyn ToolSource>>,
 }
 
 /// A session server for one workspace and one scope. Clones share it.
@@ -83,7 +85,7 @@ where
         };
         Self {
             inner: Arc::new(Inner {
-                harness: Harness::new(parts, settings),
+                harness: Harness::new(parts, settings).with_tools(wiring.tools),
                 scope,
                 hub,
                 approvals,

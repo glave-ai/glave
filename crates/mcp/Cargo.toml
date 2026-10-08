@@ -1,0 +1,37 @@
+[package]
+name = "glave-mcp"
+description = "glave's MCP client: tools from Model Context Protocol servers as a tool source, through the official rmcp SDK"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "glave-mcp-test-server"
+path = "src/bin/test_server.rs"
+required-features = ["test-server"]
+
+[[test]]
+name = "server"
+required-features = ["test-server"]
+
+[dependencies]
+glave-event.workspace = true
+glave-ports.workspace = true
+rmcp = { workspace = true, features = ["client", "transport-child-process"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["process", "rt", "sync", "time"] }
+
+[features]
+# A small MCP server on stdio, for tests in this and other crates.
+test-server = ["rmcp/server", "rmcp/transport-io", "tokio/io-std", "tokio/macros"]
+
+[dev-dependencies]
+glave-ports = { workspace = true, features = ["conformance"] }
+
+[lints]
+workspace = true
