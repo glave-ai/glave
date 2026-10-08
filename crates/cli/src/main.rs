@@ -8,6 +8,7 @@ mod input;
 mod session;
 mod system;
 mod terminal;
+mod waiting;
 
 fn main() -> std::process::ExitCode {
     session::main()

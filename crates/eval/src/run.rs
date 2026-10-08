@@ -291,7 +291,10 @@ fn note(transcript: &mut String, live: Live) {
             "[compacted {before_tokens} → {after_tokens} tokens]"
         ),
         Live::CompactionFailed(reason) => writeln!(transcript, "[compaction failed] {reason}"),
-        Live::Reasoning(_) | Live::ToolFinished { .. } => Ok(()),
+        Live::Retrying {
+            retry, of, error, ..
+        } => writeln!(transcript, "[retry {retry} of {of}] {error}"),
+        Live::Reasoning(_) | Live::ToolFinished { .. } | Live::Waiting => Ok(()),
     };
 }
 

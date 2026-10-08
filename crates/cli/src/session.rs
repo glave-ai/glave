@@ -1,8 +1,12 @@
 //! Wiring the harness together and running one turn or an interactive session.
 
+use std::future::{Future, poll_fn};
 use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
+use std::pin::pin;
 use std::process::ExitCode;
+use std::task::Poll;
+use std::time::Duration;
 
 use anyhow::Context as _;
 use glave_event::Outcome;
@@ -20,6 +24,7 @@ use crate::home;
 use crate::input::{CtrlC, Input};
 use crate::system::random_uuid;
 use crate::terminal::{AskInTerminal, Printer};
+use crate::waiting::Waiting;
 
 type Glave<A> = Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, A>;
 
@@ -62,7 +67,10 @@ pub fn main() -> ExitCode {
 }
 
 async fn run(args: Args) -> anyhow::Result<ExitCode> {
-    let endpoint = config::endpoint(args.model.clone())?;
+    let mut endpoint = config::endpoint(args.model.clone())?;
+    if let Some(idle) = config::idle_timeout()? {
+        endpoint.provider.idle_timeout = idle;
+    }
     let provider = OpenAiCompatible::new(endpoint.provider.clone())?;
     let mut workspace = Workspace::open(std::env::current_dir()?, std::env::vars_os()).await?;
     let database = home::database().await?;
@@ -235,9 +243,12 @@ async fn turn<A: Approver>(
 ) -> ExitCode {
     let cancel = Cancel::new();
     let _ctrl_c = CtrlC::cancels(&cancel);
-    let result = harness
-        .run_turn(thread, prompt, &cancel, &mut |live| printer.live(live))
-        .await;
+    let waiting = printer.waiting();
+    let result = ticking(
+        harness.run_turn(thread, prompt, &cancel, &mut |live| printer.live(live)),
+        &waiting,
+    )
+    .await;
     match result {
         Ok(summary) => {
             printer.receipt(&summary, local);
@@ -253,6 +264,22 @@ async fn turn<A: Approver>(
             ExitCode::FAILURE
         }
     }
+}
+
+/// Runs `work`, updating the waiting line once a second until it finishes.
+async fn ticking<T>(work: impl Future<Output = T>, waiting: &Waiting) -> T {
+    let mut work = pin!(work);
+    let mut clock = tokio::time::interval(Duration::from_secs(1));
+    poll_fn(|cx| {
+        if let Poll::Ready(value) = work.as_mut().poll(cx) {
+            return Poll::Ready(value);
+        }
+        while clock.poll_tick(cx).is_ready() {
+            waiting.tick();
+        }
+        Poll::Pending
+    })
+    .await
 }
 
 /// Writes the thread's events as JSON Lines, one event per line, exactly as stored.

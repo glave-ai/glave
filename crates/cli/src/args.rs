@@ -34,6 +34,8 @@ Environment:
   GLAVE_HOME         where glave keeps its database and your own AGENTS.md (default: ~/.glave)
   GLAVE_CONTEXT_WINDOW  the model's context window in tokens (default: 128000); glave
                      summarizes a thread near 80% of it
+  GLAVE_IDLE_TIMEOUT    seconds the model may send nothing before a call fails (default:
+                     300); failures that may pass are tried 4 more times
 
 A new thread starts with your AGENTS.md (in GLAVE_HOME), then every AGENTS.md from the
 repository's root down to this folder.
