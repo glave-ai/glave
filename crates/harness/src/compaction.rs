@@ -13,6 +13,7 @@ use glave_ports::{
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::toolset::ToolSet;
 use crate::turn::Live;
 
 /// When to compact a thread.
@@ -108,6 +109,20 @@ fn arguments_chars(arguments: &Arguments) -> usize {
 }
 
 /// Characters every request carries besides the conversation: instructions and tools.
+/// The estimated size of the next request, in tokens: the last reported count plus what
+/// was added since, or an estimate of everything when nothing was reported yet.
+fn next_request_tokens(thread: &Thread, offer: &ToolSet) -> u64 {
+    let now = chars(&thread.messages);
+    match thread.measured {
+        Some(measured) => measured
+            .tokens
+            .saturating_add(now.saturating_sub(measured.chars).div_ceil(CHARS_PER_TOKEN)),
+        None => now
+            .saturating_add(base_chars(&offer.system, &offer.specs))
+            .div_ceil(CHARS_PER_TOKEN),
+    }
+}
+
 fn base_chars(system: &str, tools: &[ToolSpec]) -> u64 {
     let tools = serde_json::to_string(tools).map_or(0, |json| json.len());
     u64::try_from(system.len().saturating_add(tools)).unwrap_or(u64::MAX)
@@ -135,27 +150,13 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// The estimated size of the next request, in tokens: the last reported count plus what
-    /// was added since, or an estimate of everything when nothing was reported yet.
-    pub(crate) fn next_request_tokens(&self, thread: &Thread, tools: &[ToolSpec]) -> u64 {
-        let now = chars(&thread.messages);
-        match thread.measured {
-            Some(measured) => measured
-                .tokens
-                .saturating_add(now.saturating_sub(measured.chars).div_ceil(CHARS_PER_TOKEN)),
-            None => now
-                .saturating_add(base_chars(&self.settings.system_prompt, tools))
-                .div_ceil(CHARS_PER_TOKEN),
-        }
-    }
-
     /// Compacts now if the next request would pass the threshold. A thread with nothing yet to
     /// summarize is left alone. A summary the provider fails to give is reported and the turn
     /// goes on: the request may still fit.
     pub(crate) async fn compact_if_needed(
         &self,
         thread: &mut Thread,
-        tools: &[ToolSpec],
+        offer: &ToolSet,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<Completion>, HarnessError> {
@@ -163,13 +164,13 @@ where
             window_tokens,
             at_percent,
         } = self.settings.compaction;
-        let tokens = self.next_request_tokens(thread, tools);
+        let tokens = next_request_tokens(thread, offer);
         let full =
             tokens.saturating_mul(100) >= window_tokens.saturating_mul(u64::from(at_percent));
         if !full || thread.messages.len() < 3 {
             return Ok(None);
         }
-        match self.compact_with(thread, tools, cancel, live).await {
+        match self.compact_with(thread, offer, cancel, live).await {
             Ok(compacted) => Ok(Some(compacted.completion)),
             Err(HarnessError::Provider(error)) => {
                 live(Live::CompactionFailed(error.to_string()));
@@ -189,18 +190,18 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Compacted, HarnessError> {
-        let tools = self.tools().await.specs;
-        self.compact_with(thread, &tools, cancel, live).await
+        let offer = self.tools().await;
+        self.compact_with(thread, &offer, cancel, live).await
     }
 
     async fn compact_with(
         &self,
         thread: &mut Thread,
-        tools: &[ToolSpec],
+        offer: &ToolSet,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Compacted, HarnessError> {
-        let before_tokens = self.next_request_tokens(thread, tools);
+        let before_tokens = next_request_tokens(thread, offer);
         let mut messages = thread.messages.clone();
         messages.push(Message::User {
             parts: vec![Part::Text {
@@ -211,9 +212,9 @@ where
         // tools. The instruction asks for text only, and any call is ignored.
         let request = ModelRequest {
             model: self.settings.model.clone(),
-            system: self.settings.system_prompt.clone(),
+            system: offer.system.clone(),
             messages,
-            tools: tools.to_vec(),
+            tools: offer.specs.clone(),
             tool_choice: ToolChoice::None,
             max_output_tokens: Some(SUMMARY_TOKENS),
         };
@@ -255,7 +256,7 @@ where
         self.commit(thread, events).await?;
         thread.messages = vec![Message::User { parts }];
         thread.measured = None;
-        let after_tokens = self.next_request_tokens(thread, tools);
+        let after_tokens = next_request_tokens(thread, offer);
         live(Live::Compacted {
             before_tokens,
             after_tokens,

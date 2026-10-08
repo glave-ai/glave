@@ -174,7 +174,7 @@ where
 
     /// The tools on offer now, from every source.
     pub(crate) async fn tools(&self) -> ToolSet {
-        ToolSet::gather(&self.sources).await
+        ToolSet::gather(&self.sources, &self.settings.system_prompt).await
     }
 
     pub fn workspace(&self) -> &Workspace {

@@ -72,6 +72,12 @@ mod mcp {
                 "read_mcp_resource",
             ]
         );
+        let system = said(&received[0].body, "system").join("\n");
+        assert!(
+            system.contains("# Notes from tool servers")
+                && system.contains("## tests\\n\\nCall echo to repeat text; it costs nothing."),
+            "the server's instructions reach the model: {system}"
+        );
         let results = said(&received[1].body, "tool");
         assert!(results[0].contains("from mcp"), "{results:?}");
     }

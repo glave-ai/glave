@@ -88,6 +88,11 @@ pub trait ToolSource: Send + Sync {
     /// The tools on offer now.
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>>;
 
+    /// How to use these tools, in their maker's words, for the model; asked after `tools`.
+    fn instructions(&self) -> Option<String> {
+        None
+    }
+
     /// Whether this call needs the person whatever the mode, such as a read of a file that
     /// usually holds secrets. The check runs where the files are.
     fn needs_person<'a>(&'a self, name: &'a str, arguments: &'a Arguments) -> BoxFuture<'a, bool> {
