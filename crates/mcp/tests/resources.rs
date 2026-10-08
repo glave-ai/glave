@@ -79,7 +79,7 @@ mod resources {
     fn without_servers_that_have_resources_nothing_is_offered() {
         block_on(async {
             let none = Resources::new(Vec::new());
-            assert!(none.tools().await.unwrap().is_empty());
+            assert_eq!(none.tools().await.unwrap().len(), 0);
         });
     }
 
