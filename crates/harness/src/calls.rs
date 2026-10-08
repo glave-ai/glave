@@ -5,6 +5,7 @@ use glave_event::{ApprovalDecided, ApprovalRequested, CallId, ToolCallCompleted,
 use glave_ports::{BlobStore, EventLog, Message, ModelProvider, ToolCall, ToolOutput};
 
 use crate::approval::{ApprovalRequest, Approver, Decision, no_one_there};
+use crate::ask::{self, QuestionRequest};
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::toolset::ToolSet;
@@ -12,6 +13,9 @@ use crate::turn::Live;
 
 /// The result of a tool call the turn never ran because the person cancelled it.
 pub(crate) const NOT_RUN: &str = "Not run: the person cancelled the turn.";
+
+const NO_ANSWER: &str = "No one answered. Choose what seems best, go on, and say what you \
+     assumed.";
 
 const DECLINED: &str = "The person declined this action. Ask them what they would like \
      instead, or take a different approach.";
@@ -37,6 +41,9 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<ToolOutput, HarnessError> {
+        if tools.is_ask(&call.tool) {
+            return Ok(self.put_questions(thread, call, cancel, live).await);
+        }
         let Some((index, info)) = tools.get(&call.tool) else {
             return Ok(ToolOutput::text(
                 true,
@@ -80,6 +87,38 @@ where
             is_error: output.is_error,
         });
         Ok(output)
+    }
+
+    /// Puts the model's questions to the person and waits for the answers.
+    async fn put_questions(
+        &self,
+        thread: &Thread,
+        call: &ToolCall,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> ToolOutput {
+        let questions = match ask::questions(&call.arguments) {
+            Ok(questions) => questions,
+            Err(err) => return ToolOutput::text(true, err),
+        };
+        let request = QuestionRequest {
+            thread: thread.id,
+            call_id: call.call_id.clone(),
+            questions,
+        };
+        let waiting = self.approver.answer(&request);
+        // Waiting now, so a client told of the question can answer it at once.
+        live(Live::Asked {
+            call_id: request.call_id.clone(),
+            questions: request.questions.clone(),
+        });
+        match cancel.run(waiting).await {
+            None => ToolOutput::text(true, NOT_RUN),
+            Some(None) => ToolOutput::text(true, NO_ANSWER),
+            Some(Some(answers)) => {
+                ToolOutput::text(false, ask::answered(&request.questions, &answers))
+            }
+        }
     }
 
     /// Asks the person about `request`, recording the question and the answer. `None` when the

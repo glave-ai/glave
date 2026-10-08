@@ -19,6 +19,8 @@ pub(crate) struct ToolSet {
     by_name: HashMap<String, (usize, ToolInfo)>,
     /// Sources that could not list their tools, with why.
     pub(crate) missing: Vec<String>,
+    /// Whether `ask` is on offer: only when someone can answer.
+    pub(crate) asks: bool,
 }
 
 impl ToolSet {
@@ -28,6 +30,7 @@ impl ToolSet {
             system: system.to_owned(),
             by_name: HashMap::new(),
             missing: Vec::new(),
+            asks: false,
         };
         for (index, source) in sources.iter().enumerate() {
             match source.tools().await {
@@ -52,6 +55,17 @@ impl ToolSet {
             set.system = format!("{system}\n\n{NOTES}\n\n{}", notes.join("\n\n"));
         }
         set
+    }
+
+    /// Offers `ask` too, after every other tool.
+    pub(crate) fn offer_ask(&mut self) {
+        self.asks = true;
+        self.specs.push(crate::ask::spec());
+    }
+
+    /// Whether `name` is `ask`, while it is on offer.
+    pub(crate) fn is_ask(&self, name: &str) -> bool {
+        self.asks && name.trim().eq_ignore_ascii_case(crate::ask::ASK)
     }
 
     /// The tool called `name`, forgiving case and stray whitespace, with its source's index.

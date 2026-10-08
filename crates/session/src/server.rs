@@ -131,6 +131,14 @@ where
                 self.inner.approvals.decide(thread, &approval, decision)?;
                 Ok(Reply::Done {})
             }
+            Request::QuestionAnswer {
+                thread,
+                question,
+                answers,
+            } => {
+                self.inner.approvals.respond(thread, &question, answers)?;
+                Ok(Reply::Done {})
+            }
         }
     }
 

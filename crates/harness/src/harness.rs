@@ -174,7 +174,11 @@ where
 
     /// The tools on offer now, from every source.
     pub(crate) async fn tools(&self) -> ToolSet {
-        ToolSet::gather(&self.sources, &self.settings.system_prompt).await
+        let mut set = ToolSet::gather(&self.sources, &self.settings.system_prompt).await;
+        if self.approver.can_answer() {
+            set.offer_ask();
+        }
+        set
     }
 
     pub fn workspace(&self) -> &Workspace {
