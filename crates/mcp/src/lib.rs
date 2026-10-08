@@ -9,9 +9,11 @@ mod error;
 mod names;
 mod output;
 mod reason;
+mod resources;
 mod server;
 
 pub use config::{ServerConfig, parse};
 pub use error::McpError;
 pub use names::exposed;
+pub use resources::Resources;
 pub use server::{Limits, McpServer};
