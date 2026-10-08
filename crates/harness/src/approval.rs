@@ -78,6 +78,8 @@ pub(crate) fn summarize(tool: Tool, arguments: &Arguments) -> String {
     let field = |name: &str| field(arguments, name);
     let path = field("path").unwrap_or_else(|| "?".into());
     match tool {
+        Tool::Search => format!("search {}", field("pattern").unwrap_or_else(|| "?".into())),
+        Tool::Glob => format!("glob {}", field("pattern").unwrap_or_else(|| "?".into())),
         Tool::Read => format!("read {path}"),
         Tool::Write => {
             let lines = field("content").map_or(0, |content| content.lines().count());

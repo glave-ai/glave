@@ -1,9 +1,12 @@
-//! The four tools: read, write, edit, bash. Their descriptions and schemas are kept short and
-//! plain so smaller models use them well.
+//! The tools: search, glob, read, write, edit, bash. Their descriptions and schemas are kept
+//! short and plain so smaller models use them well.
 
 mod bash;
 mod edit;
+mod glob;
 mod read;
+mod search;
+mod walk;
 pub(crate) mod workspace;
 mod write;
 
@@ -40,6 +43,8 @@ impl ToolOutcome {
 /// The tools the harness offers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tool {
+    Search,
+    Glob,
     Read,
     Write,
     Edit,
@@ -47,11 +52,20 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Self; 4] = [Self::Read, Self::Write, Self::Edit, Self::Bash];
+    pub const ALL: [Self; 6] = [
+        Self::Search,
+        Self::Glob,
+        Self::Read,
+        Self::Write,
+        Self::Edit,
+        Self::Bash,
+    ];
 
     /// Finds a tool by name, forgiving case and stray whitespace.
     pub fn named(name: &str) -> Option<Self> {
         match name.trim().to_ascii_lowercase().as_str() {
+            "search" => Some(Self::Search),
+            "glob" => Some(Self::Glob),
             "read" => Some(Self::Read),
             "write" => Some(Self::Write),
             "edit" => Some(Self::Edit),
@@ -62,6 +76,8 @@ impl Tool {
 
     pub fn name(self) -> &'static str {
         match self {
+            Self::Search => "search",
+            Self::Glob => "glob",
             Self::Read => "read",
             Self::Write => "write",
             Self::Edit => "edit",
@@ -71,11 +87,30 @@ impl Tool {
 
     /// Whether the tool can change anything, and so needs the person's approval.
     pub fn changes_things(self) -> bool {
-        !matches!(self, Self::Read)
+        !matches!(self, Self::Search | Self::Glob | Self::Read)
     }
 
     fn spec(self) -> ToolSpec {
         let (description, parameters) = match self {
+            Self::Search => (
+                "Search file contents for a regular expression, like ripgrep. Shows matching \
+                 lines as path:line:text, at most 100. Skips files git ignores, binary files and \
+                 files that hold secrets. Use this instead of grep in bash.",
+                json!({"type": "object", "properties": {
+                    "pattern": {"type": "string", "description": "Regular expression, or plain text"},
+                    "path": {"type": "string", "description": "Folder or file to search; default the whole project"},
+                    "glob": {"type": "string", "description": "Only files matching this, such as *.rs or src/**/*.ts"},
+                    "ignore_case": {"type": "boolean"}
+                }, "required": ["pattern"]}),
+            ),
+            Self::Glob => (
+                "Find files by name or path, newest first, at most 100. *.rs matches file names \
+                 in any folder; src/**/*.rs matches paths. Skips files git ignores.",
+                json!({"type": "object", "properties": {
+                    "pattern": {"type": "string", "description": "Such as *.rs, **/test_*.py or src/**/*.ts"},
+                    "path": {"type": "string", "description": "Folder to look in; default the whole project"}
+                }, "required": ["pattern"]}),
+            ),
             Self::Read => (
                 "Read a file, shown with line numbers, or list a folder. Reads up to 2000 lines; \
                  use offset and limit for more.",
@@ -125,6 +160,14 @@ impl Tool {
     /// read and act on; nothing here aborts the turn.
     pub(crate) async fn run(self, arguments: &Arguments, workspace: &Workspace) -> ToolOutcome {
         match self {
+            Self::Search => match parse(self, arguments) {
+                Ok(args) => search::search(workspace, args).await,
+                Err(outcome) => outcome,
+            },
+            Self::Glob => match parse(self, arguments) {
+                Ok(args) => glob::glob(workspace, args).await,
+                Err(outcome) => outcome,
+            },
             Self::Read => match parse(self, arguments) {
                 Ok(args) => read::read(workspace, args).await,
                 Err(outcome) => outcome,

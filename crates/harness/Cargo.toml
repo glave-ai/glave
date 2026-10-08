@@ -1,6 +1,6 @@
 [package]
 name = "glave-harness"
-description = "glave's agent loop: the four tools, approvals, and every step recorded as events"
+description = "glave's agent loop: the tools, approvals, and every step recorded as events"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,7 +11,10 @@ publish.workspace = true
 [dependencies]
 glave-event.workspace = true
 glave-ports.workspace = true
+globset.workspace = true
+ignore.workspace = true
 jiff.workspace = true
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
