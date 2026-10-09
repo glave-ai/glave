@@ -214,6 +214,24 @@ mod judging {
         );
     }
 
+    #[test]
+    fn wide_characters_are_read_safely_and_kept_in_reasons() {
+        // tree-sitter-bash reads the character after `{` with C's `isdigit`, out of bounds on
+        // glibc for these, which crashed before the script was masked.
+        for script in ["{\u{30E85}", "{1..\u{30000}}", "{日本}"] {
+            assert_eq!(verdict(script), Verdict::Unknown, "{script}");
+        }
+        assert_eq!(verdict("echo {\u{2A6D6}"), Verdict::ReadOnly);
+        let Verdict::Caution(caution) = verdict("rm -rf ~/café") else {
+            panic!("not a caution");
+        };
+        assert_eq!(
+            caution.reason,
+            "it deletes /home/ana/café, outside the project"
+        );
+        assert_eq!(verdict("cat 日本.txt"), Verdict::ReadOnly);
+    }
+
     const RISKY: &[&str] = &[
         "rm -rf ~",
         "git reset --hard",

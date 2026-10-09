@@ -105,7 +105,12 @@ impl Walk<'_> {
             self.parsed.plain = false;
             return;
         }
-        let Some(tree) = parser.parse(script, None) else {
+        let tree = if script.is_ascii() {
+            parser.parse(script, None)
+        } else {
+            parser.parse(masked(script), None)
+        };
+        let Some(tree) = tree else {
             self.parsed.plain = false;
             return;
         };
@@ -409,6 +414,23 @@ fn word(node: Node<'_>, source: &[u8]) -> Word {
         }
         _ => Word::Dynamic(text),
     }
+}
+
+/// The script with each non-ASCII character replaced by one `x` for each of its bytes, for
+/// tree-sitter-bash to parse. Its scanner (0.25.1) calls C's `isdigit` on the character after
+/// `{`, which on glibc reads out of bounds for a wide character and can crash. To bash, a
+/// non-ASCII character is an ordinary word character, as `x` is; and every byte keeps its
+/// offset, so words are still read from the script itself.
+fn masked(script: &str) -> String {
+    let mut out = String::with_capacity(script.len());
+    for c in script.chars() {
+        if c.is_ascii() {
+            out.push(c);
+        } else {
+            out.extend(std::iter::repeat_n('x', c.len_utf8()));
+        }
+    }
+    out
 }
 
 fn strip_quotes(text: &str) -> &str {
