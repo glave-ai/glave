@@ -22,8 +22,8 @@ pub(crate) struct ToolSet {
     by_name: HashMap<String, (usize, ToolInfo)>,
     /// Sources that could not list their tools, with why.
     pub(crate) missing: Vec<String>,
-    /// Whether `ask` is on offer: only when someone can answer.
-    pub(crate) asks: bool,
+    /// Whether `question` is on offer: only when someone can answer.
+    pub(crate) questions: bool,
     /// Whether `agent` is on offer.
     pub(crate) subagents: bool,
 }
@@ -35,7 +35,7 @@ impl ToolSet {
             system: system.to_owned(),
             by_name: HashMap::new(),
             missing: Vec::new(),
-            asks: false,
+            questions: false,
             subagents: false,
         };
         for (index, source) in sources.iter().enumerate() {
@@ -63,15 +63,15 @@ impl ToolSet {
         set
     }
 
-    /// Offers `ask` too, after every other tool.
-    pub(crate) fn offer_ask(&mut self) {
-        self.asks = true;
-        self.specs.push(crate::ask::spec());
+    /// Offers `question` too, after every other tool.
+    pub(crate) fn offer_question(&mut self) {
+        self.questions = true;
+        self.specs.push(crate::question::spec());
     }
 
-    /// Whether `name` is `ask`, while it is on offer.
-    pub(crate) fn is_ask(&self, name: &str) -> bool {
-        self.asks && name.trim().eq_ignore_ascii_case(crate::ask::ASK)
+    /// Whether `name` is `question`, while it is on offer.
+    pub(crate) fn is_question(&self, name: &str) -> bool {
+        self.questions && name.trim().eq_ignore_ascii_case(crate::question::QUESTION)
     }
 
     /// Offers `agent` too.
@@ -85,7 +85,7 @@ impl ToolSet {
         self.subagents && name.trim().eq_ignore_ascii_case(crate::subagent::AGENT)
     }
 
-    /// The tools a subagent has: these, less `agent` and `ask`, and for an explorer
+    /// The tools a subagent has: these, less `agent` and `question`, and for an explorer
     /// only those that read.
     pub(crate) fn for_child(&self, kind: SubagentType) -> Self {
         let keeps = |info: &ToolInfo| kind == SubagentType::General || info.effect == Effect::Reads;
@@ -105,7 +105,7 @@ impl ToolSet {
             system: self.system.clone(),
             by_name,
             missing: self.missing.clone(),
-            asks: false,
+            questions: false,
             subagents: false,
         }
     }

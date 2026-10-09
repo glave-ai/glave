@@ -1,7 +1,7 @@
 //! Approvals and questions answered through the API: the harness asks, the question is already
-//! in the log (`approval.requested`, or the `ask` call), and the turn waits until a client
+//! in the log (`approval.requested`, or the `question` call), and the turn waits until a client
 //! answers with `approval/decide` or `question/answer`. With no client that can answer, as in a
-//! script, every approval is answered "no one there" and `ask` is not offered.
+//! script, every approval is answered "no one there" and `question` is not offered.
 
 use std::collections::HashMap;
 use std::future::{Future, ready};

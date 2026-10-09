@@ -1,6 +1,7 @@
-//! `ask`: questions for the person, each with choices or none, as Claude Code's AskUserQuestion
-//! and Codex's request_user_input put them. It is offered only when someone can answer; the
-//! question waits in the call, so the log keeps it and any client can show it.
+//! `question`: questions for the person, each with choices or none, as Claude Code's
+//! AskUserQuestion, Codex's request_user_input and OpenCode's question put them. It is offered
+//! only when someone can answer; the question waits in the call, so the log keeps it and any
+//! client can show it.
 
 use std::fmt::Write as _;
 
@@ -10,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 /// The tool's name.
-pub const ASK: &str = "ask";
+pub const QUESTION: &str = "question";
 
 /// Most questions in one call.
 const MOST: usize = 4;
@@ -54,7 +55,7 @@ struct Asked {
 
 pub(crate) fn spec() -> ToolSpec {
     ToolSpec {
-        name: ASK.to_owned(),
+        name: QUESTION.to_owned(),
         description: "Ask the person when you need a decision or a fact only they have, and \
                       cannot find it in the project. Give choices when there are clear ones; \
                       they can always answer in their own words. Ask up to 4 questions at once."

@@ -13,10 +13,10 @@ use std::time::Duration;
 use serde::Serialize;
 
 use crate::approval::{ApprovalMode, Approver};
-use crate::ask::Question;
 use crate::cancel::Cancel;
 use crate::compaction::{Measured, chars, responded};
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::question::Question;
 use crate::repeats::Repeats;
 use crate::sandbox::{Prepared, Recorded};
 use crate::toolset::ToolSet;

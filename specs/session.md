@@ -30,7 +30,7 @@ Every request may carry `params._meta.protocol`, the protocol version the client
 | `turn/cancel` | `thread` | `{}` once the running turn, or compaction, has ended as cancelled |
 | `thread/compact` | `thread` | `before_tokens`, `after_tokens` |
 | `approval/decide` | `thread`; `approval` (its id); `decision`: `allow_once`, `allow_for_thread` or `deny` | `{}`; the paused turn continues |
-| `question/answer` | `thread`; `question` (the `ask` call's id); `answers`, one string for each question, in order | `{}`; the paused turn continues |
+| `question/answer` | `thread`; `question` (the `question` call's id); `answers`, one string for each question, in order | `{}`; the paused turn continues |
 
 A **thread summary** has `id` and `status`: `idle`, `running` or `waiting` (a turn is paused for an approval or an answer). Titles, creation and update times arrive with a threads view built from the log.
 
@@ -64,11 +64,11 @@ These are the approval events `events.md` deferred; they arrive with this API at
 
 ## Questions
 
-When a client can answer, the model is offered `ask`: up to four questions, each with optional choices (`label`, `description`) and `multiple` when more than one may be picked. The questions are the `ask` call's arguments, so the log keeps them in `tool.call.requested`. Once the turn is waiting for the answers it sends `turn/live` with `asked` (`question`, the call's id, and `questions`); any client may then answer with `question/answer`. The answers become the call's result.
+When a client can answer, the model is offered `question`: up to four questions, each with optional choices (`label`, `description`) and `multiple` when more than one may be picked. The questions are the `question` call's arguments, so the log keeps them in `tool.call.requested`. Once the turn is waiting for the answers it sends `turn/live` with `asked` (`question`, the call's id, and `questions`); any client may then answer with `question/answer`. The answers become the call's result.
 
 - An answer for a question that is not waiting is refused with `-32006`.
 - Cancelling the paused turn ends the call unanswered, and the turn as cancelled.
-- With no client that can answer, `ask` is not offered at all.
+- With no client that can answer, `question` is not offered at all.
 
 ## Turns
 

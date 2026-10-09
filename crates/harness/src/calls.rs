@@ -7,9 +7,9 @@ use glave_ports::{
 };
 
 use crate::approval::{ApprovalRequest, Approver, Decision, no_one_there};
-use crate::ask::{self, QuestionRequest};
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::question::{self, QuestionRequest};
 use crate::toolset::ToolSet;
 use crate::turn::{Live, Step, absorb};
 
@@ -95,7 +95,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<ToolOutput, HarnessError> {
-        if tools.is_ask(&call.tool) {
+        if tools.is_question(&call.tool) {
             return Ok(self.put_questions(thread, call, cancel, live).await);
         }
         let Some((index, info)) = tools.get(&call.tool) else {
@@ -157,7 +157,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> ToolOutput {
-        let questions = match ask::questions(&call.arguments) {
+        let questions = match question::questions(&call.arguments) {
             Ok(questions) => questions,
             Err(err) => return ToolOutput::text(true, err),
         };
@@ -176,7 +176,7 @@ where
             None => ToolOutput::text(true, NOT_RUN),
             Some(None) => ToolOutput::text(true, NO_ANSWER),
             Some(Some(answers)) => {
-                ToolOutput::text(false, ask::answered(&request.questions, &answers))
+                ToolOutput::text(false, question::answered(&request.questions, &answers))
             }
         }
     }

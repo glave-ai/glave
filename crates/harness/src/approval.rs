@@ -8,7 +8,7 @@ use glave_event::{Arguments, CallId, ThreadId};
 use glave_ports::Effect;
 use serde::Serialize;
 
-use crate::ask::QuestionRequest;
+use crate::question::QuestionRequest;
 use crate::secrets::is_secret_file;
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
@@ -84,7 +84,7 @@ pub enum Decision {
 pub trait Approver: Send + Sync {
     fn decide(&self, request: &ApprovalRequest) -> impl Future<Output = Decision> + Send;
 
-    /// Whether someone can answer questions; `ask` is offered only then.
+    /// Whether someone can answer questions; `question` is offered only then.
     fn can_answer(&self) -> bool {
         false
     }
