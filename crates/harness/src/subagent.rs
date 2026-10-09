@@ -1,7 +1,7 @@
-//! `task`: work handed to a child thread, as Claude Code's Task, Codex's spawn_agent and
-//! OpenCode's subagents do it. The child starts fresh with only the task, works with the
-//! parent's permissions or fewer, and its last answer comes back as the call's result. Several
-//! tasks in one response run side by side.
+//! `agent`: work handed to a subagent, a child thread, as Claude Code's Agent, Codex's
+//! spawn_agent and OpenCode's task tool do it. The child starts fresh with only the prompt,
+//! works with the parent's permissions or fewer, and its last answer comes back as the call's
+//! result. Several in one response run side by side.
 
 use glave_event::{Arguments, Outcome, Part};
 use glave_ports::{Message, ToolSpec};
@@ -9,23 +9,23 @@ use serde::Deserialize;
 use serde_json::json;
 
 /// The tool's name.
-pub const TASK: &str = "task";
+pub const AGENT: &str = "agent";
 
-/// Tasks running at once, as Codex caps them.
+/// Subagents running at once, as Codex caps them.
 pub(crate) const AT_ONCE: usize = 6;
 
-/// What a child may do.
+/// What a subagent may do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
-pub enum Agent {
-    /// Every tool the parent has, except starting tasks and asking the person.
+pub enum SubagentType {
+    /// Every tool the parent has, except starting subagents and asking the person.
     #[default]
     General,
     /// Only tools that read.
     Explore,
 }
 
-/// One task, as the model asked for it.
+/// One subagent, as the model asked for it.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Asked {
@@ -33,51 +33,51 @@ pub(crate) struct Asked {
     pub(crate) description: String,
     pub(crate) prompt: String,
     #[serde(default)]
-    pub(crate) agent: Agent,
+    pub(crate) subagent_type: SubagentType,
 }
 
 pub(crate) fn spec() -> ToolSpec {
     ToolSpec {
-        name: TASK.to_owned(),
+        name: AGENT.to_owned(),
         description: "Hand a self-contained piece of work to a helper that starts with no \
                       context but your prompt, and get its report back. Use it to search widely \
-                      or do independent work without filling your own context. Several task \
+                      or do independent work without filling your own context. Several agent \
                       calls in one response run at the same time. The helper cannot see this \
                       conversation, so say everything it needs, and what to report."
             .to_owned(),
         parameters: json!({"type": "object", "properties": {
-            "description": {"type": "string", "description": "The task in 3 to 6 words"},
+            "description": {"type": "string", "description": "The work in 3 to 6 words"},
             "prompt": {"type": "string", "description": "Everything the helper needs to know and do"},
-            "agent": {"type": "string", "enum": ["general", "explore"],
+            "subagent_type": {"type": "string", "enum": ["general", "explore"],
                       "description": "explore only reads and searches; general (the default) may also change files and run commands"}
         }, "required": ["description", "prompt"]}),
     }
 }
 
-/// The task in a call, or why it could not be read.
+/// The subagent a call asks for, or why it could not be read.
 pub(crate) fn asked(arguments: &Arguments) -> Result<Asked, String> {
     let Arguments::Json(arguments) = arguments else {
         return Err("The arguments were not valid JSON.".to_owned());
     };
     let asked: Asked = serde_json::from_value(serde_json::Value::Object(arguments.clone()))
-        .map_err(|err| format!("The task was not understood: {err}."))?;
+        .map_err(|err| format!("The request was not understood: {err}."))?;
     if asked.prompt.trim().is_empty() {
         return Err("Give the helper a prompt.".to_owned());
     }
     Ok(asked)
 }
 
-/// What the child is told: who it works for and what to hand back, then the task.
+/// What the child is told: who it works for and what to hand back, then the prompt.
 pub(crate) fn brief(asked: &Asked) -> String {
     format!(
-        "[You are a helper doing one task for another agent, who works with the person. Only \
-         that agent sees your answers. Do the task, then end with a short report: what you \
-         found or changed, with file paths, and anything left undone.]\n\n{}",
+        "[You are a helper doing one piece of work for another agent, who works with the \
+         person. Only that agent sees your answers. Do the work, then end with a short report: \
+         what you found or changed, with file paths, and anything left undone.]\n\n{}",
         asked.prompt
     )
 }
 
-/// The child's report: its last answer, with how the task ended when it did not finish.
+/// The child's report: its last answer, with how it ended when it did not finish.
 pub(crate) fn report(messages: &[Message], outcome: Outcome) -> String {
     let last = messages.iter().rev().find_map(|message| match message {
         Message::Assistant { parts, .. } => {
@@ -96,7 +96,7 @@ pub(crate) fn report(messages: &[Message], outcome: Outcome) -> String {
     let text = last.unwrap_or_else(|| "(the helper gave no report)".to_owned());
     match outcome {
         Outcome::Completed => text,
-        other => format!("[The task ended early: {}.]\n\n{text}", ended(other)),
+        other => format!("[The helper stopped early: {}.]\n\n{text}", ended(other)),
     }
 }
 
@@ -122,19 +122,21 @@ mod tests {
     }
 
     #[test]
-    fn a_task_is_read_with_its_agent() {
-        let task = asked(&arguments(json!({
-            "description": "find the tests", "prompt": "List the test files.", "agent": "explore"
+    fn a_request_is_read_with_its_type() {
+        let explore = asked(&arguments(json!({
+            "description": "find the tests",
+            "prompt": "List the test files.",
+            "subagent_type": "explore"
         })))
         .unwrap();
-        assert_eq!(task.agent, Agent::Explore);
-        assert!(brief(&task).ends_with("\n\nList the test files."));
+        assert_eq!(explore.subagent_type, SubagentType::Explore);
+        assert!(brief(&explore).ends_with("\n\nList the test files."));
         let general = asked(&arguments(json!({"description": "x", "prompt": "Do it."}))).unwrap();
-        assert_eq!(general.agent, Agent::General);
+        assert_eq!(general.subagent_type, SubagentType::General);
         let empty = asked(&arguments(json!({"description": "x", "prompt": " "})));
         assert_eq!(empty.unwrap_err(), "Give the helper a prompt.");
         let odd = asked(&arguments(
-            json!({"description": "x", "prompt": "y", "agent": "boss"}),
+            json!({"description": "x", "prompt": "y", "subagent_type": "boss"}),
         ));
         assert!(odd.unwrap_err().contains("unknown variant `boss`"));
     }
@@ -152,7 +154,7 @@ mod tests {
         );
         assert_eq!(
             report(&messages, Outcome::LimitReached),
-            "[The task ended early: it reached its step limit.]\n\nFound 3 tests in tests/."
+            "[The helper stopped early: it reached its step limit.]\n\nFound 3 tests in tests/."
         );
         assert_eq!(
             report(&[], Outcome::Completed),

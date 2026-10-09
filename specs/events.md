@@ -74,7 +74,7 @@ All types below are at version 1.
 
 | Type | Recorded when | `data` |
 | --- | --- | --- |
-| `thread.started` | A thread begins; always `seq` 1 | `producer` (`name`, `version`); optional `fork` (`thread`, `seq`) when the thread continues another thread's prefix; optional `parent` (`thread`, `call_id`) when a `task` call in another thread started it (version 2) |
+| `thread.started` | A thread begins; always `seq` 1 | `producer` (`name`, `version`); optional `fork` (`thread`, `seq`) when the thread continues another thread's prefix; optional `parent` (`thread`, `call_id`) when an `agent` call in another thread started it, as a subagent (version 2) |
 | `turn.started` | A turn begins | `model` (`provider`, `name`); `config`, a blob reference to the turn's full configuration (system prompt, tools, parameters) |
 | `message.added` | A finished message from the person or the assistant | `role` (`user` or `assistant`); `parts`, an ordered list of `text`, `reasoning` and `file` parts |
 | `tool.call.requested` | The model asks for a tool | `call_id`; optional `provider_call_id`; `tool`; `arguments`, either `{"json": {…}}` or `{"malformed": "<raw text>"}` |

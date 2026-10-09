@@ -1,4 +1,4 @@
-//! Running `task` calls: each in a child thread of its own, side by side, with what the person
+//! Running `agent` calls: each subagent in a child thread of its own, side by side, with what the person
 //! sees of each child forwarded under the child's thread.
 
 use std::sync::{Mutex, PoisonError};
@@ -11,7 +11,7 @@ use crate::calls::NOT_RUN;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::join::{Running, all};
-use crate::task::{self, AT_ONCE};
+use crate::subagent::{self, AT_ONCE};
 use crate::toolset::ToolSet;
 use crate::turn::{Live, TurnSummary};
 
@@ -25,9 +25,9 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Runs the `task` calls of one response, at most `AT_ONCE` at a time. Each result comes
+    /// Runs the `agent` calls of one response, at most `AT_ONCE` at a time. Each result comes
     /// back in its call's order, with the child's summary when it ran.
-    pub(crate) async fn run_tasks(
+    pub(crate) async fn run_subagents(
         &self,
         parent: &Thread,
         calls: &[ToolCall],
@@ -41,7 +41,7 @@ where
             let runs: Vec<Running<'_, _>> = group
                 .iter()
                 .map(|call| -> Running<'_, _> {
-                    Box::pin(self.run_task(parent, call, offer, cancel, &shared))
+                    Box::pin(self.run_subagent(parent, call, offer, cancel, &shared))
                 })
                 .collect();
             results.extend(all(runs).await);
@@ -49,7 +49,7 @@ where
         results
     }
 
-    async fn run_task(
+    async fn run_subagent(
         &self,
         parent: &Thread,
         call: &ToolCall,
@@ -57,7 +57,7 @@ where
         cancel: &Cancel,
         live: Shared<'_, '_>,
     ) -> (ToolOutput, Option<TurnSummary>) {
-        let asked = match task::asked(&call.arguments) {
+        let asked = match subagent::asked(&call.arguments) {
             Ok(asked) => asked,
             Err(err) => return (ToolOutput::text(true, err), None),
         };
@@ -69,7 +69,7 @@ where
             Ok(child) => child,
             Err(err) => {
                 return (
-                    ToolOutput::text(true, format!("The task could not start: {err}")),
+                    ToolOutput::text(true, format!("The subagent could not start: {err}")),
                     None,
                 );
             }
@@ -81,7 +81,7 @@ where
             let mut live = live.lock().unwrap_or_else(PoisonError::into_inner);
             live(update);
         };
-        send(Live::TaskStarted {
+        send(Live::SubagentStarted {
             thread: id,
             description: asked.description.clone(),
         });
@@ -91,24 +91,24 @@ where
                 update: Box::new(update),
             });
         };
-        let tools = offer.for_child(asked.agent);
-        let brief = task::brief(&asked);
+        let tools = offer.for_child(asked.subagent_type);
+        let brief = subagent::brief(&asked);
         let ran = self
             .run_with(&mut child, &brief, tools, cancel, &mut forward)
             .await;
         let result = match ran {
             Ok(summary) => {
                 let failed = summary.outcome != Outcome::Completed;
-                let report = task::report(&child.messages, summary.outcome);
+                let report = subagent::report(&child.messages, summary.outcome);
                 (ToolOutput::text(failed, report), Some(summary))
             }
             Err(HarnessError::Cancelled) => (ToolOutput::text(true, NOT_RUN), None),
             Err(err) => (
-                ToolOutput::text(true, format!("The task failed: {err}")),
+                ToolOutput::text(true, format!("The subagent failed: {err}")),
                 None,
             ),
         };
-        send(Live::TaskEnded {
+        send(Live::SubagentEnded {
             thread: id,
             ok: !result.0.is_error,
         });

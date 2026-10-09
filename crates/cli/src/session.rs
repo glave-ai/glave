@@ -105,7 +105,7 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
     settings.instructions = instructions.as_ref().map(|loaded| loaded.text.clone());
     settings.approval = args.approval.unwrap_or_default();
     // As Claude Code, Codex and OpenCode offer it; models use it when asked to.
-    settings.tasks = true;
+    settings.subagents = true;
     if let Some(window_tokens) = config::context_window()? {
         settings.compaction.window_tokens = window_tokens;
     }

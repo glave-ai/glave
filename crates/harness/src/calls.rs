@@ -31,8 +31,8 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Runs the calls of one response in order, recording each result. Calls that start tasks
-    /// and come one after another run side by side, and their children's work counts in the
+    /// Runs the calls of one response in order, recording each result. Calls that start
+    /// subagents and come one after another run side by side, and their children's work counts in the
     /// turn. Every call gets a result, so the thread stays valid after a cancel.
     pub(crate) async fn run_calls(
         &self,
@@ -44,14 +44,14 @@ where
     ) -> Result<(), HarnessError> {
         let mut rest = calls;
         while let Some(first) = rest.first() {
-            let tasks = rest
+            let subagents = rest
                 .iter()
-                .take_while(|call| step.toolset.is_task(&call.tool))
+                .take_while(|call| step.toolset.is_agent(&call.tool))
                 .count();
-            if tasks > 0 && !cancel.is_cancelled() {
-                let (started, after) = rest.split_at_checked(tasks).unwrap_or((rest, &[]));
+            if subagents > 0 && !cancel.is_cancelled() {
+                let (started, after) = rest.split_at_checked(subagents).unwrap_or((rest, &[]));
                 let ran = self
-                    .run_tasks(thread, started, &step.toolset, cancel, live)
+                    .run_subagents(thread, started, &step.toolset, cancel, live)
                     .await;
                 for (call, (output, child)) in started.iter().zip(ran) {
                     if let Some(child) = child {

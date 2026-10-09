@@ -1,4 +1,4 @@
-//! Tasks: a call that hands work to a child thread, which starts fresh with only the task,
+//! Subagents: a call that hands work to a child thread, which starts fresh with only the task,
 //! works with the parent's tools or fewer, and reports back; several run side by side.
 
 #[cfg(test)]
@@ -7,7 +7,7 @@
 mod support;
 
 #[cfg(test)]
-mod tasks {
+mod subagents {
     use std::future::Future;
     use std::sync::atomic::{AtomicI64, AtomicU64};
     use std::sync::{Arc, Mutex};
@@ -24,9 +24,9 @@ mod tasks {
 
     use super::support::*;
 
-    fn with_tasks() -> glave_harness::Settings {
+    fn with_subagents() -> glave_harness::Settings {
         let mut settings = settings();
-        settings.tasks = true;
+        settings.subagents = true;
         settings
     }
 
@@ -49,14 +49,14 @@ mod tasks {
 
     #[test]
     fn a_child_does_the_task_in_its_own_thread_and_reports_back() {
-        let dir = folder("tasks-report");
+        let dir = folder("subagents-report");
         block_on(async {
             let answers = vec![
                 answer(
                     None,
                     vec![(
-                        "task",
-                        json!({"description": "find the tests", "prompt": "List the test files.", "agent": "explore"}),
+                        "agent",
+                        json!({"description": "find the tests", "prompt": "List the test files.", "subagent_type": "explore"}),
                     )],
                     StopReason::ToolUse,
                 ),
@@ -65,7 +65,7 @@ mod tasks {
             ];
             let log = MemoryLog::new();
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, log, 1, with_tasks()).await;
+                harness_seeing(&dir, answers, AllowAll, log, 1, with_subagents()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let mut shown = Vec::new();
             let summary = harness
@@ -86,11 +86,11 @@ mod tasks {
             );
             assert_eq!(results(thread.messages()), ["Found tests/a.rs."]);
             let seen = seen.lock().unwrap().clone();
-            assert!(names(&seen[0]).contains(&"task".to_owned()));
+            assert!(names(&seen[0]).contains(&"agent".to_owned()));
             assert_eq!(
                 names(&seen[1]),
                 ["search", "glob", "read"],
-                "an explorer only reads, and starts no tasks"
+                "an explorer only reads, and starts no subagents"
             );
             let brief = format!("{:?}", seen[1].messages);
             assert!(brief.contains("List the test files."), "{brief}");
@@ -101,7 +101,7 @@ mod tasks {
             let child = shown
                 .iter()
                 .find_map(|live| match live {
-                    Live::TaskStarted {
+                    Live::SubagentStarted {
                         thread,
                         description,
                     } => {
@@ -117,7 +117,7 @@ mod tasks {
                     .any(|live| matches!(live, Live::Child { thread, .. } if *thread == child))
             );
             assert!(shown.iter().any(
-                |live| matches!(live, Live::TaskEnded { thread, ok: true } if *thread == child)
+                |live| matches!(live, Live::SubagentEnded { thread, ok: true } if *thread == child)
             ));
             let started = events(harness.log(), child).await;
             match &started[0].body {
@@ -131,20 +131,27 @@ mod tasks {
     }
 
     #[test]
-    fn a_general_child_has_the_parents_tools_but_no_tasks() {
-        let dir = folder("tasks-general");
+    fn a_general_child_has_the_parents_tools_but_no_subagents() {
+        let dir = folder("subagents-general");
         block_on(async {
             let answers = vec![
                 answer(
                     None,
-                    vec![("task", json!({"description": "x", "prompt": "Do x."}))],
+                    vec![("agent", json!({"description": "x", "prompt": "Do x."}))],
                     StopReason::ToolUse,
                 ),
                 answer(Some("Did x."), vec![], StopReason::EndTurn),
                 answer(Some("Done."), vec![], StopReason::EndTurn),
             ];
-            let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, with_tasks()).await;
+            let (harness, seen) = harness_seeing(
+                &dir,
+                answers,
+                AllowAll,
+                MemoryLog::new(),
+                1,
+                with_subagents(),
+            )
+            .await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "do x", &Cancel::new(), &mut |_| {})
@@ -159,8 +166,8 @@ mod tasks {
     }
 
     #[test]
-    fn without_the_setting_there_is_no_task_tool() {
-        let dir = folder("tasks-off");
+    fn without_the_setting_there_is_no_agent_tool() {
+        let dir = folder("subagents-off");
         block_on(async {
             let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
@@ -170,11 +177,11 @@ mod tasks {
                 .run_turn(&mut thread, "hi", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
-            assert!(!names(&seen.lock().unwrap()[0]).contains(&"task".to_owned()));
+            assert!(!names(&seen.lock().unwrap()[0]).contains(&"agent".to_owned()));
         });
     }
 
-    /// A model whose children each wait until both have asked: only tasks running side by side
+    /// A model whose children each wait until both have asked: only subagents running side by side
     /// get past it.
     struct Together {
         barrier: Arc<Barrier>,
@@ -201,19 +208,21 @@ mod tasks {
                         vec![],
                         StopReason::EndTurn,
                     )),
-                    Err(_) => Err(ProviderError::Protocol("the tasks ran one by one".into())),
+                    Err(_) => Err(ProviderError::Protocol(
+                        "the subagents ran one by one".into(),
+                    )),
                 }
             }
         }
     }
 
     #[test]
-    fn tasks_in_one_response_run_side_by_side() {
-        let dir = folder("tasks-together");
+    fn subagents_in_one_response_run_side_by_side() {
+        let dir = folder("subagents-together");
         block_on(async {
             let task = |name: &str| {
                 (
-                    "task",
+                    "agent",
                     json!({"description": name, "prompt": format!("Do {name}.")}),
                 )
             };
@@ -233,7 +242,7 @@ mod tasks {
                 entropy: Box::new(Counting(AtomicU64::new(1))),
                 workspace: Workspace::open(&dir, std::env::vars_os()).await.unwrap(),
             };
-            let harness = Harness::new(parts, with_tasks());
+            let harness = Harness::new(parts, with_subagents());
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let summary = harness
                 .run_turn(&mut thread, "do both", &Cancel::new(), &mut |_| {})

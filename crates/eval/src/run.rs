@@ -181,7 +181,7 @@ async fn wire(
         .map_err(EvalError::io("read the instructions in", root))?
         .map(|loaded| loaded.text);
     settings.approval = task.approval;
-    settings.tasks = setup.subagents;
+    settings.subagents = setup.subagents;
     if let Some(steps) = task.max_steps {
         settings.max_steps = steps;
     }
@@ -308,14 +308,18 @@ fn note(transcript: &mut String, live: Live) {
         Live::Retrying {
             retry, of, error, ..
         } => writeln!(transcript, "[retry {retry} of {of}] {error}"),
-        Live::TaskStarted { description, .. } => writeln!(transcript, "\n[task] {description}"),
+        Live::SubagentStarted { description, .. } => writeln!(
+            transcript,
+            "
+[agent] {description}"
+        ),
         Live::Child { update, .. } => {
             transcript.push_str("  ");
             note(transcript, *update);
             Ok(())
         }
-        Live::TaskEnded { ok, .. } => {
-            writeln!(transcript, "[task {}]", if ok { "done" } else { "failed" })
+        Live::SubagentEnded { ok, .. } => {
+            writeln!(transcript, "[agent {}]", if ok { "done" } else { "failed" })
         }
         Live::Asked { questions, .. } => {
             let asked: Vec<&str> = questions.iter().map(|q| q.question.as_str()).collect();

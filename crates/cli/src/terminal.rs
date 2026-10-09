@@ -51,8 +51,8 @@ pub struct Printer {
     /// The protections in force, such as `approval: edits · sandbox: project`.
     protections: String,
     waiting: Waiting,
-    /// The tasks running now, by their child thread, with what each is for.
-    tasks: HashMap<ThreadId, String>,
+    /// The subagents running now, by their thread, with what each is for.
+    subagents: HashMap<ThreadId, String>,
 }
 
 impl Printer {
@@ -63,7 +63,7 @@ impl Printer {
             color,
             showing: Showing::Nothing,
             waiting: Waiting::new(color, &speaker),
-            tasks: HashMap::new(),
+            subagents: HashMap::new(),
             speaker,
             protections,
         }
@@ -166,7 +166,7 @@ impl Printer {
             }
             // Shown by the client, which answers it.
             Update::Asked { .. } => {}
-            Update::TaskStarted { .. } | Update::TaskEnded { .. } => self.task(update),
+            Update::SubagentStarted { .. } | Update::SubagentEnded { .. } => self.subagent(update),
             Update::ToolFinished { is_error, .. } => {
                 if is_error {
                     println!("{}", paint(self.color, RED, "error"));
@@ -242,20 +242,23 @@ impl Printer {
         flush();
     }
 
-    /// A task starting or ending.
-    fn task(&mut self, update: Update) {
+    /// A subagent starting or ending.
+    fn subagent(&mut self, update: Update) {
         match update {
-            Update::TaskStarted { task, description } => {
+            Update::SubagentStarted {
+                subagent,
+                description,
+            } => {
                 println!();
-                println!("  {} {description}", paint(self.color, CYAN, "task"));
-                self.tasks.insert(task, description);
+                println!("  {} {description}", paint(self.color, CYAN, "agent"));
+                self.subagents.insert(subagent, description);
             }
-            Update::TaskEnded { task, ok } => {
-                let description = self.tasks.remove(&task).unwrap_or_default();
+            Update::SubagentEnded { subagent, ok } => {
+                let description = self.subagents.remove(&subagent).unwrap_or_default();
                 let (color, word) = if ok {
-                    (CYAN, "task done")
+                    (CYAN, "agent done")
                 } else {
-                    (RED, "task failed")
+                    (RED, "agent failed")
                 };
                 println!("  {} {description}", paint(self.color, color, word));
             }
@@ -264,10 +267,10 @@ impl Printer {
         self.showing = Showing::Nothing;
     }
 
-    /// What a task's child did, one finished step per line under the task's name. Its words
-    /// go to the parent, not here.
-    pub fn child(&mut self, task: ThreadId, update: Update) {
-        let Some(label) = self.tasks.get(&task) else {
+    /// What a subagent did, one finished step per line under its description. Its words go
+    /// to the parent, not here.
+    pub fn child(&mut self, subagent: ThreadId, update: Update) {
+        let Some(label) = self.subagents.get(&subagent) else {
             return;
         };
         let step = match update {
@@ -301,9 +304,9 @@ impl Printer {
         flush();
     }
 
-    /// `summary` with the task it comes from, when a task's child asks.
-    pub fn labeled(&self, task: ThreadId, summary: &str) -> String {
-        match self.tasks.get(&task) {
+    /// `summary` with the subagent it comes from, when a subagent asks.
+    pub fn labeled(&self, subagent: ThreadId, summary: &str) -> String {
+        match self.subagents.get(&subagent) {
             Some(label) => format!("[{label}] {summary}"),
             None => summary.to_owned(),
         }

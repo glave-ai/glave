@@ -19,7 +19,7 @@ const BACKLOG: usize = 1_024;
 #[derive(Default)]
 pub(crate) struct Hub {
     threads: Mutex<HashMap<ThreadId, broadcast::Sender<Arc<Notification>>>>,
-    /// Each running child's parent: a child's notifications go to its parent's watchers too.
+    /// Each running subagent's parent: its notifications go to the parent's watchers too.
     parents: Mutex<HashMap<ThreadId, ThreadId>>,
 }
 

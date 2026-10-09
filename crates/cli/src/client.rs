@@ -125,7 +125,7 @@ impl Client<'_> {
                 if !self.asks {
                     return false;
                 }
-                // A task's child asks under its own thread.
+                // A subagent asks under its own thread.
                 printer.approval(&printer.labeled(*thread, &asked.summary));
                 let Some(line) = interrupt.run(self.input.line()).await else {
                     return true;

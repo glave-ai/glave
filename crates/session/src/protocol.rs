@@ -194,14 +194,14 @@ pub enum Update {
         question: CallId,
         questions: Vec<Question>,
     },
-    /// A child thread started on a task; its notifications follow under its own thread.
-    TaskStarted {
-        task: ThreadId,
+    /// A subagent started; its notifications follow under its own thread.
+    SubagentStarted {
+        subagent: ThreadId,
         description: String,
     },
-    /// A child's task is over; `ok` when it finished its work.
-    TaskEnded {
-        task: ThreadId,
+    /// A subagent is done; `ok` when it finished its work.
+    SubagentEnded {
+        subagent: ThreadId,
         ok: bool,
     },
 }
@@ -244,14 +244,17 @@ impl From<Live> for Update {
                 question: call_id,
                 questions,
             },
-            Live::TaskStarted {
+            Live::SubagentStarted {
                 thread,
                 description,
-            } => Self::TaskStarted {
-                task: thread,
+            } => Self::SubagentStarted {
+                subagent: thread,
                 description,
             },
-            Live::TaskEnded { thread, ok } => Self::TaskEnded { task: thread, ok },
+            Live::SubagentEnded { thread, ok } => Self::SubagentEnded {
+                subagent: thread,
+                ok,
+            },
             // Published under the child's thread; see `Server::start_turn`.
             Live::Child { update, .. } => Self::from(*update),
         }

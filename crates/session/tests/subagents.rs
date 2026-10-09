@@ -1,4 +1,4 @@
-//! Tasks through the session API: a child's notifications reach whoever follows the parent,
+//! Subagents through the session API: a child's notifications reach whoever follows the parent,
 //! each under the child's thread, and a child's approval is answered there.
 
 #[cfg(test)]
@@ -7,7 +7,7 @@
 mod support;
 
 #[cfg(test)]
-mod tasks {
+mod subagents {
     use glave_event::{Body, Outcome, decode};
     use glave_harness::Settings;
     use glave_ports::MemoryLog;
@@ -19,13 +19,13 @@ mod tasks {
 
     #[test]
     fn a_childs_approval_reaches_the_parents_follower_and_is_answered_there() {
-        let dir = folder("session-tasks");
+        let dir = folder("session-subagents");
         block_on(async {
             let answers = vec![
                 answer(
                     None,
                     Some((
-                        "task",
+                        "agent",
                         json!({"description": "touch it", "prompt": "Run: touch ran.txt"}),
                     )),
                 ),
@@ -34,7 +34,7 @@ mod tasks {
                 answer(Some("Done."), None),
             ];
             let mut settings = Settings::new("test-model", "script");
-            settings.tasks = true;
+            settings.subagents = true;
             let server = server_with(
                 &dir,
                 answers,
@@ -51,7 +51,7 @@ mod tasks {
             };
             let parent = thread.id;
             let mut stream = server.start_turn(parent, "touch it").await.unwrap();
-            let mut task = None;
+            let mut subagent = None;
             let mut answered = false;
             let mut child_events = Vec::new();
             let mut ended = None;
@@ -59,15 +59,18 @@ mod tasks {
                 match item {
                     TurnItem::Note(note) => match note.as_ref() {
                         Notification::Live {
-                            update: Update::TaskStarted { task: child, .. },
+                            update:
+                                Update::SubagentStarted {
+                                    subagent: child, ..
+                                },
                             ..
-                        } => task = Some(*child),
+                        } => subagent = Some(*child),
                         Notification::Event { thread, event } if *thread != parent => {
                             child_events.push(event.kind.as_str().to_owned());
                             if let Body::ApprovalRequested(asked) =
                                 decode(event.clone()).unwrap().body
                             {
-                                assert_eq!(Some(*thread), task, "the child's own thread");
+                                assert_eq!(Some(*thread), subagent, "the child's own thread");
                                 let decide = Request::ApprovalDecide {
                                     thread: *thread,
                                     approval: asked.call_id,

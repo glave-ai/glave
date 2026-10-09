@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use glave_ports::{Effect, ToolInfo, ToolSource, ToolSpec};
 
-use crate::task::Agent;
+use crate::subagent::SubagentType;
 
 /// Opens what the sources say about their tools, which follows glave's own instructions.
 const NOTES: &str = "# Notes from tool servers\n\nThe servers whose tools you have describe them \
@@ -24,8 +24,8 @@ pub(crate) struct ToolSet {
     pub(crate) missing: Vec<String>,
     /// Whether `ask` is on offer: only when someone can answer.
     pub(crate) asks: bool,
-    /// Whether `task` is on offer.
-    pub(crate) tasks: bool,
+    /// Whether `agent` is on offer.
+    pub(crate) subagents: bool,
 }
 
 impl ToolSet {
@@ -36,7 +36,7 @@ impl ToolSet {
             by_name: HashMap::new(),
             missing: Vec::new(),
             asks: false,
-            tasks: false,
+            subagents: false,
         };
         for (index, source) in sources.iter().enumerate() {
             match source.tools().await {
@@ -74,21 +74,21 @@ impl ToolSet {
         self.asks && name.trim().eq_ignore_ascii_case(crate::ask::ASK)
     }
 
-    /// Offers `task` too.
-    pub(crate) fn offer_task(&mut self) {
-        self.tasks = true;
-        self.specs.push(crate::task::spec());
+    /// Offers `agent` too.
+    pub(crate) fn offer_agent(&mut self) {
+        self.subagents = true;
+        self.specs.push(crate::subagent::spec());
     }
 
-    /// Whether `name` is `task`, while it is on offer.
-    pub(crate) fn is_task(&self, name: &str) -> bool {
-        self.tasks && name.trim().eq_ignore_ascii_case(crate::task::TASK)
+    /// Whether `name` is `agent`, while it is on offer.
+    pub(crate) fn is_agent(&self, name: &str) -> bool {
+        self.subagents && name.trim().eq_ignore_ascii_case(crate::subagent::AGENT)
     }
 
-    /// The tools a child doing a task has: these, less `task` and `ask`, and for an explorer
+    /// The tools a subagent has: these, less `agent` and `ask`, and for an explorer
     /// only those that read.
-    pub(crate) fn for_child(&self, agent: Agent) -> Self {
-        let keeps = |info: &ToolInfo| agent == Agent::General || info.effect == Effect::Reads;
+    pub(crate) fn for_child(&self, kind: SubagentType) -> Self {
+        let keeps = |info: &ToolInfo| kind == SubagentType::General || info.effect == Effect::Reads;
         let by_name: HashMap<String, (usize, ToolInfo)> = self
             .by_name
             .iter()
@@ -106,7 +106,7 @@ impl ToolSet {
             by_name,
             missing: self.missing.clone(),
             asks: false,
-            tasks: false,
+            subagents: false,
         }
     }
 

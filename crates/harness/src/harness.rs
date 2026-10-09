@@ -43,8 +43,8 @@ pub struct Settings {
     /// Model calls allowed in one turn before it stops.
     pub max_steps: u32,
     pub max_output_tokens: Option<u32>,
-    /// Whether the model may hand work to child threads with `task`.
-    pub tasks: bool,
+    /// Whether the model may hand work to subagents with `agent`.
+    pub subagents: bool,
 }
 
 impl Settings {
@@ -62,7 +62,7 @@ impl Settings {
             retries: Retries::default(),
             max_steps: 50,
             max_output_tokens: None,
-            tasks: false,
+            subagents: false,
         }
     }
 }
@@ -185,8 +185,8 @@ where
         if self.approver.can_answer() {
             set.offer_ask();
         }
-        if self.settings.tasks {
-            set.offer_task();
+        if self.settings.subagents {
+            set.offer_agent();
         }
         set
     }

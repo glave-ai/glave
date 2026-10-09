@@ -155,7 +155,7 @@ where
             .occupy(thread, move |inner, mut held, cancel| async move {
                 let hub = Arc::clone(&inner.hub);
                 let mut publish = |live| {
-                    // A child's progress goes under the child's thread, and so to its watchers
+                    // A subagent's progress goes under its own thread, and so to its watchers
                     // and the parent's.
                     let (from, live) = match live {
                         Live::Child { thread, update } => (thread, *update),

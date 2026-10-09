@@ -59,18 +59,18 @@ pub enum Live {
         call_id: CallId,
         questions: Vec<Question>,
     },
-    /// A child thread started on a task.
-    TaskStarted {
+    /// A subagent started, in a child thread.
+    SubagentStarted {
         thread: ThreadId,
         description: String,
     },
-    /// What a child doing a task shows, under the child's own thread.
+    /// What a subagent shows, under its own thread.
     Child {
         thread: ThreadId,
         update: Box<Live>,
     },
-    /// A child's task is over; `ok` when it finished its work.
-    TaskEnded {
+    /// A subagent is done; `ok` when it finished its work.
+    SubagentEnded {
         thread: ThreadId,
         ok: bool,
     },

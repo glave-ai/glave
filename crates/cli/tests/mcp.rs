@@ -70,7 +70,7 @@ mod mcp {
                 "mcp__tests__flood",
                 "list_mcp_resources",
                 "read_mcp_resource",
-                "task",
+                "agent",
             ]
         );
         let system = said(&received[0].body, "system").join("\n");
