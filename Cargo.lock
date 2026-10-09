@@ -552,6 +552,7 @@ dependencies = [
  "glave-harness",
  "glave-ports",
  "glave-provider-openai",
+ "glave-shell",
  "jiff",
  "serde",
  "serde_json",

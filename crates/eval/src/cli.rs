@@ -21,6 +21,7 @@ pub const DEFAULT_MODELS: [&str; 3] = [
 
 const USAGE: &str = "\
 usage: glave-eval [options]
+       glave-eval judge [options]   score the action judge on evals/judge (see judge --help)
 
 Runs glave's harness in-process on the task folders against real models and grades the results.
 The endpoint comes from GLAVE_BASE_URL and GLAVE_API_KEY.
@@ -54,6 +55,12 @@ struct Options {
 
 pub fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(("judge", rest)) = args
+        .split_first()
+        .map(|(first, rest)| (first.as_str(), rest))
+    {
+        return crate::judging::main(rest);
+    }
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
