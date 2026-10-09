@@ -40,8 +40,9 @@ pub struct Settings {
     pub compaction: Compaction,
     /// How a model call that fails in a way that may pass is tried again.
     pub retries: Retries,
-    /// Model calls allowed in one turn before it stops.
-    pub max_steps: u32,
+    /// Model calls allowed in one turn before it stops; no cap when `None`, as in Codex and
+    /// OpenCode. A subagent's turn gets the same cap of its own.
+    pub max_steps: Option<u32>,
     pub max_output_tokens: Option<u32>,
     /// Whether the model may hand work to subagents with `agent`.
     pub subagents: bool,
@@ -60,7 +61,7 @@ impl Settings {
             approval: ApprovalMode::default(),
             compaction: Compaction::default(),
             retries: Retries::default(),
-            max_steps: 50,
+            max_steps: None,
             max_output_tokens: None,
             subagents: false,
         }

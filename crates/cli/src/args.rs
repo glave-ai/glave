@@ -22,6 +22,8 @@ Options:
   --sandbox <level>  run commands in the macOS sandbox: read-only, or project (writes only
                      the project and temp folder); never reads secret locations
   --network          let sandboxed commands use the network
+  --max-steps <n>    end each turn after n model calls, the last one a text report of
+                     what is done and what is left (default: no limit)
   --events <file>    save the thread's events to this file as JSON Lines
   --help             show this help
   --version          show the version
@@ -70,6 +72,8 @@ pub struct Args {
     pub sandbox: Option<SandboxLevel>,
     /// Let sandboxed commands use the network.
     pub network: bool,
+    /// Model calls one turn may make; no limit when not given.
+    pub max_steps: Option<u32>,
     /// Continue the most recent thread in this folder instead of starting one.
     pub resume: bool,
     pub events: Option<PathBuf>,
@@ -106,6 +110,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
                 })?);
             }
             "--network" => args.network = true,
+            "--max-steps" => args.max_steps = Some(steps(rest.next())?),
             "--stdio" if serving => stdio = true,
             "--continue" | "-c" => args.resume = true,
             "--help" | "-h" => args.action = Action::Help,
@@ -131,6 +136,17 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
         args.action = Action::Serve;
     }
     Ok(args)
+}
+
+/// The value of `--max-steps`: a whole number of model calls, at least one.
+fn steps(value: Option<String>) -> Result<u32, String> {
+    let value = value.ok_or("--max-steps needs a number of model calls")?;
+    match value.parse::<u32>() {
+        Ok(steps) if steps >= 1 => Ok(steps),
+        _ => Err(format!(
+            "--max-steps {value:?} is not a number of model calls: use 1 or more"
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -193,6 +209,24 @@ mod tests {
             "auto is the default"
         );
         assert!(parse_words(&["--approval"]).is_err());
+    }
+
+    #[test]
+    fn max_steps_takes_a_count_of_at_least_one() {
+        assert_eq!(parse_words(&["hi"]).unwrap().max_steps, None);
+        let capped = parse_words(&["--max-steps", "80", "hi"]).unwrap();
+        assert_eq!((capped.max_steps, capped.prompt.as_str()), (Some(80), "hi"));
+        let serve = parse_words(&["serve", "--stdio", "--max-steps", "1"]).unwrap();
+        assert_eq!((serve.action, serve.max_steps), (Action::Serve, Some(1)));
+        for wrong in ["0", "-3", "ten", "2.5", ""] {
+            let error = parse_words(&["--max-steps", wrong]).unwrap_err();
+            assert!(error.contains("use 1 or more"), "{wrong}: {error}");
+        }
+        assert!(
+            parse_words(&["--max-steps"])
+                .unwrap_err()
+                .contains("needs a number")
+        );
     }
 
     #[test]
