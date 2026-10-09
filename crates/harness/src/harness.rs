@@ -184,7 +184,7 @@ where
     pub(crate) async fn tools(&self) -> ToolSet {
         let mut set = ToolSet::gather(&self.sources, &self.settings.system_prompt).await;
         if self.approver.can_answer() {
-            set.offer_ask();
+            set.offer_question();
         }
         if self.settings.subagents {
             set.offer_agent();

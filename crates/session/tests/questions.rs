@@ -61,7 +61,7 @@ mod questions {
         let dir = folder("questions-answered");
         block_on(async {
             let answers = vec![
-                answer(None, Some(("ask", asks()))),
+                answer(None, Some(("question", asks()))),
                 answer(Some("Postgres it is."), None),
             ];
             let server = server(&dir, answers, Answering::Clients).await;
@@ -124,7 +124,7 @@ mod questions {
     fn cancelling_a_turn_waiting_for_answers_ends_it() {
         let dir = folder("questions-cancelled");
         block_on(async {
-            let answers = vec![answer(None, Some(("ask", asks())))];
+            let answers = vec![answer(None, Some(("question", asks())))];
             let server = server(&dir, answers, Answering::Clients).await;
             let thread = new_thread(&server).await;
             let mut stream = server.start_turn(thread, "set up storage").await.unwrap();
@@ -152,11 +152,11 @@ mod questions {
     }
 
     #[test]
-    fn with_no_one_to_answer_ask_is_not_offered() {
+    fn with_no_one_to_answer_question_is_not_offered() {
         let dir = folder("questions-nobody");
         block_on(async {
             let answers = vec![
-                answer(None, Some(("ask", asks()))),
+                answer(None, Some(("question", asks()))),
                 answer(Some("I chose Postgres."), None),
             ];
             let server = server(&dir, answers, Answering::NoOne).await;
@@ -171,7 +171,7 @@ mod questions {
             assert!(matches!(reply, Reply::Turn { turn } if turn.outcome == Outcome::Completed));
             let said = results(&server, thread).await;
             assert!(
-                said[0].starts_with("There is no tool named \"ask\""),
+                said[0].starts_with("There is no tool named \"question\""),
                 "{said:?}"
             );
         });
