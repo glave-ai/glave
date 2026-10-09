@@ -118,6 +118,24 @@ pub async fn server_on<L: EventLog + 'static>(
     answering: Answering,
     seed: u64,
 ) -> Server<Script, L, MemoryBlobs> {
+    let settings = Settings::new("test-model", "script");
+    server_with(dir, answers, gate, log, answering, seed, settings).await
+}
+
+/// Like `server_on`, with `settings`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a test helper that mirrors server_on"
+)]
+pub async fn server_with<L: EventLog + 'static>(
+    dir: &PathBuf,
+    answers: Vec<Completion>,
+    gate: Option<Arc<Notify>>,
+    log: L,
+    answering: Answering,
+    seed: u64,
+    settings: Settings,
+) -> Server<Script, L, MemoryBlobs> {
     let wiring = Wiring {
         provider: Script {
             answers: Mutex::new(answers.into()),
@@ -132,12 +150,7 @@ pub async fn server_on<L: EventLog + 'static>(
         workspace: Workspace::open(dir, std::env::vars_os()).await.unwrap(),
         tools: Vec::new(),
     };
-    Server::new(
-        wiring,
-        Settings::new("test-model", "script"),
-        scope(),
-        answering,
-    )
+    Server::new(wiring, settings, scope(), answering)
 }
 
 pub async fn server(

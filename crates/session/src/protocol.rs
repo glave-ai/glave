@@ -194,6 +194,16 @@ pub enum Update {
         question: CallId,
         questions: Vec<Question>,
     },
+    /// A subagent started; its notifications follow under its own thread.
+    SubagentStarted {
+        subagent: ThreadId,
+        description: String,
+    },
+    /// A subagent is done; `ok` when it finished its work.
+    SubagentEnded {
+        subagent: ThreadId,
+        ok: bool,
+    },
 }
 
 impl From<Live> for Update {
@@ -234,6 +244,19 @@ impl From<Live> for Update {
                 question: call_id,
                 questions,
             },
+            Live::SubagentStarted {
+                thread,
+                description,
+            } => Self::SubagentStarted {
+                subagent: thread,
+                description,
+            },
+            Live::SubagentEnded { thread, ok } => Self::SubagentEnded {
+                subagent: thread,
+                ok,
+            },
+            // Published under the child's thread; see `Server::start_turn`.
+            Live::Child { update, .. } => Self::from(*update),
         }
     }
 }

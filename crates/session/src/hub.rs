@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use glave_event::{RawEvent, Seq, ThreadId};
+use glave_event::{Body, Event, RawEvent, Seq, ThreadId, decode};
 use glave_ports::{EventLog, LogError, Scope};
 use tokio::sync::broadcast;
 
@@ -19,6 +19,8 @@ const BACKLOG: usize = 1_024;
 #[derive(Default)]
 pub(crate) struct Hub {
     threads: Mutex<HashMap<ThreadId, broadcast::Sender<Arc<Notification>>>>,
+    /// Each running subagent's parent: its notifications go to the parent's watchers too.
+    parents: Mutex<HashMap<ThreadId, ThreadId>>,
 }
 
 impl Hub {
@@ -31,19 +33,57 @@ impl Hub {
             .subscribe()
     }
 
-    /// Sends `notification` to everyone watching `thread`, forgetting threads no one watches.
+    /// Sends `notification` to everyone watching `thread` or a thread it is a child of,
+    /// forgetting threads no one watches.
     pub(crate) fn publish(&self, thread: ThreadId, notification: Notification) {
+        let notification = Arc::new(notification);
+        let mut to = Some(thread);
+        // A child's parent may itself be a child; a cycle could never be recorded, but the walk
+        // is bounded all the same.
+        for _ in 0..MOST_GENERATIONS {
+            let Some(watched) = to else {
+                break;
+            };
+            self.send(watched, &notification);
+            to = self
+                .parents
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(&watched)
+                .copied();
+        }
+    }
+
+    fn send(&self, thread: ThreadId, notification: &Arc<Notification>) {
         let mut threads = self.threads.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(sender) = threads.get(&thread) {
             if sender.receiver_count() == 0 {
                 threads.remove(&thread);
             } else {
                 // Only fails when no one is listening, which is fine.
-                let _ = sender.send(Arc::new(notification));
+                let _ = sender.send(Arc::clone(notification));
             }
         }
     }
+
+    /// Notes that `child` was started by a call in `parent`, until `child`'s turn ends.
+    fn adopt(&self, child: ThreadId, parent: ThreadId) {
+        self.parents
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(child, parent);
+    }
+
+    fn release(&self, child: ThreadId) {
+        self.parents
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&child);
+    }
 }
+
+/// How far up a child's notifications travel.
+const MOST_GENERATIONS: usize = 8;
 
 /// An event log that publishes every event it appends.
 pub(crate) struct Observed<L> {
@@ -61,11 +101,23 @@ impl<L: EventLog> EventLog for Observed<L> {
     async fn append(&self, scope: &Scope, events: &[RawEvent]) -> Result<(), LogError> {
         self.inner.append(scope, events).await?;
         for event in events {
+            if event.kind.as_str() == "thread.started"
+                && let Ok(Event {
+                    body: Body::ThreadStarted(started),
+                    ..
+                }) = decode(event.clone())
+                && let Some(parent) = started.parent
+            {
+                self.hub.adopt(event.thread, parent.thread);
+            }
             let notification = Notification::Event {
                 thread: event.thread,
                 event: event.clone(),
             };
             self.hub.publish(event.thread, notification);
+            if event.kind.as_str() == "turn.ended" {
+                self.hub.release(event.thread);
+            }
         }
         Ok(())
     }

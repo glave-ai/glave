@@ -9,7 +9,7 @@ use crate::ask::{self, QuestionRequest};
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::toolset::ToolSet;
-use crate::turn::Live;
+use crate::turn::{Live, Step, absorb};
 
 /// The result of a tool call the turn never ran because the person cancelled it.
 pub(crate) const NOT_RUN: &str = "Not run: the person cancelled the turn.";
@@ -31,6 +31,58 @@ where
     B: BlobStore,
     A: Approver,
 {
+    /// Runs the calls of one response in order, recording each result. Calls that start
+    /// subagents and come one after another run side by side, and their children's work counts in the
+    /// turn. Every call gets a result, so the thread stays valid after a cancel.
+    pub(crate) async fn run_calls(
+        &self,
+        thread: &mut Thread,
+        calls: &[ToolCall],
+        step: &mut Step,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<(), HarnessError> {
+        let mut rest = calls;
+        while let Some(first) = rest.first() {
+            let subagents = rest
+                .iter()
+                .take_while(|call| step.toolset.is_agent(&call.tool))
+                .count();
+            if subagents > 0 && !cancel.is_cancelled() {
+                let (started, after) = rest.split_at_checked(subagents).unwrap_or((rest, &[]));
+                let ran = self
+                    .run_subagents(thread, started, &step.toolset, cancel, live)
+                    .await;
+                for (call, (output, child)) in started.iter().zip(ran) {
+                    if let Some(child) = child {
+                        absorb(&mut step.summary, &child);
+                    }
+                    step.summary.tool_calls = step.summary.tool_calls.saturating_add(1);
+                    self.record_result(thread, call.call_id.clone(), output)
+                        .await?;
+                }
+                rest = after;
+                continue;
+            }
+            let output = if cancel.is_cancelled() {
+                ToolOutput::text(true, NOT_RUN)
+            } else if step.repeats.refuse(first) {
+                ToolOutput::text(
+                    true,
+                    "You made this exact call several times in a row. Change your approach.",
+                )
+            } else {
+                self.call_tool(thread, first, &step.toolset, cancel, live)
+                    .await?
+            };
+            step.summary.tool_calls = step.summary.tool_calls.saturating_add(1);
+            self.record_result(thread, first.call_id.clone(), output)
+                .await?;
+            rest = rest.get(1..).unwrap_or_default();
+        }
+        Ok(())
+    }
+
     /// Runs one tool call, asking the person first when its effect needs them in this mode or
     /// when its source says it does (a read of a secret file).
     pub(crate) async fn call_tool(

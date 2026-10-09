@@ -6,7 +6,7 @@ use serde_json::value::RawValue;
 
 use crate::codec::{Payload, parse};
 use crate::envelope::Seq;
-use crate::id::ThreadId;
+use crate::id::{CallId, ThreadId};
 use crate::payload::part::Part;
 
 pub(crate) const TYPE: &str = "thread.started";
@@ -20,6 +20,17 @@ pub struct ThreadStarted {
     /// Set when this thread continues another thread's events up to and including `seq`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fork: Option<ForkPoint>,
+    /// Set when a tool call in another thread started this one, as a task. Since version 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<ParentCall>,
+}
+
+/// The call in another thread that started a thread.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParentCall {
+    pub thread: ThreadId,
+    pub call_id: CallId,
 }
 
 /// The software that started the thread.
@@ -40,12 +51,13 @@ pub struct ForkPoint {
 
 impl Payload for ThreadStarted {
     const TYPE: &'static str = TYPE;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
+/// Version 1 had no `parent`; it reads as a thread no call started.
 pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<ThreadStarted>> {
     match version {
-        1 => Some(parse(data)),
+        1 | 2 => Some(parse(data)),
         _ => None,
     }
 }

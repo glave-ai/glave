@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::{Seq, ThreadId};
 use glave_harness::{
-    Clock, Entropy, Harness, HarnessError, Parts, Settings, TurnSummary, Workspace,
+    Clock, Entropy, Harness, HarnessError, Live, Parts, Settings, TurnSummary, Workspace,
 };
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, ToolSource};
 use tokio::sync::{broadcast, watch};
@@ -155,11 +155,17 @@ where
             .occupy(thread, move |inner, mut held, cancel| async move {
                 let hub = Arc::clone(&inner.hub);
                 let mut publish = |live| {
+                    // A subagent's progress goes under its own thread, and so to its watchers
+                    // and the parent's.
+                    let (from, live) = match live {
+                        Live::Child { thread, update } => (thread, *update),
+                        live => (thread, live),
+                    };
                     let update = Notification::Live {
-                        thread,
+                        thread: from,
                         update: crate::protocol::Update::from(live),
                     };
-                    hub.publish(thread, update);
+                    hub.publish(from, update);
                 };
                 let ran = inner
                     .harness

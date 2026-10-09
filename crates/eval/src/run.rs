@@ -29,6 +29,8 @@ pub struct Setup {
     pub environment: Vec<(OsString, OsString)>,
     /// Whether the model is offered the todo list, to measure what it does.
     pub todo: bool,
+    /// Whether the model may hand work to child threads with `task`, to measure what it does.
+    pub subagents: bool,
 }
 
 /// How one attempt went.
@@ -179,6 +181,7 @@ async fn wire(
         .map_err(EvalError::io("read the instructions in", root))?
         .map(|loaded| loaded.text);
     settings.approval = task.approval;
+    settings.subagents = setup.subagents;
     if let Some(steps) = task.max_steps {
         settings.max_steps = steps;
     }
@@ -305,6 +308,19 @@ fn note(transcript: &mut String, live: Live) {
         Live::Retrying {
             retry, of, error, ..
         } => writeln!(transcript, "[retry {retry} of {of}] {error}"),
+        Live::SubagentStarted { description, .. } => writeln!(
+            transcript,
+            "
+[agent] {description}"
+        ),
+        Live::Child { update, .. } => {
+            transcript.push_str("  ");
+            note(transcript, *update);
+            Ok(())
+        }
+        Live::SubagentEnded { ok, .. } => {
+            writeln!(transcript, "[agent {}]", if ok { "done" } else { "failed" })
+        }
         Live::Asked { questions, .. } => {
             let asked: Vec<&str> = questions.iter().map(|q| q.question.as_str()).collect();
             writeln!(transcript, "[asked] {}", asked.join(" / "))

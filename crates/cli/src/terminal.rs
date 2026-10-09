@@ -1,11 +1,12 @@
 //! What the person sees in the terminal: the answer as it streams, approval prompts, and the
 //! receipt that closes each turn. Every status starts with a word; color only reinforces it.
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{IsTerminal as _, Write as _};
 use std::time::Duration;
 
-use glave_event::{Currency, Money, Outcome};
+use glave_event::{Currency, Money, Outcome, ThreadId};
 use glave_harness::Question;
 use glave_session::protocol::{TurnResult, Update};
 
@@ -50,6 +51,8 @@ pub struct Printer {
     /// The protections in force, such as `approval: edits · sandbox: project`.
     protections: String,
     waiting: Waiting,
+    /// The subagents running now, by their thread, with what each is for.
+    subagents: HashMap<ThreadId, String>,
 }
 
 impl Printer {
@@ -60,6 +63,7 @@ impl Printer {
             color,
             showing: Showing::Nothing,
             waiting: Waiting::new(color, &speaker),
+            subagents: HashMap::new(),
             speaker,
             protections,
         }
@@ -162,6 +166,7 @@ impl Printer {
             }
             // Shown by the client, which answers it.
             Update::Asked { .. } => {}
+            Update::SubagentStarted { .. } | Update::SubagentEnded { .. } => self.subagent(update),
             Update::ToolFinished { is_error, .. } => {
                 if is_error {
                     println!("{}", paint(self.color, RED, "error"));
@@ -235,6 +240,76 @@ impl Printer {
         );
         self.showing = Showing::Nothing;
         flush();
+    }
+
+    /// A subagent starting or ending.
+    fn subagent(&mut self, update: Update) {
+        match update {
+            Update::SubagentStarted {
+                subagent,
+                description,
+            } => {
+                println!();
+                println!("  {} {description}", paint(self.color, CYAN, "agent"));
+                self.subagents.insert(subagent, description);
+            }
+            Update::SubagentEnded { subagent, ok } => {
+                let description = self.subagents.remove(&subagent).unwrap_or_default();
+                let (color, word) = if ok {
+                    (CYAN, "agent done")
+                } else {
+                    (RED, "agent failed")
+                };
+                println!("  {} {description}", paint(self.color, color, word));
+            }
+            _ => {}
+        }
+        self.showing = Showing::Nothing;
+    }
+
+    /// What a subagent did, one finished step per line under its description. Its words go
+    /// to the parent, not here.
+    pub fn child(&mut self, subagent: ThreadId, update: Update) {
+        let Some(label) = self.subagents.get(&subagent) else {
+            return;
+        };
+        let step = match update {
+            Update::ToolFinished { summary, is_error } => {
+                format!("{summary} · {}", if is_error { "error" } else { "done" })
+            }
+            Update::ToolDeclined {
+                summary,
+                no_one_there,
+            } => {
+                let why = if no_one_there {
+                    "not run: no one here to approve it"
+                } else {
+                    "declined"
+                };
+                format!("{summary} · {why}")
+            }
+            Update::Retrying { retry, of, .. } => format!("retrying ({retry} of {of})"),
+            Update::Compacted { .. } => "compacted its conversation".to_owned(),
+            _ => return,
+        };
+        self.waiting.stop();
+        if self.showing != Showing::Nothing {
+            println!();
+        }
+        println!(
+            "    {}",
+            paint(self.color, DIM, &format!("↳ {label} · {step}"))
+        );
+        self.showing = Showing::Nothing;
+        flush();
+    }
+
+    /// `summary` with the subagent it comes from, when a subagent asks.
+    pub fn labeled(&self, subagent: ThreadId, summary: &str) -> String {
+        match self.subagents.get(&subagent) {
+            Some(label) => format!("[{label}] {summary}"),
+            None => summary.to_owned(),
+        }
     }
 
     /// One of the model's questions; the answer is typed next.

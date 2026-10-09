@@ -13,6 +13,6 @@ pub use approval::{ApprovalDecided, ApprovalRequested, Verdict};
 pub use message::{MessageAdded, Role};
 pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};
-pub use thread::{ForkPoint, Producer, ThreadCompacted, ThreadStarted};
+pub use thread::{ForkPoint, ParentCall, Producer, ThreadCompacted, ThreadStarted};
 pub use tool::{Arguments, ToolCallCompleted, ToolCallRequested};
 pub use turn::{Outcome, TurnEnded, TurnStarted};
