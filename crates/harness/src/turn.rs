@@ -188,7 +188,7 @@ where
             if cancel.is_cancelled() {
                 break Outcome::Cancelled;
             }
-            if step.summary.model_calls >= self.settings.max_steps {
+            if self.capped(step.summary.model_calls) {
                 break Outcome::LimitReached;
             }
             if let Some(compaction) = self
@@ -198,7 +198,7 @@ where
                 step.summary.model_calls = step.summary.model_calls.saturating_add(1);
                 tally(&mut step.summary, &compaction);
             }
-            let last = step.summary.model_calls.saturating_add(1) >= self.settings.max_steps;
+            let last = self.capped(step.summary.model_calls.saturating_add(1));
             let choice = self.choice(thread, last).await?;
             // Asking the model writes nothing, so it can be dropped when the turn is cancelled.
             let Some(asked) = cancel
@@ -246,6 +246,11 @@ where
         }
         self.end(thread, step.summary.outcome).await?;
         Ok(step.summary)
+    }
+
+    /// Whether a turn that has made `calls` model calls is at its cap; never, with no cap.
+    fn capped(&self, calls: u32) -> bool {
+        self.settings.max_steps.is_some_and(|max| calls >= max)
     }
 
     /// Tells the model something about the turn itself, as a recorded user message.

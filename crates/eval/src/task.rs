@@ -47,7 +47,7 @@ pub struct Task {
     pub env: BTreeMap<String, String>,
     pub checks: Vec<Check>,
     pub timeout: Duration,
-    /// Model calls one turn may make; the harness's default when unset.
+    /// Model calls one turn may make; 50 when unset, so an attempt's cost stays bounded.
     pub max_steps: Option<u32>,
     /// How every turn must end: completed, unless the task is about another ending.
     pub outcome: Outcome,

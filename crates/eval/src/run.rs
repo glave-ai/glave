@@ -21,6 +21,9 @@ use crate::prepare::{Environment, Prepared, last_lines, prepare, script, tidy};
 use crate::task::Task;
 use crate::trace::{self, Trace};
 
+/// Model calls one turn of an attempt may make, unless its task says otherwise.
+const MAX_STEPS: u32 = 50;
+
 /// What every attempt runs with.
 pub struct Setup {
     /// The model endpoint. Its key is never printed; it is only searched for in the events.
@@ -182,9 +185,8 @@ async fn wire(
         .map(|loaded| loaded.text);
     settings.approval = task.approval;
     settings.subagents = setup.subagents;
-    if let Some(steps) = task.max_steps {
-        settings.max_steps = steps;
-    }
+    // The harness has no cap of its own, so an attempt gets one and its cost stays bounded.
+    settings.max_steps = Some(task.max_steps.unwrap_or(MAX_STEPS));
     if let Some(tokens) = task.context_window {
         settings.compaction.window_tokens = tokens;
     }
