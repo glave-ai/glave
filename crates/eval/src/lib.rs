@@ -3,11 +3,13 @@
 //! from the thread's events, the files left behind and each task's own test script, never by
 //! another model, so it needs no person and no judge.
 //!
-//! `cargo xtask eval` runs it; see `glave-eval --help` for the options.
+//! `cargo xtask eval` runs it; see `glave-eval --help` for the options. `glave-eval judge`
+//! scores the action judge on the cases in `evals/judge` (see `judging`).
 
 mod check;
 pub mod cli;
 mod error;
+mod judging;
 mod oracle;
 mod prepare;
 mod report;

@@ -1,7 +1,8 @@
 //! `cargo xtask eval`: glave's harness on the task folders in `evals/tasks`, against real
 //! models, graded from the events and files left behind (`glave-eval --help` lists the
 //! options). Not part of `ci`: it needs a model endpoint and costs money, so run it after
-//! changes the model will feel.
+//! changes the model will feel. `cargo xtask eval judge` scores the action judge on
+//! `evals/judge` instead.
 
 use crate::lock::{self, Mode};
 
