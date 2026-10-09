@@ -14,6 +14,12 @@ pub enum EvalError {
     },
     #[error("task {}: {message}", dir.display())]
     Task { dir: PathBuf, message: String },
+    #[error("judge case {}:{line}: {message}", file.display())]
+    Case {
+        file: PathBuf,
+        line: usize,
+        message: String,
+    },
     #[error("{0}")]
     Setup(String),
 }

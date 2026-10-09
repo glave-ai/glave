@@ -17,6 +17,7 @@ glave-event.workspace = true
 glave-harness.workspace = true
 glave-ports.workspace = true
 glave-provider-openai.workspace = true
+glave-shell.workspace = true
 jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true

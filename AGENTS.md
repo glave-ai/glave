@@ -47,6 +47,7 @@ crates/session/     glave-session: the session API (specs/session.md); every sur
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
+evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
 specs/              the contracts: events, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main)
 ```
@@ -60,6 +61,7 @@ cargo xtask ci          # the full gate; must pass before anything is "done"
 cargo xtask file-sizes  # line limits only
 cargo xtask bench       # benchmarks, alone on the machine (see Performance)
 cargo xtask eval        # the harness on evals/tasks against three real models, graded (costs cents)
+cargo xtask eval judge  # the action judge scored on evals/judge (the deterministic checks today)
 cargo fmt --all         # format
 cargo build --profile debugging   # full debug info, for a debugger
 ```

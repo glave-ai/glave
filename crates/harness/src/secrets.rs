@@ -49,7 +49,7 @@ const TEMPLATE_WORDS: &[&str] = &["example", "sample", "template", "dist", "defa
 
 /// Whether a file usually holds secrets, judged by its name: env files such as `.env` and
 /// `.env.local` (but not `.env.example`), private keys, and credential files.
-pub(crate) fn is_secret_file(path: &Path) -> bool {
+pub fn is_secret_file(path: &Path) -> bool {
     let Some(name) = path.file_name() else {
         return false;
     };
