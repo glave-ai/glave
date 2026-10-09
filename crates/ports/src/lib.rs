@@ -26,6 +26,6 @@ pub use model::{
 };
 pub use scope::{OrgId, Scope, SpaceId};
 pub use tools::{
-    BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource, describe_call,
-    unless_cancelled,
+    Assessment, BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource,
+    describe_call, unless_cancelled,
 };

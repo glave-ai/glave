@@ -1,0 +1,19 @@
+[package]
+name = "glave-shell"
+description = "Reading shell commands before they run: parsed with tree-sitter-bash, then judged read-only, risky with a reason, or neither"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+tree-sitter.workspace = true
+tree-sitter-bash.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

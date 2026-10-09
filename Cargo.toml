@@ -44,6 +44,7 @@ glave-mcp = { path = "crates/mcp" }
 glave-ports = { path = "crates/ports" }
 glave-provider-openai = { path = "crates/provider-openai" }
 glave-session = { path = "crates/session" }
+glave-shell = { path = "crates/shell" }
 glave-store-sqlite = { path = "crates/store-sqlite" }
 getrandom = "0.4"
 globset = "0.4"
@@ -63,6 +64,8 @@ sha2 = "0.11"
 thiserror = "2"
 tokio = { version = "1", default-features = false }
 toml = { version = "1", default-features = false, features = ["parse", "serde", "std"] }
+tree-sitter = "0.27"
+tree-sitter-bash = "0.25"
 uuid = { version = "1", default-features = false, features = ["std", "serde"] }
 
 # Day-to-day builds: file and line numbers in backtraces, no full debug info
