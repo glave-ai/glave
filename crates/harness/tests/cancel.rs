@@ -213,7 +213,7 @@ mod cancelling {
             let cancel = Cancel::new();
             let calls = vec![("bash", json!({"command": "touch ran.txt"}))];
             let answers = vec![answer(None, calls, StopReason::ToolUse)];
-            let harness = harness(&dir, answers, WalksAway(cancel.clone())).await;
+            let harness = asking_harness(&dir, answers, WalksAway(cancel.clone())).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let summary = harness
                 .run_turn(&mut thread, "go", &cancel, &mut |_| {})

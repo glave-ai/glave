@@ -138,6 +138,22 @@ pub fn settings() -> Settings {
     Settings::new("test-model", "script")
 }
 
+/// Settings for the cautious mode, where changes and commands ask.
+pub fn asking() -> Settings {
+    let mut settings = settings();
+    settings.approval = glave_harness::ApprovalMode::Ask;
+    settings
+}
+
+/// A harness in the cautious mode.
+pub async fn asking_harness<A: Approver>(
+    dir: &PathBuf,
+    answers: Vec<Completion>,
+    approver: A,
+) -> Harness<Script, MemoryLog, MemoryBlobs, A> {
+    harness_on(dir, answers, approver, MemoryLog::new(), 1, asking()).await
+}
+
 /// A harness on a given log. `seed` keeps ids distinct between harnesses sharing a log.
 pub async fn harness_on<L: EventLog, A: Approver>(
     dir: &PathBuf,

@@ -118,7 +118,9 @@ pub async fn server_on<L: EventLog + 'static>(
     answering: Answering,
     seed: u64,
 ) -> Server<Script, L, MemoryBlobs> {
-    let settings = Settings::new("test-model", "script");
+    // The cautious mode, so commands ask: these tests are about the questions.
+    let mut settings = Settings::new("test-model", "script");
+    settings.approval = glave_harness::ApprovalMode::Ask;
     server_with(dir, answers, gate, log, answering, seed, settings).await
 }
 

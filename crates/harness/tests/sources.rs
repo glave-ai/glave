@@ -131,7 +131,7 @@ mod sources {
                 answer(Some("I could not."), vec![], StopReason::EndTurn),
             ];
             let tools = extra();
-            let harness = harness(&dir, answers, NoOneToAsk)
+            let harness = asking_harness(&dir, answers, NoOneToAsk)
                 .await
                 .with_tools(vec![tools.clone()]);
             let mut thread = harness.start_thread(scope()).await.unwrap();
@@ -160,7 +160,7 @@ mod sources {
             ];
             let tools = extra();
             let approver = ForThreadOnce(AtomicU32::new(0));
-            let harness = harness(&dir, answers, approver)
+            let harness = asking_harness(&dir, answers, approver)
                 .await
                 .with_tools(vec![tools.clone()]);
             let mut thread = harness.start_thread(scope()).await.unwrap();

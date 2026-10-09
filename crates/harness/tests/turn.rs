@@ -79,7 +79,7 @@ mod scripted {
                 ),
                 answer(Some("Understood."), vec![], StopReason::EndTurn),
             ];
-            let harness = harness(&dir, answers, Refuse).await;
+            let harness = asking_harness(&dir, answers, Refuse).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "clean up", &Cancel::new(), &mut |_| {})
@@ -99,7 +99,6 @@ mod scripted {
         use glave_harness::ApprovalMode;
         for (mode, wrote, ran) in [
             (ApprovalMode::Ask, false, false),
-            (ApprovalMode::Edits, true, false),
             (ApprovalMode::Auto, true, true),
         ] {
             let dir = folder(&format!("mode-{}", mode.name()));

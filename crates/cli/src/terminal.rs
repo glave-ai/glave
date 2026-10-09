@@ -48,7 +48,7 @@ pub struct Printer {
     showing: Showing,
     /// Who the answers come from: the model's own name, never one it is not.
     speaker: String,
-    /// The protections in force, such as `approval: edits · sandbox: project`.
+    /// The protections in force, such as `approval: auto · sandbox: project`.
     protections: String,
     waiting: Waiting,
     /// The subagents running now, by their thread, with what each is for.

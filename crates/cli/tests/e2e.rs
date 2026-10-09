@@ -29,7 +29,7 @@ mod glave_binary {
         assert!(output.status.success(), "{shown}");
         assert!(shown.contains("The answer is 42."), "{shown}");
         assert!(
-            shown.contains("done · approval: edits · 1 model call · 0 tool calls"),
+            shown.contains("done · approval: auto · 1 model call · 0 tool calls"),
             "{shown}"
         );
         let received = server.received();
@@ -48,7 +48,7 @@ mod glave_binary {
     }
 
     #[test]
-    fn with_yes_a_tool_call_changes_the_project() {
+    fn a_tool_call_changes_the_project() {
         let place = place("tool");
         let server = FakeServer::start(vec![
             Reply::tool_call(
@@ -64,14 +64,7 @@ mod glave_binary {
         let output = glave(
             &place,
             &server,
-            &[
-                "--model",
-                "m",
-                "--yes",
-                "--events",
-                &events_arg,
-                "write notes",
-            ],
+            &["--model", "m", "--events", &events_arg, "write notes"],
             "",
         );
         assert!(output.status.success(), "{}", text(&output));
@@ -113,8 +106,8 @@ mod glave_binary {
     }
 
     #[test]
-    fn in_edits_mode_file_changes_land_but_commands_wait_for_a_person() {
-        let place = place("edits");
+    fn by_default_changes_and_commands_go_through() {
+        let place = place("auto");
         let server = FakeServer::start(vec![
             Reply::tool_call(
                 "toolu_1",
@@ -122,7 +115,7 @@ mod glave_binary {
                 &json!({"path": "notes.md", "content": "hello\n"}),
             ),
             Reply::tool_call("toolu_2", "bash", &json!({"command": "touch ran.txt"})),
-            Reply::text("Wrote notes.md; the command needs a person."),
+            Reply::text("Wrote notes.md and ran it."),
         ])
         .unwrap();
         let output = glave(
@@ -132,19 +125,18 @@ mod glave_binary {
             "",
         );
         assert!(output.status.success(), "{}", text(&output));
-        assert!(place.project.join("notes.md").exists(), "edits go through");
-        assert!(!place.project.join("ran.txt").exists(), "commands wait");
         assert!(
-            text(&output).contains("bash: touch ran.txt … not run: no one here to approve it"),
-            "the log shows what did not run: {}",
-            text(&output)
+            place.project.join("notes.md").exists(),
+            "changes go through"
         );
-        let third = &server.received()[2].body;
         assert!(
-            said(third, "tool")
-                .iter()
-                .any(|result| result.contains("No one is available to approve")),
-            "the model learns no one is there: {third}"
+            place.project.join("ran.txt").exists(),
+            "commands go through"
+        );
+        assert!(
+            text(&output).contains("approval: auto"),
+            "{}",
+            text(&output)
         );
     }
 

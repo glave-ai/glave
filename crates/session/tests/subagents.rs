@@ -35,6 +35,7 @@ mod subagents {
             ];
             let mut settings = Settings::new("test-model", "script");
             settings.subagents = true;
+            settings.approval = glave_harness::ApprovalMode::Ask;
             let server = server_with(
                 &dir,
                 answers,

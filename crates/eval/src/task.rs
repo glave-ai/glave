@@ -258,7 +258,7 @@ mod tests {
     fn a_bare_task_takes_the_defaults() {
         let task = load(&folder("bare", "", "Hello.")).unwrap();
         assert_eq!(task.tier, Tier::Fast);
-        assert_eq!(task.approval, ApprovalMode::Edits);
+        assert_eq!(task.approval, ApprovalMode::Auto);
         assert_eq!(task.sandbox, None);
         assert_eq!(task.timeout, DEFAULT_TIMEOUT);
         assert_eq!(task.checks, []);
