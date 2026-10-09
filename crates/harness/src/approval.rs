@@ -34,12 +34,10 @@ pub struct ApprovalRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ApprovalMode {
-    /// Ask before every change and every command.
+    /// The cautious mode: ask before every change and every command.
     Ask,
-    /// Changes to files in the project go through; commands ask.
-    #[default]
-    Edits,
     /// Changes and commands go through: in the sandbox when it is on, as the person when not.
+    #[default]
     Auto,
 }
 
@@ -47,7 +45,6 @@ impl ApprovalMode {
     pub fn named(name: &str) -> Option<Self> {
         match name {
             "ask" => Some(Self::Ask),
-            "edits" => Some(Self::Edits),
             "auto" => Some(Self::Auto),
             _ => None,
         }
@@ -56,7 +53,6 @@ impl ApprovalMode {
     pub fn name(self) -> &'static str {
         match self {
             Self::Ask => "ask",
-            Self::Edits => "edits",
             Self::Auto => "auto",
         }
     }
@@ -65,8 +61,7 @@ impl ApprovalMode {
     pub(crate) fn asks_for(self, effect: Effect) -> bool {
         match effect {
             Effect::Reads => false,
-            Effect::Changes => self == Self::Ask,
-            Effect::Runs => self != Self::Auto,
+            Effect::Changes | Effect::Runs => self == Self::Ask,
         }
     }
 }
@@ -220,18 +215,13 @@ mod tests {
 
     #[test]
     fn each_mode_asks_for_exactly_what_it_should() {
-        use ApprovalMode::{Ask, Auto, Edits};
-        let reads = Effect::Reads;
-        assert!(!Ask.asks_for(reads) && !Edits.asks_for(reads) && !Auto.asks_for(reads));
-        let changes = Effect::Changes;
-        assert!(Ask.asks_for(changes) && !Edits.asks_for(changes) && !Auto.asks_for(changes));
-        assert!(
-            Ask.asks_for(Effect::Runs)
-                && Edits.asks_for(Effect::Runs)
-                && !Auto.asks_for(Effect::Runs)
-        );
-        assert_eq!(ApprovalMode::default(), Edits);
-        for mode in [Ask, Edits, Auto] {
+        use ApprovalMode::{Ask, Auto};
+        assert!(!Ask.asks_for(Effect::Reads) && !Auto.asks_for(Effect::Reads));
+        assert!(Ask.asks_for(Effect::Changes) && !Auto.asks_for(Effect::Changes));
+        assert!(Ask.asks_for(Effect::Runs) && !Auto.asks_for(Effect::Runs));
+        assert_eq!(ApprovalMode::default(), Auto);
+        assert_eq!(ApprovalMode::named("edits"), None, "retired");
+        for mode in [Ask, Auto] {
             assert_eq!(ApprovalMode::named(mode.name()), Some(mode));
         }
     }

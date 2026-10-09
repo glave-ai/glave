@@ -75,7 +75,7 @@ mod recorded {
                 answer(Some("Done."), vec![], StopReason::EndTurn),
             ];
             let approver = Answers::new(&[Decision::AllowOnce, Decision::Deny]);
-            let harness = harness(&dir, answers, approver).await;
+            let harness = asking_harness(&dir, answers, approver).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "touch two files", &Cancel::new(), &mut |_| {})
@@ -138,8 +138,7 @@ mod recorded {
             ];
             // Allowed for the thread once; asked again, it would refuse.
             let approver = Answers::new(&[Decision::AllowForThread]);
-            let harness =
-                harness_on(&dir, answers, approver, MemoryLog::new(), 1, settings()).await;
+            let harness = harness_on(&dir, answers, approver, MemoryLog::new(), 1, asking()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "first", &Cancel::new(), &mut |_| {})
@@ -166,7 +165,7 @@ mod recorded {
                 answer(None, touch("x"), StopReason::ToolUse),
                 answer(Some("I could not."), vec![], StopReason::EndTurn),
             ];
-            let harness = harness(&dir, answers, NoOneToAsk).await;
+            let harness = asking_harness(&dir, answers, NoOneToAsk).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "touch x", &Cancel::new(), &mut |_| {})

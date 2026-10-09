@@ -16,11 +16,9 @@ Usage:
 Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)
   --continue, -c     continue your last thread in this folder
-  --approval <mode>  how much to ask before acting: ask (every change and command), edits
-                     (file changes go through, commands ask; the default), or auto
-                     (nothing asks but secret files). With no one at the keyboard, anything
-                     that would ask is declined
-  --yes, -y          the same as --approval auto
+  --approval <mode>  how much to ask before acting: auto (the default; only reading secret
+                     files asks) or ask (every change and command asks). With no one at
+                     the keyboard, anything that would ask is declined
   --sandbox <level>  run commands in the macOS sandbox: read-only, or project (writes only
                      the project and temp folder); never reads secret locations
   --network          let sandboxed commands use the network
@@ -66,7 +64,7 @@ pub enum Action {
 pub struct Args {
     pub action: Action,
     pub model: Option<String>,
-    /// How much to ask before acting; `edits` when not given.
+    /// How much to ask before acting; `auto` when not given.
     pub approval: Option<ApprovalMode>,
     /// Run commands in the sandbox at this level.
     pub sandbox: Option<SandboxLevel>,
@@ -92,14 +90,12 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--events" => {
                 args.events = Some(PathBuf::from(rest.next().ok_or("--events needs a file")?));
             }
-            "--yes" | "-y" => args.approval = Some(ApprovalMode::Auto),
             "--approval" => {
-                let mode = rest
-                    .next()
-                    .ok_or("--approval needs a mode: ask, edits or auto")?;
-                args.approval = Some(ApprovalMode::named(&mode).ok_or_else(|| {
-                    format!("unknown approval mode {mode:?}: use ask, edits or auto")
-                })?);
+                let mode = rest.next().ok_or("--approval needs a mode: auto or ask")?;
+                args.approval =
+                    Some(ApprovalMode::named(&mode).ok_or_else(|| {
+                        format!("unknown approval mode {mode:?}: use auto or ask")
+                    })?);
             }
             "--sandbox" => {
                 let level = rest
@@ -147,8 +143,9 @@ mod tests {
 
     #[test]
     fn prompt_words_join_and_flags_parse() {
-        let args = parse_words(&["--yes", "fix", "the", "--model", "m", "test"]).unwrap();
-        assert_eq!(args.approval, Some(ApprovalMode::Auto));
+        let args =
+            parse_words(&["--approval", "ask", "fix", "the", "--model", "m", "test"]).unwrap();
+        assert_eq!(args.approval, Some(ApprovalMode::Ask));
         assert_eq!(args.model.as_deref(), Some("m"));
         assert_eq!(args.prompt, "fix the test");
     }
@@ -185,11 +182,16 @@ mod tests {
     }
 
     #[test]
-    fn approval_modes_parse_and_yes_means_auto() {
+    fn approval_modes_parse() {
         assert_eq!(parse_words(&["hi"]).unwrap().approval, None);
         let ask = parse_words(&["--approval", "ask", "hi"]).unwrap();
         assert_eq!(ask.approval, Some(ApprovalMode::Ask));
         assert!(parse_words(&["--approval", "bypass"]).is_err());
+        assert!(parse_words(&["--approval", "edits"]).is_err(), "retired");
+        assert!(
+            parse_words(&["--yes", "hi"]).is_err(),
+            "auto is the default"
+        );
         assert!(parse_words(&["--approval"]).is_err());
     }
 

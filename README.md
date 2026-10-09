@@ -19,7 +19,7 @@ GLAVE_BASE_URL=https://openrouter.ai/api/v1 GLAVE_MODEL=<model id> GLAVE_API_KEY
   ./target/release/glave
 ```
 
-Without a prompt it starts a session where each line is a turn. By default file changes go through and commands ask first; `--approval ask` asks for everything and `--yes` (`--approval auto`) for nothing but secret files and ends every turn with a receipt (calls, tokens, cost). Threads are kept in `~/.glave/glave.db` (or `$GLAVE_HOME`); `--continue` picks up your last thread in the current folder, and `--events file.jsonl` exports one. `glave --help` lists everything.
+Without a prompt it starts a session where each line is a turn. By default glave acts without asking, except before reading files that usually hold secrets; `--approval ask` asks before every change and command. Every turn ends with a receipt (calls, tokens, cost). Threads are kept in `~/.glave/glave.db` (or `$GLAVE_HOME`); `--continue` picks up your last thread in the current folder, and `--events file.jsonl` exports one. `glave --help` lists everything.
 
 The local database is not encrypted yet; its folder is readable only by you.
 
