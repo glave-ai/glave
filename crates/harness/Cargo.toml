@@ -12,6 +12,7 @@ publish.workspace = true
 getrandom.workspace = true
 glave-event.workspace = true
 glave-ports.workspace = true
+glave-shell.workspace = true
 globset.workspace = true
 ignore.workspace = true
 jiff.workspace = true

@@ -83,6 +83,18 @@ pub async fn unless_cancelled<T>(
     .await
 }
 
+/// What one call does, beyond its tool's declared effect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Assessment {
+    /// As the tool declares.
+    AsDeclared,
+    /// This call only reads, whatever the tool may do.
+    Reads,
+    /// This call needs the person whatever the mode, for `reason`. `secret` when it would show
+    /// the model a file that usually holds secrets.
+    Caution { reason: String, secret: bool },
+}
+
 /// Anything that offers tools.
 pub trait ToolSource: Send + Sync {
     /// The tools on offer now.
@@ -93,11 +105,12 @@ pub trait ToolSource: Send + Sync {
         None
     }
 
-    /// Whether this call needs the person whatever the mode, such as a read of a file that
-    /// usually holds secrets. The check runs where the files are.
-    fn needs_person<'a>(&'a self, name: &'a str, arguments: &'a Arguments) -> BoxFuture<'a, bool> {
+    /// What this one call does, when the source can tell more than its tool's effect: a
+    /// command that only reads, or one that needs the person whatever the mode, such as a read
+    /// of a file that usually holds secrets. The check runs where the files are.
+    fn assess<'a>(&'a self, name: &'a str, arguments: &'a Arguments) -> BoxFuture<'a, Assessment> {
         let _ = (name, arguments);
-        Box::pin(std::future::ready(false))
+        Box::pin(std::future::ready(Assessment::AsDeclared))
     }
 
     /// The call in a few words, for the person: `bash: cargo test`.

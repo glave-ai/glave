@@ -2,14 +2,18 @@
 //! the workspace. Checks that depend on the files, such as reads of secret files, run here.
 
 use std::future::ready;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use glave_event::Arguments;
 use glave_ports::{
-    BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource, describe_call,
+    Assessment, BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource,
+    describe_call,
 };
+use glave_shell::{Context, Kind, Verdict, judge};
 
 use crate::approval::{reads_secret, summarize};
+use crate::secrets::is_secret_file;
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
 
@@ -30,6 +34,40 @@ impl Tool {
     }
 }
 
+impl Builtins {
+    /// What a command would do, read before it runs (`glave_shell`).
+    fn judge(&self, arguments: &Arguments) -> Assessment {
+        let Arguments::Json(map) = arguments else {
+            return Assessment::AsDeclared;
+        };
+        let Some(command) = map.get("command").and_then(|value| value.as_str()) else {
+            return Assessment::AsDeclared;
+        };
+        let variable = |name: &str| {
+            self.workspace
+                .environment()
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| PathBuf::from(value))
+        };
+        let (home, temp) = (variable("HOME"), variable("TMPDIR"));
+        let context = Context {
+            project: self.workspace.root(),
+            home: home.as_deref(),
+            temp: temp.as_deref(),
+            secret: &is_secret_file,
+        };
+        match judge(command, &context) {
+            Verdict::ReadOnly => Assessment::Reads,
+            Verdict::Caution(caution) => Assessment::Caution {
+                reason: caution.reason,
+                secret: caution.kind == Kind::Secrets,
+            },
+            Verdict::Unknown => Assessment::AsDeclared,
+        }
+    }
+}
+
 impl ToolSource for Builtins {
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {
         let tools = Tool::ALL
@@ -43,11 +81,18 @@ impl ToolSource for Builtins {
         Box::pin(ready(Ok(tools)))
     }
 
-    fn needs_person<'a>(&'a self, name: &'a str, arguments: &'a Arguments) -> BoxFuture<'a, bool> {
+    fn assess<'a>(&'a self, name: &'a str, arguments: &'a Arguments) -> BoxFuture<'a, Assessment> {
         Box::pin(async move {
             match Tool::named(name) {
-                Some(tool) => reads_secret(&self.workspace, tool, arguments).await,
-                None => false,
+                Some(Tool::Bash) => self.judge(arguments),
+                Some(tool) if reads_secret(&self.workspace, tool, arguments).await => {
+                    Assessment::Caution {
+                        reason: "this file usually holds secrets; the model would see them"
+                            .to_owned(),
+                        secret: true,
+                    }
+                }
+                _ => Assessment::AsDeclared,
             }
         })
     }

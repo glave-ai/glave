@@ -28,6 +28,8 @@ pub struct ApprovalRequest {
     /// The model would see a file that usually holds secrets, such as `.env`. With no one to
     /// ask, these requests are declined.
     pub secret: bool,
+    /// Why the call needs the person whatever the mode, when it does: "it deletes ~/x".
+    pub caution: Option<String>,
 }
 
 /// How much glave asks before acting. Secret files ask in every mode.
@@ -125,16 +127,24 @@ impl Approver for AllowAll {
 
 /// What the model is told when an action needs a person and no one is at the keyboard: not to
 /// retry or work around it, and to say what is left for a person.
-pub(crate) fn no_one_there(secret: bool) -> &'static str {
-    if secret {
+pub(crate) fn no_one_there(request: &ApprovalRequest) -> String {
+    if request.secret {
         "No one is available to approve reading this file, which usually holds secrets: glave is \
          running without anyone at the keyboard. Do not try to get its contents another way. \
          Finish what you can without it, and say at the end which value a person must provide."
+            .to_owned()
+    } else if let Some(reason) = &request.caution {
+        format!(
+            "Not run, because {reason}, and no one is available to approve that: glave is \
+             running without anyone at the keyboard. Do not try to get the same result another \
+             way. Finish what you can without it, and say at the end what still needs a person."
+        )
     } else {
         "No one is available to approve this action: glave is running without anyone at the \
          keyboard, in a mode that needs approval for it. Do not retry it or do the same thing \
          another way. Finish what you can without it, and say at the end what still needs a \
          person (or that it can be run with --approval auto)."
+            .to_owned()
     }
 }
 
@@ -235,6 +245,7 @@ mod tests {
             effect: Effect::Reads,
             summary: "read .env".into(),
             secret,
+            caution: None,
         };
         assert_eq!(block_on(AllowAll.decide(&request(true))), Decision::Deny);
         assert_eq!(

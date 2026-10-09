@@ -1,6 +1,6 @@
 # Approvals
 
-How much glave asks the person before acting. Tracks issues #21, #24 and #78; the walls around commands are in `sandbox.md`.
+How much glave asks the person before acting. Tracks issues #21, #24, #78 and #81; the walls around commands are in `sandbox.md`.
 
 ## Modes
 
@@ -13,7 +13,23 @@ Set with `--approval <mode>`. A tool's effect decides which column it is in; MCP
 
 In every mode, reading a file that usually holds secrets (`.env` and its variants, keys, credential files) asks first: the model would see its contents. With the sandbox on, the file tools refuse protected paths outright (`sandbox.md`).
 
-`auto` is the default because almost everyone works that way, and agency means glave acts on the person's behalf and asks only what is truly theirs. What keeps it safe without asking is being able to undo (issue #79), with a judge (issue #13) and the sandbox by default (issue #12) to come. `ask` is the cautious mode. The `edits` mode of earlier versions (changes go through, commands ask) is retired.
+`auto` is the default because almost everyone works that way, and agency means glave acts on the person's behalf and asks only what is truly theirs. What keeps it safe without asking is prevention: commands are read before they run (below), a judge decides what the rules cannot (issue #13), and the sandbox may become the default (issue #12). `ask` is the cautious mode. The `edits` mode of earlier versions (changes go through, commands ask) is retired.
+
+## Commands read before they run
+
+Every `bash` command is parsed with tree-sitter-bash before it runs, as Codex, OpenCode and Claude Code parse it, and every command in it is found: in pipelines and lists, subshells, substitutions, loops, and scripts given to `bash -c` or `eval`. Wrappers such as `sudo`, `env X=1`, `timeout`, `nice`, `nohup` and `xargs` are looked through, and `/bin/rm` is `rm`. Then:
+
+- **Risky commands ask in every mode**, even when the person allowed `bash` for the thread, and with no one there they are not run. The model is told why, and not to get the same result another way. Risky means:
+  - deleting what cannot be got back: the root, a top-level folder, the home folder, the project or what holds it, anything outside the project but the temporary folder, or a folder the command cannot name in advance;
+  - throwing away uncommitted work or rewriting what others share: `git reset --hard`, `git clean -f`, `git checkout .` and `git checkout -- …`, `git restore` of the work tree, `git stash drop` and `clear`, `git branch -D`, `git push --force` and its kin;
+  - running code fetched from the network: `curl … | sh`, `bash <(curl …)`, `sh -c "$(curl …)"`;
+  - acting on the computer: `sudo`, formatting or erasing disks, writing to devices, shutting down, changing permissions beyond the project;
+  - planting what runs later: shell start-up files, `~/.ssh`, git hooks, launch agents, `crontab`, `launchctl`, `systemctl enable`, global git settings;
+  - reading a file that usually holds secrets, as the file tools already ask.
+- **In `ask` mode, commands that only read run without asking:** plain commands such as `ls`, `cat`, `rg`, `wc` and `find` without `-exec` or `-delete`, joined by `&&`, `||`, `;` or `|`, with no redirection or substitution. Git is not among them: a repository's settings can make even `git status` run programs.
+- **Everything else** is left to the mode.
+
+These checks are tripwires for mistakes and plain attacks, such as a planted instruction to `git reset --hard`, not a security boundary: a determined program can say the same thing another way. The boundary is the sandbox (`sandbox.md`); the judge (issue #13) will weigh what the rules cannot.
 
 ## No one at the keyboard
 

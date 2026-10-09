@@ -2,7 +2,9 @@
 //! the tool, and recording its result.
 
 use glave_event::{ApprovalDecided, ApprovalRequested, CallId, ToolCallCompleted, Verdict};
-use glave_ports::{BlobStore, EventLog, Message, ModelProvider, ToolCall, ToolOutput};
+use glave_ports::{
+    Assessment, BlobStore, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
+};
 
 use crate::approval::{ApprovalRequest, Approver, Decision, no_one_there};
 use crate::ask::{self, QuestionRequest};
@@ -111,20 +113,26 @@ where
         };
         let name = info.spec.name.as_str();
         let summary = source.describe(name, &call.arguments);
-        let secret = source.needs_person(name, &call.arguments).await;
-        let asks = self.settings.approval.asks_for(info.effect) || secret;
-        if asks && !thread.allowed.contains(name) {
+        let (effect, caution, secret) = match source.assess(name, &call.arguments).await {
+            Assessment::AsDeclared => (info.effect, None, false),
+            Assessment::Reads => (Effect::Reads, None, false),
+            Assessment::Caution { reason, secret } => (info.effect, Some(reason), secret),
+        };
+        // A caution asks even when the tool was allowed for the rest of the thread.
+        let asks = caution.is_some()
+            || (self.settings.approval.asks_for(effect) && !thread.allowed.contains(name));
+        if asks {
             let request = ApprovalRequest {
                 thread: thread.id,
                 call_id: call.call_id.clone(),
                 tool: name.to_owned(),
-                effect: info.effect,
-                summary: if secret {
-                    format!("{summary} (this file usually holds secrets; the model would see them)")
-                } else {
-                    summary.clone()
+                effect,
+                summary: match &caution {
+                    Some(reason) => format!("{summary} ({reason})"),
+                    None => summary.clone(),
                 },
                 secret,
+                caution,
             };
             if let Some(refused) = self.ask(thread, &request, cancel, live).await? {
                 return Ok(refused);
@@ -217,11 +225,11 @@ where
                 Some(ToolOutput::text(
                     true,
                     if verdict == Verdict::NoOneThere {
-                        no_one_there(request.secret)
+                        no_one_there(request)
                     } else if request.secret {
-                        DECLINED_SECRET
+                        DECLINED_SECRET.to_owned()
                     } else {
-                        DECLINED
+                        DECLINED.to_owned()
                     },
                 ))
             }
