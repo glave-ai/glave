@@ -1,29 +1,23 @@
-//! `bash`: run one command in a fresh shell at the workspace root.
+//! `bash`: run one command in a fresh shell at the workspace root, on the workspace's
+//! computer, keeping the start and the end of what it prints.
 
 use std::collections::VecDeque;
 use std::fmt::Write as _;
-use std::process::Stdio;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Mutex;
+use std::time::Duration;
 
+use glave_ports::{BoxFuture, Cancellation, Ending as Exit, Output};
 use serde::Deserialize;
-use tokio::io::AsyncReadExt as _;
-use tokio::process::{Child, ChildStdout, Command};
 
 use super::ToolOutcome;
 use super::workspace::Workspace;
-use glave_ports::{Cancellation, unless_cancelled};
+use crate::sandbox::blocked_note;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
 /// Output kept from the start and the end of a long run; the middle is dropped.
 const HEAD_BYTES: usize = 8 * 1024;
 const TAIL_BYTES: usize = 24 * 1024;
-/// How long to keep reading after the command exits, in case a background child it started
-/// still holds the output open.
-const DRAIN: Duration = Duration::from_millis(500);
-/// How long a timed-out command gets between SIGTERM and SIGKILL.
-const GRACE: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct BashArgs {
@@ -44,43 +38,20 @@ pub(crate) async fn bash(
         .timeout_secs
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
         .clamp(1, MAX_TIMEOUT_SECS);
-    let mut command = command(workspace, &args.command);
-    let started = Instant::now();
-    let mut child = match command.spawn() {
-        Ok(child) => child,
-        Err(e) => return ToolOutcome::error(format!("Could not start bash: {e}")),
+    let captured = Capture::default();
+    let finished = match workspace.run(args.command, limit, &captured, cancel).await {
+        Ok(finished) => finished,
+        Err(error) => return ToolOutcome::error(sentence(error.message())),
     };
-    let captured = Arc::new(Mutex::new(Captured::default()));
-    let mut reader = child
-        .stdout
-        .take()
-        .map(|stdout| tokio::spawn(collect(stdout, Arc::clone(&captured))));
-    let waited = unless_cancelled(
-        cancel,
-        tokio::time::timeout(Duration::from_secs(limit), child.wait()),
-    )
-    .await;
-    let ending = match waited {
-        Some(Ok(Ok(status))) => Ending::Exited(status.code()),
-        Some(Ok(Err(e))) => {
-            return ToolOutcome::error(format!("Could not wait for the command: {e}"));
-        }
-        Some(Err(_)) => {
-            stop(&mut child).await;
-            Ending::TimedOut(limit)
-        }
-        None => {
-            stop(&mut child).await;
-            Ending::Cancelled
-        }
+    let ending = match finished.ending {
+        Exit::Exited { code } => Ending::Exited(Some(code)),
+        Exit::Signalled => Ending::Exited(None),
+        Exit::TimedOut { after_secs } => Ending::TimedOut(after_secs),
+        Exit::Cancelled => Ending::Cancelled,
     };
-    if let Some(handle) = reader.as_mut()
-        && tokio::time::timeout(DRAIN, &mut *handle).await.is_err()
-    {
-        handle.abort();
-    }
-    let output = captured.lock().map(|c| c.render()).unwrap_or_default();
-    let footer = footer(&ending, started.elapsed().as_secs_f64());
+    let output = captured.render();
+    let seconds = Duration::from_millis(finished.millis).as_secs_f64();
+    let footer = footer(&ending, seconds);
     let body = if output.is_empty() {
         "(no output)".to_owned()
     } else {
@@ -94,7 +65,7 @@ pub(crate) async fn bash(
     };
     if let Some(note) = workspace
         .sandbox()
-        .and_then(|sandbox| sandbox.blocked_note(exit, &body))
+        .and_then(|sandbox| blocked_note(sandbox, exit, &body))
     {
         text.push('\n');
         text.push_str(note);
@@ -106,40 +77,13 @@ pub(crate) async fn bash(
     }
 }
 
-/// `script` run by bash at the project root, in the sandbox if there is one, with the
-/// workspace's environment and output that reads well as text.
-fn command(workspace: &Workspace, script: &str) -> Command {
-    let mut command = match workspace.sandbox() {
-        Some(sandbox) => {
-            let (program, args) = sandbox.wrapper();
-            let mut command = Command::new(program);
-            command.args(args).arg("bash");
-            command
-        }
-        None => Command::new("bash"),
-    };
-    command
-        .arg("-c")
-        .arg(format!("exec 2>&1\n{script}"))
-        .current_dir(workspace.root())
-        .env_clear()
-        .envs(
-            workspace
-                .environment()
-                .iter()
-                .map(|(name, value)| (name, value)),
-        )
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .env("NO_COLOR", "1")
-        .env("TERM", "dumb")
-        .env("PAGER", "cat")
-        .env("GIT_PAGER", "cat")
-        .kill_on_drop(true);
-    #[cfg(unix)]
-    command.process_group(0);
-    command
+/// A computer's message as the start of a sentence: "could not start bash: …" reads
+/// "Could not start bash: …".
+fn sentence(message: &str) -> String {
+    let mut chars = message.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 /// The line after a command's output: how it ended and how long it took.
@@ -164,40 +108,22 @@ enum Ending {
     Cancelled,
 }
 
-/// Stops a timed-out or cancelled command and everything it started: SIGTERM to its process
-/// group, then SIGKILL if it is still running after a grace period.
-async fn stop(child: &mut Child) {
-    #[cfg(unix)]
-    if let Some(pid) = child.id() {
-        signal_group("-TERM", pid).await;
-        if tokio::time::timeout(GRACE, child.wait()).await.is_err() {
-            signal_group("-KILL", pid).await;
-        }
+/// The command's output as it arrives, keeping its start and its end.
+#[derive(Default)]
+struct Capture(Mutex<Captured>);
+
+impl Capture {
+    fn render(&self) -> String {
+        self.0.lock().map(|c| c.render()).unwrap_or_default()
     }
-    let _ = child.kill().await;
 }
 
-#[cfg(unix)]
-async fn signal_group(signal: &str, pid: u32) {
-    let _ = Command::new("kill")
-        .arg(signal)
-        .arg("--")
-        .arg(format!("-{pid}"))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await;
-}
-
-async fn collect(mut stdout: ChildStdout, captured: Arc<Mutex<Captured>>) {
-    let mut buffer = vec![0u8; 16 * 1024];
-    while let Ok(read) = stdout.read(&mut buffer).await {
-        let Some(chunk) = buffer.get(..read).filter(|chunk| !chunk.is_empty()) else {
-            break;
-        };
-        if let Ok(mut captured) = captured.lock() {
-            captured.push(chunk);
+impl Output for Capture {
+    fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
+        if let Ok(mut captured) = self.0.lock() {
+            captured.push(text.as_bytes());
         }
+        Box::pin(std::future::ready(()))
     }
 }
 

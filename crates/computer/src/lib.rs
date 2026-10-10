@@ -15,6 +15,6 @@ mod wire;
 
 pub use cancel::Switch;
 pub use environment::{EnvironmentError, Found, read_environment};
-pub use local::LocalComputers;
+pub use local::{LocalComputers, sandbox_available};
 pub use remote::RemoteComputers;
 pub use serve::{serve, serve_tcp};

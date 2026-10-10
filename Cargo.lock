@@ -904,7 +904,10 @@ version = "0.0.0"
 dependencies = [
  "getrandom 0.4.3",
  "glave-ports",
+ "globset",
+ "ignore",
  "proptest",
+ "regex",
  "serde",
  "serde_json",
  "thiserror",
@@ -917,6 +920,7 @@ dependencies = [
 name = "glave-eval"
 version = "0.0.0"
 dependencies = [
+ "glave-computer",
  "glave-event",
  "glave-harness",
  "glave-ports",
@@ -960,14 +964,12 @@ name = "glave-harness"
 version = "0.0.0"
 dependencies = [
  "getrandom 0.4.3",
+ "glave-computer",
  "glave-event",
  "glave-ports",
  "glave-shell",
- "globset",
- "ignore",
  "jiff",
  "proptest",
- "regex",
  "serde",
  "serde_json",
  "thiserror",
@@ -1059,6 +1061,7 @@ name = "glave-session"
 version = "0.0.0"
 dependencies = [
  "aws-lc-rs",
+ "glave-computer",
  "glave-event",
  "glave-harness",
  "glave-keys",

@@ -4,21 +4,27 @@
 
 mod command;
 mod files;
+mod finding;
 mod git;
 mod paths;
 mod registry;
+mod sandbox;
+mod walk;
 
 use std::ffi::OsString;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
+use glave_ports::secrets::without_secrets;
 use glave_ports::{
     BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, Image, Listed, Listing, Network, Output, Save, Saved, Size,
-    Sources, State, WorkspaceId, WorkspaceInfo,
+    Environment, FileWrite, Finished, Glob, Globbed, Image, Listed, Listing, Network, Output, Save,
+    Saved, Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
 };
 
 use registry::{Opened, Registry};
+
+pub use sandbox::sandbox_available;
 
 /// This machine's computers.
 #[derive(Debug)]
@@ -30,14 +36,36 @@ pub struct LocalComputers {
 
 impl LocalComputers {
     /// Computers on this machine, keeping repository copies under `base`. Commands run with
-    /// `environment`, which must already be free of secrets (glave's own environment, less
-    /// anything named like a key or token), plus each computer's environment variables.
-    pub fn new(base: impl Into<PathBuf>, environment: Vec<(OsString, OsString)>) -> Self {
+    /// `environment` (usually glave's own) less anything named like a secret, such as the
+    /// model provider's API key, plus each computer's environment variables.
+    pub fn new(
+        base: impl Into<PathBuf>,
+        environment: impl IntoIterator<Item = (OsString, OsString)>,
+    ) -> Self {
         Self {
             base: base.into(),
-            environment: Arc::new(environment),
+            environment: Arc::new(without_secrets(environment)),
             registry: Registry::default(),
         }
+    }
+
+    /// This machine as a computer, with `folder` open on it in place: where the person's own
+    /// thread works, and what the CLI, the session server and evals run on by default.
+    /// Commands run with `environment`, less its secrets.
+    pub async fn here(
+        folder: impl AsRef<Path>,
+        environment: impl IntoIterator<Item = (OsString, OsString)>,
+    ) -> Result<(Arc<Self>, WorkspaceInfo), ComputerError> {
+        let computers = Arc::new(Self::new(
+            std::env::temp_dir().join("glave-workspaces"),
+            environment,
+        ));
+        let computer = computers.create(&Environment::host()).await?;
+        let sources = Sources::Folder {
+            path: folder.as_ref().to_string_lossy().into_owned(),
+        };
+        let workspace = computers.open(computer.id, &sources).await?;
+        Ok((computers, workspace))
     }
 
     fn describe(id: ComputerId, environment: Option<Environment>) -> ComputerInfo {
@@ -80,17 +108,27 @@ impl LocalComputers {
                 (paths::folder(&dest.to_string_lossy()).await?, true)
             }
         };
+        let environment = self.command_environment(&environment);
+        let variable = |name: &str| {
+            environment
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.to_string_lossy().into_owned())
+        };
         let info = WorkspaceInfo {
             id,
             computer,
             root: root.to_string_lossy().into_owned(),
             sources: sources.clone(),
+            home: variable("HOME"),
+            temp: variable("TMPDIR"),
         };
         let opened = Opened {
             computer,
             root,
             copy,
-            environment: self.command_environment(&environment),
+            environment,
+            prepared: Mutex::new(None),
         };
         if let Err(error) = self.registry.add_workspace(id, opened) {
             if copy {
@@ -247,6 +285,39 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             let opened = self.registry.workspace(workspace)?;
             files::list(&opened.root, listing).await
+        })
+    }
+
+    fn stat<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        path: &'a str,
+    ) -> BoxFuture<'a, Result<Stat, ComputerError>> {
+        Box::pin(async move {
+            let opened = self.registry.workspace(workspace)?;
+            files::stat(&opened.root, path).await
+        })
+    }
+
+    fn glob<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        glob: &'a Glob,
+    ) -> BoxFuture<'a, Result<Globbed, ComputerError>> {
+        Box::pin(async move {
+            let opened = self.registry.workspace(workspace)?;
+            finding::glob(&opened.root, glob).await
+        })
+    }
+
+    fn search<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        search: &'a Search,
+    ) -> BoxFuture<'a, Result<Searched, ComputerError>> {
+        Box::pin(async move {
+            let opened = self.registry.workspace(workspace)?;
+            finding::search(&opened.root, search).await
         })
     }
 

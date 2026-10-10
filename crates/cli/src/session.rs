@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::Context as _;
+use glave_computer::LocalComputers;
 use glave_event::ThreadId;
 use glave_harness::{
     AGENTS_MD, Cancel, OsEntropy, Sandbox, Settings, SystemClock, Workspace, agents_md,
@@ -100,7 +101,9 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
         &endpoint,
         judge.as_deref(),
     )?;
-    let mut workspace = Workspace::open(std::env::current_dir()?, std::env::vars_os()).await?;
+    let (computers, here) =
+        LocalComputers::here(std::env::current_dir()?, std::env::vars_os()).await?;
+    let mut workspace = Workspace::new(computers, here);
     let database = home::database().await?;
     if let Some(level) = args.sandbox {
         let sandbox = Sandbox {

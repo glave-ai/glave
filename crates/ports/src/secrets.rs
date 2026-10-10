@@ -1,6 +1,7 @@
 //! What counts as a secret: environment variables and files whose contents must not reach the
 //! model without the person's say-so. Judged by name only, so checking costs nothing and never
-//! reads the secret itself.
+//! reads the secret itself. The harness asks before showing such a file, and a computer never
+//! opens one while searching, so the rule lives here, where both see it.
 
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
@@ -16,7 +17,7 @@ pub fn is_secret_variable(name: &OsStr) -> bool {
 }
 
 /// `vars` without the secrets, for the commands the model runs.
-pub(crate) fn without_secrets(
+pub fn without_secrets(
     vars: impl IntoIterator<Item = (OsString, OsString)>,
 ) -> Vec<(OsString, OsString)> {
     vars.into_iter()

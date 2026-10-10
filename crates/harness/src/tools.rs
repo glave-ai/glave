@@ -6,7 +6,6 @@ mod edit;
 mod glob;
 mod read;
 mod search;
-mod walk;
 pub(crate) mod workspace;
 mod write;
 

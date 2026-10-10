@@ -19,7 +19,7 @@ use crate::compaction::{Measured, chars, responded};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::question::Question;
 use crate::repeats::Repeats;
-use crate::sandbox::{Prepared, Recorded};
+use crate::sandbox::{Recorded, recorded};
 use crate::toolset::ToolSet;
 
 /// What the model is told after a cancelled turn, as Codex tells it.
@@ -336,7 +336,7 @@ where
             tools: &offer.specs,
             max_output_tokens: self.settings.max_output_tokens,
             approval: self.settings.approval,
-            sandbox: self.workspace.sandbox().map(Prepared::recorded),
+            sandbox: self.workspace.sandbox().map(recorded),
         };
         let bytes = serde_json::to_vec(&config).map_err(|e| HarnessError::Event(e.to_string()))?;
         let config = self

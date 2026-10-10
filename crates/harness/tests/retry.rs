@@ -16,7 +16,7 @@ mod retrying {
     use std::time::Duration;
 
     use glave_event::{Outcome, StopReason};
-    use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Live, Parts, Retries, Workspace};
+    use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Live, Parts, Retries};
     use glave_ports::{
         Completion, Delta, MemoryBlobs, MemoryLog, ModelProvider, ModelRequest, ProviderError,
     };
@@ -66,9 +66,7 @@ mod retrying {
             approver: AllowAll,
             clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
             entropy: Box::new(Counting(AtomicU64::new(1))),
-            workspace: Workspace::open(&folder("retry"), std::env::vars_os())
-                .await
-                .unwrap(),
+            workspace: workspace(&folder("retry")).await,
         };
         Harness::new(parts, settings)
     }

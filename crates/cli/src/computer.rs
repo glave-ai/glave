@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
 use glave_computer::{LocalComputers, serve, serve_tcp};
-use glave_harness::is_secret_variable;
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
@@ -90,12 +89,9 @@ pub fn main(arguments: &[String]) -> ExitCode {
 }
 
 async fn run(transport: Transport) -> anyhow::Result<()> {
-    let environment = std::env::vars_os()
-        .filter(|(name, _)| !is_secret_variable(name))
-        .collect();
     let computers = Arc::new(LocalComputers::new(
         home::folder()?.join("workspaces"),
-        environment,
+        std::env::vars_os(),
     ));
     match transport {
         Transport::Stdio => {

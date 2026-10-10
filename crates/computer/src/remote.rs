@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 
 use glave_ports::{
     BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, Listed, Listing, Output, Save, Saved, Sources, WorkspaceId,
-    WorkspaceInfo,
+    Environment, FileWrite, Finished, Glob, Globbed, Listed, Listing, Output, Save, Saved, Search,
+    Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
 };
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -368,6 +368,42 @@ impl Computers for RemoteComputers {
         let request = Request::List {
             workspace,
             listing: listing.clone(),
+        };
+        Box::pin(async move { self.typed(&request).await })
+    }
+
+    fn stat<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        path: &'a str,
+    ) -> BoxFuture<'a, Result<Stat, ComputerError>> {
+        let request = Request::Stat {
+            workspace,
+            path: path.to_owned(),
+        };
+        Box::pin(async move { self.typed(&request).await })
+    }
+
+    fn glob<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        glob: &'a Glob,
+    ) -> BoxFuture<'a, Result<Globbed, ComputerError>> {
+        let request = Request::Glob {
+            workspace,
+            glob: glob.clone(),
+        };
+        Box::pin(async move { self.typed(&request).await })
+    }
+
+    fn search<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        search: &'a Search,
+    ) -> BoxFuture<'a, Result<Searched, ComputerError>> {
+        let request = Request::Search {
+            workspace,
+            search: search.clone(),
         };
         Box::pin(async move { self.typed(&request).await })
     }

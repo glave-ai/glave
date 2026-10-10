@@ -2,6 +2,7 @@
 //! the lifecycle, files confined to their workspace, commands streamed and stoppable, and
 //! work leaving a computer only through git.
 
+mod finding;
 mod helpers;
 
 use helpers::{Collect, Trip, failed, files, run, run_quietly};
@@ -39,7 +40,9 @@ pub async fn computers<C: Computers>(computers: &C, scratch: &str) -> Verdict {
         .map_err(failed("open a folder"))?;
     ensure(here.computer == made.id, "a workspace names its computer")?;
     file_operations(computers, here.id).await?;
+    finding::finding(computers, here.id).await?;
     commands(computers, here.id, &here.root).await?;
+    finding::sandboxed(computers, here.id).await?;
     moves_through_git(computers, made.id, here.id, &here.root).await?;
     plain_folders(computers, made.id, here.id, scratch).await?;
     computers
@@ -112,13 +115,7 @@ async fn file_operations<C: Computers>(computers: &C, here: WorkspaceId) -> Verd
 
 async fn listings<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
     let top = computers
-        .list(
-            here,
-            &Listing {
-                path: ".".into(),
-                recursive: false,
-            },
-        )
+        .list(here, &Listing::of("."))
         .await
         .map_err(failed("list the root"))?;
     let names: Vec<(&str, EntryKind)> = top
@@ -134,8 +131,8 @@ async fn listings<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
         .list(
             here,
             &Listing {
-                path: ".".into(),
                 recursive: true,
+                ..Listing::of(".")
             },
         )
         .await
@@ -149,15 +146,7 @@ async fn listings<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
     )?;
     ensure(
         matches!(
-            computers
-                .list(
-                    here,
-                    &Listing {
-                        path: "..".into(),
-                        recursive: false
-                    }
-                )
-                .await,
+            computers.list(here, &Listing::of("..")).await,
             Err(ComputerError::Refused(_))
         ),
         "listing outside the workspace must be refused",
@@ -332,13 +321,7 @@ async fn plain_folders<C: Computers>(
         .map_err(failed("save again"))?;
     ensure(second.commit != first.commit, "each save is a new commit")?;
     let listed = computers
-        .list(
-            plain.id,
-            &Listing {
-                path: ".".into(),
-                recursive: false,
-            },
-        )
+        .list(plain.id, &Listing::of("."))
         .await
         .map_err(failed("list a plain folder"))?;
     ensure(

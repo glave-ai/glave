@@ -128,7 +128,7 @@ pub fn block_on<F: Future>(future: F) -> F::Output {
 }
 
 pub async fn harness<A: Approver>(
-    dir: &PathBuf,
+    dir: &std::path::Path,
     answers: Vec<Completion>,
     approver: A,
 ) -> Harness<Script, MemoryLog, MemoryBlobs, A> {
@@ -148,7 +148,7 @@ pub fn asking() -> Settings {
 
 /// A harness in the cautious mode.
 pub async fn asking_harness<A: Approver>(
-    dir: &PathBuf,
+    dir: &std::path::Path,
     answers: Vec<Completion>,
     approver: A,
 ) -> Harness<Script, MemoryLog, MemoryBlobs, A> {
@@ -157,7 +157,7 @@ pub async fn asking_harness<A: Approver>(
 
 /// A harness on a given log. `seed` keeps ids distinct between harnesses sharing a log.
 pub async fn harness_on<L: EventLog, A: Approver>(
-    dir: &PathBuf,
+    dir: &std::path::Path,
     answers: Vec<Completion>,
     approver: A,
     log: L,
@@ -174,7 +174,19 @@ pub type Seen = Arc<Mutex<Vec<ModelRequest>>>;
 
 /// Like `harness_on`, also returning what the model is sent.
 pub async fn harness_seeing<L: EventLog, A: Approver>(
-    dir: &PathBuf,
+    dir: &std::path::Path,
+    answers: Vec<Completion>,
+    approver: A,
+    log: L,
+    seed: u64,
+    settings: Settings,
+) -> (Harness<Script, L, MemoryBlobs, A>, Seen) {
+    harness_with(workspace(dir).await, answers, approver, log, seed, settings)
+}
+
+/// Like `harness_seeing`, on a given workspace.
+pub fn harness_with<L: EventLog, A: Approver>(
+    workspace: Workspace,
     answers: Vec<Completion>,
     approver: A,
     log: L,
@@ -193,9 +205,17 @@ pub async fn harness_seeing<L: EventLog, A: Approver>(
         approver,
         clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
         entropy: Box::new(Counting(AtomicU64::new(seed))),
-        workspace: Workspace::open(dir, std::env::vars_os()).await.unwrap(),
+        workspace,
     };
     (Harness::new(parts, settings), requests)
+}
+
+/// `dir` on this machine as the tools' workspace, as the CLI opens the folder it starts in.
+pub async fn workspace(dir: &std::path::Path) -> Workspace {
+    let (computers, info) = glave_computer::LocalComputers::here(dir, std::env::vars_os())
+        .await
+        .unwrap();
+    Workspace::new(computers, info)
 }
 
 pub async fn events<L: EventLog>(log: &L, thread: glave_event::ThreadId) -> Vec<Event> {

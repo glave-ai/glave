@@ -14,9 +14,7 @@ mod cancelling {
     use std::time::{Duration, Instant};
 
     use glave_event::{Outcome, Part, StopReason};
-    use glave_harness::{
-        AllowAll, ApprovalRequest, Approver, Cancel, Decision, Harness, Parts, Workspace,
-    };
+    use glave_harness::{AllowAll, ApprovalRequest, Approver, Cancel, Decision, Harness, Parts};
     use glave_ports::{
         Completion, Delta, MemoryBlobs, MemoryLog, Message, ModelProvider, ModelRequest,
         ProviderError,
@@ -124,7 +122,7 @@ mod cancelling {
                 approver: AllowAll,
                 clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
                 entropy: Box::new(Counting(AtomicU64::new(1))),
-                workspace: Workspace::open(&dir, std::env::vars_os()).await.unwrap(),
+                workspace: workspace(&dir).await,
             };
             let harness = Harness::new(parts, settings());
             let mut thread = harness.start_thread(scope()).await.unwrap();

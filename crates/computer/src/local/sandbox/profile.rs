@@ -5,7 +5,7 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use super::{PROTECTED, SandboxLevel};
+use glave_ports::{PROTECTED, SandboxLevel};
 
 const BASE: &str = include_str!("base.sbpl");
 const PREFERENCES: &str = include_str!("preferences.sbpl");

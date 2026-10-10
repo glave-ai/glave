@@ -3,13 +3,16 @@
 
 use std::path::{Path, PathBuf};
 
-use glave_ports::{Bytes, ComputerError, Entry, EntryKind, FileWrite, Listed, Listing};
+use glave_ports::{
+    Bytes, ComputerError, Entry, EntryKind, FileWrite, Listed, Listing, Stat, digest,
+};
 
 use super::git::HISTORY;
 use super::paths::{relative, resolve};
+use super::walk;
 
 /// The largest file read or written in one call, so it fits in one message on the wire.
-pub(crate) const MAX_FILE: u64 = 8 * 1024 * 1024;
+pub(crate) const MAX_FILE: u64 = 20 * 1024 * 1024;
 /// The most entries one listing returns.
 pub(crate) const MAX_ENTRIES: usize = 10_000;
 
@@ -69,8 +72,48 @@ pub(crate) async fn write(root: &Path, files: &[FileWrite]) -> Result<(), Comput
     Ok(())
 }
 
+/// What is at `path`: nothing, a folder, or a file with its size and, when small enough to
+/// read whole, its digest.
+pub(crate) async fn stat(root: &Path, path: &str) -> Result<Stat, ComputerError> {
+    let resolved = resolve(root, path).await?;
+    let shown = relative(root, &resolved);
+    let Ok(metadata) = tokio::fs::metadata(&resolved).await else {
+        return Ok(Stat {
+            path: shown,
+            kind: None,
+            size: 0,
+            digest: None,
+        });
+    };
+    if metadata.is_dir() {
+        return Ok(Stat {
+            path: shown,
+            kind: Some(EntryKind::Folder),
+            size: 0,
+            digest: None,
+        });
+    }
+    let digest = if metadata.len() <= MAX_FILE {
+        tokio::fs::read(&resolved)
+            .await
+            .ok()
+            .map(|bytes| digest(&bytes))
+    } else {
+        None
+    };
+    Ok(Stat {
+        path: shown,
+        kind: Some(EntryKind::File),
+        size: metadata.len(),
+        digest,
+    })
+}
+
 pub(crate) async fn list(root: &Path, listing: &Listing) -> Result<Listed, ComputerError> {
     let start = resolve(root, &listing.path).await?;
+    if listing.skip_ignored {
+        return discover(root, start, listing).await;
+    }
     let mut entries = Vec::new();
     let mut folders = vec![start];
     let mut truncated = false;
@@ -116,7 +159,53 @@ pub(crate) async fn list(root: &Path, listing: &Listing) -> Result<Listed, Compu
         }
     }
     entries.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(Listed { entries, truncated })
+    Ok(Listed {
+        entries,
+        truncated,
+        ignored: 0,
+    })
+}
+
+/// A listing the way git sees the folder: what it ignores is left out and counted.
+async fn discover(root: &Path, start: PathBuf, listing: &Listing) -> Result<Listed, ComputerError> {
+    let shown = listing.path.clone();
+    let recursive = listing.recursive;
+    let walked = tokio::task::spawn_blocking(move || {
+        if recursive {
+            let entries: Vec<(PathBuf, EntryKind)> = walk::files(&start)
+                .take(MAX_ENTRIES.saturating_add(1))
+                .map(|path| (path, EntryKind::File))
+                .collect();
+            Ok((entries, 0))
+        } else {
+            walk::entries(&start)
+        }
+    })
+    .await
+    .map_err(|error| ComputerError::Failed(format!("{shown}: {error}")))?
+    .map_err(|error| io(&listing.path, &error))?;
+    let (found, ignored) = walked;
+    let truncated = found.len() > MAX_ENTRIES;
+    let mut entries = Vec::with_capacity(found.len().min(MAX_ENTRIES));
+    for (path, kind) in found.into_iter().take(MAX_ENTRIES) {
+        let size = if kind == EntryKind::File {
+            tokio::fs::symlink_metadata(&path)
+                .await
+                .map_or(0, |metadata| metadata.len())
+        } else {
+            0
+        };
+        entries.push(Entry {
+            path: relative(root, &path),
+            kind,
+            size,
+        });
+    }
+    Ok(Listed {
+        entries,
+        truncated,
+        ignored: u64::try_from(ignored).unwrap_or(u64::MAX),
+    })
 }
 
 /// Folders a recursive listing does not descend into: git's own records.
