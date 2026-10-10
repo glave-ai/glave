@@ -180,9 +180,10 @@ pub async fn blob_store<B: BlobStore>(blobs: &B) -> Verdict {
     let here = scope(1);
     let elsewhere = scope(2);
     let bytes = b"turn config".to_vec();
+    let t = thread(1)?;
 
     let reference = blobs
-        .put(&here, bytes.clone(), "application/json")
+        .put(&here, t, bytes.clone(), "application/json")
         .await
         .map_err(|e| e.to_string())?;
     ensure(
@@ -199,7 +200,7 @@ pub async fn blob_store<B: BlobStore>(blobs: &B) -> Verdict {
     )?;
 
     let again = blobs
-        .put(&here, bytes.clone(), "application/json")
+        .put(&here, t, bytes.clone(), "application/json")
         .await
         .map_err(|e| e.to_string())?;
     ensure(

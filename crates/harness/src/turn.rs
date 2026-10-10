@@ -311,7 +311,7 @@ where
         let bytes = serde_json::to_vec(&config).map_err(|e| HarnessError::Event(e.to_string()))?;
         let config = self
             .blobs
-            .put(&thread.scope, bytes, "application/json")
+            .put(&thread.scope, thread.id, bytes, "application/json")
             .await?;
         let model = ModelRef {
             provider: self.settings.provider.clone(),

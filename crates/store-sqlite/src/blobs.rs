@@ -1,22 +1,25 @@
-//! The blob store on SQLite: content kept once per scope, named by its SHA-256.
+//! The blob store on SQLite: content kept once per scope, sealed, and stored under an HMAC of
+//! its SHA-256 so the file does not reveal which known content it holds.
 
 use std::future::Future;
+use std::sync::Arc;
 
-use glave_event::{BlobRef, Sha256};
+use glave_event::{BlobRef, Sha256, ThreadId};
 use glave_ports::{BlobError, BlobStore, Scope, digest};
 use rusqlite::{OptionalExtension as _, params};
 
-use crate::store::{Shared, run};
+use crate::store::{Shared, SqliteKeyring, run};
 
 /// The blob store in the local database.
 #[derive(Clone)]
 pub struct SqliteBlobs {
     connection: Shared,
+    keys: Arc<SqliteKeyring>,
 }
 
 impl SqliteBlobs {
-    pub(crate) fn new(connection: Shared) -> Self {
-        Self { connection }
+    pub(crate) fn new(connection: Shared, keys: Arc<SqliteKeyring>) -> Self {
+        Self { connection, keys }
     }
 }
 
@@ -24,12 +27,13 @@ impl BlobStore for SqliteBlobs {
     fn put(
         &self,
         scope: &Scope,
+        thread: ThreadId,
         bytes: Vec<u8>,
         media_type: &str,
     ) -> impl Future<Output = Result<BlobRef, BlobError>> + Send {
         let scope = *scope;
         let media_type = media_type.to_owned();
-        let connection = self.connection.clone();
+        let this = self.clone();
         async move {
             let sha256 = digest(&bytes);
             let size = u64::try_from(bytes.len()).map_err(|e| BlobError::Storage(e.to_string()))?;
@@ -38,18 +42,29 @@ impl BlobStore for SqliteBlobs {
                 bytes: size,
                 media_type: media_type.clone(),
             };
-            run(&connection, move |connection| {
-                connection.execute(
-                    "INSERT OR IGNORE INTO blobs (org, space, sha256, media_type, bytes)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![
-                        scope.org.to_string(),
-                        scope.space.to_string(),
-                        sha256.as_str(),
-                        media_type,
-                        bytes
-                    ],
-                )
+            let (name, sealed) = this
+                .keys
+                .seal_blob(&scope, &sha256, &bytes)
+                .await
+                .map_err(|e| BlobError::Storage(format!("could not seal a blob: {e}")))?;
+            run(&this.connection, move |connection| {
+                let (org, space) = (scope.org.to_string(), scope.space.to_string());
+                let transaction = connection.transaction()?;
+                // Storing it again re-seals it under this month's key.
+                transaction.execute(
+                    "INSERT INTO blobs (org, space, name, media_type, bytes, key_id)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                     ON CONFLICT (org, space, name) DO UPDATE
+                     SET media_type = excluded.media_type, bytes = excluded.bytes,
+                         key_id = excluded.key_id",
+                    params![org, space, name, media_type, sealed.bytes, sealed.key_id],
+                )?;
+                transaction.execute(
+                    "INSERT OR IGNORE INTO blob_threads (org, space, name, thread)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![org, space, name, thread.to_string()],
+                )?;
+                transaction.commit()
             })
             .await
             .map_err(|e| BlobError::Storage(e.to_string()))?;
@@ -64,23 +79,55 @@ impl BlobStore for SqliteBlobs {
     ) -> impl Future<Output = Result<Option<Vec<u8>>, BlobError>> + Send {
         let scope = *scope;
         let sha256 = sha256.clone();
-        let connection = self.connection.clone();
+        let this = self.clone();
         async move {
-            run(&connection, move |connection| {
+            let name = this
+                .keys
+                .blob_name(&scope, &sha256)
+                .await
+                .map_err(|e| BlobError::Storage(e.to_string()))?;
+            let lookup = name.clone();
+            let row: Option<(Vec<u8>, Option<String>)> = run(&this.connection, move |connection| {
+                let (org, space) = (scope.org.to_string(), scope.space.to_string());
+                let sealed = match lookup {
+                    Some(name) => connection
+                        .query_row(
+                            "SELECT bytes, key_id FROM blobs
+                             WHERE org = ?1 AND space = ?2 AND name = ?3 AND key_id IS NOT NULL",
+                            params![org, space, name],
+                            |row| Ok((row.get(0)?, row.get(1)?)),
+                        )
+                        .optional()?,
+                    None => None,
+                };
+                if sealed.is_some() {
+                    return Ok(sealed);
+                }
+                // Written before sealing: stored as written, under its hash.
                 connection
                     .query_row(
-                        "SELECT bytes FROM blobs WHERE org = ?1 AND space = ?2 AND sha256 = ?3",
-                        params![
-                            scope.org.to_string(),
-                            scope.space.to_string(),
-                            sha256.as_str()
-                        ],
-                        |row| row.get(0),
+                        "SELECT bytes, NULL FROM blobs
+                         WHERE org = ?1 AND space = ?2 AND name = ?3 AND key_id IS NULL",
+                        params![org, space, sha256.as_str()],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .optional()
             })
             .await
-            .map_err(|e| BlobError::Storage(e.to_string()))
+            .map_err(|e| BlobError::Storage(e.to_string()))?;
+            match (row, name) {
+                (None, _) => Ok(None),
+                (Some((bytes, None)), _) => Ok(Some(bytes)),
+                (Some((bytes, Some(key_id))), Some(name)) => this
+                    .keys
+                    .open_blob(&scope, &name, &key_id, &bytes)
+                    .await
+                    .map(Some)
+                    .map_err(|e| BlobError::Storage(format!("a blob could not be opened: {e}"))),
+                (Some(_), None) => Err(BlobError::Storage(
+                    "a sealed blob was found without its space key".into(),
+                )),
+            }
         }
     }
 }

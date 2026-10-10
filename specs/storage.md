@@ -4,7 +4,15 @@ How glave keeps what lasts: the event log, blobs, memory and attachments, sealed
 
 ## Status
 
-Draft, specified ahead of the code (issue #22 and the storage ports): today `key_id` is always empty and payloads are stored as written. Everything below is a contract for the first sealed release.
+Partly built (issue #22). **Built:** the key hierarchy, sealing and erasure in `glave-keys`; both stores (SQLite and Postgres) seal every new event payload and blob and open them on read, and rows written before sealing (NULL `key_id`) still read as written; blobs are stored under their keyed name with the threads that use them; the person's root in the OS keychain, or a key file (0600) when there is no keychain or `GLAVE_HOME` moves glave's folder. **Not yet:** the scope index, promotion, recording erasure as an event, legal holds, KMS roots, encrypting the whole local file, and data keys per thread.
+
+Settled while building, within this contract:
+
+- An event is sealed under the data key of the month of its `at`, in UTC; a blob under the month it is written in.
+- A space key has two halves: one wraps data keys and is replaced on every rotation; the other names blobs and is carried forward, so blob names stay stable until the space is erased.
+- The data store keeps one wrapped key per organization and one record of wrapped keys per space, replaced whole by compare-and-swap on a revision, so a rotation is a single atomic write. A destroyed key's entry stays, emptied, so numbers are never reused.
+- A blob's associated data is a `glave/blob/v1` tag, organization, space, stored name and `key_id`, length-prefixed like an event's.
+- Unwrapped keys are cached per process. Another process (a second server on the same Postgres) keeps a destroyed key until it leaves its cache.
 
 ## Scope
 

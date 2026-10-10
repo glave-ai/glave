@@ -1,10 +1,12 @@
-//! The event log on Postgres: one row per event, the envelope as columns, the payload as the
-//! exact bytes written.
+//! The event log on Postgres: one row per event, the envelope as readable columns, the
+//! payload sealed under its space's data key (or, in rows written before sealing, as written).
 
 use std::future::Future;
+use std::sync::Arc;
 
 use deadpool_postgres::Pool;
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
+use glave_keys::{EventFields, KeyError};
 use glave_ports::{EventLog, LogError, Scope, check_append};
 use jiff::Timestamp;
 use serde_json::value::RawValue;
@@ -12,27 +14,28 @@ use tokio_postgres::Row;
 use tokio_postgres::error::SqlState;
 use uuid::Uuid;
 
-use crate::store::{connection, describe};
+use crate::store::{PostgresKeyring, connection, describe};
 
 /// The event log in the database.
 #[derive(Clone)]
 pub struct PostgresLog {
     pool: Pool,
+    keys: Arc<PostgresKeyring>,
 }
 
 impl PostgresLog {
-    pub(crate) fn new(pool: Pool) -> Self {
-        Self { pool }
+    pub(crate) fn new(pool: Pool, keys: Arc<PostgresKeyring>) -> Self {
+        Self { pool, keys }
     }
 }
 
 /// The whole batch in one statement: each column travels as one array.
 const INSERT: &str = "
-    INSERT INTO events (org, space, thread, seq, id, at, type, v, glave, data)
-    SELECT $1, $2, $3, seq, id, at, type, v, glave, data
+    INSERT INTO events (org, space, thread, seq, id, at, type, v, glave, data, key_id)
+    SELECT $1, $2, $3, seq, id, at, type, v, glave, data, key_id
     FROM UNNEST($4::bigint[], $5::uuid[], $6::timestamptz[], $7::text[], $8::bigint[],
-                $9::bigint[], $10::bytea[])
-        AS batch (seq, id, at, type, v, glave, data)";
+                $9::bigint[], $10::bytea[], $11::text[])
+        AS batch (seq, id, at, type, v, glave, data, key_id)";
 
 impl EventLog for PostgresLog {
     fn append(
@@ -43,6 +46,7 @@ impl EventLog for PostgresLog {
         let scope = *scope;
         let events = events.to_vec();
         let pool = self.pool.clone();
+        let keys = Arc::clone(&self.keys);
         async move {
             let Some(first) = events.first() else {
                 return Ok(());
@@ -52,7 +56,7 @@ impl EventLog for PostgresLog {
                 scope.space.as_uuid(),
                 first.thread.as_uuid(),
             );
-            let columns = Columns::of(&events)?;
+            let columns = Columns::of(&keys, &scope, &events).await?;
             let mut client = connection(&pool).await.map_err(storage)?;
             let transaction = client.transaction().await.map_err(database)?;
             let last: Option<i64> = transaction
@@ -83,6 +87,7 @@ impl EventLog for PostgresLog {
                         &columns.v,
                         &columns.glave,
                         &columns.data,
+                        &columns.key_id,
                     ],
                 )
                 .await
@@ -100,13 +105,14 @@ impl EventLog for PostgresLog {
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
         let scope = *scope;
         let pool = self.pool.clone();
+        let keys = Arc::clone(&self.keys);
         async move {
             let after = i64::try_from(after.map_or(0, Seq::get)).unwrap_or(i64::MAX);
             let limit = i64::try_from(limit).unwrap_or(i64::MAX);
             let client = connection(&pool).await.map_err(storage)?;
             let statement = client
                 .prepare_cached(
-                    "SELECT glave, id, thread, seq, at, type, v, data FROM events
+                    "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
                      WHERE org = $1 AND space = $2 AND thread = $3 AND seq > $4
                      ORDER BY seq LIMIT $5",
                 )
@@ -125,7 +131,11 @@ impl EventLog for PostgresLog {
                 )
                 .await
                 .map_err(database)?;
-            rows.iter().map(event).collect()
+            let mut events = Vec::with_capacity(rows.len());
+            for row in &rows {
+                events.push(event(&keys, &scope, row).await?);
+            }
+            Ok(events)
         }
     }
 
@@ -172,10 +182,16 @@ struct Columns {
     v: Vec<i64>,
     glave: Vec<i64>,
     data: Vec<Vec<u8>>,
+    key_id: Vec<String>,
 }
 
 impl Columns {
-    fn of(events: &[RawEvent]) -> Result<Self, LogError> {
+    /// The columns of `events`, each payload sealed.
+    async fn of(
+        keys: &PostgresKeyring,
+        scope: &Scope,
+        events: &[RawEvent],
+    ) -> Result<Self, LogError> {
         let mut columns = Self {
             seq: Vec::with_capacity(events.len()),
             id: Vec::with_capacity(events.len()),
@@ -184,6 +200,7 @@ impl Columns {
             v: Vec::with_capacity(events.len()),
             glave: Vec::with_capacity(events.len()),
             data: Vec::with_capacity(events.len()),
+            key_id: Vec::with_capacity(events.len()),
         };
         for event in events {
             let seq = i64::try_from(event.seq.get())
@@ -194,14 +211,16 @@ impl Columns {
             columns.kind.push(event.kind.as_str().to_owned());
             columns.v.push(i64::from(event.v.get()));
             columns.glave.push(i64::from(event.glave));
-            columns.data.push(event.data.get().as_bytes().to_vec());
+            let sealed = keys.seal_event(scope, event).await.map_err(sealing)?;
+            columns.data.push(sealed.bytes);
+            columns.key_id.push(sealed.key_id);
         }
         Ok(columns)
     }
 }
 
-/// A stored row back into an event, checking every column.
-fn event(row: &Row) -> Result<RawEvent, LogError> {
+/// A stored row back into an event, checking every column and opening the payload.
+async fn event(keys: &PostgresKeyring, scope: &Scope, row: &Row) -> Result<RawEvent, LogError> {
     let glave: i64 = row.try_get("glave").map_err(corrupt)?;
     let id: Uuid = row.try_get("id").map_err(corrupt)?;
     let thread: Uuid = row.try_get("thread").map_err(corrupt)?;
@@ -210,17 +229,51 @@ fn event(row: &Row) -> Result<RawEvent, LogError> {
     let kind: String = row.try_get("type").map_err(corrupt)?;
     let v: i64 = row.try_get("v").map_err(corrupt)?;
     let data: Vec<u8> = row.try_get("data").map_err(corrupt)?;
+    let key_id: Option<String> = row.try_get("key_id").map_err(corrupt)?;
+    let glave = u32::try_from(glave).map_err(corrupt)?;
+    let thread = ThreadId::try_from(thread).map_err(corrupt)?;
+    let seq = stored_seq(u64::try_from(seq).map_err(corrupt)?)?;
+    let kind = TypeName::new(kind).map_err(corrupt)?;
+    let v = PayloadVersion::new(u32::try_from(v).map_err(corrupt)?).map_err(corrupt)?;
+    let data = match key_id {
+        // Written before sealing: stored as written.
+        None => data,
+        Some(key_id) => {
+            let fields = EventFields {
+                glave,
+                thread,
+                seq,
+                kind: kind.as_str(),
+                v: v.get(),
+            };
+            keys.open_event(scope, &fields, &key_id, &data)
+                .await
+                .map_err(|e| opening(seq, &e))?
+        }
+    };
     let data = String::from_utf8(data).map_err(corrupt)?;
     Ok(RawEvent {
-        glave: u32::try_from(glave).map_err(corrupt)?,
+        glave,
         id: EventId::try_from(id).map_err(corrupt)?,
-        thread: ThreadId::try_from(thread).map_err(corrupt)?,
-        seq: stored_seq(u64::try_from(seq).map_err(corrupt)?)?,
+        thread,
+        seq,
         at: At::from(at),
-        kind: TypeName::new(kind).map_err(corrupt)?,
-        v: PayloadVersion::new(u32::try_from(v).map_err(corrupt)?).map_err(corrupt)?,
+        kind,
+        v,
         data: RawValue::from_string(data).map_err(corrupt)?,
     })
+}
+
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "taken by value to pass straight to map_err"
+)]
+fn sealing(error: KeyError) -> LogError {
+    LogError::Storage(format!("could not seal an event: {error}"))
+}
+
+fn opening(seq: Seq, error: &KeyError) -> LogError {
+    LogError::Storage(format!("event {} could not be opened: {error}", seq.get()))
 }
 
 fn stored_seq(seq: u64) -> Result<Seq, LogError> {

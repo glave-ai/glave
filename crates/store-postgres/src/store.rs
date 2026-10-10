@@ -1,11 +1,15 @@
 //! The database: connecting a pool to it, bringing its schema up to date, and handing the
 //! log and the blobs their connections.
 
+use std::sync::Arc;
+
 use deadpool_postgres::{Manager, ManagerConfig, Object, Pool, RecyclingMethod};
+use glave_keys::{KeySettings, Keys};
 use thiserror::Error;
 use tokio_postgres::{Config, NoTls};
 
 use crate::blobs::PostgresBlobs;
+use crate::keys::PostgresKeys;
 use crate::log::PostgresLog;
 use crate::schema;
 
@@ -20,25 +24,30 @@ pub enum StoreError {
     Storage(String),
 }
 
-/// One Postgres database: the event log and the blobs, through a bounded connection pool.
+/// The keys of the database.
+pub type PostgresKeyring = Keys<PostgresKeys>;
+
+/// One Postgres database: the event log, the blobs and their keys, through a bounded
+/// connection pool.
 #[derive(Clone)]
 pub struct Store {
     pool: Pool,
+    keys: Arc<PostgresKeyring>,
 }
 
 impl Store {
     /// Connects to the database at `url` (`postgres://user:password@host/database`) and
-    /// brings its schema up to date.
-    pub async fn connect(url: &str) -> Result<Self, StoreError> {
+    /// brings its schema up to date. Content is sealed under keys that `keys.root` wraps.
+    pub async fn connect(url: &str, keys: KeySettings) -> Result<Self, StoreError> {
         let config = url
             .parse::<Config>()
             .map_err(|e| StoreError::Connect(format!("the database URL is not valid: {e}")))?;
-        Self::connect_with(config).await
+        Self::connect_with(config, keys).await
     }
 
     /// Connects with a prepared configuration, for settings a URL cannot carry, and brings the
     /// schema up to date. The tables live in the connection's `search_path`.
-    pub async fn connect_with(config: Config) -> Result<Self, StoreError> {
+    pub async fn connect_with(config: Config, keys: KeySettings) -> Result<Self, StoreError> {
         let manager = Manager::from_config(
             config,
             NoTls,
@@ -54,15 +63,21 @@ impl Store {
             .await
             .map_err(|e| StoreError::Connect(e.to_string()))?;
         schema::migrate(&mut client).await?;
-        Ok(Self { pool })
+        let keys = Arc::new(Keys::new(keys, PostgresKeys::new(pool.clone())));
+        Ok(Self { pool, keys })
     }
 
     pub fn log(&self) -> PostgresLog {
-        PostgresLog::new(self.pool.clone())
+        PostgresLog::new(self.pool.clone(), Arc::clone(&self.keys))
     }
 
     pub fn blobs(&self) -> PostgresBlobs {
-        PostgresBlobs::new(self.pool.clone())
+        PostgresBlobs::new(self.pool.clone(), Arc::clone(&self.keys))
+    }
+
+    /// The keys content is sealed under, and erased by destroying.
+    pub fn keys(&self) -> &PostgresKeyring {
+        &self.keys
     }
 }
 

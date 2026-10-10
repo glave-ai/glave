@@ -4,12 +4,14 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use glave_keys::{KeySettings, Keys};
 use glave_ports::{OrgId, Scope, SpaceId};
 use rusqlite::{Connection, OptionalExtension as _, params};
 use thiserror::Error;
 use uuid::Uuid;
 
 use crate::blobs::SqliteBlobs;
+use crate::keys::SqliteKeys;
 use crate::log::SqliteLog;
 use crate::schema;
 
@@ -32,53 +34,66 @@ impl StoreError {
 
 pub(crate) type Shared = Arc<Mutex<Connection>>;
 
-/// One local database: the event log, the blobs, and which space each folder is.
+/// The keys of the local database.
+pub type SqliteKeyring = Keys<SqliteKeys>;
+
+/// One local database: the event log, the blobs, their keys, and which space each folder is.
 #[derive(Clone)]
 pub struct Store {
     connection: Shared,
+    keys: Arc<SqliteKeyring>,
 }
 
 impl Store {
     /// Opens (creating if needed) the database at `path` and brings its schema up to date.
-    pub async fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
+    /// Content is sealed under keys that `keys.root` wraps.
+    pub async fn open(path: impl AsRef<Path>, keys: KeySettings) -> Result<Self, StoreError> {
         let path = path.as_ref().to_owned();
         tokio::task::spawn_blocking(move || {
             let connection = Connection::open(&path)
                 .map_err(|e| StoreError::Open(format!("{}: {e}", path.display())))?;
-            Self::prepare(connection)
+            Self::prepare(connection, keys)
         })
         .await
         .map_err(|e| StoreError::Open(e.to_string()))?
     }
 
     /// A database that lives only in memory, for tests.
-    pub fn open_in_memory() -> Result<Self, StoreError> {
+    pub fn open_in_memory(keys: KeySettings) -> Result<Self, StoreError> {
         let connection =
             Connection::open_in_memory().map_err(|e| StoreError::Open(e.to_string()))?;
-        Self::prepare(connection)
+        Self::prepare(connection, keys)
     }
 
-    fn prepare(mut connection: Connection) -> Result<Self, StoreError> {
+    fn prepare(mut connection: Connection, keys: KeySettings) -> Result<Self, StoreError> {
+        // `secure_delete` overwrites deleted and replaced content, so a destroyed key does not
+        // linger in the file's free pages.
         connection
             .execute_batch(
                 "PRAGMA journal_mode = WAL;
                  PRAGMA synchronous = NORMAL;
                  PRAGMA foreign_keys = ON;
-                 PRAGMA busy_timeout = 5000;",
+                 PRAGMA busy_timeout = 5000;
+                 PRAGMA secure_delete = ON;",
             )
             .map_err(|e| StoreError::Open(e.to_string()))?;
         schema::migrate(&mut connection)?;
-        Ok(Self {
-            connection: Arc::new(Mutex::new(connection)),
-        })
+        let connection = Arc::new(Mutex::new(connection));
+        let keys = Arc::new(Keys::new(keys, SqliteKeys::new(Arc::clone(&connection))));
+        Ok(Self { connection, keys })
     }
 
     pub fn log(&self) -> SqliteLog {
-        SqliteLog::new(Arc::clone(&self.connection))
+        SqliteLog::new(Arc::clone(&self.connection), Arc::clone(&self.keys))
     }
 
     pub fn blobs(&self) -> SqliteBlobs {
-        SqliteBlobs::new(Arc::clone(&self.connection))
+        SqliteBlobs::new(Arc::clone(&self.connection), Arc::clone(&self.keys))
+    }
+
+    /// The keys content is sealed under, and erased by destroying.
+    pub fn keys(&self) -> &SqliteKeyring {
+        &self.keys
     }
 
     /// The scope for a project folder on this computer: the one local organization, and the

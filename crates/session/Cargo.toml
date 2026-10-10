@@ -17,6 +17,7 @@ serde_json.workspace = true
 tokio = { workspace = true, features = ["io-util", "rt", "sync"] }
 
 [dev-dependencies]
+glave-keys.workspace = true
 glave-store-sqlite.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
