@@ -16,6 +16,22 @@ concurrency:
 jobs:
   linux:
     runs-on: ubuntu-latest
+    # A real Postgres, so the Postgres store runs its conformance suites here instead of
+    # skipping them.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: glave
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      GLAVE_TEST_POSTGRES_URL: postgres://postgres:glave@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
