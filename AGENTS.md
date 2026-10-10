@@ -39,6 +39,7 @@ xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
 crates/ports/       glave-ports: event log, blob store, model provider and tool source ports, in-memory versions, conformance suites
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
+crates/provider-anthropic/  glave-provider-anthropic: Anthropic's native Messages API provider (thinking sent back signed)
 crates/store-sqlite/  glave-store-sqlite: the event log and blob store on one local SQLite file
 crates/shell/       glave-shell: shell commands read before they run (tree-sitter-bash): read-only, risky with a reason, or neither
 crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`)

@@ -536,6 +536,7 @@ dependencies = [
  "glave-harness",
  "glave-mcp",
  "glave-ports",
+ "glave-provider-anthropic",
  "glave-provider-openai",
  "glave-session",
  "glave-store-sqlite",
@@ -623,6 +624,19 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "glave-provider-anthropic"
+version = "0.0.0"
+dependencies = [
+ "glave-event",
+ "glave-ports",
+ "proptest",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

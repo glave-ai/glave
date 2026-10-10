@@ -10,7 +10,6 @@ use glave_event::ThreadId;
 use glave_harness::{
     AGENTS_MD, Cancel, OsEntropy, Sandbox, Settings, SystemClock, Workspace, agents_md,
 };
-use glave_provider_openai::OpenAiCompatible;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, Server, Wiring};
 use glave_store_sqlite::Store;
@@ -20,6 +19,7 @@ use crate::client::{Client, Glave};
 use crate::config::{self, Endpoint};
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
+use crate::model::Model;
 use crate::system::random_uuid;
 use crate::terminal::Printer;
 use crate::{home, identity};
@@ -83,7 +83,7 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
     if let Some(idle) = config::idle_timeout()? {
         endpoint.provider.idle_timeout = idle;
     }
-    let provider = OpenAiCompatible::new(endpoint.provider.clone())?;
+    let provider = Model::for_endpoint(&endpoint.provider)?;
     let mut workspace = Workspace::open(std::env::current_dir()?, std::env::vars_os()).await?;
     let database = home::database().await?;
     if let Some(level) = args.sandbox {

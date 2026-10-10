@@ -29,8 +29,10 @@ Options:
   --version          show the version
 
 Environment:
-  GLAVE_BASE_URL     an OpenAI-compatible API (default: http://localhost:11434/v1, Ollama)
-  GLAVE_MODEL        the model name, such as gemma4:12b or an OpenRouter model id
+  GLAVE_BASE_URL     an OpenAI-compatible API (default: http://localhost:11434/v1, Ollama),
+                     or https://api.anthropic.com for Anthropic's own Messages API
+  GLAVE_MODEL        the model name, such as gemma4:12b, an OpenRouter model id, or a
+                     Claude model id with Anthropic's API
   GLAVE_API_KEY      the API key, if the endpoint needs one
   GLAVE_PROVIDER     a short name recorded with each response (default: from the URL)
   GLAVE_HOME         where glave keeps its database, your own AGENTS.md and mcp.json
