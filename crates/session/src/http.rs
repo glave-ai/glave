@@ -163,21 +163,12 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let answered = match request {
-        Request::TurnStart {
-            thread,
-            prompt,
-            meta,
-        } => {
-            let key = meta.idempotency_key.as_ref();
-            match server.start_turn_as(caller, thread, &prompt, key).await {
-                // A notification is never answered; the turn goes on without anyone following.
-                Ok(_) if id.is_none() => return accepted(),
-                Ok(stream) => return events(Answer::turn(stream, id)),
-                Err(failed) => Err(failed),
-            }
-        }
-        other => server.request_as(caller, other).await,
+    let answered = match server.start_streaming(caller, request).await {
+        // A notification is never answered; the turn goes on without anyone following.
+        Ok(Ok(_)) if id.is_none() => return accepted(),
+        Ok(Ok(stream)) => return events(Answer::turn(stream, id)),
+        Ok(Err(failed)) => Err(failed),
+        Err(other) => server.request_as(caller, *other).await,
     };
     match id {
         Some(id) => json(StatusCode::OK, respond(Some(&id), answered.as_ref())),

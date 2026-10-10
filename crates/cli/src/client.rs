@@ -8,11 +8,11 @@ use std::process::ExitCode;
 use std::task::Poll;
 use std::time::Duration;
 
-use glave_event::{Body, CallId, Outcome, ThreadId, decode};
+use glave_event::{Body, CallId, GoalReason, Outcome, PrincipalKind, ThreadId, decode};
 use glave_gateway::Gateway;
-use glave_harness::{Cancel, Question};
+use glave_harness::{Caller, Cancel, Goal, Question};
 use glave_session::protocol::{Answer, ApiError, Notification, Reply, Request, Update, code};
-use glave_session::{Server, TurnItem};
+use glave_session::{Server, TurnItem, TurnStream};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 
 use crate::asking;
@@ -40,7 +40,38 @@ impl Client<'_> {
     /// Runs one turn, which Ctrl-C cancels, printing its progress and receipt.
     pub async fn turn(&self, prompt: &str, printer: &mut Printer) -> ExitCode {
         self.servers.report(printer).await;
-        let mut stream = match self.server.start_turn(self.thread, prompt).await {
+        let started = self.server.start_turn(self.thread, prompt).await;
+        self.follow(started, printer).await
+    }
+
+    /// Works toward `goal` across turns until it ends, which Ctrl-C does too, printing every
+    /// turn's progress and then the receipt for all of them. Succeeds only when it is met.
+    pub async fn goal(&self, goal: Goal, printer: &mut Printer) -> ExitCode {
+        self.servers.report(printer).await;
+        let started = self
+            .server
+            .start_goal_as(&Caller::default(), self.thread, Some(goal))
+            .await;
+        let code = self.follow(started, printer).await;
+        let get = Request::GoalGet {
+            thread: self.thread,
+        };
+        match self.server.request(get).await {
+            Ok(Reply::Goal { goal: Some(goal) }) if goal.ended.is_some_and(GoalReason::met) => {
+                ExitCode::SUCCESS
+            }
+            _ if code == ExitCode::from(130) => code,
+            _ => ExitCode::FAILURE,
+        }
+    }
+
+    /// Follows a started turn, or a goal's turns, to the end.
+    async fn follow(
+        &self,
+        started: Result<TurnStream, ApiError>,
+        printer: &mut Printer,
+    ) -> ExitCode {
+        let mut stream = match started {
             Ok(stream) => stream,
             Err(error) => {
                 self.show_error(printer, &error);
@@ -119,8 +150,22 @@ impl Client<'_> {
                 let Ok(decoded) = decode(event.clone()) else {
                     return false;
                 };
-                let Body::ApprovalRequested(asked) = decoded.body else {
-                    return false;
+                let asked = match decoded.body {
+                    Body::ApprovalRequested(asked) => asked,
+                    Body::GoalEnded(ended) => {
+                        printer.goal_ended(ended.reason, ended.tokens);
+                        return false;
+                    }
+                    Body::MessageAdded(added)
+                        if added
+                            .author
+                            .as_ref()
+                            .is_some_and(|author| author.kind == PrincipalKind::Glave) =>
+                    {
+                        printer.status("\n· continuing toward the goal");
+                        return false;
+                    }
+                    _ => return false,
                 };
                 if !self.asks {
                     return false;

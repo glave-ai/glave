@@ -7,14 +7,15 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use glave_event::ThreadId;
-use glave_harness::{Caller, Live};
+use glave_harness::{Caller, DEFAULT_BUDGET, Goal, Live};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, watch};
 
 use crate::held::finished;
+use crate::hub::Hub;
 use crate::keyed::Done;
-use crate::protocol::{ApiError, IdempotencyKey, Notification, TurnResult, Update, code};
+use crate::protocol::{ApiError, IdempotencyKey, Notification, Request, TurnResult, Update, code};
 use crate::server::{Server, api};
 
 /// One thing a running turn sends.
@@ -37,7 +38,7 @@ pub struct TurnStream {
 }
 
 impl TurnStream {
-    fn new(notes: Option<broadcast::Receiver<Arc<Notification>>>, done: Done) -> Self {
+    pub(crate) fn new(notes: Option<broadcast::Receiver<Arc<Notification>>>, done: Done) -> Self {
         Self {
             notes,
             done,
@@ -87,6 +88,20 @@ impl TurnStream {
     }
 }
 
+/// Sends progress in `thread` to whoever follows it. A subagent's progress goes under its own
+/// thread, and so to its watchers and the parent's.
+pub(crate) fn publish(hub: &Hub, thread: ThreadId, live: Live) {
+    let (from, live) = match live {
+        Live::Child { thread, update } => (thread, *update),
+        live => (thread, live),
+    };
+    let update = Notification::Live {
+        thread: from,
+        update: Update::from(live),
+    };
+    hub.publish(from, update);
+}
+
 /// How the turn ended, as the API reports it.
 async fn ending(done: &mut Done) -> Result<TurnResult, ApiError> {
     match finished(done).await {
@@ -104,6 +119,39 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
+    /// Starts `request` and streams it when its method streams (`turn/start`, `goal/start`);
+    /// hands any other request back, to answer with [`Server::request_as`].
+    pub async fn start_streaming(
+        &self,
+        caller: &Caller,
+        request: Request,
+    ) -> Result<Result<TurnStream, ApiError>, Box<Request>> {
+        match request {
+            Request::TurnStart {
+                thread,
+                prompt,
+                meta,
+            } => {
+                let key = meta.idempotency_key.as_ref();
+                Ok(self.start_turn_as(caller, thread, &prompt, key).await)
+            }
+            Request::GoalStart {
+                thread,
+                objective,
+                check,
+                budget,
+            } => {
+                let goal = objective.map(|objective| Goal {
+                    objective,
+                    check,
+                    token_budget: budget.unwrap_or(DEFAULT_BUDGET),
+                });
+                Ok(self.start_goal_as(caller, thread, goal).await)
+            }
+            other => Err(Box::new(other)),
+        }
+    }
+
     /// Starts a turn for the local person and streams it: its notifications, then how it ended.
     pub async fn start_turn(&self, thread: ThreadId, prompt: &str) -> Result<TurnStream, ApiError> {
         self.start_turn_as(&Caller::default(), thread, prompt, None)
@@ -132,19 +180,7 @@ where
         let started = self
             .occupy(thread, finish, move |inner, mut held, cancel| async move {
                 let hub = Arc::clone(&inner.hub);
-                let mut publish = |live| {
-                    // A subagent's progress goes under its own thread, and so to its watchers
-                    // and the parent's.
-                    let (from, live) = match live {
-                        Live::Child { thread, update } => (thread, *update),
-                        live => (thread, live),
-                    };
-                    let update = Notification::Live {
-                        thread: from,
-                        update: Update::from(live),
-                    };
-                    hub.publish(from, update);
-                };
+                let mut publish = |live| publish(&hub, thread, live);
                 let ran = inner
                     .harness
                     .run_turn_as(&mut held, &prompt, &caller, &cancel, &mut publish)

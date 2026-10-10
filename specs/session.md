@@ -37,6 +37,9 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | `thread/compact` | `thread` | `before_tokens`, `after_tokens` |
 | `approval/decide` | `thread`; `approval` (its id); `decision`: `allow_once`, `allow_for_thread` or `deny` | `{}`; the paused turn continues |
 | `question/answer` | `thread`; `question` (the `question` call's id); `answers`, one string for each question, in order | `{}`; the paused turn continues |
+| `goal/start` | `thread`; `objective`; optional `check` (a command), `budget` (tokens; default 1,000,000). Without `objective`, continues the thread's active goal, as after a restart | streams every turn of the goal as `turn/start` streams one, then answers with `turn`: how its last turn ended, with every turn's calls, tokens and cost added up |
+| `goal/stop` | `thread` | `{}` once the goal is recorded as stopped, its running turn cancelled |
+| `goal/get` | `thread` | `goal`: the thread's latest goal (`objective`, `check`, `token_budget`, `tokens` used, `turns`, and `ended`, the reason, once it has), or `null` |
 
 A **thread summary** has `id` and `status`: `idle`, `running` or `waiting` (a turn is paused for an approval or an answer). Titles, creation and update times arrive with a threads view built from the log.
 
@@ -76,6 +79,13 @@ When a client can answer, the model is offered `question`: up to four questions,
 - Cancelling the paused turn ends the call unanswered, and the turn as cancelled.
 - With no client that can answer, `question` is not offered at all.
 
+## Goals
+
+A goal keeps a thread working across turns until it is met, the person stops it, or its budget runs out. Its first turn's prompt is the objective; each turn after it starts with a continuation glave writes (the objective again, the budget left, and a failed check's output), recorded with `author` glave. With a `check`, glave runs it after each turn through the `bash` tool, in the sandbox and asking as any command would, and the goal is met when it passes. Without one, the model is offered `update_goal` (`status`: `complete`) during the goal's turns, and the goal is met when it calls it. A turn that reaches the budget gets a last step in text only. `goal.set` and `goal.ended` (`events.md`) record it, so `goal/get` reads progress from the log while it runs, and a goal survives a restart: `goal/start` without an `objective` continues it.
+
+- A goal's turns are turns: `turn/cancel` cancels the running one, which stops the goal; a second `turn/start` or `goal/start` is refused with `-32002`.
+- `goal/stop` or `goal/start` without `objective` on a thread with no active goal is refused with `-32007`.
+
 ## Turns
 
 - One turn runs per thread at a time. A second `turn/start` is refused with `-32002`. Queueing and steering a running turn come later.
@@ -94,6 +104,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32004` | No such approval is pending |
 | `-32005` | The operation was cancelled, such as a compaction stopped by `turn/cancel` |
 | `-32006` | No such question is waiting |
+| `-32007` | The thread has no active goal |
 | `-32010` | Unsupported protocol version; `data.supported` lists the spoken ones |
 | `-32011` | The thread is running in another server of this deployment |
 | `-32012` | The caller may not do this |

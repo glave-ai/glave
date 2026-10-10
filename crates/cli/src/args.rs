@@ -13,6 +13,11 @@ glave: run hope, or any model, on the project in this folder
 Usage:
   glave [options] [prompt...]   run one turn with this prompt
   glave [options]               start a session; each line you type is a turn
+  glave --goal <objective> [--check <command>] [--goal-budget <tokens>] [options]
+                                keep working across turns until the goal is met: the check
+                                passes or, without one, the model says it is done. Stops
+                                when its token budget (default 1000000) runs out, after
+                                three turns in a row without a tool call, or on Ctrl-C
   glave serve --stdio [options] serve the session API (JSON-RPC 2.0, one message per line)
                                 to the program that started glave
   glave serve --http <address> --issuer <url> --audience <name> [options]
@@ -118,6 +123,12 @@ pub struct Args {
     pub prompt: String,
     /// Serve over HTTP on this address, rather than stdio.
     pub http: Option<SocketAddr>,
+    /// Work toward this objective across turns, instead of running one turn.
+    pub goal: Option<String>,
+    /// The goal's check: a command whose success means the goal is met.
+    pub check: Option<String>,
+    /// Tokens the goal may use.
+    pub goal_budget: Option<u64>,
     /// The identity providers whose tokens sign clients in over HTTP.
     pub issuers: Vec<String>,
     /// The audience those tokens must name.
@@ -162,6 +173,9 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             }
             "--network" => args.network = true,
             "--max-steps" => args.max_steps = Some(steps(rest.next())?),
+            "--goal" => args.goal = Some(rest.next().ok_or("--goal needs an objective")?),
+            "--check" => args.check = Some(rest.next().ok_or("--check needs a command")?),
+            "--goal-budget" => args.goal_budget = Some(budget(rest.next())?),
             "--stdio" if serving => stdio = true,
             "--http" if serving => {
                 args.http = Some(address(rest.next())?);
@@ -195,7 +209,34 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
         transport(&args, stdio)?;
         args.action = Action::Serve;
     }
+    goal(&args)?;
     Ok(args)
+}
+
+/// Checks that a goal's flags come with `--goal`, and a goal with no prompt beside it.
+fn goal(args: &Args) -> Result<(), String> {
+    match &args.goal {
+        None if args.check.is_some() || args.goal_budget.is_some() => {
+            Err("--check and --goal-budget need --goal <objective>".into())
+        }
+        Some(objective) if objective.trim().is_empty() => Err("--goal needs an objective".into()),
+        Some(_) if !args.prompt.is_empty() => {
+            Err("give the goal's objective with --goal, and no prompt beside it".into())
+        }
+        Some(_) if args.action != Action::Run => Err("--goal runs a goal: not with serve".into()),
+        _ => Ok(()),
+    }
+}
+
+/// The value of `--goal-budget`: a whole number of tokens, at least one.
+fn budget(value: Option<String>) -> Result<u64, String> {
+    let value = value.ok_or("--goal-budget needs a number of tokens")?;
+    match value.parse::<u64>() {
+        Ok(tokens) if tokens >= 1 => Ok(tokens),
+        _ => Err(format!(
+            "--goal-budget {value:?} is not a number of tokens: use 1 or more"
+        )),
+    }
 }
 
 /// Checks that `glave serve` has one transport, and sign-in for HTTP.
@@ -384,6 +425,23 @@ mod tests {
         assert!(parse_words(&["policy", "explain", "why"]).is_err());
         let prompt = parse_words(&["explain", "policy"]).unwrap();
         assert_eq!(prompt.action, Action::Run);
+    }
+
+    #[test]
+    fn a_goal_takes_an_objective_and_optionally_a_check_and_a_budget() {
+        let goal =
+            parse_words(&["--goal", "make the tests pass", "--check", "cargo test"]).unwrap();
+        assert_eq!(goal.goal.as_deref(), Some("make the tests pass"));
+        assert_eq!(goal.check.as_deref(), Some("cargo test"));
+        assert_eq!(goal.goal_budget, None);
+        let budgeted = parse_words(&["--goal", "x", "--goal-budget", "50000"]).unwrap();
+        assert_eq!(budgeted.goal_budget, Some(50_000));
+        assert!(parse_words(&["--check", "cargo test", "hi"]).is_err());
+        assert!(parse_words(&["--goal-budget", "5", "hi"]).is_err());
+        assert!(parse_words(&["--goal", "x", "--goal-budget", "0"]).is_err());
+        assert!(parse_words(&["--goal", "x", "and", "a", "prompt"]).is_err());
+        assert!(parse_words(&["--goal", " "]).is_err());
+        assert!(parse_words(&["serve", "--stdio", "--goal", "x"]).is_err());
     }
 
     #[test]

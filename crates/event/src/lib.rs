@@ -21,8 +21,9 @@ pub use error::{DecodeError, EncodeError, InvalidValue};
 pub use id::{CallId, EventId, PrincipalId, ThreadId};
 pub use money::{Currency, Money};
 pub use payload::{
-    ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, ForkPoint, MessageAdded,
-    ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome, ParentCall, Part, Principal,
-    PrincipalKind, Producer, Role, StopReason, ThreadCompacted, ThreadStarted, TokenCounts,
-    ToolCallCompleted, ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
+    ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, ForkPoint, GoalEnded,
+    GoalReason, GoalSet, MessageAdded, ModelRef, ModelResponded, Opaque, Origin, OriginKind,
+    Outcome, ParentCall, Part, Principal, PrincipalKind, Producer, Role, StopReason,
+    ThreadCompacted, ThreadStarted, TokenCounts, ToolCallCompleted, ToolCallRequested, TraceId,
+    TurnEnded, TurnStarted, Usage, Verdict,
 };

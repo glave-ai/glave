@@ -10,7 +10,8 @@ use anyhow::Context as _;
 use glave_computer::LocalComputers;
 use glave_event::ThreadId;
 use glave_harness::{
-    AGENTS_MD, Cancel, OsEntropy, Sandbox, Settings, SystemClock, Workspace, agents_md,
+    AGENTS_MD, Cancel, DEFAULT_BUDGET, Goal, OsEntropy, Sandbox, Settings, SystemClock, Workspace,
+    agents_md,
 };
 use glave_session::protocol::{Reply, Request};
 use glave_session::signin::{SignIn, Trust};
@@ -288,7 +289,14 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         servers,
     };
     let mut printer = Printer::new(&endpoint.model, protections(choices, args.network));
-    let code = if args.prompt.is_empty() {
+    let code = if let Some(objective) = &args.goal {
+        let goal = Goal {
+            objective: objective.clone(),
+            check: args.check.clone(),
+            token_budget: args.goal_budget.unwrap_or(DEFAULT_BUDGET),
+        };
+        client.goal(goal, &mut printer).await
+    } else if args.prompt.is_empty() {
         let mut note = match named(files) {
             Some(files) => format!("{note} · following {files}"),
             None => note.to_owned(),

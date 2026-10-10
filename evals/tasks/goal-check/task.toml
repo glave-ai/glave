@@ -1,0 +1,15 @@
+[task]
+name = "glave/goal-check"
+description = "A goal with a check: five stubbed functions, too many for one short turn; the goal continues until cargo test passes."
+
+[agent]
+timeout_sec = 900
+
+[glave]
+tier = "hard"
+# Real work runs commands: nothing asks but secrets.
+approval = "auto"
+# Three tool steps a turn, so the work takes several turns and the goal must continue.
+max_steps = 4
+goal = { check = "cargo test", budget = 600000 }
+checks = [{ goal_ended = ["met_by_check"] }]
