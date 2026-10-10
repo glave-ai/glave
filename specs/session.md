@@ -139,7 +139,12 @@ What changes when a client is on another machine: who is calling, how a server t
 
 ## Status
 
-Version 1, in-process (`glave-session`, used by the CLI) and over stdio (`glave serve --stdio`, the same server through `rpc::serve`; one conformance suite runs over both): every method but `thread/watch`, whose in-process form is `Server::watch`. Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted. "Over the network" above is specified ahead of the code (issue #64): sign-in, durable paused turns, leases and idempotent turns.
+Version 1, in-process (`glave-session`, used by the CLI), over stdio (`glave serve --stdio`, the same server through `rpc::serve`) and over HTTP with server-sent events (`glave serve --http <address> --issuer <url> --audience <name>`, requests `POST`ed to `/`); one conformance suite runs over all three. Every method but `thread/watch`, whose in-process form is `Server::watch`.
+
+- **Sign-in on HTTP:** OIDC access tokens signed with RS256 or ES256, checked against the keys the issuer's discovery document points to, with `iss`, `aud`, `exp` and `nbf` verified and a minute of clock skew forgiven. Keys are cached and fetched again for a key not seen yet, at most every 30 seconds. An issuer must be `https`, or `http` on the same computer. The person is derived from the issuer and subject (a UUID v7 at time zero whose random bits are the start of a SHA-256 of both) until an identity source maps them. The caller is stamped as "Who is calling" describes. The listener has no TLS of its own: across machines it sits behind a proxy that has.
+- **Retries:** `turn/start` honours `_meta.idempotency_key` for the 1,024 most recent keys, in memory.
+- Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted.
+- Still to come from "Over the network" (issue #64): SAML and glave session tokens, durable paused turns, leases, WebSocket, and enforcing `-32011` and `-32012`.
 
 ## Later
 

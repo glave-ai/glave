@@ -10,7 +10,7 @@ mod support;
 mod questions {
     use glave_event::{Body, CallId, Outcome, Part, ThreadId, decode};
     use glave_ports::{MemoryBlobs, MemoryLog};
-    use glave_session::protocol::{Notification, Reply, Request, Status, Update, code};
+    use glave_session::protocol::{Meta, Notification, Reply, Request, Status, Update, code};
     use glave_session::{Answering, Server, TurnItem};
     use serde_json::json;
 
@@ -165,6 +165,7 @@ mod questions {
                 .request(Request::TurnStart {
                     thread,
                     prompt: "set up storage".into(),
+                    meta: Meta::default(),
                 })
                 .await
                 .unwrap();

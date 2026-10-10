@@ -7,13 +7,14 @@ use glave_event::{Outcome, ParentCall};
 use glave_ports::{BlobStore, EventLog, ModelProvider, ToolCall, ToolOutput};
 
 use crate::approval::Approver;
+use crate::caller::Caller;
 use crate::calls::NOT_RUN;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::join::{Running, all};
 use crate::subagent::{self, AT_ONCE};
 use crate::toolset::ToolSet;
-use crate::turn::{Live, TurnSummary};
+use crate::turn::{Live, Prompt, TurnSummary};
 
 /// What the person sees, shared by children running side by side.
 type Shared<'a, 'b> = &'a Mutex<&'b mut (dyn FnMut(Live) + Send)>;
@@ -65,7 +66,10 @@ where
             thread: parent.id,
             call_id: call.call_id.clone(),
         };
-        let mut child = match self.start_thread_from(parent.scope, Some(started)).await {
+        let mut child = match self
+            .start_thread_from(parent.scope, Some(started), &Caller::default())
+            .await
+        {
             Ok(child) => child,
             Err(err) => {
                 return (
@@ -95,8 +99,14 @@ where
         };
         let tools = offer.for_child(asked.subagent_type);
         let brief = subagent::brief(&asked);
+        // The parent's agent writes the brief: the child's `for` is implied, as for any prompt.
+        let caller = Caller::default();
+        let prompt = Prompt {
+            text: &brief,
+            caller: &caller,
+        };
         let ran = self
-            .run_with(&mut child, &brief, tools, cancel, &mut forward)
+            .run_with(&mut child, prompt, tools, cancel, &mut forward)
             .await;
         let result = match ran {
             Ok(summary) => {

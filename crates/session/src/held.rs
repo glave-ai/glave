@@ -7,7 +7,7 @@ use std::sync::{Arc, PoisonError};
 use glave_event::ThreadId;
 use glave_harness::{Cancel, HarnessError, Thread};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
-use tokio::sync::{oneshot, watch};
+use tokio::sync::watch;
 
 use crate::protocol::{ApiError, Status, ThreadSummary, code};
 use crate::server::{Inner, Server, api, no_thread};
@@ -78,16 +78,18 @@ where
     }
 
     /// Runs `work` on `thread` in a task of its own, holding the thread busy until it ends, so
-    /// a client that goes away never strands it. The result comes back on the receiver.
+    /// a client that goes away never strands it. The result is sent on `done` once the thread
+    /// is ready for the next turn.
     pub(crate) async fn occupy<W, F, R>(
         &self,
         thread: ThreadId,
+        done: Finish<R>,
         work: W,
-    ) -> Result<oneshot::Receiver<Result<R, HarnessError>>, ApiError>
+    ) -> Result<(), ApiError>
     where
         W: FnOnce(Arc<Inner<P, L, B>>, Thread, Cancel) -> F + Send + 'static,
         F: std::future::Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
-        R: Send + 'static,
+        R: Send + Sync + 'static,
     {
         self.load(thread).await?;
         let cancel = Cancel::new();
@@ -113,7 +115,6 @@ where
                 }
             }
         };
-        let (send, receive) = oneshot::channel();
         let inner = Arc::clone(&self.inner);
         let task = tokio::spawn(async move {
             let (held, result) = work(Arc::clone(&inner), held, cancel).await;
@@ -124,8 +125,8 @@ where
                 .unwrap_or_else(PoisonError::into_inner)
                 .insert(thread, Slot::Idle(Box::new(held)));
             let _ = finish.send(true);
-            // The asker may have gone; the work is done either way.
-            let _ = send.send(result);
+            // Kept even when no one is following any more: a retry may still ask for it.
+            done.send_replace(Some(Arc::new(result)));
         });
         let mut tasks = self
             .inner
@@ -134,6 +135,23 @@ where
             .unwrap_or_else(PoisonError::into_inner);
         tasks.retain(|task| !task.is_finished());
         tasks.push(task);
-        Ok(receive)
+        Ok(())
+    }
+}
+
+/// Where work on a thread sends its result: nothing until it ends, then how it ended. Shared,
+/// so anyone may follow it, however late.
+pub(crate) type Finish<R> = watch::Sender<Option<Arc<Result<R, HarnessError>>>>;
+
+/// How work on a thread ended, once it has; `None` if it stopped without saying.
+pub(crate) async fn finished<R>(done: &mut watch::Receiver<Option<Arc<R>>>) -> Option<Arc<R>> {
+    loop {
+        let current = done.borrow_and_update().clone();
+        if current.is_some() {
+            return current;
+        }
+        if done.changed().await.is_err() {
+            return done.borrow().clone();
+        }
     }
 }

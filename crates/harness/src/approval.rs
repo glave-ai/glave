@@ -4,7 +4,7 @@
 use std::future::{Future, ready};
 use std::path::Path;
 
-use glave_event::{Arguments, CallId, ThreadId};
+use glave_event::{Arguments, CallId, PrincipalId, ThreadId};
 use glave_ports::Effect;
 use serde::Serialize;
 
@@ -83,6 +83,16 @@ pub enum Decision {
 /// one is there when it has none.
 pub trait Approver: Send + Sync {
     fn decide(&self, request: &ApprovalRequest) -> impl Future<Output = Decision> + Send;
+
+    /// Decides, and names the person who did when the approver knows: someone other than the
+    /// thread's `for` is recorded as the decision's `by`. Plain [`Approver::decide`] by default.
+    fn decide_by(
+        &self,
+        request: &ApprovalRequest,
+    ) -> impl Future<Output = (Decision, Option<PrincipalId>)> + Send {
+        let decided = self.decide(request);
+        async move { (decided.await, None) }
+    }
 
     /// Whether someone can answer questions; `question` is offered only then.
     fn can_answer(&self) -> bool {
