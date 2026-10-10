@@ -18,7 +18,7 @@ mod judging {
 
     fn judged() -> Settings {
         let mut settings = settings();
-        settings.judge = Some("judge-model".into());
+        settings.judge = true;
         settings
     }
 

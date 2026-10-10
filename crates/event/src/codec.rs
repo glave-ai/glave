@@ -35,6 +35,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (tool::REQUESTED, 1),
     (tool::COMPLETED, 1),
     (model::TYPE, 1),
+    (model::TYPE, 2),
     (turn::ENDED, 1),
     (approval::REQUESTED, 1),
     (approval::DECIDED, 1),

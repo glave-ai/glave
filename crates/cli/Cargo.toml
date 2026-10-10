@@ -16,6 +16,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 getrandom.workspace = true
 glave-event.workspace = true
+glave-gateway.workspace = true
 glave-harness.workspace = true
 glave-mcp.workspace = true
 glave-ports.workspace = true

@@ -79,16 +79,19 @@ mod glave_binary {
                 .any(|result| result.contains("notes.md")),
             "the model is told what the tool did: {second}"
         );
-        let types: Vec<String> = std::fs::read_to_string(&events)
+        let recorded: Vec<Value> = std::fs::read_to_string(&events)
             .unwrap()
             .lines()
-            .map(|line| {
-                serde_json::from_str::<Value>(line).unwrap()["type"]
-                    .as_str()
-                    .unwrap()
-                    .to_owned()
-            })
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
             .collect();
+        let types: Vec<&str> = recorded
+            .iter()
+            .map(|event| event["type"].as_str().unwrap())
+            .collect();
+        for responded in recorded.iter().filter(|e| e["type"] == "model.responded") {
+            assert_eq!(responded["data"]["route"], "main", "{responded}");
+            assert_eq!(responded["data"]["target"], "local/m", "{responded}");
+        }
         assert_eq!(
             types,
             [

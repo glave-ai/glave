@@ -85,6 +85,7 @@ pub fn answer(text: Option<&str>, call: Option<(&str, serde_json::Value)>) -> Co
         provider_stop: None,
         usage: Usage::new(TokenCounts::default(), false, None).unwrap(),
         cost: None,
+        served: None,
     }
 }
 

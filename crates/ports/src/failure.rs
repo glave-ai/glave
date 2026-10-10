@@ -29,6 +29,8 @@ pub enum Failure {
     Malformed,
     /// Any other refusal of the request.
     Rejected,
+    /// The call could exceed a budget, so it was not sent.
+    OverBudget,
 }
 
 impl Failure {
@@ -49,6 +51,8 @@ impl ProviderError {
             Self::Transport(_) => Failure::Unreachable,
             Self::Timeout { .. } => Failure::Silent,
             Self::Protocol(_) => Failure::Malformed,
+            Self::Unserved { failure, .. } => *failure,
+            Self::OverBudget { .. } => Failure::OverBudget,
         }
     }
 
@@ -147,6 +151,16 @@ mod tests {
             ProviderError::Protocol("bad".into()).failure(),
             Failure::Malformed
         );
+        let unserved = ProviderError::Unserved {
+            failure: Failure::TooLong,
+            reason: "longer than every model's context".into(),
+        };
+        assert_eq!(unserved.failure(), Failure::TooLong);
+        let over = ProviderError::OverBudget {
+            budget: "person".into(),
+            detail: "x".into(),
+        };
+        assert_eq!(over.failure(), Failure::OverBudget);
     }
 
     #[test]
@@ -162,6 +176,7 @@ mod tests {
             Failure::Silent,
             Failure::Malformed,
             Failure::Rejected,
+            Failure::OverBudget,
         ]
         .into_iter()
         .filter(|failure| failure.is_transient())

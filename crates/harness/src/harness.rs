@@ -46,9 +46,10 @@ pub struct Settings {
     pub max_output_tokens: Option<u32>,
     /// Whether the model may hand work to subagents with `agent`.
     pub subagents: bool,
-    /// The model that judges, in auto mode, whether an action a rule flagged may run because
-    /// the person asked for it. Off when `None`: every flagged action asks.
-    pub judge: Option<String>,
+    /// Whether, in auto mode, a judge decides if an action a rule flagged may run because the
+    /// person asked for it. Its model is chosen by the provider's `judge` route (see the
+    /// gateway); off, every flagged action asks.
+    pub judge: bool,
     /// The person whose work every thread is: recorded as the thread's `for`. When `None`,
     /// the harness makes one id when it is created, used for all its threads.
     pub person: Option<PrincipalId>,
@@ -73,7 +74,7 @@ impl Settings {
             max_steps: None,
             max_output_tokens: None,
             subagents: false,
-            judge: None,
+            judge: false,
             person: None,
             agent: None,
         }
@@ -134,14 +135,28 @@ pub struct Thread {
     /// The person's own messages, oldest first: what the judge reads as their say-so. A
     /// subagent's thread holds its parent's, never the brief the parent's agent wrote.
     pub(crate) asked: Vec<String>,
-    /// Whether an agent, not the person, writes this thread's prompts: a subagent's thread.
-    pub(crate) delegated: bool,
+    /// The threads that started this one, nearest first: empty unless this is a subagent's
+    /// thread, whose prompts an agent, not the person, writes.
+    pub(crate) above: Vec<ThreadId>,
 }
 
 impl Thread {
     /// The conversation the model will see next.
     pub fn messages(&self) -> &[Message] {
         &self.messages
+    }
+
+    /// Whether an agent, not the person, writes this thread's prompts: a subagent's thread.
+    pub(crate) fn delegated(&self) -> bool {
+        !self.above.is_empty()
+    }
+
+    /// This thread, then the threads that started it: whose budgets its model calls count in.
+    pub(crate) fn lineage(&self) -> Vec<ThreadId> {
+        let mut threads = Vec::with_capacity(self.above.len().saturating_add(1));
+        threads.push(self.id);
+        threads.extend_from_slice(&self.above);
+        threads
     }
 }
 
@@ -260,7 +275,7 @@ where
             measured: None,
             request: None,
             asked: Vec::new(),
-            delegated: parent.is_some(),
+            above: parent.iter().map(|call| call.thread).collect(),
         };
         let mut events = Vec::new();
         let producer = Producer {

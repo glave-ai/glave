@@ -39,6 +39,8 @@ mod over_http {
             tools: Vec::new(),
             tool_choice: ToolChoice::Auto,
             max_output_tokens: None,
+            purpose: glave_ports::Purpose::Main,
+            threads: Vec::new(),
         }
     }
 
