@@ -9,7 +9,7 @@ How much glave asks the person before acting. Tracks issues #21, #24, #78 and #8
 | `auto` (the default) | go through | go through | go through: in the sandbox when it is on, as the person when not |
 | `ask` | go through | ask | ask |
 
-Set with `--approval <mode>`. A tool's effect decides which column it is in; MCP tools that say they only read are reads.
+Set with `--approval <mode>`, or `approval` in `config.toml`; an organization's policy can limit the modes allowed (`policy.md`). A tool's effect decides which column it is in; MCP tools that say they only read are reads.
 
 In every mode, reading a file that usually holds secrets (`.env` and its variants, keys, credential files) asks first: the model would see its contents. With the sandbox on, the file tools refuse protected paths outright (`sandbox.md`).
 
@@ -62,4 +62,3 @@ Every question is recorded with its answer: `approval.requested`, then `approval
 
 - A judge model that decides in `auto` instead of the person (issue #13).
 - Asking to let one sandboxed command out of the sandbox.
-- Organizations capping the mode, such as "always `ask`" (issue #22).

@@ -4,7 +4,17 @@ How glave is set up: what a person or project chooses, and what an organization 
 
 ## Status
 
-Draft, specified ahead of the code. Today the CLI reads environment variables and `~/.glave/mcp.json`; nothing below is enforced yet.
+First cut built, in the CLI (`crates/cli/src/policy`):
+
+- `~/.glave/config.toml` (in `GLAVE_HOME`) and `/etc/glave/policy.toml` are read as typed TOML; unknown keys, and a policy without `version = 1`, are errors naming the file and key.
+- Choices resolve nearest-wins across flags (`--model`, `--approval`, `--sandbox`, which now takes `off`), the environment (`GLAVE_MODEL`, `GLAVE_JUDGE_MODEL`), the person's file and the defaults, each remembering its source. `mcp` turns on only the named servers of `mcp.json`.
+- Constraints only narrow: allow-lists intersect, deny lists add up, a requirement anywhere holds, limits take the smallest, and contradictions (no approval mode left, a judge both required and off) are errors.
+- A choice someone made outside the constraints is an error naming the rule, its file and the choice's source. Only glave's own defaults give way, to what the policy leaves (shown as "default, narrowed by" the file).
+- Enforced: `[models]` when the gateway's targets are built, `[approval] modes` and `judge` in the settings the harness runs with, `[sandbox] required` before the workspace exists, `[mcp] own = false` before any server starts.
+- Refused at load as not enforced yet, so glave will not run under them: `[budget]` (the gateway keeps budgets per run, not per day) and `[mcp] catalog` (glave cannot start servers an organization offers).
+- `glave policy explain` prints every setting with its source, every rule with its file, and why glave would refuse to run; it exits non-zero when it would.
+
+Not built yet: project trust, so a project's `.glave/config.toml` is noticed and named but not used (issue #83); signed bundles from an organization's server, macOS managed preferences and Group Policy; a space's own policy; recording policy changes as events (the admin console); and recording the policy version in each turn's configuration.
 
 ## Two kinds of setting, two rules
 

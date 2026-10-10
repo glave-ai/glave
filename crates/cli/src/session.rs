@@ -20,9 +20,12 @@ use tokio::net::TcpListener;
 use crate::args::{self, Action, Args, USAGE};
 use crate::client::{Client, Glave};
 use crate::config::{self, Endpoint};
+use crate::gateway::Allowed;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::model::Model;
+use crate::policy::Choices;
+use crate::setup::{self, Setup};
 use crate::system::random_uuid;
 use crate::terminal::Printer;
 use crate::{gateway, home, identity, keys};
@@ -52,7 +55,7 @@ pub fn main() -> ExitCode {
             println!("glave {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
-        Action::Run | Action::Serve => {}
+        Action::Run | Action::Serve | Action::Explain => {}
     }
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -64,10 +67,10 @@ pub fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let ran = if args.action == Action::Serve {
-        runtime.block_on(serve(args))
-    } else {
-        runtime.block_on(run(args))
+    let ran = match args.action {
+        Action::Serve => runtime.block_on(serve(args)),
+        Action::Explain => runtime.block_on(setup::explain(&args)),
+        _ => runtime.block_on(run(args)),
     };
     match ran {
         Ok(code) => code,
@@ -86,41 +89,43 @@ struct Wired {
     root: PathBuf,
     /// The instruction files the model is given, for the banner.
     files: Vec<PathBuf>,
+    /// The settings in use, for the banner and receipts.
+    choices: Choices,
 }
 
 /// Builds the session server on this computer's store and the current folder.
 async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
-    let mut endpoint = config::endpoint(args.model.clone())?;
+    let folder = std::env::current_dir()?;
+    let setup = Setup::load(args, &folder).await?;
+    if let Some(notice) = setup.notice() {
+        eprintln!("glave: {notice}");
+    }
+    let choices = &setup.choices;
+    let mut endpoint = config::endpoint(choices.model.as_ref().map(|m| m.value.clone()))?;
     if let Some(idle) = config::idle_timeout()? {
         endpoint.provider.idle_timeout = idle;
     }
-    let judge = config::judge_model(&endpoint.model);
+    let judge = choices.judge.value.model(&endpoint.model);
+    let allowed = Allowed {
+        constraints: &setup.loaded.constraints,
+        main: choices.model.as_ref().map(|m| &m.from),
+        judge: &choices.judge.from,
+    };
     let provider = gateway::gateway(
         Model::for_endpoint(&endpoint.provider)?,
         &endpoint,
         judge.as_deref(),
+        &allowed,
     )?;
-    let mut workspace = Workspace::open(std::env::current_dir()?, std::env::vars_os()).await?;
     let database = home::database().await?;
-    if let Some(level) = args.sandbox {
-        let sandbox = Sandbox {
-            level,
-            network: args.network,
-            home: std::env::var_os("HOME").map(PathBuf::from),
-            glave_home: database.parent().map(Path::to_path_buf),
-        };
-        workspace = workspace
-            .with_sandbox(&sandbox)
-            .await
-            .context("--sandbox was asked for, so glave will not run commands without it")?;
-    }
+    let workspace = workspace(&folder, choices, args.network, &database).await?;
     let keys = keys::settings(&home::folder()?, home::relocated()).await?;
     let store = Store::open(database, keys).await?;
     let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
     let personal = home::folder()?.join(AGENTS_MD);
     let instructions = agents_md(workspace.root(), Some(&personal)).await?;
     settings.instructions = instructions.as_ref().map(|loaded| loaded.text.clone());
-    settings.approval = args.approval.unwrap_or_default();
+    settings.approval = choices.approval.value;
     settings.max_steps = args.max_steps;
     // As Claude Code, Codex and OpenCode offer it; models use it when asked to.
     settings.subagents = true;
@@ -132,7 +137,13 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
         settings.compaction.window_tokens = window_tokens;
     }
     let root = workspace.root().to_owned();
-    let servers = Servers::start(&home::folder()?, &root).await?;
+    let servers = Servers::start(
+        &home::folder()?,
+        &root,
+        choices.mcp.as_ref(),
+        &setup.loaded.constraints,
+    )
+    .await?;
     let scope = store
         .local_scope(&root, random_uuid(), random_uuid())
         .await?;
@@ -151,6 +162,32 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
         endpoint,
         root,
         files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
+        choices: setup.choices,
+    })
+}
+
+/// The workspace in `folder`, in the sandbox `choices` ask for.
+async fn workspace(
+    folder: &Path,
+    choices: &Choices,
+    network: bool,
+    database: &Path,
+) -> anyhow::Result<Workspace> {
+    let workspace = Workspace::open(folder, std::env::vars_os()).await?;
+    let Some(level) = choices.sandbox.value else {
+        return Ok(workspace);
+    };
+    let sandbox = Sandbox {
+        level,
+        network,
+        home: std::env::var_os("HOME").map(PathBuf::from),
+        glave_home: database.parent().map(Path::to_path_buf),
+    };
+    workspace.with_sandbox(&sandbox).await.with_context(|| {
+        format!(
+            "the sandbox was asked for (by {}), so glave will not run commands without it",
+            choices.sandbox.from
+        )
     })
 }
 
@@ -218,6 +255,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         endpoint,
         root,
         files,
+        choices,
     } = wired;
     let (thread, note) = pick_thread(server, args.resume).await?;
     let input = Input::start();
@@ -229,7 +267,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         asks,
         servers,
     };
-    let mut printer = Printer::new(&endpoint.model, protections(args));
+    let mut printer = Printer::new(&endpoint.model, protections(choices, args.network));
     let code = if args.prompt.is_empty() {
         let mut note = match named(files) {
             Some(files) => format!("{note} · following {files}"),
@@ -352,11 +390,11 @@ fn named(files: &[PathBuf]) -> Option<String> {
 }
 
 /// The protections commands run under, for the banner and receipts: `sandbox: project`.
-fn protections(args: &Args) -> String {
-    let approval = format!("approval: {}", args.approval.unwrap_or_default().name());
-    match args.sandbox {
+fn protections(choices: &Choices, network: bool) -> String {
+    let approval = format!("approval: {}", choices.approval.value.name());
+    match choices.sandbox.value {
         Some(level) => {
-            let network = if args.network { " + network" } else { "" };
+            let network = if network { " + network" } else { "" };
             format!("{approval} · sandbox: {}{network}", level.name())
         }
         None => approval,

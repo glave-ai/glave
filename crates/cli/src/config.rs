@@ -1,4 +1,5 @@
 //! Where the model is, from the environment. Keys come only from the environment, never files.
+//! Which model is chosen in `policy`, nearest wins.
 
 use std::time::Duration;
 
@@ -18,12 +19,14 @@ pub struct Endpoint {
     pub local: bool,
 }
 
-pub fn endpoint(model_flag: Option<String>) -> anyhow::Result<Endpoint> {
+/// The endpoint for `model`, the model chosen; an error saying how to choose one when none is.
+pub fn endpoint(model: Option<String>) -> anyhow::Result<Endpoint> {
     let base_url = std::env::var("GLAVE_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned());
-    let Some(model) = model_flag.or_else(|| std::env::var("GLAVE_MODEL").ok()) else {
+    let Some(model) = model else {
         bail!(
-            "no model chosen: set GLAVE_MODEL or pass --model (for example gemma4:12b with \
-             Ollama, or an OpenRouter model id with GLAVE_BASE_URL=https://openrouter.ai/api/v1)"
+            "no model chosen: set GLAVE_MODEL, pass --model, or set model in config.toml (for \
+             example gemma4:12b with Ollama, or an OpenRouter model id with \
+             GLAVE_BASE_URL=https://openrouter.ai/api/v1)"
         );
     };
     let api_key = std::env::var("GLAVE_API_KEY")
@@ -124,20 +127,6 @@ pub fn context_window() -> anyhow::Result<Option<u64>> {
     }
 }
 
-/// The model that judges flagged actions in auto mode, from `GLAVE_JUDGE_MODEL`: the main
-/// model when it is not set, and no judge at all when it is `off`.
-pub fn judge_model(main: &str) -> Option<String> {
-    judge_from(std::env::var("GLAVE_JUDGE_MODEL").ok().as_deref(), main)
-}
-
-fn judge_from(setting: Option<&str>, main: &str) -> Option<String> {
-    match setting.map(str::trim) {
-        None | Some("") => Some(main.to_owned()),
-        Some("off") => None,
-        Some(model) => Some(model.to_owned()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,13 +170,5 @@ mod tests {
                 .unwrap()
                 .contains("running on this computer")
         );
-    }
-
-    #[test]
-    fn the_judge_is_the_main_model_unless_named_or_off() {
-        assert_eq!(judge_from(None, "m").as_deref(), Some("m"));
-        assert_eq!(judge_from(Some(" "), "m").as_deref(), Some("m"));
-        assert_eq!(judge_from(Some("small"), "m").as_deref(), Some("small"));
-        assert_eq!(judge_from(Some("off"), "m"), None);
     }
 }

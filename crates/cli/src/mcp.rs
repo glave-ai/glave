@@ -1,15 +1,17 @@
 //! The MCP servers in glave's settings, `mcp.json` in glave's folder: started in the background
-//! with the session, waited for before the first turn, and closed when glave ends.
+//! with the session, waited for before the first turn, and closed when glave ends. A
+//! `config.toml` may turn on only some of them, and a policy may forbid them all.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use anyhow::Context as _;
-use glave_mcp::{Limits, McpServer, Resources};
+use anyhow::{Context as _, bail};
+use glave_mcp::{Limits, McpServer, Resources, ServerConfig};
 use glave_ports::ToolSource;
 
+use crate::policy::{Chosen, Constraints, check_own_servers};
 use crate::terminal::Printer;
 
 /// The settings file, in glave's folder.
@@ -22,8 +24,14 @@ pub struct Servers {
 }
 
 impl Servers {
-    /// Starts every server in `home`'s settings, in `root`. With no settings file there are none.
-    pub async fn start(home: &Path, root: &Path) -> anyhow::Result<Self> {
+    /// Starts the servers in `home`'s settings, in `root`: those `chosen`, or every one. With no
+    /// settings file there are none. Fails when `constraints` forbid any of them.
+    pub async fn start(
+        home: &Path,
+        root: &Path,
+        chosen: Option<&Chosen<Vec<String>>>,
+        constraints: &Constraints,
+    ) -> anyhow::Result<Self> {
         let path = home.join(FILE);
         let text = match tokio::fs::read_to_string(&path).await {
             Ok(text) => text,
@@ -41,6 +49,9 @@ impl Servers {
             glave_mcp::parse(&text, &environment)
                 .with_context(|| format!("in {}", path.display()))?
         };
+        let configs = turned_on(configs, chosen, &path)?;
+        let names: Vec<&str> = configs.keys().map(String::as_str).collect();
+        check_own_servers(&names, constraints)?;
         let servers = configs
             .iter()
             .map(|(name, config)| {
@@ -105,5 +116,62 @@ impl Servers {
             closing.spawn(async move { server.close().await });
         }
         while closing.join_next().await.is_some() {}
+    }
+}
+
+/// The servers of `configs` that `chosen` names, or all of them when it names none. A name
+/// with no server in the settings file is an error, so a typo never quietly turns one off.
+fn turned_on(
+    mut configs: BTreeMap<String, ServerConfig>,
+    chosen: Option<&Chosen<Vec<String>>>,
+    path: &Path,
+) -> anyhow::Result<BTreeMap<String, ServerConfig>> {
+    let Some(chosen) = chosen else {
+        return Ok(configs);
+    };
+    let missing: Vec<&str> = chosen
+        .value
+        .iter()
+        .filter(|name| !configs.contains_key(*name))
+        .map(String::as_str)
+        .collect();
+    if !missing.is_empty() {
+        bail!(
+            "mcp (from {}) names servers {} has no settings for: {}",
+            chosen.from,
+            path.display(),
+            missing.join(", ")
+        );
+    }
+    configs.retain(|name, _| chosen.value.contains(name));
+    Ok(configs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::policy::tests::constraints;
+
+    #[test]
+    fn a_policy_that_forbids_people_s_own_servers_stops_them_starting() {
+        let home = std::env::temp_dir().join(format!("glave-mcp-policy-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        let servers = r#"{"mcpServers": {"mine": {"command": "/nonexistent/server"}}}"#;
+        std::fs::write(home.join(FILE), servers).unwrap();
+        let forbidden = constraints("version = 1\n[mcp]\nown = false\n");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let start = |chosen| runtime.block_on(Servers::start(&home, &home, chosen, &forbidden));
+        let refused = start(None).err().unwrap().to_string();
+        assert!(
+            refused.contains("mine") && refused.contains("[mcp] own = false"),
+            "{refused}"
+        );
+        let none = Chosen {
+            value: Vec::new(),
+            from: crate::policy::Source::Default,
+        };
+        assert_eq!(start(Some(&none)).unwrap().names(), Vec::<&str>::new());
     }
 }
