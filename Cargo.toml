@@ -38,6 +38,8 @@ allow_attributes_without_reason = "deny"
 
 [workspace.dependencies]
 anyhow = "1"
+# Only for tests: signing tokens as a fake identity provider. rustls already builds it.
+aws-lc-rs = { version = "1", default-features = false, features = ["aws-lc-sys", "ring-io"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
 glave-event = { path = "crates/event" }
 glave-harness = { path = "crates/harness" }
@@ -53,6 +55,8 @@ http = "1"
 hyper = { version = "1", default-features = false }
 hyper-util = { version = "0.1", default-features = false }
 ignore = "0.4"
+# Verifying OIDC tokens, on aws-lc-rs, the crypto rustls already uses.
+jsonwebtoken = { version = "11.1", default-features = false, features = ["aws_lc_rs"] }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
 proptest = "1"
 regex = "1"

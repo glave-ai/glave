@@ -34,7 +34,12 @@ pub enum Request {
         limit: Option<usize>,
     },
     #[serde(rename = "turn/start")]
-    TurnStart { thread: ThreadId, prompt: String },
+    TurnStart {
+        thread: ThreadId,
+        prompt: String,
+        #[serde(rename = "_meta", default, skip_serializing_if = "Meta::is_empty")]
+        meta: Meta,
+    },
     #[serde(rename = "turn/cancel")]
     TurnCancel { thread: ThreadId },
     #[serde(rename = "thread/compact")]
@@ -52,6 +57,75 @@ pub enum Request {
         question: CallId,
         answers: Vec<String>,
     },
+}
+
+impl Request {
+    /// The method's name, as JSON-RPC and the `Glave-Method` header carry it.
+    pub fn method(&self) -> &'static str {
+        match self {
+            Self::Discover {} => "server/discover",
+            Self::ThreadStart {} => "thread/start",
+            Self::ThreadList { .. } => "thread/list",
+            Self::ThreadGet { .. } => "thread/get",
+            Self::ThreadEvents { .. } => "thread/events",
+            Self::TurnStart { .. } => "turn/start",
+            Self::TurnCancel { .. } => "turn/cancel",
+            Self::ThreadCompact { .. } => "thread/compact",
+            Self::ApprovalDecide { .. } => "approval/decide",
+            Self::QuestionAnswer { .. } => "question/answer",
+        }
+    }
+}
+
+/// What a request may carry besides its params, in `params._meta`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Meta {
+    /// For `turn/start`: the same key for the same thread returns the turn already started
+    /// instead of starting another, so a client may retry safely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<IdempotencyKey>,
+}
+
+impl Meta {
+    fn is_empty(&self) -> bool {
+        self.idempotency_key.is_none()
+    }
+}
+
+/// A client's name for one attempt at a turn: 1 to 255 bytes of text.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct IdempotencyKey(String);
+
+impl IdempotencyKey {
+    /// The longest key, in bytes.
+    pub const MAX: usize = 255;
+
+    pub fn new(key: impl Into<String>) -> Result<Self, String> {
+        let key = key.into();
+        if key.is_empty() || key.len() > Self::MAX {
+            return Err(format!(
+                "an idempotency key is 1 to {} bytes, got {}",
+                Self::MAX,
+                key.len()
+            ));
+        }
+        Ok(Self(key))
+    }
+}
+
+impl TryFrom<String> for IdempotencyKey {
+    type Error = String;
+
+    fn try_from(key: String) -> Result<Self, Self::Error> {
+        Self::new(key)
+    }
+}
+
+impl From<IdempotencyKey> for String {
+    fn from(key: IdempotencyKey) -> Self {
+        key.0
+    }
 }
 
 /// The person's answer to an approval.
@@ -285,6 +359,8 @@ pub mod code {
     pub const NO_APPROVAL: i64 = -32004;
     pub const NO_QUESTION: i64 = -32006;
     pub const CANCELLED: i64 = -32005;
+    /// No valid sign-in, on a network transport.
+    pub const NO_SIGN_IN: i64 = -32013;
     pub const PROVIDER: i64 = -32020;
 }
 

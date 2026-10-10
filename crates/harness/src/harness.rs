@@ -16,6 +16,7 @@ use thiserror::Error;
 
 use crate::approval::{ApprovalMode, Approver};
 use crate::builtins::Builtins;
+use crate::caller::Caller;
 use crate::compaction::{Compaction, Measured};
 use crate::env::{Clock, Entropy};
 use crate::prompt::system_prompt;
@@ -241,7 +242,18 @@ where
 
     /// Starts a new thread in `scope` and records `thread.started`.
     pub async fn start_thread(&self, scope: Scope) -> Result<Thread, HarnessError> {
-        self.start_thread_from(scope, None).await
+        self.start_thread_from(scope, None, &Caller::default())
+            .await
+    }
+
+    /// Starts a new thread for `caller`, recorded as the thread's `origin.by` when they are
+    /// not the person it is for.
+    pub async fn start_thread_as(
+        &self,
+        scope: Scope,
+        caller: &Caller,
+    ) -> Result<Thread, HarnessError> {
+        self.start_thread_from(scope, None, caller).await
     }
 
     /// Starts a thread, recording the call in another thread that started it, if one did.
@@ -249,6 +261,7 @@ where
         &self,
         scope: Scope,
         parent: Option<ParentCall>,
+        caller: &Caller,
     ) -> Result<Thread, HarnessError> {
         let id = ThreadId::new(self.clock.now(), self.entropy.bytes())?;
         let mut thread = Thread {
@@ -263,6 +276,12 @@ where
             delegated: parent.is_some(),
         };
         let mut events = Vec::new();
+        let mut origin = Origin::of(if parent.is_some() {
+            OriginKind::Subagent
+        } else {
+            OriginKind::Prompt
+        });
+        origin.by = self.other_than_for(caller.person);
         let producer = Producer {
             name: "glave".into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -271,11 +290,7 @@ where
             &thread,
             &mut events,
             &ThreadStarted {
-                origin: Origin::of(if parent.is_some() {
-                    OriginKind::Subagent
-                } else {
-                    OriginKind::Prompt
-                }),
+                origin,
                 producer,
                 fork: None,
                 parent,

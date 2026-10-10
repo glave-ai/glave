@@ -44,7 +44,7 @@ crates/store-postgres/  glave-store-postgres: the event log and blob store on Po
 crates/shell/       glave-shell: shell commands read before they run (tree-sitter-bash): read-only, risky with a reason, or neither
 crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`)
 crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash), approvals, resume, AGENTS.md, the opt-in sandbox
-crates/session/     glave-session: the session API (specs/session.md); every surface, the CLI first, runs threads through it
+crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC sign-in; every surface, the CLI first, runs threads through it
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
