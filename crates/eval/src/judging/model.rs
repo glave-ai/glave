@@ -76,9 +76,10 @@ pub(crate) async fn decide_all<P: ModelProvider + 'static>(
                     action: &action,
                     flagged: &reason,
                 },
+                Vec::new(),
             )
             .await;
-            let label = match ruling {
+            let label = match ruling.0 {
                 Ruling::Run { .. } => Label::Allow,
                 Ruling::Ask { .. } => Label::Ask,
             };

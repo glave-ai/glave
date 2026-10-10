@@ -3,10 +3,12 @@
 
 use std::future::Future;
 
-use glave_event::{Arguments, CallId, Cost, ModelRef, Part, StopReason, Usage};
+use glave_event::{Arguments, CallId, Cost, ModelRef, Part, StopReason, ThreadId, Usage};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
+
+use crate::failure::Failure;
 
 /// A model that can answer a conversation.
 pub trait ModelProvider: Send + Sync {
@@ -32,6 +34,44 @@ pub struct ModelRequest {
     pub tool_choice: ToolChoice,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_output_tokens: Option<u32>,
+    /// What the call is for, so a gateway can choose the model for it. Providers ignore it.
+    #[serde(default, skip_serializing_if = "Purpose::is_main")]
+    pub purpose: Purpose,
+    /// The thread the call is made for, then the threads that started it, innermost first:
+    /// whose budgets it counts against. Providers ignore it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub threads: Vec<ThreadId>,
+}
+
+/// What a model call is for. A stable public vocabulary: gateway routes are named by it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Purpose {
+    /// The agent's own turn.
+    #[default]
+    Main,
+    /// Deciding whether a flagged action the person asked for may run (auto mode).
+    Judge,
+    /// A compaction's handoff summary.
+    Summary,
+    /// A subagent's turn.
+    Subagent,
+}
+
+impl Purpose {
+    /// The purpose's stable id: `main`, `judge`, `summary` or `subagent`.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Main => "main",
+            Self::Judge => "judge",
+            Self::Summary => "summary",
+            Self::Subagent => "subagent",
+        }
+    }
+
+    pub fn is_main(&self) -> bool {
+        *self == Self::Main
+    }
 }
 
 /// Whether a response may call tools.
@@ -103,8 +143,23 @@ pub struct Completion {
     pub stop: StopReason,
     pub provider_stop: Option<String>,
     pub usage: Usage,
-    /// The cost the provider itself reported, when it reports one (OpenRouter does).
+    /// The cost the provider itself reported, when it reports one (OpenRouter does), or a
+    /// gateway computed from a configured price.
     pub cost: Option<Cost>,
+    /// How a gateway served the call; `None` when no gateway was in between.
+    pub served: Option<Served>,
+}
+
+/// How a gateway served a call: the route it was sent by and the target that answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Served {
+    /// The route's id: the call's purpose, such as `main` or `judge`.
+    pub route: String,
+    /// The name of the target that answered.
+    pub target: String,
+    /// True when opaque reasoning was left out of the request because the target that
+    /// answered could not accept it.
+    pub reasoning_stripped: bool,
 }
 
 /// A tool call the model just asked for. The harness gives it a glave call id when it
@@ -131,4 +186,11 @@ pub enum ProviderError {
     /// The provider sent nothing for this long, before or during its answer.
     #[error("the model provider sent nothing for {seconds} s")]
     Timeout { seconds: u64 },
+    /// A gateway sent nothing: no target could serve the request. `failure` says why, in the
+    /// terms a provider's own refusal would have used.
+    #[error("no model could serve the request: {reason}")]
+    Unserved { failure: Failure, reason: String },
+    /// A gateway sent nothing: the call could exceed this budget.
+    #[error("the {budget} budget would be exceeded: {detail}")]
+    OverBudget { budget: String, detail: String },
 }

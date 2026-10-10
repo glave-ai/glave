@@ -5,8 +5,8 @@
 
 use std::fmt::Write as _;
 
-use glave_event::Part;
-use glave_ports::{Message, ModelProvider, ModelRequest, ToolChoice};
+use glave_event::{Part, ThreadId};
+use glave_ports::{Completion, Message, ModelProvider, ModelRequest, Purpose, ToolChoice};
 use serde::Deserialize;
 
 /// The most of the person's words the judge reads: their latest messages, each cut short.
@@ -52,8 +52,16 @@ pub enum Ruling {
     Ask { reason: String },
 }
 
-/// Asks `model` at `provider` to rule on `case`. Any failure is a ruling to ask.
-pub async fn judge<P: ModelProvider>(provider: &P, model: &str, case: &JudgeCase<'_>) -> Ruling {
+/// Asks `provider` to rule on `case`, as a `judge` call for `threads` (the thread the action
+/// is in, then the threads above it), naming `model` for a provider with no judge route of its
+/// own. Any failure is a ruling to ask. The answer comes back too, when there was one, so its
+/// usage can be recorded.
+pub async fn judge<P: ModelProvider>(
+    provider: &P,
+    model: &str,
+    case: &JudgeCase<'_>,
+    threads: Vec<ThreadId>,
+) -> (Ruling, Option<Completion>) {
     let request = ModelRequest {
         model: model.to_owned(),
         system: POLICY.to_owned(),
@@ -63,6 +71,8 @@ pub async fn judge<P: ModelProvider>(provider: &P, model: &str, case: &JudgeCase
         tools: Vec::new(),
         tool_choice: ToolChoice::None,
         max_output_tokens: Some(MOST_OUTPUT_TOKENS),
+        purpose: Purpose::Judge,
+        threads,
     };
     match provider.complete(&request, &mut |_| {}).await {
         Ok(completion) => {
@@ -74,11 +84,14 @@ pub async fn judge<P: ModelProvider>(provider: &P, model: &str, case: &JudgeCase
                     _ => None,
                 })
                 .collect();
-            read(&text)
+            (read(&text), Some(completion))
         }
-        Err(err) => Ruling::Ask {
-            reason: format!("the judge could not be reached ({err})"),
-        },
+        Err(err) => (
+            Ruling::Ask {
+                reason: format!("the judge could not be reached ({err})"),
+            },
+            None,
+        ),
     }
 }
 

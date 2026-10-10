@@ -6,6 +6,7 @@ mod asking;
 mod client;
 mod computer;
 mod config;
+mod gateway;
 mod home;
 mod identity;
 mod input;

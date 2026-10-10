@@ -10,11 +10,11 @@ use glave_ports::{
 
 use crate::approval::{ApprovalMode, ApprovalRequest, Approver, Decision, no_one_there};
 use crate::cancel::Cancel;
+use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
-use crate::toolset::ToolSet;
-use crate::turn::{Live, Step, absorb};
+use crate::turn::{Live, Step, TurnSummary, absorb, tally};
 
 /// The result of a tool call the turn never ran because the person cancelled it.
 pub(crate) const NOT_RUN: &str = "Not run: the person cancelled the turn.";
@@ -77,8 +77,7 @@ where
                     "You made this exact call several times in a row. Change your approach.",
                 )
             } else {
-                self.call_tool(thread, first, &step.toolset, cancel, live)
-                    .await?
+                self.call_tool(thread, first, step, cancel, live).await?
             };
             step.summary.tool_calls = step.summary.tool_calls.saturating_add(1);
             self.record_result(thread, first.call_id.clone(), output)
@@ -94,10 +93,11 @@ where
         &self,
         thread: &mut Thread,
         call: &ToolCall,
-        tools: &ToolSet,
+        step: &mut Step,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<ToolOutput, HarnessError> {
+        let tools = &step.toolset;
         if tools.is_question(&call.tool) {
             return Ok(self.put_questions(thread, call, cancel, live).await);
         }
@@ -132,7 +132,10 @@ where
                 summary: &summary,
                 reason,
             };
-            match self.judged(thread, &flagged, cancel).await? {
+            match self
+                .judged(thread, &flagged, &mut step.summary, cancel)
+                .await?
+            {
                 Judged::Cleared => caution = None,
                 Judged::Ask => {}
                 Judged::Cancelled => return Ok(ToolOutput::text(true, NOT_RUN)),
@@ -202,11 +205,13 @@ where
     }
 
     /// In auto mode with a judge, asks it whether a soft caution may run because the person
-    /// asked for it. A cleared action is recorded as an approval glave decided.
+    /// asked for it. The judge's call is recorded and counted in the turn, as model usage this
+    /// thread caused; a cleared action is recorded as an approval glave decided.
     async fn judged(
         &self,
         thread: &mut Thread,
         flagged: &Flagged<'_>,
+        turn: &mut TurnSummary,
         cancel: &Cancel,
     ) -> Result<Judged, HarnessError> {
         let Flagged {
@@ -215,10 +220,7 @@ where
             summary,
             reason,
         } = *flagged;
-        let Some(model) = self.settings.judge.as_deref() else {
-            return Ok(Judged::Ask);
-        };
-        if self.settings.approval != ApprovalMode::Auto {
+        if !self.settings.judge || self.settings.approval != ApprovalMode::Auto {
             return Ok(Judged::Ask);
         }
         let case = JudgeCase {
@@ -227,9 +229,16 @@ where
             action: summary,
             flagged: reason,
         };
-        let Some(ruling) = cancel.run(judge(&self.provider, model, &case)).await else {
+        let model = &self.settings.model;
+        let asking = judge(&self.provider, model, &case, thread.lineage());
+        let Some((ruling, answer)) = cancel.run(asking).await else {
             return Ok(Judged::Cancelled);
         };
+        if let Some(answer) = &answer {
+            turn.model_calls = turn.model_calls.saturating_add(1);
+            tally(turn, answer);
+            self.record(thread, &responded(answer)).await?;
+        }
         let Ruling::Run { reason: why } = ruling else {
             return Ok(Judged::Ask);
         };

@@ -28,8 +28,8 @@ pub use failure::Failure;
 pub use log::{EventLog, LogError, check_append};
 pub use memory::{MemoryBlobs, MemoryLog, MemoryTools};
 pub use model::{
-    Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, RequestedCall,
-    ToolCall, ToolChoice, ToolSpec,
+    Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose, RequestedCall,
+    Served, ToolCall, ToolChoice, ToolSpec,
 };
 pub use scope::{OrgId, Scope, SpaceId};
 pub use tools::{

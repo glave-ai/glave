@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 
 use glave_ports::{
     BlobStore, Completion, EventLog, Failure, Message, ModelProvider, ModelRequest, ProviderError,
-    ToolChoice, ToolSpec,
+    Purpose, ToolChoice, ToolSpec,
 };
 
 use crate::approval::Approver;
@@ -242,6 +242,8 @@ where
             tools: offer.specs.clone(),
             tool_choice: ToolChoice::None,
             max_output_tokens: Some(self.summary_tokens()),
+            purpose: Purpose::Summary,
+            threads: thread.lineage(),
         };
         let completion = self.summarize(request, cancel).await?;
         let summary: Vec<&str> = completion
@@ -323,8 +325,10 @@ where
     }
 }
 
-/// The content-free record of a model call.
+/// The content-free record of a model call, with the gateway route and target that served
+/// it when a gateway did.
 pub(crate) fn responded(completion: &Completion) -> ModelResponded {
+    let served = completion.served.as_ref();
     ModelResponded {
         model: completion.model.clone(),
         response_id: completion.response_id.clone(),
@@ -332,6 +336,9 @@ pub(crate) fn responded(completion: &Completion) -> ModelResponded {
         provider_stop: completion.provider_stop.clone(),
         usage: completion.usage.clone(),
         cost: completion.cost.clone(),
+        route: served.map(|served| served.route.clone()),
+        target: served.map(|served| served.target.clone()),
+        reasoning_stripped: served.is_some_and(|served| served.reasoning_stripped),
     }
 }
 

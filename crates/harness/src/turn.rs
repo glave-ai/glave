@@ -6,7 +6,7 @@ use glave_event::{
 };
 use glave_ports::{
     BlobStore, BoxFuture, Completion, Delta, EventLog, Failure, Message, ModelProvider,
-    ModelRequest, ProviderError, ToolCall, ToolChoice, ToolSpec,
+    ModelRequest, ProviderError, Purpose, ToolCall, ToolChoice, ToolSpec,
 };
 use std::time::Duration;
 
@@ -376,7 +376,7 @@ where
         self.commit(thread, events).await?;
         thread.messages.push(Message::User { parts });
         thread.request = Some(prompt.to_owned());
-        if !thread.delegated {
+        if !thread.delegated() {
             thread.asked.push(prompt.to_owned());
         }
         Ok(())
@@ -397,6 +397,12 @@ where
             tools: offer.specs.clone(),
             tool_choice,
             max_output_tokens: self.settings.max_output_tokens,
+            purpose: if thread.delegated() {
+                Purpose::Subagent
+            } else {
+                Purpose::Main
+            },
+            threads: thread.lineage(),
         };
         let retries = self.settings.retries;
         let mut retry = 0;
@@ -507,7 +513,7 @@ pub(crate) fn absorb(summary: &mut TurnSummary, child: &TurnSummary) {
     };
 }
 
-fn tally(summary: &mut TurnSummary, completion: &Completion) {
+pub(crate) fn tally(summary: &mut TurnSummary, completion: &Completion) {
     let counts = completion.usage.counts();
     let total = &mut summary.tokens;
     total.input = total.input.saturating_add(counts.input);

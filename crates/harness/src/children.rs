@@ -81,6 +81,7 @@ where
         // A child may do what the parent was allowed to, and no more, on the person's word.
         child.allowed = parent.allowed.clone();
         child.asked = parent.asked.clone();
+        child.above.extend_from_slice(&parent.above);
         let id = child.id;
         let send = |update: Live| {
             let mut live = live.lock().unwrap_or_else(PoisonError::into_inner);

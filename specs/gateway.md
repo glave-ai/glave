@@ -4,7 +4,9 @@ The single door out for model calls: which model serves each purpose, with whose
 
 ## Status
 
-Draft, specified ahead of the code. Today the harness calls one OpenAI-compatible provider directly, and the judge uses the main model unless `GLAVE_JUDGE_MODEL` names another.
+In-process gateway built (`crates/gateway`): routes by purpose, capability-checked and reasoning-sticky fallback, reserve-then-settle budgets held in memory (organization, person, and each thread within the threads above it), and `model.responded` version 2 recording the route, the target and any reasoning stripped. The harness sends every call with its purpose and the threads it counts in; the judge's calls are recorded in the thread whose action they judged. The CLI builds the gateway from `GLAVE_MODEL` (`main`) and `GLAVE_JUDGE_MODEL` (`judge`, when it names another model), with no budgets, so nothing changes by default.
+
+Not built yet: `glave gateway serve` and its OpenAI and Anthropic inbound surfaces, grouping stateless calls into threads, credential sources beyond the environment key, Bedrock, Azure and Vertex targets, the policy allow-list, typed TOML configuration, space-level budgets, and instruction-count gates for the overhead benchmark (`cargo xtask bench --bench overhead` measures wall-clock time today).
 
 ## Routes
 

@@ -158,6 +158,7 @@ impl Assembler {
             provider_stop: self.finish,
             usage,
             cost,
+            served: None,
         })
     }
 }

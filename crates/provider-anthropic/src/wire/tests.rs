@@ -43,6 +43,8 @@ fn request(messages: Vec<Message>) -> ModelRequest {
         tools: Vec::new(),
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        threads: Vec::new(),
     }
 }
 
