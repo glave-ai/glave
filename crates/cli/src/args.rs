@@ -3,7 +3,9 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
-use glave_harness::{ApprovalMode, SandboxLevel};
+use glave_harness::ApprovalMode;
+
+use crate::policy::SandboxChoice;
 
 pub const USAGE: &str = "\
 glave: run hope, or any model, on the project in this folder
@@ -19,6 +21,8 @@ Usage:
                                 The address is host:port, or a port on 127.0.0.1; the
                                 listener has no TLS, so put it behind a proxy that has.
                                 --issuer may be given more than once
+  glave policy explain [options] show every setting and where it came from, and every
+                                constraint and the policy file that set it
 
 Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)
@@ -27,7 +31,7 @@ Options:
                      files asks) or ask (every change and command asks). With no one at
                      the keyboard, anything that would ask is declined
   --sandbox <level>  run commands in the macOS sandbox: read-only, or project (writes only
-                     the project and temp folder); never reads secret locations
+                     the project and temp folder), or off; never reads secret locations
   --network          let sandboxed commands use the network
   --max-steps <n>    end each turn after n model calls, the last one a text report of
                      what is done and what is left (default: no limit)
@@ -52,6 +56,10 @@ Environment:
                      flagged may run because you asked for it (default: the main model;
                      `off` to always ask)
 
+Settings: config.toml in GLAVE_HOME may set model, judge_model, approval, sandbox and
+mcp (the servers in mcp.json to turn on); flags and the environment win over it. An
+organization's policy at /etc/glave/policy.toml limits what may be chosen.
+
 A new thread starts with your AGENTS.md (in GLAVE_HOME), then every AGENTS.md from the
 repository's root down to this folder.
 
@@ -69,6 +77,8 @@ pub enum Action {
     Run,
     /// Serve the session API to another program over stdin and stdout.
     Serve,
+    /// Explain the settings and the policy.
+    Explain,
     Help,
     Version,
 }
@@ -80,8 +90,8 @@ pub struct Args {
     pub model: Option<String>,
     /// How much to ask before acting; `auto` when not given.
     pub approval: Option<ApprovalMode>,
-    /// Run commands in the sandbox at this level.
-    pub sandbox: Option<SandboxLevel>,
+    /// Run commands in the sandbox at this level, or not at all.
+    pub sandbox: Option<SandboxChoice>,
     /// Let sandboxed commands use the network.
     pub network: bool,
     /// Model calls one turn may make; no limit when not given.
@@ -105,6 +115,12 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
     let mut rest = arguments.into_iter().peekable();
     // `serve` is a subcommand only as the first word; a prompt starting with it goes after `--`.
     let serving = rest.next_if(|first| first == "serve").is_some();
+    if !serving && rest.next_if(|first| first == "policy").is_some() {
+        if rest.next_if(|second| second == "explain").is_none() {
+            return Err("glave policy takes one command: explain".into());
+        }
+        args.action = Action::Explain;
+    }
     let mut stdio = false;
     while let Some(argument) = rest.next() {
         match argument.as_str() {
@@ -122,9 +138,9 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--sandbox" => {
                 let level = rest
                     .next()
-                    .ok_or("--sandbox needs a level: read-only or project")?;
-                args.sandbox = Some(SandboxLevel::named(&level).ok_or_else(|| {
-                    format!("unknown sandbox level {level:?}: use read-only or project")
+                    .ok_or("--sandbox needs a level: read-only, project or off")?;
+                args.sandbox = Some(SandboxChoice::named(&level).ok_or_else(|| {
+                    format!("unknown sandbox level {level:?}: use read-only, project or off")
                 })?);
             }
             "--network" => args.network = true,
@@ -148,10 +164,13 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             _ => words.push(argument),
         }
     }
-    if args.network && args.sandbox.is_none() {
-        return Err("--network only applies with --sandbox".into());
+    if args.network && args.sandbox == Some(SandboxChoice::Off) {
+        return Err("--network only applies with a sandbox".into());
     }
     args.prompt = words.join(" ");
+    if args.action == Action::Explain && (!args.prompt.is_empty() || args.resume) {
+        return Err("glave policy explain takes no prompt or --continue".into());
+    }
     if serving && args.action == Action::Run {
         transport(&args, stdio)?;
         args.action = Action::Serve;
@@ -223,13 +242,19 @@ mod tests {
     #[test]
     fn the_sandbox_takes_a_level_and_optional_network() {
         let args = parse_words(&["--sandbox", "project", "--network", "go"]).unwrap();
-        assert_eq!(args.sandbox, Some(SandboxLevel::Project));
+        assert_eq!(args.sandbox, Some(SandboxChoice::Project));
         assert!(args.network);
+        let off = parse_words(&["--sandbox", "off", "go"]).unwrap();
+        assert_eq!(off.sandbox, Some(SandboxChoice::Off));
         assert!(parse_words(&["--sandbox", "everything"]).is_err());
         assert!(parse_words(&["--sandbox"]).is_err());
         assert!(
-            parse_words(&["--network"]).is_err(),
+            parse_words(&["--sandbox", "off", "--network"]).is_err(),
             "network needs a sandbox"
+        );
+        assert!(
+            parse_words(&["--network"]).is_ok(),
+            "a config file may choose the sandbox"
         );
     }
 
@@ -318,6 +343,18 @@ mod tests {
                 .unwrap_err()
                 .contains("needs a number")
         );
+    }
+
+    #[test]
+    fn policy_explain_is_a_command_that_takes_the_choice_flags() {
+        let explain = parse_words(&["policy", "explain", "--approval", "ask"]).unwrap();
+        assert_eq!(explain.action, Action::Explain);
+        assert_eq!(explain.approval, Some(ApprovalMode::Ask));
+        assert!(parse_words(&["policy"]).is_err());
+        assert!(parse_words(&["policy", "show"]).is_err());
+        assert!(parse_words(&["policy", "explain", "why"]).is_err());
+        let prompt = parse_words(&["explain", "policy"]).unwrap();
+        assert_eq!(prompt.action, Action::Run);
     }
 
     #[test]

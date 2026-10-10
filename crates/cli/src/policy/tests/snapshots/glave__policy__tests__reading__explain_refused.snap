@@ -1,0 +1,26 @@
+---
+source: crates/cli/src/policy/tests/reading.rs
+expression: refused
+---
+Settings (the nearest wins: flags, environment, project, person, default)
+  model        acme-large  from GLAVE_MODEL
+  judge_model  acme-small  from /home/ada/.glave/config.toml
+  approval     ask         from --approval
+  sandbox      project     from default, narrowed by /etc/glave/policy.toml
+  mcp          ["github"]  from /home/ada/.glave/config.toml
+
+Config files
+  /home/ada/.glave/config.toml
+  /code/app/.glave/config.toml (not used: glave cannot trust a project's settings yet)
+
+Constraints (they only narrow, and a deny always wins)
+  [models] allow = ["acme/*"]         from /etc/glave/policy.toml
+  [models] deny = ["acme/old-*"]      from /etc/glave/policy.toml
+  [approval] modes = ["ask", "auto"]  from /etc/glave/policy.toml
+  [approval] judge = "required"       from /etc/glave/policy.toml
+  [sandbox] required = true           from /etc/glave/policy.toml
+  [approval] modes = ["ask"]          from /srv/space/policy.toml
+
+glave will not run here:
+  model other/acme-large (from GLAVE_MODEL) is not allowed: [models] allow = ["acme/*"] in /etc/glave/policy.toml
+  model other/acme-small (from /home/ada/.glave/config.toml) is not allowed: [models] allow = ["acme/*"] in /etc/glave/policy.toml

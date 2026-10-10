@@ -25,11 +25,15 @@ glave-provider-anthropic.workspace = true
 glave-provider-openai.workspace = true
 glave-session.workspace = true
 glave-store-sqlite.workspace = true
+globset.workspace = true
+serde.workspace = true
 tokio = { workspace = true, features = ["fs", "io-std", "io-util", "net", "rt", "signal", "sync", "time"] }
+toml.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 glave-provider-openai = { workspace = true, features = ["fake-server"] }
+insta.workspace = true
 serde_json.workspace = true
 
 [[bench]]
