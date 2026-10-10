@@ -8,6 +8,7 @@ mod config;
 mod home;
 mod identity;
 mod input;
+mod keys;
 mod mcp;
 mod model;
 mod session;

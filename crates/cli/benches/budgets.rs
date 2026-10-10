@@ -14,6 +14,7 @@ use glave_event::{Arguments, ModelRef, Part, StopReason, TokenCounts, Usage};
 use glave_harness::{
     AllowAll, Cancel, Harness, OsEntropy, Parts, Settings, SystemClock, Workspace,
 };
+use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError, RequestedCall};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 
@@ -119,7 +120,11 @@ async fn threads(dir: &Path) -> anyhow::Result<(Duration, Duration)> {
     std::fs::create_dir_all(&project)?;
     std::fs::write(project.join("README.md"), "A line of notes.\n".repeat(80))?;
     let database = dir.join("bench.db");
-    let store = Store::open(&database).await?;
+    let keys = || -> anyhow::Result<KeySettings> {
+        let root = KeyFileRoot::open_or_create(database.with_extension("key"))?;
+        Ok(KeySettings::new(std::sync::Arc::new(root)))
+    };
+    let store = Store::open(&database, keys()?).await?;
     let scope = store.local_scope(&project, uuid(1), uuid(2)).await?;
     let harness = harness_on(&store, &project).await?;
     let mut thread = harness.start_thread(scope).await?;
@@ -133,7 +138,7 @@ async fn threads(dir: &Path) -> anyhow::Result<(Duration, Duration)> {
     let mut resumes = Vec::with_capacity(RESUMES);
     for _ in 0..RESUMES {
         let started = Instant::now();
-        let store = Store::open(&database).await?;
+        let store = Store::open(&database, keys()?).await?;
         let fresh = harness_on(&store, &project).await?;
         let again = fresh.resume_thread(scope, thread.id).await?;
         resumes.push(started.elapsed());

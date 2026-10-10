@@ -15,8 +15,13 @@ pub fn folder() -> anyhow::Result<PathBuf> {
     }
 }
 
-/// The database file, in glave's folder. The folder is created readable only by you, since
-/// the database is not yet encrypted.
+/// Whether `GLAVE_HOME` moved glave's folder from `~/.glave`.
+pub fn relocated() -> bool {
+    std::env::var_os("GLAVE_HOME").is_some()
+}
+
+/// The database file, in glave's folder. The folder is created readable only by you: content
+/// is sealed, but the envelope of each event is not yet.
 pub async fn database() -> anyhow::Result<PathBuf> {
     let home = folder()?;
     let mut builder = tokio::fs::DirBuilder::new();

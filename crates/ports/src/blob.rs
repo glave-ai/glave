@@ -2,7 +2,7 @@
 
 use std::future::Future;
 
-use glave_event::{BlobRef, Sha256};
+use glave_event::{BlobRef, Sha256, ThreadId};
 use sha2::Digest as _;
 use thiserror::Error;
 
@@ -10,11 +10,14 @@ use crate::scope::Scope;
 
 /// Holds content by hash: turn configurations, large tool outputs, files.
 pub trait BlobStore: Send + Sync {
-    /// Stores `bytes` and returns a reference to them. Storing the same bytes twice returns
-    /// the same reference and keeps one copy.
+    /// Stores `bytes` for `thread`, which references them, and returns a reference to them.
+    /// Storing the same bytes twice returns the same reference and keeps one copy; each
+    /// thread that stores them is recorded, so erasing a thread can find the blobs only it
+    /// used.
     fn put(
         &self,
         scope: &Scope,
+        thread: ThreadId,
         bytes: Vec<u8>,
         media_type: &str,
     ) -> impl Future<Output = Result<BlobRef, BlobError>> + Send;

@@ -38,6 +38,34 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (org, space, sha256)
     );
     ",
+    // 2: sealing. Blobs are stored under a name derived from their hash, sealed with
+    // `key_id` (NULL: stored as written, before sealing); the threads that use each blob; and
+    // the wrapped keys: one per organization, and one record of keys per space.
+    "
+    ALTER TABLE blobs RENAME COLUMN sha256 TO name;
+    ALTER TABLE blobs ADD COLUMN key_id text;
+
+    CREATE TABLE blob_threads (
+        org     uuid NOT NULL,
+        space   uuid NOT NULL,
+        name    text NOT NULL,
+        thread  uuid NOT NULL,
+        PRIMARY KEY (org, space, name, thread)
+    );
+
+    CREATE TABLE org_keys (
+        org      uuid  PRIMARY KEY,
+        wrapped  bytea NOT NULL
+    );
+
+    CREATE TABLE space_keys (
+        org       uuid   NOT NULL,
+        space     uuid   NOT NULL,
+        revision  bigint NOT NULL,
+        record    bytea  NOT NULL,
+        PRIMARY KEY (org, space)
+    );
+    ",
 ];
 
 /// The schema version this build writes.

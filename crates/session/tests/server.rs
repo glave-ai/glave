@@ -23,6 +23,12 @@ mod session {
 
     use super::support::*;
 
+    /// Keys under a key file beside `database`, so a second store on it reads the first's.
+    fn keys(database: &std::path::Path) -> glave_keys::KeySettings {
+        let root = glave_keys::KeyFileRoot::open_or_create(database.with_extension("key")).unwrap();
+        glave_keys::KeySettings::new(Arc::new(root))
+    }
+
     async fn new_thread<P, L, B>(server: &Server<P, L, B>) -> glave_event::ThreadId
     where
         P: ModelProvider + 'static,
@@ -266,7 +272,9 @@ mod session {
         let dir = folder("stateless");
         block_on(async {
             let database = dir.join("glave.db");
-            let first_store = glave_store_sqlite::Store::open(&database).await.unwrap();
+            let first_store = glave_store_sqlite::Store::open(&database, keys(&database))
+                .await
+                .unwrap();
             let first = server_on(
                 &dir,
                 vec![answer(Some("One."), None)],
@@ -287,7 +295,9 @@ mod session {
                 .unwrap();
             first.shutdown().await;
 
-            let second_store = glave_store_sqlite::Store::open(&database).await.unwrap();
+            let second_store = glave_store_sqlite::Store::open(&database, keys(&database))
+                .await
+                .unwrap();
             let second = server_on(
                 &dir,
                 vec![answer(Some("Two."), None)],
