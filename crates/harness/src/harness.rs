@@ -17,9 +17,11 @@ use thiserror::Error;
 use crate::approval::{ApprovalMode, Approver};
 use crate::builtins::Builtins;
 use crate::caller::Caller;
+use crate::commands::Command;
 use crate::compaction::{Compaction, Measured};
 use crate::env::{Clock, Entropy};
 use crate::goal::{GoalProgress, Pursuit};
+use crate::hooks::Hooks;
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
 use crate::tools::workspace::Workspace;
@@ -55,6 +57,9 @@ pub struct Settings {
     /// The person whose work every thread is: recorded as the thread's `for`. When `None`,
     /// the harness makes one id when it is created, used for all its threads.
     pub person: Option<PrincipalId>,
+    /// The commands the person can type as `/name arguments`: a prompt that names one is
+    /// sent as its body, with the arguments put in. None by default.
+    pub commands: Vec<Command>,
     /// The agent profile that runs every thread: recorded as the thread's `agent`. When
     /// `None`, made once like `person`.
     pub agent: Option<PrincipalId>,
@@ -79,6 +84,7 @@ impl Settings {
             judge: false,
             person: None,
             agent: None,
+            commands: Vec::new(),
         }
     }
 }
@@ -114,6 +120,8 @@ pub struct Harness<P, L, B, A> {
     pub(crate) workspace: Arc<Workspace>,
     /// Where tools come from: the built-in tools first, then any others, such as MCP servers.
     pub(crate) sources: Vec<Arc<dyn ToolSource>>,
+    /// Commands run at points of a turn; none by default.
+    pub(crate) hooks: Hooks,
     pub(crate) settings: Settings,
     /// Who every thread works for, and the agent that runs it: from the settings, or made once.
     pub(crate) actors: Actors,
@@ -186,6 +194,9 @@ pub enum HarnessError {
     Cancelled,
     #[error("thread {0} has no active goal")]
     NoGoal(ThreadId),
+    /// A `UserPromptSubmit` hook stopped the prompt; the model never saw it.
+    #[error("a hook stopped this prompt: {0}")]
+    PromptBlocked(String),
 }
 
 impl From<EncodeError> for HarnessError {
@@ -226,6 +237,7 @@ where
                 workspace: Arc::clone(&workspace),
             })],
             workspace,
+            hooks: Hooks::default(),
             settings,
             learned_window: AtomicU64::new(0),
         }
@@ -236,6 +248,13 @@ where
     #[must_use]
     pub fn with_tools(mut self, sources: Vec<Arc<dyn ToolSource>>) -> Self {
         self.sources.extend(sources);
+        self
+    }
+
+    /// Runs `hooks` at their points of every turn.
+    #[must_use]
+    pub fn with_hooks(mut self, hooks: Hooks) -> Self {
+        self.hooks = hooks;
         self
     }
 

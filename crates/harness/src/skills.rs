@@ -4,7 +4,7 @@
 //! descriptions until a task needs one; then `skill` loads its body. Scripts a skill mentions
 //! run only through bash, asked about like any other command.
 
-mod frontmatter;
+pub(crate) mod frontmatter;
 mod tool;
 
 use std::collections::HashMap;

@@ -85,6 +85,7 @@ Types are at version 1 unless the table says otherwise.
 | `approval.decided` | The person, or glave on their behalf, answered | `call_id`; `decision`: `allow_once`, `allow_for_thread`, `deny`, `no_one_there` (nothing to ask, so the call did not run) or `cancelled` (the turn was cancelled while it waited); optional `by` (version 2, see "Who acted") |
 | `goal.set` | The person set a goal: the thread keeps working across turns until it ends. It replaces any goal the thread had | `objective`, the person's words; optional `check`, a command whose success means the goal is met; `token_budget`, the tokens (in and out, subagents' included) its turns may use; optional `by` (see "Who acted") |
 | `goal.ended` | The thread's goal ended | `reason`: `met_by_check` (the check passed), `met_per_model` (no check; the model said so with `update_goal`), `stopped` (the person stopped it or cancelled its turn), `budget` (its token budget ran out) or `stalled` (three turns in a row without a tool call); `tokens`, what its turns used; optional `by` |
+| `hook.ran` | A hook (`approvals.md`, "Hooks") ran at a point of a turn | `point`: `pre_tool_use`, `post_tool_use`, `user_prompt_submit` or `stop`; `command`, as configured; optional `call_id`, the tool call it ran for; `result`: `passed`, `blocked` (it stopped the call or the prompt, or after a tool sent the model a reason) or `failed` (it could not run, timed out, or exited with neither 0 nor 2, and things went on as if it passed); optional `exit_code`; optional `reason`, the block's reason as the model or person was shown it, or why it failed. A `PreToolUse` block is also in the call's `tool.call.completed`, and a `PostToolUse` one in its output, so the conversation rebuilds from those alone |
 | `thread.compacted` | The conversation was summarized to fit the model's context window | `through`, the last `seq` the summary covers; `parts`, the message the conversation restarts from (the summary and the person's latest request). Rebuilding a conversation starts from the latest one; earlier events stay in the log |
 
 Details shared by several types:
@@ -135,7 +136,7 @@ A principal is anyone or anything that can act, written as a reference:
 
 A goal's continuation, the message glave writes to start each of its turns after the first, is a `message.added` with `author` `{"kind": "glave"}`: it is never read as the person's request.
 
-Every other event (tool calls, model responses, compaction) is the thread's `agent` acting for the thread's `for`, and carries no actor of its own.
+Every other event (tool calls, model responses, compaction) is the thread's `agent` acting for the thread's `for`, and carries no actor of its own. `hook.ran` is glave running a command the thread's `for` configured, or trusted their project to configure.
 
 A subagent's thread has the parent's `for`, the subagent's profile as `agent` (the parent's `agent` until profiles have ids of their own), and `origin.kind` `subagent`; its `parent` keeps naming the call that started it.
 

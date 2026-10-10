@@ -1,0 +1,1 @@
+{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000041","thread":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c14","seq":7,"at":"2026-10-10T12:00:00.000Z","type":"hook.ran","v":1,"data":{"point":"pre_tool_use","command":"./scripts/guard.sh","call_id":"call_5","result":"blocked","exit_code":2,"reason":"Edits to migrations/ need a review first."}}
