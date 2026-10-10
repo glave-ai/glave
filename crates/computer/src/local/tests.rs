@@ -30,7 +30,8 @@ fn safe_environment() -> Vec<(OsString, OsString)> {
 #[test]
 fn this_machine_passes_the_computers_suite() {
     let (work, copies) = scratch("suite");
-    let computers = LocalComputers::new(&copies, safe_environment());
+    let computers = LocalComputers::new(&copies, safe_environment())
+        .with_worktrees(copies.with_file_name("worktrees"));
     let verdict = block_on(conformance::computers(&computers, &work.to_string_lossy()));
     assert_eq!(verdict, Ok(()));
     let left = std::fs::read_dir(&copies).map_or(0, Iterator::count);

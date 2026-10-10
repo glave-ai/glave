@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::{Seq, ThreadId};
 use glave_harness::{
-    Caller, Clock, Entropy, Harness, HarnessError, Parts, Settings, TurnSummary, Workspace,
+    Caller, Clock, Entropy, Harness, HarnessError, Parts, Place, Settings, TurnSummary, Workspace,
 };
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, ToolSource};
 use tokio::sync::{broadcast, watch};
@@ -34,6 +34,9 @@ pub struct Wiring<P, L, B> {
     pub workspace: Workspace,
     /// Tools beside the built-in ones, such as MCP servers'.
     pub tools: Vec<Arc<dyn ToolSource>>,
+    /// Whether a new thread works in a worktree of its own unless `thread/start` says; off,
+    /// it works in the workspace itself.
+    pub worktree: bool,
 }
 
 /// A session server for one workspace and one scope. Clones share it.
@@ -54,6 +57,8 @@ pub(crate) type Glave<P, L, B> = Harness<P, Observed<L>, B, Approvals>;
 pub(crate) struct Inner<P, L, B> {
     pub(crate) harness: Glave<P, L, B>,
     pub(crate) scope: Scope,
+    /// Whether new threads get a worktree when `thread/start` does not say.
+    pub(crate) worktree: bool,
     pub(crate) hub: Arc<Hub>,
     pub(crate) approvals: Approvals,
     pub(crate) threads: Mutex<HashMap<ThreadId, Slot>>,
@@ -89,6 +94,7 @@ where
             inner: Arc::new(Inner {
                 harness: Harness::new(parts, settings).with_tools(wiring.tools),
                 scope,
+                worktree: wiring.worktree,
                 hub,
                 approvals,
                 threads: Mutex::new(HashMap::new()),
@@ -112,7 +118,7 @@ where
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 protocols: vec![PROTOCOL.to_owned()],
             })),
-            Request::ThreadStart {} => self.start_thread(caller).await,
+            Request::ThreadStart { worktree } => self.start_thread(caller, worktree).await,
             Request::ThreadList { limit } => self.list(limit).await,
             Request::ThreadGet { thread } => {
                 self.load(thread).await?;
@@ -198,11 +204,20 @@ where
         }
     }
 
-    async fn start_thread(&self, caller: &Caller) -> Result<Reply, ApiError> {
+    async fn start_thread(
+        &self,
+        caller: &Caller,
+        worktree: Option<bool>,
+    ) -> Result<Reply, ApiError> {
+        let place = if worktree.unwrap_or(self.inner.worktree) {
+            Place::Worktree
+        } else {
+            Place::Here
+        };
         let thread = self
             .inner
             .harness
-            .start_thread_as(self.inner.scope, caller)
+            .start_thread_in(self.inner.scope, caller, place)
             .await
             .map_err(|error| api(&error))?;
         let id = thread.id;
@@ -304,6 +319,7 @@ pub(crate) fn api(error: &HarnessError) -> ApiError {
         HarnessError::NotFound(thread) => no_thread(*thread),
         HarnessError::Cancelled => ApiError::new(code::CANCELLED, "cancelled"),
         HarnessError::NoGoal(_) => ApiError::new(code::NO_GOAL, error.to_string()),
+        HarnessError::Workspace(_) => ApiError::new(code::WORKSPACE, error.to_string()),
         _ => ApiError::new(code::INTERNAL, error.to_string()),
     }
 }

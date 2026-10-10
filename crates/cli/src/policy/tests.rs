@@ -71,7 +71,7 @@ fn each_choice_comes_from_the_nearest_level_that_sets_it() {
     };
     let project = file(
         PROJECT,
-        "model = \"project-model\"\nsandbox = \"read-only\"\n",
+        "model = \"project-model\"\nsandbox = \"read-only\"\nworktree = true\n",
     );
     let person = file(
         PERSON,
@@ -92,6 +92,10 @@ fn each_choice_comes_from_the_nearest_level_that_sets_it() {
     assert_eq!(choices.judge.value, Judge::Off);
     assert_eq!(choices.judge.from, file_source(PERSON));
     assert_eq!(choices.mcp.unwrap().from, file_source(PERSON));
+    assert_eq!(
+        (choices.worktree.value, choices.worktree.from),
+        (true, file_source(PROJECT))
+    );
 }
 
 #[test]
@@ -115,6 +119,11 @@ fn with_nothing_set_every_choice_is_the_default() {
         (None, Source::Default)
     );
     assert_eq!(choices.mcp, None);
+    assert_eq!(
+        (choices.worktree.value, choices.worktree.from),
+        (false, Source::Default),
+        "threads work in the folder itself unless asked"
+    );
     let flags_beat_files = choices::resolve(&layers(
         ConfigFile {
             sandbox: Some(SandboxChoice::Off),

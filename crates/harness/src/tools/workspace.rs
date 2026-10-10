@@ -12,7 +12,8 @@ use std::sync::{Arc, Mutex};
 use glave_event::Sha256;
 use glave_ports::{
     Bytes, Cancellation, Command, ComputerError, Computers, FileWrite, Finished, Glob, Globbed,
-    Listed, Listing, Output, Sandbox, Search, Searched, Stat, WorkspaceInfo, digest, is_protected,
+    Listed, Listing, Output, Sandbox, Search, Searched, Sources, Stat, WorkspaceInfo, digest,
+    is_protected,
 };
 
 use crate::cancel::Cancel;
@@ -71,6 +72,22 @@ impl Workspace {
         self.temp = Some(PathBuf::from(temp));
         self.sandbox = Some(sandbox.clone());
         Ok(self)
+    }
+
+    /// A worktree of the repository around this workspace, on `branch`, on the same computer
+    /// and in the same sandbox: the one already there for that branch, or a new one made from
+    /// the current commit.
+    pub async fn worktree(&self, branch: &str) -> Result<Self, ComputerError> {
+        let sources = Sources::Worktree {
+            path: self.info.root.clone(),
+            branch: branch.to_owned(),
+        };
+        let info = self.computers.open(self.info.computer, &sources).await?;
+        let worktree = Self::new(Arc::clone(&self.computers), info);
+        match &self.sandbox {
+            Some(sandbox) => worktree.with_sandbox(sandbox).await,
+            None => Ok(worktree),
+        }
     }
 
     /// The sandbox commands run in, if one was asked for.

@@ -88,6 +88,8 @@ pub struct Choices {
     pub sandbox: Chosen<Option<SandboxLevel>>,
     /// The MCP servers to turn on; every server in `mcp.json` when not chosen.
     pub mcp: Option<Chosen<Vec<String>>>,
+    /// Whether each new thread works in a worktree of its own; off, in the folder itself.
+    pub worktree: Chosen<bool>,
 }
 
 /// One level choices come from.
@@ -114,6 +116,7 @@ impl Layer {
                 "model" => "--model",
                 "approval" => "--approval",
                 "sandbox" => "--sandbox",
+                "worktree" => "--worktree",
                 _ => "a flag",
             }),
             Level::Env => Source::Env(match key {
@@ -147,6 +150,7 @@ pub fn resolve(layers: &[Layer]) -> Choices {
             None,
         ),
         mcp: nearest(layers, "mcp", |file| file.mcp.clone()),
+        worktree: defaulted(nearest(layers, "worktree", |file| file.worktree), false),
     }
 }
 

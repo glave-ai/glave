@@ -42,6 +42,11 @@ pub fn main() -> ExitCode {
     {
         return crate::computer::main(rest);
     }
+    if let Some((first, rest)) = words.split_first()
+        && first == "worktrees"
+    {
+        return crate::worktrees::main(rest);
+    }
     let args = match args::parse(words) {
         Ok(args) => args,
         Err(message) => {
@@ -169,6 +174,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         workspace,
         // The project's skills first, then the MCP servers' tools.
         tools: [crate::skills::offered(&root).await?, servers.sources()].concat(),
+        worktree: choices.worktree.value,
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
@@ -187,7 +193,10 @@ async fn workspace(
     network: bool,
     database: &Path,
 ) -> anyhow::Result<Workspace> {
-    let (computers, here) = LocalComputers::here(folder, std::env::vars_os()).await?;
+    let (computers, here) = LocalComputers::for_here(std::env::vars_os())
+        .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER))
+        .open_here(folder)
+        .await?;
     let workspace = Workspace::new(computers, here);
     let Some(level) = choices.sandbox.value else {
         return Ok(workspace);
@@ -279,6 +288,9 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         choices,
     } = wired;
     let (thread, note) = pick_thread(server, args.resume).await?;
+    if let Some(working) = crate::worktrees::note(server, thread).await {
+        eprintln!("glave: {working}");
+    }
     let input = Input::start();
     let client = Client {
         server,
@@ -338,7 +350,10 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
     } else {
         "new thread"
     };
-    match server.request(Request::ThreadStart {}).await? {
+    match server
+        .request(Request::ThreadStart { worktree: None })
+        .await?
+    {
         Reply::Thread { thread } => Ok((thread.id, note)),
         other => anyhow::bail!("the server answered thread/start with {other:?}"),
     }

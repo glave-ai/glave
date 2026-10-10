@@ -360,7 +360,7 @@ where
             tools: &offer.specs,
             max_output_tokens: self.settings.max_output_tokens,
             approval: self.settings.approval,
-            sandbox: self.workspace.sandbox().map(recorded),
+            sandbox: self.workspace_for(thread).sandbox().map(recorded),
         };
         let bytes = serde_json::to_vec(&config).map_err(|e| HarnessError::Event(e.to_string()))?;
         let config = self
@@ -487,7 +487,12 @@ where
         for requested in &completion.tool_calls {
             let seq = Self::seq_after(thread, &events)?;
             let call = ToolCall {
-                call_id: CallId::new(format!("call_{}", seq.get()))?,
+                // Numbered as the model has always seen them: bindings do not count, so where
+                // a thread works never changes what the model is sent.
+                call_id: CallId::new(format!(
+                    "call_{}",
+                    seq.get().saturating_sub(thread.unnumbered)
+                ))?,
                 tool: requested.tool.clone(),
                 arguments: requested.arguments.clone(),
             };

@@ -27,7 +27,7 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | Method | Params | Result |
 | --- | --- | --- |
 | `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
-| `thread/start` | none | `thread`: a thread summary |
+| `thread/start` | optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`) | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32008`, and no thread starts |
 | `thread/list` | optional `limit` (default 20) | `threads`: summaries, newest first |
 | `thread/get` | `thread` | `thread`: its summary |
 | `thread/events` | `thread`; optional `after` (a `seq`), `limit` (default 500) | `events`: stored events in `seq` order, exactly as `events.md` defines them; `next`, when there are more |
@@ -105,6 +105,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32005` | The operation was cancelled, such as a compaction stopped by `turn/cancel` |
 | `-32006` | No such question is waiting |
 | `-32007` | The thread has no active goal |
+| `-32008` | The thread's workspace could not be opened, such as a worktree outside a repository |
 | `-32010` | Unsupported protocol version; `data.supported` lists the spoken ones |
 | `-32011` | The thread is running in another server of this deployment |
 | `-32012` | The caller may not do this |

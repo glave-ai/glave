@@ -12,9 +12,11 @@ mod local;
 mod remote;
 mod serve;
 mod wire;
+pub mod worktrees;
 
 pub use cancel::Switch;
 pub use environment::{EnvironmentError, Found, read_environment};
 pub use local::{LocalComputers, sandbox_available};
 pub use remote::RemoteComputers;
 pub use serve::{serve, serve_tcp};
+pub use worktrees::{Kept, Pruned};

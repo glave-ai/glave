@@ -114,7 +114,7 @@ where
                 ),
             ));
         };
-        let Some(source) = self.sources.get(index) else {
+        let Some(source) = self.source_for(thread, index) else {
             return Ok(ToolOutput::text(true, format!("{:?} is gone", call.tool)));
         };
         let name = info.spec.name.as_str();

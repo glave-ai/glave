@@ -17,7 +17,12 @@ pub enum Request {
     #[serde(rename = "server/discover")]
     Discover {},
     #[serde(rename = "thread/start")]
-    ThreadStart {},
+    ThreadStart {
+        /// Whether the thread works in a worktree of its own rather than in the folder itself;
+        /// the server's default (`worktree` in `config.toml`) when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worktree: Option<bool>,
+    },
     #[serde(rename = "thread/list")]
     ThreadList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -84,7 +89,7 @@ impl Request {
     pub fn method(&self) -> &'static str {
         match self {
             Self::Discover {} => "server/discover",
-            Self::ThreadStart {} => "thread/start",
+            Self::ThreadStart { .. } => "thread/start",
             Self::ThreadList { .. } => "thread/list",
             Self::ThreadGet { .. } => "thread/get",
             Self::ThreadEvents { .. } => "thread/events",
@@ -386,6 +391,8 @@ pub mod code {
     pub const NO_APPROVAL: i64 = -32004;
     pub const NO_QUESTION: i64 = -32006;
     pub const NO_GOAL: i64 = -32007;
+    /// The thread's workspace could not be opened, such as a worktree outside a repository.
+    pub const WORKSPACE: i64 = -32008;
     pub const CANCELLED: i64 = -32005;
     /// No valid sign-in, on a network transport.
     pub const NO_SIGN_IN: i64 = -32013;

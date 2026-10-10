@@ -46,6 +46,8 @@ where
             asked: asked(&events),
             above: above(&events),
             goal: crate::goal::latest(&events).map(crate::goal::Pursuit::of),
+            workspace: self.reopen(&events).await?,
+            unnumbered: crate::bind::bindings(&events),
         };
         self.repair(&mut thread, &events).await?;
         Ok(thread)

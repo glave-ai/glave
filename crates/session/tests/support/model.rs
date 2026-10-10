@@ -158,6 +158,7 @@ pub async fn server_with<L: EventLog + 'static>(
             Workspace::new(computers, info)
         },
         tools: Vec::new(),
+        worktree: false,
     };
     Server::new(wiring, settings, scope(), answering)
 }

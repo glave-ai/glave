@@ -22,6 +22,8 @@ pub struct ConfigFile {
     pub sandbox: Option<SandboxChoice>,
     /// The MCP servers to turn on.
     pub mcp: Option<Vec<String>>,
+    /// Whether each new thread works in a worktree of its own.
+    pub worktree: Option<bool>,
 }
 
 /// An approval mode as written.

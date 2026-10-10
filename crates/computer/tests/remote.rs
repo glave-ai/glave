@@ -28,7 +28,10 @@ mod remote_tests {
 
     fn local(copies: &PathBuf) -> Arc<LocalComputers> {
         let environment = std::env::vars_os().filter(|(name, _)| name == "PATH" || name == "HOME");
-        Arc::new(LocalComputers::new(copies, environment))
+        Arc::new(
+            LocalComputers::new(copies, environment)
+                .with_worktrees(copies.with_file_name("worktrees")),
+        )
     }
 
     #[test]
