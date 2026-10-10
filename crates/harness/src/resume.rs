@@ -45,12 +45,17 @@ where
             request: latest_request(&events),
             asked: asked(&events),
             above: above(&events),
+            goal: crate::goal::latest(&events).map(crate::goal::Pursuit::of),
         };
         self.repair(&mut thread, &events).await?;
         Ok(thread)
     }
 
-    async fn load(&self, scope: &Scope, id: ThreadId) -> Result<Vec<Event>, HarnessError> {
+    pub(crate) async fn load(
+        &self,
+        scope: &Scope,
+        id: ThreadId,
+    ) -> Result<Vec<Event>, HarnessError> {
         let mut events = Vec::new();
         let mut after: Option<Seq> = None;
         loop {
@@ -136,7 +141,7 @@ fn asked(events: &[Event]) -> Vec<String> {
     events
         .iter()
         .filter_map(|event| match &event.body {
-            Body::MessageAdded(added) if added.role == glave_event::Role::User => {
+            Body::MessageAdded(added) if by_person(added) => {
                 added.parts.iter().rev().find_map(|part| match part {
                     Part::Text { text } => Some(text.clone()),
                     _ => None,
@@ -164,7 +169,7 @@ fn above(events: &[Event]) -> Vec<ThreadId> {
 /// The text of the person's latest message, kept word for word through a compaction.
 fn latest_request(events: &[Event]) -> Option<String> {
     events.iter().rev().find_map(|event| match &event.body {
-        Body::MessageAdded(added) if added.role == glave_event::Role::User => {
+        Body::MessageAdded(added) if by_person(added) => {
             let texts: Vec<&str> = added
                 .parts
                 .iter()
@@ -177,6 +182,16 @@ fn latest_request(events: &[Event]) -> Option<String> {
         }
         _ => None,
     })
+}
+
+/// Whether a message is the person's own: not the model's, and not one glave wrote, such as
+/// a goal's continuation.
+fn by_person(added: &glave_event::MessageAdded) -> bool {
+    added.role == glave_event::Role::User
+        && added
+            .author
+            .as_ref()
+            .is_none_or(|author| author.kind != glave_event::PrincipalKind::Glave)
 }
 
 /// The tools the person allowed for the rest of the thread, from its recorded approvals.

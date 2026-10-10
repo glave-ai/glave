@@ -19,6 +19,7 @@ use crate::builtins::Builtins;
 use crate::caller::Caller;
 use crate::compaction::{Compaction, Measured};
 use crate::env::{Clock, Entropy};
+use crate::goal::{GoalProgress, Pursuit};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
 use crate::tools::workspace::Workspace;
@@ -139,12 +140,19 @@ pub struct Thread {
     /// The threads that started this one, nearest first: empty unless this is a subagent's
     /// thread, whose prompts an agent, not the person, writes.
     pub(crate) above: Vec<ThreadId>,
+    /// The thread's latest goal, active or ended; `None` until one is set.
+    pub(crate) goal: Option<Pursuit>,
 }
 
 impl Thread {
     /// The conversation the model will see next.
     pub fn messages(&self) -> &[Message] {
         &self.messages
+    }
+
+    /// The thread's latest goal and how far it has come, active or ended.
+    pub fn goal(&self) -> Option<&GoalProgress> {
+        self.goal.as_ref().map(|goal| &goal.progress)
     }
 
     /// Whether an agent, not the person, writes this thread's prompts: a subagent's thread.
@@ -176,6 +184,8 @@ pub enum HarnessError {
     NotFound(ThreadId),
     #[error("cancelled")]
     Cancelled,
+    #[error("thread {0} has no active goal")]
+    NoGoal(ThreadId),
 }
 
 impl From<EncodeError> for HarnessError {
@@ -289,6 +299,7 @@ where
             request: None,
             asked: Vec::new(),
             above: parent.iter().map(|call| call.thread).collect(),
+            goal: None,
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {

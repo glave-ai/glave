@@ -125,14 +125,11 @@ where
                 after,
                 limit,
             } => self.events(thread, after, limit).await,
-            Request::TurnStart {
-                thread,
-                prompt,
-                meta,
-            } => {
-                let key = meta.idempotency_key.as_ref();
-                let mut stream = self.start_turn_as(caller, thread, &prompt, key).await?;
-                stream.finish().await.map(|turn| Reply::Turn { turn })
+            streams @ (Request::TurnStart { .. } | Request::GoalStart { .. }) => {
+                match self.start_streaming(caller, streams).await {
+                    Ok(started) => started?.finish().await.map(|turn| Reply::Turn { turn }),
+                    Err(_) => Err(ApiError::new(code::INTERNAL, "not a streaming method")),
+                }
             }
             Request::TurnCancel { thread } => self.cancel(thread).await,
             Request::ThreadCompact { thread } => self.compact(thread).await,
@@ -155,6 +152,10 @@ where
                 self.inner.approvals.respond(thread, &question, answers)?;
                 Ok(Reply::Done {})
             }
+            Request::GoalStop { thread } => self.stop_goal(caller, thread).await,
+            Request::GoalGet { thread } => Ok(Reply::Goal {
+                goal: self.goal(thread).await?,
+            }),
         }
     }
 
@@ -302,6 +303,7 @@ pub(crate) fn api(error: &HarnessError) -> ApiError {
         },
         HarnessError::NotFound(thread) => no_thread(*thread),
         HarnessError::Cancelled => ApiError::new(code::CANCELLED, "cancelled"),
+        HarnessError::NoGoal(_) => ApiError::new(code::NO_GOAL, error.to_string()),
         _ => ApiError::new(code::INTERNAL, error.to_string()),
     }
 }

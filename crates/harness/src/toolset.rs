@@ -26,6 +26,8 @@ pub(crate) struct ToolSet {
     pub(crate) questions: bool,
     /// Whether `agent` is on offer.
     pub(crate) subagents: bool,
+    /// Whether `update_goal` is on offer: only in a goal's turns.
+    pub(crate) goal: bool,
 }
 
 impl ToolSet {
@@ -37,6 +39,7 @@ impl ToolSet {
             missing: Vec::new(),
             questions: false,
             subagents: false,
+            goal: false,
         };
         for (index, source) in sources.iter().enumerate() {
             match source.tools().await {
@@ -85,6 +88,17 @@ impl ToolSet {
         self.subagents && name.trim().eq_ignore_ascii_case(crate::subagent::AGENT)
     }
 
+    /// Offers `update_goal` too.
+    pub(crate) fn offer_goal(&mut self) {
+        self.goal = true;
+        self.specs.push(crate::goal::spec());
+    }
+
+    /// Whether `name` is `update_goal`, while it is on offer.
+    pub(crate) fn is_goal(&self, name: &str) -> bool {
+        self.goal && name.trim().eq_ignore_ascii_case(crate::goal::UPDATE_GOAL)
+    }
+
     /// The tools a subagent has: these, less `agent` and `question`, and for an explorer
     /// only those that read.
     pub(crate) fn for_child(&self, kind: SubagentType) -> Self {
@@ -107,6 +121,7 @@ impl ToolSet {
             missing: self.missing.clone(),
             questions: false,
             subagents: false,
+            goal: false,
         }
     }
 

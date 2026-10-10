@@ -51,6 +51,18 @@ pub struct Task {
     pub max_steps: Option<u32>,
     /// How every turn must end: completed, unless the task is about another ending.
     pub outcome: Outcome,
+    /// Run the instruction as a goal, worked toward across turns, rather than as one turn.
+    pub goal: Option<TaskGoal>,
+}
+
+/// A goal, as `[glave] goal = { check = "cargo test", budget = 200000 }` sets it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskGoal {
+    /// The goal's check command.
+    pub check: Option<String>,
+    /// Its token budget; glave's default when unset.
+    pub budget: Option<u64>,
 }
 
 /// How hard a task is: the fast tier runs on every change the model feels; the hard tier
@@ -120,6 +132,7 @@ struct Glave {
     checks: Vec<Check>,
     max_steps: Option<u32>,
     outcome: Option<Outcome>,
+    goal: Option<TaskGoal>,
 }
 
 /// Loads the task in `dir`. Its paths are absolute, since the grader runs from the workspace.
@@ -182,6 +195,7 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         timeout,
         max_steps: glave.max_steps,
         outcome: glave.outcome.unwrap_or(Outcome::Completed),
+        goal: glave.goal,
     })
 }
 

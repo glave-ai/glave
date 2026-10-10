@@ -1,0 +1,12 @@
+[task]
+name = "glave/goal-budget"
+description = "A goal that cannot be met stops on its own: at its token budget, or as stalled when the model stops trying."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+approval = "auto"
+# No whole number squares to 2, so the check never passes.
+goal = { check = "awk 'NR == 1 { ok = $1 ~ /^[0-9]+$/ && $1 * $1 == 2 } END { exit !ok }' answer.txt", budget = 60000 }
+checks = [{ goal_ended = ["budget", "stalled"] }]

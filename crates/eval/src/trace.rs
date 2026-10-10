@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use glave_event::{Body, CallId, Outcome, Part, RawEvent, Role, decode};
+use glave_event::{Body, CallId, GoalReason, Outcome, Part, RawEvent, Role, decode};
 
 /// The facts a task is graded on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +23,8 @@ pub struct Trace {
     pub answer: String,
     /// Everything commands printed back: the output of every `bash` call.
     pub printed: String,
+    /// Why the last goal ended, if one did.
+    pub goal: Option<GoalReason>,
 }
 
 impl Default for Trace {
@@ -40,6 +42,7 @@ impl Default for Trace {
             outcomes: Vec::new(),
             answer: String::new(),
             printed: String::new(),
+            goal: None,
         }
     }
 }
@@ -100,6 +103,7 @@ impl Trace {
                 };
             }
             Body::TurnEnded(ended) => self.outcomes.push(ended.outcome),
+            Body::GoalEnded(ended) => self.goal = Some(ended.reason),
             _ => {}
         }
     }
@@ -149,6 +153,7 @@ mod tests {
                 outcomes: vec![Outcome::Completed],
                 answer: "Moved 214 files into 6 folders.".to_owned(),
                 printed: "README.md\nsrc\n".to_owned(),
+                goal: None,
             }
         );
     }
