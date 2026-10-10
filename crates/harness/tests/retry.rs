@@ -41,6 +41,19 @@ mod retrying {
         }
     }
 
+    /// A model whose answer streams some text and then ends in an error.
+    struct Broken;
+
+    impl ModelProvider for Broken {
+        fn complete(
+            &self,
+            _request: &ModelRequest,
+            _on_delta: &mut (dyn FnMut(Delta) + Send),
+        ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
+            ready(Ok(answer(Some("Half an ans"), vec![], StopReason::Error)))
+        }
+    }
+
     fn unavailable() -> ProviderError {
         ProviderError::Http {
             status: 503,
@@ -121,6 +134,74 @@ mod retrying {
                 1,
                 "failed tries leave nothing in the log"
             );
+        });
+    }
+
+    fn empty_error() -> ProviderError {
+        ProviderError::NoOutput("finish reason error".into())
+    }
+
+    #[test]
+    fn a_response_that_errors_before_any_output_is_tried_again() {
+        block_on(async {
+            let harness = harness(vec![empty_error()], Duration::ZERO).await;
+            let mut thread = harness.start_thread(scope()).await.unwrap();
+            let mut shown = Vec::new();
+            let summary = harness
+                .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
+                    shown.push(live);
+                })
+                .await
+                .unwrap();
+            assert_eq!(summary.outcome, Outcome::Completed);
+            assert_eq!(retries(&shown), [(1, 4)]);
+        });
+    }
+
+    #[test]
+    fn a_response_that_errors_before_any_output_every_time_fails_after_the_limit() {
+        block_on(async {
+            let harness = harness(vec![empty_error(); 5], Duration::ZERO).await;
+            let mut thread = harness.start_thread(scope()).await.unwrap();
+            let mut shown = Vec::new();
+            let result = harness
+                .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
+                    shown.push(live);
+                })
+                .await;
+            assert!(matches!(result, Err(HarnessError::Provider(_))));
+            assert_eq!(retries(&shown).len(), 4);
+        });
+    }
+
+    #[test]
+    fn a_response_that_errors_after_output_is_not_tried_again() {
+        block_on(async {
+            let mut settings = settings();
+            settings.retries = Retries {
+                attempts: 4,
+                first_wait: Duration::ZERO,
+            };
+            let parts = Parts {
+                provider: Broken,
+                log: MemoryLog::new(),
+                blobs: MemoryBlobs::new(),
+                approver: AllowAll,
+                clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
+                entropy: Box::new(Counting(AtomicU64::new(1))),
+                workspace: workspace(&folder("retry-broken")).await,
+            };
+            let harness = Harness::new(parts, settings);
+            let mut thread = harness.start_thread(scope()).await.unwrap();
+            let mut shown = Vec::new();
+            let summary = harness
+                .run_turn(&mut thread, "hi", &Cancel::new(), &mut |live| {
+                    shown.push(live);
+                })
+                .await
+                .unwrap();
+            assert_eq!(summary.outcome, Outcome::Failed);
+            assert_eq!(retries(&shown), []);
         });
     }
 

@@ -281,7 +281,7 @@ fn usage_is_normalized_to_inclusive_totals() {
 
 #[test]
 fn stop_reasons_map_and_keep_their_raw_value() {
-    for (raw, stop) in [
+    for (raw, expected) in [
         ("end_turn", StopReason::EndTurn),
         ("tool_use", StopReason::ToolUse),
         ("max_tokens", StopReason::MaxTokens),
@@ -291,10 +291,15 @@ fn stop_reasons_map_and_keep_their_raw_value() {
         ("model_context_window_exceeded", StopReason::ContextExceeded),
         ("something_new", StopReason::Error),
     ] {
-        let mut events = vec![start(usage())];
+        let mut events = vec![
+            start(usage()),
+            block(0, json!({"type": "text", "text": ""})),
+            text(0, "partial"),
+            stop(0),
+        ];
         events.extend(end(raw, 1));
         let completion = run(&events).0.unwrap();
-        assert_eq!(completion.stop, stop, "{raw}");
+        assert_eq!(completion.stop, expected, "{raw}");
         assert_eq!(completion.provider_stop.as_deref(), Some(raw));
     }
 }
@@ -415,4 +420,49 @@ proptest::proptest! {
         proptest::prop_assert_eq!(&completion, &whole.0);
         proptest::prop_assert_eq!(&deltas, &whole.1);
     }
+}
+
+#[test]
+fn an_unclassified_stop_before_any_output_may_be_tried_again() {
+    let mut events = vec![start(usage())];
+    events.extend(end("something_new", 0));
+    let error = run(&events).0.unwrap_err();
+    assert!(matches!(error, ProviderError::NoOutput(_)), "{error:?}");
+    assert!(error.is_transient());
+}
+
+#[test]
+fn an_unclassified_error_event_before_any_output_may_be_tried_again() {
+    let events = [
+        start(usage()),
+        json!({"type": "error", "error": {"type": "weird_error", "message": "boom"}}),
+    ];
+    let error = run(&events).0.unwrap_err();
+    assert!(matches!(error, ProviderError::NoOutput(_)), "{error:?}");
+}
+
+#[test]
+fn an_unclassified_error_event_after_output_is_final() {
+    let events = [
+        start(usage()),
+        block(0, json!({"type": "text", "text": ""})),
+        text(0, "partial"),
+        json!({"type": "error", "error": {"type": "weird_error", "message": "boom"}}),
+    ];
+    let error = run(&events).0.unwrap_err();
+    assert!(matches!(error, ProviderError::Protocol(_)), "{error:?}");
+    assert!(!error.is_transient());
+}
+
+#[test]
+fn an_unclassified_stop_after_output_still_ends_in_error() {
+    let mut events = vec![
+        start(usage()),
+        block(0, json!({"type": "text", "text": ""})),
+        text(0, "partial"),
+        stop(0),
+    ];
+    events.extend(end("something_new", 1));
+    let completion = run(&events).0.unwrap();
+    assert_eq!(completion.stop, StopReason::Error);
 }
