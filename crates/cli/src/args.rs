@@ -76,6 +76,10 @@ or {\"url\": ..., \"headers\": {...}}), start with glave; their tools reach the 
 mcp__<server>__<tool>. A program gets only the variables its settings name, so add keys
 there: \"env\": {\"TOKEN\": \"${TOKEN}\"}.
 
+A repository may bring its own: .mcp.json at its root (the same format) and .glave/config.toml.
+glave asks once, only when they would run commands, and remembers the answer in trust.toml
+in GLAVE_HOME. With no one to ask, those servers stay off.
+
 In a session, /compact summarizes the thread now, and /exit leaves.";
 
 /// What to do.

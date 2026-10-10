@@ -1,8 +1,10 @@
-//! The MCP servers in glave's settings, `mcp.json` in glave's folder: started in the background
-//! with the session, waited for before the first turn, and closed when glave ends. A
-//! `config.toml` may turn on only some of them, and a policy may forbid them all.
+//! The MCP servers in glave's settings, `mcp.json` in glave's folder, and the ones a trusted
+//! project's `.mcp.json` brings: started in the background with the session, waited for before
+//! the first turn, and closed when glave ends. A `config.toml` may turn on only some of them,
+//! and a policy may forbid them.
 
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,20 +19,31 @@ use crate::terminal::Printer;
 /// The settings file, in glave's folder.
 pub const FILE: &str = "mcp.json";
 
+/// The environment servers' `${VAR}` are filled from.
+pub fn environment() -> BTreeMap<String, String> {
+    std::env::vars_os()
+        .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
+        .collect()
+}
+
 /// The servers of one session.
 pub struct Servers {
-    servers: Vec<Arc<McpServer>>,
+    started: Vec<Arc<McpServer>>,
     reported: AtomicBool,
+    /// Project servers left out because the person's own has the same name.
+    shadowed: Vec<String>,
 }
 
 impl Servers {
-    /// Starts the servers in `home`'s settings, in `root`: those `chosen`, or every one. With no
-    /// settings file there are none. Fails when `constraints` forbid any of them.
+    /// Starts the servers in `home`'s settings and the trusted `project` servers (a
+    /// `.mcp.json`'s text), in `root`: those `chosen`, or every one. With no settings file there
+    /// are none. Fails when `constraints` forbid the person's own.
     pub async fn start(
         home: &Path,
         root: &Path,
         chosen: Option<&Chosen<Vec<String>>>,
         constraints: &Constraints,
+        project: Option<&str>,
     ) -> anyhow::Result<Self> {
         let path = home.join(FILE);
         let text = match tokio::fs::read_to_string(&path).await {
@@ -40,18 +53,35 @@ impl Servers {
                 return Err(err).with_context(|| format!("could not read {}", path.display()));
             }
         };
-        let environment: BTreeMap<String, String> = std::env::vars_os()
-            .filter_map(|(name, value)| Some((name.into_string().ok()?, value.into_string().ok()?)))
-            .collect();
-        let configs = if text.is_empty() {
+        let environment = environment();
+        let own = if text.is_empty() {
             BTreeMap::new()
         } else {
             glave_mcp::parse(&text, &environment)
                 .with_context(|| format!("in {}", path.display()))?
         };
+        let mine: Vec<String> = own.keys().cloned().collect();
+        let mut configs = own;
+        let mut shadowed = Vec::new();
+        if let Some(project) = project {
+            for (name, config) in glave_mcp::parse(project, &environment)
+                .context("in the project's trusted .mcp.json servers")?
+            {
+                match configs.entry(name) {
+                    Entry::Occupied(taken) => shadowed.push(taken.key().clone()),
+                    Entry::Vacant(free) => {
+                        free.insert(config);
+                    }
+                }
+            }
+        }
         let configs = turned_on(configs, chosen, &path)?;
-        let names: Vec<&str> = configs.keys().map(String::as_str).collect();
-        check_own_servers(&names, constraints)?;
+        let on: Vec<&str> = mine
+            .iter()
+            .filter(|name| configs.contains_key(*name))
+            .map(String::as_str)
+            .collect();
+        check_own_servers(&on, constraints)?;
         let servers = configs
             .iter()
             .map(|(name, config)| {
@@ -65,25 +95,26 @@ impl Servers {
             })
             .collect();
         Ok(Self {
-            servers,
+            started: servers,
             reported: AtomicBool::new(false),
+            shadowed,
         })
     }
 
     /// The servers as tool sources, in the order of their names, then their resources.
     pub fn sources(&self) -> Vec<Arc<dyn ToolSource>> {
         let mut sources: Vec<Arc<dyn ToolSource>> = self
-            .servers
+            .started
             .iter()
             .map(|server| Arc::clone(server) as Arc<dyn ToolSource>)
             .collect();
-        sources.push(Arc::new(Resources::new(self.servers.clone())));
+        sources.push(Arc::new(Resources::new(self.started.clone())));
         sources
     }
 
     /// The servers' names, in order.
     pub fn names(&self) -> Vec<&str> {
-        self.servers.iter().map(|server| server.name()).collect()
+        self.started.iter().map(|server| server.name()).collect()
     }
 
     /// Before the first turn only: waits for every server to start, and says why any did not.
@@ -92,16 +123,21 @@ impl Servers {
             return;
         }
         let starting: Vec<&str> = self
-            .servers
+            .started
             .iter()
             .filter(|server| server.starting())
             .map(|server| server.name())
             .collect();
+        for name in &self.shadowed {
+            printer.warning(&format!(
+                "the project's MCP server {name:?} is not started: your mcp.json has one of the same name"
+            ));
+        }
         if !starting.is_empty() {
             printer.status(&format!("starting MCP servers: {}", starting.join(", ")));
         }
         // They start side by side, so this waits only as long as the slowest.
-        for server in &self.servers {
+        for server in &self.started {
             if let Err(err) = server.started().await {
                 printer.warning(&err.to_string());
             }
@@ -111,7 +147,7 @@ impl Servers {
     /// Closes every server side by side, so one slow to exit holds up no other.
     pub async fn close(&self) {
         let mut closing = tokio::task::JoinSet::new();
-        for server in &self.servers {
+        for server in &self.started {
             let server = Arc::clone(server);
             closing.spawn(async move { server.close().await });
         }
@@ -137,7 +173,8 @@ fn turned_on(
         .collect();
     if !missing.is_empty() {
         bail!(
-            "mcp (from {}) names servers {} has no settings for: {}",
+            "mcp (from {}) names servers with no settings in {} or the project's trusted \
+             .mcp.json: {}",
             chosen.from,
             path.display(),
             missing.join(", ")
@@ -162,7 +199,8 @@ mod tests {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap();
-        let start = |chosen| runtime.block_on(Servers::start(&home, &home, chosen, &forbidden));
+        let start =
+            |chosen| runtime.block_on(Servers::start(&home, &home, chosen, &forbidden, None));
         let refused = start(None).err().unwrap().to_string();
         assert!(
             refused.contains("mine") && refused.contains("[mcp] own = false"),

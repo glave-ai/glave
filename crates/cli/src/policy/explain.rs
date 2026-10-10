@@ -26,18 +26,23 @@ pub fn explain(loaded: &Loaded, provider: Option<&str>) -> (String, bool) {
     out.push_str("Settings (the nearest wins: flags, environment, project, person, default)\n");
     out.push_str(&table(&settings(choices)));
     out.push_str("\nConfig files\n");
-    if loaded.configs.is_empty() && loaded.untrusted.is_none() {
+    if loaded.configs.is_empty() {
         out.push_str("  none\n");
     }
     for path in &loaded.configs {
         let _ = writeln!(out, "  {}", path.display());
     }
-    if let Some(path) = &loaded.untrusted {
-        let _ = writeln!(
-            out,
-            "  {} (not used: glave cannot trust a project's settings yet)",
-            path.display()
-        );
+    if let Some(project) = &loaded.project {
+        let _ = writeln!(out, "\nProject {}", project.root.display());
+        let width = project
+            .rows
+            .iter()
+            .map(|[what, _]| what.len())
+            .max()
+            .unwrap_or(0);
+        for [what, standing] in &project.rows {
+            let _ = writeln!(out, "  {what:<width$}  {standing}");
+        }
     }
     out.push_str("\nConstraints (they only narrow, and a deny always wins)\n");
     let rules: Vec<[String; 3]> = loaded
