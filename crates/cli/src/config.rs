@@ -117,6 +117,20 @@ pub fn context_window() -> anyhow::Result<Option<u64>> {
     }
 }
 
+/// The model that judges flagged actions in auto mode, from `GLAVE_JUDGE_MODEL`: the main
+/// model when it is not set, and no judge at all when it is `off`.
+pub fn judge_model(main: &str) -> Option<String> {
+    judge_from(std::env::var("GLAVE_JUDGE_MODEL").ok().as_deref(), main)
+}
+
+fn judge_from(setting: Option<&str>, main: &str) -> Option<String> {
+    match setting.map(str::trim) {
+        None | Some("") => Some(main.to_owned()),
+        Some("off") => None,
+        Some(model) => Some(model.to_owned()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,5 +174,13 @@ mod tests {
                 .unwrap()
                 .contains("running on this computer")
         );
+    }
+
+    #[test]
+    fn the_judge_is_the_main_model_unless_named_or_off() {
+        assert_eq!(judge_from(None, "m").as_deref(), Some("m"));
+        assert_eq!(judge_from(Some(" "), "m").as_deref(), Some("m"));
+        assert_eq!(judge_from(Some("small"), "m").as_deref(), Some("small"));
+        assert_eq!(judge_from(Some("off"), "m"), None);
     }
 }

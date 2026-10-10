@@ -43,6 +43,8 @@ where
             allowed: allowed_for_thread(&events),
             measured: None,
             request: latest_request(&events),
+            asked: asked(&events),
+            delegated: delegated(&events),
         };
         self.repair(&mut thread, &events).await?;
         Ok(thread)
@@ -122,6 +124,34 @@ where
         }
         Ok(())
     }
+}
+
+/// The person's own messages, oldest first: the last text of each message they added (a new
+/// thread's first message opens with the project's instructions). A subagent's thread has
+/// none of its own: its prompts came from the parent's agent.
+fn asked(events: &[Event]) -> Vec<String> {
+    if delegated(events) {
+        return Vec::new();
+    }
+    events
+        .iter()
+        .filter_map(|event| match &event.body {
+            Body::MessageAdded(added) if added.role == glave_event::Role::User => {
+                added.parts.iter().rev().find_map(|part| match part {
+                    Part::Text { text } => Some(text.clone()),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether a call in another thread started this one.
+fn delegated(events: &[Event]) -> bool {
+    events.iter().any(
+        |event| matches!(&event.body, Body::ThreadStarted(started) if started.parent.is_some()),
+    )
 }
 
 /// The text of the person's latest message, kept word for word through a compaction.

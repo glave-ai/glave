@@ -9,27 +9,37 @@
 
 mod baseline;
 mod case;
+mod model;
 mod score;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Instant;
 
+use glave_provider_openai::{Config, OpenAiCompatible};
+use model::{Metered, decide_all};
 use score::Score;
 
 const USAGE: &str = "\
 usage: glave-eval judge [options]
 
 Scores glave's deterministic checks, as auto mode applies them, on the judge cases: false
-alarms on actions that should run and catches on actions that should ask, per category.
+alarms on actions that should run and catches on actions that should ask, per category. With
+--model, also scores the checks with that model judging every soft caution, as auto mode does
+with a judge; the endpoint comes from GLAVE_BASE_URL and GLAVE_API_KEY.
 
 options:
   --cases <folder>  where the cases are (default evals/judge)
+  --model <id>      a model to judge soft cautions (repeat for several)
+  --at-once <n>     judge calls at once (default 8)
   --wrong           also list every wrong decision";
 
 #[derive(Debug, PartialEq)]
 struct Options {
     cases: PathBuf,
+    models: Vec<String>,
+    at_once: usize,
     wrong: bool,
 }
 
@@ -59,12 +69,52 @@ fn run(options: &Options) -> Result<(), String> {
     if options.wrong {
         println!("{}", score.wrong());
     }
+    if options.models.is_empty() {
+        return Ok(());
+    }
+    let base_url = std::env::var("GLAVE_BASE_URL")
+        .map_err(|_| "set GLAVE_BASE_URL (and GLAVE_API_KEY) to the model endpoint".to_owned())?;
+    let api_key = std::env::var("GLAVE_API_KEY")
+        .ok()
+        .filter(|key| !key.is_empty());
+    let endpoint = Config::for_url(base_url.clone(), api_key)
+        .ok_or_else(|| format!("GLAVE_BASE_URL is not a URL: {base_url}"))?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|err| format!("could not start: {err}"))?;
+    for name in &options.models {
+        let client = OpenAiCompatible::new(endpoint.clone()).map_err(|err| err.to_string())?;
+        let provider = Arc::new(Metered::new(client));
+        let decided = runtime.block_on(decide_all(
+            &cases,
+            Arc::clone(&provider),
+            name,
+            options.at_once,
+        ));
+        let mut score = Score::default();
+        for (case, (label, took)) in cases.iter().zip(decided) {
+            score.record(case, label, took);
+        }
+        let micros = provider.micros();
+        println!(
+            "{}cost: ${}.{:06}\n",
+            score.markdown(&format!("checks + {name} judging soft cautions")),
+            micros / 1_000_000,
+            micros % 1_000_000
+        );
+        if options.wrong {
+            println!("{}", score.wrong());
+        }
+    }
     Ok(())
 }
 
 fn options(args: &[String]) -> Result<Options, String> {
     let mut options = Options {
         cases: PathBuf::from("evals/judge"),
+        models: Vec::new(),
+        at_once: 8,
         wrong: false,
     };
     let mut rest = args.iter();
@@ -75,6 +125,22 @@ fn options(args: &[String]) -> Result<Options, String> {
                     .next()
                     .ok_or_else(|| format!("--cases needs a folder\n{USAGE}"))?;
                 options.cases = PathBuf::from(folder);
+            }
+            "--model" => {
+                let model = rest
+                    .next()
+                    .ok_or_else(|| format!("--model needs a model\n{USAGE}"))?;
+                options.models.push(model.clone());
+            }
+            "--at-once" => {
+                let n = rest
+                    .next()
+                    .ok_or_else(|| format!("--at-once needs a number\n{USAGE}"))?;
+                options.at_once = n
+                    .parse()
+                    .ok()
+                    .filter(|n| *n > 0)
+                    .ok_or_else(|| format!("--at-once must be a positive number, not {n:?}"))?;
             }
             "--wrong" => options.wrong = true,
             other => return Err(format!("unknown option {other}\n{USAGE}")),
@@ -102,6 +168,8 @@ mod tests {
             parse(&[]).unwrap(),
             Options {
                 cases: PathBuf::from("evals/judge"),
+                models: Vec::new(),
+                at_once: 8,
                 wrong: false,
             }
         );
@@ -109,6 +177,11 @@ mod tests {
         assert_eq!(chosen.cases, PathBuf::from("x"));
         assert!(chosen.wrong);
         assert!(parse(&["--cases"]).is_err());
-        assert!(parse(&["--model", "m"]).is_err());
+        assert_eq!(
+            parse(&["--model", "a", "--model", "b"]).unwrap().models,
+            ["a", "b"]
+        );
+        assert!(parse(&["--at-once", "0"]).is_err());
+        assert!(parse(&["--judge", "m"]).is_err());
     }
 }

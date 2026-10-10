@@ -107,6 +107,7 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
     settings.max_steps = args.max_steps;
     // As Claude Code, Codex and OpenCode offer it; models use it when asked to.
     settings.subagents = true;
+    settings.judge = config::judge_model(&endpoint.model);
     if let Some(window_tokens) = config::context_window()? {
         settings.compaction.window_tokens = window_tokens;
     }

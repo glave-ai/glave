@@ -335,6 +335,9 @@ where
         self.commit(thread, events).await?;
         thread.messages.push(Message::User { parts });
         thread.request = Some(prompt.to_owned());
+        if !thread.delegated {
+            thread.asked.push(prompt.to_owned());
+        }
         Ok(())
     }
 
