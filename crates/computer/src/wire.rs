@@ -1,0 +1,207 @@
+//! The computer protocol on the wire: JSON-RPC 2.0, one message per line, as the session API
+//! frames it on stdio. Requests run concurrently; a command's output arrives as
+//! `command/output` notifications before its response, and `command/cancel` stops it.
+
+use glave_ports::{
+    Command, ComputerError, ComputerId, Environment, FileWrite, Listing, Save, Sources, WorkspaceId,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+
+/// The longest message accepted, in bytes: a whole file read or written, as base64, fits.
+pub(crate) const MAX_LINE: u64 = 16 * 1024 * 1024;
+
+/// The protocol version spoken; it changes whenever a message changes shape.
+pub const PROTOCOL: &str = "2026-10";
+
+/// The notification that carries a command's output.
+pub(crate) const OUTPUT: &str = "command/output";
+
+/// Every request, by method.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "method", content = "params")]
+pub(crate) enum Request {
+    /// Over a network transport, the first message: the token the harness side minted.
+    #[serde(rename = "connection/authenticate")]
+    Authenticate { token: String },
+    /// What the server is, and the protocol versions it speaks.
+    #[serde(rename = "server/discover")]
+    Discover {},
+    #[serde(rename = "computer/create")]
+    Create { environment: Environment },
+    #[serde(rename = "computer/status")]
+    Status { computer: ComputerId },
+    #[serde(rename = "computer/destroy")]
+    Destroy { computer: ComputerId },
+    #[serde(rename = "workspace/open")]
+    Open {
+        computer: ComputerId,
+        sources: Sources,
+    },
+    #[serde(rename = "workspace/close")]
+    Close { workspace: WorkspaceId },
+    /// `run` names this run in its output notifications and in `command/cancel`.
+    #[serde(rename = "command/run")]
+    Run {
+        workspace: WorkspaceId,
+        command: Command,
+        run: String,
+    },
+    #[serde(rename = "command/cancel")]
+    Cancel { run: String },
+    #[serde(rename = "files/read")]
+    Read {
+        workspace: WorkspaceId,
+        path: String,
+    },
+    #[serde(rename = "files/write")]
+    Write {
+        workspace: WorkspaceId,
+        files: Vec<FileWrite>,
+    },
+    #[serde(rename = "files/list")]
+    List {
+        workspace: WorkspaceId,
+        listing: Listing,
+    },
+    #[serde(rename = "workspace/save")]
+    Save { workspace: WorkspaceId, save: Save },
+}
+
+/// Every method a request may name.
+const METHODS: &[&str] = &[
+    "connection/authenticate",
+    "server/discover",
+    "computer/create",
+    "computer/status",
+    "computer/destroy",
+    "workspace/open",
+    "workspace/close",
+    "command/run",
+    "command/cancel",
+    "files/read",
+    "files/write",
+    "files/list",
+    "workspace/save",
+];
+
+/// A command's output, as it arrives.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Chunk {
+    pub(crate) run: String,
+    pub(crate) text: String,
+}
+
+/// JSON-RPC's error codes, and one for a computer's own refusals and failures, whose
+/// [`ComputerError`] travels in `data`.
+pub(crate) mod code {
+    pub(crate) const PARSE: i64 = -32700;
+    pub(crate) const INVALID_REQUEST: i64 = -32600;
+    pub(crate) const NO_METHOD: i64 = -32601;
+    pub(crate) const INVALID_PARAMS: i64 = -32602;
+    pub(crate) const COMPUTER: i64 = -32000;
+    pub(crate) const UNAUTHENTICATED: i64 = -32001;
+}
+
+/// A request line: its id and request, or the id (if known) and why it is not one.
+pub(crate) fn parse(line: &str) -> Result<(Option<Value>, Request), (Option<Value>, Value)> {
+    let message: Value = serde_json::from_str(line).map_err(|error| {
+        (
+            None,
+            failure(code::PARSE, &format!("not JSON-RPC: {error}")),
+        )
+    })?;
+    let id = message.get("id").cloned();
+    if message.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+        return Err((
+            id,
+            failure(code::INVALID_REQUEST, "expected \"jsonrpc\": \"2.0\""),
+        ));
+    }
+    let Some(method) = message.get("method").and_then(Value::as_str) else {
+        return Err((id, failure(code::INVALID_REQUEST, "no method")));
+    };
+    if !METHODS.contains(&method) {
+        let message = format!("no method {method:?}");
+        return Err((id, failure(code::NO_METHOD, &message)));
+    }
+    let params = message.get("params").cloned().unwrap_or_else(|| json!({}));
+    serde_json::from_value(json!({"method": method, "params": params}))
+        .map(|request| (id.clone(), request))
+        .map_err(|error| {
+            (
+                id,
+                failure(code::INVALID_PARAMS, &format!("{method}: {error}")),
+            )
+        })
+}
+
+/// A JSON-RPC error object.
+pub(crate) fn failure(code: i64, message: &str) -> Value {
+    json!({"code": code, "message": message})
+}
+
+/// A computer's error as a JSON-RPC error object, the error itself in `data`.
+pub(crate) fn computer_failure(error: &ComputerError) -> Value {
+    json!({"code": code::COMPUTER, "message": error.to_string(), "data": error})
+}
+
+/// The response to request `id`.
+pub(crate) fn respond(id: Option<&Value>, answered: Result<Value, Value>) -> String {
+    match answered {
+        Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
+        Err(error) => json!({"jsonrpc": "2.0", "id": id, "error": error}),
+    }
+    .to_string()
+}
+
+/// A notification: a message with a method and no id.
+pub(crate) fn notify(method: &str, params: &impl Serialize) -> String {
+    json!({"jsonrpc": "2.0", "method": method, "params": params}).to_string()
+}
+
+/// A request message.
+pub(crate) fn request(id: u64, request: &Request) -> String {
+    let mut message = serde_json::to_value(request).unwrap_or(Value::Null);
+    if let Value::Object(fields) = &mut message {
+        fields.insert("jsonrpc".into(), "2.0".into());
+        fields.insert("id".into(), id.into());
+    }
+    message.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn requests_round_trip_and_mistakes_get_standard_codes() {
+        let run = Request::Run {
+            workspace: WorkspaceId::from_uuid(uuid::Uuid::nil()),
+            command: Command::new("ls"),
+            run: "r1".into(),
+        };
+        let line = request(7, &run);
+        assert!(line.contains(r#""method":"command/run""#), "{line}");
+        assert_eq!(parse(&line).unwrap(), (Some(json!(7)), run));
+        let code = |line: &str| parse(line).err().map(|(_, error)| error["code"].clone());
+        assert_eq!(code("nope"), Some(json!(code::PARSE)));
+        assert_eq!(
+            code(r#"{"id":1,"method":"computer/status"}"#),
+            Some(json!(code::INVALID_REQUEST))
+        );
+        assert_eq!(
+            code(r#"{"jsonrpc":"2.0","id":1,"method":"computer/explode"}"#),
+            Some(json!(code::NO_METHOD))
+        );
+        assert_eq!(
+            code(r#"{"jsonrpc":"2.0","id":1,"method":"computer/status","params":{}}"#),
+            Some(json!(code::INVALID_PARAMS))
+        );
+        let error = ComputerError::NotFound("no workspace".into());
+        assert_eq!(
+            respond(Some(&json!(1)), Err(computer_failure(&error))),
+            r#"{"error":{"code":-32000,"data":{"kind":"not_found","message":"no workspace"},"message":"not found: no workspace"},"id":1,"jsonrpc":"2.0"}"#
+        );
+    }
+}

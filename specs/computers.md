@@ -4,7 +4,7 @@ Where work runs: the machines, the recipes they are made from, and the working c
 
 ## Status
 
-Draft, specified ahead of the code. Today every thread works in the folder glave was started in, on the person's own computer.
+First cut built (#116). The computer port (`Computers` in `glave-ports`) and its conformance suite; `glave-computer` with this machine as a computer (`LocalComputers`), `glave computer serve` (stdio, and TCP on 127.0.0.1 behind a token) and the client that reaches it (`RemoteComputers`), both passing the same suite; environments read from devcontainer.json or environment.toml. The harness still runs its tools in the folder glave was started in: moving its tools onto the port, `tool/run`, sleep, wake, resize, credentials, cloud computers, `workspace.bound` events and placement come next.
 
 ## The nouns
 
@@ -46,6 +46,21 @@ A computer adapter answers, over the same JSON-RPC as the session API (in-proces
 | `credentials/request` | the computer's credential helper asking the harness for a credential, which may refuse |
 
 Coarse calls only: a search runs inside the computer and returns results, never a remote filesystem.
+
+Built so far, beside `computer/create`, `computer/status`, `computer/destroy`, `workspace/open` and `workspace/close` (wire version `2026-10`):
+
+| Method | Does |
+| --- | --- |
+| `server/discover` | the server's name, version and protocol versions |
+| `connection/authenticate` | the first message on a network transport: the token; anything else ends the connection |
+| `command/run` | runs a bash command at the workspace root, its output (standard output and error together) streamed as `command/output` notifications before the answer: exit code, signal, timeout or cancel, and how long it took |
+| `command/cancel` | stops a running command and everything it started |
+| `files/read`, `files/write`, `files/list` | one file read whole (at most 8 MiB, as base64), files written all-or-nothing after every path is checked, a folder listed (at most 10,000 entries); every path confined to the workspace, symlinks followed before the check |
+| `workspace/save` | commits everything to a branch and pushes it to `origin`; a plain folder keeps the commit in a hidden history (`.glave/history.git`, up to 100 MB of files), never a `.git` |
+
+A repository opens as a clone under `~/.glave/workspaces/<computer>/<workspace>`, removed on close; a folder opens in place and is kept. A computer on the host refuses what it cannot honour (an image, setup commands, a limited network) rather than ignoring it.
+
+devcontainer.json honours `image`, `containerEnv` and `remoteEnv` (written values only, no `${...}`), `onCreateCommand`, `updateContentCommand` and `postCreateCommand` (as setup, in that order) and `hostRequirements` (cpus, memory, storage). It refuses by name what glave cannot carry out (building images, Compose, non-empty `features`, `initializeCommand`, `postStartCommand`, `postAttachCommand`, mounts, container options, GPUs, unknown keys), and lists the editor and preview settings it leaves alone (`customizations`, `forwardPorts` and the like). environment.toml refuses unknown keys.
 
 ## Environments
 

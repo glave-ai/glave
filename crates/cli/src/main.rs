@@ -4,6 +4,7 @@
 mod args;
 mod asking;
 mod client;
+mod computer;
 mod config;
 mod home;
 mod identity;

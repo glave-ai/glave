@@ -2,6 +2,10 @@
 //! enable the `conformance` feature and run these against their own implementation.
 //! Each suite returns the first violation it finds as an error message.
 
+mod computers;
+
+pub use computers::computers;
+
 use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
 use uuid::{Builder, Uuid};
 
