@@ -95,6 +95,9 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32005` | The operation was cancelled, such as a compaction stopped by `turn/cancel` |
 | `-32006` | No such question is waiting |
 | `-32010` | Unsupported protocol version; `data.supported` lists the spoken ones |
+| `-32011` | The thread is running in another server of this deployment |
+| `-32012` | The caller may not do this |
+| `-32013` | No valid sign-in (network transports) |
 | `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
 
 ## Transports
@@ -109,9 +112,34 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 
 A network listener never runs without authentication: there is no "add it later". Closing a streaming HTTP response stops only that stream; the turn goes on, and `thread/watch` picks it up again.
 
+## Over the network
+
+What changes when a client is on another machine: who is calling, how a server that may restart keeps a paused turn, and how several servers share threads.
+
+### Signing in
+
+- **Local transports need no sign-in:** in-process, stdio and a Unix socket act as the local person.
+- **Network transports always need it.** A server accepts:
+  - **OIDC access tokens** (`Authorization: Bearer …`), checked against the identity provider's published keys (JWKS), with `iss`, `aud` and expiry verified. The CLI gets one by the device flow; browsers and the desktop app by authorization code with PKCE.
+  - **SAML,** for organizations that use it: a browser signs in through the identity provider, and glave issues its own short-lived session token, signed by the organization's key.
+  - **glave session tokens,** the same signed tokens, so any server of the organization can verify a caller without shared memory.
+- **Who the caller is:** the token's `iss` and `sub` map to a person through the identity source (SCIM provisions the mapping in an organization). The verified person is the caller for every request on that connection or HTTP request, and is stamped as "Who is calling" describes. A token never enters the log: `turn.started.auth` records the method, issuer, subject and session only.
+- **Expiry:** a stream outlives its token only until the token expires; the client reconnects with a fresh one and continues with `thread/watch` from its last `seq`.
+
+### Turns that outlive a server
+
+- **A paused turn is durable.** Its `approval.requested` (or the `question` call) is already in the log. Any server of the deployment can take a `approval/decide` or `question/answer` for it, rebuild the thread from the log, record the decision and continue the turn. A server that stops while a turn waits no longer leaves it interrupted.
+- **One harness at a time per thread.** A server running or continuing a turn holds a lease on the thread in the data store, renewed while it works. Another server asked to act on the thread answers error `-32011` (running elsewhere) until the lease ends. The log's unique `(thread, seq)` remains the final guard, so a lost lease can never corrupt a thread.
+- **Retrying is safe.** `turn/start` may carry `params._meta.idempotency_key`. A server that sees the same key for the same thread returns the turn already started instead of starting another, so a client retrying after a dropped connection never runs a turn twice.
+
+### Several clients
+
+- Any number of clients may `thread/watch` the same thread; each sees every event once, in `seq` order.
+- Who may do what (start a turn, answer an approval, read a thread) is checked against the caller on every request, from the space's owner and the organization's policy (issue #22). A request from someone who may not make it is refused with error `-32012` and never recorded; a network request without a valid sign-in is refused with `-32013`.
+
 ## Status
 
-Version 1, in-process (`glave-session`, used by the CLI) and over stdio (`glave serve --stdio`, the same server through `rpc::serve`; one conformance suite runs over both): every method but `thread/watch`, whose in-process form is `Server::watch`. Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted. Continuing a paused turn in another process, and the network transports, come next.
+Version 1, in-process (`glave-session`, used by the CLI) and over stdio (`glave serve --stdio`, the same server through `rpc::serve`; one conformance suite runs over both): every method but `thread/watch`, whose in-process form is `Server::watch`. Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted. "Over the network" above is specified ahead of the code (issue #64): sign-in, durable paused turns, leases and idempotent turns.
 
 ## Later
 
