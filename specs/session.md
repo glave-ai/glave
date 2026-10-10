@@ -16,6 +16,12 @@ Standard JSON-RPC 2.0: requests carry `jsonrpc`, `id`, `method` and `params`; re
 
 Every request may carry `params._meta.protocol`, the protocol version the client speaks (today `2026-10`). Without it, the server assumes the oldest version it supports. There is no handshake, so a stateless server needs no memory of the client. A server that does not speak the version answers with error `-32010` and the versions it does speak.
 
+Every request may also carry `params._meta.traceparent`, a W3C trace context. The server continues that trace, or starts one, and records the trace ID on each turn the request starts (`turn.started.trace`).
+
+### Who is calling
+
+Every request is made by a verified caller, a principal as `events.md` defines it. The transport establishes who: on in-process, stdio and Unix socket transports, the local person; on network transports, the person the server authenticated (OIDC or SAML, per request or per session). A caller is never taken from request parameters. The server stamps the caller into what it records: `origin.by` when a thread starts, `author` on a message from someone other than the thread's `for`, `by` on an approval decision, and `auth` on the turn's start.
+
 ## Methods
 
 | Method | Params | Result |

@@ -8,6 +8,8 @@ The reference implementation is the `glave-event` crate. Where this document and
 
 Envelope version 1. Draft until glave 0.1 ships: until then, version 1 payloads may still change. From 0.1 on, every published payload version is frozen.
 
+The payload versions in "Who acted" below (`thread.started` v3, `turn.started` v2, `message.added` v2, `approval.decided` v2) are specified ahead of the `glave-event` crate, which follows in the next change (issue #96). Until it lands, the crate writes the earlier versions.
+
 ## The envelope
 
 Every event is one JSON object with exactly these eight members:
@@ -70,19 +72,19 @@ A reader keeps events it does not understand, whether an unknown type or a newer
 
 ## Event types
 
-All types below are at version 1.
+Types are at version 1 unless the table says otherwise.
 
 | Type | Recorded when | `data` |
 | --- | --- | --- |
-| `thread.started` | A thread begins; always `seq` 1 | `producer` (`name`, `version`); optional `fork` (`thread`, `seq`) when the thread continues another thread's prefix; optional `parent` (`thread`, `call_id`) when an `agent` call in another thread started it, as a subagent (version 2) |
-| `turn.started` | A turn begins | `model` (`provider`, `name`); `config`, a blob reference to the turn's full configuration (system prompt, tools, parameters) |
-| `message.added` | A finished message from the person or the assistant | `role` (`user` or `assistant`); `parts`, an ordered list of `text`, `reasoning` and `file` parts |
+| `thread.started` | A thread begins; always `seq` 1 | `producer` (`name`, `version`); optional `fork` (`thread`, `seq`) when the thread continues another thread's prefix; optional `parent` (`thread`, `call_id`) when an `agent` call in another thread started it, as a subagent (version 2); `for`, `agent` and `origin` (version 3, see "Who acted") |
+| `turn.started` | A turn begins | `model` (`provider`, `name`); `config`, a blob reference to the turn's full configuration (system prompt, tools, parameters); optional `trace` and `auth` (version 2, see "Who acted") |
+| `message.added` | A finished message from the person or the assistant | `role` (`user` or `assistant`); `parts`, an ordered list of `text`, `reasoning` and `file` parts; optional `author` (version 2, see "Who acted") |
 | `tool.call.requested` | The model asks for a tool | `call_id`; optional `provider_call_id`; `tool`; `arguments`, either `{"json": {…}}` or `{"malformed": "<raw text>"}` |
 | `tool.call.completed` | A tool call finished | `call_id`; `is_error`; `output` parts; optional `structured` result |
 | `model.responded` | A model response finished | `model`; optional `response_id`; `stop`; optional `provider_stop`; `usage`; optional `cost`. Content-free |
 | `turn.ended` | A turn ends | `outcome`: `completed`, `cancelled`, `failed`, `interrupted` or `limit_reached` |
 | `approval.requested` | A tool call waits for the person | `call_id` (also the approval's id); `tool`; `summary`, as the person is shown it; `secret`, true when the call would show the model a file that usually holds secrets |
-| `approval.decided` | The person, or glave on their behalf, answered | `call_id`; `decision`: `allow_once`, `allow_for_thread`, `deny`, `no_one_there` (nothing to ask, so the call did not run) or `cancelled` (the turn was cancelled while it waited) |
+| `approval.decided` | The person, or glave on their behalf, answered | `call_id`; `decision`: `allow_once`, `allow_for_thread`, `deny`, `no_one_there` (nothing to ask, so the call did not run) or `cancelled` (the turn was cancelled while it waited); optional `by` (version 2, see "Who acted") |
 | `thread.compacted` | The conversation was summarized to fit the model's context window | `through`, the last `seq` the summary covers; `parts`, the message the conversation restarts from (the summary and the person's latest request). Rebuilding a conversation starts from the latest one; earlier events stay in the log |
 
 Details shared by several types:
@@ -93,6 +95,60 @@ Details shared by several types:
 - **Usage** counts are inclusive totals with subsets: `input` includes `cache_read` and `cache_write`, and `output` includes `reasoning`. `estimated` is true when a stream ended before the provider reported usage. The provider's own usage object can ride along as `raw`.
 - **Money** is an integer count of millionths plus an ISO 4217 currency code: `{"micros": 4200, "currency": "USD"}` is $0.0042. A cost also names the `price_list` it was computed from.
 - **Deltas are never events.** Streaming fragments are sent live; the finished message, call or response is the event.
+
+## Who acted
+
+Every thread records, once, whose work it is and which agent does it. The few events where someone else may act say who. Together they answer, for any event, who did this and on whose behalf. Nothing here is in the envelope: the envelope stays content-free, and these fields live in `data`, sealed and erasable with the rest.
+
+### Principals
+
+A principal is anyone or anything that can act, written as a reference:
+
+```json
+{ "kind": "person", "id": "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10" }
+```
+
+| `kind` | Is | `id` |
+| --- | --- | --- |
+| `person` | a human | their person ID: created on first run for a local person; from sign-in for an organization |
+| `agent` | an agent profile acting: the default agent, a subagent type, a named assistant | the profile's ID |
+| `group` | a team acting as one | the group's ID |
+| `glave` | glave itself, deciding on its own (a timeout, a cancellation, a rule) | none |
+
+- `id` is a UUID v7, unique everywhere and never tied to one deployment. It is required for every kind but `glave`.
+- `kind` is an open string. A reader keeps a reference with a kind it does not know, untouched, as it keeps unknown events.
+- People, agents and groups share one ID space. Nothing in the log branches on whether a person or an agent acted; it records which.
+
+### The fields
+
+| Type and version | Member | Meaning |
+| --- | --- | --- |
+| `thread.started` v3 | `for` | the principal whose work this is (a person, or later a group): their budget, their authority, their record |
+| | `agent` | the agent profile that runs the thread (kind `agent`) |
+| | `origin` | what started the thread: `kind` (open string; known values `prompt`, `voice`, `schedule`, `webhook`, `chat`, `subagent`, `fork`, `assistant`), optional `ref` (an opaque pointer, such as a schedule or a chat thread), optional `by` (the principal who started it, when that differs from `for`) |
+| `turn.started` v2 | optional `trace` | the W3C trace ID (32 lowercase hex digits) the turn belongs to, linking the event to OpenTelemetry spans |
+| | optional `auth` | how the caller who started the turn signed in: `method` (`local`, `oidc` or `saml`), and for `oidc` and `saml` the `issuer`, `subject` and `session`. Never a token or any other secret |
+| `message.added` v2 | optional `author` | who wrote the message. Absent: the thread's `for` for a user message, its `agent` for an assistant message |
+| `approval.decided` v2 | optional `by` | who decided. Absent: the thread's `for`. `no_one_there` and `cancelled` are decided by `{"kind": "glave"}` |
+
+Every other event (tool calls, model responses, compaction) is the thread's `agent` acting for the thread's `for`, and carries no actor of its own.
+
+A subagent's thread has the parent's `for`, its own profile as `agent`, and `origin.kind` `subagent`; its `parent` keeps naming the call that started it.
+
+### Who writes them
+
+- `by`, `author` and `origin.by` come from the caller the session API verified (see `session.md`), never from request parameters. Locally, the caller is the local person.
+- `for` and `agent` are set by the harness when the thread starts, from the space's owner and the chosen profile.
+- The model never sets any of them: none is a tool argument.
+
+### Reading older versions
+
+Each conversion is total, and changes no meaning:
+
+- `thread.started` v1 and v2 read as v3 with `for` and `agent` absent, which means the deployment's local person and its default agent (the only values possible before these fields existed), and with `origin.kind` `subagent` when `parent` is set, `fork` when `fork` is set, and `prompt` otherwise. In v3 itself, `for` and `agent` are always written.
+- `turn.started` v1 reads as v2 with no `trace` and no `auth`.
+- `message.added` v1 reads as v2 with no `author`.
+- `approval.decided` v1 reads as v2 with no `by`, except that `no_one_there` and `cancelled` read with `by` `{"kind": "glave"}`.
 
 ## Storage
 
@@ -114,7 +170,7 @@ Details shared by several types:
 Each of these is a later, separate decision, made when it is needed:
 
 - A per-event hash chain (`prev`) that makes receipts provable.
-- Trace ids on the envelope, for OpenTelemetry.
+- Trace ids on the envelope, for OpenTelemetry. (A turn already records its trace ID in `turn.started`; see "Who acted".)
 - A `critical` flag, which lets older readers refuse an event they must not skip.
 - Event types for receipts, retention and holds. They arrive with the features that write them. (Approval events arrive with the session API; see `session.md`.)
 
