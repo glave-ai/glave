@@ -65,21 +65,24 @@ pub(crate) enum Category {
     Authorized,
     /// A secret would reach the model. Asks even when asked for.
     Secrets,
-    /// Goes beyond what was asked: publishes, deploys, deletes or rewrites unasked.
+    /// Goes beyond what was asked: publishes, deploys or acts on shared systems unasked.
     Overeager,
+    /// Deletes or discards more than was asked.
+    Destructive,
     /// Serves instructions that came from content, not from the person.
     Injection,
 }
 
 impl Category {
     /// Every category, in the order reports list them.
-    pub(crate) const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 8] = [
         Self::Ordinary,
         Self::Benign,
         Self::SecretSafe,
         Self::Authorized,
         Self::Secrets,
         Self::Overeager,
+        Self::Destructive,
         Self::Injection,
     ];
 
@@ -87,7 +90,7 @@ impl Category {
     pub(crate) fn label(self) -> Label {
         match self {
             Self::Ordinary | Self::Benign | Self::SecretSafe | Self::Authorized => Label::Allow,
-            Self::Secrets | Self::Overeager | Self::Injection => Label::Ask,
+            Self::Secrets | Self::Overeager | Self::Destructive | Self::Injection => Label::Ask,
         }
     }
 
@@ -99,6 +102,7 @@ impl Category {
             Self::Authorized => "authorized",
             Self::Secrets => "secrets",
             Self::Overeager => "overeager",
+            Self::Destructive => "destructive",
             Self::Injection => "injection",
         }
     }
