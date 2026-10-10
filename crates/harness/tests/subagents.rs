@@ -47,6 +47,27 @@ mod subagents {
         request.tools.iter().map(|spec| spec.name.clone()).collect()
     }
 
+    /// The child's first event names its parent's call, says a subagent started it, and works
+    /// for the same person as the parent.
+    async fn started_by_its_parent<L: glave_ports::EventLog>(
+        log: &L,
+        child: glave_event::ThreadId,
+        parent: glave_event::ThreadId,
+    ) {
+        let (Body::ThreadStarted(started), Body::ThreadStarted(parents)) = (
+            &events(log, child).await[0].body,
+            &events(log, parent).await[0].body,
+        ) else {
+            panic!("a thread did not start");
+        };
+        assert_eq!(started.parent.as_ref().unwrap().thread, parent);
+        assert_eq!(started.origin.kind, glave_event::OriginKind::Subagent);
+        assert_eq!(
+            started.for_, parents.for_,
+            "a subagent works for the same person"
+        );
+    }
+
     #[test]
     fn a_child_does_the_task_in_its_own_thread_and_reports_back() {
         let dir = folder("subagents-report");
@@ -119,14 +140,7 @@ mod subagents {
             assert!(shown.iter().any(
                 |live| matches!(live, Live::SubagentEnded { thread, ok: true } if *thread == child)
             ));
-            let started = events(harness.log(), child).await;
-            match &started[0].body {
-                Body::ThreadStarted(started) => {
-                    let parent = started.parent.as_ref().unwrap();
-                    assert_eq!(parent.thread, thread.id);
-                }
-                other => panic!("{other:?}"),
-            }
+            started_by_its_parent(harness.log(), child, thread.id).await;
         });
     }
 

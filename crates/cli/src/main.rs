@@ -6,6 +6,7 @@ mod asking;
 mod client;
 mod config;
 mod home;
+mod identity;
 mod input;
 mod mcp;
 mod session;
