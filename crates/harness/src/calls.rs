@@ -12,6 +12,7 @@ use crate::approval::{ApprovalMode, ApprovalRequest, Approver, Decision, no_one_
 use crate::cancel::Cancel;
 use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::hooks::ToolHook;
 use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
 use crate::turn::{Live, Step, TurnSummary, absorb, tally};
@@ -105,20 +106,23 @@ where
             return Ok(crate::goal::update(thread, &call.arguments));
         }
         let Some((index, info)) = tools.get(&call.tool) else {
-            return Ok(ToolOutput::text(
-                true,
-                format!(
-                    "There is no tool named {:?}. The tools are {}.",
-                    call.tool,
-                    tools.names().join(", ")
-                ),
-            ));
+            let names = tools.names().join(", ");
+            let text = format!(
+                "There is no tool named {:?}. The tools are {names}.",
+                call.tool
+            );
+            return Ok(ToolOutput::text(true, text));
         };
         let Some(source) = self.sources.get(index) else {
             return Ok(ToolOutput::text(true, format!("{:?} is gone", call.tool)));
         };
         let name = info.spec.name.as_str();
         let summary = source.describe(name, &call.arguments);
+        let hooked = ToolHook::of(call, name);
+        let hook = self.stopped_by_hook(thread, &hooked, &summary, cancel, live);
+        if let Some(stopped) = hook.await? {
+            return Ok(stopped);
+        }
         let (effect, mut caution, secret, firm) = match source.assess(name, &call.arguments).await {
             Assessment::AsDeclared => (info.effect, None, false, false),
             Assessment::Reads => (Effect::Reads, None, false, false),
@@ -172,7 +176,34 @@ where
             summary,
             is_error: output.is_error,
         });
-        Ok(output)
+        self.after_tool(thread, &hooked, output, cancel).await
+    }
+
+    /// Runs the `PreToolUse` hooks: the result the model is given instead of running the
+    /// call, when one stopped it or the turn was cancelled meanwhile; `None` to go on. A hook
+    /// only stops calls: what passes is still asked about as before.
+    async fn stopped_by_hook(
+        &self,
+        thread: &mut Thread,
+        hooked: &ToolHook<'_>,
+        summary: &str,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<Option<ToolOutput>, HarnessError> {
+        let stopped = self.before_tool(thread, hooked, cancel).await?;
+        if cancel.is_cancelled() {
+            return Ok(Some(ToolOutput::text(true, NOT_RUN)));
+        }
+        Ok(stopped.map(|reason| {
+            live(Live::ToolFinished {
+                summary: format!("{summary} (stopped by a hook)"),
+                is_error: true,
+            });
+            ToolOutput::text(
+                true,
+                format!("Not run: a hook the person set up stopped this call: {reason}"),
+            )
+        }))
     }
 
     /// Puts the model's questions to the person and waits for the answers.

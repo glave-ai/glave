@@ -8,9 +8,9 @@ use serde_json::value::RawValue;
 use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeName};
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
-    ApprovalDecided, ApprovalRequested, GoalEnded, GoalResumed, GoalSet, MessageAdded,
+    ApprovalDecided, ApprovalRequested, GoalEnded, GoalResumed, GoalSet, HookRan, MessageAdded,
     ModelResponded, ThreadCompacted, ThreadStarted, ToolCallCompleted, ToolCallRequested,
-    TurnEnded, TurnStarted, approval, goal, message, model, thread, tool, turn,
+    TurnEnded, TurnStarted, approval, goal, hook, message, model, thread, tool, turn,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -45,6 +45,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (goal::ENDED, 1),
     (goal::ENDED, 2),
     (goal::RESUMED, 1),
+    (hook::TYPE, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -70,6 +71,7 @@ pub enum Body {
     GoalSet(GoalSet),
     GoalEnded(GoalEnded),
     GoalResumed(GoalResumed),
+    HookRan(HookRan),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -146,6 +148,7 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         goal::SET => goal::decode_set(version, data).map(|r| r.map(Body::GoalSet)),
         goal::ENDED => goal::decode_ended(version, data).map(|r| r.map(Body::GoalEnded)),
         goal::RESUMED => goal::decode_resumed(version, data).map(|r| r.map(Body::GoalResumed)),
+        hook::TYPE => hook::decode(version, data).map(|r| r.map(Body::HookRan)),
         _ => None,
     };
     let body = match known {
@@ -186,6 +189,7 @@ impl Event {
             Body::GoalSet(payload) => encode(header, payload),
             Body::GoalEnded(payload) => encode(header, payload),
             Body::GoalResumed(payload) => encode(header, payload),
+            Body::HookRan(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,

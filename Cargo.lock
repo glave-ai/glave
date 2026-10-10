@@ -974,6 +974,7 @@ dependencies = [
  "glave-shell",
  "jiff",
  "proptest",
+ "regex",
  "serde",
  "serde_json",
  "thiserror",

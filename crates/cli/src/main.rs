@@ -4,6 +4,7 @@
 mod args;
 mod asking;
 mod client;
+mod commands;
 mod computer;
 mod config;
 mod gateway;

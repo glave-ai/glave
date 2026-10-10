@@ -269,3 +269,97 @@ fn a_mistake_in_a_project_file_stops_glave_naming_it() {
     let error = block_on(Project::read(&dir, &BTreeMap::new())).unwrap_err();
     assert!(error.to_string().contains("aproval"), "{error}");
 }
+
+const GUARD: &str = "[[hooks.PreToolUse]]\nmatcher = \"bash\"\ncommand = \"./guard.sh\"\n";
+
+#[test]
+fn project_hooks_stay_off_until_trusted_and_the_model_is_not_told() {
+    let dir = scratch("hooks-off");
+    let rules = Constraints::default();
+    let project = repository(&dir, "", Some(&format!("model = \"m\"\n{GUARD}")));
+    let assessment = assess(project, &Record::default(), &rules);
+    assert_eq!(assessment.undecided().len(), 1);
+    let off = assessment.clone().apply(Answer::NoOne);
+    assert_eq!(off.hooks.len(), 0);
+    assert_eq!(off.withheld.len(), 0, "the model never calls a hook");
+    assert!(
+        off.hooks_off[0].contains("hook PreToolUse (./guard.sh (for tools matching bash)) is off"),
+        "{:?}",
+        off.hooks_off
+    );
+    let config = off.config.unwrap();
+    assert_eq!(
+        config.model.as_deref(),
+        Some("m"),
+        "the rest applies at once"
+    );
+    assert_eq!(config.hooks, None, "hooks never travel as choices");
+    let explained = assessment.clone().apply(Answer::Explaining);
+    assert!(explained.rows[0][1].contains("glave will ask once"));
+    let on = assessment.apply(Answer::Yes);
+    assert_eq!(on.hooks.len(), 1);
+    assert_eq!(on.hooks[0].command, "./guard.sh");
+    assert_eq!(on.config.unwrap().hooks, None);
+}
+
+#[test]
+fn a_trusted_hook_is_asked_about_again_when_it_changes() {
+    let dir = scratch("hooks-change");
+    let rules = Constraints::default();
+    let project = repository(&dir, "", Some(GUARD));
+    let mut record = Record::default();
+    let outcome = assess(project.clone(), &record, &rules).apply(Answer::Yes);
+    record.remember(&project, outcome.decisions.unwrap());
+    assert_eq!(undecided(&project, &record, &rules), 0, "asked once");
+    let again = assess(project, &record, &rules).apply(Answer::NoOne);
+    assert_eq!(again.hooks.len(), 1);
+    let wider = GUARD.replace("\"bash\"", "\"bash|edit\"");
+    let changed = repository(&dir, "", Some(&wider));
+    let assessment = assess(changed, &record, &rules);
+    let why: Vec<_> = assessment.undecided().iter().map(|(_, why)| *why).collect();
+    assert_eq!(why, [assess::Why::Changed]);
+    assert_eq!(assessment.apply(Answer::NoOne).hooks.len(), 0);
+}
+
+#[test]
+fn policy_can_forbid_project_hooks_whatever_the_person_says() {
+    let dir = scratch("hooks-forbid");
+    let project = repository(&dir, "", Some(GUARD));
+    let forbidding = constraints("version = 1\n[hooks]\nown = false\n");
+    let outcome = assess(project, &Record::default(), &forbidding).apply(Answer::Yes);
+    assert_eq!(outcome.hooks.len(), 0);
+    assert!(
+        outcome.hooks_off[0].contains("does not allow hooks a project brings"),
+        "{:?}",
+        outcome.hooks_off
+    );
+}
+
+#[test]
+fn a_hook_written_wrong_stops_glave_naming_the_file() {
+    let dir = scratch("hooks-wrong");
+    std::fs::create_dir_all(dir.join(".glave")).unwrap();
+    for (text, says) in [
+        (
+            "[[hooks.PreToolUse]]\nmatcher = \"(\"\ncommand = \"x\"\n",
+            "regular expression",
+        ),
+        (
+            "[[hooks.Stop]]\nmatcher = \"bash\"\ncommand = \"x\"\n",
+            "do not run for a tool",
+        ),
+        (
+            "[[hooks.PreToolUse]]\ncommand = \"x\"\ntype = \"command\"\n",
+            "type",
+        ),
+        ("[[hooks.BeforeTool]]\ncommand = \"x\"\n", "BeforeTool"),
+    ] {
+        std::fs::write(dir.join(".glave/config.toml"), text).unwrap();
+        let error = block_on(Project::read(&dir, &BTreeMap::new())).unwrap_err();
+        let error = format!("{error:#}");
+        assert!(
+            error.contains("config.toml") && error.contains(says),
+            "{error}"
+        );
+    }
+}
