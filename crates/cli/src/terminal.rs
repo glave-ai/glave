@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use std::io::{IsTerminal as _, Write as _};
 use std::time::Duration;
 
-use glave_event::{Currency, Money, Outcome, ThreadId};
+use glave_event::{Currency, GoalReason, Money, Outcome, ThreadId};
 use glave_harness::Question;
 use glave_session::protocol::{TurnResult, Update};
 
@@ -323,6 +323,25 @@ impl Printer {
     /// What the person can change to fix the error just shown.
     pub fn fix(&mut self, text: &str) {
         println!("  {} {text}", paint(self.color, YELLOW, "fix:"));
+        flush();
+    }
+
+    /// How a goal ended, and the tokens its turns used.
+    pub fn goal_ended(&mut self, reason: GoalReason, tokens: u64) {
+        self.waiting.stop();
+        let (word, color, why) = match reason {
+            GoalReason::MetByCheck => ("goal met", CYAN, "the check passed"),
+            GoalReason::MetPerModel => ("goal met", CYAN, "the model says it is done"),
+            GoalReason::Stopped => ("goal stopped", YELLOW, "you stopped it"),
+            GoalReason::Budget => ("goal stopped", YELLOW, "its token budget ran out"),
+            GoalReason::Stalled => (
+                "goal stopped",
+                YELLOW,
+                "three turns in a row without a tool call",
+            ),
+        };
+        let detail = format!("{why} · {} tokens", thousands(tokens));
+        self.note(color, word, &detail);
         flush();
     }
 

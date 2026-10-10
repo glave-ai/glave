@@ -1,8 +1,8 @@
 //! One turn: the person's prompt, then model calls and tool calls until the model is done.
 
 use glave_event::{
-    CallId, Currency, MessageAdded, ModelRef, Money, Outcome, Part, Role, StopReason, ThreadId,
-    TokenCounts, ToolCallRequested, TurnEnded, TurnStarted,
+    CallId, Currency, MessageAdded, ModelRef, Money, Outcome, Part, Principal, Role, StopReason,
+    ThreadId, TokenCounts, ToolCallRequested, TurnEnded, TurnStarted,
 };
 use glave_ports::{
     BlobStore, BoxFuture, Completion, Delta, EventLog, Failure, Message, ModelProvider,
@@ -16,6 +16,7 @@ use crate::approval::{ApprovalMode, Approver};
 use crate::caller::Caller;
 use crate::cancel::Cancel;
 use crate::compaction::{Measured, chars, responded};
+use crate::goal::{BUDGET_SPENT, counted};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::question::Question;
 use crate::repeats::Repeats;
@@ -91,6 +92,9 @@ pub enum Live {
 pub(crate) struct Prompt<'a> {
     pub(crate) text: &'a str,
     pub(crate) caller: &'a Caller,
+    /// Whether glave wrote the prompt, as a goal's continuation: recorded as glave's, and
+    /// never read as the person's say-so.
+    pub(crate) by_glave: bool,
 }
 
 /// What a turn carries from step to step.
@@ -114,7 +118,7 @@ pub struct TurnSummary {
 }
 
 impl TurnSummary {
-    fn started() -> Self {
+    pub(crate) fn started() -> Self {
         Self {
             outcome: Outcome::Completed,
             model_calls: 0,
@@ -178,6 +182,7 @@ where
         let prompt = Prompt {
             text: prompt,
             caller,
+            by_glave: false,
         };
         self.run_with(thread, prompt, toolset, cancel, live).await
     }
@@ -224,8 +229,9 @@ where
                 step.summary.model_calls = step.summary.model_calls.saturating_add(1);
                 tally(&mut step.summary, &compaction);
             }
-            let last = self.capped(step.summary.model_calls.saturating_add(1));
+            let last = self.last_step(thread, &step.summary);
             let choice = self.choice(thread, last).await?;
+            let last = last.is_some();
             // Asking the model writes nothing, so it can be dropped when the turn is cancelled.
             let Some(asked) = cancel
                 .run(self.ask_model(thread, &step.toolset, choice, live))
@@ -279,6 +285,19 @@ where
         self.settings.max_steps.is_some_and(|max| calls >= max)
     }
 
+    /// Why the next step is the turn's last, if it is: the step cap, or a goal's spent budget.
+    fn last_step(&self, thread: &Thread, summary: &TurnSummary) -> Option<&'static str> {
+        if self.capped(summary.model_calls.saturating_add(1)) {
+            return Some(STEP_LIMIT);
+        }
+        let goal = thread.goal.as_ref().filter(|goal| goal.running)?;
+        let used = goal
+            .progress
+            .tokens
+            .saturating_add(counted(&summary.tokens));
+        (used >= goal.progress.token_budget).then_some(BUDGET_SPENT)
+    }
+
     /// Tells the model something about the turn itself, as a recorded user message.
     async fn add_note(&self, thread: &mut Thread, note: &str) -> Result<(), HarnessError> {
         let parts = vec![Part::Text {
@@ -299,9 +318,13 @@ where
     /// The tools the model may call this step. The last step allowed answers in text: what
     /// was done and what is left, as OpenCode asks for, rather than stopping mid-work without
     /// a word.
-    async fn choice(&self, thread: &mut Thread, last: bool) -> Result<ToolChoice, HarnessError> {
-        if last {
-            self.add_note(thread, STEP_LIMIT).await?;
+    async fn choice(
+        &self,
+        thread: &mut Thread,
+        last: Option<&str>,
+    ) -> Result<ToolChoice, HarnessError> {
+        if let Some(note) = last {
+            self.add_note(thread, note).await?;
             Ok(ToolChoice::None)
         } else {
             Ok(ToolChoice::Auto)
@@ -328,6 +351,7 @@ where
         let Prompt {
             text: prompt,
             caller,
+            by_glave,
         } = prompt;
         let config = TurnConfig {
             model: &self.settings.model,
@@ -370,11 +394,18 @@ where
         let message = MessageAdded {
             role: Role::User,
             parts: parts.clone(),
-            author: self.other_than_for(caller.person),
+            author: if by_glave {
+                Some(Principal::glave())
+            } else {
+                self.other_than_for(caller.person)
+            },
         };
         self.stage(thread, &mut events, &message)?;
         self.commit(thread, events).await?;
         thread.messages.push(Message::User { parts });
+        if by_glave {
+            return Ok(());
+        }
         thread.request = Some(prompt.to_owned());
         if !thread.delegated() {
             thread.asked.push(prompt.to_owned());

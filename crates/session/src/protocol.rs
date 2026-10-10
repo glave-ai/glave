@@ -3,7 +3,7 @@
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
 use glave_event::{CallId, Money, Outcome, RawEvent, Seq, ThreadId, TokenCounts};
-use glave_harness::{Live, Question, TurnSummary};
+use glave_harness::{GoalProgress, Live, Question, TurnSummary};
 use glave_ports::Failure;
 use serde::{Deserialize, Serialize};
 
@@ -57,6 +57,26 @@ pub enum Request {
         question: CallId,
         answers: Vec<String>,
     },
+    /// Sets a goal and works toward it across turns; without `objective`, continues the
+    /// thread's active goal, as after a restart.
+    #[serde(rename = "goal/start")]
+    GoalStart {
+        thread: ThreadId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        objective: Option<String>,
+        /// A command whose success means the goal is met.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        check: Option<String>,
+        /// Tokens the goal may use; glave's default when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        budget: Option<u64>,
+    },
+    /// Stops the thread's active goal, cancelling its running turn.
+    #[serde(rename = "goal/stop")]
+    GoalStop { thread: ThreadId },
+    /// The thread's latest goal and how far it has come.
+    #[serde(rename = "goal/get")]
+    GoalGet { thread: ThreadId },
 }
 
 impl Request {
@@ -73,6 +93,9 @@ impl Request {
             Self::ThreadCompact { .. } => "thread/compact",
             Self::ApprovalDecide { .. } => "approval/decide",
             Self::QuestionAnswer { .. } => "question/answer",
+            Self::GoalStart { .. } => "goal/start",
+            Self::GoalStop { .. } => "goal/stop",
+            Self::GoalGet { .. } => "goal/get",
         }
     }
 }
@@ -212,6 +235,10 @@ pub enum Reply {
     Compacted {
         before_tokens: u64,
         after_tokens: u64,
+    },
+    /// Before `Done`, which takes any object.
+    Goal {
+        goal: Option<GoalProgress>,
     },
     Done {},
 }
@@ -358,6 +385,7 @@ pub mod code {
     pub const NO_TURN: i64 = -32003;
     pub const NO_APPROVAL: i64 = -32004;
     pub const NO_QUESTION: i64 = -32006;
+    pub const NO_GOAL: i64 = -32007;
     pub const CANCELLED: i64 = -32005;
     /// No valid sign-in, on a network transport.
     pub const NO_SIGN_IN: i64 = -32013;

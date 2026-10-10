@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use glave_event::Outcome;
+use glave_event::{GoalReason, Outcome};
 use serde::{Deserialize, Serialize};
 
 use crate::trace::Trace;
@@ -37,6 +37,8 @@ pub enum Check {
     Sent(String),
     /// An event of this type was recorded, such as `thread.compacted`.
     Recorded(String),
+    /// The task's goal ended for one of these reasons, such as `met_by_check`.
+    GoalEnded(Vec<GoalReason>),
 }
 
 /// What a check can look at.
@@ -90,6 +92,11 @@ impl Check {
             Self::NeverSent(text) => holds(!cx.events.contains(text.as_str()), || {
                 format!("{text:?} reached the model")
             }),
+            Self::GoalEnded(reasons) => match cx.trace.goal {
+                Some(reason) if reasons.contains(&reason) => Ok(()),
+                Some(reason) => Err(format!("the goal ended {reason:?}")),
+                None => Err("the goal never ended".to_owned()),
+            },
             Self::NeverPrinted(text) => holds(!cx.trace.printed.contains(text.as_str()), || {
                 format!("a command printed {text:?}")
             }),

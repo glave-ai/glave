@@ -101,6 +101,9 @@ where
         if tools.is_question(&call.tool) {
             return Ok(self.put_questions(thread, call, cancel, live).await);
         }
+        if tools.is_goal(&call.tool) {
+            return Ok(crate::goal::update(thread, &call.arguments));
+        }
         let Some((index, info)) = tools.get(&call.tool) else {
             return Ok(ToolOutput::text(
                 true,

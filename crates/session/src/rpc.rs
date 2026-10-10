@@ -36,6 +36,9 @@ const METHODS: &[&str] = &[
     "thread/compact",
     "approval/decide",
     "question/answer",
+    "goal/start",
+    "goal/stop",
+    "goal/get",
 ];
 
 /// JSON-RPC's own error codes.
@@ -147,15 +150,8 @@ where
     };
     // Local transports act as the local person.
     let local = Caller::default();
-    let answered = match request {
-        Request::TurnStart {
-            thread,
-            prompt,
-            meta,
-        } => match server
-            .start_turn_as(&local, thread, &prompt, meta.idempotency_key.as_ref())
-            .await
-        {
+    let answered = match server.start_streaming(&local, request).await {
+        Ok(started) => match started {
             Ok(mut stream) => loop {
                 match stream.next().await {
                     Some(TurnItem::Note(note)) => {
@@ -174,7 +170,7 @@ where
             },
             Err(failed) => Err(failed),
         },
-        other => server.request_as(&local, other).await,
+        Err(other) => server.request_as(&local, *other).await,
     };
     // A request without an id is a notification, which is never answered.
     if let Some(id) = id {

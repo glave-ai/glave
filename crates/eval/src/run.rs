@@ -9,8 +9,8 @@ use std::time::Instant;
 
 use glave_computer::LocalComputers;
 use glave_harness::{
-    Cancel, Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox, Settings, SystemClock, Todo,
-    Workspace, agents_md,
+    Caller, Cancel, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox,
+    Settings, SystemClock, Todo, Workspace, agents_md,
 };
 use glave_ports::{EventLog, MemoryBlobs, MemoryLog, OrgId, Scope, SpaceId};
 use glave_provider_openai::{Config, OpenAiCompatible};
@@ -121,7 +121,10 @@ pub async fn attempt(
         failures.push(err);
         Trace::default()
     });
-    failures.extend(ended(task.outcome, &trace.outcomes).err());
+    // A goal's turns may end at the step limit and go on; its own checks grade how it ended.
+    if task.goal.is_none() {
+        failures.extend(ended(task.outcome, &trace.outcomes).err());
+    }
     if let Some(test) = task.test_script() {
         let test = test.display().to_string();
         let output = script("bash", &[test.as_str()], &workspace, &environment).await;
@@ -242,10 +245,24 @@ async fn converse(
         let cancel = Cancel::new();
         let _deadline = Deadline::cancels(&cancel, deadline);
         let mut show = |live| note(&mut transcript, live);
-        match harness
-            .run_turn(&mut thread, prompt, &cancel, &mut show)
-            .await
-        {
+        let ran = match (&task.goal, index) {
+            (Some(goal), 0) => {
+                let goal = Goal {
+                    objective: prompt.clone(),
+                    check: goal.check.clone(),
+                    token_budget: goal.budget.unwrap_or(DEFAULT_BUDGET),
+                };
+                harness
+                    .start_goal(&mut thread, goal, &Caller::default(), &cancel, &mut show)
+                    .await
+            }
+            _ => {
+                harness
+                    .run_turn(&mut thread, prompt, &cancel, &mut show)
+                    .await
+            }
+        };
+        match ran {
             Ok(_) if cancel.is_cancelled() => {
                 failures.push(format!("took longer than {}s", task.timeout.as_secs()));
                 break;

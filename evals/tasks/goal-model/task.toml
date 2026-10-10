@@ -1,0 +1,15 @@
+[task]
+name = "glave/goal-model"
+description = "A goal with no check: five stubbed functions, too many for one short turn; the model says when the goal is met, and hidden tests grade it."
+
+[agent]
+timeout_sec = 900
+
+[glave]
+tier = "hard"
+# Real work runs commands: nothing asks but secrets.
+approval = "auto"
+# Three tool steps a turn, so the work takes several turns and the goal must continue.
+max_steps = 4
+goal = { budget = 600000 }
+checks = [{ goal_ended = ["met_per_model"] }]
