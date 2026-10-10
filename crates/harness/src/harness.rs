@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use glave_event::{
-    At, EncodeError, EventId, Header, InvalidValue, ParentCall, Part, Payload, Producer, RawEvent,
-    Seq, ThreadId, ThreadStarted, encode,
+    At, EncodeError, EventId, Header, InvalidValue, Origin, OriginKind, ParentCall, Part, Payload,
+    Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, encode,
 };
 use glave_ports::{
     BlobError, BlobStore, EventLog, LogError, Message, ModelProvider, ProviderError, Scope,
@@ -46,6 +46,12 @@ pub struct Settings {
     pub max_output_tokens: Option<u32>,
     /// Whether the model may hand work to subagents with `agent`.
     pub subagents: bool,
+    /// The person whose work every thread is: recorded as the thread's `for`. When `None`,
+    /// the harness makes one id when it is created, used for all its threads.
+    pub person: Option<PrincipalId>,
+    /// The agent profile that runs every thread: recorded as the thread's `agent`. When
+    /// `None`, made once like `person`.
+    pub agent: Option<PrincipalId>,
 }
 
 impl Settings {
@@ -64,6 +70,8 @@ impl Settings {
             max_steps: None,
             max_output_tokens: None,
             subagents: false,
+            person: None,
+            agent: None,
         }
     }
 }
@@ -81,6 +89,14 @@ pub struct Parts<P, L, B, A> {
 }
 
 /// The agent loop and everything it needs.
+/// Who a harness's threads work for, and the agent that runs them. A thread's subagents work
+/// for the same person and, until agent profiles have their own ids, under the same agent.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Actors {
+    pub(crate) person: Option<PrincipalId>,
+    pub(crate) agent: Option<PrincipalId>,
+}
+
 pub struct Harness<P, L, B, A> {
     pub(crate) provider: P,
     pub(crate) log: L,
@@ -92,6 +108,8 @@ pub struct Harness<P, L, B, A> {
     /// Where tools come from: the built-in tools first, then any others, such as MCP servers.
     pub(crate) sources: Vec<Arc<dyn ToolSource>>,
     pub(crate) settings: Settings,
+    /// Who every thread works for, and the agent that runs it: from the settings, or made once.
+    pub(crate) actors: Actors,
     /// The model's real context window, once a refusal has stated it; 0 until then.
     pub(crate) learned_window: AtomicU64,
 }
@@ -156,7 +174,13 @@ where
 {
     pub fn new(parts: Parts<P, L, B, A>, settings: Settings) -> Self {
         let workspace = Arc::new(parts.workspace);
+        let made = || PrincipalId::new(parts.clock.now(), parts.entropy.bytes()).ok();
+        let actors = Actors {
+            person: settings.person.or_else(made),
+            agent: settings.agent.or_else(made),
+        };
         Self {
+            actors,
             provider: parts.provider,
             log: parts.log,
             blobs: parts.blobs,
@@ -236,9 +260,16 @@ where
             &thread,
             &mut events,
             &ThreadStarted {
+                origin: Origin::of(if parent.is_some() {
+                    OriginKind::Subagent
+                } else {
+                    OriginKind::Prompt
+                }),
                 producer,
                 fork: None,
                 parent,
+                for_: self.actors.person.map(Principal::person),
+                agent: self.actors.agent.map(Principal::agent),
             },
         )?;
         self.commit(&mut thread, events).await?;

@@ -6,6 +6,7 @@ use serde_json::value::RawValue;
 
 use crate::codec::{Payload, parse};
 use crate::id::CallId;
+use crate::payload::principal::Principal;
 
 pub(crate) const REQUESTED: &str = "approval.requested";
 pub(crate) const DECIDED: &str = "approval.decided";
@@ -28,6 +29,32 @@ pub struct ApprovalRequested {
 pub struct ApprovalDecided {
     pub call_id: CallId,
     pub decision: Verdict,
+    /// Who decided. Absent: the thread's `for`. Automatic outcomes (`no_one_there`,
+    /// `cancelled`) are decided by glave. Since version 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<Principal>,
+}
+
+/// Version 1, before a decision named who made it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApprovalDecidedV1 {
+    call_id: CallId,
+    decision: Verdict,
+}
+
+impl From<ApprovalDecidedV1> for ApprovalDecided {
+    fn from(old: ApprovalDecidedV1) -> Self {
+        let by = match old.decision {
+            Verdict::NoOneThere | Verdict::Cancelled => Some(Principal::glave()),
+            Verdict::AllowOnce | Verdict::AllowForThread | Verdict::Deny => None,
+        };
+        Self {
+            call_id: old.call_id,
+            decision: old.decision,
+            by,
+        }
+    }
 }
 
 /// How an approval was answered.
@@ -52,7 +79,7 @@ impl Payload for ApprovalRequested {
 
 impl Payload for ApprovalDecided {
     const TYPE: &'static str = DECIDED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 pub(crate) fn decode_requested(
@@ -70,7 +97,8 @@ pub(crate) fn decode_decided(
     data: &RawValue,
 ) -> Option<serde_json::Result<ApprovalDecided>> {
     match version {
-        1 => Some(parse(data)),
+        1 => Some(parse::<ApprovalDecidedV1>(data).map(ApprovalDecided::from)),
+        2 => Some(parse(data)),
         _ => None,
     }
 }

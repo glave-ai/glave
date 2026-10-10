@@ -18,11 +18,11 @@ pub use blob::{BlobRef, Sha256};
 pub use codec::{Body, Event, KNOWN_VERSIONS, Payload, Unknown, decode, encode};
 pub use envelope::{At, ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, Seq, TypeName};
 pub use error::{DecodeError, EncodeError, InvalidValue};
-pub use id::{CallId, EventId, ThreadId};
+pub use id::{CallId, EventId, PrincipalId, ThreadId};
 pub use money::{Currency, Money};
 pub use payload::{
-    ApprovalDecided, ApprovalRequested, Arguments, Cost, ForkPoint, MessageAdded, ModelRef,
-    ModelResponded, Opaque, Outcome, ParentCall, Part, Producer, Role, StopReason, ThreadCompacted,
-    ThreadStarted, TokenCounts, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted,
-    Usage, Verdict,
+    ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, ForkPoint, MessageAdded,
+    ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome, ParentCall, Part, Principal,
+    PrincipalKind, Producer, Role, StopReason, ThreadCompacted, ThreadStarted, TokenCounts,
+    ToolCallCompleted, ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
 };

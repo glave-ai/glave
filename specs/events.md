@@ -8,8 +8,6 @@ The reference implementation is the `glave-event` crate. Where this document and
 
 Envelope version 1. Draft until glave 0.1 ships: until then, version 1 payloads may still change. From 0.1 on, every published payload version is frozen.
 
-The payload versions in "Who acted" below (`thread.started` v3, `turn.started` v2, `message.added` v2, `approval.decided` v2) are specified ahead of the `glave-event` crate, which follows in the next change (issue #96). Until it lands, the crate writes the earlier versions.
-
 ## The envelope
 
 Every event is one JSON object with exactly these eight members:
@@ -133,7 +131,7 @@ A principal is anyone or anything that can act, written as a reference:
 
 Every other event (tool calls, model responses, compaction) is the thread's `agent` acting for the thread's `for`, and carries no actor of its own.
 
-A subagent's thread has the parent's `for`, its own profile as `agent`, and `origin.kind` `subagent`; its `parent` keeps naming the call that started it.
+A subagent's thread has the parent's `for`, the subagent's profile as `agent` (the parent's `agent` until profiles have ids of their own), and `origin.kind` `subagent`; its `parent` keeps naming the call that started it.
 
 ### Who writes them
 

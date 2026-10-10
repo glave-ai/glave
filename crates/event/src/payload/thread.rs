@@ -8,11 +8,13 @@ use crate::codec::{Payload, parse};
 use crate::envelope::Seq;
 use crate::id::{CallId, ThreadId};
 use crate::payload::part::Part;
+use crate::payload::principal::{Principal, open_kind};
 
 pub(crate) const TYPE: &str = "thread.started";
 pub(crate) const COMPACTED: &str = "thread.compacted";
 
-/// A thread begins. Always at `seq` 1.
+/// A thread begins. Always at `seq` 1. Records, once, whose work the thread is and which
+/// agent does it; every later event acts for them unless it says otherwise.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ThreadStarted {
@@ -20,9 +22,96 @@ pub struct ThreadStarted {
     /// Set when this thread continues another thread's events up to and including `seq`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fork: Option<ForkPoint>,
-    /// Set when a tool call in another thread started this one, as a task. Since version 2.
+    /// Set when a tool call in another thread started this one, as a subagent. Since version 2.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<ParentCall>,
+    /// Whose work this is. Always written since version 3; absent only in older threads, where
+    /// it means the deployment's local person.
+    #[serde(rename = "for", default, skip_serializing_if = "Option::is_none")]
+    pub for_: Option<Principal>,
+    /// The agent profile that runs the thread. Always written since version 3; absent only in
+    /// older threads, where it means the default agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<Principal>,
+    /// What started the thread. Since version 3.
+    pub origin: Origin,
+}
+
+/// What started a thread, and who.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Origin {
+    pub kind: OriginKind,
+    /// An opaque pointer to what started it, such as a schedule or a chat thread.
+    #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    /// Who started it, when that differs from the thread's `for`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<Principal>,
+}
+
+impl Origin {
+    /// Started by a kind of trigger alone, with no pointer and nobody else.
+    pub fn of(kind: OriginKind) -> Self {
+        Self {
+            kind,
+            reference: None,
+            by: None,
+        }
+    }
+}
+
+open_kind! {
+    /// What kind of thing started a thread.
+    pub enum OriginKind {
+        /// Someone typed a prompt.
+        Prompt => "prompt",
+        /// Someone spoke.
+        Voice => "voice",
+        /// A schedule fired.
+        Schedule => "schedule",
+        /// A webhook arrived.
+        Webhook => "webhook",
+        /// A message in a chat platform.
+        Chat => "chat",
+        /// A call in another thread, as a subagent.
+        Subagent => "subagent",
+        /// A fork of another thread.
+        Fork => "fork",
+        /// An assistant acting across a person's projects.
+        Assistant => "assistant",
+    }
+}
+
+/// Versions 1 and 2, before a thread recorded who it was for.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ThreadStartedV2 {
+    producer: Producer,
+    #[serde(default)]
+    fork: Option<ForkPoint>,
+    #[serde(default)]
+    parent: Option<ParentCall>,
+}
+
+impl From<ThreadStartedV2> for ThreadStarted {
+    fn from(old: ThreadStartedV2) -> Self {
+        let kind = if old.parent.is_some() {
+            OriginKind::Subagent
+        } else if old.fork.is_some() {
+            OriginKind::Fork
+        } else {
+            OriginKind::Prompt
+        };
+        Self {
+            producer: old.producer,
+            fork: old.fork,
+            parent: old.parent,
+            for_: None,
+            agent: None,
+            origin: Origin::of(kind),
+        }
+    }
 }
 
 /// The call in another thread that started a thread.
@@ -51,13 +140,15 @@ pub struct ForkPoint {
 
 impl Payload for ThreadStarted {
     const TYPE: &'static str = TYPE;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 3;
 }
 
-/// Version 1 had no `parent`; it reads as a thread no call started.
+/// Version 1 had no `parent`; versions 1 and 2 had no `for`, `agent` or `origin`, and read as
+/// the local person's thread, run by the default agent.
 pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<ThreadStarted>> {
     match version {
-        1 | 2 => Some(parse(data)),
+        1 | 2 => Some(parse::<ThreadStartedV2>(data).map(ThreadStarted::from)),
+        3 => Some(parse(data)),
         _ => None,
     }
 }
