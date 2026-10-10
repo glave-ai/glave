@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use anyhow::{anyhow, bail};
-use glave_harness::{ApprovalMode, SandboxLevel};
+use glave_harness::{ApprovalMode, Hook, HookPoint, Hooks, SandboxLevel};
 use globset::Glob;
 use serde::Deserialize;
 
@@ -22,6 +22,57 @@ pub struct ConfigFile {
     pub sandbox: Option<SandboxChoice>,
     /// The MCP servers to turn on.
     pub mcp: Option<Vec<String>>,
+    /// Commands to run at points of a turn. They add up across files rather than the
+    /// nearest winning: the person's run, and a trusted project's run too.
+    pub hooks: Option<HooksFile>,
+}
+
+/// `[hooks]`: each point's hooks, under the names Claude Code and Codex give the points.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HooksFile {
+    #[serde(rename = "PreToolUse", default)]
+    pub pre_tool_use: Vec<HookEntry>,
+    #[serde(rename = "PostToolUse", default)]
+    pub post_tool_use: Vec<HookEntry>,
+    #[serde(rename = "UserPromptSubmit", default)]
+    pub user_prompt_submit: Vec<HookEntry>,
+    #[serde(rename = "Stop", default)]
+    pub stop: Vec<HookEntry>,
+}
+
+/// One hook as written: `[[hooks.PreToolUse]]`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HookEntry {
+    pub command: String,
+    /// A regular expression over the whole tool name; every tool when absent.
+    pub matcher: Option<String>,
+    /// Seconds before it is stopped.
+    pub timeout: Option<u64>,
+}
+
+impl HooksFile {
+    /// Every hook, point by point, in the order written.
+    pub fn hooks(&self) -> Vec<Hook> {
+        let points = [
+            (HookPoint::PreToolUse, &self.pre_tool_use),
+            (HookPoint::PostToolUse, &self.post_tool_use),
+            (HookPoint::UserPromptSubmit, &self.user_prompt_submit),
+            (HookPoint::Stop, &self.stop),
+        ];
+        points
+            .into_iter()
+            .flat_map(|(point, entries)| {
+                entries.iter().map(move |entry| Hook {
+                    point,
+                    command: entry.command.clone(),
+                    matcher: entry.matcher.clone(),
+                    timeout_secs: entry.timeout,
+                })
+            })
+            .collect()
+    }
 }
 
 /// An approval mode as written.
@@ -95,6 +146,16 @@ pub struct PolicyFile {
     pub budget: BudgetRules,
     #[serde(default)]
     pub projects: ProjectRules,
+    #[serde(default)]
+    pub hooks: HookRules,
+}
+
+/// `[hooks]`.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HookRules {
+    /// Whether people and projects may run hooks of their own.
+    pub own: Option<bool>,
 }
 
 /// `[projects]`: which projects need no question.
@@ -169,7 +230,12 @@ pub struct BudgetRules {
 
 /// `config.toml` at `path`, from its `text`.
 pub fn config(text: &str, path: &Path) -> anyhow::Result<ConfigFile> {
-    toml::from_str(text).map_err(|error| anyhow!("{}: {error}", path.display()))
+    let file: ConfigFile =
+        toml::from_str(text).map_err(|error| anyhow!("{}: {error}", path.display()))?;
+    if let Some(hooks) = &file.hooks {
+        Hooks::new(hooks.hooks()).map_err(|error| anyhow!("{}: {error}", path.display()))?;
+    }
+    Ok(file)
 }
 
 /// `policy.toml` at `path`, from its `text`: a version glave knows, and globs that compile.

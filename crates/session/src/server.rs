@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::{Seq, ThreadId};
 use glave_harness::{
-    Caller, Clock, Entropy, Harness, HarnessError, Parts, Settings, TurnSummary, Workspace,
+    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Settings, TurnSummary, Workspace,
 };
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, ToolSource};
 use tokio::sync::{broadcast, watch};
@@ -34,6 +34,8 @@ pub struct Wiring<P, L, B> {
     pub workspace: Workspace,
     /// Tools beside the built-in ones, such as MCP servers'.
     pub tools: Vec<Arc<dyn ToolSource>>,
+    /// Commands run at points of every turn.
+    pub hooks: Hooks,
 }
 
 /// A session server for one workspace and one scope. Clones share it.
@@ -87,7 +89,9 @@ where
         };
         Self {
             inner: Arc::new(Inner {
-                harness: Harness::new(parts, settings).with_tools(wiring.tools),
+                harness: Harness::new(parts, settings)
+                    .with_tools(wiring.tools)
+                    .with_hooks(wiring.hooks),
                 scope,
                 hub,
                 approvals,
@@ -304,6 +308,7 @@ pub(crate) fn api(error: &HarnessError) -> ApiError {
         HarnessError::NotFound(thread) => no_thread(*thread),
         HarnessError::Cancelled => ApiError::new(code::CANCELLED, "cancelled"),
         HarnessError::NoGoal(_) => ApiError::new(code::NO_GOAL, error.to_string()),
+        HarnessError::PromptBlocked(_) => ApiError::new(code::PROMPT_BLOCKED, error.to_string()),
         _ => ApiError::new(code::INTERNAL, error.to_string()),
     }
 }

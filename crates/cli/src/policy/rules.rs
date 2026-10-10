@@ -37,6 +37,8 @@ pub enum Kind {
     PersonPerDayUsd(f64),
     /// Projects at these paths (globs) are trusted without asking.
     ProjectsTrusted(Vec<String>),
+    /// People and projects may not run hooks of their own.
+    HooksOwnForbidden,
 }
 
 impl fmt::Display for Kind {
@@ -58,6 +60,7 @@ impl fmt::Display for Kind {
             Self::McpOwnForbidden => f.write_str("[mcp] own = false"),
             Self::PersonPerDayUsd(usd) => write!(f, "[budget] person_per_day_usd = {usd}"),
             Self::ProjectsTrusted(globs) => write!(f, "[projects] trusted = {}", quoted(globs)),
+            Self::HooksOwnForbidden => f.write_str("[hooks] own = false"),
         }
     }
 }
@@ -113,6 +116,9 @@ impl Constraints {
             }
             if !file.projects.trusted.is_empty() {
                 add(Kind::ProjectsTrusted(file.projects.trusted.clone()));
+            }
+            if file.hooks.own == Some(false) {
+                add(Kind::HooksOwnForbidden);
             }
         }
         Self { rules }
@@ -181,6 +187,11 @@ impl Constraints {
     /// The first rule that forbids people's own MCP servers.
     pub fn own_mcp_forbidden(&self) -> Option<&Rule> {
         self.first(|kind| matches!(kind, Kind::McpOwnForbidden))
+    }
+
+    /// The first rule that forbids people's and projects' own hooks.
+    pub fn own_hooks_forbidden(&self) -> Option<&Rule> {
+        self.first(|kind| matches!(kind, Kind::HooksOwnForbidden))
     }
 
     /// The first rule that trusts the project at `root` without asking. Unlike the others

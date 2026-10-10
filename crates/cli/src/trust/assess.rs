@@ -4,6 +4,8 @@
 
 use std::collections::BTreeMap;
 
+use glave_harness::Hook;
+
 use crate::policy::{ConfigFile, Constraints};
 use crate::trust::project::{Item, Project, SETTINGS};
 use crate::trust::record::{Decision, FILE, Record};
@@ -54,8 +56,13 @@ pub struct Outcome {
     pub config: Option<ConfigFile>,
     /// The project servers to start, by name, each as JSON.
     pub servers: BTreeMap<String, String>,
+    /// The project hooks that run.
+    pub hooks: Vec<Hook>,
     /// What stays off and why, one sentence each: for the person, and for the model.
     pub withheld: Vec<String>,
+    /// The project hooks that stay off and why, for the person only: the model never
+    /// calls a hook, so it need not know.
+    pub hooks_off: Vec<String>,
     /// The record to keep, when a question was answered.
     pub decisions: Option<BTreeMap<String, Decision>>,
     /// One line per item for `glave policy explain`: what it is, and where it stands.
@@ -75,10 +82,14 @@ pub fn assess(project: Project, record: &Record, constraints: &Constraints) -> A
         .items()
         .into_iter()
         .map(|item| {
-            let forbidden = constraints
-                .own_mcp_forbidden()
-                .filter(|_| item.is_server())
-                .map(ToString::to_string);
+            let forbidden = if item.is_server() {
+                constraints.own_mcp_forbidden()
+            } else if item.is_hook() {
+                constraints.own_hooks_forbidden()
+            } else {
+                None
+            }
+            .map(ToString::to_string);
             let standing = match (forbidden, &trusting, before.get(&item.id)) {
                 (Some(rule), ..) => Standing::Forbidden(rule),
                 (None, Some(rule), _) => Standing::PreApproved(rule.clone()),
@@ -113,26 +124,30 @@ impl Assessment {
     /// What the run does, given `answer` to the question if there was one.
     pub fn apply(self, answer: Answer) -> Outcome {
         let mut servers = BTreeMap::new();
+        let mut hooks_on = Vec::new();
         let mut withheld = Vec::new();
+        let mut hooks_off = Vec::new();
         let mut rows = Vec::new();
         let mut decisions = BTreeMap::new();
         let mut settings_on = false;
         for (item, standing) in &self.items {
-            let (on, text, reason) = verdict(standing, answer);
+            let (on, text, reason) = verdict(item, standing, answer);
             rows.push([format!("{} ({})", item.label(), item.shows), text]);
             if on {
-                match item.id.strip_prefix("mcp:") {
-                    Some(name) => {
-                        servers.insert(name.to_owned(), item.definition.clone());
-                    }
-                    None => settings_on = true,
+                if let Some(name) = item.id.strip_prefix("mcp:") {
+                    servers.insert(name.to_owned(), item.definition.clone());
+                } else if item.is_hook() {
+                    hooks_on.push(item.id.clone());
+                } else {
+                    settings_on = true;
                 }
             } else {
-                withheld.push(format!(
-                    "{} ({}) is off: {reason}",
-                    item.label(),
-                    item.shows
-                ));
+                let line = format!("{} ({}) is off: {reason}", item.label(), item.shows);
+                if item.is_hook() {
+                    hooks_off.push(line);
+                } else {
+                    withheld.push(line);
+                }
             }
             let kept = match (standing, answer) {
                 (Standing::Trusted, _) | (Standing::Asks(_), Answer::Yes) => Some(true),
@@ -151,10 +166,23 @@ impl Assessment {
         } else {
             project.config_without_trust()
         };
+        // Hooks never run as choices: the trusted ones are handed over on their own.
+        let config = config.map(|config| ConfigFile {
+            hooks: None,
+            ..config
+        });
+        let hooks = project
+            .hooks()
+            .into_iter()
+            .filter(|(item, _)| hooks_on.contains(&item.id))
+            .map(|(_, hook)| hook)
+            .collect();
         Outcome {
             config,
             servers,
+            hooks,
             withheld,
+            hooks_off,
             decisions: answered.then_some(decisions),
             rows,
         }
@@ -163,7 +191,8 @@ impl Assessment {
 
 /// Whether an item is on, how `glave policy explain` says where it stands, and, when it is
 /// off, why.
-fn verdict(standing: &Standing, answer: Answer) -> (bool, String, String) {
+fn verdict(item: &Item, standing: &Standing, answer: Answer) -> (bool, String, String) {
+    let kind = if item.is_hook() { "hooks" } else { "servers" };
     let record = format!("recorded in {FILE}");
     match (standing, answer) {
         (Standing::Trusted, _) => (true, format!("trusted ({record})"), String::new()),
@@ -176,7 +205,7 @@ fn verdict(standing: &Standing, answer: Answer) -> (bool, String, String) {
         (Standing::Forbidden(rule), _) => (
             false,
             format!("forbidden by {rule}"),
-            format!("{rule} does not allow servers a project brings"),
+            format!("{rule} does not allow {kind} a project brings"),
         ),
         (Standing::Asks(_), Answer::Yes) => (true, "trusted just now".to_owned(), String::new()),
         (Standing::Asks(_), Answer::No) => (
