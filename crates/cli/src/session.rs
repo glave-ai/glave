@@ -57,7 +57,7 @@ pub fn main() -> ExitCode {
             println!("glave {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
-        Action::Run | Action::Serve | Action::Explain => {}
+        Action::Run | Action::Serve | Action::Explain | Action::Skills => {}
     }
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -72,6 +72,7 @@ pub fn main() -> ExitCode {
     let ran = match args.action {
         Action::Serve => runtime.block_on(serve(args)),
         Action::Explain => runtime.block_on(setup::explain(&args)),
+        Action::Skills => runtime.block_on(crate::skills::list()),
         _ => runtime.block_on(run(args)),
     };
     match ran {
@@ -165,7 +166,8 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         clock: Box::new(SystemClock),
         entropy: Box::new(OsEntropy),
         workspace,
-        tools: servers.sources(),
+        // The project's skills first, then the MCP servers' tools.
+        tools: [crate::skills::offered(&root).await?, servers.sources()].concat(),
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),

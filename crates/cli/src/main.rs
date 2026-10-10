@@ -16,6 +16,7 @@ mod model;
 mod policy;
 mod session;
 mod setup;
+mod skills;
 mod system;
 mod terminal;
 mod trust;

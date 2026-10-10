@@ -75,7 +75,7 @@ pub async fn agents_md(
 }
 
 /// The folders to look in: from the repository's root down to `root`, or `root` alone.
-fn project_dirs(root: &Path) -> Vec<PathBuf> {
+pub(crate) fn project_dirs(root: &Path) -> Vec<PathBuf> {
     let repository = root
         .ancestors()
         .find(|dir| dir.join(".git").exists())
@@ -93,7 +93,7 @@ fn project_dirs(root: &Path) -> Vec<PathBuf> {
 }
 
 /// `text` cut to at most `limit` bytes on a character boundary, and whether it was cut.
-fn within(text: &str, limit: usize) -> (&str, bool) {
+pub(crate) fn within(text: &str, limit: usize) -> (&str, bool) {
     if text.len() <= limit {
         return (text, false);
     }
