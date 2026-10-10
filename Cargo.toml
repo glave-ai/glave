@@ -43,6 +43,7 @@ glave-event = { path = "crates/event" }
 glave-harness = { path = "crates/harness" }
 glave-mcp = { path = "crates/mcp" }
 glave-ports = { path = "crates/ports" }
+glave-provider-anthropic = { path = "crates/provider-anthropic" }
 glave-provider-openai = { path = "crates/provider-openai" }
 glave-session = { path = "crates/session" }
 glave-shell = { path = "crates/shell" }

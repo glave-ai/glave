@@ -6,6 +6,8 @@ use anyhow::{Context as _, bail};
 use glave_ports::Failure;
 use glave_provider_openai::Config;
 
+use crate::model;
+
 const DEFAULT_BASE_URL: &str = "http://localhost:11434/v1";
 
 /// The model endpoint and the model to use.
@@ -31,6 +33,8 @@ pub fn endpoint(model_flag: Option<String>) -> anyhow::Result<Endpoint> {
         .with_context(|| format!("GLAVE_BASE_URL is not a URL: {base_url}"))?;
     if let Ok(name) = std::env::var("GLAVE_PROVIDER") {
         provider.provider = name;
+    } else if model::speaks_anthropic(&provider) {
+        "anthropic".clone_into(&mut provider.provider);
     }
     Ok(Endpoint {
         local: provider.is_local(),
@@ -79,6 +83,9 @@ pub fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
             "{model} sent nothing for {} s: a slow local model may need a larger GLAVE_IDLE_TIMEOUT",
             endpoint.provider.idle_timeout.as_secs()
         ),
+        Failure::Malformed if model::speaks_anthropic(&endpoint.provider) => {
+            format!("the server at {host} sent a response glave could not read")
+        }
         Failure::Malformed => format!(
             "the server at {host} may not speak OpenAI's chat completions API: check GLAVE_BASE_URL"
         ),

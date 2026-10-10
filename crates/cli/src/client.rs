@@ -10,7 +10,6 @@ use std::time::Duration;
 
 use glave_event::{Body, CallId, Outcome, ThreadId, decode};
 use glave_harness::{Cancel, Question};
-use glave_provider_openai::OpenAiCompatible;
 use glave_session::protocol::{Answer, ApiError, Notification, Reply, Request, Update, code};
 use glave_session::{Server, TurnItem};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog};
@@ -19,10 +18,11 @@ use crate::asking;
 use crate::config::{self, Endpoint};
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
+use crate::model::Model;
 use crate::terminal::Printer;
 use crate::waiting::Waiting;
 
-pub type Glave = Server<OpenAiCompatible, SqliteLog, SqliteBlobs>;
+pub type Glave = Server<Model, SqliteLog, SqliteBlobs>;
 
 /// What a turn is followed with.
 pub struct Client<'a> {
