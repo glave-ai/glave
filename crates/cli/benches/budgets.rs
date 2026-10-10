@@ -221,6 +221,7 @@ impl ModelProvider for Scripted {
             provider_stop: None,
             usage,
             cost: None,
+            served: None,
         })
         .map_err(|err| ProviderError::Protocol(err.to_string()));
         ready(completion)

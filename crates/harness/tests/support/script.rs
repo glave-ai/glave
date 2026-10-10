@@ -97,6 +97,7 @@ pub fn answer(
         provider_stop: None,
         usage: Usage::new(counts, false, None).unwrap(),
         cost: None,
+        served: None,
     }
 }
 

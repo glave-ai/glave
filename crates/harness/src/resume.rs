@@ -44,7 +44,7 @@ where
             measured: None,
             request: latest_request(&events),
             asked: asked(&events),
-            delegated: delegated(&events),
+            above: above(&events),
         };
         self.repair(&mut thread, &events).await?;
         Ok(thread)
@@ -130,7 +130,7 @@ where
 /// thread's first message opens with the project's instructions). A subagent's thread has
 /// none of its own: its prompts came from the parent's agent.
 fn asked(events: &[Event]) -> Vec<String> {
-    if delegated(events) {
+    if !above(events).is_empty() {
         return Vec::new();
     }
     events
@@ -148,10 +148,17 @@ fn asked(events: &[Event]) -> Vec<String> {
 }
 
 /// Whether a call in another thread started this one.
-fn delegated(events: &[Event]) -> bool {
-    events.iter().any(
-        |event| matches!(&event.body, Body::ThreadStarted(started) if started.parent.is_some()),
-    )
+/// The thread that started this one, if an `agent` call did. Subagents start no subagents of
+/// their own, so there is never more than one.
+fn above(events: &[Event]) -> Vec<ThreadId> {
+    events
+        .iter()
+        .filter_map(|event| match &event.body {
+            Body::ThreadStarted(started) => started.parent.as_ref().map(|parent| parent.thread),
+            _ => None,
+        })
+        .take(1)
+        .collect()
 }
 
 /// The text of the person's latest message, kept word for word through a compaction.

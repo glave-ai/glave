@@ -89,7 +89,7 @@ pub fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
         Failure::Malformed => format!(
             "the server at {host} may not speak OpenAI's chat completions API: check GLAVE_BASE_URL"
         ),
-        Failure::Rejected => return None,
+        Failure::Rejected | Failure::OverBudget => return None,
     })
 }
 

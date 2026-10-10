@@ -25,7 +25,7 @@ use crate::mcp::Servers;
 use crate::model::Model;
 use crate::system::random_uuid;
 use crate::terminal::Printer;
-use crate::{home, identity, keys};
+use crate::{gateway, home, identity, keys};
 
 pub fn main() -> ExitCode {
     let args = match args::parse(std::env::args().skip(1)) {
@@ -86,7 +86,12 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
     if let Some(idle) = config::idle_timeout()? {
         endpoint.provider.idle_timeout = idle;
     }
-    let provider = Model::for_endpoint(&endpoint.provider)?;
+    let judge = config::judge_model(&endpoint.model);
+    let provider = gateway::gateway(
+        Model::for_endpoint(&endpoint.provider)?,
+        &endpoint,
+        judge.as_deref(),
+    )?;
     let mut workspace = Workspace::open(std::env::current_dir()?, std::env::vars_os()).await?;
     let database = home::database().await?;
     if let Some(level) = args.sandbox {
@@ -111,7 +116,7 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
     settings.max_steps = args.max_steps;
     // As Claude Code, Codex and OpenCode offer it; models use it when asked to.
     settings.subagents = true;
-    settings.judge = config::judge_model(&endpoint.model);
+    settings.judge = judge.is_some();
     let identity = identity::load_or_make(&home::folder()?).await?;
     settings.person = Some(identity.person);
     settings.agent = Some(identity.agent);

@@ -5,6 +5,7 @@ mod args;
 mod asking;
 mod client;
 mod config;
+mod gateway;
 mod home;
 mod identity;
 mod input;

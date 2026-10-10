@@ -44,6 +44,8 @@ fn a_request_has_the_chat_completions_shape() {
         }],
         tool_choice: ToolChoice::Auto,
         max_output_tokens: Some(1024),
+        purpose: glave_ports::Purpose::Main,
+        threads: Vec::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -90,6 +92,8 @@ fn consecutive_user_messages_are_sent_as_one() {
         tools: Vec::new(),
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        threads: Vec::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(
@@ -115,6 +119,8 @@ fn text_only_requests_keep_their_tools_and_say_none() {
         }],
         tool_choice: ToolChoice::None,
         max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        threads: Vec::new(),
     };
     let body = serde_json::to_value(chat_request(&request, "ollama")).unwrap();
     assert_eq!(body["tool_choice"], "none");
@@ -147,6 +153,8 @@ fn automatic_caching_is_asked_for_only_where_it_works() {
         tools: Vec::new(),
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        threads: Vec::new(),
     };
     let cached = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(cached["cache_control"], json!({"type": "ephemeral"}));
@@ -166,6 +174,8 @@ fn openrouter_is_told_not_to_cut_a_long_prompt() {
         tools: Vec::new(),
         tool_choice: ToolChoice::Auto,
         max_output_tokens: None,
+        purpose: glave_ports::Purpose::Main,
+        threads: Vec::new(),
     };
     let routed = serde_json::to_value(chat_request(&request, "openrouter")).unwrap();
     assert_eq!(

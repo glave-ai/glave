@@ -241,6 +241,7 @@ impl Assembler {
             provider_stop: self.stop,
             usage: usage(self.usage, interrupted)?,
             cost: None,
+            served: None,
         })
     }
 }
