@@ -2,6 +2,7 @@
 //! the terminal as its client, for one turn or an interactive session.
 
 use std::io::IsTerminal as _;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -11,8 +12,10 @@ use glave_harness::{
     AGENTS_MD, Cancel, OsEntropy, Sandbox, Settings, SystemClock, Workspace, agents_md,
 };
 use glave_session::protocol::{Reply, Request};
+use glave_session::signin::{SignIn, Trust};
 use glave_session::{Answering, Server, Wiring};
 use glave_store_sqlite::Store;
+use tokio::net::TcpListener;
 
 use crate::args::{self, Action, Args, USAGE};
 use crate::client::{Client, Glave};
@@ -153,14 +156,45 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     ran
 }
 
-/// Serves the session API to the program that started glave, until its input ends.
+/// Serves the session API: to the program that started glave until its input ends, or over
+/// HTTP until Ctrl-C.
 async fn serve(args: Args) -> anyhow::Result<ExitCode> {
     let wired = wire(&args, Answering::Clients).await?;
-    let input = tokio::io::BufReader::new(tokio::io::stdin());
-    let served = glave_session::rpc::serve(wired.server, input, tokio::io::stdout()).await;
+    let served = if let Some(address) = args.http {
+        serve_http(&args, wired.server, address).await
+    } else {
+        let input = tokio::io::BufReader::new(tokio::io::stdin());
+        glave_session::rpc::serve(wired.server, input, tokio::io::stdout())
+            .await
+            .map_err(anyhow::Error::from)
+    };
     wired.servers.close().await;
     served?;
     Ok(ExitCode::SUCCESS)
+}
+
+/// Serves the session API over HTTP on `address`, each client signed in by OIDC.
+async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyhow::Result<()> {
+    let trust = Trust {
+        issuers: args.issuers.clone(),
+        audience: args.audience.clone().unwrap_or_default(),
+    };
+    let signin = SignIn::new(trust, Box::new(SystemClock))?;
+    let listener = TcpListener::bind(address)
+        .await
+        .with_context(|| format!("could not listen on {address}"))?;
+    eprintln!(
+        "glave: serving the session API on http://{}",
+        listener.local_addr()?
+    );
+    let stop = async {
+        // Without Ctrl-C, the server runs until it is stopped some other way.
+        if tokio::signal::ctrl_c().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    };
+    glave_session::http::serve(server, signin, listener, stop).await?;
+    Ok(())
 }
 
 /// Picks the thread, runs the turn or the session, and exports the events when asked.

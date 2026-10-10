@@ -13,6 +13,7 @@ use std::time::Duration;
 use serde::Serialize;
 
 use crate::approval::{ApprovalMode, Approver};
+use crate::caller::Caller;
 use crate::cancel::Cancel;
 use crate::compaction::{Measured, chars, responded};
 use crate::harness::{Harness, HarnessError, Thread};
@@ -85,6 +86,13 @@ pub enum Live {
     },
 }
 
+/// What the person asked for, and who asked.
+#[derive(Clone, Copy)]
+pub(crate) struct Prompt<'a> {
+    pub(crate) text: &'a str,
+    pub(crate) caller: &'a Caller,
+}
+
 /// What a turn carries from step to step.
 pub(crate) struct Step {
     pub(crate) toolset: ToolSet,
@@ -152,7 +160,25 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        self.run_turn_as(thread, prompt, &Caller::default(), cancel, live)
+            .await
+    }
+
+    /// Runs one turn for `caller`: their sign-in is recorded with the turn, and they are the
+    /// prompt's `author` when they are not the person the thread is for.
+    pub async fn run_turn_as(
+        &self,
+        thread: &mut Thread,
+        prompt: &str,
+        caller: &Caller,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<TurnSummary, HarnessError> {
         let toolset: ToolSet = self.tools().await;
+        let prompt = Prompt {
+            text: prompt,
+            caller,
+        };
         self.run_with(thread, prompt, toolset, cancel, live).await
     }
 
@@ -160,7 +186,7 @@ where
     pub(crate) fn run_with<'a>(
         &'a self,
         thread: &'a mut Thread,
-        prompt: &'a str,
+        prompt: Prompt<'a>,
         toolset: ToolSet,
         cancel: &'a Cancel,
         live: &'a mut (dyn FnMut(Live) + Send),
@@ -171,7 +197,7 @@ where
     async fn turn(
         &self,
         thread: &mut Thread,
-        prompt: &str,
+        prompt: Prompt<'_>,
         toolset: ToolSet,
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
@@ -296,9 +322,13 @@ where
     async fn begin(
         &self,
         thread: &mut Thread,
-        prompt: &str,
+        prompt: Prompt<'_>,
         offer: &ToolSet,
     ) -> Result<(), HarnessError> {
+        let Prompt {
+            text: prompt,
+            caller,
+        } = prompt;
         let config = TurnConfig {
             model: &self.settings.model,
             provider: &self.settings.provider,
@@ -334,13 +364,13 @@ where
                 model,
                 config,
                 trace: None,
-                auth: None,
+                auth: caller.auth.clone(),
             },
         )?;
         let message = MessageAdded {
             role: Role::User,
             parts: parts.clone(),
-            author: None,
+            author: self.other_than_for(caller.person),
         };
         self.stage(thread, &mut events, &message)?;
         self.commit(thread, events).await?;

@@ -14,9 +14,9 @@ mod session {
     use glave_event::{Body, Outcome, Verdict, decode};
     use glave_ports::{EventLog, MemoryLog, ModelProvider};
     use glave_session::protocol::{
-        Answer, ApiError, Notification, Reply, Request, Status, Update, code,
+        Answer, ApiError, IdempotencyKey, Meta, Notification, Reply, Request, Status, Update, code,
     };
-    use glave_session::{Answering, Server, TurnItem};
+    use glave_session::{Answering, Caller, Server, TurnItem};
     use jiff::Timestamp;
     use serde_json::json;
     use tokio::sync::Notify;
@@ -139,6 +139,41 @@ mod session {
     }
 
     #[test]
+    fn a_retry_with_the_same_key_follows_the_running_turn_instead_of_starting_one() {
+        let dir = folder("retry-running");
+        block_on(async {
+            let gate = Arc::new(Notify::new());
+            let answers = vec![answer(Some("Slow."), None)];
+            let server = server_on(
+                &dir,
+                answers,
+                Some(Arc::clone(&gate)),
+                MemoryLog::new(),
+                Answering::NoOne,
+                1,
+            )
+            .await;
+            let thread = new_thread(&server).await;
+            let key = IdempotencyKey::new("attempt-1").unwrap();
+            let local = Caller::default();
+            let start = |key| server.start_turn_as(&local, thread, "slow", key);
+            let mut first = start(Some(&key)).await.unwrap();
+            let mut retried = start(Some(&key)).await.unwrap();
+            let other = IdempotencyKey::new("attempt-2").unwrap();
+            let refused = start(Some(&other)).await;
+            assert_eq!(refused.err().map(|e| e.code), Some(code::TURN_RUNNING));
+            gate.notify_one();
+            let (first, retried) = (first.finish().await, retried.finish().await);
+            assert_eq!(first.unwrap(), retried.unwrap());
+            // Once ended, the key still names that turn.
+            let mut late = start(Some(&key)).await.unwrap();
+            assert_eq!(late.finish().await.unwrap().outcome, Outcome::Completed);
+            assert!(IdempotencyKey::new("").is_err());
+            assert!(IdempotencyKey::new("k".repeat(256)).is_err());
+        });
+    }
+
+    #[test]
     fn a_client_answers_an_approval_and_the_turn_continues() {
         let dir = folder("approve");
         block_on(async {
@@ -204,6 +239,7 @@ mod session {
                 .request(Request::TurnStart {
                     thread,
                     prompt: "touch it".into(),
+                    meta: Meta::default(),
                 })
                 .await
                 .unwrap();
@@ -253,6 +289,7 @@ mod session {
                 .request(Request::TurnStart {
                     thread,
                     prompt: "one".into(),
+                    meta: Meta::default(),
                 })
                 .await
                 .unwrap();
@@ -274,6 +311,7 @@ mod session {
                 .request(Request::TurnStart {
                     thread,
                     prompt: "two".into(),
+                    meta: Meta::default(),
                 })
                 .await
                 .unwrap();
@@ -318,6 +356,7 @@ mod session {
         let request = Request::TurnStart {
             thread,
             prompt: "hi".into(),
+            meta: Meta::default(),
         };
         let wire = serde_json::to_value(&request).unwrap();
         assert_eq!(wire["method"], "turn/start");
