@@ -1,0 +1,10 @@
+---
+source: crates/cli/src/trust/tests.rs
+expression: "ask::question(&assessment).replace(&assessment.project.root.display().to_string(),\n\"/code/app\")"
+---
+
+This project can run commands on your computer:
+  /code/app
+    MCP server docs: docs-mcp --slow  (changed since you last answered)
+    MCP server extra: x
+Trust them? glave asks once, and remembers the answer in trust.toml. [y/N]
