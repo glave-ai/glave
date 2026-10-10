@@ -1,0 +1,28 @@
+[package]
+name = "glave-computer"
+description = "glave's computers: this machine as a computer, environments read from environment.toml or devcontainer.json, and computers served and reached over JSON-RPC"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The random part of new computer and workspace ids (UUID v7).
+getrandom.workspace = true
+glave-ports.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
+# Reading .glave/environment.toml.
+toml.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+glave-ports = { workspace = true, features = ["conformance"] }
+proptest.workspace = true
+
+[lints]
+workspace = true

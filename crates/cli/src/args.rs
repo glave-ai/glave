@@ -19,6 +19,9 @@ Usage:
                                 The address is host:port, or a port on 127.0.0.1; the
                                 listener has no TLS, so put it behind a proxy that has.
                                 --issuer may be given more than once
+  glave computer serve --stdio | --tcp <port>
+                                serve this machine as a computer to a harness elsewhere
+                                (glave computer --help)
 
 Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)

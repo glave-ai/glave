@@ -1,6 +1,6 @@
 [package]
 name = "glave-ports"
-description = "glave's ports: the event log, blob store, model provider and tool source interfaces, with in-memory implementations and conformance suites"
+description = "glave's ports: the event log, blob store, model provider, tool source and computer interfaces, with in-memory implementations and conformance suites"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -22,6 +22,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 jiff.workspace = true
+proptest.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 
 [lints]

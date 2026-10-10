@@ -37,7 +37,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 Cargo.toml          workspace: lints, profiles, shared dependencies
 xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
-crates/ports/       glave-ports: event log, blob store, model provider and tool source ports, in-memory versions, conformance suites
+crates/ports/       glave-ports: event log, blob store, model provider, tool source and computer ports, in-memory versions, conformance suites
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
 crates/provider-anthropic/  glave-provider-anthropic: Anthropic's native Messages API provider (thinking sent back signed)
 crates/gateway/     glave-gateway: the in-process gateway (specs/gateway.md): routes by purpose, safe fallback, budgets, metering
@@ -47,6 +47,7 @@ crates/store-postgres/  glave-store-postgres: the event log, blob store and wrap
 crates/shell/       glave-shell: shell commands read before they run (tree-sitter-bash): read-only, risky with a reason, or neither
 crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`)
 crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash), approvals, resume, AGENTS.md, the opt-in sandbox
+crates/computer/    glave-computer: computers (specs/computers.md): this machine as one, environments from devcontainer.json or environment.toml, served (`glave computer serve`) and reached over JSON-RPC
 crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC sign-in; every surface, the CLI first, runs threads through it
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary
