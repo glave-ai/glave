@@ -40,6 +40,7 @@ crates/event/       glave-event: the versioned event format (envelope, payloads,
 crates/ports/       glave-ports: event log, blob store, model provider and tool source ports, in-memory versions, conformance suites
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
 crates/store-sqlite/  glave-store-sqlite: the event log and blob store on one local SQLite file
+crates/store-postgres/  glave-store-postgres: the event log and blob store on Postgres, an organization's one data store
 crates/shell/       glave-shell: shell commands read before they run (tree-sitter-bash): read-only, risky with a reason, or neither
 crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`)
 crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash), approvals, resume, AGENTS.md, the opt-in sandbox
