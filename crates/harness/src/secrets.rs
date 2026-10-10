@@ -10,7 +10,7 @@ use std::path::Path;
 const SECRET_WORDS: &[&str] = &["KEY", "SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL"];
 
 /// Whether an environment variable's name marks it as a secret.
-pub(crate) fn is_secret_variable(name: &OsStr) -> bool {
+pub fn is_secret_variable(name: &OsStr) -> bool {
     let name = name.to_string_lossy().to_ascii_uppercase();
     SECRET_WORDS.iter().any(|word| name.contains(word))
 }

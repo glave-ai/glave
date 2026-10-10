@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 getrandom.workspace = true
+glave-computer.workspace = true
 glave-event.workspace = true
 glave-gateway.workspace = true
 glave-harness.workspace = true
@@ -32,9 +33,11 @@ toml.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+glave-ports = { workspace = true, features = ["conformance"] }
 glave-provider-openai = { workspace = true, features = ["fake-server"] }
 insta.workspace = true
 serde_json.workspace = true
+tokio = { workspace = true, features = ["process"] }
 
 [[bench]]
 name = "budgets"

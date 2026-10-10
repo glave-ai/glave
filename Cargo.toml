@@ -42,6 +42,7 @@ anyhow = "1"
 aws-lc-rs = { version = "1", default-features = false, features = ["aws-lc-sys", "ring-io"] }
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
+glave-computer = { path = "crates/computer" }
 glave-event = { path = "crates/event" }
 glave-gateway = { path = "crates/gateway" }
 glave-harness = { path = "crates/harness" }

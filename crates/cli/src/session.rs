@@ -31,7 +31,15 @@ use crate::terminal::Printer;
 use crate::{gateway, home, identity, keys};
 
 pub fn main() -> ExitCode {
-    let args = match args::parse(std::env::args().skip(1)) {
+    let words: Vec<String> = std::env::args().skip(1).collect();
+    // `computer` is a subcommand only as the first word; a prompt starting with it goes
+    // after `--`.
+    if let Some((first, rest)) = words.split_first()
+        && first == "computer"
+    {
+        return crate::computer::main(rest);
+    }
+    let args = match args::parse(words) {
         Ok(args) => args,
         Err(message) => {
             eprintln!("glave: {message}\n\n{USAGE}");

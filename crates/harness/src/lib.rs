@@ -42,7 +42,7 @@ pub use prompt::system_prompt;
 pub use question::{Choice, QUESTION, Question, QuestionRequest};
 pub use retry::Retries;
 pub use sandbox::{Sandbox, SandboxLevel};
-pub use secrets::is_secret_file;
+pub use secrets::{is_secret_file, is_secret_variable};
 pub use subagent::{AGENT, SubagentType};
 pub use todo::{TODO, Todo};
 pub use tools::workspace::Workspace;
