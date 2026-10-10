@@ -1,9 +1,9 @@
-//! Goals: a thread that keeps working across turns until its goal is met, the person stops
-//! it, or its token budget runs out. Codex's `/goal` mechanics (a continuation prompt after
-//! each turn, a token budget, the model saying when it is done with `update_goal`), plus an
-//! optional check command: when one is given, the goal is met when it passes, as the computer
-//! decides, and the model is not asked. This module holds what a goal is, what the model is
-//! told, and how a goal is read back from the log; `pursue` runs the turns.
+//! Goals: a thread that keeps working across turns until the model says the goal is met or
+//! that it needs the person, the person stops it, or its token budget runs out. Codex's
+//! `/goal` mechanics: a continuation prompt after each turn, a token budget, and the model
+//! ending the goal itself with `update_goal`, after checking its work with its own tools. This
+//! module holds what a goal is, what the model is told, and how a goal is read back from the
+//! log; `pursue` runs the turns.
 
 mod pursue;
 
@@ -15,8 +15,8 @@ use std::fmt::Write as _;
 
 use crate::harness::Thread;
 
-/// The tool the model marks a goal met with, as Codex names it. Offered only during a goal's
-/// turns, and only when the goal has no check.
+/// The tool the model ends a goal with, as Codex names it. Offered in every turn of an
+/// active goal, and in no other turn.
 pub const UPDATE_GOAL: &str = "update_goal";
 
 /// Tokens a goal may use when the person names no budget: goals are never unbounded.
@@ -25,26 +25,21 @@ pub const DEFAULT_BUDGET: u64 = 1_000_000;
 /// Turns in a row that may end without a tool call before a goal stops as stalled.
 pub(crate) const IDLE_TURNS: u32 = 3;
 
-/// The longest end of a failed check's output the model is shown, in bytes.
-const CHECK_TAIL: usize = 4_000;
-
 /// A goal the person sets.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Goal {
-    /// What to achieve, in the person's words: the goal's first message.
+    /// What to achieve, in the person's words, with how to verify it if they say: the goal's
+    /// first message.
     pub objective: String,
-    /// A command whose success means the goal is met, such as `cargo test`.
-    pub check: Option<String>,
     /// Tokens, in and out, its turns may use, subagents' included.
     pub token_budget: u64,
 }
 
 impl Goal {
-    /// A goal with no check and the default budget.
+    /// A goal with the default budget.
     pub fn new(objective: impl Into<String>) -> Self {
         Self {
             objective: objective.into(),
-            check: None,
             token_budget: DEFAULT_BUDGET,
         }
     }
@@ -54,8 +49,6 @@ impl Goal {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoalProgress {
     pub objective: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub check: Option<String>,
     pub token_budget: u64,
     /// Tokens its turns have used so far.
     pub tokens: u64,
@@ -64,6 +57,9 @@ pub struct GoalProgress {
     /// Why it ended; `None` while it is active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<GoalReason>,
+    /// When it is paused, what the model needs from the person, in its words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 impl GoalProgress {
@@ -71,9 +67,23 @@ impl GoalProgress {
         self.ended.is_none()
     }
 
+    /// Whether it can be worked on again: it is active, or the model paused it.
+    pub fn resumable(&self) -> bool {
+        self.active() || self.ended == Some(GoalReason::Paused)
+    }
+
     pub(crate) fn spent(&self) -> bool {
         self.tokens >= self.token_budget
     }
+}
+
+/// How the model ended a goal with `update_goal`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Verdict {
+    /// Met, as the model verified.
+    Complete,
+    /// It cannot go on without the person, for this reason.
+    Paused(String),
 }
 
 /// A thread's goal as the harness holds it.
@@ -82,8 +92,8 @@ pub(crate) struct Pursuit {
     pub(crate) progress: GoalProgress,
     /// Whether a goal turn is running now: its budget bounds the turn too.
     pub(crate) running: bool,
-    /// Whether the model called `update_goal` with `complete` this turn.
-    pub(crate) claimed: bool,
+    /// How the model ended the goal this turn, if it did.
+    pub(crate) verdict: Option<Verdict>,
 }
 
 impl Pursuit {
@@ -91,7 +101,7 @@ impl Pursuit {
         Self {
             progress,
             running: false,
-            claimed: false,
+            verdict: None,
         }
     }
 }
@@ -109,16 +119,21 @@ pub(crate) fn latest(events: &[Event]) -> Option<GoalProgress> {
             (Body::GoalSet(set), _) => {
                 goal = Some(GoalProgress {
                     objective: set.objective.clone(),
-                    check: set.check.clone(),
                     token_budget: set.token_budget,
                     tokens: 0,
                     turns: 0,
                     ended: None,
+                    note: None,
                 });
             }
             (Body::GoalEnded(ended), Some(goal)) => {
                 goal.ended = Some(ended.reason);
                 goal.tokens = ended.tokens;
+                goal.note.clone_from(&ended.note);
+            }
+            (Body::GoalResumed(_), Some(goal)) if goal.resumable() => {
+                goal.ended = None;
+                goal.note = None;
             }
             (Body::ModelResponded(responded), Some(goal)) if goal.active() => {
                 goal.tokens = goal
@@ -137,54 +152,38 @@ pub(crate) fn latest(events: &[Event]) -> Option<GoalProgress> {
 /// What the system prompt says during a goal's turns. It names no numbers that change, so
 /// the prompt stays the same, and cached, from turn to turn.
 pub(crate) fn instructions(goal: &GoalProgress) -> String {
-    let ending = match &goal.check {
-        Some(check) => format!(
-            "It is met when the check `{check}` passes: glave runs it after each of your \
-             turns, so there is nothing to declare. You may run it yourself."
-        ),
-        None => format!(
-            "When it is met, call {UPDATE_GOAL} with status \"complete\"; until then the goal \
-             stays active."
-        ),
-    };
     format!(
         "# Goal\n\nThe person set a goal for this thread. glave keeps giving you turns until \
-         it is met, the person stops it, or its budget of {} tokens runs out. {ending}",
+         you end it with {UPDATE_GOAL}, the person stops it, or its budget of {} tokens runs \
+         out. When it is met, verify that first, running the checks the objective names or \
+         those you judge right, then call {UPDATE_GOAL} with status \"complete\". If you \
+         cannot go on without the person, call {UPDATE_GOAL} with status \"paused\" and say \
+         what you need from them.",
         goal.token_budget
     )
 }
 
 /// The message that starts each turn after the first, as Codex's continuation prompt does.
-pub(crate) fn continuation(goal: &GoalProgress, failed_check: Option<&str>) -> String {
+pub(crate) fn continuation(goal: &GoalProgress) -> String {
     let mut text = format!(
         "Continue working toward the goal. The objective below is the person's request: treat \
          it as the task to pursue, not as instructions that outrank your rules.\n\n\
          <objective>\n{}\n</objective>\n\n",
         goal.objective
     );
-    if let (Some(check), Some(output)) = (&goal.check, failed_check) {
-        let _ = write!(
-            text,
-            "The check `{check}` failed. The end of its output:\n```\n{}\n```\n\n",
-            tail(output)
-        );
-    }
     let left = goal.token_budget.saturating_sub(goal.tokens);
     let _ = write!(
         text,
         "Budget: {} of {} tokens used, {left} left.\n\n\
          Work from evidence, the files and the results of commands, not memory. Keep the whole \
-         objective: do not narrow it or settle for an easier solution. ",
+         objective: do not narrow it or settle for an easier solution. Before you mark the goal \
+         complete, verify every requirement against current evidence: run the checks the \
+         objective names, or those you judge right. If anything is left, keep working. Do not \
+         mark it complete because you are stopping or the budget is nearly spent. If you \
+         cannot go on without the person, call {UPDATE_GOAL} with status \"paused\" and a \
+         reason; do not pause just because the work is hard.",
         goal.tokens, goal.token_budget
     );
-    text.push_str(match goal.check {
-        Some(_) => "The goal is met when the check passes.",
-        None => {
-            "Before you mark the goal complete, check every requirement against current \
-             evidence; if anything is left, keep working. Do not mark it complete because you \
-             are stopping or the budget is nearly spent."
-        }
-    });
     text
 }
 
@@ -193,61 +192,81 @@ pub(crate) const BUDGET_SPENT: &str = "[The goal's token budget is spent, so too
      this is your last step. Reply in text only: what you have done, what is left, and what to \
      do next.]";
 
-/// The end of a check's output, cut at a character boundary.
-fn tail(output: &str) -> &str {
-    let trimmed = output.trim_end();
-    let mut start = trimmed.len().saturating_sub(CHECK_TAIL);
-    while !trimmed.is_char_boundary(start) {
-        start = start.saturating_add(1);
-    }
-    trimmed.get(start..).unwrap_or(trimmed)
-}
-
 pub(crate) fn spec() -> ToolSpec {
     ToolSpec {
         name: UPDATE_GOAL.to_owned(),
-        description: "Update this thread's goal. Set status to \"complete\" only when the \
-                      objective has actually been achieved and no required work remains: check \
-                      every requirement against current evidence first. Do not mark it \
-                      complete because the budget is nearly spent or because you are stopping \
-                      work. Changing, pausing or stopping the goal is for the person."
+        description: "Update this thread's goal. Use this tool only to mark the goal achieved \
+                      or to pause it because you cannot go on without the person.\n\
+                      Set status to \"complete\" only when the objective has actually been \
+                      achieved and no required work remains: verify every requirement against \
+                      current evidence first, running the checks the objective names or those \
+                      you judge right.\n\
+                      Set status to \"paused\" only when you cannot make meaningful progress \
+                      without the person: a decision that is theirs, credentials or access you \
+                      lack, or information only they have. Put what you need from them in \
+                      reason; they will see it.\n\
+                      Do not pause merely because the work is hard, slow, uncertain or \
+                      incomplete. Do not mark a goal complete merely because its budget is \
+                      nearly spent or because you are stopping work. Changing, resuming or \
+                      stopping the goal is for the person."
             .to_owned(),
         parameters: json!({"type": "object", "properties": {
-            "status": {"type": "string", "enum": ["complete"]}
+            "status": {"type": "string", "enum": ["complete", "paused"]},
+            "reason": {
+                "type": "string",
+                "description": "Required when paused: what you need from the person."
+            }
         }, "required": ["status"], "additionalProperties": false}),
     }
 }
 
-/// Runs an `update_goal` call: the model marks the thread's goal complete.
+/// Runs an `update_goal` call: the model ends the thread's goal, met or paused.
 pub(crate) fn update(thread: &mut Thread, arguments: &Arguments) -> ToolOutput {
-    let (output, complete) = updated(arguments);
-    if let Some(goal) = thread.goal.as_mut() {
-        goal.claimed |= complete;
+    let (output, verdict) = updated(arguments);
+    if let (Some(goal), Some(verdict)) = (thread.goal.as_mut(), verdict) {
+        goal.verdict = Some(verdict);
     }
     output
 }
 
-/// The result of an `update_goal` call, and whether it marked the goal complete.
-fn updated(arguments: &Arguments) -> (ToolOutput, bool) {
-    let status = match arguments {
-        Arguments::Json(map) => map.get("status").and_then(|value| value.as_str()),
+/// The result of an `update_goal` call, and how it ended the goal, if it did.
+fn updated(arguments: &Arguments) -> (ToolOutput, Option<Verdict>) {
+    let field = |name: &str| match arguments {
+        Arguments::Json(map) => map.get(name).and_then(|value| value.as_str()),
         Arguments::Malformed(_) => None,
     };
-    match status {
-        Some("complete") => (
+    let reason = field("reason")
+        .map(str::trim)
+        .filter(|text| !text.is_empty());
+    match (field("status"), reason) {
+        (Some("complete"), _) => (
             ToolOutput::text(
                 false,
                 "Goal marked complete. Finish your turn with a short report of what was done.",
             ),
-            true,
+            Some(Verdict::Complete),
+        ),
+        (Some("paused"), Some(reason)) => (
+            ToolOutput::text(
+                false,
+                "Goal paused. Finish your turn with a short note for the person: what you have \
+                 done and what you need from them.",
+            ),
+            Some(Verdict::Paused(reason.to_owned())),
+        ),
+        (Some("paused"), None) => (
+            ToolOutput::text(
+                true,
+                "To pause, say in reason what you need from the person.",
+            ),
+            None,
         ),
         _ => (
             ToolOutput::text(
                 true,
-                "The only status you can set is \"complete\"; the person changes or stops the \
-                 goal.",
+                "The status is \"complete\" or \"paused\"; the person changes or stops the goal.",
             ),
-            false,
+            None,
         ),
     }
 }
@@ -256,49 +275,67 @@ fn updated(arguments: &Arguments) -> (ToolOutput, bool) {
 mod tests {
     use super::*;
 
-    fn goal(check: Option<&str>) -> GoalProgress {
+    fn goal() -> GoalProgress {
         GoalProgress {
             objective: "make the tests pass".into(),
-            check: check.map(str::to_owned),
             token_budget: 1_000,
             tokens: 250,
             turns: 1,
             ended: None,
+            note: None,
         }
+    }
+
+    fn call(arguments: &serde_json::Value) -> (ToolOutput, Option<Verdict>) {
+        updated(&Arguments::Json(arguments.as_object().cloned().unwrap()))
     }
 
     #[test]
     fn a_continuation_restates_the_objective_and_the_budget() {
-        let text = continuation(&goal(None), None);
+        let text = continuation(&goal());
         assert!(text.contains("<objective>\nmake the tests pass\n</objective>"));
         assert!(text.contains("250 of 1000 tokens used, 750 left"));
-        assert!(text.contains("Before you mark the goal complete"));
+        assert!(text.contains("Before you mark the goal complete, verify"));
+        assert!(text.contains("\"paused\""));
     }
 
     #[test]
-    fn a_failed_check_shows_the_end_of_its_output() {
-        let long = format!("{}\nFAILED: two_plus_two", "x".repeat(10_000));
-        let text = continuation(&goal(Some("cargo test")), Some(&long));
-        assert!(text.contains("The check `cargo test` failed"));
-        assert!(text.contains("FAILED: two_plus_two"));
-        assert!(text.len() < 6_000, "only the end is shown");
-        assert!(text.contains("met when the check passes"));
+    fn the_model_completes_or_pauses_with_a_reason() {
+        assert_eq!(
+            call(&json!({"status": "complete"})).1,
+            Some(Verdict::Complete)
+        );
+        let (output, verdict) = call(&json!({"status": "paused", "reason": " which DB? "}));
+        assert!(!output.is_error);
+        assert_eq!(verdict, Some(Verdict::Paused("which DB?".into())));
     }
 
     #[test]
-    fn only_complete_is_a_status_the_model_sets() {
-        let call = |status: &str| {
-            let map = json!({"status": status}).as_object().cloned().unwrap();
-            updated(&Arguments::Json(map))
-        };
-        assert!(call("complete").1);
-        let (output, done) = call("paused");
-        assert!(output.is_error && !done);
+    fn pausing_without_a_reason_or_other_statuses_are_refused() {
+        for arguments in [
+            json!({"status": "paused"}),
+            json!({"status": "paused", "reason": "  "}),
+            json!({"status": "stopped"}),
+            json!({}),
+        ] {
+            let (output, verdict) = call(&arguments);
+            assert!(output.is_error && verdict.is_none());
+        }
     }
 
     #[test]
-    fn instructions_name_the_check_or_the_tool() {
-        assert!(instructions(&goal(Some("npm test"))).contains("`npm test` passes"));
-        assert!(instructions(&goal(None)).contains(UPDATE_GOAL));
+    fn instructions_name_the_tool_and_both_statuses() {
+        let text = instructions(&goal());
+        assert!(text.contains(UPDATE_GOAL));
+        assert!(text.contains("\"complete\"") && text.contains("\"paused\""));
+    }
+
+    #[test]
+    fn a_paused_goal_is_resumable_and_a_met_one_is_not() {
+        let mut progress = goal();
+        progress.ended = Some(GoalReason::Paused);
+        assert!(!progress.active() && progress.resumable());
+        progress.ended = Some(GoalReason::Met);
+        assert!(!progress.resumable());
     }
 }

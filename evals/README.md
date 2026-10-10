@@ -34,7 +34,7 @@ solution: it must fail on the untouched task and pass on the solved one.
 `[glave]` takes `tier` (`fast` or `hard`), `approval` (`ask`, `edits`, `auto`), `sandbox`
 (`read-only`, `project`), `network`, `context_window`, `setup` (shell commands run first),
 `env`, `turns` (messages after the instruction; each resumes the thread from its log),
-`goal` (run the instruction as a goal: `{ check = "cargo test", budget = 600000 }`, both
-optional; a goal's turns may end at the step limit and go on, so the check `goal_ended`
+`goal` (run the instruction as a goal: `{ budget = 600000 }`, the budget optional; how to
+verify the goal is the instruction's to say, in words, and the model ends it; a goal's turns may end at the step limit and go on, so the check `goal_ended`
 grades it instead of each turn's ending) and `checks`. In `env` and `setup`, `{dir}`, `{workspace}` and `{task}` name the attempt's
 folder, the workspace and the task's folder. The checks are listed in `crates/eval/src/check.rs`.

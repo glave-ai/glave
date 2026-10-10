@@ -52,6 +52,7 @@ pub fn conversation(events: &[Event]) -> Vec<Message> {
             | Body::ApprovalDecided(_)
             | Body::GoalSet(_)
             | Body::GoalEnded(_)
+            | Body::GoalResumed(_)
             | Body::Unknown(_) => {}
         }
     }

@@ -239,6 +239,7 @@ pub fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::ApprovalDecided(_) => "approval.decided",
             Body::GoalSet(_) => "goal.set",
             Body::GoalEnded(_) => "goal.ended",
+            Body::GoalResumed(_) => "goal.resumed",
             Body::Unknown(_) => "unknown",
         })
         .collect()

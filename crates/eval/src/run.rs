@@ -256,7 +256,6 @@ async fn converse(
             (Some(goal), 0) => {
                 let goal = Goal {
                     objective: prompt.clone(),
-                    check: goal.check.clone(),
                     token_budget: goal.budget.unwrap_or(DEFAULT_BUDGET),
                 };
                 harness

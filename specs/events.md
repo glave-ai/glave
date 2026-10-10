@@ -83,8 +83,9 @@ Types are at version 1 unless the table says otherwise.
 | `turn.ended` | A turn ends | `outcome`: `completed`, `cancelled`, `failed`, `interrupted` or `limit_reached` |
 | `approval.requested` | A tool call waits for the person | `call_id` (also the approval's id); `tool`; `summary`, as the person is shown it; `secret`, true when the call would show the model a file that usually holds secrets |
 | `approval.decided` | The person, or glave on their behalf, answered | `call_id`; `decision`: `allow_once`, `allow_for_thread`, `deny`, `no_one_there` (nothing to ask, so the call did not run) or `cancelled` (the turn was cancelled while it waited); optional `by` (version 2, see "Who acted") |
-| `goal.set` | The person set a goal: the thread keeps working across turns until it ends. It replaces any goal the thread had | `objective`, the person's words; optional `check`, a command whose success means the goal is met; `token_budget`, the tokens (in and out, subagents' included) its turns may use; optional `by` (see "Who acted") |
-| `goal.ended` | The thread's goal ended | `reason`: `met_by_check` (the check passed), `met_per_model` (no check; the model said so with `update_goal`), `stopped` (the person stopped it or cancelled its turn), `budget` (its token budget ran out) or `stalled` (three turns in a row without a tool call); `tokens`, what its turns used; optional `by` |
+| `goal.set` | The person set a goal: the thread keeps working across turns until it ends. It replaces any goal the thread had | `objective`, the person's words, which say how to verify it if they want that; `token_budget`, the tokens (in and out, subagents' included) its turns may use; optional `by` (see "Who acted"). Version 2: version 1 also had an optional `check` command, which is read as a sentence appended to the objective ("The goal is met when \`<check>\` passes.") |
+| `goal.ended` | The thread's goal ended | `reason`: `met` (the model verified it and said so with `update_goal`), `paused` (the model cannot go on without the person and said so with `update_goal`; the goal can be resumed), `stopped` (the person stopped it or cancelled its turn), `budget` (its token budget ran out) or `stalled` (three turns in a row without a tool call); `tokens`, what its turns used; optional `by`; with `paused`, `note`, the model's words to the person: what it needs from them. Version 2: version 1's `met_by_check` and `met_per_model` are read as `met` |
+| `goal.resumed` | The person resumed a paused goal: it is active again, its tokens and turns counting on from where it paused | optional `by` |
 | `thread.compacted` | The conversation was summarized to fit the model's context window | `through`, the last `seq` the summary covers; `parts`, the message the conversation restarts from (the summary and the person's latest request). Rebuilding a conversation starts from the latest one; earlier events stay in the log |
 
 Details shared by several types:
@@ -131,7 +132,8 @@ A principal is anyone or anything that can act, written as a reference:
 | `message.added` v2 | optional `author` | who wrote the message. Absent: the thread's `for` for a user message, its `agent` for an assistant message |
 | `approval.decided` v2 | optional `by` | who decided. Absent: the thread's `for`. `no_one_there` and `cancelled` are decided by `{"kind": "glave"}` |
 | `goal.set` v1 | optional `by` | who set the goal. Absent: the thread's `for` |
-| `goal.ended` v1 | optional `by` | who ended it. `stopped`: the person who stopped it, absent meaning the thread's `for`. Every other reason is decided by `{"kind": "glave"}` |
+| `goal.ended` v1 | optional `by` | who ended it. `stopped`: the person who stopped it, absent meaning the thread's `for`. Every other reason is recorded by `{"kind": "glave"}` |
+| `goal.resumed` v1 | optional `by` | who resumed it. Absent: the thread's `for` |
 
 A goal's continuation, the message glave writes to start each of its turns after the first, is a `message.added` with `author` `{"kind": "glave"}`: it is never read as the person's request.
 
