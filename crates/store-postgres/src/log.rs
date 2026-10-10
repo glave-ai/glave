@@ -1,0 +1,252 @@
+//! The event log on Postgres: one row per event, the envelope as columns, the payload as the
+//! exact bytes written.
+
+use std::future::Future;
+
+use deadpool_postgres::Pool;
+use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
+use glave_ports::{EventLog, LogError, Scope, check_append};
+use jiff::Timestamp;
+use serde_json::value::RawValue;
+use tokio_postgres::Row;
+use tokio_postgres::error::SqlState;
+use uuid::Uuid;
+
+use crate::store::{connection, describe};
+
+/// The event log in the database.
+#[derive(Clone)]
+pub struct PostgresLog {
+    pool: Pool,
+}
+
+impl PostgresLog {
+    pub(crate) fn new(pool: Pool) -> Self {
+        Self { pool }
+    }
+}
+
+/// The whole batch in one statement: each column travels as one array.
+const INSERT: &str = "
+    INSERT INTO events (org, space, thread, seq, id, at, type, v, glave, data)
+    SELECT $1, $2, $3, seq, id, at, type, v, glave, data
+    FROM UNNEST($4::bigint[], $5::uuid[], $6::timestamptz[], $7::text[], $8::bigint[],
+                $9::bigint[], $10::bytea[])
+        AS batch (seq, id, at, type, v, glave, data)";
+
+impl EventLog for PostgresLog {
+    fn append(
+        &self,
+        scope: &Scope,
+        events: &[RawEvent],
+    ) -> impl Future<Output = Result<(), LogError>> + Send {
+        let scope = *scope;
+        let events = events.to_vec();
+        let pool = self.pool.clone();
+        async move {
+            let Some(first) = events.first() else {
+                return Ok(());
+            };
+            let (org, space, thread) = (
+                scope.org.as_uuid(),
+                scope.space.as_uuid(),
+                first.thread.as_uuid(),
+            );
+            let columns = Columns::of(&events)?;
+            let mut client = connection(&pool).await.map_err(storage)?;
+            let transaction = client.transaction().await.map_err(database)?;
+            let last: Option<i64> = transaction
+                .query_one(
+                    "SELECT MAX(seq) FROM events WHERE org = $1 AND space = $2 AND thread = $3",
+                    &[&org, &space, &thread],
+                )
+                .await
+                .map_err(database)?
+                .try_get(0)
+                .map_err(database)?;
+            let last = last
+                .map(|seq| u64::try_from(seq).map_err(corrupt).and_then(stored_seq))
+                .transpose()?;
+            check_append(last, &events)?;
+            let insert = transaction.prepare_cached(INSERT).await.map_err(database)?;
+            transaction
+                .execute(
+                    &insert,
+                    &[
+                        &org,
+                        &space,
+                        &thread,
+                        &columns.seq,
+                        &columns.id,
+                        &columns.at,
+                        &columns.kind,
+                        &columns.v,
+                        &columns.glave,
+                        &columns.data,
+                    ],
+                )
+                .await
+                .map_err(database)?;
+            transaction.commit().await.map_err(database)
+        }
+    }
+
+    fn read(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        after: Option<Seq>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
+        let scope = *scope;
+        let pool = self.pool.clone();
+        async move {
+            let after = i64::try_from(after.map_or(0, Seq::get)).unwrap_or(i64::MAX);
+            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+            let client = connection(&pool).await.map_err(storage)?;
+            let statement = client
+                .prepare_cached(
+                    "SELECT glave, id, thread, seq, at, type, v, data FROM events
+                     WHERE org = $1 AND space = $2 AND thread = $3 AND seq > $4
+                     ORDER BY seq LIMIT $5",
+                )
+                .await
+                .map_err(database)?;
+            let rows = client
+                .query(
+                    &statement,
+                    &[
+                        &scope.org.as_uuid(),
+                        &scope.space.as_uuid(),
+                        &thread.as_uuid(),
+                        &after,
+                        &limit,
+                    ],
+                )
+                .await
+                .map_err(database)?;
+            rows.iter().map(event).collect()
+        }
+    }
+
+    fn threads(
+        &self,
+        scope: &Scope,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send {
+        let scope = *scope;
+        let pool = self.pool.clone();
+        async move {
+            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+            let client = connection(&pool).await.map_err(storage)?;
+            let statement = client
+                .prepare_cached(
+                    "SELECT thread FROM events WHERE org = $1 AND space = $2
+                     GROUP BY thread ORDER BY MAX(pos) DESC LIMIT $3",
+                )
+                .await
+                .map_err(database)?;
+            let rows = client
+                .query(
+                    &statement,
+                    &[&scope.org.as_uuid(), &scope.space.as_uuid(), &limit],
+                )
+                .await
+                .map_err(database)?;
+            rows.iter()
+                .map(|row| {
+                    let id: Uuid = row.try_get(0).map_err(corrupt)?;
+                    ThreadId::try_from(id).map_err(corrupt)
+                })
+                .collect()
+        }
+    }
+}
+
+/// A batch of events turned inside out: one array per column, as `INSERT` takes them.
+struct Columns {
+    seq: Vec<i64>,
+    id: Vec<Uuid>,
+    at: Vec<Timestamp>,
+    kind: Vec<String>,
+    v: Vec<i64>,
+    glave: Vec<i64>,
+    data: Vec<Vec<u8>>,
+}
+
+impl Columns {
+    fn of(events: &[RawEvent]) -> Result<Self, LogError> {
+        let mut columns = Self {
+            seq: Vec::with_capacity(events.len()),
+            id: Vec::with_capacity(events.len()),
+            at: Vec::with_capacity(events.len()),
+            kind: Vec::with_capacity(events.len()),
+            v: Vec::with_capacity(events.len()),
+            glave: Vec::with_capacity(events.len()),
+            data: Vec::with_capacity(events.len()),
+        };
+        for event in events {
+            let seq = i64::try_from(event.seq.get())
+                .map_err(|_| LogError::Storage("seq is too large to store".into()))?;
+            columns.seq.push(seq);
+            columns.id.push(event.id.as_uuid());
+            columns.at.push(event.at.timestamp());
+            columns.kind.push(event.kind.as_str().to_owned());
+            columns.v.push(i64::from(event.v.get()));
+            columns.glave.push(i64::from(event.glave));
+            columns.data.push(event.data.get().as_bytes().to_vec());
+        }
+        Ok(columns)
+    }
+}
+
+/// A stored row back into an event, checking every column.
+fn event(row: &Row) -> Result<RawEvent, LogError> {
+    let glave: i64 = row.try_get("glave").map_err(corrupt)?;
+    let id: Uuid = row.try_get("id").map_err(corrupt)?;
+    let thread: Uuid = row.try_get("thread").map_err(corrupt)?;
+    let seq: i64 = row.try_get("seq").map_err(corrupt)?;
+    let at: Timestamp = row.try_get("at").map_err(corrupt)?;
+    let kind: String = row.try_get("type").map_err(corrupt)?;
+    let v: i64 = row.try_get("v").map_err(corrupt)?;
+    let data: Vec<u8> = row.try_get("data").map_err(corrupt)?;
+    let data = String::from_utf8(data).map_err(corrupt)?;
+    Ok(RawEvent {
+        glave: u32::try_from(glave).map_err(corrupt)?,
+        id: EventId::try_from(id).map_err(corrupt)?,
+        thread: ThreadId::try_from(thread).map_err(corrupt)?,
+        seq: stored_seq(u64::try_from(seq).map_err(corrupt)?)?,
+        at: At::from(at),
+        kind: TypeName::new(kind).map_err(corrupt)?,
+        v: PayloadVersion::new(u32::try_from(v).map_err(corrupt)?).map_err(corrupt)?,
+        data: RawValue::from_string(data).map_err(corrupt)?,
+    })
+}
+
+fn stored_seq(seq: u64) -> Result<Seq, LogError> {
+    Seq::new(seq).map_err(corrupt)
+}
+
+fn corrupt(error: impl std::fmt::Display) -> LogError {
+    LogError::Storage(format!("a stored event is corrupt: {error}"))
+}
+
+fn storage(error: impl std::fmt::Display) -> LogError {
+    LogError::Storage(error.to_string())
+}
+
+/// A uniqueness violation means another writer took the position first.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "taken by value to pass straight to map_err"
+)]
+fn database(error: tokio_postgres::Error) -> LogError {
+    if error.code() == Some(&SqlState::UNIQUE_VIOLATION) {
+        LogError::Storage(format!(
+            "another writer appended first: {}",
+            describe(&error)
+        ))
+    } else {
+        LogError::Storage(format!("the database failed: {}", describe(&error)))
+    }
+}

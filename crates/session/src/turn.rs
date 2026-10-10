@@ -1,15 +1,21 @@
-//! Following a turn as it runs: its notifications in order, then how it ended.
+//! Starting a turn and following it as it runs: its notifications in order, then how it ended.
+//! A turn started with an idempotency key can be followed again by a retry with the same key.
 
-use std::future::poll_fn;
-use std::pin::{Pin, pin};
+use std::future::{pending, poll_fn};
+use std::pin::pin;
 use std::sync::Arc;
 use std::task::Poll;
 
+use glave_event::ThreadId;
+use glave_harness::{Caller, Live};
+use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::{broadcast, watch};
 
-use crate::protocol::{ApiError, Notification, TurnResult, code};
-use crate::server::{Ended, api};
+use crate::held::finished;
+use crate::keyed::Done;
+use crate::protocol::{ApiError, IdempotencyKey, Notification, TurnResult, Update, code};
+use crate::server::{Server, api};
 
 /// One thing a running turn sends.
 #[derive(Debug, Clone)]
@@ -24,16 +30,14 @@ pub enum TurnItem {
 
 /// A turn's notifications, then its ending.
 pub struct TurnStream {
-    notes: broadcast::Receiver<Arc<Notification>>,
-    done: oneshot::Receiver<Ended>,
+    /// `None` when the turn had already ended before anyone followed it.
+    notes: Option<broadcast::Receiver<Arc<Notification>>>,
+    done: Done,
     ended: bool,
 }
 
 impl TurnStream {
-    pub(crate) fn new(
-        notes: broadcast::Receiver<Arc<Notification>>,
-        done: oneshot::Receiver<Ended>,
-    ) -> Self {
+    fn new(notes: Option<broadcast::Receiver<Arc<Notification>>>, done: Done) -> Self {
         Self {
             notes,
             done,
@@ -47,7 +51,14 @@ impl TurnStream {
             return None;
         }
         let Self { notes, done, .. } = self;
-        let mut note = pin!(notes.recv());
+        let note = async {
+            match notes {
+                Some(notes) => notes.recv().await,
+                None => pending().await,
+            }
+        };
+        let mut note = pin!(note);
+        let mut ending = pin!(ending(done));
         let item = poll_fn(|cx| {
             // Everything sent before the turn ended is in the channel by then, so notes are
             // always taken first and the ending comes last.
@@ -58,12 +69,7 @@ impl TurnStream {
                 }
                 Poll::Ready(Err(RecvError::Closed)) | Poll::Pending => {}
             }
-            Pin::new(&mut *done).poll(cx).map(|ended| {
-                TurnItem::Ended(match ended {
-                    Ok(ran) => ran.map(TurnResult::from).map_err(|error| api(&error)),
-                    Err(_) => Err(ApiError::new(code::INTERNAL, "the turn stopped")),
-                })
-            })
+            ending.as_mut().poll(cx).map(TurnItem::Ended)
         })
         .await;
         self.ended = matches!(item, TurnItem::Ended(_));
@@ -78,5 +84,80 @@ impl TurnStream {
             }
         }
         Err(ApiError::new(code::INTERNAL, "the turn already ended"))
+    }
+}
+
+/// How the turn ended, as the API reports it.
+async fn ending(done: &mut Done) -> Result<TurnResult, ApiError> {
+    match finished(done).await {
+        Some(ended) => match ended.as_ref() {
+            Ok(summary) => Ok(TurnResult::from(summary.clone())),
+            Err(error) => Err(api(error)),
+        },
+        None => Err(ApiError::new(code::INTERNAL, "the turn stopped")),
+    }
+}
+
+impl<P, L, B> Server<P, L, B>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    /// Starts a turn for the local person and streams it: its notifications, then how it ended.
+    pub async fn start_turn(&self, thread: ThreadId, prompt: &str) -> Result<TurnStream, ApiError> {
+        self.start_turn_as(&Caller::default(), thread, prompt, None)
+            .await
+    }
+
+    /// Starts a turn for `caller` and streams it. With `key`, a turn already started in
+    /// `thread` with the same key is followed instead of starting another.
+    pub async fn start_turn_as(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+        prompt: &str,
+        key: Option<&IdempotencyKey>,
+    ) -> Result<TurnStream, ApiError> {
+        let (finish, done) = watch::channel(None);
+        if let Some(key) = key
+            && let Some(started) = self.inner.keyed.claim(thread, key, &done)
+        {
+            let notes = started.borrow().is_none().then(|| self.watch(thread));
+            return Ok(TurnStream::new(notes, started));
+        }
+        let notes = self.watch(thread);
+        let prompt = prompt.to_owned();
+        let caller = caller.clone();
+        let started = self
+            .occupy(thread, finish, move |inner, mut held, cancel| async move {
+                let hub = Arc::clone(&inner.hub);
+                let mut publish = |live| {
+                    // A subagent's progress goes under its own thread, and so to its watchers
+                    // and the parent's.
+                    let (from, live) = match live {
+                        Live::Child { thread, update } => (thread, *update),
+                        live => (thread, live),
+                    };
+                    let update = Notification::Live {
+                        thread: from,
+                        update: Update::from(live),
+                    };
+                    hub.publish(from, update);
+                };
+                let ran = inner
+                    .harness
+                    .run_turn_as(&mut held, &prompt, &caller, &cancel, &mut publish)
+                    .await;
+                (held, ran)
+            })
+            .await;
+        if let Err(failed) = started {
+            if let Some(key) = key {
+                self.inner.keyed.release(thread, key, &done);
+            }
+            return Err(failed);
+        }
+        Ok(TurnStream::new(Some(notes), done))
     }
 }

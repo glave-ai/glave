@@ -1,5 +1,6 @@
 //! Command-line arguments.
 
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 
 use glave_harness::{ApprovalMode, SandboxLevel};
@@ -12,6 +13,12 @@ Usage:
   glave [options]               start a session; each line you type is a turn
   glave serve --stdio [options] serve the session API (JSON-RPC 2.0, one message per line)
                                 to the program that started glave
+  glave serve --http <address> --issuer <url> --audience <name> [options]
+                                serve the session API over HTTP to clients signed in with
+                                an OIDC access token from that issuer for that audience.
+                                The address is host:port, or a port on 127.0.0.1; the
+                                listener has no TLS, so put it behind a proxy that has.
+                                --issuer may be given more than once
 
 Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)
@@ -29,8 +36,10 @@ Options:
   --version          show the version
 
 Environment:
-  GLAVE_BASE_URL     an OpenAI-compatible API (default: http://localhost:11434/v1, Ollama)
-  GLAVE_MODEL        the model name, such as gemma4:12b or an OpenRouter model id
+  GLAVE_BASE_URL     an OpenAI-compatible API (default: http://localhost:11434/v1, Ollama),
+                     or https://api.anthropic.com for Anthropic's own Messages API
+  GLAVE_MODEL        the model name, such as gemma4:12b, an OpenRouter model id, or a
+                     Claude model id with Anthropic's API
   GLAVE_API_KEY      the API key, if the endpoint needs one
   GLAVE_PROVIDER     a short name recorded with each response (default: from the URL)
   GLAVE_HOME         where glave keeps its database, your own AGENTS.md and mcp.json
@@ -82,6 +91,12 @@ pub struct Args {
     pub events: Option<PathBuf>,
     /// The one-shot prompt; empty starts an interactive session.
     pub prompt: String,
+    /// Serve over HTTP on this address, rather than stdio.
+    pub http: Option<SocketAddr>,
+    /// The identity providers whose tokens sign clients in over HTTP.
+    pub issuers: Vec<String>,
+    /// The audience those tokens must name.
+    pub audience: Option<String>,
 }
 
 pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String> {
@@ -115,6 +130,16 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--network" => args.network = true,
             "--max-steps" => args.max_steps = Some(steps(rest.next())?),
             "--stdio" if serving => stdio = true,
+            "--http" if serving => {
+                args.http = Some(address(rest.next())?);
+            }
+            "--issuer" if serving => {
+                args.issuers
+                    .push(rest.next().ok_or("--issuer needs a URL")?);
+            }
+            "--audience" if serving => {
+                args.audience = Some(rest.next().ok_or("--audience needs a name")?);
+            }
             "--continue" | "-c" => args.resume = true,
             "--help" | "-h" => args.action = Action::Help,
             "--version" | "-V" => args.action = Action::Version,
@@ -128,17 +153,43 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
     }
     args.prompt = words.join(" ");
     if serving && args.action == Action::Run {
-        if !stdio {
-            return Err("glave serve needs a transport: --stdio".into());
-        }
-        if !args.prompt.is_empty() || args.resume || args.events.is_some() {
-            return Err(
-                "glave serve takes no prompt, --continue or --events: clients choose".into(),
-            );
-        }
+        transport(&args, stdio)?;
         args.action = Action::Serve;
     }
     Ok(args)
+}
+
+/// Checks that `glave serve` has one transport, and sign-in for HTTP.
+fn transport(args: &Args, stdio: bool) -> Result<(), String> {
+    if stdio == args.http.is_some() {
+        return Err("glave serve needs one transport: --stdio or --http <address>".into());
+    }
+    if !args.prompt.is_empty() || args.resume || args.events.is_some() {
+        return Err("glave serve takes no prompt, --continue or --events: clients choose".into());
+    }
+    let signs_in = !args.issuers.is_empty() || args.audience.is_some();
+    if stdio && signs_in {
+        return Err("--issuer and --audience are for --http; stdio needs no sign-in".into());
+    }
+    if args.http.is_some() && (args.issuers.is_empty() || args.audience.is_none()) {
+        return Err(
+            "glave serve --http needs --issuer <url> and --audience <name>: a network \
+             listener never runs without sign-in"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+/// The value of `--http`: `host:port`, or a port alone on 127.0.0.1.
+fn address(value: Option<String>) -> Result<SocketAddr, String> {
+    let value = value.ok_or("--http needs an address: host:port, or a port")?;
+    if let Ok(port) = value.parse::<u16>() {
+        return Ok(SocketAddr::from((Ipv4Addr::LOCALHOST, port)));
+    }
+    value
+        .parse()
+        .map_err(|_| format!("--http {value:?} is not host:port or a port"))
 }
 
 /// The value of `--max-steps`: a whole number of model calls, at least one.
@@ -188,6 +239,10 @@ mod tests {
         assert_eq!(serve.action, Action::Serve);
         assert_eq!(serve.approval, Some(ApprovalMode::Auto));
         assert!(parse_words(&["serve"]).unwrap_err().contains("--stdio"));
+        assert!(
+            parse_words(&["--http", "8080"]).is_err(),
+            "only serve takes --http"
+        );
         assert!(parse_words(&["serve", "--stdio", "hello"]).is_err());
         assert!(
             parse_words(&["--stdio"]).is_err(),
@@ -198,6 +253,39 @@ mod tests {
             (prompt.action, prompt.prompt.as_str()),
             (Action::Run, "serve the page")
         );
+    }
+
+    #[test]
+    fn serving_over_http_needs_sign_in() {
+        let https = [
+            "serve",
+            "--http",
+            "8080",
+            "--issuer",
+            "https://id.example.com",
+            "--audience",
+            "glave",
+        ];
+        let serve = parse_words(&https).unwrap();
+        assert_eq!(serve.action, Action::Serve);
+        assert_eq!(serve.http, Some("127.0.0.1:8080".parse().unwrap()));
+        assert_eq!(serve.issuers, ["https://id.example.com"]);
+        assert_eq!(serve.audience.as_deref(), Some("glave"));
+        let anywhere = parse_words(&[
+            "serve",
+            "--http",
+            "0.0.0.0:9",
+            "--issuer",
+            "i",
+            "--audience",
+            "a",
+        ]);
+        assert_eq!(anywhere.unwrap().http, Some("0.0.0.0:9".parse().unwrap()));
+        let unsigned = parse_words(&["serve", "--http", "8080"]).unwrap_err();
+        assert!(unsigned.contains("--issuer"), "{unsigned}");
+        assert!(parse_words(&["serve", "--http", "8080", "--stdio"]).is_err());
+        assert!(parse_words(&["serve", "--stdio", "--audience", "a"]).is_err());
+        assert!(parse_words(&["serve", "--http", "nowhere"]).is_err());
     }
 
     #[test]

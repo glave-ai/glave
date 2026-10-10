@@ -265,7 +265,8 @@ where
             secret: request.secret,
         };
         self.record(thread, &asked).await?;
-        let decision = cancel.run(self.approver.decide(request)).await;
+        let decided = cancel.run(self.approver.decide_by(request)).await;
+        let (decision, person) = decided.map_or((None, None), |(d, by)| (Some(d), by));
         let verdict = match decision {
             None => Verdict::Cancelled,
             Some(Decision::AllowOnce) => Verdict::AllowOnce,
@@ -273,11 +274,16 @@ where
             Some(Decision::Deny) => Verdict::Deny,
             Some(Decision::Unavailable) => Verdict::NoOneThere,
         };
+        // The person decides, unless glave did: no one was there, or the turn was cancelled.
+        let by = if matches!(verdict, Verdict::NoOneThere | Verdict::Cancelled) {
+            Some(Principal::glave())
+        } else {
+            self.other_than_for(person)
+        };
         let decided = ApprovalDecided {
             call_id: request.call_id.clone(),
             decision: verdict,
-            // The person decides, unless glave did: no one was there, or the turn was cancelled.
-            by: matches!(verdict, Verdict::NoOneThere | Verdict::Cancelled).then(Principal::glave),
+            by,
         };
         self.record(thread, &decided).await?;
         Ok(match verdict {
