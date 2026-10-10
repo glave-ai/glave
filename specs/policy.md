@@ -70,6 +70,8 @@ person_per_day_usd = 20
 
 Unknown keys are errors that name the key and file, so a typo never silently does nothing.
 
+The policy file is the source of truth, and an organization's admin console is an editor for it: changes made in the console are written to the same policy and recorded as events, so every change has a history and an author. Admins who prefer configuration as code edit the file; both reach the same result.
+
 ## Enforcement
 
 Each constraint is enforced where it cannot be bypassed:
