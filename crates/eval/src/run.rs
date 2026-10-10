@@ -10,9 +10,9 @@ use std::time::Instant;
 use glave_computer::LocalComputers;
 use glave_harness::{
     Caller, Cancel, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox,
-    Settings, SystemClock, Todo, Workspace, agents_md,
+    Settings, Skills, SystemClock, Todo, Workspace, agents_md, find_skills, skill_folders,
 };
-use glave_ports::{EventLog, MemoryBlobs, MemoryLog, OrgId, Scope, SpaceId};
+use glave_ports::{EventLog, MemoryBlobs, MemoryLog, OrgId, Scope, SpaceId, ToolSource};
 use glave_provider_openai::{Config, OpenAiCompatible};
 use serde::{Deserialize, Serialize};
 
@@ -206,12 +206,19 @@ async fn wire(
         entropy: Box::new(OsEntropy),
         workspace,
     };
-    let harness = Harness::new(parts, settings);
-    Ok(if setup.todo {
-        harness.with_tools(vec![Arc::new(Todo)])
-    } else {
-        harness
-    })
+    let mut tools: Vec<Arc<dyn ToolSource>> = Vec::new();
+    // The project's skills, as the CLI finds them; the person's own are not part of a task.
+    let skills = find_skills(&skill_folders(root, &[])).await;
+    if let Some(warning) = skills.warnings.first() {
+        return Err(EvalError::Setup(format!("{}: skill {warning}", task.name)));
+    }
+    if let Some(skills) = Skills::offer(skills.skills) {
+        tools.push(Arc::new(skills));
+    }
+    if setup.todo {
+        tools.push(Arc::new(Todo));
+    }
+    Ok(Harness::new(parts, settings).with_tools(tools))
 }
 
 /// Sends every turn, each after the first to a thread resumed from the log, and returns the

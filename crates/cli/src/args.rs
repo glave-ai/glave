@@ -31,6 +31,7 @@ Usage:
                                 (glave computer --help)
   glave policy explain [options] show every setting and where it came from, and every
                                 constraint and the policy file that set it
+  glave skills                  list the skills the model is offered here
 
 Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)
@@ -71,6 +72,11 @@ organization's policy at /etc/glave/policy.toml limits what may be chosen.
 A new thread starts with your AGENTS.md (in GLAVE_HOME), then every AGENTS.md from the
 repository's root down to this folder.
 
+Skills (agentskills.io: <name>/SKILL.md with a name and a description) come from .glave/skills,
+.agents/skills and .claude/skills in this folder and each one above it up to the repository's
+root, then from skills in GLAVE_HOME and ~/.agents/skills; the nearest wins a name. The model
+sees each name and description, and loads a skill's instructions when a task needs them.
+
 MCP servers in mcp.json, in the .mcp.json format ({\"mcpServers\": {\"name\": {\"command\": ...}}}
 or {\"url\": ..., \"headers\": {...}}), start with glave; their tools reach the model as
 mcp__<server>__<tool>. A program gets only the variables its settings name, so add keys
@@ -91,6 +97,8 @@ pub enum Action {
     Serve,
     /// Explain the settings and the policy.
     Explain,
+    /// List the skills on offer.
+    Skills,
     Help,
     Version,
 }
@@ -138,6 +146,8 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             return Err("glave policy takes one command: explain".into());
         }
         args.action = Action::Explain;
+    } else if !serving && rest.next_if(|first| first == "skills").is_some() {
+        args.action = Action::Skills;
     }
     let mut stdio = false;
     while let Some(argument) = rest.next() {
@@ -191,6 +201,9 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
     args.prompt = words.join(" ");
     if args.action == Action::Explain && (!args.prompt.is_empty() || args.resume) {
         return Err("glave policy explain takes no prompt or --continue".into());
+    }
+    if args.action == Action::Skills && (!args.prompt.is_empty() || args.resume) {
+        return Err("glave skills takes no prompt or --continue".into());
     }
     if serving && args.action == Action::Run {
         transport(&args, stdio)?;
@@ -391,6 +404,15 @@ mod tests {
                 .unwrap_err()
                 .contains("needs a number")
         );
+    }
+
+    #[test]
+    fn skills_is_a_command_only_as_the_first_word() {
+        assert_eq!(parse_words(&["skills"]).unwrap().action, Action::Skills);
+        assert!(parse_words(&["skills", "now"]).is_err());
+        let prompt = parse_words(&["list", "skills"]).unwrap();
+        assert_eq!(prompt.action, Action::Run);
+        assert_eq!(prompt.prompt, "list skills");
     }
 
     #[test]

@@ -1,0 +1,11 @@
+[task]
+name = "glave/skills"
+description = "Records a change the way the project's skill says; nothing else describes how."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+tier = "fast"
+# Real work runs commands: nothing asks but secrets.
+approval = "auto"

@@ -23,6 +23,7 @@ mod resume;
 mod retry;
 mod room;
 mod sandbox;
+mod skills;
 mod subagent;
 mod todo;
 mod tools;
@@ -44,6 +45,10 @@ pub use judge::{JudgeCase, Ruling, judge};
 pub use prompt::system_prompt;
 pub use question::{Choice, QUESTION, Question, QuestionRequest};
 pub use retry::Retries;
+pub use skills::{
+    Found, MAX_LISTED, MAX_SKILLS, PROJECT_FOLDERS, SKILL, SKILL_MD, Skill, Skills, find_skills,
+    skill_folders,
+};
 pub use subagent::{AGENT, SubagentType};
 pub use todo::{TODO, Todo};
 pub use tools::workspace::Workspace;
