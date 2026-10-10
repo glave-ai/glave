@@ -183,6 +183,10 @@ pub enum ProviderError {
     /// The provider's response did not follow its own protocol.
     #[error("the model provider sent a malformed response: {0}")]
     Protocol(String),
+    /// The response ended in an error before any text, reasoning or tool call: nothing was
+    /// shown or run, so asking again is safe.
+    #[error("the model provider ended the response in an error before any output: {0}")]
+    NoOutput(String),
     /// The provider sent nothing for this long, before or during its answer.
     #[error("the model provider sent nothing for {seconds} s")]
     Timeout { seconds: u64 },

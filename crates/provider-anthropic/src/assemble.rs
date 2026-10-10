@@ -97,7 +97,15 @@ impl Assembler {
                 self.add_usage(usage);
             }
             StreamEvent::MessageStop => self.stopped = true,
-            StreamEvent::Error { error } => return Err(mid_stream(&error)),
+            StreamEvent::Error { error } => {
+                return Err(match mid_stream(&error) {
+                    // An error nobody can classify, before any output, is safe to ask again.
+                    ProviderError::Protocol(reason) if self.blocks.is_empty() => {
+                        ProviderError::NoOutput(reason)
+                    }
+                    other => other,
+                });
+            }
             StreamEvent::ContentBlockStop | StreamEvent::Ping | StreamEvent::Other => {}
         }
         Ok(())
@@ -229,6 +237,13 @@ impl Assembler {
             }
         }
         let interrupted = self.stop.is_none();
+        let stop = stop_reason(self.stop.as_deref());
+        if stop == StopReason::Error && parts.is_empty() && tool_calls.is_empty() {
+            return Err(ProviderError::NoOutput(format!(
+                "stop reason {}",
+                self.stop.as_deref().unwrap_or("error")
+            )));
+        }
         Ok(Completion {
             model: ModelRef {
                 provider: self.provider,
@@ -237,7 +252,7 @@ impl Assembler {
             response_id: self.response_id,
             parts,
             tool_calls,
-            stop: stop_reason(self.stop.as_deref()),
+            stop,
             provider_stop: self.stop,
             usage: usage(self.usage, interrupted)?,
             cost: None,
