@@ -1,41 +1,66 @@
 //! `glave worktrees`: the worktrees threads made on this machine (with `worktree = true` or
-//! `--worktree`), and removing the ones the person is done with. Nothing is removed on its own.
+//! `--worktree`), and cleaning them up: by hand with `prune`, and once a day when glave starts.
 
-use std::collections::HashSet;
+mod cleanup;
+
 use std::fmt::Write as _;
-use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use glave_computer::worktrees::{self, Kept, Pruned};
+use glave_computer::worktrees::{self, Kept, Trash};
 use glave_event::{Body, Opened, ThreadId, decode};
+use glave_harness::OsEntropy;
+use glave_ports::EventLog;
 use glave_ports::secrets::without_secrets;
 use glave_session::protocol::{Reply, Request};
+use glave_store_sqlite::Store;
+use jiff::{SignedDuration, Timestamp};
 
 use crate::client::Glave;
-use crate::home;
+use crate::{home, keys};
+
+pub use cleanup::Cleanup;
 
 /// The folder in glave's folder where threads' worktrees are kept, one folder per repository.
 pub const FOLDER: &str = "worktrees";
+
+/// The file in glave's folder holding when worktrees were last checked.
+const SWEPT: &str = "worktrees-checked";
+
+/// How often glave checks worktrees as it starts.
+const EVERY: SignedDuration = SignedDuration::from_hours(24);
 
 pub const USAGE: &str = "\
 glave worktrees: the worktrees threads made on this machine
 
 Usage:
-  glave worktrees                    list them: folder, branch, repository, and whether each
-                                     has uncommitted changes or is merged
-  glave worktrees prune [name...]    remove the merged ones, or the ones named (by folder,
-                                     folder name or branch). One with uncommitted changes is
-                                     removed only after you confirm; a branch that is not
-                                     merged is kept
+  glave worktrees                          list them: folder, branch, whether removing each
+                                           would lose work, and any held by a cleanup
+  glave worktrees prune [--force <name>]   remove every one that is safe to remove; say why
+                                           each other one stays. --force removes the one
+                                           named (by its folder's name) anyway
 
-A thread works in a worktree of its own with --worktree, or worktree = true in config.toml.
-They are kept under $GLAVE_HOME/worktrees until you prune them.";
+Safe means no uncommitted changes and every commit on a remote, so nothing is lost; a
+branch is never deleted. A worktree whose repository is gone goes to the Trash. Once a day,
+as glave starts, worktrees whose thread has done nothing for 30 days are removed when safe
+and held otherwise.
+
+A thread works in a worktree of its own with --worktree, or worktree = true in config.toml.";
 
 pub fn main(arguments: &[String]) -> ExitCode {
-    let (prune, names) = match arguments.split_first() {
-        None => (false, &[][..]),
-        Some((first, rest)) if first == "prune" => (true, rest),
+    let mut forced = Vec::new();
+    let prune = match arguments.split_first() {
+        None => false,
+        Some((first, rest)) if first == "prune" => match forced_names(rest) {
+            Ok(names) => {
+                forced = names;
+                true
+            }
+            Err(message) => {
+                eprintln!("glave: {message}\n\n{USAGE}");
+                return ExitCode::from(2);
+            }
+        },
         Some((first, _)) if first == "--help" || first == "-h" => {
             println!("{USAGE}");
             return ExitCode::SUCCESS;
@@ -55,29 +80,7 @@ pub fn main(arguments: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let ran = home::folder()
-        .map(|home| home.join(FOLDER))
-        .and_then(|base| {
-            let environment = without_secrets(std::env::vars_os());
-            let kept = runtime.block_on(worktrees::list(&base, &environment))?;
-            if !prune {
-                print!("{}", listing(&kept, &base));
-                return Ok(());
-            }
-            let chosen = choose(kept, names);
-            if chosen.is_empty() {
-                println!("nothing to prune");
-                return Ok(());
-            }
-            // Asked before anything runs, so no answer is awaited inside the runtime.
-            let confirmed = confirm_changed(&chosen);
-            let pruned = runtime.block_on(worktrees::prune(chosen, &environment, |kept| {
-                confirmed.contains(&kept.path)
-            }))?;
-            print!("{}", report(&pruned));
-            Ok(())
-        });
-    match ran {
+    match runtime.block_on(run(prune, &forced)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("glave: {error:#}");
@@ -86,89 +89,123 @@ pub fn main(arguments: &[String]) -> ExitCode {
     }
 }
 
-/// The worktrees to prune: the ones `names` name, or every merged one when none are named.
-fn choose(kept: Vec<Kept>, names: &[String]) -> Vec<Kept> {
-    if names.is_empty() {
-        return kept.into_iter().filter(|kept| kept.merged).collect();
-    }
-    kept.into_iter()
-        .filter(|kept| names.iter().any(|name| names_it(kept, name)))
-        .collect()
-}
-
-/// Whether `name` is the worktree's folder, its folder's name, or its branch.
-fn names_it(kept: &Kept, name: &str) -> bool {
-    let path = Path::new(name);
-    kept.path == path
-        || std::fs::canonicalize(path).is_ok_and(|path| path == kept.path)
-        || kept.path.file_name().is_some_and(|leaf| leaf == name)
-        || kept.branch.as_deref() == Some(name)
-}
-
-/// The changed worktrees among `chosen` the person agrees to remove; none without a terminal.
-fn confirm_changed(chosen: &[Kept]) -> HashSet<PathBuf> {
-    let mut yes = HashSet::new();
-    let asks = std::io::stdin().is_terminal();
-    for kept in chosen.iter().filter(|kept| kept.changed) {
-        if !asks {
-            continue;
-        }
-        print!(
-            "{} has uncommitted changes. Remove it and lose them? [y/N] ",
-            kept.path.display()
-        );
-        let _ = std::io::stdout().flush();
-        let mut line = String::new();
-        if std::io::stdin().lock().read_line(&mut line).is_ok()
-            && matches!(line.trim(), "y" | "Y" | "yes")
-        {
-            yes.insert(kept.path.clone());
+/// The names after `prune`: each `--force <name>`.
+fn forced_names(words: &[String]) -> Result<Vec<String>, String> {
+    let mut names = Vec::new();
+    let mut words = words.iter();
+    while let Some(word) = words.next() {
+        match (word.as_str(), words.next()) {
+            ("--force", Some(name)) => names.push(name.clone()),
+            ("--force", None) => return Err("--force needs a worktree's name".into()),
+            (other, _) => return Err(format!("unexpected {other:?} after prune")),
         }
     }
-    yes
+    Ok(names)
 }
 
-/// One line per worktree, with the base folder as `$GLAVE_HOME/worktrees`.
+async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
+    let home = home::folder()?;
+    let environment = without_secrets(std::env::vars_os());
+    let kept = worktrees::list(&home.join(FOLDER), &environment).await?;
+    if !prune {
+        print!("{}", listing(&kept, &home.join(FOLDER)));
+        return Ok(());
+    }
+    let store = Store::open(
+        home::database().await?,
+        keys::settings(&home, home::relocated()).await?,
+    )
+    .await?;
+    let now = Timestamp::now();
+    let trash = this_machines_trash(now);
+    let cleanup = Cleanup {
+        log: &store.log(),
+        environment: &environment,
+        trash: trash.as_ref(),
+        now,
+        entropy: &OsEntropy,
+    };
+    for line in cleanup.prune(&kept, forced).await {
+        println!("{line}");
+    }
+    Ok(())
+}
+
+/// The person's Trash on this machine, if it has one glave knows.
+fn this_machines_trash(now: Timestamp) -> Option<Trash> {
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let data_home = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+    let deleted_at = now.strftime("%Y-%m-%dT%H:%M:%S").to_string();
+    Trash::for_home(&home, data_home.as_deref(), &deleted_at)
+}
+
+/// Checks this machine's worktrees as glave starts, at most once a day, with what `log`
+/// holds; says what it did on standard error. Never stops glave from starting.
+pub async fn check_at_start<L: EventLog>(log: &L) {
+    let Ok(home) = home::folder() else {
+        return;
+    };
+    let environment = without_secrets(std::env::vars_os());
+    let now = Timestamp::now();
+    let trash = this_machines_trash(now);
+    let cleanup = Cleanup {
+        log,
+        environment: &environment,
+        trash: trash.as_ref(),
+        now,
+        entropy: &OsEntropy,
+    };
+    for line in check_if_due(&home, &cleanup).await {
+        eprintln!("glave: {line}");
+    }
+}
+
+/// The daily check, when the last one was a day or more before `cleanup.now`: it records the
+/// time first, so a check that fails is not retried until tomorrow.
+pub async fn check_if_due<L: EventLog>(home: &Path, cleanup: &Cleanup<'_, L>) -> Vec<String> {
+    let stamp = home.join(SWEPT);
+    let last = tokio::fs::read_to_string(&stamp)
+        .await
+        .ok()
+        .and_then(|text| text.trim().parse::<Timestamp>().ok());
+    if last.is_some_and(|last| cleanup.now.duration_since(last) < EVERY) {
+        return Vec::new();
+    }
+    let base = home.join(FOLDER);
+    if !tokio::fs::try_exists(&base).await.unwrap_or(false) {
+        return Vec::new();
+    }
+    if let Err(error) = tokio::fs::write(&stamp, cleanup.now.to_string()).await {
+        return vec![format!("could not write {}: {error}", stamp.display())];
+    }
+    match worktrees::list(&base, cleanup.environment).await {
+        Ok(kept) => cleanup.idle(&kept).await,
+        Err(error) => vec![format!("could not check worktrees: {error}")],
+    }
+}
+
+/// One line per worktree: its folder, branch, and whether removing it would lose work.
 fn listing(kept: &[Kept], base: &Path) -> String {
     if kept.is_empty() {
         return format!("no worktrees in {}\n", base.display());
     }
     let mut out = String::new();
     for kept in kept {
-        let mut notes = Vec::new();
-        if kept.changed {
-            notes.push("uncommitted changes");
-        }
-        if kept.merged {
-            notes.push("merged");
-        }
-        let notes = if notes.is_empty() {
-            String::new()
-        } else {
-            format!("  ({})", notes.join(", "))
+        let standing = match kept.at_risk() {
+            None => "safe to remove".to_owned(),
+            Some(risk) => risk,
         };
+        let held = kept
+            .held
+            .as_deref()
+            .map(|why| format!("; held ({why})"))
+            .unwrap_or_default();
         let _ = writeln!(
             out,
-            "{}  {}  of {}{notes}",
+            "{}  {}  ({standing}{held})",
             kept.path.display(),
             kept.branch.as_deref().unwrap_or("(no branch)"),
-            kept.repository.display()
         );
-    }
-    out
-}
-
-fn report(pruned: &[Pruned]) -> String {
-    let mut out = String::new();
-    for done in pruned {
-        let _ = match done {
-            Pruned::Removed(kept) => writeln!(out, "removed {}", kept.path.display()),
-            Pruned::KeptChanged(kept) => writeln!(
-                out,
-                "kept {}: it has uncommitted changes",
-                kept.path.display()
-            ),
-        };
     }
     out
 }
@@ -194,49 +231,4 @@ pub async fn note(server: &Glave, thread: ThreadId) -> Option<String> {
             },
             _ => None,
         })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn kept(path: &str, branch: &str, changed: bool, merged: bool) -> Kept {
-        Kept {
-            path: PathBuf::from(path),
-            repository: PathBuf::from("/code/app"),
-            branch: Some(branch.to_owned()),
-            changed,
-            merged,
-        }
-    }
-
-    #[test]
-    fn prune_takes_the_merged_ones_or_the_ones_named() {
-        let all = vec![
-            kept("/w/app-1/glave-a", "glave/a", false, true),
-            kept("/w/app-1/glave-b", "glave/b", true, false),
-        ];
-        let merged = choose(all.clone(), &[]);
-        assert_eq!(merged.len(), 1);
-        let named = choose(all.clone(), &["glave/b".to_owned()]);
-        assert_eq!(
-            named.first().map(|kept| kept.branch.clone()),
-            Some(Some("glave/b".into()))
-        );
-        let by_folder = choose(all, &["glave-a".to_owned()]);
-        assert_eq!(by_folder.len(), 1);
-    }
-
-    #[test]
-    fn the_listing_says_what_each_one_holds() {
-        let shown = listing(
-            &[kept("/w/app-1/glave-b", "glave/b", true, false)],
-            Path::new("/w"),
-        );
-        assert_eq!(
-            shown,
-            "/w/app-1/glave-b  glave/b  of /code/app  (uncommitted changes)\n"
-        );
-        assert_eq!(listing(&[], Path::new("/w")), "no worktrees in /w\n");
-    }
 }

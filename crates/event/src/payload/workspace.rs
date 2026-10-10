@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::codec::{Payload, parse};
 
 pub(crate) const BOUND: &str = "workspace.bound";
+pub(crate) const REMOVED: &str = "workspace.removed";
 
 /// The thread's tools act in this workspace from now on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,12 +59,56 @@ pub enum Opened {
     },
 }
 
+/// The thread's worktree was removed, or moved to the Trash, by a cleanup. Its branch is kept,
+/// so resuming the thread checks it out again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceRemoved {
+    /// The worktree's folder, as its computer named it.
+    pub root: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    pub reason: RemovedReason,
+    /// Where it went when it was moved to the Trash rather than removed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trash: Option<String>,
+}
+
+/// Why a worktree was removed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemovedReason {
+    /// Its thread was archived or deleted.
+    Archived,
+    /// Its thread had no events for 30 days.
+    Idle,
+    /// Its repository no longer exists; it went to the Trash.
+    RepositoryGone,
+    /// The person pruned it.
+    Pruned,
+}
+
 impl Payload for WorkspaceBound {
     const TYPE: &'static str = BOUND;
     const VERSION: u32 = 1;
 }
 
+impl Payload for WorkspaceRemoved {
+    const TYPE: &'static str = REMOVED;
+    const VERSION: u32 = 1;
+}
+
 pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<WorkspaceBound>> {
+    match version {
+        1 => Some(parse(data)),
+        _ => None,
+    }
+}
+
+pub(crate) fn decode_removed(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<WorkspaceRemoved>> {
     match version {
         1 => Some(parse(data)),
         _ => None,

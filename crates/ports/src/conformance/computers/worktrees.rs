@@ -18,6 +18,7 @@ pub(super) async fn worktrees<C: Computers>(
         let sources = Sources::Worktree {
             path: seed.clone(),
             branch: branch.into(),
+            owner: None,
         };
         async move { computers.open(computer, &sources).await }
     };
@@ -55,6 +56,7 @@ pub(super) async fn worktrees<C: Computers>(
     let plain = Sources::Worktree {
         path: format!("{root}/plain"),
         branch: "glave/conformance-c".into(),
+        owner: None,
     };
     ensure(
         matches!(

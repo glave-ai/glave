@@ -76,11 +76,12 @@ impl Workspace {
 
     /// A worktree of the repository around this workspace, on `branch`, on the same computer
     /// and in the same sandbox: the one already there for that branch, or a new one made from
-    /// the current commit.
-    pub async fn worktree(&self, branch: &str) -> Result<Self, ComputerError> {
+    /// the current commit. `owner` is kept beside it, for whoever cleans it up later.
+    pub async fn worktree(&self, branch: &str, owner: Option<&str>) -> Result<Self, ComputerError> {
         let sources = Sources::Worktree {
             path: self.info.root.clone(),
             branch: branch.to_owned(),
+            owner: owner.map(str::to_owned),
         };
         let info = self.computers.open(self.info.computer, &sources).await?;
         let worktree = Self::new(Arc::clone(&self.computers), info);

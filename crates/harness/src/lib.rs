@@ -21,6 +21,7 @@ mod join;
 mod judge;
 mod prompt;
 mod question;
+mod removed;
 mod repeats;
 mod resume;
 mod retry;
@@ -52,6 +53,7 @@ pub use instructions::{AGENTS_MD, Instructions, agents_md};
 pub use judge::{JudgeCase, Ruling, judge};
 pub use prompt::system_prompt;
 pub use question::{Choice, QUESTION, Question, QuestionRequest};
+pub use removed::{last_active, owner_label, owner_of, record_removed};
 pub use retry::Retries;
 pub use skills::{
     Found, MAX_LISTED, MAX_SKILLS, PROJECT_FOLDERS, SKILL, SKILL_MD, Skill, Skills, find_skills,

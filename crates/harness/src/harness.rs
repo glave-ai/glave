@@ -321,7 +321,7 @@ where
     ) -> Result<Thread, HarnessError> {
         let id = ThreadId::new(self.clock.now(), self.entropy.bytes())?;
         let placed = match place {
-            Some(place) => Some(self.place(id, place).await?),
+            Some(place) => Some(self.place(scope, id, place).await?),
             None => None,
         };
         let (workspace, bound) =

@@ -81,7 +81,14 @@ pub enum Sources {
     /// `branch` in a folder the computer chooses outside the repository. The branch is made
     /// from the folder's current commit when it does not exist yet. Opening the same branch
     /// again reopens the same worktree, and closing one keeps it: nothing in it is lost.
-    Worktree { path: String, branch: String },
+    /// `owner` is a label the computer keeps beside the worktree for whoever cleans it up
+    /// later, such as the thread it belongs to; opening it again clears any hold on it.
+    Worktree {
+        path: String,
+        branch: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner: Option<String>,
+    },
 }
 
 /// A workspace: where it is and what it came from.

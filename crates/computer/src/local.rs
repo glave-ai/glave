@@ -124,22 +124,27 @@ impl LocalComputers {
             .environment(computer)?
             .ok_or_else(|| ComputerError::NotFound(format!("no computer {computer}")))?;
         let id = WorkspaceId::from_uuid(registry::new_id());
-        let (root, copy) = match sources {
-            Sources::Folder { path } => (paths::folder(path).await?, false),
+        let (root, copy, git_common) = match sources {
+            Sources::Folder { path } => (paths::folder(path).await?, false, None),
             Sources::Git { url, at } => {
                 let dest = self.base.join(computer.to_string()).join(id.to_string());
                 let env = self.command_environment(&environment);
                 git::clone(&env, url, at.as_deref(), &dest).await?;
-                (paths::folder(&dest.to_string_lossy()).await?, true)
+                (paths::folder(&dest.to_string_lossy()).await?, true, None)
             }
-            Sources::Worktree { path, branch } => {
+            Sources::Worktree {
+                path,
+                branch,
+                owner,
+            } => {
                 let base = self.worktrees.as_ref().ok_or_else(|| {
                     ComputerError::Unsupported(
                         "this computer keeps no worktrees; work in the folder itself".into(),
                     )
                 })?;
                 let env = self.command_environment(&environment);
-                (worktree::open(&env, base, path, branch).await?, false)
+                let made = worktree::open(&env, base, path, branch, owner.as_deref()).await?;
+                (made.root, false, Some(made.common))
             }
         };
         let environment = self.command_environment(&environment);
@@ -161,6 +166,7 @@ impl LocalComputers {
             computer,
             root,
             copy,
+            git_common,
             environment,
             prepared: Mutex::new(None),
         };

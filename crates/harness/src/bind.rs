@@ -11,6 +11,7 @@ use crate::approval::Approver;
 use crate::builtins::Builtins;
 use crate::caller::Caller;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
 
 /// Where a new thread works.
@@ -31,11 +32,17 @@ pub fn branch_for(thread: ThreadId) -> String {
     format!("glave/{short}")
 }
 
-/// How many times `events` record a binding, which call ids do not count.
-pub(crate) fn bindings(events: &[Event]) -> u64 {
+/// How many of `events` are glave's own record of where the thread works (bindings and
+/// removals), which call ids do not count.
+pub(crate) fn own_records(events: &[Event]) -> u64 {
     let count = events
         .iter()
-        .filter(|event| matches!(event.body, Body::WorkspaceBound(_)))
+        .filter(|event| {
+            matches!(
+                event.body,
+                Body::WorkspaceBound(_) | Body::WorkspaceRemoved(_)
+            )
+        })
         .count();
     u64::try_from(count).unwrap_or(u64::MAX)
 }
@@ -45,7 +52,7 @@ fn bound(workspace: &Workspace) -> WorkspaceBound {
     let info = workspace.info();
     let opened = match &info.sources {
         Sources::Folder { path } => Opened::Folder { path: path.clone() },
-        Sources::Worktree { path, branch } => Opened::Worktree {
+        Sources::Worktree { path, branch, .. } => Opened::Worktree {
             repository: path.clone(),
             branch: branch.clone(),
         },
@@ -86,16 +93,22 @@ where
             .await
     }
 
-    /// The workspace for a thread `id` at `place`, and its binding to record.
+    /// The workspace for a thread `id` in `scope` at `place`, and its binding to record. A
+    /// worktree is kept with the thread as its owner, for cleaning it up later.
     pub(crate) async fn place(
         &self,
+        scope: Scope,
         id: ThreadId,
         place: Place,
     ) -> Result<(Option<Arc<Workspace>>, WorkspaceBound), HarnessError> {
         match place {
             Place::Here => Ok((None, bound(&self.workspace))),
             Place::Worktree => {
-                let worktree = self.workspace.worktree(&branch_for(id)).await?;
+                let owner = owner_label(scope, id);
+                let worktree = self
+                    .workspace
+                    .worktree(&branch_for(id), Some(&owner))
+                    .await?;
                 let recorded = bound(&worktree);
                 Ok((Some(Arc::new(worktree)), recorded))
             }
@@ -103,9 +116,12 @@ where
     }
 
     /// The workspace a resumed thread's events bound it to: its worktree, opened again (made
-    /// again from its branch if it was removed), or `None` for the harness's own.
+    /// again from its branch if it was removed, and no longer held), or `None` for the
+    /// harness's own.
     pub(crate) async fn reopen(
         &self,
+        scope: Scope,
+        id: ThreadId,
         events: &[Event],
     ) -> Result<Option<Arc<Workspace>>, HarnessError> {
         let latest = events.iter().rev().find_map(|event| match &event.body {
@@ -114,7 +130,9 @@ where
         });
         match latest.map(|bound| &bound.opened) {
             Some(Opened::Worktree { branch, .. }) => {
-                Ok(Some(Arc::new(self.workspace.worktree(branch).await?)))
+                let owner = owner_label(scope, id);
+                let worktree = self.workspace.worktree(branch, Some(&owner)).await?;
+                Ok(Some(Arc::new(worktree)))
             }
             Some(Opened::Folder { .. } | Opened::Clone { .. }) | None => Ok(None),
         }

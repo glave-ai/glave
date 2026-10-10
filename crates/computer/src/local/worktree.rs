@@ -6,18 +6,64 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use glave_ports::{ComputerError, digest};
+use serde::{Deserialize, Serialize};
 
 use super::git::{Git, not_an_option};
 use super::paths;
 
+/// A worktree opened: the folder its workspace is rooted at, and its repository's shared git
+/// folder.
+pub(crate) struct Made {
+    pub(crate) root: PathBuf,
+    pub(crate) common: PathBuf,
+}
+
+/// What glave keeps beside each worktree, as `<folder>.json`: whose it is, and whether a
+/// cleanup kept it because removing it would lose work.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Record {
+    /// The repository's shared git folder.
+    pub(crate) repository: PathBuf,
+    pub(crate) branch: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) owner: Option<String>,
+    /// Why a cleanup wanted it gone but kept it, such as `idle`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) held: Option<String>,
+}
+
+/// Where the record for the worktree at `dest` is kept: beside it, never inside it.
+pub(crate) fn record_path(dest: &Path) -> PathBuf {
+    let mut name = dest.file_name().unwrap_or_default().to_os_string();
+    name.push(".json");
+    dest.with_file_name(name)
+}
+
+/// The record beside the worktree at `dest`, if there is one glave can read.
+pub(crate) async fn read_record(dest: &Path) -> Option<Record> {
+    let text = tokio::fs::read(record_path(dest)).await.ok()?;
+    serde_json::from_slice(&text).ok()
+}
+
+pub(crate) async fn write_record(dest: &Path, record: &Record) -> Result<(), ComputerError> {
+    let path = record_path(dest);
+    let text = serde_json::to_vec_pretty(record)
+        .map_err(|error| ComputerError::Failed(format!("{}: {error}", path.display())))?;
+    tokio::fs::write(&path, text).await.map_err(|error| {
+        ComputerError::Failed(format!("could not write {}: {error}", path.display()))
+    })
+}
+
 /// Where the worktree for `branch` of the repository around `path` lives under `base`,
-/// created if it is not there yet; answers the folder matching `path` inside it.
+/// created if it is not there yet, with `owner` kept beside it and any hold cleared; answers
+/// the folder matching `path` inside it.
 pub(crate) async fn open(
     environment: &[(OsString, OsString)],
     base: &Path,
     path: &str,
     branch: &str,
-) -> Result<PathBuf, ComputerError> {
+    owner: Option<&str>,
+) -> Result<Made, ComputerError> {
     let folder = paths::folder(path).await?;
     not_an_option("the branch", branch)?;
     let git = Git::at(environment, &folder);
@@ -54,13 +100,21 @@ pub(crate) async fn open(
     } else {
         add(&git, &dest, branch).await?;
     }
+    let record = Record {
+        repository: common.clone(),
+        branch: branch.to_owned(),
+        owner: owner.map(str::to_owned),
+        held: None,
+    };
+    write_record(&dest, &record).await?;
     let inside = dest.join(&prefix);
     let root = if prefix.is_empty() || !tokio::fs::try_exists(&inside).await.unwrap_or(false) {
         dest
     } else {
         inside
     };
-    paths::folder(&root.to_string_lossy()).await
+    let root = paths::folder(&root.to_string_lossy()).await?;
+    Ok(Made { root, common })
 }
 
 /// The repository's shared git folder, made canonical: the same for every worktree of it.

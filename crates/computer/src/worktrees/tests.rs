@@ -19,27 +19,36 @@ fn environment() -> Vec<(OsString, OsString)> {
         .collect()
 }
 
-/// A repository with one commit, and where its worktrees go.
+fn sh(at: &Path, script: &str) -> String {
+    let out = Process::new("bash")
+        .args(["-c", script])
+        .current_dir(at)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{script}: {out:?}");
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// A repository with one commit pushed to a remote, and where its worktrees go.
 fn repository(name: &str) -> (PathBuf, PathBuf) {
     let dir = std::env::temp_dir().join(format!("glave-worktrees-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let repo = dir.join("app");
-    std::fs::create_dir_all(&repo).unwrap();
-    let script = "git init -q --initial-branch=main && echo hi > a.txt && git add a.txt && \
-        git -c user.name=t -c user.email=t@example.com commit -q -m one";
-    let made = Process::new("bash")
-        .args(["-c", script])
-        .current_dir(&repo)
-        .status()
-        .unwrap();
-    assert!(made.success());
-    (repo, dir.join("worktrees"))
+    std::fs::create_dir_all(&dir).unwrap();
+    sh(
+        &dir,
+        "git init -q --bare --initial-branch=main origin.git && \
+         git init -q --initial-branch=main app && cd app && echo hi > a.txt && git add a.txt && \
+         git -c user.name=t -c user.email=t@example.com commit -q -m one && \
+         git remote add origin \"$(cd .. && pwd)/origin.git\" && git push -q origin main",
+    );
+    (dir.join("app"), dir.join("worktrees"))
 }
 
-fn worktree(repo: &Path, branch: &str) -> Sources {
+fn worktree(repo: &Path, branch: &str, owner: Option<&str>) -> Sources {
     Sources::Worktree {
         path: repo.to_string_lossy().into_owned(),
         branch: branch.to_owned(),
+        owner: owner.map(str::to_owned),
     }
 }
 
@@ -50,13 +59,27 @@ fn file(path: &str, content: &[u8]) -> FileWrite {
     }
 }
 
+fn computers(base: &Path) -> LocalComputers {
+    LocalComputers::new(base.join("copies"), environment()).with_worktrees(base)
+}
+
+fn branches(repo: &Path) -> String {
+    sh(
+        repo,
+        "git branch --list 'glave/*' --format='%(refname:short)'",
+    )
+}
+
 #[test]
 fn worktrees_opened_at_once_do_not_collide() {
     let (repo, base) = repository("parallel");
-    let computers = LocalComputers::new(base.join("copies"), environment()).with_worktrees(&base);
+    let computers = computers(&base);
     block_on(async {
         let made = computers.create(&Environment::host()).await.unwrap();
-        let (a, b) = (worktree(&repo, "glave/aaaa"), worktree(&repo, "glave/bbbb"));
+        let (a, b) = (
+            worktree(&repo, "glave/aaaa", None),
+            worktree(&repo, "glave/bbbb", None),
+        );
         let (a, b) = tokio::join!(computers.open(made.id, &a), computers.open(made.id, &b));
         let (a, b) = (a.unwrap(), b.unwrap());
         assert_ne!(a.root, b.root);
@@ -79,18 +102,75 @@ fn worktrees_opened_at_once_do_not_collide() {
 }
 
 #[test]
-fn prune_keeps_a_changed_worktree_unless_confirmed() {
-    let (repo, base) = repository("prune");
-    let computers = LocalComputers::new(base.join("copies"), environment()).with_worktrees(&base);
+fn safe_means_nothing_uncommitted_and_every_commit_on_a_remote() {
+    let (repo, base) = repository("safety");
+    let computers = computers(&base);
     let env = environment();
     block_on(async {
         let made = computers.create(&Environment::host()).await.unwrap();
         let clean = computers
-            .open(made.id, &worktree(&repo, "glave/clean"))
+            .open(made.id, &worktree(&repo, "glave/clean", Some("thread-1")))
             .await
             .unwrap();
         let dirty = computers
-            .open(made.id, &worktree(&repo, "glave/dirty"))
+            .open(made.id, &worktree(&repo, "glave/dirty", None))
+            .await
+            .unwrap();
+        computers
+            .write(dirty.id, &[file("new.txt", b"work")])
+            .await
+            .unwrap();
+        let ahead = computers
+            .open(made.id, &worktree(&repo, "glave/ahead", None))
+            .await
+            .unwrap();
+        let commit = "echo b > b.txt && git add b.txt && \
+            git -c user.name=t -c user.email=t@example.com commit -q -m two";
+        sh(Path::new(&ahead.root), commit);
+
+        let kept = list(&base, &env).await.unwrap();
+        let seen: Vec<(Option<&str>, Condition)> = kept
+            .iter()
+            .map(|kept| (kept.branch.as_deref(), kept.condition))
+            .collect();
+        let unsafe_with = |changed, unpushed| Condition::Unsafe { changed, unpushed };
+        assert_eq!(
+            seen,
+            [
+                (Some("glave/ahead"), unsafe_with(false, 1)),
+                (Some("glave/clean"), Condition::Safe),
+                (Some("glave/dirty"), unsafe_with(true, 0)),
+            ]
+        );
+        assert_eq!(kept[0].at_risk().as_deref(), Some("1 commit not pushed"));
+        assert_eq!(kept[2].at_risk().as_deref(), Some("uncommitted changes"));
+        assert_eq!(kept[1].owner.as_deref(), Some("thread-1"));
+        assert_eq!(
+            kept[1].path,
+            std::fs::canonicalize(&clean.root).unwrap(),
+            "listed by its folder"
+        );
+
+        // Pushed anywhere (as a squash merge leaves it, the branch on the remote) is safe.
+        sh(Path::new(&ahead.root), "git push -q origin glave/ahead");
+        let kept = list(&base, &env).await.unwrap();
+        assert_eq!(kept[0].condition, Condition::Safe);
+    });
+}
+
+#[test]
+fn a_release_removes_what_is_safe_and_holds_the_rest_keeping_every_branch() {
+    let (repo, base) = repository("release");
+    let computers = computers(&base);
+    let env = environment();
+    block_on(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let clean = computers
+            .open(made.id, &worktree(&repo, "glave/clean", None))
+            .await
+            .unwrap();
+        let dirty = computers
+            .open(made.id, &worktree(&repo, "glave/dirty", None))
             .await
             .unwrap();
         computers
@@ -98,52 +178,95 @@ fn prune_keeps_a_changed_worktree_unless_confirmed() {
             .await
             .unwrap();
         let kept = list(&base, &env).await.unwrap();
-        let described: Vec<(Option<&str>, bool, bool)> = kept
-            .iter()
-            .map(|kept| (kept.branch.as_deref(), kept.changed, kept.merged))
-            .collect();
+        let mut done = Vec::new();
+        for kept in &kept {
+            done.push(release(kept, &env, "idle", None).await.unwrap());
+        }
         assert_eq!(
-            described,
+            done,
             [
-                (Some("glave/clean"), false, true),
-                (Some("glave/dirty"), true, true)
+                Released::Removed,
+                Released::Held("uncommitted changes".into())
             ]
         );
-        assert_eq!(kept[0].repository, std::fs::canonicalize(&repo).unwrap());
-
-        let mut asked = Vec::new();
-        let pruned = prune(kept, &env, |kept| {
-            asked.push(kept.branch.clone());
-            false
-        })
-        .await
-        .unwrap();
-        assert_eq!(
-            asked,
-            [Some("glave/dirty".to_owned())],
-            "only the changed one asks"
-        );
-        assert!(matches!(
-            &pruned[..],
-            [Pruned::Removed(_), Pruned::KeptChanged(_)]
-        ));
         assert!(!Path::new(&clean.root).exists());
         assert!(Path::new(&dirty.root).join("new.txt").exists());
-
         let left = list(&base, &env).await.unwrap();
         assert_eq!(left.len(), 1);
-        let pruned = prune(left, &env, |_| true).await.unwrap();
-        assert!(matches!(&pruned[..], [Pruned::Removed(_)]));
-        assert_eq!(list(&base, &env).await.unwrap(), []);
-        let branches = Process::new("git")
-            .args(["branch", "--list", "glave/*"])
-            .current_dir(&repo)
-            .output()
+        assert_eq!(left[0].held.as_deref(), Some("idle"));
+        assert_eq!(branches(&repo), "glave/clean\nglave/dirty", "branches stay");
+
+        // Opening it again, as a resumed thread does, clears the hold.
+        computers
+            .open(made.id, &worktree(&repo, "glave/dirty", None))
+            .await
             .unwrap();
+        assert_eq!(list(&base, &env).await.unwrap()[0].held, None);
+        remove(&left[0], &env).await.unwrap();
+        assert_eq!(list(&base, &env).await.unwrap(), []);
+        assert_eq!(branches(&repo), "glave/clean\nglave/dirty");
+    });
+}
+
+#[test]
+fn a_worktree_whose_repository_is_gone_goes_to_the_trash_never_away() {
+    let (repo, base) = repository("gone");
+    let computers = computers(&base);
+    let env = environment();
+    let trash = base.with_file_name("Trash");
+    block_on(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let first = computers
+            .open(made.id, &worktree(&repo, "glave/one", None))
+            .await
+            .unwrap();
+        computers
+            .open(made.id, &worktree(&repo, "glave/two", None))
+            .await
+            .unwrap();
+        std::fs::remove_dir_all(&repo).unwrap();
+        let kept = list(&base, &env).await.unwrap();
         assert!(
-            String::from_utf8_lossy(&branches.stdout).trim().is_empty(),
-            "merged branches go with their worktrees"
+            kept.iter()
+                .all(|kept| kept.condition == Condition::RepositoryGone),
+            "{kept:?}"
         );
+        assert_eq!(kept[0].at_risk().as_deref(), Some("its repository is gone"));
+
+        assert_eq!(
+            release(&kept[1], &env, "idle", None).await.unwrap(),
+            Released::NoTrash
+        );
+        assert!(kept[1].path.exists(), "with no Trash it is kept");
+
+        let folder = Trash::Folder(trash.join("mac"));
+        let Released::Trashed(moved) = release(&kept[0], &env, "idle", Some(&folder))
+            .await
+            .unwrap()
+        else {
+            panic!("trashed")
+        };
+        assert!(!Path::new(&first.root).exists());
+        assert!(moved.join("a.txt").exists(), "everything is in the Trash");
+
+        let desktop = Trash::Freedesktop {
+            root: trash.join("xdg"),
+            deleted_at: "2026-10-10T12:00:00".into(),
+        };
+        let Released::Trashed(moved) = release(&kept[1], &env, "idle", Some(&desktop))
+            .await
+            .unwrap()
+        else {
+            panic!("trashed")
+        };
+        assert_eq!(moved, trash.join("xdg/files/glave-two"));
+        let note = std::fs::read_to_string(trash.join("xdg/info/glave-two.trashinfo")).unwrap();
+        assert!(note.starts_with("[Trash Info]\nPath=/"), "{note}");
+        assert!(
+            note.ends_with("DeletionDate=2026-10-10T12:00:00\n"),
+            "{note}"
+        );
+        assert_eq!(list(&base, &env).await.unwrap(), []);
     });
 }
 
@@ -152,11 +275,11 @@ fn a_folder_outside_a_repository_is_refused_clearly() {
     let (repo, base) = repository("plain");
     let plain = repo.with_file_name("plain");
     std::fs::create_dir_all(&plain).unwrap();
-    let computers = LocalComputers::new(base.join("copies"), environment()).with_worktrees(&base);
+    let computers = computers(&base);
     block_on(async {
         let made = computers.create(&Environment::host()).await.unwrap();
         let refused = computers
-            .open(made.id, &worktree(&plain, "glave/x"))
+            .open(made.id, &worktree(&plain, "glave/x", None))
             .await
             .unwrap_err();
         assert!(
@@ -166,7 +289,9 @@ fn a_folder_outside_a_repository_is_refused_clearly() {
         );
         let without = LocalComputers::new(base.join("copies"), environment());
         let made = without.create(&Environment::host()).await.unwrap();
-        let unsupported = without.open(made.id, &worktree(&repo, "glave/x")).await;
+        let unsupported = without
+            .open(made.id, &worktree(&repo, "glave/x", None))
+            .await;
         assert!(matches!(unsupported, Err(ComputerError::Unsupported(_))));
     });
 }

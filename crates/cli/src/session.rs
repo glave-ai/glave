@@ -129,8 +129,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     )?;
     let database = home::database().await?;
     let workspace = workspace(&folder, choices, args.network, &database).await?;
-    let keys = keys::settings(&home::folder()?, home::relocated()).await?;
-    let store = Store::open(database, keys).await?;
+    let store = store(database).await?;
     let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
     let personal = home::folder()?.join(AGENTS_MD);
     let instructions = agents_md(workspace.root(), Some(&personal)).await?;
@@ -184,6 +183,14 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
         choices: setup.choices,
     })
+}
+
+/// The store in `database`, once this machine's worktrees have had their daily check.
+async fn store(database: PathBuf) -> anyhow::Result<Store> {
+    let keys = keys::settings(&home::folder()?, home::relocated()).await?;
+    let store = Store::open(database, keys).await?;
+    crate::worktrees::check_at_start(&store.log()).await;
+    Ok(store)
 }
 
 /// The workspace in `folder`, in the sandbox `choices` ask for.
