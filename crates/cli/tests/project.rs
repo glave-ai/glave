@@ -154,6 +154,40 @@ mod project {
     }
 
     #[test]
+    fn an_untrusted_projects_judge_is_ignored_with_the_reason_but_off_applies() {
+        let place = place("project-judge");
+        std::fs::create_dir_all(place.project.join(".glave")).unwrap();
+        let config = place.project.join(".glave/config.toml");
+        std::fs::write(&config, "judge_model = \"lenient\"\n").unwrap();
+        let model = FakeServer::start(vec![Reply::text("Fine.")]).unwrap();
+        let output = glave(&place, &model, &["--model", "m", "hello"], "");
+        let shown = text(&output);
+        assert!(output.status.success(), "{shown}");
+        assert!(
+            shown.contains("judge_model = \"lenient\"") && shown.contains("nobody is here to ask"),
+            "{shown}"
+        );
+        let explained = Command::new(env!("CARGO_BIN_EXE_glave"))
+            .args(["policy", "explain"])
+            .current_dir(&place.project)
+            .env("GLAVE_HOME", &place.home)
+            .env("GLAVE_MODEL", "gemma4:12b")
+            .env_remove("GLAVE_JUDGE_MODEL")
+            .output()
+            .unwrap();
+        let shown = text(&explained);
+        assert!(
+            shown.contains("settings (judge_model = \"lenient\")"),
+            "{shown}"
+        );
+        assert!(shown.contains("glave will ask once"), "{shown}");
+        std::fs::write(&config, "judge_model = \"off\"\n").unwrap();
+        let output = glave(&place, &model, &["--model", "m", "hello"], "");
+        let shown = text(&output);
+        assert!(!shown.contains("is off"), "off needs no trust: {shown}");
+    }
+
+    #[test]
     fn policy_explain_shows_the_project_s_trust() {
         let place = place("project-explain");
         bring_server(&place);

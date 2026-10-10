@@ -78,6 +78,31 @@ fn settings_that_loosen_wait_for_trust_and_the_rest_apply_at_once() {
 }
 
 #[test]
+fn a_project_cannot_pick_its_own_judge_without_trust_but_may_turn_it_off() {
+    let dir = scratch("judge");
+    let rules = Constraints::default();
+    let project = repository(&dir, "", Some("judge_model = \"lenient\"\n"));
+    let assessment = assess(project, &Record::default(), &rules);
+    assert_eq!(assessment.undecided().len(), 1);
+    let outcome = assessment.clone().apply(Answer::NoOne);
+    assert_eq!(outcome.config.unwrap().judge_model, None);
+    assert!(
+        outcome.withheld[0].contains("judge_model = \"lenient\""),
+        "{:?}",
+        outcome.withheld
+    );
+    let explained = assessment.clone().apply(Answer::Explaining);
+    assert!(explained.rows[0][0].contains("judge_model"));
+    let trusted = assessment.apply(Answer::Yes).config.unwrap();
+    assert_eq!(trusted.judge_model.as_deref(), Some("lenient"));
+    let off = repository(&scratch("judge-off"), "", Some("judge_model = \"off\"\n"));
+    let assessment = assess(off, &Record::default(), &rules);
+    assert_eq!(assessment.items.len(), 0, "never asks");
+    let config = assessment.apply(Answer::NoOne).config.unwrap();
+    assert_eq!(config.judge_model.as_deref(), Some("off"));
+}
+
+#[test]
 fn asked_once_then_remembered_until_the_servers_change() {
     let dir = scratch("once");
     let rules = Constraints::default();

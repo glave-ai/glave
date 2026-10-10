@@ -93,13 +93,15 @@ impl Project {
         self.config.as_ref().map(|config| ConfigFile {
             approval: config.approval.filter(|a| *a != Approval::Auto),
             sandbox: config.sandbox.filter(|s| *s != SandboxChoice::Off),
+            judge_model: config.judge_model.clone().filter(|j| j.trim() == "off"),
             ..config.clone()
         })
     }
 }
 
 /// The settings item for the choices in `config` that loosen how commands run: approval
-/// `auto` and the sandbox `off`. Everything else only tightens, or picks a model.
+/// `auto`, the sandbox `off`, and a judge model (a repo must not pick who judges its own
+/// actions; `off` only makes glave ask more). Everything else only tightens, or picks a model.
 fn loosening(config: &ConfigFile) -> Option<Item> {
     let mut parts = Vec::new();
     if config.approval.map(Approval::mode) == Some(ApprovalMode::Auto) {
@@ -108,8 +110,18 @@ fn loosening(config: &ConfigFile) -> Option<Item> {
     if config.sandbox == Some(SandboxChoice::Off) {
         parts.push("sandbox = \"off\"");
     }
-    (!parts.is_empty()).then(|| {
-        let text = parts.join(", ");
+    let judge = config
+        .judge_model
+        .as_deref()
+        .filter(|judge| judge.trim() != "off");
+    let judge_part = judge.map(|judge| format!("judge_model = {judge:?}"));
+    (!parts.is_empty() || judge_part.is_some()).then(|| {
+        let text = parts
+            .iter()
+            .map(|part| (*part).to_owned())
+            .chain(judge_part)
+            .collect::<Vec<_>>()
+            .join(", ");
         Item {
             id: SETTINGS.to_owned(),
             definition: text.clone(),
