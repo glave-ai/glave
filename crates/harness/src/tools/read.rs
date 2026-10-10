@@ -2,10 +2,10 @@
 
 use std::fmt::Write as _;
 
+use glave_ports::{EntryKind, Listing, looks_binary};
 use serde::Deserialize;
 
 use super::ToolOutcome;
-use super::walk;
 use super::workspace::Workspace;
 
 /// Most lines returned by one read.
@@ -29,31 +29,30 @@ pub(crate) struct ReadArgs {
 }
 
 pub(crate) async fn read(workspace: &Workspace, args: ReadArgs) -> ToolOutcome {
-    let path = match workspace.resolve(&args.path).await {
-        Ok(path) => path,
+    let stat = match workspace.stat(&args.path).await {
+        Ok(stat) => stat,
         Err(message) => return ToolOutcome::error(message),
     };
-    let shown = workspace.show(&path);
-    let Ok(metadata) = tokio::fs::metadata(&path).await else {
-        return ToolOutcome::error(format!("File not found: {shown}"));
-    };
-    if metadata.is_dir() {
-        return list(&path, &shown).await;
+    let shown = stat.path;
+    match stat.kind {
+        None => return ToolOutcome::error(format!("File not found: {shown}")),
+        Some(EntryKind::Folder) => return list(workspace, &shown).await,
+        Some(EntryKind::File | EntryKind::Link) => {}
     }
-    if metadata.len() > MAX_FILE_BYTES {
+    if stat.size > MAX_FILE_BYTES {
         return ToolOutcome::error(format!(
             "{shown} is {} bytes, too large to read. Use bash with sed -n or rg to look inside it.",
-            metadata.len()
+            stat.size
         ));
     }
-    let bytes = match tokio::fs::read(&path).await {
-        Ok(bytes) => bytes,
-        Err(e) => return ToolOutcome::error(format!("Could not read {shown}: {e}")),
+    let bytes = match workspace.read(&shown).await {
+        Ok(bytes) => bytes.into_vec(),
+        Err(e) => return ToolOutcome::error(format!("Could not read {shown}: {}", e.message())),
     };
     if looks_binary(&bytes) {
         return ToolOutcome::error(format!("{shown} is a binary file."));
     }
-    workspace.remember(&path, &bytes);
+    workspace.remember(&shown, &bytes);
     numbered(&String::from_utf8_lossy(&bytes), args.offset, args.limit)
 }
 
@@ -106,34 +105,36 @@ fn cut_line(line: &str) -> String {
     cut
 }
 
-/// A NUL byte, or more than 30% control bytes, in the first 4 KiB.
-pub(crate) fn looks_binary(bytes: &[u8]) -> bool {
-    let head = bytes.get(..4_096).unwrap_or(bytes);
-    if head.contains(&0) {
-        return true;
-    }
-    let control = head
-        .iter()
-        .filter(|b| **b < 0x09 || (0x0E..0x20).contains(*b))
-        .count();
-    control.saturating_mul(10) > head.len().saturating_mul(3)
-}
-
-async fn list(path: &std::path::Path, shown: &str) -> ToolOutcome {
-    let dir = path.to_owned();
-    let (names, left_out) = match tokio::task::spawn_blocking(move || walk::entries(&dir)).await {
-        Ok(Ok(listed)) => listed,
-        Ok(Err(e)) => return ToolOutcome::error(format!("Could not list {shown}: {e}")),
-        Err(_) => return ToolOutcome::error(format!("Could not list {shown}.")),
+async fn list(workspace: &Workspace, shown: &str) -> ToolOutcome {
+    let listing = Listing {
+        skip_ignored: true,
+        ..Listing::of(shown)
     };
-    let total = names.len();
-    let mut lines: Vec<String> = names.into_iter().take(MAX_ENTRIES).collect();
+    let listed = match workspace.list(&listing).await {
+        Ok(listed) => listed,
+        Err(e) => return ToolOutcome::error(format!("Could not list {shown}: {}", e.message())),
+    };
+    let total = listed.entries.len();
+    let mut lines: Vec<String> = listed
+        .entries
+        .iter()
+        .take(MAX_ENTRIES)
+        .map(|entry| {
+            let name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
+            if entry.kind == EntryKind::Folder {
+                format!("{name}/")
+            } else {
+                name.to_owned()
+            }
+        })
+        .collect();
     if total > MAX_ENTRIES {
         lines.push(format!("({MAX_ENTRIES} of {total} entries shown)"));
     }
-    if left_out > 0 {
+    if listed.ignored > 0 {
         lines.push(format!(
-            "({left_out} more that git ignores, such as build output; read them by name if needed)"
+            "({} more that git ignores, such as build output; read them by name if needed)",
+            listed.ignored
         ));
     }
     if lines.is_empty() {

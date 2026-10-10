@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::Context as _;
+use glave_computer::LocalComputers;
 use glave_event::ThreadId;
 use glave_harness::{
     AGENTS_MD, Cancel, DEFAULT_BUDGET, Goal, OsEntropy, Sandbox, Settings, SystemClock, Workspace,
@@ -184,7 +185,8 @@ async fn workspace(
     network: bool,
     database: &Path,
 ) -> anyhow::Result<Workspace> {
-    let workspace = Workspace::open(folder, std::env::vars_os()).await?;
+    let (computers, here) = LocalComputers::here(folder, std::env::vars_os()).await?;
+    let workspace = Workspace::new(computers, here);
     let Some(level) = choices.sandbox.value else {
         return Ok(workspace);
     };

@@ -9,6 +9,7 @@ use tokio::io::AsyncReadExt as _;
 use tokio::process::{Child, ChildStdout};
 
 use super::registry::Opened;
+use super::sandbox::Prepared;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
@@ -31,8 +32,12 @@ pub(crate) async fn run(
         .timeout_secs
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
         .clamp(1, MAX_TIMEOUT_SECS);
+    let sandbox = match &command.sandbox {
+        Some(sandbox) => Some(opened.sandbox(sandbox).await?),
+        None => None,
+    };
     let started = Instant::now();
-    let mut child = bash(opened, &command.script)
+    let mut child = bash(opened, &command.script, sandbox.as_deref())
         .spawn()
         .map_err(|error| ComputerError::Failed(format!("could not start bash: {error}")))?;
     let stdout = child.stdout.take();
@@ -53,16 +58,25 @@ pub(crate) async fn run(
     })
 }
 
-/// `script` run by bash at the workspace root, with the workspace's environment and output
-/// that reads well as text.
-fn bash(opened: &Opened, script: &str) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new("bash");
+/// `script` run by bash at the workspace root, in the sandbox if there is one, with the
+/// workspace's environment and output that reads well as text.
+fn bash(opened: &Opened, script: &str, sandbox: Option<&Prepared>) -> tokio::process::Command {
+    let mut command = match sandbox {
+        Some(sandbox) => {
+            let (program, args) = sandbox.wrapper();
+            let mut command = tokio::process::Command::new(program);
+            command.args(args).arg("bash");
+            command
+        }
+        None => tokio::process::Command::new("bash"),
+    };
     command
         .arg("-c")
         .arg(format!("exec 2>&1\n{script}"))
         .current_dir(&opened.root)
         .env_clear()
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
+        .envs(sandbox.map(|sandbox| ("TMPDIR", sandbox.temp())))
         .env("NO_COLOR", "1")
         .env("TERM", "dumb")
         .env("PAGER", "cat")

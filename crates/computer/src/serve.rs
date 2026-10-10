@@ -221,6 +221,11 @@ impl<C: Computers + 'static> Connection<C> {
             Request::List { workspace, listing } => {
                 reply(computers.list(workspace, &listing).await)
             }
+            Request::Stat { workspace, path } => reply(computers.stat(workspace, &path).await),
+            Request::Glob { workspace, glob } => reply(computers.glob(workspace, &glob).await),
+            Request::Search { workspace, search } => {
+                reply(computers.search(workspace, &search).await)
+            }
             Request::Save { workspace, save } => reply(computers.save(workspace, &save).await),
         }
     }

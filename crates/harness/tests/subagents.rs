@@ -14,7 +14,7 @@ mod subagents {
     use std::time::Duration;
 
     use glave_event::{Body, Outcome, Part, StopReason};
-    use glave_harness::{AllowAll, Cancel, Harness, Live, Parts, Workspace};
+    use glave_harness::{AllowAll, Cancel, Harness, Live, Parts};
     use glave_ports::{
         Completion, Delta, MemoryBlobs, MemoryLog, Message, ModelProvider, ModelRequest,
         ProviderError,
@@ -254,7 +254,7 @@ mod subagents {
                 approver: AllowAll,
                 clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
                 entropy: Box::new(Counting(AtomicU64::new(1))),
-                workspace: Workspace::open(&dir, std::env::vars_os()).await.unwrap(),
+                workspace: workspace(&dir).await,
             };
             let harness = Harness::new(parts, with_subagents());
             let mut thread = harness.start_thread(scope()).await.unwrap();

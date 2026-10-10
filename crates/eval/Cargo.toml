@@ -13,6 +13,7 @@ name = "glave-eval"
 path = "src/main.rs"
 
 [dependencies]
+glave-computer.workspace = true
 glave-event.workspace = true
 glave-harness.workspace = true
 glave-ports.workspace = true

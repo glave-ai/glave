@@ -9,9 +9,9 @@ use glave_ports::Effect;
 use serde::Serialize;
 
 use crate::question::QuestionRequest;
-use crate::secrets::is_secret_file;
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
+use glave_ports::secrets::is_secret_file;
 
 /// What the harness wants to do, in words the person can judge.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -169,9 +169,9 @@ pub(crate) async fn reads_secret(workspace: &Workspace, tool: Tool, arguments: &
     };
     is_secret_file(Path::new(&path))
         || workspace
-            .resolve(&path)
+            .stat(&path)
             .await
-            .is_ok_and(|resolved| is_secret_file(&resolved))
+            .is_ok_and(|resolved| is_secret_file(Path::new(&resolved.path)))
 }
 
 fn field(arguments: &Arguments, name: &str) -> Option<String> {

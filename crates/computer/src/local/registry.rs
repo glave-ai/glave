@@ -7,8 +7,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use glave_ports::{ComputerError, ComputerId, Environment, WorkspaceId};
+use glave_ports::{ComputerError, ComputerId, Environment, Sandbox, WorkspaceId};
 use uuid::{Builder, Uuid};
+
+use super::sandbox::Prepared;
 
 /// The most computers one machine holds at once.
 const MAX_COMPUTERS: usize = 64;
@@ -25,6 +27,29 @@ pub(crate) struct Opened {
     /// in place, which is kept.
     pub(crate) copy: bool,
     pub(crate) environment: Arc<Vec<(OsString, OsString)>>,
+    /// The sandbox its commands last ran in, prepared once and kept while they ask for the
+    /// same one, so its temp folder lasts as long as the workspace.
+    pub(crate) prepared: Mutex<Option<Arc<Prepared>>>,
+}
+
+impl Opened {
+    /// `sandbox`, prepared for this workspace.
+    pub(crate) async fn sandbox(&self, sandbox: &Sandbox) -> Result<Arc<Prepared>, ComputerError> {
+        let kept = self
+            .prepared
+            .lock()
+            .ok()
+            .and_then(|kept| kept.clone())
+            .filter(|kept| kept.sandbox == *sandbox);
+        if let Some(kept) = kept {
+            return Ok(kept);
+        }
+        let prepared = Arc::new(Prepared::new(sandbox, &self.root).await?);
+        if let Ok(mut kept) = self.prepared.lock() {
+            *kept = Some(Arc::clone(&prepared));
+        }
+        Ok(prepared)
+    }
 }
 
 #[derive(Debug, Default)]

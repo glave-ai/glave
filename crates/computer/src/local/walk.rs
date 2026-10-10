@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use glave_ports::EntryKind;
 use globset::{GlobBuilder, GlobMatcher};
 use ignore::{Walk, WalkBuilder};
 
@@ -27,22 +28,23 @@ pub(crate) fn files(root: &Path) -> impl Iterator<Item = PathBuf> {
         .map(ignore::DirEntry::into_path)
 }
 
-/// The entries directly inside `dir` that git would not ignore, folders ending in `/`, and
-/// how many others were left out (not counting `.git`).
-pub(crate) fn entries(dir: &Path) -> std::io::Result<(Vec<String>, usize)> {
+/// The entries directly inside `dir` that git would not ignore, in path order, each with its
+/// kind (links are not followed), and how many others were left out (not counting `.git`).
+pub(crate) fn entries(dir: &Path) -> std::io::Result<(Vec<(PathBuf, EntryKind)>, usize)> {
     let all = std::fs::read_dir(dir)?
         .filter_map(Result::ok)
         .filter(|entry| entry.file_name() != ".git")
         .count();
-    let names: Vec<String> = walker(dir, Some(1))
+    let names: Vec<(PathBuf, EntryKind)> = walker(dir, Some(1))
         .filter_map(Result::ok)
         .filter(|entry| entry.depth() == 1)
         .map(|entry| {
-            let mut name = entry.file_name().to_string_lossy().into_owned();
-            if entry.file_type().is_some_and(|kind| kind.is_dir()) {
-                name.push('/');
-            }
-            name
+            let kind = match entry.file_type() {
+                Some(kind) if kind.is_dir() => EntryKind::Folder,
+                Some(kind) if kind.is_symlink() => EntryKind::Link,
+                _ => EntryKind::File,
+            };
+            (entry.into_path(), kind)
         })
         .collect();
     let left_out = all.saturating_sub(names.len());
@@ -82,23 +84,10 @@ impl Pattern {
     }
 }
 
-/// `path` as the model sees it: relative to the project root.
-pub(crate) fn shown(root: &Path, path: &Path) -> String {
-    let relative = path
-        .strip_prefix(root)
-        .unwrap_or(path)
-        .display()
-        .to_string();
-    if relative.is_empty() {
-        ".".into()
-    } else {
-        relative
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::local::paths::relative;
 
     pub(crate) fn project(name: &str, files: &[(&str, &str)]) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("glave-walk-{name}-{}", std::process::id()));
@@ -124,10 +113,21 @@ mod tests {
                 (".git/config", "[core]\n"),
             ],
         );
-        let found: Vec<String> = files(&dir).map(|path| shown(&dir, &path)).collect();
+        let found: Vec<String> = files(&dir).map(|path| relative(&dir, &path)).collect();
         assert_eq!(found, [".github/ci.yml", ".gitignore", "src/main.rs"]);
         let (names, left_out) = entries(&dir).unwrap();
-        assert_eq!(names, [".github/", ".gitignore", "src/"]);
+        let names: Vec<(String, EntryKind)> = names
+            .iter()
+            .map(|(path, kind)| (relative(&dir, path), *kind))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                (".github".to_owned(), EntryKind::Folder),
+                (".gitignore".to_owned(), EntryKind::File),
+                ("src".to_owned(), EntryKind::Folder)
+            ]
+        );
         assert_eq!(left_out, 2, "target/ and debug.log");
     }
 

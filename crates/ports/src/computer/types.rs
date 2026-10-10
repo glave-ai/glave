@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use super::bytes::Bytes;
 use super::environment::{Environment, Size};
+use super::sandbox::Sandbox;
 
 /// Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -86,6 +87,12 @@ pub struct WorkspaceInfo {
     /// The workspace root, an absolute path on its computer.
     pub root: String,
     pub sources: Sources,
+    /// The home folder commands there see, when it is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home: Option<String>,
+    /// The temp folder commands there see, when it is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temp: Option<String>,
 }
 
 /// One command, run by bash at the workspace root.
@@ -95,6 +102,10 @@ pub struct Command {
     /// Seconds before it is stopped; the adapter's own limit when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_secs: Option<u64>,
+    /// The sandbox it runs in; unconfined when `None`. A computer that cannot enforce it
+    /// refuses the command as unsupported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<Sandbox>,
 }
 
 impl Command {
@@ -102,6 +113,7 @@ impl Command {
         Self {
             script: script.into(),
             timeout_secs: None,
+            sandbox: None,
         }
     }
 }
@@ -145,6 +157,20 @@ pub struct Listing {
     /// Everything under it, rather than only what it holds.
     #[serde(default)]
     pub recursive: bool,
+    /// Leave out what git would ignore, even outside a repository, and the `.git` folder.
+    #[serde(default)]
+    pub skip_ignored: bool,
+}
+
+impl Listing {
+    /// What `path` holds, everything included.
+    pub fn of(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            recursive: false,
+            skip_ignored: false,
+        }
+    }
 }
 
 /// What kind of entry a listing found.
@@ -171,6 +197,9 @@ pub struct Entry {
 pub struct Listed {
     pub entries: Vec<Entry>,
     pub truncated: bool,
+    /// Entries left out because git ignores them (not counting `.git`).
+    #[serde(default)]
+    pub ignored: u64,
 }
 
 /// What to save: everything in the workspace, committed to `branch`.
@@ -208,6 +237,19 @@ pub enum ComputerError {
     /// The computer could not be reached, or its answer made no sense.
     #[error("unreachable: {0}")]
     Unreachable(String),
+}
+
+impl ComputerError {
+    /// What happened, without the kind in front.
+    pub fn message(&self) -> &str {
+        match self {
+            Self::NotFound(message)
+            | Self::Refused(message)
+            | Self::Unsupported(message)
+            | Self::Failed(message)
+            | Self::Unreachable(message) => message,
+        }
+    }
 }
 
 #[cfg(test)]

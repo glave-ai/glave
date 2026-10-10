@@ -12,6 +12,12 @@ publish.workspace = true
 # The random part of new computer and workspace ids (UUID v7).
 getrandom.workspace = true
 glave-ports.workspace = true
+# File patterns as models write them, for files/glob and files/search.
+globset.workspace = true
+# Walking a workspace the way git sees it, leaving out what it ignores.
+ignore.workspace = true
+# The expressions files/search looks for.
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

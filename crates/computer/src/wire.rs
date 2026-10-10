@@ -3,16 +3,19 @@
 //! `command/output` notifications before its response, and `command/cancel` stops it.
 
 use glave_ports::{
-    Command, ComputerError, ComputerId, Environment, FileWrite, Listing, Save, Sources, WorkspaceId,
+    Command, ComputerError, ComputerId, Environment, FileWrite, Glob, Listing, Save, Search,
+    Sources, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// The longest message accepted, in bytes: a whole file read or written, as base64, fits.
-pub(crate) const MAX_LINE: u64 = 16 * 1024 * 1024;
+pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 
-/// The protocol version spoken; it changes whenever a message changes shape.
-pub const PROTOCOL: &str = "2026-10";
+/// The protocol version spoken; it changes whenever a message changes shape. `2026-10-10`
+/// added `files/stat`, `files/glob`, `files/search`, ignore-aware listings and the sandbox on
+/// `command/run`: a server that predates it would run a sandboxed command unconfined.
+pub const PROTOCOL: &str = "2026-10-10";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";
@@ -64,6 +67,18 @@ pub(crate) enum Request {
         workspace: WorkspaceId,
         listing: Listing,
     },
+    #[serde(rename = "files/stat")]
+    Stat {
+        workspace: WorkspaceId,
+        path: String,
+    },
+    #[serde(rename = "files/glob")]
+    Glob { workspace: WorkspaceId, glob: Glob },
+    #[serde(rename = "files/search")]
+    Search {
+        workspace: WorkspaceId,
+        search: Search,
+    },
     #[serde(rename = "workspace/save")]
     Save { workspace: WorkspaceId, save: Save },
 }
@@ -82,6 +97,9 @@ const METHODS: &[&str] = &[
     "files/read",
     "files/write",
     "files/list",
+    "files/stat",
+    "files/glob",
+    "files/search",
     "workspace/save",
 ];
 
