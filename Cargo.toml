@@ -61,6 +61,8 @@ http = "1"
 hyper = { version = "1", default-features = false }
 hyper-util = { version = "0.1", default-features = false }
 ignore = "0.4"
+# Snapshot tests for stable text formats (AGENTS.md). Dev only; no default features.
+insta = { version = "1", default-features = false }
 # Verifying OIDC tokens, on aws-lc-rs, the crypto rustls already uses.
 jsonwebtoken = { version = "11.1", default-features = false, features = ["aws_lc_rs"] }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }

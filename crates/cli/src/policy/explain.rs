@@ -1,0 +1,148 @@
+//! `glave policy explain`: every effective setting and where it came from, every constraint and
+//! the file that imposed it, and anything that stops glave from running.
+
+use std::fmt::Write as _;
+
+use crate::policy::Loaded;
+use crate::policy::choices::{Choices, Source};
+use crate::policy::effective::check_model;
+
+/// The explanation of `loaded`, with models named `provider/model` when `provider` is known.
+/// The second value is false when glave would refuse to run.
+pub fn explain(loaded: &Loaded, provider: Option<&str>) -> (String, bool) {
+    let settled = loaded.settle();
+    let mut problems: Vec<String> = Vec::new();
+    let choices = match &settled {
+        Ok(choices) => choices,
+        Err(error) => {
+            problems.push(format!("{error:#}"));
+            &loaded.choices
+        }
+    };
+    if let (Ok(_), Some(provider)) = (&settled, provider) {
+        problems.extend(refused_models(choices, provider, loaded));
+    }
+    let mut out = String::new();
+    out.push_str("Settings (the nearest wins: flags, environment, project, person, default)\n");
+    out.push_str(&table(&settings(choices)));
+    out.push_str("\nConfig files\n");
+    if loaded.configs.is_empty() && loaded.untrusted.is_none() {
+        out.push_str("  none\n");
+    }
+    for path in &loaded.configs {
+        let _ = writeln!(out, "  {}", path.display());
+    }
+    if let Some(path) = &loaded.untrusted {
+        let _ = writeln!(
+            out,
+            "  {} (not used: glave cannot trust a project's settings yet)",
+            path.display()
+        );
+    }
+    out.push_str("\nConstraints (they only narrow, and a deny always wins)\n");
+    let rules: Vec<[String; 3]> = loaded
+        .constraints
+        .rules()
+        .iter()
+        .map(|rule| {
+            [
+                rule.kind.to_string(),
+                String::new(),
+                rule.from.display().to_string(),
+            ]
+        })
+        .collect();
+    if rules.is_empty() {
+        out.push_str("  none: no policy applies here, so everything is allowed\n");
+    } else {
+        out.push_str(&table(&rules));
+    }
+    if !problems.is_empty() {
+        out.push_str("\nglave will not run here:\n");
+        for problem in &problems {
+            let _ = writeln!(out, "  {problem}");
+        }
+    }
+    (out, problems.is_empty())
+}
+
+/// Each setting as `[name, value, source]`.
+fn settings(choices: &Choices) -> Vec<[String; 3]> {
+    let row = |name: &str, value: String, from: &Source| [name.to_owned(), value, from.to_string()];
+    let sandbox = choices
+        .sandbox
+        .value
+        .map_or("off", glave_harness::SandboxLevel::name);
+    vec![
+        match &choices.model {
+            Some(model) => row("model", model.value.clone(), &model.from),
+            None => row(
+                "model",
+                "none: set GLAVE_MODEL or pass --model".to_owned(),
+                &Source::Default,
+            ),
+        },
+        row(
+            "judge_model",
+            choices.judge.value.to_string(),
+            &choices.judge.from,
+        ),
+        row(
+            "approval",
+            choices.approval.value.name().to_owned(),
+            &choices.approval.from,
+        ),
+        row("sandbox", sandbox.to_owned(), &choices.sandbox.from),
+        match &choices.mcp {
+            Some(mcp) => row("mcp", format!("{:?}", mcp.value), &mcp.from),
+            None => row(
+                "mcp",
+                "every server in mcp.json".to_owned(),
+                &Source::Default,
+            ),
+        },
+    ]
+}
+
+/// Why the main and judge models are refused, if they are.
+fn refused_models(choices: &Choices, provider: &str, loaded: &Loaded) -> Vec<String> {
+    let Some(main) = &choices.model else {
+        return Vec::new();
+    };
+    let mut models = vec![(main.value.clone(), &main.from)];
+    if let Some(judge) = choices.judge.value.model(&main.value)
+        && judge != main.value
+    {
+        models.push((judge, &choices.judge.from));
+    }
+    models
+        .into_iter()
+        .filter_map(|(model, from)| {
+            check_model(&format!("{provider}/{model}"), from, &loaded.constraints)
+                .err()
+                .map(|error| error.to_string())
+        })
+        .collect()
+}
+
+/// Rows in aligned columns, indented, with "from" before each source.
+fn table(rows: &[[String; 3]]) -> String {
+    let width = |column: usize| {
+        rows.iter()
+            .map(|row| row.get(column).map_or(0, String::len))
+            .max()
+            .unwrap_or(0)
+    };
+    let (first, second) = (width(0), width(1));
+    let mut out = String::new();
+    for [name, value, from] in rows {
+        let line = if value.is_empty() {
+            format!("  {name:<first$}  from {from}")
+        } else {
+            format!("  {name:<first$}  {value:<second$}  from {from}")
+        };
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    out
+}
