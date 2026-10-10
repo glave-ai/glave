@@ -9,7 +9,8 @@ Draft, specified ahead of the code (issue #22 and the storage ports): today `key
 ## Scope
 
 - **Every table and every key carries the organization and the space.** Every storage call takes a scope, and no call can cross scopes. This is already true of the ports.
-- **A thread's space never changes.** Promoting a one-off chat into a project starts a new thread in the project's space that continues it (`thread.started` with `fork`). The original stays where it was. Nothing is moved or re-sealed.
+- **A thread's space never changes.** Nothing stored is ever moved or rewritten in place.
+- **Promoting a one-off chat into a project copies, then archives.** The chat's history is written as a new thread in the project's space, sealed under the project's keys, by the same path that writes any new thread. Its first event records where it came from. The original in the Inbox is then archived as "moved to the project" and deleted (its keys destroyed) 30 days later, so a mistaken promotion can still be undone. Archived originals never appear in search, thread lists or memory; only the project's copy does.
 - **One-off chats live in each person's Inbox space,** created with their personal organization. Every thread has a space from birth.
 - **A thread id is resolved to its scope by one small index:** `(thread) → (organization, space)`, kept by the data store and written when a thread starts. It is the only lookup that takes a bare thread id. It answers only "which scope", and every read that follows is scoped as usual and checked against the caller.
 - **Exports carry their scope** in a header line, and an import names the scope it goes into. An import never takes the scope from the file.
