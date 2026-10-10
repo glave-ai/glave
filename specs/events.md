@@ -158,7 +158,7 @@ Each conversion is total, and changes no meaning:
 
 ## Retention
 
-- Content is encrypted under keys scoped by organization, space, thread and month. Destroying a key erases that content everywhere at once, including backups.
+- Content is encrypted under keys scoped by organization, space and month (thread later). Destroying a space's key erases its content everywhere at once, including backups; erasing less than a space also rotates the space key (see `storage.md`).
 - Envelopes and content-free events, such as `model.responded`, can outlive the content they describe, for audit and billing.
 - Erasure is the only change ever made to a stored event, and it is itself recorded as an event in the same thread.
 - A legal hold is an event, and it pauses all deletion in its scope.
