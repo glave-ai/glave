@@ -183,7 +183,7 @@ fn an_error_mid_stream_fails_the_request() {
         "openrouter",
         &[r#"{"error":{"code":502,"message":"upstream failed"}}"#],
     );
-    assert!(matches!(completion, Err(ProviderError::Protocol(_))));
+    assert!(matches!(completion, Err(ProviderError::NoOutput(_))));
 }
 
 #[test]
@@ -201,4 +201,46 @@ fn decimals_convert_to_micros_exactly() {
     ] {
         assert_eq!(decimal_to_micros(text), micros, "{text}");
     }
+}
+
+/// OpenRouter's recorded shape: a role-only chunk, then `finish_reason: "error"` and no usage.
+#[test]
+fn an_error_finish_before_any_output_may_be_tried_again() {
+    let (result, deltas) = run(
+        "openrouter",
+        &[
+            r#"{"id":"gen-1","choices":[{"delta":{"role":"assistant","content":""}}]}"#,
+            r#"{"id":"gen-1","choices":[{"delta":{"content":""},"finish_reason":"error"}]}"#,
+        ],
+    );
+    let error = result.unwrap_err();
+    assert!(matches!(error, ProviderError::NoOutput(_)), "{error:?}");
+    assert!(error.is_transient());
+    assert_eq!(deltas, Vec::<Delta>::new());
+}
+
+#[test]
+fn an_error_finish_after_text_still_ends_in_error() {
+    let (completion, _) = run(
+        "openrouter",
+        &[
+            r#"{"choices":[{"delta":{"content":"Hel"}}]}"#,
+            r#"{"choices":[{"delta":{},"finish_reason":"error"}]}"#,
+        ],
+    );
+    assert_eq!(completion.unwrap().stop, StopReason::Error);
+}
+
+#[test]
+fn an_error_chunk_is_retryable_only_before_output() {
+    let (result, _) = run("openrouter", &[r#"{"error":{"message":"upstream"}}"#]);
+    assert!(matches!(result, Err(ProviderError::NoOutput(_))));
+    let (result, _) = run(
+        "openrouter",
+        &[
+            r#"{"choices":[{"delta":{"content":"Hi"}}]}"#,
+            r#"{"error":{"message":"upstream"}}"#,
+        ],
+    );
+    assert!(matches!(result, Err(ProviderError::Protocol(_))));
 }

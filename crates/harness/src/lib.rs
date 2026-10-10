@@ -9,11 +9,13 @@ mod caller;
 mod calls;
 mod cancel;
 mod children;
+mod commands;
 mod compaction;
 mod conversation;
 mod env;
 mod goal;
 mod harness;
+mod hooks;
 mod instructions;
 mod join;
 mod judge;
@@ -35,6 +37,9 @@ pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, 
 pub use bind::{Place, branch_for};
 pub use caller::Caller;
 pub use cancel::Cancel;
+pub use commands::{
+    COMMAND_FOLDERS, Command, FoundCommands, command_folders, find_commands, invoked,
+};
 pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;
 pub use env::{Clock, Entropy, OsEntropy, SystemClock};
@@ -42,6 +47,7 @@ pub use glave_ports::secrets::{is_secret_file, is_secret_variable};
 pub use glave_ports::{Sandbox, SandboxLevel};
 pub use goal::{DEFAULT_BUDGET, Goal, GoalProgress, UPDATE_GOAL};
 pub use harness::{Harness, HarnessError, Parts, Settings, Thread};
+pub use hooks::{HOOK_TIMEOUT_SECS, Hook, HookError, HookPoint, Hooks, point_name};
 pub use instructions::{AGENTS_MD, Instructions, agents_md};
 pub use judge::{JudgeCase, Ruling, judge};
 pub use prompt::system_prompt;

@@ -14,11 +14,12 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
+use glave_harness::Hook;
 
 pub use choices::{Choices, Chosen, Layer, Level, Source};
 pub use effective::{check_model, check_own_servers};
 pub use explain::explain;
-pub use files::{Approval, ConfigFile, PolicyFile, SandboxChoice, config};
+pub use files::{Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, config};
 pub use rules::Constraints;
 
 /// The choices file, in glave's folder and in a project's `.glave/`.
@@ -68,6 +69,8 @@ pub struct Loaded {
     pub policies: Vec<PathBuf>,
     /// What the project brings that needs trust, and where each thing stands.
     pub project: Option<ProjectTrust>,
+    /// The hooks in the person's `config.toml`, which are theirs and need no trust.
+    pub person_hooks: Vec<Hook>,
 }
 
 /// A project's trust, for `glave policy explain`.
@@ -109,6 +112,11 @@ pub async fn load(
         Some(text) => Some(files::config(&text, &locations.person)?),
         None => None,
     };
+    let person_hooks = person
+        .as_ref()
+        .and_then(|file| file.hooks.as_ref())
+        .map(HooksFile::hooks)
+        .unwrap_or_default();
     let mut layers = vec![
         Layer {
             level: Level::Flags,
@@ -131,7 +139,9 @@ pub async fn load(
             values,
         });
     }
-    Ok(assemble(&layers, policies, None))
+    let mut loaded = assemble(&layers, policies, None);
+    loaded.person_hooks = person_hooks;
+    Ok(loaded)
 }
 
 /// The choices of `layers`, nearest first, under the rules of `policies`.
@@ -152,6 +162,7 @@ pub fn assemble(
             .collect(),
         policies: policies.iter().map(|(path, _)| path.clone()).collect(),
         project,
+        person_hooks: Vec::new(),
     }
 }
 

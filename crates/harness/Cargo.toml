@@ -14,6 +14,8 @@ glave-event.workspace = true
 glave-ports.workspace = true
 glave-shell.workspace = true
 jiff.workspace = true
+# Hook matchers are regular expressions over tool names, as Claude Code and Codex write them.
+regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

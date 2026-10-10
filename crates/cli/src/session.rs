@@ -10,8 +10,8 @@ use anyhow::Context as _;
 use glave_computer::LocalComputers;
 use glave_event::ThreadId;
 use glave_harness::{
-    AGENTS_MD, Cancel, DEFAULT_BUDGET, Goal, OsEntropy, Sandbox, Settings, SystemClock, Workspace,
-    agents_md,
+    AGENTS_MD, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings, SystemClock,
+    Workspace, agents_md,
 };
 use glave_session::protocol::{Reply, Request};
 use glave_session::signin::{SignIn, Trust};
@@ -63,7 +63,7 @@ pub fn main() -> ExitCode {
             println!("glave {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
-        Action::Run | Action::Serve | Action::Explain | Action::Skills => {}
+        Action::Run | Action::Serve | Action::Explain | Action::Skills | Action::Commands => {}
     }
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -79,6 +79,7 @@ pub fn main() -> ExitCode {
         Action::Serve => runtime.block_on(serve(args)),
         Action::Explain => runtime.block_on(setup::explain(&args)),
         Action::Skills => runtime.block_on(crate::skills::list()),
+        Action::Commands => runtime.block_on(crate::commands::list()),
         _ => runtime.block_on(run(args)),
     };
     match ran {
@@ -142,16 +143,14 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     .reduce(|all, part| format!("{all}\n\n{part}"));
     settings.approval = choices.approval.value;
     settings.max_steps = args.max_steps;
-    // As Claude Code, Codex and OpenCode offer it; models use it when asked to.
-    settings.subagents = true;
+    settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
     settings.judge = judge.is_some();
     let identity = identity::load_or_make(&home::folder()?).await?;
-    settings.person = Some(identity.person);
-    settings.agent = Some(identity.agent);
-    if let Some(window_tokens) = config::context_window()? {
-        settings.compaction.window_tokens = window_tokens;
-    }
+    (settings.person, settings.agent) = (Some(identity.person), Some(identity.agent));
+    let window = config::context_window()?;
+    settings.compaction.window_tokens = window.unwrap_or(settings.compaction.window_tokens);
     let root = workspace.root().to_owned();
+    settings.commands = crate::commands::find(&root).await?;
     let servers = Servers::start(
         &home::folder()?,
         &root,
@@ -175,6 +174,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         // The project's skills first, then the MCP servers' tools.
         tools: [crate::skills::offered(&root).await?, servers.sources()].concat(),
         worktree: choices.worktree.value,
+        hooks: Hooks::new(setup.hooks.clone())?,
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),

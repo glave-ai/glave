@@ -34,6 +34,7 @@ Usage:
   glave skills                  list the skills the model is offered here
   glave worktrees [prune]       list the worktrees threads made, or remove the merged ones
                                 (glave worktrees --help)
+  glave commands                list the custom commands you can type here as /name
 
 Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)
@@ -82,6 +83,17 @@ Skills (agentskills.io: <name>/SKILL.md with a name and a description) come from
 root, then from skills in GLAVE_HOME and ~/.agents/skills; the nearest wins a name. The model
 sees each name and description, and loads a skill's instructions when a task needs them.
 
+Commands are <name>.md files in .glave/commands and .claude/commands (in this folder and each
+one above it up to the repository's root), then in commands in GLAVE_HOME and
+~/.claude/commands. Typing /name words sends the file's text, with $ARGUMENTS replaced by the
+words and $1 to $9 by each one.
+
+Hooks are commands config.toml runs at points of a turn: [[hooks.PreToolUse]] (before a tool
+call; exit 2 stops it, and the model reads why), [[hooks.PostToolUse]], [[hooks.UserPromptSubmit]]
+and [[hooks.Stop]], each with a command, and optionally a matcher (a regular expression over
+the tool's name) and a timeout in seconds. A hook reads JSON on its input. A project's hooks
+run only once you trust the project.
+
 MCP servers in mcp.json, in the .mcp.json format ({\"mcpServers\": {\"name\": {\"command\": ...}}}
 or {\"url\": ..., \"headers\": {...}}), start with glave; their tools reach the model as
 mcp__<server>__<tool>. A program gets only the variables its settings name, so add keys
@@ -104,6 +116,8 @@ pub enum Action {
     Explain,
     /// List the skills on offer.
     Skills,
+    /// List the custom commands.
+    Commands,
     Help,
     Version,
 }
@@ -155,6 +169,8 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
         args.action = Action::Explain;
     } else if !serving && rest.next_if(|first| first == "skills").is_some() {
         args.action = Action::Skills;
+    } else if !serving && rest.next_if(|first| first == "commands").is_some() {
+        args.action = Action::Commands;
     }
     let mut stdio = false;
     while let Some(argument) = rest.next() {
@@ -212,6 +228,9 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
     }
     if args.action == Action::Skills && (!args.prompt.is_empty() || args.resume) {
         return Err("glave skills takes no prompt or --continue".into());
+    }
+    if args.action == Action::Commands && (!args.prompt.is_empty() || args.resume) {
+        return Err("glave commands takes no prompt or --continue".into());
     }
     if serving && args.action == Action::Run {
         transport(&args, stdio)?;
@@ -424,6 +443,8 @@ mod tests {
     fn skills_is_a_command_only_as_the_first_word() {
         assert_eq!(parse_words(&["skills"]).unwrap().action, Action::Skills);
         assert!(parse_words(&["skills", "now"]).is_err());
+        assert_eq!(parse_words(&["commands"]).unwrap().action, Action::Commands);
+        assert!(parse_words(&["commands", "now"]).is_err());
         let prompt = parse_words(&["list", "skills"]).unwrap();
         assert_eq!(prompt.action, Action::Run);
         assert_eq!(prompt.prompt, "list skills");

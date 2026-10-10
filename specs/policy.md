@@ -22,7 +22,13 @@ Project trust (issue #83), in `crates/cli/src/trust`:
 - With no one to ask (a pipe, a script, `glave serve`), untrusted servers stay off, glave says so, and the model is told which tools are off and why.
 - `glave policy explain` lists the project's items and where each stands.
 
-Not built yet: a command to change a decision (edit `trust.toml`); hooks, which will join the things that need trust; signed bundles from an organization's server, macOS managed preferences and Group Policy; a space's own policy; recording policy changes as events (the admin console); and recording the policy version in each turn's configuration.
+Hooks (issue #46; `approvals.md`, "Hooks"):
+
+- `[[hooks.<Point>]]` in `config.toml` (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`; `command`, optional `matcher` and `timeout`), checked when read: an unknown point or key, a matcher that is not a regular expression, or a matcher on a point without a tool is an error naming the file.
+- Hooks add up instead of the nearest winning: the person's, then a trusted project's. They are not choices, so flags and the environment have none.
+- A project's hooks are trust items, each bound by its whole definition. `[hooks] own = false` forbids them, and makes glave refuse to start while the person's own `config.toml` has hooks. `glave policy explain` lists the person's hooks and the project's with where each stands.
+
+Not built yet: a command to change a decision (edit `trust.toml`); signed bundles from an organization's server, macOS managed preferences and Group Policy; a space's own policy; recording policy changes as events (the admin console); and recording the policy version in each turn's configuration.
 
 ## Two kinds of setting, two rules
 
@@ -61,7 +67,13 @@ approval = "auto"                             # or "ask"
 sandbox = "project"                           # or "off", "read-only"
 mcp = ["github", "jira"]                      # servers to turn on, from the catalog
 worktree = true                               # each thread in a worktree of its own; default false
+
+[[hooks.PreToolUse]]                          # commands run at points of a turn (approvals.md)
+matcher = "bash"
+command = "./scripts/guard.sh"
 ```
+
+Hooks are the one thing in `config.toml` that adds up across files rather than the nearest winning: the person's and a trusted project's all run.
 
 `policy.toml` (constraints; every section optional):
 
@@ -88,6 +100,9 @@ person_per_day_usd = 20
 
 [projects]
 trusted = ["/srv/repos/*"]                        # projects at these paths (globs) need no question
+
+[hooks]
+own = false                                       # may people and projects run hooks
 ```
 
 Unknown keys are errors that name the key and file, so a typo never silently does nothing.
@@ -104,6 +119,7 @@ Each constraint is enforced where it cannot be bypassed:
 | approval modes, the judge | the session API and the harness's tool gate |
 | sandbox | the computer port, before any command runs |
 | MCP servers | the harness, when it starts servers |
+| hooks | the CLI, before the harness is built: forbidden hooks are never handed to it |
 
 A laptop's own config can never loosen a constraint, because the constraint arrives from the organization (a signed bundle or device management), not from a file the person edits.
 
@@ -113,7 +129,7 @@ A laptop's own config can never loosen a constraint, because the constraint arri
 
 ## Project trust
 
-- A project's `.glave/config.toml` and its `.mcp.json` can run commands (MCP servers, later hooks). So they are honoured only after the person trusts the project once. glave asks at most once per project, and only when the project brings something that runs commands.
+- A project's `.glave/config.toml` and its `.mcp.json` can run commands (MCP servers and hooks). So they are honoured only after the person trusts the project once. glave asks at most once per project, and only when the project brings something that runs commands.
 - Trust decisions are kept in `trust.toml` in `~/.glave` (or `GLAVE_HOME`), one `[[project]]` per repository, keyed by its canonical root path. A clone that moved is recognised by its `origin` remote, read from the repository's config file without running anything. Each item records the exact definition that was answered, so trust is of the content:
 
   ```toml
@@ -127,6 +143,6 @@ A laptop's own config can never loosen a constraint, because the constraint arri
   definition = '{"args":["--fast"],"command":"docs-mcp"}'
   trusted = true          # false: declined, and not asked again until it changes
   ```
-- What needs trust: each server in the project's `.mcp.json`, and `approval = "auto"` or `sandbox = "off"` in its `config.toml`, and a `judge_model` other than `"off"` (a repository must not choose who judges its own actions; `off` only makes glave ask more and applies at once). Nothing else asks. Servers in `~/.glave/mcp.json` are the person's own and always trusted; on a name clash the person's wins.
-- An organization's policy can pre-trust projects (`[projects] trusted`), or forbid project MCP servers entirely (`[mcp] own = false`). A forbid wins over a pre-trust and over the person's yes.
-- With no one to answer, an untrusted project's servers stay off, and the model is told why: its instructions gain a "Project tools that are off" section listing what is off and why.
+- What needs trust: each server in the project's `.mcp.json`, each hook in its `config.toml` (item `hook:<Point>:<n>`, its definition the hook's point, command, matcher and timeout as JSON), and `approval = "auto"` or `sandbox = "off"` in its `config.toml`, and a `judge_model` other than `"off"` (a repository must not choose who judges its own actions; `off` only makes glave ask more and applies at once). Nothing else asks. Servers in `~/.glave/mcp.json` are the person's own and always trusted; on a name clash the person's wins.
+- An organization's policy can pre-trust projects (`[projects] trusted`), or forbid project MCP servers (`[mcp] own = false`) or hooks (`[hooks] own = false`) entirely. A forbid wins over a pre-trust and over the person's yes.
+- With no one to answer, an untrusted project's servers stay off, and the model is told why: its instructions gain a "Project tools that are off" section listing what is off and why. Hooks that stay off are told to the person only: the model never calls a hook.

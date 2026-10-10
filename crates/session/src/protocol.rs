@@ -392,7 +392,9 @@ pub mod code {
     pub const NO_QUESTION: i64 = -32006;
     pub const NO_GOAL: i64 = -32007;
     /// The thread's workspace could not be opened, such as a worktree outside a repository.
-    pub const WORKSPACE: i64 = -32008;
+    pub const WORKSPACE: i64 = -32009;
+    /// A hook stopped the prompt before the model saw it.
+    pub const PROMPT_BLOCKED: i64 = -32008;
     pub const CANCELLED: i64 = -32005;
     /// No valid sign-in, on a network transport.
     pub const NO_SIGN_IN: i64 = -32013;

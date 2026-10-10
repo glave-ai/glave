@@ -50,6 +50,7 @@ impl ProviderError {
             Self::Http { status, body } => from_status(*status, &body.to_ascii_lowercase()),
             Self::Transport(_) => Failure::Unreachable,
             Self::Timeout { .. } => Failure::Silent,
+            Self::NoOutput(_) => Failure::Unavailable,
             Self::Protocol(_) => Failure::Malformed,
             Self::Unserved { failure, .. } => *failure,
             Self::OverBudget { .. } => Failure::OverBudget,
@@ -150,6 +151,10 @@ mod tests {
         assert_eq!(
             ProviderError::Protocol("bad".into()).failure(),
             Failure::Malformed
+        );
+        assert_eq!(
+            ProviderError::NoOutput("finish_reason error".into()).failure(),
+            Failure::Unavailable
         );
         let unserved = ProviderError::Unserved {
             failure: Failure::TooLong,

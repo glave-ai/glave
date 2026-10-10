@@ -53,9 +53,12 @@ impl Assembler {
         let chunk: Chunk = serde_json::from_str(data)
             .map_err(|e| ProviderError::Protocol(format!("unreadable chunk: {e}")))?;
         if let Some(error) = chunk.error {
-            return Err(ProviderError::Protocol(format!(
-                "error mid-stream: {error}"
-            )));
+            let reason = format!("error mid-stream: {error}");
+            return Err(if self.has_output() {
+                ProviderError::Protocol(reason)
+            } else {
+                ProviderError::NoOutput(reason)
+            });
         }
         if let Some(id) = chunk.id.filter(|id| !id.is_empty()) {
             self.response_id = Some(id);
@@ -96,6 +99,11 @@ impl Assembler {
             }
         }
         Ok(())
+    }
+
+    /// Whether anything has been shown or asked for yet: text, reasoning or a tool call.
+    fn has_output(&self) -> bool {
+        !self.parts.is_empty() || !self.calls.is_empty()
     }
 
     fn push_text(&mut self, text: &str, on_delta: &mut (dyn FnMut(Delta) + Send)) {
@@ -144,6 +152,12 @@ impl Assembler {
             })
             .collect();
         let stop = stop_reason(self.finish.as_deref(), !tool_calls.is_empty());
+        if stop == StopReason::Error && self.parts.is_empty() && tool_calls.is_empty() {
+            return Err(ProviderError::NoOutput(format!(
+                "finish reason {}",
+                self.finish.as_deref().unwrap_or("error")
+            )));
+        }
         let interrupted = self.finish.is_none();
         let (usage, cost) = usage_and_cost(self.usage.as_deref(), interrupted, &self.provider)?;
         Ok(Completion {

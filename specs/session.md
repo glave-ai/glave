@@ -27,7 +27,7 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | Method | Params | Result |
 | --- | --- | --- |
 | `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
-| `thread/start` | optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`) | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32008`, and no thread starts |
+| `thread/start` | optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`) | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
 | `thread/list` | optional `limit` (default 20) | `threads`: summaries, newest first |
 | `thread/get` | `thread` | `thread`: its summary |
 | `thread/events` | `thread`; optional `after` (a `seq`), `limit` (default 500) | `events`: stored events in `seq` order, exactly as `events.md` defines them; `next`, when there are more |
@@ -89,6 +89,7 @@ A goal keeps a thread working across turns until it is met, the person stops it,
 ## Turns
 
 - One turn runs per thread at a time. A second `turn/start` is refused with `-32002`. Queueing and steering a running turn come later.
+- **Custom commands.** A `prompt` that starts with `/name` where `name` is one of the server's commands (Markdown files in `.glave/commands` or `.claude/commands` in the project, then the person's own) is sent as that command's text, with `$ARGUMENTS` replaced by the rest of the prompt and `$1` to `$9` by each word of it; the stored `message.added` holds the text sent. Any other prompt, `/usr/bin is slow` included, is sent as written. Listing the commands over the API comes later; `glave commands` lists them.
 - A turn's notifications go to the client that started it and to every client watching the thread.
 - If the server stops mid-turn, the log ends without `turn.ended`. Resuming records the turn as `interrupted` and gives every unanswered tool call a result, so the thread continues.
 
@@ -105,7 +106,8 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32005` | The operation was cancelled, such as a compaction stopped by `turn/cancel` |
 | `-32006` | No such question is waiting |
 | `-32007` | The thread has no active goal |
-| `-32008` | The thread's workspace could not be opened, such as a worktree outside a repository |
+| `-32008` | A `UserPromptSubmit` hook stopped the prompt; the message gives its reason, and the model never saw the prompt (`approvals.md`, "Hooks") |
+| `-32009` | The thread's workspace could not be opened, such as a worktree outside a repository |
 | `-32010` | Unsupported protocol version; `data.supported` lists the spoken ones |
 | `-32011` | The thread is running in another server of this deployment |
 | `-32012` | The caller may not do this |

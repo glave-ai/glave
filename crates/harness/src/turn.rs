@@ -15,6 +15,7 @@ use serde::Serialize;
 use crate::approval::{ApprovalMode, Approver};
 use crate::caller::Caller;
 use crate::cancel::Cancel;
+use crate::commands::invoked;
 use crate::compaction::{Measured, chars, responded};
 use crate::goal::{BUDGET_SPENT, counted};
 use crate::harness::{Harness, HarnessError, Thread};
@@ -179,8 +180,11 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
         let toolset: ToolSet = self.tools().await;
+        // A prompt that names a command sends the command's text.
+        let expanded = invoked(&self.settings.commands, prompt)
+            .map(|(command, arguments)| command.expand(arguments));
         let prompt = Prompt {
-            text: prompt,
+            text: expanded.as_deref().unwrap_or(prompt),
             caller,
             by_glave: false,
         };
@@ -207,6 +211,13 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        // The person's own prompts pass the `UserPromptSubmit` hooks first.
+        if !prompt.by_glave
+            && !thread.delegated()
+            && let Some(reason) = self.on_prompt(thread, prompt.text, cancel).await?
+        {
+            return Err(HarnessError::PromptBlocked(reason));
+        }
         self.begin(thread, prompt, &toolset).await?;
         let mut step = Step {
             toolset,
@@ -277,6 +288,9 @@ where
             self.add_note(thread, CANCELLED).await?;
         }
         self.end(thread, step.summary.outcome).await?;
+        if !thread.delegated() && step.summary.outcome != Outcome::Cancelled {
+            self.on_stop(thread, step.summary.outcome, cancel).await?;
+        }
         Ok(step.summary)
     }
 

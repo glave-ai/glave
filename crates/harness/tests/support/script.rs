@@ -240,6 +240,7 @@ pub fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::GoalSet(_) => "goal.set",
             Body::GoalEnded(_) => "goal.ended",
             Body::WorkspaceBound(_) => "workspace.bound",
+            Body::HookRan(_) => "hook.ran",
             Body::Unknown(_) => "unknown",
         })
         .collect()

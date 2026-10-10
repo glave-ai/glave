@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::ExitCode;
 
+use glave_harness::Hook;
+
 use crate::args::Args;
 use crate::policy::{self, Choices, ConfigFile, Loaded, Locations, ProjectTrust};
 use crate::trust::{self, Asking, Outcome, Project};
@@ -18,6 +20,10 @@ pub struct Setup {
     pub project_servers: BTreeMap<String, String>,
     /// What the project brings that stays off, and why.
     pub withheld: Vec<String>,
+    /// The hooks that run: the person's own, then the project's trusted ones.
+    pub hooks: Vec<Hook>,
+    /// The project's hooks that stay off, and why: told to the person, never the model.
+    pub hooks_off: Vec<String>,
 }
 
 impl Setup {
@@ -29,17 +35,33 @@ impl Setup {
         if args.network && choices.sandbox.value.is_none() {
             anyhow::bail!("--network only applies with a sandbox: pass --sandbox, or set one");
         }
+        let mine = &loaded.person_hooks;
+        if let Some(rule) = loaded.constraints.own_hooks_forbidden()
+            && !mine.is_empty()
+        {
+            anyhow::bail!(
+                "{} has hooks of your own, and {rule} does not allow them: remove its [hooks]",
+                loaded
+                    .configs
+                    .last()
+                    .map_or_else(String::new, |path| path.display().to_string())
+            );
+        }
+        let hooks = [mine.clone(), outcome.hooks].concat();
         Ok(Self {
             loaded,
             choices,
             project_servers: outcome.servers,
             withheld: outcome.withheld,
+            hooks,
+            hooks_off: outcome.hooks_off,
         })
     }
 
     /// What to tell the person before the first turn, if anything.
     pub fn notice(&self) -> Option<String> {
-        (!self.withheld.is_empty()).then(|| self.withheld.join("\nglave: "))
+        let lines = [self.withheld.as_slice(), self.hooks_off.as_slice()].concat();
+        (!lines.is_empty()).then(|| lines.join("\nglave: "))
     }
 
     /// What to tell the model, so it does not look for tools that are not there.
