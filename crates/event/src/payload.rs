@@ -3,6 +3,7 @@
 
 pub(crate) mod approval;
 pub(crate) mod goal;
+pub(crate) mod hook;
 pub(crate) mod message;
 pub(crate) mod model;
 pub(crate) mod part;
@@ -13,6 +14,7 @@ pub(crate) mod turn;
 
 pub use approval::{ApprovalDecided, ApprovalRequested, Verdict};
 pub use goal::{GoalEnded, GoalReason, GoalSet};
+pub use hook::{HookPoint, HookRan, HookResult};
 pub use message::{MessageAdded, Role};
 pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};

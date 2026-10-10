@@ -144,3 +144,45 @@ fn explain_shows_every_setting_and_rule_with_its_source() {
     let empty = assemble(&[], &[], None);
     insta::assert_snapshot!("explain_defaults", explain(&empty, None).0);
 }
+
+#[test]
+fn the_person_s_hooks_are_read_shown_and_refused_when_the_policy_forbids_them() {
+    let dir = scratch("hooks");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(
+        home.join("config.toml"),
+        "[[hooks.PostToolUse]]\nmatcher = \"edit|write\"\ncommand = \"cargo fmt\"\ntimeout = 30\n",
+    )
+    .unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![dir.join("policy.toml")];
+    let loaded = load_all(&locations, None).unwrap();
+    assert_eq!(loaded.person_hooks.len(), 1);
+    assert_eq!(loaded.person_hooks[0].timeout_secs, Some(30));
+    assert_eq!(
+        loaded.choices,
+        load_all(&Locations::here(&dir.join("none"), &dir), None)
+            .unwrap()
+            .choices,
+        "hooks are not choices"
+    );
+    let (text, runs) = explain(&loaded, None);
+    assert!(runs);
+    assert!(
+        text.contains("PostToolUse  cargo fmt (for tools matching edit|write)"),
+        "{text}"
+    );
+    std::fs::write(
+        dir.join("policy.toml"),
+        "version = 1\n[hooks]\nown = false\n",
+    )
+    .unwrap();
+    let forbidden = load_all(&locations, None).unwrap();
+    let (text, runs) = explain(&forbidden, None);
+    assert!(!runs);
+    assert!(
+        text.contains("your hooks are not allowed: [hooks] own = false"),
+        "{text}"
+    );
+}

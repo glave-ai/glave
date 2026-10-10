@@ -386,6 +386,8 @@ pub mod code {
     pub const NO_APPROVAL: i64 = -32004;
     pub const NO_QUESTION: i64 = -32006;
     pub const NO_GOAL: i64 = -32007;
+    /// A hook stopped the prompt before the model saw it.
+    pub const PROMPT_BLOCKED: i64 = -32008;
     pub const CANCELLED: i64 = -32005;
     /// No valid sign-in, on a network transport.
     pub const NO_SIGN_IN: i64 = -32013;

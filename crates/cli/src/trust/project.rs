@@ -1,21 +1,25 @@
-//! What a repository brings that needs trust: its `.mcp.json` servers and the parts of its
-//! `.glave/config.toml` that loosen how commands run. Read, never run: reading a file in a
-//! repository you have not trusted is safe, starting what it names is not.
+//! What a repository brings that needs trust: its `.mcp.json` servers, the hooks in its
+//! `.glave/config.toml`, and the parts of that file that loosen how commands run. Read, never
+//! run: reading a file in a repository you have not trusted is safe, starting what it names
+//! is not.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use glave_harness::ApprovalMode;
+use glave_harness::{ApprovalMode, Hook, point_name};
 use serde_json::Value;
 
-use crate::policy::{self, Approval, ConfigFile, SandboxChoice};
+use crate::policy::{self, Approval, ConfigFile, HooksFile, SandboxChoice};
 
 /// A project's MCP servers, in Claude Code's format, at the repository's root.
 pub const MCP_FILE: &str = ".mcp.json";
 
 /// The id of the settings item, beside `mcp:<server>` ids.
 pub const SETTINGS: &str = "settings";
+
+/// The start of a hook's id: `hook:<point>:<n>`, the nth hook at that point.
+const HOOK: &str = "hook:";
 
 /// One thing the person is asked to trust.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,10 +38,22 @@ impl Item {
         self.id.starts_with("mcp:")
     }
 
-    /// The label the person reads: `MCP server docs` or `settings`.
+    /// Whether this is a hook, which a policy may forbid.
+    pub fn is_hook(&self) -> bool {
+        self.id.starts_with(HOOK)
+    }
+
+    /// The label the person reads: `MCP server docs`, `hook PreToolUse` or `settings`.
     pub fn label(&self) -> String {
-        match self.id.strip_prefix("mcp:") {
-            Some(name) => format!("MCP server {name}"),
+        if let Some(name) = self.id.strip_prefix("mcp:") {
+            return format!("MCP server {name}");
+        }
+        match self
+            .id
+            .strip_prefix(HOOK)
+            .and_then(|rest| rest.split_once(':'))
+        {
+            Some((point, _)) => format!("hook {point}"),
             None => "settings".to_owned(),
         }
     }
@@ -82,18 +98,63 @@ impl Project {
         })
     }
 
-    /// Everything here that needs trust: the servers, then the settings that loosen things.
+    /// Everything here that needs trust: the servers, the hooks, then the settings that
+    /// loosen things.
     pub fn items(&self) -> Vec<Item> {
         let settings = self.config.as_ref().and_then(loosening);
-        self.servers.values().cloned().chain(settings).collect()
+        let hooks = self.hooks().into_iter().map(|(item, _)| item);
+        self.servers
+            .values()
+            .cloned()
+            .chain(hooks)
+            .chain(settings)
+            .collect()
     }
 
-    /// The config as it applies without trust: choices that only tighten or pick a model.
+    /// The hooks in the project's `config.toml`, each with the item that trusts it. Each is
+    /// trusted by its whole definition, so a changed command, matcher or timeout asks again.
+    pub fn hooks(&self) -> Vec<(Item, Hook)> {
+        let hooks = self
+            .config
+            .as_ref()
+            .and_then(|config| config.hooks.as_ref())
+            .map(HooksFile::hooks)
+            .unwrap_or_default();
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        hooks
+            .into_iter()
+            .map(|hook| {
+                let point = point_name(hook.point);
+                let count = counts.entry(point).or_default();
+                *count = count.saturating_add(1);
+                let definition = serde_json::json!({
+                    "event": point,
+                    "command": hook.command,
+                    "matcher": hook.matcher,
+                    "timeout": hook.timeout_secs,
+                });
+                let shows = match &hook.matcher {
+                    Some(matcher) => format!("{} (for tools matching {matcher})", hook.command),
+                    None => hook.command.clone(),
+                };
+                let item = Item {
+                    id: format!("{HOOK}{point}:{count}"),
+                    definition: definition.to_string(),
+                    shows,
+                };
+                (item, hook)
+            })
+            .collect()
+    }
+
+    /// The config as it applies without trust: choices that only tighten or pick a model,
+    /// and no hooks.
     pub fn config_without_trust(&self) -> Option<ConfigFile> {
         self.config.as_ref().map(|config| ConfigFile {
             approval: config.approval.filter(|a| *a != Approval::Auto),
             sandbox: config.sandbox.filter(|s| *s != SandboxChoice::Off),
             judge_model: config.judge_model.clone().filter(|j| j.trim() == "off"),
+            hooks: None,
             ..config.clone()
         })
     }

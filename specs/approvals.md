@@ -43,6 +43,38 @@ A rule cannot tell "push my branch" from a push nobody asked for. In auto mode, 
 
 The judge is the main model unless `GLAVE_JUDGE_MODEL` names another; `off` turns it off. On `evals/judge` (`cargo xtask eval judge --model …`), any of the three default models as judge lowers false alarms on actions the person asked for from 56% to 1–6%, and lets through no case that should ask.
 
+## Hooks
+
+Hooks are commands the person sets up to run at four points of a turn, under the names and protocol Claude Code and Codex share:
+
+| Point | Runs | A block |
+| --- | --- | --- |
+| `PreToolUse` | before a tool call, before anyone is asked about it | stops the call; the model's result is "Not run: a hook the person set up stopped this call: <reason>" |
+| `PostToolUse` | after a tool call ran, before the model sees its result | adds "[A hook that runs after <tool> says: <reason>]" to the result |
+| `UserPromptSubmit` | when the person sends a prompt (not a goal's continuation, not a subagent's brief) | the prompt is refused with its reason (`-32008` in the session API) and never reaches the model |
+| `Stop` | once a turn has ended, unless it was cancelled; not in subagents' threads | cannot block: keeping work going until something holds is a goal's job, with a check |
+
+They are written in `config.toml`, the person's (`~/.glave/config.toml`) and a project's (`.glave/config.toml`), and they add up rather than the nearest winning: the person's run first, then the project's, in the order written.
+
+```toml
+[[hooks.PreToolUse]]
+matcher = "bash"              # a regular expression over the whole tool name; every tool when absent
+command = "./scripts/guard.sh"
+timeout = 30                  # seconds; 600 when absent
+
+[[hooks.PostToolUse]]
+matcher = "edit|write"
+command = "cargo fmt --all"
+```
+
+- **Running.** Each hook is a bash command run at the workspace root on the workspace's computer, through the computer port, in the sandbox when there is one, with its timeout. It gets one line of JSON on its standard input: `hook_event_name`, `session_id` (the thread), `cwd`, `permission_mode` (`auto` or `ask`), and for the tool points `tool_name`, `tool_input` and `tool_use_id`, plus `tool_response` (`output`, `is_error`) after the tool; `prompt` for `UserPromptSubmit`, `outcome` for `Stop`. Hooks at one point run one after another, and the first that blocks ends the rest.
+- **Answering.** Exit 0 lets things go on. Exit 2 blocks, and the hook's output is the reason. On exit 0, output that is a JSON object blocks when it says `"decision": "block"` (with `reason`), or for `PreToolUse` `hookSpecificOutput.permissionDecision` `"deny"` (with `permissionDecisionReason`). The computer port gives one stream, standard output and error together, so a hook answering in JSON writes nothing else. Any other exit code, a timeout, or a hook that cannot start is recorded as failed and things go on.
+- **A hook can only narrow.** A blocking hook stops a call or a prompt; nothing a hook says loosens anything. `"permissionDecision": "allow"` or `"ask"` is ignored, a call a hook passed is still asked about exactly as the mode and the cautions say, and no hook changes a call's arguments.
+- **Trust and policy.** The person's hooks are theirs. A project's hooks run only once the person trusts the project, each trusted by its whole definition, so a changed command, matcher or timeout asks again; until then they stay off and glave says so to the person (not to the model, which never calls a hook). `[hooks] own = false` in an organization's policy forbids hooks: a project's stay off whatever the person says, and the person's own make glave refuse to start, naming the rule (`policy.md`).
+- **Recording.** Every hook that runs is recorded as `hook.ran` (`events.md`). With no hooks, or none that apply, nothing runs and the model is sent exactly what it was sent before.
+
+Later: `additionalContext` (a hook adding text for the model), `updatedInput`, hooks at session start and end and around compaction, and hooks an organization provides.
+
 ## No one at the keyboard
 
 Whether someone can answer is a fact about the run, not a mode. With a terminal, glave asks there: once, always in this thread, or no. Without one (scripts, CI, piped input), anything that would ask is not run, and:

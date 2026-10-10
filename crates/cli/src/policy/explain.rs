@@ -32,6 +32,23 @@ pub fn explain(loaded: &Loaded, provider: Option<&str>) -> (String, bool) {
     for path in &loaded.configs {
         let _ = writeln!(out, "  {}", path.display());
     }
+    if !loaded.person_hooks.is_empty() {
+        out.push_str(
+            "\nYour hooks (from your config.toml; a trusted project's are under Project)\n",
+        );
+        for hook in &loaded.person_hooks {
+            let matcher = hook
+                .matcher
+                .as_deref()
+                .map(|matcher| format!(" (for tools matching {matcher})"))
+                .unwrap_or_default();
+            let point = glave_harness::point_name(hook.point);
+            let _ = writeln!(out, "  {point}  {}{matcher}", hook.command);
+        }
+        if let Some(rule) = loaded.constraints.own_hooks_forbidden() {
+            problems.push(format!("your hooks are not allowed: {rule}"));
+        }
+    }
     if let Some(project) = &loaded.project {
         let _ = writeln!(out, "\nProject {}", project.root.display());
         let width = project
