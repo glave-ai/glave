@@ -4,6 +4,7 @@
 
 mod approval;
 mod builtins;
+mod caller;
 mod calls;
 mod cancel;
 mod children;
@@ -29,6 +30,7 @@ mod toolset;
 mod turn;
 
 pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};
+pub use caller::Caller;
 pub use cancel::Cancel;
 pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;
