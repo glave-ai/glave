@@ -13,6 +13,8 @@ use super::registry::Opened;
 
 /// Where a plain folder's history lives, inside the folder.
 pub(crate) const HISTORY: &str = ".glave/history.git";
+/// The same history, as a line in `.glave/.gitignore`, which lives inside `.glave`.
+const IGNORED: &str = "history.git";
 /// The largest plain folder whose history glave keeps; past this, make it a repository.
 const MAX_PLAIN_BYTES: u64 = 100 * 1024 * 1024;
 
@@ -199,6 +201,39 @@ async fn repository(opened: &Opened) -> Result<Git<'_>, ComputerError> {
         tokio::fs::write(&exclude, format!("/{HISTORY}/\n"))
             .await
             .map_err(failed)?;
+        ignore_history(&opened.root).await?;
     }
     Ok(git)
+}
+
+/// Makes sure `<folder>/.glave/.gitignore` lists the hidden history, so a `git init` run in
+/// the folder later never commits it. Creates the file if it is missing, and otherwise adds
+/// the line once, keeping every other line.
+pub(crate) async fn ignore_history(root: &Path) -> Result<(), ComputerError> {
+    let path = root.join(".glave").join(".gitignore");
+    let failed = |error: std::io::Error| {
+        ComputerError::Failed(format!("could not write {}: {error}", path.display()))
+    };
+    let text = match tokio::fs::read_to_string(&path).await {
+        Ok(text) => Some(text),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(failed(error)),
+    };
+    let Some(mut text) = text else {
+        return tokio::fs::write(&path, format!("{IGNORED}\n"))
+            .await
+            .map_err(failed);
+    };
+    if text
+        .lines()
+        .any(|line| matches!(line.trim(), IGNORED | "/history.git"))
+    {
+        return Ok(());
+    }
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(IGNORED);
+    text.push('\n');
+    tokio::fs::write(&path, text).await.map_err(failed)
 }

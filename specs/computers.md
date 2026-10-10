@@ -61,7 +61,7 @@ Built so far, beside `computer/create`, `computer/status`, `computer/destroy`, `
 | `files/stat` | what is at a path: where it resolves inside the workspace, nothing, a folder, or a file with its size and SHA-256 |
 | `files/glob` | files matching a pattern (`*.rs` by name, `src/**/*.rs` by path), newest first, leaving out what git ignores, up to a limit, with the total |
 | `files/search` | lines matching a regular expression (plain text when it is not one), in path order, up to a limit; ignored, binary and large files are not searched, and files that usually hold secrets are never opened, only named |
-| `workspace/save` | commits everything to a branch and pushes it to `origin`; a plain folder keeps the commit in a hidden history (`.glave/history.git`, up to 100 MB of files), never a `.git` |
+| `workspace/save` | commits everything to a branch and pushes it to `origin`; a plain folder keeps the commit in a hidden history (`.glave/history.git`, up to 100 MB of files, listed in `.glave/.gitignore` so a later `git init` never commits it), never a `.git` |
 
 A repository opens as a clone under `~/.glave/workspaces/<computer>/<workspace>`, removed on close; a folder opens in place and is kept. A computer on the host refuses what it cannot honour (an image, setup commands, a limited network) rather than ignoring it.
 
