@@ -1,9 +1,11 @@
 //! JSON-RPC 2.0 over any stream of lines: one message per line, as on stdio and Unix sockets.
+//! These transports are local, so every request comes from the local person.
 //! Requests run concurrently, so a client can cancel a turn or answer an approval while another
 //! request is still streaming. When the client's input ends, its turns are cancelled.
 
 use std::sync::Arc;
 
+use glave_harness::Caller;
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -33,10 +35,11 @@ const METHODS: &[&str] = &[
     "turn/cancel",
     "thread/compact",
     "approval/decide",
+    "question/answer",
 ];
 
 /// JSON-RPC's own error codes.
-mod error {
+pub(crate) mod error {
     pub const PARSE: i64 = -32700;
     pub const INVALID_REQUEST: i64 = -32600;
     pub const NO_METHOD: i64 = -32601;
@@ -142,8 +145,17 @@ where
             return;
         }
     };
+    // Local transports act as the local person.
+    let local = Caller::default();
     let answered = match request {
-        Request::TurnStart { thread, prompt } => match server.start_turn(thread, &prompt).await {
+        Request::TurnStart {
+            thread,
+            prompt,
+            meta,
+        } => match server
+            .start_turn_as(&local, thread, &prompt, meta.idempotency_key.as_ref())
+            .await
+        {
             Ok(mut stream) => loop {
                 match stream.next().await {
                     Some(TurnItem::Note(note)) => {
@@ -162,7 +174,7 @@ where
             },
             Err(failed) => Err(failed),
         },
-        other => server.request(other).await,
+        other => server.request_as(&local, other).await,
     };
     // A request without an id is a notification, which is never answered.
     if let Some(id) = id {
@@ -171,7 +183,7 @@ where
 }
 
 /// Reads one message as a request, or says why it is not one.
-fn parse(line: &str) -> Result<(Option<Id>, Request), (Option<Id>, ApiError)> {
+pub(crate) fn parse(line: &str) -> Result<(Option<Id>, Request), (Option<Id>, ApiError)> {
     let failed = |code, message: String| ApiError {
         code,
         message,
@@ -202,7 +214,7 @@ fn parse(line: &str) -> Result<(Option<Id>, Request), (Option<Id>, ApiError)> {
     }
 }
 
-fn respond(id: Option<&Id>, answered: Result<&Reply, &ApiError>) -> String {
+pub(crate) fn respond(id: Option<&Id>, answered: Result<&Reply, &ApiError>) -> String {
     let (result, error) = match answered {
         Ok(reply) => (Some(reply), None),
         Err(failed) => (None, Some(failed)),
@@ -219,7 +231,7 @@ fn respond(id: Option<&Id>, answered: Result<&Reply, &ApiError>) -> String {
     })
 }
 
-fn notify(note: &Arc<Notification>) -> String {
+pub(crate) fn notify(note: &Arc<Notification>) -> String {
     let mut message = serde_json::to_value(note.as_ref()).unwrap_or(Value::Null);
     if let Value::Object(fields) = &mut message {
         fields.insert("jsonrpc".into(), "2.0".into());

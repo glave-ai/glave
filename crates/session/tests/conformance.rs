@@ -1,5 +1,5 @@
-//! One set of scenarios, run over every transport: in-process, and JSON-RPC 2.0 over a stream
-//! of lines (as stdio carries it). A transport changes how messages travel, never what they
+//! One set of scenarios, run over every transport: in-process, JSON-RPC 2.0 over a stream of
+//! lines (as stdio carries it), and HTTP with server-sent events, signed in. A transport changes how messages travel, never what they
 //! mean (`specs/session.md`), so each scenario must end the same way over each.
 
 #[cfg(test)]
@@ -8,18 +8,30 @@
 mod support;
 
 #[cfg(test)]
+#[path = "support/issuer.rs"]
+#[expect(dead_code, reason = "shared helpers; this file uses some of them")]
+mod issuer;
+
+#[cfg(test)]
+#[path = "support/web.rs"]
+#[expect(dead_code, reason = "shared helpers; this file uses some of them")]
+mod web;
+
+#[cfg(test)]
 mod conformance {
     use glave_event::{Body, Outcome, ThreadId, decode};
     use glave_ports::MemoryLog;
     use glave_session::protocol::{
-        Answer, ApiError, Notification, Reply, Request, TurnResult, code,
+        Answer, ApiError, Meta, Notification, Reply, Request, TurnResult, code,
     };
     use glave_session::{Answering, Server, TurnItem};
     use serde_json::{Value, json};
     use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, DuplexStream, Lines};
     use tokio::task::JoinHandle;
 
+    use super::issuer::{Issuer, Signer};
     use super::support::*;
+    use super::web::{Events, Served, Web, serve_http};
 
     type Tested = Server<Script, MemoryLog, glave_ports::MemoryBlobs>;
 
@@ -149,6 +161,7 @@ mod conformance {
             let request = Request::TurnStart {
                 thread,
                 prompt: prompt.to_owned(),
+                meta: Meta::default(),
             };
             let id = self.send(&request).await;
             loop {
@@ -166,6 +179,72 @@ mod conformance {
                     }
                 }
             }
+        }
+    }
+
+    /// JSON-RPC 2.0 over HTTP, signed in through a fake identity provider.
+    struct OverHttp {
+        web: Web,
+        served: Served,
+        _issuer: Issuer,
+    }
+
+    impl OverHttp {
+        async fn new(tested: Tested) -> Self {
+            let issuer = Issuer::start().await;
+            let signer = Signer::es256("key-1");
+            issuer.publish(&signer);
+            let served = serve_http(tested, &issuer).await;
+            let token = signer.sign(&issuer.claims("ada"));
+            Self {
+                web: Web::new(&served, Some(token)),
+                served,
+                _issuer: issuer,
+            }
+        }
+
+        async fn close(self) {
+            self.served.close().await;
+        }
+    }
+
+    impl Client for OverHttp {
+        async fn call(&mut self, request: Request) -> Result<Value, ApiError> {
+            outcome(&self.web.call(&request).await)
+        }
+
+        async fn turn(
+            &mut self,
+            thread: ThreadId,
+            prompt: &str,
+            react: &mut dyn FnMut(&Notification) -> Reaction,
+        ) -> Result<TurnResult, ApiError> {
+            let request = Request::TurnStart {
+                thread,
+                prompt: prompt.to_owned(),
+                meta: Meta::default(),
+            };
+            let (message, id) = self.web.message(&request);
+            let response = self.web.open(&message, Some("turn/start")).await;
+            let streams = response.headers()["content-type"] == "text/event-stream";
+            let mut events = Events::new(response);
+            if !streams {
+                let answer: Value = serde_json::from_str(&events.rest().await).unwrap();
+                return Err(outcome(&answer).unwrap_err());
+            }
+            while let Some(message) = events.next().await {
+                if message["id"] == id {
+                    return outcome(&message).and_then(|result| {
+                        serde_json::from_value(result["turn"].clone())
+                            .map_err(|err| unreadable(&err))
+                    });
+                }
+                let note: Notification = serde_json::from_value(message).unwrap();
+                if let Some(reaction) = react(&note) {
+                    self.web.call(&reaction).await;
+                }
+            }
+            panic!("the stream ended without the turn's response")
         }
     }
 
@@ -194,7 +273,7 @@ mod conformance {
         serde_json::from_value(reply["thread"]["id"].clone()).unwrap()
     }
 
-    /// Runs `scenario` over both transports, each with a fresh server and folder.
+    /// Runs `scenario` over every transport, each with a fresh server and folder.
     macro_rules! over_each_transport {
         ($name:literal, $answers:expr, |$client:ident, $dir:ident| $body:block) => {{
             let $dir = folder(concat!($name, "-in-process"));
@@ -206,6 +285,12 @@ mod conformance {
             let $dir = folder(concat!($name, "-json-rpc"));
             let tested = server(&$dir, $answers, Answering::Clients).await;
             let mut $client = OverJsonRpc::new(tested);
+            $body
+            $client.close().await;
+
+            let $dir = folder(concat!($name, "-http"));
+            let tested = server(&$dir, $answers, Answering::Clients).await;
+            let mut $client = OverHttp::new(tested).await;
             $body
             $client.close().await;
         }};

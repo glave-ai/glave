@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use glave_event::{CallId, ThreadId};
+use glave_event::{CallId, PrincipalId, ThreadId};
 use glave_harness::{ApprovalRequest, Approver, Decision, QuestionRequest};
 use tokio::sync::oneshot;
 
@@ -23,7 +23,9 @@ pub enum Answering {
     NoOne,
 }
 
-type Pending = HashMap<(ThreadId, CallId), oneshot::Sender<Decision>>;
+/// A decision, and the person who made it when the caller was not the local person.
+type Decided = (Decision, Option<PrincipalId>);
+type Pending = HashMap<(ThreadId, CallId), oneshot::Sender<Decided>>;
 type Questions = HashMap<(ThreadId, CallId), oneshot::Sender<Vec<String>>>;
 
 /// The approvals waiting for an answer.
@@ -47,12 +49,13 @@ impl Approvals {
         self.pending.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Answers the approval for `call` in `thread`.
+    /// Answers the approval for `call` in `thread`, as `by` when that is a signed-in person.
     pub(crate) fn decide(
         &self,
         thread: ThreadId,
         call: &CallId,
         answer: Answer,
+        by: Option<PrincipalId>,
     ) -> Result<(), ApiError> {
         let waiting = self
             .pending()
@@ -68,7 +71,7 @@ impl Approvals {
             Answer::AllowForThread => Decision::AllowForThread,
             Answer::Deny => Decision::Deny,
         };
-        waiting.send(decision).map_err(|_| {
+        waiting.send((decision, by)).map_err(|_| {
             ApiError::new(
                 code::NO_APPROVAL,
                 format!("no approval {} is pending", call.as_str()),
@@ -144,6 +147,11 @@ impl Approver for Approvals {
     }
 
     fn decide(&self, request: &ApprovalRequest) -> impl Future<Output = Decision> + Send {
+        let decided = self.decide_by(request);
+        async move { decided.await.0 }
+    }
+
+    fn decide_by(&self, request: &ApprovalRequest) -> impl Future<Output = Decided> + Send {
         let receiver = match self.answering {
             Answering::NoOne => None,
             Answering::Clients => {
@@ -156,8 +164,8 @@ impl Approver for Approvals {
         async move {
             match receiver {
                 // A question dropped without an answer counts as declined.
-                Some(receiver) => receiver.await.unwrap_or(Decision::Deny),
-                None => ready(Decision::Unavailable).await,
+                Some(receiver) => receiver.await.unwrap_or((Decision::Deny, None)),
+                None => ready((Decision::Unavailable, None)).await,
             }
         }
     }

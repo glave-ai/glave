@@ -8,8 +8,11 @@ mod support;
 
 #[cfg(test)]
 mod actors {
-    use glave_event::{Body, OriginKind, Principal, PrincipalKind, StopReason, Verdict};
-    use glave_harness::{Cancel, NoOneToAsk};
+    use glave_event::{
+        Auth, AuthMethod, Body, OriginKind, Principal, PrincipalId, PrincipalKind, Role,
+        StopReason, Verdict,
+    };
+    use glave_harness::{Caller, Cancel, NoOneToAsk};
     use serde_json::json;
 
     use super::support::*;
@@ -71,6 +74,68 @@ mod actors {
             assert_eq!(
                 decided,
                 vec![(Verdict::NoOneThere, Some(Principal::glave()))]
+            );
+        });
+    }
+
+    #[test]
+    fn a_caller_other_than_the_threads_person_is_recorded_and_the_person_is_implied() {
+        let dir = folder("actors-caller");
+        block_on(async {
+            let answers = vec![
+                answer(Some("One."), vec![], StopReason::EndTurn),
+                answer(Some("Two."), vec![], StopReason::EndTurn),
+            ];
+            let harness = harness(&dir, answers, NoOneToAsk).await;
+            let first = harness.start_thread(scope()).await.unwrap();
+            let Body::ThreadStarted(started) = &events(harness.log(), first.id).await[0].body
+            else {
+                panic!("not started");
+            };
+            let owner = started.for_.as_ref().and_then(|p| p.id);
+            let ada = PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]).unwrap();
+            let auth = Auth {
+                method: AuthMethod::Oidc,
+                issuer: Some("https://id.example.com".into()),
+                subject: Some("ada".into()),
+                session: None,
+            };
+            let signed_in = Caller {
+                person: Some(ada),
+                auth: Some(auth.clone()),
+            };
+            let mut thread = harness.start_thread_as(scope(), &signed_in).await.unwrap();
+            for caller in [
+                &signed_in,
+                &Caller {
+                    person: owner,
+                    auth: None,
+                },
+            ] {
+                harness
+                    .run_turn_as(&mut thread, "hi", caller, &Cancel::new(), &mut |_| {})
+                    .await
+                    .unwrap();
+            }
+            let mut origin = None;
+            let mut auths = Vec::new();
+            let mut authors = Vec::new();
+            for event in events(harness.log(), thread.id).await {
+                match event.body {
+                    Body::ThreadStarted(started) => origin = started.origin.by,
+                    Body::TurnStarted(turn) => auths.push(turn.auth),
+                    Body::MessageAdded(added) if added.role == Role::User => {
+                        authors.push(added.author);
+                    }
+                    _ => {}
+                }
+            }
+            assert_eq!(origin, Some(Principal::person(ada)));
+            assert_eq!(auths, [Some(auth), None]);
+            assert_eq!(
+                authors,
+                [Some(Principal::person(ada)), None],
+                "the owner is implied"
             );
         });
     }

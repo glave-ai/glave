@@ -7,19 +7,19 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::{Seq, ThreadId};
 use glave_harness::{
-    Clock, Entropy, Harness, HarnessError, Live, Parts, Settings, TurnSummary, Workspace,
+    Caller, Clock, Entropy, Harness, HarnessError, Parts, Settings, TurnSummary, Workspace,
 };
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, ToolSource};
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
 use crate::approvals::{Answering, Approvals};
-use crate::held::Slot;
+use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
+use crate::keyed::Keyed;
 use crate::protocol::{
     ApiError, ErrorData, Notification, PROTOCOL, Reply, Request, ServerInfo, code,
 };
-use crate::turn::TurnStream;
 
 /// The most events or threads one page returns.
 const MAX_PAGE: usize = 5_000;
@@ -58,6 +58,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) approvals: Approvals,
     pub(crate) threads: Mutex<HashMap<ThreadId, Slot>>,
     pub(crate) tasks: Mutex<Vec<JoinHandle<()>>>,
+    /// Turns started with an idempotency key, for retries.
+    pub(crate) keyed: Keyed,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -91,20 +93,26 @@ where
                 approvals,
                 threads: Mutex::new(HashMap::new()),
                 tasks: Mutex::new(Vec::new()),
+                keyed: Keyed::default(),
             }),
         }
     }
 
-    /// Answers one request. `turn/start` answers when the turn has ended; to follow it as it
-    /// runs, use [`Server::start_turn`].
+    /// Answers one request from the local person. `turn/start` answers when the turn has
+    /// ended; to follow it as it runs, use [`Server::start_turn`].
     pub async fn request(&self, request: Request) -> Result<Reply, ApiError> {
+        self.request_as(&Caller::default(), request).await
+    }
+
+    /// Answers one request from `caller`, the person the transport verified.
+    pub async fn request_as(&self, caller: &Caller, request: Request) -> Result<Reply, ApiError> {
         match request {
             Request::Discover {} => Ok(Reply::Server(ServerInfo {
                 name: "glave".to_owned(),
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 protocols: vec![PROTOCOL.to_owned()],
             })),
-            Request::ThreadStart {} => self.start_thread().await,
+            Request::ThreadStart {} => self.start_thread(caller).await,
             Request::ThreadList { limit } => self.list(limit).await,
             Request::ThreadGet { thread } => {
                 self.load(thread).await?;
@@ -117,8 +125,13 @@ where
                 after,
                 limit,
             } => self.events(thread, after, limit).await,
-            Request::TurnStart { thread, prompt } => {
-                let mut stream = self.start_turn(thread, &prompt).await?;
+            Request::TurnStart {
+                thread,
+                prompt,
+                meta,
+            } => {
+                let key = meta.idempotency_key.as_ref();
+                let mut stream = self.start_turn_as(caller, thread, &prompt, key).await?;
                 stream.finish().await.map(|turn| Reply::Turn { turn })
             }
             Request::TurnCancel { thread } => self.cancel(thread).await,
@@ -128,7 +141,10 @@ where
                 approval,
                 decision,
             } => {
-                self.inner.approvals.decide(thread, &approval, decision)?;
+                let by = caller.person;
+                self.inner
+                    .approvals
+                    .decide(thread, &approval, decision, by)?;
                 Ok(Reply::Done {})
             }
             Request::QuestionAnswer {
@@ -145,36 +161,6 @@ where
     /// Everything `thread` publishes from now on: its events as they are stored, and progress.
     pub fn watch(&self, thread: ThreadId) -> broadcast::Receiver<Arc<Notification>> {
         self.inner.hub.watch(thread)
-    }
-
-    /// Starts a turn and streams it: its notifications, then how it ended.
-    pub async fn start_turn(&self, thread: ThreadId, prompt: &str) -> Result<TurnStream, ApiError> {
-        let notes = self.watch(thread);
-        let prompt = prompt.to_owned();
-        let done = self
-            .occupy(thread, move |inner, mut held, cancel| async move {
-                let hub = Arc::clone(&inner.hub);
-                let mut publish = |live| {
-                    // A subagent's progress goes under its own thread, and so to its watchers
-                    // and the parent's.
-                    let (from, live) = match live {
-                        Live::Child { thread, update } => (thread, *update),
-                        live => (thread, live),
-                    };
-                    let update = Notification::Live {
-                        thread: from,
-                        update: crate::protocol::Update::from(live),
-                    };
-                    hub.publish(from, update);
-                };
-                let ran = inner
-                    .harness
-                    .run_turn(&mut held, &prompt, &cancel, &mut publish)
-                    .await;
-                (held, ran)
-            })
-            .await?;
-        Ok(TurnStream::new(notes, done))
     }
 
     /// Cancels every running turn and waits for each to end. Call before dropping the server.
@@ -211,11 +197,11 @@ where
         }
     }
 
-    async fn start_thread(&self) -> Result<Reply, ApiError> {
+    async fn start_thread(&self, caller: &Caller) -> Result<Reply, ApiError> {
         let thread = self
             .inner
             .harness
-            .start_thread(self.inner.scope)
+            .start_thread_as(self.inner.scope, caller)
             .await
             .map_err(|error| api(&error))?;
         let id = thread.id;
@@ -287,16 +273,16 @@ where
     }
 
     async fn compact(&self, thread: ThreadId) -> Result<Reply, ApiError> {
-        let done = self
-            .occupy(thread, |inner, mut held, cancel| async move {
-                let compacted = inner.harness.compact(&mut held, &cancel, &mut |_| {}).await;
-                (held, compacted)
-            })
-            .await?;
-        let compacted = done
+        let (finish, mut done) = watch::channel(None);
+        self.occupy(thread, finish, |inner, mut held, cancel| async move {
+            let compacted = inner.harness.compact(&mut held, &cancel, &mut |_| {}).await;
+            (held, compacted)
+        })
+        .await?;
+        let ended = finished(&mut done)
             .await
-            .map_err(|_| ApiError::new(code::INTERNAL, "the compaction stopped"))?
-            .map_err(|error| api(&error))?;
+            .ok_or_else(|| ApiError::new(code::INTERNAL, "the compaction stopped"))?;
+        let compacted = ended.as_ref().as_ref().map_err(api)?;
         Ok(Reply::Compacted {
             before_tokens: compacted.before_tokens,
             after_tokens: compacted.after_tokens,
