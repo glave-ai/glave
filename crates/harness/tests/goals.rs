@@ -109,7 +109,11 @@ mod goals {
             assert!(first.contains("verify every requirement"));
             let seen = seen.lock().unwrap();
             assert!(seen.iter().all(|request| offers(request, UPDATE_GOAL)));
-            assert!(seen.iter().all(|request| request.system.contains("# Goal")));
+            // The tool and the continuation carry the goal; the system prompt stays as it is.
+            assert!(
+                seen.iter()
+                    .all(|request| !request.system.contains("# Goal"))
+            );
             // The person's objective opens the goal; glave writes only the continuation.
             let opening = seen.first().unwrap().messages.last().unwrap();
             assert!(

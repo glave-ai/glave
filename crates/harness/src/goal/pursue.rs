@@ -4,9 +4,7 @@
 use glave_event::{GoalEnded, GoalReason, GoalResumed, GoalSet, Outcome, Principal, ThreadId};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 
-use super::{
-    Goal, GoalProgress, IDLE_TURNS, Pursuit, Verdict, continuation, counted, instructions, latest,
-};
+use super::{Goal, GoalProgress, IDLE_TURNS, Pursuit, Verdict, continuation, counted, latest};
 use crate::approval::Approver;
 use crate::caller::Caller;
 use crate::cancel::Cancel;
@@ -118,7 +116,6 @@ where
                 break;
             }
             let mut toolset = self.tools().await;
-            toolset.system = format!("{}\n\n{}", toolset.system, instructions(&goal));
             toolset.offer_goal();
             let opened = opening.take();
             let text = match opened {

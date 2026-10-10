@@ -149,20 +149,6 @@ pub(crate) fn latest(events: &[Event]) -> Option<GoalProgress> {
     goal
 }
 
-/// What the system prompt says during a goal's turns. It names no numbers that change, so
-/// the prompt stays the same, and cached, from turn to turn.
-pub(crate) fn instructions(goal: &GoalProgress) -> String {
-    format!(
-        "# Goal\n\nThe person set a goal for this thread. glave keeps giving you turns until \
-         you end it with {UPDATE_GOAL}, the person stops it, or its budget of {} tokens runs \
-         out. When it is met, verify that first, running the checks the objective names or \
-         those you judge right, then call {UPDATE_GOAL} with status \"complete\". If you \
-         cannot go on without the person, call {UPDATE_GOAL} with status \"paused\" and say \
-         what you need from them.",
-        goal.token_budget
-    )
-}
-
 /// The message that starts each turn after the first, as Codex's continuation prompt does.
 pub(crate) fn continuation(goal: &GoalProgress) -> String {
     let mut text = format!(
@@ -321,13 +307,6 @@ mod tests {
             let (output, verdict) = call(&arguments);
             assert!(output.is_error && verdict.is_none());
         }
-    }
-
-    #[test]
-    fn instructions_name_the_tool_and_both_statuses() {
-        let text = instructions(&goal());
-        assert!(text.contains(UPDATE_GOAL));
-        assert!(text.contains("\"complete\"") && text.contains("\"paused\""));
     }
 
     #[test]
