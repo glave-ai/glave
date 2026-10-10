@@ -28,6 +28,7 @@ use crate::policy::Choices;
 use crate::setup::{self, Setup};
 use crate::system::random_uuid;
 use crate::terminal::Printer;
+use crate::trust::{self, Asking};
 use crate::{gateway, home, identity, keys};
 
 pub fn main() -> ExitCode {
@@ -94,9 +95,9 @@ struct Wired {
 }
 
 /// Builds the session server on this computer's store and the current folder.
-async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
+async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Result<Wired> {
     let folder = std::env::current_dir()?;
-    let setup = Setup::load(args, &folder).await?;
+    let setup = Setup::load(args, &folder, asking).await?;
     if let Some(notice) = setup.notice() {
         eprintln!("glave: {notice}");
     }
@@ -124,7 +125,13 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
     let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
     let personal = home::folder()?.join(AGENTS_MD);
     let instructions = agents_md(workspace.root(), Some(&personal)).await?;
-    settings.instructions = instructions.as_ref().map(|loaded| loaded.text.clone());
+    settings.instructions = [
+        instructions.as_ref().map(|loaded| loaded.text.clone()),
+        setup.model_note(),
+    ]
+    .into_iter()
+    .flatten()
+    .reduce(|all, part| format!("{all}\n\n{part}"));
     settings.approval = choices.approval.value;
     settings.max_steps = args.max_steps;
     // As Claude Code, Codex and OpenCode offer it; models use it when asked to.
@@ -142,6 +149,9 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
         &root,
         choices.mcp.as_ref(),
         &setup.loaded.constraints,
+        (!setup.project_servers.is_empty())
+            .then(|| trust::mcp_json(&setup.project_servers))
+            .as_deref(),
     )
     .await?;
     let scope = store
@@ -199,7 +209,12 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     } else {
         Answering::NoOne
     };
-    let wired = wire(&args, answering).await?;
+    let wired = wire(
+        &args,
+        answering,
+        if asks { Asking::Person } else { Asking::NoOne },
+    )
+    .await?;
     let ran = session(&args, &wired, asks).await;
     wired.server.shutdown().await;
     wired.servers.close().await;
@@ -209,7 +224,8 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
 /// Serves the session API: to the program that started glave until its input ends, or over
 /// HTTP until Ctrl-C.
 async fn serve(args: Args) -> anyhow::Result<ExitCode> {
-    let wired = wire(&args, Answering::Clients).await?;
+    // The session API owns standard input, so there is no one to ask about a project.
+    let wired = wire(&args, Answering::Clients, Asking::NoOne).await?;
     let served = if let Some(address) = args.http {
         serve_http(&args, wired.server, address).await
     } else {

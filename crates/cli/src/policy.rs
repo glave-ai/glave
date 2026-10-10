@@ -18,7 +18,7 @@ use anyhow::Context as _;
 pub use choices::{Choices, Chosen, Layer, Level, Source};
 pub use effective::{check_model, check_own_servers};
 pub use explain::explain;
-pub use files::{ConfigFile, SandboxChoice};
+pub use files::{Approval, ConfigFile, PolicyFile, SandboxChoice, config};
 pub use rules::Constraints;
 
 /// The choices file, in glave's folder and in a project's `.glave/`.
@@ -30,6 +30,8 @@ pub const ORGANIZATION_POLICY: &str = "/etc/glave/policy.toml";
 /// Where the files are.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Locations {
+    /// The project's root: the repository around the folder, or the folder itself.
+    pub root: PathBuf,
     /// The person's `config.toml`.
     pub person: PathBuf,
     /// The project's `.glave/config.toml`.
@@ -47,6 +49,7 @@ impl Locations {
             .find(|dir| dir.join(".git").exists())
             .unwrap_or(folder);
         Self {
+            root: project.to_owned(),
             person: home.join(CONFIG),
             project: project.join(".glave").join(CONFIG),
             policies: vec![PathBuf::from(ORGANIZATION_POLICY)],
@@ -63,9 +66,16 @@ pub struct Loaded {
     pub configs: Vec<PathBuf>,
     /// The policy files read.
     pub policies: Vec<PathBuf>,
-    /// The project's `config.toml`, present but not used: a project's settings count only once
-    /// the person trusts the project, which glave cannot ask yet.
-    pub untrusted: Option<PathBuf>,
+    /// What the project brings that needs trust, and where each thing stands.
+    pub project: Option<ProjectTrust>,
+}
+
+/// A project's trust, for `glave policy explain`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectTrust {
+    pub root: PathBuf,
+    /// Each thing that needs trust, and where it stands.
+    pub rows: Vec<[String; 2]>,
 }
 
 impl Loaded {
@@ -75,9 +85,23 @@ impl Loaded {
     }
 }
 
-/// Reads the files at `locations` under the choices of `flags` and `env`.
+/// The policy files that exist at `locations`, organization first.
+pub async fn policies(locations: &Locations) -> anyhow::Result<Vec<(PathBuf, PolicyFile)>> {
+    let mut policies = Vec::new();
+    for path in &locations.policies {
+        if let Some(text) = read(path).await? {
+            policies.push((path.clone(), files::policy(&text, path)?));
+        }
+    }
+    Ok(policies)
+}
+
+/// Reads the config files at `locations` under the choices of `flags` and `env`, with the
+/// `project` choices that count (the project's `config.toml` as far as it is trusted).
 pub async fn load(
     locations: &Locations,
+    policies: &[(PathBuf, PolicyFile)],
+    project: Option<ConfigFile>,
     flags: ConfigFile,
     env: ConfigFile,
 ) -> anyhow::Result<Loaded> {
@@ -85,16 +109,6 @@ pub async fn load(
         Some(text) => Some(files::config(&text, &locations.person)?),
         None => None,
     };
-    let untrusted = tokio::fs::try_exists(&locations.project)
-        .await
-        .unwrap_or(false)
-        .then(|| locations.project.clone());
-    let mut policies = Vec::new();
-    for path in &locations.policies {
-        if let Some(text) = read(path).await? {
-            policies.push((path.clone(), files::policy(&text, path)?));
-        }
-    }
     let mut layers = vec![
         Layer {
             level: Level::Flags,
@@ -105,20 +119,26 @@ pub async fn load(
             values: env,
         },
     ];
+    if let Some(values) = project {
+        layers.push(Layer {
+            level: Level::File(locations.project.clone()),
+            values,
+        });
+    }
     if let Some(values) = person {
         layers.push(Layer {
             level: Level::File(locations.person.clone()),
             values,
         });
     }
-    Ok(assemble(&layers, &policies, untrusted))
+    Ok(assemble(&layers, policies, None))
 }
 
 /// The choices of `layers`, nearest first, under the rules of `policies`.
 pub fn assemble(
     layers: &[Layer],
     policies: &[(PathBuf, files::PolicyFile)],
-    untrusted: Option<PathBuf>,
+    project: Option<ProjectTrust>,
 ) -> Loaded {
     Loaded {
         choices: choices::resolve(layers),
@@ -131,7 +151,7 @@ pub fn assemble(
             })
             .collect(),
         policies: policies.iter().map(|(path, _)| path.clone()).collect(),
-        untrusted,
+        project,
     }
 }
 

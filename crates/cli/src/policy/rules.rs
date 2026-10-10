@@ -35,6 +35,8 @@ pub enum Kind {
     /// People may not add MCP servers of their own.
     McpOwnForbidden,
     PersonPerDayUsd(f64),
+    /// Projects at these paths (globs) are trusted without asking.
+    ProjectsTrusted(Vec<String>),
 }
 
 impl fmt::Display for Kind {
@@ -55,6 +57,7 @@ impl fmt::Display for Kind {
             Self::McpCatalog(names) => write!(f, "[mcp] catalog = {}", quoted(names)),
             Self::McpOwnForbidden => f.write_str("[mcp] own = false"),
             Self::PersonPerDayUsd(usd) => write!(f, "[budget] person_per_day_usd = {usd}"),
+            Self::ProjectsTrusted(globs) => write!(f, "[projects] trusted = {}", quoted(globs)),
         }
     }
 }
@@ -107,6 +110,9 @@ impl Constraints {
             }
             if let Some(usd) = file.budget.person_per_day_usd {
                 add(Kind::PersonPerDayUsd(usd));
+            }
+            if !file.projects.trusted.is_empty() {
+                add(Kind::ProjectsTrusted(file.projects.trusted.clone()));
             }
         }
         Self { rules }
@@ -175,6 +181,18 @@ impl Constraints {
     /// The first rule that forbids people's own MCP servers.
     pub fn own_mcp_forbidden(&self) -> Option<&Rule> {
         self.first(|kind| matches!(kind, Kind::McpOwnForbidden))
+    }
+
+    /// The first rule that trusts the project at `root` without asking. Unlike the others
+    /// this one lifts a question rather than adding a limit, so any file may add to it; it
+    /// never lifts a deny.
+    pub fn trusts_project(&self, root: &str) -> Option<&Rule> {
+        self.rules.iter().find(|rule| match &rule.kind {
+            Kind::ProjectsTrusted(globs) => globs
+                .iter()
+                .any(|glob| Glob::new(glob).is_ok_and(|g| g.compile_matcher().is_match(root))),
+            _ => false,
+        })
     }
 
     /// The smallest daily budget per person, and the rule that set it.

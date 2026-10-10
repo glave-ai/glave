@@ -1,36 +1,59 @@
 //! The settings a run uses: its flags and the environment over the `config.toml` files, kept
 //! within the policy (`specs/policy.md`), and `glave policy explain`, which shows them.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::ExitCode;
 
 use crate::args::Args;
-use crate::policy::{self, Choices, ConfigFile, Loaded, Locations};
-use crate::{config, home};
+use crate::policy::{self, Choices, ConfigFile, Loaded, Locations, ProjectTrust};
+use crate::trust::{self, Asking, Outcome, Project};
+use crate::{config, home, mcp};
 
 /// What this run uses: the files read, and the choices within the constraints.
 pub struct Setup {
     pub loaded: Loaded,
     pub choices: Choices,
+    /// The project's `.mcp.json` servers that are trusted, to start with the person's own.
+    pub project_servers: BTreeMap<String, String>,
+    /// What the project brings that stays off, and why.
+    pub withheld: Vec<String>,
 }
 
 impl Setup {
     /// Reads the files for this run in `folder` and keeps its choices within the policy.
-    pub async fn load(args: &Args, folder: &Path) -> anyhow::Result<Self> {
-        let loaded = read(args, folder).await?;
+    /// Asks the person about the project once, if `asking` allows and there is a question.
+    pub async fn load(args: &Args, folder: &Path, asking: Asking) -> anyhow::Result<Self> {
+        let (loaded, outcome) = read(args, folder, asking).await?;
         let choices = loaded.settle()?;
         if args.network && choices.sandbox.value.is_none() {
             anyhow::bail!("--network only applies with a sandbox: pass --sandbox, or set one");
         }
-        Ok(Self { loaded, choices })
+        Ok(Self {
+            loaded,
+            choices,
+            project_servers: outcome.servers,
+            withheld: outcome.withheld,
+        })
     }
 
     /// What to tell the person before the first turn, if anything.
     pub fn notice(&self) -> Option<String> {
-        self.loaded.untrusted.as_ref().map(|path| {
+        (!self.withheld.is_empty()).then(|| self.withheld.join("\nglave: "))
+    }
+
+    /// What to tell the model, so it does not look for tools that are not there.
+    pub fn model_note(&self) -> Option<String> {
+        (!self.withheld.is_empty()).then(|| {
             format!(
-                "not using {}: glave cannot trust a project's settings yet",
-                path.display()
+                "# Project tools that are off\n\nThis project brings tools or settings that glave \
+                 did not turn on:\n{}\nDo not look for them or try to run them yourself. If the \
+                 task needs them, say so to the person.",
+                self.withheld
+                    .iter()
+                    .map(|line| format!("- {line}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
             )
         })
     }
@@ -39,7 +62,7 @@ impl Setup {
 /// `glave policy explain`: prints every setting and constraint, and fails when glave would
 /// refuse to run here.
 pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
-    let loaded = read(args, &std::env::current_dir()?).await?;
+    let (loaded, _) = read(args, &std::env::current_dir()?, Asking::Explaining).await?;
     // The provider names models as the gateway sees them; without a model there is none.
     let model = loaded
         .choices
@@ -59,9 +82,26 @@ pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
     })
 }
 
-async fn read(args: &Args, folder: &Path) -> anyhow::Result<Loaded> {
-    let locations = Locations::here(&home::folder()?, folder);
-    policy::load(&locations, flags(args), environment()).await
+async fn read(args: &Args, folder: &Path, asking: Asking) -> anyhow::Result<(Loaded, Outcome)> {
+    let home = home::folder()?;
+    let locations = Locations::here(&home, folder);
+    let policies = policy::policies(&locations).await?;
+    let constraints = policy::Constraints::of(&policies);
+    let project = Project::read(&locations.root, &mcp::environment()).await?;
+    let outcome = trust::resolve(&home, project, &constraints, asking).await?;
+    let mut loaded = policy::load(
+        &locations,
+        &policies,
+        outcome.config.clone(),
+        flags(args),
+        environment(),
+    )
+    .await?;
+    loaded.project = (!outcome.rows.is_empty()).then(|| ProjectTrust {
+        root: locations.root.clone(),
+        rows: outcome.rows.clone(),
+    });
+    Ok((loaded, outcome))
 }
 
 /// The choices made with flags.

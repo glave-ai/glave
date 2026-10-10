@@ -20,60 +20,79 @@ fn scratch(name: &str) -> PathBuf {
     dir
 }
 
+/// Reads the policy files at `locations`, then everything else with `project` as the
+/// project's choices.
+fn load_all(locations: &Locations, project: Option<ConfigFile>) -> anyhow::Result<Loaded> {
+    block_on(async {
+        let policies = policies(locations).await?;
+        load(
+            locations,
+            &policies,
+            project,
+            ConfigFile::default(),
+            ConfigFile::default(),
+        )
+        .await
+    })
+}
+
 #[test]
 fn with_no_files_nothing_changes() {
     let dir = scratch("none");
-    let locations = Locations::here(&dir.join("home"), &dir);
-    let mut locations = locations;
+    let mut locations = Locations::here(&dir.join("home"), &dir);
     locations.policies = vec![dir.join("policy.toml")];
-    let loaded = block_on(load(
-        &locations,
-        ConfigFile::default(),
-        ConfigFile::default(),
-    ))
-    .unwrap();
+    let loaded = load_all(&locations, None).unwrap();
     assert!(loaded.configs.is_empty() && loaded.policies.is_empty());
-    assert_eq!(loaded.untrusted, None);
+    assert_eq!(loaded.project, None);
     assert_eq!(loaded.settle().unwrap(), no_choices());
     assert_eq!(loaded.constraints.rules(), []);
 }
 
 #[test]
-fn files_are_read_from_their_places_and_a_project_s_waits_for_trust() {
+fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
     let dir = scratch("read");
     let home = dir.join("home");
     let project = dir.join("repo");
     std::fs::create_dir_all(home.clone()).unwrap();
     std::fs::create_dir_all(project.join(".git")).unwrap();
-    std::fs::create_dir_all(project.join(".glave")).unwrap();
     std::fs::create_dir_all(project.join("src")).unwrap();
-    std::fs::write(home.join("config.toml"), "approval = \"ask\"\n").unwrap();
-    std::fs::write(project.join(".glave/config.toml"), "approval = \"auto\"\n").unwrap();
+    std::fs::write(
+        home.join("config.toml"),
+        "approval = \"ask\"\nmodel = \"mine\"\n",
+    )
+    .unwrap();
     let org = dir.join("policy.toml");
     std::fs::write(&org, "version = 1\n[sandbox]\nrequired = true\n").unwrap();
     let mut locations = Locations::here(&home, &project.join("src"));
+    assert_eq!(locations.root, project);
     assert_eq!(locations.project, project.join(".glave/config.toml"));
     locations.policies = vec![org.clone()];
-    let loaded = block_on(load(
-        &locations,
-        ConfigFile::default(),
-        ConfigFile::default(),
-    ))
-    .unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let choices = loaded.settle().unwrap();
+    assert_eq!(choices.approval.value, ApprovalMode::Ask, "the person's");
+    assert_eq!(choices.sandbox.from, Source::Narrowed(org));
+    let theirs = ConfigFile {
+        approval: Some(Approval::Auto),
+        ..ConfigFile::default()
+    };
+    let loaded = load_all(&locations, Some(theirs)).unwrap();
     let choices = loaded.settle().unwrap();
     assert_eq!(
         choices.approval.value,
-        ApprovalMode::Ask,
-        "the person's, not the project's"
+        ApprovalMode::Auto,
+        "nearer than the person's"
     );
-    assert_eq!(choices.sandbox.from, Source::Narrowed(org));
-    assert_eq!(loaded.untrusted, Some(project.join(".glave/config.toml")));
+    assert_eq!(
+        choices.approval.from,
+        Source::File(locations.project.clone())
+    );
+    assert_eq!(choices.model.map(|m| m.value).as_deref(), Some("mine"));
+    assert_eq!(
+        loaded.configs,
+        [locations.project.clone(), locations.person.clone()]
+    );
     std::fs::write(home.join("config.toml"), "aproval = \"ask\"\n").unwrap();
-    let typo = block_on(load(
-        &locations,
-        ConfigFile::default(),
-        ConfigFile::default(),
-    ));
+    let typo = load_all(&locations, None);
     assert!(format!("{:#}", typo.unwrap_err()).contains("aproval"));
 }
 
@@ -102,7 +121,20 @@ fn explain_shows_every_setting_and_rule_with_its_source() {
         ),
         policy_at(SPACE, "version = 1\n[approval]\nmodes = [\"ask\"]\n"),
     ];
-    let loaded = assemble(&chosen, &policies, Some(PathBuf::from(PROJECT)));
+    let trust = ProjectTrust {
+        root: PathBuf::from("/code/app"),
+        rows: vec![
+            [
+                "MCP server docs (docs-mcp --fast)".to_owned(),
+                "trusted (recorded in trust.toml)".to_owned(),
+            ],
+            [
+                "settings (approval = \"auto\")".to_owned(),
+                "off until trusted: glave will ask once".to_owned(),
+            ],
+        ],
+    };
+    let loaded = assemble(&chosen, &policies, Some(trust));
     let (text, runs) = explain(&loaded, Some("acme"));
     assert!(runs);
     insta::assert_snapshot!("explain", text);

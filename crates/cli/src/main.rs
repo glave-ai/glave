@@ -18,6 +18,7 @@ mod session;
 mod setup;
 mod system;
 mod terminal;
+mod trust;
 mod waiting;
 
 fn main() -> std::process::ExitCode {

@@ -1,0 +1,187 @@
+//! What a repository brings that needs trust: its `.mcp.json` servers and the parts of its
+//! `.glave/config.toml` that loosen how commands run. Read, never run: reading a file in a
+//! repository you have not trusted is safe, starting what it names is not.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use anyhow::Context as _;
+use glave_harness::ApprovalMode;
+use serde_json::Value;
+
+use crate::policy::{self, Approval, ConfigFile, SandboxChoice};
+
+/// A project's MCP servers, in Claude Code's format, at the repository's root.
+pub const MCP_FILE: &str = ".mcp.json";
+
+/// The id of the settings item, beside `mcp:<server>` ids.
+pub const SETTINGS: &str = "settings";
+
+/// One thing the person is asked to trust.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Item {
+    /// `mcp:<server>` or `settings`.
+    pub id: String,
+    /// Exactly what is trusted, so a changed definition is a new question.
+    pub definition: String,
+    /// What it does, in a few words, for the question and for `glave policy explain`.
+    pub shows: String,
+}
+
+impl Item {
+    /// Whether this is an MCP server, which a policy may forbid.
+    pub fn is_server(&self) -> bool {
+        self.id.starts_with("mcp:")
+    }
+
+    /// The label the person reads: `MCP server docs` or `settings`.
+    pub fn label(&self) -> String {
+        match self.id.strip_prefix("mcp:") {
+            Some(name) => format!("MCP server {name}"),
+            None => "settings".to_owned(),
+        }
+    }
+}
+
+/// A repository as glave reads it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Project {
+    /// The repository's root with symlinks resolved: the key trust is kept under.
+    pub root: PathBuf,
+    /// The `origin` remote in `.git/config`, which lets a moved clone be recognised.
+    pub remote: Option<String>,
+    /// The `.glave/config.toml`, when there is one.
+    pub config: Option<ConfigFile>,
+    /// The `.mcp.json` servers by name.
+    pub servers: BTreeMap<String, Item>,
+}
+
+impl Project {
+    /// Reads the repository at `root`. A file that does not parse stops glave, naming it, so
+    /// a mistake never quietly turns a project's settings off.
+    pub async fn read(root: &Path, environment: &BTreeMap<String, String>) -> anyhow::Result<Self> {
+        let root = tokio::fs::canonicalize(root)
+            .await
+            .with_context(|| format!("could not resolve {}", root.display()))?;
+        let config_path = root.join(".glave").join(policy::CONFIG);
+        let config = match read(&config_path).await? {
+            Some(text) => Some(policy::config(&text, &config_path)?),
+            None => None,
+        };
+        let mcp_path = root.join(MCP_FILE);
+        let servers = match read(&mcp_path).await? {
+            Some(text) => servers(&text, environment, &mcp_path)?,
+            None => BTreeMap::new(),
+        };
+        let remote = remote(&root).await;
+        Ok(Self {
+            root,
+            remote,
+            config,
+            servers,
+        })
+    }
+
+    /// Everything here that needs trust: the servers, then the settings that loosen things.
+    pub fn items(&self) -> Vec<Item> {
+        let settings = self.config.as_ref().and_then(loosening);
+        self.servers.values().cloned().chain(settings).collect()
+    }
+
+    /// The config as it applies without trust: choices that only tighten or pick a model.
+    pub fn config_without_trust(&self) -> Option<ConfigFile> {
+        self.config.as_ref().map(|config| ConfigFile {
+            approval: config.approval.filter(|a| *a != Approval::Auto),
+            sandbox: config.sandbox.filter(|s| *s != SandboxChoice::Off),
+            ..config.clone()
+        })
+    }
+}
+
+/// The settings item for the choices in `config` that loosen how commands run: approval
+/// `auto` and the sandbox `off`. Everything else only tightens, or picks a model.
+fn loosening(config: &ConfigFile) -> Option<Item> {
+    let mut parts = Vec::new();
+    if config.approval.map(Approval::mode) == Some(ApprovalMode::Auto) {
+        parts.push("approval = \"auto\"");
+    }
+    if config.sandbox == Some(SandboxChoice::Off) {
+        parts.push("sandbox = \"off\"");
+    }
+    (!parts.is_empty()).then(|| {
+        let text = parts.join(", ");
+        Item {
+            id: SETTINGS.to_owned(),
+            definition: text.clone(),
+            shows: text,
+        }
+    })
+}
+
+/// The servers in `.mcp.json`'s `text`, checked as glave would read them.
+fn servers(
+    text: &str,
+    environment: &BTreeMap<String, String>,
+    path: &Path,
+) -> anyhow::Result<BTreeMap<String, Item>> {
+    glave_mcp::parse(text, environment).with_context(|| format!("in {}", path.display()))?;
+    let file: Value = serde_json::from_str(text)
+        .with_context(|| format!("{} is not valid JSON", path.display()))?;
+    let found = file.get("mcpServers").and_then(Value::as_object);
+    Ok(found
+        .into_iter()
+        .flatten()
+        .map(|(name, definition)| {
+            let item = Item {
+                id: format!("mcp:{name}"),
+                definition: definition.to_string(),
+                shows: shows(definition),
+            };
+            (name.clone(), item)
+        })
+        .collect())
+}
+
+/// What a server runs or where it connects, as written (variables unfilled).
+fn shows(definition: &Value) -> String {
+    let text = |key: &str| definition.get(key).and_then(Value::as_str);
+    if let Some(url) = text("url") {
+        return url.to_owned();
+    }
+    let args = definition
+        .get("args")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str);
+    let words: Vec<&str> = text("command").into_iter().chain(args).collect();
+    words.join(" ")
+}
+
+/// The `origin` remote's url, read from `.git/config` without running git (which a
+/// repository's own config can make run programs).
+async fn remote(root: &Path) -> Option<String> {
+    let text = tokio::fs::read_to_string(root.join(".git").join("config"))
+        .await
+        .ok()?;
+    let mut in_origin = false;
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_origin = line == "[remote \"origin\"]";
+        } else if in_origin && let Some(url) = line.strip_prefix("url") {
+            return url
+                .trim_start()
+                .strip_prefix('=')
+                .map(|url| url.trim().to_owned());
+        }
+    }
+    None
+}
+
+async fn read(path: &Path) -> anyhow::Result<Option<String>> {
+    match tokio::fs::read_to_string(path).await {
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("could not read {}", path.display())),
+    }
+}

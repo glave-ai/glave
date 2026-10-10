@@ -93,6 +93,17 @@ pub struct PolicyFile {
     pub mcp: McpRules,
     #[serde(default)]
     pub budget: BudgetRules,
+    #[serde(default)]
+    pub projects: ProjectRules,
+}
+
+/// `[projects]`: which projects need no question.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectRules {
+    /// Globs over a repository's canonical path: trusted without asking.
+    #[serde(default)]
+    pub trusted: Vec<String>,
 }
 
 /// `[models]`: globs over `provider/model`.
@@ -178,10 +189,19 @@ pub fn policy(text: &str, path: &Path) -> anyhow::Result<PolicyFile> {
         .iter()
         .flatten()
         .map(|glob| ("allow", glob));
-    for (key, glob) in globs.chain(file.models.deny.iter().map(|glob| ("deny", glob))) {
+    let denied = file.models.deny.iter().map(|glob| ("deny", glob));
+    for (key, glob) in globs.chain(denied) {
         if let Err(error) = Glob::new(glob) {
             bail!(
                 "{}: [models] {key} has {glob:?}, which is not a glob: {error}",
+                path.display()
+            );
+        }
+    }
+    for glob in &file.projects.trusted {
+        if let Err(error) = Glob::new(glob) {
+            bail!(
+                "{}: [projects] trusted has {glob:?}, which is not a glob: {error}",
                 path.display()
             );
         }

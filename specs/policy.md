@@ -14,7 +14,15 @@ First cut built, in the CLI (`crates/cli/src/policy`):
 - Refused at load as not enforced yet, so glave will not run under them: `[budget]` (the gateway keeps budgets per run, not per day) and `[mcp] catalog` (glave cannot start servers an organization offers).
 - `glave policy explain` prints every setting with its source, every rule with its file, and why glave would refuse to run; it exits non-zero when it would.
 
-Not built yet: project trust, so a project's `.glave/config.toml` is noticed and named but not used (issue #83); signed bundles from an organization's server, macOS managed preferences and Group Policy; a space's own policy; recording policy changes as events (the admin console); and recording the policy version in each turn's configuration.
+Project trust (issue #83), in `crates/cli/src/trust`:
+
+- A repository's `.mcp.json` servers and the loosening parts of its `.glave/config.toml` (`approval = "auto"`, `sandbox = "off"`) run only after the person trusts the project. glave asks once, in the terminal, and only when the repository brings such things; a repository without them never asks, and the rest of its `config.toml` (a model, a tighter approval or sandbox) applies at once.
+- The answer is kept in `trust.toml` in glave's folder (below). What is trusted is each server's definition, so a repository that changes a server, or adds one, is asked about again, and only that.
+- `[projects] trusted` pre-trusts projects by path glob, with no question. `[mcp] own = false` forbids a project's servers whatever anyone says; the person's own servers in `mcp.json` stay refused loudly as before.
+- With no one to ask (a pipe, a script, `glave serve`), untrusted servers stay off, glave says so, and the model is told which tools are off and why.
+- `glave policy explain` lists the project's items and where each stands.
+
+Not built yet: a command to change a decision (edit `trust.toml`); hooks, which will join the things that need trust; signed bundles from an organization's server, macOS managed preferences and Group Policy; a space's own policy; recording policy changes as events (the admin console); and recording the policy version in each turn's configuration.
 
 ## Two kinds of setting, two rules
 
@@ -76,6 +84,9 @@ own = false                                       # may people add their own ser
 
 [budget]
 person_per_day_usd = 20
+
+[projects]
+trusted = ["/srv/repos/*"]                        # projects at these paths (globs) need no question
 ```
 
 Unknown keys are errors that name the key and file, so a typo never silently does nothing.
@@ -102,6 +113,19 @@ A laptop's own config can never loosen a constraint, because the constraint arri
 ## Project trust
 
 - A project's `.glave/config.toml` and its `.mcp.json` can run commands (MCP servers, later hooks). So they are honoured only after the person trusts the project once. glave asks at most once per project, and only when the project brings something that runs commands.
-- Trust decisions are kept in `~/.glave`, keyed by the project's path and repository identity.
-- An organization's policy can pre-trust projects, or forbid project MCP servers entirely.
-- With no one to answer, an untrusted project's servers stay off, and the model is told why.
+- Trust decisions are kept in `trust.toml` in `~/.glave` (or `GLAVE_HOME`), one `[[project]]` per repository, keyed by its canonical root path. A clone that moved is recognised by its `origin` remote, read from the repository's config file without running anything. Each item records the exact definition that was answered, so trust is of the content:
+
+  ```toml
+  version = 1
+
+  [[project]]
+  path = "/Users/ada/code/app"
+  remote = "git@example.com:acme/app.git"
+
+  [project.items."mcp:docs"]
+  definition = '{"args":["--fast"],"command":"docs-mcp"}'
+  trusted = true          # false: declined, and not asked again until it changes
+  ```
+- What needs trust: each server in the project's `.mcp.json`, and `approval = "auto"` or `sandbox = "off"` in its `config.toml`. Nothing else asks. Servers in `~/.glave/mcp.json` are the person's own and always trusted; on a name clash the person's wins.
+- An organization's policy can pre-trust projects (`[projects] trusted`), or forbid project MCP servers entirely (`[mcp] own = false`). A forbid wins over a pre-trust and over the person's yes.
+- With no one to answer, an untrusted project's servers stay off, and the model is told why: its instructions gain a "Project tools that are off" section listing what is off and why.
