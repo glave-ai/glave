@@ -91,8 +91,13 @@ pub enum Assessment {
     /// This call only reads, whatever the tool may do.
     Reads,
     /// This call needs the person whatever the mode, for `reason`. `secret` when it would show
-    /// the model a file that usually holds secrets.
-    Caution { reason: String, secret: bool },
+    /// the model a file that usually holds secrets. Unless `firm`, a judge that finds the
+    /// person's say-so in what they asked may let it run in auto mode.
+    Caution {
+        reason: String,
+        secret: bool,
+        firm: bool,
+    },
 }
 
 /// Anything that offers tools.

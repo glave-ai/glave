@@ -10,6 +10,7 @@ mod judge;
 mod parse;
 mod paths;
 mod reads;
+mod remote;
 mod rules;
 
 pub use judge::{Caution, Context, Kind, Verdict, judge};

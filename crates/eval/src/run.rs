@@ -185,6 +185,8 @@ async fn wire(
         .map(|loaded| loaded.text);
     settings.approval = task.approval;
     settings.subagents = setup.subagents;
+    // As the CLI runs it: the model under test also judges flagged actions in auto mode.
+    settings.judge = Some(model.to_owned());
     // The harness has no cap of its own, so an attempt gets one and its cost stays bounded.
     settings.max_steps = Some(task.max_steps.unwrap_or(MAX_STEPS));
     if let Some(tokens) = task.context_window {

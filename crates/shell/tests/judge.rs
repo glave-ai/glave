@@ -58,7 +58,6 @@ mod judging {
             "git checkout main",
             "git restore --staged src/a.rs",
             "git clean -n",
-            "git push origin main",
             "git checkout -- src/main.rs",
             "git checkout HEAD~1 -- src/lib.rs",
             "git restore src/main.rs",
@@ -131,6 +130,54 @@ mod judging {
         ] {
             assert_eq!(kind(script), Some(Kind::Discards), "{script}");
         }
+    }
+
+    #[test]
+    fn acting_beyond_this_computer_is_a_soft_caution() {
+        for script in [
+            "git push origin main",
+            "git push",
+            "npm publish",
+            "cargo publish",
+            "twine upload dist/*",
+            "python3 -m twine upload dist/*",
+            "docker push acme/api:latest",
+            "gh release create v2.0.0 --generate-notes",
+            "gh pr merge 128 --admin --squash",
+            "gh workflow run deploy.yml",
+            "kubectl delete pod --all -n staging",
+            "kubectl apply -f deploy.yaml",
+            "helm upgrade api ./chart",
+            "terraform apply -auto-approve",
+            "terraform destroy",
+            "vercel --prod",
+            "fly deploy",
+            "aws lambda update-function-configuration --function-name x --timeout 60",
+            "aws s3 rm s3://bucket --recursive",
+            "aws s3 sync dist/ s3://bucket/web/",
+            "gcloud run deploy api --image x",
+            "psql -d app -c 'ALTER TABLE users ADD COLUMN nickname text'",
+            "psql -d app_dev -c 'DELETE FROM users'",
+            "redis-cli -h localhost FLUSHALL",
+            "stripe refunds create --payment-intent pi_1",
+        ] {
+            assert_eq!(kind(script), Some(Kind::Remote), "{script}");
+            assert!(!Kind::Remote.firm());
+        }
+        for script in [
+            "npm install",
+            "docker build -t app .",
+            "kubectl get pods",
+            "terraform plan",
+            "aws s3 cp s3://bucket/x.txt .",
+            "aws s3 ls",
+            "psql -d app -c 'select count(*) from users'",
+            "gh pr view 12",
+            "helm list",
+        ] {
+            assert_eq!(kind(script), None, "{script}");
+        }
+        assert!(Kind::Secrets.firm() && Kind::Unreadable.firm());
     }
 
     #[test]

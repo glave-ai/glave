@@ -46,6 +46,9 @@ pub struct Settings {
     pub max_output_tokens: Option<u32>,
     /// Whether the model may hand work to subagents with `agent`.
     pub subagents: bool,
+    /// The model that judges, in auto mode, whether an action a rule flagged may run because
+    /// the person asked for it. Off when `None`: every flagged action asks.
+    pub judge: Option<String>,
     /// The person whose work every thread is: recorded as the thread's `for`. When `None`,
     /// the harness makes one id when it is created, used for all its threads.
     pub person: Option<PrincipalId>,
@@ -70,6 +73,7 @@ impl Settings {
             max_steps: None,
             max_output_tokens: None,
             subagents: false,
+            judge: None,
             person: None,
             agent: None,
         }
@@ -127,6 +131,11 @@ pub struct Thread {
     pub(crate) measured: Option<Measured>,
     /// The person's latest request, kept word for word through a compaction.
     pub(crate) request: Option<String>,
+    /// The person's own messages, oldest first: what the judge reads as their say-so. A
+    /// subagent's thread holds its parent's, never the brief the parent's agent wrote.
+    pub(crate) asked: Vec<String>,
+    /// Whether an agent, not the person, writes this thread's prompts: a subagent's thread.
+    pub(crate) delegated: bool,
 }
 
 impl Thread {
@@ -250,6 +259,8 @@ where
             allowed: HashSet::new(),
             measured: None,
             request: None,
+            asked: Vec::new(),
+            delegated: parent.is_some(),
         };
         let mut events = Vec::new();
         let producer = Producer {

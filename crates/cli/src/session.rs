@@ -107,6 +107,7 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
     settings.max_steps = args.max_steps;
     // As Claude Code, Codex and OpenCode offer it; models use it when asked to.
     settings.subagents = true;
+    settings.judge = config::judge_model(&endpoint.model);
     let identity = identity::load_or_make(&home::folder()?).await?;
     settings.person = Some(identity.person);
     settings.agent = Some(identity.agent);

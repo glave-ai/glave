@@ -8,9 +8,10 @@ use glave_ports::{
     Assessment, BlobStore, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
 };
 
-use crate::approval::{ApprovalRequest, Approver, Decision, no_one_there};
+use crate::approval::{ApprovalMode, ApprovalRequest, Approver, Decision, no_one_there};
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
 use crate::toolset::ToolSet;
 use crate::turn::{Live, Step, absorb};
@@ -115,11 +116,28 @@ where
         };
         let name = info.spec.name.as_str();
         let summary = source.describe(name, &call.arguments);
-        let (effect, caution, secret) = match source.assess(name, &call.arguments).await {
-            Assessment::AsDeclared => (info.effect, None, false),
-            Assessment::Reads => (Effect::Reads, None, false),
-            Assessment::Caution { reason, secret } => (info.effect, Some(reason), secret),
+        let (effect, mut caution, secret, firm) = match source.assess(name, &call.arguments).await {
+            Assessment::AsDeclared => (info.effect, None, false, false),
+            Assessment::Reads => (Effect::Reads, None, false, false),
+            Assessment::Caution {
+                reason,
+                secret,
+                firm,
+            } => (info.effect, Some(reason), secret, firm),
         };
+        if let Some(reason) = caution.as_deref().filter(|_| !firm) {
+            let flagged = Flagged {
+                call,
+                name,
+                summary: &summary,
+                reason,
+            };
+            match self.judged(thread, &flagged, cancel).await? {
+                Judged::Cleared => caution = None,
+                Judged::Ask => {}
+                Judged::Cancelled => return Ok(ToolOutput::text(true, NOT_RUN)),
+            }
+        }
         // A caution asks even when the tool was allowed for the rest of the thread.
         let asks = caution.is_some()
             || (self.settings.approval.asks_for(effect) && !thread.allowed.contains(name));
@@ -181,6 +199,54 @@ where
                 ToolOutput::text(false, question::answered(&request.questions, &answers))
             }
         }
+    }
+
+    /// In auto mode with a judge, asks it whether a soft caution may run because the person
+    /// asked for it. A cleared action is recorded as an approval glave decided.
+    async fn judged(
+        &self,
+        thread: &mut Thread,
+        flagged: &Flagged<'_>,
+        cancel: &Cancel,
+    ) -> Result<Judged, HarnessError> {
+        let Flagged {
+            call,
+            name,
+            summary,
+            reason,
+        } = *flagged;
+        let Some(model) = self.settings.judge.as_deref() else {
+            return Ok(Judged::Ask);
+        };
+        if self.settings.approval != ApprovalMode::Auto {
+            return Ok(Judged::Ask);
+        }
+        let case = JudgeCase {
+            asked: &thread.asked,
+            rules: self.settings.instructions.as_deref(),
+            action: summary,
+            flagged: reason,
+        };
+        let Some(ruling) = cancel.run(judge(&self.provider, model, &case)).await else {
+            return Ok(Judged::Cancelled);
+        };
+        let Ruling::Run { reason: why } = ruling else {
+            return Ok(Judged::Ask);
+        };
+        let asked = ApprovalRequested {
+            call_id: call.call_id.clone(),
+            tool: name.to_owned(),
+            summary: format!("{summary} ({reason}; the judge let it run: {why})"),
+            secret: false,
+        };
+        self.record(thread, &asked).await?;
+        let decided = ApprovalDecided {
+            call_id: call.call_id.clone(),
+            decision: Verdict::AllowOnce,
+            by: Some(Principal::glave()),
+        };
+        self.record(thread, &decided).await?;
+        Ok(Judged::Cleared)
     }
 
     /// Asks the person about `request`, recording the question and the answer. `None` when the
@@ -263,4 +329,23 @@ where
         });
         Ok(())
     }
+}
+
+/// What the judge made of a soft caution.
+enum Judged {
+    /// The person asked for it: it runs without asking.
+    Cleared,
+    /// The person decides, as for any caution.
+    Ask,
+    /// The turn was cancelled while the judge thought.
+    Cancelled,
+}
+
+/// A call a rule flagged, as the judge is told about it.
+#[derive(Clone, Copy)]
+struct Flagged<'a> {
+    call: &'a ToolCall,
+    name: &'a str,
+    summary: &'a str,
+    reason: &'a str,
 }
