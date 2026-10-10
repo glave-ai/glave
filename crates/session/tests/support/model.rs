@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use glave_computer::LocalComputers;
 use glave_event::{Arguments, ModelRef, Part, StopReason, TokenCounts, Usage};
 use glave_harness::{Clock, Entropy, Settings, Workspace};
 use glave_ports::{
@@ -150,7 +151,12 @@ pub async fn server_with<L: EventLog + 'static>(
             1_791_000_000_000 + 1_000_000 * i64::try_from(seed).unwrap(),
         ))),
         entropy: Box::new(Counting(AtomicU64::new(seed << 32))),
-        workspace: Workspace::open(dir, std::env::vars_os()).await.unwrap(),
+        workspace: {
+            let (computers, info) = LocalComputers::here(dir, std::env::vars_os())
+                .await
+                .unwrap();
+            Workspace::new(computers, info)
+        },
         tools: Vec::new(),
     };
     Server::new(wiring, settings, scope(), answering)

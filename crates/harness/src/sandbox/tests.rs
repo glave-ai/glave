@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use glave_event::Arguments;
 
-use super::*;
+use glave_computer::sandbox_available;
+use glave_ports::{Sandbox, SandboxLevel, is_protected};
+
 use crate::cancel::Cancel;
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
@@ -13,7 +15,7 @@ use crate::tools::workspace::Workspace;
 /// Whether to run the sandbox tests here. Where CI expects a sandbox (`GLAVE_REQUIRE_SANDBOX`),
 /// its absence fails the test instead of skipping it, so a test never passes vacuously.
 fn enforced() -> bool {
-    let available = Sandbox::available();
+    let available = sandbox_available();
     assert!(
         available || std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none(),
         "GLAVE_REQUIRE_SANDBOX is set but the sandbox is not available here"
@@ -67,11 +69,17 @@ fn run(project: &Path, sandbox: &Sandbox, command: &str) -> crate::tools::ToolOu
 
 #[test]
 fn without_a_sandbox_on_this_computer_preparing_fails() {
-    if Sandbox::available() {
+    if sandbox_available() {
         return;
     }
     let dir = scratch("unavailable");
-    let prepared = block_on(sandbox(SandboxLevel::Project, false, &dir).prepare(&dir));
+    let prepared = block_on(async {
+        Workspace::open(&dir, std::env::vars_os())
+            .await
+            .unwrap()
+            .with_sandbox(&sandbox(SandboxLevel::Project, false, &dir))
+            .await
+    });
     assert!(prepared.is_err());
 }
 

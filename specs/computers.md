@@ -4,7 +4,9 @@ Where work runs: the machines, the recipes they are made from, and the working c
 
 ## Status
 
-First cut built (#116). The computer port (`Computers` in `glave-ports`) and its conformance suite; `glave-computer` with this machine as a computer (`LocalComputers`), `glave computer serve` (stdio, and TCP on 127.0.0.1 behind a token) and the client that reaches it (`RemoteComputers`), both passing the same suite; environments read from devcontainer.json or environment.toml. The harness still runs its tools in the folder glave was started in: moving its tools onto the port, `tool/run`, sleep, wake, resize, credentials, cloud computers, `workspace.bound` events and placement come next.
+First cut built (#116). The computer port (`Computers` in `glave-ports`) and its conformance suite; `glave-computer` with this machine as a computer (`LocalComputers`), `glave computer serve` (stdio, and TCP on 127.0.0.1 behind a token) and the client that reaches it (`RemoteComputers`), both passing the same suite; environments read from devcontainer.json or environment.toml.
+
+The harness's six tools run on a computer through the port. The harness's `Workspace` is a binding to one workspace on one computer; the CLI, the session server and evals bind to this machine (`LocalComputers::here`, the folder glave starts in, worked on in place), and a test runs a whole turn against a computer over TCP and gets exactly what the model gets locally. The cut, as Codex's exec server and Claude Code's remote sessions draw it: the brain stays in the harness (approvals, the judge, the shell assessment, secrets handling, read-before-write freshness, every word the model reads, truncation, receipts), and the computer is the hands (paths confined to the workspace, files read and written, searches walked next to the files, commands run in the sandbox each one carries). Rather than one `tool/run`, the protocol stays fine-grained and coarse: `command/run`, `files/*` and `workspace/save`, plus `files/stat` (where a path resolves, what is there and its digest, so freshness holds without fetching the file), `files/glob` and `files/search` (run on the computer, answering with results), and listings that leave out what git ignores. Path refusals are whole sentences the model reads as they are. Sleep, wake, resize, credentials, cloud computers, `workspace.bound` events and placement come next.
 
 ## The nouns
 
@@ -47,15 +49,18 @@ A computer adapter answers, over the same JSON-RPC as the session API (in-proces
 
 Coarse calls only: a search runs inside the computer and returns results, never a remote filesystem.
 
-Built so far, beside `computer/create`, `computer/status`, `computer/destroy`, `workspace/open` and `workspace/close` (wire version `2026-10`):
+Built so far, beside `computer/create`, `computer/status`, `computer/destroy`, `workspace/open` and `workspace/close` (wire version `2026-10-10`):
 
 | Method | Does |
 | --- | --- |
 | `server/discover` | the server's name, version and protocol versions |
 | `connection/authenticate` | the first message on a network transport: the token; anything else ends the connection |
-| `command/run` | runs a bash command at the workspace root, its output (standard output and error together) streamed as `command/output` notifications before the answer: exit code, signal, timeout or cancel, and how long it took |
+| `command/run` | runs a bash command at the workspace root, its output (standard output and error together) streamed as `command/output` notifications before the answer: exit code, signal, timeout or cancel, and how long it took. The sandbox (level, network, the home and glave folders to protect) travels with the command; a computer that cannot enforce it refuses the command as unsupported, never runs it unconfined |
 | `command/cancel` | stops a running command and everything it started |
-| `files/read`, `files/write`, `files/list` | one file read whole (at most 8 MiB, as base64), files written all-or-nothing after every path is checked, a folder listed (at most 10,000 entries); every path confined to the workspace, symlinks followed before the check |
+| `files/read`, `files/write`, `files/list` | one file read whole (at most 20 MiB, as base64), files written all-or-nothing after every path is checked, a folder listed (at most 10,000 entries), optionally leaving out what git ignores and counting it; every path confined to the workspace, symlinks followed before the check |
+| `files/stat` | what is at a path: where it resolves inside the workspace, nothing, a folder, or a file with its size and SHA-256 |
+| `files/glob` | files matching a pattern (`*.rs` by name, `src/**/*.rs` by path), newest first, leaving out what git ignores, up to a limit, with the total |
+| `files/search` | lines matching a regular expression (plain text when it is not one), in path order, up to a limit; ignored, binary and large files are not searched, and files that usually hold secrets are never opened, only named |
 | `workspace/save` | commits everything to a branch and pushes it to `origin`; a plain folder keeps the commit in a hidden history (`.glave/history.git`, up to 100 MB of files), never a `.git` |
 
 A repository opens as a clone under `~/.glave/workspaces/<computer>/<workspace>`, removed on close; a folder opens in place and is kept. A computer on the host refuses what it cannot honour (an image, setup commands, a limited network) rather than ignoring it.

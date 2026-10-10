@@ -4,6 +4,7 @@ mod matcher;
 
 use std::fmt::Write as _;
 
+use glave_ports::{Bytes, EntryKind, digest};
 use serde::Deserialize;
 
 use super::ToolOutcome;
@@ -24,17 +25,23 @@ pub(crate) struct EditArgs {
 }
 
 pub(crate) async fn edit(workspace: &Workspace, args: EditArgs) -> ToolOutcome {
-    let path = match workspace.resolve_for_change(&args.path).await {
-        Ok(path) => path,
+    let stat = match workspace.stat_for_change(&args.path).await {
+        Ok(stat) => stat,
         Err(message) => return ToolOutcome::error(message),
     };
-    let shown = workspace.show(&path);
-    let Ok(bytes) = tokio::fs::read(&path).await else {
-        return ToolOutcome::error(format!(
+    let shown = stat.path;
+    let not_found = || {
+        ToolOutcome::error(format!(
             "File not found: {shown}. To create a file, use write."
-        ));
+        ))
     };
-    if let Err(message) = workspace.check_fresh(&path, &bytes) {
+    if stat.kind.is_none_or(|kind| kind == EntryKind::Folder) {
+        return not_found();
+    }
+    let Ok(bytes) = workspace.read(&shown).await.map(Bytes::into_vec) else {
+        return not_found();
+    };
+    if let Err(message) = workspace.check_fresh(&shown, Some(&digest(&bytes))) {
         return ToolOutcome::error(message);
     }
     let Ok(original) = String::from_utf8(bytes) else {
@@ -60,10 +67,10 @@ pub(crate) async fn edit(workspace: &Workspace, args: EditArgs) -> ToolOutcome {
     if bom {
         written.insert_str(0, BOM);
     }
-    if let Err(e) = tokio::fs::write(&path, written.as_bytes()).await {
-        return ToolOutcome::error(format!("Could not write {shown}: {e}"));
+    if let Err(e) = workspace.write(&shown, written.as_bytes()).await {
+        return ToolOutcome::error(format!("Could not write {shown}: {}", e.message()));
     }
-    workspace.remember(&path, written.as_bytes());
+    workspace.remember(&shown, written.as_bytes());
     ToolOutcome::ok(success(&edited, &shown))
 }
 

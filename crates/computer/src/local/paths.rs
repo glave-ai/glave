@@ -1,5 +1,6 @@
 //! Paths inside a workspace: every path a caller gives is resolved and confined to the
 //! workspace root. Symlinks and `..` are followed before the check, so neither can escape.
+//! Refusals are whole sentences, written to be shown to the model as they are.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -23,7 +24,7 @@ pub(crate) async fn folder(path: &str) -> Result<PathBuf, ComputerError> {
 /// Resolves `path` (relative to `root`, or absolute inside it) to a path inside `root`.
 pub(crate) async fn resolve(root: &Path, path: &str) -> Result<PathBuf, ComputerError> {
     if path.trim().is_empty() {
-        return Err(ComputerError::Refused("the path is empty".into()));
+        return Err(ComputerError::Refused("The path is empty.".into()));
     }
     let candidate = root.join(path);
     let mut existing = candidate.as_path();
@@ -33,11 +34,14 @@ pub(crate) async fn resolve(root: &Path, path: &str) -> Result<PathBuf, Computer
         // target, wherever that is, so it cannot be checked. Refuse it.
         if tokio::fs::symlink_metadata(existing).await.is_ok() {
             return Err(ComputerError::Refused(format!(
-                "{path} goes through a link to something that does not exist"
+                "{path} goes through a link to something that does not exist, so it cannot be \
+                 checked to stay inside the workspace."
             )));
         }
         let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
-            return Err(ComputerError::Refused(format!("{path} cannot be resolved")));
+            return Err(ComputerError::Refused(format!(
+                "{path} cannot be resolved."
+            )));
         };
         tail.push(name.to_owned());
         existing = parent;
@@ -51,7 +55,7 @@ pub(crate) async fn resolve(root: &Path, path: &str) -> Result<PathBuf, Computer
             Some(Component::Normal(_))
         ) {
             return Err(ComputerError::Refused(format!(
-                "{path} uses '..' or '.' through a folder that does not exist"
+                "{path} uses '..' or '.' through a folder that does not exist."
             )));
         }
         resolved.push(name);
@@ -60,7 +64,8 @@ pub(crate) async fn resolve(root: &Path, path: &str) -> Result<PathBuf, Computer
         Ok(resolved)
     } else {
         Err(ComputerError::Refused(format!(
-            "{path} is outside the workspace"
+            "{path} is outside the workspace ({}).",
+            root.display()
         )))
     }
 }

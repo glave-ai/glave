@@ -2,13 +2,11 @@
 //! ignores.
 
 use std::fmt::Write as _;
-use std::path::Path;
-use std::time::SystemTime;
 
+use glave_ports::Glob;
 use serde::Deserialize;
 
 use super::ToolOutcome;
-use super::walk::{self, Pattern, shown};
 use super::workspace::Workspace;
 
 /// Most files listed by one call.
@@ -22,58 +20,36 @@ pub(crate) struct GlobArgs {
 }
 
 pub(crate) async fn glob(workspace: &Workspace, args: GlobArgs) -> ToolOutcome {
-    let start = match workspace.resolve(args.path.as_deref().unwrap_or(".")).await {
-        Ok(path) => path,
+    let glob = Glob {
+        pattern: args.pattern.clone(),
+        path: args.path.unwrap_or_else(|| ".".into()),
+        limit: MAX_FILES,
+    };
+    let found = match workspace.glob(&glob).await {
+        Ok(found) => found,
         Err(message) => return ToolOutcome::error(message),
     };
-    let pattern = match Pattern::new(&args.pattern) {
-        Ok(pattern) => pattern,
-        Err(message) => return ToolOutcome::error(message),
-    };
-    let root = workspace.root().to_owned();
-    let place = shown(&root, &start);
-    let listed = tokio::task::spawn_blocking(move || {
-        let mut files: Vec<(SystemTime, String)> = walk::files(&start)
-            .filter(|path| pattern.matches(path.strip_prefix(&start).unwrap_or(path)))
-            .map(|path| (modified(&path), shown(&root, &path)))
-            .collect();
-        // Newest first: what changed recently is what a task is usually about.
-        files.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-        files
-    })
-    .await;
-    let Ok(files) = listed else {
-        return ToolOutcome::error("The file search stopped unexpectedly.");
-    };
-    if files.is_empty() {
-        return ToolOutcome::ok(format!("No files match {} in {place}.", args.pattern));
+    if found.files.is_empty() {
+        return ToolOutcome::ok(format!(
+            "No files match {} in {}.",
+            args.pattern, found.path
+        ));
     }
-    let total = files.len();
-    let mut out = files
-        .into_iter()
-        .take(MAX_FILES)
-        .map(|(_, path)| path)
-        .collect::<Vec<_>>()
-        .join("\n");
-    if total > MAX_FILES {
+    let mut out = found.files.join("\n");
+    if found.total > u64::try_from(MAX_FILES).unwrap_or(u64::MAX) {
         let _ = write!(
             out,
-            "\n[{MAX_FILES} of {total} files shown, newest first. Narrow the pattern or path to see the rest.]"
+            "\n[{MAX_FILES} of {} files shown, newest first. Narrow the pattern or path to see the rest.]",
+            found.total
         );
     }
     ToolOutcome::ok(out)
 }
 
-fn modified(path: &Path) -> SystemTime {
-    std::fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .unwrap_or(SystemTime::UNIX_EPOCH)
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use std::time::Duration;
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, SystemTime};
 
     use super::*;
 

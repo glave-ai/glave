@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
+use glave_computer::LocalComputers;
 use glave_harness::{
     Cancel, Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox, Settings, SystemClock, Todo,
     Workspace, agents_md,
@@ -161,9 +162,10 @@ async fn wire(
     environment: &Environment,
     root: &Path,
 ) -> Result<Harness<OpenAiCompatible, MemoryLog, MemoryBlobs, NoOneToAsk>, EvalError> {
-    let mut workspace = Workspace::open(root, environment.clone())
+    let (computers, info) = LocalComputers::here(root, environment.clone())
         .await
-        .map_err(EvalError::io("open", root))?;
+        .map_err(|error| EvalError::io("open", root)(std::io::Error::other(error)))?;
+    let mut workspace = Workspace::new(computers, info);
     if let Some(level) = task.sandbox {
         let sandbox = Sandbox {
             level,
@@ -174,7 +176,7 @@ async fn wire(
         workspace = workspace
             .with_sandbox(&sandbox)
             .await
-            .map_err(EvalError::io("sandbox", root))?;
+            .map_err(|error| EvalError::io("sandbox", root)(std::io::Error::other(error)))?;
     }
     let provider = OpenAiCompatible::new(setup.endpoint.clone())
         .map_err(|err| EvalError::Setup(err.to_string()))?;

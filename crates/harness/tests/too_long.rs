@@ -15,7 +15,7 @@ mod too_long {
     use std::sync::{Arc, Mutex};
 
     use glave_event::{Outcome, Part, StopReason};
-    use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Parts, Workspace};
+    use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Parts};
     use glave_ports::{
         Completion, Delta, Failure, MemoryBlobs, MemoryLog, Message, ModelProvider, ModelRequest,
         ProviderError,
@@ -88,7 +88,7 @@ mod too_long {
             approver: AllowAll,
             clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
             entropy: Box::new(Counting(AtomicU64::new(1))),
-            workspace: Workspace::open(&dir, std::env::vars_os()).await.unwrap(),
+            workspace: workspace(&dir).await,
         };
         (Harness::new(parts, settings()), seen)
     }

@@ -2,7 +2,6 @@
 //! the workspace. Checks that depend on the files, such as reads of secret files, run here.
 
 use std::future::ready;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use glave_event::Arguments;
@@ -13,9 +12,9 @@ use glave_ports::{
 use glave_shell::{Context, Kind, Verdict, judge};
 
 use crate::approval::{reads_secret, summarize};
-use crate::secrets::is_secret_file;
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
+use glave_ports::secrets::is_secret_file;
 
 /// The built-in tools on one workspace.
 pub(crate) struct Builtins {
@@ -43,18 +42,10 @@ impl Builtins {
         let Some(command) = map.get("command").and_then(|value| value.as_str()) else {
             return Assessment::AsDeclared;
         };
-        let variable = |name: &str| {
-            self.workspace
-                .environment()
-                .iter()
-                .find(|(key, _)| key == name)
-                .map(|(_, value)| PathBuf::from(value))
-        };
-        let (home, temp) = (variable("HOME"), variable("TMPDIR"));
         let context = Context {
             project: self.workspace.root(),
-            home: home.as_deref(),
-            temp: temp.as_deref(),
+            home: self.workspace.home(),
+            temp: self.workspace.temp(),
             secret: &is_secret_file,
         };
         match judge(command, &context) {

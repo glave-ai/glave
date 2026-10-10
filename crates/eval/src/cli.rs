@@ -180,7 +180,7 @@ fn is_run(name: &str) -> bool {
 
 /// The tasks to run: in the tier, matching `--only`, and runnable on this computer.
 fn chosen(tasks: Vec<Task>, options: &Options) -> Result<Vec<Task>, String> {
-    let sandbox = glave_harness::Sandbox::available();
+    let sandbox = glave_computer::sandbox_available();
     let mut left_out = 0;
     let tasks: Vec<Task> = tasks
         .into_iter()

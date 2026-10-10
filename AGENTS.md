@@ -46,8 +46,8 @@ crates/store-sqlite/  glave-store-sqlite: the event log, blob store and wrapped 
 crates/store-postgres/  glave-store-postgres: the event log, blob store and wrapped keys on Postgres, an organization's one data store, content sealed
 crates/shell/       glave-shell: shell commands read before they run (tree-sitter-bash): read-only, risky with a reason, or neither
 crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`)
-crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash), approvals, resume, AGENTS.md, the opt-in sandbox
-crates/computer/    glave-computer: computers (specs/computers.md): this machine as one, environments from devcontainer.json or environment.toml, served (`glave computer serve`) and reached over JSON-RPC
+crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash) run on a computer through the port, approvals, resume, AGENTS.md
+crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (with the opt-in sandbox), environments from devcontainer.json or environment.toml, served (`glave computer serve`) and reached over JSON-RPC
 crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC sign-in; every surface, the CLI first, runs threads through it
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary

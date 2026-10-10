@@ -16,13 +16,15 @@ mod log;
 mod memory;
 mod model;
 mod scope;
+pub mod secrets;
 mod tools;
 
 pub use blob::{BlobError, BlobStore, digest};
 pub use computer::{
     Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Entry, EntryKind,
-    Environment, FileWrite, Finished, Image, Listed, Listing, Network, Output, Save, Saved, Size,
-    Sources, State, WorkspaceId, WorkspaceInfo,
+    Environment, FileWrite, Finished, Glob, Globbed, Image, Listed, Listing, Match, Network,
+    Output, PROTECTED, Sandbox, SandboxLevel, Save, Saved, Search, Searched, Size, Sources, Stat,
+    State, WorkspaceId, WorkspaceInfo, is_protected, looks_binary,
 };
 pub use failure::Failure;
 pub use log::{EventLog, LogError, check_append};

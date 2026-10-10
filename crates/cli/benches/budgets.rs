@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, bail};
+use glave_computer::LocalComputers;
 use glave_event::{Arguments, ModelRef, Part, StopReason, TokenCounts, Usage};
 use glave_harness::{
     AllowAll, Cancel, Harness, OsEntropy, Parts, Settings, SystemClock, Workspace,
@@ -162,7 +163,10 @@ async fn harness_on(store: &Store, project: &Path) -> anyhow::Result<Benched> {
         approver: AllowAll,
         clock: Box::new(SystemClock),
         entropy: Box::new(OsEntropy),
-        workspace: Workspace::open(project, std::env::vars_os()).await?,
+        workspace: {
+            let (computers, info) = LocalComputers::here(project, std::env::vars_os()).await?;
+            Workspace::new(computers, info)
+        },
     };
     Ok(Harness::new(parts, settings))
 }

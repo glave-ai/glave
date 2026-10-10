@@ -5,12 +5,16 @@
 
 mod bytes;
 mod environment;
+mod finding;
+mod sandbox;
 mod types;
 
 use crate::tools::{BoxFuture, Cancellation};
 
 pub use bytes::Bytes;
 pub use environment::{Environment, Image, Network, Size};
+pub use finding::{Glob, Globbed, Match, Search, Searched, Stat, looks_binary};
+pub use sandbox::{PROTECTED, Sandbox, SandboxLevel, is_protected};
 pub use types::{
     Command, ComputerError, ComputerId, ComputerInfo, Ending, Entry, EntryKind, FileWrite,
     Finished, Listed, Listing, Save, Saved, Sources, State, WorkspaceId, WorkspaceInfo,
@@ -82,6 +86,28 @@ pub trait Computers: Send + Sync {
         workspace: WorkspaceId,
         listing: &'a Listing,
     ) -> BoxFuture<'a, Result<Listed, ComputerError>>;
+
+    /// What is at a path in the workspace (`files/stat`): where it resolves to, what it is,
+    /// and for a file its digest. Nothing there yet is an answer, not an error.
+    fn stat<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        path: &'a str,
+    ) -> BoxFuture<'a, Result<Stat, ComputerError>>;
+
+    /// Finds files by name or path, newest first (`files/glob`).
+    fn glob<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        glob: &'a Glob,
+    ) -> BoxFuture<'a, Result<Globbed, ComputerError>>;
+
+    /// Finds lines matching a regular expression (`files/search`).
+    fn search<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        search: &'a Search,
+    ) -> BoxFuture<'a, Result<Searched, ComputerError>>;
 
     /// Commits the workspace's changes to a branch and pushes it to where the sources came
     /// from (`workspace/save`): the only way work leaves a computer. A plain folder gets a
