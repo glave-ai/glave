@@ -61,6 +61,42 @@ impl fmt::Display for EventId {
     }
 }
 
+/// Identifies a principal: a person, an agent profile or a group. People, agents and groups
+/// share one id space, unique everywhere and never tied to one deployment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "Uuid", into = "Uuid")]
+pub struct PrincipalId(Uuid);
+
+impl PrincipalId {
+    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
+        build_v7("principal id", at, random).map(Self)
+    }
+
+    pub fn as_uuid(self) -> Uuid {
+        self.0
+    }
+}
+
+impl TryFrom<Uuid> for PrincipalId {
+    type Error = InvalidValue;
+
+    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
+        require_v7("principal id", uuid).map(Self)
+    }
+}
+
+impl From<PrincipalId> for Uuid {
+    fn from(id: PrincipalId) -> Self {
+        id.0
+    }
+}
+
+impl fmt::Display for PrincipalId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Identifies one thread: a conversation or task with its own ordered log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "Uuid", into = "Uuid")]

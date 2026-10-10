@@ -26,15 +26,19 @@ pub trait Payload: Serialize + DeserializeOwned {
 pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (thread::TYPE, 1),
     (thread::TYPE, 2),
+    (thread::TYPE, 3),
     (thread::COMPACTED, 1),
     (turn::STARTED, 1),
+    (turn::STARTED, 2),
     (message::TYPE, 1),
+    (message::TYPE, 2),
     (tool::REQUESTED, 1),
     (tool::COMPLETED, 1),
     (model::TYPE, 1),
     (turn::ENDED, 1),
     (approval::REQUESTED, 1),
     (approval::DECIDED, 1),
+    (approval::DECIDED, 2),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -226,6 +230,9 @@ mod tests {
             },
             fork: None,
             parent: None,
+            for_: None,
+            agent: None,
+            origin: crate::payload::Origin::of(crate::payload::OriginKind::Prompt),
         };
         let raw = encode(header(), &payload).unwrap();
         assert_eq!(raw.kind.as_str(), "thread.started");

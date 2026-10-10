@@ -18,11 +18,11 @@ use glave_store_sqlite::Store;
 use crate::args::{self, Action, Args, USAGE};
 use crate::client::{Client, Glave};
 use crate::config::{self, Endpoint};
-use crate::home;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::system::random_uuid;
 use crate::terminal::Printer;
+use crate::{home, identity};
 
 pub fn main() -> ExitCode {
     let args = match args::parse(std::env::args().skip(1)) {
@@ -108,6 +108,9 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
     // As Claude Code, Codex and OpenCode offer it; models use it when asked to.
     settings.subagents = true;
     settings.judge = config::judge_model(&endpoint.model);
+    let identity = identity::load_or_make(&home::folder()?).await?;
+    settings.person = Some(identity.person);
+    settings.agent = Some(identity.agent);
     if let Some(window_tokens) = config::context_window()? {
         settings.compaction.window_tokens = window_tokens;
     }

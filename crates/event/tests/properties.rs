@@ -36,6 +36,7 @@ mod properties {
             let message = MessageAdded {
                 role: if assistant { Role::Assistant } else { Role::User },
                 parts: vec![Part::Text { text }],
+                author: None,
             };
             let json = encode(header(seq, millis), &message).unwrap().to_json().unwrap();
             let event = decode(RawEvent::from_json(&json).unwrap()).unwrap();

@@ -1,7 +1,9 @@
 //! Running one of the model's tool calls: asking the person when the call needs it, running
 //! the tool, and recording its result.
 
-use glave_event::{ApprovalDecided, ApprovalRequested, CallId, ToolCallCompleted, Verdict};
+use glave_event::{
+    ApprovalDecided, ApprovalRequested, CallId, Principal, ToolCallCompleted, Verdict,
+};
 use glave_ports::{
     Assessment, BlobStore, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
 };
@@ -241,6 +243,7 @@ where
         let decided = ApprovalDecided {
             call_id: call.call_id.clone(),
             decision: Verdict::AllowOnce,
+            by: Some(Principal::glave()),
         };
         self.record(thread, &decided).await?;
         Ok(Judged::Cleared)
@@ -273,6 +276,8 @@ where
         let decided = ApprovalDecided {
             call_id: request.call_id.clone(),
             decision: verdict,
+            // The person decides, unless glave did: no one was there, or the turn was cancelled.
+            by: matches!(verdict, Verdict::NoOneThere | Verdict::Cancelled).then(Principal::glave),
         };
         self.record(thread, &decided).await?;
         Ok(match verdict {

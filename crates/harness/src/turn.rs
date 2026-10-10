@@ -262,6 +262,7 @@ where
         let message = MessageAdded {
             role: Role::User,
             parts: parts.clone(),
+            author: None,
         };
         self.stage(thread, &mut events, &message)?;
         self.commit(thread, events).await?;
@@ -326,10 +327,20 @@ where
             text: prompt.to_owned(),
         });
         let mut events = Vec::new();
-        self.stage(thread, &mut events, &TurnStarted { model, config })?;
+        self.stage(
+            thread,
+            &mut events,
+            &TurnStarted {
+                model,
+                config,
+                trace: None,
+                auth: None,
+            },
+        )?;
         let message = MessageAdded {
             role: Role::User,
             parts: parts.clone(),
+            author: None,
         };
         self.stage(thread, &mut events, &message)?;
         self.commit(thread, events).await?;
@@ -401,6 +412,7 @@ where
             let message = MessageAdded {
                 role: Role::Assistant,
                 parts: completion.parts.clone(),
+                author: None,
             };
             self.stage(thread, &mut events, &message)?;
         }

@@ -49,6 +49,16 @@ mod judging {
             .collect()
     }
 
+    fn deciders(events: &[glave_event::Event]) -> Vec<Option<glave_event::Principal>> {
+        events
+            .iter()
+            .filter_map(|event| match &event.body {
+                Body::ApprovalDecided(decided) => Some(decided.by.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[test]
     fn an_action_the_person_asked_for_runs_and_the_judge_is_on_record() {
         let dir = folder("judge-run");
@@ -76,9 +86,12 @@ mod judging {
                 .unwrap();
             let said = results(thread.messages());
             assert!(!said[0].starts_with("Not run"), "{said:?}");
+            let recorded = events(harness.log(), thread.id).await;
+            assert_eq!(verdicts(&recorded), [Verdict::AllowOnce]);
             assert_eq!(
-                verdicts(&events(harness.log(), thread.id).await),
-                [Verdict::AllowOnce]
+                deciders(&recorded),
+                [Some(glave_event::Principal::glave())],
+                "the judge's ruling is glave's decision"
             );
         });
     }
