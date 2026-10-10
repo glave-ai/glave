@@ -39,6 +39,9 @@ Environment:
                      summarizes a thread near 80% of it
   GLAVE_IDLE_TIMEOUT    seconds the model may send nothing before a call fails (default:
                      300); failures that may pass are tried 4 more times
+  GLAVE_JUDGE_MODEL     in auto mode, the model that decides whether an action a rule
+                     flagged may run because you asked for it (default: the main model;
+                     `off` to always ask)
 
 A new thread starts with your AGENTS.md (in GLAVE_HOME), then every AGENTS.md from the
 repository's root down to this folder.
