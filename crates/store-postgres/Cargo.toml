@@ -1,0 +1,26 @@
+[package]
+name = "glave-store-postgres"
+description = "glave's Postgres storage: the event log and blob store for an organization's one data store"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+deadpool-postgres.workspace = true
+glave-event.workspace = true
+glave-ports.workspace = true
+jiff.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio-postgres.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+glave-ports = { workspace = true, features = ["conformance"] }
+tokio = { workspace = true, features = ["rt"] }
+
+[lints]
+workspace = true
