@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 glave-event.workspace = true
+glave-keys.workspace = true
 glave-ports.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
@@ -18,6 +19,7 @@ tokio = { workspace = true, features = ["rt"] }
 uuid.workspace = true
 
 [dev-dependencies]
+glave-keys = { workspace = true, features = ["conformance"] }
 glave-ports = { workspace = true, features = ["conformance"] }
 
 [lints]

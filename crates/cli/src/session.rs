@@ -25,7 +25,7 @@ use crate::mcp::Servers;
 use crate::model::Model;
 use crate::system::random_uuid;
 use crate::terminal::Printer;
-use crate::{gateway, home, identity};
+use crate::{gateway, home, identity, keys};
 
 pub fn main() -> ExitCode {
     let args = match args::parse(std::env::args().skip(1)) {
@@ -106,7 +106,8 @@ async fn wire(args: &Args, answering: Answering) -> anyhow::Result<Wired> {
             .await
             .context("--sandbox was asked for, so glave will not run commands without it")?;
     }
-    let store = Store::open(database).await?;
+    let keys = keys::settings(&home::folder()?, home::relocated()).await?;
+    let store = Store::open(database, keys).await?;
     let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
     let personal = home::folder()?.join(AGENTS_MD);
     let instructions = agents_md(workspace.root(), Some(&personal)).await?;

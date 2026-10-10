@@ -1,0 +1,37 @@
+[package]
+name = "glave-keys"
+description = "glave's keys: the root, organization, space and data keys, sealing content at rest, and erasing it by destroying keys"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# The OS keychain as the root for a person: macOS Keychain, Windows Credential Manager, Linux
+# Secret Service. Only the binary turns it on, so stores and their tests never touch a keychain.
+keychain = ["dep:keyring"]
+# Exposes the conformance suite so stores can run it against their own key storage.
+conformance = []
+
+[dependencies]
+chacha20poly1305.workspace = true
+getrandom.workspace = true
+glave-event.workspace = true
+glave-ports.workspace = true
+hmac.workspace = true
+jiff.workspace = true
+keyring = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt"] }
+
+[lints]
+workspace = true

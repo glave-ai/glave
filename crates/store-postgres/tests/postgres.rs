@@ -3,27 +3,30 @@
 //! and drops it at the end, so tests run in parallel and leave nothing behind.
 
 #[cfg(test)]
+#[path = "support/scratch.rs"]
+mod support;
+
+#[cfg(test)]
 mod postgres {
     use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
     use glave_ports::{BlobStore, EventLog, OrgId, Scope, SpaceId, conformance, digest};
-    use glave_store_postgres::{Config, Store, StoreError};
-    use tokio::task::JoinHandle;
-    use tokio_postgres::{Client, NoTls};
+    use glave_store_postgres::{Store, StoreError};
     use uuid::{Builder, Uuid};
 
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
+    use super::support::{Scratch, block_on};
 
     fn scope() -> Scope {
         Scope {
             org: OrgId::from_uuid(Uuid::from_u128(1)),
             space: SpaceId::from_uuid(Uuid::from_u128(2)),
         }
+    }
+
+    fn thread() -> ThreadId {
+        ThreadId::try_from(
+            Builder::from_unix_timestamp_millis(1_791_000_000_000, &[9; 10]).into_uuid(),
+        )
+        .unwrap()
     }
 
     /// The first event of a thread, as each racing writer would write it.
@@ -39,57 +42,6 @@ mod postgres {
             outcome: Outcome::Completed,
         };
         encode(header, &ended).unwrap()
-    }
-
-    /// A schema of the test's own, and an admin connection to make and drop it.
-    struct Scratch {
-        admin: Client,
-        connection: JoinHandle<()>,
-        schema: String,
-        config: Config,
-    }
-
-    impl Scratch {
-        /// A fresh, empty schema, or `None` when no database was given.
-        async fn new(name: &str) -> Option<Self> {
-            let Ok(url) = std::env::var("GLAVE_TEST_POSTGRES_URL") else {
-                eprintln!("skipped: set GLAVE_TEST_POSTGRES_URL to run the Postgres tests");
-                return None;
-            };
-            let (admin, connection) = tokio_postgres::connect(&url, NoTls).await.unwrap();
-            let connection = tokio::spawn(async move {
-                let _ = connection.await;
-            });
-            // Test processes run one test each, so the process id keeps parallel runs apart.
-            let schema = format!("glave_test_{name}_{}", std::process::id());
-            admin
-                .batch_execute(&format!(
-                    "DROP SCHEMA IF EXISTS {schema} CASCADE; CREATE SCHEMA {schema};"
-                ))
-                .await
-                .unwrap();
-            let mut config: Config = url.parse().unwrap();
-            config.options(format!("-c search_path={schema}"));
-            Some(Self {
-                admin,
-                connection,
-                schema,
-                config,
-            })
-        }
-
-        async fn store(&self) -> Result<Store, StoreError> {
-            Store::connect_with(self.config.clone()).await
-        }
-
-        async fn drop_schema(self) {
-            self.admin
-                .batch_execute(&format!("DROP SCHEMA {} CASCADE", self.schema))
-                .await
-                .unwrap();
-            drop(self.admin);
-            self.connection.await.unwrap();
-        }
     }
 
     #[test]
@@ -130,7 +82,7 @@ mod postgres {
             let first = scratch.store().await.unwrap();
             first
                 .blobs()
-                .put(&scope, b"kept".to_vec(), "text/plain")
+                .put(&scope, thread(), b"kept".to_vec(), "text/plain")
                 .await
                 .unwrap();
             drop(first);
@@ -148,7 +100,7 @@ mod postgres {
                 .get::<_, i64>(0);
             scratch.drop_schema().await;
             assert_eq!(kept, Ok(Some(b"kept".to_vec())));
-            assert_eq!(versions, 1, "each migration is recorded once");
+            assert_eq!(versions, 2, "each migration is recorded once");
         });
     }
 
@@ -159,7 +111,7 @@ mod postgres {
                 return;
             };
             let openers: Vec<_> = (0..4)
-                .map(|_| tokio::spawn(Store::connect_with(scratch.config.clone())))
+                .map(|_| tokio::spawn(Store::connect_with(scratch.config.clone(), scratch.keys())))
                 .collect();
             let mut results = Vec::new();
             for opener in openers {
@@ -179,10 +131,7 @@ mod postgres {
                 return;
             };
             let store = scratch.store().await.unwrap();
-            let thread = ThreadId::try_from(
-                Builder::from_unix_timestamp_millis(1_791_000_000_000, &[9; 10]).into_uuid(),
-            )
-            .unwrap();
+            let thread = thread();
             let writers: Vec<_> = (0..8)
                 .map(|writer| {
                     let log = store.log();

@@ -6,7 +6,7 @@ use rusqlite::Connection;
 use crate::store::StoreError;
 
 /// Every migration ever shipped, in order. Never edit or remove one; add the next.
-const MIGRATIONS: &[&str] = &[
+pub(crate) const MIGRATIONS: &[&str] = &[
     // 1: the event log, the blob store, and the local settings and spaces.
     "
     CREATE TABLE events (
@@ -43,6 +43,34 @@ const MIGRATIONS: &[&str] = &[
     CREATE TABLE spaces (
         path  TEXT PRIMARY KEY,
         id    TEXT NOT NULL UNIQUE
+    ) STRICT;
+    ",
+    // 2: sealing. Blobs are stored under a name derived from their hash, sealed with
+    // `key_id` (NULL: stored as written, before sealing); the threads that use each blob; and
+    // the wrapped keys: one per organization, and one record of keys per space.
+    "
+    ALTER TABLE blobs RENAME COLUMN sha256 TO name;
+    ALTER TABLE blobs ADD COLUMN key_id TEXT;
+
+    CREATE TABLE blob_threads (
+        org     TEXT NOT NULL,
+        space   TEXT NOT NULL,
+        name    TEXT NOT NULL,
+        thread  TEXT NOT NULL,
+        PRIMARY KEY (org, space, name, thread)
+    ) STRICT;
+
+    CREATE TABLE org_keys (
+        org      TEXT PRIMARY KEY,
+        wrapped  BLOB NOT NULL
+    ) STRICT;
+
+    CREATE TABLE space_keys (
+        org       TEXT    NOT NULL,
+        space     TEXT    NOT NULL,
+        revision  INTEGER NOT NULL,
+        record    BLOB    NOT NULL,
+        PRIMARY KEY (org, space)
     ) STRICT;
     ",
 ];

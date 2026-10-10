@@ -1,0 +1,76 @@
+//! A schema of a test's own in the database `GLAVE_TEST_POSTGRES_URL` names, dropped at the
+//! end, so tests run in parallel and leave nothing behind.
+
+use std::sync::Arc;
+
+use glave_keys::{KeySettings, MemoryRoot};
+use glave_store_postgres::{Config, Store, StoreError};
+use tokio::task::JoinHandle;
+use tokio_postgres::{Client, NoTls};
+
+pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(future)
+}
+
+/// A schema of the test's own, an admin connection to make, inspect and drop it, and the
+/// root every store on it shares.
+pub struct Scratch {
+    pub admin: Client,
+    connection: JoinHandle<()>,
+    pub schema: String,
+    pub config: Config,
+    root: Arc<MemoryRoot>,
+}
+
+impl Scratch {
+    /// A fresh, empty schema, or `None` when no database was given.
+    pub async fn new(name: &str) -> Option<Self> {
+        let Ok(url) = std::env::var("GLAVE_TEST_POSTGRES_URL") else {
+            eprintln!("skipped: set GLAVE_TEST_POSTGRES_URL to run the Postgres tests");
+            return None;
+        };
+        let (admin, connection) = tokio_postgres::connect(&url, NoTls).await.unwrap();
+        let connection = tokio::spawn(async move {
+            let _ = connection.await;
+        });
+        // Test processes run one test each, so the process id keeps parallel runs apart.
+        let schema = format!("glave_test_{name}_{}", std::process::id());
+        admin
+            .batch_execute(&format!(
+                "DROP SCHEMA IF EXISTS {schema} CASCADE; CREATE SCHEMA {schema};"
+            ))
+            .await
+            .unwrap();
+        let mut config: Config = url.parse().unwrap();
+        config.options(format!("-c search_path={schema}"));
+        Some(Self {
+            admin,
+            connection,
+            schema,
+            config,
+            root: Arc::new(MemoryRoot::new().unwrap()),
+        })
+    }
+
+    /// Keys under the root this scratch schema's stores share.
+    pub fn keys(&self) -> KeySettings {
+        KeySettings::new(self.root.clone())
+    }
+
+    pub async fn store(&self) -> Result<Store, StoreError> {
+        Store::connect_with(self.config.clone(), self.keys()).await
+    }
+
+    pub async fn drop_schema(self) {
+        self.admin
+            .batch_execute(&format!("DROP SCHEMA {} CASCADE", self.schema))
+            .await
+            .unwrap();
+        drop(self.admin);
+        self.connection.await.unwrap();
+    }
+}

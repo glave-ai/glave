@@ -160,6 +160,7 @@ impl BlobStore for MemoryBlobs {
     fn put(
         &self,
         scope: &Scope,
+        _thread: ThreadId,
         bytes: Vec<u8>,
         media_type: &str,
     ) -> impl Future<Output = Result<BlobRef, BlobError>> + Send {

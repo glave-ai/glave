@@ -1,25 +1,28 @@
-//! The event log on SQLite: one row per event, the envelope as columns, the payload as the
-//! exact bytes written.
+//! The event log on SQLite: one row per event, the envelope as readable columns, the payload
+//! sealed under its space's data key (or, in rows written before sealing, as written).
 
 use std::future::Future;
+use std::sync::Arc;
 
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
+use glave_keys::{EventFields, KeyError, Sealed};
 use glave_ports::{EventLog, LogError, Scope, check_append};
 use rusqlite::{Connection, ErrorCode, TransactionBehavior, params};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
-use crate::store::{Shared, StoreError, run};
+use crate::store::{Shared, SqliteKeyring, StoreError, run};
 
 /// The event log in the local database.
 #[derive(Clone)]
 pub struct SqliteLog {
     connection: Shared,
+    keys: Arc<SqliteKeyring>,
 }
 
 impl SqliteLog {
-    pub(crate) fn new(connection: Shared) -> Self {
-        Self { connection }
+    pub(crate) fn new(connection: Shared, keys: Arc<SqliteKeyring>) -> Self {
+        Self { connection, keys }
     }
 }
 
@@ -43,13 +46,18 @@ impl EventLog for SqliteLog {
     ) -> impl Future<Output = Result<(), LogError>> + Send {
         let scope = *scope;
         let events = events.to_vec();
-        let connection = self.connection.clone();
+        let this = self.clone();
         async move {
             if events.is_empty() {
                 return Ok(());
             }
-            let outcome = run(&connection, move |connection| {
-                Ok(append_now(connection, &scope, &events))
+            // Sealing may read keys from the database, so it happens before the transaction.
+            let mut sealed = Vec::with_capacity(events.len());
+            for event in &events {
+                sealed.push(this.keys.seal_event(&scope, event).await.map_err(sealing)?);
+            }
+            let outcome = run(&this.connection, move |connection| {
+                Ok(append_now(connection, &scope, &events, &sealed))
             })
             .await;
             match outcome {
@@ -69,13 +77,13 @@ impl EventLog for SqliteLog {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
         let scope = *scope;
-        let connection = self.connection.clone();
+        let this = self.clone();
         async move {
             let after = i64::try_from(after.map_or(0, Seq::get)).unwrap_or(i64::MAX);
             let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-            let rows = run(&connection, move |connection| {
+            let rows = run(&this.connection, move |connection| {
                 let mut statement = connection.prepare_cached(
-                    "SELECT glave, id, thread, seq, at, type, v, data FROM events
+                    "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
                      WHERE org = ?1 AND space = ?2 AND thread = ?3 AND seq > ?4
                      ORDER BY seq LIMIT ?5",
                 )?;
@@ -97,6 +105,7 @@ impl EventLog for SqliteLog {
                             kind: row.get(5)?,
                             v: row.get(6)?,
                             data: row.get(7)?,
+                            key_id: row.get(8)?,
                         })
                     },
                 )?;
@@ -104,7 +113,11 @@ impl EventLog for SqliteLog {
             })
             .await
             .map_err(|e| LogError::Storage(e.to_string()))?;
-            rows.into_iter().map(Row::into_event).collect()
+            let mut events = Vec::with_capacity(rows.len());
+            for row in rows {
+                events.push(row.into_event(&this.keys, &scope).await?);
+            }
+            Ok(events)
         }
     }
 
@@ -141,6 +154,7 @@ fn append_now(
     connection: &mut Connection,
     scope: &Scope,
     events: &[RawEvent],
+    sealed: &[Sealed],
 ) -> Result<(), AppendFailure> {
     let Some(first) = events.first() else {
         return Ok(());
@@ -168,10 +182,10 @@ fn append_now(
     check_append(last, events).map_err(AppendFailure::Rule)?;
     {
         let mut insert = transaction.prepare_cached(
-            "INSERT INTO events (org, space, thread, seq, id, at, type, v, glave, data)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO events (org, space, thread, seq, id, at, type, v, glave, data, key_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         )?;
-        for event in events {
+        for (event, sealed) in events.iter().zip(sealed) {
             let seq = i64::try_from(event.seq.get()).map_err(|_| {
                 AppendFailure::Rule(LogError::Storage("seq is too large to store".into()))
             })?;
@@ -185,7 +199,8 @@ fn append_now(
                 event.kind.as_str(),
                 i64::from(event.v.get()),
                 i64::from(event.glave),
-                event.data.get().as_bytes(),
+                sealed.bytes,
+                sealed.key_id,
             ])?;
         }
     }
@@ -193,7 +208,7 @@ fn append_now(
     Ok(())
 }
 
-/// A stored event before its columns are checked.
+/// A stored event before its columns are checked and its payload opened.
 struct Row {
     glave: i64,
     id: String,
@@ -203,19 +218,41 @@ struct Row {
     kind: String,
     v: i64,
     data: Vec<u8>,
+    key_id: Option<String>,
 }
 
 impl Row {
-    fn into_event(self) -> Result<RawEvent, LogError> {
-        let data = String::from_utf8(self.data).map_err(corrupt)?;
+    async fn into_event(self, keys: &SqliteKeyring, scope: &Scope) -> Result<RawEvent, LogError> {
+        let glave = u32::try_from(self.glave).map_err(corrupt)?;
+        let thread = ThreadId::try_from(parse_uuid(&self.thread)?).map_err(corrupt)?;
+        let seq = Seq::new(u64::try_from(self.seq).map_err(corrupt)?).map_err(corrupt)?;
+        let kind = TypeName::new(self.kind).map_err(corrupt)?;
+        let v = PayloadVersion::new(u32::try_from(self.v).map_err(corrupt)?).map_err(corrupt)?;
+        let data = match self.key_id {
+            // Written before sealing: stored as written.
+            None => self.data,
+            Some(key_id) => {
+                let fields = EventFields {
+                    glave,
+                    thread,
+                    seq,
+                    kind: kind.as_str(),
+                    v: v.get(),
+                };
+                keys.open_event(scope, &fields, &key_id, &self.data)
+                    .await
+                    .map_err(|e| opening(seq, &e))?
+            }
+        };
+        let data = String::from_utf8(data).map_err(corrupt)?;
         Ok(RawEvent {
-            glave: u32::try_from(self.glave).map_err(corrupt)?,
+            glave,
             id: EventId::try_from(parse_uuid(&self.id)?).map_err(corrupt)?,
-            thread: ThreadId::try_from(parse_uuid(&self.thread)?).map_err(corrupt)?,
-            seq: Seq::new(u64::try_from(self.seq).map_err(corrupt)?).map_err(corrupt)?,
+            thread,
+            seq,
             at: At::try_from(self.at).map_err(corrupt)?,
-            kind: TypeName::new(self.kind).map_err(corrupt)?,
-            v: PayloadVersion::new(u32::try_from(self.v).map_err(corrupt)?).map_err(corrupt)?,
+            kind,
+            v,
             data: RawValue::from_string(data).map_err(corrupt)?,
         })
     }
@@ -227,6 +264,18 @@ fn parse_uuid(text: &str) -> Result<Uuid, LogError> {
 
 fn corrupt(error: impl std::fmt::Display) -> LogError {
     LogError::Storage(format!("a stored event is corrupt: {error}"))
+}
+
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "taken by value to pass straight to map_err"
+)]
+fn sealing(error: KeyError) -> LogError {
+    LogError::Storage(format!("could not seal an event: {error}"))
+}
+
+fn opening(seq: Seq, error: &KeyError) -> LogError {
+    LogError::Storage(format!("event {} could not be opened: {error}", seq.get()))
 }
 
 /// A uniqueness violation means another writer took the position first.

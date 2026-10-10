@@ -40,10 +40,12 @@ allow_attributes_without_reason = "deny"
 anyhow = "1"
 # Only for tests: signing tokens as a fake identity provider. rustls already builds it.
 aws-lc-rs = { version = "1", default-features = false, features = ["aws-lc-sys", "ring-io"] }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
 glave-event = { path = "crates/event" }
 glave-gateway = { path = "crates/gateway" }
 glave-harness = { path = "crates/harness" }
+glave-keys = { path = "crates/keys" }
 glave-mcp = { path = "crates/mcp" }
 glave-ports = { path = "crates/ports" }
 glave-provider-anthropic = { path = "crates/provider-anthropic" }
@@ -53,6 +55,7 @@ glave-shell = { path = "crates/shell" }
 glave-store-sqlite = { path = "crates/store-sqlite" }
 getrandom = "0.4"
 globset = "0.4"
+hmac = "0.13"
 http = "1"
 hyper = { version = "1", default-features = false }
 hyper-util = { version = "0.1", default-features = false }
@@ -60,6 +63,7 @@ ignore = "0.4"
 # Verifying OIDC tokens, on aws-lc-rs, the crypto rustls already uses.
 jsonwebtoken = { version = "11.1", default-features = false, features = ["aws_lc_rs"] }
 jiff = { version = "0.2", default-features = false, features = ["std", "serde"] }
+keyring = { version = "4.2", default-features = false, features = ["v1"] }
 proptest = "1"
 regex = "1"
 rmcp = { version = "3.5.1", default-features = false }
@@ -75,6 +79,7 @@ toml = { version = "1", default-features = false, features = ["parse", "serde", 
 tree-sitter = "0.27"
 tree-sitter-bash = "0.25"
 uuid = { version = "1", default-features = false, features = ["std", "serde"] }
+zeroize = "1"
 
 # Day-to-day builds: file and line numbers in backtraces, no full debug info
 # for dependencies. Roughly 40% smaller `target/` (measured on the legacy tree).

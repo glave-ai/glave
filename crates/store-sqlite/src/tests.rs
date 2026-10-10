@@ -1,9 +1,24 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use glave_keys::{KeyFileRoot, KeySettings, MemoryRoot};
 use glave_ports::{EventLog, conformance};
 use uuid::Uuid;
 
 use super::*;
+
+mod sealing;
+
+/// Keys under a root that lives only in this process.
+fn keys() -> KeySettings {
+    KeySettings::new(Arc::new(MemoryRoot::new().unwrap()))
+}
+
+/// Keys under the key file beside `database`, so a reopened database can read its content.
+fn file_keys(database: &std::path::Path) -> KeySettings {
+    let root = KeyFileRoot::open_or_create(database.with_extension("key")).unwrap();
+    KeySettings::new(Arc::new(root))
+}
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
@@ -21,13 +36,13 @@ fn temp_db(name: &str) -> PathBuf {
 
 #[test]
 fn the_log_passes_the_event_log_conformance_suite() {
-    let store = Store::open_in_memory().unwrap();
+    let store = Store::open_in_memory(keys()).unwrap();
     assert_eq!(block_on(conformance::event_log(&store.log())), Ok(()));
 }
 
 #[test]
 fn the_blobs_pass_the_blob_store_conformance_suite() {
-    let store = Store::open_in_memory().unwrap();
+    let store = Store::open_in_memory(keys()).unwrap();
     assert_eq!(block_on(conformance::blob_store(&store.blobs())), Ok(()));
 }
 
@@ -35,14 +50,14 @@ fn the_blobs_pass_the_blob_store_conformance_suite() {
 fn events_survive_closing_and_reopening() {
     let path = temp_db("reopen");
     block_on(async {
-        let store = Store::open(&path).await.unwrap();
+        let store = Store::open(&path, file_keys(&path)).await.unwrap();
         assert_eq!(conformance::event_log(&store.log()).await, Ok(()));
         let scope = store
             .local_scope(&path, Uuid::nil(), Uuid::nil())
             .await
             .unwrap();
         drop(store);
-        let reopened = Store::open(&path).await.unwrap();
+        let reopened = Store::open(&path, file_keys(&path)).await.unwrap();
         let again = reopened
             .local_scope(&path, Uuid::max(), Uuid::max())
             .await
@@ -58,13 +73,13 @@ fn a_newer_schema_is_refused() {
         let connection = rusqlite::Connection::open(&path).unwrap();
         connection.pragma_update(None, "user_version", 999).unwrap();
     }
-    let result = block_on(Store::open(&path));
+    let result = block_on(Store::open(&path, keys()));
     assert!(matches!(result, Err(StoreError::Schema(message)) if message.contains("newer glave")));
 }
 
 #[test]
 fn folders_get_their_own_spaces_in_one_organization() {
-    let store = Store::open_in_memory().unwrap();
+    let store = Store::open_in_memory(keys()).unwrap();
     block_on(async {
         let a = store
             .local_scope(
