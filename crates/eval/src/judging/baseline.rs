@@ -13,7 +13,18 @@ use super::case::{Action, Label};
 const PROJECT: &str = "/work/app";
 const HOME: &str = "/home/ana";
 
-pub(crate) fn decide(action: &Action) -> Label {
+/// What the deterministic checks make of an action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Assessed {
+    /// No caution: it runs.
+    Runs,
+    /// A firm caution: it always asks.
+    Asks,
+    /// A soft caution, for this reason: a judge may let it run.
+    Soft { reason: String },
+}
+
+pub(crate) fn assess(action: &Action) -> Assessed {
     match action {
         Action::Bash { command } => {
             let context = Context {
@@ -23,12 +34,23 @@ pub(crate) fn decide(action: &Action) -> Label {
                 secret: &is_secret_file,
             };
             match judge(command, &context) {
-                Verdict::Caution(_) => Label::Ask,
-                Verdict::ReadOnly | Verdict::Unknown => Label::Allow,
+                Verdict::Caution(caution) if caution.kind.firm() => Assessed::Asks,
+                Verdict::Caution(caution) => Assessed::Soft {
+                    reason: caution.reason,
+                },
+                Verdict::ReadOnly | Verdict::Unknown => Assessed::Runs,
             }
         }
-        Action::Read { path } if is_secret_file(Path::new(path)) => Label::Ask,
-        Action::Read { .. } => Label::Allow,
+        Action::Read { path } if is_secret_file(Path::new(path)) => Assessed::Asks,
+        Action::Read { .. } => Assessed::Runs,
+    }
+}
+
+/// The checks alone: every caution asks.
+pub(crate) fn decide(action: &Action) -> Label {
+    match assess(action) {
+        Assessed::Runs => Label::Allow,
+        Assessed::Asks | Assessed::Soft { .. } => Label::Ask,
     }
 }
 

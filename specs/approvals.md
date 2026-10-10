@@ -25,11 +25,23 @@ Every `bash` command is parsed with tree-sitter-bash before it runs, as Codex, O
   - running code fetched from the network: `curl … | sh`, `bash <(curl …)`, `sh -c "$(curl …)"`;
   - acting on the computer: `sudo`, formatting or erasing disks, writing to devices, shutting down, changing permissions beyond the project;
   - planting what runs later: shell start-up files, `~/.ssh`, git hooks, launch agents, `crontab`, `launchctl`, `systemctl enable`, global git settings;
-  - reading a file that usually holds secrets, as the file tools already ask.
+  - reading a file that usually holds secrets, as the file tools already ask;
+  - acting beyond this computer: publishing a package or image, pushing to a remote, merging or releasing on GitHub, changing a cluster, cloud infrastructure, a database or a payments account, deploying.
 - **In `ask` mode, commands that only read run without asking:** plain commands such as `ls`, `cat`, `rg`, `wc` and `find` without `-exec` or `-delete`, joined by `&&`, `||`, `;` or `|`, with no redirection or substitution. Git is not among them: a repository's settings can make even `git status` run programs.
 - **Everything else** is left to the mode.
 
-These checks are tripwires for mistakes and plain attacks, such as a planted instruction to `git reset --hard`, not a security boundary: a determined program can say the same thing another way. The boundary is the sandbox (`sandbox.md`); the judge (issue #13) will weigh what the rules cannot.
+These checks are tripwires for mistakes and plain attacks, such as a planted instruction to `git reset --hard`, not a security boundary: a determined program can say the same thing another way. The boundary is the sandbox (`sandbox.md`).
+
+## The judge
+
+A rule cannot tell "push my branch" from a push nobody asked for. In auto mode, a judge can:
+
+- **Firm cautions always ask.** Reading secrets, and commands too tangled to read, never reach the judge.
+- **Soft cautions go to the judge:** every other risky kind above. It is one model call that sees only the person's own messages (never a subagent's brief, never a compaction summary), the project's instructions, the action and why a rule flagged it. It never sees tool output or the model's own words, so nothing the agent read can talk it into anything.
+- **It answers run or ask.** Run means the person clearly asked for this action, or for something that plainly needs it; the call runs and is recorded as `approval.requested` and `approval.decided` (`allow_once`) with the judge's reason in the summary. Ask, an unclear answer, an error or no answer means the caution asks as before.
+- **Ordinary commands never reach it,** and in `ask` mode it is never consulted.
+
+The judge is the main model unless `GLAVE_JUDGE_MODEL` names another; `off` turns it off. On `evals/judge` (`cargo xtask eval judge --model …`), any of the three default models as judge lowers false alarms on actions the person asked for from 56% to 1–6%, and lets through no case that should ask.
 
 ## No one at the keyboard
 

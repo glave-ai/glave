@@ -7,6 +7,7 @@ use std::path::Path;
 use crate::judge::{Caution, Context, Kind};
 use crate::parse::{Command, Word};
 use crate::paths::{basename, critical, inside, resolve};
+use crate::remote::remote;
 
 /// The command a wrapper runs: `sudo`, `env X=1`, `timeout 5`, `nice -n 5`, `nohup`, `time`,
 /// `command`, `builtin`, `exec`, `stdbuf -oL` and `xargs` are looked through.
@@ -65,7 +66,7 @@ pub(crate) fn caution(command: &Command, context: &Context<'_>) -> Option<Cautio
     let found = match name {
         Some("rm") => removes(words, cwd, context),
         Some("git") => git(words),
-        Some(name) => system(name, words, cwd, context),
+        Some(name) => system(name, words, cwd, context).or_else(|| remote(name, words)),
         None => None,
     };
     found
@@ -229,6 +230,7 @@ fn git(words: &[Word]) -> Option<Caution> {
                 "it rewrites or deletes what others share",
             ))
         }
+        "push" => Some(found(Kind::Remote, "it pushes to a remote")),
         "config"
             if (has("--global") || has("--system") || has("core.hooksPath"))
                 && config_writes(&args) =>
