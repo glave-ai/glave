@@ -47,6 +47,17 @@ impl Default for Trace {
     }
 }
 
+/// The lines of `jsonl` that belong to its last thread: what a later thread did alone.
+pub fn last_thread(jsonl: &str) -> String {
+    let thread = |line: &str| RawEvent::from_json(line).ok().map(|event| event.thread);
+    let last = jsonl.lines().rev().find_map(thread);
+    jsonl
+        .lines()
+        .filter(|line| last.is_some() && thread(line) == last)
+        .flat_map(|line| [line, "\n"])
+        .collect()
+}
+
 /// Builds the trace from JSON Lines events.
 pub fn parse(jsonl: &str) -> Result<Trace, String> {
     let mut trace = Trace::default();

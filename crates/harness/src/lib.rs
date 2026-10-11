@@ -58,7 +58,8 @@ pub use instructions::{AGENTS_MD, Instructions, agents_md};
 pub use judge::{JudgeCase, Ruling, judge};
 pub use memory::{
     Access, Control, EDIT_MEMORY, FORGET, MEMORY_SERVER, Memory, MemoryChange, MemoryContext,
-    MemoryError, MemoryOutput, MemoryVerb, REMEMBER, Remembered, Shown, memory_ledger,
+    MemoryError, MemoryOutput, MemoryVerb, REMEMBER, REMEMBER_CAUTION, Remembered, Shown,
+    memory_ledger,
 };
 pub use prompt::system_prompt;
 pub use question::{Choice, QUESTION, Question, QuestionRequest};

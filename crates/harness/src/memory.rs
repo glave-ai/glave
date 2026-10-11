@@ -19,7 +19,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub use call::MemoryVerb;
+pub use call::{MemoryVerb, REMEMBER_CAUTION};
 pub(crate) use state::{ConfigMemory, MemoryState};
 
 /// The memory server's name, so its tools reach the model as `mcp__memory__<tool>`.

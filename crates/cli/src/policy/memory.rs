@@ -156,3 +156,54 @@ pub fn settle(choices: &Choices, constraints: &Constraints) -> anyhow::Result<Me
         retention_days: rules.iter().filter_map(|(_, m)| m.retention_days).min(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+    use crate::policy::choices::{Layer, Level, resolve};
+    use crate::policy::files;
+    use crate::policy::tests::constraints;
+
+    fn chosen(config: &str) -> Choices {
+        let path = PathBuf::from("/home/ada/.glave/config.toml");
+        resolve(&[Layer {
+            values: files::config(config, Path::new(&path)).unwrap(),
+            level: Level::File(path),
+        }])
+    }
+
+    #[test]
+    fn memory_is_off_by_default_and_on_by_the_persons_choice() {
+        let none = constraints("version = 1");
+        let off = settle(&chosen(""), &none).unwrap();
+        assert!(!off.on);
+        assert_eq!(off.space, SpaceMemory::Shared);
+        assert!(settle(&chosen("memory = \"on\""), &none).unwrap().on);
+    }
+
+    #[test]
+    fn a_policy_only_narrows_memory() {
+        let no_personal = constraints("version = 1\n[memory]\npersonal = false\nretention_days = 90");
+        let settled = settle(&chosen("memory = \"on\""), &no_personal).unwrap();
+        assert!(!settled.personal);
+        assert_eq!(settled.space, SpaceMemory::Isolated, "the default gives way");
+        assert_eq!(settled.retention_days, Some(90));
+        let shared = settle(&chosen("space_memory = \"shared\""), &no_personal);
+        assert!(shared.is_err(), "a choice outside the policy is an error naming it");
+        let disabled = constraints("version = 1\n[memory]\nenabled = false");
+        assert!(settle(&chosen("memory = \"on\""), &disabled).is_err());
+        assert!(!settle(&chosen(""), &disabled).unwrap().on);
+        let only_off = constraints("version = 1\n[memory]\nspaces = [\"off\"]");
+        assert_eq!(settle(&chosen(""), &only_off).unwrap().space, SpaceMemory::Off);
+    }
+
+    #[test]
+    fn another_memory_server_is_refused_until_it_is_built() {
+        let other = constraints("version = 1\n[memory]\nserver = \"corp-memory\"");
+        assert!(!other.not_enforced().is_empty());
+        let glave = constraints("version = 1\n[memory]\nserver = \"glave\"");
+        assert!(glave.not_enforced().is_empty());
+    }
+}

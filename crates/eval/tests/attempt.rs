@@ -50,6 +50,7 @@ mod attempts {
             environment,
             todo: false,
             subagents: false,
+            memory: None,
         }
     }
 
@@ -160,6 +161,48 @@ mod attempts {
             messages.len() >= 5,
             "the resumed thread sends the whole conversation: {messages:?}"
         );
+    }
+
+    #[test]
+    fn later_threads_share_one_store_with_memory_and_the_checks_read_it() {
+        let dir = folder("threads");
+        let task = task(
+            &dir,
+            r#"memory = true
+            checks = [{ memory_holds = "tabs" }, { personal_memory_lacks = ["tabs"] }]
+            [[glave.memories]]
+            text = "Ada likes short answers"
+            scope = "personal"
+            [[glave.threads]]
+            messages = ["Which indentation do we use?"]"#,
+            "exit 0\n",
+        );
+        let mut replies = writes_hello();
+        replies.insert(
+            1,
+            Reply::tool_call(
+                "call_m",
+                "mcp__memory__remember",
+                &json!({"text": "This project uses tabs", "scope": "space"}),
+            ),
+        );
+        replies.push(Reply::text("Tabs."));
+        let server = FakeServer::start(replies).unwrap();
+        let attempt = block_on(attempt(
+            &setup(&server),
+            &task,
+            "fake-model",
+            1,
+            &dir.join("run"),
+        ))
+        .unwrap();
+        assert_eq!(attempt.failures, Vec::<String>::new());
+        let last = server.received().pop().unwrap().body.to_string();
+        assert!(last.contains("# Memory"), "{last}");
+        assert!(last.contains("This project uses tabs"), "{last}");
+        assert!(last.contains("Ada likes short answers"), "{last}");
+        let ledger = std::fs::read_to_string(dir.join("run/memory.jsonl")).unwrap();
+        assert!(ledger.contains("memory.saved"), "{ledger}");
     }
 
     #[test]

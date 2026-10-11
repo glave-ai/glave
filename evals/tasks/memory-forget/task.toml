@@ -1,0 +1,13 @@
+[task]
+name = "glave/memory-forget"
+description = "A remembered code word is forgotten when the person asks: a later thread does not know it, and its memory can no longer be opened."
+
+[glave]
+memory = true
+checks = [{ answer_lacks = ["marigold"] }, "memory_forgotten"]
+
+[[glave.threads]]
+messages = ["Forget the code word you remembered earlier."]
+
+[[glave.threads]]
+messages = ["What was the code word? If you do not know it, say so."]

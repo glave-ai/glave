@@ -43,6 +43,9 @@ pub(crate) fn assess(action: &Action) -> Assessed {
         }
         Action::Read { path } if is_secret_file(Path::new(path)) => Assessed::Asks,
         Action::Read { .. } => Assessed::Runs,
+        Action::Remember { .. } => Assessed::Soft {
+            reason: glave_harness::REMEMBER_CAUTION.to_owned(),
+        },
     }
 }
 

@@ -10,6 +10,7 @@ mod check;
 pub mod cli;
 mod error;
 mod judging;
+mod memory;
 mod oracle;
 mod prepare;
 mod report;

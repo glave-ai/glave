@@ -16,7 +16,7 @@ use crate::hooks::ToolHook;
 use crate::turn::{Live, Step};
 
 /// Why a save asks after untrusted content: told to the judge, the person and the model.
-const AFTER_UNTRUSTED: &str = "this thread has read untrusted content or a secrets file, so \
+pub const REMEMBER_CAUTION: &str = "this thread has read untrusted content or a secrets file, so \
      saving to memory now could carry a planted instruction into every later thread; it runs \
      only if the person asked for this to be remembered";
 
@@ -70,7 +70,7 @@ where
                 call,
                 name,
                 summary: &summary,
-                reason: AFTER_UNTRUSTED,
+                reason: REMEMBER_CAUTION,
             };
             match self
                 .judged(thread, &flagged, &mut step.summary, cancel)
@@ -84,9 +84,9 @@ where
                         call_id: call.call_id.clone(),
                         tool: name.to_owned(),
                         effect: Effect::Changes,
-                        summary: format!("{summary} ({AFTER_UNTRUSTED})"),
+                        summary: format!("{summary} ({REMEMBER_CAUTION})"),
                         secret: false,
-                        caution: Some(AFTER_UNTRUSTED.to_owned()),
+                        caution: Some(REMEMBER_CAUTION.to_owned()),
                     };
                     if let Some(refused) = self.ask(thread, &request, cancel, live).await? {
                         return Ok(refused);

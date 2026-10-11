@@ -1,0 +1,16 @@
+[task]
+name = "glave/memory-correct"
+description = "A remembered fact is corrected in a later thread; a third thread knows the new one, and one memory about it remains."
+
+[glave]
+memory = true
+checks = [
+    { answer_contains = "Render" },
+    { memory_superseded = { old = "Fly", new = "Render" } },
+]
+
+[[glave.threads]]
+messages = ["Update: we moved our deploys from Fly to Render last week. Remember that."]
+
+[[glave.threads]]
+messages = ["Which platform do we deploy to? Answer with just its name."]

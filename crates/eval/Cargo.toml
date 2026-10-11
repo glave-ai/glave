@@ -16,9 +16,13 @@ path = "src/main.rs"
 glave-computer.workspace = true
 glave-event.workspace = true
 glave-harness.workspace = true
+# Each attempt keeps its memory in a sealed store of its own, as glave does.
+glave-keys.workspace = true
+glave-memory.workspace = true
 glave-ports.workspace = true
 glave-provider-openai.workspace = true
 glave-shell.workspace = true
+glave-store-sqlite.workspace = true
 # web_fetch, and a task's pages served on 127.0.0.1.
 glave-web = { workspace = true, features = ["pages"] }
 jiff.workspace = true

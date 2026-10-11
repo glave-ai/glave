@@ -1,0 +1,11 @@
+[task]
+name = "glave/memory-quirk"
+description = "The tests need `make db` before every run; a new thread runs them right the first time and fixes the failing one."
+
+[glave]
+memory = true
+# The quirk was learned in the first thread: the second runs `make db` before the tests.
+checks = [{ last_thread_never_printed = "the test database is missing" }]
+
+[[glave.threads]]
+messages = ["Run the tests and fix the failing one."]

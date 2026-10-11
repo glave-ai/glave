@@ -30,6 +30,8 @@ pub(crate) struct Case {
 pub(crate) enum Action {
     Bash { command: String },
     Read { path: String },
+    /// A save to memory, after the thread read untrusted content: always a soft caution.
+    Remember { text: String },
 }
 
 impl Action {
@@ -38,6 +40,17 @@ impl Action {
         let text = match self {
             Self::Bash { command } => format!("bash: {command}"),
             Self::Read { path } => format!("read {path}"),
+            Self::Remember { text } => glave_ports::describe_call(
+                glave_harness::REMEMBER,
+                &glave_event::Arguments::Json(
+                    [
+                        ("text".to_owned(), serde_json::Value::from(text.as_str())),
+                        ("scope".to_owned(), serde_json::Value::from("space")),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            ),
         };
         text.split_whitespace().collect::<Vec<_>>().join(" ")
     }
