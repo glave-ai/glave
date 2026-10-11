@@ -202,6 +202,7 @@ pub async fn connect_tls(
     let stream = TcpStream::connect(address).await.map_err(|error| {
         ComputerError::Unreachable(format!("{NOT_LISTENING} {address}: {error}"))
     })?;
+    let _ = stream.set_nodelay(true);
     let name = ServerName::try_from(NAME)
         .map_err(|error| ComputerError::Failed(format!("{NAME} is not a server name: {error}")))?;
     let stream = TlsConnector::from(Arc::new(config))

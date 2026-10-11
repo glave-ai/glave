@@ -56,9 +56,11 @@ where
     let (lines, mut queued) = mpsc::channel::<String>(WRITE_AHEAD);
     let writer = tokio::spawn(async move {
         let mut output = output;
-        while let Some(line) = queued.recv().await {
+        while let Some(mut line) = queued.recv().await {
+            // One write per message: a line and its newline written apart wait on each
+            // other over TCP (Nagle and delayed acknowledgement, about 40 ms on Linux).
+            line.push('\n');
             output.write_all(line.as_bytes()).await?;
-            output.write_all(b"\n").await?;
             output.flush().await?;
         }
         Ok::<_, std::io::Error>(())
@@ -305,6 +307,7 @@ pub async fn serve_tcp<C: Computers + 'static>(
             connections.join_next().await;
         }
         let (stream, _) = listener.accept().await?;
+        let _ = stream.set_nodelay(true);
         let (read, write) = stream.into_split();
         let (computers, token) = (Arc::clone(&computers), Token::lasting(token.clone()));
         connections.spawn(serve(computers, BufReader::new(read), write, Some(token)));
@@ -327,6 +330,7 @@ pub async fn serve_tls<C: Computers + 'static>(
             connections.join_next().await;
         }
         let (stream, _) = listener.accept().await?;
+        let _ = stream.set_nodelay(true);
         let (computers, token, tls) = (Arc::clone(&computers), token.clone(), tls.clone());
         connections.spawn(async move {
             let handshake = tokio::time::timeout(HANDSHAKE, tls.accept(stream));

@@ -1137,6 +1137,7 @@ dependencies = [
  "proptest",
  "rcgen",
  "regex",
+ "rustix",
  "rustls",
  "serde",
  "serde_json",

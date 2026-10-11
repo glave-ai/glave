@@ -23,13 +23,14 @@ pub const PROTECTED: &[&str] = &[
     ".envrc",
 ];
 
-/// Whether `path` (resolved) is one of the project's protected paths. Compared without case:
-/// macOS folders usually ignore it, so `.GIT/hooks` is `.git/hooks`.
+/// Whether `path` (resolved) is one of the project's protected paths. Compared the way a file
+/// system that ignores case compares names (macOS folders usually do), so `.GIT/hooks` is
+/// `.git/hooks`, and so is `.git/hook\u{17f}` with a long s, which APFS folds to `s`.
 pub fn is_protected(root: &Path, path: &Path) -> bool {
     let Ok(relative) = path.strip_prefix(root) else {
         return false;
     };
-    let relative = PathBuf::from(relative.to_string_lossy().to_lowercase());
+    let relative = PathBuf::from(fold(&relative.to_string_lossy()));
     let parts: Vec<String> = relative
         .iter()
         .map(|part| part.to_string_lossy().into_owned())
@@ -49,6 +50,13 @@ pub fn is_protected(root: &Path, path: &Path) -> bool {
         || PROTECTED
             .iter()
             .any(|protected| relative.starts_with(protected.to_lowercase()))
+}
+
+/// A name as a file system that ignores case sees it: lowercase, and the one letter outside
+/// ASCII that Unicode case folding turns into an ASCII letter lowercasing does not (`\u{17f}`,
+/// long s, folds to `s`; the Kelvin sign already lowercases to `k`).
+fn fold(name: &str) -> String {
+    name.to_lowercase().replace('\u{17f}', "s")
 }
 
 /// Where sandboxed commands may write.

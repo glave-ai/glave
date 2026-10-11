@@ -247,6 +247,9 @@ fn protected_paths_are_recognized_in_any_case() {
         ".mcp.json",
         ".vscode/tasks.json",
         ".envrc",
+        ".git/hook\u{17f}/pre-commit",
+        ".V\u{17f}CODE/tasks.json",
+        ".mcp.j\u{17f}on",
     ] {
         assert!(is_protected(root, &root.join(path)), "{path}");
     }
@@ -315,6 +318,114 @@ fn the_file_tools_refuse_protected_paths_in_a_sandbox() {
     let open = write(false, ".git/hooks/pre-commit");
     assert!(!open.is_error, "{}", open.text);
     assert!(project.join(".git/hooks/pre-commit").exists());
+}
+
+/// Whether the folder ignores case in names, as macOS folders usually do.
+fn ignores_case(dir: &Path) -> bool {
+    std::fs::write(dir.join("case-probe"), "").unwrap();
+    dir.join("CASE-PROBE").exists()
+}
+
+/// Paths through the links the test plants, and, where the folder ignores case, other
+/// spellings of protected names.
+fn planted_paths(project: &Path) -> Vec<&'static str> {
+    let mut paths = vec![
+        "hooks/pre-commit",
+        "settings/settings.json",
+        "settings/new.json",
+        "conf",
+        "git_dir/config",
+        "git_dir/hooks/post-checkout",
+    ];
+    if ignores_case(project) {
+        paths.extend([
+            ".GIT/hooks/pre-commit",
+            ".Git/config",
+            ".GLAVE/settings.json",
+            ".git/hook\u{17f}/pre-commit",
+            "HOOKS/pre-commit",
+        ]);
+    }
+    paths
+}
+
+/// A command in the sandbox may plant links in the project; the file tools still refuse to
+/// write or edit what they lead to, as they refuse spellings the folder treats as the same
+/// protected name.
+#[test]
+fn the_file_tools_refuse_links_a_command_planted_into_protected_paths() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("planted-links");
+    let project = dir.join("project");
+    std::fs::create_dir_all(project.join(".git/hooks")).unwrap();
+    std::fs::create_dir_all(project.join(".glave")).unwrap();
+    std::fs::write(project.join(".glave/settings.json"), "{}\n").unwrap();
+    let sandbox = sandbox(SandboxLevel::Project, false, &dir);
+    let planted = run(
+        &project,
+        &sandbox,
+        "ln -s .git/hooks hooks && ln -s .glave settings && ln -s .glave/settings.json conf && \
+         ln -s .git git_dir && echo planted",
+    );
+    assert!(planted.text.contains("planted"), "{}", planted.text);
+    let tool = |tool: Tool, arguments: serde_json::Value| {
+        let arguments = Arguments::Json(serde_json::from_value(arguments).unwrap());
+        block_on(async {
+            let workspace = Workspace::open(&project, std::env::vars_os())
+                .await
+                .unwrap()
+                .with_sandbox(&sandbox)
+                .await
+                .unwrap();
+            tool.run(&arguments, &workspace, &Cancel::new()).await
+        })
+    };
+    for path in planted_paths(&project) {
+        let write = tool(
+            Tool::Write,
+            serde_json::json!({ "path": path, "content": "echo pwned\n" }),
+        );
+        assert!(
+            write.is_error && write.text.contains("protected by the sandbox"),
+            "write {path}: {}",
+            write.text
+        );
+        let edit = tool(
+            Tool::Edit,
+            serde_json::json!({ "path": path, "old_string": "{}", "new_string": "{\"x\": 1}" }),
+        );
+        assert!(
+            edit.is_error && edit.text.contains("protected by the sandbox"),
+            "edit {path}: {}",
+            edit.text
+        );
+    }
+    assert_eq!(
+        std::fs::read_dir(project.join(".git/hooks"))
+            .unwrap()
+            .count(),
+        0,
+        "no hook was written"
+    );
+    assert!(!project.join(".git/config").exists());
+    assert_eq!(
+        std::fs::read_to_string(project.join(".glave/settings.json")).unwrap(),
+        "{}\n"
+    );
+    // Control: through a link to an ordinary folder, the same write goes through.
+    std::fs::create_dir_all(project.join("docs")).unwrap();
+    std::os::unix::fs::symlink("docs", project.join("docs_link")).unwrap();
+    let ordinary = tool(
+        Tool::Write,
+        serde_json::json!({ "path": "docs_link/notes.txt", "content": "fine\n" }),
+    );
+    assert!(!ordinary.is_error, "{}", ordinary.text);
+    assert_eq!(
+        std::fs::read_to_string(project.join("docs/notes.txt")).unwrap(),
+        "fine\n"
+    );
 }
 
 /// The bug the live evals found: a project inside a writable temp folder lost its protections,

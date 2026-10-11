@@ -92,6 +92,100 @@ mod remote_tests {
         });
     }
 
+    /// Names of secret variables in every case, set to one value no command may print.
+    const SECRETS: [&str; 5] = [
+        "OPENAI_API_KEY",
+        "glave_api_key",
+        "Github_Token",
+        "DB_PASSWORD",
+        "my_passwd",
+    ];
+
+    /// This machine as a computer, given the secret variables and one ordinary setting.
+    fn with_secrets(copies: &PathBuf) -> Arc<LocalComputers> {
+        let mut environment: Vec<_> = std::env::vars_os()
+            .filter(|(name, _)| name == "PATH" || name == "HOME")
+            .collect();
+        for name in SECRETS {
+            environment.push((name.into(), "hunter2".into()));
+        }
+        environment.push(("HARMLESS_SETTING".into(), "visible".into()));
+        Arc::new(LocalComputers::new(copies, environment))
+    }
+
+    /// Runs `env` on `remote` in `work`: ordinary settings come through, secrets never do.
+    async fn secrets_stay_out<C: Computers>(remote: &C, work: &std::path::Path) {
+        use glave_ports::{BoxFuture, Command, Environment, Output, Sources};
+        use std::sync::Mutex;
+
+        struct Text(Mutex<String>);
+        impl Output for Text {
+            fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
+                if let Ok(mut all) = self.0.lock() {
+                    all.push_str(text);
+                }
+                Box::pin(std::future::ready(()))
+            }
+        }
+
+        let made = remote.create(&Environment::host()).await.unwrap();
+        let path = work.to_string_lossy().into_owned();
+        let here = remote
+            .open(made.id, &Sources::Folder { path })
+            .await
+            .unwrap();
+        let text = Text(Mutex::default());
+        let never = glave_computer::Switch::default();
+        remote
+            .run(here.id, &Command::new("env"), &text, &never)
+            .await
+            .unwrap();
+        let seen = text.0.lock().unwrap().clone();
+        assert!(seen.contains("HARMLESS_SETTING=visible"), "{seen}");
+        assert!(
+            !seen.contains("hunter2"),
+            "a secret reached a command: {seen}"
+        );
+        for name in SECRETS {
+            assert!(!seen.contains(name), "{name} reached a command");
+        }
+    }
+
+    #[test]
+    fn a_computer_across_a_pipe_keeps_secret_variables_from_commands() {
+        let (work, copies) = scratch("secrets-pipe");
+        block_on(async {
+            let (client, server) = tokio::io::duplex(64 * 1024);
+            let (server_read, server_write) = tokio::io::split(server);
+            let serving = tokio::spawn(serve(
+                with_secrets(&copies),
+                BufReader::new(server_read),
+                server_write,
+                None,
+            ));
+            let (client_read, client_write) = tokio::io::split(client);
+            let remote = RemoteComputers::connect(client_read, client_write);
+            secrets_stay_out(&remote, &work).await;
+            drop(remote);
+            serving.await.unwrap().unwrap();
+        });
+    }
+
+    #[test]
+    fn a_computer_over_tcp_keeps_secret_variables_from_commands() {
+        let (work, copies) = scratch("secrets-tcp");
+        block_on(async {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let serving = tokio::spawn(serve_tcp(with_secrets(&copies), listener, "s3cret".into()));
+            let (read, write) = TcpStream::connect(address).await.unwrap().into_split();
+            let remote = RemoteComputers::connect(read, write);
+            remote.authenticate("s3cret").await.unwrap();
+            secrets_stay_out(&remote, &work).await;
+            serving.abort();
+        });
+    }
+
     /// A TLS listener on 127.0.0.1 serving `copies`, with a fresh identity and `token`.
     async fn tls(copies: &PathBuf, token: Token) -> (std::net::SocketAddr, Identity, JoinHandle) {
         let identity = Identity::mint().unwrap();

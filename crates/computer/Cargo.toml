@@ -31,6 +31,9 @@ ignore.workspace = true
 rcgen.workspace = true
 # The expressions files/search looks for.
 regex.workspace = true
+# Resolving every path one name at a time from an open handle on the workspace root
+# (openat, no-follow), so a link swapped in by a command cannot lead a file tool outside.
+rustix.workspace = true
 # TLS between the harness and a worker (already in the tree via reqwest).
 rustls.workspace = true
 serde.workspace = true
