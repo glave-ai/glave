@@ -31,13 +31,30 @@ pub(crate) fn make_folders(
     Ok(here)
 }
 
+/// Puts content into the new file.
+type Fill = fn(&mut std::fs::File, &[u8]) -> std::io::Result<()>;
+
 /// Replaces the file `name` in `folder` with `content`, or creates it.
 pub(crate) fn replace(folder: BorrowedFd<'_>, name: &OsStr, content: &[u8]) -> std::io::Result<()> {
+    replace_with(folder, name, content, |file, content| {
+        file.write_all(content)
+    })
+}
+
+/// [`replace`], with `put` writing the content: tests pass one that fails as a full disk
+/// does, part way through.
+fn replace_with(
+    folder: BorrowedFd<'_>,
+    name: &OsStr,
+    content: &[u8],
+    put: Fill,
+) -> std::io::Result<()> {
     let mode = existing_mode(folder, name)?;
     let temp = temp_name();
     let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
     let fd = openat(folder, &temp, flags, Mode::from_raw_mode(0o666))?;
-    let written = fill(fd, mode, content).and_then(|()| Ok(renameat(folder, &temp, folder, name)?));
+    let written =
+        fill(fd, mode, content, put).and_then(|()| Ok(renameat(folder, &temp, folder, name)?));
     if written.is_err() {
         let _ = unlinkat(folder, &temp, AtFlags::empty());
     }
@@ -62,12 +79,12 @@ fn existing_mode(folder: BorrowedFd<'_>, name: &OsStr) -> std::io::Result<Option
     }
 }
 
-fn fill(fd: OwnedFd, mode: Option<Mode>, content: &[u8]) -> std::io::Result<()> {
+fn fill(fd: OwnedFd, mode: Option<Mode>, content: &[u8], put: Fill) -> std::io::Result<()> {
     if let Some(mode) = mode {
         fchmod(fd.as_fd(), mode)?;
     }
     let mut file = std::fs::File::from(fd);
-    file.write_all(content)?;
+    put(&mut file, content)?;
     file.sync_all()
 }
 
@@ -78,4 +95,51 @@ fn temp_name() -> String {
     let _ = getrandom::fill(&mut random);
     let hex: String = format!("{:016x}", u64::from_le_bytes(random));
     format!(".glave-write-{hex}.tmp")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Writes half the content, then finds the disk full.
+    fn full_disk(file: &mut std::fs::File, content: &[u8]) -> std::io::Result<()> {
+        file.write_all(content.get(..content.len() / 2).unwrap_or_default())?;
+        Err(std::io::Error::from_raw_os_error(
+            Errno::NOSPC.raw_os_error(),
+        ))
+    }
+
+    #[test]
+    fn a_full_disk_leaves_the_file_as_it_was_and_says_so() {
+        let dir = std::env::temp_dir().join(format!("glave-full-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.txt"), "the original\n").unwrap();
+        let folder = std::fs::File::open(&dir).unwrap();
+        let new = b"a much longer replacement that never fits on the disk\n";
+        let failed = replace_with(folder.as_fd(), OsStr::new("a.txt"), new, full_disk).unwrap_err();
+        assert_eq!(failed.kind(), std::io::ErrorKind::StorageFull);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("a.txt")).unwrap(),
+            "the original\n",
+            "the file is intact"
+        );
+        let left: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(
+            left,
+            vec![std::ffi::OsString::from("a.txt")],
+            "no half-written file left"
+        );
+        let said = super::super::files::io("a.txt", &failed).to_string();
+        assert!(
+            said.contains("disk is full") && said.contains("a.txt"),
+            "{said}"
+        );
+        // A new file the disk cannot hold is not left half made either.
+        assert!(replace_with(folder.as_fd(), OsStr::new("b.txt"), new, full_disk).is_err());
+        assert!(!dir.join("b.txt").exists());
+    }
 }

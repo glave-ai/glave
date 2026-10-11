@@ -11,6 +11,7 @@ mod engine;
 #[cfg(feature = "kubernetes")]
 mod kubernetes;
 mod limits;
+mod reconnect;
 mod route;
 mod tar;
 
@@ -28,6 +29,7 @@ use crate::remote::RemoteComputers;
 use crate::tls::{Identity, NO_HANDSHAKE, NOT_LISTENING, connect_tls};
 use crate::token::Token;
 use backend::{Backend, Link, Spec, Started};
+use reconnect::Connection;
 
 pub use credentials::{Credentials, https_url};
 pub use docker::{Docker, DockerSettings};
@@ -53,7 +55,7 @@ pub type Clock = Arc<dyn Fn() -> SystemTime + Send + Sync>;
 /// One worker as the harness side holds it.
 struct Worker {
     name: String,
-    remote: RemoteComputers,
+    connection: Connection,
     environment: Environment,
     /// When it stops taking new work, if policy limits its run time.
     deadline: Option<SystemTime>,
@@ -195,13 +197,13 @@ impl WorkerComputers {
         let started = self.backend.start(&spec).await?;
         let name = started.name.clone();
         match self.reach(started, &token, environment).await {
-            Ok((remote, link_task, info)) => {
+            Ok((connection, link_task, info)) => {
                 let deadline = decided.max_minutes.and_then(|minutes| {
                     now.checked_add(Duration::from_secs(u64::from(minutes).saturating_mul(60)))
                 });
                 let worker = Worker {
                     name,
-                    remote,
+                    connection,
                     environment: environment.clone(),
                     deadline,
                     minutes: decided.max_minutes,
@@ -225,8 +227,8 @@ impl WorkerComputers {
         started: Started,
         token: &Token,
         environment: &Environment,
-    ) -> Result<(RemoteComputers, Option<JoinHandle<()>>, ComputerInfo), ComputerError> {
-        let (remote, task) = match started.link {
+    ) -> Result<(Connection, Option<JoinHandle<()>>, ComputerInfo), ComputerError> {
+        let (remote, task, address) = match started.link {
             Link::Tls {
                 address,
                 fingerprint,
@@ -252,7 +254,7 @@ impl WorkerComputers {
                         }
                     }
                 };
-                (remote, forward)
+                (remote, forward, Some((address, fingerprint)))
             }
             Link::Stream { read, write, task } => {
                 let remote = RemoteComputers::connect(read, write);
@@ -260,7 +262,7 @@ impl WorkerComputers {
                     task.abort();
                     return Err(error);
                 }
-                (remote, Some(task))
+                (remote, Some(task), None)
             }
         };
         let inside = Environment {
@@ -269,7 +271,12 @@ impl WorkerComputers {
         };
         let mut info = remote.create(&inside).await?;
         info.environment = Some(environment.clone());
-        Ok((remote, task, info))
+        Ok((Connection::new(remote, address), task, info))
+    }
+
+    /// The connection to `worker`, opened again (once) if it has died.
+    async fn remote(&self, worker: &Worker) -> Result<Arc<RemoteComputers>, ComputerError> {
+        worker.connection.get(&worker.name, &*self.backend).await
     }
 
     /// Runs the worker's setup commands once, in order, at the root of its first workspace.
@@ -282,8 +289,9 @@ impl WorkerComputers {
             let mut command = Command::new(script.clone());
             command.timeout_secs = Some(SETUP_TIMEOUT_SECS);
             let output = route::Tail::default();
-            let finished = worker
-                .remote
+            let finished = self
+                .remote(worker)
+                .await?
                 .run(workspace, &command, &output, &route::Never)
                 .await?;
             if finished.ending != (Ending::Exited { code: 0 }) {
@@ -318,12 +326,12 @@ impl WorkerComputers {
         };
         let info = match &credential {
             Some(credential) => {
-                worker
-                    .remote
+                self.remote(&worker)
+                    .await?
                     .open_with_credential(computer, sources, credential)
                     .await?
             }
-            None => worker.remote.open(computer, sources).await?,
+            None => self.remote(&worker).await?.open(computer, sources).await?,
         };
         self.held()?.workspaces.insert(info.id, computer);
         if let Err(error) = self.set_up(&worker, info.id).await {
@@ -363,7 +371,10 @@ impl WorkerComputers {
             let most = left.as_secs().max(1);
             command.timeout_secs = Some(command.timeout_secs.map_or(most, |asked| asked.min(most)));
         }
-        worker.remote.run(workspace, &command, output, cancel).await
+        self.remote(&worker)
+            .await?
+            .run(workspace, &command, output, cancel)
+            .await
     }
 }
 
@@ -378,7 +389,7 @@ impl Computers for WorkerComputers {
     fn status(&self, computer: ComputerId) -> BoxFuture<'_, Result<ComputerInfo, ComputerError>> {
         Box::pin(async move {
             match self.worker(computer) {
-                Ok(worker) => worker.remote.status(computer).await,
+                Ok(worker) => self.remote(&worker).await?.status(computer).await,
                 Err(_) => Ok(route::gone(computer)),
             }
         })
@@ -399,7 +410,7 @@ impl Computers for WorkerComputers {
     fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>> {
         Box::pin(async move {
             let worker = self.worker_of(workspace)?;
-            worker.remote.close(workspace).await?;
+            self.remote(&worker).await?.close(workspace).await?;
             self.held()?.workspaces.remove(&workspace);
             Ok(())
         })

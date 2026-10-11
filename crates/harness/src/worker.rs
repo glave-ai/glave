@@ -53,6 +53,9 @@ pub struct ReleasedWorker {
     pub branch: Option<String>,
     /// The files the model handed back, by their path under [`HAND_BACK`].
     pub files: Vec<(String, Bytes)>,
+    /// What could not be kept, and why, when the worker could not be checked or saved (its
+    /// connection died for good, say). Recorded on the thread too; never dropped silently.
+    pub lost: Option<String>,
 }
 
 /// The branch a released worker's unpushed work goes to: `glave/wip/` and the thread's short id.
@@ -133,8 +136,9 @@ where
 
     /// Releases the worker `thread` works on, if it works on one of its own: hands back the
     /// files under [`HAND_BACK`], pushes unpushed work to [`wip_branch`], destroys the worker,
-    /// and records it. `None` for a thread on anything else, or a subagent sharing its
-    /// parent's worker.
+    /// and records it. When the work cannot be read or saved, the worker is still destroyed,
+    /// and what was lost and why is recorded and returned. `None` for a thread on anything
+    /// else, or a subagent sharing its parent's worker.
     pub async fn release_worker(
         &self,
         thread: &mut Thread,
@@ -145,39 +149,83 @@ where
         if thread.note.is_none() || thread.delegated() {
             return Ok(None);
         }
-        let files = handed_back(&workspace).await?;
-        let _ = workspace.quietly(&format!("rm -rf {HAND_BACK}")).await;
-        let (ended, said) = workspace
-            .quietly("git status --porcelain && git rev-list HEAD --not --remotes")
-            .await?;
-        let unsaved = ended.ending != (Ending::Exited { code: 0 }) || !said.trim().is_empty();
-        let branch = if unsaved {
-            let branch = wip_branch(thread.id);
-            let save = Save {
-                branch: branch.clone(),
-                message: "glave: work in progress, saved when the worker was released".into(),
-            };
-            workspace
-                .computers()
-                .save(workspace.info().id, &save)
-                .await?;
-            Some(branch)
-        } else {
-            None
+        // Every step goes on when one before it fails: a worker whose connection died is
+        // reached again (once) by its computers, so the work can still be saved.
+        // Reading changes nothing, so a read the dead connection failed is tried once more.
+        let read = match handed_back(&workspace).await {
+            Err(HarnessError::Workspace(ComputerError::Unreachable(_))) => {
+                handed_back(&workspace).await
+            }
+            read => read,
         };
+        let (files, unread) = match read {
+            Ok(files) => (files, None),
+            Err(error) => (Vec::new(), Some(error)),
+        };
+        if unread.is_none() {
+            let _ = workspace.quietly(&format!("rm -rf {HAND_BACK}")).await;
+        }
+        let saved = save_unpushed(&workspace, thread.id).await;
         let info = workspace.info();
         workspace.computers().destroy(info.computer).await?;
+        let (branch, lost) = match (saved, unread) {
+            (Ok(branch), None) => (branch, None),
+            (Ok(branch), Some(unread)) => (
+                branch,
+                Some(format!(
+                    "the files in {HAND_BACK} could not be read: {unread}"
+                )),
+            ),
+            (Err(error), _) => (None, Some(error.to_string())),
+        };
         let removed = WorkspaceRemoved {
             root: info.root.clone(),
             branch: branch.clone(),
             reason: RemovedReason::Released,
             trash: None,
+            lost: lost.clone(),
         };
         self.record(thread, &removed).await?;
         thread.unnumbered = thread.unnumbered.saturating_add(1);
         thread.note = None;
-        Ok(Some(ReleasedWorker { branch, files }))
+        Ok(Some(ReleasedWorker {
+            branch,
+            files,
+            lost,
+        }))
     }
+}
+
+/// Pushes what the worker has not pushed to [`wip_branch`]: the branch, or `None` when
+/// everything was already pushed.
+async fn save_unpushed(
+    workspace: &Workspace,
+    thread: ThreadId,
+) -> Result<Option<String>, ComputerError> {
+    let branch = wip_branch(thread);
+    let saved = async {
+        let (ended, said) = workspace
+            .quietly("git status --porcelain && git rev-list HEAD --not --remotes")
+            .await?;
+        let unsaved = ended.ending != (Ending::Exited { code: 0 }) || !said.trim().is_empty();
+        if !unsaved {
+            return Ok(None);
+        }
+        let save = Save {
+            branch: branch.clone(),
+            message: "glave: work in progress, saved when the worker was released".into(),
+        };
+        workspace
+            .computers()
+            .save(workspace.info().id, &save)
+            .await?;
+        Ok(Some(branch.clone()))
+    };
+    saved.await.map_err(|error: ComputerError| {
+        ComputerError::Failed(format!(
+            "the worker's unpushed work, if it had any, could not be pushed to {branch}: {error}"
+        ))
+    })
 }
 
 /// The files the model put under [`HAND_BACK`], read whole.

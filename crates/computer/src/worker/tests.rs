@@ -14,6 +14,8 @@ use tokio::net::TcpListener;
 use super::*;
 use crate::{LocalComputers, Switch, serve, serve_tls};
 
+mod reconnect;
+
 const IMAGE: &str =
     "alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507";
 
@@ -32,11 +34,19 @@ fn scratch(name: &str) -> PathBuf {
     dir
 }
 
-/// Workers served in-process: what a container would run, without the container.
+/// Workers served in-process: what a container would run, without the container. A worker
+/// with a network reads its token from a file, as glave in a container does, and is reached
+/// through a door whose connections a test can cut, as a network fault would.
 struct InProcess {
     copies: PathBuf,
     serving: Mutex<HashMap<String, JoinHandle<()>>>,
     started: Mutex<Vec<Spec>>,
+    /// Connections open through each worker's door.
+    links: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    /// Times a worker was to be given a new token after it started.
+    renewed: AtomicU64,
+    /// Whether giving a worker a new token fails, as it does when the worker is gone.
+    renewing_fails: std::sync::atomic::AtomicBool,
 }
 
 impl InProcess {
@@ -45,11 +55,69 @@ impl InProcess {
             copies: copies.to_owned(),
             serving: Mutex::new(HashMap::new()),
             started: Mutex::new(Vec::new()),
+            links: Arc::default(),
+            renewed: AtomicU64::new(0),
+            renewing_fails: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
     fn running(&self) -> usize {
         self.serving.lock().unwrap().len()
+    }
+
+    fn token_file(&self, name: &str) -> PathBuf {
+        self.copies.join(format!("{name}.token"))
+    }
+
+    /// Cuts every connection open to every worker, leaving the workers running.
+    fn cut(&self) {
+        for link in self.links.lock().unwrap().drain(..) {
+            link.abort();
+        }
+    }
+
+    /// Ends glave in the worker `name`, as if its process died; the worker stays held.
+    fn kill(&self, name: &str) {
+        if let Some(task) = self.serving.lock().unwrap().get(name) {
+            task.abort();
+        }
+    }
+}
+
+/// Moves bytes between each connection to `door` and the worker listening at `inside`.
+async fn door(
+    door: TcpListener,
+    inside: std::net::SocketAddr,
+    links: Arc<Mutex<Vec<JoinHandle<()>>>>,
+) {
+    while let Ok((mut outer, _)) = door.accept().await {
+        let link = tokio::spawn(async move {
+            if let Ok(mut inner) = tokio::net::TcpStream::connect(inside).await {
+                let _ = tokio::io::copy_bidirectional(&mut outer, &mut inner).await;
+            }
+        });
+        links.lock().unwrap().push(link);
+    }
+}
+
+/// A backend shared with the test, so it can cut connections while the adapter holds it.
+struct Shared(Arc<InProcess>);
+
+impl Backend for Shared {
+    fn start<'a>(&'a self, spec: &'a Spec) -> BoxFuture<'a, Result<Started, ComputerError>> {
+        self.0.start(spec)
+    }
+
+    fn renew<'a>(
+        &'a self,
+        name: &'a str,
+        token: &'a Token,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        self.0.renew(name, token)
+    }
+
+    fn remove<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<(), ComputerError>> {
+        self.0.remove(name)
     }
 }
 
@@ -62,11 +130,19 @@ impl Backend for InProcess {
             let computers = Arc::new(LocalComputers::new(self.copies.join(&name), environment));
             let (link, task) = if spec.network {
                 let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-                let address = listener.local_addr().unwrap();
+                let inside = listener.local_addr().unwrap();
+                let entrance = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let address = entrance.local_addr().unwrap();
                 let tls = Identity::acceptor(&spec.identity.certificate, &spec.identity.key)?;
-                let token = spec.token.clone();
+                std::fs::create_dir_all(&self.copies).unwrap();
+                std::fs::write(self.token_file(&name), spec.token.to_file()).unwrap();
+                let tokens = crate::Tokens::file(self.token_file(&name));
+                let links = Arc::clone(&self.links);
                 let task = tokio::spawn(async move {
-                    let _ = serve_tls(computers, listener, tls, token).await;
+                    tokio::select! {
+                        _ = serve_tls(computers, listener, tls, tokens) => {}
+                        () = door(entrance, inside, links) => {}
+                    }
                 });
                 let link = Link::Tls {
                     address,
@@ -91,6 +167,21 @@ impl Backend for InProcess {
             };
             self.serving.lock().unwrap().insert(name.clone(), task);
             Ok(Started { name, link })
+        })
+    }
+
+    fn renew<'a>(
+        &'a self,
+        name: &'a str,
+        token: &'a Token,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(async move {
+            self.renewed.fetch_add(1, Ordering::SeqCst);
+            if self.renewing_fails.load(Ordering::SeqCst) {
+                return Err(ComputerError::Failed(format!("no worker {name}")));
+            }
+            std::fs::write(self.token_file(name), token.to_file()).unwrap();
+            Ok(())
         })
     }
 
