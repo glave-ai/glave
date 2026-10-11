@@ -49,6 +49,21 @@ impl SpaceKey {
         Ok(hex)
     }
 
+    /// One word of a full-text index: HMAC-SHA-256 of the word under the naming half, kept
+    /// apart from blob names by its own label, its first 16 bytes in lowercase hex. The index
+    /// holds no word in the clear, and loses every word when the space is erased.
+    pub(super) fn name_term(&self, term: &str) -> Result<String, KeyError> {
+        let mut mac = Hmac::<sha2::Sha256>::new_from_slice(self.name.bytes())
+            .map_err(|e| KeyError::Corrupt(e.to_string()))?;
+        mac.update(b"glave/search/v1\0");
+        mac.update(term.as_bytes());
+        let mut hex = String::with_capacity(32);
+        for byte in mac.finalize().into_bytes().iter().take(16) {
+            let _ = write!(hex, "{byte:02x}");
+        }
+        Ok(hex)
+    }
+
     fn to_bytes(&self) -> Zeroizing<Vec<u8>> {
         let mut bytes = Zeroizing::new(Vec::with_capacity(64));
         bytes.extend_from_slice(self.wrap.bytes());

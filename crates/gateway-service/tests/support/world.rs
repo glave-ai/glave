@@ -48,6 +48,15 @@ impl EventLog for SharedLog {
         self.0.threads(scope, limit).await
     }
 
+    async fn search(
+        &self,
+        scope: &Scope,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<glave_ports::search::Found>, LogError> {
+        self.0.search(scope, query, limit).await
+    }
+
     async fn locate(&self, thread: ThreadId) -> Result<Option<Scope>, LogError> {
         self.0.locate(thread).await
     }

@@ -13,6 +13,7 @@ use glave_harness::{
     AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings,
     SystemClock, Workspace, agents_md,
 };
+use glave_memory::ModelTidier;
 use glave_ports::ToolSource;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, Server, Wiring};
@@ -144,6 +145,26 @@ fn task_limits(constraints: &policy::Constraints) -> glave_session::TaskLimits {
     }
 }
 
+/// The MCP servers the setup turns on in `root`: the person's, then the project's trusted
+/// ones, or the catalog of the gateway elsewhere.
+async fn mcp_servers(
+    setup: &Setup,
+    root: &Path,
+    remote: Option<&Remote>,
+) -> anyhow::Result<Servers> {
+    Servers::start(
+        &home::folder()?,
+        root,
+        setup.choices.mcp.as_ref(),
+        &setup.loaded.constraints,
+        (!setup.project_servers.is_empty())
+            .then(|| trust::mcp_json(&setup.project_servers))
+            .as_deref(),
+        remote,
+    )
+    .await
+}
+
 /// Builds the session server on this computer's store and the current folder.
 async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Result<Wired> {
     let folder = std::env::current_dir()?;
@@ -178,22 +199,13 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     settings.compaction.window_tokens = window;
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
-    let servers = Servers::start(
-        &home::folder()?,
-        &root,
-        choices.mcp.as_ref(),
-        &setup.loaded.constraints,
-        (!setup.project_servers.is_empty())
-            .then(|| trust::mcp_json(&setup.project_servers))
-            .as_deref(),
-        remote.as_ref(),
-    )
-    .await?;
+    let servers = mcp_servers(&setup, &root, remote.as_ref()).await?;
     // The task host puts tasks on workers whenever a backend is set up.
     let (on_workers, workers) =
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder, args.socket).await?;
     let scope = crate::spaces::here(&store, &root, identity.person).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
+    tidy(memory.as_ref(), &setup, &endpoint)?;
     let wiring = Wiring {
         provider,
         log: store.log(),
@@ -226,6 +238,20 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         memory,
         _telemetry: telemetry,
     })
+}
+
+/// Tidies memory in the background, when it is on: tidy-up asks a gateway of its own, which
+/// sends it on the `summary` route.
+fn tidy(
+    memory: Option<&crate::memory::Running>,
+    setup: &Setup,
+    endpoint: &Endpoint,
+) -> anyhow::Result<()> {
+    if let Some(memory) = memory {
+        let (summary, _) = provider(setup, endpoint)?;
+        memory.tidy_with(Arc::new(ModelTidier::new(summary, endpoint.model.clone())));
+    }
+    Ok(())
 }
 
 /// The gateway elsewhere, when `[gateway] url` names one, and the endpoint model calls go to:

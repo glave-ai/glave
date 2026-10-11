@@ -97,6 +97,13 @@ pub(crate) struct Book {
     /// their keys are destroyed (again, harmlessly) by the next housekeeping, in case the
     /// writer that forgot them failed to.
     pub(crate) erasing: BTreeSet<MemoryId>,
+    /// Pairs of memories tidy-up could not reconcile, waiting for the person: open until
+    /// either memory changes.
+    pub(crate) questions: Vec<[MemoryId; 2]>,
+    /// When tidy-up last ran over this ledger.
+    pub(crate) tidied: Option<At>,
+    /// Where each forgotten memory was saved: `recall` never returns that turn again.
+    pub(crate) hidden: BTreeMap<MemoryId, MemorySource>,
 }
 
 impl Book {
@@ -107,6 +114,35 @@ impl Book {
     /// The memories in force, oldest first.
     pub(crate) fn live(&self) -> Vec<Remembered> {
         self.entries.values().filter_map(Entry::live).collect()
+    }
+
+    /// The open questions whose memories are both still in force.
+    pub(crate) fn open_questions(&self) -> Vec<[MemoryId; 2]> {
+        let live = |memory: &MemoryId| {
+            self.entries
+                .get(memory)
+                .is_some_and(|entry| entry.forgot.is_none())
+        };
+        self.questions
+            .iter()
+            .filter(|pair| pair.iter().all(live))
+            .copied()
+            .collect()
+    }
+
+    /// Tidy-up ran at `at`, leaving `questions` for the person.
+    fn tidied_at(&mut self, at: At, questions: Vec<[MemoryId; 2]>) {
+        self.tidied = Some(at);
+        for pair in questions {
+            if !self.questions.contains(&pair) {
+                self.questions.push(pair);
+            }
+        }
+    }
+
+    /// A change to `memory` answers any question about it.
+    fn answered(&mut self, memory: MemoryId) {
+        self.questions.retain(|pair| !pair.contains(&memory));
     }
 
     /// Takes in the event at the next `seq`; any other is already in, or not yet.
@@ -142,6 +178,7 @@ impl Book {
                 );
             }
             Body::MemoryEdited(edited) => {
+                self.answered(edited.memory);
                 if let Some(entry) = self.entries.get_mut(&edited.memory) {
                     entry.versions.push(Version {
                         text: edited.text,
@@ -153,6 +190,10 @@ impl Book {
                 }
             }
             Body::MemoryForgotten(forgotten) => {
+                self.answered(forgotten.memory);
+                if let Some(source) = forgotten.source {
+                    self.hidden.insert(forgotten.memory, source);
+                }
                 // Erased at once: the text leaves this view now, as it leaves the store.
                 if forgotten.erase_at <= at {
                     if self.entries.remove(&forgotten.memory).is_some() {
@@ -167,6 +208,7 @@ impl Book {
                 }
             }
             Body::MemoryRestored(restored) => {
+                self.answered(restored.memory);
                 if let Some(entry) = self.entries.get_mut(&restored.memory) {
                     if entry
                         .forgot
@@ -174,6 +216,7 @@ impl Book {
                         .is_some_and(|forgot| forgot.event == restored.undone)
                     {
                         entry.forgot = None;
+                        self.hidden.remove(&restored.memory);
                     }
                     for version in entry.versions.iter_mut().skip(1) {
                         if version.event == restored.undone {
@@ -182,6 +225,7 @@ impl Book {
                     }
                 }
             }
+            Body::MemoryTidied(tidied) => self.tidied_at(at, tidied.questions),
             _ => {}
         }
     }
