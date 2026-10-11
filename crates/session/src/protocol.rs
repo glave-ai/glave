@@ -18,7 +18,7 @@ pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub const PROTOCOL: &str = "2026-10";
 
 /// A request, by method.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
     #[serde(rename = "server/discover")]
@@ -291,7 +291,7 @@ impl Request {
 }
 
 /// What a request may carry besides its params, in `params._meta`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Meta {
     /// For `turn/start`: the same key for the same thread returns the turn already started
     /// instead of starting another, so a client may retry safely.
@@ -306,7 +306,7 @@ impl Meta {
 }
 
 /// A client's name for one attempt at a turn: 1 to 255 bytes of text.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "String", into = "String")]
 pub struct IdempotencyKey(String);
 
@@ -342,7 +342,9 @@ impl From<IdempotencyKey> for String {
 }
 
 /// Which threads `thread/list` shows.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Show {
     /// Threads that are neither archived nor deleted.
@@ -354,7 +356,7 @@ pub enum Show {
 }
 
 /// The person's answer to an approval.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Answer {
     AllowOnce,
@@ -363,7 +365,7 @@ pub enum Answer {
 }
 
 /// What the server is.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ServerInfo {
     pub name: String,
     pub version: String,
@@ -372,7 +374,7 @@ pub struct ServerInfo {
 }
 
 /// A thread, as a list shows it: from the threads view, with what it is doing now.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ThreadSummary {
     pub id: ThreadId,
     pub space: SpaceId,
@@ -402,7 +404,7 @@ pub struct ThreadSummary {
 }
 
 /// What a thread is doing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     Idle,
@@ -412,7 +414,7 @@ pub enum Status {
 }
 
 /// How a turn ended and what it cost.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TurnResult {
     pub outcome: Outcome,
     pub model_calls: u32,
@@ -439,64 +441,60 @@ impl From<TurnSummary> for TurnResult {
 }
 
 /// A reply, by the shape of its result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum Reply {
+    #[schemars(title = "Server")]
     Server(ServerInfo),
-    Thread {
-        thread: ThreadSummary,
-    },
+    #[schemars(title = "Thread")]
+    Thread { thread: ThreadSummary },
+    #[schemars(title = "Threads")]
     Threads {
         threads: Vec<ThreadSummary>,
         /// The cursor of the next page, when there is one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         next: Option<String>,
     },
+    #[schemars(title = "Events")]
     Events {
         events: Vec<RawEvent>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         next: Option<Seq>,
     },
-    Turn {
-        turn: TurnResult,
-    },
+    #[schemars(title = "Turn")]
+    Turn { turn: TurnResult },
+    #[schemars(title = "Compacted")]
     Compacted {
         before_tokens: u64,
         after_tokens: u64,
     },
-    Task {
-        task: TaskInfo,
-    },
-    Tasks {
-        tasks: Vec<TaskInfo>,
-    },
-    Schedule {
-        schedule: ScheduleInfo,
-    },
-    Schedules {
-        schedules: Vec<ScheduleInfo>,
-    },
+    #[schemars(title = "Task")]
+    Task { task: TaskInfo },
+    #[schemars(title = "Tasks")]
+    Tasks { tasks: Vec<TaskInfo> },
+    #[schemars(title = "Schedule")]
+    Schedule { schedule: ScheduleInfo },
+    #[schemars(title = "Schedules")]
+    Schedules { schedules: Vec<ScheduleInfo> },
     /// A space: one asked for, made or renamed.
-    Space {
-        space: Space,
-    },
-    Spaces {
-        spaces: Vec<Space>,
-    },
+    #[schemars(title = "Space")]
+    Space { space: Space },
+    #[schemars(title = "Spaces")]
+    Spaces { spaces: Vec<Space> },
     /// Memories listed, or the ones a change touched.
-    Memories {
-        memories: Vec<Remembered>,
-    },
-    /// After every reply with a field of its own, since a missing `goal` reads as `null`;
-    /// before `Done`, which takes any object.
-    Goal {
-        goal: Option<GoalProgress>,
-    },
+    #[schemars(title = "Memories")]
+    Memories { memories: Vec<Remembered> },
+    // After every reply with a field of its own, since a missing `goal` reads as `null`;
+    // before `Done`, which takes any object.
+    /// The thread's latest goal, or `null`.
+    #[schemars(title = "Goal")]
+    Goal { goal: Option<GoalProgress> },
+    #[schemars(title = "Done")]
     Done {},
 }
 
 /// Something a turn or a watched thread sends while it runs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "method", content = "params")]
 pub enum Notification {
     /// A stored event, as it is appended.
@@ -511,7 +509,7 @@ pub enum Notification {
 }
 
 /// Progress while a turn runs: the live side of `Live`, in a form any transport carries.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Update {
     Text {
@@ -630,7 +628,7 @@ impl From<Live> for Update {
 }
 
 /// A request that failed, as JSON-RPC carries it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ApiError {
     pub code: i64,
     pub message: String,
@@ -639,7 +637,7 @@ pub struct ApiError {
 }
 
 /// Why a model call failed, for a client to say what to fix.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ErrorData {
     pub failure: Failure,
 }
@@ -655,6 +653,10 @@ pub mod code {
     pub const NO_GOAL: i64 = -32007;
     /// The thread's workspace could not be opened, such as a worktree outside a repository.
     pub const WORKSPACE: i64 = -32009;
+    /// The client speaks no protocol version this server does.
+    pub const UNSUPPORTED_PROTOCOL: i64 = -32010;
+    /// The thread is running in another server of this deployment.
+    pub const RUNNING_ELSEWHERE: i64 = -32011;
     /// The thread is archived: unarchive it before running a turn in it.
     pub const ARCHIVED: i64 = -32014;
     /// A hook stopped the prompt before the model saw it.

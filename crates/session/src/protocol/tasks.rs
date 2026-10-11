@@ -5,7 +5,7 @@ use glave_event::{At, Money, Outcome, ScheduleId, ThreadId, TokenCounts, When};
 use serde::{Deserialize, Serialize};
 
 /// What kind of work a task is. Background commands the model starts arrive later.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
     /// A thread: a turn, or a goal's turns, run by the agent.
@@ -13,7 +13,7 @@ pub enum TaskKind {
 }
 
 /// Whether a task is still going.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     Running,
@@ -23,7 +23,7 @@ pub enum TaskStatus {
 }
 
 /// A task, as the tasks panel shows it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TaskInfo {
     pub thread: ThreadId,
     pub kind: TaskKind,
@@ -51,7 +51,7 @@ pub struct TaskInfo {
 }
 
 /// A schedule, as `schedule/list` shows it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ScheduleInfo {
     pub schedule: ScheduleId,
     pub when: When,

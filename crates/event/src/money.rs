@@ -7,7 +7,19 @@ use serde::{Deserialize, Serialize};
 use crate::error::InvalidValue;
 
 /// An ISO 4217 currency code: three uppercase ASCII letters, such as `USD`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(try_from = "String", into = "String")]
 pub struct Currency([u8; 3]);
 
@@ -54,7 +66,7 @@ impl fmt::Display for Currency {
 
 /// An exact amount: `micros` millionths of one unit of `currency`. `{"micros": 4200,
 /// "currency": "USD"}` is $0.0042.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Money {
     pub micros: i64,

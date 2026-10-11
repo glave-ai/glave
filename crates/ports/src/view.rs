@@ -24,7 +24,9 @@ pub const TITLE_CHARS: usize = 80;
 
 /// Whether a thread is shown: the latest `thread.archived`, `thread.unarchived` or
 /// `thread.deleted` decides.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Standing {
     /// Shown in lists.
