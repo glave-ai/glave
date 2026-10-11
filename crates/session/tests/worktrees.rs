@@ -20,7 +20,10 @@ mod worktrees {
         block_on(async {
             let server = server(&dir, Vec::new(), Answering::NoOne).await;
             let Reply::Thread { thread } = server
-                .request(Request::ThreadStart { worktree: None })
+                .request(Request::ThreadStart {
+                    background: false,
+                    worktree: None,
+                })
                 .await
                 .unwrap()
             else {
@@ -47,6 +50,7 @@ mod worktrees {
             // This server's computer keeps no worktrees, so asking for one is refused.
             let refused = server
                 .request(Request::ThreadStart {
+                    background: false,
                     worktree: Some(true),
                 })
                 .await

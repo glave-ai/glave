@@ -131,7 +131,12 @@ where
                 thread,
                 prompt,
                 meta,
+                background: false,
+                budget,
             } => {
+                if budget.is_some() {
+                    return Ok(Err(crate::tasks::requests::unenforced_budget()));
+                }
                 let key = meta.idempotency_key.as_ref();
                 Ok(self.start_turn_as(caller, thread, &prompt, key).await)
             }
@@ -139,6 +144,7 @@ where
                 thread,
                 objective,
                 budget,
+                background: false,
             } => {
                 let goal = objective.map(|objective| Goal {
                     objective,
