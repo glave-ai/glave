@@ -336,7 +336,7 @@ async fn converse(
             break;
         }
     }
-    if task.tidy && conversation.failures.is_empty() {
+    if task.tidy == crate::task::Tidying::AfterThreads && conversation.failures.is_empty() {
         let provider = OpenAiCompatible::new(setup.endpoint.clone())
             .map_err(|err| EvalError::Setup(err.to_string()))?;
         match remembering.tidy(&ModelTidier::new(provider, model)).await {

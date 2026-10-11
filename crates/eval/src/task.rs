@@ -70,9 +70,18 @@ pub struct Task {
     pub memories: Vec<Seeded>,
     /// Past conversations, written to the store before the first thread, for `recall`.
     pub past: Vec<PastThread>,
-    /// Run tidy-up over every space's memory once the threads are done, on the model under
-    /// test (`specs/memory.md`, "Tidy-up").
-    pub tidy: bool,
+    /// Whether tidy-up runs over every space's memory once the threads are done, on the model
+    /// under test (`specs/memory.md`, "Tidy-up"): `[glave] tidy = true`.
+    pub tidy: Tidying,
+}
+
+/// When an attempt tidies memory.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Tidying {
+    #[default]
+    Never,
+    /// Once every thread is done.
+    AfterThreads,
 }
 
 /// A past conversation: `[[glave.past]]`, the person's messages in a thread of their own.
@@ -272,7 +281,11 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         threads: glave.threads,
         memories: glave.memories,
         past: glave.past,
-        tidy: glave.tidy,
+        tidy: if glave.tidy {
+            Tidying::AfterThreads
+        } else {
+            Tidying::Never
+        },
     })
 }
 
