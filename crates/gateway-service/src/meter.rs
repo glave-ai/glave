@@ -16,7 +16,7 @@ use glave_event::{
     encode,
 };
 use glave_gateway::{Budget, Caller, Gateway, Limit};
-use glave_harness::{Clock, Entropy};
+use glave_ports::{Clock, Entropy};
 use glave_ports::{EventLog, LogError, Scope};
 
 /// Events read per page.

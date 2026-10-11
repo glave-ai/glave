@@ -12,7 +12,7 @@ mod local;
 use std::net::IpAddr;
 
 use glave_event::{Auth, AuthMethod, PrincipalId};
-use glave_harness::{Caller, Clock};
+use glave_ports::Clock;
 use jsonwebtoken::{Algorithm, Validation, decode, decode_header};
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
@@ -20,6 +20,7 @@ use thiserror::Error;
 
 use self::keys::Keys;
 pub use self::local::{LOCAL_BYTES, LOCAL_PREFIX, LocalToken, is_loopback};
+use crate::Caller;
 
 /// How far the clocks of the server and the identity provider may disagree, in seconds.
 const SKEW: f64 = 60.0;

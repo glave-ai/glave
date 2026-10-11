@@ -5,7 +5,7 @@
 //! targets it allows.
 
 use glave_gateway::{Gateway, Target};
-use glave_harness::Caller;
+use glave_identity::Caller;
 use glave_ports::Purpose;
 
 use crate::errors::{Kind, Refusal};

@@ -17,6 +17,11 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
         .block_on(future)
 }
 
+/// A terminal no one answers.
+async fn no_one(_question: String) -> std::io::Result<Option<String>> {
+    Ok(None)
+}
+
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("glave-trust-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -249,11 +254,11 @@ fn resolve_writes_nothing_when_no_one_is_asked() {
     let project = repository(&dir.join("repo"), DOCS, None);
     let rules = Constraints::default();
     for asking in [Asking::NoOne, Asking::Explaining] {
-        let outcome = block_on(resolve(&home, project.clone(), &rules, asking)).unwrap();
+        let outcome = block_on(resolve(&home, project.clone(), &rules, asking, no_one)).unwrap();
         assert!(outcome.servers.is_empty());
         assert!(!home.join("trust.toml").exists());
     }
-    let explained = block_on(resolve(&home, project, &rules, Asking::Explaining)).unwrap();
+    let explained = block_on(resolve(&home, project, &rules, Asking::Explaining, no_one)).unwrap();
     assert!(explained.rows[0][1].contains("glave will ask once"));
 }
 
@@ -281,7 +286,7 @@ fn a_mistake_in_a_project_file_stops_glave_naming_it() {
     let dir = scratch("mistake");
     std::fs::write(dir.join(MCP_FILE), r#"{"mcpServers": {"a": {}}}"#).unwrap();
     let error = block_on(Project::read(&dir, &BTreeMap::new())).unwrap_err();
-    let error = format!("{error:#}");
+    let error = error.chain();
     assert!(
         error.contains(".mcp.json") && error.contains("give a command"),
         "{error}"
@@ -379,7 +384,7 @@ fn a_hook_written_wrong_stops_glave_naming_the_file() {
     ] {
         std::fs::write(dir.join(".glave/config.toml"), text).unwrap();
         let error = block_on(Project::read(&dir, &BTreeMap::new())).unwrap_err();
-        let error = format!("{error:#}");
+        let error = error.chain();
         assert!(
             error.contains("config.toml") && error.contains(says),
             "{error}"

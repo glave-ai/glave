@@ -2,15 +2,16 @@
 //! within the policy (`specs/policy.md`), and `glave policy explain`, which shows them.
 
 use std::collections::BTreeMap;
+use std::io::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 
 use glave_harness::Hook;
 
 use crate::args::Args;
-use crate::policy::{self, Choices, ConfigFile, Loaded, Locations, ProjectTrust};
-use crate::trust::{self, Asking, Outcome, Project};
 use crate::{config, home, mcp};
+use glave_config::policy::{self, Choices, ConfigFile, Loaded, Locations, ProjectTrust};
+use glave_config::trust::{self, Asking, Outcome, Project};
 
 /// Why the sandbox cannot run, as `glave policy explain` says it without trying.
 const NO_SANDBOX: &str = "this computer has no sandbox glave can use (macOS's Seatbelt, or \
@@ -121,7 +122,7 @@ async fn read(args: &Args, folder: &Path, asking: Asking) -> anyhow::Result<(Loa
     let policies = policy::policies(&locations).await?;
     let constraints = policy::Constraints::of(&policies);
     let project = Project::read(&locations.root, &mcp::environment()).await?;
-    let outcome = trust::resolve(&home, project, &constraints, asking).await?;
+    let outcome = trust::resolve(&home, project, &constraints, asking, ask).await?;
     let mut loaded = policy::load(
         &locations,
         &policies,
@@ -135,6 +136,21 @@ async fn read(args: &Args, folder: &Path, asking: Asking) -> anyhow::Result<(Loa
         rows: outcome.rows.clone(),
     });
     Ok((loaded, outcome))
+}
+
+/// Shows `question` in the terminal and reads the line typed; nothing when input ends first.
+async fn ask(question: String) -> std::io::Result<Option<String>> {
+    tokio::task::spawn_blocking(move || {
+        let mut err = std::io::stderr();
+        let _ = write!(err, "{question}");
+        let _ = err.flush();
+        let mut line = String::new();
+        std::io::stdin()
+            .read_line(&mut line)
+            .map(|read| (read > 0).then_some(line))
+    })
+    .await
+    .map_err(std::io::Error::other)?
 }
 
 /// The choices made with flags.

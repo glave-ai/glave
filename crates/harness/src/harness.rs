@@ -17,10 +17,8 @@ use thiserror::Error;
 use crate::approval::{ApprovalMode, Approver};
 use crate::bind::Place;
 use crate::builtins::Builtins;
-use crate::caller::Caller;
 use crate::commands::Command;
 use crate::compaction::{Compaction, Measured};
-use crate::env::{Clock, Entropy};
 use crate::goal::{GoalProgress, Pursuit};
 use crate::hooks::Hooks;
 use crate::memory::{Memory, MemoryState};
@@ -30,6 +28,8 @@ use crate::standing::Standing;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
 use crate::worker::Workers;
+use glave_identity::Caller;
+use glave_ports::{Clock, Entropy};
 
 /// How the harness runs.
 #[derive(Debug, Clone, PartialEq, Eq)]

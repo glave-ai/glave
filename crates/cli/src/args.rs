@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use glave_harness::ApprovalMode;
 
-use crate::policy::{On, SandboxChoice};
+use glave_config::policy::{On, SandboxChoice};
 
 pub const USAGE: &str = "\
 glave: run hope, or any model, on the project in this folder

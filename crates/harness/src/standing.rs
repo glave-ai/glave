@@ -11,9 +11,9 @@ use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 use jiff::Timestamp;
 
 use crate::approval::Approver;
-use crate::caller::Caller;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::append_next;
+use glave_identity::Caller;
 
 /// The event types that decide a thread's standing.
 pub(crate) const KINDS: &[&str] = &["thread.archived", "thread.unarchived", "thread.deleted"];

@@ -51,7 +51,7 @@ fn layers(flags: ConfigFile, env: ConfigFile, files: Vec<Layer>) -> Vec<Layer> {
     all
 }
 
-fn settle(choices: &[Layer], policies: &[(PathBuf, PolicyFile)]) -> anyhow::Result<Choices> {
+fn settle(choices: &[Layer], policies: &[(PathBuf, PolicyFile)]) -> crate::Result<Choices> {
     assemble(choices, policies, None).settle()
 }
 

@@ -23,8 +23,8 @@ use tokio::net::TcpListener;
 use crate::config;
 use crate::gateway::{Allowed, gateway};
 use crate::model::Model;
-use crate::policy::{self, Constraints, ORGANIZATION_POLICY, Source};
 use crate::{home, keys, mcp};
+use glave_config::policy::{self, Constraints, ORGANIZATION_POLICY, Source};
 
 pub const USAGE: &str = "\
 glave gateway: the gateway as a service, for everyone in an organization

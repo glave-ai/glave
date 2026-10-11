@@ -11,6 +11,7 @@ mod blob;
 mod computer;
 #[cfg(any(test, feature = "conformance"))]
 pub mod conformance;
+mod env;
 mod failure;
 mod log;
 mod memory;
@@ -29,6 +30,7 @@ pub use computer::{
     Sources, Stat, State, WorkspaceId, WorkspaceInfo, is_protected, is_protected_refusal,
     looks_binary, refuse_protected,
 };
+pub use env::{Clock, Entropy, OsEntropy, SystemClock};
 pub use failure::Failure;
 pub use log::{EventLog, LogError, check_append};
 pub use memory::{MemoryBlobs, MemoryLog, MemoryTools};

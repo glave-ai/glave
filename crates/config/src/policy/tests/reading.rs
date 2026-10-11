@@ -25,7 +25,7 @@ pub(super) fn scratch(name: &str) -> PathBuf {
 pub(super) fn load_all(
     locations: &Locations,
     project: Option<ConfigFile>,
-) -> anyhow::Result<Loaded> {
+) -> crate::Result<Loaded> {
     block_on(async {
         let policies = policies(locations).await?;
         load(

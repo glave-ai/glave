@@ -44,10 +44,12 @@ bytes = "1"
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
 glave-computer = { path = "crates/computer" }
+glave-config = { path = "crates/config" }
 glave-event = { path = "crates/event" }
 glave-gateway = { path = "crates/gateway" }
 glave-gateway-service = { path = "crates/gateway-service" }
 glave-harness = { path = "crates/harness" }
+glave-identity = { path = "crates/identity" }
 glave-keys = { path = "crates/keys" }
 glave-mcp = { path = "crates/mcp" }
 glave-memory = { path = "crates/memory" }

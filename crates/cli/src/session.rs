@@ -27,11 +27,11 @@ use crate::gateway::remote::Remote;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::model::Model;
-use crate::policy::{self, Choices, On, Source};
 use crate::setup::{self, Setup};
 use crate::terminal::Printer;
-use crate::trust::{self, Asking};
 use crate::{gateway, home, identity, keys};
+use glave_config::policy::{self, Choices, On, Source};
+use glave_config::trust::{self, Asking};
 use glave_gateway::Gateway;
 
 pub fn main() -> ExitCode {
@@ -134,6 +134,15 @@ struct Wired {
 }
 
 /// Builds the session server on this computer's store and the current folder.
+/// The task limits every `[tasks]` rule of `constraints` sets at once.
+fn task_limits(constraints: &policy::Constraints) -> glave_session::TaskLimits {
+    let rules = constraints.task_limits();
+    glave_session::TaskLimits {
+        max_running: rules.max_running,
+        max_schedules: rules.max_schedules,
+    }
+}
+
 async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Result<Wired> {
     let folder = std::env::current_dir()?;
     let mut setup = Setup::load(args, &folder, asking).await?;
@@ -199,7 +208,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
         workers: on_workers,
-        tasks: setup.loaded.constraints.task_limits(),
+        tasks: task_limits(&setup.loaded.constraints),
         memory: memory.as_ref().map(crate::memory::Running::handle),
         spaces: Arc::new(store.spaces()),
     };

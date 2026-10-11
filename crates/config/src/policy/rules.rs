@@ -194,7 +194,7 @@ impl Constraints {
     }
 
     /// The judge rule in force, `required` or `off`; an error when files ask for both.
-    pub fn judge(&self) -> anyhow::Result<Option<(JudgeRule, &Path)>> {
+    pub fn judge(&self) -> crate::Result<Option<(JudgeRule, &Path)>> {
         let mut found: Option<&Rule> = None;
         for rule in &self.rules {
             if !matches!(rule.kind, Kind::Judge(_)) {
@@ -202,7 +202,9 @@ impl Constraints {
             }
             match found {
                 Some(first) if first.kind != rule.kind => {
-                    anyhow::bail!("{first} and {rule} contradict each other: nothing meets both")
+                    crate::error::refuse!(
+                        "{first} and {rule} contradict each other: nothing meets both"
+                    )
                 }
                 Some(_) => {}
                 None => found = Some(rule),
@@ -336,12 +338,12 @@ impl Constraints {
     }
 
     /// The limits every `[tasks]` rule sets at once: the smallest of each.
-    pub fn task_limits(&self) -> glave_session::TaskLimits {
+    pub fn task_limits(&self) -> TaskRules {
         let smallest = |a: Option<usize>, b: Option<usize>| match (a, b) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         };
-        let mut limits = glave_session::TaskLimits::default();
+        let mut limits = TaskRules::default();
         for rule in &self.rules {
             if let Kind::Tasks(tasks) = &rule.kind {
                 limits.max_running = smallest(limits.max_running, tasks.max_running);

@@ -10,7 +10,7 @@ use glave_mcp::{Limits, McpServer};
 use glave_provider_openai::Config;
 
 use crate::config::Endpoint;
-use crate::policy::Chosen;
+use glave_config::policy::Chosen;
 
 /// The variable that holds the person's sign-in for the gateway: an OIDC access token.
 pub const TOKEN: &str = "GLAVE_GATEWAY_TOKEN";
@@ -81,7 +81,7 @@ impl Remote {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::policy::Source;
+    use glave_config::policy::Source;
 
     #[test]
     fn the_gateway_is_reached_at_its_v1_with_the_sign_in_as_the_key() {

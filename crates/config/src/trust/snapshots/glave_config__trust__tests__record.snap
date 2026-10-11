@@ -1,5 +1,5 @@
 ---
-source: crates/cli/src/trust/tests.rs
+source: crates/config/src/trust/tests.rs
 expression: "text.replace(&project.root.display().to_string(), \"/code/app\")"
 ---
 version = 1

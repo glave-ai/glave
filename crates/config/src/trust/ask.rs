@@ -1,7 +1,6 @@
 //! The one question: this project brings things that run commands, trust it?
 
 use std::fmt::Write as _;
-use std::io::Write as _;
 
 use crate::trust::assess::{Assessment, Why};
 use crate::trust::record::FILE;
@@ -29,22 +28,6 @@ pub fn question(assessment: &Assessment) -> String {
 /// How a typed line answers: `y` or `yes` trusts; anything else, even nothing, does not.
 pub fn trusts(typed: &str) -> bool {
     matches!(typed.trim().to_ascii_lowercase().as_str(), "y" | "yes")
-}
-
-/// Shows `question` and reads the answer from the terminal. `None` when input ends without
-/// one, which counts as no one being there.
-pub async fn ask(question: String) -> anyhow::Result<Option<bool>> {
-    let typed = tokio::task::spawn_blocking(move || {
-        let mut err = std::io::stderr();
-        let _ = write!(err, "{question}");
-        let _ = err.flush();
-        let mut line = String::new();
-        std::io::stdin()
-            .read_line(&mut line)
-            .map(|read| (read > 0).then_some(line))
-    })
-    .await??;
-    Ok(typed.map(|line| trusts(&line)))
 }
 
 #[cfg(test)]

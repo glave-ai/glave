@@ -19,8 +19,8 @@ use glave_mcp::{Limits, McpServer, Resources, ServerConfig};
 use glave_ports::ToolSource;
 
 use crate::gateway::remote::Remote;
-use crate::policy::{Chosen, Constraints, check_own_servers};
 use crate::terminal::Printer;
+use glave_config::policy::{Chosen, Constraints, check_own_servers};
 
 /// The settings file, in glave's folder.
 pub const FILE: &str = "mcp.json";
@@ -207,7 +207,7 @@ fn turned_on(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::policy::tests::constraints;
+    use crate::gateway::tests::constraints;
 
     #[test]
     fn a_policy_can_mark_servers_untrusted() {
@@ -236,7 +236,7 @@ mod tests {
         );
         let none = Chosen {
             value: Vec::new(),
-            from: crate::policy::Source::Default,
+            from: glave_config::policy::Source::Default,
         };
         assert_eq!(start(Some(&none)).unwrap().names(), Vec::<&str>::new());
         let offered = constraints("version = 1\n[mcp]\nown = false\ncatalog = [\"mine\"]\n");

@@ -14,10 +14,10 @@ use glave_ports::Scope;
 use glave_store_sqlite::{SqliteLog, Store};
 
 use crate::args::Args;
-use crate::policy::MemorySettings;
 use crate::setup::Setup;
-use crate::trust::Asking;
 use crate::{home, identity, keys};
+use glave_config::policy::MemorySettings;
+use glave_config::trust::Asking;
 
 pub const USAGE: &str = "\
 glave memory: what glave remembers here, for later threads
@@ -61,7 +61,8 @@ pub async fn start_for(
     person: PrincipalId,
     scope: Scope,
 ) -> anyhow::Result<Option<Running>> {
-    let settings = crate::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
+    let settings =
+        glave_config::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
     start(store, &settings, person, scope).await
 }
 
@@ -184,7 +185,8 @@ pub fn main(arguments: &[String]) -> ExitCode {
 async fn run(command: Command) -> anyhow::Result<()> {
     let folder = std::env::current_dir()?;
     let setup = Setup::load(&Args::default(), &folder, Asking::NoOne).await?;
-    let settings = crate::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
+    let settings =
+        glave_config::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
     let home = home::folder()?;
     let store = Store::open(
         home::database().await?,
