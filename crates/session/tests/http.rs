@@ -123,7 +123,12 @@ mod http {
             // A little clock skew is forgiven, and nothing was started by the refused.
             let late = signer.sign(&with(&good, &json!({"exp": NOW - 30})));
             let mut web = Web::new(&served, Some(late));
-            let listed = web.call(&Request::ThreadList { limit: None }).await;
+            let listed = web
+                .call(&Request::ThreadList {
+                    limit: None,
+                    show: None,
+                })
+                .await;
             assert_eq!(listed["result"]["threads"], json!([]), "{listed}");
             served.close().await;
         });

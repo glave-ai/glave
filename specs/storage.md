@@ -4,7 +4,7 @@ How glave keeps what lasts: the event log, blobs, memory and attachments, sealed
 
 ## Status
 
-Partly built (issue #22). **Built:** the key hierarchy, sealing and erasure in `glave-keys`; both stores (SQLite and Postgres) seal every new event payload and blob and open them on read, and rows written before sealing (NULL `key_id`) still read as written; blobs are stored under their keyed name with the threads that use them; the person's root in the OS keychain, or a key file (0600) when there is no keychain or `GLAVE_HOME` moves glave's folder. **Not yet:** the scope index, promotion, recording erasure as an event, legal holds, KMS roots, encrypting the whole local file, and data keys per thread.
+Partly built (issue #22). **Built:** the key hierarchy, sealing and erasure in `glave-keys`; both stores (SQLite and Postgres) seal every new event payload and blob and open them on read, and rows written before sealing (NULL `key_id`) still read as written; blobs are stored under their keyed name with the threads that use them; the person's root in the OS keychain, or a key file (0600) when there is no keychain or `GLAVE_HOME` moves glave's folder. **Archive and delete:** `thread.archived`, `thread.unarchived` and `thread.deleted` events (`events.md`) decide whether a thread is shown. Per-thread erasure is not possible with today's keys (data keys are per space and month), so delete is archive plus a permanent marker: the thread is hidden everywhere, its content stays sealed in the log, and `thread/list` with `show: deleted` lists the threads waiting for erasure. **Not yet:** the scope index, promotion, recording erasure as an event, legal holds, KMS roots, encrypting the whole local file, and data keys per thread.
 
 Settled while building, within this contract:
 
@@ -54,6 +54,7 @@ Settled while building, within this contract:
 
 - **A space** is erased by destroying its space key. Everything sealed under it, in the store and in every backup, becomes unreadable at once.
 - **A month, or later a thread,** is erased by destroying its data key and then rotating the space key: the surviving data keys are re-wrapped under a new space-key version, and the old version is destroyed. Backups that still hold the old wrapped data key can no longer unwrap it. Without the rotation, destroying a data key alone does not reach backups.
+- **Deleting a thread** records `thread.deleted` and waits for erasure of its content. Until data keys exist per thread, that erasure is a month's key plus a rotation, or a space's, which loses more than the one thread, so it is not done automatically.
 - Erasure is recorded as an event in the thread it affects, and envelopes and content-free events may outlive it, as `events.md` says. A legal hold pauses all of it.
 
 ## On a person's computer

@@ -28,7 +28,10 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | --- | --- | --- |
 | `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
 | `thread/start` | optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`) | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
-| `thread/list` | optional `limit` (default 20) | `threads`: summaries, newest first |
+| `thread/list` | optional `limit` (default 20); optional `show`: `active` (default), `archived`, or `deleted` (waiting for erasure, for the operator that does it) | `threads`: summaries, newest first |
+| `thread/archive` | `thread` | `{}`. Records `thread.archived`; the thread leaves `thread/list` and search but stays in the log and readable by id. A turn, goal or compaction in it is refused with `-32014`. Archiving an archived thread records nothing |
+| `thread/unarchive` | `thread` | `{}`. Records `thread.unarchived` |
+| `thread/delete` | `thread` | `{}`. Records `thread.deleted`: the thread is hidden for good, and every method but `thread/list` with `show: deleted` answers `-32001` for it |
 | `thread/get` | `thread` | `thread`: its summary |
 | `thread/events` | `thread`; optional `after` (a `seq`), `limit` (default 500) | `events`: stored events in `seq` order, exactly as `events.md` defines them; `next`, when there are more |
 | `thread/watch` | `thread`; optional `after` | streams the thread's notifications from `after` on, until the client stops listening |
@@ -46,6 +49,12 @@ A **thread summary** has `id` and `status`: `idle`, `running` or `waiting` (a tu
 A **turn result** has `outcome` (`completed`, `cancelled`, `failed`, `interrupted`, `limit_reached`), `model_calls`, `tool_calls`, `tokens` and `cost` as in `events.md`.
 
 Each server serves one workspace and one scope in version 1. Choosing among several workspaces arrives with issue #29; choosing a space arrives with organizations (issue #22).
+
+## Archiving, deleting and records from outside
+
+- **Archive and delete are events** (`thread.archived`, `thread.unarchived`, `thread.deleted`), appended through the thread when the server holds it. A thread with a turn running is refused with `-32002`.
+- **Records from outside.** Glave's own records about a thread may be appended by another glave process while a server holds the thread: `glave threads archive|unarchive|delete` and worktree cleanup (`glave worktrees prune`, the daily check, archiving) write straight to the log. When the holding server's next append meets the log's `(thread, seq)` conflict, it reads what was written after its last event. If all of it is `workspace.removed`, `thread.archived`, `thread.unarchived` or `thread.deleted` (records that do not change the conversation, which call ids do not count), it takes them in and appends after them, so the model is sent the same. A removed worktree is opened again from its branch, as resuming does. If the thread is now archived the turn stops with `-32014`, deleted with `-32001`, and the server reads the thread from the log again next time, which closes what the turn left open. Anything else written from outside, such as a message, means another harness is running the thread, and stays a conflict.
+- **Worktrees.** `glave threads archive|delete` removes the thread's worktree at once when that loses nothing (no uncommitted changes, every commit on a remote) and records `workspace.removed` with reason `archived`; its branch stays. A worktree that would lose work is kept and marked held, and the command says why. The session methods record the change only: worktree cleanup works on the computer's files, which the session crate reaches only through the computer port, and that port has no cleanup operations yet.
 
 ## Notifications
 
@@ -112,6 +121,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32011` | The thread is running in another server of this deployment |
 | `-32012` | The caller may not do this |
 | `-32013` | No valid sign-in (network transports) |
+| `-32014` | The thread is archived; unarchive it first |
 | `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
 
 ## Transports
@@ -158,6 +168,7 @@ Version 1, in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Sign-in on HTTP:** OIDC access tokens signed with RS256 or ES256, checked against the keys the issuer's discovery document points to, with `iss`, `aud`, `exp` and `nbf` verified and a minute of clock skew forgiven. Keys are cached and fetched again for a key not seen yet, at most every 30 seconds. An issuer must be `https`, or `http` on the same computer. The person is derived from the issuer and subject (a UUID v7 at time zero whose random bits are the start of a SHA-256 of both) until an identity source maps them. The caller is stamped as "Who is calling" describes. The listener has no TLS of its own: across machines it sits behind a proxy that has.
 - **Retries:** `turn/start` honours `_meta.idempotency_key` for the 1,024 most recent keys, in memory.
 - Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted.
+- **Archive, delete, cleanup:** built (issue #131). **Deleting does not erase yet:** today's keys are per space and month, so one thread's content cannot be destroyed alone (`storage.md`). `thread/delete` hides the thread for good and lists it (`thread/list` with `show: deleted`) for the erasure that arrives with data keys per thread. Archiving or deleting through the session API does not remove the thread's worktree yet (above); `glave threads` does, and the daily check removes it once the thread has been idle 30 days.
 - Still to come from "Over the network" (issue #64): SAML and glave session tokens, durable paused turns, leases, WebSocket, and enforcing `-32011` and `-32012`.
 
 ## Later
