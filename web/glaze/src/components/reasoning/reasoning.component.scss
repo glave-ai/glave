@@ -1,0 +1,25 @@
+:host {
+  display: block;
+}
+
+.summary {
+  width: fit-content;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  cursor: pointer;
+}
+
+.summary:focus-visible {
+  outline: 2px solid var(--glz-color-focus);
+  outline-offset: 2px;
+  border-radius: var(--glz-radius-sm);
+}
+
+.text {
+  margin-top: var(--glz-space-2);
+  padding-inline-start: var(--glz-space-3);
+  border-inline-start: 2px solid var(--glz-color-border);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  white-space: pre-wrap;
+}

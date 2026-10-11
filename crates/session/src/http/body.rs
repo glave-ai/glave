@@ -30,6 +30,10 @@ impl Answer {
         Self::Once(Some(Bytes::from(text)))
     }
 
+    pub(crate) fn bytes(bytes: Vec<u8>) -> Self {
+        Self::Once(Some(Bytes::from(bytes)))
+    }
+
     pub(crate) fn empty() -> Self {
         Self::Once(None)
     }

@@ -272,7 +272,7 @@ fn views_rebuilt_from_the_log_equal_the_kept_ones() {
         assert_eq!(conformance::thread_views(&store.log()).await, Ok(()));
         drop(store);
         let kept = views(&path);
-        assert_eq!(kept.len(), 3);
+        assert_eq!(kept.len(), 4);
 
         // As after the upgrade that made the table: no views, and no version recorded.
         let connection = rusqlite::Connection::open(&path).unwrap();
@@ -287,7 +287,7 @@ fn views_rebuilt_from_the_log_equal_the_kept_ones() {
         assert_eq!(
             rebuilt,
             Rebuilt {
-                threads: 3,
+                threads: 4,
                 failed: 0
             }
         );

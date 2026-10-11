@@ -1,0 +1,18 @@
+/*
+ * Popovers Glaze makes outside any component (tooltips): the native popover API puts them in
+ * the top layer; their look is here, since no component template holds them.
+ */
+
+.glz-tooltip {
+  max-width: 18rem;
+  margin: 0;
+  padding: var(--glz-space-1) var(--glz-space-2);
+  border: 0;
+  border-radius: var(--glz-radius-sm);
+  background: var(--glz-surface-inverse);
+  color: var(--glz-color-on-inverse);
+  font-family: var(--glz-font-sans);
+  font-size: var(--glz-text-xs);
+  line-height: var(--glz-leading-normal);
+  pointer-events: none;
+}

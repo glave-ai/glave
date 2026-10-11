@@ -11,6 +11,7 @@ mod file_sizes;
 mod lock;
 mod schema;
 mod typescript;
+mod web;
 mod workspace;
 
 fn main() -> std::process::ExitCode {

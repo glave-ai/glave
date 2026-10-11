@@ -200,8 +200,10 @@ fn add(a: TokenCounts, b: TokenCounts) -> TokenCounts {
     }
 }
 
-/// The title `event` gives a thread: a `thread.renamed`'s, or the first line of a message from
-/// the person, trimmed and cut to [`TITLE_CHARS`]. `None` for any other event.
+/// The title `event` gives a thread: a `thread.renamed`'s, or the first line of what the
+/// person wrote in a message, trimmed and cut to [`TITLE_CHARS`]. What they wrote is the
+/// message's last text part: a thread's first message opens with the project's instructions.
+/// `None` for any other event.
 pub fn title_of(event: &RawEvent) -> Option<String> {
     match decode(event.clone()).ok()?.body {
         Body::ThreadRenamed(renamed) => Some(renamed.title),
@@ -213,7 +215,8 @@ pub fn title_of(event: &RawEvent) -> Option<String> {
                     Part::Text { text } => Some(text.as_str()),
                     _ => None,
                 })
-                .flat_map(str::lines)
+                .next_back()?
+                .lines()
                 .map(str::trim)
                 .find(|line| !line.is_empty())?;
             Some(shorten(line))

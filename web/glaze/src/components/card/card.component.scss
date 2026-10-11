@@ -1,0 +1,32 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-3);
+  padding: var(--glz-card-padding, var(--glz-space-4));
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-lg);
+  background: var(--glz-surface-card);
+  color: var(--glz-color-text);
+}
+
+:host(.glz-surface-raised) {
+  border-color: transparent;
+  background: var(--glz-surface-raised);
+  box-shadow: var(--glz-elevation-2);
+}
+
+:host(.glz-surface-sunken) {
+  border-color: transparent;
+  background: var(--glz-surface-sunken);
+}
+
+.header:empty,
+.footer:empty {
+  display: none;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--glz-space-2);
+}

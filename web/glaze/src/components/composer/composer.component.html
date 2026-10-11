@@ -1,0 +1,83 @@
+@if (hasFiles()) {
+  <ul class="files" [attr.data-testid]="ids().files">
+    @for (file of shownFiles(); track file.index) {
+      <li class="file">
+        <span class="name">{{ file.name }}</span>
+        <span class="size">{{ file.size }}</span>
+        <button
+          glzIconButton
+          size="sm"
+          [attr.data-testid]="ids().removeFile"
+          [label]="file.removeLabel"
+          (click)="remove(file.index)"
+        >
+          <glz-icon [icon]="removeIcon" />
+        </button>
+      </li>
+    }
+  </ul>
+}
+<textarea
+  #textarea
+  class="input"
+  rows="1"
+  [attr.data-testid]="ids().input"
+  [attr.aria-label]="label()"
+  [attr.aria-describedby]="hintId"
+  [placeholder]="placeholder()"
+  [disabled]="disabled()"
+  [value]="value()"
+  (input)="typed($event)"
+  (keydown)="keydown($event)"
+  (paste)="pasted($event)"
+></textarea>
+<p class="glz-visually-hidden" [id]="hintId">{{ hint() }}</p>
+<div class="bar">
+  <div class="start">
+    @if (attachments()) {
+      <button
+        glzIconButton
+        [attr.data-testid]="ids().attach"
+        [label]="attachLabel()"
+        [disabled]="disabled()"
+        (click)="chooseFiles()"
+      >
+        <glz-icon [icon]="attachIcon" />
+      </button>
+    }
+    <ng-content select="[glzComposerStart]" />
+  </div>
+  <div class="end">
+    <ng-content select="[glzComposerEnd]" />
+    @if (busy()) {
+      <button
+        glzIconButton
+        variant="secondary"
+        [attr.data-testid]="ids().stop"
+        [label]="stopLabel()"
+        (click)="stopped()"
+      >
+        <glz-icon [icon]="stopIcon" />
+      </button>
+    } @else {
+      <button
+        glzIconButton
+        variant="primary"
+        [attr.data-testid]="ids().send"
+        [label]="sendLabel()"
+        [disabled]="sendDisabled()"
+        (click)="submit()"
+      >
+        <glz-icon [icon]="sendIcon" />
+      </button>
+    }
+  </div>
+</div>
+<input
+  #fileInput
+  type="file"
+  multiple
+  hidden
+  [attr.data-testid]="ids().fileInput"
+  (change)="picked($event)"
+/>
