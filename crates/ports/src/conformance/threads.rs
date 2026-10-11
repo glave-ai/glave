@@ -245,7 +245,42 @@ pub async fn thread_views<L: EventLog>(log: &L) -> Verdict {
     )?;
 
     isolation(log, &here, &elsewhere, a, ledger).await?;
-    rebuilding(log, &here, &[a, b, c]).await
+    rebuilding(log, &here, &[a, b, c]).await?;
+    opening_messages(log, &here, thread(15)?).await
+}
+
+/// A thread's first message opens with the project's instructions, its last part being what
+/// the person wrote: the title is from that part, and a message whose last part is blank
+/// gives none, however much text comes before it.
+async fn opening_messages<L: EventLog>(log: &L, here: &Scope, id: ThreadId) -> Verdict {
+    let mut writer = Writer::new(id);
+    let parts = |prompt: &str| MessageAdded {
+        role: Role::User,
+        parts: vec![
+            Part::Text {
+                text: "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>…</INSTRUCTIONS>".into(),
+            },
+            Part::Text {
+                text: prompt.into(),
+            },
+        ],
+        author: None,
+    };
+    let events = vec![
+        writer.next(20, &started()?)?,
+        writer.next(21, &parts("   "))?,
+        writer.next(22, &parts("Deploy the site"))?,
+    ];
+    log.append(here, &events).await.map_err(|e| e.to_string())?;
+    let view = log.thread_view(here, id).await.map_err(|e| e.to_string())?;
+    ensure(
+        view.as_ref().and_then(|view| view.title_seq) == Seq::new(3).ok(),
+        "a message titles its thread by its last text part, not the instructions before it",
+    )?;
+    ensure(
+        events.get(2).and_then(crate::view::title_of).as_deref() == Some("Deploy the site"),
+        "the title is the first line of the message's last text part",
+    )
 }
 
 /// Pages follow each other through the cursor of the last view.
