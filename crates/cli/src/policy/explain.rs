@@ -115,6 +115,11 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
             &choices.approval.from,
         ),
         row("sandbox", sandbox.to_owned(), &choices.sandbox.from),
+        row(
+            "network",
+            if choices.network.value { "on" } else { "off" }.to_owned(),
+            &choices.network.from,
+        ),
         match &choices.mcp {
             Some(mcp) => row("mcp", format!("{:?}", mcp.value), &mcp.from),
             None => row(

@@ -53,7 +53,14 @@ mod memory {
             Reply::text("Hello again."),
         ])
         .unwrap();
-        let first = glave(&place, &model, &["--model", "m", "remember: tabs"], "");
+        // Unconfined and without asking, so the save goes through wherever the sandbox cannot.
+        let args = ["--sandbox", "off", "--approval", "auto", "--model", "m"];
+        let first = glave(
+            &place,
+            &model,
+            &[&args[..], &["remember: tabs"]].concat(),
+            "",
+        );
         let shown = text(&first);
         assert!(first.status.success(), "{shown}");
         assert!(shown.contains("remembered:"), "{shown}");

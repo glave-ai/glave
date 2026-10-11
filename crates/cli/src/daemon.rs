@@ -214,8 +214,10 @@ fn settings(args: &Args) -> Vec<String> {
     if let Some(sandbox) = args.sandbox {
         words.extend(["--sandbox".to_owned(), sandbox.name().to_owned()]);
     }
-    if args.network {
-        words.push("--network".to_owned());
+    match args.network {
+        Some(true) => words.push("--network".to_owned()),
+        Some(false) => words.push("--no-network".to_owned()),
+        None => {}
     }
     if let Some(on) = args.on {
         words.extend(["--on".to_owned(), on.name().to_owned()]);

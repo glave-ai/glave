@@ -15,6 +15,16 @@ mod glave_binary {
 
     use super::support::*;
 
+    /// What glave runs under by default here: in the sandbox where this computer can run
+    /// it, and asking where it cannot.
+    fn default_protections() -> &'static str {
+        if glave_computer::sandbox_available() {
+            "approval: auto · sandbox: project + network"
+        } else {
+            "approval: ask"
+        }
+    }
+
     #[test]
     fn a_one_shot_question_gets_an_answer_and_a_receipt() {
         let place = place("answer");
@@ -29,7 +39,10 @@ mod glave_binary {
         assert!(output.status.success(), "{shown}");
         assert!(shown.contains("The answer is 42."), "{shown}");
         assert!(
-            shown.contains("done · approval: auto · 1 model call · 0 tool calls"),
+            shown.contains(&format!(
+                "done · {} · 1 model call · 0 tool calls",
+                default_protections()
+            )),
             "{shown}"
         );
         let received = server.received();
@@ -64,7 +77,17 @@ mod glave_binary {
         let output = glave(
             &place,
             &server,
-            &["--model", "m", "--events", &events_arg, "write notes"],
+            &[
+                "--model",
+                "m",
+                "--sandbox",
+                "off",
+                "--approval",
+                "auto",
+                "--events",
+                &events_arg,
+                "write notes",
+            ],
             "",
         );
         assert!(output.status.success(), "{}", text(&output));
@@ -109,38 +132,93 @@ mod glave_binary {
         );
     }
 
-    #[test]
-    fn by_default_changes_and_commands_go_through() {
-        let place = place("auto");
-        let server = FakeServer::start(vec![
+    /// A write, a command, and a command writing outside the project.
+    fn changes_and_commands() -> FakeServer {
+        FakeServer::start(vec![
             Reply::tool_call(
                 "toolu_1",
                 "write",
                 &json!({"path": "notes.md", "content": "hello\n"}),
             ),
             Reply::tool_call("toolu_2", "bash", &json!({"command": "touch ran.txt"})),
+            Reply::tool_call(
+                "toolu_3",
+                "bash",
+                &json!({"command": "touch ../escaped.txt"}),
+            ),
             Reply::text("Wrote notes.md and ran it."),
         ])
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn by_default_commands_run_in_the_sandbox_or_ask_where_it_cannot() {
+        let place = place("auto");
+        let server = changes_and_commands();
         let output = glave(
             &place,
             &server,
             &["--model", "m", "write notes, then run it"],
             "",
         );
-        assert!(output.status.success(), "{}", text(&output));
-        assert!(
+        let shown = text(&output);
+        assert!(output.status.success(), "{shown}");
+        assert!(shown.contains(default_protections()), "{shown}");
+        let (wrote, ran) = (
             place.project.join("notes.md").exists(),
-            "changes go through"
-        );
-        assert!(
             place.project.join("ran.txt").exists(),
-            "commands go through"
         );
+        if glave_computer::sandbox_available() {
+            assert!(wrote && ran, "inside the project nothing asks: {shown}");
+        } else {
+            assert!(!wrote && !ran, "with no one to ask nothing runs: {shown}");
+            assert!(
+                !place.project.join("../escaped.txt").exists(),
+                "never unconfined without asking"
+            );
+            assert!(
+                shown.contains("the sandbox cannot run on this computer"),
+                "{shown}"
+            );
+        }
+    }
+
+    #[test]
+    fn sandbox_off_asks_unless_auto_is_chosen_too() {
+        let place = place("off");
+        let server = changes_and_commands();
+        let output = glave(
+            &place,
+            &server,
+            &["--model", "m", "--sandbox", "off", "write notes"],
+            "",
+        );
+        let shown = text(&output);
+        assert!(output.status.success(), "{shown}");
+        assert!(shown.contains("approval: ask"), "{shown}");
+        assert!(!place.project.join("notes.md").exists(), "{shown}");
+        let server = changes_and_commands();
+        let output = glave(
+            &place,
+            &server,
+            &[
+                "--model",
+                "m",
+                "--sandbox",
+                "off",
+                "--approval",
+                "auto",
+                "write notes",
+            ],
+            "",
+        );
+        let shown = text(&output);
+        assert!(output.status.success(), "{shown}");
+        assert!(!shown.contains("sandbox:"), "{shown}");
+        assert!(place.project.join("ran.txt").exists(), "{shown}");
         assert!(
-            text(&output).contains("approval: auto"),
-            "{}",
-            text(&output)
+            place.project.join("../escaped.txt").exists(),
+            "the person chose to run commands unconfined: {shown}"
         );
     }
 

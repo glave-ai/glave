@@ -21,7 +21,7 @@ pub async fn oracle(base: &[(OsString, OsString)], task: &Task, dir: &Path) -> R
         ));
     }
     let checked = check(base, task, dir, &test, &solution).await;
-    tidy(dir).await;
+    tidy(dir, task).await;
     checked
 }
 

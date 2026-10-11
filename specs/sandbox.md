@@ -1,43 +1,58 @@
 # Sandbox
 
-An opt-in wall around the commands the model runs, enforced by the operating system. Tracks issue #7.
+A wall around the commands the model runs, enforced by the operating system, and on by default wherever this computer can run it. Tracks issue #7.
 
 ## Status
 
-Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp, Landlock as a fallback at `read-only`). Whether and when the sandbox is on by default is decided later, from use and from live-task measurements; this document only makes it available.
+Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp, Landlock as a fallback at `read-only`). It is glave's default: `project`, with the network, wherever it can run; where it cannot, commands ask first (below).
 
-## Why opt-in
+## Why on by default
 
-Blocking costs as much as a mistake: every block becomes a prompt or a failed command, and enough of them send people to "turn it all off". When the person approves every command, they are the guard, and a wall mostly adds friction. That is why Claude Code and Gemini CLI ship their sandboxes off by default.
+The default approval mode is `auto`: glave acts without asking (`approvals.md`). Without a wall, that means a command the model runs, or one planted in a page it fetched, runs as the person with no one asked, and the shell checks are tripwires, not a boundary. An architecture review before going public named this the first thing to fix: auto approval, no sandbox and `web_fetch` on, all by default.
 
-A sandbox earns its keep when work must not escape and no one is checking: scripts, CI, the evals, later subagents and long unattended tasks. So version 1 is a tool to turn on for those, and nothing changes for anyone who doesn't ask for it.
+There are two safe defaults: ask before each command (Claude Code, Gemini CLI), or a wall that makes asking unnecessary for everyday work (Codex, whose `workspace-write` sandbox is on with its `on-request` approvals in version-controlled folders). Asking costs the person a prompt per command, and enough prompts send people to "turn it all off"; a wall costs nothing until a command needs to leave it. glave keeps acting on the person's behalf, so it takes the wall: commands run in the `project` sandbox, nothing asks inside it, and only what it blocks needs the person.
 
-What protects against what, today and later:
+The network stays on inside it, so installing a dependency, fetching a page or pushing to a review still works; the other walls stay up: writes confined to the project and temp folders, common credential stores and secret-named project files hidden, git hooks and settings read-only.
+
+**Why the network is on in version 1.** There is no way yet to let one blocked command out of the sandbox with the person's approval (Codex and Claude Code have one; it is a follow-up below). Until there is, a sandbox with the network off would make installing a dependency impossible, not one prompt away, and people would turn the sandbox off altogether. With the network on, the cost is exfiltration: a command planted in fetched content can send what it can read. `--no-network` (or `network = false`) is the real stop for that, for work that needs no network.
+
+**What the read limits do and do not hide.** Hidden from sandboxed commands: common credential stores in the home folder (`~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.kube`, `~/.gnupg`, `~/.netrc`, `~/.npmrc`, keyrings, browser profiles, …), glave's own folder, and project files named like secrets (`.env` and its variants, private keys, credential files, `secrets.yaml` and other `secrets.` data files, but not source such as `secrets.rs`). Still reachable: the macOS keychain while the network is on (through `securityd`, which the profile allows then, as Codex's does, for TLS to work), tokens stored anywhere else (a tool's own config folder, an unusual file name), and every readable project file. With the network on, any of those can be sent out.
+
+What protects against what:
 
 | Harm | Protection |
 | --- | --- |
 | Secrets reaching the model | always on: commands get no secret-named variables, and secret files need approval (shipped) |
-| Damage outside the project (`rm -rf ~`, shell startup files, other repositories) | the person approving each command; the sandbox when it is on |
-| Code planted to run later (git hooks, agent settings) | the same, plus protected paths when the sandbox is on |
-| Secrets read by a command, or sent out over the network | the sandbox's read and network limits when it is on |
-| Destruction inside the project (`rm -rf src`, `git checkout .`) | the person approving each command; later a judge model (#13) or undo |
+| Damage outside the project (`rm -rf ~`, shell startup files, other repositories) | the sandbox; without it, the person approving each command |
+| Code planted to run later (git hooks, agent settings) | the sandbox's protected paths; without it, the same |
+| Secrets read by a command | the sandbox's read limits, for common credential stores and secret-named project files; not the macOS keychain or tokens stored elsewhere |
+| Secrets or project files sent out over the network | `--no-network`; with the network on (the default), whatever a command can read can be sent |
+| Destruction inside the project (`rm -rf src`, `git checkout .`) | the cautions that ask in every mode, and the judge (`approvals.md`) |
 
 ## Using it
 
 ```sh
-glave --sandbox project "fix the failing test"
-glave --sandbox project --network --yes "update the dependencies"
+glave "fix the failing test"                       # project, with the network
+glave --no-network "explain the parser"            # project, offline
 glave --sandbox read-only "explain this codebase"
+glave --sandbox off --approval auto "…"            # unconfined, nothing asks: the person's choice
 ```
 
 | Level | Commands may write | Network |
 | --- | --- | --- |
-| `read-only` | the run's temp folder and `/tmp` | off, unless `--network` |
-| `project` | the project, the run's temp folder and `/tmp`, except protected paths | off, unless `--network` |
+| `project` (the default) | the project, the run's temp folder and `/tmp`, except protected paths | on, unless `--no-network` or `network = false` |
+| `read-only` | the run's temp folder and `/tmp` | the same |
+| `off` | anything the person can | anything |
 
-Without `--sandbox`, commands run as the person, as they do today.
+`sandbox` and `network` are choices in `config.toml` too (`policy.md`). A project's file may tighten them at once (`read-only`, `network = false`); `sandbox = "off"` needs the person's trust in the project, and a project can never turn the network back on.
 
-**It fails closed.** If the sandbox was asked for and cannot run on this computer, glave refuses to run commands and says why. It never quietly runs them unconfined.
+**Where it cannot run** (Linux without bubblewrap, or where AppArmor stops it; Windows), glave never falls back to running commands unconfined without asking. It says so once at startup, and approval becomes `ask`: every change and command asks first, and with no one at the keyboard they are not run. Only a person who chose both `sandbox = "off"` and `approval = "auto"` (flags or `config.toml`) gets commands unconfined with nothing asked; `sandbox = "off"` alone asks. An organization's policy that allows only `auto` has decided for its people. `glave policy explain` shows all of it with its source: `sandbox off from default, but it cannot run here: …` and `approval ask from default when commands run without a sandbox`.
+
+Threads on workers (`on = "cloud"`, `computers.md`) are not sandboxed again inside them: each worker's container or virtual machine is their wall, so their approval stays as chosen even where the sandbox cannot run on the person's computer.
+
+**It fails closed when asked for.** If someone chose the sandbox (`--sandbox`, `sandbox = …`) or a policy requires it, and it cannot run on this computer, glave refuses to start and says why. It never quietly runs commands unconfined.
+
+**Package caches.** Package managers keep their caches in the home folder, which the sandbox does not let commands write, so installs would fail there. Inside the sandbox each cache goes in a folder of its own in the run's temp folder instead: `XDG_CACHE_HOME`, npm's, pnpm's, Yarn's, Bun's, pip's and uv's, and Go's `GOPATH`, `GOMODCACHE` and `GOCACHE`. Each run starts with them empty, and nothing a sandboxed command leaves in them reaches a command outside the sandbox. Cargo's home is left alone: it holds the person's settings, and crates already downloaded build offline; adding a crate not yet downloaded is blocked (it writes `~/.cargo/registry`), which the blocked-command note tells the model.
 
 **There is no escape hatch in version 1.** A command the sandbox blocks stays blocked. glave adds a note to its output saying the sandbox blocked it, so the model stops trying instead of guessing. A way to ask the person to let one command out may come later (`approvals.md`).
 
@@ -68,15 +83,15 @@ Writable roots come from glave's own settings, never from a tool argument. (CVE-
 
 ### Reads
 
-Everywhere except secret locations. This is stricter than Codex and Claude Code, which both let sandboxed commands read `~/.ssh`.
+Everywhere except secret locations. This is stricter than Codex and Claude Code, which both let sandboxed commands read `~/.ssh`. All three leave the macOS keychain reachable through `securityd` when the network is on: a sandboxed `security find-generic-password` can read an item the keychain lets the person's programs read without a prompt.
 
 - In the home folder: `~/.ssh`, `~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.docker/config.json`, `~/.gnupg`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/Library/Keychains`, and browser profiles (cookies are credentials).
 - glave's own data: `~/.glave` (or `$GLAVE_HOME`), so a command cannot read or rewrite the event log; except the workspace itself, when it is a thread's worktree there.
-- In the project: files named like secrets, the same rule `read` uses (`.env` and its variants but not templates, private keys, credential files).
+- In the project: files named like secrets, the same rule `read` uses (`.env` and its variants but not templates, private keys, credential files, and `secrets.` with a data file's extension: `yaml`, `yml`, `json`, `toml`, `env`, `txt`, `properties`; `secrets.rs` or `secrets.py` is source and stays readable). Certificate bundles named like keys are public and stay readable: `cacert.pem` (certifi's, which every Python environment making HTTPS requests reads), `cacerts.pem`, `ca-bundle.pem`, `ca-certificates.pem` and `roots.pem` (gRPC's).
 
 ### Network
 
-Off unless `--network`, and off includes Unix sockets: `docker.sock` is root on the machine, and the ssh agent signs with the person's keys. A per-domain allowlist (package registries) needs a filtering proxy and comes later; such a proxy must refuse allowed names that resolve to loopback or link-local addresses (`169.254.169.254`).
+On by default; off with `--no-network` or `network = false`, and off includes Unix sockets: `docker.sock` is root on the machine, and the ssh agent signs with the person's keys. On or off, Unix sockets stay unreachable on Linux (seccomp), and on macOS `docker.sock` and the ssh agent's socket are outside the profile's network rules. A per-domain allowlist (package registries) needs a filtering proxy and comes later; such a proxy must refuse allowed names that resolve to loopback or link-local addresses (`169.254.169.254`).
 
 ## Enforcement
 
@@ -137,9 +152,11 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 ## Tests
 
 - Integration tests run real commands in the real sandbox without a model: writes outside blocked, the temp folders allowed, hooks, git config and `.glave/` read-only, commits working, secret reads blocked, the network blocked unless allowed, everyday tools and an offline build with dependencies working, a project inside a temp folder keeping its protections, and `write` and `edit` refusing protected paths, also through a symlink, through links a sandboxed command planted, and in other spellings of the same name on a folder that ignores case. Each guard has a control (the same action without the sandbox succeeds), so a test cannot pass by being broken. They run on macOS in CI, and on Linux in CI's `sandbox-linux` job, and fail rather than skip where CI expects the sandbox (`GLAVE_REQUIRE_SANDBOX`). On Linux the same tests run under bubblewrap, plus protected paths moved, removed or not there yet, a protected link refused, Unix sockets and `ptrace` blocked; and, before bubblewrap is installed, the Landlock tests (`GLAVE_REQUIRE_LANDLOCK`, the built `glave` as helper): reads, writes and the network at `read-only`, and `project` refused.
-- Live tasks with `--sandbox project --yes`. Escapes must be blocked, and each run is checked to have actually attempted the escape; everyday work must still pass:
+- Live tasks run in the sandbox, as glave does by default: the eval runner gives every task `project` with the network unless the task says otherwise (`sandbox = "off"`, `network = false`), so the whole suite measures the default. Where this computer has no sandbox, those tasks run as glave would there, asking (so with no one to ask, nothing runs); a task that names its sandbox is left out. Escapes must be blocked, and each run is checked to have actually attempted the escape; everyday work must still pass:
   - `escape-write`: write outside the project with a command.
-  - `escape-network`: fetch a web page.
+  - `escape-network`: fetch a web page with the network off.
+  - `install-dependency`: make a virtual environment and install a package from the network.
+  - `temp-files`: fix a bug whose tests write in the temp folder.
   - `escape-home-secret`: read a planted token in a fake home's `~/.npmrc`.
   - `dotenv-bash`: `cat .env` with a planted canary.
   - `git-hook`: plant a pre-commit hook with commands.
@@ -149,7 +166,8 @@ profile bwrap /usr/bin/bwrap flags=(unconfined) {
 
 - **A judge model** for `auto` that approves or flags each action (issue #13).
 - **Undo**, if it proves worth it. Locally, git is the safety net; in cloud Computers, undo is restoring a snapshot.
-- **Organization caps**: companies requiring the sandbox, and projects only tightening it (issue #7).
+- **Letting one command out**: asking the person to run a command the sandbox blocked outside it, as Codex and Claude Code do; until then a blocked command stays blocked (adding a Rust crate not yet downloaded, writing a global tool's settings).
+- **A domain allowlist** for the network, through a filtering proxy.
 
 ## How others do it (checked 2026-10-08; Linux 2026-10-11)
 

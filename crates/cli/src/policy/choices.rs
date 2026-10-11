@@ -21,6 +21,10 @@ pub enum Source {
     Default,
     /// glave's default was not allowed, so this is the value the policy file leaves.
     Narrowed(PathBuf),
+    /// glave's default sandbox cannot run on this computer, for this reason.
+    Unavailable(String),
+    /// glave's default approval mode when commands run without a sandbox.
+    Unsandboxed,
 }
 
 impl fmt::Display for Source {
@@ -31,6 +35,8 @@ impl fmt::Display for Source {
             Self::File(path) => write!(f, "{}", path.display()),
             Self::Default => f.write_str("default"),
             Self::Narrowed(path) => write!(f, "default, narrowed by {}", path.display()),
+            Self::Unavailable(why) => write!(f, "default, but it cannot run here: {why}"),
+            Self::Unsandboxed => f.write_str("default when commands run without a sandbox"),
         }
     }
 }
@@ -88,8 +94,10 @@ pub struct Choices {
     pub model: Option<Chosen<String>>,
     pub judge: Chosen<Judge>,
     pub approval: Chosen<ApprovalMode>,
-    /// `None` is no sandbox.
+    /// `None` is no sandbox. `project` by default, wherever it can run.
     pub sandbox: Chosen<Option<SandboxLevel>>,
+    /// Whether sandboxed commands may use the network: on by default.
+    pub network: Chosen<bool>,
     /// The MCP servers to turn on; every server in `mcp.json` when not chosen.
     pub mcp: Option<Chosen<Vec<String>>>,
     /// Whether each new thread works in a worktree of its own; off, in the folder itself.
@@ -132,6 +140,7 @@ impl Layer {
                 "model" => "--model",
                 "approval" => "--approval",
                 "sandbox" => "--sandbox",
+                "network" => "--network or --no-network",
                 "worktree" => "--worktree",
                 "on" => "--on",
                 _ => "a flag",
@@ -164,8 +173,9 @@ pub fn resolve(layers: &[Layer]) -> Choices {
             nearest(layers, "sandbox", |file| {
                 file.sandbox.map(SandboxChoice::level)
             }),
-            None,
+            Some(SandboxLevel::Project),
         ),
+        network: defaulted(nearest(layers, "network", |file| file.network), true),
         mcp: nearest(layers, "mcp", |file| file.mcp.clone()),
         worktree: defaulted(nearest(layers, "worktree", |file| file.worktree), false),
         on: defaulted(nearest(layers, "on", |file| file.on), On::Here),

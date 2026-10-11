@@ -50,7 +50,7 @@ crates/mcp/         glave-mcp: MCP servers as tool sources, through the official
 crates/memory/      glave-memory: memory (specs/memory.md): an in-process MCP server over the data store, each memory sealed under its own key, scoped by the session; a conformance suite for memory servers
 crates/web/         glave-web: web_fetch as a tool source: private addresses refused at every hop, limits, a host policy, HTML as Markdown, output untrusted (a local page server behind `pages`)
 crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash) run on a computer through the port, approvals, resume, AGENTS.md, skills (agentskills.io), custom commands, hooks
-crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (with the opt-in sandbox), environments from devcontainer.json or environment.toml, workers on Docker or Kubernetes (the `kubernetes` feature), served (`glave computer serve`, TLS across machines) and reached over JSON-RPC
+crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (in the sandbox by default), environments from devcontainer.json or environment.toml, workers on Docker or Kubernetes (the `kubernetes` feature), served (`glave computer serve`, TLS across machines) and reached over JSON-RPC
 crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC sign-in; every surface, the CLI first, runs threads through it
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary

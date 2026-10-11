@@ -195,7 +195,7 @@ fn chosen(tasks: Vec<Task>, options: &Options) -> Result<Vec<Task>, String> {
                 .is_none_or(|only| task.name.contains(only))
         })
         .filter(|task| {
-            let runnable = sandbox || task.sandbox.is_none();
+            let runnable = sandbox || task.sandbox.is_none() || !task.sandbox_named;
             left_out += usize::from(!runnable);
             runnable
         })

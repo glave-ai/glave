@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use glave_ports::{PROTECTED, SandboxLevel};
 
-use super::secrets::{ENV_FILES, OTHER_SECRET_FILES, TEMPLATE_WORDS};
+use super::secrets::{CERTIFICATE_BUNDLES, ENV_FILES, OTHER_SECRET_FILES, TEMPLATE_WORDS};
 
 const BASE: &str = include_str!("base.sbpl");
 const PREFERENCES: &str = include_str!("preferences.sbpl");
@@ -102,13 +102,14 @@ fn reads(profile: &mut Profile, places: &Places) {
             .push(("GLAVE_HOME".into(), glave_home.clone()));
     }
     let root = regex_escape(&places.root);
-    let (env, templates, others) = (
+    let (env, templates, others, bundles) = (
         any_case(ENV_FILES),
         any_case(TEMPLATE_WORDS),
         any_case(OTHER_SECRET_FILES),
+        any_case(CERTIFICATE_BUNDLES),
     );
     conditions.push(format!(
-        r#"(require-not (regex #"^{root}/(.*/)?{others}$"))"#
+        r#"(require-any (require-not (regex #"^{root}/(.*/)?{others}$")) (regex #"^{root}/(.*/)?{bundles}$"))"#
     ));
     conditions.push(format!(
         r#"(require-any (require-not (regex #"^{root}/(.*/)?{env}$")) (regex #"^{root}/(.*/)?[^/]*{templates}[^/]*$"))"#

@@ -11,8 +11,8 @@ use anyhow::Context as _;
 use glave_computer::{LocalComputers, WorkerComputers};
 use glave_event::ThreadId;
 use glave_harness::{
-    AGENTS_MD, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings, SystemClock,
-    Workspace, agents_md,
+    AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings,
+    SystemClock, Workspace, agents_md,
 };
 use glave_ports::ToolSource;
 use glave_session::protocol::{Reply, Request};
@@ -30,7 +30,7 @@ use crate::gateway::remote::Remote;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::model::Model;
-use crate::policy::Choices;
+use crate::policy::{self, Choices, On, Source};
 use crate::setup::{self, Setup};
 use crate::terminal::Printer;
 use crate::trust::{self, Asking};
@@ -139,15 +139,15 @@ struct Wired {
 /// Builds the session server on this computer's store and the current folder.
 async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Result<Wired> {
     let folder = std::env::current_dir()?;
-    let setup = Setup::load(args, &folder, asking).await?;
+    let mut setup = Setup::load(args, &folder, asking).await?;
     if let Some(notice) = setup.notice() {
         eprintln!("glave: {notice}");
     }
+    let database = home::database().await?;
+    let workspace = workspace(&folder, &mut setup, &database).await?;
     let choices = &setup.choices;
     let (remote, endpoint) = endpoint(choices)?;
     let (provider, judge) = provider(&setup, &endpoint)?;
-    let database = home::database().await?;
-    let workspace = workspace(&folder, choices, args.network, &database).await?;
     let store = store(database).await?;
     let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
     let personal = home::folder()?.join(AGENTS_MD);
@@ -277,35 +277,69 @@ async fn store(database: PathBuf) -> anyhow::Result<Store> {
     Ok(store)
 }
 
-/// The workspace in `folder`, in the sandbox `choices` ask for.
-async fn workspace(
-    folder: &Path,
-    choices: &Choices,
-    network: bool,
-    database: &Path,
-) -> anyhow::Result<Workspace> {
+/// The workspace in `folder`, in the sandbox the setup's choices ask for. Where glave's
+/// default sandbox cannot run, commands go unconfined and the choices say so: approval
+/// becomes `ask` (`policy::unsandboxed`), unless threads work on workers, whose own
+/// container or virtual machine is their wall. A sandbox someone chose, or a policy
+/// requires, is never given up: glave refuses to start instead.
+async fn workspace(folder: &Path, setup: &mut Setup, database: &Path) -> anyhow::Result<Workspace> {
+    let choices = &setup.choices;
+    let Some(level) = choices.sandbox.value else {
+        return open_here(folder).await;
+    };
+    let sandbox = Sandbox {
+        level,
+        network: choices.network.value,
+        home: std::env::var_os("HOME").map(PathBuf::from),
+        glave_home: database.parent().map(Path::to_path_buf),
+    };
+    let error = match open_here(folder).await?.with_sandbox(&sandbox).await {
+        Ok(workspace) => return Ok(workspace),
+        Err(error) => error,
+    };
+    if choices.sandbox.from != Source::Default {
+        return Err(error).with_context(|| {
+            format!(
+                "the sandbox was asked for (by {}), so glave will not run commands without it",
+                choices.sandbox.from
+            )
+        });
+    }
+    let why = error.to_string();
+    let approval = choices.approval.clone();
+    let constraints = &setup.loaded.constraints;
+    setup.choices = policy::unsandboxed(setup.choices.clone(), &why, constraints);
+    if setup.choices.on.value == On::Cloud {
+        setup.choices.approval = approval;
+    } else {
+        eprintln!("glave: {}", unsandboxed_notice(&setup.choices, &why));
+    }
+    open_here(folder).await
+}
+
+/// The workspace in `folder` on this computer, without a sandbox yet.
+async fn open_here(folder: &Path) -> anyhow::Result<Workspace> {
     let computers = LocalComputers::for_here(std::env::vars_os())
         .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER))
         .with_scratch(home::folder()?.join(crate::worktrees::SCRATCH));
     let (computers, here) = crate::computer::with_sandbox_helper(computers)
         .open_here(folder)
         .await?;
-    let workspace = Workspace::new(computers, here);
-    let Some(level) = choices.sandbox.value else {
-        return Ok(workspace);
+    Ok(Workspace::new(computers, here))
+}
+
+/// What the person is told, once at startup, when glave's default sandbox cannot run here.
+fn unsandboxed_notice(choices: &Choices, why: &str) -> String {
+    let asks = if choices.approval.value == ApprovalMode::Ask {
+        "so every command and change asks you first (approval: ask)"
+    } else {
+        "and the policy allows only approval auto, so commands run as you without asking"
     };
-    let sandbox = Sandbox {
-        level,
-        network,
-        home: std::env::var_os("HOME").map(PathBuf::from),
-        glave_home: database.parent().map(Path::to_path_buf),
-    };
-    workspace.with_sandbox(&sandbox).await.with_context(|| {
-        format!(
-            "the sandbox was asked for (by {}), so glave will not run commands without it",
-            choices.sandbox.from
-        )
-    })
+    format!(
+        "the sandbox cannot run on this computer ({why}), {asks}. To run commands without \
+         the sandbox and without asking, choose both sandbox = \"off\" and approval = \"auto\" \
+         (--sandbox off --approval auto)."
+    )
 }
 
 async fn run(args: Args) -> anyhow::Result<ExitCode> {
@@ -413,7 +447,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         asks,
         servers,
     };
-    let mut printer = Printer::new(&endpoint.model, protections(choices, args.network));
+    let mut printer = Printer::new(&endpoint.model, protections(choices));
     let code = if let Some(objective) = &args.goal {
         let goal = Goal {
             objective: objective.clone(),
@@ -580,11 +614,15 @@ fn named(files: &[PathBuf]) -> Option<String> {
 }
 
 /// The protections commands run under, for the banner and receipts: `sandbox: project`.
-fn protections(choices: &Choices, network: bool) -> String {
+fn protections(choices: &Choices) -> String {
     let approval = format!("approval: {}", choices.approval.value.name());
     match choices.sandbox.value {
         Some(level) => {
-            let network = if network { " + network" } else { "" };
+            let network = if choices.network.value {
+                " + network"
+            } else {
+                ""
+            };
             format!("{approval} · sandbox: {}{network}", level.name())
         }
         None => approval,

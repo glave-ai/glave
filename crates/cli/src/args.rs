@@ -57,12 +57,15 @@ Usage:
 Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)
   --continue, -c     continue your last thread in this folder
-  --approval <mode>  how much to ask before acting: auto (the default; only reading secret
-                     files asks) or ask (every change and command asks). With no one at
-                     the keyboard, anything that would ask is declined
-  --sandbox <level>  run commands in the macOS sandbox: read-only, or project (writes only
-                     the project and temp folder), or off; never reads secret locations
-  --network          let sandboxed commands use the network
+  --approval <mode>  how much to ask before acting: auto (only reading secret files asks;
+                     the default when commands run in the sandbox) or ask (every change
+                     and command asks; the default when they cannot). With no one at the
+                     keyboard, anything that would ask is declined
+  --sandbox <level>  the wall around commands: project (the default wherever this computer
+                     can run it: writes only the project and temp folders, hooks and
+                     settings stay read-only), read-only, or off; never reads secrets
+  --no-network       keep sandboxed commands off the network
+  --network          let sandboxed commands use the network (the default)
   --worktree         work in a new worktree of this repository, on a branch glave/<id>,
                      kept under GLAVE_HOME/worktrees, rather than in this folder itself
   --on <place>       where threads work: here (the default), or cloud: a disposable worker
@@ -158,8 +161,8 @@ pub struct Args {
     pub approval: Option<ApprovalMode>,
     /// Run commands in the sandbox at this level, or not at all.
     pub sandbox: Option<SandboxChoice>,
-    /// Let sandboxed commands use the network.
-    pub network: bool,
+    /// Whether sandboxed commands may use the network; chosen elsewhere, or on, when not given.
+    pub network: Option<bool>,
     /// Work in a worktree of the repository of its own, on a new branch.
     pub worktree: bool,
     /// Where new threads work: here, or on a worker (`--on cloud`).
@@ -227,7 +230,8 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
                     format!("unknown sandbox level {level:?}: use read-only, project or off")
                 })?);
             }
-            "--network" => args.network = true,
+            "--network" => args.network = Some(true),
+            "--no-network" => args.network = Some(false),
             "--worktree" => args.worktree = true,
             "--on" => args.on = Some(place(rest.next())?),
             "--max-steps" => args.max_steps = Some(steps(rest.next())?),
@@ -255,8 +259,8 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             _ => words.push(argument),
         }
     }
-    if args.network && args.sandbox == Some(SandboxChoice::Off) {
-        return Err("--network only applies with a sandbox".into());
+    if args.network.is_some() && args.sandbox == Some(SandboxChoice::Off) {
+        return Err("--network and --no-network only apply with a sandbox".into());
     }
     args.prompt = words.join(" ");
     alone(&args)?;
@@ -424,7 +428,10 @@ mod tests {
     fn the_sandbox_takes_a_level_and_optional_network() {
         let args = parse_words(&["--sandbox", "project", "--network", "go"]).unwrap();
         assert_eq!(args.sandbox, Some(SandboxChoice::Project));
-        assert!(args.network);
+        assert_eq!(args.network, Some(true));
+        let offline = parse_words(&["--no-network", "go"]).unwrap();
+        assert_eq!(offline.network, Some(false));
+        assert_eq!(parse_words(&["go"]).unwrap().network, None);
         let off = parse_words(&["--sandbox", "off", "go"]).unwrap();
         assert_eq!(off.sandbox, Some(SandboxChoice::Off));
         assert!(parse_words(&["--sandbox", "everything"]).is_err());
@@ -432,6 +439,10 @@ mod tests {
         assert!(
             parse_words(&["--sandbox", "off", "--network"]).is_err(),
             "network needs a sandbox"
+        );
+        assert!(
+            parse_words(&["--sandbox", "off", "--no-network"]).is_err(),
+            "no network needs a sandbox"
         );
         assert!(
             parse_words(&["--network"]).is_ok(),

@@ -46,8 +46,21 @@ const SECRET_NAMES: &[&str] = &[
     "id_ed25519",
 ];
 
+/// Certificate bundles, which are public though named like keys: certifi's `cacert.pem`, in
+/// every Python environment that makes HTTPS requests, and gRPC's `roots.pem`.
+const CERTIFICATE_BUNDLES: &[&str] = &[
+    "cacert.pem",
+    "cacerts.pem",
+    "ca-bundle.pem",
+    "ca-certificates.pem",
+    "roots.pem",
+];
+
 /// Files that hold secrets, by extension: private keys and key stores.
 const SECRET_EXTENSIONS: &[&str] = &["pem", "key", "p12", "pfx", "jks", "keystore"];
+
+/// The extensions of a `secrets.` file that holds data; `secrets.rs` or `secrets.py` is code.
+const SECRETS_DATA: &[&str] = &["yaml", "yml", "json", "toml", "env", "txt", "properties"];
 
 /// Words in an env file's name that mark it as a template with no real values.
 const TEMPLATE_WORDS: &[&str] = &["example", "sample", "template", "dist", "defaults"];
@@ -65,8 +78,11 @@ pub fn is_secret_file(path: &Path) -> bool {
         return !TEMPLATE_WORDS.iter().any(|word| name.contains(word));
     }
     SECRET_NAMES.contains(&name.as_str())
-        || name.starts_with("secrets.")
-        || extension.is_some_and(|extension| SECRET_EXTENSIONS.contains(&extension))
+        || name
+            .strip_prefix("secrets.")
+            .is_some_and(|rest| SECRETS_DATA.contains(&rest))
+        || (extension.is_some_and(|extension| SECRET_EXTENSIONS.contains(&extension))
+            && !CERTIFICATE_BUNDLES.contains(&name.as_str()))
 }
 
 #[cfg(test)]
@@ -118,6 +134,8 @@ mod tests {
             "id_ed25519",
             ".npmrc",
             "secrets.yaml",
+            "secrets.json",
+            "secrets.properties",
             "config/credentials.json",
         ] {
             assert!(is_secret_file(Path::new(path)), "{path}");
@@ -129,7 +147,14 @@ mod tests {
             "id_ed25519.pub",
             "src/main.rs",
             "keys.rs",
+            "src/secrets.rs",
+            "secrets.py",
+            "secrets.ts",
+            "secrets.go",
+            "secrets.yaml.rs",
             "environment.md",
+            ".venv/lib/python3.12/site-packages/certifi/cacert.pem",
+            "grpc/_cython/_credentials/roots.pem",
             ".",
         ] {
             assert!(!is_secret_file(Path::new(path)), "{path}");

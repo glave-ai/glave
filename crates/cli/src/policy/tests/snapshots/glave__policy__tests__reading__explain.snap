@@ -7,6 +7,7 @@ Settings (the nearest wins: flags, environment, project, person, default)
   judge_model   acme-small  from /home/ada/.glave/config.toml
   approval      ask         from --approval
   sandbox       project     from default, narrowed by /etc/glave/policy.toml
+  network       on          from default
   mcp           ["github"]  from /home/ada/.glave/config.toml
   worktree      off         from default
   on            here        from default
