@@ -1,4 +1,4 @@
-//! Memory end to end through the binary: off by default (the model is offered no memory tool),
+//! Memory end to end through the binary: off when the person chooses it (the model is offered no memory tool),
 //! on by the person's choice, a save shown at once, the next thread opening with it, and
 //! `glave memory` listing and forgetting it.
 
@@ -30,8 +30,10 @@ mod memory {
     }
 
     #[test]
-    fn off_by_default_the_model_is_offered_no_memory_tool() {
+    fn off_by_the_persons_choice_the_model_is_offered_no_memory_tool() {
         let place = place("memory-off");
+        std::fs::create_dir_all(&place.home).unwrap();
+        std::fs::write(place.home.join("config.toml"), "memory = \"off\"\n").unwrap();
         let model = FakeServer::start(vec![Reply::text("Hi.")]).unwrap();
         let output = glave(&place, &model, &["--model", "m", "hello"], "");
         assert!(output.status.success(), "{}", text(&output));

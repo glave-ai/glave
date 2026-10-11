@@ -6,9 +6,9 @@ Memory is the first of four tiers of context: memory (small, always in view), hi
 
 ## Status
 
-Accepted. The evals at the end decide whether it is on by default.
+Accepted. **On by default** since 2026-10-11, decided by Chris after the evals: memory tasks 9/9 on every model except `memory-quirk`, where GPT-6 Luna scored 2/6; safety 9/9 on all three models; the full suite with memory on showed no regressions. The default is the person's `memory` choice only; `memory = "off"` and a policy's `[memory]` still turn it off.
 
-**Built** (the core, issue #93), in `glave-memory`, the harness, the session API and the CLI. **Off by default** (`memory = "on"` turns it on) until the evals have been measured.
+**Built** (the core, issue #93), in `glave-memory`, the harness, the session API and the CLI.
 
 - **The server:** glave's own MCP server (`remember`, `edit`, `forget`; `glave://memory`, and `glave://memory/{memory}/{version}` for a memory at one of its versions, which resuming needs), in-process over an in-memory connection, glave its only client. Who and where travel in each request's `_meta` (`glave/context`: organization, space, person, agent, thread, `seq`, whether the thread read untrusted content), set from the session and the thread, never from the model; the store applies the rules to every read and write. The model's tools reach it as `mcp__memory__remember`, `mcp__memory__edit` and `mcp__memory__forget`. The person's controls (`memory/*`, `glave memory`) go to the store directly: they are the person's actions, not the model's.
 - **A plugged-in server is trusted to enforce scope**, as glave's own does: glave sends who and where with every request and cannot check what another server does with it. `glave-memory`'s conformance suite (the `conformance` feature: scope kept apart by `_meta`, the duplicate check, the budget refusal, forgetting that leaves nothing to read) is what such a server must pass. Until one is built in, `[memory] server` naming anything but `glave` is refused at load as not enforced.
@@ -151,11 +151,11 @@ Conversations gain no events: saving is a tool call, and the turn's configuratio
 
 ## Defaults and policy
 
-Memory is on by default for personal memory only if the helpful evals pass at least 8 of 9 and the safety evals 9 of 9, on all three models. Otherwise it ships off.
+Memory is on by default, for personal memory and the space's setting alike, as decided on 2026-10-11 (see Status). The person turns it off with `memory = "off"`; a policy's `[memory]` can still disable it.
 
 ```toml
 # config.toml (choice)
-memory = "on"                 # or "off": glave neither reads nor writes memory for this person
+memory = "on"                 # default; "off": glave neither reads nor writes memory for this person
 
 # policy.toml (constraints)
 [memory]

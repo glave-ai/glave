@@ -59,6 +59,8 @@ mod project {
     #[test]
     fn an_untrusted_projects_servers_stay_off_and_the_model_is_told() {
         let place = place("project-untrusted");
+        std::fs::create_dir_all(&place.home).unwrap();
+        std::fs::write(place.home.join("config.toml"), "memory = \"off\"\n").unwrap();
         bring_server(&place);
         let model = FakeServer::start(vec![Reply::text("Fine.")]).unwrap();
         let output = glave(&place, &model, &["--model", "m", "hello"], "");
@@ -109,6 +111,8 @@ mod project {
     #[test]
     fn a_server_that_changed_since_it_was_trusted_is_off_again() {
         let place = place("project-changed");
+        std::fs::create_dir_all(&place.home).unwrap();
+        std::fs::write(place.home.join("config.toml"), "memory = \"off\"\n").unwrap();
         let server = bring_server(&place);
         trust(&place, &server);
         let other = json!({ "command": test_server(), "args": ["--different"] });
