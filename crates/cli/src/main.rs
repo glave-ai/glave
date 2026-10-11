@@ -24,6 +24,7 @@ mod skills;
 mod spaces;
 mod system;
 mod tasks;
+mod telemetry;
 mod terminal;
 mod threads;
 mod waiting;

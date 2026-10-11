@@ -131,6 +131,8 @@ struct Wired {
     workers: Option<Arc<WorkerComputers>>,
     /// Memory, when it is on.
     memory: Option<crate::memory::Running>,
+    /// Logs and telemetry, stopped last.
+    _telemetry: crate::telemetry::Telemetry,
 }
 
 /// The task limits every `[tasks]` rule of `constraints` sets at once.
@@ -149,6 +151,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     if let Some(notice) = setup.notice() {
         eprintln!("glave: {notice}");
     }
+    let telemetry = crate::telemetry::start_for(args.log.as_deref(), &setup.choices)?;
     let database = home::database().await?;
     let workspace = workspace(&folder, &mut setup, &database).await?;
     let choices = &setup.choices;
@@ -221,6 +224,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         choices: setup.choices,
         workers,
         memory,
+        _telemetry: telemetry,
     })
 }
 
@@ -414,6 +418,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         choices,
         workers: _,
         memory: _,
+        _telemetry: _,
     } = wired;
     crate::tasks::at_start(server, args).await;
     let (thread, note) = pick_thread(server, args.resume).await?;

@@ -4,12 +4,14 @@
 use std::future::Future;
 
 use glave_ports::{Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Served};
+use tracing::Instrument as _;
 
 use crate::budget::{Budget, Budgets, Caller, Charge, Ledger, OverBudget};
 use crate::estimate::Needs;
 use crate::plan::{candidates, prepare};
 use crate::routes::Routes;
 use crate::target::Target;
+use crate::telemetry;
 
 /// The output a budget reserves when neither the request nor the target sets a limit.
 const DEFAULT_OUTPUT_TOKENS: u32 = 32_768;
@@ -94,14 +96,20 @@ impl Gateway {
                     }
                 };
             let (sent, stripped) = prepare(request, target, &needs);
-            match target.handle.send(&sent, on_delta).await {
+            let span = telemetry::model_call(request.purpose.id(), &target.name);
+            let sent = target.handle.send(&sent, on_delta).instrument(span.clone());
+            let sent = sent.await.map(|mut completion| {
+                if completion.cost.is_none() {
+                    completion.cost = target
+                        .price
+                        .as_ref()
+                        .map(|price| price.cost(&completion.usage.counts()));
+                }
+                completion
+            });
+            telemetry::model_ended(&span, request.purpose.id(), &target.name, &sent);
+            match sent {
                 Ok(mut completion) => {
-                    if completion.cost.is_none() {
-                        completion.cost = target
-                            .price
-                            .as_ref()
-                            .map(|price| price.cost(&completion.usage.counts()));
-                    }
                     hold.settle(actual(&completion));
                     completion.served = Some(Served {
                         route: request.purpose.id().to_owned(),

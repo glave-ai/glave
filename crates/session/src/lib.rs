@@ -19,6 +19,7 @@ mod server;
 mod spaces;
 mod standing;
 mod tasks;
+mod trace;
 mod turn;
 
 pub use approvals::Answering;

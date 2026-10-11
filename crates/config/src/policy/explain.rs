@@ -149,6 +149,9 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
     if let Some(gateway) = &choices.gateway {
         rows.push(row("gateway", gateway.value.clone(), &gateway.from));
     }
+    if let Some(telemetry) = &choices.telemetry {
+        rows.push(row("telemetry", telemetry.value.clone(), &telemetry.from));
+    }
     rows
 }
 

@@ -229,3 +229,34 @@ fn only_the_person_s_own_file_chooses_a_gateway_and_only_a_safe_one() {
     let typo = files::config("[gateway]\nurls = \"https://x\"\n", &home);
     assert!(typo.unwrap_err().to_string().contains("urls"));
 }
+
+#[test]
+fn telemetry_goes_only_where_the_person_says_never_where_a_project_does() {
+    let dir = scratch("telemetry");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let project = files::config(
+        "[telemetry]\notlp = \"https://collector.example.com\"\n",
+        &locations.project,
+    )
+    .unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.telemetry, None, "a project's is ignored");
+    std::fs::write(
+        home.join("config.toml"),
+        "[telemetry]\notlp = \"http://localhost:4318\"\n",
+    )
+    .unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let chosen = loaded.choices.telemetry.unwrap();
+    assert_eq!(chosen.value, "http://localhost:4318");
+    assert_eq!(chosen.from, Source::File(home.join("config.toml")));
+    let refused = files::config(
+        "[telemetry]\notlp = \"collector:4318\"\n",
+        &locations.person,
+    );
+    let refused = refused.unwrap_err().to_string();
+    assert!(refused.contains("[telemetry] otlp"), "{refused}");
+}

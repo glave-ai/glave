@@ -83,6 +83,11 @@ export type Meta = {
    * instead of starting another, so a client may retry safely.
    */
   readonly idempotency_key?: IdempotencyKey | null;
+  /**
+   * For `turn/start`: the W3C trace the turn belongs to (`00-<trace id>-<parent id>-<flags>`),
+   * recorded with the turn and joined by glave's spans. One that is not one is ignored.
+   */
+  readonly traceparent?: string | null;
 };
 
 /**

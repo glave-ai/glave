@@ -17,6 +17,8 @@ jiff.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio-postgres.workspace = true
+# A content-free span for each append.
+tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

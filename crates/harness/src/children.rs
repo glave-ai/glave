@@ -143,5 +143,6 @@ fn for_parent(parent: &Thread) -> Caller {
     Caller {
         person: parent.for_,
         auth: None,
+        trace: None,
     }
 }

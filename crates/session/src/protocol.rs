@@ -297,11 +297,15 @@ pub struct Meta {
     /// instead of starting another, so a client may retry safely.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<IdempotencyKey>,
+    /// For `turn/start`: the W3C trace the turn belongs to (`00-<trace id>-<parent id>-<flags>`),
+    /// recorded with the turn and joined by glave's spans. One that is not one is ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traceparent: Option<String>,
 }
 
 impl Meta {
     fn is_empty(&self) -> bool {
-        self.idempotency_key.is_none()
+        self.idempotency_key.is_none() && self.traceparent.is_none()
     }
 }
 

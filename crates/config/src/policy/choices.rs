@@ -114,6 +114,8 @@ pub struct Choices {
     pub memory: Chosen<bool>,
     /// This space's memory setting: shared by default.
     pub space_memory: Chosen<SpaceMemory>,
+    /// The OpenTelemetry collector spans and metrics go to, if any: its OTLP/HTTP URL.
+    pub telemetry: Option<Chosen<String>>,
 }
 
 /// One level choices come from.
@@ -180,6 +182,11 @@ pub fn resolve(layers: &[Layer]) -> Choices {
         worktree: defaulted(nearest(layers, "worktree", |file| file.worktree), false),
         on: defaulted(nearest(layers, "on", |file| file.on), On::Here),
         workers: nearest(layers, "workers", |file| file.workers.clone()),
+        telemetry: nearest(layers, "telemetry", |file| {
+            file.telemetry
+                .as_ref()
+                .map(|telemetry| telemetry.otlp.trim().to_owned())
+        }),
         gateway: nearest(layers, "gateway", |file| {
             file.gateway
                 .as_ref()

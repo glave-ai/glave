@@ -150,8 +150,11 @@ where
             }
         };
         let inner = Arc::clone(&self.inner);
+        // The work stays in the span of the request that started it.
+        let span = tracing::Span::current();
         let task = tokio::spawn(async move {
-            let (held, result) = work(Arc::clone(&inner), held, cancel).await;
+            let work = work(Arc::clone(&inner), held, cancel);
+            let (held, result) = tracing::Instrument::instrument(work, span).await;
             inner.approvals.forget(thread);
             let mut threads = inner.threads.lock().unwrap_or_else(PoisonError::into_inner);
             // Archived or deleted from outside while held: the work stopped where it was, so

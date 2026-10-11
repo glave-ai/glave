@@ -21,7 +21,9 @@ use glave_harness::Hook;
 pub use choices::{Choices, Chosen, Layer, Level, Source};
 pub use effective::{check_model, check_own_servers, unsandboxed};
 pub use explain::explain;
-pub use files::{Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, TaskRules, config};
+pub use files::{
+    Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, TaskRules, TelemetryFile, config,
+};
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use rules::Constraints;
 pub use web::WebFile;
@@ -153,11 +155,12 @@ pub async fn load(
     ];
     if let Some(values) = project {
         // A project never chooses the gateway: the person's sign-in would go where it said.
-        // Nor whether the person's memory is on: that is theirs alone. It may take the
-        // network away from sandboxed commands, never give it back.
+        // Nor whether the person's memory is on: that is theirs alone. Nor where telemetry
+        // goes. It may take the network away from sandboxed commands, never give it back.
         let values = ConfigFile {
             gateway: None,
             memory: None,
+            telemetry: None,
             network: values.network.filter(|on| !on),
             ..values
         };

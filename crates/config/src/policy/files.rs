@@ -46,6 +46,17 @@ pub struct ConfigFile {
     pub memory: Option<MemoryChoice>,
     /// This space's memory: shared with the person's, isolated, or off.
     pub space_memory: Option<SpaceChoice>,
+    /// Where spans and metrics go. Only the person's or the server's own file sets it.
+    pub telemetry: Option<TelemetryFile>,
+}
+
+/// `[telemetry]`: an OpenTelemetry collector to send spans and metrics to. Off unless set;
+/// never content: no prompts, answers, file contents or secrets.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TelemetryFile {
+    /// The collector's OTLP/HTTP endpoint, such as `http://localhost:4318`.
+    pub otlp: String,
 }
 
 /// `[gateway]`: the organization's gateway (`specs/gateway.md`, "Client mode").
@@ -316,6 +327,16 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
             path.display(),
             gateway.url
         );
+    }
+    if let Some(telemetry) = &file.telemetry {
+        let url = telemetry.otlp.trim();
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            invalid!(
+                "{}: [telemetry] otlp = {:?} is not an http or https URL",
+                path.display(),
+                telemetry.otlp
+            );
+        }
     }
     if let Some(web) = &file.web {
         web.policy().map_err(|error| {

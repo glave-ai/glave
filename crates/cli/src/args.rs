@@ -79,6 +79,8 @@ Options:
   --max-steps <n>    end each turn after n model calls, the last one a text report of
                      what is done and what is left (default: no limit)
   --events <file>    save the thread's events to this file as JSON Lines
+  --log <file>       append glave's spans and metrics to this file: ids, names, counts and
+                     timings, never prompts, answers, file contents or secrets
   --help             show this help
   --version          show the version
 
@@ -95,14 +97,16 @@ Environment:
                      summarizes a thread near 80% of it
   GLAVE_IDLE_TIMEOUT    seconds the model may send nothing before a call fails (default:
                      300); failures that may pass are tried 4 more times
+  GLAVE_LOG          how much --log records: error, warn, info (the default), debug or trace
   GLAVE_JUDGE_MODEL     in auto mode, the model that decides whether an action a rule
                      flagged may run because you asked for it (default: the main model;
                      `off` to always ask)
 
 Settings: config.toml in GLAVE_HOME may set model, judge_model, approval, sandbox,
 worktree (true or false), on (here or cloud), [workers] (backend = \"docker\" and glave,
-a Linux build of glave for workers) and mcp (the servers in mcp.json to turn on); flags and
-the environment win over it. An
+a Linux build of glave for workers), mcp (the servers in mcp.json to turn on) and
+[telemetry] (otlp = an OpenTelemetry collector's OTLP/HTTP URL, for builds with the otlp
+feature: spans and metrics, never content); flags and the environment win over it. An
 organization's policy at /etc/glave/policy.toml limits what may be chosen.
 
 A new thread starts with your AGENTS.md (in GLAVE_HOME), then every AGENTS.md from the
@@ -176,6 +180,8 @@ pub struct Args {
     /// Continue the most recent thread in this folder instead of starting one.
     pub resume: bool,
     pub events: Option<PathBuf>,
+    /// Append glave's spans and metrics to this file.
+    pub log: Option<PathBuf>,
     /// The one-shot prompt; empty starts an interactive session.
     pub prompt: String,
     /// Serve over HTTP on this address, rather than stdio.
@@ -219,6 +225,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--events" => {
                 args.events = Some(PathBuf::from(rest.next().ok_or("--events needs a file")?));
             }
+            "--log" => args.log = Some(PathBuf::from(rest.next().ok_or("--log needs a file")?)),
             "--approval" => {
                 let mode = rest.next().ok_or("--approval needs a mode: auto or ask")?;
                 args.approval =

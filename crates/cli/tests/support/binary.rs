@@ -40,8 +40,19 @@ pub fn glave(place: &Place, server: &FakeServer, args: &[&str], stdin: &str) -> 
 
 /// `glave` started with `args`, still running.
 pub fn start(place: &Place, server: &FakeServer, args: &[&str]) -> Child {
+    start_with(place, server, args, &[])
+}
+
+/// `glave` started with `args` and the variables `env`, still running.
+pub fn start_with(
+    place: &Place,
+    server: &FakeServer,
+    args: &[&str],
+    env: &[(&str, &str)],
+) -> Child {
     Command::new(env!("CARGO_BIN_EXE_glave"))
         .args(args)
+        .envs(env.iter().copied())
         .current_dir(&place.project)
         .env("GLAVE_BASE_URL", server.url())
         .env("GLAVE_HOME", &place.home)

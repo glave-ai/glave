@@ -273,10 +273,12 @@ mod spaces {
             let grace = Caller {
                 person: Some(person("https://id.example.com", "grace").unwrap()),
                 auth: None,
+                trace: None,
             };
             let linus = Caller {
                 person: Some(person("https://id.example.com", "linus").unwrap()),
                 auth: None,
+                trace: None,
             };
             let made = server
                 .request_as(

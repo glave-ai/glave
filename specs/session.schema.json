@@ -278,6 +278,13 @@
             }
           ],
           "description": "For `turn/start`: the same key for the same thread returns the turn already started\ninstead of starting another, so a client may retry safely."
+        },
+        "traceparent": {
+          "description": "For `turn/start`: the W3C trace the turn belongs to (`00-<trace id>-<parent id>-<flags>`),\nrecorded with the turn and joined by glave's spans. One that is not one is ignored.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"

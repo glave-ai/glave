@@ -93,6 +93,9 @@ private_addresses = false                     # default false; a host allow name
 [gateway]                                     # the person's file only: the organization's gateway
 url = "https://gateway.example.com"           # model calls and the tool catalog go through it
 
+[telemetry]                                   # the person's or server's file only; off by default
+otlp = "http://localhost:4318"                # spans and metrics (never content) to this OTLP/HTTP collector
+
 [[hooks.PreToolUse]]                          # commands run at points of a turn (approvals.md)
 matcher = "bash"
 command = "./scripts/guard.sh"

@@ -49,26 +49,30 @@ impl EventLog for SqliteLog {
         let scope = *scope;
         let events = events.to_vec();
         let this = self.clone();
-        async move {
-            if events.is_empty() {
-                return Ok(());
-            }
-            // Sealing may read keys from the database, so it happens before the transaction.
-            let mut sealed = Vec::with_capacity(events.len());
-            for event in &events {
-                sealed.push(this.keys.seal_event(&scope, event).await.map_err(sealing)?);
-            }
-            let outcome = run(&this.connection, move |connection| {
-                Ok(append_now(connection, &scope, &events, &sealed))
-            })
-            .await;
-            match outcome {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(AppendFailure::Rule(error))) => Err(error),
-                Ok(Err(AppendFailure::Database(error))) => Err(storage(&error)),
-                Err(error) => Err(LogError::Storage(error.to_string())),
-            }
-        }
+        let span = tracing::debug_span!("store.append", store = "sqlite", events = events.len());
+        tracing::Instrument::instrument(
+            async move {
+                if events.is_empty() {
+                    return Ok(());
+                }
+                // Sealing may read keys from the database, so it happens before the transaction.
+                let mut sealed = Vec::with_capacity(events.len());
+                for event in &events {
+                    sealed.push(this.keys.seal_event(&scope, event).await.map_err(sealing)?);
+                }
+                let outcome = run(&this.connection, move |connection| {
+                    Ok(append_now(connection, &scope, &events, &sealed))
+                })
+                .await;
+                match outcome {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err(AppendFailure::Rule(error))) => Err(error),
+                    Ok(Err(AppendFailure::Database(error))) => Err(storage(&error)),
+                    Err(error) => Err(LogError::Storage(error.to_string())),
+                }
+            },
+            span,
+        )
     }
 
     fn read(
