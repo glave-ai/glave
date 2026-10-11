@@ -192,6 +192,7 @@ pub async fn build<L: EventLog + 'static>(
         tools: Vec::new(),
         worktree: false,
         hooks: glave_harness::Hooks::default(),
+        workers: None,
     };
     (Server::new(wiring, settings, scope(), answering), recorded)
 }

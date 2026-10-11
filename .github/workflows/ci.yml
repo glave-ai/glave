@@ -30,8 +30,16 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
+    # The runner's own Docker, so the Docker worker backend runs its tests here too (a small
+    # alpine image pinned by digest, a stub in glave's place). Everything they make is
+    # labelled glave.test=<run id>, and they check by that label that nothing is left.
     env:
       GLAVE_TEST_POSTGRES_URL: postgres://postgres:glave@localhost:5432/postgres
+      GLAVE_TEST_DOCKER: "1"
+      # A real worker too: the glave this job builds (Linux, the runner's processor), in an
+      # image with bash and git whose glibc is the runner's (Ubuntu 24.04), pinned.
+      GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
+      GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
     steps:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
@@ -41,6 +49,25 @@ jobs:
         with:
           tool: cargo-nextest,cargo-deny
       - run: cargo xtask ci
+      - name: Nothing the Docker tests made is left behind
+        if: always()
+        run: |
+          label="label=glave.test=${{ github.run_id }}"
+          left="$(docker ps -aq --filter "$label")$(docker ps -aq --filter label=glave.worker)$(docker volume ls -q --filter "$label")$(docker network ls -q --filter "$label")"
+          # The worker image is shared by two tests running at once, so it is removed here.
+          docker image rm "$GLAVE_TEST_WORKER_IMAGE" >/dev/null 2>&1 || true
+          if docker image inspect "$GLAVE_TEST_WORKER_IMAGE" >/dev/null 2>&1; then
+            echo "the worker image is left behind"
+            exit 1
+          fi
+          if [ -n "$left" ]; then
+            echo "left behind: $left"
+            exit 1
+          fi
+          if docker image inspect "alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507" >/dev/null 2>&1; then
+            echo "the test image is left behind"
+            exit 1
+          fi
 
   # macOS minutes cost 10x on private repos, so this runs on main only (and on demand).
   macos:

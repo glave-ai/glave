@@ -128,6 +128,7 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
             if choices.worktree.value { "on" } else { "off" }.to_owned(),
             &choices.worktree.from,
         ),
+        row("on", choices.on.value.name().to_owned(), &choices.on.from),
     ]
 }
 

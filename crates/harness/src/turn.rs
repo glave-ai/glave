@@ -389,7 +389,7 @@ where
         // A new thread opens with the project's instructions.
         let opening = thread.messages.is_empty();
         let mut parts = self
-            .instruction_parts()
+            .opening_parts(thread)
             .filter(|_| opening)
             .unwrap_or_default();
         parts.push(Part::Text {

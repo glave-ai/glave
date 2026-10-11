@@ -28,6 +28,7 @@ use crate::retry::Retries;
 use crate::standing::Standing;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
+use crate::worker::Workers;
 
 /// How the harness runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +130,8 @@ pub struct Harness<P, L, B, A> {
     pub(crate) actors: Actors,
     /// The model's real context window, once a refusal has stated it; 0 until then.
     pub(crate) learned_window: AtomicU64,
+    /// Where threads placed on a worker get one; none by default.
+    pub(crate) workers: Option<Workers>,
 }
 
 /// One thread: where it is stored, where it continues, and the conversation so far.
@@ -158,6 +161,9 @@ pub struct Thread {
     /// Events glave recorded for itself that call ids do not count (`bind::own_records`).
     /// Each takes a `seq` before any later call, so ids stay unique.
     pub(crate) unnumbered: u64,
+    /// What the model is told about where it works when that is not the folder itself: a
+    /// worker's sources, and how work leaves it. Sent with the opening instructions.
+    pub(crate) note: Option<String>,
     /// Whether the thread is shown, archived or deleted.
     pub(crate) standing: Standing,
     /// A cleanup removed the thread's worktree while it was held: it is opened again before
@@ -259,7 +265,15 @@ where
             hooks: Hooks::default(),
             settings,
             learned_window: AtomicU64::new(0),
+            workers: None,
         }
+    }
+
+    /// Places threads asked to work on a worker ([`crate::Place::Worker`]) with `workers`.
+    #[must_use]
+    pub fn with_workers(mut self, workers: Workers) -> Self {
+        self.workers = Some(workers);
+        self
     }
 
     /// Offers the tools of `sources` too, after the built-in ones. A tool keeps the first
@@ -346,6 +360,7 @@ where
             asked: Vec::new(),
             above: parent.iter().map(|call| call.thread).collect(),
             goal: None,
+            note: bound.as_ref().and_then(crate::worker::note),
             workspace,
             unnumbered: u64::from(bound.is_some()),
             standing: Standing::Active,
@@ -381,12 +396,15 @@ where
         Ok(thread)
     }
 
-    /// The project's instructions as the opening part of a conversation, if there are any.
-    pub(crate) fn instruction_parts(&self) -> Option<Vec<Part>> {
-        self.settings
-            .instructions
-            .as_ref()
-            .map(|text| vec![Part::Text { text: text.clone() }])
+    /// What opens a conversation: the project's instructions, and where the thread works when
+    /// that is a worker, if there is either.
+    pub(crate) fn opening_parts(&self, thread: &Thread) -> Option<Vec<Part>> {
+        let parts: Vec<Part> = [self.settings.instructions.as_ref(), thread.note.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|text| Part::Text { text: text.clone() })
+            .collect();
+        (!parts.is_empty()).then_some(parts)
     }
 
     /// Records one event on its own.

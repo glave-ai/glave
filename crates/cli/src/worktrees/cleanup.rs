@@ -33,6 +33,7 @@ fn named(reason: RemovedReason) -> &'static str {
         RemovedReason::Idle => "idle",
         RemovedReason::RepositoryGone => "repository_gone",
         RemovedReason::Pruned => "pruned",
+        RemovedReason::Released => "released",
     }
 }
 

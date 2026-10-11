@@ -5,9 +5,10 @@ use std::io::IsTerminal as _;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use anyhow::Context as _;
-use glave_computer::LocalComputers;
+use glave_computer::{LocalComputers, WorkerComputers};
 use glave_event::ThreadId;
 use glave_harness::{
     AGENTS_MD, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings, SystemClock,
@@ -32,6 +33,7 @@ use crate::system::random_uuid;
 use crate::terminal::Printer;
 use crate::trust::{self, Asking};
 use crate::{gateway, home, identity, keys};
+use glave_gateway::Gateway;
 
 pub fn main() -> ExitCode {
     let words: Vec<String> = std::env::args().skip(1).collect();
@@ -106,6 +108,8 @@ struct Wired {
     files: Vec<PathBuf>,
     /// The settings in use, for the banner and receipts.
     choices: Choices,
+    /// The workers threads work on, with `--on cloud`.
+    workers: Option<Arc<WorkerComputers>>,
 }
 
 /// Builds the session server on this computer's store and the current folder.
@@ -120,18 +124,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     if let Some(idle) = config::idle_timeout()? {
         endpoint.provider.idle_timeout = idle;
     }
-    let judge = choices.judge.value.model(&endpoint.model);
-    let allowed = Allowed {
-        constraints: &setup.loaded.constraints,
-        main: choices.model.as_ref().map(|m| &m.from),
-        judge: &choices.judge.from,
-    };
-    let provider = gateway::gateway(
-        Model::for_endpoint(&endpoint.provider)?,
-        &endpoint,
-        judge.as_deref(),
-        &allowed,
-    )?;
+    let (provider, judge) = provider(&setup, &endpoint)?;
     let database = home::database().await?;
     let workspace = workspace(&folder, choices, args.network, &database).await?;
     let store = store(database).await?;
@@ -151,8 +144,8 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     settings.judge = judge.is_some();
     let identity = identity::load_or_make(&home::folder()?).await?;
     (settings.person, settings.agent) = (Some(identity.person), Some(identity.agent));
-    let window = config::context_window()?;
-    settings.compaction.window_tokens = window.unwrap_or(settings.compaction.window_tokens);
+    let window = config::context_window()?.unwrap_or(settings.compaction.window_tokens);
+    settings.compaction.window_tokens = window;
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
     let servers = Servers::start(
@@ -165,6 +158,8 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
             .as_deref(),
     )
     .await?;
+    let (on_workers, workers) =
+        crate::cloud::workers(choices, &setup.loaded.constraints, &folder).await?;
     let scope = store
         .local_scope(&root, random_uuid(), random_uuid())
         .await?;
@@ -179,6 +174,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         tools: [crate::skills::offered(&root).await?, servers.sources()].concat(),
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
+        workers: on_workers,
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
@@ -187,7 +183,26 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         root,
         files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
         choices: setup.choices,
+        workers,
     })
+}
+
+/// The gateway to the chosen model, and the judge model, if any.
+fn provider(setup: &Setup, endpoint: &Endpoint) -> anyhow::Result<(Gateway, Option<String>)> {
+    let choices = &setup.choices;
+    let judge = choices.judge.value.model(&endpoint.model);
+    let allowed = Allowed {
+        constraints: &setup.loaded.constraints,
+        main: choices.model.as_ref().map(|m| &m.from),
+        judge: &choices.judge.from,
+    };
+    let provider = gateway::gateway(
+        Model::for_endpoint(&endpoint.provider)?,
+        endpoint,
+        judge.as_deref(),
+        &allowed,
+    )?;
+    Ok((provider, judge))
 }
 
 /// The store in `database`, once this machine's worktrees have had their daily check.
@@ -243,6 +258,9 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     .await?;
     let ran = session(&args, &wired, asks).await;
     wired.server.shutdown().await;
+    if let Some(workers) = &wired.workers {
+        crate::cloud::release(&wired.server, workers).await;
+    }
     wired.servers.close().await;
     ran
 }
@@ -253,13 +271,17 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
     // The session API owns standard input, so there is no one to ask about a project.
     let wired = wire(&args, Answering::Clients, Asking::NoOne).await?;
     let served = if let Some(address) = args.http {
-        serve_http(&args, wired.server, address).await
+        serve_http(&args, wired.server.clone(), address).await
     } else {
         let input = tokio::io::BufReader::new(tokio::io::stdin());
-        glave_session::rpc::serve(wired.server, input, tokio::io::stdout())
+        glave_session::rpc::serve(wired.server.clone(), input, tokio::io::stdout())
             .await
             .map_err(anyhow::Error::from)
     };
+    if let Some(workers) = &wired.workers {
+        wired.server.shutdown().await;
+        crate::cloud::release(&wired.server, workers).await;
+    }
     wired.servers.close().await;
     served?;
     Ok(ExitCode::SUCCESS)
@@ -298,6 +320,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         root,
         files,
         choices,
+        workers: _,
     } = wired;
     let (thread, note) = pick_thread(server, args.resume).await?;
     if let Some(working) = crate::worktrees::note(server, thread).await {

@@ -5,7 +5,9 @@
 use std::sync::Arc;
 
 use glave_event::{Body, ComputerKind, ComputerRef, Event, Opened, ThreadId, WorkspaceBound};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, Sources, ToolSource};
+use glave_ports::{
+    BlobStore, ComputerError, Environment, EventLog, ModelProvider, Scope, Sources, ToolSource,
+};
 
 use crate::approval::Approver;
 use crate::builtins::Builtins;
@@ -15,13 +17,16 @@ use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
 
 /// Where a new thread works.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Place {
     /// The harness's workspace, as it is: the folder the person is in.
     #[default]
     Here,
     /// A git worktree of its own, on the branch [`branch_for`] names, beside the repository.
     Worktree,
+    /// A worker of its own, made from this environment by the harness's workers (see
+    /// [`crate::Workers`]), with the project's repository cloned into it.
+    Worker(Environment),
 }
 
 /// The branch a thread's worktree is on: `glave/` and the last 12 hex digits of the thread's
@@ -52,7 +57,7 @@ pub(crate) fn own_records(events: &[Event]) -> u64 {
 }
 
 /// The binding of a thread to `workspace`, as recorded.
-fn bound(workspace: &Workspace) -> WorkspaceBound {
+pub(crate) fn bound(workspace: &Workspace, kind: ComputerKind) -> WorkspaceBound {
     let info = workspace.info();
     let opened = match &info.sources {
         Sources::Folder { path } => Opened::Folder { path: path.clone() },
@@ -69,8 +74,7 @@ fn bound(workspace: &Workspace) -> WorkspaceBound {
         workspace: info.id.as_uuid(),
         computer: ComputerRef {
             id: info.computer.as_uuid(),
-            // Every computer a harness binds to is this machine's until workers come.
-            kind: ComputerKind::Local,
+            kind,
         },
         opened,
         root: info.root.clone(),
@@ -106,16 +110,17 @@ where
         place: Place,
     ) -> Result<(Option<Arc<Workspace>>, WorkspaceBound), HarnessError> {
         match place {
-            Place::Here => Ok((None, bound(&self.workspace))),
+            Place::Here => Ok((None, bound(&self.workspace, ComputerKind::Local))),
             Place::Worktree => {
                 let owner = owner_label(scope, id);
                 let worktree = self
                     .workspace
                     .worktree(&branch_for(id), Some(&owner))
                     .await?;
-                let recorded = bound(&worktree);
+                let recorded = bound(&worktree, ComputerKind::Local);
                 Ok((Some(Arc::new(worktree)), recorded))
             }
+            Place::Worker(environment) => self.place_worker(&environment).await,
         }
     }
 
@@ -132,6 +137,14 @@ where
             Body::WorkspaceBound(bound) => Some(bound),
             _ => None,
         });
+        if latest.is_some_and(|bound| bound.computer.kind == ComputerKind::Worker) {
+            return Err(ComputerError::Unsupported(
+                "this thread worked on a cloud worker, which was released when its session \
+                 ended; its work is on the branches it pushed. Start a new thread to go on"
+                    .into(),
+            )
+            .into());
+        }
         match latest.map(|bound| &bound.opened) {
             Some(Opened::Worktree { branch, .. }) => {
                 let owner = owner_label(scope, id);

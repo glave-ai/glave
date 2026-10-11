@@ -133,6 +133,7 @@ fn flags(args: &Args) -> ConfigFile {
         approval: args.approval.map(Into::into),
         sandbox: args.sandbox,
         worktree: args.worktree.then_some(true),
+        on: args.on,
         ..ConfigFile::default()
     }
 }
