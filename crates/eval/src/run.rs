@@ -14,6 +14,8 @@ use glave_harness::{
 };
 use glave_ports::{EventLog, MemoryBlobs, MemoryLog, OrgId, Scope, SpaceId, ToolSource};
 use glave_provider_openai::{Config, OpenAiCompatible};
+use glave_web::pages::Pages;
+use glave_web::{Domain, Limits, Web, WebPolicy, WebSettings};
 use serde::{Deserialize, Serialize};
 
 use crate::check::{Context, ended};
@@ -105,9 +107,21 @@ pub async fn attempt(
         workspace,
         environment,
     } = prepare(&setup.environment, task, dir).await?;
+    // The task's pages, served until the attempt is graded.
+    let pages = match task.web_pages() {
+        Some(pages) => Some(crate::web::serve(&pages).await?),
+        None => None,
+    };
+    let web = pages.as_ref().map(Pages::base);
     let start = Instant::now();
-    let (events, transcript, mut failures) =
-        converse(setup, task, model, &environment, &workspace).await?;
+    let (events, transcript, mut failures) = converse(
+        setup,
+        task,
+        model,
+        &environment,
+        (&workspace, web.as_deref()),
+    )
+    .await?;
     let seconds = start.elapsed().as_secs_f64();
     write(dir.join("events.jsonl"), &events).await?;
     write(dir.join("transcript.txt"), &transcript).await?;
@@ -163,7 +177,7 @@ async fn wire(
     task: &Task,
     model: &str,
     environment: &Environment,
-    root: &Path,
+    (root, web): (&Path, Option<&str>),
 ) -> Result<Harness<OpenAiCompatible, MemoryLog, MemoryBlobs, NoOneToAsk>, EvalError> {
     let (computers, info) = LocalComputers::here(root, environment.clone())
         .await
@@ -206,7 +220,20 @@ async fn wire(
         entropy: Box::new(OsEntropy),
         workspace,
     };
-    let mut tools: Vec<Arc<dyn ToolSource>> = Vec::new();
+    // web_fetch, as the CLI offers it; a task's own pages are on 127.0.0.1, named exactly.
+    let mut policy = WebPolicy::default();
+    if web.is_some() {
+        policy.allow = ["127.0.0.1", "*"]
+            .iter()
+            .filter_map(|pattern| Domain::parse(pattern).ok())
+            .collect();
+    }
+    let web = Web::new(WebSettings {
+        policy,
+        limits: Limits::default(),
+    })
+    .map_err(|err| EvalError::Setup(err.to_string()))?;
+    let mut tools: Vec<Arc<dyn ToolSource>> = vec![Arc::new(web)];
     // The project's skills, as the CLI finds them; the person's own are not part of a task.
     let skills = find_skills(&skill_folders(root, &[])).await;
     if let Some(warning) = skills.warnings.first() {
@@ -228,9 +255,9 @@ async fn converse(
     task: &Task,
     model: &str,
     environment: &Environment,
-    root: &Path,
+    (root, web): (&Path, Option<&str>),
 ) -> Result<(String, String, Vec<String>), EvalError> {
-    let harness = wire(setup, task, model, environment, root).await?;
+    let harness = wire(setup, task, model, environment, (root, web)).await?;
     let scope = Scope {
         org: OrgId::from_uuid(uuid::Uuid::from_u128(1)),
         space: SpaceId::from_uuid(uuid::Uuid::from_u128(2)),
@@ -240,7 +267,12 @@ async fn converse(
     let deadline = Instant::now() + task.timeout;
     let mut transcript = String::new();
     let mut failures = Vec::new();
-    for (index, prompt) in task.turns.iter().enumerate() {
+    let turns: Vec<String> = task
+        .turns
+        .iter()
+        .map(|turn| web.map_or_else(|| turn.clone(), |base| crate::web::fill(turn, base)))
+        .collect();
+    for (index, prompt) in turns.iter().enumerate() {
         if index > 0 {
             thread = harness
                 .resume_thread(scope, thread.id)

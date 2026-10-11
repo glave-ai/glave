@@ -12,7 +12,7 @@ mod reason;
 mod resources;
 mod server;
 
-pub use config::{ServerConfig, parse};
+pub use config::{ServerConfig, parse, untrusted};
 pub use error::McpError;
 pub use names::{catalog, exposed};
 pub use resources::Resources;

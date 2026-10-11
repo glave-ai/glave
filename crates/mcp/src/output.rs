@@ -24,6 +24,9 @@ pub fn output(result: &CallToolResult) -> ToolOutput {
         parts: vec![Part::Text {
             text: cut(texts.join("\n")),
         }],
+        // The connection marks it untrusted for an open-world tool, the server for one the
+        // person or a policy marked.
+        untrusted: false,
     }
 }
 

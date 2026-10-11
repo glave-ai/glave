@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use glave_harness::{ApprovalMode, SandboxLevel};
 
 use crate::policy::files::{Approval, ConfigFile, SandboxChoice};
+use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkersFile};
 
 /// Where a value came from.
@@ -97,6 +98,8 @@ pub struct Choices {
     pub workers: Option<Chosen<WorkersFile>>,
     /// The gateway elsewhere model calls go to, if any: its URL.
     pub gateway: Option<Chosen<String>>,
+    /// What `web_fetch` may reach: on, public hosts only, by default.
+    pub web: Chosen<WebFile>,
 }
 
 /// One level choices come from.
@@ -166,6 +169,10 @@ pub fn resolve(layers: &[Layer]) -> Choices {
                 .as_ref()
                 .map(|gateway| gateway.url.trim().to_owned())
         }),
+        web: defaulted(
+            nearest(layers, "web", |file| file.web.clone()),
+            WebFile::default(),
+        ),
     }
 }
 

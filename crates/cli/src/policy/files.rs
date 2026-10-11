@@ -7,6 +7,7 @@ use anyhow::{anyhow, bail};
 use glave_harness::{ApprovalMode, Hook, HookPoint, Hooks, SandboxLevel};
 use globset::Glob;
 
+use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkerRules, WorkersFile};
 use serde::Deserialize;
 
@@ -30,6 +31,8 @@ pub struct ConfigFile {
     pub on: Option<On>,
     /// The backend workers run on.
     pub workers: Option<WorkersFile>,
+    /// What `web_fetch` may reach.
+    pub web: Option<WebFile>,
     /// Commands to run at points of a turn. They add up across files rather than the
     /// nearest winning: the person's run, and a trusted project's run too.
     pub hooks: Option<HooksFile>,
@@ -275,6 +278,9 @@ pub struct McpRules {
     pub catalog: Option<Vec<String>>,
     /// Whether people may add servers of their own.
     pub own: Option<bool>,
+    /// Servers whose tools return untrusted content, as web pages are.
+    #[serde(default)]
+    pub untrusted: Vec<String>,
 }
 
 /// `[budget]`.
@@ -300,6 +306,10 @@ pub fn config(text: &str, path: &Path) -> anyhow::Result<ConfigFile> {
             path.display(),
             gateway.url
         );
+    }
+    if let Some(web) = &file.web {
+        web.policy()
+            .map_err(|error| anyhow!("{}: {error:#}", path.display()))?;
     }
     Ok(file)
 }

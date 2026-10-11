@@ -9,6 +9,7 @@ mod files;
 mod rules;
 #[cfg(test)]
 pub(crate) mod tests;
+mod web;
 mod workers;
 
 use std::io::ErrorKind;
@@ -22,6 +23,7 @@ pub use effective::{check_model, check_own_servers};
 pub use explain::explain;
 pub use files::{Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, config};
 pub use rules::Constraints;
+pub use web::WebFile;
 pub use workers::{Backend, On, WorkersFile};
 
 /// The choices file, in glave's folder and in a project's `.glave/`.

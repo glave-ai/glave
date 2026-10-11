@@ -226,7 +226,16 @@ mod gateway {
             .collect();
         assert_eq!(
             offered,
-            ["search", "glob", "read", "write", "edit", "bash", "agent"],
+            [
+                "search",
+                "glob",
+                "read",
+                "write",
+                "edit",
+                "bash",
+                "web_fetch",
+                "agent"
+            ],
             "no catalog, no gateway"
         );
     }

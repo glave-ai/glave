@@ -75,6 +75,7 @@ pub(crate) async fn decide_all<P: ModelProvider + 'static>(
                     rules: None,
                     action: &action,
                     flagged: &reason,
+                    untrusted: false,
                 },
                 Vec::new(),
             )

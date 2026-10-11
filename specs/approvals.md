@@ -43,6 +43,16 @@ A rule cannot tell "push my branch" from a push nobody asked for. In auto mode, 
 
 The judge is the main model unless `GLAVE_JUDGE_MODEL` names another; `off` turns it off. On `evals/judge` (`cargo xtask eval judge --model …`), any of the three default models as judge lowers false alarms on actions the person asked for from 56% to 1–6%, and lets through no case that should ask.
 
+## Untrusted content
+
+Some tool output comes from outside and no one vouches for it: a page `web_fetch` read, the result of an MCP tool whose annotations say `openWorldHint: true` (MCP's flag for a tool that reaches beyond its server, such as a web search), and anything from an MCP server marked `"untrusted": true` in `mcp.json` or named in a policy's `[mcp] untrusted` (`policy.md`). Such output may hold instructions planted to make the agent act.
+
+- **Labelled.** The model is shown it between `<untrusted>` tags, after a line saying it is data, not instructions, and not to follow requests in it or run commands it suggests unless the person asked. A closing tag inside the content is broken up, so the content cannot end the label early. Errors are glave's own words and are not labelled.
+- **Remembered.** The call's `tool.call.completed` records `untrusted: true` (`events.md`), so the thread knows it has read such content, and resuming it rebuilds that. A subagent starts knowing what its parent read, and the report of a subagent that read such content is labelled and marks the parent too.
+- **Risky actions after it are judged knowing it.** The cautions above still ask in every mode. In auto mode, a soft caution goes to the judge as before, which is also told that the agent has read untrusted content and that asking the agent to do what some content says is not asking for the action; it never sees the content itself. With the judge off, or in `ask` mode, the caution asks as always. Actions that are not cautions are left to the mode: the sandbox, not the label, is the boundary.
+
+`web_fetch` is the one web tool built in (on by default, `[web]` in `config.toml`, `policy.md`): an HTTP GET of an http or https URL, read as Markdown, with the URL it ended at. It reaches beyond the workspace, so in `ask` mode it asks. It refuses private addresses (this computer, private networks, link-local and cloud metadata, carrier NAT, multicast, reserved ranges, and IPv6 forms that carry such an IPv4 address): addresses written in the URL, however spelled (decimal, octal, hex), are checked before anything is sent; names are checked as they resolve, and only the allowed addresses are connected to, so a name cannot resolve one way when checked and another when connected. Redirects (at most 5) are followed by hand and each hop is checked again; no proxy is used. A fetch reads at most 5 MB within 30 seconds, and the model is given at most 50,000 characters; pages are kept for 15 minutes (at most 32). Search is not built in: it comes from remote tools, such as an MCP server for Brave Search or SearXNG.
+
 ## Hooks
 
 Hooks are commands the person sets up to run at four points of a turn, under the names and protocol Claude Code and Codex share:

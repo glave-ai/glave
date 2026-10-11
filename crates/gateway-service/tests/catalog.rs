@@ -86,12 +86,26 @@ mod catalog {
                 "readOnlyHint passed through"
             );
             let listed = alice.listing().await.unwrap();
-            let web = listed.iter().find(|tool| tool.name == "docs__web").unwrap();
-            let hints = web.annotations.as_ref().unwrap();
+            let lookup = listed
+                .iter()
+                .find(|tool| tool.name == "docs__lookup")
+                .unwrap();
+            let hints = lookup.annotations.as_ref().unwrap();
             assert_eq!(
                 hints.open_world_hint,
                 Some(true),
                 "openWorldHint passed through"
+            );
+            let found = alice
+                .call(
+                    "mcp__docs__lookup",
+                    &arguments(&json!({"text": "rust"})),
+                    &Never,
+                )
+                .await;
+            assert!(
+                found.untrusted,
+                "glave labels what an open-world catalog tool returns untrusted"
             );
             let said = alice
                 .call(
@@ -103,7 +117,8 @@ mod catalog {
             assert!(!said.is_error, "{said:?}");
             assert_eq!(text(&said), "hello");
             let recorded = world.recorded("alice").await;
-            let [Body::GatewayToolCalled(called)] = recorded.as_slice() else {
+            let [Body::GatewayToolCalled(_), Body::GatewayToolCalled(called)] = recorded.as_slice()
+            else {
                 panic!("{recorded:?}");
             };
             assert_eq!(

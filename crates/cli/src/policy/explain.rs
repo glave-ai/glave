@@ -129,6 +129,7 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
             &choices.worktree.from,
         ),
         row("on", choices.on.value.name().to_owned(), &choices.on.from),
+        row("web", choices.web.value.describe(), &choices.web.from),
     ];
     if let Some(gateway) = &choices.gateway {
         rows.push(row("gateway", gateway.value.clone(), &gateway.from));

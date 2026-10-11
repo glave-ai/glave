@@ -24,6 +24,12 @@ Project trust (issue #83), in `crates/cli/src/trust`:
 - With no one to ask (a pipe, a script, `glave serve`), untrusted servers stay off, glave says so, and the model is told which tools are off and why.
 - `glave policy explain` lists the project's items and where each stands.
 
+Web and untrusted servers (issue #94; `approvals.md`, "Untrusted content"):
+
+- `[web]` in `config.toml` (`fetch`, `allow`, `deny`, `private_addresses`) is one choice, the nearest table winning; patterns are checked when read. Without trust a project's `[web]` keeps only `fetch` and `deny`. `glave policy explain` shows it.
+- A server in `mcp.json` or a project's `.mcp.json` may say `"untrusted": true`, and `[mcp] untrusted` in a policy names servers: what they return is labelled untrusted. Marks only add up.
+- Not built yet: `[web]` rules in `policy.toml` (an organization's allow and deny lists), and fetches leaving through the gateway.
+
 Hooks (issue #46; `approvals.md`, "Hooks"):
 
 - `[[hooks.<Point>]]` in `config.toml` (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`; `command`, optional `matcher` and `timeout`), checked when read: an unknown point or key, a matcher that is not a regular expression, or a matcher on a point without a tool is an error naming the file.
@@ -71,6 +77,12 @@ mcp = ["github", "jira"]                      # servers to turn on, from the cat
 worktree = true                               # each thread in a worktree of its own; default false
 on = "cloud"                                  # each thread on a worker of its own; default "here"
 
+[web]                                         # what web_fetch may reach (approvals.md), nearest wins
+fetch = true                                  # default true; false turns web_fetch off
+allow = ["docs.rs", "*.example.com"]          # hosts it may fetch; every host when absent
+deny = ["*.internal.example.com"]             # hosts it never fetches; a deny wins
+private_addresses = false                     # default false; a host allow names exactly may be private anyway
+
 [gateway]                                     # the person's file only: the organization's gateway
 url = "https://gateway.example.com"           # model calls and the tool catalog go through it
 
@@ -109,6 +121,7 @@ required = true
 [mcp]
 catalog = ["github", "jira"]                      # servers the organization offers (its gateway's)
 own = false                                       # may people add their own servers
+untrusted = ["search"]                            # servers whose output is untrusted (approvals.md)
 
 [budget]
 person_per_day_usd = 20
@@ -171,6 +184,6 @@ A laptop's own config can never loosen a constraint, because the constraint arri
   definition = '{"args":["--fast"],"command":"docs-mcp"}'
   trusted = true          # false: declined, and not asked again until it changes
   ```
-- What needs trust: each server in the project's `.mcp.json`, each hook in its `config.toml` (item `hook:<Point>:<n>`, its definition the hook's point, command, matcher and timeout as JSON), and `approval = "auto"` or `sandbox = "off"` in its `config.toml`, and a `judge_model` other than `"off"` (a repository must not choose who judges its own actions; `off` only makes glave ask more and applies at once). Nothing else asks. Servers in `~/.glave/mcp.json` are the person's own and always trusted; on a name clash the person's wins.
+- What needs trust: each server in the project's `.mcp.json`, each hook in its `config.toml` (item `hook:<Point>:<n>`, its definition the hook's point, command, matcher and timeout as JSON), and `approval = "auto"` or `sandbox = "off"` in its `config.toml`, `[web] private_addresses = true` or a `[web] allow` list (a host it names exactly may be private), and a `judge_model` other than `"off"` (a repository must not choose who judges its own actions; `off` only makes glave ask more and applies at once). Nothing else asks. Servers in `~/.glave/mcp.json` are the person's own and always trusted; on a name clash the person's wins.
 - An organization's policy can pre-trust projects (`[projects] trusted`), or forbid project MCP servers (`[mcp] own = false`) or hooks (`[hooks] own = false`) entirely. A forbid wins over a pre-trust and over the person's yes.
 - With no one to answer, an untrusted project's servers stay off, and the model is told why: its instructions gain a "Project tools that are off" section listing what is off and why. Hooks that stay off are told to the person only: the model never calls a hook.

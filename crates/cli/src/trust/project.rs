@@ -10,7 +10,7 @@ use anyhow::Context as _;
 use glave_harness::{ApprovalMode, Hook, point_name};
 use serde_json::Value;
 
-use crate::policy::{self, Approval, ConfigFile, HooksFile, SandboxChoice};
+use crate::policy::{self, Approval, ConfigFile, HooksFile, SandboxChoice, WebFile};
 
 /// A project's MCP servers, in Claude Code's format, at the repository's root.
 pub const MCP_FILE: &str = ".mcp.json";
@@ -154,6 +154,7 @@ impl Project {
             approval: config.approval.filter(|a| *a != Approval::Auto),
             sandbox: config.sandbox.filter(|s| *s != SandboxChoice::Off),
             judge_model: config.judge_model.clone().filter(|j| j.trim() == "off"),
+            web: config.web.as_ref().map(WebFile::without_trust),
             hooks: None,
             ..config.clone()
         })
@@ -161,8 +162,9 @@ impl Project {
 }
 
 /// The settings item for the choices in `config` that loosen how commands run: approval
-/// `auto`, the sandbox `off`, and a judge model (a repo must not pick who judges its own
-/// actions; `off` only makes glave ask more). Everything else only tightens, or picks a model.
+/// `auto`, the sandbox `off`, `[web]` reaching further than the default, and a judge model (a
+/// repo must not pick who judges its own actions; `off` only makes glave ask more). Everything
+/// else only tightens, or picks a model.
 fn loosening(config: &ConfigFile) -> Option<Item> {
     let mut parts = Vec::new();
     if config.approval.map(Approval::mode) == Some(ApprovalMode::Auto) {
@@ -176,11 +178,13 @@ fn loosening(config: &ConfigFile) -> Option<Item> {
         .as_deref()
         .filter(|judge| judge.trim() != "off");
     let judge_part = judge.map(|judge| format!("judge_model = {judge:?}"));
-    (!parts.is_empty() || judge_part.is_some()).then(|| {
+    let web_part = config.web.as_ref().and_then(WebFile::loosening);
+    (!parts.is_empty() || judge_part.is_some() || web_part.is_some()).then(|| {
         let text = parts
             .iter()
             .map(|part| (*part).to_owned())
             .chain(judge_part)
+            .chain(web_part)
             .collect::<Vec<_>>()
             .join(", ");
         Item {

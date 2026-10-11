@@ -116,7 +116,7 @@ mod server {
                     ("mcp__tests__grow", Effect::Runs, false),
                     ("mcp__tests__listed", Effect::Runs, false),
                     ("mcp__tests__flood", Effect::Runs, false),
-                    ("mcp__tests__web", Effect::Runs, false),
+                    ("mcp__tests__lookup", Effect::Reads, true),
                 ]
             );
             assert_eq!(tools[0].spec.description, "Say the text back.");
@@ -235,6 +235,29 @@ mod server {
             let tools = server.tools().await.unwrap();
             assert_eq!(tools.len(), 9);
             server.close().await;
+        });
+    }
+
+    #[test]
+    fn open_world_tools_and_servers_marked_untrusted_return_untrusted_output() {
+        block_on(async {
+            let server = start(&[]).await;
+            server.tools().await.unwrap();
+            let asked = arguments(json!({"text": "rust"}));
+            let found = server.call("mcp__tests__lookup", &asked, &Never).await;
+            assert!(found.untrusted && !found.is_error, "{found:?}");
+            let echoed = server.call("mcp__tests__echo", &asked, &Never).await;
+            assert!(
+                !echoed.untrusted,
+                "a closed-world tool's output is not marked"
+            );
+            server.close().await;
+            let marked =
+                launch("tests", &stdio(SERVER, &[], &[]), Limits::default()).untrusted(true);
+            marked.tools().await.unwrap();
+            let echoed = marked.call("mcp__tests__echo", &asked, &Never).await;
+            assert!(echoed.untrusted && marked.is_untrusted());
+            marked.close().await;
         });
     }
 
