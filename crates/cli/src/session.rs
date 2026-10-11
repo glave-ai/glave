@@ -133,7 +133,6 @@ struct Wired {
     memory: Option<crate::memory::Running>,
 }
 
-/// Builds the session server on this computer's store and the current folder.
 /// The task limits every `[tasks]` rule of `constraints` sets at once.
 fn task_limits(constraints: &policy::Constraints) -> glave_session::TaskLimits {
     let rules = constraints.task_limits();
@@ -143,6 +142,7 @@ fn task_limits(constraints: &policy::Constraints) -> glave_session::TaskLimits {
     }
 }
 
+/// Builds the session server on this computer's store and the current folder.
 async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Result<Wired> {
     let folder = std::env::current_dir()?;
     let mut setup = Setup::load(args, &folder, asking).await?;
