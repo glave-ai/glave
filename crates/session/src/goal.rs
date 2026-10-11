@@ -30,6 +30,8 @@ where
         goal: Option<Goal>,
     ) -> Result<TurnStream, ApiError> {
         self.authorize(caller, thread).await?;
+        // A model the thread chose before must still be one this server runs.
+        self.model_of(thread, None).await?;
         if goal.is_none() && !self.goal(thread).await?.is_some_and(|g| g.resumable()) {
             return Err(no_goal(thread));
         }

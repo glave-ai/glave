@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use glave_harness::{ApprovalMode, SandboxLevel};
 
-use crate::policy::files::{Approval, ConfigFile, SandboxChoice};
+use crate::policy::files::{Approval, ConfigFile, ModelEntry, SandboxChoice};
 use crate::policy::memory::{MemoryChoice, SpaceChoice};
 use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkersFile};
@@ -100,6 +100,8 @@ pub struct Choices {
     pub network: Chosen<bool>,
     /// The MCP servers to turn on; every server in `mcp.json` when not chosen.
     pub mcp: Option<Chosen<Vec<String>>>,
+    /// Models offered for a thread besides `model`; none when not chosen.
+    pub models: Option<Chosen<Vec<ModelEntry>>>,
     /// Whether each new thread works in a worktree of its own; off, in the folder itself.
     pub worktree: Chosen<bool>,
     /// Where new threads work: here by default.
@@ -177,6 +179,7 @@ pub fn resolve(layers: &[Layer]) -> Choices {
         ),
         network: defaulted(nearest(layers, "network", |file| file.network), true),
         mcp: nearest(layers, "mcp", |file| file.mcp.clone()),
+        models: nearest(layers, "models", |file| file.models.clone()),
         worktree: defaulted(nearest(layers, "worktree", |file| file.worktree), false),
         on: defaulted(nearest(layers, "on", |file| file.on), On::Here),
         workers: nearest(layers, "workers", |file| file.workers.clone()),

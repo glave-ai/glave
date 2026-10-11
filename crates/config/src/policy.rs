@@ -21,7 +21,9 @@ use glave_harness::Hook;
 pub use choices::{Choices, Chosen, Layer, Level, Source};
 pub use effective::{check_model, check_own_servers, unsandboxed};
 pub use explain::explain;
-pub use files::{Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, TaskRules, config};
+pub use files::{
+    Approval, ConfigFile, HooksFile, ModelEntry, PolicyFile, SandboxChoice, TaskRules, config,
+};
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use rules::Constraints;
 pub use web::WebFile;

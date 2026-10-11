@@ -9,6 +9,7 @@ mod caller;
 mod calls;
 mod cancel;
 mod children;
+mod chosen;
 mod commands;
 mod compaction;
 mod conversation;

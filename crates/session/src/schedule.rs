@@ -210,7 +210,7 @@ where
         let caller = Caller::default();
         let home = self.inner.home.space;
         let thread = self
-            .new_thread(&caller, home, schedule.worktree, true)
+            .new_thread(&caller, home, schedule.worktree, true, None)
             .await?;
         let work = if schedule.goal {
             Work::Goal(Some(Goal {
@@ -218,7 +218,7 @@ where
                 token_budget: schedule.budget,
             }))
         } else {
-            Work::Turn(schedule.prompt.clone())
+            Work::Turn(schedule.prompt.clone(), None)
         };
         let fired = Fired {
             schedule: schedule.schedule,

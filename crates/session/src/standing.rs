@@ -36,9 +36,12 @@ where
                 space,
                 worktree,
                 background,
+                model,
             } => {
                 let space = self.space_for(caller, space).await?.id;
-                let thread = self.new_thread(caller, space, worktree, background).await?;
+                let thread = self
+                    .new_thread(caller, space, worktree, background, model.as_deref())
+                    .await?;
                 let scope = Scope {
                     org: self.inner.home.org,
                     space,

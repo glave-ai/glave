@@ -88,6 +88,35 @@ mod listing {
     }
 
     #[test]
+    fn a_thread_opened_with_the_projects_instructions_is_titled_by_the_prompt() {
+        let dir = folder("listing-instructions");
+        std::fs::write(dir.join("AGENTS.md"), "# Rules\n\nKeep answers short.\n").unwrap();
+        block_on(async {
+            let answers = vec![answer(Some("Hi."), None)];
+            let mut settings = Settings::new("test-model", "script");
+            settings.instructions = glave_harness::agents_md(&dir, None)
+                .await
+                .unwrap()
+                .map(|loaded| loaded.text);
+            let log = MemoryLog::new();
+            let server = server_with(&dir, answers, None, log, Answering::NoOne, 1, settings).await;
+            let thread = start(&server, false).await;
+            turn(&server, thread).await.unwrap();
+            let opening = events(&server, thread)
+                .await
+                .into_iter()
+                .find(|event| event.kind.as_str() == "message.added")
+                .unwrap();
+            assert!(
+                opening.data.get().contains("Keep answers short."),
+                "the first message opens with the instructions"
+            );
+            let (threads, _) = page(&server, 10, None).await;
+            assert_eq!(threads[0].title.as_deref(), Some("go"));
+        });
+    }
+
+    #[test]
     fn a_rename_titles_the_thread() {
         let dir = folder("listing-rename");
         block_on(async {

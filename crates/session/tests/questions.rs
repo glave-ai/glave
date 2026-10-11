@@ -24,6 +24,7 @@ mod questions {
                 space: None,
                 background: false,
                 worktree: None,
+                model: None,
             })
             .await
             .unwrap()
@@ -176,6 +177,7 @@ mod questions {
                     thread,
                     prompt: "set up storage".into(),
                     meta: Meta::default(),
+                    model: None,
                 })
                 .await
                 .unwrap();

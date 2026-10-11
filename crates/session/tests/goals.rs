@@ -49,6 +49,7 @@ mod goals {
                 space: None,
                 background: false,
                 worktree: None,
+                model: None,
             })
             .await
             .unwrap()

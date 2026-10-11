@@ -29,6 +29,7 @@ const WRITE_AHEAD: usize = 256;
 /// Every method a request may name.
 pub(crate) const METHODS: &[&str] = &[
     "server/discover",
+    "model/list",
     "thread/start",
     "thread/list",
     "thread/rename",
@@ -320,7 +321,8 @@ mod tests {
             Request::ThreadStart {
                 space: None,
                 worktree: None,
-                background: false
+                background: false,
+                model: None,
             }
         );
         let (_, request) =
@@ -331,7 +333,8 @@ mod tests {
             Request::ThreadStart {
                 space: None,
                 worktree: Some(true),
-                background: false
+                background: false,
+                model: None,
             }
         );
     }
