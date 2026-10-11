@@ -8,6 +8,7 @@ use glave_harness::{ApprovalMode, Hook, HookPoint, Hooks, SandboxLevel};
 use globset::Glob;
 
 use crate::policy::memory::{MemoryChoice, MemoryRules, SpaceChoice};
+use crate::policy::placement::PlacementRules;
 use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkerRules, WorkersFile};
 use serde::Deserialize;
@@ -48,6 +49,26 @@ pub struct ConfigFile {
     pub space_memory: Option<SpaceChoice>,
     /// Where spans and metrics go. Only the person's or the server's own file sets it.
     pub telemetry: Option<TelemetryFile>,
+    /// The data store. Only the person's or the server's own file sets it.
+    pub store: Option<StoreFile>,
+}
+
+/// `[store]`: the one data store (AGENTS.md, "One of each"). The local SQLite file in glave's
+/// folder unless `url` names a Postgres database.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoreFile {
+    /// `postgres://user:password@host/database`; TLS off this computer unless
+    /// `sslmode=disable`.
+    pub url: String,
+}
+
+impl StoreFile {
+    /// Whether `url` names a Postgres database.
+    pub fn postgres(url: &str) -> bool {
+        let url = url.trim();
+        url.starts_with("postgres://") || url.starts_with("postgresql://")
+    }
 }
 
 /// `[telemetry]`: an OpenTelemetry collector to send spans and metrics to. Off unless set;
@@ -217,6 +238,8 @@ pub struct PolicyFile {
     pub tasks: TaskRules,
     #[serde(default)]
     pub memory: MemoryRules,
+    #[serde(default)]
+    pub placement: PlacementRules,
 }
 
 /// `[tasks]`: what one person may run with no one attached, and keep scheduled.
@@ -340,6 +363,15 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
                 telemetry.otlp
             );
         }
+    }
+    if let Some(store) = &file.store
+        && !StoreFile::postgres(&store.url)
+    {
+        invalid!(
+            "{}: [store] url = {:?} is not a postgres:// URL",
+            path.display(),
+            crate::policy::redacted(&store.url)
+        );
     }
     if let Some(web) = &file.web {
         web.policy().map_err(|error| {

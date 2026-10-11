@@ -158,6 +158,7 @@ mod spaces {
                 space: None,
                 worktree: None,
                 background: false,
+                computer: None,
             };
             let theirs = ada.call(&start).await["result"]["thread"]["id"].clone();
             let thread = serde_json::from_value(theirs.clone()).unwrap();
@@ -226,6 +227,7 @@ mod spaces {
                     space: None,
                     worktree: None,
                     background: false,
+                    computer: None,
                 })
                 .await;
             let id = started["result"]["thread"]["id"].clone();
@@ -309,6 +311,7 @@ mod spaces {
                         space: Some(space.id),
                         worktree: None,
                         background: false,
+                        computer: None,
                     },
                 )
                 .await

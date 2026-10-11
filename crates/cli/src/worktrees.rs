@@ -14,11 +14,10 @@ use glave_harness::OsEntropy;
 use glave_ports::secrets::without_secrets;
 use glave_ports::{EventLog, Scope};
 use glave_session::protocol::{Reply, Request};
-use glave_store_sqlite::Store;
 use jiff::{SignedDuration, Timestamp};
 
 use crate::client::Glave;
-use crate::{home, keys};
+use crate::home;
 
 pub use cleanup::Cleanup;
 
@@ -122,11 +121,7 @@ async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
         print!("{}", listing(&kept, &home.join(FOLDER)));
         return Ok(());
     }
-    let store = Store::open(
-        home::database().await?,
-        keys::settings(&home, home::relocated()).await?,
-    )
-    .await?;
+    let store = crate::data::Data::here().await?;
     let now = Timestamp::now();
     let trash = this_machines_trash(now);
     let cleanup = Cleanup {

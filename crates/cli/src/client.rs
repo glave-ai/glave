@@ -13,16 +13,16 @@ use glave_gateway::Gateway;
 use glave_harness::{Caller, Cancel, Goal, Question};
 use glave_session::protocol::{Answer, ApiError, Notification, Reply, Request, Update, code};
 use glave_session::{Server, TurnItem, TurnStream};
-use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 
 use crate::asking;
 use crate::config::{self, Endpoint};
+use crate::data::{DataBlobs, DataLog};
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::terminal::Printer;
 use crate::waiting::Waiting;
 
-pub type Glave = Server<Gateway, SqliteLog, SqliteBlobs>;
+pub type Glave = Server<Gateway, DataLog, DataBlobs>;
 
 /// What a turn is followed with.
 pub struct Client<'a> {

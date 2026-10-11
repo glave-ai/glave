@@ -7,11 +7,10 @@ use std::process::ExitCode;
 use glave_event::ThreadId;
 use glave_harness::{Change, Entropy, OsEntropy, Standing, change_standing};
 use glave_ports::{EventLog, Scope, ThreadQuery};
-use glave_store_sqlite::Store;
 use jiff::Timestamp;
 use uuid::Uuid;
 
-use crate::{home, keys, worktrees};
+use crate::{home, worktrees};
 
 pub const USAGE: &str = "\
 glave threads: the threads in this folder
@@ -92,11 +91,7 @@ pub fn main(arguments: &[String]) -> ExitCode {
 
 async fn run(command: Command) -> anyhow::Result<()> {
     let home = home::folder()?;
-    let store = Store::open(
-        home::database().await?,
-        keys::settings(&home, home::relocated()).await?,
-    )
-    .await?;
+    let store = crate::data::Data::here().await?;
     let person = crate::identity::load_or_make(&home).await?.person;
     let scope = crate::spaces::here(&store, &std::env::current_dir()?, person).await?;
     let log = store.log();

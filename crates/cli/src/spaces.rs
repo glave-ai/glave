@@ -5,14 +5,14 @@
 use std::path::Path;
 
 use glave_event::{At, Principal, PrincipalId};
-use glave_ports::{FolderKey, OrgId, Scope, Space, SpaceId, SpaceKind, Spaces as _};
-use glave_store_sqlite::Store;
+use glave_ports::{FolderKey, OrgId, Scope, Space, SpaceId, SpaceKind};
 
-use crate::system::{new_uuid_v7, random_uuid};
+use crate::data::Data;
+use crate::system::new_uuid_v7;
 
-/// This computer's one organization.
-async fn org(store: &Store) -> anyhow::Result<OrgId> {
-    Ok(store.org(random_uuid()).await?)
+/// The store's one organization.
+async fn org(store: &Data) -> anyhow::Result<OrgId> {
+    store.org().await
 }
 
 /// A new space record, owned by `owner`, made now.
@@ -32,7 +32,7 @@ fn new_space(kind: SpaceKind, name: String, owner: Principal) -> Space {
 /// The scope of the project space `folder` leads to, for `person`: found by its path, else by
 /// the repository's `origin` remote, else made as theirs. Spaces made before spaces were
 /// records become theirs first.
-pub async fn here(store: &Store, folder: &Path, person: PrincipalId) -> anyhow::Result<Scope> {
+pub async fn here(store: &Data, folder: &Path, person: PrincipalId) -> anyhow::Result<Scope> {
     let org = org(store).await?;
     let owner = Principal::person(person);
     store.claim_spaces(&owner).await?;
@@ -56,7 +56,7 @@ pub async fn here(store: &Store, folder: &Path, person: PrincipalId) -> anyhow::
 }
 
 /// The scope of `person`'s personal space, made the first time.
-pub async fn personal(store: &Store, person: PrincipalId) -> anyhow::Result<Scope> {
+pub async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope> {
     let org = org(store).await?;
     let new = new_space(
         SpaceKind::Personal,
@@ -72,7 +72,7 @@ pub async fn personal(store: &Store, person: PrincipalId) -> anyhow::Result<Scop
 
 /// The scope glave keeps a record of its own under `name`, such as the gateway's, which no
 /// person works in.
-pub async fn named(store: &Store, name: &str) -> anyhow::Result<Scope> {
+pub async fn named(store: &Data, name: &str) -> anyhow::Result<Scope> {
     let org = org(store).await?;
     let new = new_space(SpaceKind::Project, name.to_owned(), Principal::glave());
     let keys = [FolderKey::Path(name.to_owned())];

@@ -17,12 +17,12 @@ use glave_memory::ModelTidier;
 use glave_ports::ToolSource;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, Server, Wiring};
-use glave_store_sqlite::Store;
 use glave_web::{Web, WebSettings};
 
 use crate::args::{self, Action, Args, USAGE};
 use crate::client::{Client, Glave};
 use crate::config::{self, Endpoint};
+use crate::data::Data;
 use crate::gateway::Allowed;
 use crate::gateway::remote::Remote;
 use crate::input::{CtrlC, Input};
@@ -30,7 +30,7 @@ use crate::mcp::Servers;
 use crate::model::Model;
 use crate::setup::{self, Setup};
 use crate::terminal::Printer;
-use crate::{gateway, home, identity, keys};
+use crate::{gateway, home, identity};
 use glave_config::policy::{self, Choices, On, Source};
 use glave_config::trust::{self, Asking};
 use glave_gateway::Gateway;
@@ -178,7 +178,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let choices = &setup.choices;
     let (remote, endpoint) = endpoint(choices)?;
     let (provider, judge) = provider(&setup, &endpoint)?;
-    let store = store(database).await?;
+    let store = store(&setup).await?;
     let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
     let personal = home::folder()?.join(AGENTS_MD);
     let instructions = agents_md(workspace.root(), Some(&personal)).await?;
@@ -225,7 +225,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         workers: on_workers,
         tasks: task_limits(&setup.loaded.constraints),
         memory: memory.as_ref().map(crate::memory::Running::handle),
-        spaces: Arc::new(store.spaces()),
+        spaces: store.spaces(),
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
@@ -305,10 +305,10 @@ fn provider(setup: &Setup, endpoint: &Endpoint) -> anyhow::Result<(Gateway, Opti
     Ok((provider, judge))
 }
 
-/// The store in `database`, once this machine's worktrees have had their daily check.
-async fn store(database: PathBuf) -> anyhow::Result<Store> {
-    let keys = keys::settings(&home::folder()?, home::relocated()).await?;
-    let store = Store::open(database, keys).await?;
+/// The data store the setup's choices name, once this machine's worktrees have had their
+/// daily check.
+async fn store(setup: &Setup) -> anyhow::Result<Data> {
+    let store = Data::chosen(&setup.choices).await?;
     crate::worktrees::check_at_start(&store.log()).await;
     Ok(store)
 }
@@ -395,7 +395,7 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         if asks { Asking::Person } else { Asking::NoOne },
     )
     .await?;
-    let ran = session(&args, &wired, asks).await;
+    let ran = Box::pin(session(&args, &wired, asks)).await;
     wired.server.shutdown().await;
     if let Some(workers) = &wired.workers {
         crate::cloud::release(&wired.server, workers).await;
@@ -519,6 +519,7 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
             space: None,
             background: false,
             worktree: None,
+            computer: None,
         })
         .await?
     {

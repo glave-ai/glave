@@ -320,7 +320,8 @@ mod tests {
             Request::ThreadStart {
                 space: None,
                 worktree: None,
-                background: false
+                background: false,
+                computer: None,
             }
         );
         let (_, request) =
@@ -331,7 +332,8 @@ mod tests {
             Request::ThreadStart {
                 space: None,
                 worktree: Some(true),
-                background: false
+                background: false,
+                computer: None,
             }
         );
     }

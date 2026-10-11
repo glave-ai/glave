@@ -93,6 +93,10 @@ private_addresses = false                     # default false; a host allow name
 [gateway]                                     # the person's file only: the organization's gateway
 url = "https://gateway.example.com"           # model calls and the tool catalog go through it
 
+[store]                                       # the person's or server's file only; also GLAVE_STORE_URL
+url = "postgres://glave:...@db.example.com/glave"  # the one data store; the local SQLite file when absent.
+                                              # TLS off this computer unless sslmode=disable; shown without its password
+
 [telemetry]                                   # the person's or server's file only; off by default
 otlp = "http://localhost:4318"                # spans and metrics (never content) to this OTLP/HTTP collector
 
@@ -133,6 +137,10 @@ catalog = ["github", "jira"]                      # servers the organization off
 own = false                                       # may people add their own servers
 untrusted = ["search"]                            # servers whose output is untrusted (approvals.md)
 trusted = ["docs"]                                # remote or project servers vouched for
+
+[placement]
+allowed = ["here", "worker", "laptop"]            # where threads may work; every place when absent.
+                                                  # "laptop" (a person's computer dialled in) is not available yet
 
 [budget]
 person_per_day_usd = 20

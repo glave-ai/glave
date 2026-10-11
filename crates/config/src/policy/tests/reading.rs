@@ -260,3 +260,34 @@ fn telemetry_goes_only_where_the_person_says_never_where_a_project_does() {
     let refused = refused.unwrap_err().to_string();
     assert!(refused.contains("[telemetry] otlp"), "{refused}");
 }
+
+#[test]
+fn the_store_is_the_person_s_choice_and_its_password_never_shown() {
+    let dir = scratch("store");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let url = "postgres://glave:hunter2hunter2@db.example.com/glave";
+    let text = format!("[store]\nurl = \"{url}\"\n");
+    let project = files::config(&text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.store, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), &text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    assert_eq!(loaded.choices.store.as_ref().unwrap().value, url);
+    let (shown, _) = explain(&loaded, None);
+    assert!(
+        shown.contains("postgres://glave:***@db.example.com/glave"),
+        "{shown}"
+    );
+    assert!(!shown.contains("hunter2"), "{shown}");
+    let wrong = "[store]\nurl = \"mysql://glave:hunter2hunter2@db\"\n";
+    let refused = files::config(wrong, &locations.person)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        refused.contains("[store] url") && !refused.contains("hunter2"),
+        "{refused}"
+    );
+}

@@ -9,7 +9,7 @@ use glave_event::{
     Seq, ThreadId, TokenCounts, When,
 };
 use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
-use glave_ports::{Failure, Space, SpaceId, Standing};
+use glave_ports::{ComputerId, Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
@@ -37,6 +37,10 @@ pub enum Request {
         /// even when other threads work here.
         #[serde(default, skip_serializing_if = "is_false")]
         background: bool,
+        /// A running computer to work on, such as the person's own laptop dialled in to this
+        /// server. Not available yet: refused with `-32021`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        computer: Option<ComputerId>,
     },
     #[serde(rename = "thread/list")]
     ThreadList {
@@ -683,6 +687,8 @@ pub mod code {
     pub const NO_SPACE: i64 = -32019;
     /// The request's parameters do not make sense together.
     pub const INVALID_PARAMS: i64 = -32602;
+    /// What was asked for is not built yet, such as a thread on a computer that dialled in.
+    pub const NOT_AVAILABLE: i64 = -32021;
 }
 
 impl ApiError {

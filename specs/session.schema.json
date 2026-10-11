@@ -63,6 +63,11 @@
       ],
       "type": "object"
     },
+    "ComputerId": {
+      "description": "Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it).",
+      "format": "uuid",
+      "type": "string"
+    },
     "Currency": {
       "description": "An ISO 4217 currency code: three uppercase ASCII letters, such as `USD`.",
       "type": "string"
@@ -2315,6 +2320,17 @@
           "background": {
             "description": "For a thread that runs as a task: it works on a worker when the server has them,\neven when other threads work here.",
             "type": "boolean"
+          },
+          "computer": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ComputerId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A running computer to work on, such as the person's own laptop dialled in to this\nserver. Not available yet: refused with `-32021`."
           },
           "space": {
             "anyOf": [

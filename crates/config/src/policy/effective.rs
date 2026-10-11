@@ -19,6 +19,7 @@ pub fn settle(mut choices: Choices, constraints: &Constraints) -> crate::Result<
     choices.judge = judge(choices.judge, constraints)?;
     choices.sandbox = sandbox(choices.sandbox, constraints)?;
     crate::policy::memory::settle(&choices, constraints)?;
+    let choices = crate::policy::placement::settle(choices, constraints)?;
     Ok(asks_unconfined(choices, constraints))
 }
 

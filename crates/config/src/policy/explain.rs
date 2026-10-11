@@ -149,6 +149,10 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
     if let Some(gateway) = &choices.gateway {
         rows.push(row("gateway", gateway.value.clone(), &gateway.from));
     }
+    if let Some(store) = &choices.store {
+        let shown = crate::policy::redacted(&store.value);
+        rows.push(row("store", shown, &store.from));
+    }
     if let Some(telemetry) = &choices.telemetry {
         rows.push(row("telemetry", telemetry.value.clone(), &telemetry.from));
     }

@@ -46,7 +46,7 @@ crates/gateway/     glave-gateway: the in-process gateway (specs/gateway.md): ro
 crates/gateway-service/  glave-gateway-service: the gateway as a service (`glave gateway serve`): OpenAI and Anthropic surfaces, OIDC sign-in (glave-identity), per-caller policy, budgets and metering, the MCP tool catalog at /mcp
 crates/keys/        glave-keys: the key hierarchy (root, organization, space, data keys), sealing at rest, erasure; roots in the OS keychain (`keychain`) or a key file
 crates/store-sqlite/  glave-store-sqlite: the event log, blob store and wrapped keys on one local SQLite file, content sealed
-crates/store-postgres/  glave-store-postgres: the event log, blob store and wrapped keys on Postgres, an organization's one data store, content sealed
+crates/store-postgres/  glave-store-postgres: the event log, blob store and wrapped keys on Postgres, an organization's one data store (`[store] url`), TLS off this computer, content sealed
 crates/shell/       glave-shell: shell commands read before they run (tree-sitter-bash): read-only, risky with a reason, or neither
 crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`); open-world tools and servers marked untrusted return untrusted output
 crates/memory/      glave-memory: memory (specs/memory.md): an in-process MCP server over the data store, each memory sealed under its own key, scoped by the session; a conformance suite for memory servers

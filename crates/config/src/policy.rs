@@ -7,6 +7,8 @@ mod effective;
 mod explain;
 mod files;
 mod memory;
+mod placement;
+mod redact;
 mod rules;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -22,9 +24,12 @@ pub use choices::{Choices, Chosen, Layer, Level, Source};
 pub use effective::{check_model, check_own_servers, unsandboxed};
 pub use explain::explain;
 pub use files::{
-    Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, TaskRules, TelemetryFile, config,
+    Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, StoreFile, TaskRules,
+    TelemetryFile, config,
 };
 pub use memory::{MemorySettings, settle as memory_settings};
+pub use placement::{Placement, PlacementRules};
+pub use redact::redacted;
 pub use rules::Constraints;
 pub use web::WebFile;
 pub use workers::{Backend, On, WorkersFile};
@@ -156,11 +161,12 @@ pub async fn load(
     if let Some(values) = project {
         // A project never chooses the gateway: the person's sign-in would go where it said.
         // Nor whether the person's memory is on: that is theirs alone. Nor where telemetry
-        // goes. It may take the network away from sandboxed commands, never give it back.
+        // goes, nor where history is kept. It may take the network away from sandboxed commands, never give it back.
         let values = ConfigFile {
             gateway: None,
             memory: None,
             telemetry: None,
+            store: None,
             network: values.network.filter(|on| !on),
             ..values
         };

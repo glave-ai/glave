@@ -39,6 +39,8 @@ glave-ports.workspace = true
 glave-provider-anthropic.workspace = true
 glave-provider-openai.workspace = true
 glave-session.workspace = true
+# The data store: the local SQLite file, or Postgres for a server (`[store] url`).
+glave-store-postgres.workspace = true
 glave-store-sqlite.workspace = true
 glave-web.workspace = true
 globset.workspace = true
@@ -65,6 +67,8 @@ hyper = { workspace = true, features = ["http1", "server"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 insta.workspace = true
 tokio = { workspace = true, features = ["process"] }
+# Making and inspecting the Postgres test schema.
+tokio-postgres.workspace = true
 
 [[bench]]
 name = "budgets"
