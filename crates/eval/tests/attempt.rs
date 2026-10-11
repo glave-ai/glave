@@ -37,7 +37,23 @@ mod attempts {
         std::fs::create_dir_all(task.join("tests")).unwrap();
         std::fs::write(task.join("environment/README.md"), "# scratch\n").unwrap();
         std::fs::write(task.join("instruction.md"), "Write hello.txt saying hi.\n").unwrap();
-        std::fs::write(task.join("task.toml"), format!("[glave]\n{glave}\n")).unwrap();
+        // Unconfined and without asking unless a test says otherwise, so the runner's own
+        // behaviour is the same on a computer with no sandbox.
+        let sandbox = if glave.contains("sandbox") {
+            ""
+        } else {
+            "sandbox = \"off\"\n"
+        };
+        let approval = if glave.contains("approval") {
+            ""
+        } else {
+            "approval = \"auto\"\n"
+        };
+        std::fs::write(
+            task.join("task.toml"),
+            format!("[glave]\n{sandbox}{approval}{glave}\n"),
+        )
+        .unwrap();
         std::fs::write(task.join("tests/test.sh"), test).unwrap();
         load(&task).unwrap()
     }
@@ -72,12 +88,10 @@ mod attempts {
             &dir,
             r#"checks = [{ answer_contains = "hello.txt" }, { exists = "hello.txt" }, { kept = "README.md" }]"#,
             // The grader sees the workspace, never glave's endpoint variables, and builds in
-            // a folder of the run's own outside the workspace: in the sandbox, glave's default,
-            // one in /tmp, which sandboxed commands may write.
+            // the run's own folder, outside the workspace.
             "grep -q hi hello.txt && test -z \"${GLAVE_API_KEY:-}\"\n\
              mkdir -p \"$CARGO_TARGET_DIR\"\n\
-             case \"$CARGO_TARGET_DIR\" in /tmp/glave-eval-*/target) ;; *) exit 1;; esac\n\
-             echo \"$CARGO_TARGET_DIR\" > ../target-path.txt\n",
+             test \"$(cd \"$CARGO_TARGET_DIR\" && pwd -P)\" = \"$(cd .. && pwd -P)/target\"\n",
         );
         let server = FakeServer::start(writes_hello()).unwrap();
         let run = dir.join("run");
@@ -95,10 +109,9 @@ mod attempts {
         );
         assert!(transcript.contains("[tool]"), "{transcript}");
         assert!(run.join("test.log").is_file());
-        let target = std::fs::read_to_string(run.join("target-path.txt")).unwrap();
         assert!(
-            !std::path::Path::new(target.trim()).exists(),
-            "what the run built is removed: {target}"
+            !run.join("target").exists(),
+            "what the run built is removed"
         );
         let sent = server.received();
         assert_eq!(

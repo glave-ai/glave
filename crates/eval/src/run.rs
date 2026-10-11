@@ -9,8 +9,9 @@ use std::time::Instant;
 
 use glave_computer::LocalComputers;
 use glave_harness::{
-    Caller, Cancel, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox,
-    Settings, Skills, SystemClock, Todo, Workspace, agents_md, find_skills, skill_folders,
+    ApprovalMode, Caller, Cancel, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, OsEntropy,
+    Parts, Sandbox, Settings, Skills, SystemClock, Todo, Workspace, agents_md, find_skills,
+    skill_folders,
 };
 use glave_ports::{EventLog, ToolSource};
 use glave_provider_openai::{Config, OpenAiCompatible};
@@ -178,6 +179,36 @@ pub async fn attempt(
     Ok(attempt)
 }
 
+/// The workspace in `root`, in the sandbox the task runs in, and the approval mode it runs
+/// with. As glave does: where the default sandbox cannot run, commands run without it and ask
+/// (with no one to ask, they are not run); a sandbox the task names never gives way.
+async fn workspace(
+    task: &Task,
+    environment: &Environment,
+    root: &Path,
+) -> Result<(Workspace, ApprovalMode), EvalError> {
+    let open = || async {
+        let (computers, info) = LocalComputers::here(root, environment.clone())
+            .await
+            .map_err(|error| EvalError::io("open", root)(std::io::Error::other(error)))?;
+        Ok::<_, EvalError>(Workspace::new(computers, info))
+    };
+    let Some(level) = task.sandbox else {
+        return Ok((open().await?, task.approval));
+    };
+    let sandbox = Sandbox {
+        level,
+        network: task.network,
+        home: environment.get(&OsString::from("HOME")).map(PathBuf::from),
+        glave_home: None,
+    };
+    match open().await?.with_sandbox(&sandbox).await {
+        Ok(workspace) => Ok((workspace, task.approval)),
+        Err(_) if !task.sandbox_named => Ok((open().await?, ApprovalMode::Ask)),
+        Err(error) => Err(EvalError::io("sandbox", root)(std::io::Error::other(error))),
+    }
+}
+
 /// The harness for one attempt, wired in-process: a real provider, an in-memory log, the
 /// workspace (sandboxed when the task asks) and no one to approve anything.
 async fn wire(
@@ -188,22 +219,7 @@ async fn wire(
     (root, web): (&Path, Option<&str>),
     remembering: &Remembering,
 ) -> Result<Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, NoOneToAsk>, EvalError> {
-    let (computers, info) = LocalComputers::here(root, environment.clone())
-        .await
-        .map_err(|error| EvalError::io("open", root)(std::io::Error::other(error)))?;
-    let mut workspace = Workspace::new(computers, info);
-    if let Some(level) = task.sandbox {
-        let sandbox = Sandbox {
-            level,
-            network: task.network,
-            home: environment.get(&OsString::from("HOME")).map(PathBuf::from),
-            glave_home: None,
-        };
-        workspace = workspace
-            .with_sandbox(&sandbox)
-            .await
-            .map_err(|error| EvalError::io("sandbox", root)(std::io::Error::other(error)))?;
-    }
+    let (workspace, approval) = workspace(task, environment, root).await?;
     let provider = OpenAiCompatible::new(setup.endpoint.clone())
         .map_err(|err| EvalError::Setup(err.to_string()))?;
     let mut settings = Settings::new(model, setup.endpoint.provider.clone());
@@ -211,7 +227,7 @@ async fn wire(
         .await
         .map_err(EvalError::io("read the instructions in", root))?
         .map(|loaded| loaded.text);
-    settings.approval = task.approval;
+    settings.approval = approval;
     settings.subagents = setup.subagents;
     settings.person = Some(crate::memory::person()?);
     // As the CLI runs it: the model under test also judges flagged actions in auto mode.

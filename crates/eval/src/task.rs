@@ -40,6 +40,9 @@ pub struct Task {
     pub approval: ApprovalMode,
     /// `project` unless the task says otherwise, as glave runs by default; `None` is off.
     pub sandbox: Option<SandboxLevel>,
+    /// Whether the task names its sandbox. One it names must run; glave's default gives way
+    /// where this computer has none, as it does in glave.
+    pub sandbox_named: bool,
     /// Whether sandboxed commands may use the network: on unless the task says otherwise.
     pub network: bool,
     pub context_window: Option<u64>,
@@ -233,6 +236,7 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         tier: glave.tier,
         approval,
         sandbox,
+        sandbox_named: glave.sandbox.is_some(),
         network: glave.network.unwrap_or(true),
         context_window: glave.context_window,
         setup: glave.setup,
