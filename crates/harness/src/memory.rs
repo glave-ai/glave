@@ -30,6 +30,8 @@ pub const REMEMBER: &str = "mcp__memory__remember";
 pub const EDIT_MEMORY: &str = "mcp__memory__edit";
 /// The tool that forgets a memory.
 pub const FORGET: &str = "mcp__memory__forget";
+/// The tool that searches memories and past conversations by keyword.
+pub const RECALL: &str = "mcp__memory__recall";
 
 /// The memory ledger's reserved thread id: the UUID v7 at time zero whose random bits are 1,
 /// `00000000-0000-7000-8000-000000000001`, beside the task ledger's `…0000`. No thread can
@@ -219,6 +221,15 @@ pub trait Memory: Send + Sync {
         on: &'a MemoryContext,
         wanted: &'a [Shown],
     ) -> BoxFuture<'a, Result<Vec<Remembered>, MemoryError>>;
+
+    /// Pairs of the memories a thread of `on` reads that tidy-up could not reconcile: both are
+    /// kept until the person says which holds. None by default.
+    fn questions<'a>(
+        &'a self,
+        _on: &'a MemoryContext,
+    ) -> BoxFuture<'a, Result<Vec<[MemoryId; 2]>, MemoryError>> {
+        Box::pin(std::future::ready(Ok(Vec::new())))
+    }
 
     /// One of the person's controls, by `by`. Returns the memories it lists or changed.
     fn control<'a>(

@@ -18,6 +18,10 @@ const START: &str = "# Memory\n\n<MEMORY>\nWhat you saved with the memory tools 
 
 const END: &str = "</MEMORY>";
 
+const UNSURE: &str = "Unsure: tidy-up found memories that disagree and could not tell which \
+     holds. Before relying on either, ask the person which is right (with the question tool \
+     when you can), then forget or replace the wrong one:";
+
 const NOTE: &str = "[Memory updates since we last spoke]";
 
 const NOTE_END: &str = "[End of memory updates]";
@@ -28,16 +32,25 @@ pub(crate) enum Line {
     Added(Remembered),
     Changed(Remembered),
     Forgotten(MemoryId),
+    /// A contradiction tidy-up left for the person.
+    Asked([MemoryId; 2]),
 }
 
-/// The block that opens a thread, or `None` when there is nothing to show.
-pub(crate) fn start(memories: &[Remembered]) -> Option<String> {
+/// The block that opens a thread, or `None` when there is nothing to show: each memory, then
+/// any contradiction left for the person.
+pub(crate) fn start(memories: &[Remembered], questions: &[[MemoryId; 2]]) -> Option<String> {
     if memories.is_empty() {
         return None;
     }
     let mut text = format!("{START}\n");
     for memory in memories {
         let _ = write!(text, "\n- {}", line(memory));
+    }
+    if !questions.is_empty() {
+        let _ = write!(text, "\n\n{UNSURE}");
+        for [one, other] in questions {
+            let _ = write!(text, "\n- [{one}] or [{other}]");
+        }
     }
     let _ = write!(text, "\n{END}");
     Some(text)
@@ -54,6 +67,11 @@ pub(crate) fn note(lines: &[Line]) -> Option<String> {
             Line::Added(memory) => write!(text, "\n- added {}", line(memory)),
             Line::Changed(memory) => write!(text, "\n- changed {}", line(memory)),
             Line::Forgotten(memory) => write!(text, "\n- forgotten [{memory}]"),
+            Line::Asked([one, other]) => write!(
+                text,
+                "\n- unsure which holds: [{one}] or [{other}]; ask the person, then forget or \
+                 replace the wrong one"
+            ),
         };
     }
     let _ = write!(text, "\n{NOTE_END}");
@@ -125,8 +143,12 @@ mod tests {
 
     #[test]
     fn the_start_lists_each_memory_with_its_id_scope_and_dates() {
-        assert_eq!(start(&[]), None);
-        let text = start(&[memory(1, 1, "use tabs"), memory(2, 2, "make db first")]).unwrap();
+        assert_eq!(start(&[], &[]), None);
+        let text = start(
+            &[memory(1, 1, "use tabs"), memory(2, 2, "make db first")],
+            &[],
+        )
+        .unwrap();
         assert!(text.starts_with("# Memory\n\n<MEMORY>\n"), "{text}");
         assert!(
             text.ends_with(

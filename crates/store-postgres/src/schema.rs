@@ -126,6 +126,21 @@ const MIGRATIONS: &[&str] = &[
         value  text NOT NULL
     );
     ",
+    // 5: keyword search over conversations (`specs/memory.md`, "Recall"): the words of each
+    // message and tool output, as keyed hashes under its space key (`Keys::search_terms`), so
+    // the index holds no word in the clear. Written in the same transaction as the events.
+    "
+    CREATE TABLE event_search (
+        pos     bigint   GENERATED ALWAYS AS IDENTITY,
+        org     uuid     NOT NULL,
+        space   uuid     NOT NULL,
+        thread  uuid     NOT NULL,
+        seq     bigint   NOT NULL,
+        terms   tsvector NOT NULL,
+        PRIMARY KEY (org, space, thread, seq)
+    );
+    CREATE INDEX event_search_terms ON event_search USING gin (terms);
+    ",
 ];
 
 /// The schema version this build writes.

@@ -52,7 +52,7 @@ pub enum Remembering {
 }
 
 /// A memory's text, checked: one short line, never a secret.
-fn checked(text: &str) -> Result<String, MemoryError> {
+pub(crate) fn checked(text: &str) -> Result<String, MemoryError> {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if text.is_empty() {
         return Err(MemoryError::Invalid("a memory needs some text".into()));
@@ -74,7 +74,7 @@ fn checked(text: &str) -> Result<String, MemoryError> {
 }
 
 /// About how many tokens a memory takes in view.
-fn tokens(text: &str) -> usize {
+pub(crate) fn tokens(text: &str) -> usize {
     text.chars().count().saturating_add(LINE_CHARS).div_ceil(4)
 }
 
@@ -194,9 +194,15 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         erase_at: Option<At>,
     ) -> Result<(), MemoryError> {
         let now = self.now();
+        let source = self
+            .with_book(ledger, |book| {
+                book.entries.get(&memory).and_then(|entry| entry.source)
+            })
+            .await?;
         let forgotten = MemoryForgotten {
             memory,
             erase_at: erase_at.unwrap_or(now),
+            source,
             by: by.clone(),
         };
         self.append(ledger, &forgotten).await?;

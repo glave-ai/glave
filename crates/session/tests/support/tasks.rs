@@ -51,6 +51,15 @@ impl EventLog for Shared {
         self.0.threads(scope, limit)
     }
 
+    fn search(
+        &self,
+        scope: &Scope,
+        query: &str,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<glave_ports::search::Found>, LogError>> + Send {
+        self.0.search(scope, query, limit)
+    }
+
     fn locate(
         &self,
         thread: ThreadId,
