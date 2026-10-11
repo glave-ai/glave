@@ -33,6 +33,7 @@ mod todo;
 mod tools;
 mod toolset;
 mod turn;
+mod worker;
 
 pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};
 pub use bind::{Place, branch_for};
@@ -64,3 +65,4 @@ pub use todo::{TODO, Todo};
 pub use tools::workspace::Workspace;
 pub use tools::{Tool, ToolOutcome};
 pub use turn::{Live, TurnSummary};
+pub use worker::{ATTACHMENTS, HAND_BACK, ReleasedWorker, Workers, wip_branch};

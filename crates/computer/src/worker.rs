@@ -1,0 +1,398 @@
+//! Workers: disposable computers, one per thread, started from an environment's pinned image
+//! by a backend (Docker first), with glave inside serving the computer protocol. The harness
+//! drives each one through this adapter, which keeps every call on the right worker over TLS
+//! (or a stream, for a worker with no network), within policy's limits. Work leaves a worker
+//! only as a pushed branch, a file handed back, or a store write; destroying it removes it.
+
+mod backend;
+mod credentials;
+mod docker;
+mod engine;
+mod limits;
+mod route;
+mod tar;
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, SystemTime};
+
+use glave_ports::{
+    BoxFuture, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending,
+    Environment, Output, Sources, WorkspaceId, WorkspaceInfo,
+};
+use tokio::task::JoinHandle;
+
+use crate::remote::RemoteComputers;
+use crate::tls::{Identity, NO_HANDSHAKE, NOT_LISTENING, connect_tls};
+use crate::token::Token;
+use backend::{Backend, Link, Spec, Started};
+
+pub use credentials::{Credentials, https_url};
+pub use docker::{Docker, DockerSettings};
+pub use limits::Limits;
+
+/// How long a worker's token opens connections: long enough for it to start.
+const TOKEN_LIFETIME: Duration = Duration::from_mins(10);
+/// How long a TLS worker has to start listening, tried every [`RETRY`]. One not listening
+/// yet refuses the connection, or (behind a port proxy) drops it before the handshake: the
+/// only failures tried again.
+const START_WAIT: Duration = Duration::from_secs(60);
+const RETRY: Duration = Duration::from_millis(250);
+/// The longest one setup command may run.
+const SETUP_TIMEOUT_SECS: u64 = 30 * 60;
+/// The most setup output kept for an error.
+const SETUP_TAIL: usize = 4_000;
+
+/// The time now; injected so tests decide when a worker runs out of time.
+pub type Clock = Arc<dyn Fn() -> SystemTime + Send + Sync>;
+
+/// One worker as the harness side holds it.
+struct Worker {
+    name: String,
+    remote: RemoteComputers,
+    environment: Environment,
+    /// When it stops taking new work, if policy limits its run time.
+    deadline: Option<SystemTime>,
+    minutes: Option<u32>,
+    /// Whether its commands may reach the network.
+    network: bool,
+    /// Whether its setup commands have run (they run in its first workspace).
+    set_up: tokio::sync::Mutex<bool>,
+    /// Moves the bytes of a stream link; stopped with the worker.
+    link_task: Option<JoinHandle<()>>,
+}
+
+#[derive(Default)]
+struct Held {
+    workers: HashMap<ComputerId, Arc<Worker>>,
+    workspaces: HashMap<WorkspaceId, ComputerId>,
+}
+
+/// Workers as computers. Each `computer/create` starts one; `computer/destroy` removes it.
+pub struct WorkerComputers {
+    backend: Box<dyn Backend>,
+    limits: Limits,
+    credentials: Credentials,
+    clock: Clock,
+    held: Mutex<Held>,
+}
+
+impl std::fmt::Debug for WorkerComputers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WorkerComputers")
+            .field("limits", &self.limits)
+            .finish_non_exhaustive()
+    }
+}
+
+impl WorkerComputers {
+    /// Workers on Docker, within `limits`, fetching sources with `credentials`.
+    pub fn docker(docker: Docker, limits: Limits, credentials: Credentials) -> Self {
+        Self::on(Box::new(docker), limits, credentials)
+    }
+
+    pub(crate) fn on(backend: Box<dyn Backend>, limits: Limits, credentials: Credentials) -> Self {
+        Self {
+            backend,
+            limits,
+            credentials,
+            clock: Arc::new(SystemTime::now),
+            held: Mutex::new(Held::default()),
+        }
+    }
+
+    /// Uses `clock` for the time, instead of the system's.
+    #[must_use]
+    pub fn with_clock(mut self, clock: Clock) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    /// Removes every worker still held: for when the harness side stops.
+    pub async fn destroy_all(&self) -> Result<(), ComputerError> {
+        let ids: Vec<ComputerId> = self.held()?.workers.keys().copied().collect();
+        let mut first = None;
+        for id in ids {
+            if let Err(error) = self.destroy(id).await {
+                first.get_or_insert(error);
+            }
+        }
+        first.map_or(Ok(()), Err)
+    }
+
+    fn held(&self) -> Result<MutexGuard<'_, Held>, ComputerError> {
+        self.held
+            .lock()
+            .map_err(|_| ComputerError::Failed("the worker table's lock is poisoned".into()))
+    }
+
+    fn worker(&self, computer: ComputerId) -> Result<Arc<Worker>, ComputerError> {
+        self.held()?
+            .workers
+            .get(&computer)
+            .cloned()
+            .ok_or_else(|| ComputerError::NotFound(format!("no worker {computer}")))
+    }
+
+    fn worker_of(&self, workspace: WorkspaceId) -> Result<Arc<Worker>, ComputerError> {
+        let computer = self
+            .held()?
+            .workspaces
+            .get(&workspace)
+            .copied()
+            .ok_or_else(|| ComputerError::NotFound(format!("no workspace {workspace}")))?;
+        self.worker(computer)
+    }
+
+    /// Refuses new work on a worker past its run time; saving and releasing still work.
+    fn check_time(&self, worker: &Worker) -> Result<Option<Duration>, ComputerError> {
+        let Some(deadline) = worker.deadline else {
+            return Ok(None);
+        };
+        match deadline.duration_since((self.clock)()) {
+            Ok(left) if !left.is_zero() => Ok(Some(left)),
+            _ => Err(ComputerError::Refused(format!(
+                "this worker has run its {} minutes ([workers] max_minutes); its work is kept \
+                 when it is released",
+                worker.minutes.unwrap_or_default()
+            ))),
+        }
+    }
+
+    async fn create_now(&self, environment: &Environment) -> Result<ComputerInfo, ComputerError> {
+        let running = self.held()?.workers.len();
+        let decided = limits::decide(environment, &self.limits, running)?;
+        let now = (self.clock)();
+        // The worker checks its token against its own clock, so the token keeps real time.
+        let token = Token::mint(SystemTime::now(), TOKEN_LIFETIME)?;
+        let spec = Spec {
+            image: decided.image,
+            env: environment.env.clone(),
+            cpus: decided.cpus,
+            memory_gb: decided.memory_gb,
+            network: decided.network,
+            identity: Identity::mint()?,
+            token: token.clone(),
+        };
+        let started = self.backend.start(&spec).await?;
+        let name = started.name.clone();
+        match self.reach(started, &token, environment).await {
+            Ok((remote, link_task, info)) => {
+                let deadline = decided.max_minutes.and_then(|minutes| {
+                    now.checked_add(Duration::from_secs(u64::from(minutes).saturating_mul(60)))
+                });
+                let worker = Worker {
+                    name,
+                    remote,
+                    environment: environment.clone(),
+                    deadline,
+                    minutes: decided.max_minutes,
+                    network: decided.network,
+                    set_up: tokio::sync::Mutex::new(environment.setup.is_empty()),
+                    link_task,
+                };
+                self.held()?.workers.insert(info.id, Arc::new(worker));
+                Ok(info)
+            }
+            Err(error) => {
+                let _ = self.backend.remove(&name).await;
+                Err(error)
+            }
+        }
+    }
+
+    /// Connects to a started worker and makes its one computer: the container itself.
+    async fn reach(
+        &self,
+        started: Started,
+        token: &Token,
+        environment: &Environment,
+    ) -> Result<(RemoteComputers, Option<JoinHandle<()>>, ComputerInfo), ComputerError> {
+        let (remote, task) = match started.link {
+            Link::Tls {
+                address,
+                fingerprint,
+            } => {
+                let mut waited = Duration::ZERO;
+                let remote = loop {
+                    match connect_tls(address, &fingerprint, token.secret()).await {
+                        Ok(remote) => break remote,
+                        Err(ComputerError::Unreachable(why))
+                            if (why.starts_with(NOT_LISTENING)
+                                || why.starts_with(NO_HANDSHAKE))
+                                && waited < START_WAIT =>
+                        {
+                            tokio::time::sleep(RETRY).await;
+                            waited = waited.saturating_add(RETRY);
+                        }
+                        Err(error) => return Err(error),
+                    }
+                };
+                (remote, None)
+            }
+            Link::Stream { read, write, task } => {
+                let remote = RemoteComputers::connect(read, write);
+                if let Err(error) = remote.check_protocol().await {
+                    task.abort();
+                    return Err(error);
+                }
+                (remote, Some(task))
+            }
+        };
+        let inside = Environment {
+            env: environment.env.clone(),
+            ..Environment::host()
+        };
+        let mut info = remote.create(&inside).await?;
+        info.environment = Some(environment.clone());
+        Ok((remote, task, info))
+    }
+
+    /// Runs the worker's setup commands once, in order, at the root of its first workspace.
+    async fn set_up(&self, worker: &Worker, workspace: WorkspaceId) -> Result<(), ComputerError> {
+        let mut done = worker.set_up.lock().await;
+        if *done {
+            return Ok(());
+        }
+        for script in &worker.environment.setup {
+            let mut command = Command::new(script.clone());
+            command.timeout_secs = Some(SETUP_TIMEOUT_SECS);
+            let output = route::Tail::default();
+            let finished = worker
+                .remote
+                .run(workspace, &command, &output, &route::Never)
+                .await?;
+            if finished.ending != (Ending::Exited { code: 0 }) {
+                return Err(ComputerError::Failed(format!(
+                    "the setup command {script:?} did not succeed ({:?}): {}",
+                    finished.ending,
+                    output.text(SETUP_TAIL)
+                )));
+            }
+        }
+        *done = true;
+        Ok(())
+    }
+
+    async fn open_now(
+        &self,
+        computer: ComputerId,
+        sources: &Sources,
+    ) -> Result<WorkspaceInfo, ComputerError> {
+        let worker = self.worker(computer)?;
+        self.check_time(&worker)?;
+        let credential = match sources {
+            Sources::Git { .. } if !worker.network => {
+                return Err(ComputerError::Refused(
+                    "this worker has no network, so it cannot clone a repository; give it the \
+                     network, or open a folder on it"
+                        .into(),
+                ));
+            }
+            Sources::Git { url, .. } => self.credentials.for_url(url).await?,
+            Sources::Folder { .. } | Sources::Worktree { .. } => None,
+        };
+        let info = match &credential {
+            Some(credential) => {
+                worker
+                    .remote
+                    .open_with_credential(computer, sources, credential)
+                    .await?
+            }
+            None => worker.remote.open(computer, sources).await?,
+        };
+        self.held()?.workspaces.insert(info.id, computer);
+        if let Err(error) = self.set_up(&worker, info.id).await {
+            let _ = self.close(info.id).await;
+            return Err(error);
+        }
+        Ok(info)
+    }
+
+    async fn destroy_now(&self, computer: ComputerId) -> Result<(), ComputerError> {
+        let worker = {
+            let mut held = self.held()?;
+            held.workspaces.retain(|_, on| *on != computer);
+            held.workers.remove(&computer)
+        };
+        let Some(worker) = worker else {
+            return Err(ComputerError::NotFound(format!("no worker {computer}")));
+        };
+        if let Some(task) = &worker.link_task {
+            task.abort();
+        }
+        self.backend.remove(&worker.name).await
+    }
+
+    async fn run_now(
+        &self,
+        workspace: WorkspaceId,
+        command: &Command,
+        output: &dyn Output,
+        cancel: &dyn Cancellation,
+    ) -> Result<glave_ports::Finished, ComputerError> {
+        let worker = self.worker_of(workspace)?;
+        let left = self.check_time(&worker)?;
+        let mut command = command.clone();
+        if let Some(left) = left {
+            // A command never outlives the worker's time.
+            let most = left.as_secs().max(1);
+            command.timeout_secs = Some(command.timeout_secs.map_or(most, |asked| asked.min(most)));
+        }
+        worker.remote.run(workspace, &command, output, cancel).await
+    }
+}
+
+impl Computers for WorkerComputers {
+    fn create<'a>(
+        &'a self,
+        environment: &'a Environment,
+    ) -> BoxFuture<'a, Result<ComputerInfo, ComputerError>> {
+        Box::pin(self.create_now(environment))
+    }
+
+    fn status(&self, computer: ComputerId) -> BoxFuture<'_, Result<ComputerInfo, ComputerError>> {
+        Box::pin(async move {
+            match self.worker(computer) {
+                Ok(worker) => worker.remote.status(computer).await,
+                Err(_) => Ok(route::gone(computer)),
+            }
+        })
+    }
+
+    fn destroy(&self, computer: ComputerId) -> BoxFuture<'_, Result<(), ComputerError>> {
+        Box::pin(self.destroy_now(computer))
+    }
+
+    fn open<'a>(
+        &'a self,
+        computer: ComputerId,
+        sources: &'a Sources,
+    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
+        Box::pin(self.open_now(computer, sources))
+    }
+
+    fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>> {
+        Box::pin(async move {
+            let worker = self.worker_of(workspace)?;
+            worker.remote.close(workspace).await?;
+            self.held()?.workspaces.remove(&workspace);
+            Ok(())
+        })
+    }
+
+    fn run<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        command: &'a Command,
+        output: &'a dyn Output,
+        cancel: &'a dyn Cancellation,
+    ) -> BoxFuture<'a, Result<glave_ports::Finished, ComputerError>> {
+        Box::pin(self.run_now(workspace, command, output, cancel))
+    }
+
+    route::forward!();
+}
+
+#[cfg(test)]
+mod tests;

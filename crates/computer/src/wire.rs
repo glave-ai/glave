@@ -3,8 +3,8 @@
 //! `command/output` notifications before its response, and `command/cancel` stops it.
 
 use glave_ports::{
-    Command, ComputerError, ComputerId, Environment, FileWrite, Glob, Listing, Save, Search,
-    Sources, WorkspaceId,
+    Command, ComputerError, ComputerId, Environment, FileWrite, GitCredential, Glob, Listing, Save,
+    Search, Sources, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -15,7 +15,8 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// The protocol version spoken; it changes whenever a message changes shape. `2026-10-10`
 /// added `files/stat`, `files/glob`, `files/search`, ignore-aware listings and the sandbox on
 /// `command/run`: a server that predates it would run a sandboxed command unconfined.
-pub const PROTOCOL: &str = "2026-10-10";
+/// `2026-10-10.1` added the credential on `workspace/open`.
+pub const PROTOCOL: &str = "2026-10-10.1";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";
@@ -36,10 +37,13 @@ pub(crate) enum Request {
     Status { computer: ComputerId },
     #[serde(rename = "computer/destroy")]
     Destroy { computer: ComputerId },
+    /// `credential`, when given, is kept in memory by the computer for fetching and saving.
     #[serde(rename = "workspace/open")]
     Open {
         computer: ComputerId,
         sources: Sources,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        credential: Option<GitCredential>,
     },
     #[serde(rename = "workspace/close")]
     Close { workspace: WorkspaceId },

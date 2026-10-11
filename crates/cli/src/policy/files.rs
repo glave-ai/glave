@@ -6,6 +6,8 @@ use std::path::Path;
 use anyhow::{anyhow, bail};
 use glave_harness::{ApprovalMode, Hook, HookPoint, Hooks, SandboxLevel};
 use globset::Glob;
+
+use crate::policy::workers::{On, WorkerRules, WorkersFile};
 use serde::Deserialize;
 
 /// The only version of `policy.toml` there is.
@@ -24,6 +26,10 @@ pub struct ConfigFile {
     pub mcp: Option<Vec<String>>,
     /// Whether each new thread works in a worktree of its own.
     pub worktree: Option<bool>,
+    /// Where new threads work: here, or on a worker of their own.
+    pub on: Option<On>,
+    /// The backend workers run on.
+    pub workers: Option<WorkersFile>,
     /// Commands to run at points of a turn. They add up across files rather than the
     /// nearest winning: the person's run, and a trusted project's run too.
     pub hooks: Option<HooksFile>,
@@ -150,6 +156,8 @@ pub struct PolicyFile {
     pub projects: ProjectRules,
     #[serde(default)]
     pub hooks: HookRules,
+    #[serde(default)]
+    pub workers: WorkerRules,
 }
 
 /// `[hooks]`.

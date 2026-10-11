@@ -277,6 +277,64 @@ fn limits_take_the_smallest_and_unenforced_rules_refuse_to_run() {
     assert!(refused.contains("[mcp] catalog") && refused.contains("not enforced yet"));
 }
 
+#[test]
+fn worker_limits_narrow_and_an_allow_list_refuses_to_run() {
+    let rules = Constraints::of(&[
+        policy_at(
+            ORG,
+            "version = 1\n[workers]\ncpu = 4\nmemory_gb = 8\nper_person = 3\n",
+        ),
+        policy_at(
+            SPACE,
+            "version = 1\n[workers]\ncpu = 2\nmax_minutes = 90\nnetwork = \"off\"\n",
+        ),
+    ]);
+    let limits = rules.worker_limits();
+    assert_eq!(
+        (
+            limits.cpus,
+            limits.memory_gb,
+            limits.max_minutes,
+            limits.per_person
+        ),
+        (Some(2), Some(8), Some(90), Some(3))
+    );
+    assert_eq!(limits.network, Some(glave_ports::Network::Off));
+    assert!(effective::settle(no_choices(), &rules).is_ok());
+    let allowlist = constraints("version = 1\n[workers]\nnetwork = \"allowlist\"\n");
+    let refused = effective::settle(no_choices(), &allowlist)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        refused.contains("[workers] network = \"allowlist\""),
+        "{refused}"
+    );
+    assert!(refused.contains("not enforced yet"), "{refused}");
+    let typo = files::policy("version = 1\n[workers]\ncpus = 2\n", Path::new(ORG));
+    assert!(typo.unwrap_err().to_string().contains("cpus"));
+}
+
+#[test]
+fn where_threads_work_is_a_choice_and_the_backend_comes_from_config() {
+    let chosen = layers(
+        ConfigFile {
+            on: Some(On::Cloud),
+            ..ConfigFile::default()
+        },
+        ConfigFile::default(),
+        vec![file(
+            PERSON,
+            "on = \"here\"\n[workers]\nbackend = \"docker\"\nglave = \"/opt/glave-linux\"\n",
+        )],
+    );
+    let choices = choices::resolve(&chosen);
+    assert_eq!(choices.on.value, On::Cloud);
+    assert_eq!(choices.on.from, Source::Flag("--on"));
+    let workers = choices.workers.unwrap();
+    assert_eq!(workers.value.glave, Path::new("/opt/glave-linux"));
+    assert_eq!(no_choices().on.value, On::Here, "here by default");
+}
+
 fn no_choices() -> Choices {
     choices::resolve(&[])
 }

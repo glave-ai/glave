@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 
 use glave_ports::{
     BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, Glob, Globbed, Listed, Listing, Output, Save, Saved, Search,
-    Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
+    Environment, FileWrite, Finished, GitCredential, Glob, Globbed, Listed, Listing, Output, Save,
+    Saved, Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
 };
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -314,6 +314,21 @@ impl Computers for RemoteComputers {
         let request = Request::Open {
             computer,
             sources: sources.clone(),
+            credential: None,
+        };
+        Box::pin(async move { self.typed(&request).await })
+    }
+
+    fn open_with_credential<'a>(
+        &'a self,
+        computer: ComputerId,
+        sources: &'a Sources,
+        credential: &'a GitCredential,
+    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
+        let request = Request::Open {
+            computer,
+            sources: sources.clone(),
+            credential: Some(credential.clone()),
         };
         Box::pin(async move { self.typed(&request).await })
     }

@@ -22,9 +22,9 @@ mod tools;
 pub use blob::{BlobError, BlobStore, digest};
 pub use computer::{
     Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Entry, EntryKind,
-    Environment, FileWrite, Finished, Glob, Globbed, Image, Listed, Listing, Match, Network,
-    Output, PROTECTED, Sandbox, SandboxLevel, Save, Saved, Search, Searched, Size, Sources, Stat,
-    State, WorkspaceId, WorkspaceInfo, is_protected, looks_binary,
+    Environment, FileWrite, Finished, GitCredential, Glob, Globbed, Image, Listed, Listing, Match,
+    Network, Output, PROTECTED, Sandbox, SandboxLevel, Save, Saved, Search, Searched, Size,
+    Sources, Stat, State, WorkspaceId, WorkspaceInfo, is_protected, looks_binary,
 };
 pub use failure::Failure;
 pub use log::{EventLog, LogError, check_append};

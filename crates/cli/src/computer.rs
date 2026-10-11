@@ -1,12 +1,14 @@
 //! `glave computer serve`: this machine as a computer for a harness elsewhere, over the
-//! computer protocol (`specs/computers.md`) on stdio or on TCP at 127.0.0.1.
+//! computer protocol (`specs/computers.md`) on stdio, on TCP at 127.0.0.1, or over TLS at any
+//! address (how a worker is reached).
 
 use std::net::{Ipv4Addr, SocketAddr};
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
-use glave_computer::{LocalComputers, serve, serve_tcp};
+use glave_computer::{Identity, LocalComputers, MIN_SECRET, Token, serve, serve_tcp, serve_tls};
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
@@ -20,6 +22,11 @@ Usage:
                                      per line) to the program that started glave
   glave computer serve --tcp <port>  serve it on 127.0.0.1:<port> to clients that first send
                                      connection/authenticate with $GLAVE_COMPUTER_TOKEN
+  glave computer serve --tls <host:port> <folder>
+                                     serve it over TLS on any address, with cert.pem, key.pem
+                                     and token in <folder> (the token file: the secret, then
+                                     the Unix second it stops opening connections); how a
+                                     harness reaches a worker
 
 Copies of repositories are kept in $GLAVE_HOME/workspaces. Commands get glave's environment
 without anything named like a key, token, secret or password.";
@@ -29,28 +36,39 @@ without anything named like a key, token, secret or password.";
 enum Transport {
     Stdio,
     Tcp(SocketAddr),
+    Tls(SocketAddr, PathBuf),
+}
+
+fn address(text: &str, flag: &str) -> Result<SocketAddr, String> {
+    match text.parse::<u16>() {
+        Ok(port) => Ok(SocketAddr::from((Ipv4Addr::LOCALHOST, port))),
+        Err(_) => text
+            .parse()
+            .map_err(|_| format!("{flag} {text:?} is not a port or host:port")),
+    }
 }
 
 fn parse(arguments: &[String]) -> Result<Transport, String> {
     match arguments {
         [serve, stdio] if serve == "serve" && stdio == "--stdio" => Ok(Transport::Stdio),
-        [serve, tcp, address] if serve == "serve" && tcp == "--tcp" => {
-            let address = match address.parse::<u16>() {
-                Ok(port) => SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
-                Err(_) => address
-                    .parse()
-                    .map_err(|_| format!("--tcp {address:?} is not a port or host:port"))?,
-            };
+        [serve, tcp, at] if serve == "serve" && tcp == "--tcp" => {
+            let address = address(at, "--tcp")?;
             if address.ip().is_loopback() {
                 Ok(Transport::Tcp(address))
             } else {
                 Err(format!(
                     "--tcp {address} is not on this machine; serving computers across machines \
-                     needs TLS, which comes later"
+                     needs --tls"
                 ))
             }
         }
-        _ => Err("expected: glave computer serve --stdio, or --tcp <port>".into()),
+        [serve, tls, at, folder] if serve == "serve" && tls == "--tls" => {
+            Ok(Transport::Tls(address(at, "--tls")?, PathBuf::from(folder)))
+        }
+        _ => Err(
+            "expected: glave computer serve --stdio, --tcp <port>, or --tls <host:port> <folder>"
+                .into(),
+        ),
     }
 }
 
@@ -88,6 +106,13 @@ pub fn main(arguments: &[String]) -> ExitCode {
     }
 }
 
+async fn read(folder: &Path, name: &str) -> anyhow::Result<String> {
+    let path = folder.join(name);
+    tokio::fs::read_to_string(&path)
+        .await
+        .with_context(|| format!("could not read {}", path.display()))
+}
+
 async fn run(transport: Transport) -> anyhow::Result<()> {
     let home = home::folder()?;
     let computers = Arc::new(
@@ -104,11 +129,11 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
         Transport::Tcp(address) => {
             let Some(token) = std::env::var("GLAVE_COMPUTER_TOKEN")
                 .ok()
-                .filter(|token| token.len() >= 16)
+                .filter(|token| token.len() >= MIN_SECRET)
             else {
                 bail!(
-                    "glave computer serve --tcp needs GLAVE_COMPUTER_TOKEN, at least 16 \
-                     characters: a listener never runs without one"
+                    "glave computer serve --tcp needs GLAVE_COMPUTER_TOKEN, at least \
+                     {MIN_SECRET} characters: a listener never runs without one"
                 );
             };
             let listener = TcpListener::bind(address)
@@ -117,6 +142,19 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
             serve_tcp(computers, listener, token)
                 .await
                 .with_context(|| format!("serving on {address}"))
+        }
+        Transport::Tls(address, folder) => {
+            let tls = Identity::acceptor(
+                &read(&folder, "cert.pem").await?,
+                &read(&folder, "key.pem").await?,
+            )?;
+            let token = Token::from_file(&read(&folder, "token").await?)?;
+            let listener = TcpListener::bind(address)
+                .await
+                .with_context(|| format!("could not listen on {address}"))?;
+            serve_tls(computers, listener, tls, token)
+                .await
+                .with_context(|| format!("serving TLS on {address}"))
         }
     }
 }
@@ -130,13 +168,21 @@ mod tests {
     }
 
     #[test]
-    fn serve_takes_one_transport_on_this_machine() {
+    fn serve_takes_one_transport_and_only_tls_leaves_this_machine() {
         assert_eq!(parse(&words("serve --stdio")), Ok(Transport::Stdio));
         assert_eq!(
             parse(&words("serve --tcp 7070")),
             Ok(Transport::Tcp("127.0.0.1:7070".parse().unwrap()))
         );
         assert!(parse(&words("serve --tcp 0.0.0.0:7070")).is_err());
+        assert_eq!(
+            parse(&words("serve --tls 0.0.0.0:7070 /opt/glave/tls")),
+            Ok(Transport::Tls(
+                "0.0.0.0:7070".parse().unwrap(),
+                PathBuf::from("/opt/glave/tls")
+            ))
+        );
+        assert!(parse(&words("serve --tls 0.0.0.0:7070")).is_err());
         assert!(parse(&words("serve")).is_err());
         assert!(parse(&words("serve --stdio --tcp 1")).is_err());
         assert!(parse(&words("run")).is_err());

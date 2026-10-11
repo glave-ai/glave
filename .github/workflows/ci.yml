@@ -30,8 +30,12 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
+    # The runner's own Docker, so the Docker worker backend runs its tests here too (a small
+    # alpine image pinned by digest, a stub in glave's place). Everything they make is
+    # labelled glave.test=<run id>, and they check by that label that nothing is left.
     env:
       GLAVE_TEST_POSTGRES_URL: postgres://postgres:glave@localhost:5432/postgres
+      GLAVE_TEST_DOCKER: "1"
     steps:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
@@ -41,6 +45,19 @@ jobs:
         with:
           tool: cargo-nextest,cargo-deny
       - run: cargo xtask ci
+      - name: Nothing the Docker tests made is left behind
+        if: always()
+        run: |
+          label="label=glave.test=${{ github.run_id }}"
+          left="$(docker ps -aq --filter "$label")$(docker volume ls -q --filter "$label")$(docker network ls -q --filter "$label")"
+          if [ -n "$left" ]; then
+            echo "left behind: $left"
+            exit 1
+          fi
+          if docker image inspect "alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507" >/dev/null 2>&1; then
+            echo "the test image is left behind"
+            exit 1
+          fi
 
   # macOS minutes cost 10x on private repos, so this runs on main only (and on demand).
   macos:

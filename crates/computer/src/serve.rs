@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use glave_ports::{BoxFuture, ComputerError, Computers, Output};
 use serde::Serialize;
@@ -15,8 +16,10 @@ use tokio::io::{
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tokio_rustls::TlsAcceptor;
 
 use crate::cancel::Switch;
+use crate::token::Token;
 use crate::wire::{self, Chunk, MAX_LINE, OUTPUT, Request, code};
 
 /// Lines written ahead of a slow client.
@@ -25,6 +28,8 @@ const WRITE_AHEAD: usize = 256;
 const MAX_IN_FLIGHT: usize = 64;
 /// Connections one TCP listener serves at once.
 const MAX_CONNECTIONS: usize = 32;
+/// How long a TLS client has to finish its handshake before it is dropped.
+const HANDSHAKE: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// One connection's shared state.
 struct Connection<C> {
@@ -35,12 +40,13 @@ struct Connection<C> {
 }
 
 /// Serves `computers` to one client until its input ends. With a `token`, the first message
-/// must be `connection/authenticate` with that token, or the connection ends.
+/// must be `connection/authenticate` with that token, before it expires, or the connection
+/// ends.
 pub async fn serve<C, R, W>(
     computers: Arc<C>,
     input: R,
     output: W,
-    token: Option<String>,
+    token: Option<Token>,
 ) -> std::io::Result<()>
 where
     C: Computers + 'static,
@@ -127,13 +133,15 @@ async fn next_line<R: AsyncBufRead + Unpin>(input: &mut R) -> std::io::Result<Op
 async fn authenticate<R: AsyncBufRead + Unpin>(
     input: &mut R,
     lines: &mpsc::Sender<String>,
-    token: &str,
+    token: &Token,
 ) -> std::io::Result<bool> {
     let Some(line) = next_line(input).await? else {
         return Ok(false);
     };
     let (id, accepted) = match wire::parse(&line) {
-        Ok((id, Request::Authenticate { token: given })) => (id, same(&given, token)),
+        Ok((id, Request::Authenticate { token: given })) => {
+            (id, token.admits(&given, SystemTime::now()))
+        }
         Ok((id, _)) | Err((id, _)) => (id, false),
     };
     let answer = if accepted {
@@ -146,16 +154,6 @@ async fn authenticate<R: AsyncBufRead + Unpin>(
     };
     let _ = lines.send(wire::respond(id.as_ref(), answer)).await;
     Ok(accepted)
-}
-
-/// Compares secrets in time that does not depend on where they differ.
-fn same(given: &str, expected: &str) -> bool {
-    given.len() == expected.len()
-        && given
-            .bytes()
-            .zip(expected.bytes())
-            .fold(0u8, |differ, (a, b)| differ | (a ^ b))
-            == 0
 }
 
 impl<C: Computers + 'static> Connection<C> {
@@ -182,7 +180,18 @@ impl<C: Computers + 'static> Connection<C> {
             Request::Create { environment } => reply(computers.create(&environment).await),
             Request::Status { computer } => reply(computers.status(computer).await),
             Request::Destroy { computer } => reply(computers.destroy(computer).await),
-            Request::Open { computer, sources } => reply(computers.open(computer, &sources).await),
+            Request::Open {
+                computer,
+                sources,
+                credential,
+            } => reply(match &credential {
+                Some(credential) => {
+                    computers
+                        .open_with_credential(computer, &sources, credential)
+                        .await
+                }
+                None => computers.open(computer, &sources).await,
+            }),
             Request::Close { workspace } => reply(computers.close(workspace).await),
             Request::Run {
                 workspace,
@@ -277,7 +286,7 @@ impl Output for Forward<'_> {
 }
 
 /// Serves `computers` on a TCP listener on this machine's loopback address, to clients that
-/// first present `token`. Connections from other machines need TLS, which comes later, so a
+/// first present `token`. Connections from other machines need TLS ([`serve_tls`]), so a
 /// listener on any other address is refused. Runs until accepting fails.
 pub async fn serve_tcp<C: Computers + 'static>(
     computers: Arc<C>,
@@ -297,20 +306,36 @@ pub async fn serve_tcp<C: Computers + 'static>(
         }
         let (stream, _) = listener.accept().await?;
         let (read, write) = stream.into_split();
-        let (computers, token) = (Arc::clone(&computers), token.clone());
+        let (computers, token) = (Arc::clone(&computers), Token::lasting(token.clone()));
         connections.spawn(serve(computers, BufReader::new(read), write, Some(token)));
         while connections.try_join_next().is_some() {}
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tokens_compare_whole() {
-        assert!(same("abc", "abc"));
-        assert!(!same("abd", "abc"));
-        assert!(!same("ab", "abc"));
+/// Serves `computers` over TLS on a TCP listener at any address, to clients that first present
+/// `token` before it expires: how a worker is reached from the harness. A client that fails
+/// the handshake is dropped without an answer. Runs until accepting fails.
+pub async fn serve_tls<C: Computers + 'static>(
+    computers: Arc<C>,
+    listener: TcpListener,
+    tls: TlsAcceptor,
+    token: Token,
+) -> std::io::Result<()> {
+    let mut connections = JoinSet::new();
+    loop {
+        while connections.len() >= MAX_CONNECTIONS {
+            connections.join_next().await;
+        }
+        let (stream, _) = listener.accept().await?;
+        let (computers, token, tls) = (Arc::clone(&computers), token.clone(), tls.clone());
+        connections.spawn(async move {
+            let handshake = tokio::time::timeout(HANDSHAKE, tls.accept(stream));
+            let Ok(Ok(stream)) = handshake.await else {
+                return Ok(());
+            };
+            let (read, write) = tokio::io::split(stream);
+            serve(computers, BufReader::new(read), write, Some(token)).await
+        });
+        while connections.try_join_next().is_some() {}
     }
 }
