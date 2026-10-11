@@ -67,8 +67,8 @@ pub(crate) async fn edit(workspace: &Workspace, args: EditArgs) -> ToolOutcome {
     if bom {
         written.insert_str(0, BOM);
     }
-    if let Err(e) = workspace.write(&shown, written.as_bytes()).await {
-        return ToolOutcome::error(format!("Could not write {shown}: {}", e.message()));
+    if let Err(message) = workspace.write(&shown, written.as_bytes()).await {
+        return ToolOutcome::error(message);
     }
     workspace.remember(&shown, written.as_bytes());
     ToolOutcome::ok(success(&edited, &shown))

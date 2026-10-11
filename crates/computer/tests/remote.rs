@@ -61,6 +61,41 @@ mod remote_tests {
         });
     }
 
+    /// A server from before protected writes (`2026-10-10.1`) would ignore `protect` and
+    /// write, so the client refuses it before sending anything: it fails closed.
+    #[test]
+    fn a_server_that_predates_protected_writes_is_refused() {
+        use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
+        block_on(async {
+            let (client, server) = tokio::io::duplex(64 * 1024);
+            let older = tokio::spawn(async move {
+                let (read, mut write) = tokio::io::split(server);
+                let mut lines = BufReader::new(read).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+                    let answer = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": request["id"],
+                        "result": {"name": "glave-computer", "protocols": ["2026-10-10.1"]},
+                    });
+                    write
+                        .write_all(format!("{answer}\n").as_bytes())
+                        .await
+                        .unwrap();
+                }
+            });
+            let (read, write) = tokio::io::split(client);
+            let remote = RemoteComputers::connect(read, write);
+            let refused = remote.check_protocol().await;
+            assert!(
+                matches!(&refused, Err(ComputerError::Unsupported(m)) if m.contains("2026-10-11")),
+                "{refused:?}"
+            );
+            drop(remote);
+            older.await.unwrap();
+        });
+    }
+
     #[test]
     fn a_computer_over_tcp_passes_the_suite_once_signed_in() {
         let (work, copies) = scratch("tcp");

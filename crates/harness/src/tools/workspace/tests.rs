@@ -95,3 +95,113 @@ fn changes_need_a_fresh_read() {
         );
     });
 }
+
+/// Moves `docs` aside, puts a link to each of `targets` in turn in its place, and moves it
+/// back, as a sandboxed command running beside the file tools could, until told to stop.
+#[cfg(unix)]
+fn swap_for_links(dir: &Path, targets: &[&str], stop: &std::sync::atomic::AtomicBool) -> usize {
+    use std::sync::atomic::Ordering;
+    let (folder, parked) = (dir.join("docs"), dir.join("docs.parked"));
+    let mut swaps = 0;
+    while !stop.load(Ordering::Relaxed) {
+        if std::fs::rename(&folder, &parked).is_ok() {
+            let target = targets.get(swaps % targets.len().max(1)).unwrap();
+            if std::os::unix::fs::symlink(target, &folder).is_ok() {
+                swaps += 1;
+            }
+            let _ = std::fs::remove_file(&folder);
+            while std::fs::rename(&parked, &folder).is_err() {
+                let _ = std::fs::remove_dir_all(&folder);
+            }
+        }
+    }
+    swaps
+}
+
+/// The write tool in a sandbox, raced by a command swapping a folder for a link into
+/// `.git/hooks` or `.glave` between the tool's protected-path check and its write: nothing
+/// protected is ever written, and every refusal reads as the check's own sentence.
+#[cfg(unix)]
+#[test]
+fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use glave_event::Arguments;
+    use glave_ports::SandboxLevel;
+
+    use crate::cancel::Cancel;
+    use crate::tools::Tool;
+
+    let dir = scratch("protected-race");
+    std::fs::create_dir_all(dir.join(".git/hooks")).unwrap();
+    std::fs::create_dir_all(dir.join(".glave")).unwrap();
+    std::fs::write(dir.join(".glave/settings.json"), "{}\n").unwrap();
+    std::fs::create_dir_all(dir.join("docs")).unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let swapper = {
+        let (dir, stop) = (dir.clone(), Arc::clone(&stop));
+        std::thread::spawn(move || swap_for_links(&dir, &[".git/hooks", ".glave"], &stop))
+    };
+    let mut refusals = Vec::new();
+    let mut landed = 0usize;
+    block_on(async {
+        let mut ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
+        // The sandbox as the binding records it; no command runs here.
+        ws.sandbox = Some(Sandbox {
+            level: SandboxLevel::Project,
+            network: false,
+            home: None,
+            glave_home: None,
+        });
+        let started = std::time::Instant::now();
+        let mut n = 0usize;
+        while started.elapsed().as_millis() < 3_000 {
+            n += 1;
+            let arguments = Arguments::Json(
+                serde_json::from_value(serde_json::json!({
+                    "path": format!("docs/pre-commit-{n}"),
+                    "content": "echo pwned\n",
+                }))
+                .unwrap(),
+            );
+            let outcome = Tool::Write.run(&arguments, &ws, &Cancel::new()).await;
+            if outcome.is_error {
+                refusals.push(outcome.text);
+            } else {
+                landed += 1;
+            }
+        }
+    });
+    stop.store(true, Ordering::Relaxed);
+    let swaps = swapper.join().unwrap();
+    assert!(swaps > 100, "the race must really run: {swaps} swaps");
+    assert!(landed > 0, "writes into the real folder still land");
+    // Others fail because the folder moved under them, which is fine: they wrote nothing.
+    refusals.retain(|refusal| refusal.contains("protected"));
+    assert!(!refusals.is_empty(), "protected paths were reached");
+    for refusal in &refusals {
+        let path = refusal.split(' ').next().unwrap_or_default();
+        assert!(
+            path.starts_with(".git/hooks/pre-commit-") || path.starts_with(".glave/pre-commit-"),
+            "{refusal}"
+        );
+        assert_eq!(
+            refusal,
+            &format!(
+                "{path} is protected by the sandbox: changing it could make code run later, \
+                 outside the sandbox. Ask the person to change it themselves."
+            ),
+        );
+    }
+    let hooks: Vec<_> = std::fs::read_dir(dir.join(".git/hooks"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert!(hooks.is_empty(), "a hook was written: {hooks:?}");
+    let settings: Vec<_> = std::fs::read_dir(dir.join(".glave"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(settings, ["settings.json"], "nothing new in .glave");
+}

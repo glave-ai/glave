@@ -19,10 +19,7 @@ pub(super) fn failed(step: &'static str) -> impl Fn(ComputerError) -> String {
 pub(super) fn files(pairs: &[(&str, &[u8])]) -> Vec<FileWrite> {
     pairs
         .iter()
-        .map(|(path, content)| FileWrite {
-            path: (*path).to_owned(),
-            content: Bytes::new(*content),
-        })
+        .map(|(path, content)| FileWrite::new((*path).to_owned(), Bytes::new(*content)))
         .collect()
 }
 

@@ -80,10 +80,10 @@ mod faults {
     async fn perform(remote: &RemoteComputers, op: Op) -> Result<(), ComputerError> {
         match op {
             Op::Write(n) => {
-                let file = FileWrite {
-                    path: format!("w{n}.txt"),
-                    content: glave_ports::Bytes::new(format!("written {n}")),
-                };
+                let file = FileWrite::new(
+                    format!("w{n}.txt"),
+                    glave_ports::Bytes::new(format!("written {n}")),
+                );
                 remote.write(workspace(), &[file]).await
             }
             Op::Run(n) | Op::Slow(n) => {

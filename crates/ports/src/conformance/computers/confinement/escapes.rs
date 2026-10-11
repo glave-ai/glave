@@ -4,7 +4,9 @@
 
 use super::super::helpers::{failed, run, run_quietly};
 use super::{Confinement, LINKED, WRITTEN, outside_unchanged, plain};
-use crate::computer::{Command, ComputerError, Computers, Listing, is_protected};
+use crate::computer::{
+    Command, ComputerError, Computers, FileWrite, Listing, is_protected, refuse_protected,
+};
 use crate::conformance::{Verdict, ensure};
 
 pub async fn confinement_escapes<C: Computers>(computers: &C, fixture: &Confinement) -> Verdict {
@@ -160,7 +162,9 @@ async fn permissions<C: Computers>(computers: &C, fixture: &Confinement) -> Verd
     )
 }
 
-/// A link into a protected path resolves to that path, so the harness's check sees it.
+/// A link into a protected path resolves to that path, so the harness's check sees it; and a
+/// write that asks to be protected is refused on the path it would really land on, links
+/// followed, while one that does not ask, or lands elsewhere, goes through.
 async fn protected<C: Computers>(computers: &C, fixture: &Confinement) -> Verdict {
     let here = fixture.workspace;
     let stat = computers
@@ -174,5 +178,50 @@ async fn protected<C: Computers>(computers: &C, fixture: &Confinement) -> Verdic
                 &std::path::Path::new(&fixture.root).join(&stat.path),
             ),
         "a link into a protected path must resolve to it",
-    )
+    )?;
+    for (path, lands) in [
+        ("hooklink", ".glave/hook.sh"),
+        (".glave/new.json", ".glave/new.json"),
+        ("in_link/../.glave/hook.sh", ".glave/hook.sh"),
+        ("objects/pack/new.pack", "objects/pack/new.pack"),
+    ] {
+        let write = computers.write(here, &[guarded(path, GUARDED)]).await;
+        ensure(
+            write == Err(refuse_protected(lands)),
+            &format!("a protected write to {path} must be refused as {lands}: {write:?}"),
+        )?;
+    }
+    let hook = computers.read(here, ".glave/hook.sh").await;
+    ensure(
+        hook.is_ok_and(|bytes| bytes.as_slice() != GUARDED),
+        "a refused protected write leaves the file as it was",
+    )?;
+    for nothing in [".glave/new.json", "objects"] {
+        ensure(
+            computers
+                .stat(here, nothing)
+                .await
+                .is_ok_and(|stat| stat.kind.is_none()),
+            &format!("a refused protected write makes nothing: {nothing}"),
+        )?;
+    }
+    computers
+        .write(here, &[guarded("sub/fine.txt", b"fine")])
+        .await
+        .map_err(failed("a protected write to an ordinary path"))?;
+    computers
+        .write(here, &[plain(".glave/unguarded.txt", b"fine")])
+        .await
+        .map_err(failed("an unprotected write to a protected path"))
+}
+
+/// What a protected write writes, which must never be found.
+const GUARDED: &[u8] = b"GUARDED";
+
+/// A write that asks the computer to refuse protected paths.
+fn guarded(path: &str, content: &[u8]) -> FileWrite {
+    FileWrite {
+        protect: true,
+        ..plain(path, content)
+    }
 }

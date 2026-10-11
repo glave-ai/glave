@@ -16,7 +16,9 @@ pub use bytes::Bytes;
 pub use credential::GitCredential;
 pub use environment::{Environment, Image, Network, Size};
 pub use finding::{Glob, Globbed, Match, Search, Searched, Stat, looks_binary};
-pub use sandbox::{PROTECTED, Sandbox, SandboxLevel, is_protected};
+pub use sandbox::{
+    PROTECTED, Sandbox, SandboxLevel, is_protected, is_protected_refusal, refuse_protected,
+};
 pub use types::{
     Command, ComputerError, ComputerId, ComputerInfo, Ending, Entry, EntryKind, FileWrite,
     Finished, Listed, Listing, Save, Saved, Sources, State, WorkspaceId, WorkspaceInfo,

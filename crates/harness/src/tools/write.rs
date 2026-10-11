@@ -30,8 +30,8 @@ pub(crate) async fn write(workspace: &Workspace, args: WriteArgs) -> ToolOutcome
             "Refusing to overwrite {shown}: {message} To change part of it, use edit."
         ));
     }
-    if let Err(e) = workspace.write(&shown, args.content.as_bytes()).await {
-        return ToolOutcome::error(format!("Could not write {shown}: {}", e.message()));
+    if let Err(message) = workspace.write(&shown, args.content.as_bytes()).await {
+        return ToolOutcome::error(message);
     }
     workspace.remember(&shown, args.content.as_bytes());
     let lines = args.content.lines().count();

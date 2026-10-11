@@ -55,10 +55,7 @@ mod workers {
                 url: origin.to_string_lossy().into_owned(),
                 at: Some("main".into()),
             },
-            attachments: vec![FileWrite {
-                path: "brief.md".into(),
-                content: Bytes::new(b"do the thing\n"),
-            }],
+            attachments: vec![FileWrite::new("brief.md", Bytes::new(b"do the thing\n"))],
         }
     }
 
