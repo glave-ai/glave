@@ -32,18 +32,18 @@ test('a thread shows its history and streams a reply to a new message', async ({
   await expect(byTestId(page, 'thread-receipt')).toContainText('cargo test');
   await expect(byTestId(page, 'thread-message').last()).toContainText('They pass now.');
   await expectAccessible(page);
-  const composer = byTestId(page, 'thread-composer');
-  await composer.getByTestId('composer-input').fill('Thanks');
-  await composer.getByTestId('composer-input').press('Enter');
+  const reply = byTestId(page, 'thread-composer-input');
+  await reply.fill('Thanks');
+  await reply.press('Enter');
   await expect(byTestId(page, 'thread-message').last()).toContainText('Hello from Hope.');
 });
 
 test('a new chat starts a thread and sends the first message', async ({ page }) => {
   const api = await fakeApi(page);
   await page.goto('/#token=glave_local_test');
-  const composer = byTestId(page, 'home-composer');
-  await composer.getByTestId('composer-input').fill('Plan the launch');
-  await composer.getByTestId('composer-input').press('Enter');
+  const prompt = byTestId(page, 'home-composer-input');
+  await prompt.fill('Plan the launch');
+  await prompt.press('Enter');
   await expect(page).toHaveURL(new RegExp(`/t/${NEW_THREAD}$`, 'u'));
   await expect(byTestId(page, 'thread-message').first()).toContainText('Plan the launch');
   expect(api.calls).toContain('thread/start');

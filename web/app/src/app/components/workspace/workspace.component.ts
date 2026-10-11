@@ -1,4 +1,11 @@
-import { ChangeDetectionStrategy, Component, computed, inject, viewChild } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  viewChild,
+} from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import {
@@ -11,6 +18,7 @@ import { Brain, ListChecks, Menu, Settings } from 'lucide';
 import { filter, map } from 'rxjs';
 
 import { threadFromUrl } from '../../lib/threads';
+import { SessionService } from '../../services/session.service';
 import { SpacesService } from '../../services/spaces.service';
 import { SpacesNavComponent } from '../spaces-nav/spaces-nav.component';
 import { ThemePickerComponent } from '../theme-picker/theme-picker.component';
@@ -46,6 +54,7 @@ const COPY = {
 })
 export class WorkspaceComponent {
   protected readonly copy = COPY;
+  protected readonly contentLink = '#content';
   protected readonly icons = { menu: Menu, tasks: ListChecks, memory: Brain, settings: Settings };
   private readonly router = inject(Router);
   private readonly layout = viewChild.required(GlzSidenavLayoutComponent);
@@ -60,6 +69,13 @@ export class WorkspaceComponent {
 
   constructor() {
     void inject(SpacesService).refresh();
+    // A refused sign-in (or signing out) ends the session: back to the sign-in page.
+    const session = inject(SessionService);
+    effect(() => {
+      if (!session.signedIn()) {
+        void this.router.navigateByUrl('/sign-in');
+      }
+    });
   }
 
   protected toggle(): void {

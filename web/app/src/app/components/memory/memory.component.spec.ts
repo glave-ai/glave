@@ -48,7 +48,7 @@ describe('MemoryComponent', () => {
 
     click(root, 'memory-forget');
     await settle(fixture);
-    click(root, 'confirm-ok');
+    click(root, 'memory-forget-ok');
     await settle(fixture);
     expect(fake.paramsOf('memory/forget')).toEqual([{ memory: 'm1' }]);
   });

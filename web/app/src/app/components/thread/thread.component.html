@@ -30,7 +30,7 @@
         @case ('call') {
           <glz-receipt
             class="aside"
-            data-testid="thread-receipt"
+            testId="thread-receipt"
             [tool]="item.tool"
             [summary]="item.summary"
             [status]="item.status"
@@ -41,7 +41,7 @@
         @case ('approval') {
           <glz-approval-card
             class="aside"
-            data-testid="thread-approval"
+            testId="thread-approval"
             [tool]="item.tool"
             [summary]="item.summary"
             [decision]="item.decision"
@@ -52,7 +52,7 @@
         @case ('question') {
           <glz-question-card
             class="aside"
-            data-testid="thread-question"
+            testId="thread-question"
             [questions]="item.questions"
             [answered]="item.answers"
             [busy]="service.sending()"
@@ -62,7 +62,13 @@
       }
     }
     @if (service.hasReply()) {
-      <glz-message from="model" hope streaming data-testid="thread-reply" [author]="copy.model">
+      <glz-message
+        from="model"
+        streaming
+        data-testid="thread-reply"
+        [author]="replyAuthor()"
+        [hope]="replyHope()"
+      >
         @if (service.reply().reasoning) {
           <glz-reasoning streaming>{{ service.reply().reasoning }}</glz-reasoning>
         }
@@ -78,7 +84,7 @@
   }
   <glz-composer
     class="composer"
-    data-testid="thread-composer"
+    testId="thread-composer"
     [attachments]="false"
     [placeholder]="copy.placeholder"
     [busy]="service.busy()"

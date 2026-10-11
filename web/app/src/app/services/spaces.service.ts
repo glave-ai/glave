@@ -1,3 +1,4 @@
+import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
 import type { Space, SpaceId, ThreadId, ThreadSummary } from '@glave/client';
 
@@ -19,20 +20,24 @@ export const REFRESH_MS = 10_000;
 @Service()
 export class SpacesService {
   private readonly session = inject(SessionService);
+  private readonly document = inject(DOCUMENT);
+  /** The read under way, which a second asks join rather than start another. */
+  private pending: Promise<void> | null = null;
   private readonly lists = signal<readonly SpaceThreads[]>([]);
   private readonly failed = signal<string | null>(null);
-  private readonly read = signal(false);
+  private readonly done = signal(false);
 
   /** Projects first, then the personal space; each with its threads, newest first. */
   readonly spaces = computed(() =>
     [...this.lists()].sort((a, b) => kindOrder(a.space) - kindOrder(b.space)),
   );
   readonly error = this.failed.asReadonly();
-  readonly loaded = this.read.asReadonly();
+  readonly loaded = this.done.asReadonly();
 
   constructor() {
+    // Polling skips a tab no one is looking at, and a read still under way.
     const timer = setInterval(() => {
-      if (this.session.signedIn()) {
+      if (this.session.signedIn() && !this.document.hidden && this.pending === null) {
         void this.refresh();
       }
     }, REFRESH_MS);
@@ -41,8 +46,15 @@ export class SpacesService {
     });
   }
 
-  /** Reads the spaces and their threads again. */
-  async refresh(): Promise<void> {
+  /** Reads the spaces and their threads again, or joins the read under way. */
+  refresh(): Promise<void> {
+    this.pending ??= this.readAll().finally(() => {
+      this.pending = null;
+    });
+    return this.pending;
+  }
+
+  private async readAll(): Promise<void> {
     try {
       const { spaces } = await this.session.call('space/list', {});
       const lists = await Promise.all(
@@ -59,7 +71,7 @@ export class SpacesService {
     } catch (error: unknown) {
       this.failed.set(error instanceof Error ? error.message : String(error));
     } finally {
-      this.read.set(true);
+      this.done.set(true);
     }
   }
 

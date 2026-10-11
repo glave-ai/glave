@@ -1,4 +1,4 @@
-<a class="skip" href="#content" data-testid="workspace-skip">{{ copy.skip }}</a>
+<a class="skip" [href]="contentLink" data-testid="workspace-skip">{{ copy.skip }}</a>
 <glz-sidenav-layout [label]="copy.sideNav">
   <app-spaces-nav glzSidenav class="side" [current]="currentThread()" (navigated)="navigated()" />
   <div class="page">

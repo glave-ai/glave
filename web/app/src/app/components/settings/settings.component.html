@@ -11,9 +11,9 @@
           [value]="choice()"
           (valueChange)="pick($event)"
         >
-          <glz-radio value="system">{{ copy.system }}</glz-radio>
-          <glz-radio value="light">{{ copy.light }}</glz-radio>
-          <glz-radio value="dark">{{ copy.dark }}</glz-radio>
+          @for (theme of themes; track theme.value) {
+            <glz-radio [value]="theme.value">{{ theme.label }}</glz-radio>
+          }
         </glz-radio-group>
       </glz-form-field>
     </glz-card>

@@ -1,8 +1,15 @@
-import { Service, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
 import type { RawEvent, ThreadId } from '@glave/client';
 import type { GlzDecision } from '@glave/glaze';
 
-import { NO_DRAFT, applyUpdate, mergeEvents, threadItems, type Draft } from '../lib/conversation';
+import {
+  NO_DRAFT,
+  applyUpdate,
+  latestModel,
+  mergeEvents,
+  threadItems,
+  type Draft,
+} from '../lib/conversation';
 import { SessionService } from './session.service';
 import { SpacesService } from './spaces.service';
 
@@ -29,7 +36,16 @@ export class ThreadService {
   readonly busy = this.running.asReadonly();
   readonly error = this.failed.asReadonly();
   readonly sending = this.deciding.asReadonly();
+  /** The model the latest turn runs on, for the reply streaming in. */
+  readonly model = computed(() => latestModel(this.events()));
   readonly hasReply = computed(() => this.draft().text !== '' || this.draft().reasoning !== '');
+
+  constructor() {
+    // Leaving the thread stops following its turn; the turn itself goes on in the server.
+    inject(DestroyRef).onDestroy(() => {
+      this.controller?.abort();
+    });
+  }
 
   /** Opens `thread`: reads all its events. */
   async open(thread: ThreadId): Promise<void> {

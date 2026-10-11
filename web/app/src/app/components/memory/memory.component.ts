@@ -61,6 +61,7 @@ const COPY = {
 export class MemoryComponent {
   protected readonly copy = COPY;
   protected readonly icon = Brain;
+  protected readonly textRows = 3;
   protected readonly service = inject(MemoryService);
   // The validator is passed as itself: Glaze's required mark compares it by reference.
   /* eslint-disable @typescript-eslint/unbound-method -- see above */
@@ -87,9 +88,7 @@ export class MemoryComponent {
     })),
   );
   protected readonly off = computed(() => this.service.state() === 'off');
-  protected readonly empty = computed(
-    () => this.service.state() === 'ready' && this.service.memories().length === 0,
-  );
+  protected readonly ready = computed(() => this.service.state() === 'ready');
 
   constructor() {
     void this.service.refresh();

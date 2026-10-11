@@ -24,7 +24,7 @@ import {
   GlzButtonComponent,
 } from '@glave/glaze';
 
-import type { MessageItem, ThreadItem } from '../../lib/conversation';
+import { type MessageItem, type ThreadItem, isHope } from '../../lib/conversation';
 import { threadMark, threadTitle } from '../../lib/threads';
 import { SpacesService } from '../../services/spaces.service';
 import { ThreadService } from '../../services/thread.service';
@@ -32,7 +32,7 @@ import type { FirstPrompt } from '../home/home.component';
 
 const COPY = {
   you: 'You',
-  model: 'Hope',
+  model: 'Model',
   latest: 'Jump to latest',
   failed: 'Something went wrong:',
   placeholder: 'Reply',
@@ -94,12 +94,15 @@ export class ThreadComponent {
       item.kind === 'message'
         ? {
             ...item,
-            author: item.from === 'person' ? COPY.you : COPY.model,
-            hope: item.from === 'model',
+            author: item.from === 'person' ? COPY.you : (item.model ?? COPY.model),
+            hope: isHope(item.model),
           }
         : item,
     ),
   );
+  /** Who is writing the reply streaming in: the latest turn's model. */
+  protected readonly replyAuthor = computed(() => this.service.model() ?? COPY.model);
+  protected readonly replyHope = computed(() => isHope(this.service.model()));
   protected readonly summary = computed(() => this.spaces.thread(this.thread()));
   protected readonly title = computed(() => {
     const summary = this.summary();

@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
+import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
@@ -21,5 +22,18 @@ describe('WorkspaceComponent', () => {
       'Tasks',
     );
     await expectAccessible(root);
+  });
+
+  it('goes to the sign-in page when the server refuses the sign-in', async () => {
+    const fake = new FakeSession().answer(
+      'space/list',
+      new ApiError({ code: ErrorCode.NO_SIGN_IN, message: 'expired' }),
+    );
+    TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    const fixture = TestBed.createComponent(WorkspaceComponent);
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    expect(navigate).toHaveBeenCalledWith('/sign-in');
   });
 });

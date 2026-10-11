@@ -71,9 +71,6 @@ export class TasksComponent {
       stopLabel: `${COPY.stop} ${task.title}`,
     })),
   );
-  protected readonly empty = computed(
-    () => this.service.loaded() && this.service.tasks().length === 0,
-  );
 
   constructor() {
     void this.service.refresh();

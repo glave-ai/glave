@@ -9,7 +9,7 @@ import { space, thread } from '../../testing/fixtures';
 import { HomeComponent } from './home.component';
 
 async function send(root: HTMLElement, text: string): Promise<void> {
-  const input = root.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]');
+  const input = root.querySelector<HTMLTextAreaElement>('[data-testid="home-composer-input"]');
   if (input) {
     input.value = text;
     input.dispatchEvent(new Event('input'));
@@ -50,8 +50,8 @@ describe('HomeComponent', () => {
     expect(root.querySelector('[data-testid="home-error"]')?.textContent).toContain(
       'not a repository',
     );
-    expect(root.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')?.value).toBe(
-      'Hello',
-    );
+    expect(
+      root.querySelector<HTMLTextAreaElement>('[data-testid="home-composer-input"]')?.value,
+    ).toBe('Hello');
   });
 });

@@ -9,11 +9,6 @@
   @if (service.error(); as error) {
     <p class="error" role="alert">{{ copy.failed }} {{ error }}</p>
   }
-  @if (empty()) {
-    <glz-empty-state [heading]="copy.emptyHeading" [icon]="icon">{{
-      copy.emptyText
-    }}</glz-empty-state>
-  }
   <div class="list">
     @for (task of rows(); track task.thread) {
       <glz-card data-testid="task">
@@ -37,6 +32,12 @@
           </div>
         }
       </glz-card>
+    } @empty {
+      @if (service.loaded()) {
+        <glz-empty-state [heading]="copy.emptyHeading" [icon]="icon">{{
+          copy.emptyText
+        }}</glz-empty-state>
+      }
     }
   </div>
 </div>

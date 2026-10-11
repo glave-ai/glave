@@ -43,7 +43,7 @@ describe('ThreadComponent', () => {
       'Keep logs?',
     );
     await expectAccessible(root);
-    root.querySelector<HTMLButtonElement>('[data-testid="approval-allow-once"]')?.click();
+    root.querySelector<HTMLButtonElement>('[data-testid="thread-approval-allow-once"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
     expect(fake.paramsOf('approval/decide')).toEqual([
       { thread: 'thread-1', approval: 'c1', decision: 'allow_once' },
@@ -70,7 +70,7 @@ describe('ThreadComponent', () => {
       },
     ]);
     const root = await open(fake);
-    const input = root.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]');
+    const input = root.querySelector<HTMLTextAreaElement>('[data-testid="thread-composer-input"]');
     if (input) {
       input.value = 'Go';
       input.dispatchEvent(new Event('input'));

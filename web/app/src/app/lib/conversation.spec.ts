@@ -4,6 +4,8 @@ import {
   NO_DRAFT,
   answersFrom,
   applyUpdate,
+  isHope,
+  latestModel,
   argumentsSummary,
   mergeEvents,
   partsText,
@@ -147,6 +149,26 @@ describe('conversation', () => {
     ]);
     expect(items[0]).toMatchObject({ status: 'running' });
     expect(items[1]).toMatchObject({ decision: null });
+  });
+
+  it('names the model of each reply from its turn, and knows Hope', () => {
+    const events = [
+      event('message.added', { role: 'user', parts: [{ type: 'text', text: 'Hi' }] }),
+      event('turn.started', { model: { provider: 'openrouter', name: 'hope-12b' } }),
+      event('message.added', { role: 'assistant', parts: [{ type: 'text', text: 'One' }] }),
+      event('turn.started', { model: { provider: 'anthropic', name: 'claude-haiku' } }),
+      event('message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Two' }] }),
+    ];
+    expect(threadItems(events).map((item) => (item.kind === 'message' ? item.model : 'x'))).toEqual(
+      [null, 'hope-12b', 'claude-haiku'],
+    );
+    expect(latestModel(events)).toBe('claude-haiku');
+    expect(latestModel([])).toBeNull();
+    expect(isHope('hope-12b')).toBe(true);
+    expect(isHope('Hope')).toBe(true);
+    expect(isHope('hopeful-model')).toBe(false);
+    expect(isHope('claude-haiku')).toBe(false);
+    expect(isHope(null)).toBe(false);
   });
 
   it('grows the draft with text and reasoning only', () => {

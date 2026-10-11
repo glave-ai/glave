@@ -10,7 +10,7 @@ import {
 } from '@glave/glaze';
 
 import { SessionService } from '../../services/session.service';
-import { type ThemeChoice, ThemeService } from '../../services/theme.service';
+import { ThemeService, isChoice } from '../../services/theme.service';
 
 const COPY = {
   heading: 'Settings',
@@ -28,10 +28,6 @@ const COPY = {
   signOut: 'Sign out of this tab',
 } as const;
 
-function isTheme(value: string | null): value is ThemeChoice {
-  return value === 'system' || value === 'light' || value === 'dark';
-}
-
 /** Settings, read-only for now: the theme, where settings come from, the server, sign out. */
 @Component({
   selector: 'app-settings',
@@ -48,6 +44,11 @@ function isTheme(value: string | null): value is ThemeChoice {
 })
 export class SettingsComponent {
   protected readonly copy = COPY;
+  protected readonly themes = [
+    { value: 'system', label: COPY.system },
+    { value: 'light', label: COPY.light },
+    { value: 'dark', label: COPY.dark },
+  ] as const;
   private readonly theme = inject(ThemeService);
   private readonly session = inject(SessionService);
   private readonly router = inject(Router);
@@ -71,7 +72,7 @@ export class SettingsComponent {
   }
 
   protected pick(choice: string | null): void {
-    if (isTheme(choice)) {
+    if (isChoice(choice)) {
       this.theme.set(choice);
     }
   }
