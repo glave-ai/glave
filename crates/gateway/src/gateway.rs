@@ -1,8 +1,6 @@
 //! The gateway as a model provider: each call goes by its purpose's route, to the first target
 //! that can serve it, within budget, and comes back saying who served it.
 
-use std::future::Future;
-
 use glave_ports::{Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Served};
 
 use crate::budget::{Budget, Budgets, Caller, Charge, Ledger, OverBudget};
@@ -127,17 +125,13 @@ impl Gateway {
 }
 
 impl ModelProvider for Gateway {
-    fn complete(
+    async fn complete(
         &self,
         request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
-        self.serve(
-            None,
-            self.routes.targets(request.purpose),
-            request,
-            on_delta,
-        )
+    ) -> Result<Completion, ProviderError> {
+        let targets = self.routes.for_model(request.purpose, &request.model);
+        self.serve(None, &targets, request, on_delta).await
     }
 }
 

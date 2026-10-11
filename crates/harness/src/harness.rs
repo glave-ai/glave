@@ -185,6 +185,8 @@ pub struct Thread {
     /// The person whose work this thread is, its `for`: the caller who started it, or the
     /// harness's person. A subagent's thread has its parent's.
     pub(crate) for_: Option<PrincipalId>,
+    /// The model chosen for the thread (`chosen.rs`); the harness's own when `None`.
+    pub(crate) model: Option<String>,
 }
 
 impl Thread {
@@ -344,7 +346,7 @@ where
 
     /// The tools on offer now in `thread`, from every source.
     pub(crate) async fn tools(&self, thread: &Thread) -> ToolSet {
-        let mut set = ToolSet::gather(&self.sources, &self.settings.system_prompt).await;
+        let mut set = ToolSet::gather(&self.sources, &self.system_for(thread)).await;
         if let Some((memory, _)) = self.memory_for(thread)
             && let Ok(tools) = memory.tools().await
         {
@@ -425,6 +427,7 @@ where
             read_secret: false,
             memory: MemoryState::default(),
             for_: caller.person.or(self.actors.person),
+            model: None,
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {

@@ -136,6 +136,7 @@ mod tasks {
                     background: false,
                     budget: None,
                     meta: glave_session::protocol::Meta::default(),
+                    model: None,
                 })
                 .await
                 .unwrap();
@@ -236,6 +237,7 @@ mod tasks {
                     background: false,
                     budget: Some(5),
                     meta: glave_session::protocol::Meta::default(),
+                    model: None,
                 })
                 .await;
             assert_eq!(followed.unwrap_err().code, code::INVALID_PARAMS);
@@ -260,6 +262,7 @@ mod tasks {
                     background: true,
                     budget: None,
                     meta: glave_session::protocol::Meta::default(),
+                    model: None,
                 })
                 .await
                 .unwrap_err();

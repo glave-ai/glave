@@ -109,6 +109,8 @@ pub struct Setup {
     pub settings: Settings,
     pub limits: TaskLimits,
     pub now: Arc<AtomicI64>,
+    /// Models offered beside the settings' own.
+    pub models: Vec<glave_session::protocol::ModelInfo>,
 }
 
 impl Setup {
@@ -126,6 +128,7 @@ impl Setup {
                     .unwrap()
                     .as_millisecond(),
             )),
+            models: Vec::new(),
         }
     }
 
@@ -152,6 +155,7 @@ impl Setup {
             tasks: self.limits,
             memory: None,
             spaces: Arc::new(glave_ports::MemorySpaces::new()),
+            models: self.models,
         };
         (
             Server::new(wiring, self.settings, scope(), self.answering),
@@ -189,6 +193,7 @@ pub async fn background(server: &Tested, thread: ThreadId, budget: Option<u64>) 
         background: true,
         budget,
         meta: glave_session::protocol::Meta::default(),
+        model: None,
     };
     match server.request(request).await.unwrap() {
         Reply::Task { task } => task,

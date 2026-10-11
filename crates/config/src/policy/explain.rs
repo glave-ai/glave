@@ -128,6 +128,21 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
                 &Source::Default,
             ),
         },
+        match &choices.models {
+            Some(models) => row(
+                "models",
+                format!(
+                    "{:?}",
+                    models
+                        .value
+                        .iter()
+                        .map(|model| model.id.as_str())
+                        .collect::<Vec<_>>()
+                ),
+                &models.from,
+            ),
+            None => row("models", "none besides model".to_owned(), &Source::Default),
+        },
         row(
             "worktree",
             if choices.worktree.value { "on" } else { "off" }.to_owned(),

@@ -46,6 +46,7 @@ mod local {
                     space: None,
                     worktree: None,
                     background: false,
+                    model: None,
                 })
                 .await;
             let thread = started["result"]["thread"]["id"].clone();
@@ -56,6 +57,7 @@ mod local {
                 background: false,
                 budget: None,
                 meta: Meta::default(),
+                model: None,
             });
             let answered = web.post(&message).await;
             assert_eq!(answered.status, 200);

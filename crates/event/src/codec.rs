@@ -10,11 +10,11 @@ use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
     ApprovalDecided, ApprovalRequested, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
     HookRan, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryTidied,
-    MessageAdded, ModelResponded, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted,
-    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
-    ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
-    approval, gateway, goal, hook, memory, message, model, standing, task, thread, tool, turn,
-    workspace,
+    MessageAdded, ModelChosen, ModelResponded, ScheduleCreated, ScheduleDeleted, TaskEnded,
+    TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted,
+    ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound,
+    WorkspaceRemoved, approval, chosen, gateway, goal, hook, memory, message, model, standing,
+    task, thread, tool, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -45,6 +45,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (tool::COMPLETED, 2),
     (model::TYPE, 1),
     (model::TYPE, 2),
+    (chosen::TYPE, 1),
     (turn::ENDED, 1),
     (approval::REQUESTED, 1),
     (approval::DECIDED, 1),
@@ -93,6 +94,7 @@ pub enum Body {
     ToolCallRequested(ToolCallRequested),
     ToolCallCompleted(ToolCallCompleted),
     ModelResponded(ModelResponded),
+    ModelChosen(ModelChosen),
     TurnEnded(TurnEnded),
     ApprovalRequested(ApprovalRequested),
     ApprovalDecided(ApprovalDecided),
@@ -190,6 +192,7 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
             tool::decode_completed(version, data).map(|r| r.map(Body::ToolCallCompleted))
         }
         model::TYPE => model::decode(version, data).map(|r| r.map(Body::ModelResponded)),
+        chosen::TYPE => chosen::decode(version, data).map(|r| r.map(Body::ModelChosen)),
         turn::ENDED => turn::decode_ended(version, data).map(|r| r.map(Body::TurnEnded)),
         approval::REQUESTED => {
             approval::decode_requested(version, data).map(|r| r.map(Body::ApprovalRequested))
@@ -250,6 +253,7 @@ impl Event {
             Body::ToolCallRequested(payload) => encode(header, payload),
             Body::ToolCallCompleted(payload) => encode(header, payload),
             Body::ModelResponded(payload) => encode(header, payload),
+            Body::ModelChosen(payload) => encode(header, payload),
             Body::TurnEnded(payload) => encode(header, payload),
             Body::ApprovalRequested(payload) => encode(header, payload),
             Body::ApprovalDecided(payload) => encode(header, payload),
