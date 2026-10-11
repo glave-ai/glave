@@ -258,8 +258,17 @@ async fn streamed(cluster: &Kubernetes) {
     assert_eq!(echoed, "hello");
     task.abort();
     cluster.remove(&name).await.unwrap();
-    assert_eq!(policy["spec"]["egress"], json!([]), "nothing goes out");
-    assert_eq!(policy["spec"]["ingress"], json!([]), "nothing comes in");
+    // Both directions are governed, and the API server drops empty rule lists: no rules.
+    assert_eq!(policy["spec"]["policyTypes"], json!(["Ingress", "Egress"]));
+    let none = |rules: &Value| rules.is_null() || *rules == json!([]);
+    assert!(
+        none(&policy["spec"]["egress"]),
+        "nothing goes out: {policy}"
+    );
+    assert!(
+        none(&policy["spec"]["ingress"]),
+        "nothing comes in: {policy}"
+    );
     assert_eq!(left_behind(cluster).await, Vec::<String>::new());
 }
 
