@@ -96,6 +96,8 @@ rusqlite = { version = "0.40", default-features = false, features = ["bundled", 
 rustix = { version = "1.1", default-features = false, features = ["fs", "std"] }
 # The Linux sandbox's seccomp filter, built and compiled to BPF in safe Rust (Firecracker's).
 seccompiler = { version = "0.5", default-features = false }
+# JSON Schema of the session API, derived beside serde (already in the tree, under rmcp).
+schemars = { version = "1.2", default-features = false, features = ["derive", "std", "uuid1"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.11"

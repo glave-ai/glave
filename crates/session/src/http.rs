@@ -1,5 +1,6 @@
 //! The session API over HTTP (`specs/session.md`, "Transports"). A client `POST`s one JSON-RPC
-//! request to `/` with an OIDC access token. The answer is JSON, or for `turn/start` a
+//! request to `/` with an OIDC access token, or from this computer with the server's local
+//! token. The answer is JSON, or for `turn/start` a
 //! `text/event-stream` of the turn's notifications ending with its response. The method may
 //! also be named in the `Glave-Method` header, for proxies and logs; when it is, it must match.
 //! Every request needs a valid sign-in: without one the answer is HTTP 401 with error `-32013`.
@@ -8,6 +9,7 @@ mod body;
 
 use std::convert::Infallible;
 use std::future::{Future, poll_fn};
+use std::net::IpAddr;
 use std::pin::{Pin, pin};
 use std::sync::Arc;
 use std::time::Duration;
@@ -72,14 +74,15 @@ where
             }
         };
         // A connection that failed to open is that client's problem, not the server's.
-        let Ok((stream, _)) = accepted else {
+        let Ok((stream, peer)) = accepted else {
             continue;
         };
+        let peer = peer.ip();
         let (server, signin) = (server.clone(), Arc::clone(&signin));
         connections.spawn(async move {
             let service = service_fn(move |request| {
                 let (server, signin) = (server.clone(), Arc::clone(&signin));
-                async move { Ok::<_, Infallible>(answer(&server, &signin, request).await) }
+                async move { Ok::<_, Infallible>(answer(&server, &signin, peer, request).await) }
             });
             // A client that goes away mid-request ends only its own connection.
             let _ = http1::Builder::new()
@@ -99,6 +102,7 @@ where
 async fn answer<P, L, B>(
     server: &Server<P, L, B>,
     signin: &SignIn,
+    peer: IpAddr,
     request: HttpRequest<Incoming>,
 ) -> Response<Answer>
 where
@@ -117,7 +121,7 @@ where
         return refused;
     }
     let caller = match bearer(request.headers()) {
-        Some(token) => signin.verify(token).await,
+        Some(token) => signin.verify_from(token, peer).await,
         None => Err(SignInError::Missing),
     };
     let caller = match caller {

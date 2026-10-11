@@ -80,6 +80,7 @@ mod spaces {
             space,
             limit: None,
             show: None,
+            cursor: None,
         }
     }
 

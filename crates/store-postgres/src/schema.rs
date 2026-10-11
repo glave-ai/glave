@@ -103,7 +103,30 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (org, key)
     );
     ",
-    // 4: keyword search over conversations (`specs/memory.md`, "Recall"): the words of each
+    // 4: the threads view: one row per thread, folded from its events as they are appended
+    // (`glave_ports::ThreadView`, as JSON), listed by standing, most recently written first.
+    // Content-free. The store fills it from the log when it connects (`views::refresh`), and
+    // records which fold built it in `glave_settings`.
+    "
+    CREATE TABLE threads (
+        org       uuid   NOT NULL,
+        space     uuid   NOT NULL,
+        thread    uuid   NOT NULL,
+        standing  text   NOT NULL,
+        -- The `pos` of the thread's latest event: the order of writes.
+        position  bigint NOT NULL,
+        view      text   NOT NULL,
+        PRIMARY KEY (org, space, thread)
+    );
+
+    CREATE INDEX threads_by_position ON threads (org, space, standing, position DESC);
+
+    CREATE TABLE glave_settings (
+        key    text PRIMARY KEY,
+        value  text NOT NULL
+    );
+    ",
+    // 5: keyword search over conversations (`specs/memory.md`, "Recall"): the words of each
     // message and tool output, as keyed hashes under its space key (`Keys::search_terms`), so
     // the index holds no word in the clear. Written in the same transaction as the events.
     "

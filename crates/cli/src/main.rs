@@ -18,6 +18,7 @@ mod mcp;
 mod memory;
 mod model;
 mod policy;
+mod serving;
 mod session;
 mod setup;
 mod skills;

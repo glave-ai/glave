@@ -46,7 +46,7 @@ impl Goal {
 }
 
 /// A thread's latest goal and how far it has come.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GoalProgress {
     pub objective: String,
     pub token_budget: u64,

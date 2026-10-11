@@ -1,7 +1,7 @@
 //! `thread.archived`, `thread.unarchived` and `thread.deleted`: whether a thread is shown.
 //! The latest of the three decides: archived threads are hidden from lists and kept in the
 //! log, an archive can be undone, and a deleted thread is hidden for good and waits for
-//! erasure (`specs/storage.md`).
+//! erasure (`specs/storage.md`). And `thread.renamed`: the title someone gave the thread.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -12,6 +12,7 @@ use crate::payload::principal::Principal;
 pub(crate) const ARCHIVED: &str = "thread.archived";
 pub(crate) const UNARCHIVED: &str = "thread.unarchived";
 pub(crate) const DELETED: &str = "thread.deleted";
+pub(crate) const RENAMED: &str = "thread.renamed";
 
 /// The thread was archived: hidden from lists, kept in the log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +39,28 @@ pub struct ThreadDeleted {
     /// Who deleted it. Absent: the thread's `for`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
+}
+
+/// Someone gave the thread a title, in place of the one its first message gave it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThreadRenamed {
+    pub title: String,
+    /// Who renamed it. Absent: the thread's `for`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<Principal>,
+}
+
+impl Payload for ThreadRenamed {
+    const TYPE: &'static str = RENAMED;
+    const VERSION: u32 = 1;
+}
+
+pub(crate) fn decode_renamed(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<ThreadRenamed>> {
+    (version == 1).then(|| parse(data))
 }
 
 impl Payload for ThreadArchived {

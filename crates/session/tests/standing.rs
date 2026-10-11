@@ -30,8 +30,9 @@ mod standing {
             space: None,
             limit: None,
             show: Some(show),
+            cursor: None,
         };
-        let Reply::Threads { threads } = server.request(request).await.unwrap() else {
+        let Reply::Threads { threads, .. } = server.request(request).await.unwrap() else {
             panic!("threads")
         };
         threads.into_iter().map(|thread| thread.id).collect()

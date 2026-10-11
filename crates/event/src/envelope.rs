@@ -15,7 +15,19 @@ pub const ENVELOPE_VERSION: u32 = 1;
 
 /// An event's position in its thread, starting at 1 and assigned gap-free by the thread's
 /// single writer. This is the order of events; time never is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(try_from = "u64", into = "u64")]
 pub struct Seq(NonZeroU64);
 
@@ -53,7 +65,19 @@ impl From<Seq> for u64 {
 }
 
 /// The version of one payload type, starting at 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(try_from = "u32", into = "u32")]
 pub struct PayloadVersion(NonZeroU32);
 
@@ -86,7 +110,9 @@ impl From<PayloadVersion> for u32 {
 /// What happened: lowercase dotted segments such as `tool.call.requested`, at most 64 bytes.
 /// Each segment is lowercase ASCII letters, digits and underscores; the name starts with a
 /// letter.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(try_from = "String", into = "String")]
 pub struct TypeName(String);
 
@@ -142,7 +168,19 @@ impl fmt::Display for TypeName {
 /// When an event was recorded, in UTC at millisecond precision. For people only: events are
 /// ordered by [`Seq`]. Always written with three fractional digits, such as
 /// `2026-10-07T21:14:01.250Z`, so every instant has exactly one spelling.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(try_from = "String", into = "String")]
 pub struct At(Timestamp);
 
@@ -199,7 +237,7 @@ pub struct Header {
 
 /// An event exactly as it is stored and sent. `data` holds the payload's bytes as written;
 /// [`crate::decode`] interprets them.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RawEvent {
     pub glave: u32,
     pub id: EventId,
@@ -209,6 +247,8 @@ pub struct RawEvent {
     #[serde(rename = "type")]
     pub kind: TypeName,
     pub v: PayloadVersion,
+    /// The payload of `type` at version `v` (`specs/events.md`).
+    #[schemars(with = "serde_json::Map<String, serde_json::Value>")]
     pub data: Box<RawValue>,
 }
 

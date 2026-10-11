@@ -9,6 +9,8 @@ mod cmd;
 mod eval;
 mod file_sizes;
 mod lock;
+mod schema;
+mod typescript;
 mod workspace;
 
 fn main() -> std::process::ExitCode {

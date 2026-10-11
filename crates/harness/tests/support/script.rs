@@ -232,6 +232,7 @@ pub fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::ThreadArchived(_) => "thread.archived",
             Body::ThreadUnarchived(_) => "thread.unarchived",
             Body::ThreadDeleted(_) => "thread.deleted",
+            Body::ThreadRenamed(_) => "thread.renamed",
             Body::TurnStarted(_) => "turn.started",
             Body::MessageAdded(_) => "message.added",
             Body::ToolCallRequested(_) => "tool.call.requested",

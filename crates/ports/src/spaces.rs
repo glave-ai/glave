@@ -20,7 +20,7 @@ pub use memory::MemorySpaces;
 pub const MAX_NAME: usize = 200;
 
 /// What a space is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SpaceKind {
     /// A project: the work of its owner and members, usually tied to folders.
@@ -48,7 +48,7 @@ impl SpaceKind {
 }
 
 /// A space, as its record keeps it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Space {
     pub id: SpaceId,
     pub kind: SpaceKind,

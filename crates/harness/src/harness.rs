@@ -243,6 +243,9 @@ pub enum HarnessError {
     /// A `UserPromptSubmit` hook stopped the prompt; the model never saw it.
     #[error("a hook stopped this prompt: {0}")]
     PromptBlocked(String),
+    /// What was asked for is not valid, such as an empty title.
+    #[error("{0}")]
+    Invalid(String),
 }
 
 impl From<EncodeError> for HarnessError {

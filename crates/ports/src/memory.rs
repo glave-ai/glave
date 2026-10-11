@@ -13,6 +13,7 @@ use crate::search::{Found, indexed, query_terms};
 
 /// One searchable event and its words.
 type Indexed = (Found, BTreeSet<String>);
+use crate::view::{ThreadQuery, ThreadView};
 
 /// An event log held in memory. Nothing survives the process.
 #[derive(Debug, Default)]
@@ -27,6 +28,8 @@ struct Thread {
     events: Vec<RawEvent>,
     /// When the thread was last written, as a count of appends across the log.
     written: u64,
+    /// Its row of the threads view, folded as events are appended.
+    view: Option<ThreadView>,
 }
 
 impl MemoryLog {
@@ -52,6 +55,10 @@ impl MemoryLog {
         check_append(thread.events.last().map(|event| event.seq), events)?;
         thread.events.extend(events.iter().cloned());
         thread.written = clock;
+        thread.view = ThreadView::fold(thread.view.take(), events).map(|mut view| {
+            view.position = i64::try_from(clock).unwrap_or(i64::MAX);
+            view
+        });
         drop(threads);
         let mut index = self
             .index
@@ -137,7 +144,75 @@ impl MemoryLog {
     }
 }
 
+/// Every thread the in-memory log holds, by scope and id.
+type Threads = HashMap<(Scope, ThreadId), Thread>;
+
+impl MemoryLog {
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Threads>, LogError> {
+        self.threads
+            .lock()
+            .map_err(|_| LogError::Storage("the in-memory log's lock is poisoned".into()))
+    }
+
+    fn views_now(&self, scope: &Scope, query: &ThreadQuery) -> Result<Vec<ThreadView>, LogError> {
+        let threads = self.lock()?;
+        let mut found: Vec<ThreadView> = threads
+            .iter()
+            .filter(|((owner, _), _)| owner == scope)
+            .filter_map(|(_, thread)| thread.view.clone())
+            .filter(|view| query.admits(view))
+            .collect();
+        found.sort_by_key(|view| std::cmp::Reverse(view.cursor()));
+        found.truncate(query.limit);
+        Ok(found)
+    }
+
+    fn view_now(&self, scope: &Scope, thread: ThreadId) -> Result<Option<ThreadView>, LogError> {
+        Ok(self
+            .lock()?
+            .get(&(*scope, thread))
+            .and_then(|thread| thread.view.clone()))
+    }
+
+    fn rebuild_now(&self, scope: &Scope, thread: ThreadId) -> Result<Option<ThreadView>, LogError> {
+        let mut threads = self.lock()?;
+        let Some(stored) = threads.get_mut(&(*scope, thread)) else {
+            return Ok(None);
+        };
+        let position = i64::try_from(stored.written).unwrap_or(i64::MAX);
+        stored.view = ThreadView::fold(None, &stored.events).map(|mut view| {
+            view.position = position;
+            view
+        });
+        Ok(stored.view.clone())
+    }
+}
+
 impl EventLog for MemoryLog {
+    fn thread_views(
+        &self,
+        scope: &Scope,
+        query: &ThreadQuery,
+    ) -> impl Future<Output = Result<Vec<ThreadView>, LogError>> + Send {
+        ready(self.views_now(scope, query))
+    }
+
+    fn thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send {
+        ready(self.view_now(scope, thread))
+    }
+
+    fn rebuild_thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send {
+        ready(self.rebuild_now(scope, thread))
+    }
+
     fn append(
         &self,
         scope: &Scope,
@@ -327,6 +402,14 @@ mod tests {
     #[test]
     fn memory_log_passes_the_search_conformance_suite() {
         assert_eq!(block_on(conformance::search(&MemoryLog::new())), Ok(()));
+    }
+
+    #[test]
+    fn memory_log_passes_the_threads_view_conformance_suite() {
+        assert_eq!(
+            block_on(conformance::thread_views(&MemoryLog::new())),
+            Ok(())
+        );
     }
 
     fn tool(name: &str) -> (crate::tools::ToolInfo, crate::tools::ToolOutput) {

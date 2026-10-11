@@ -32,11 +32,15 @@ Usage:
                                 be this folder's task host: serve the session API on a Unix
                                 socket in GLAVE_HOME/run and run its tasks and schedules
                                 until nothing is left (glave starts it when needed)
-  glave serve --http <address> --issuer <url> --audience <name> [options]
-                                serve the session API over HTTP to clients signed in with
-                                an OIDC access token from that issuer for that audience.
-                                The address is host:port, or a port on 127.0.0.1; the
-                                listener has no TLS, so put it behind a proxy that has.
+  glave serve --http <address> [--issuer <url> --audience <name>] [options]
+                                serve the session API over HTTP. A browser on this
+                                computer signs in with a token made at every start (kept in
+                                GLAVE_HOME/serve.token; glave prints a link with it); with
+                                --issuer and --audience, clients elsewhere sign in with an
+                                OIDC access token from that issuer for that audience.
+                                The address is host:port, or a port on 127.0.0.1; without
+                                --issuer it must be this computer's. The listener has no
+                                TLS, so put it behind a proxy that has.
                                 --issuer may be given more than once
   glave gateway serve --http <address> --issuer <url> --audience <name>
                                 serve the gateway to an organization: model calls and the
@@ -365,12 +369,17 @@ fn transport(args: &Args, stdio: bool) -> Result<(), String> {
             "--issuer and --audience are for --http; stdio and the socket need no sign-in".into(),
         );
     }
-    if args.http.is_some() && (args.issuers.is_empty() || args.audience.is_none()) {
-        return Err(
-            "glave serve --http needs --issuer <url> and --audience <name>: a network \
-             listener never runs without sign-in"
-                .into(),
-        );
+    if let Some(address) = args.http {
+        if args.issuers.is_empty() != args.audience.is_none() {
+            return Err("--issuer and --audience go together: OIDC needs both".into());
+        }
+        if args.issuers.is_empty() && !address.ip().is_loopback() {
+            return Err(format!(
+                "glave serve --http {address} would listen beyond this computer: without \
+                 --issuer <url> and --audience <name> only a browser here can sign in, so \
+                 listen on 127.0.0.1 or ::1"
+            ));
+        }
     }
     Ok(())
 }
@@ -504,8 +513,14 @@ mod tests {
             "a",
         ]);
         assert_eq!(anywhere.unwrap().http, Some("0.0.0.0:9".parse().unwrap()));
-        let unsigned = parse_words(&["serve", "--http", "8080"]).unwrap_err();
-        assert!(unsigned.contains("--issuer"), "{unsigned}");
+        // Without OIDC, only a browser on this computer signs in, with the local token.
+        let local = parse_words(&["serve", "--http", "8080"]).unwrap();
+        assert_eq!(local.http, Some("127.0.0.1:8080".parse().unwrap()));
+        assert!(parse_words(&["serve", "--http", "[::1]:8080"]).is_ok());
+        let exposed = parse_words(&["serve", "--http", "0.0.0.0:9"]).unwrap_err();
+        assert!(exposed.contains("--issuer"), "{exposed}");
+        let half = parse_words(&["serve", "--http", "8080", "--issuer", "i"]).unwrap_err();
+        assert!(half.contains("go together"), "{half}");
         assert!(parse_words(&["serve", "--http", "8080", "--stdio"]).is_err());
         assert!(parse_words(&["serve", "--stdio", "--audience", "a"]).is_err());
         assert!(parse_words(&["serve", "--http", "nowhere"]).is_err());

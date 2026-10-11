@@ -8,7 +8,9 @@ use deadpool_postgres::Pool;
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
 use glave_keys::{EventFields, KeyError, erased_payload};
 use glave_ports::search::{Found, indexed, query_terms};
-use glave_ports::{EventLog, LogError, OrgId, Scope, SpaceId, check_append};
+use glave_ports::{
+    EventLog, LogError, OrgId, Scope, SpaceId, ThreadQuery, ThreadView, check_append,
+};
 use jiff::Timestamp;
 use serde_json::value::RawValue;
 use tokio_postgres::Row;
@@ -36,7 +38,8 @@ const INSERT: &str = "
     SELECT $1, $2, $3, seq, id, at, type, v, glave, data, key_id
     FROM UNNEST($4::bigint[], $5::uuid[], $6::timestamptz[], $7::text[], $8::bigint[],
                 $9::bigint[], $10::bytea[], $11::text[])
-        AS batch (seq, id, at, type, v, glave, data, key_id)";
+        AS batch (seq, id, at, type, v, glave, data, key_id)
+    RETURNING pos";
 
 /// The batch's searchable events into the index, each word exactly as hashed.
 const INDEX: &str = "
@@ -88,8 +91,8 @@ impl EventLog for PostgresLog {
                 .transpose()?;
             check_append(last, &events)?;
             let insert = transaction.prepare_cached(INSERT).await.map_err(database)?;
-            transaction
-                .execute(
+            let inserted = transaction
+                .query(
                     &insert,
                     &[
                         &org,
@@ -117,6 +120,11 @@ impl EventLog for PostgresLog {
                     .await
                     .map_err(database)?;
             }
+            let mut position = 0_i64;
+            for row in &inserted {
+                position = position.max(row.try_get::<_, i64>(0).map_err(corrupt)?);
+            }
+            crate::views::fold_in(&transaction, &scope, &events, position).await?;
             transaction.commit().await.map_err(database)
         }
     }
@@ -165,6 +173,33 @@ impl EventLog for PostgresLog {
                 })
                 .collect()
         }
+    }
+
+    fn thread_views(
+        &self,
+        scope: &Scope,
+        query: &ThreadQuery,
+    ) -> impl Future<Output = Result<Vec<ThreadView>, LogError>> + Send {
+        let (scope, query, pool) = (*scope, *query, self.pool.clone());
+        async move { crate::views::page(&pool, &scope, &query).await }
+    }
+
+    fn thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send {
+        let (scope, pool) = (*scope, self.pool.clone());
+        async move { crate::views::one(&pool, &scope, thread).await }
+    }
+
+    fn rebuild_thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send {
+        let (scope, this) = (*scope, self.clone());
+        async move { crate::views::rebuild(&this, &this.pool, &scope, thread).await }
     }
 
     fn read(

@@ -66,7 +66,7 @@ pub struct TaskEnded {
 }
 
 /// When a schedule runs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum When {
     /// Once, at this time.

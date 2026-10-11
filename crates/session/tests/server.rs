@@ -105,11 +105,12 @@ mod session {
                     space: None,
                     limit: None,
                     show: None,
+                    cursor: None,
                 })
                 .await
                 .unwrap()
             {
-                Reply::Threads { threads } => assert_eq!(threads[0].id, thread),
+                Reply::Threads { threads, .. } => assert_eq!(threads[0].id, thread),
                 other => panic!("{other:?}"),
             }
         });

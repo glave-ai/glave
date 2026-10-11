@@ -26,7 +26,7 @@ pub use payload::{
     MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
     MemoryTidied, MessageAdded, ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome,
     ParentCall, Part, Principal, PrincipalKind, Producer, Role, StopReason, ThreadArchived,
-    ThreadCompacted, ThreadDeleted, ThreadStarted, ThreadUnarchived, TokenCounts,
+    ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts,
     ToolCallCompleted, ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
 };
 pub use payload::{

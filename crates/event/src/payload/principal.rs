@@ -10,7 +10,7 @@ use crate::id::PrincipalId;
 macro_rules! open_kind {
     ($(#[$meta:meta])* pub enum $name:ident { $($(#[$vmeta:meta])* $variant:ident => $text:literal,)* }) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
         #[serde(from = "String", into = "String")]
         pub enum $name {
             $($(#[$vmeta])* $variant,)*
@@ -62,7 +62,7 @@ open_kind! {
 
 /// A reference to a principal: `{"kind": "person", "id": "…"}`. Every kind but `glave` has an
 /// id.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Principal {
     pub kind: PrincipalKind,

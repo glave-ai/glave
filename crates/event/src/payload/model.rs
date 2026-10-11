@@ -98,7 +98,9 @@ pub enum StopReason {
 /// Token counts as inclusive totals with subsets: `input` includes `cache_read` and
 /// `cache_write`, and `output` includes `reasoning`. Providers disagree on what their totals
 /// include, so adapters normalize before writing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, schemars::JsonSchema,
+)]
 pub struct TokenCounts {
     pub input: u64,
     pub cache_read: u64,

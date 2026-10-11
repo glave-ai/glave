@@ -65,6 +65,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::ThreadArchived(_)
         | Body::ThreadUnarchived(_)
         | Body::ThreadDeleted(_)
+        | Body::ThreadRenamed(_)
         | Body::HookRan(_)
         | Body::TaskStarted(_)
         | Body::TaskEnded(_)

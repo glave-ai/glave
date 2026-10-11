@@ -1,0 +1,168 @@
+//! Listing threads through the session API: pages from the threads view, most recently written
+//! first, with titles from the person's first message or a rename, and what each thread's
+//! turns used; and renaming, which changes nothing the model is sent.
+
+#[cfg(test)]
+#[path = "support/model.rs"]
+#[expect(dead_code, reason = "shared helpers; this file uses some of them")]
+mod support;
+
+#[cfg(test)]
+mod listing {
+    use glave_event::{Outcome, ThreadId};
+    use glave_harness::{ApprovalMode, Settings};
+    use glave_ports::{EventLog, MemoryLog, ModelProvider, Standing};
+    use glave_session::protocol::{Reply, Request, Status, ThreadSummary, code};
+    use glave_session::{Answering, Server};
+    use serde_json::json;
+
+    use super::support::*;
+
+    async fn page<P, L, B>(
+        server: &Server<P, L, B>,
+        limit: usize,
+        cursor: Option<String>,
+    ) -> (Vec<ThreadSummary>, Option<String>)
+    where
+        P: ModelProvider + 'static,
+        L: EventLog + 'static,
+        B: glave_ports::BlobStore + 'static,
+    {
+        let request = Request::ThreadList {
+            space: None,
+            limit: Some(limit),
+            show: None,
+            cursor,
+        };
+        let Reply::Threads { threads, next } = server.request(request).await.unwrap() else {
+            panic!("threads")
+        };
+        (threads, next)
+    }
+
+    fn ids(threads: &[ThreadSummary]) -> Vec<ThreadId> {
+        threads.iter().map(|thread| thread.id).collect()
+    }
+
+    #[test]
+    fn lists_come_a_page_at_a_time_with_titles_and_usage() {
+        let dir = folder("listing-pages");
+        block_on(async {
+            let answers = vec![answer(Some("Hi."), None)];
+            let server = server(&dir, answers, Answering::NoOne).await;
+            let (a, b, c) = (
+                start(&server, false).await,
+                start(&server, false).await,
+                start(&server, false).await,
+            );
+            turn(&server, a).await.unwrap();
+
+            let (first, next) = page(&server, 2, None).await;
+            assert_eq!(ids(&first), [a, c], "most recently written first");
+            let Some(next) = next else {
+                panic!("a second page follows")
+            };
+            let (second, last) = page(&server, 2, Some(next)).await;
+            assert_eq!(ids(&second), [b]);
+            assert_eq!(last, None, "nothing follows the last page");
+
+            let worked = &first[0];
+            assert_eq!(worked.title.as_deref(), Some("go"));
+            assert_eq!(worked.turns, 1);
+            assert_eq!(worked.outcome, Some(Outcome::Completed));
+            assert_eq!(worked.status, Status::Idle);
+            assert_eq!(worked.standing, Standing::Active);
+            assert!(worked.updated_at > worked.created_at);
+            let fresh = &first[1];
+            assert_eq!((fresh.title.as_deref(), fresh.turns), (None, 0));
+
+            let bad = Request::ThreadList {
+                space: None,
+                limit: None,
+                show: None,
+                cursor: Some("not a cursor".into()),
+            };
+            let refused = server.request(bad).await.unwrap_err();
+            assert_eq!(refused.code, code::INVALID_PARAMS);
+        });
+    }
+
+    #[test]
+    fn a_rename_titles_the_thread() {
+        let dir = folder("listing-rename");
+        block_on(async {
+            let server = server(&dir, vec![answer(Some("Hi."), None)], Answering::NoOne).await;
+            let thread = start(&server, false).await;
+            turn(&server, thread).await.unwrap();
+            let rename = |title: &str| Request::ThreadRename {
+                thread,
+                title: title.into(),
+            };
+            let Reply::Thread { thread: renamed } =
+                server.request(rename("  Release notes ")).await.unwrap()
+            else {
+                panic!("the renamed thread")
+            };
+            assert_eq!(renamed.title.as_deref(), Some("Release notes"));
+            let (listed, _) = page(&server, 10, None).await;
+            assert_eq!(listed[0].title.as_deref(), Some("Release notes"));
+            for title in ["   ", &"x".repeat(201)] {
+                let refused = server.request(rename(title)).await.unwrap_err();
+                assert_eq!(refused.code, code::INVALID_PARAMS, "{title:?}");
+            }
+            server
+                .request(Request::ThreadDelete { thread })
+                .await
+                .unwrap();
+            let gone = server.request(rename("Too late")).await.unwrap_err();
+            assert_eq!(gone.code, code::NO_THREAD);
+        });
+    }
+
+    #[test]
+    fn renaming_changes_nothing_the_model_is_sent() {
+        let dir = folder("listing-same-requests");
+        block_on(async {
+            let script = || {
+                vec![
+                    answer(None, Some(("glob", json!({"pattern": "*"})))),
+                    answer(Some("One."), None),
+                    answer(None, Some(("glob", json!({"pattern": "*"})))),
+                    answer(Some("Two."), None),
+                ]
+            };
+            let run = |rename: bool| {
+                let dir = dir.clone();
+                let answers = script();
+                async move {
+                    let mut settings = Settings::new("test-model", "script");
+                    settings.approval = ApprovalMode::Ask;
+                    let (server, seen) = build(
+                        &dir,
+                        answers,
+                        None,
+                        MemoryLog::new(),
+                        Answering::NoOne,
+                        1,
+                        settings,
+                        None,
+                    )
+                    .await;
+                    let thread = start(&server, false).await;
+                    turn(&server, thread).await.unwrap();
+                    if rename {
+                        let title = "Renamed".to_owned();
+                        let request = Request::ThreadRename { thread, title };
+                        server.request(request).await.unwrap();
+                    }
+                    turn(&server, thread).await.unwrap();
+                    seen.lock().unwrap().clone()
+                }
+            };
+            let plain = run(false).await;
+            let renamed = run(true).await;
+            assert_eq!(plain.len(), 4);
+            assert_eq!(plain, renamed);
+        });
+    }
+}
