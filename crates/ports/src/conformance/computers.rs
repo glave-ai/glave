@@ -2,10 +2,14 @@
 //! the lifecycle, files confined to their workspace, commands streamed and stoppable, and
 //! work leaving a computer only through git.
 
+mod confinement;
 mod finding;
 mod helpers;
 mod worktrees;
 
+pub use confinement::{
+    Confinement, confinement_case, confinement_escapes, confinement_fixture, confinement_paths,
+};
 use helpers::{Collect, Trip, failed, files, run, run_quietly};
 
 use super::{Verdict, ensure};
@@ -47,6 +51,11 @@ pub async fn computers<C: Computers>(computers: &C, scratch: &str) -> Verdict {
     moves_through_git(computers, made.id, here.id, &here.root).await?;
     plain_folders(computers, made.id, here.id, scratch).await?;
     worktrees::worktrees(computers, made.id, &here.root).await?;
+    let fixture = confinement_fixture(computers, made.id, here.id, scratch).await?;
+    for path in confinement_paths(0x5eed, 24) {
+        confinement_case(computers, &fixture, &path).await?;
+    }
+    confinement_escapes(computers, &fixture).await?;
     computers
         .close(here.id)
         .await

@@ -4,7 +4,10 @@
 
 mod computers;
 
-pub use computers::computers;
+pub use computers::{
+    Confinement, computers, confinement_case, confinement_escapes, confinement_fixture,
+    confinement_paths,
+};
 
 use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
 use uuid::{Builder, Uuid};

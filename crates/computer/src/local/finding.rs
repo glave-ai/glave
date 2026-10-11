@@ -9,6 +9,7 @@ use glave_ports::secrets::is_secret_file;
 use glave_ports::{ComputerError, Glob, Globbed, Match, Search, Searched, looks_binary};
 use regex::{Regex, RegexBuilder};
 
+use super::opened::still_here;
 use super::paths::{relative, resolve};
 use super::walk::{self, Pattern};
 
@@ -116,7 +117,7 @@ fn scan(
             }
             continue;
         }
-        let Some(text) = searchable(&path) else {
+        let Some(text) = searchable(root, &path) else {
             continue;
         };
         for (index, line) in text.lines().enumerate() {
@@ -137,13 +138,16 @@ fn scan(
 }
 
 /// The file's text, unless it is too big, unreadable or binary.
-fn searchable(path: &Path) -> Option<String> {
-    let size = std::fs::metadata(path).ok()?.len();
-    if size > MAX_SEARCHED_BYTES {
+/// Read through an open handle and kept only if the path still names that very file inside
+/// the workspace, so a folder swapped for a link mid-search shows nothing from outside.
+fn searchable(root: &Path, path: &Path) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+    if file.metadata().ok()?.len() > MAX_SEARCHED_BYTES {
         return None;
     }
-    let bytes = std::fs::read(path).ok()?;
-    if looks_binary(&bytes) {
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut file, &mut bytes).ok()?;
+    if !still_here(root, path, &file) || looks_binary(&bytes) {
         return None;
     }
     Some(String::from_utf8_lossy(&bytes).into_owned())

@@ -26,7 +26,10 @@ pub(crate) async fn resolve(root: &Path, path: &str) -> Result<PathBuf, Computer
     if path.trim().is_empty() {
         return Err(ComputerError::Refused("The path is empty.".into()));
     }
-    let candidate = root.join(path);
+    // Rebuilt from its components so a trailing slash is gone: asked about `link/`, the system
+    // answers "not a folder" for a link to a file, which would pass for "does not exist" and
+    // leave the link unresolved.
+    let candidate: PathBuf = root.join(path).components().collect();
     let mut existing = candidate.as_path();
     let mut tail = Vec::new();
     while !tokio::fs::try_exists(existing).await.unwrap_or(false) {

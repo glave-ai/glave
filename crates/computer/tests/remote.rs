@@ -85,4 +85,74 @@ mod remote_tests {
             serving.abort();
         });
     }
+
+    /// Commands run through a computer across a pipe never see secret variables, whatever the
+    /// case of their names, while ordinary settings come through.
+    #[test]
+    fn a_computer_across_a_pipe_keeps_secret_variables_from_commands() {
+        use glave_ports::{BoxFuture, Command, Environment, Output, Sources};
+        use std::sync::Mutex;
+
+        struct Text(Mutex<String>);
+        impl Output for Text {
+            fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
+                if let Ok(mut all) = self.0.lock() {
+                    all.push_str(text);
+                }
+                Box::pin(std::future::ready(()))
+            }
+        }
+
+        let (work, copies) = scratch("secrets");
+        let secrets = [
+            "OPENAI_API_KEY",
+            "glave_api_key",
+            "Github_Token",
+            "DB_PASSWORD",
+            "my_passwd",
+        ];
+        let mut environment: Vec<_> = std::env::vars_os()
+            .filter(|(name, _)| name == "PATH" || name == "HOME")
+            .collect();
+        for name in secrets {
+            environment.push((name.into(), "hunter2".into()));
+        }
+        environment.push(("HARMLESS_SETTING".into(), "visible".into()));
+        let machine = Arc::new(LocalComputers::new(&copies, environment));
+        block_on(async {
+            let (client, server) = tokio::io::duplex(64 * 1024);
+            let (server_read, server_write) = tokio::io::split(server);
+            let serving = tokio::spawn(serve(
+                machine,
+                BufReader::new(server_read),
+                server_write,
+                None,
+            ));
+            let (client_read, client_write) = tokio::io::split(client);
+            let remote = RemoteComputers::connect(client_read, client_write);
+            let made = remote.create(&Environment::host()).await.unwrap();
+            let path = work.to_string_lossy().into_owned();
+            let here = remote
+                .open(made.id, &Sources::Folder { path })
+                .await
+                .unwrap();
+            let text = Text(Mutex::default());
+            let never = glave_computer::Switch::default();
+            remote
+                .run(here.id, &Command::new("env"), &text, &never)
+                .await
+                .unwrap();
+            let seen = text.0.lock().unwrap().clone();
+            assert!(seen.contains("HARMLESS_SETTING=visible"), "{seen}");
+            assert!(
+                !seen.contains("hunter2"),
+                "a secret reached a command: {seen}"
+            );
+            for name in secrets {
+                assert!(!seen.contains(name), "{name} reached a command");
+            }
+            drop(remote);
+            serving.await.unwrap().unwrap();
+        });
+    }
 }

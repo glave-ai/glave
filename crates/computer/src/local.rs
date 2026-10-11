@@ -6,6 +6,7 @@ mod command;
 mod files;
 mod finding;
 pub(crate) mod git;
+mod opened;
 mod paths;
 mod registry;
 mod sandbox;
@@ -375,3 +376,6 @@ impl Computers for LocalComputers {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod confinement_tests;

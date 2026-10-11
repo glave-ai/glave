@@ -3,11 +3,15 @@
 
 use std::path::{Path, PathBuf};
 
+use tokio::fs::OpenOptions;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
 use glave_ports::{
     Bytes, ComputerError, Entry, EntryKind, FileWrite, Listed, Listing, Stat, digest,
 };
 
 use super::git::HISTORY;
+use super::opened::checked;
 use super::paths::{relative, resolve};
 use super::walk;
 
@@ -26,9 +30,10 @@ fn io(path: &str, error: &std::io::Error) -> ComputerError {
 
 pub(crate) async fn read(root: &Path, path: &str) -> Result<Bytes, ComputerError> {
     let resolved = resolve(root, path).await?;
-    let metadata = tokio::fs::metadata(&resolved)
-        .await
-        .map_err(|error| io(path, &error))?;
+    let mut options = OpenOptions::new();
+    options.read(true);
+    let mut file = checked(root, path, &resolved, &options, false).await?;
+    let metadata = file.metadata().await.map_err(|error| io(path, &error))?;
     if metadata.is_dir() {
         return Err(ComputerError::Refused(format!(
             "{path} is a folder; list it instead"
@@ -40,10 +45,11 @@ pub(crate) async fn read(root: &Path, path: &str) -> Result<Bytes, ComputerError
             metadata.len()
         )));
     }
-    tokio::fs::read(&resolved)
+    let mut content = Vec::new();
+    file.read_to_end(&mut content)
         .await
-        .map(Bytes::new)
-        .map_err(|error| io(path, &error))
+        .map_err(|error| io(path, &error))?;
+    Ok(Bytes::new(content))
 }
 
 /// Checks every path first, so a refused path means nothing was written.
@@ -65,7 +71,21 @@ pub(crate) async fn write(root: &Path, files: &[FileWrite]) -> Result<(), Comput
                 .await
                 .map_err(|error| io(&file.path, &error))?;
         }
-        tokio::fs::write(&path, file.content.as_slice())
+        // Opened without truncating, checked, and only then emptied and written, so a path
+        // swapped for a link to somewhere else never costs that file its contents.
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(false);
+        let mut handle = checked(root, &file.path, &path, &options, true).await?;
+        handle
+            .set_len(0)
+            .await
+            .map_err(|error| io(&file.path, &error))?;
+        handle
+            .write_all(file.content.as_slice())
+            .await
+            .map_err(|error| io(&file.path, &error))?;
+        handle
+            .flush()
             .await
             .map_err(|error| io(&file.path, &error))?;
     }
@@ -94,10 +114,10 @@ pub(crate) async fn stat(root: &Path, path: &str) -> Result<Stat, ComputerError>
         });
     }
     let digest = if metadata.len() <= MAX_FILE {
-        tokio::fs::read(&resolved)
+        read(root, path)
             .await
             .ok()
-            .map(|bytes| digest(&bytes))
+            .map(|bytes| digest(bytes.as_slice()))
     } else {
         None
     };
