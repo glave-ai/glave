@@ -1,6 +1,6 @@
 [package]
 name = "glave-computer"
-description = "glave's computers: this machine as a computer, environments read from environment.toml or devcontainer.json, and computers served and reached over JSON-RPC"
+description = "glave's computers: this machine as a computer, environments read from environment.toml or devcontainer.json, workers on Docker, and computers served and reached over JSON-RPC"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,19 +9,31 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-# The random part of new computer and workspace ids (UUID v7).
+# Request and response bodies for the Docker Engine API (already in the tree via reqwest).
+bytes.workspace = true
+# The random part of new computer and workspace ids (UUID v7), and workers' tokens.
 getrandom.workspace = true
 glave-ports.workspace = true
 # File patterns as models write them, for files/glob and files/search.
 globset.workspace = true
+# The Docker Engine API, over its Unix socket (already in the tree via reqwest).
+http.workspace = true
+http-body-util.workspace = true
+hyper = { workspace = true, features = ["client", "http1"] }
+hyper-util = { workspace = true, features = ["tokio"] }
 # Walking a workspace the way git sees it, leaving out what it ignores.
 ignore.workspace = true
+# A self-signed certificate per worker, whose fingerprint the harness pins.
+rcgen.workspace = true
 # The expressions files/search looks for.
 regex.workspace = true
+# TLS between the harness and a worker (already in the tree via reqwest).
+rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
+tokio-rustls.workspace = true
 # Reading .glave/environment.toml.
 toml.workspace = true
 uuid.workspace = true

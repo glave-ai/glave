@@ -7,11 +7,11 @@ How glave is set up: what a person or project chooses, and what an organization 
 First cut built, in the CLI (`crates/cli/src/policy`):
 
 - `~/.glave/config.toml` (in `GLAVE_HOME`) and `/etc/glave/policy.toml` are read as typed TOML; unknown keys, and a policy without `version = 1`, are errors naming the file and key.
-- Choices resolve nearest-wins across flags (`--model`, `--approval`, `--sandbox`, which now takes `off`), the environment (`GLAVE_MODEL`, `GLAVE_JUDGE_MODEL`), the person's file and the defaults, each remembering its source. `mcp` turns on only the named servers of `mcp.json`. `worktree` (`true` or `false`, default `false`; also `--worktree`) gives each new thread a git worktree of its own instead of the folder itself (`computers.md`); it is a plain choice, needs no trust in a project's file, and `glave policy explain` shows it with its source.
+- Choices resolve nearest-wins across flags (`--model`, `--approval`, `--sandbox`, which now takes `off`), the environment (`GLAVE_MODEL`, `GLAVE_JUDGE_MODEL`), the person's file and the defaults, each remembering its source. `mcp` turns on only the named servers of `mcp.json`. `worktree` (`true` or `false`, default `false`; also `--worktree`) gives each new thread a git worktree of its own instead of the folder itself (`computers.md`); it is a plain choice, needs no trust in a project's file, and `glave policy explain` shows it with its source. `on` (`here` or `cloud`, default `here`; also `--on`) puts each new thread on a worker of its own, made on the backend `[workers]` names (`backend = "docker"`, `glave`, the Linux build that goes into workers, and optionally `socket`); `--on cloud` without `[workers]` is an error saying so.
 - Constraints only narrow: allow-lists intersect, deny lists add up, a requirement anywhere holds, limits take the smallest, and contradictions (no approval mode left, a judge both required and off) are errors.
 - A choice someone made outside the constraints is an error naming the rule, its file and the choice's source. Only glave's own defaults give way, to what the policy leaves (shown as "default, narrowed by" the file).
-- Enforced: `[models]` when the gateway's targets are built, `[approval] modes` and `judge` in the settings the harness runs with, `[sandbox] required` before the workspace exists, `[mcp] own = false` before any server starts.
-- Refused at load as not enforced yet, so glave will not run under them: `[budget]` (the gateway keeps budgets per run, not per day) and `[mcp] catalog` (glave cannot start servers an organization offers).
+- Enforced: `[models]` when the gateway's targets are built, `[approval] modes` and `judge` in the settings the harness runs with, `[sandbox] required` before the workspace exists, `[mcp] own = false` before any server starts, `[workers]` (cpu, memory_gb, max_minutes, per_person, network on or off) by the worker adapter: limits take the smallest, and `off` wins over `on`.
+- Refused at load as not enforced yet, so glave will not run under them: `[budget]` (the gateway keeps budgets per run, not per day) and `[mcp] catalog` (glave cannot start servers an organization offers), and `[workers] network = "allowlist"` (no egress allow-list on workers yet).
 - `glave policy explain` prints every setting with its source, every rule with its file, and why glave would refuse to run; it exits non-zero when it would.
 
 Project trust (issue #83), in `crates/cli/src/trust`:
@@ -67,10 +67,16 @@ approval = "auto"                             # or "ask"
 sandbox = "project"                           # or "off", "read-only"
 mcp = ["github", "jira"]                      # servers to turn on, from the catalog
 worktree = true                               # each thread in a worktree of its own; default false
+on = "cloud"                                  # each thread on a worker of its own; default "here"
 
 [[hooks.PreToolUse]]                          # commands run at points of a turn (approvals.md)
 matcher = "bash"
 command = "./scripts/guard.sh"
+
+[workers]                                     # where workers run (computers.md), nearest wins
+backend = "docker"
+glave = "/opt/glave/linux-arm64/glave"         # a Linux build of glave for the backend's processor
+socket = "/var/run/docker.sock"              # optional: Docker's socket
 ```
 
 Hooks are the one thing in `config.toml` that adds up across files rather than the nearest winning: the person's and a trusted project's all run.
@@ -103,6 +109,13 @@ trusted = ["/srv/repos/*"]                        # projects at these paths (glo
 
 [hooks]
 own = false                                       # may people and projects run hooks
+
+[workers]                                         # what workers may be (computers.md)
+cpu = 4                                           # the most CPUs; the size when none is named
+memory_gb = 8
+max_minutes = 120                                 # after this, a worker takes no new work
+per_person = 3                                    # workers one person may have at once
+network = "on"                                    # or "off"; "allowlist" is refused for now
 ```
 
 Unknown keys are errors that name the key and file, so a typo never silently does nothing.
@@ -120,6 +133,7 @@ Each constraint is enforced where it cannot be bypassed:
 | sandbox | the computer port, before any command runs |
 | MCP servers | the harness, when it starts servers |
 | hooks | the CLI, before the harness is built: forbidden hooks are never handed to it |
+| workers | the worker adapter (`WorkerComputers`), before a worker starts and on every call to it |
 
 A laptop's own config can never loosen a constraint, because the constraint arrives from the organization (a signed bundle or device management), not from a file the person edits.
 

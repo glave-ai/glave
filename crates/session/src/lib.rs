@@ -16,5 +16,5 @@ mod turn;
 
 pub use approvals::Answering;
 pub use glave_harness::Caller;
-pub use server::{Server, Wiring};
+pub use server::{OnWorkers, Server, Wiring};
 pub use turn::{TurnItem, TurnStream};

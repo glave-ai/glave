@@ -48,6 +48,7 @@ where
             goal: crate::goal::latest(&events).map(crate::goal::Pursuit::of),
             workspace: self.reopen(scope, id, &events).await?,
             unnumbered: crate::bind::own_records(&events),
+            note: None,
         };
         self.repair(&mut thread, &events).await?;
         Ok(thread)

@@ -9,6 +9,7 @@ use glave_harness::ApprovalMode;
 use globset::Glob;
 
 use crate::policy::files::{JudgeRule, PolicyFile};
+use crate::policy::workers::{NetworkRule, WorkerRules, limits};
 
 /// The approval modes there are, cautious first.
 const MODES: [ApprovalMode; 2] = [ApprovalMode::Ask, ApprovalMode::Auto];
@@ -39,6 +40,8 @@ pub enum Kind {
     ProjectsTrusted(Vec<String>),
     /// People and projects may not run hooks of their own.
     HooksOwnForbidden,
+    /// What workers may be.
+    Workers(WorkerRules),
 }
 
 impl fmt::Display for Kind {
@@ -61,6 +64,7 @@ impl fmt::Display for Kind {
             Self::PersonPerDayUsd(usd) => write!(f, "[budget] person_per_day_usd = {usd}"),
             Self::ProjectsTrusted(globs) => write!(f, "[projects] trusted = {}", quoted(globs)),
             Self::HooksOwnForbidden => f.write_str("[hooks] own = false"),
+            Self::Workers(rules) => f.write_str(&rules.describe()),
         }
     }
 }
@@ -119,6 +123,9 @@ impl Constraints {
             }
             if file.hooks.own == Some(false) {
                 add(Kind::HooksOwnForbidden);
+            }
+            if !file.workers.is_empty() {
+                add(Kind::Workers(file.workers.clone()));
             }
         }
         Self { rules }
@@ -234,10 +241,25 @@ impl Constraints {
                     rule,
                     "glave cannot start servers an organization offers yet",
                 )),
+                Kind::Workers(WorkerRules {
+                    network: Some(NetworkRule::Allowlist),
+                    ..
+                }) => Some((
+                    rule,
+                    "an allow-list of hosts is not enforced on workers yet",
+                )),
                 _ => None,
             })
             .chain(budget)
             .collect()
+    }
+
+    /// The limits every `[workers]` rule sets at once.
+    pub fn worker_limits(&self) -> glave_computer::Limits {
+        limits(self.rules.iter().filter_map(|rule| match &rule.kind {
+            Kind::Workers(rules) => Some(rules),
+            _ => None,
+        }))
     }
 
     fn first(&self, test: impl Fn(&Kind) -> bool) -> Option<&Rule> {

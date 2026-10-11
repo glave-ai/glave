@@ -7,10 +7,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::{Seq, ThreadId};
 use glave_harness::{
-    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Place, Settings, TurnSummary,
-    Workspace,
+    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Place, ReleasedWorker, Settings,
+    TurnSummary, Workers, Workspace,
 };
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, ToolSource};
+use glave_ports::{BlobStore, Environment, EventLog, ModelProvider, Scope, ToolSource};
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
@@ -40,6 +40,16 @@ pub struct Wiring<P, L, B> {
     pub worktree: bool,
     /// Commands run at points of every turn.
     pub hooks: Hooks,
+    /// When set, every new thread works on a worker of its own (`--on cloud`) unless
+    /// `thread/start` asks for a worktree; none by default.
+    pub workers: Option<OnWorkers>,
+}
+
+/// Threads on workers: where workers come from, and the environment each is made from.
+#[derive(Debug, Clone)]
+pub struct OnWorkers {
+    pub workers: Workers,
+    pub environment: Environment,
 }
 
 /// A session server for one workspace and one scope. Clones share it.
@@ -62,6 +72,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) scope: Scope,
     /// Whether new threads get a worktree when `thread/start` does not say.
     pub(crate) worktree: bool,
+    /// The environment new threads' workers are made from, when they work on workers.
+    pub(crate) worker: Option<Environment>,
     pub(crate) hub: Arc<Hub>,
     pub(crate) approvals: Approvals,
     pub(crate) threads: Mutex<HashMap<ThreadId, Slot>>,
@@ -95,9 +107,13 @@ where
         };
         Self {
             inner: Arc::new(Inner {
-                harness: Harness::new(parts, settings)
-                    .with_tools(wiring.tools)
-                    .with_hooks(wiring.hooks),
+                harness: match wiring.workers.clone() {
+                    Some(on) => Harness::new(parts, settings).with_workers(on.workers),
+                    None => Harness::new(parts, settings),
+                }
+                .with_tools(wiring.tools)
+                .with_hooks(wiring.hooks),
+                worker: wiring.workers.map(|on| on.environment),
                 scope,
                 worktree: wiring.worktree,
                 hub,
@@ -175,6 +191,36 @@ where
         self.inner.hub.watch(thread)
     }
 
+    /// Releases the worker of every thread held idle that works on one (call after
+    /// [`Server::shutdown`], when no turn runs): what each left behind, or why it could not be
+    /// released.
+    pub async fn release_workers(&self) -> Vec<(ThreadId, Result<ReleasedWorker, HarnessError>)> {
+        let idle: Vec<(ThreadId, Box<glave_harness::Thread>)> = {
+            let mut threads = self.lock();
+            let ids: Vec<ThreadId> = threads
+                .iter()
+                .filter(|(_, slot)| matches!(slot, Slot::Idle(_)))
+                .map(|(id, _)| *id)
+                .collect();
+            ids.into_iter()
+                .filter_map(|id| match threads.remove(&id) {
+                    Some(Slot::Idle(thread)) => Some((id, thread)),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut released = Vec::new();
+        for (id, mut thread) in idle {
+            match self.inner.harness.release_worker(&mut thread).await {
+                Ok(Some(left)) => released.push((id, Ok(left))),
+                Ok(None) => {}
+                Err(error) => released.push((id, Err(error))),
+            }
+            self.lock().insert(id, Slot::Idle(thread));
+        }
+        released
+    }
+
     /// Cancels every running turn and waits for each to end. Call before dropping the server.
     pub async fn shutdown(&self) {
         let finished: Vec<watch::Receiver<bool>> = {
@@ -214,10 +260,11 @@ where
         caller: &Caller,
         worktree: Option<bool>,
     ) -> Result<Reply, ApiError> {
-        let place = if worktree.unwrap_or(self.inner.worktree) {
-            Place::Worktree
-        } else {
-            Place::Here
+        let place = match (worktree, &self.inner.worker) {
+            (Some(true), _) => Place::Worktree,
+            (None, Some(environment)) => Place::Worker(environment.clone()),
+            (None, None) if self.inner.worktree => Place::Worktree,
+            _ => Place::Here,
         };
         let thread = self
             .inner

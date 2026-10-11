@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use glave_harness::{ApprovalMode, SandboxLevel};
 
 use crate::policy::files::{Approval, ConfigFile, SandboxChoice};
+use crate::policy::workers::{On, WorkersFile};
 
 /// Where a value came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +91,10 @@ pub struct Choices {
     pub mcp: Option<Chosen<Vec<String>>>,
     /// Whether each new thread works in a worktree of its own; off, in the folder itself.
     pub worktree: Chosen<bool>,
+    /// Where new threads work: here by default.
+    pub on: Chosen<On>,
+    /// The backend workers run on, if one is set up.
+    pub workers: Option<Chosen<WorkersFile>>,
 }
 
 /// One level choices come from.
@@ -117,6 +122,7 @@ impl Layer {
                 "approval" => "--approval",
                 "sandbox" => "--sandbox",
                 "worktree" => "--worktree",
+                "on" => "--on",
                 _ => "a flag",
             }),
             Level::Env => Source::Env(match key {
@@ -151,6 +157,8 @@ pub fn resolve(layers: &[Layer]) -> Choices {
         ),
         mcp: nearest(layers, "mcp", |file| file.mcp.clone()),
         worktree: defaulted(nearest(layers, "worktree", |file| file.worktree), false),
+        on: defaulted(nearest(layers, "on", |file| file.on), On::Here),
+        workers: nearest(layers, "workers", |file| file.workers.clone()),
     }
 }
 

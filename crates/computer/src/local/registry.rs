@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use glave_ports::{ComputerError, ComputerId, Environment, Sandbox, WorkspaceId};
+use glave_ports::{ComputerError, ComputerId, Environment, GitCredential, Sandbox, WorkspaceId};
 use uuid::{Builder, Uuid};
 
 use super::sandbox::Prepared;
@@ -30,6 +30,8 @@ pub(crate) struct Opened {
     /// in a sandbox, so that `git commit` works there.
     pub(crate) git_common: Option<PathBuf>,
     pub(crate) environment: Arc<Vec<(OsString, OsString)>>,
+    /// The credential its sources were opened with, kept in memory only, for saving them.
+    pub(crate) credential: Option<GitCredential>,
     /// The sandbox its commands last ran in, prepared once and kept while they ask for the
     /// same one, so its temp folder lasts as long as the workspace.
     pub(crate) prepared: Mutex<Option<Arc<Prepared>>>,

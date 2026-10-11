@@ -9,6 +9,7 @@ mod files;
 mod rules;
 #[cfg(test)]
 pub(crate) mod tests;
+mod workers;
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -21,6 +22,7 @@ pub use effective::{check_model, check_own_servers};
 pub use explain::explain;
 pub use files::{Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, config};
 pub use rules::Constraints;
+pub use workers::{Backend, On};
 
 /// The choices file, in glave's folder and in a project's `.glave/`.
 pub const CONFIG: &str = "config.toml";
