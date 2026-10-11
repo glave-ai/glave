@@ -317,4 +317,46 @@ mod loading {
             }
         });
     }
+
+    #[test]
+    fn a_save_with_every_argument_filled_in_and_no_memory_to_replace_is_saved() {
+        block_on(async {
+            let kit = Kit::new();
+            let memory = kit.memory(rules(), 1).await;
+            let dir = folder("filled");
+            let empty = json!({"text": "Use tabs in Python", "scope": "space", "replaces": "", "force": false});
+            let none = json!({"text": "We deploy with Render", "scope": "space", "replaces": "none", "force": false});
+            let junk = json!({"text": "Tests need make db", "scope": "space", "replaces": "new", "force": false});
+            let answers = vec![
+                answer(
+                    None,
+                    vec![(REMEMBER, empty), (REMEMBER, none), (REMEMBER, junk)],
+                ),
+                said("done"),
+            ];
+            let (harness, seen) = kit
+                .harness(&dir, answers, AllowAll, Some(memory), settings())
+                .await;
+            let mut thread = harness.start_thread(shared()).await.unwrap();
+            harness
+                .run_turn(&mut thread, "remember these", &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            let saved: Vec<String> = kit
+                .memories(rules(), 9)
+                .list_as(Some(person()), shared(), None)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|memory| memory.text)
+                .collect();
+            assert_eq!(saved, ["Use tabs in Python", "We deploy with Render"]);
+            let last = seen.lock().unwrap().last().unwrap().clone();
+            let results = format!("{:?}", last.messages);
+            assert!(
+                results.contains("\\\"new\\\" is not a memory id"),
+                "{results}"
+            );
+        });
+    }
 }

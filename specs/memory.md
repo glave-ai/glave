@@ -86,7 +86,7 @@ The model chooses personal or space when it saves; the person can move a memory 
 ## Writing
 
 - **The model saves as it works, with no approval and never hidden.** Every save shows at once in every client: `remembered: "prefers tabs in new files" · edit · forget`.
-- **The tool's description says what to keep:** what would help later and cannot be read from the workspace or its instructions; corrections the person made; decisions and their reasons. Not: what AGENTS.md or a skill says, the code's structure, what was done in this thread, secrets, or sensitive details (health, money, beliefs, other people) unless the person asks.
+- **The tool's description says when to save:** when the person asks to remember something, states a preference or corrects the model, and lasting project facts the files do not make obvious (a setup step the tests need, a decision and its reason). It says to replace (`replaces`) when a fact changes, to forget when the person asks, and where the ids are listed. Not: what AGENTS.md or a skill says, the code's structure, what was done in this thread, secrets, or sensitive details (health, money, beliefs, other people) unless the person asks.
 - **Corrections replace** (`replaces`), never add a contradicting second memory.
 - **Duplicate check.** Before saving, `remember` runs a cheap full-text near-duplicate check (words normalised, overlap scored) against the scope. Close matches come back instead of a save: "a similar memory exists: … replace, merge or save anyway?" The model answers with `replaces`, or `remember` again with `force: true`.
 - **The budget is about 1,000 tokens per scope.** A save that would exceed it is refused, telling the model to merge or replace.
@@ -96,9 +96,9 @@ The model chooses personal or space when it saves; the person can move a memory 
 ## Loading and the cache
 
 - **Everything allowed is loaded,** with no selection step: at most about 2,000 tokens (two scopes).
-- **Placement, most stable first:** the system prompt and tools (identical for everyone), then AGENTS.md, then memories (in the first message, as AGENTS.md is, each line with its id, scope and date, under a heading saying the person can see and edit these), then the conversation.
+- **Placement, most stable first:** the system prompt and tools (identical for everyone), then AGENTS.md, then memories (in the first message, as AGENTS.md is, each line with its id, scope and date, under a heading, inside `<MEMORY>` … `</MEMORY>` so the person's words after it are unmistakably theirs, opening with one paragraph: the person can see and edit these, they come after the person's messages and the instructions, and how to replace or forget one by its id), then the conversation.
 - **The start of a thread is never rewritten.** The thread records which memories, at which version, it was shown, never their text; resuming rebuilds that start from those versions. The one exception is a forgotten memory, which can no longer be read and drops out: forgetting is worth a cache miss.
-- **Returning to a thread** whose memories changed since it last looked appends a short note at the end: "memory updates since we last spoke", with additions and removals. A memory saved in the same thread needs no note: the tool's reply already shows it.
+- **Returning to a thread** whose memories changed since it last looked appends a short note at the end: "memory updates since we last spoke", with additions and removals, closed by "end of memory updates" before the person's words. A memory saved in the same thread needs no note: the tool's reply already shows it.
 - **Compaction** rebuilds the start with the full current list and folds the notes away.
 - **Order of authority:** the person's message, then the instructions, then memory. When a memory conflicts with the instructions, the model follows the instructions and says so.
 
