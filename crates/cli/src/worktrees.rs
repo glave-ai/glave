@@ -10,8 +10,8 @@ use std::process::ExitCode;
 use glave_computer::worktrees::{self, Kept, Trash};
 use glave_event::{Body, Opened, ThreadId, decode};
 use glave_harness::OsEntropy;
-use glave_ports::EventLog;
 use glave_ports::secrets::without_secrets;
+use glave_ports::{EventLog, Scope};
 use glave_session::protocol::{Reply, Request};
 use glave_store_sqlite::Store;
 use jiff::{SignedDuration, Timestamp};
@@ -129,6 +129,27 @@ async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
         println!("{line}");
     }
     Ok(())
+}
+
+/// Releases the worktrees of `thread` in `scope`, which was just archived or deleted, with
+/// what `log` holds: one line for each, saying what became of it.
+pub async fn release_archived<L: EventLog>(
+    log: &L,
+    scope: Scope,
+    thread: ThreadId,
+) -> anyhow::Result<Vec<String>> {
+    let environment = without_secrets(std::env::vars_os());
+    let kept = worktrees::list(&home::folder()?.join(FOLDER), &environment).await?;
+    let now = Timestamp::now();
+    let trash = this_machines_trash(now);
+    let cleanup = Cleanup {
+        log,
+        environment: &environment,
+        trash: trash.as_ref(),
+        now,
+        entropy: &OsEntropy,
+    };
+    Ok(cleanup.archived(&kept, scope, thread).await)
 }
 
 /// The person's Trash on this machine, if it has one glave knows.

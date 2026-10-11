@@ -139,4 +139,13 @@ impl<L: EventLog> EventLog for Observed<L> {
     ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send {
         self.inner.threads(scope, limit)
     }
+
+    fn latest_of(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: &[&str],
+    ) -> impl Future<Output = Result<Option<RawEvent>, LogError>> + Send {
+        self.inner.latest_of(scope, thread, kinds)
+    }
 }

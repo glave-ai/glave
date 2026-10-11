@@ -121,6 +121,57 @@ impl EventLog for SqliteLog {
         }
     }
 
+    fn latest_of(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: &[&str],
+    ) -> impl Future<Output = Result<Option<RawEvent>, LogError>> + Send {
+        let scope = *scope;
+        let this = self.clone();
+        // The types travel as one JSON array, so the statement is the same for any number.
+        let kinds = serde_json::to_string(kinds);
+        async move {
+            let kinds = kinds.map_err(|e| LogError::Storage(e.to_string()))?;
+            let rows = run(&this.connection, move |connection| {
+                let mut statement = connection.prepare_cached(
+                    "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
+                     WHERE org = ?1 AND space = ?2 AND thread = ?3
+                       AND type IN (SELECT value FROM json_each(?4))
+                     ORDER BY seq DESC LIMIT 1",
+                )?;
+                let rows = statement.query_map(
+                    params![
+                        scope.org.to_string(),
+                        scope.space.to_string(),
+                        thread.to_string(),
+                        kinds
+                    ],
+                    |row| {
+                        Ok(Row {
+                            glave: row.get(0)?,
+                            id: row.get(1)?,
+                            thread: row.get(2)?,
+                            seq: row.get(3)?,
+                            at: row.get(4)?,
+                            kind: row.get(5)?,
+                            v: row.get(6)?,
+                            data: row.get(7)?,
+                            key_id: row.get(8)?,
+                        })
+                    },
+                )?;
+                rows.collect::<rusqlite::Result<Vec<Row>>>()
+            })
+            .await
+            .map_err(|e| LogError::Storage(e.to_string()))?;
+            match rows.into_iter().next() {
+                Some(row) => Ok(Some(row.into_event(&this.keys, &scope).await?)),
+                None => Ok(None),
+            }
+        }
+    }
+
     fn threads(
         &self,
         scope: &Scope,

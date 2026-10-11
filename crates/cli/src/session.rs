@@ -49,6 +49,11 @@ pub fn main() -> ExitCode {
     {
         return crate::worktrees::main(rest);
     }
+    if let Some((first, rest)) = words.split_first()
+        && first == "threads"
+    {
+        return crate::threads::main(rest);
+    }
     let args = match args::parse(words) {
         Ok(args) => args,
         Err(message) => {
@@ -362,7 +367,10 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
 async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, &'static str)> {
     if resume {
         let latest = match server
-            .request(Request::ThreadList { limit: Some(1) })
+            .request(Request::ThreadList {
+                limit: Some(1),
+                show: None,
+            })
             .await?
         {
             Reply::Threads { threads } => threads.first().map(|thread| thread.id),
