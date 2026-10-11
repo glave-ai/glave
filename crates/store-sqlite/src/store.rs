@@ -16,6 +16,7 @@ use crate::keys::SqliteKeys;
 use crate::log::SqliteLog;
 use crate::schema;
 use crate::spaces::SqliteSpaces;
+use crate::views::Rebuilt;
 
 /// Why the store could not open or answer.
 #[derive(Debug, Error)]
@@ -49,15 +50,24 @@ pub struct Store {
 impl Store {
     /// Opens (creating if needed) the database at `path` and brings its schema up to date.
     /// Content is sealed under keys that `keys.root` wraps.
+    /// The threads view is filled from the log the first time, and again whenever this build
+    /// folds threads differently from the one that filled it.
     pub async fn open(path: impl AsRef<Path>, keys: KeySettings) -> Result<Self, StoreError> {
         let path = path.as_ref().to_owned();
-        tokio::task::spawn_blocking(move || {
+        let store = tokio::task::spawn_blocking(move || {
             let connection = Connection::open(&path)
                 .map_err(|e| StoreError::Open(format!("{}: {e}", path.display())))?;
             Self::prepare(connection, keys)
         })
         .await
-        .map_err(|e| StoreError::Open(e.to_string()))?
+        .map_err(|e| StoreError::Open(e.to_string()))??;
+        crate::views::refresh(&store.log(), &store.connection).await?;
+        Ok(store)
+    }
+
+    /// Rebuilds the view of every thread from the log, as the views are disposable.
+    pub async fn rebuild_views(&self) -> Result<Rebuilt, StoreError> {
+        crate::views::rebuild_all(&self.log(), &self.connection).await
     }
 
     /// A database that lives only in memory, for tests.

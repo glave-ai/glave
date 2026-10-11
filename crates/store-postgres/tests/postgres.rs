@@ -72,6 +72,55 @@ mod postgres {
         });
     }
 
+    /// Every row of the threads view, by thread.
+    async fn rows(scratch: &Scratch) -> Vec<(String, String)> {
+        let sql = format!(
+            "SELECT thread::text, view FROM {}.threads ORDER BY thread",
+            scratch.schema
+        );
+        scratch
+            .admin
+            .query(&sql, &[])
+            .await
+            .unwrap()
+            .iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect()
+    }
+
+    #[test]
+    fn the_log_passes_the_threads_view_conformance_suite() {
+        block_on(async {
+            let Some(scratch) = Scratch::new("views").await else {
+                return;
+            };
+            let store = scratch.store().await.unwrap();
+            let verdict = conformance::thread_views(&store.log()).await;
+            let kept = rows(&scratch).await;
+            // As after the upgrade that made the table: no views, and no version recorded.
+            scratch
+                .admin
+                .batch_execute(&format!(
+                    "DELETE FROM {0}.threads; DELETE FROM {0}.glave_settings;",
+                    scratch.schema
+                ))
+                .await
+                .unwrap();
+            drop(store);
+            let reconnected = scratch.store().await.unwrap();
+            let refilled = rows(&scratch).await;
+            let rebuilt = reconnected.rebuild_views().await.unwrap();
+            let again = rows(&scratch).await;
+            drop(reconnected);
+            scratch.drop_schema().await;
+            assert_eq!(verdict, Ok(()));
+            assert_eq!(kept.len(), 3);
+            assert_eq!(refilled, kept, "connecting fills the view from the log");
+            assert_eq!(rebuilt.threads, 3);
+            assert_eq!(again, kept);
+        });
+    }
+
     #[test]
     fn the_blobs_pass_the_blob_store_conformance_suite() {
         block_on(async {
@@ -114,7 +163,7 @@ mod postgres {
                 .get::<_, i64>(0);
             scratch.drop_schema().await;
             assert_eq!(kept, Ok(Some(b"kept".to_vec())));
-            assert_eq!(versions, 3, "each migration is recorded once");
+            assert_eq!(versions, 4, "each migration is recorded once");
         });
     }
 

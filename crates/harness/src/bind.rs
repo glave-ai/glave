@@ -53,6 +53,7 @@ pub(crate) fn own_records(events: &[Event]) -> u64 {
                     | Body::ThreadArchived(_)
                     | Body::ThreadUnarchived(_)
                     | Body::ThreadDeleted(_)
+                    | Body::ThreadRenamed(_)
             )
         })
         .count();

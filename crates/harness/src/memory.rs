@@ -61,7 +61,7 @@ pub struct MemoryContext {
 }
 
 /// One memory as it is shown: to the model, and to the person.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Remembered {
     pub memory: MemoryId,
     /// 1 when saved, one more with each edit.

@@ -138,6 +138,23 @@ pub(crate) const MIGRATIONS: &[&str] = &[
 
     DROP TABLE spaces;
     ",
+    // 4: the threads view: one row per thread, folded from its events as they are appended
+    // (`glave_ports::ThreadView`, as JSON), listed by standing, most recently written first.
+    // Content-free. The store fills it from the log when it opens (`views::refresh`).
+    "
+    CREATE TABLE threads (
+        org       TEXT    NOT NULL,
+        space     TEXT    NOT NULL,
+        thread    TEXT    NOT NULL,
+        standing  TEXT    NOT NULL,
+        -- The rowid of the thread's latest event: the order of writes.
+        position  INTEGER NOT NULL,
+        view      TEXT    NOT NULL,
+        PRIMARY KEY (org, space, thread)
+    ) STRICT;
+
+    CREATE INDEX threads_by_position ON threads (org, space, standing, position DESC);
+    ",
 ];
 
 /// The schema version this build writes.

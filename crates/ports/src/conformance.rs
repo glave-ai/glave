@@ -4,12 +4,14 @@
 
 mod computers;
 mod spaces;
+mod threads;
 
 pub use computers::{
     Confinement, computers, confinement_case, confinement_escapes, confinement_fixture,
     confinement_paths, confinement_targets, confinement_untouched,
 };
 pub use spaces::spaces;
+pub use threads::thread_views;
 
 use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
 use uuid::{Builder, Uuid};

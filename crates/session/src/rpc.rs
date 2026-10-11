@@ -27,10 +27,11 @@ const MAX_LINE: u64 = 16 * 1024 * 1024;
 const WRITE_AHEAD: usize = 256;
 
 /// Every method a request may name.
-const METHODS: &[&str] = &[
+pub(crate) const METHODS: &[&str] = &[
     "server/discover",
     "thread/start",
     "thread/list",
+    "thread/rename",
     "thread/archive",
     "thread/unarchive",
     "thread/delete",
@@ -53,6 +54,12 @@ const METHODS: &[&str] = &[
     "space/get",
     "space/create",
     "space/rename",
+    "memory/list",
+    "memory/save",
+    "memory/edit",
+    "memory/move",
+    "memory/forget",
+    "memory/restore",
 ];
 
 /// JSON-RPC's own error codes.

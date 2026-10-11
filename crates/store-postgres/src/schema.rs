@@ -103,6 +103,29 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (org, key)
     );
     ",
+    // 4: the threads view: one row per thread, folded from its events as they are appended
+    // (`glave_ports::ThreadView`, as JSON), listed by standing, most recently written first.
+    // Content-free. The store fills it from the log when it connects (`views::refresh`), and
+    // records which fold built it in `glave_settings`.
+    "
+    CREATE TABLE threads (
+        org       uuid   NOT NULL,
+        space     uuid   NOT NULL,
+        thread    uuid   NOT NULL,
+        standing  text   NOT NULL,
+        -- The `pos` of the thread's latest event: the order of writes.
+        position  bigint NOT NULL,
+        view      text   NOT NULL,
+        PRIMARY KEY (org, space, thread)
+    );
+
+    CREATE INDEX threads_by_position ON threads (org, space, standing, position DESC);
+
+    CREATE TABLE glave_settings (
+        key    text PRIMARY KEY,
+        value  text NOT NULL
+    );
+    ",
 ];
 
 /// The schema version this build writes.

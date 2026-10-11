@@ -128,6 +128,7 @@ mod http {
                     space: None,
                     limit: None,
                     show: None,
+                    cursor: None,
                 })
                 .await;
             assert_eq!(listed["result"]["threads"], json!([]), "{listed}");

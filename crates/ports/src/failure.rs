@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::ProviderError;
 
 /// The kind of a failed model request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Failure {
     /// The key was refused (401, 403).

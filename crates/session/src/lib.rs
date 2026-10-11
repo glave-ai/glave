@@ -14,6 +14,7 @@ mod memory;
 pub mod protocol;
 pub mod rpc;
 mod schedule;
+pub mod schema;
 mod server;
 pub mod signin;
 mod spaces;

@@ -17,7 +17,7 @@ pub const QUESTION: &str = "question";
 const MOST: usize = 4;
 
 /// One question.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Question {
     pub question: String,
@@ -30,7 +30,7 @@ pub struct Question {
 }
 
 /// One choice.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Choice {
     pub label: String,

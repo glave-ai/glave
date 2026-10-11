@@ -8,6 +8,8 @@ usage: cargo xtask <command>
 commands:
   ci            the full local gate: format, lint, tests, dependency audit, file sizes
   file-sizes    enforce the source-file line limits
+  schema        write specs/session.schema.json from the session API's Rust types, and the web
+                client's TypeScript types from it (`--check`: fail if either is out of date)
   bench [args]  run benchmarks under the machine-wide benchmark lock
   eval [args]   run the harness on the eval tasks against real models and grade the results
                 (see `cargo xtask eval --help`; needs the model endpoint in the environment)
@@ -30,6 +32,7 @@ fn run(args: &[String]) -> Result<(), String> {
         Some((command, rest)) => match command.as_str() {
             "ci" => crate::ci::run(),
             "file-sizes" => crate::file_sizes::check(),
+            "schema" => crate::schema::run(rest),
             "bench" => crate::bench::run(rest),
             "eval" => crate::eval::run(rest),
             "help" | "--help" | "-h" => {

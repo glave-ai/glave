@@ -1,4 +1,5 @@
-//! `cargo xtask ci`: the full local gate, identical to what CI runs.
+//! `cargo xtask ci`: the full local gate, identical to what CI runs. (CI also type-checks the
+//! web client with TypeScript, which needs Node.)
 
 use crate::cmd;
 use crate::lock::{self, Mode};
@@ -35,6 +36,7 @@ pub fn run() -> Result<(), String> {
     })?;
     step("dependencies", || cmd::run("cargo", &["deny", "check"]))?;
     step("file sizes", crate::file_sizes::check)?;
+    step("api schema", || crate::schema::run(&["--check".to_owned()]))?;
     println!("\nxtask: all checks passed");
     Ok(())
 }

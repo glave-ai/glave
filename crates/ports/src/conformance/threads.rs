@@ -1,0 +1,318 @@
+//! The threads view suite: what every event log's views must show, kept in step with appends
+//! and equal to what a rebuild from the log makes.
+
+use glave_event::{
+    At, Cost, Currency, EventId, Header, MessageAdded, ModelRef, ModelResponded, Money, Origin,
+    OriginKind, Outcome, Part, Payload, Principal, PrincipalId, Producer, RawEvent, Role, Seq,
+    StopReason, ThreadArchived, ThreadId, ThreadRenamed, ThreadStarted, TokenCounts, TurnEnded,
+    TurnStarted, Usage, encode,
+};
+
+use super::{Verdict, ensure, scope, thread, uuid_v7};
+use crate::blob::digest;
+use crate::log::EventLog;
+use crate::scope::Scope;
+use crate::view::{Standing, ThreadQuery, ThreadView};
+
+/// Builds a thread's events, numbering them and giving each its own second.
+struct Writer {
+    thread: ThreadId,
+    seq: u64,
+}
+
+impl Writer {
+    fn new(thread: ThreadId) -> Self {
+        Self { thread, seq: 0 }
+    }
+
+    fn next<P: Payload>(&mut self, second: u64, payload: &P) -> Result<RawEvent, String> {
+        self.seq = self.seq.saturating_add(1);
+        let header = Header {
+            id: EventId::try_from(uuid_v7(10_000 + second * 100 + self.seq))
+                .map_err(|e| e.to_string())?,
+            thread: self.thread,
+            seq: Seq::new(self.seq).map_err(|e| e.to_string())?,
+            at: at(second)?,
+        };
+        encode(header, payload).map_err(|e| e.to_string())
+    }
+}
+
+fn at(second: u64) -> Result<At, String> {
+    At::try_from(format!(
+        "2026-10-07T21:{:02}:{:02}.000Z",
+        second / 60,
+        second % 60
+    ))
+    .map_err(|e| e.to_string())
+}
+
+fn person() -> Result<Principal, String> {
+    PrincipalId::try_from(uuid_v7(9_000))
+        .map(Principal::person)
+        .map_err(|e| e.to_string())
+}
+
+fn started() -> Result<ThreadStarted, String> {
+    Ok(ThreadStarted {
+        producer: Producer {
+            name: "glave".into(),
+            version: "0.0.0".into(),
+        },
+        fork: None,
+        parent: None,
+        for_: Some(person()?),
+        agent: None,
+        origin: Origin::of(OriginKind::Prompt),
+    })
+}
+
+fn said(text: &str) -> MessageAdded {
+    MessageAdded {
+        role: Role::User,
+        parts: vec![Part::Text { text: text.into() }],
+        author: None,
+    }
+}
+
+fn model() -> ModelRef {
+    ModelRef {
+        provider: "test".into(),
+        name: "model".into(),
+    }
+}
+
+fn responded() -> Result<ModelResponded, String> {
+    let counts = TokenCounts {
+        input: 100,
+        cache_read: 0,
+        cache_write: 0,
+        output: 10,
+        reasoning: 0,
+    };
+    Ok(ModelResponded {
+        model: model(),
+        response_id: None,
+        stop: StopReason::EndTurn,
+        provider_stop: None,
+        usage: Usage::new(counts, false, None).map_err(|e| e.to_string())?,
+        cost: Some(Cost {
+            amount: Money {
+                micros: 5_000,
+                currency: Currency::USD,
+            },
+            price_list: "test".into(),
+        }),
+        route: None,
+        target: None,
+        reasoning_stripped: false,
+    })
+}
+
+/// A whole turn: a message from the person, then the turn and one response.
+fn turn(writer: &mut Writer, from: u64) -> Result<Vec<RawEvent>, String> {
+    let blob = glave_event::BlobRef {
+        sha256: digest(b"config"),
+        bytes: 6,
+        media_type: "application/json".into(),
+    };
+    Ok(vec![
+        writer.next(from, &said("  \n  Fix the login test  \nIt fails on CI."))?,
+        writer.next(
+            from + 1,
+            &TurnStarted {
+                model: model(),
+                config: blob,
+                trace: None,
+                auth: None,
+            },
+        )?,
+        writer.next(from + 2, &responded()?)?,
+        writer.next(
+            from + 3,
+            &TurnEnded {
+                outcome: Outcome::Completed,
+            },
+        )?,
+    ])
+}
+
+async fn list<L: EventLog>(
+    log: &L,
+    scope: &Scope,
+    standing: Standing,
+    limit: usize,
+) -> Result<Vec<ThreadView>, String> {
+    let query = ThreadQuery {
+        standing,
+        limit,
+        after: None,
+    };
+    log.thread_views(scope, &query)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+fn ids(views: &[ThreadView]) -> Vec<ThreadId> {
+    views.iter().map(|view| view.thread).collect()
+}
+
+/// Whether `view` is thread `a` as the suite wrote it: one whole turn.
+fn worked(view: &ThreadView) -> bool {
+    view.title_seq == Seq::new(2).ok()
+        && view.turns == 1
+        && view.outcome == Some(Outcome::Completed)
+        && view.tokens.input == 100
+        && view.tokens.output == 10
+        && view.cost.is_some_and(|cost| cost.micros == 5_000)
+        && view.for_ == person().ok()
+        && at(0).is_ok_and(|start| view.created_at == start)
+        && at(4).is_ok_and(|end| view.updated_at == end)
+        && view.last_seq.get() == 5
+}
+
+/// Every [`EventLog`] keeps a view of each thread as it is appended: listed by standing, most
+/// recently written first, in pages after a cursor, inside its scope; ledgers (no
+/// `thread.started`) have none; and rebuilding a view from the log gives the same view.
+pub async fn thread_views<L: EventLog>(log: &L) -> Verdict {
+    let (here, elsewhere) = (scope(11), scope(12));
+    let (a, b, c, ledger) = (thread(11)?, thread(12)?, thread(13)?, thread(14)?);
+    let mut first = Writer::new(a);
+    let mut events = vec![first.next(0, &started()?)?];
+    events.extend(turn(&mut first, 1)?);
+    log.append(&here, &events)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut second = Writer::new(b);
+    let mut third = Writer::new(c);
+    let appends = [
+        (b, vec![second.next(5, &started()?)?]),
+        (b, vec![second.next(6, &said("Second"))?]),
+        (c, vec![third.next(7, &started()?)?]),
+        (
+            ledger,
+            vec![Writer::new(ledger).next(
+                8,
+                &TurnEnded {
+                    outcome: Outcome::Failed,
+                },
+            )?],
+        ),
+    ];
+    for (_, events) in appends {
+        log.append(&here, &events)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    let active = list(log, &here, Standing::Active, 10).await?;
+    ensure(
+        ids(&active) == [c, b, a],
+        "views must list most recently written first, and only threads",
+    )?;
+    ensure(
+        active.iter().any(|view| view.thread == a && worked(view)),
+        "a view must hold the thread's start, title event, turns, usage and cost",
+    )?;
+    paging(log, &here, &active).await?;
+
+    let archived = vec![second.next(9, &ThreadArchived { by: None })?];
+    log.append(&here, &archived)
+        .await
+        .map_err(|e| e.to_string())?;
+    let renamed = vec![first.next(
+        10,
+        &ThreadRenamed {
+            title: "Login".into(),
+            by: None,
+        },
+    )?];
+    log.append(&here, &renamed)
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        ids(&list(log, &here, Standing::Active, 10).await?) == [a, c],
+        "an archived thread must leave the active views, and a rename must update a view",
+    )?;
+    ensure(
+        ids(&list(log, &here, Standing::Archived, 10).await?) == [b],
+        "an archived thread must be listed with the archived views",
+    )?;
+    let renamed = log.thread_view(&here, a).await.map_err(|e| e.to_string())?;
+    ensure(
+        renamed.as_ref().and_then(|view| view.title_seq) == Seq::new(6).ok(),
+        "a rename must become the thread's title event",
+    )?;
+
+    isolation(log, &here, &elsewhere, a, ledger).await?;
+    rebuilding(log, &here, &[a, b, c]).await
+}
+
+/// Pages follow each other through the cursor of the last view.
+async fn paging<L: EventLog>(log: &L, here: &Scope, all: &[ThreadView]) -> Verdict {
+    let page = list(log, here, Standing::Active, 2).await?;
+    ensure(
+        ids(&page) == ids(all.get(..2).unwrap_or_default()),
+        "a page must stop at its limit",
+    )?;
+    let query = ThreadQuery {
+        standing: Standing::Active,
+        limit: 10,
+        after: page.last().map(ThreadView::cursor),
+    };
+    let rest = log
+        .thread_views(here, &query)
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        ids(&rest) == ids(all.get(2..).unwrap_or_default()),
+        "the next page must start right after the cursor",
+    )
+}
+
+async fn isolation<L: EventLog>(
+    log: &L,
+    here: &Scope,
+    elsewhere: &Scope,
+    a: ThreadId,
+    ledger: ThreadId,
+) -> Verdict {
+    ensure(
+        log.thread_view(here, ledger)
+            .await
+            .map_err(|e| e.to_string())?
+            .is_none(),
+        "a stream without thread.started must have no view",
+    )?;
+    ensure(
+        log.thread_view(elsewhere, a)
+            .await
+            .map_err(|e| e.to_string())?
+            .is_none()
+            && list(log, elsewhere, Standing::Active, 10).await?.is_empty(),
+        "views must not cross scopes",
+    )
+}
+
+async fn rebuilding<L: EventLog>(log: &L, here: &Scope, threads: &[ThreadId]) -> Verdict {
+    for thread in threads {
+        let kept = log
+            .thread_view(here, *thread)
+            .await
+            .map_err(|e| e.to_string())?;
+        let rebuilt = log
+            .rebuild_thread_view(here, *thread)
+            .await
+            .map_err(|e| e.to_string())?;
+        ensure(
+            kept.is_some() && rebuilt == kept,
+            "a view rebuilt from the log must equal the one kept by appends",
+        )?;
+        let stored = log
+            .thread_view(here, *thread)
+            .await
+            .map_err(|e| e.to_string())?;
+        ensure(stored == rebuilt, "a rebuilt view must be stored")?;
+    }
+    Ok(())
+}

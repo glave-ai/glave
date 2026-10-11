@@ -17,7 +17,19 @@ pub(crate) const FORGOTTEN: &str = "memory.forgotten";
 pub(crate) const RESTORED: &str = "memory.restored";
 
 /// Where a memory belongs: to the person, or to the space it was saved in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryScope {
     /// About the person: read in their threads, in spaces that allow it.
@@ -45,7 +57,7 @@ impl MemoryScope {
 }
 
 /// Where in a thread a memory was saved.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MemorySource {
     pub thread: ThreadId,

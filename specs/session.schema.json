@@ -1,0 +1,2490 @@
+{
+  "$defs": {
+    "Answer": {
+      "description": "The person's answer to an approval.",
+      "enum": [
+        "allow_once",
+        "allow_for_thread",
+        "deny"
+      ],
+      "type": "string"
+    },
+    "ApiError": {
+      "description": "A request that failed, as JSON-RPC carries it.",
+      "properties": {
+        "code": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorData"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "At": {
+      "description": "When an event was recorded, in UTC at millisecond precision. For people only: events are\nordered by [`Seq`]. Always written with three fractional digits, such as\n`2026-10-07T21:14:01.250Z`, so every instant has exactly one spelling.",
+      "type": "string"
+    },
+    "CallId": {
+      "description": "Links a tool call to its result: 1 to 128 printable ASCII characters.",
+      "type": "string"
+    },
+    "Choice": {
+      "additionalProperties": false,
+      "description": "One choice.",
+      "properties": {
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "type": "object"
+    },
+    "Currency": {
+      "description": "An ISO 4217 currency code: three uppercase ASCII letters, such as `USD`.",
+      "type": "string"
+    },
+    "ErrorData": {
+      "description": "Why a model call failed, for a client to say what to fix.",
+      "properties": {
+        "failure": {
+          "$ref": "#/$defs/Failure"
+        }
+      },
+      "required": [
+        "failure"
+      ],
+      "type": "object"
+    },
+    "EventId": {
+      "description": "Identifies one event, unique everywhere.",
+      "format": "uuid",
+      "type": "string"
+    },
+    "Failure": {
+      "description": "The kind of a failed model request.",
+      "oneOf": [
+        {
+          "const": "refused",
+          "description": "The key was refused (401, 403).",
+          "type": "string"
+        },
+        {
+          "const": "no_credit",
+          "description": "The account has no credit left (402).",
+          "type": "string"
+        },
+        {
+          "const": "unknown_model",
+          "description": "The server has no such model, or no chat completions API at that address.",
+          "type": "string"
+        },
+        {
+          "const": "too_long",
+          "description": "The conversation is longer than the model's context window.",
+          "type": "string"
+        },
+        {
+          "const": "rate_limited",
+          "description": "The provider is limiting requests (429).",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "description": "The provider failed on its side (5xx).",
+          "type": "string"
+        },
+        {
+          "const": "unreachable",
+          "description": "The server could not be reached, or the connection broke.",
+          "type": "string"
+        },
+        {
+          "const": "silent",
+          "description": "The server sent nothing for too long.",
+          "type": "string"
+        },
+        {
+          "const": "malformed",
+          "description": "The server's answer did not follow the protocol.",
+          "type": "string"
+        },
+        {
+          "const": "rejected",
+          "description": "Any other refusal of the request.",
+          "type": "string"
+        },
+        {
+          "const": "over_budget",
+          "description": "The call could exceed a budget, so it was not sent.",
+          "type": "string"
+        }
+      ]
+    },
+    "GoalProgress": {
+      "description": "A thread's latest goal and how far it has come.",
+      "properties": {
+        "ended": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GoalReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why it ended; `None` while it is active."
+        },
+        "note": {
+          "description": "When it is paused, what the model needs from the person, in its words.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "objective": {
+          "type": "string"
+        },
+        "token_budget": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tokens": {
+          "description": "Tokens its turns have used so far.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "turns": {
+          "description": "Turns it has run.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "objective",
+        "token_budget",
+        "tokens",
+        "turns"
+      ],
+      "type": "object"
+    },
+    "GoalReason": {
+      "description": "Why a goal ended.",
+      "oneOf": [
+        {
+          "const": "met",
+          "description": "The model verified the goal is met and said so with `update_goal`.",
+          "type": "string"
+        },
+        {
+          "const": "paused",
+          "description": "The model cannot go on without the person, and said why with `update_goal`. The goal\ncan be resumed.",
+          "type": "string"
+        },
+        {
+          "const": "stopped",
+          "description": "The person stopped it, or cancelled its turn.",
+          "type": "string"
+        },
+        {
+          "const": "budget",
+          "description": "Its token budget ran out.",
+          "type": "string"
+        },
+        {
+          "const": "stalled",
+          "description": "Three turns in a row ended without the model calling a tool: no progress.",
+          "type": "string"
+        }
+      ]
+    },
+    "IdempotencyKey": {
+      "description": "A client's name for one attempt at a turn: 1 to 255 bytes of text.",
+      "type": "string"
+    },
+    "MemoryId": {
+      "description": "Identifies one memory: a short statement kept for later threads (`specs/memory.md`).",
+      "format": "uuid",
+      "type": "string"
+    },
+    "MemoryScope": {
+      "description": "Where a memory belongs: to the person, or to the space it was saved in.",
+      "oneOf": [
+        {
+          "const": "personal",
+          "description": "About the person: read in their threads, in spaces that allow it.",
+          "type": "string"
+        },
+        {
+          "const": "space",
+          "description": "About the space's work: read by every member and agent working in it.",
+          "type": "string"
+        }
+      ]
+    },
+    "MemorySource": {
+      "additionalProperties": false,
+      "description": "Where in a thread a memory was saved.",
+      "properties": {
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "thread",
+        "seq"
+      ],
+      "type": "object"
+    },
+    "Meta": {
+      "description": "What a request may carry besides its params, in `params._meta`.",
+      "properties": {
+        "idempotency_key": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IdempotencyKey"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For `turn/start`: the same key for the same thread returns the turn already started\ninstead of starting another, so a client may retry safely."
+        }
+      },
+      "type": "object"
+    },
+    "Money": {
+      "additionalProperties": false,
+      "description": "An exact amount: `micros` millionths of one unit of `currency`. `{\"micros\": 4200,\n\"currency\": \"USD\"}` is $0.0042.",
+      "properties": {
+        "currency": {
+          "$ref": "#/$defs/Currency"
+        },
+        "micros": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "micros",
+        "currency"
+      ],
+      "type": "object"
+    },
+    "Origin": {
+      "additionalProperties": false,
+      "description": "What started a thread, and who.",
+      "properties": {
+        "by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Principal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Who started it, when that differs from the thread's `for`."
+        },
+        "kind": {
+          "$ref": "#/$defs/OriginKind"
+        },
+        "ref": {
+          "description": "An opaque pointer to what started it, such as a schedule or a chat thread.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "OriginKind": {
+      "description": "What kind of thing started a thread.",
+      "type": "string"
+    },
+    "Outcome": {
+      "description": "How a turn ended.",
+      "enum": [
+        "completed",
+        "cancelled",
+        "failed",
+        "interrupted",
+        "limit_reached"
+      ],
+      "type": "string"
+    },
+    "PayloadVersion": {
+      "description": "The version of one payload type, starting at 1.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "Principal": {
+      "additionalProperties": false,
+      "description": "A reference to a principal: `{\"kind\": \"person\", \"id\": \"…\"}`. Every kind but `glave` has an\nid.",
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PrincipalId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/PrincipalKind"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "PrincipalId": {
+      "description": "Identifies a principal: a person, an agent profile or a group. People, agents and groups\nshare one id space, unique everywhere and never tied to one deployment.",
+      "format": "uuid",
+      "type": "string"
+    },
+    "PrincipalKind": {
+      "description": "What kind of principal acts.",
+      "type": "string"
+    },
+    "Question": {
+      "additionalProperties": false,
+      "description": "One question.",
+      "properties": {
+        "multiple": {
+          "description": "Whether more than one choice may be picked.",
+          "type": "boolean"
+        },
+        "options": {
+          "description": "Choices to pick from; the person may answer in their own words either way.",
+          "items": {
+            "$ref": "#/$defs/Choice"
+          },
+          "type": "array"
+        },
+        "question": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "RawEvent": {
+      "description": "An event exactly as it is stored and sent. `data` holds the payload's bytes as written;\n[`crate::decode`] interprets them.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/At"
+        },
+        "data": {
+          "additionalProperties": true,
+          "description": "The payload of `type` at version `v` (`specs/events.md`).",
+          "type": "object"
+        },
+        "glave": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "$ref": "#/$defs/EventId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "type": {
+          "$ref": "#/$defs/TypeName"
+        },
+        "v": {
+          "$ref": "#/$defs/PayloadVersion"
+        }
+      },
+      "required": [
+        "glave",
+        "id",
+        "thread",
+        "seq",
+        "at",
+        "type",
+        "v",
+        "data"
+      ],
+      "type": "object"
+    },
+    "Remembered": {
+      "description": "One memory as it is shown: to the model, and to the person.",
+      "properties": {
+        "edited_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memory": {
+          "$ref": "#/$defs/MemoryId"
+        },
+        "saved_at": {
+          "$ref": "#/$defs/At"
+        },
+        "scope": {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemorySource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The thread and `seq` it was saved in."
+        },
+        "text": {
+          "type": "string"
+        },
+        "untrusted_read": {
+          "description": "Saved in a thread that had read untrusted content or a secrets file.",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "1 when saved, one more with each edit.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "memory",
+        "version",
+        "scope",
+        "text",
+        "saved_at"
+      ],
+      "type": "object"
+    },
+    "ScheduleId": {
+      "description": "Identifies one schedule: a prompt or goal that runs as a task at set times.",
+      "format": "uuid",
+      "type": "string"
+    },
+    "ScheduleInfo": {
+      "description": "A schedule, as `schedule/list` shows it.",
+      "properties": {
+        "budget": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "created_at": {
+          "$ref": "#/$defs/At"
+        },
+        "goal": {
+          "type": "boolean"
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When it last ran: the time that run was due."
+        },
+        "next": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When it runs next; absent once a one-off has run."
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "schedule": {
+          "$ref": "#/$defs/ScheduleId"
+        },
+        "when": {
+          "$ref": "#/$defs/When"
+        },
+        "worktree": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "schedule",
+        "when",
+        "prompt",
+        "budget",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "Seq": {
+      "description": "An event's position in its thread, starting at 1 and assigned gap-free by the thread's\nsingle writer. This is the order of events; time never is.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "ServerInfo": {
+      "description": "What the server is.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "protocols": {
+          "description": "The protocol versions spoken.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "protocols"
+      ],
+      "type": "object"
+    },
+    "Show": {
+      "description": "Which threads `thread/list` shows.",
+      "oneOf": [
+        {
+          "enum": [
+            "archived"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "active",
+          "description": "Threads that are neither archived nor deleted.",
+          "type": "string"
+        },
+        {
+          "const": "deleted",
+          "description": "Deleted threads, waiting for their content to be erased: for the operator that does it.",
+          "type": "string"
+        }
+      ]
+    },
+    "Space": {
+      "description": "A space, as its record keeps it.",
+      "properties": {
+        "created_at": {
+          "$ref": "#/$defs/At"
+        },
+        "id": {
+          "$ref": "#/$defs/SpaceId"
+        },
+        "kind": {
+          "$ref": "#/$defs/SpaceKind"
+        },
+        "members": {
+          "description": "Who else works in it.",
+          "items": {
+            "$ref": "#/$defs/Principal"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "owner": {
+          "$ref": "#/$defs/Principal",
+          "description": "Whose it is: a person, or later a team or an agent."
+        },
+        "updated_at": {
+          "$ref": "#/$defs/At"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "owner",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "SpaceId": {
+      "description": "Identifies a space: the boundary for memory, history, files, members and policy.",
+      "format": "uuid",
+      "type": "string"
+    },
+    "SpaceKind": {
+      "description": "What a space is.",
+      "oneOf": [
+        {
+          "const": "project",
+          "description": "A project: the work of its owner and members, usually tied to folders.",
+          "type": "string"
+        },
+        {
+          "const": "personal",
+          "description": "A person's own space (the Inbox): their one-off chats and their personal memory. Each\nperson has exactly one in each organization.",
+          "type": "string"
+        }
+      ]
+    },
+    "Standing": {
+      "description": "Whether a thread is shown: the latest `thread.archived`, `thread.unarchived` or\n`thread.deleted` decides.",
+      "oneOf": [
+        {
+          "const": "active",
+          "description": "Shown in lists.",
+          "type": "string"
+        },
+        {
+          "const": "archived",
+          "description": "Hidden from lists and kept in the log; `unarchive` brings it back.",
+          "type": "string"
+        },
+        {
+          "const": "deleted",
+          "description": "Hidden for good, and waiting for its content to be erased.",
+          "type": "string"
+        }
+      ]
+    },
+    "Status": {
+      "description": "What a thread is doing.",
+      "oneOf": [
+        {
+          "enum": [
+            "idle",
+            "running"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "waiting",
+          "description": "A turn is paused until someone answers an approval.",
+          "type": "string"
+        }
+      ]
+    },
+    "TaskInfo": {
+      "description": "A task, as the tasks panel shows it.",
+      "properties": {
+        "budget": {
+          "description": "Tokens the run may use; no limit when absent.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cost": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What they cost so far, when every call reported a cost."
+        },
+        "elapsed_ms": {
+          "description": "Milliseconds from its start until now, or until it ended.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/TaskKind"
+        },
+        "model": {
+          "type": "string"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Outcome"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How it ended, once it has."
+        },
+        "schedule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScheduleId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The schedule that started it, if one did."
+        },
+        "started_at": {
+          "$ref": "#/$defs/At"
+        },
+        "status": {
+          "$ref": "#/$defs/TaskStatus"
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "title": {
+          "description": "The prompt or objective, shortened.",
+          "type": "string"
+        },
+        "tokens": {
+          "$ref": "#/$defs/TokenCounts",
+          "description": "Tokens used so far, subagents' included."
+        }
+      },
+      "required": [
+        "thread",
+        "kind",
+        "title",
+        "model",
+        "tokens",
+        "started_at",
+        "elapsed_ms",
+        "status"
+      ],
+      "type": "object"
+    },
+    "TaskKind": {
+      "description": "What kind of work a task is. Background commands the model starts arrive later.",
+      "oneOf": [
+        {
+          "const": "agent",
+          "description": "A thread: a turn, or a goal's turns, run by the agent.",
+          "type": "string"
+        }
+      ]
+    },
+    "TaskStatus": {
+      "description": "Whether a task is still going.",
+      "oneOf": [
+        {
+          "enum": [
+            "running",
+            "finished"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "elsewhere",
+          "description": "Started and not ended, by a server other than this one (or one that stopped).",
+          "type": "string"
+        }
+      ]
+    },
+    "ThreadId": {
+      "description": "Identifies one thread: a conversation or task with its own ordered log.",
+      "format": "uuid",
+      "type": "string"
+    },
+    "ThreadSummary": {
+      "description": "A thread, as a list shows it: from the threads view, with what it is doing now.",
+      "properties": {
+        "cost": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What they cost, when every call reported a cost."
+        },
+        "created_at": {
+          "$ref": "#/$defs/At"
+        },
+        "for": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Principal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whose work it is; absent in threads from before it was recorded (the local person)."
+        },
+        "id": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "origin": {
+          "$ref": "#/$defs/Origin"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Outcome"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How its latest turn ended."
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ThreadId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The thread whose call started this one, for a subagent's."
+        },
+        "space": {
+          "$ref": "#/$defs/SpaceId"
+        },
+        "standing": {
+          "$ref": "#/$defs/Standing"
+        },
+        "status": {
+          "$ref": "#/$defs/Status"
+        },
+        "title": {
+          "description": "The title the person gave it, else the first line of their first message.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokens": {
+          "$ref": "#/$defs/TokenCounts",
+          "description": "Tokens its own model calls used."
+        },
+        "turns": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/At"
+        }
+      },
+      "required": [
+        "id",
+        "space",
+        "status",
+        "standing",
+        "origin",
+        "created_at",
+        "updated_at",
+        "turns",
+        "tokens"
+      ],
+      "type": "object"
+    },
+    "TokenCounts": {
+      "description": "Token counts as inclusive totals with subsets: `input` includes `cache_read` and\n`cache_write`, and `output` includes `reasoning`. Providers disagree on what their totals\ninclude, so adapters normalize before writing.",
+      "properties": {
+        "cache_read": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cache_write": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "input": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "output": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reasoning": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input",
+        "cache_read",
+        "cache_write",
+        "output",
+        "reasoning"
+      ],
+      "type": "object"
+    },
+    "TurnResult": {
+      "description": "How a turn ended and what it cost.",
+      "properties": {
+        "cost": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimated": {
+          "default": false,
+          "description": "True when a usage count was estimated, not reported.",
+          "type": "boolean"
+        },
+        "model_calls": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "tokens": {
+          "$ref": "#/$defs/TokenCounts"
+        },
+        "tool_calls": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "outcome",
+        "model_calls",
+        "tool_calls",
+        "tokens"
+      ],
+      "type": "object"
+    },
+    "TypeName": {
+      "description": "What happened: lowercase dotted segments such as `tool.call.requested`, at most 64 bytes.\nEach segment is lowercase ASCII letters, digits and underscores; the name starts with a\nletter.",
+      "type": "string"
+    },
+    "Update": {
+      "description": "Progress while a turn runs: the live side of `Live`, in a form any transport carries.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "text",
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "reasoning",
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "tool_started",
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "summary"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "is_error": {
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "tool_finished",
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "summary",
+            "is_error"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "tool_declined",
+              "type": "string"
+            },
+            "no_one_there": {
+              "type": "boolean"
+            },
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "summary",
+            "no_one_there"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "waiting",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "retrying",
+              "type": "string"
+            },
+            "of": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "retry": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "wait_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "retry",
+            "of",
+            "wait_ms",
+            "error"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "after_tokens": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "before_tokens": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "compacted",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "before_tokens",
+            "after_tokens"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "error": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "compaction_failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "error"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The model asked the person questions; answer with `question/answer`.",
+          "properties": {
+            "kind": {
+              "const": "asked",
+              "type": "string"
+            },
+            "question": {
+              "$ref": "#/$defs/CallId"
+            },
+            "questions": {
+              "items": {
+                "$ref": "#/$defs/Question"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "question",
+            "questions"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A subagent started; its notifications follow under its own thread.",
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "subagent_started",
+              "type": "string"
+            },
+            "subagent": {
+              "$ref": "#/$defs/ThreadId"
+            }
+          },
+          "required": [
+            "kind",
+            "subagent",
+            "description"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A subagent is done; `ok` when it finished its work.",
+          "properties": {
+            "kind": {
+              "const": "subagent_ended",
+              "type": "string"
+            },
+            "ok": {
+              "type": "boolean"
+            },
+            "subagent": {
+              "$ref": "#/$defs/ThreadId"
+            }
+          },
+          "required": [
+            "kind",
+            "subagent",
+            "ok"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A memory was saved, edited or forgotten: `change` is `remembered`, `edited` or `forgot`.",
+          "properties": {
+            "change": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "memory",
+              "type": "string"
+            },
+            "memory": {
+              "$ref": "#/$defs/MemoryId"
+            },
+            "text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "change",
+            "memory"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "When": {
+      "description": "When a schedule runs.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Once, at this time.",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/At"
+            }
+          },
+          "required": [
+            "at"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Whenever this five-field cron expression matches, in UTC.",
+          "properties": {
+            "cron": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cron"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "JSON-RPC 2.0 methods, notifications and errors of glave's session API (specs/session.md). Generated from the Rust protocol types by `cargo xtask schema`; do not edit.",
+  "error": {
+    "$ref": "#/$defs/ApiError"
+  },
+  "errors": {
+    "ARCHIVED": {
+      "code": -32014,
+      "message": "The thread is archived; unarchive it first"
+    },
+    "CANCELLED": {
+      "code": -32005,
+      "message": "The operation was cancelled"
+    },
+    "INTERNAL": {
+      "code": -32603,
+      "message": "The server failed"
+    },
+    "INVALID_PARAMS": {
+      "code": -32602,
+      "message": "The params are not valid"
+    },
+    "INVALID_REQUEST": {
+      "code": -32600,
+      "message": "The message is not a valid request"
+    },
+    "LIMIT": {
+      "code": -32015,
+      "message": "A policy limit was reached"
+    },
+    "MEMORY_OFF": {
+      "code": -32018,
+      "message": "Memory is off for this server"
+    },
+    "NOT_ALLOWED": {
+      "code": -32012,
+      "message": "The caller may not do this"
+    },
+    "NO_APPROVAL": {
+      "code": -32004,
+      "message": "No such approval is pending"
+    },
+    "NO_GOAL": {
+      "code": -32007,
+      "message": "The thread has no active goal (or, to resume, no paused one)"
+    },
+    "NO_MEMORY": {
+      "code": -32017,
+      "message": "No such memory here"
+    },
+    "NO_METHOD": {
+      "code": -32601,
+      "message": "No such method"
+    },
+    "NO_QUESTION": {
+      "code": -32006,
+      "message": "No such question is waiting"
+    },
+    "NO_SCHEDULE": {
+      "code": -32016,
+      "message": "No such schedule"
+    },
+    "NO_SIGN_IN": {
+      "code": -32013,
+      "message": "No valid sign-in (network transports)"
+    },
+    "NO_SPACE": {
+      "code": -32019,
+      "message": "No such space"
+    },
+    "NO_THREAD": {
+      "code": -32001,
+      "message": "No such thread"
+    },
+    "NO_TURN": {
+      "code": -32003,
+      "message": "No turn is running in this thread"
+    },
+    "PARSE": {
+      "code": -32700,
+      "message": "The message is not JSON-RPC"
+    },
+    "PROMPT_BLOCKED": {
+      "code": -32008,
+      "message": "A hook stopped the prompt"
+    },
+    "PROVIDER": {
+      "code": -32020,
+      "message": "The model provider failed"
+    },
+    "RUNNING_ELSEWHERE": {
+      "code": -32011,
+      "message": "The thread is running in another server of this deployment"
+    },
+    "TURN_RUNNING": {
+      "code": -32002,
+      "message": "A turn is already running in this thread"
+    },
+    "UNSUPPORTED_PROTOCOL": {
+      "code": -32010,
+      "message": "Unsupported protocol version"
+    },
+    "WORKSPACE": {
+      "code": -32009,
+      "message": "The thread's workspace could not be opened"
+    }
+  },
+  "methods": {
+    "approval/decide": {
+      "params": {
+        "properties": {
+          "approval": {
+            "$ref": "#/$defs/CallId"
+          },
+          "decision": {
+            "$ref": "#/$defs/Answer"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "approval",
+          "decision"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "goal/get": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "The thread's latest goal, or `null`.",
+        "properties": {
+          "goal": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/GoalProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "streams": false
+    },
+    "goal/start": {
+      "params": {
+        "properties": {
+          "background": {
+            "description": "Works toward the goal as a task, with no one attached: answered at once.",
+            "type": "boolean"
+          },
+          "budget": {
+            "description": "Tokens the goal may use; glave's default when absent.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "objective": {
+            "description": "What to achieve, with how to verify it in the person's words.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "properties": {
+              "turn": {
+                "$ref": "#/$defs/TurnResult"
+              }
+            },
+            "required": [
+              "turn"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "task": {
+                "$ref": "#/$defs/TaskInfo"
+              }
+            },
+            "required": [
+              "task"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "streams": true
+    },
+    "goal/stop": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "memory/edit": {
+      "params": {
+        "properties": {
+          "memory": {
+            "$ref": "#/$defs/MemoryId"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory",
+          "text"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Memories listed, or the ones a change touched.",
+        "properties": {
+          "memories": {
+            "items": {
+              "$ref": "#/$defs/Remembered"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "memories"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "memory/forget": {
+      "params": {
+        "properties": {
+          "all": {
+            "type": "boolean"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MemoryId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MemoryScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "description": "Memories listed, or the ones a change touched.",
+        "properties": {
+          "memories": {
+            "items": {
+              "$ref": "#/$defs/Remembered"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "memories"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "memory/list": {
+      "params": {
+        "properties": {
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MemoryScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "description": "Memories listed, or the ones a change touched.",
+        "properties": {
+          "memories": {
+            "items": {
+              "$ref": "#/$defs/Remembered"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "memories"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "memory/move": {
+      "params": {
+        "properties": {
+          "memory": {
+            "$ref": "#/$defs/MemoryId"
+          },
+          "scope": {
+            "$ref": "#/$defs/MemoryScope"
+          }
+        },
+        "required": [
+          "memory",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Memories listed, or the ones a change touched.",
+        "properties": {
+          "memories": {
+            "items": {
+              "$ref": "#/$defs/Remembered"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "memories"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "memory/restore": {
+      "params": {
+        "properties": {
+          "memory": {
+            "$ref": "#/$defs/MemoryId"
+          }
+        },
+        "required": [
+          "memory"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Memories listed, or the ones a change touched.",
+        "properties": {
+          "memories": {
+            "items": {
+              "$ref": "#/$defs/Remembered"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "memories"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "memory/save": {
+      "params": {
+        "properties": {
+          "scope": {
+            "$ref": "#/$defs/MemoryScope"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "scope"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "Memories listed, or the ones a change touched.",
+        "properties": {
+          "memories": {
+            "items": {
+              "$ref": "#/$defs/Remembered"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "memories"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "question/answer": {
+      "params": {
+        "properties": {
+          "answers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "question": {
+            "$ref": "#/$defs/CallId"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "question",
+          "answers"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "schedule/create": {
+      "params": {
+        "properties": {
+          "budget": {
+            "description": "Tokens each run may use. Required: no schedule runs unbounded.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "goal": {
+            "type": "boolean"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "when": {
+            "$ref": "#/$defs/When"
+          },
+          "worktree": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "when",
+          "prompt",
+          "budget"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "schedule": {
+            "$ref": "#/$defs/ScheduleInfo"
+          }
+        },
+        "required": [
+          "schedule"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "schedule/delete": {
+      "params": {
+        "properties": {
+          "schedule": {
+            "$ref": "#/$defs/ScheduleId"
+          }
+        },
+        "required": [
+          "schedule"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "schedule/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "schedules": {
+            "items": {
+              "$ref": "#/$defs/ScheduleInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schedules"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "server/discover": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "$ref": "#/$defs/ServerInfo"
+      },
+      "streams": false
+    },
+    "space/create": {
+      "params": {
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/$defs/Principal"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A space: one asked for, made or renamed.",
+        "properties": {
+          "space": {
+            "$ref": "#/$defs/Space"
+          }
+        },
+        "required": [
+          "space"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "space/get": {
+      "params": {
+        "properties": {
+          "space": {
+            "$ref": "#/$defs/SpaceId"
+          }
+        },
+        "required": [
+          "space"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A space: one asked for, made or renamed.",
+        "properties": {
+          "space": {
+            "$ref": "#/$defs/Space"
+          }
+        },
+        "required": [
+          "space"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "space/list": {
+      "params": {
+        "properties": {
+          "limit": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "spaces": {
+            "items": {
+              "$ref": "#/$defs/Space"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "spaces"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "space/rename": {
+      "params": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "space": {
+            "$ref": "#/$defs/SpaceId"
+          }
+        },
+        "required": [
+          "space",
+          "name"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A space: one asked for, made or renamed.",
+        "properties": {
+          "space": {
+            "$ref": "#/$defs/Space"
+          }
+        },
+        "required": [
+          "space"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "tasks/list": {
+      "params": {
+        "properties": {
+          "limit": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "tasks": {
+            "items": {
+              "$ref": "#/$defs/TaskInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tasks"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "tasks/stop": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/archive": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/compact": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "after_tokens": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "before_tokens": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "before_tokens",
+          "after_tokens"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/delete": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/events": {
+      "params": {
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Seq"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limit": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/$defs/RawEvent"
+            },
+            "type": "array"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Seq"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/get": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadSummary"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/list": {
+      "params": {
+        "properties": {
+          "cursor": {
+            "description": "Where the page starts: the `next` of the page before.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "show": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Show"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Which threads: the active ones by default."
+          },
+          "space": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SpaceId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The space whose threads to list, by default as `thread/start` picks one."
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "next": {
+            "description": "The cursor of the next page, when there is one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "threads": {
+            "items": {
+              "$ref": "#/$defs/ThreadSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "threads"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/rename": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread",
+          "title"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadSummary"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/start": {
+      "params": {
+        "properties": {
+          "background": {
+            "description": "For a thread that runs as a task: it works on a worker when the server has them,\neven when other threads work here.",
+            "type": "boolean"
+          },
+          "space": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SpaceId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The space the thread is in: by default the server's own, for a caller who works in\nit, else the caller's personal space."
+          },
+          "worktree": {
+            "description": "Whether the thread works in a worktree of its own rather than in the folder itself;\nthe server's default (`worktree` in `config.toml`) when absent.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadSummary"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "thread/unarchive": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "turn/cancel": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "turn/start": {
+      "params": {
+        "properties": {
+          "_meta": {
+            "$ref": "#/$defs/Meta"
+          },
+          "background": {
+            "description": "Runs the turn as a task, with no one attached: answered at once with the task.",
+            "type": "boolean"
+          },
+          "budget": {
+            "description": "With `background`, tokens the turn may use, subagents' included.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "prompt"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "properties": {
+              "turn": {
+                "$ref": "#/$defs/TurnResult"
+              }
+            },
+            "required": [
+              "turn"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "task": {
+                "$ref": "#/$defs/TaskInfo"
+              }
+            },
+            "required": [
+              "task"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "streams": true
+    }
+  },
+  "notifications": {
+    "task/finished": {
+      "properties": {
+        "task": {
+          "$ref": "#/$defs/TaskInfo"
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "thread",
+        "task"
+      ],
+      "type": "object"
+    },
+    "thread/event": {
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/RawEvent"
+        },
+        "thread": {
+          "$ref": "#/$defs/ThreadId"
+        }
+      },
+      "required": [
+        "thread",
+        "event"
+      ],
+      "type": "object"
+    },
+    "turn/live": {
+      "properties": {
+        "thread": {
+          "$ref": "#/$defs/ThreadId"
+        },
+        "update": {
+          "$ref": "#/$defs/Update"
+        }
+      },
+      "required": [
+        "thread",
+        "update"
+      ],
+      "type": "object"
+    }
+  },
+  "protocol": "2026-10",
+  "title": "glave session API"
+}
