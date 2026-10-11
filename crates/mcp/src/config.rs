@@ -2,7 +2,7 @@
 //! from `{"mcpServers": {"name": {...}}}`. `${VAR}` and `${VAR:-default}` in a server's command,
 //! arguments, environment, URL and headers are filled from the environment.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
@@ -43,6 +43,22 @@ struct Raw {
     url: Option<String>,
     #[serde(default)]
     headers: BTreeMap<String, String>,
+    /// glave's own key: what the server's tools return is untrusted, as web content is.
+    #[serde(default)]
+    untrusted: bool,
+}
+
+/// The servers in a `.mcp.json` file's text marked `"untrusted": true`: what their tools
+/// return comes from outside and no one vouches for it, as with a web page.
+pub fn untrusted(text: &str) -> Result<BTreeSet<String>, McpError> {
+    let settings: File =
+        serde_json::from_str(text).map_err(|err| McpError::Config(err.to_string()))?;
+    Ok(settings
+        .servers
+        .into_iter()
+        .filter(|(_, raw)| raw.untrusted)
+        .map(|(name, _)| name)
+        .collect())
 }
 
 /// Reads the servers in a `.mcp.json` file's text, filling `${VAR}` from `environment`.
@@ -161,5 +177,19 @@ mod tests {
         assert_eq!(expand("${NOPE:-fallback}", &env), "fallback");
         assert_eq!(expand("${NOPE}", &env), "");
         assert_eq!(expand("unclosed ${TOKEN", &env), "unclosed ${TOKEN");
+    }
+
+    #[test]
+    fn servers_can_be_marked_untrusted() {
+        let text = r#"{"mcpServers": {
+            "search": {"command": "brave-mcp", "untrusted": true},
+            "docs": {"command": "docs-mcp", "untrusted": false},
+            "files": {"command": "files-mcp"}
+        }}"#;
+        assert_eq!(parse(text, &env()).unwrap().len(), 3);
+        assert_eq!(
+            untrusted(text).unwrap(),
+            BTreeSet::from(["search".to_owned()])
+        );
     }
 }

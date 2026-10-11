@@ -61,6 +61,9 @@ pub struct McpServer {
     /// The start in the background, until it is over or the server is closed.
     starting: Mutex<Option<JoinHandle<()>>>,
     call_limit: Duration,
+    /// Whether what every tool and resource of the server returns is untrusted, as the person
+    /// or a policy marked it.
+    untrusted: bool,
 }
 
 impl McpServer {
@@ -147,7 +150,22 @@ impl McpServer {
             state,
             starting: Mutex::new(Some(starting)),
             call_limit: limits.call,
+            untrusted: false,
         }
+    }
+
+    /// Marks what the server returns as untrusted, as a web page is, when `untrusted`: the
+    /// person or a policy says the server brings in content from outside. Tools that say they
+    /// reach an open world (`openWorldHint`) are untrusted whatever this says.
+    #[must_use]
+    pub fn untrusted(mut self, untrusted: bool) -> Self {
+        self.untrusted = untrusted;
+        self
+    }
+
+    /// Whether the server is marked untrusted.
+    pub fn is_untrusted(&self) -> bool {
+        self.untrusted
     }
 
     fn failed(name: &str, error: McpError, limits: Limits) -> Self {
@@ -156,6 +174,7 @@ impl McpServer {
             state: watch::channel(State::Failed(error)).1,
             starting: Mutex::new(None),
             call_limit: limits.call,
+            untrusted: false,
         }
     }
 
@@ -228,9 +247,11 @@ impl McpServer {
     ) -> ToolOutput {
         match unless_cancelled(cancel, self.connection()).await {
             Some(Ok(connection)) => {
-                connection
+                let mut output = connection
                     .call(name, arguments, cancel, self.call_limit)
-                    .await
+                    .await;
+                output.untrusted |= self.untrusted;
+                output
             }
             Some(Err(err)) => ToolOutput::text(true, err.to_string()),
             None => ToolOutput::text(true, CANCELLED),

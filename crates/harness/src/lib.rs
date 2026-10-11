@@ -35,6 +35,7 @@ mod todo;
 mod tools;
 mod toolset;
 mod turn;
+mod untrusted;
 mod worker;
 
 pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};

@@ -17,6 +17,7 @@ mod run;
 mod suite;
 mod task;
 mod trace;
+mod web;
 
 pub use check::Check;
 pub use error::EvalError;

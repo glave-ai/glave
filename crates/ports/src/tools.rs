@@ -40,6 +40,10 @@ pub struct ToolInfo {
 pub struct ToolOutput {
     pub is_error: bool,
     pub parts: Vec<Part>,
+    /// Whether the parts hold content from outside that no one vouches for, such as a web
+    /// page. The harness labels such output for the model as data, not instructions, and
+    /// risky actions after it are judged knowing it was read (`specs/approvals.md`).
+    pub untrusted: bool,
 }
 
 impl ToolOutput {
@@ -47,6 +51,15 @@ impl ToolOutput {
         Self {
             is_error,
             parts: vec![Part::Text { text: text.into() }],
+            untrusted: false,
+        }
+    }
+
+    /// A successful result holding untrusted content from outside, such as a web page.
+    pub fn untrusted(text: impl Into<String>) -> Self {
+        Self {
+            untrusted: true,
+            ..Self::text(false, text)
         }
     }
 }

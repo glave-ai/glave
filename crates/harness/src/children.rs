@@ -85,6 +85,7 @@ where
         // A subagent works where its parent does.
         child.workspace.clone_from(&parent.workspace);
         child.note.clone_from(&parent.note);
+        child.untrusted = parent.untrusted;
         let id = child.id;
         let send = |update: Live| {
             let mut live = live.lock().unwrap_or_else(PoisonError::into_inner);
@@ -116,7 +117,11 @@ where
             Ok(summary) => {
                 let failed = summary.outcome != Outcome::Completed;
                 let report = subagent::report(&child.messages, summary.outcome);
-                (ToolOutput::text(failed, report), Some(summary))
+                let mut output = ToolOutput::text(failed, report);
+                // A child that read untrusted content may pass its words on: its report is
+                // labelled as such, and the parent judged knowing it.
+                output.untrusted = child.untrusted;
+                (output, Some(summary))
             }
             Err(HarnessError::Cancelled) => (ToolOutput::text(true, NOT_RUN), None),
             Err(err) => (
