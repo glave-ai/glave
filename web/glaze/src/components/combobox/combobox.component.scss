@@ -1,0 +1,38 @@
+:host {
+  display: block;
+}
+
+.listbox {
+  inset: auto;
+  max-height: var(--glz-combobox-max-height, 16rem);
+  overflow-y: auto;
+  margin: var(--glz-space-1) 0;
+  padding: var(--glz-space-1);
+  list-style: none;
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-md);
+  background: var(--glz-surface-overlay);
+  box-shadow: var(--glz-elevation-3);
+}
+
+.option {
+  padding: var(--glz-space-2) var(--glz-space-3);
+  border-radius: var(--glz-radius-sm);
+  color: var(--glz-color-text);
+  cursor: pointer;
+}
+
+.option:hover,
+.option.active {
+  background: var(--glz-surface-hover);
+}
+
+.option[aria-selected='true'] {
+  background: var(--glz-surface-selected);
+  font-weight: var(--glz-weight-bold);
+}
+
+.empty {
+  padding: var(--glz-space-2) var(--glz-space-3);
+  color: var(--glz-color-text-muted);
+}

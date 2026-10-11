@@ -1,0 +1,77 @@
+import { ChangeDetectionStrategy, Component, computed, input, model } from '@angular/core';
+import { Ban, Check, LoaderCircle, TriangleAlert } from 'lucide';
+
+import { type GlzMoney, formatDuration, formatMoney, formatTokens } from '../../lib/format';
+import type { GlzIconData } from '../../lib/icons';
+import { GlzIconComponent } from '../icon/icon.component';
+
+/** Where a tool call stands. */
+export type GlzReceiptStatus = 'running' | 'done' | 'failed' | 'declined';
+
+const ICONS: Readonly<Record<GlzReceiptStatus, GlzIconData>> = {
+  running: LoaderCircle,
+  done: Check,
+  failed: TriangleAlert,
+  declined: Ban,
+};
+
+const STATUS_WORDS: Readonly<Record<GlzReceiptStatus, string>> = {
+  running: 'Running',
+  done: 'Done',
+  failed: 'Failed',
+  declined: 'Declined',
+};
+
+/**
+ * A compact record of one tool call: what it did, in one line with its status, time and
+ * cost; opened, its evidence (the command and its output, the diff, the page read). A native
+ * `<details>`, so it opens by click or keyboard and screen readers say its state.
+ *
+ * ```html
+ * <glz-receipt tool="bash" summary="cargo test" status="done" [durationMs]="4200" [cost]="cost">
+ *   <pre>test result: ok. 112 passed</pre>
+ * </glz-receipt>
+ * ```
+ */
+@Component({
+  selector: 'glz-receipt',
+  imports: [GlzIconComponent],
+  templateUrl: './receipt.component.html',
+  styleUrl: './receipt.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '[class]': 'statusClass()' },
+})
+export class GlzReceiptComponent {
+  /** What it did, in a few words: the command, the file, the search. */
+  readonly summary = input.required<string>();
+  /** The tool's name. */
+  readonly tool = input('');
+  readonly status = input<GlzReceiptStatus>('done');
+  readonly durationMs = input<number | null>(null);
+  readonly tokens = input<number | null>(null);
+  readonly cost = input<GlzMoney | null>(null);
+  readonly open = model(false);
+
+  protected readonly icon = computed(() => ICONS[this.status()]);
+  protected readonly statusWord = computed(() => STATUS_WORDS[this.status()]);
+  protected readonly statusClass = computed(() => `status-${this.status()}`);
+  /** Time, tokens and cost, those known, joined: `4.2 s · 1.2K tokens · $0.0042`. */
+  protected readonly meta = computed(() => {
+    const duration = this.durationMs();
+    const tokens = this.tokens();
+    const cost = this.cost();
+    return [
+      duration === null ? '' : formatDuration(duration),
+      tokens === null ? '' : `${formatTokens(tokens)} tokens`,
+      cost === null ? '' : formatMoney(cost),
+    ]
+      .filter((part) => part !== '')
+      .join(' · ');
+  });
+
+  protected toggled(event: Event): void {
+    if (event.target instanceof HTMLDetailsElement) {
+      this.open.set(event.target.open);
+    }
+  }
+}

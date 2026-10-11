@@ -19,6 +19,8 @@ concurrency:
 # requests restore them: per-PR copies pushed the repository past its 10 GB cache limit.
 env:
   CARGO_INCREMENTAL: "0"
+  # The web checks run in the `web` job; `cargo xtask ci` in the Rust jobs skips them.
+  GLAVE_SKIP_WEB: "1"
 
 jobs:
   linux:
@@ -78,17 +80,33 @@ jobs:
             exit 1
           fi
 
-  # The web client's TypeScript, strict: the types generated from the session API's schema
-  # (`cargo xtask ci` checks they match the Rust types) and the client written against them.
-  web-client:
+  # web/: the session API's TypeScript client, Glaze and the app. Format, lint (eslint and
+  # stylelint), type-check, unit tests with axe, the library and app builds, and end-to-end
+  # smoke tests in Chromium with axe in light and dark, under glave's Content Security Policy.
+  web:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Type-check the web client
-        run: npx --yes --package typescript@5.9.3 tsc -p web/client
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Install Chromium for the end-to-end tests
+        run: npx playwright install chromium --only-shell --with-deps
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: "0"
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build:glaze
+      - run: npm run build
+      - run: npm run e2e
 
   # Workers on Kubernetes: a kind cluster on the runner, and the Kubernetes backend's tests
   # against it (a stub in glave's place, then the glave this job builds in real workers, over

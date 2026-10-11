@@ -1,0 +1,12 @@
+@if (showAvatar()) {
+  <glz-avatar class="avatar" size="sm" [name]="author()" [hope]="hope()" />
+}
+<div class="main">
+  <p class="author" aria-hidden="true">{{ author() }}</p>
+  <div class="body">
+    <ng-content />
+    @if (streaming()) {
+      <span class="caret" aria-hidden="true"></span>
+    }
+  </div>
+</div>

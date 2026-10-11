@@ -1,0 +1,38 @@
+:host {
+  --glz-badge-bg: var(--glz-surface-sunken);
+  --glz-badge-fg: var(--glz-color-text);
+
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glz-space-1);
+  min-width: 1.5rem;
+  padding: 0.0625rem var(--glz-space-2);
+  border-radius: var(--glz-radius-full);
+  background: var(--glz-badge-bg);
+  color: var(--glz-badge-fg);
+  font-size: var(--glz-text-xs);
+  font-weight: var(--glz-weight-bold);
+  line-height: 1.4;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+:host(.glz-tone-accent) {
+  --glz-badge-bg: var(--glz-color-accent-soft);
+  --glz-badge-fg: var(--glz-color-text);
+}
+
+:host(.glz-tone-success) {
+  --glz-badge-bg: var(--glz-color-success-soft);
+  --glz-badge-fg: var(--glz-color-text);
+}
+
+:host(.glz-tone-warning) {
+  --glz-badge-bg: var(--glz-color-warning-soft);
+  --glz-badge-fg: var(--glz-color-text);
+}
+
+:host(.glz-tone-danger) {
+  --glz-badge-bg: var(--glz-color-danger-soft);
+  --glz-badge-fg: var(--glz-color-text);
+}

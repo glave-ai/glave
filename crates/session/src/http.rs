@@ -4,8 +4,13 @@
 //! `text/event-stream` of the turn's notifications ending with its response. The method may
 //! also be named in the `Glave-Method` header, for proxies and logs; when it is, it must match.
 //! Every request needs a valid sign-in: without one the answer is HTTP 401 with error `-32013`.
+//! Served with a [`Site`], any `GET` is the web app instead (`site`), with no sign-in: the app
+//! signs in to the API itself.
 
 mod body;
+mod site;
+
+pub use self::site::{NoSite, Site};
 
 use std::convert::Infallible;
 use std::future::{Future, poll_fn};
@@ -56,7 +61,25 @@ where
     B: BlobStore + 'static,
     S: Future<Output = ()>,
 {
+    serve_site(server, signin, None, listener, stop).await
+}
+
+/// As [`serve`], and with `site`, the web app too: every `GET` is one of its files.
+pub async fn serve_site<P, L, B, S>(
+    server: Server<P, L, B>,
+    signin: SignIn,
+    site: Option<Site>,
+    listener: TcpListener,
+    stop: S,
+) -> std::io::Result<()>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+    S: Future<Output = ()>,
+{
     let signin = Arc::new(signin);
+    let site = Arc::new(site);
     let mut connections = JoinSet::new();
     let mut stop = pin!(stop);
     loop {
@@ -78,11 +101,21 @@ where
             continue;
         };
         let peer = peer.ip();
-        let (server, signin) = (server.clone(), Arc::clone(&signin));
+        let (server, signin, site) = (server.clone(), Arc::clone(&signin), Arc::clone(&site));
         connections.spawn(async move {
             let service = service_fn(move |request| {
-                let (server, signin) = (server.clone(), Arc::clone(&signin));
-                async move { Ok::<_, Infallible>(answer(&server, &signin, peer, request).await) }
+                let (server, signin, site) =
+                    (server.clone(), Arc::clone(&signin), Arc::clone(&site));
+                async move {
+                    let answered = match site.as_ref() {
+                        Some(site) if is_read(request.method()) => {
+                            let nonce = site::nonce(&server.nonce());
+                            site.answer(request.uri().path(), &nonce).await
+                        }
+                        _ => answer(&server, &signin, peer, request).await,
+                    };
+                    Ok::<_, Infallible>(answered)
+                }
             });
             // A client that goes away mid-request ends only its own connection.
             let _ = http1::Builder::new()
@@ -178,6 +211,11 @@ where
         Some(id) => json(StatusCode::OK, respond(Some(&id), answered.as_ref())),
         None => accepted(),
     }
+}
+
+/// Whether `method` reads a page rather than calling the API.
+fn is_read(method: &Method) -> bool {
+    *method == Method::GET || *method == Method::HEAD
 }
 
 /// The token in `Authorization: Bearer <token>`, if there is one.

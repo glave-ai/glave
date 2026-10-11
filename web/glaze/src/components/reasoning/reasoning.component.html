@@ -1,0 +1,4 @@
+<details class="details" [open]="open()" (toggle)="toggled($event)">
+  <summary class="summary" data-testid="reasoning-summary">{{ summary() }}</summary>
+  <div class="text"><ng-content /></div>
+</details>

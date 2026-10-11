@@ -1,0 +1,17 @@
+@use '../button/button';
+@include button.button;
+
+:host {
+  width: var(--glz-control-height-md);
+  padding: 0;
+}
+
+:host(.glz-button--sm) {
+  width: var(--glz-control-height-sm);
+  padding: 0;
+}
+
+:host(.glz-button--lg) {
+  width: var(--glz-control-height-lg);
+  padding: 0;
+}

@@ -1,0 +1,8 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--glz-space-1);
+  width: var(--glz-rail-width);
+  padding: var(--glz-space-2) var(--glz-space-1);
+}

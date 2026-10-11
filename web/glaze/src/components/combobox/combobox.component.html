@@ -1,0 +1,50 @@
+<input
+  #input
+  class="glz-input"
+  type="text"
+  role="combobox"
+  autocomplete="off"
+  aria-autocomplete="list"
+  data-testid="combobox-input"
+  [attr.id]="inputId()"
+  [attr.aria-label]="ariaLabel()"
+  [attr.aria-expanded]="open()"
+  [attr.aria-controls]="listboxId"
+  [attr.aria-activedescendant]="activeId()"
+  [attr.aria-describedby]="describedBy()"
+  [attr.aria-invalid]="ariaInvalid()"
+  [attr.aria-required]="ariaRequired()"
+  [placeholder]="placeholder()"
+  [disabled]="isDisabled()"
+  [value]="query()"
+  (input)="typing($event)"
+  (keydown)="keydown($event)"
+  (click)="toggle()"
+  (blur)="blurred()"
+/>
+<ul
+  #listbox
+  class="listbox"
+  role="listbox"
+  popover="manual"
+  data-testid="combobox-listbox"
+  [id]="listboxId"
+>
+  @for (option of shown(); track option.value) {
+    <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -- the input owns the keyboard through aria-activedescendant; options only take pointer clicks -->
+    <li
+      class="option"
+      role="option"
+      data-testid="combobox-option"
+      [id]="option.id"
+      [class.active]="option.active"
+      [attr.aria-selected]="option.selected"
+      (mousedown)="keepFocus($event)"
+      (click)="choose(option.value)"
+    >
+      {{ option.label }}
+    </li>
+  } @empty {
+    <li class="empty" role="presentation">{{ emptyText() }}</li>
+  }
+</ul>

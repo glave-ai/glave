@@ -1,0 +1,58 @@
+<section id="ai" aria-labelledby="ai-heading">
+  <h2 id="ai-heading">{{ copy.heading }}</h2>
+  <div class="thread demo" data-testid="showcase-thread" glzStickToBottom [(atBottom)]="atBottom">
+    <glz-message from="person" [author]="copy.you">
+      <p class="text">{{ copy.ask }}</p>
+    </glz-message>
+    <glz-message from="model" hope [author]="copy.hope">
+      <glz-reasoning>{{ copy.reasoning }}</glz-reasoning>
+      <glz-receipt tool="search" summary="parse_date" status="done" [durationMs]="120" />
+      <glz-receipt
+        tool="bash"
+        summary="cargo test"
+        status="failed"
+        [durationMs]="4200"
+        [tokens]="1200"
+        [cost]="cost"
+      >
+        <pre>test dates::parses_utc ... FAILED</pre>
+      </glz-receipt>
+      <glz-approval-card
+        tool="bash"
+        summary="Run the whole test suite again"
+        [decision]="decision()"
+        (decide)="decide($event)"
+      >
+        <pre>cargo test --workspace</pre>
+      </glz-approval-card>
+      <glz-question-card [questions]="questions" [answered]="answers()" (answer)="answer($event)" />
+      <p class="text">{{ copy.reply }}</p>
+    </glz-message>
+    <glz-message from="note" [author]="copy.noteAuthor">{{ copy.note }}</glz-message>
+    @for (message of messages(); track message.id) {
+      <glz-message data-testid="showcase-message" [from]="message.from" [author]="message.author">
+        <p class="text">{{ message.text }}</p>
+      </glz-message>
+    }
+  </div>
+  @if (awayFromBottom()) {
+    <button glzButton size="sm" class="latest" (click)="jumpToLatest()">{{ copy.latest }}</button>
+  }
+  <glz-composer
+    class="demo"
+    data-testid="showcase-composer"
+    [busy]="busy()"
+    [(value)]="draft"
+    (send)="send($event)"
+    (stop)="stop()"
+  >
+    <glz-combobox
+      glzComposerStart
+      class="model"
+      [label]="copy.model"
+      [options]="models"
+      [(value)]="model"
+    />
+    <glz-switch glzComposerEnd [(checked)]="cloud">{{ copy.cloud }}</glz-switch>
+  </glz-composer>
+</section>

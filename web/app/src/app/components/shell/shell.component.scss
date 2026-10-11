@@ -1,0 +1,34 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.name {
+  color: var(--glz-color-text);
+  text-decoration: none;
+}
+
+.main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.main:focus {
+  outline: none;
+}
+
+.skip {
+  position: absolute;
+  inset-inline-start: var(--glz-space-2);
+  top: -3rem;
+  z-index: 100;
+  padding: var(--glz-space-2) var(--glz-space-3);
+  border-radius: var(--glz-radius-md);
+  background: var(--glz-surface-overlay);
+}
+
+.skip:focus {
+  top: var(--glz-space-2);
+}

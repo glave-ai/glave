@@ -1,0 +1,30 @@
+:host {
+  display: block;
+  width: var(--glz-skeleton-width, 100%);
+  height: var(--glz-skeleton-height, 1em);
+  border-radius: var(--glz-radius-sm);
+  background: var(--glz-surface-sunken);
+  animation: glz-skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+:host(.glz-skeleton-block) {
+  height: var(--glz-skeleton-height, 4rem);
+  border-radius: var(--glz-radius-md);
+}
+
+:host(.glz-skeleton-circle) {
+  height: var(--glz-skeleton-height, var(--glz-skeleton-width, 2rem));
+  border-radius: var(--glz-radius-full);
+}
+
+@keyframes glz-skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host {
+    animation: none;
+  }
+}

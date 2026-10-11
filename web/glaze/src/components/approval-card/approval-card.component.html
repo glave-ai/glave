@@ -1,0 +1,37 @@
+<div class="header">
+  <glz-icon class="icon" [icon]="icon" />
+  <p class="heading" [id]="headingId">{{ heading() }}</p>
+</div>
+<p class="summary">
+  @if (tool()) {
+    <span class="tool">{{ tool() }}</span>
+  }
+  {{ summary() }}
+</p>
+<div class="detail"><ng-content /></div>
+@if (decidedText(); as decided) {
+  <p class="decided" data-testid="approval-decided">{{ decided }}</p>
+} @else {
+  <div class="actions">
+    <button glzButton data-testid="approval-deny" [disabled]="busy()" (click)="deny()">
+      {{ denyLabel() }}
+    </button>
+    <button
+      glzButton
+      data-testid="approval-allow-thread"
+      [disabled]="busy()"
+      (click)="allowForThread()"
+    >
+      {{ allowForThreadLabel() }}
+    </button>
+    <button
+      glzButton
+      variant="primary"
+      data-testid="approval-allow-once"
+      [disabled]="busy()"
+      (click)="allowOnce()"
+    >
+      {{ allowOnceLabel() }}
+    </button>
+  </div>
+}

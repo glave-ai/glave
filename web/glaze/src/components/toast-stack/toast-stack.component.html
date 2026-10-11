@@ -1,0 +1,19 @@
+@for (toast of shown(); track toast.id) {
+  <div data-testid="toast" [class]="toast.toneClass">
+    <span class="message">{{ toast.message }}</span>
+    @if (toast.action; as action) {
+      <button type="button" class="action" data-testid="toast-action" (click)="act(toast.id)">
+        {{ action.label }}
+      </button>
+    }
+    <button
+      glzIconButton
+      size="sm"
+      data-testid="toast-dismiss"
+      [label]="dismissLabel()"
+      (click)="dismiss(toast.id)"
+    >
+      <glz-icon [icon]="closeIcon" />
+    </button>
+  </div>
+}

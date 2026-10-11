@@ -1,0 +1,5 @@
+:host {
+  display: flex;
+  flex-direction: var(--glz-radio-group-direction, column);
+  gap: var(--glz-space-2);
+}

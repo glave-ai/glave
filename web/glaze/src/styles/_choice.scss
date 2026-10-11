@@ -1,0 +1,39 @@
+// The shared look of a checkbox or radio: a visually hidden native input that keeps keyboard
+// and screen-reader behaviour, followed by a drawn mark and the label's text.
+@mixin choice {
+  .choice {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: var(--glz-space-2);
+    cursor: pointer;
+    line-height: var(--glz-leading-normal);
+  }
+
+  .native {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+  }
+
+  .mark {
+    flex: none;
+    width: 1.125rem;
+    height: 1.125rem;
+    margin-top: 0.19em;
+    border: 2px solid var(--glz-color-border-strong);
+    background: var(--glz-surface-card);
+    transition: background-color var(--glz-duration-fast) var(--glz-easing);
+  }
+
+  .native:focus-visible + .mark {
+    box-shadow: var(--glz-focus-ring);
+  }
+
+  .native:disabled + .mark,
+  .native:disabled ~ .text {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+}

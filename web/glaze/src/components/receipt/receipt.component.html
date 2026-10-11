@@ -1,0 +1,13 @@
+<details class="details" [open]="open()" (toggle)="toggled($event)">
+  <summary class="line" data-testid="receipt-summary">
+    <glz-icon class="status" [icon]="icon()" [label]="statusWord()" />
+    @if (tool()) {
+      <span class="tool">{{ tool() }}</span>
+    }
+    <span class="what">{{ summary() }}</span>
+    @if (meta()) {
+      <span class="meta">{{ meta() }}</span>
+    }
+  </summary>
+  <div class="evidence" data-testid="receipt-evidence"><ng-content /></div>
+</details>
