@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use glave_ports::{ComputerError, Sandbox};
 
-use super::profile::{Places, profile};
+use super::profile::{Places, home_secrets, profile};
 use super::{Launch, failed, own_git_folder, resolved};
 
 /// The only `sandbox-exec` trusted: an earlier one in `PATH` could be planted.
@@ -37,6 +37,7 @@ impl Enforcer {
         root: &Path,
         git_common: Option<&Path>,
         _helper: Option<&Path>,
+        cache: Option<&Path>,
     ) -> Result<(Self, PathBuf), ComputerError> {
         if !available() {
             return Err(ComputerError::Unsupported(format!(
@@ -60,11 +61,16 @@ impl Enforcer {
             }
             None => None,
         };
+        let hidden = match resolved(sandbox.home.as_deref()).await {
+            Some(home) => hidden(&home).await,
+            None => Vec::new(),
+        };
         let places = Places {
             root: root.to_owned(),
             temp: temp.clone(),
-            home: resolved(sandbox.home.as_deref()).await,
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
+            hidden,
+            cache: cache.map(Path::to_path_buf),
             git_common,
             git_own,
         };
@@ -102,6 +108,22 @@ impl Drop for Enforcer {
         // Best effort: the folder is in the system's temp folder, which is cleaned anyway.
         let _ = std::fs::remove_dir_all(&self.temp);
     }
+}
+
+/// The home folder's credential stores, each as named and, when a link leads elsewhere, where
+/// it leads: Seatbelt matches the real path, so a `~/.config` that is a link to dotfiles would
+/// otherwise leave what it holds readable.
+async fn hidden(home: &Path) -> Vec<PathBuf> {
+    let mut hidden = Vec::new();
+    for path in home_secrets(home) {
+        if let Ok(real) = tokio::fs::canonicalize(&path).await
+            && real != path
+        {
+            hidden.push(real);
+        }
+        hidden.push(path);
+    }
+    hidden
 }
 
 /// A temp folder of the sandbox's own inside the system's, so commands cannot write other

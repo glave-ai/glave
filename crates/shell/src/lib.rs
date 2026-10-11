@@ -6,6 +6,7 @@
 //! These checks are tripwires for mistakes and plain attacks, not a security boundary. A
 //! determined program can always say the same thing another way; the sandbox is the boundary.
 
+mod credentials;
 mod judge;
 mod parse;
 mod paths;
