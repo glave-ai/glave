@@ -293,16 +293,6 @@ where
         &self.workspace
     }
 
-    /// The harness's clock.
-    pub fn clock(&self) -> &dyn Clock {
-        self.clock.as_ref()
-    }
-
-    /// The harness's source of randomness for ids.
-    pub fn entropy(&self) -> &dyn Entropy {
-        self.entropy.as_ref()
-    }
-
     /// The log events are written to.
     pub fn log(&self) -> &L {
         &self.log

@@ -1,6 +1,7 @@
-//! Goals against a scripted model: a goal keeps the thread working across turns until its
-//! check passes or the model marks it complete, the person stops it, its budget runs out, or
-//! it stalls; it survives a restart; and its tool is offered only during its turns.
+//! Goals against a scripted model: a goal keeps the thread working across turns until the
+//! model marks it complete or paused, the person stops it, its budget runs out, or it stalls;
+//! a paused goal resumes; it survives a restart; and its tool is offered only during its
+//! turns.
 
 #[cfg(test)]
 #[path = "support/script.rs"]
@@ -63,89 +64,131 @@ mod goals {
         request.tools.iter().any(|spec| spec.name == tool)
     }
 
-    fn goal(objective: &str, check: Option<&str>, budget: u64) -> Goal {
+    fn goal(objective: &str, budget: u64) -> Goal {
         Goal {
             objective: objective.into(),
-            check: check.map(str::to_owned),
             token_budget: budget,
         }
     }
 
     #[test]
-    fn a_goal_continues_until_its_check_passes() {
-        let dir = folder("goal-check");
+    fn the_model_verifies_then_says_the_goal_is_met() {
+        let dir = folder("goal-met");
         block_on(async {
             let answers = vec![
                 done("I looked around."),
                 call("write", json!({"path": "done.txt", "content": "yes\n"})),
-                done("Wrote it."),
+                call("read", json!({"path": "done.txt"})),
+                complete(),
+                done("Wrote it and read it back."),
             ];
             let (harness, seen) =
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
-            let check = Some("test -f done.txt");
+            let objective = "make done.txt; read it back to check";
             let summary = harness
                 .start_goal(
                     &mut thread,
-                    goal("make done.txt", check, 1_000_000),
+                    goal(objective, 1_000_000),
                     &Caller::default(),
                     &Cancel::new(),
                     &mut |_| {},
                 )
                 .await
                 .unwrap();
-            assert_eq!(summary.model_calls, 3);
+            assert_eq!(summary.model_calls, 5);
             let events = events(harness.log(), thread.id).await;
-            assert_eq!(ended(&events), [GoalReason::MetByCheck]);
+            assert_eq!(ended(&events), [GoalReason::Met]);
             let kinds = kinds(&events);
             assert_eq!(kinds.get(1), Some(&"goal.set"));
             assert_eq!(kinds.last(), Some(&"goal.ended"));
             let continued = continuations(&events);
             assert_eq!(continued.len(), 1, "one continuation: {continued:?}");
             let first = continued.first().unwrap();
-            assert!(first.contains("<objective>\nmake done.txt\n</objective>"));
-            assert!(first.contains("The check `test -f done.txt` failed"));
+            assert!(first.contains(&format!("<objective>\n{objective}\n</objective>")));
+            assert!(first.contains("verify every requirement"));
             let seen = seen.lock().unwrap();
-            assert!(seen.iter().all(|request| !offers(request, UPDATE_GOAL)));
+            assert!(seen.iter().all(|request| offers(request, UPDATE_GOAL)));
+            // The tool and the continuation carry the goal; the system prompt stays as it is.
             assert!(
                 seen.iter()
-                    .all(|request| request.system.contains("`test -f done.txt` passes"))
+                    .all(|request| !request.system.contains("# Goal"))
+            );
+            // The person's objective opens the goal; glave writes only the continuation.
+            let opening = seen.first().unwrap().messages.last().unwrap();
+            assert!(
+                matches!(opening, Message::User { parts } if parts.iter().any(
+                |part| matches!(part, Part::Text { text } if text == objective)))
             );
             let progress = thread.goal().unwrap();
-            assert_eq!(progress.ended, Some(GoalReason::MetByCheck));
+            assert_eq!(progress.ended, Some(GoalReason::Met));
             assert_eq!(progress.turns, 2);
-            assert_eq!(progress.tokens, 330);
+            assert_eq!(progress.tokens, 550);
         });
     }
 
     #[test]
-    fn without_a_check_the_model_says_when_the_goal_is_met() {
-        let dir = folder("goal-model");
+    fn the_model_pauses_with_a_reason_and_the_person_resumes_the_goal() {
+        let dir = folder("goal-pause");
         block_on(async {
-            let answers = vec![done("Started."), complete(), done("All done.")];
+            let answers = vec![
+                call(
+                    UPDATE_GOAL,
+                    json!({"status": "paused", "reason": "Which port?"}),
+                ),
+                done("I need the port to go on."),
+                done("Noted: 8080."),
+                done("Hi."),
+                complete(),
+                done("Serving on 8080."),
+            ];
             let (harness, seen) =
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+            let caller = Caller::default();
             let mut thread = harness.start_thread(scope()).await.unwrap();
+            let serve = goal("serve it", 1_000_000);
             harness
-                .start_goal(
-                    &mut thread,
-                    goal("tidy up", None, 1_000_000),
-                    &Caller::default(),
-                    &Cancel::new(),
-                    &mut |_| {},
-                )
+                .start_goal(&mut thread, serve, &caller, &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            let paused = harness.goal(scope(), thread.id).await.unwrap().unwrap();
+            assert_eq!(paused.ended, Some(GoalReason::Paused));
+            assert_eq!(paused.note.as_deref(), Some("Which port?"));
+            assert!(paused.resumable() && !paused.active());
+            assert!(!harness.stop_goal(&mut thread, &caller).await.unwrap());
+
+            // The person answers in a plain turn, which looks like any turn without a goal.
+            harness
+                .run_turn(&mut thread, "Use 8080.", &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            let mut fresh = harness.start_thread(scope()).await.unwrap();
+            harness
+                .run_turn(&mut fresh, "hello", &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            {
+                let seen = seen.lock().unwrap();
+                let (plain, other) = (seen.get(2).unwrap(), seen.get(3).unwrap());
+                assert!(!offers(plain, UPDATE_GOAL));
+                assert_eq!((&plain.tools, &plain.system), (&other.tools, &other.system));
+            }
+
+            harness
+                .continue_goal(&mut thread, &caller, &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
             let events = events(harness.log(), thread.id).await;
-            assert_eq!(ended(&events), [GoalReason::MetPerModel]);
-            let seen = seen.lock().unwrap();
-            assert!(seen.iter().all(|request| offers(request, UPDATE_GOAL)));
-            assert!(seen.iter().all(|request| request.system.contains("# Goal")));
-            // The person's objective opens the goal; glave writes only the continuation.
-            let first = seen.first().unwrap().messages.last().unwrap();
-            assert!(matches!(first, Message::User { parts } if parts.iter().any(
-                |part| matches!(part, Part::Text { text } if text == "tidy up"))));
-            assert_eq!(continuations(&events).len(), 1);
+            assert_eq!(ended(&events), [GoalReason::Paused, GoalReason::Met]);
+            assert!(kinds(&events).contains(&"goal.resumed"));
+            let note = events.iter().find_map(|event| match &event.body {
+                Body::GoalEnded(ended) => ended.note.clone(),
+                _ => None,
+            });
+            assert_eq!(note.as_deref(), Some("Which port?"));
+            let read = harness.goal(scope(), thread.id).await.unwrap().unwrap();
+            assert_eq!(Some(&read), thread.goal(), "the log and the thread agree");
+            assert_eq!((read.turns, read.tokens, read.note), (2, 440, None));
         });
     }
 
@@ -167,7 +210,7 @@ mod goals {
             harness
                 .start_goal(
                     &mut thread,
-                    goal("the impossible", None, 250),
+                    goal("the impossible", 250),
                     &Caller::default(),
                     &Cancel::new(),
                     &mut |_| {},
@@ -198,13 +241,7 @@ mod goals {
             cancel.cancel();
             let caller = Caller::default();
             harness
-                .start_goal(
-                    &mut thread,
-                    goal("x", None, 1_000),
-                    &caller,
-                    &cancel,
-                    &mut |_| {},
-                )
+                .start_goal(&mut thread, goal("x", 1_000), &caller, &cancel, &mut |_| {})
                 .await
                 .unwrap();
             assert_eq!(
@@ -222,7 +259,7 @@ mod goals {
             let failed = harness
                 .start_goal(
                     &mut thread,
-                    goal("x", None, 1_000),
+                    goal("x", 1_000),
                     &caller,
                     &Cancel::new(),
                     &mut |_| {},
@@ -246,7 +283,7 @@ mod goals {
             let crashed = first
                 .start_goal(
                     &mut thread,
-                    goal("ship it", None, 1_000_000),
+                    goal("ship it", 1_000_000),
                     &caller,
                     &Cancel::new(),
                     &mut |_| {},
@@ -280,7 +317,8 @@ mod goals {
                 .await
                 .unwrap();
             let events = events(second.log(), thread.id).await;
-            assert_eq!(ended(&events), [GoalReason::MetPerModel]);
+            assert_eq!(ended(&events), [GoalReason::Met]);
+            assert!(!kinds(&events).contains(&"goal.resumed"), "it never paused");
             let opening = seen
                 .lock()
                 .unwrap()
@@ -307,7 +345,7 @@ mod goals {
             harness
                 .start_goal(
                     &mut thread,
-                    goal("x", None, 1_000_000),
+                    goal("x", 1_000_000),
                     &Caller::default(),
                     &Cancel::new(),
                     &mut |_| {},

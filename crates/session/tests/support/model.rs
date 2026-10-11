@@ -8,9 +8,7 @@ use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_computer::LocalComputers;
-use glave_event::{
-    Arguments, ModelRef, Part, RawEvent, StopReason, ThreadId, TokenCounts, Usage,
-};
+use glave_event::{Arguments, ModelRef, Part, RawEvent, StopReason, ThreadId, TokenCounts, Usage};
 use glave_harness::{Clock, Entropy, Settings, Workspace};
 use glave_ports::{
     BlobStore, Completion, Delta, EventLog, MemoryBlobs, MemoryLog, ModelProvider, ModelRequest,

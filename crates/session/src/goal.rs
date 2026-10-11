@@ -22,14 +22,14 @@ where
 {
     /// Sets `goal` on `thread` for `caller` and streams its turns: their notifications, then
     /// how the last one ended, with every turn's calls, tokens and cost added up. Without a
-    /// goal, continues the thread's active one.
+    /// goal, continues the thread's active one or resumes the one the model paused.
     pub async fn start_goal_as(
         &self,
         caller: &Caller,
         thread: ThreadId,
         goal: Option<Goal>,
     ) -> Result<TurnStream, ApiError> {
-        if goal.is_none() && !self.goal(thread).await?.is_some_and(|g| g.active()) {
+        if goal.is_none() && !self.goal(thread).await?.is_some_and(|g| g.resumable()) {
             return Err(no_goal(thread));
         }
         let (finish, done) = watch::channel(None);

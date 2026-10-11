@@ -199,7 +199,8 @@ mod outside {
             let refused = turn(&server, thread).await.unwrap_err();
             assert_eq!(refused.code, code::ARCHIVED);
             // The refused turn wrote nothing.
-            let started = |kinds: Vec<String>| kinds.iter().filter(|k| *k == "turn.started").count();
+            let started =
+                |kinds: Vec<String>| kinds.iter().filter(|k| *k == "turn.started").count();
             assert_eq!(started(kinds(&server, thread).await), 1);
 
             server
@@ -241,7 +242,10 @@ mod outside {
             .await
             .unwrap();
 
-            assert_eq!(turn(&server, thread).await.unwrap_err().code, code::NO_THREAD);
+            assert_eq!(
+                turn(&server, thread).await.unwrap_err().code,
+                code::NO_THREAD
+            );
             let got = server.request(Request::ThreadGet { thread }).await;
             assert_eq!(got.unwrap_err().code, code::NO_THREAD);
         });

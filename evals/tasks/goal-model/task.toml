@@ -12,4 +12,4 @@ approval = "auto"
 # Three tool steps a turn, so the work takes several turns and the goal must continue.
 max_steps = 4
 goal = { budget = 600000 }
-checks = [{ goal_ended = ["met_per_model"] }]
+checks = [{ goal_ended = ["met"] }]

@@ -55,12 +55,11 @@ pub struct Task {
     pub goal: Option<TaskGoal>,
 }
 
-/// A goal, as `[glave] goal = { check = "cargo test", budget = 200000 }` sets it.
+/// A goal, as `[glave] goal = { budget = 200000 }` sets it. How to verify it is the
+/// instruction's to say, in words.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskGoal {
-    /// The goal's check command.
-    pub check: Option<String>,
     /// Its token budget; glave's default when unset.
     pub budget: Option<u64>,
 }

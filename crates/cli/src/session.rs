@@ -316,7 +316,6 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
     let code = if let Some(objective) = &args.goal {
         let goal = Goal {
             objective: objective.clone(),
-            check: args.check.clone(),
             token_budget: args.goal_budget.unwrap_or(DEFAULT_BUDGET),
         };
         client.goal(goal, &mut printer).await

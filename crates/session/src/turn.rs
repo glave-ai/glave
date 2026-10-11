@@ -138,12 +138,10 @@ where
             Request::GoalStart {
                 thread,
                 objective,
-                check,
                 budget,
             } => {
                 let goal = objective.map(|objective| Goal {
                     objective,
-                    check,
                     token_budget: budget.unwrap_or(DEFAULT_BUDGET),
                 });
                 Ok(self.start_goal_as(caller, thread, goal).await)

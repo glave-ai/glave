@@ -326,12 +326,12 @@ impl Printer {
         flush();
     }
 
-    /// How a goal ended, and the tokens its turns used.
-    pub fn goal_ended(&mut self, reason: GoalReason, tokens: u64) {
+    /// How a goal ended, the tokens its turns used, and, when paused, what the model needs.
+    pub fn goal_ended(&mut self, reason: GoalReason, tokens: u64, note: Option<&str>) {
         self.waiting.stop();
         let (word, color, why) = match reason {
-            GoalReason::MetByCheck => ("goal met", CYAN, "the check passed"),
-            GoalReason::MetPerModel => ("goal met", CYAN, "the model says it is done"),
+            GoalReason::Met => ("goal met", CYAN, "the model checked it is done"),
+            GoalReason::Paused => ("goal paused", YELLOW, note.unwrap_or("the model needs you")),
             GoalReason::Stopped => ("goal stopped", YELLOW, "you stopped it"),
             GoalReason::Budget => ("goal stopped", YELLOW, "its token budget ran out"),
             GoalReason::Stalled => (
