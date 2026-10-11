@@ -7,6 +7,7 @@ use std::sync::Arc;
 use deadpool_postgres::Pool;
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
 use glave_keys::{EventFields, KeyError, erased_payload};
+use glave_ports::search::{Found, indexed, query_terms};
 use glave_ports::{EventLog, LogError, Scope, check_append};
 use jiff::Timestamp;
 use serde_json::value::RawValue;
@@ -36,6 +37,20 @@ const INSERT: &str = "
     FROM UNNEST($4::bigint[], $5::uuid[], $6::timestamptz[], $7::text[], $8::bigint[],
                 $9::bigint[], $10::bytea[], $11::text[])
         AS batch (seq, id, at, type, v, glave, data, key_id)";
+
+/// The batch's searchable events into the index, each word exactly as hashed.
+const INDEX: &str = "
+    INSERT INTO event_search (org, space, thread, seq, terms)
+    SELECT $1, $2, $3, seq, array_to_tsvector(string_to_array(words, ' '))
+    FROM UNNEST($4::bigint[], $5::text[]) AS batch (seq, words)
+    WHERE words IS NOT NULL";
+
+/// The events matching any hashed word, best match first, then newest first.
+const SEARCH: &str = "
+    SELECT thread, seq FROM event_search
+    WHERE org = $1 AND space = $2 AND terms @@ $3::text::tsquery
+    ORDER BY ts_rank(terms, $3::text::tsquery) DESC, pos DESC
+    LIMIT $4";
 
 impl EventLog for PostgresLog {
     fn append(
@@ -92,7 +107,63 @@ impl EventLog for PostgresLog {
                 )
                 .await
                 .map_err(database)?;
+            if columns.words.iter().any(Option::is_some) {
+                let index = transaction.prepare_cached(INDEX).await.map_err(database)?;
+                transaction
+                    .execute(
+                        &index,
+                        &[&org, &space, &thread, &columns.seq, &columns.words],
+                    )
+                    .await
+                    .map_err(database)?;
+            }
             transaction.commit().await.map_err(database)
+        }
+    }
+
+    fn search(
+        &self,
+        scope: &Scope,
+        query: &str,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
+        let scope = *scope;
+        let words = query_terms(query);
+        let pool = self.pool.clone();
+        let keys = Arc::clone(&self.keys);
+        async move {
+            if words.is_empty() || limit == 0 {
+                return Ok(Vec::new());
+            }
+            let Some(hashed) = keys.search_terms(&scope, &words).await.map_err(sealing)? else {
+                return Ok(Vec::new());
+            };
+            // Hashes are hex, so quoting each is all the query syntax needs.
+            let query = hashed
+                .iter()
+                .map(|word| format!("'{word}'"))
+                .collect::<Vec<_>>()
+                .join(" | ");
+            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+            let client = connection(&pool).await.map_err(storage)?;
+            let statement = client.prepare_cached(SEARCH).await.map_err(database)?;
+            let rows = client
+                .query(
+                    &statement,
+                    &[&scope.org.as_uuid(), &scope.space.as_uuid(), &query, &limit],
+                )
+                .await
+                .map_err(database)?;
+            rows.iter()
+                .map(|row| {
+                    let thread: Uuid = row.try_get(0).map_err(corrupt)?;
+                    let seq: i64 = row.try_get(1).map_err(corrupt)?;
+                    Ok(Found {
+                        thread: ThreadId::try_from(thread).map_err(corrupt)?,
+                        seq: stored_seq(u64::try_from(seq).map_err(corrupt)?)?,
+                    })
+                })
+                .collect()
         }
     }
 
@@ -183,6 +254,8 @@ struct Columns {
     glave: Vec<i64>,
     data: Vec<Vec<u8>>,
     key_id: Vec<String>,
+    /// Each event's hashed words, for the search index; `None` for one never searched.
+    words: Vec<Option<String>>,
 }
 
 impl Columns {
@@ -201,6 +274,7 @@ impl Columns {
             glave: Vec::with_capacity(events.len()),
             data: Vec::with_capacity(events.len()),
             key_id: Vec::with_capacity(events.len()),
+            words: Vec::with_capacity(events.len()),
         };
         for event in events {
             let seq = i64::try_from(event.seq.get())
@@ -214,6 +288,13 @@ impl Columns {
             let sealed = keys.seal_event(scope, event).await.map_err(sealing)?;
             columns.data.push(sealed.bytes);
             columns.key_id.push(sealed.key_id);
+            let words = indexed(event);
+            let hashed = if words.is_empty() {
+                None
+            } else {
+                keys.search_terms(scope, &words).await.map_err(sealing)?
+            };
+            columns.words.push(hashed.map(|hashed| hashed.join(" ")));
         }
         Ok(columns)
     }

@@ -24,10 +24,10 @@ pub use payload::{
     ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, ForkPoint,
     GatewayToolCalled, GoalEnded, GoalReason, GoalResumed, GoalSet, HookPoint, HookRan, HookResult,
     MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
-    MessageAdded, ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome, ParentCall, Part,
-    Principal, PrincipalKind, Producer, Role, StopReason, ThreadArchived, ThreadCompacted,
-    ThreadDeleted, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
-    ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
+    MemoryTidied, MessageAdded, ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome,
+    ParentCall, Part, Principal, PrincipalKind, Producer, Role, StopReason, ThreadArchived,
+    ThreadCompacted, ThreadDeleted, ThreadStarted, ThreadUnarchived, TokenCounts,
+    ToolCallCompleted, ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
 };
 pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,

@@ -52,7 +52,7 @@ pub enum Remembering {
 }
 
 /// A memory's text, checked: one short line, never a secret.
-fn checked(text: &str) -> Result<String, MemoryError> {
+pub(crate) fn checked(text: &str) -> Result<String, MemoryError> {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if text.is_empty() {
         return Err(MemoryError::Invalid("a memory needs some text".into()));
@@ -74,7 +74,7 @@ fn checked(text: &str) -> Result<String, MemoryError> {
 }
 
 /// About how many tokens a memory takes in view.
-fn tokens(text: &str) -> usize {
+pub(crate) fn tokens(text: &str) -> usize {
     text.chars().count().saturating_add(LINE_CHARS).div_ceil(4)
 }
 

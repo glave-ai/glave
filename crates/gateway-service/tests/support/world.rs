@@ -46,6 +46,15 @@ impl EventLog for SharedLog {
     async fn threads(&self, scope: &Scope, limit: usize) -> Result<Vec<ThreadId>, LogError> {
         self.0.threads(scope, limit).await
     }
+
+    async fn search(
+        &self,
+        scope: &Scope,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<glave_ports::search::Found>, LogError> {
+        self.0.search(scope, query, limit).await
+    }
 }
 
 /// Bob may not use the judge's model, nor any tool of the `tracker` server.

@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
 use glave_keys::{EventFields, KeyError, Sealed, erased_payload};
+use glave_ports::search::{Found, indexed, query_terms};
 use glave_ports::{EventLog, LogError, Scope, check_append};
 use rusqlite::{Connection, ErrorCode, TransactionBehavior, params};
 use serde_json::value::RawValue;
@@ -51,13 +52,16 @@ impl EventLog for SqliteLog {
             if events.is_empty() {
                 return Ok(());
             }
-            // Sealing may read keys from the database, so it happens before the transaction.
+            // Sealing may read keys from the database, so it happens before the transaction,
+            // and so does hashing the words the search index keeps.
             let mut sealed = Vec::with_capacity(events.len());
+            let mut words = Vec::with_capacity(events.len());
             for event in &events {
                 sealed.push(this.keys.seal_event(&scope, event).await.map_err(sealing)?);
+                words.push(index_words(&this.keys, &scope, event).await?);
             }
             let outcome = run(&this.connection, move |connection| {
-                Ok(append_now(connection, &scope, &events, &sealed))
+                Ok(append_now(connection, &scope, &events, &sealed, &words))
             })
             .await;
             match outcome {
@@ -172,6 +176,64 @@ impl EventLog for SqliteLog {
         }
     }
 
+    fn search(
+        &self,
+        scope: &Scope,
+        query: &str,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
+        let scope = *scope;
+        let words = query_terms(query);
+        let this = self.clone();
+        async move {
+            if words.is_empty() || limit == 0 {
+                return Ok(Vec::new());
+            }
+            let Some(hashed) = this
+                .keys
+                .search_terms(&scope, &words)
+                .await
+                .map_err(sealing)?
+            else {
+                return Ok(Vec::new());
+            };
+            // Hashes are hex, so quoting them is all FTS5's query syntax needs.
+            let expression = hashed
+                .iter()
+                .map(|word| format!("\"{word}\""))
+                .collect::<Vec<_>>()
+                .join(" OR ");
+            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+            let rows = run(&this.connection, move |connection| {
+                let mut statement = connection.prepare_cached(
+                    "SELECT thread, seq FROM event_search
+                     WHERE event_search MATCH ?1 AND org = ?2 AND space = ?3
+                     ORDER BY bm25(event_search), rowid DESC LIMIT ?4",
+                )?;
+                let rows = statement.query_map(
+                    params![
+                        expression,
+                        scope.org.to_string(),
+                        scope.space.to_string(),
+                        limit
+                    ],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                )?;
+                rows.collect::<rusqlite::Result<Vec<(String, i64)>>>()
+            })
+            .await
+            .map_err(|e| LogError::Storage(e.to_string()))?;
+            rows.into_iter()
+                .map(|(thread, seq)| {
+                    Ok(Found {
+                        thread: ThreadId::try_from(parse_uuid(&thread)?).map_err(corrupt)?,
+                        seq: Seq::new(u64::try_from(seq).map_err(corrupt)?).map_err(corrupt)?,
+                    })
+                })
+                .collect()
+        }
+    }
+
     fn threads(
         &self,
         scope: &Scope,
@@ -201,11 +263,26 @@ impl EventLog for SqliteLog {
     }
 }
 
+/// The words `event` is found by, hashed for `scope`'s index; `None` when it is not searched.
+async fn index_words(
+    keys: &SqliteKeyring,
+    scope: &Scope,
+    event: &RawEvent,
+) -> Result<Option<String>, LogError> {
+    let words = indexed(event);
+    if words.is_empty() {
+        return Ok(None);
+    }
+    let hashed = keys.search_terms(scope, &words).await.map_err(sealing)?;
+    Ok(hashed.map(|hashed| hashed.join(" ")))
+}
+
 fn append_now(
     connection: &mut Connection,
     scope: &Scope,
     events: &[RawEvent],
     sealed: &[Sealed],
+    words: &[Option<String>],
 ) -> Result<(), AppendFailure> {
     let Some(first) = events.first() else {
         return Ok(());
@@ -253,6 +330,15 @@ fn append_now(
                 sealed.bytes,
                 sealed.key_id,
             ])?;
+        }
+        let mut index = transaction.prepare_cached(
+            "INSERT INTO event_search (terms, org, space, thread, seq) VALUES (?1, ?2, ?3, ?4, ?5)",
+        )?;
+        for (event, words) in events.iter().zip(words) {
+            if let Some(words) = words {
+                let seq = i64::try_from(event.seq.get()).unwrap_or(i64::MAX);
+                index.execute(params![words, org, space, event.thread.to_string(), seq])?;
+            }
         }
     }
     transaction.commit()?;

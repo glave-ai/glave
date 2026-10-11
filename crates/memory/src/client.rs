@@ -2,8 +2,12 @@
 //! harness's [`Memory`]. The model's tools and the current memories go through MCP, each
 //! request carrying who and where in its `_meta`; the person's own controls (listing, moving,
 //! restoring) are their actions, not the model's, and go to the store directly.
+//!
+//! With a tidier ([`GlaveMemory::tidy_with`]), tidy-up runs in the background on a task this
+//! owns: asked after each save or edit, and by the host when it starts, it tidies each ledger
+//! that is due (a week since the last time, or past 90% of its budget).
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use glave_event::{Arguments, MemoryId, Principal};
 use glave_harness::{
@@ -11,18 +15,21 @@ use glave_harness::{
     Remembered, Shown,
 };
 use glave_mcp::{Limits, McpServer, tool_output};
-use glave_ports::{BoxFuture, Cancellation, EventLog, ToolError, ToolInfo, ToolSource};
+use glave_ports::{BoxFuture, Cancellation, EventLog, Scope, ToolError, ToolInfo, ToolSource};
 use rmcp::ServiceExt as _;
 use rmcp::model::ResourceContents;
 use serde::Deserialize;
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use crate::memories::{Memories, Remembering, Writer};
+use crate::memories::{Memories, Remembering, Tidier, Writer};
 use crate::rules::SpaceMemory;
 use crate::server::{Context, MemoryServer, RESOURCE};
 
 /// Bytes the in-process connection buffers each way.
 const BUFFER: usize = 64 * 1024;
+/// Ledgers waiting to be looked at by tidy-up; more are dropped, as a run is due anyway.
+const TIDY_QUEUE: usize = 16;
 
 /// Memory as glave runs it: its own server, in-process, over the data store.
 pub struct GlaveMemory<L: EventLog + 'static> {
@@ -30,11 +37,15 @@ pub struct GlaveMemory<L: EventLog + 'static> {
     client: McpServer,
     /// The server, serving until it is closed or this is dropped.
     server: Mutex<Option<JoinHandle<()>>>,
+    /// Tidy-up, when a tidier was given: where to ask for a ledger, and the task that tidies.
+    tidying: Mutex<Option<(mpsc::Sender<Scope>, JoinHandle<()>)>>,
 }
 
 #[derive(Deserialize)]
 struct Listed {
     memories: Vec<Remembered>,
+    #[serde(default)]
+    questions: Vec<[MemoryId; 2]>,
 }
 
 /// A read that is never cancelled: memory reads are short and bounded by the call limit.
@@ -71,7 +82,44 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
             memories,
             client,
             server: Mutex::new(Some(server)),
+            tidying: Mutex::new(None),
         })
+    }
+
+    /// Tidies in the background with `tidier` from now on: each ledger asked for with
+    /// [`GlaveMemory::tidy_soon`], and those a save or an edit changes, when they are due.
+    pub fn tidy_with(&self, tidier: Arc<dyn Tidier>) {
+        let (sender, mut asked) = mpsc::channel::<Scope>(TIDY_QUEUE);
+        let memories = self.memories.clone();
+        let task = tokio::spawn(async move {
+            while let Some(ledger) = asked.recv().await {
+                // A failed tidy-up changes nothing it did not record; the next one tries again.
+                if memories.tidy_due(ledger).await.unwrap_or(false) {
+                    let _ = memories.tidy(ledger, tidier.as_ref()).await;
+                }
+            }
+        });
+        let previous = self
+            .tidying
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .replace((sender, task));
+        if let Some((_, task)) = previous {
+            task.abort();
+        }
+    }
+
+    /// Asks for `ledgers` to be tidied, when they are due and a tidier was given.
+    pub fn tidy_soon(&self, ledgers: &[Scope]) {
+        let tidying = self
+            .tidying
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((sender, _)) = tidying.as_ref() {
+            for ledger in ledgers {
+                let _ = sender.try_send(*ledger);
+            }
+        }
     }
 
     /// The store behind the server.
@@ -79,8 +127,18 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
         &self.memories
     }
 
-    /// Closes the connection and stops the server.
+    /// Closes the connection and stops the server and any tidy-up. Tidy-up changes one memory
+    /// at a time, merged text first, so one stopped halfway leaves a duplicate, never a loss.
     pub async fn close(&self) {
+        let tidying = self
+            .tidying
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some((_, task)) = tidying {
+            task.abort();
+            let _ = task.await;
+        }
         self.client.close().await;
         let server = self
             .server
@@ -94,20 +152,28 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
     }
 
     async fn read(&self, on: &MemoryContext, uri: &str) -> Result<Vec<Remembered>, MemoryError> {
+        Ok(self.listing(on, uri).await?.memories)
+    }
+
+    async fn listing(&self, on: &MemoryContext, uri: &str) -> Result<Listed, MemoryError> {
         let contents = self
             .client
             .read_with(uri, Context::of(on).meta(), &Never)
             .await
             .map_err(MemoryError::Storage)?;
-        let mut memories = Vec::new();
+        let mut all = Listed {
+            memories: Vec::new(),
+            questions: Vec::new(),
+        };
         for content in contents {
             if let ResourceContents::TextResourceContents { text, .. } = content {
                 let listed: Listed = serde_json::from_str(&text)
                     .map_err(|error| MemoryError::Storage(error.to_string()))?;
-                memories.extend(listed.memories);
+                all.memories.extend(listed.memories);
+                all.questions.extend(listed.questions);
             }
         }
-        Ok(memories)
+        Ok(all)
     }
 
     async fn call_tool(
@@ -135,15 +201,31 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
             Ok(result) => result,
             Err(why) => return MemoryOutput::failed(why),
         };
-        let output = tool_output(&result);
-        let change = if output.is_error {
-            None
-        } else {
-            result
-                .structured_content
-                .as_ref()
-                .and_then(|structured| change(&tool, structured))
-        };
+        let mut output = tool_output(&result);
+        let structured = result
+            .structured_content
+            .as_ref()
+            .filter(|_| !output.is_error);
+        // A recall that found untrusted output reads as untrusted content.
+        output.untrusted = tool == "recall"
+            && structured
+                .and_then(|structured| structured.get("untrusted"))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+        let change = structured.and_then(|structured| change(&tool, structured));
+        if matches!(
+            change,
+            Some(MemoryChange::Saved { .. } | MemoryChange::Edited(_))
+        ) {
+            let ledgers: Vec<Scope> = self
+                .memories
+                .rules()
+                .readable(on.person, on.scope)
+                .into_iter()
+                .map(|(_, ledger)| ledger)
+                .collect();
+            self.tidy_soon(&ledgers);
+        }
         MemoryOutput { output, change }
     }
 
@@ -195,6 +277,14 @@ impl<L: EventLog + 'static> Drop for GlaveMemory<L> {
             .take()
         {
             server.abort();
+        }
+        if let Some((_, task)) = self
+            .tidying
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            task.abort();
         }
     }
 }
@@ -269,6 +359,13 @@ impl<L: EventLog + 'static> Memory for GlaveMemory<L> {
             }
             Ok(found)
         })
+    }
+
+    fn questions<'a>(
+        &'a self,
+        on: &'a MemoryContext,
+    ) -> BoxFuture<'a, Result<Vec<[MemoryId; 2]>, MemoryError>> {
+        Box::pin(async move { Ok(self.listing(on, RESOURCE).await?.questions) })
     }
 
     fn control<'a>(

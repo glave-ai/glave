@@ -73,6 +73,19 @@ pub(crate) const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (org, space)
     ) STRICT;
     ",
+    // 3: keyword search over conversations (`specs/memory.md`, "Recall"): the words of each
+    // message and tool output, as keyed hashes under its space key (`Keys::search_terms`), so
+    // the index holds no word in the clear. Written in the same transaction as the events.
+    "
+    CREATE VIRTUAL TABLE event_search USING fts5(
+        terms,
+        org UNINDEXED,
+        space UNINDEXED,
+        thread UNINDEXED,
+        seq UNINDEXED,
+        tokenize = 'ascii'
+    );
+    ",
 ];
 
 /// The schema version this build writes.

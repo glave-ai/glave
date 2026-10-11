@@ -99,7 +99,7 @@ impl ToolSet {
         self.subagents && name.trim().eq_ignore_ascii_case(crate::subagent::AGENT)
     }
 
-    /// Offers memory's tools too: `remember`, `edit` and `forget`. They are first-party, so the
+    /// Offers memory's tools too: `remember`, `edit`, `forget` and `recall`. First-party, so the
     /// harness runs them itself (`memory/call.rs`), and a subagent never gets them.
     pub(crate) fn offer_memory(&mut self, tools: Vec<ToolInfo>) {
         for info in tools {

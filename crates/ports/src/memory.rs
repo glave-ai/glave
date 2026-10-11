@@ -1,6 +1,6 @@
 //! In-memory implementations of the storage ports, for tests and for runs that keep nothing.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::future::{Future, ready};
 use std::sync::Mutex;
 
@@ -9,11 +9,17 @@ use glave_event::{BlobRef, RawEvent, Seq, Sha256, ThreadId};
 use crate::blob::{BlobError, BlobStore, digest};
 use crate::log::{EventLog, LogError, check_append};
 use crate::scope::Scope;
+use crate::search::{Found, indexed, query_terms};
+
+/// One searchable event and its words.
+type Indexed = (Found, BTreeSet<String>);
 
 /// An event log held in memory. Nothing survives the process.
 #[derive(Debug, Default)]
 pub struct MemoryLog {
     threads: Mutex<HashMap<(Scope, ThreadId), Thread>>,
+    /// Each scope's searchable events and their words, oldest first.
+    index: Mutex<HashMap<Scope, Vec<Indexed>>>,
 }
 
 #[derive(Debug, Default)]
@@ -46,7 +52,49 @@ impl MemoryLog {
         check_append(thread.events.last().map(|event| event.seq), events)?;
         thread.events.extend(events.iter().cloned());
         thread.written = clock;
+        drop(threads);
+        let mut index = self
+            .index
+            .lock()
+            .map_err(|_| LogError::Storage("the in-memory index's lock is poisoned".into()))?;
+        let entries = index.entry(*scope).or_default();
+        for event in events {
+            let words = indexed(event);
+            if !words.is_empty() {
+                let found = Found {
+                    thread: event.thread,
+                    seq: event.seq,
+                };
+                entries.push((found, words.into_iter().collect()));
+            }
+        }
         Ok(())
+    }
+
+    fn search_now(&self, scope: &Scope, query: &str, limit: usize) -> Result<Vec<Found>, LogError> {
+        let wanted = query_terms(query);
+        let index = self
+            .index
+            .lock()
+            .map_err(|_| LogError::Storage("the in-memory index's lock is poisoned".into()))?;
+        let Some(entries) = index.get(scope) else {
+            return Ok(Vec::new());
+        };
+        // Most query words matched first; among equals, the newest first.
+        let mut found: Vec<(usize, usize, Found)> = entries
+            .iter()
+            .enumerate()
+            .filter_map(|(order, (found, words))| {
+                let matched = wanted.iter().filter(|word| words.contains(*word)).count();
+                (matched > 0).then_some((matched, order, *found))
+            })
+            .collect();
+        found.sort_by_key(|(matched, order, _)| std::cmp::Reverse((*matched, *order)));
+        Ok(found
+            .into_iter()
+            .take(limit)
+            .map(|(_, _, found)| found)
+            .collect())
     }
 
     fn read_now(
@@ -114,6 +162,15 @@ impl EventLog for MemoryLog {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send {
         ready(self.threads_now(scope, limit))
+    }
+
+    fn search(
+        &self,
+        scope: &Scope,
+        query: &str,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
+        ready(self.search_now(scope, query, limit))
     }
 }
 
@@ -247,6 +304,11 @@ mod tests {
     #[test]
     fn memory_log_passes_the_event_log_conformance_suite() {
         assert_eq!(block_on(conformance::event_log(&MemoryLog::new())), Ok(()));
+    }
+
+    #[test]
+    fn memory_log_passes_the_search_conformance_suite() {
+        assert_eq!(block_on(conformance::search(&MemoryLog::new())), Ok(()));
     }
 
     fn tool(name: &str) -> (crate::tools::ToolInfo, crate::tools::ToolOutput) {

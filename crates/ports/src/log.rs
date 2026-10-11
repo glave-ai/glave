@@ -6,6 +6,7 @@ use glave_event::{RawEvent, Seq, ThreadId};
 use thiserror::Error;
 
 use crate::scope::Scope;
+use crate::search::Found;
 
 /// The append-only log every event is written to.
 ///
@@ -37,6 +38,17 @@ pub trait EventLog: Send + Sync {
         scope: &Scope,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send;
+
+    /// Searches `scope`'s conversations by keyword, with the store's own full-text index: the
+    /// events whose words (`search::indexed`, maintained as events are appended) match any of
+    /// `query`'s (`search::query_terms`), best match first, then newest first, at most `limit`.
+    /// Never another scope's.
+    fn search(
+        &self,
+        scope: &Scope,
+        query: &str,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send;
 
     /// The thread's latest event whose type is one of `kinds`, if it has one. The default reads
     /// the thread from the start; an adapter that can ask its storage answers faster.

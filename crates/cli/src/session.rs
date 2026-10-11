@@ -14,6 +14,7 @@ use glave_harness::{
     AGENTS_MD, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings, SystemClock,
     Workspace, agents_md,
 };
+use glave_memory::ModelTidier;
 use glave_ports::ToolSource;
 use glave_session::protocol::{Reply, Request};
 use glave_session::signin::{SignIn, Trust};
@@ -188,6 +189,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         .local_scope(&root, random_uuid(), random_uuid())
         .await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
+    tidy(memory.as_ref(), &setup, &endpoint)?;
     let wiring = Wiring {
         provider,
         log: store.log(),
@@ -218,6 +220,20 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         workers,
         memory,
     })
+}
+
+/// Tidies memory in the background, when it is on: tidy-up asks a gateway of its own, which
+/// sends it on the `summary` route.
+fn tidy(
+    memory: Option<&crate::memory::Running>,
+    setup: &Setup,
+    endpoint: &Endpoint,
+) -> anyhow::Result<()> {
+    if let Some(memory) = memory {
+        let (summary, _) = provider(setup, endpoint)?;
+        memory.tidy_with(Arc::new(ModelTidier::new(summary, endpoint.model.clone())));
+    }
+    Ok(())
 }
 
 /// The gateway elsewhere, when `[gateway] url` names one, and the endpoint model calls go to:

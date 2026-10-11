@@ -12,6 +12,7 @@ use glave_harness::{
     Caller, Cancel, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox,
     Settings, Skills, SystemClock, Todo, Workspace, agents_md, find_skills, skill_folders,
 };
+use glave_memory::ModelTidier;
 use glave_ports::{EventLog, ToolSource};
 use glave_provider_openai::{Config, OpenAiCompatible};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog};
@@ -317,6 +318,18 @@ async fn converse(
         }
         if !conversation.failures.is_empty() {
             break;
+        }
+    }
+    if task.tidy && conversation.failures.is_empty() {
+        let provider = OpenAiCompatible::new(setup.endpoint.clone())
+            .map_err(|err| EvalError::Setup(err.to_string()))?;
+        match remembering.tidy(&ModelTidier::new(provider, model)).await {
+            Ok(runs) => {
+                for run in runs {
+                    let _ = writeln!(conversation.transcript, "[tidy] {run}");
+                }
+            }
+            Err(err) => conversation.failures.push(err.to_string()),
         }
     }
     let memory = remembering.report().await?;

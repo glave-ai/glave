@@ -16,6 +16,7 @@ mod log;
 mod memory;
 mod model;
 mod scope;
+pub mod search;
 pub mod secrets;
 mod tools;
 

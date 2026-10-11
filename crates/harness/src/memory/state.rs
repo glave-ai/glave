@@ -11,7 +11,7 @@ use glave_event::{MemoryId, Part};
 use glave_ports::{BlobStore, EventLog, Message, ModelProvider};
 use serde::{Deserialize, Serialize};
 
-use super::render::{self, changes};
+use super::render::{self, Line, changes};
 use super::{Memory, MemoryChange as Change, MemoryContext, Remembered, Shown};
 use crate::approval::Approver;
 use crate::harness::{Harness, Thread};
@@ -21,6 +21,9 @@ use crate::harness::{Harness, Thread};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ConfigMemory {
     pub(crate) memories: Vec<Shown>,
+    /// The contradictions tidy-up left for the person, among those memories.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) questions: Vec<[MemoryId; 2]>,
 }
 
 /// A thread's memory, as its model is shown it.
@@ -32,6 +35,8 @@ pub(crate) struct MemoryState {
     pub(crate) notes: Vec<(usize, String)>,
     /// The memories the model knows now, with their text, by id.
     pub(crate) known: BTreeMap<MemoryId, Remembered>,
+    /// The contradictions the model was told to ask the person about.
+    pub(crate) questions: Vec<[MemoryId; 2]>,
     /// What the memory call being recorded changed, for its `tool.call.completed`.
     pub(crate) structured: Option<serde_json::Value>,
 }
@@ -66,9 +71,22 @@ impl MemoryState {
     /// After a compaction: the start shows everything known, and the notes fold away.
     pub(crate) fn restart(&mut self) {
         let known: Vec<Remembered> = self.known.values().cloned().collect();
-        self.start = render::start(&known);
+        self.questions = among(&self.questions, &known);
+        self.start = render::start(&known, &self.questions);
         self.notes.clear();
     }
+}
+
+/// The pairs in `questions` whose memories are both in `memories`.
+pub(crate) fn among(questions: &[[MemoryId; 2]], memories: &[Remembered]) -> Vec<[MemoryId; 2]> {
+    questions
+        .iter()
+        .filter(|pair| {
+            pair.iter()
+                .all(|memory| memories.iter().any(|shown| shown.memory == *memory))
+        })
+        .copied()
+        .collect()
 }
 
 /// What a call's `tool.call.completed` records for a memory change: ids and versions only.
@@ -143,15 +161,31 @@ where
     pub(crate) async fn look_at_memory(&self, thread: &mut Thread) -> Option<ConfigMemory> {
         let (memory, on) = self.memory_for(thread)?;
         let now = memory.list(&on).await.ok()?;
+        let questions = if now.len() >= 2 {
+            among(&memory.questions(&on).await.unwrap_or_default(), &now)
+        } else {
+            Vec::new()
+        };
         if thread.messages.is_empty() {
-            thread.memory.start = render::start(&now);
+            thread.memory.start = render::start(&now, &questions);
             thread.memory.notes.clear();
-        } else if let Some(note) = render::note(&changes(&thread.memory.versions(), &now)) {
-            thread.memory.notes.push((thread.messages.len(), note));
+        } else {
+            let mut lines = changes(&thread.memory.versions(), &now);
+            lines.extend(
+                questions
+                    .iter()
+                    .filter(|pair| !thread.memory.questions.contains(pair))
+                    .map(|pair| Line::Asked(*pair)),
+            );
+            if let Some(note) = render::note(&lines) {
+                thread.memory.notes.push((thread.messages.len(), note));
+            }
         }
         thread.memory.known = now.iter().map(|m| (m.memory, m.clone())).collect();
+        thread.memory.questions.clone_from(&questions);
         Some(ConfigMemory {
             memories: now.iter().map(Remembered::shown).collect(),
+            questions,
         })
     }
 

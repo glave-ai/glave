@@ -1,14 +1,18 @@
 //! Memory for one attempt (`specs/memory.md`, "Evals"): a sealed store of the attempt's own, the
 //! spaces its threads work in, glave's memory server over them when memory is on, the memories
-//! seeded before the first thread, and afterwards what the memory ledgers hold, for the checks.
+//! seeded before the first thread, the past conversations `recall` searches, tidy-up when the
+//! task asks for it, and afterwards what the memory ledgers hold, for the checks.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use glave_event::{Body, MemoryId, MemoryScope, Principal, PrincipalId, decode};
-use glave_harness::{OsEntropy, SystemClock, memory_ledger};
+use glave_event::{
+    Body, EventId, Header, MemoryId, MemoryScope, MessageAdded, Part, Principal, PrincipalId, Role,
+    Seq, ThreadId, decode, encode,
+};
+use glave_harness::{Clock as _, Entropy as _, OsEntropy, SystemClock, memory_ledger};
 use glave_keys::{KeySettings, MemoryRoot};
-use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory, Writer};
+use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory, Tidier, Writer};
 use glave_ports::{EventLog, OrgId, Scope, SpaceId};
 use glave_store_sqlite::{SqliteLog, Store};
 
@@ -117,19 +121,24 @@ impl Remembering {
             )
         };
         let seeding = memories();
-        let writer = Writer {
-            person: Some(person),
-            scope: space(None),
-            by: Principal::person(person),
-            source: None,
-            untrusted_read: false,
-        };
         for seed in &task.memories {
+            let writer = Writer {
+                person: Some(person),
+                scope: space(None),
+                by: Principal::person(person),
+                source: None,
+                untrusted_read: seed.untrusted,
+            };
             let which = MemoryScope::named(&seed.scope).unwrap_or(MemoryScope::Space);
             seeding
                 .remember(&writer, &seed.text, which, None, true)
                 .await
                 .map_err(|e| fail(&e))?;
+            // Apart in time, so which came later is plain to tidy-up.
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        for past in &task.past {
+            write_past(&store, space(past.space.as_deref()), &past.messages).await?;
         }
         let memory = if on {
             Some(Arc::new(
@@ -143,6 +152,27 @@ impl Remembering {
             memory,
             scopes,
         })
+    }
+
+    /// Tidies every space's memory now, on `model`, whether or not it is due. What each run
+    /// did, for the transcript.
+    pub async fn tidy(&self, model: &dyn Tidier) -> Result<Vec<String>, EvalError> {
+        let Some(memory) = &self.memory else {
+            return Ok(Vec::new());
+        };
+        let mut done = Vec::new();
+        for scope in &self.scopes {
+            let tidied = memory
+                .memories()
+                .tidy(*scope, model)
+                .await
+                .map_err(|e| EvalError::Setup(format!("tidy-up failed: {e}")))?;
+            done.push(format!(
+                "merged {}, forgot {}, asked {}, refused {:?}",
+                tidied.merged, tidied.forgotten, tidied.questions, tidied.refused
+            ));
+        }
+        Ok(done)
     }
 
     /// What the memory ledgers hold now.
@@ -199,6 +229,33 @@ impl Remembering {
         }
         Ok(report)
     }
+}
+
+/// A past conversation in `scope`: the person's `messages`, in a thread of their own.
+async fn write_past(store: &Store, scope: Scope, messages: &[String]) -> Result<(), EvalError> {
+    let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("past thread: {error}"));
+    let now = SystemClock.now();
+    let thread = ThreadId::new(now, OsEntropy.bytes()).map_err(|e| fail(&e))?;
+    let mut events = Vec::new();
+    for (seq, text) in (1_u64..).zip(messages) {
+        let header = Header {
+            id: EventId::new(now, OsEntropy.bytes()).map_err(|e| fail(&e))?,
+            thread,
+            seq: Seq::new(seq).map_err(|e| fail(&e))?,
+            at: now.into(),
+        };
+        let message = MessageAdded {
+            role: Role::User,
+            parts: vec![Part::Text { text: text.clone() }],
+            author: None,
+        };
+        events.push(encode(header, &message).map_err(|e| fail(&e))?);
+    }
+    store
+        .log()
+        .append(&scope, &events)
+        .await
+        .map_err(|e| fail(&e))
 }
 
 #[cfg(test)]

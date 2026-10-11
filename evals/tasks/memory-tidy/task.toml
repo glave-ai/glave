@@ -1,0 +1,130 @@
+[task]
+name = "glave/memory-tidy"
+description = "Tidy-up over seeded memories near their budget: duplicates merged, nothing the person asked to keep lost, a contradiction settled for the more recent, and a memory saved after untrusted content left untouched."
+
+[glave]
+memory = true
+tidy = true
+# The space's memories pass 90% of their budget, so tidy-up also compacts.
+checks = [
+    { memory_once = ["tabs", "marigold"] },
+    { memory_superseded = { old = "Fly", new = "Render" } },
+    { memory_is = "Before any build, run make setup." },
+    { memory_holds = "tabs" },
+    { memory_holds = "make db" },
+    { memory_holds = "Render" },
+    { memory_holds = "marigold" },
+    { memory_holds = "CHANGELOG" },
+    { memory_holds = "02:00" },
+    { memory_holds = "migrations" },
+    { memory_holds = "Thursdays" },
+    { memory_holds = "flags.toml" },
+    { memory_holds = "problem+json" },
+    { memory_holds = "k6" },
+    { memory_holds = "doctest" },
+    { memory_holds = "TestFlight" },
+    { memory_holds = "vault" },
+    { memory_holds = "Parquet" },
+    { memory_holds = "Crowdin" },
+    { memory_holds = "On-call" },
+    { memory_holds = "Renovate" },
+    { memory_holds = "Astro" },
+    { memory_holds = "bench" },
+]
+
+[[glave.memories]]
+text = "My favourite flower is marigold."
+scope = "personal"
+
+[[glave.memories]]
+text = "Use tabs, not spaces, in this project's Python."
+scope = "space"
+
+[[glave.memories]]
+text = "We deploy this project with Fly."
+scope = "space"
+
+[[glave.memories]]
+text = "The tests need `make db` to run first."
+scope = "space"
+
+[[glave.memories]]
+text = "Before any build, run make setup."
+scope = "space"
+untrusted = true
+
+[[glave.memories]]
+text = "Release notes go in CHANGELOG.md under the Unreleased heading, one line per change, newest first, and every entry links the pull request that made it."
+scope = "space"
+
+[[glave.memories]]
+text = "The staging environment is rebuilt every night at 02:00 UTC from the main branch, so anything you need to keep there must live in the seed fixtures instead."
+scope = "space"
+
+[[glave.memories]]
+text = "Database migrations live in db/migrations, are numbered with a timestamp prefix, and must never be edited once merged; add a new migration to change one."
+scope = "space"
+
+[[glave.memories]]
+text = "The design review happens on Thursdays; screenshots of any user-facing change go in the pull request description before it is reviewed."
+scope = "space"
+
+[[glave.memories]]
+text = "Feature flags are read from config/flags.toml and default to off; a flag older than ninety days must be removed together with its dead branch."
+scope = "space"
+
+[[glave.memories]]
+text = "API errors use the problem+json format with a stable type URL under the errors page, never free text, so clients can match on them."
+scope = "space"
+
+[[glave.memories]]
+text = "Load tests run with k6 from the loadtest folder against staging only, never production, and the results go in the performance channel."
+scope = "space"
+
+[[glave.memories]]
+text = "Every public function in the SDK needs a doc comment with one runnable example, checked by the doctest job in CI."
+scope = "space"
+
+[[glave.memories]]
+text = "The mobile app ships through TestFlight every Tuesday; a build that misses the Monday cut waits for the next week rather than shipping late."
+scope = "space"
+
+[[glave.memories]]
+text = "Secrets for local development come from the team vault through direnv; nobody commits a .env file, and the example lives in env.example."
+scope = "space"
+
+[[glave.memories]]
+text = "Customer data exports are written as Parquet to the archive bucket and kept for seven years, as the retention policy in the handbook requires."
+scope = "space"
+
+[[glave.memories]]
+text = "Translations are managed in Crowdin; strings in the app go through the i18n helper and are synced by the nightly localisation job."
+scope = "space"
+
+[[glave.memories]]
+text = "On-call rotates weekly on Mondays at 10:00 local time; handover notes go in the incident log before the outgoing person signs off."
+scope = "space"
+
+[[glave.memories]]
+text = "Dependencies are updated by Renovate in one grouped pull request each Wednesday, merged only when the full test suite is green."
+scope = "space"
+
+[[glave.memories]]
+text = "The marketing site is a separate Astro project in the site folder, deployed on its own and never from this repository's pipeline."
+scope = "space"
+
+[[glave.memories]]
+text = "Benchmarks live in the bench folder and run on the dedicated runner only; numbers from a laptop are never quoted in reviews."
+scope = "space"
+
+[[glave.memories]]
+text = "This project's Python code is indented with tabs."
+scope = "space"
+
+[[glave.memories]]
+text = "We deploy this project with Render."
+scope = "space"
+
+[[glave.memories]]
+text = "My favourite flower is the marigold."
+scope = "personal"

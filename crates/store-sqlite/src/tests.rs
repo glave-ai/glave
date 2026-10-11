@@ -41,6 +41,39 @@ fn the_log_passes_the_event_log_conformance_suite() {
 }
 
 #[test]
+fn the_log_passes_the_search_conformance_suite() {
+    let store = Store::open_in_memory(keys()).unwrap();
+    assert_eq!(block_on(conformance::search(&store.log())), Ok(()));
+}
+
+#[test]
+fn the_search_index_holds_no_word_in_the_clear() {
+    let path = temp_db("search");
+    block_on(async {
+        let store = Store::open(&path, file_keys(&path)).await.unwrap();
+        assert_eq!(conformance::search(&store.log()).await, Ok(()));
+    });
+    let raw = rusqlite::Connection::open(&path).unwrap();
+    let terms: Vec<String> = raw
+        .prepare("SELECT terms FROM event_search")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(!terms.is_empty(), "messages and outputs are indexed");
+    for words in &terms {
+        assert!(
+            words
+                .split(' ')
+                .all(|word| word.len() == 32 && word.bytes().all(|b| b.is_ascii_hexdigit())),
+            "{words}"
+        );
+        assert!(!words.contains("deploy") && !words.contains("postgres"));
+    }
+}
+
+#[test]
 fn the_blobs_pass_the_blob_store_conformance_suite() {
     let store = Store::open_in_memory(keys()).unwrap();
     assert_eq!(block_on(conformance::blob_store(&store.blobs())), Ok(()));

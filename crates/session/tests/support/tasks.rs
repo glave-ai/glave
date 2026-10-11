@@ -50,6 +50,15 @@ impl EventLog for Shared {
     ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send {
         self.0.threads(scope, limit)
     }
+
+    fn search(
+        &self,
+        scope: &Scope,
+        query: &str,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<glave_ports::search::Found>, LogError>> + Send {
+        self.0.search(scope, query, limit)
+    }
 }
 
 /// A clock that stands still until a test moves it.

