@@ -19,8 +19,19 @@ Usage:
                                 check in the objective (\"... until cargo test passes\").
                                 Stops when its token budget (default 1000000) runs out,
                                 after three turns in a row without a tool call, or on Ctrl-C
+  glave --background <prompt> [--budget <tokens>], or -b
+                                run the turn as a task, with no one attached, in this
+                                folder's task host, so it goes on when you leave; with
+                                --goal, work toward the goal (glave tasks --help)
+  glave tasks [stop <thread>]   list the tasks running and recently finished, or stop one
+  glave schedule add|list|rm    run a prompt or a goal as a task at set times
+                                (glave schedule --help)
   glave serve --stdio [options] serve the session API (JSON-RPC 2.0, one message per line)
                                 to the program that started glave
+  glave serve --socket [options]
+                                be this folder's task host: serve the session API on a Unix
+                                socket in GLAVE_HOME/run and run its tasks and schedules
+                                until nothing is left (glave starts it when needed)
   glave serve --http <address> --issuer <url> --audience <name> [options]
                                 serve the session API over HTTP to clients signed in with
                                 an OIDC access token from that issuer for that audience.
@@ -133,6 +144,10 @@ pub enum Action {
 
 /// What the person asked for.
 #[derive(Debug, Default, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent command-line flags, each a yes or no"
+)]
 pub struct Args {
     pub action: Action,
     pub model: Option<String>,
@@ -163,6 +178,12 @@ pub struct Args {
     pub issuers: Vec<String>,
     /// The audience those tokens must name.
     pub audience: Option<String>,
+    /// Run the turn or goal as a task in the folder's task host, with no one attached.
+    pub background: bool,
+    /// With `background`, tokens the turn may use.
+    pub budget: Option<u64>,
+    /// Serve as the folder's task host, on its Unix socket.
+    pub socket: bool,
 }
 
 pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String> {
@@ -209,6 +230,9 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--max-steps" => args.max_steps = Some(steps(rest.next())?),
             "--goal" => args.goal = Some(rest.next().ok_or("--goal needs an objective")?),
             "--goal-budget" => args.goal_budget = Some(budget(rest.next())?),
+            "--background" | "-b" => args.background = true,
+            "--budget" => args.budget = Some(tokens("--budget", rest.next())?),
+            "--socket" if serving => args.socket = true,
             "--stdio" if serving => stdio = true,
             "--http" if serving => {
                 args.http = Some(address(rest.next())?);
@@ -232,21 +256,61 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
         return Err("--network only applies with a sandbox".into());
     }
     args.prompt = words.join(" ");
-    if args.action == Action::Explain && (!args.prompt.is_empty() || args.resume) {
-        return Err("glave policy explain takes no prompt or --continue".into());
-    }
-    if args.action == Action::Skills && (!args.prompt.is_empty() || args.resume) {
-        return Err("glave skills takes no prompt or --continue".into());
-    }
-    if args.action == Action::Commands && (!args.prompt.is_empty() || args.resume) {
-        return Err("glave commands takes no prompt or --continue".into());
-    }
+    alone(&args)?;
     if serving && args.action == Action::Run {
         transport(&args, stdio)?;
         args.action = Action::Serve;
     }
     goal(&args)?;
+    background(&args)?;
     Ok(args)
+}
+
+/// Checks that the commands that take no prompt got none.
+fn alone(args: &Args) -> Result<(), String> {
+    let name = match args.action {
+        Action::Explain => "policy explain",
+        Action::Skills => "skills",
+        Action::Commands => "commands",
+        _ => return Ok(()),
+    };
+    if !args.prompt.is_empty() || args.resume {
+        return Err(format!("glave {name} takes no prompt or --continue"));
+    }
+    Ok(())
+}
+
+/// Checks that a task has something to do, and a budget only with a task's turn.
+fn background(args: &Args) -> Result<(), String> {
+    if args.budget.is_some() && (!args.background || args.goal.is_some()) {
+        return Err(
+            "--budget is for a turn run with --background; a goal takes --goal-budget".into(),
+        );
+    }
+    if !args.background {
+        return Ok(());
+    }
+    if args.action != Action::Run {
+        return Err("--background runs a task: not with this command".into());
+    }
+    if args.prompt.is_empty() && args.goal.is_none() {
+        return Err("--background needs a prompt, or --goal <objective>".into());
+    }
+    if args.resume || args.events.is_some() {
+        return Err("--background starts a new thread: not with --continue or --events".into());
+    }
+    Ok(())
+}
+
+/// A number of tokens for `flag`: at least one.
+fn tokens(flag: &str, value: Option<String>) -> Result<u64, String> {
+    let value = value.ok_or_else(|| format!("{flag} needs a number of tokens"))?;
+    match value.parse::<u64>() {
+        Ok(tokens) if tokens >= 1 => Ok(tokens),
+        _ => Err(format!(
+            "{flag} {value:?} is not a number of tokens: use 1 or more"
+        )),
+    }
 }
 
 /// Checks that a goal's flags come with `--goal`, and a goal with no prompt beside it.
@@ -275,15 +339,24 @@ fn budget(value: Option<String>) -> Result<u64, String> {
 
 /// Checks that `glave serve` has one transport, and sign-in for HTTP.
 fn transport(args: &Args, stdio: bool) -> Result<(), String> {
-    if stdio == args.http.is_some() {
-        return Err("glave serve needs one transport: --stdio or --http <address>".into());
+    if [stdio, args.http.is_some(), args.socket]
+        .iter()
+        .filter(|chosen| **chosen)
+        .count()
+        != 1
+    {
+        return Err(
+            "glave serve needs one transport: --stdio, --socket or --http <address>".into(),
+        );
     }
     if !args.prompt.is_empty() || args.resume || args.events.is_some() {
         return Err("glave serve takes no prompt, --continue or --events: clients choose".into());
     }
     let signs_in = !args.issuers.is_empty() || args.audience.is_some();
-    if stdio && signs_in {
-        return Err("--issuer and --audience are for --http; stdio needs no sign-in".into());
+    if (stdio || args.socket) && signs_in {
+        return Err(
+            "--issuer and --audience are for --http; stdio and the socket need no sign-in".into(),
+        );
     }
     if args.http.is_some() && (args.issuers.is_empty() || args.audience.is_none()) {
         return Err(
@@ -489,6 +562,30 @@ mod tests {
         assert!(parse_words(&["--goal", "x", "and", "a", "prompt"]).is_err());
         assert!(parse_words(&["--goal", " "]).is_err());
         assert!(parse_words(&["serve", "--stdio", "--goal", "x"]).is_err());
+    }
+
+    #[test]
+    fn background_takes_a_prompt_or_a_goal_and_a_budget_only_for_a_turn() {
+        let task = parse_words(&["-b", "--budget", "5000", "tidy", "up"]).unwrap();
+        assert!(task.background);
+        assert_eq!((task.budget, task.prompt.as_str()), (Some(5000), "tidy up"));
+        let goal = parse_words(&["--background", "--goal", "pass", "--goal-budget", "9"]).unwrap();
+        assert!(goal.background && goal.goal.is_some());
+        assert!(parse_words(&["-b"]).is_err(), "nothing to do");
+        assert!(
+            parse_words(&["--budget", "5", "hi"]).is_err(),
+            "only for a task"
+        );
+        assert!(parse_words(&["-b", "--goal", "x", "--budget", "5"]).is_err());
+        assert!(parse_words(&["-b", "--continue", "hi"]).is_err());
+        assert!(parse_words(&["-b", "--budget", "0", "hi"]).is_err());
+        let host = parse_words(&["serve", "--socket", "--model", "m"]).unwrap();
+        assert!(host.socket && host.action == Action::Serve);
+        assert!(parse_words(&["serve", "--socket", "--stdio"]).is_err());
+        assert!(
+            parse_words(&["--socket"]).is_err(),
+            "only serve takes --socket"
+        );
     }
 
     #[test]

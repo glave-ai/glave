@@ -59,6 +59,10 @@ pub fn conversation(events: &[Event]) -> Vec<Message> {
             | Body::ThreadUnarchived(_)
             | Body::ThreadDeleted(_)
             | Body::HookRan(_)
+            | Body::TaskStarted(_)
+            | Body::TaskEnded(_)
+            | Body::ScheduleCreated(_)
+            | Body::ScheduleDeleted(_)
             | Body::Unknown(_) => {}
         }
     }

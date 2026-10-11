@@ -134,6 +134,10 @@ max_minutes = 120                                 # after this, a worker takes n
 per_person = 3                                    # workers one person may have at once
 network = "on"                                    # or "off"; "allowlist" is refused for now
 isolation = "vm"                                  # or "container": "vm" needs a runtime class
+
+[tasks]                                           # threads that run with no one attached (session.md)
+max_running = 3                                   # tasks one person may have running at once
+max_schedules = 10                                # schedules one person may keep
 ```
 
 Unknown keys are errors that name the key and file, so a typo never silently does nothing.

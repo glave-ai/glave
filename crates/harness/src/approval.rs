@@ -94,8 +94,9 @@ pub trait Approver: Send + Sync {
         async move { (decided.await, None) }
     }
 
-    /// Whether someone can answer questions; `question` is offered only then.
-    fn can_answer(&self) -> bool {
+    /// Whether someone can answer questions in `thread`; `question` is offered only then.
+    fn can_answer(&self, thread: ThreadId) -> bool {
+        let _ = thread;
         false
     }
 

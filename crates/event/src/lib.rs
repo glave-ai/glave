@@ -18,7 +18,7 @@ pub use blob::{BlobRef, Sha256};
 pub use codec::{Body, Event, KNOWN_VERSIONS, Payload, Unknown, decode, encode};
 pub use envelope::{At, ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, Seq, TypeName};
 pub use error::{DecodeError, EncodeError, InvalidValue};
-pub use id::{CallId, EventId, PrincipalId, ThreadId};
+pub use id::{CallId, EventId, PrincipalId, ScheduleId, ThreadId};
 pub use money::{Currency, Money};
 pub use payload::{
     ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, ForkPoint, GoalEnded,
@@ -29,5 +29,6 @@ pub use payload::{
     TurnEnded, TurnStarted, Usage, Verdict,
 };
 pub use payload::{
-    ComputerKind, ComputerRef, Opened, RemovedReason, WorkspaceBound, WorkspaceRemoved,
+    ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,
+    TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved,
 };

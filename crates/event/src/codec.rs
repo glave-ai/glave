@@ -9,10 +9,10 @@ use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeNa
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
     ApprovalDecided, ApprovalRequested, GoalEnded, GoalResumed, GoalSet, HookRan, MessageAdded,
-    ModelResponded, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadStarted,
-    ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound,
-    WorkspaceRemoved, approval, goal, hook, message, model, standing, thread, tool, turn,
-    workspace,
+    ModelResponded, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived,
+    ThreadCompacted, ThreadDeleted, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
+    ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, goal,
+    hook, message, model, standing, task, thread, tool, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -55,6 +55,10 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (workspace::REMOVED, 1),
     (workspace::REMOVED, 2),
     (hook::TYPE, 1),
+    (task::STARTED, 1),
+    (task::ENDED, 1),
+    (task::CREATED, 1),
+    (task::DELETED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -86,6 +90,10 @@ pub enum Body {
     WorkspaceBound(WorkspaceBound),
     WorkspaceRemoved(WorkspaceRemoved),
     HookRan(HookRan),
+    TaskStarted(TaskStarted),
+    TaskEnded(TaskEnded),
+    ScheduleCreated(ScheduleCreated),
+    ScheduleDeleted(ScheduleDeleted),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -176,6 +184,10 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
             workspace::decode_removed(version, data).map(|r| r.map(Body::WorkspaceRemoved))
         }
         hook::TYPE => hook::decode(version, data).map(|r| r.map(Body::HookRan)),
+        task::STARTED => task::decode_started(version, data).map(|r| r.map(Body::TaskStarted)),
+        task::ENDED => task::decode_ended(version, data).map(|r| r.map(Body::TaskEnded)),
+        task::CREATED => task::decode_created(version, data).map(|r| r.map(Body::ScheduleCreated)),
+        task::DELETED => task::decode_deleted(version, data).map(|r| r.map(Body::ScheduleDeleted)),
         _ => None,
     };
     let body = match known {
@@ -222,6 +234,10 @@ impl Event {
             Body::WorkspaceBound(payload) => encode(header, payload),
             Body::WorkspaceRemoved(payload) => encode(header, payload),
             Body::HookRan(payload) => encode(header, payload),
+            Body::TaskStarted(payload) => encode(header, payload),
+            Body::TaskEnded(payload) => encode(header, payload),
+            Body::ScheduleCreated(payload) => encode(header, payload),
+            Body::ScheduleDeleted(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use glave_harness::ApprovalMode;
 use globset::Glob;
 
-use crate::policy::files::{JudgeRule, PolicyFile};
+use crate::policy::files::{JudgeRule, PolicyFile, TaskRules};
 use crate::policy::workers::{NetworkRule, WorkerRules, limits};
 
 /// The approval modes there are, cautious first.
@@ -44,6 +44,8 @@ pub enum Kind {
     HooksOwnForbidden,
     /// What workers may be.
     Workers(WorkerRules),
+    /// How many tasks may run, and schedules be kept.
+    Tasks(TaskRules),
 }
 
 impl fmt::Display for Kind {
@@ -68,6 +70,16 @@ impl fmt::Display for Kind {
             Self::ProjectsTrusted(globs) => write!(f, "[projects] trusted = {}", quoted(globs)),
             Self::HooksOwnForbidden => f.write_str("[hooks] own = false"),
             Self::Workers(rules) => f.write_str(&rules.describe()),
+            Self::Tasks(rules) => {
+                let parts: Vec<String> = [
+                    ("max_running", rules.max_running),
+                    ("max_schedules", rules.max_schedules),
+                ]
+                .iter()
+                .filter_map(|(key, value)| value.map(|value| format!("{key} = {value}")))
+                .collect();
+                write!(f, "[tasks] {}", parts.join(", "))
+            }
         }
     }
 }
@@ -132,6 +144,9 @@ impl Constraints {
             }
             if !file.workers.is_empty() {
                 add(Kind::Workers(file.workers.clone()));
+            }
+            if file.tasks != TaskRules::default() {
+                add(Kind::Tasks(file.tasks));
             }
         }
         Self { rules }
@@ -265,6 +280,22 @@ impl Constraints {
             })
             .chain(budget)
             .collect()
+    }
+
+    /// The limits every `[tasks]` rule sets at once: the smallest of each.
+    pub fn task_limits(&self) -> glave_session::TaskLimits {
+        let smallest = |a: Option<usize>, b: Option<usize>| match (a, b) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        let mut limits = glave_session::TaskLimits::default();
+        for rule in &self.rules {
+            if let Kind::Tasks(tasks) = &rule.kind {
+                limits.max_running = smallest(limits.max_running, tasks.max_running);
+                limits.max_schedules = smallest(limits.max_schedules, tasks.max_schedules);
+            }
+        }
+        limits
     }
 
     /// The limits every `[workers]` rule sets at once.

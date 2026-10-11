@@ -21,16 +21,37 @@ use crate::client::Glave;
 use crate::home;
 use crate::policy::{Backend, Choices, Constraints, On, WorkersFile};
 
-/// Threads on workers, when `on` is `cloud`: what the session server needs, and the workers
-/// themselves, to remove any left at the end.
+/// Threads on workers, when `on` is `cloud`, or only tasks' threads when `tasks` and a backend
+/// is set up: what the session server needs, and the workers themselves, to remove any left at
+/// the end. A task host that cannot make workers says why and runs its tasks here.
 pub async fn workers(
     choices: &Choices,
     constraints: &Constraints,
     folder: &Path,
+    tasks: bool,
 ) -> anyhow::Result<(Option<OnWorkers>, Option<Arc<WorkerComputers>>)> {
     if choices.on.value != On::Cloud {
-        return Ok((None, None));
+        if !tasks || choices.workers.is_none() {
+            return Ok((None, None));
+        }
+        return match every_or_tasks(choices, constraints, folder, false).await {
+            Ok(made) => Ok(made),
+            Err(error) => {
+                eprintln!("glave: tasks run here, not on workers: {error:#}");
+                Ok((None, None))
+            }
+        };
     }
+    every_or_tasks(choices, constraints, folder, true).await
+}
+
+/// Workers for every thread, or for tasks' threads only.
+async fn every_or_tasks(
+    choices: &Choices,
+    constraints: &Constraints,
+    folder: &Path,
+    every_thread: bool,
+) -> anyhow::Result<(Option<OnWorkers>, Option<Arc<WorkerComputers>>)> {
     let Some(backend) = &choices.workers else {
         bail!(
             "--on cloud (from {}) needs a worker backend: set [workers] backend = \"docker\" (or \
@@ -54,6 +75,7 @@ pub async fn workers(
             attachments: Vec::new(),
         },
         environment: found.environment,
+        every_thread,
     };
     Ok((Some(on), Some(computers)))
 }
@@ -212,11 +234,16 @@ mod tests {
             .unwrap();
         let constraints = Constraints::default();
         let here = runtime
-            .block_on(workers(&chosen(""), &constraints, &dir))
+            .block_on(workers(&chosen(""), &constraints, &dir, false))
             .unwrap();
         assert!(here.0.is_none() && here.1.is_none(), "here by default");
         let no_backend = runtime
-            .block_on(workers(&chosen("on = \"cloud\"\n"), &constraints, &dir))
+            .block_on(workers(
+                &chosen("on = \"cloud\"\n"),
+                &constraints,
+                &dir,
+                false,
+            ))
             .unwrap_err();
         assert!(
             no_backend.to_string().contains("[workers] backend"),
@@ -224,7 +251,7 @@ mod tests {
         );
         let backend = "on = \"cloud\"\n[workers]\nbackend = \"docker\"\nglave = \"/x\"\n";
         let no_environment = runtime
-            .block_on(workers(&chosen(backend), &constraints, &dir))
+            .block_on(workers(&chosen(backend), &constraints, &dir, false))
             .unwrap_err();
         assert!(
             no_environment.to_string().contains("devcontainer.json"),

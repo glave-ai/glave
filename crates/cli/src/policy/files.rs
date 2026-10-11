@@ -131,6 +131,14 @@ impl SandboxChoice {
         }
     }
 
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::ReadOnly => "read-only",
+            Self::Project => "project",
+        }
+    }
+
     pub fn level(self) -> Option<SandboxLevel> {
         match self {
             Self::Off => None,
@@ -161,6 +169,18 @@ pub struct PolicyFile {
     pub hooks: HookRules,
     #[serde(default)]
     pub workers: WorkerRules,
+    #[serde(default)]
+    pub tasks: TaskRules,
+}
+
+/// `[tasks]`: what one person may run with no one attached, and keep scheduled.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskRules {
+    /// Tasks one person may have running at once.
+    pub max_running: Option<usize>,
+    /// Schedules one person may keep.
+    pub max_schedules: Option<usize>,
 }
 
 /// `[hooks]`.

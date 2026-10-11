@@ -106,7 +106,10 @@ mod http {
             ];
             for (case, token) in refused {
                 let mut web = Web::new(&served, token.clone());
-                let (message, _) = web.message(&Request::ThreadStart { worktree: None });
+                let (message, _) = web.message(&Request::ThreadStart {
+                    background: false,
+                    worktree: None,
+                });
                 let answered = web.post(&message).await;
                 assert_eq!(answered.status, 401, "{case}");
                 assert_eq!(
@@ -254,7 +257,12 @@ mod http {
             let served = serve_http(server(&dir, answers, Answering::Clients).await, &issuer).await;
             let token = signer.sign(&issuer.claims("ada"));
             let mut web = Web::new(&served, Some(token.clone()));
-            let started = web.call(&Request::ThreadStart { worktree: None }).await;
+            let started = web
+                .call(&Request::ThreadStart {
+                    background: false,
+                    worktree: None,
+                })
+                .await;
             let thread = started["result"]["thread"]["id"].clone();
             let start = json!({"jsonrpc": "2.0", "id": 99, "method": "turn/start",
                 "params": {"thread": thread, "prompt": "touch it"}});
@@ -310,7 +318,10 @@ mod http {
             let served =
                 serve_http(server(&dir, Vec::new(), Answering::Clients).await, &issuer).await;
             let mut web = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
-            let (message, _) = web.message(&Request::ThreadStart { worktree: None });
+            let (message, _) = web.message(&Request::ThreadStart {
+                background: false,
+                worktree: None,
+            });
             let mismatched = web.open(&message, Some("turn/start")).await;
             let answer: Value =
                 serde_json::from_str(&Events::new(mismatched).rest().await).unwrap();
@@ -338,7 +349,12 @@ mod http {
             let answers = vec![answer(Some("Once."), None), answer(Some("Twice."), None)];
             let served = serve_http(server(&dir, answers, Answering::Clients).await, &issuer).await;
             let mut web = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
-            let started = web.call(&Request::ThreadStart { worktree: None }).await;
+            let started = web
+                .call(&Request::ThreadStart {
+                    background: false,
+                    worktree: None,
+                })
+                .await;
             let thread = started["result"]["thread"]["id"].clone();
             let start = json!({"jsonrpc": "2.0", "id": 1, "method": "turn/start",
                 "params": {"thread": thread, "prompt": "hi",

@@ -5,12 +5,13 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use glave_event::{Seq, ThreadId};
+use glave_event::{PrincipalId, Seq, ThreadId};
 use glave_harness::{
     Caller, Change, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Place, ReleasedWorker,
     Settings, TurnSummary, Workers, Workspace,
 };
 use glave_ports::{BlobStore, Environment, EventLog, ModelProvider, Scope, ToolSource};
+use jiff::Timestamp;
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
@@ -18,9 +19,11 @@ use crate::approvals::{Answering, Approvals};
 use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
+use crate::ledger::{Ledger, is_ledger};
 use crate::protocol::{
     ApiError, ErrorData, Notification, PROTOCOL, Reply, Request, ServerInfo, code,
 };
+use crate::tasks::{TaskLimits, Tasks};
 
 /// The most events or threads one page returns.
 pub(crate) const MAX_PAGE: usize = 5_000;
@@ -40,9 +43,11 @@ pub struct Wiring<P, L, B> {
     pub worktree: bool,
     /// Commands run at points of every turn.
     pub hooks: Hooks,
-    /// When set, every new thread works on a worker of its own (`--on cloud`) unless
-    /// `thread/start` asks for a worktree; none by default.
+    /// When set, threads work on workers: every new thread (`--on cloud`) unless
+    /// `thread/start` asks for a worktree, or only those that run as tasks; none by default.
     pub workers: Option<OnWorkers>,
+    /// What one person may run at once and keep scheduled.
+    pub tasks: TaskLimits,
 }
 
 /// Threads on workers: where workers come from, and the environment each is made from.
@@ -50,6 +55,8 @@ pub struct Wiring<P, L, B> {
 pub struct OnWorkers {
     pub workers: Workers,
     pub environment: Environment,
+    /// Whether every new thread works on one, or only threads that run as tasks.
+    pub every_thread: bool,
 }
 
 /// A session server for one workspace and one scope. Clones share it.
@@ -74,6 +81,19 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) worktree: bool,
     /// The environment new threads' workers are made from, when they work on workers.
     pub(crate) worker: Option<Environment>,
+    /// Whether every new thread works on a worker, or only tasks' threads.
+    pub(crate) every_thread: bool,
+    pub(crate) clock: Arc<dyn Clock>,
+    pub(crate) entropy: Arc<dyn Entropy>,
+    /// The model turns are sent to, as tasks record it.
+    pub(crate) model: String,
+    /// The space's own person, whom the log leaves implied.
+    pub(crate) person: Option<PrincipalId>,
+    pub(crate) limits: TaskLimits,
+    /// What the space's task ledger says, as far as this server has read it.
+    pub(crate) ledger: Mutex<Ledger>,
+    /// Tasks running in this server.
+    pub(crate) running: Mutex<Tasks>,
     pub(crate) hub: Arc<Hub>,
     pub(crate) approvals: Approvals,
     pub(crate) threads: Mutex<HashMap<ThreadId, Slot>>,
@@ -95,16 +115,21 @@ where
         answering: Answering,
     ) -> Self {
         let hub = Arc::new(Hub::default());
-        let approvals = Approvals::new(answering);
+        let approvals = Approvals::new(answering, Arc::clone(&hub));
+        let clock: Arc<dyn Clock> = Arc::from(wiring.clock);
+        let entropy: Arc<dyn Entropy> = Arc::from(wiring.entropy);
+        let model = settings.model.clone();
+        let person = settings.person;
         let parts = Parts {
             provider: wiring.provider,
             log: Observed::new(wiring.log, Arc::clone(&hub)),
             blobs: wiring.blobs,
             approver: approvals.clone(),
-            clock: wiring.clock,
-            entropy: wiring.entropy,
+            clock: Box::new(SharedClock(Arc::clone(&clock))),
+            entropy: Box::new(SharedEntropy(Arc::clone(&entropy))),
             workspace: wiring.workspace,
         };
+        let every_thread = wiring.workers.as_ref().is_some_and(|on| on.every_thread);
         Self {
             inner: Arc::new(Inner {
                 harness: match wiring.workers.clone() {
@@ -114,6 +139,14 @@ where
                 .with_tools(wiring.tools)
                 .with_hooks(wiring.hooks),
                 worker: wiring.workers.map(|on| on.environment),
+                every_thread,
+                clock,
+                entropy,
+                model,
+                person,
+                limits: wiring.tasks,
+                ledger: Mutex::new(Ledger::default()),
+                running: Mutex::new(Tasks::new()),
                 scope,
                 worktree: wiring.worktree,
                 hub,
@@ -139,7 +172,15 @@ where
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 protocols: vec![PROTOCOL.to_owned()],
             })),
-            Request::ThreadStart { worktree } => self.start_thread(caller, worktree).await,
+            Request::ThreadStart {
+                worktree,
+                background,
+            } => {
+                let thread = self.new_thread(caller, worktree, background).await?;
+                Ok(Reply::Thread {
+                    thread: self.summary(thread),
+                })
+            }
             Request::ThreadList { limit, show } => self.list(limit, show.unwrap_or_default()).await,
             Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
             Request::ThreadUnarchive { thread } => {
@@ -160,7 +201,10 @@ where
             streams @ (Request::TurnStart { .. } | Request::GoalStart { .. }) => {
                 match self.start_streaming(caller, streams).await {
                     Ok(started) => started?.finish().await.map(|turn| Reply::Turn { turn }),
-                    Err(_) => Err(ApiError::new(code::INTERNAL, "not a streaming method")),
+                    Err(background) => self
+                        .tasks_request(caller, *background)
+                        .await
+                        .unwrap_or_else(|_| Err(ApiError::new(code::INTERNAL, "not a turn"))),
                 }
             }
             Request::TurnCancel { thread } => self.cancel(thread).await,
@@ -188,6 +232,14 @@ where
             Request::GoalGet { thread } => Ok(Reply::Goal {
                 goal: self.goal(thread).await?,
             }),
+            other @ (Request::TasksList { .. }
+            | Request::TasksStop { .. }
+            | Request::ScheduleCreate { .. }
+            | Request::ScheduleList {}
+            | Request::ScheduleDelete { .. }) => self
+                .tasks_request(caller, other)
+                .await
+                .unwrap_or_else(|_| Err(ApiError::new(code::INTERNAL, "not a task request"))),
         }
     }
 
@@ -260,15 +312,19 @@ where
         }
     }
 
-    async fn start_thread(
+    /// Starts a thread for `caller`: where `worktree` says, else on a worker when the server
+    /// puts every thread, or a task's (`background`), on one, else as the server is set.
+    pub(crate) async fn new_thread(
         &self,
         caller: &Caller,
         worktree: Option<bool>,
-    ) -> Result<Reply, ApiError> {
+        background: bool,
+    ) -> Result<ThreadId, ApiError> {
+        let on_worker = self.inner.every_thread || background;
         let place = match (worktree, &self.inner.worker) {
             (Some(true), _) => Place::Worktree,
-            (None, Some(environment)) => Place::Worker(environment.clone()),
-            (None, None) if self.inner.worktree => Place::Worktree,
+            (None, Some(environment)) if on_worker => Place::Worker(environment.clone()),
+            (None, _) if self.inner.worktree => Place::Worktree,
             _ => Place::Here,
         };
         let thread = self
@@ -279,9 +335,7 @@ where
             .map_err(|error| api(&error))?;
         let id = thread.id;
         self.keep(id, thread);
-        Ok(Reply::Thread {
-            thread: self.summary(id),
-        })
+        Ok(id)
     }
 
     async fn events(
@@ -291,6 +345,9 @@ where
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
         let limit = limit.unwrap_or(500).clamp(1, MAX_PAGE);
+        if is_ledger(thread) {
+            return Err(no_thread(thread));
+        }
         self.ensure_not_deleted(thread).await?;
         let events = self
             .inner
@@ -347,6 +404,24 @@ where
             before_tokens: compacted.before_tokens,
             after_tokens: compacted.after_tokens,
         })
+    }
+}
+
+/// The server's clock, shared with its harness.
+struct SharedClock(Arc<dyn Clock>);
+
+impl Clock for SharedClock {
+    fn now(&self) -> Timestamp {
+        self.0.now()
+    }
+}
+
+/// The server's randomness, shared with its harness.
+struct SharedEntropy(Arc<dyn Entropy>);
+
+impl Entropy for SharedEntropy {
+    fn bytes(&self) -> [u8; 10] {
+        self.0.bytes()
     }
 }
 

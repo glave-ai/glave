@@ -130,6 +130,8 @@ impl Client<'_> {
     /// person pressed Ctrl-C instead of answering.
     async fn note(&self, note: &Notification, printer: &mut Printer, interrupt: &Cancel) -> bool {
         match note {
+            // A turn the terminal follows is not a task.
+            Notification::TaskFinished { .. } => false,
             Notification::Live { thread, update } if *thread != self.thread => {
                 printer.child(*thread, update.clone());
                 false

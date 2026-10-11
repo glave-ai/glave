@@ -58,7 +58,7 @@ impl Clock for Ticking {
     }
 }
 
-pub struct Counting(AtomicU64);
+pub struct Counting(pub AtomicU64);
 impl Entropy for Counting {
     fn bytes(&self) -> [u8; 10] {
         let n = self.0.fetch_add(1, Ordering::SeqCst).to_be_bytes();
@@ -193,6 +193,7 @@ pub async fn build<L: EventLog + 'static>(
         worktree: false,
         hooks: glave_harness::Hooks::default(),
         workers: None,
+        tasks: glave_session::TaskLimits::default(),
     };
     (Server::new(wiring, settings, scope(), answering), recorded)
 }
@@ -213,6 +214,7 @@ where
     B: BlobStore + 'static,
 {
     let started = Request::ThreadStart {
+        background: false,
         worktree: worktree.then_some(true),
     };
     match server.request(started).await.unwrap() {
@@ -230,6 +232,8 @@ where
 {
     server
         .request(Request::TurnStart {
+            background: false,
+            budget: None,
             thread,
             prompt: "go".into(),
             meta: Meta::default(),
@@ -270,4 +274,18 @@ where
         .iter()
         .map(|event| event.kind.as_str().to_owned())
         .collect()
+}
+
+/// A scripted model, and every request it receives (as JSON).
+pub fn script(
+    answers: Vec<Completion>,
+    gate: Option<Arc<Notify>>,
+) -> (Script, Arc<Mutex<Vec<String>>>) {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let script = Script {
+        answers: Mutex::new(answers.into()),
+        gate,
+        seen: Arc::clone(&seen),
+    };
+    (script, seen)
 }
