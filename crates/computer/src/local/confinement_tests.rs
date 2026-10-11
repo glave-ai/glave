@@ -125,14 +125,15 @@ fn links_planted_by_commands_and_hard_links_cannot_reach_outside() {
     );
 }
 
-/// Swaps the folder `in_dir` for a link to the folder outside the workspace and back, the way
-/// a command running beside the file tools could, until told to stop. How many swaps it made.
-fn flip(inside: &std::path::Path, stop: &AtomicBool) -> usize {
+/// Swaps the folder `in_dir` for a link to each of `targets` in turn and back, the way a
+/// command running beside the file tools could, until told to stop. How many swaps it made.
+fn flip(inside: &std::path::Path, targets: &[&str], stop: &AtomicBool) -> usize {
     let (folder, parked) = (inside.join("in_dir"), inside.join("in_dir.parked"));
     let mut swaps = 0;
     while !stop.load(Ordering::Relaxed) {
         if std::fs::rename(&folder, &parked).is_ok() {
-            if std::os::unix::fs::symlink("../outside", &folder).is_ok() {
+            let target = targets.get(swaps % targets.len().max(1)).unwrap();
+            if std::os::unix::fs::symlink(target, &folder).is_ok() {
                 swaps += 1;
             }
             let _ = std::fs::remove_file(&folder);
@@ -149,10 +150,7 @@ fn flip(inside: &std::path::Path, stop: &AtomicBool) -> usize {
 fn leaks(computers: &LocalComputers, at: WorkspaceId, rt: &tokio::runtime::Runtime) -> Vec<String> {
     let mut seen = Vec::new();
     for path in ["in_dir/sentinel.txt", "in_dir/fresh/new.txt"] {
-        let write = FileWrite {
-            path: path.into(),
-            content: Bytes::new(b"PWNED"),
-        };
+        let write = FileWrite::new(path, Bytes::new(b"PWNED"));
         let _ = rt.block_on(computers.write(at, &[write]));
     }
     if let Ok(bytes) = rt.block_on(computers.read(at, "in_dir/sentinel.txt")) {
@@ -209,7 +207,7 @@ fn a_link_swapped_while_files_are_worked_on_never_reaches_outside() {
     let stop = Arc::new(AtomicBool::new(false));
     let flipper = {
         let (inside, stop) = (inside.clone(), Arc::clone(&stop));
-        std::thread::spawn(move || flip(&inside, &stop))
+        std::thread::spawn(move || flip(&inside, &["../outside"], &stop))
     };
     let workspace = confinement_workspace(&computers, &work, &rt);
     let started = std::time::Instant::now();
@@ -240,6 +238,73 @@ fn a_link_swapped_while_files_are_worked_on_never_reaches_outside() {
         std::fs::read_to_string(inside.join("in_dir/sentinel.txt")).unwrap(),
         "PWNED",
         "writes inside still work while raced"
+    );
+}
+
+/// Protected writes, raced by a command swapping a folder for a link into `.git/hooks` or
+/// `.glave` and back: the computer checks the path it actually opens, so nothing protected is
+/// ever written, while writes into the real folder still land.
+#[test]
+fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
+    let rt = runtime();
+    let (work, copies) = scratch("protected-race");
+    std::fs::create_dir_all(work.join(".git/hooks")).unwrap();
+    std::fs::create_dir_all(work.join(".glave")).unwrap();
+    std::fs::write(work.join(".glave/settings.json"), "{}\n").unwrap();
+    std::fs::create_dir_all(work.join("in_dir")).unwrap();
+    let computers = LocalComputers::new(&copies, plain_environment());
+    let here = rt.block_on(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let path = work.to_string_lossy().into_owned();
+        computers
+            .open(made.id, &Sources::Folder { path })
+            .await
+            .unwrap()
+    });
+    let stop = Arc::new(AtomicBool::new(false));
+    let flipper = {
+        let (work, stop) = (work.clone(), Arc::clone(&stop));
+        std::thread::spawn(move || flip(&work, &[".git/hooks", ".glave"], &stop))
+    };
+    let started = std::time::Instant::now();
+    let (mut landed, mut refused) = (0usize, 0usize);
+    while started.elapsed().as_millis() < 3_000 {
+        for path in [
+            "in_dir/pre-commit",
+            "in_dir/settings.json",
+            "in_dir/fresh/hook",
+        ] {
+            let write = FileWrite {
+                protect: true,
+                ..FileWrite::new(path, Bytes::new(b"PWNED"))
+            };
+            match rt.block_on(computers.write(here.id, &[write])) {
+                Ok(()) => landed += 1,
+                Err(error) if glave_ports::is_protected_refusal(&error) => refused += 1,
+                Err(_) => {}
+            }
+        }
+    }
+    stop.store(true, Ordering::Relaxed);
+    let swaps = flipper.join().unwrap();
+    assert!(swaps > 100, "the race must really run: {swaps} swaps");
+    let hooks: Vec<_> = std::fs::read_dir(work.join(".git/hooks"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert!(hooks.is_empty(), "a hook was written: {hooks:?}");
+    let settings: Vec<_> = std::fs::read_dir(work.join(".glave"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(settings, ["settings.json"], "nothing new in .glave");
+    assert_eq!(
+        std::fs::read_to_string(work.join(".glave/settings.json")).unwrap(),
+        "{}\n"
+    );
+    assert!(
+        landed > 0 && refused > 0,
+        "both sides of the race were seen: {landed} landed, {refused} refused"
     );
 }
 
@@ -300,10 +365,7 @@ fn a_hard_linked_file_can_be_edited_and_the_other_name_is_unchanged() {
             .await
             .unwrap()
     });
-    let edit = FileWrite {
-        path: "node_modules/pkg/index.js".into(),
-        content: Bytes::new(b"edited\n"),
-    };
+    let edit = FileWrite::new("node_modules/pkg/index.js", Bytes::new(b"edited\n"));
     rt.block_on(computers.write(here.id, &[edit])).unwrap();
     assert_eq!(
         std::fs::read_to_string(work.join("node_modules/pkg/index.js")).unwrap(),

@@ -3,6 +3,7 @@
 //! where the sandbox is (macOS), unless `GLAVE_REQUIRE_SANDBOX` says it must.
 
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command as Process;
 
@@ -136,5 +137,127 @@ fn a_sandboxed_worktree_commits_but_never_writes_the_main_checkout() {
         assert!(!repo.join(".git/hooks/post-commit").exists(), "{said}");
         let config = std::fs::read_to_string(repo.join(".git/config")).unwrap();
         assert!(!config.ends_with("x\n"), "{config}");
+    });
+}
+
+/// Spellings a command might use for a protected path, and the path a folder that ignores
+/// case (APFS's default) takes each one to: case, a long s (folds to `s`) and the Kelvin sign
+/// (folds to `k`).
+const SPELLINGS: &[(&str, &str)] = &[
+    (".git/hook\u{17f}/pre-commit", ".git/hooks/pre-commit"),
+    (".GIT/hooks/post-checkout", ".git/hooks/post-checkout"),
+    (".git/hoo\u{212a}s/post-merge", ".git/hooks/post-merge"),
+    (".git/CONFIG", ".git/config"),
+    (".GLAVE/settings.json", ".glave/settings.json"),
+    (".v\u{17f}code/tasks.json", ".vscode/tasks.json"),
+    (".mcp.j\u{17f}on", ".mcp.json"),
+    ("ref\u{17f}/heads/main", "refs/heads/main"),
+    (
+        ".git/worktrees/w/hook\u{17f}/pre-commit",
+        ".git/worktrees/w/hooks/pre-commit",
+    ),
+];
+
+/// A script writing every spelling, making folders on the way.
+fn write_spellings() -> String {
+    let mut script = String::new();
+    for (spelled, _) in SPELLINGS {
+        let _ = write!(
+            script,
+            "mkdir -p \"$(dirname '{spelled}')\"; printf x > '{spelled}'; "
+        );
+    }
+    script + "true"
+}
+
+fn ignores_case(dir: &Path) -> bool {
+    std::fs::write(dir.join("case-probe"), "").unwrap();
+    dir.join("CASE-PROBE").exists()
+}
+
+/// Seatbelt compares paths the way the folder does: on a folder that ignores case, a command
+/// cannot reach a protected path through another spelling of it, whether the protected folder
+/// exists yet or not. A name that only looks alike stays writable. Where there is no sandbox
+/// (Linux, until bubblewrap lands), the command is refused and writes nothing.
+#[test]
+fn other_spellings_of_protected_paths_are_protected_too() {
+    let enforced = enforced();
+    let dir = scratch("spellings");
+    let environment: Vec<(OsString, OsString)> = std::env::vars_os()
+        .filter(|(name, _)| name == "PATH" || name == "HOME")
+        .collect();
+    let computers = LocalComputers::new(dir.join("copies"), environment);
+    let sandbox = Sandbox {
+        level: SandboxLevel::Project,
+        network: false,
+        home: None,
+        glave_home: None,
+    };
+    let project = |name: &str, hooks: bool| {
+        let root = dir.join(name);
+        std::fs::create_dir_all(root.join(".git/worktrees/w")).unwrap();
+        if hooks {
+            std::fs::create_dir_all(root.join(".git/hooks")).unwrap();
+        }
+        root
+    };
+    block_on(async {
+        let computer = computers.create(&Environment::host()).await.unwrap();
+        if !enforced {
+            let root = project("unconfined", false);
+            let path = root.to_string_lossy().into_owned();
+            let here = computers
+                .open(computer.id, &Sources::Folder { path })
+                .await
+                .unwrap();
+            let mut command = Command::new(write_spellings());
+            command.sandbox = Some(sandbox.clone());
+            let refused = computers
+                .run(here.id, &command, &Collect::default(), &Switch::default())
+                .await;
+            assert!(
+                matches!(refused, Err(glave_ports::ComputerError::Unsupported(_))),
+                "{refused:?}"
+            );
+            for (spelled, protected) in SPELLINGS {
+                assert!(!root.join(spelled).exists() && !root.join(protected).exists());
+            }
+            return;
+        }
+        for hooks in [false, true] {
+            let root = project(&format!("sandboxed-{hooks}"), hooks);
+            let path = root.to_string_lossy().into_owned();
+            let here = computers
+                .open(computer.id, &Sources::Folder { path })
+                .await
+                .unwrap();
+            let script = write_spellings()
+                + "; mkdir -p .git/look\u{17f} && printf x > .git/look\u{17f}/a && echo alike-ok";
+            let (_, said) = run(&computers, here.id, &sandbox, &script).await;
+            for (spelled, protected) in SPELLINGS {
+                assert!(
+                    !root.join(protected).exists(),
+                    "{spelled} reached {protected}: {said}"
+                );
+            }
+            assert!(said.contains("alike-ok"), "{said}");
+        }
+        // Control: unsandboxed, the same spellings land on the protected paths, so the check
+        // above can fail.
+        let root = project("open", false);
+        if ignores_case(&root) {
+            let made = Process::new("bash")
+                .args(["-c", &write_spellings()])
+                .current_dir(&root)
+                .status()
+                .unwrap();
+            assert!(made.success());
+            for (spelled, protected) in SPELLINGS {
+                assert!(
+                    root.join(protected).exists(),
+                    "{spelled} is not {protected} here"
+                );
+            }
+        }
     });
 }

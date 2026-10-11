@@ -15,8 +15,12 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// The protocol version spoken; it changes whenever a message changes shape. `2026-10-10`
 /// added `files/stat`, `files/glob`, `files/search`, ignore-aware listings and the sandbox on
 /// `command/run`: a server that predates it would run a sandboxed command unconfined.
-/// `2026-10-10.1` added the credential on `workspace/open`.
-pub const PROTOCOL: &str = "2026-10-10.1";
+/// `2026-10-10.1` added the credential on `workspace/open`. `2026-10-11` added `protect` on
+/// each file of `files/write`: the computer refuses a protected path on the path it opens. A
+/// server that predates it would ignore the field and write, so the client refuses such a
+/// server before sending it anything. The protected list is the one in `glave-ports`, the same
+/// on both sides; changing it changes the protocol.
+pub const PROTOCOL: &str = "2026-10-11";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";

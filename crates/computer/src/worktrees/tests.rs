@@ -53,10 +53,7 @@ fn worktree(repo: &Path, branch: &str, owner: Option<&str>) -> Sources {
 }
 
 fn file(path: &str, content: &[u8]) -> FileWrite {
-    FileWrite {
-        path: path.into(),
-        content: glave_ports::Bytes::new(content),
-    }
+    FileWrite::new(path, glave_ports::Bytes::new(content))
 }
 
 fn computers(base: &Path) -> LocalComputers {
