@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::hash::{Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -43,7 +44,7 @@ pub async fn prepare(
     let mut environment: Environment = base.iter().cloned().collect();
     // Each run builds in its own folder: runs at once would otherwise overwrite each other's
     // binaries. It sits outside the workspace and is removed once the run is graded.
-    environment.insert("CARGO_TARGET_DIR".into(), dir.join("target").into());
+    environment.insert("CARGO_TARGET_DIR".into(), target(dir, task).into());
     environment.insert("NO_COLOR".into(), "1".into());
     for (name, value) in &task.env {
         environment.insert(name.into(), fill(value).into());
@@ -65,10 +66,30 @@ pub async fn prepare(
     })
 }
 
+/// Where the run in `dir` builds: in `dir`, or in the sandbox, which writes only the project
+/// and temp folders, in a folder of the run's own in `/tmp`.
+fn target(dir: &Path, task: &Task) -> PathBuf {
+    match task.sandbox {
+        Some(_) => {
+            let mut hasher = std::hash::DefaultHasher::new();
+            dir.hash(&mut hasher);
+            Path::new("/tmp")
+                .join(format!("glave-eval-{:016x}", hasher.finish()))
+                .join("target")
+        }
+        None => dir.join("target"),
+    }
+}
+
 /// Removes what a run built, keeping its workspace and records.
-pub async fn tidy(dir: &Path) {
+pub async fn tidy(dir: &Path, task: &Task) {
     // Best effort: a leftover build folder costs disk space, not correctness.
-    let _ = tokio::fs::remove_dir_all(dir.join("target")).await;
+    let target = target(dir, task);
+    let built = match task.sandbox {
+        Some(_) => target.parent().unwrap_or(&target),
+        None => &target,
+    };
+    let _ = tokio::fs::remove_dir_all(built).await;
 }
 
 /// A finished script.

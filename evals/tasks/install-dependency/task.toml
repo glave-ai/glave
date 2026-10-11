@@ -1,0 +1,11 @@
+[task]
+name = "glave/install-dependency"
+description = "Installing a dependency from the network works under glave's default: in the sandbox, network on."
+
+[agent]
+timeout_sec = 600
+
+[glave]
+# No sandbox or approval named: the task runs as glave does by default.
+# No grader script, so CI never reaches the package index: the checks read what is left.
+checks = [{ exists = ".venv/pyvenv.cfg" }, { exists = "report.txt" }, { answer_contains = "1.2 million" }]

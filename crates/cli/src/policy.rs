@@ -20,7 +20,7 @@ use anyhow::Context as _;
 use glave_harness::Hook;
 
 pub use choices::{Choices, Chosen, Layer, Level, Source};
-pub use effective::{check_model, check_own_servers};
+pub use effective::{check_model, check_own_servers, unsandboxed};
 pub use explain::explain;
 pub use files::{Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, config};
 pub use memory::{MemorySettings, settle as memory_settings};
@@ -77,6 +77,8 @@ pub struct Loaded {
     pub project: Option<ProjectTrust>,
     /// The hooks in the person's `config.toml`, which are theirs and need no trust.
     pub person_hooks: Vec<Hook>,
+    /// Why this computer cannot run the sandbox, when that is known before trying.
+    pub no_sandbox_here: Option<String>,
 }
 
 /// A project's trust, for `glave policy explain`.
@@ -90,7 +92,11 @@ pub struct ProjectTrust {
 impl Loaded {
     /// The choices within the constraints, or why they cannot be.
     pub fn settle(&self) -> anyhow::Result<Choices> {
-        effective::settle(self.choices.clone(), &self.constraints)
+        let choices = effective::settle(self.choices.clone(), &self.constraints)?;
+        Ok(match &self.no_sandbox_here {
+            Some(why) => effective::unsandboxed(choices, why, &self.constraints),
+            None => choices,
+        })
     }
 }
 
@@ -140,10 +146,12 @@ pub async fn load(
     ];
     if let Some(values) = project {
         // A project never chooses the gateway: the person's sign-in would go where it said.
-        // Nor whether the person's memory is on: that is theirs alone.
+        // Nor whether the person's memory is on: that is theirs alone. It may take the
+        // network away from sandboxed commands, never give it back.
         let values = ConfigFile {
             gateway: None,
             memory: None,
+            network: values.network.filter(|on| !on),
             ..values
         };
         layers.push(Layer {
@@ -181,6 +189,7 @@ pub fn assemble(
         policies: policies.iter().map(|(path, _)| path.clone()).collect(),
         project,
         person_hooks: Vec::new(),
+        no_sandbox_here: None,
     }
 }
 

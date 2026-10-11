@@ -97,7 +97,21 @@ mod project {
             Reply::text("It said hi."),
         ])
         .unwrap();
-        let output = glave(&place, &model, &["--model", "m", "echo it"], "");
+        // Unconfined and without asking, so the call runs wherever the sandbox cannot.
+        let output = glave(
+            &place,
+            &model,
+            &[
+                "--sandbox",
+                "off",
+                "--approval",
+                "auto",
+                "--model",
+                "m",
+                "echo it",
+            ],
+            "",
+        );
         let shown = text(&output);
         assert!(output.status.success(), "{shown}");
         assert!(shown.contains("It said hi."), "{shown}");

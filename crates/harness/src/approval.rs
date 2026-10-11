@@ -39,6 +39,7 @@ pub enum ApprovalMode {
     /// The cautious mode: ask before every change and every command.
     Ask,
     /// Changes and commands go through: in the sandbox when it is on, as the person when not.
+    /// glave chooses it by default only where commands run in the sandbox (`specs/approvals.md`).
     #[default]
     Auto,
 }

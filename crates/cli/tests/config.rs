@@ -34,7 +34,16 @@ mod config {
         let output = glave(
             &place,
             &model,
-            &["--approval", "auto", "--model", "m", "hi"],
+            // With the sandbox off too: auto without a sandbox needs both choices.
+            &[
+                "--approval",
+                "auto",
+                "--sandbox",
+                "off",
+                "--model",
+                "m",
+                "hi",
+            ],
             "",
         );
         let shown = text(&output);
