@@ -3,7 +3,7 @@
 
   <h3>{{ copy.tabs }}</h3>
   <div class="demo">
-    <glz-tabs data-testid="showcase-tabs" [label]="copy.tabsLabel" [(selected)]="tab">
+    <glz-tabs testId="showcase-tabs" [label]="copy.tabsLabel" [(selected)]="tab">
       <glz-tab [label]="copy.conversation">{{ copy.conversationText }}</glz-tab>
       <glz-tab [label]="copy.events">{{ copy.eventsText }}</glz-tab>
       <glz-tab [label]="copy.cost">{{ copy.costText }}</glz-tab>

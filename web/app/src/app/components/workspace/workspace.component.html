@@ -1,0 +1,56 @@
+<a class="skip" [href]="contentLink" data-testid="workspace-skip">{{ copy.skip }}</a>
+<glz-sidenav-layout [label]="copy.sideNav">
+  <app-spaces-nav glzSidenav class="side" [current]="currentThread()" (navigated)="navigated()" />
+  <div class="page">
+    <header>
+      <glz-top-bar>
+        <button
+          glzTopBarStart
+          glzIconButton
+          data-testid="workspace-menu"
+          [label]="copy.menu"
+          (click)="toggle()"
+        >
+          <glz-icon [icon]="icons.menu" />
+        </button>
+        <a class="name" routerLink="/">{{ copy.name }}</a>
+        <nav glzTopBarEnd class="pages" [attr.aria-label]="copy.pages">
+          <a
+            glzIconButton
+            routerLink="/tasks"
+            routerLinkActive="active"
+            ariaCurrentWhenActive="page"
+            data-testid="workspace-tasks"
+            [label]="copy.tasks"
+          >
+            <glz-icon [icon]="icons.tasks" />
+          </a>
+          <a
+            glzIconButton
+            routerLink="/memory"
+            routerLinkActive="active"
+            ariaCurrentWhenActive="page"
+            data-testid="workspace-memory"
+            [label]="copy.memory"
+          >
+            <glz-icon [icon]="icons.memory" />
+          </a>
+          <a
+            glzIconButton
+            routerLink="/settings"
+            routerLinkActive="active"
+            ariaCurrentWhenActive="page"
+            data-testid="workspace-settings"
+            [label]="copy.settings"
+          >
+            <glz-icon [icon]="icons.settings" />
+          </a>
+          <app-theme-picker />
+        </nav>
+      </glz-top-bar>
+    </header>
+    <main id="content" class="content" tabindex="-1">
+      <router-outlet />
+    </main>
+  </div>
+</glz-sidenav-layout>
