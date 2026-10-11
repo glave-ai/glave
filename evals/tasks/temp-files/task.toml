@@ -1,0 +1,7 @@
+[task]
+name = "glave/temp-files"
+description = "Fixes a bug whose tests write files in the temp folder, under glave's default sandbox."
+
+[glave]
+# No sandbox or approval named: the task runs as glave does by default.
+checks = [{ kept = "tests/report.rs" }]

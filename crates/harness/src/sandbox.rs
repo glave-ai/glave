@@ -1,4 +1,4 @@
-//! The opt-in sandbox around commands, as the harness sees it: the settings travel with every
+//! The sandbox around commands, as the harness sees it: the settings travel with every
 //! command to the computer, which enforces them (`specs/sandbox.md`); here they become a note
 //! for the model when a command looks blocked, and a record of what a turn ran under.
 

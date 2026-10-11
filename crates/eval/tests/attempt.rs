@@ -72,10 +72,12 @@ mod attempts {
             &dir,
             r#"checks = [{ answer_contains = "hello.txt" }, { exists = "hello.txt" }, { kept = "README.md" }]"#,
             // The grader sees the workspace, never glave's endpoint variables, and builds in
-            // the run's own folder, outside the workspace.
+            // a folder of the run's own outside the workspace: in the sandbox, glave's default,
+            // one in /tmp, which sandboxed commands may write.
             "grep -q hi hello.txt && test -z \"${GLAVE_API_KEY:-}\"\n\
              mkdir -p \"$CARGO_TARGET_DIR\"\n\
-             test \"$(cd \"$CARGO_TARGET_DIR\" && pwd -P)\" = \"$(cd .. && pwd -P)/target\"\n",
+             case \"$CARGO_TARGET_DIR\" in /tmp/glave-eval-*/target) ;; *) exit 1;; esac\n\
+             echo \"$CARGO_TARGET_DIR\" > ../target-path.txt\n",
         );
         let server = FakeServer::start(writes_hello()).unwrap();
         let run = dir.join("run");
@@ -93,9 +95,10 @@ mod attempts {
         );
         assert!(transcript.contains("[tool]"), "{transcript}");
         assert!(run.join("test.log").is_file());
+        let target = std::fs::read_to_string(run.join("target-path.txt")).unwrap();
         assert!(
-            !run.join("target").exists(),
-            "what the run built is removed"
+            !std::path::Path::new(target.trim()).exists(),
+            "what the run built is removed: {target}"
         );
         let sent = server.received();
         assert_eq!(

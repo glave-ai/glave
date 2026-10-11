@@ -167,11 +167,15 @@ fn secret_locations_are_unreadable() {
     std::fs::write(project.join("server.pem"), "canary-pem\n").unwrap();
     std::fs::write(project.join(".env.example"), "example-ok\n").unwrap();
     std::fs::write(project.join("notes.md"), "notes-ok\n").unwrap();
+    // A certificate bundle is public: Python's HTTPS needs certifi's in a project's venv.
+    let certifi = project.join(".venv/lib/certifi");
+    std::fs::create_dir_all(&certifi).unwrap();
+    std::fs::write(certifi.join("cacert.pem"), "bundle-ok\n").unwrap();
     let out = run(
         &project,
         &sandbox(SandboxLevel::Project, false, &dir),
         &format!(
-            "for f in {}/.ssh/id_ed25519 {}/.glave/glave.db .env .ENV.local server.pem .env.example notes.md; do cat \"$f\"; done; true",
+            "for f in {}/.ssh/id_ed25519 {}/.glave/glave.db .env .ENV.local server.pem .env.example notes.md .venv/lib/certifi/cacert.pem; do cat \"$f\"; done; true",
             dir.display(),
             dir.display()
         ),
@@ -179,6 +183,7 @@ fn secret_locations_are_unreadable() {
     assert!(!out.text.contains("canary"), "{}", out.text);
     assert!(out.text.contains("example-ok"), "{}", out.text);
     assert!(out.text.contains("notes-ok"), "{}", out.text);
+    assert!(out.text.contains("bundle-ok"), "{}", out.text);
     // Control: without the sandbox every canary is readable.
     let open = run_in(
         &project,
@@ -189,6 +194,25 @@ fn secret_locations_are_unreadable() {
         ),
     );
     assert_eq!(open.text.matches("canary").count(), 4, "{}", open.text);
+}
+
+/// Package managers keep their caches in the home folder, which sandboxed commands cannot
+/// write; in the sandbox they go in its temp folder, so installing a dependency works.
+#[test]
+fn package_caches_are_in_the_sandbox_s_temp_folder() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("caches");
+    let project = dir.join("project");
+    let out = run(
+        &project,
+        &sandbox(SandboxLevel::Project, true, &dir),
+        "for v in XDG_CACHE_HOME npm_config_cache YARN_CACHE_FOLDER PIP_CACHE_DIR UV_CACHE_DIR \
+         GOPATH GOMODCACHE GOCACHE; do case \"${!v}\" in \"$TMPDIR\"/*) mkdir -p \"${!v}\" && \
+         touch \"${!v}/x\" && echo \"$v writable\";; *) echo \"$v is ${!v}\";; esac; done",
+    );
+    assert_eq!(out.text.matches("writable").count(), 8, "{}", out.text);
 }
 
 #[test]

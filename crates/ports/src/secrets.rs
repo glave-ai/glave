@@ -46,6 +46,16 @@ const SECRET_NAMES: &[&str] = &[
     "id_ed25519",
 ];
 
+/// Certificate bundles, which are public though named like keys: certifi's `cacert.pem`, in
+/// every Python environment that makes HTTPS requests, and gRPC's `roots.pem`.
+const CERTIFICATE_BUNDLES: &[&str] = &[
+    "cacert.pem",
+    "cacerts.pem",
+    "ca-bundle.pem",
+    "ca-certificates.pem",
+    "roots.pem",
+];
+
 /// Files that hold secrets, by extension: private keys and key stores.
 const SECRET_EXTENSIONS: &[&str] = &["pem", "key", "p12", "pfx", "jks", "keystore"];
 
@@ -66,7 +76,8 @@ pub fn is_secret_file(path: &Path) -> bool {
     }
     SECRET_NAMES.contains(&name.as_str())
         || name.starts_with("secrets.")
-        || extension.is_some_and(|extension| SECRET_EXTENSIONS.contains(&extension))
+        || (extension.is_some_and(|extension| SECRET_EXTENSIONS.contains(&extension))
+            && !CERTIFICATE_BUNDLES.contains(&name.as_str()))
 }
 
 #[cfg(test)]
@@ -130,6 +141,8 @@ mod tests {
             "src/main.rs",
             "keys.rs",
             "environment.md",
+            ".venv/lib/python3.12/site-packages/certifi/cacert.pem",
+            "grpc/_cython/_credentials/roots.pem",
             ".",
         ] {
             assert!(!is_secret_file(Path::new(path)), "{path}");

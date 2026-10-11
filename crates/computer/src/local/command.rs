@@ -19,6 +19,23 @@ const MAX_TIMEOUT_SECS: u64 = 600;
 const DRAIN: Duration = Duration::from_millis(500);
 /// How long a stopped command gets between SIGTERM and SIGKILL.
 const GRACE: Duration = Duration::from_secs(3);
+/// Package managers' caches, kept in the home folder by default, where sandboxed commands
+/// cannot write. In the sandbox each goes in a folder of its own in the sandbox's temp folder,
+/// so installing a dependency works there; the cache starts empty each run, and nothing a
+/// command leaves in it reaches commands outside the sandbox. Cargo's is left alone: its
+/// home holds the person's settings, and crates already downloaded build offline.
+const CACHES: &[(&str, &str)] = &[
+    ("XDG_CACHE_HOME", "xdg"),
+    ("npm_config_cache", "npm"),
+    ("npm_config_store_dir", "pnpm"),
+    ("YARN_CACHE_FOLDER", "yarn"),
+    ("BUN_INSTALL_CACHE_DIR", "bun"),
+    ("PIP_CACHE_DIR", "pip"),
+    ("UV_CACHE_DIR", "uv"),
+    ("GOPATH", "go"),
+    ("GOMODCACHE", "go/pkg/mod"),
+    ("GOCACHE", "go-build"),
+];
 
 /// Runs `command` in `opened`. `helper` runs the Linux sandbox's helper, if this machine has one.
 pub(crate) async fn run(
@@ -96,7 +113,13 @@ fn bash(
         .current_dir(&opened.root)
         .env_clear()
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
-        .envs(sandbox.map(|(_, temp)| ("TMPDIR", temp)))
+        .envs(sandbox.map(|(_, temp)| ("TMPDIR", temp.to_path_buf())))
+        .envs(sandbox.into_iter().flat_map(|(_, temp)| {
+            let caches = temp.join("caches");
+            CACHES
+                .iter()
+                .map(move |(name, folder)| (*name, caches.join(folder)))
+        }))
         .env("NO_COLOR", "1")
         .env("TERM", "dumb")
         .env("PAGER", "cat")

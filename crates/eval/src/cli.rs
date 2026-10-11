@@ -201,7 +201,10 @@ fn chosen(tasks: Vec<Task>, options: &Options) -> Result<Vec<Task>, String> {
         })
         .collect();
     if left_out > 0 {
-        println!("({left_out} sandboxed tasks are left out: this computer has no sandbox)");
+        println!(
+            "({left_out} tasks are left out: they run in the sandbox, as glave does by default, \
+             and this computer has none)"
+        );
     }
     if tasks.is_empty() {
         return Err("no task matches".to_owned());

@@ -12,6 +12,10 @@ use crate::policy::{self, Choices, ConfigFile, Loaded, Locations, ProjectTrust};
 use crate::trust::{self, Asking, Outcome, Project};
 use crate::{config, home, mcp};
 
+/// Why the sandbox cannot run, as `glave policy explain` says it without trying.
+const NO_SANDBOX: &str = "this computer has no sandbox glave can use (macOS's Seatbelt, or \
+                          bubblewrap on Linux)";
+
 /// What this run uses: the files read, and the choices within the constraints.
 pub struct Setup {
     pub loaded: Loaded,
@@ -32,8 +36,12 @@ impl Setup {
     pub async fn load(args: &Args, folder: &Path, asking: Asking) -> anyhow::Result<Self> {
         let (loaded, outcome) = read(args, folder, asking).await?;
         let choices = loaded.settle()?;
-        if args.network && choices.sandbox.value.is_none() {
-            anyhow::bail!("--network only applies with a sandbox: pass --sandbox, or set one");
+        if args.network.is_some() && choices.sandbox.value.is_none() {
+            anyhow::bail!(
+                "--network and --no-network only apply with a sandbox, and the sandbox is off \
+                 here (from {})",
+                choices.sandbox.from
+            );
         }
         let mine = &loaded.person_hooks;
         if let Some(rule) = loaded.constraints.own_hooks_forbidden()
@@ -84,7 +92,10 @@ impl Setup {
 /// `glave policy explain`: prints every setting and constraint, and fails when glave would
 /// refuse to run here.
 pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
-    let (loaded, _) = read(args, &std::env::current_dir()?, Asking::Explaining).await?;
+    let (mut loaded, _) = read(args, &std::env::current_dir()?, Asking::Explaining).await?;
+    if !glave_computer::sandbox_available() {
+        loaded.no_sandbox_here = Some(NO_SANDBOX.to_owned());
+    }
     // The provider names models as the gateway sees them; without a model there is none.
     let model = loaded
         .choices
@@ -132,6 +143,7 @@ fn flags(args: &Args) -> ConfigFile {
         model: args.model.clone(),
         approval: args.approval.map(Into::into),
         sandbox: args.sandbox,
+        network: args.network,
         worktree: args.worktree.then_some(true),
         on: args.on,
         ..ConfigFile::default()

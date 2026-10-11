@@ -160,6 +160,8 @@ mod gateway {
         )
         .unwrap();
         let output = Command::new(env!("CARGO_BIN_EXE_glave"))
+            // Unconfined and without asking, so the call runs wherever the sandbox cannot.
+            .args(["--sandbox", "off", "--approval", "auto"])
             .arg("echo it through the catalog")
             .current_dir(&place.project)
             .env("GLAVE_HOME", &place.home)

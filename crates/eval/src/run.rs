@@ -147,7 +147,7 @@ pub async fn attempt(
     if let Some(test) = task.test_script() {
         let test = test.display().to_string();
         let output = script("bash", &[test.as_str()], &workspace, &environment).await;
-        tidy(dir).await;
+        tidy(dir, task).await;
         let output = output?;
         write(dir.join("test.log"), &output.text).await?;
         if !output.success {
@@ -172,7 +172,7 @@ pub async fn attempt(
             .iter()
             .filter_map(|check| check.judge(&cx).err()),
     );
-    tidy(dir).await;
+    tidy(dir, task).await;
     let mut attempt = Attempt::graded(&task.name, model, number, &trace, seconds);
     attempt.failures = failures;
     Ok(attempt)
