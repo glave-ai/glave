@@ -52,6 +52,8 @@ kubernetes = ["dep:kube", "dep:k8s-openapi"]
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }
 proptest.workspace = true
+# Paused time, so fault tests stall and time out on a clock they move, never a real one.
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

@@ -6,9 +6,10 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use anyhow::{Context as _, bail};
-use glave_computer::{Identity, LocalComputers, MIN_SECRET, Token, serve, serve_tcp, serve_tls};
+use glave_computer::{Identity, LocalComputers, MIN_SECRET, Tokens, serve, serve_tcp, serve_tls};
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
@@ -25,8 +26,10 @@ Usage:
   glave computer serve --tls <host:port> <folder>
                                      serve it over TLS on any address, with cert.pem, key.pem
                                      and token in <folder> (the token file: the secret, then
-                                     the Unix second it stops opening connections); how a
-                                     harness reaches a worker
+                                     how many seconds it opens connections, counted on this
+                                     machine's clock from when glave first reads it; read
+                                     again for each connection, so it can be renewed); how
+                                     a harness reaches a worker
 
 Copies of repositories are kept in $GLAVE_HOME/workspaces. Commands get glave's environment
 without anything named like a key, token, secret or password.";
@@ -148,7 +151,13 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
                 &read(&folder, "cert.pem").await?,
                 &read(&folder, "key.pem").await?,
             )?;
-            let token = Token::from_file(&read(&folder, "token").await?)?;
+            // Read for each connection, so the harness can renew it; read once now, so a
+            // missing or malformed token stops glave before it listens.
+            let token = Tokens::file(folder.join("token"));
+            token
+                .current(SystemTime::now())
+                .await
+                .with_context(|| format!("could not read {}", folder.join("token").display()))?;
             let listener = TcpListener::bind(address)
                 .await
                 .with_context(|| format!("could not listen on {address}"))?;

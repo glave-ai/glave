@@ -2,7 +2,7 @@
 //! concurrently, a command's output streams as notifications, and when the connection ends
 //! every command it started is stopped.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
@@ -19,7 +19,7 @@ use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
 
 use crate::cancel::Switch;
-use crate::token::Token;
+use crate::token::{Token, Tokens};
 use crate::wire::{self, Chunk, MAX_LINE, OUTPUT, Request, code};
 
 /// Lines written ahead of a slow client.
@@ -30,12 +30,15 @@ const MAX_IN_FLIGHT: usize = 64;
 const MAX_CONNECTIONS: usize = 32;
 /// How long a TLS client has to finish its handshake before it is dropped.
 const HANDSHAKE: std::time::Duration = std::time::Duration::from_secs(10);
+/// Request ids one connection remembers, so a request delivered twice runs once.
+const SEEN: usize = 4096;
 
 /// One connection's shared state.
 struct Connection<C> {
     computers: Arc<C>,
     /// Running commands by run name, so `command/cancel` can stop them.
     runs: Mutex<HashMap<String, Switch>>,
+    seen: Mutex<Seen>,
     lines: mpsc::Sender<String>,
 }
 
@@ -68,6 +71,7 @@ where
     let connection = Arc::new(Connection {
         computers,
         runs: Mutex::new(HashMap::new()),
+        seen: Mutex::new(Seen::default()),
         lines,
     });
     let mut input = input;
@@ -115,17 +119,21 @@ where
     read
 }
 
-/// One line, or `None` at the end. A line longer than [`MAX_LINE`] is an error.
+/// One line, or `None` at the end. A line longer than [`MAX_LINE`] is an error; a last line
+/// the input ended in the middle of was cut off, so it is not acted on.
 async fn next_line<R: AsyncBufRead + Unpin>(input: &mut R) -> std::io::Result<Option<String>> {
     let mut line = String::new();
     let got = input.take(MAX_LINE).read_line(&mut line).await?;
     if got == 0 {
         return Ok(None);
     }
-    if !line.ends_with('\n') && u64::try_from(line.len()).unwrap_or(u64::MAX) >= MAX_LINE {
-        return Err(std::io::Error::other(format!(
-            "a message is longer than {MAX_LINE} bytes"
-        )));
+    if !line.ends_with('\n') {
+        if u64::try_from(line.len()).unwrap_or(u64::MAX) >= MAX_LINE {
+            return Err(std::io::Error::other(format!(
+                "a message is longer than {MAX_LINE} bytes"
+            )));
+        }
+        return Ok(None);
     }
     Ok(Some(line))
 }
@@ -158,16 +166,52 @@ async fn authenticate<R: AsyncBufRead + Unpin>(
     Ok(accepted)
 }
 
+/// The request ids a connection has seen lately, so a request that arrives twice runs once.
+#[derive(Default)]
+struct Seen {
+    ids: HashSet<String>,
+    order: VecDeque<String>,
+}
+
+impl Seen {
+    /// Whether `id` is new; remembers it, forgetting the oldest past [`SEEN`].
+    fn first(&mut self, id: &Value) -> bool {
+        let id = id.to_string();
+        if !self.ids.insert(id.clone()) {
+            return false;
+        }
+        self.order.push_back(id);
+        if self.order.len() > SEEN
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.ids.remove(&oldest);
+        }
+        true
+    }
+}
+
 impl<C: Computers + 'static> Connection<C> {
+    /// Whether a request with `id` is the first with it on this connection.
+    fn first(&self, id: &Value) -> bool {
+        self.seen.lock().is_ok_and(|mut seen| seen.first(id))
+    }
+
     async fn answer(&self, line: &str) -> () {
         let (id, answered) = match wire::parse(line) {
-            Ok((id, request)) => (id, self.handle(request).await),
+            // A second copy of a request is dropped unanswered: the first is (or was)
+            // answered, and running it again could do the work twice.
+            Ok((Some(id), _)) if !self.first(&id) => return,
+            // A notification (no id) is never answered.
+            Ok((None, request)) => {
+                let _ = self.handle(request).await;
+                return;
+            }
+            Ok((Some(id), request)) => (Some(id), self.handle(request).await),
+            // A message that cannot be read is answered, with no id when its id cannot be
+            // read either (JSON-RPC's null id), so the client knows at once.
             Err((id, failure)) => (id, Err(failure)),
         };
-        // A request without an id is a notification, which is never answered.
-        if let Some(id) = id {
-            let _ = self.lines.send(wire::respond(Some(&id), answered)).await;
-        }
+        let _ = self.lines.send(wire::respond(id.as_ref(), answered)).await;
     }
 
     async fn handle(&self, request: Request) -> Result<Value, Value> {
@@ -316,14 +360,15 @@ pub async fn serve_tcp<C: Computers + 'static>(
 }
 
 /// Serves `computers` over TLS on a TCP listener at any address, to clients that first present
-/// `token` before it expires: how a worker is reached from the harness. A client that fails
-/// the handshake is dropped without an answer. Runs until accepting fails.
+/// the token `tokens` holds, before it expires: how a worker is reached from the harness. A
+/// client that fails the handshake is dropped without an answer. Runs until accepting fails.
 pub async fn serve_tls<C: Computers + 'static>(
     computers: Arc<C>,
     listener: TcpListener,
     tls: TlsAcceptor,
-    token: Token,
+    tokens: impl Into<Tokens>,
 ) -> std::io::Result<()> {
+    let tokens = tokens.into();
     let mut connections = JoinSet::new();
     loop {
         while connections.len() >= MAX_CONNECTIONS {
@@ -331,12 +376,14 @@ pub async fn serve_tls<C: Computers + 'static>(
         }
         let (stream, _) = listener.accept().await?;
         let _ = stream.set_nodelay(true);
-        let (computers, token, tls) = (Arc::clone(&computers), token.clone(), tls.clone());
+        let (computers, tokens, tls) = (Arc::clone(&computers), tokens.clone(), tls.clone());
         connections.spawn(async move {
             let handshake = tokio::time::timeout(HANDSHAKE, tls.accept(stream));
             let Ok(Ok(stream)) = handshake.await else {
                 return Ok(());
             };
+            // The token as it is now: the side that minted it may have renewed it.
+            let token = tokens.current(SystemTime::now()).await?;
             let (read, write) = tokio::io::split(stream);
             serve(computers, BufReader::new(read), write, Some(token)).await
         });

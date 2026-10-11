@@ -87,6 +87,30 @@ pub(crate) enum Request {
     Save { workspace: WorkspaceId, save: Save },
 }
 
+impl Request {
+    /// The method this request names, for errors that say which call failed.
+    pub(crate) fn method(&self) -> &'static str {
+        match self {
+            Self::Authenticate { .. } => "connection/authenticate",
+            Self::Discover {} => "server/discover",
+            Self::Create { .. } => "computer/create",
+            Self::Status { .. } => "computer/status",
+            Self::Destroy { .. } => "computer/destroy",
+            Self::Open { .. } => "workspace/open",
+            Self::Close { .. } => "workspace/close",
+            Self::Run { .. } => "command/run",
+            Self::Cancel { .. } => "command/cancel",
+            Self::Read { .. } => "files/read",
+            Self::Write { .. } => "files/write",
+            Self::List { .. } => "files/list",
+            Self::Stat { .. } => "files/stat",
+            Self::Glob { .. } => "files/glob",
+            Self::Search { .. } => "files/search",
+            Self::Save { .. } => "workspace/save",
+        }
+    }
+}
+
 /// Every method a request may name.
 const METHODS: &[&str] = &[
     "connection/authenticate",
@@ -205,6 +229,8 @@ mod tests {
         };
         let line = request(7, &run);
         assert!(line.contains(r#""method":"command/run""#), "{line}");
+        assert_eq!(run.method(), "command/run");
+        assert!(METHODS.contains(&Request::Discover {}.method()));
         assert_eq!(parse(&line).unwrap(), (Some(json!(7)), run));
         let code = |line: &str| parse(line).err().map(|(_, error)| error["code"].clone());
         assert_eq!(code("nope"), Some(json!(code::PARSE)));

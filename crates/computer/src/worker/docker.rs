@@ -16,6 +16,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use super::backend::{Backend, Link, PORT, Spec, Started};
 use super::engine::{Engine, demultiplex, query};
 use super::tar::{Entry, archive};
+use crate::token::Token;
 
 /// Where glave and its identity go inside a worker.
 const HOME: &str = "/opt/glave";
@@ -429,6 +430,32 @@ impl Backend for Docker {
                         )))
                     }
                 }
+            }
+        })
+    }
+
+    fn renew<'a>(
+        &'a self,
+        name: &'a str,
+        token: &'a Token,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(async move {
+            let files = Bytes::from(super::tar::token_file(token)?);
+            let put = self
+                .engine
+                .send(
+                    Method::PUT,
+                    &format!("/containers/{name}/archive?path=/"),
+                    Some((files, "application/x-tar")),
+                )
+                .await?;
+            if put.status.is_success() {
+                Ok(())
+            } else {
+                Err(ComputerError::Failed(format!(
+                    "could not give the worker a new token: {}",
+                    put.message()
+                )))
             }
         })
     }

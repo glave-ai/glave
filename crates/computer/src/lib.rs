@@ -25,7 +25,7 @@ pub use local::{LocalComputers, sandbox_available};
 pub use remote::RemoteComputers;
 pub use serve::{serve, serve_tcp, serve_tls};
 pub use tls::{Fingerprint, Identity, connect_tls};
-pub use token::{MIN_SECRET, Token};
+pub use token::{MIN_SECRET, Token, Tokens};
 pub use worker::{
     Clock, Credentials, Docker, DockerSettings, Isolation, Limits, WorkerComputers, https_url,
 };

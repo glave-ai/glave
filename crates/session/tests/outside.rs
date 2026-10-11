@@ -54,6 +54,7 @@ mod outside {
             branch: None,
             reason: RemovedReason::Pruned,
             trash: None,
+            lost: None,
         };
         record_removed(log, &scope(), thread, at(1), [1; 10], &removed)
             .await
