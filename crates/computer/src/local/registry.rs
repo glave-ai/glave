@@ -26,6 +26,9 @@ pub(crate) struct Opened {
     /// A copy made for this workspace, removed when it closes; otherwise a folder worked on
     /// in place, which is kept.
     pub(crate) copy: bool,
+    /// For a worktree, the repository's shared git folder, which its commands may also write
+    /// in a sandbox, so that `git commit` works there.
+    pub(crate) git_common: Option<PathBuf>,
     pub(crate) environment: Arc<Vec<(OsString, OsString)>>,
     /// The sandbox its commands last ran in, prepared once and kept while they ask for the
     /// same one, so its temp folder lasts as long as the workspace.
@@ -44,7 +47,8 @@ impl Opened {
         if let Some(kept) = kept {
             return Ok(kept);
         }
-        let prepared = Arc::new(Prepared::new(sandbox, &self.root).await?);
+        let prepared =
+            Arc::new(Prepared::new(sandbox, &self.root, self.git_common.as_deref()).await?);
         if let Ok(mut kept) = self.prepared.lock() {
             *kept = Some(Arc::clone(&prepared));
         }

@@ -269,7 +269,10 @@ mod conformance {
     }
 
     async fn thread_of(client: &mut impl Client) -> ThreadId {
-        let reply = client.call(Request::ThreadStart {}).await.unwrap();
+        let reply = client
+            .call(Request::ThreadStart { worktree: None })
+            .await
+            .unwrap();
         serde_json::from_value(reply["thread"]["id"].clone()).unwrap()
     }
 

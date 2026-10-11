@@ -44,7 +44,11 @@ mod goals {
     }
 
     async fn new_thread(server: &Tested) -> ThreadId {
-        match server.request(Request::ThreadStart {}).await.unwrap() {
+        match server
+            .request(Request::ThreadStart { worktree: None })
+            .await
+            .unwrap()
+        {
             Reply::Thread { thread } => thread.id,
             other => panic!("expected a thread, got {other:?}"),
         }

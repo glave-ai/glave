@@ -42,6 +42,11 @@ pub fn main() -> ExitCode {
     {
         return crate::computer::main(rest);
     }
+    if let Some((first, rest)) = words.split_first()
+        && first == "worktrees"
+    {
+        return crate::worktrees::main(rest);
+    }
     let args = match args::parse(words) {
         Ok(args) => args,
         Err(message) => {
@@ -124,8 +129,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     )?;
     let database = home::database().await?;
     let workspace = workspace(&folder, choices, args.network, &database).await?;
-    let keys = keys::settings(&home::folder()?, home::relocated()).await?;
-    let store = Store::open(database, keys).await?;
+    let store = store(database).await?;
     let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
     let personal = home::folder()?.join(AGENTS_MD);
     let instructions = agents_md(workspace.root(), Some(&personal)).await?;
@@ -141,8 +145,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
     settings.judge = judge.is_some();
     let identity = identity::load_or_make(&home::folder()?).await?;
-    settings.person = Some(identity.person);
-    settings.agent = Some(identity.agent);
+    (settings.person, settings.agent) = (Some(identity.person), Some(identity.agent));
     let window = config::context_window()?;
     settings.compaction.window_tokens = window.unwrap_or(settings.compaction.window_tokens);
     let root = workspace.root().to_owned();
@@ -169,6 +172,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         workspace,
         // The project's skills first, then the MCP servers' tools.
         tools: [crate::skills::offered(&root).await?, servers.sources()].concat(),
+        worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
     };
     Ok(Wired {
@@ -181,6 +185,14 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     })
 }
 
+/// The store in `database`, once this machine's worktrees have had their daily check.
+async fn store(database: PathBuf) -> anyhow::Result<Store> {
+    let keys = keys::settings(&home::folder()?, home::relocated()).await?;
+    let store = Store::open(database, keys).await?;
+    crate::worktrees::check_at_start(&store.log()).await;
+    Ok(store)
+}
+
 /// The workspace in `folder`, in the sandbox `choices` ask for.
 async fn workspace(
     folder: &Path,
@@ -188,7 +200,10 @@ async fn workspace(
     network: bool,
     database: &Path,
 ) -> anyhow::Result<Workspace> {
-    let (computers, here) = LocalComputers::here(folder, std::env::vars_os()).await?;
+    let (computers, here) = LocalComputers::for_here(std::env::vars_os())
+        .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER))
+        .open_here(folder)
+        .await?;
     let workspace = Workspace::new(computers, here);
     let Some(level) = choices.sandbox.value else {
         return Ok(workspace);
@@ -280,6 +295,9 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         choices,
     } = wired;
     let (thread, note) = pick_thread(server, args.resume).await?;
+    if let Some(working) = crate::worktrees::note(server, thread).await {
+        eprintln!("glave: {working}");
+    }
     let input = Input::start();
     let client = Client {
         server,
@@ -339,7 +357,10 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
     } else {
         "new thread"
     };
-    match server.request(Request::ThreadStart {}).await? {
+    match server
+        .request(Request::ThreadStart { worktree: None })
+        .await?
+    {
         Reply::Thread { thread } => Ok((thread.id, note)),
         other => anyhow::bail!("the server answered thread/start with {other:?}"),
     }

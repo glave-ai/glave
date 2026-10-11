@@ -77,6 +77,18 @@ pub enum Sources {
     /// A repository cloned into a new copy, at a branch, tag or commit (its default branch
     /// when `None`).
     Git { url: String, at: Option<String> },
+    /// A git worktree of the repository holding the folder at `path`, checked out on its own
+    /// `branch` in a folder the computer chooses outside the repository. The branch is made
+    /// from the folder's current commit when it does not exist yet. Opening the same branch
+    /// again reopens the same worktree, and closing one keeps it: nothing in it is lost.
+    /// `owner` is a label the computer keeps beside the worktree for whoever cleans it up
+    /// later, such as the thread it belongs to; opening it again clears any hold on it.
+    Worktree {
+        path: String,
+        branch: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner: Option<String>,
+    },
 }
 
 /// A workspace: where it is and what it came from.

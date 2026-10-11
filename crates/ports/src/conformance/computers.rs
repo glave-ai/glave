@@ -4,6 +4,7 @@
 
 mod finding;
 mod helpers;
+mod worktrees;
 
 use helpers::{Collect, Trip, failed, files, run, run_quietly};
 
@@ -45,6 +46,7 @@ pub async fn computers<C: Computers>(computers: &C, scratch: &str) -> Verdict {
     finding::sandboxed(computers, here.id).await?;
     moves_through_git(computers, made.id, here.id, &here.root).await?;
     plain_folders(computers, made.id, here.id, scratch).await?;
+    worktrees::worktrees(computers, made.id, &here.root).await?;
     computers
         .close(here.id)
         .await

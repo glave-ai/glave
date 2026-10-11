@@ -4,6 +4,8 @@
 //! command is refused, never run unconfined.
 
 mod profile;
+#[cfg(test)]
+mod tests;
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -32,7 +34,12 @@ pub(crate) struct Prepared {
 impl Prepared {
     /// Resolves every path the profile names (macOS matches real paths) and writes the
     /// profile once, for every command run in `root` under `sandbox`.
-    pub(crate) async fn new(sandbox: &Sandbox, root: &Path) -> Result<Self, ComputerError> {
+    /// `git_common`, for a worktree, is its repository's shared git folder, writable too.
+    pub(crate) async fn new(
+        sandbox: &Sandbox,
+        root: &Path,
+        git_common: Option<&Path>,
+    ) -> Result<Self, ComputerError> {
         if !sandbox_available() {
             return Err(ComputerError::Unsupported(
                 "the sandbox is not available on this computer (macOS only for now)".into(),
@@ -50,6 +57,7 @@ impl Prepared {
             temp: temp.clone(),
             home: resolved(sandbox.home.as_deref()).await,
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
+            git_common: resolved(git_common).await,
         };
         let profile = profile(&places, sandbox.level, sandbox.network);
         let mut args: Vec<OsString> = vec!["-p".into(), profile.text.into()];

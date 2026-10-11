@@ -67,7 +67,7 @@ where
             call_id: call.call_id.clone(),
         };
         let mut child = match self
-            .start_thread_from(parent.scope, Some(started), &Caller::default())
+            .start_thread_from(parent.scope, Some(started), &Caller::default(), None)
             .await
         {
             Ok(child) => child,
@@ -82,6 +82,8 @@ where
         child.allowed = parent.allowed.clone();
         child.asked = parent.asked.clone();
         child.above.extend_from_slice(&parent.above);
+        // A subagent works where its parent does.
+        child.workspace.clone_from(&parent.workspace);
         let id = child.id;
         let send = |update: Live| {
             let mut live = live.lock().unwrap_or_else(PoisonError::into_inner);

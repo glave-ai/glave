@@ -27,3 +27,6 @@ pub use payload::{
     Role, StopReason, ThreadCompacted, ThreadStarted, TokenCounts, ToolCallCompleted,
     ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
 };
+pub use payload::{
+    ComputerKind, ComputerRef, Opened, RemovedReason, WorkspaceBound, WorkspaceRemoved,
+};

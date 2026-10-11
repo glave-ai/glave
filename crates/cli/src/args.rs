@@ -32,6 +32,8 @@ Usage:
   glave policy explain [options] show every setting and where it came from, and every
                                 constraint and the policy file that set it
   glave skills                  list the skills the model is offered here
+  glave worktrees [prune]       list the worktrees threads made, or remove the merged ones
+                                (glave worktrees --help)
   glave commands                list the custom commands you can type here as /name
 
 Options:
@@ -43,6 +45,8 @@ Options:
   --sandbox <level>  run commands in the macOS sandbox: read-only, or project (writes only
                      the project and temp folder), or off; never reads secret locations
   --network          let sandboxed commands use the network
+  --worktree         work in a new worktree of this repository, on a branch glave/<id>,
+                     kept under GLAVE_HOME/worktrees, rather than in this folder itself
   --max-steps <n>    end each turn after n model calls, the last one a text report of
                      what is done and what is left (default: no limit)
   --events <file>    save the thread's events to this file as JSON Lines
@@ -66,8 +70,9 @@ Environment:
                      flagged may run because you asked for it (default: the main model;
                      `off` to always ask)
 
-Settings: config.toml in GLAVE_HOME may set model, judge_model, approval, sandbox and
-mcp (the servers in mcp.json to turn on); flags and the environment win over it. An
+Settings: config.toml in GLAVE_HOME may set model, judge_model, approval, sandbox,
+worktree (true or false) and mcp (the servers in mcp.json to turn on); flags and the
+environment win over it. An
 organization's policy at /etc/glave/policy.toml limits what may be chosen.
 
 A new thread starts with your AGENTS.md (in GLAVE_HOME), then every AGENTS.md from the
@@ -128,6 +133,8 @@ pub struct Args {
     pub sandbox: Option<SandboxChoice>,
     /// Let sandboxed commands use the network.
     pub network: bool,
+    /// Work in a worktree of the repository of its own, on a new branch.
+    pub worktree: bool,
     /// Model calls one turn may make; no limit when not given.
     pub max_steps: Option<u32>,
     /// Continue the most recent thread in this folder instead of starting one.
@@ -188,6 +195,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
                 })?);
             }
             "--network" => args.network = true,
+            "--worktree" => args.worktree = true,
             "--max-steps" => args.max_steps = Some(steps(rest.next())?),
             "--goal" => args.goal = Some(rest.next().ok_or("--goal needs an objective")?),
             "--check" => args.check = Some(rest.next().ok_or("--check needs a command")?),
@@ -336,6 +344,12 @@ mod tests {
             parse_words(&["--network"]).is_ok(),
             "a config file may choose the sandbox"
         );
+    }
+
+    #[test]
+    fn a_worktree_is_asked_for_by_flag_and_off_otherwise() {
+        assert!(parse_words(&["--worktree", "go"]).unwrap().worktree);
+        assert!(!parse_words(&["go"]).unwrap().worktree);
     }
 
     #[test]

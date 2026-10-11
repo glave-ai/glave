@@ -10,7 +10,8 @@ use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
     ApprovalDecided, ApprovalRequested, GoalEnded, GoalSet, HookRan, MessageAdded, ModelResponded,
     ThreadCompacted, ThreadStarted, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted,
-    approval, goal, hook, message, model, thread, tool, turn,
+    WorkspaceBound, WorkspaceRemoved, approval, goal, hook, message, model, thread, tool, turn,
+    workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -42,6 +43,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (approval::DECIDED, 2),
     (goal::SET, 1),
     (goal::ENDED, 1),
+    (workspace::BOUND, 1),
+    (workspace::REMOVED, 1),
     (hook::TYPE, 1),
 ];
 
@@ -67,6 +70,8 @@ pub enum Body {
     ApprovalDecided(ApprovalDecided),
     GoalSet(GoalSet),
     GoalEnded(GoalEnded),
+    WorkspaceBound(WorkspaceBound),
+    WorkspaceRemoved(WorkspaceRemoved),
     HookRan(HookRan),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
@@ -143,6 +148,10 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         }
         goal::SET => goal::decode_set(version, data).map(|r| r.map(Body::GoalSet)),
         goal::ENDED => goal::decode_ended(version, data).map(|r| r.map(Body::GoalEnded)),
+        workspace::BOUND => workspace::decode(version, data).map(|r| r.map(Body::WorkspaceBound)),
+        workspace::REMOVED => {
+            workspace::decode_removed(version, data).map(|r| r.map(Body::WorkspaceRemoved))
+        }
         hook::TYPE => hook::decode(version, data).map(|r| r.map(Body::HookRan)),
         _ => None,
     };
@@ -183,6 +192,8 @@ impl Event {
             Body::ApprovalDecided(payload) => encode(header, payload),
             Body::GoalSet(payload) => encode(header, payload),
             Body::GoalEnded(payload) => encode(header, payload),
+            Body::WorkspaceBound(payload) => encode(header, payload),
+            Body::WorkspaceRemoved(payload) => encode(header, payload),
             Body::HookRan(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,

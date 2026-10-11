@@ -57,6 +57,8 @@ pub(crate) struct Places {
     pub temp: PathBuf,
     pub home: Option<PathBuf>,
     pub glave_home: Option<PathBuf>,
+    /// For a worktree: the repository's shared git folder, where its commits go.
+    pub git_common: Option<PathBuf>,
 }
 
 /// A profile and the paths it names, passed as `sandbox-exec -p <text> -D<name>=<path>`.
@@ -86,10 +88,20 @@ fn reads(profile: &mut Profile, places: &Places) {
         .home
         .iter()
         .flat_map(|home| HOME_SECRETS.iter().map(move |secret| home.join(secret)));
-    for (index, path) in home_secrets.chain(places.glave_home.clone()).enumerate() {
+    for (index, path) in home_secrets.enumerate() {
         let name = format!("SECRET_{index}");
         conditions.push(format!(r#"(require-not (subpath (param "{name}")))"#));
         profile.params.push((name, path));
+    }
+    if let Some(glave_home) = &places.glave_home {
+        // glave's own folder, except the workspace when it lives there: a thread's worktree.
+        conditions.push(
+            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))) (subpath (param "ROOT")))"#
+                .to_owned(),
+        );
+        profile
+            .params
+            .push(("GLAVE_HOME".into(), glave_home.clone()));
     }
     let root = regex_escape(&places.root);
     let (env, templates, others) = (
@@ -147,6 +159,31 @@ fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
         "; writes: the project, except what runs code later\n(allow file-write*\n  (require-all\n    {}))",
         conditions.join("\n    ")
     );
+    if let Some(common) = &places.git_common {
+        git_common_writes(profile, common);
+    }
+}
+
+/// A worktree's repository's shared git folder: its objects, refs and logs, so commits work,
+/// but never its hooks or config, which would run code in every checkout of it.
+fn git_common_writes(profile: &mut Profile, common: &Path) {
+    profile.params.push(("COMMON".into(), common.to_owned()));
+    let mut conditions = vec![r#"(subpath (param "COMMON"))"#.to_owned()];
+    for (index, path) in ["hooks", "config", "config.worktree"].iter().enumerate() {
+        let name = format!("COMMON_PROTECTED_{index}");
+        conditions.push(format!(r#"(require-not (literal (param "{name}")))"#));
+        conditions.push(format!(r#"(require-not (subpath (param "{name}")))"#));
+        profile.params.push((name, common.join(path)));
+    }
+    let common = regex_escape(common);
+    conditions.push(format!(
+        r#"(require-not (regex #"^{common}/(worktrees|modules)/.+/(hooks(/.*)?|config(\.worktree)?)$"))"#
+    ));
+    let _ = writeln!(
+        profile.text,
+        "; writes: the repository's shared git folder, except what runs code later\n(allow file-write*\n  (require-all\n    {}))",
+        conditions.join("\n    ")
+    );
 }
 
 /// `path` as a literal inside a profile regular expression.
@@ -187,6 +224,7 @@ mod tests {
             temp: PathBuf::from("/private/var/folders/x/T"),
             home: Some(PathBuf::from("/Users/me")),
             glave_home: Some(PathBuf::from("/Users/me/.glave")),
+            git_common: None,
         }
     }
 
@@ -245,7 +283,21 @@ mod tests {
             .map(|(_, path)| path.as_path())
             .collect();
         assert!(secrets.contains(&Path::new("/Users/me/.ssh")));
-        assert!(secrets.contains(&Path::new("/Users/me/.glave")));
+        assert_eq!(
+            param(&profile, "GLAVE_HOME"),
+            Some(Path::new("/Users/me/.glave"))
+        );
+        assert!(profile.text.contains(
+            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))) (subpath (param "ROOT")))"#
+        ));
+        assert_eq!(param(&profile, "COMMON"), None, "not a worktree");
+        let mut worktree = places();
+        worktree.git_common = Some(PathBuf::from("/Users/me/code/app/.git"));
+        let profile = super::profile(&worktree, SandboxLevel::Project, false);
+        assert_eq!(
+            param(&profile, "COMMON_PROTECTED_0"),
+            Some(Path::new("/Users/me/code/app/.git/hooks"))
+        );
         assert!(profile.text.contains("[eE][nN][vV]"), "env files, any case");
     }
 

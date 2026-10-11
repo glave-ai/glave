@@ -22,6 +22,8 @@ pub struct ConfigFile {
     pub sandbox: Option<SandboxChoice>,
     /// The MCP servers to turn on.
     pub mcp: Option<Vec<String>>,
+    /// Whether each new thread works in a worktree of its own.
+    pub worktree: Option<bool>,
     /// Commands to run at points of a turn. They add up across files rather than the
     /// nearest winning: the person's run, and a trusted project's run too.
     pub hooks: Option<HooksFile>,

@@ -56,6 +56,8 @@ The project folder; a temp folder of the run's own, which commands see as `TMPDI
 
 The rest of `.git` stays writable, so committing, staging and branching work. (Codex makes all of `.git` read-only; Claude Code protects hooks and config, as here.)
 
+**A thread's worktree** (`computers.md`): the writable set is the worktree folder and its repository's shared git folder (`git rev-parse --git-common-dir`), where its commits go, and nothing else. The shared folder's `hooks/`, `config`, `config.worktree` and `worktrees/*/` (or `modules/*/`) hooks and config stay read-only, so a commit works but nothing is planted that runs in another checkout. The main checkout's files and other threads' worktrees stay unwritable (#130). The worktree lives under `~/.glave/worktrees`, so the read rule for glave's own data below excepts the workspace itself.
+
 The rule: **the sandbox may change the project's files, never the machinery that runs code on them.**
 
 glave's own `write` and `edit` tools refuse the same paths when the sandbox is on, from the same list, after resolving symlinks, so they cannot do what commands may not. A link whose target does not exist yet is always refused: writing to it would create the target wherever it points.
@@ -67,7 +69,7 @@ Writable roots come from glave's own settings, never from a tool argument. (CVE-
 Everywhere except secret locations. This is stricter than Codex and Claude Code, which both let sandboxed commands read `~/.ssh`.
 
 - In the home folder: `~/.ssh`, `~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.docker/config.json`, `~/.gnupg`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/Library/Keychains`, and browser profiles (cookies are credentials).
-- glave's own data: `~/.glave` (or `$GLAVE_HOME`), so a command cannot read or rewrite the event log.
+- glave's own data: `~/.glave` (or `$GLAVE_HOME`), so a command cannot read or rewrite the event log; except the workspace itself, when it is a thread's worktree there.
 - In the project: files named like secrets, the same rule `read` uses (`.env` and its variants but not templates, private keys, credential files).
 
 ### Network

@@ -9,12 +9,13 @@ use glave_event::{
     Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, encode,
 };
 use glave_ports::{
-    BlobError, BlobStore, EventLog, LogError, Message, ModelProvider, ProviderError, Scope,
-    ToolSource,
+    BlobError, BlobStore, ComputerError, EventLog, LogError, Message, ModelProvider, ProviderError,
+    Scope, ToolSource,
 };
 use thiserror::Error;
 
 use crate::approval::{ApprovalMode, Approver};
+use crate::bind::Place;
 use crate::builtins::Builtins;
 use crate::caller::Caller;
 use crate::commands::Command;
@@ -150,6 +151,12 @@ pub struct Thread {
     pub(crate) above: Vec<ThreadId>,
     /// The thread's latest goal, active or ended; `None` until one is set.
     pub(crate) goal: Option<Pursuit>,
+    /// The workspace the thread's tools act on when it is not the harness's own, such as its
+    /// worktree. A subagent's thread shares its parent's.
+    pub(crate) workspace: Option<Arc<Workspace>>,
+    /// Events glave recorded for itself that call ids do not count: the thread's
+    /// `workspace.bound` events. Each takes a `seq` before any later call, so ids stay unique.
+    pub(crate) unnumbered: u64,
 }
 
 impl Thread {
@@ -194,6 +201,9 @@ pub enum HarnessError {
     Cancelled,
     #[error("thread {0} has no active goal")]
     NoGoal(ThreadId),
+    /// The thread's workspace could not be opened, such as a worktree outside a repository.
+    #[error("{}", .0.message())]
+    Workspace(#[from] ComputerError),
     /// A `UserPromptSubmit` hook stopped the prompt; the model never saw it.
     #[error("a hook stopped this prompt: {0}")]
     PromptBlocked(String),
@@ -286,7 +296,7 @@ where
 
     /// Starts a new thread in `scope` and records `thread.started`.
     pub async fn start_thread(&self, scope: Scope) -> Result<Thread, HarnessError> {
-        self.start_thread_from(scope, None, &Caller::default())
+        self.start_thread_from(scope, None, &Caller::default(), None)
             .await
     }
 
@@ -297,17 +307,25 @@ where
         scope: Scope,
         caller: &Caller,
     ) -> Result<Thread, HarnessError> {
-        self.start_thread_from(scope, None, caller).await
+        self.start_thread_from(scope, None, caller, None).await
     }
 
-    /// Starts a thread, recording the call in another thread that started it, if one did.
+    /// Starts a thread, recording the call in another thread that started it, if one did, and
+    /// where it works, when `place` is given.
     pub(crate) async fn start_thread_from(
         &self,
         scope: Scope,
         parent: Option<ParentCall>,
         caller: &Caller,
+        place: Option<Place>,
     ) -> Result<Thread, HarnessError> {
         let id = ThreadId::new(self.clock.now(), self.entropy.bytes())?;
+        let placed = match place {
+            Some(place) => Some(self.place(scope, id, place).await?),
+            None => None,
+        };
+        let (workspace, bound) =
+            placed.map_or((None, None), |(workspace, bound)| (workspace, Some(bound)));
         let mut thread = Thread {
             scope,
             id,
@@ -319,6 +337,8 @@ where
             asked: Vec::new(),
             above: parent.iter().map(|call| call.thread).collect(),
             goal: None,
+            workspace,
+            unnumbered: u64::from(bound.is_some()),
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {
@@ -343,6 +363,9 @@ where
                 agent: self.actors.agent.map(Principal::agent),
             },
         )?;
+        if let Some(bound) = &bound {
+            self.stage(&thread, &mut events, bound)?;
+        }
         self.commit(&mut thread, events).await?;
         Ok(thread)
     }
