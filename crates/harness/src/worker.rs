@@ -111,9 +111,8 @@ where
             let files: Vec<FileWrite> = workers
                 .attachments
                 .iter()
-                .map(|file| FileWrite {
-                    path: format!("{ATTACHMENTS}/{}", file.path),
-                    content: file.content.clone(),
+                .map(|file| {
+                    FileWrite::new(format!("{ATTACHMENTS}/{}", file.path), file.content.clone())
                 })
                 .collect();
             if !files.is_empty() {

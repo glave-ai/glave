@@ -13,7 +13,7 @@ use glave_event::Sha256;
 use glave_ports::{
     Bytes, Cancellation, Command, ComputerError, Computers, FileWrite, Finished, Glob, Globbed,
     Listed, Listing, Output, Sandbox, Search, Searched, Sources, Stat, WorkspaceInfo, digest,
-    is_protected,
+    is_protected, is_protected_refusal, refuse_protected,
 };
 
 use crate::cancel::Cancel;
@@ -140,17 +140,14 @@ impl Workspace {
     }
 
     /// What is at a path the model wants to change. In a sandbox, paths that make code run
-    /// later (git hooks and config, glave's settings) are refused here too, so the file tools
-    /// cannot do what commands may not. Symlinks are resolved first, so a planted link is
-    /// caught.
+    /// later (git hooks and config, glave's settings) are refused here first, before the
+    /// model is asked to read a file it may not change anyway. Symlinks are resolved first, so
+    /// a planted link is caught. The computer refuses them again on the write itself
+    /// ([`Self::write`]), and that refusal is the one that holds while a command races.
     pub(crate) async fn stat_for_change(&self, path: &str) -> Result<Stat, String> {
         let stat = self.stat(path).await?;
         if self.sandbox.is_some() && is_protected(&self.root, &self.root.join(&stat.path)) {
-            return Err(format!(
-                "{} is protected by the sandbox: changing it could make code run later, outside \
-                 the sandbox. Ask the person to change it themselves.",
-                stat.path
-            ));
+            return Err(refuse_protected(&stat.path).message().to_owned());
         }
         Ok(stat)
     }
@@ -159,14 +156,26 @@ impl Workspace {
         self.computers.read(self.info.id, path).await
     }
 
-    pub(crate) async fn write(&self, path: &str, content: &[u8]) -> Result<(), ComputerError> {
+    /// Writes `content` to `path`, a path [`Self::stat_for_change`] showed. In a sandbox the
+    /// computer refuses a protected path on the path it opens, so a folder a command swapped
+    /// for a link since then cannot slip one in. A failure is a sentence for the model: that
+    /// refusal as the stat check words it, or what went wrong.
+    pub(crate) async fn write(&self, path: &str, content: &[u8]) -> Result<(), String> {
         let file = FileWrite {
-            path: path.to_owned(),
-            content: Bytes::new(content),
+            protect: self.sandbox.is_some(),
+            ..FileWrite::new(path, Bytes::new(content))
         };
-        self.computers
+        let written = self
+            .computers
             .write(self.info.id, std::slice::from_ref(&file))
-            .await
+            .await;
+        written.map_err(|error| {
+            if is_protected_refusal(&error) {
+                error.message().to_owned()
+            } else {
+                format!("Could not write {path}: {}", error.message())
+            }
+        })
     }
 
     pub(crate) async fn list(&self, listing: &Listing) -> Result<Listed, ComputerError> {

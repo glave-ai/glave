@@ -5,7 +5,9 @@ use std::io::Read as _;
 use std::os::fd::AsFd as _;
 use std::path::{Path, PathBuf};
 
-use glave_ports::{Bytes, ComputerError, EntryKind, FileWrite, Stat, digest};
+use glave_ports::{
+    Bytes, ComputerError, EntryKind, FileWrite, Stat, digest, is_protected, refuse_protected,
+};
 use rustix::fs::FileType;
 
 use super::anchored::{Found, Root, count, open_to_read, resolve, shown};
@@ -72,7 +74,8 @@ fn read_found(path: &str, found: &Found) -> Result<Vec<u8>, ComputerError> {
 }
 
 /// Checks every path first, so a refused path means nothing was written. Each file is
-/// replaced whole (`replace`), never written in place.
+/// replaced whole (`replace`), never written in place, through the folders its path resolved
+/// to; a file that asks to be protected is refused if those folders lead to a protected path.
 pub(crate) async fn write(root: &Path, files: &[FileWrite]) -> Result<(), ComputerError> {
     let (root, files) = (root.to_owned(), files.to_vec());
     blocking(move || {
@@ -87,6 +90,16 @@ pub(crate) async fn write(root: &Path, files: &[FileWrite]) -> Result<(), Comput
                 )));
             }
             let found = resolve(&root, &file.path)?;
+            if file.protect
+                && is_protected(
+                    root.path,
+                    &root.path.join(found.names.iter().collect::<PathBuf>()),
+                )
+            {
+                // The names are those of the folders already open, which the write goes
+                // through: no link swapped in later can change where it lands.
+                return Err(refuse_protected(&shown(&found.names)));
+            }
             if found.is_folder() || found.name.is_none() {
                 return Err(ComputerError::Refused(format!(
                     "{} is a folder, not a file.",

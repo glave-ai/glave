@@ -60,7 +60,7 @@ The rest of `.git` stays writable, so committing, staging and branching work. (C
 
 The rule: **the sandbox may change the project's files, never the machinery that runs code on them.**
 
-glave's own `write` and `edit` tools refuse the same paths when the sandbox is on, from the same list, after resolving symlinks, so they cannot do what commands may not, including through links a command planted. Names are compared the way a folder that ignores case compares them: `.GIT/hooks` and `.git/hookſ` (a long s, which APFS folds to `s`) are `.git/hooks`. A link whose target does not exist yet is always refused: writing to it would create the target wherever it points. How paths stay inside the workspace while commands race the file tools is in `computers.md` (*Confinement*).
+glave's own `write` and `edit` tools refuse the same paths when the sandbox is on, from the same list, after resolving symlinks, so they cannot do what commands may not, including through links a command planted. The computer makes that check on the write itself, on the path it opens (`computers.md`, *Confinement*), so a command racing the tools cannot slip a protected path in between. Names are compared the way a folder that ignores case compares them: `.GIT/hooks` and `.git/hookſ` (a long s, which APFS folds to `s`) are `.git/hooks`. A link whose target does not exist yet is always refused: writing to it would create the target wherever it points. How paths stay inside the workspace while commands race the file tools is in `computers.md` (*Confinement*).
 
 Writable roots come from glave's own settings, never from a tool argument. (CVE-2025-59532 let a model-supplied working directory become the writable root.)
 
@@ -85,7 +85,7 @@ Off unless `--network`, and off includes Unix sockets: `docker.sock` is root on 
 | Windows | not yet; `--sandbox` refuses to run commands | later |
 | Cloud Computers | the virtual machine is the wall | with Computers |
 
-Paths go into the profile resolved: macOS matches real paths, and `/var` is really `/private/var`. Symlinks are resolved before glave's own file tools check a path, so they never write through a link a command planted (CVE-2026-39861).
+Paths go into the profile resolved: macOS matches real paths, and `/var` is really `/private/var`. Seatbelt also compares names as the folder does: on APFS that ignores case, a command writing `.git/hookſ/x`, `.GIT/hooks/x`, `.git/hooKs/x` (the Kelvin sign), `.vſcode` or `refſ/heads/x` is refused like the plain spelling, through `literal`, `subpath` and `regex` rules alike, whether the protected folder exists yet or not, while a name that only looks alike (`.git/lookſ`) stays writable (tested on macOS 26.6, 2026-10-11). Names APFS keeps apart, such as one with a zero-width joiner, are other files and need no protecting. Symlinks are resolved before glave's own file tools check a path, so they never write through a link a command planted (CVE-2026-39861).
 
 A deny-by-default profile lists the system settings commands may read, and new macOS releases add some. CI on macOS catches breakage when a release lands.
 

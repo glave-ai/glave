@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use super::ComputerError;
+
 /// Inside the project: paths that make code run later, outside the sandbox. Neither commands
 /// nor glave's file tools may change them in a sandbox, even before they exist.
 pub const PROTECTED: &[&str] = &[
@@ -50,6 +52,22 @@ pub fn is_protected(root: &Path, path: &Path) -> bool {
         || PROTECTED
             .iter()
             .any(|protected| relative.starts_with(protected.to_lowercase()))
+}
+
+/// Why a change to a protected path is refused: the sentence after the path, as the model
+/// reads it whichever side refused.
+const REFUSED_BECAUSE: &str = " is protected by the sandbox: changing it could make code run \
+     later, outside the sandbox. Ask the person to change it themselves.";
+
+/// The refusal of a change to the protected `path`, as the computer gives it and the model
+/// reads it.
+pub fn refuse_protected(path: &str) -> ComputerError {
+    ComputerError::Refused(format!("{path}{REFUSED_BECAUSE}"))
+}
+
+/// Whether `error` is a refusal of a change to a protected path ([`refuse_protected`]).
+pub fn is_protected_refusal(error: &ComputerError) -> bool {
+    matches!(error, ComputerError::Refused(message) if message.ends_with(REFUSED_BECAUSE))
 }
 
 /// A name as a file system that ignores case sees it: lowercase, and the one letter outside
@@ -99,4 +117,44 @@ pub struct Sandbox {
     /// glave's own data folder, which commands may neither read nor write.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glave_home: Option<PathBuf>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::computer::{Bytes, FileWrite};
+
+    #[test]
+    fn the_refusal_reads_as_it_always_has_and_is_recognized() {
+        let refused = refuse_protected(".git/hooks/pre-commit");
+        assert_eq!(
+            refused,
+            ComputerError::Refused(
+                ".git/hooks/pre-commit is protected by the sandbox: changing it could make code \
+                 run later, outside the sandbox. Ask the person to change it themselves."
+                    .into()
+            )
+        );
+        assert!(is_protected_refusal(&refused));
+        assert!(!is_protected_refusal(&ComputerError::Refused(
+            "x is outside the workspace (/p).".into()
+        )));
+        assert!(!is_protected_refusal(&ComputerError::Failed(
+            refused.message().to_owned()
+        )));
+    }
+
+    #[test]
+    fn protect_crosses_the_wire_only_when_asked() {
+        let plain = FileWrite::new("a.txt", Bytes::new(b"x"));
+        let json = serde_json::to_value(&plain).unwrap();
+        assert!(json.get("protect").is_none(), "{json}");
+        let guarded = FileWrite {
+            protect: true,
+            ..plain
+        };
+        let json = serde_json::to_value(&guarded).unwrap();
+        assert_eq!(json["protect"], true);
+        assert_eq!(serde_json::from_value::<FileWrite>(json).unwrap(), guarded);
+    }
 }

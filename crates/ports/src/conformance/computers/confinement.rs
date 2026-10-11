@@ -364,8 +364,5 @@ async fn outside_unchanged<C: Computers>(
 }
 
 fn plain(path: &str, content: &[u8]) -> FileWrite {
-    FileWrite {
-        path: path.to_owned(),
-        content: Bytes::new(content),
-    }
+    FileWrite::new(path.to_owned(), Bytes::new(content))
 }
