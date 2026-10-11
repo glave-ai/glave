@@ -1,5 +1,5 @@
 //! Workers: disposable computers, one per thread, started from an environment's pinned image
-//! by a backend (Docker first), with glave inside serving the computer protocol. The harness
+//! by a backend (Docker, or Kubernetes with the `kubernetes` feature), with glave inside serving the computer protocol. The harness
 //! drives each one through this adapter, which keeps every call on the right worker over TLS
 //! (or a stream, for a worker with no network), within policy's limits. Work leaves a worker
 //! only as a pushed branch, a file handed back, or a store write; destroying it removes it.
@@ -8,6 +8,8 @@ mod backend;
 mod credentials;
 mod docker;
 mod engine;
+#[cfg(feature = "kubernetes")]
+mod kubernetes;
 mod limits;
 mod route;
 mod tar;
@@ -29,7 +31,9 @@ use backend::{Backend, Link, Spec, Started};
 
 pub use credentials::{Credentials, https_url};
 pub use docker::{Docker, DockerSettings};
-pub use limits::Limits;
+#[cfg(feature = "kubernetes")]
+pub use kubernetes::{Kubernetes, KubernetesSettings};
+pub use limits::{Isolation, Limits};
 
 /// How long a worker's token opens connections: long enough for it to start.
 const TOKEN_LIFETIME: Duration = Duration::from_mins(10);
@@ -89,6 +93,12 @@ impl WorkerComputers {
     /// Workers on Docker, within `limits`, fetching sources with `credentials`.
     pub fn docker(docker: Docker, limits: Limits, credentials: Credentials) -> Self {
         Self::on(Box::new(docker), limits, credentials)
+    }
+
+    /// Workers on Kubernetes, within `limits`, fetching sources with `credentials`.
+    #[cfg(feature = "kubernetes")]
+    pub fn kubernetes(kubernetes: Kubernetes, limits: Limits, credentials: Credentials) -> Self {
+        Self::on(Box::new(kubernetes), limits, credentials)
     }
 
     pub(crate) fn on(backend: Box<dyn Backend>, limits: Limits, credentials: Credentials) -> Self {
@@ -162,6 +172,14 @@ impl WorkerComputers {
     async fn create_now(&self, environment: &Environment) -> Result<ComputerInfo, ComputerError> {
         let running = self.held()?.workers.len();
         let decided = limits::decide(environment, &self.limits, running)?;
+        if self.backend.isolation() < self.limits.isolation {
+            return Err(ComputerError::Refused(
+                "policy requires workers isolated in a sandbox or virtual machine of their own \
+                 ([workers] isolation = \"vm\"), and this backend has none: run workers on \
+                 Kubernetes with [workers] runtime_class set (gVisor or Kata)"
+                    .into(),
+            ));
+        }
         let now = (self.clock)();
         // The worker checks its token against its own clock, so the token keeps real time.
         let token = Token::mint(SystemTime::now(), TOKEN_LIFETIME)?;
@@ -212,6 +230,7 @@ impl WorkerComputers {
             Link::Tls {
                 address,
                 fingerprint,
+                forward,
             } => {
                 let mut waited = Duration::ZERO;
                 let remote = loop {
@@ -225,10 +244,15 @@ impl WorkerComputers {
                             tokio::time::sleep(RETRY).await;
                             waited = waited.saturating_add(RETRY);
                         }
-                        Err(error) => return Err(error),
+                        Err(error) => {
+                            if let Some(forward) = &forward {
+                                forward.abort();
+                            }
+                            return Err(error);
+                        }
                     }
                 };
-                (remote, None)
+                (remote, forward)
             }
             Link::Stream { read, write, task } => {
                 let remote = RemoteComputers::connect(read, write);

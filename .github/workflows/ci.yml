@@ -69,6 +69,51 @@ jobs:
             exit 1
           fi
 
+  # Workers on Kubernetes: a kind cluster on the runner, and the Kubernetes backend's tests
+  # against it (a stub in glave's place, then the glave this job builds in real workers, over
+  # TLS through port-forward and over attach). Everything they make is labelled
+  # glave.test=<run id>, and nothing labelled may be left.
+  kubernetes:
+    runs-on: ubuntu-latest
+    env:
+      GLAVE_TEST_KUBE: "1"
+      GLAVE_TEST_KUBE_RUNTIME_CLASS: glave-test-runc
+      GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
+      GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - uses: helm/kind-action@v1.15.1
+        with:
+          version: v0.33.0
+          cluster_name: glave
+      # A runtime class on kind's own runc, so the real workers run under one (gVisor in kind
+      # is a follow-up): the class is set on the Pod and the VM-isolation policy accepts it.
+      - name: A runtime class for the real workers
+        run: |
+          kubectl apply -f - <<'EOF'
+          apiVersion: node.k8s.io/v1
+          kind: RuntimeClass
+          metadata:
+            name: glave-test-runc
+          handler: runc
+          EOF
+      - run: cargo build -p glave
+      - run: cargo nextest run -p glave-computer --all-features -E 'test(/^worker::kubernetes::/)'
+      - name: Nothing the Kubernetes tests made is left behind
+        if: always()
+        run: |
+          left="$(kubectl get pods,networkpolicies,secrets -A -l "glave.test=${{ github.run_id }}" -o name)$(kubectl get pods -A -l glave.worker -o name)"
+          if [ -n "$left" ]; then
+            echo "left behind: $left"
+            exit 1
+          fi
+
   # macOS minutes cost 10x on private repos, so this runs on main only (and on demand).
   macos:
     if: github.event_name != 'pull_request'

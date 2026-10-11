@@ -1,6 +1,6 @@
 [package]
 name = "glave-computer"
-description = "glave's computers: this machine as a computer, environments read from environment.toml or devcontainer.json, workers on Docker, and computers served and reached over JSON-RPC"
+description = "glave's computers: this machine as a computer, environments read from environment.toml or devcontainer.json, workers on Docker or Kubernetes, and computers served and reached over JSON-RPC"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -21,6 +21,10 @@ http.workspace = true
 http-body-util.workspace = true
 hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, features = ["tokio"] }
+# Workers on Kubernetes, only with the `kubernetes` feature (the CLI turns it on), so library
+# users who never start a worker on a cluster do not build a Kubernetes client.
+k8s-openapi = { workspace = true, optional = true }
+kube = { workspace = true, optional = true }
 # Walking a workspace the way git sees it, leaving out what it ignores.
 ignore.workspace = true
 # A self-signed certificate per worker, whose fingerprint the harness pins.
@@ -40,6 +44,10 @@ tokio-rustls.workspace = true
 # Reading .glave/environment.toml.
 toml.workspace = true
 uuid.workspace = true
+
+[features]
+# The worker backend on Kubernetes.
+kubernetes = ["dep:kube", "dep:k8s-openapi"]
 
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }

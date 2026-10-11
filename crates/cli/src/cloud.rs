@@ -10,7 +10,8 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
 use glave_computer::{
-    Credentials, Docker, DockerSettings, WorkerComputers, https_url, read_environment,
+    Credentials, Docker, DockerSettings, Kubernetes, KubernetesSettings, WorkerComputers,
+    https_url, read_environment,
 };
 use glave_harness::Workers;
 use glave_ports::Sources;
@@ -18,7 +19,7 @@ use glave_session::OnWorkers;
 
 use crate::client::Glave;
 use crate::home;
-use crate::policy::{Backend, Choices, Constraints, On};
+use crate::policy::{Backend, Choices, Constraints, On, WorkersFile};
 
 /// Threads on workers, when `on` is `cloud`: what the session server needs, and the workers
 /// themselves, to remove any left at the end.
@@ -32,8 +33,8 @@ pub async fn workers(
     }
     let Some(backend) = &choices.workers else {
         bail!(
-            "--on cloud (from {}) needs a worker backend: set [workers] backend = \"docker\" and \
-             glave = \"<a Linux build of glave>\" in config.toml",
+            "--on cloud (from {}) needs a worker backend: set [workers] backend = \"docker\" (or \
+             \"kubernetes\") and glave = \"<a Linux build of glave>\" in config.toml",
             choices.on.from
         );
     };
@@ -45,19 +46,7 @@ pub async fn workers(
         )
     })?;
     let sources = sources(folder).await?;
-    let Backend::Docker = backend.value.backend;
-    let docker = Docker::new(
-        DockerSettings {
-            socket: backend.value.socket.clone(),
-            glave: backend.value.glave.clone(),
-        },
-        std::env::var_os("HOME").map(PathBuf::from).as_deref(),
-    );
-    let computers = Arc::new(WorkerComputers::docker(
-        docker,
-        constraints.worker_limits(),
-        Credentials::HostGit,
-    ));
+    let computers = Arc::new(computers(&backend.value, constraints).await?);
     let on = OnWorkers {
         workers: Workers {
             computers: computers.clone(),
@@ -67,6 +56,42 @@ pub async fn workers(
         environment: found.environment,
     };
     Ok((Some(on), Some(computers)))
+}
+
+/// Workers on the backend `file` names, within the constraints' limits.
+async fn computers(
+    file: &WorkersFile,
+    constraints: &Constraints,
+) -> anyhow::Result<WorkerComputers> {
+    if let Some(key) = file.misplaced() {
+        bail!(
+            "[workers] {key} is not used by the {} backend; remove it from config.toml",
+            file.backend.name()
+        );
+    }
+    let limits = constraints.worker_limits();
+    Ok(match file.backend {
+        Backend::Docker => {
+            let docker = Docker::new(
+                DockerSettings {
+                    socket: file.socket.clone(),
+                    glave: file.glave.clone(),
+                },
+                std::env::var_os("HOME").map(PathBuf::from).as_deref(),
+            );
+            WorkerComputers::docker(docker, limits, Credentials::HostGit)
+        }
+        Backend::Kubernetes => {
+            let kubernetes = Kubernetes::connect(KubernetesSettings {
+                kubeconfig: file.kubeconfig.clone(),
+                namespace: file.namespace.clone(),
+                runtime_class: file.runtime_class.clone(),
+                glave: file.glave.clone(),
+            })
+            .await?;
+            WorkerComputers::kubernetes(kubernetes, limits, Credentials::HostGit)
+        }
+    })
 }
 
 /// Runs git in `folder`; its output, or an error saying what it said.
@@ -201,6 +226,23 @@ mod tests {
         assert!(
             no_environment.to_string().contains("devcontainer.json"),
             "{no_environment}"
+        );
+        let docker_with_a_runtime_class = WorkersFile {
+            backend: Backend::Docker,
+            glave: "/x".into(),
+            socket: None,
+            kubeconfig: None,
+            namespace: None,
+            runtime_class: Some("gvisor".into()),
+        };
+        let refused = runtime
+            .block_on(computers(&docker_with_a_runtime_class, &constraints))
+            .unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("runtime_class is not used by the docker"),
+            "{refused}"
         );
     }
 
