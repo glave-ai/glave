@@ -278,6 +278,7 @@ where
         space: None,
         background: false,
         worktree: worktree.then_some(true),
+        computer: None,
     };
     match server.request(started).await.unwrap() {
         Reply::Thread { thread } => thread.id,

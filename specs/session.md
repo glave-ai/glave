@@ -27,7 +27,7 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | Method | Params | Result |
 | --- | --- | --- |
 | `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
-| `thread/start` | optional `space` (default: the server's own space, when the caller works in it; else the caller's personal space, made the first time, as for a one-off chat from the web); optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`); optional `background`: `true` for a thread that will run as a task, which works on a worker when the server has a worker backend, even if other threads work here | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
+| `thread/start` | optional `space` (default: the server's own space, when the caller works in it; else the caller's personal space, made the first time, as for a one-off chat from the web); optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`); optional `background`: `true` for a thread that will run as a task, which works on a worker when the server has a worker backend, even if other threads work here; optional `computer`: the id of a running computer to work on, such as a person's own laptop dialled in to this server (not available yet: refused with `-32021`, and no thread starts) | `thread`: a thread summary, which says nothing about where the thread works, so a client never assumes a worker. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
 | `thread/list` | optional `space` (default as `thread/start` picks it); optional `limit` (default 20); optional `show`: `active` (default), `archived`, or `deleted` (waiting for erasure, for the operator that does it); optional `cursor`, the `next` of the page before | `threads`: summaries, most recently written first, read from the threads view a page at a time (its cost is the page's, however many threads or events the space has); `next`, the cursor of the following page, when there is one. A `cursor` this server did not make is refused with `-32602` |
 | `thread/rename` | `thread`; `title`: 1 to 200 characters, trimmed, not only spaces | `thread`: its summary with the new title. Records `thread.renamed`, glave's own record, so the model is sent the same. A title that is empty or too long is refused with `-32602`; a thread with a turn running with `-32002` |
 | `thread/archive` | `thread` | `{}`. Records `thread.archived`; the thread leaves `thread/list` and search but stays in the log and readable by id. A turn, goal or compaction in it is refused with `-32014`. Archiving an archived thread records nothing |
@@ -178,6 +178,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32018` | Memory is off for this server |
 | `-32019` | No such space |
 | `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
+| `-32021` | Not available yet, such as a thread on a computer of the person's own |
 
 ## Transports
 

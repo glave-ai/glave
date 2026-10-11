@@ -10,7 +10,7 @@ use glave_harness::Hook;
 
 use crate::args::Args;
 use crate::{config, home, mcp};
-use glave_config::policy::{self, Choices, ConfigFile, Loaded, Locations, ProjectTrust};
+use glave_config::policy::{self, Choices, ConfigFile, Loaded, Locations, ProjectTrust, StoreFile};
 use glave_config::trust::{self, Asking, Outcome, Project};
 
 /// Why the sandbox cannot run, as `glave policy explain` says it without trying.
@@ -176,6 +176,7 @@ fn environment() -> ConfigFile {
     ConfigFile {
         model: set("GLAVE_MODEL"),
         judge_model: set("GLAVE_JUDGE_MODEL"),
+        store: crate::data::environment().map(|url| StoreFile { url }),
         ..ConfigFile::default()
     }
 }

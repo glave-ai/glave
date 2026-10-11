@@ -9,6 +9,7 @@ mod commands;
 mod computer;
 mod config;
 mod daemon;
+mod data;
 mod gateway;
 mod home;
 mod identity;

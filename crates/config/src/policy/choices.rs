@@ -116,6 +116,9 @@ pub struct Choices {
     pub space_memory: Chosen<SpaceMemory>,
     /// The OpenTelemetry collector spans and metrics go to, if any: its OTLP/HTTP URL.
     pub telemetry: Option<Chosen<String>>,
+    /// The Postgres database that is the data store, if any; the local SQLite file if not.
+    /// The URL may hold a password: show it only [`redacted`](crate::policy::redacted).
+    pub store: Option<Chosen<String>>,
 }
 
 /// One level choices come from.
@@ -182,6 +185,9 @@ pub fn resolve(layers: &[Layer]) -> Choices {
         worktree: defaulted(nearest(layers, "worktree", |file| file.worktree), false),
         on: defaulted(nearest(layers, "on", |file| file.on), On::Here),
         workers: nearest(layers, "workers", |file| file.workers.clone()),
+        store: nearest(layers, "store", |file| {
+            file.store.as_ref().map(|store| store.url.trim().to_owned())
+        }),
         telemetry: nearest(layers, "telemetry", |file| {
             file.telemetry
                 .as_ref()

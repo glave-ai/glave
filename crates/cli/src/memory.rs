@@ -11,11 +11,11 @@ use glave_event::{MemoryId, MemoryScope, PrincipalId};
 use glave_harness::{Access, Control, Memory, OsEntropy, Remembered, SystemClock};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 use glave_ports::Scope;
-use glave_store_sqlite::{SqliteLog, Store};
 
 use crate::args::Args;
+use crate::data::{Data, DataLog};
 use crate::setup::Setup;
-use crate::{home, identity, keys};
+use crate::{home, identity};
 use glave_config::policy::MemorySettings;
 use glave_config::trust::Asking;
 
@@ -35,7 +35,7 @@ In a session, /memory lists them.";
 
 /// Memory as running here: the server, and the spaces it keeps.
 pub struct Running {
-    pub memory: Arc<GlaveMemory<SqliteLog>>,
+    pub memory: Arc<GlaveMemory<DataLog>>,
     pub scopes: Vec<Scope>,
 }
 
@@ -56,7 +56,7 @@ impl Running {
 
 /// Starts memory for a run with `setup`, when its choices turn it on and the policy allows.
 pub async fn start_for(
-    store: &Store,
+    store: &Data,
     setup: &Setup,
     person: PrincipalId,
     scope: Scope,
@@ -68,7 +68,7 @@ pub async fn start_for(
 
 /// Starts memory for `person` working in `scope`, when `settings` turn it on.
 pub async fn start(
-    store: &Store,
+    store: &Data,
     settings: &MemorySettings,
     person: PrincipalId,
     scope: Scope,
@@ -88,7 +88,7 @@ pub async fn start(
     rules.spaces.insert(scope.space, settings.space);
     let memories = Memories::new(
         store.log(),
-        store.keyring(),
+        store.shredder(),
         rules,
         Box::new(SystemClock),
         Box::new(OsEntropy),
@@ -188,11 +188,7 @@ async fn run(command: Command) -> anyhow::Result<()> {
     let settings =
         glave_config::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
     let home = home::folder()?;
-    let store = Store::open(
-        home::database().await?,
-        keys::settings(&home, home::relocated()).await?,
-    )
-    .await?;
+    let store = Data::chosen(&setup.choices).await?;
     let person = identity::load_or_make(&home).await?.person;
     let scope = crate::spaces::here(&store, &folder, person).await?;
     let on = MemorySettings {

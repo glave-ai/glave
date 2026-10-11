@@ -17,13 +17,12 @@ use glave_gateway_service::{Policy, Service, Wiring};
 use glave_harness::{Caller, OsEntropy, SystemClock};
 use glave_mcp::{Limits, McpServer, ServerConfig};
 use glave_session::signin::{SignIn, Trust};
-use glave_store_sqlite::Store;
 use tokio::net::TcpListener;
 
 use crate::config;
 use crate::gateway::{Allowed, gateway};
 use crate::model::Model;
-use crate::{home, keys, mcp};
+use crate::{home, mcp};
 use glave_config::policy::{self, Constraints, ORGANIZATION_POLICY, Source};
 
 pub const USAGE: &str = "\
@@ -176,11 +175,7 @@ async fn run(options: Options) -> anyhow::Result<()> {
     let home = home::folder()?;
     let (catalog, mut secrets) = catalog(&home, &constraints).await?;
     secrets.extend(endpoint.provider.api_key.clone());
-    let store = Store::open(
-        home::database().await?,
-        keys::settings(&home, home::relocated()).await?,
-    )
-    .await?;
+    let store = crate::data::Data::open(None).await?;
     let scope = crate::spaces::named(&store, SCOPE).await?;
     let trust = Trust {
         issuers: options.issuers,

@@ -10,6 +10,7 @@ use globset::Glob;
 
 use crate::policy::files::{JudgeRule, PolicyFile, TaskRules};
 use crate::policy::memory::MemoryRules;
+use crate::policy::placement::Placement;
 use crate::policy::workers::{NetworkRule, WorkerRules, limits};
 
 /// The approval modes there are, cautious first.
@@ -49,6 +50,8 @@ pub enum Kind {
     Tasks(TaskRules),
     /// What memory may be.
     Memory(MemoryRules),
+    /// Where threads may work.
+    Placement(Vec<Placement>),
 }
 
 impl fmt::Display for Kind {
@@ -74,6 +77,10 @@ impl fmt::Display for Kind {
             Self::HooksOwnForbidden => f.write_str("[hooks] own = false"),
             Self::Workers(rules) => f.write_str(&rules.describe()),
             Self::Memory(rules) => f.write_str(&rules.describe()),
+            Self::Placement(places) => {
+                let names: Vec<String> = places.iter().map(|p| p.name().to_owned()).collect();
+                write!(f, "[placement] allowed = {}", quoted(&names))
+            }
             Self::Tasks(rules) => {
                 let parts: Vec<String> = [
                     ("max_running", rules.max_running),
@@ -154,6 +161,9 @@ impl Constraints {
             }
             if !file.memory.is_empty() {
                 add(Kind::Memory(file.memory.clone()));
+            }
+            if let Some(allowed) = &file.placement.allowed {
+                add(Kind::Placement(allowed.clone()));
             }
         }
         Self { rules }

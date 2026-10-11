@@ -30,6 +30,9 @@ export type Choice = {
   readonly label: string;
 };
 
+/** Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it). */
+export type ComputerId = string;
+
 /** An ISO 4217 currency code: three uppercase ASCII letters, such as `USD`. */
 export type Currency = string;
 
@@ -644,6 +647,11 @@ export type ThreadStartParams = {
    * even when other threads work here.
    */
   readonly background?: boolean;
+  /**
+   * A running computer to work on, such as the person's own laptop dialled in to this
+   * server. Not available yet: refused with `-32021`.
+   */
+  readonly computer?: ComputerId | null;
   /**
    * The space the thread is in: by default the server's own, for a caller who works in
    * it, else the caller's personal space.

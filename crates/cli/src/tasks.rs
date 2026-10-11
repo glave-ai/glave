@@ -140,6 +140,7 @@ pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
         space: None,
         worktree: args.worktree.then_some(true),
         background: true,
+        computer: None,
     };
     let Reply::Thread { thread } = host.request(started).await? else {
         bail!("the task host answered thread/start with something else");

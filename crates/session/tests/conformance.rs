@@ -317,6 +317,7 @@ mod conformance {
                 space: None,
                 background: false,
                 worktree: None,
+                computer: None,
             })
             .await
             .unwrap();
