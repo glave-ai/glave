@@ -11,7 +11,7 @@ mod subagents {
     use glave_event::{Body, Outcome, decode};
     use glave_harness::Settings;
     use glave_ports::MemoryLog;
-    use glave_session::protocol::{Answer, Notification, Reply, Request, Update};
+    use glave_session::protocol::{Answer, Notification, Request, Update};
     use glave_session::{Answering, TurnItem};
     use serde_json::json;
 
@@ -46,14 +46,7 @@ mod subagents {
                 settings,
             )
             .await;
-            let Reply::Thread { thread } = server
-                .request(Request::ThreadStart { worktree: None })
-                .await
-                .unwrap()
-            else {
-                panic!("expected a thread");
-            };
-            let parent = thread.id;
+            let parent = start(&server, false).await;
             let mut stream = server.start_turn(parent, "touch it").await.unwrap();
             let mut subagent = None;
             let mut answered = false;

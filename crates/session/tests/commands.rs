@@ -60,7 +60,10 @@ mod commands {
             )
             .await;
             let Reply::Thread { thread } = server
-                .request(Request::ThreadStart { worktree: None })
+                .request(Request::ThreadStart {
+                    background: false,
+                    worktree: None,
+                })
                 .await
                 .unwrap()
             else {
@@ -68,6 +71,8 @@ mod commands {
             };
             for prompt in ["/review 12", "/usr/bin is slow"] {
                 let turn = Request::TurnStart {
+                    background: false,
+                    budget: None,
                     thread: thread.id,
                     prompt: prompt.into(),
                     meta: Meta::default(),

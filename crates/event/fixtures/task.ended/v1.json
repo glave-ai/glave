@@ -1,0 +1,1 @@
+{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000041","thread":"00000000-0000-7000-8000-000000000000","seq":4,"at":"2026-10-10T09:04:12.250Z","type":"task.ended","v":1,"data":{"thread":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c13","outcome":"completed","tokens":{"input":41200,"cache_read":30000,"cache_write":0,"output":2300,"reasoning":800},"cost":{"micros":18400,"currency":"USD"}}}

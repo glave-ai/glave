@@ -246,6 +246,10 @@ pub fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::WorkspaceBound(_) => "workspace.bound",
             Body::WorkspaceRemoved(_) => "workspace.removed",
             Body::HookRan(_) => "hook.ran",
+            Body::TaskStarted(_) => "task.started",
+            Body::TaskEnded(_) => "task.ended",
+            Body::ScheduleCreated(_) => "schedule.created",
+            Body::ScheduleDeleted(_) => "schedule.deleted",
             Body::Unknown(_) => "unknown",
         })
         .collect()

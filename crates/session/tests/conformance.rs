@@ -1,5 +1,6 @@
 //! One set of scenarios, run over every transport: in-process, JSON-RPC 2.0 over a stream of
-//! lines (as stdio carries it), and HTTP with server-sent events, signed in. A transport changes how messages travel, never what they
+//! lines (as stdio carries it), the same over a Unix socket to a long-running server, and HTTP
+//! with server-sent events, signed in. A transport changes how messages travel, never what they
 //! mean (`specs/session.md`), so each scenario must end the same way over each.
 
 #[cfg(test)]
@@ -26,7 +27,9 @@ mod conformance {
     };
     use glave_session::{Answering, Server, TurnItem};
     use serde_json::{Value, json};
-    use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, DuplexStream, Lines};
+    use tokio::io::{
+        AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader, Lines,
+    };
     use tokio::task::JoinHandle;
 
     use super::issuer::{Issuer, Signer};
@@ -81,12 +84,18 @@ mod conformance {
         }
     }
 
-    /// JSON-RPC 2.0, one message per line, over an in-memory pipe to `rpc::serve`.
+    type Writer = Box<dyn AsyncWrite + Unpin + Send>;
+    type Reader = Box<dyn AsyncRead + Unpin + Send>;
+
+    /// JSON-RPC 2.0, one message per line, over an in-memory pipe to `rpc::serve`, or over a
+    /// Unix socket to `rpc::serve_connection`.
     struct OverJsonRpc {
-        to_server: DuplexStream,
-        from_server: Lines<BufReader<DuplexStream>>,
+        to_server: Writer,
+        from_server: Lines<BufReader<Reader>>,
         next_id: i64,
         serving: Option<JoinHandle<std::io::Result<()>>>,
+        /// A long-running server, shut down when the test is done with it.
+        shared: Option<Tested>,
     }
 
     impl OverJsonRpc {
@@ -99,10 +108,37 @@ mod conformance {
                 server_out,
             ));
             Self {
-                to_server: client_out,
-                from_server: BufReader::new(client_in).lines(),
+                to_server: Box::new(client_out),
+                from_server: BufReader::new(Box::new(client_in) as Reader).lines(),
                 next_id: 0,
                 serving: Some(serving),
+                shared: None,
+            }
+        }
+
+        /// A client of `server` serving on a Unix socket, as `glave serve --socket` does.
+        async fn on_socket(server: Tested, name: &str) -> Self {
+            // Short, as socket paths must be.
+            let path =
+                std::path::PathBuf::from(format!("/tmp/glave-{name}-{}.sock", std::process::id()));
+            let _ = std::fs::remove_file(&path);
+            let listener = tokio::net::UnixListener::bind(&path).unwrap();
+            let serving_server = server.clone();
+            let serving = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await?;
+                let (read, write) = stream.into_split();
+                glave_session::rpc::serve_connection(serving_server, BufReader::new(read), write)
+                    .await
+            });
+            let stream = tokio::net::UnixStream::connect(&path).await.unwrap();
+            let _ = std::fs::remove_file(&path);
+            let (read, write) = stream.into_split();
+            Self {
+                to_server: Box::new(write),
+                from_server: BufReader::new(Box::new(read) as Reader).lines(),
+                next_id: 0,
+                serving: Some(serving),
+                shared: Some(server),
             }
         }
 
@@ -127,6 +163,9 @@ mod conformance {
             drop(self.to_server);
             if let Some(serving) = self.serving.take() {
                 serving.await.unwrap().unwrap();
+            }
+            if let Some(server) = self.shared.take() {
+                server.shutdown().await;
             }
         }
     }
@@ -159,6 +198,8 @@ mod conformance {
             react: &mut dyn FnMut(&Notification) -> Reaction,
         ) -> Result<TurnResult, ApiError> {
             let request = Request::TurnStart {
+                background: false,
+                budget: None,
                 thread,
                 prompt: prompt.to_owned(),
                 meta: Meta::default(),
@@ -220,6 +261,8 @@ mod conformance {
             react: &mut dyn FnMut(&Notification) -> Reaction,
         ) -> Result<TurnResult, ApiError> {
             let request = Request::TurnStart {
+                background: false,
+                budget: None,
                 thread,
                 prompt: prompt.to_owned(),
                 meta: Meta::default(),
@@ -270,7 +313,10 @@ mod conformance {
 
     async fn thread_of(client: &mut impl Client) -> ThreadId {
         let reply = client
-            .call(Request::ThreadStart { worktree: None })
+            .call(Request::ThreadStart {
+                background: false,
+                worktree: None,
+            })
             .await
             .unwrap();
         serde_json::from_value(reply["thread"]["id"].clone()).unwrap()
@@ -288,6 +334,12 @@ mod conformance {
             let $dir = folder(concat!($name, "-json-rpc"));
             let tested = server(&$dir, $answers, Answering::Clients).await;
             let mut $client = OverJsonRpc::new(tested);
+            $body
+            $client.close().await;
+
+            let $dir = folder(concat!($name, "-socket"));
+            let tested = server(&$dir, $answers, Answering::Clients).await;
+            let mut $client = OverJsonRpc::on_socket(tested, $name).await;
             $body
             $client.close().await;
 
@@ -392,6 +444,42 @@ mod conformance {
                     client.call(stale).await.err().map(|e| e.code),
                     Some(code::NO_APPROVAL)
                 );
+                let _ = &dir;
+            });
+        });
+    }
+
+    #[test]
+    fn a_background_turn_answers_at_once_and_its_task_is_listed_when_done() {
+        block_on(async {
+            over_each_transport!("task", vec![answer(Some("Done."), None)], |client, dir| {
+                let thread = thread_of(&mut client).await;
+                let started = client
+                    .call(Request::TurnStart {
+                        thread,
+                        prompt: "go".into(),
+                        background: true,
+                        budget: Some(10_000),
+                        meta: Meta::default(),
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(started["task"]["thread"], json!(thread));
+                assert_eq!(started["task"]["kind"], "agent");
+                assert_eq!(started["task"]["budget"], 10_000);
+                let mut finished = Value::Null;
+                for _ in 0..10_000 {
+                    let listed = client
+                        .call(Request::TasksList { limit: None })
+                        .await
+                        .unwrap();
+                    if listed["tasks"][0]["status"] == "finished" {
+                        finished = listed["tasks"][0].clone();
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+                assert_eq!(finished["outcome"], "completed", "{finished}");
                 let _ = &dir;
             });
         });

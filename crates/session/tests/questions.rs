@@ -20,7 +20,10 @@ mod questions {
 
     async fn new_thread(server: &Scripted) -> ThreadId {
         match server
-            .request(Request::ThreadStart { worktree: None })
+            .request(Request::ThreadStart {
+                background: false,
+                worktree: None,
+            })
             .await
             .unwrap()
         {
@@ -167,6 +170,8 @@ mod questions {
             let thread = new_thread(&server).await;
             let reply = server
                 .request(Request::TurnStart {
+                    background: false,
+                    budget: None,
                     thread,
                     prompt: "set up storage".into(),
                     meta: Meta::default(),

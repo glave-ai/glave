@@ -74,6 +74,23 @@ impl Hub {
             .insert(child, parent);
     }
 
+    /// `thread`, then the threads that started it, nearest first.
+    pub(crate) fn lineage(&self, thread: ThreadId) -> Vec<ThreadId> {
+        let parents = self.parents.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut lineage = vec![thread];
+        let mut at = thread;
+        for _ in 0..MOST_GENERATIONS {
+            match parents.get(&at) {
+                Some(parent) => {
+                    lineage.push(*parent);
+                    at = *parent;
+                }
+                None => break,
+            }
+        }
+        lineage
+    }
+
     fn release(&self, child: ThreadId) {
         self.parents
             .lock()

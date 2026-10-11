@@ -142,6 +142,6 @@ Sizes and counts are choices within policy ceilings (`policy.md`): the largest s
 
 ## Placement defaults
 
-- **On a laptop:** the computer is the laptop. The thread the person is driving works in the project folder itself unless `worktree = true` gives it a worktree under `~/.glave/worktrees/`; later, background threads, goals and scheduled work get their own copy beside it the same way (or a copy-on-write clone where the filesystem supports it).
+- **On a laptop:** the computer is the laptop. The thread the person is driving works in the project folder itself unless `worktree = true` gives it a worktree under `~/.glave/worktrees/`. Tasks (`session.md`) work on a worker of their own whenever `[workers]` names a backend, so they go on with the laptop closed; without one, they work where any thread does (`--worktree` or `worktree = true` keeps them off the person's own folder). Later, a copy-on-write clone where the filesystem supports it.
 - **In the cloud:** one persistent computer per person by default, sleeping when idle; a space can be pinned to a computer of its own; short-lived burst computers start from a snapshot of the person's computer for parallel work, later.
 - **Removal:** a worktree is removed when its thread is archived, idle for 30 days or pruned, and only when nothing would be lost (above); reopening the thread checks its branch out again.

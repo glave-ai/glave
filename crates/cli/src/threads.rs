@@ -105,6 +105,9 @@ async fn run(command: Command) -> anyhow::Result<()> {
     match command {
         Command::List(wanted) => {
             for thread in log.threads(&scope, MOST_LISTED).await? {
+                if glave_session::is_ledger(thread) {
+                    continue;
+                }
                 if standing_of(&log, &scope, thread).await? == wanted {
                     println!("{thread}");
                 }
