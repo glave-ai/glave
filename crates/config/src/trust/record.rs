@@ -6,7 +6,6 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
 
 use crate::trust::project::{Item, Project};
@@ -66,7 +65,7 @@ impl Default for Record {
 
 impl Record {
     /// The record in `home`; empty when there is none yet.
-    pub async fn load(home: &Path) -> anyhow::Result<Self> {
+    pub async fn load(home: &Path) -> crate::Result<Self> {
         let path = home.join(FILE);
         let text = match tokio::fs::read_to_string(&path).await {
             Ok(text) => text,
@@ -74,35 +73,37 @@ impl Record {
                 return Ok(Self::default());
             }
             Err(error) => {
-                return Err(error).with_context(|| format!("could not read {}", path.display()));
+                return Err(crate::Error::io("read", path)(error));
             }
         };
         let record: Self = toml::from_str(&text)
-            .map_err(|error| anyhow::anyhow!("{}: {error}", path.display()))?;
-        anyhow::ensure!(
-            record.version == VERSION,
-            "{}: version = {} is not one this glave knows: use version = {VERSION}",
-            path.display(),
-            record.version
-        );
+            .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
+        if record.version != VERSION {
+            crate::error::invalid!(
+                "{}: version = {} is not one this glave knows: use version = {VERSION}",
+                path.display(),
+                record.version
+            );
+        }
         Ok(record)
     }
 
     /// Writes the record to `home`, whole and then moved into place so a crash never leaves
     /// half of it.
-    pub async fn save(&self, home: &Path) -> anyhow::Result<()> {
-        let text = toml::to_string(self).context("could not write the trust record")?;
+    pub async fn save(&self, home: &Path) -> crate::Result<()> {
+        let text = toml::to_string(self)
+            .map_err(|error| crate::Error::within("could not write the trust record", error))?;
         tokio::fs::create_dir_all(home)
             .await
-            .with_context(|| format!("could not create {}", home.display()))?;
+            .map_err(crate::Error::io("create", home))?;
         let path = home.join(FILE);
         let temporary = home.join(format!("{FILE}.new"));
         tokio::fs::write(&temporary, text)
             .await
-            .with_context(|| format!("could not write {}", temporary.display()))?;
+            .map_err(crate::Error::io("write", &temporary))?;
         tokio::fs::rename(&temporary, &path)
             .await
-            .with_context(|| format!("could not replace {}", path.display()))
+            .map_err(crate::Error::io("replace", path))
     }
 
     /// The decisions about `project`: found by path, else by the remote a moved clone shares.

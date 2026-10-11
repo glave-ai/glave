@@ -6,7 +6,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::Context as _;
 use glave_harness::{ApprovalMode, Hook, point_name};
 use serde_json::Value;
 
@@ -75,10 +74,10 @@ pub struct Project {
 impl Project {
     /// Reads the repository at `root`. A file that does not parse stops glave, naming it, so
     /// a mistake never quietly turns a project's settings off.
-    pub async fn read(root: &Path, environment: &BTreeMap<String, String>) -> anyhow::Result<Self> {
+    pub async fn read(root: &Path, environment: &BTreeMap<String, String>) -> crate::Result<Self> {
         let root = tokio::fs::canonicalize(root)
             .await
-            .with_context(|| format!("could not resolve {}", root.display()))?;
+            .map_err(crate::Error::io("resolve", root))?;
         let config_path = root.join(".glave").join(policy::CONFIG);
         let config = match read(&config_path).await? {
             Some(text) => Some(policy::config(&text, &config_path)?),
@@ -200,10 +199,12 @@ fn servers(
     text: &str,
     environment: &BTreeMap<String, String>,
     path: &Path,
-) -> anyhow::Result<BTreeMap<String, Item>> {
-    glave_mcp::parse(text, environment).with_context(|| format!("in {}", path.display()))?;
-    let file: Value = serde_json::from_str(text)
-        .with_context(|| format!("{} is not valid JSON", path.display()))?;
+) -> crate::Result<BTreeMap<String, Item>> {
+    glave_mcp::parse(text, environment)
+        .map_err(|error| crate::Error::within(format!("in {}", path.display()), error))?;
+    let file: Value = serde_json::from_str(text).map_err(|error| {
+        crate::Error::within(format!("{} is not valid JSON", path.display()), error)
+    })?;
     let found = file.get("mcpServers").and_then(Value::as_object);
     Ok(found
         .into_iter()
@@ -255,10 +256,10 @@ pub async fn remote(root: &Path) -> Option<String> {
     None
 }
 
-async fn read(path: &Path) -> anyhow::Result<Option<String>> {
+async fn read(path: &Path) -> crate::Result<Option<String>> {
     match tokio::fs::read_to_string(path).await {
         Ok(text) => Ok(Some(text)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error).with_context(|| format!("could not read {}", path.display())),
+        Err(error) => Err(crate::Error::io("read", path)(error)),
     }
 }

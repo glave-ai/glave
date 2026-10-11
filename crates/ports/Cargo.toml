@@ -13,7 +13,11 @@ publish.workspace = true
 conformance = []
 
 [dependencies]
+# The operating system's randomness, for the random part of new ids.
+getrandom.workspace = true
 glave-event.workspace = true
+# The clock's time.
+jiff.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -22,7 +26,6 @@ thiserror.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-jiff.workspace = true
 proptest.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 

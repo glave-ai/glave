@@ -6,10 +6,10 @@ use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 
 use super::{Goal, GoalProgress, IDLE_TURNS, Pursuit, Verdict, continuation, counted, latest};
 use crate::approval::Approver;
-use crate::caller::Caller;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::turn::{Live, Prompt, TurnSummary, absorb};
+use glave_identity::Caller;
 
 impl<P, L, B, A> Harness<P, L, B, A>
 where

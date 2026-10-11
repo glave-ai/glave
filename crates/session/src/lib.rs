@@ -16,14 +16,13 @@ pub mod rpc;
 mod schedule;
 pub mod schema;
 mod server;
-pub mod signin;
 mod spaces;
 mod standing;
 mod tasks;
 mod turn;
 
 pub use approvals::Answering;
-pub use glave_harness::Caller;
+pub use glave_identity::{Caller, signin};
 pub use ledger::is_ledger;
 pub use server::{OnWorkers, Server, Wiring};
 pub use spaces::PERSONAL_NAME;

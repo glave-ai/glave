@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use anyhow::{anyhow, bail};
+use crate::error::invalid;
 use glave_harness::{ApprovalMode, Hook, HookPoint, Hooks, SandboxLevel};
 use globset::Glob;
 
@@ -303,16 +303,17 @@ pub struct BudgetRules {
 }
 
 /// `config.toml` at `path`, from its `text`.
-pub fn config(text: &str, path: &Path) -> anyhow::Result<ConfigFile> {
-    let file: ConfigFile =
-        toml::from_str(text).map_err(|error| anyhow!("{}: {error}", path.display()))?;
+pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
+    let file: ConfigFile = toml::from_str(text)
+        .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
     if let Some(hooks) = &file.hooks {
-        Hooks::new(hooks.hooks()).map_err(|error| anyhow!("{}: {error}", path.display()))?;
+        Hooks::new(hooks.hooks())
+            .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
     }
     if let Some(gateway) = &file.gateway
         && !gateway.safe()
     {
-        bail!(
+        invalid!(
             "{}: [gateway] url = {:?} is not https (http only to this computer): your sign-in \
              goes there",
             path.display(),
@@ -320,18 +321,19 @@ pub fn config(text: &str, path: &Path) -> anyhow::Result<ConfigFile> {
         );
     }
     if let Some(web) = &file.web {
-        web.policy()
-            .map_err(|error| anyhow!("{}: {error:#}", path.display()))?;
+        web.policy().map_err(|error| {
+            crate::Error::Invalid(format!("{}: {}", path.display(), error.chain()))
+        })?;
     }
     Ok(file)
 }
 
 /// `policy.toml` at `path`, from its `text`: a version glave knows, and globs that compile.
-pub fn policy(text: &str, path: &Path) -> anyhow::Result<PolicyFile> {
-    let file: PolicyFile =
-        toml::from_str(text).map_err(|error| anyhow!("{}: {error}", path.display()))?;
+pub fn policy(text: &str, path: &Path) -> crate::Result<PolicyFile> {
+    let file: PolicyFile = toml::from_str(text)
+        .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
     if file.version != POLICY_VERSION {
-        bail!(
+        invalid!(
             "{}: version = {} is not one this glave knows: use version = {POLICY_VERSION}",
             path.display(),
             file.version
@@ -346,7 +348,7 @@ pub fn policy(text: &str, path: &Path) -> anyhow::Result<PolicyFile> {
     let denied = file.models.deny.iter().map(|glob| ("deny", glob));
     for (key, glob) in globs.chain(denied) {
         if let Err(error) = Glob::new(glob) {
-            bail!(
+            invalid!(
                 "{}: [models] {key} has {glob:?}, which is not a glob: {error}",
                 path.display()
             );
@@ -354,7 +356,7 @@ pub fn policy(text: &str, path: &Path) -> anyhow::Result<PolicyFile> {
     }
     for glob in &file.projects.trusted {
         if let Err(error) = Glob::new(glob) {
-            bail!(
+            invalid!(
                 "{}: [projects] trusted has {glob:?}, which is not a glob: {error}",
                 path.display()
             );
@@ -363,7 +365,7 @@ pub fn policy(text: &str, path: &Path) -> anyhow::Result<PolicyFile> {
     if let Some(usd) = file.budget.person_per_day_usd
         && !(usd.is_finite() && usd >= 0.0)
     {
-        bail!(
+        invalid!(
             "{}: [budget] person_per_day_usd = {usd} is not an amount of dollars",
             path.display()
         );

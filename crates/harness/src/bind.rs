@@ -11,10 +11,10 @@ use glave_ports::{
 
 use crate::approval::Approver;
 use crate::builtins::Builtins;
-use crate::caller::Caller;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
+use glave_identity::Caller;
 
 /// Where a new thread works.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

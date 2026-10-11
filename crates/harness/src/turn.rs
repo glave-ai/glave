@@ -13,7 +13,6 @@ use std::time::Duration;
 use serde::Serialize;
 
 use crate::approval::{ApprovalMode, Approver};
-use crate::caller::Caller;
 use crate::cancel::Cancel;
 use crate::commands::invoked;
 use crate::compaction::{Measured, chars, responded};
@@ -24,6 +23,7 @@ use crate::question::Question;
 use crate::repeats::Repeats;
 use crate::sandbox::{Recorded, recorded};
 use crate::toolset::ToolSet;
+use glave_identity::Caller;
 
 /// What the model is told after a cancelled turn, as Codex tells it.
 const CANCELLED: &str = "[The person cancelled this turn on purpose. A command that was stopped \

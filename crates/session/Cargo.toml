@@ -11,19 +11,16 @@ publish.workspace = true
 [dependencies]
 glave-event.workspace = true
 glave-harness.workspace = true
+# Sign-in on network transports, and who is calling.
+glave-identity.workspace = true
 glave-ports.workspace = true
 # The HTTP transport's server.
 hyper = { workspace = true, features = ["http1", "server"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 jiff.workspace = true
-# Verifying sign-in tokens against the identity provider's keys.
-jsonwebtoken.workspace = true
-# Fetching an identity provider's discovery document and keys.
-reqwest.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 thiserror.workspace = true
 # The scheduler waits for the next due run with a timer.
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
@@ -34,6 +31,7 @@ glave-computer.workspace = true
 glave-keys.workspace = true
 glave-memory.workspace = true
 glave-store-sqlite.workspace = true
+reqwest.workspace = true
 # Property tests for the cron parser (AGENTS.md: parsers get property tests).
 proptest.workspace = true
 serde_json.workspace = true

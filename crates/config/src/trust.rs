@@ -32,22 +32,27 @@ pub enum Asking {
 }
 
 /// What `project` does under the record in `home`, asking the person if that is needed and
-/// possible, and keeping the answer.
+/// possible, and keeping the answer. `ask` shows the question and returns the line typed, or
+/// nothing when input ends without one, which counts as no one being there.
 pub async fn resolve(
     home: &Path,
     project: Project,
     constraints: &Constraints,
     asking: Asking,
-) -> anyhow::Result<Outcome> {
+    ask: impl AsyncFnOnce(String) -> std::io::Result<Option<String>>,
+) -> crate::Result<Outcome> {
     let mut record = Record::load(home).await?;
     let assessment = assess(project, &record, constraints);
     let answer = match asking {
         Asking::Explaining => Answer::Explaining,
         Asking::NoOne => Answer::NoOne,
         Asking::Person if assessment.undecided().is_empty() => Answer::NoOne,
-        Asking::Person => match ask::ask(ask::question(&assessment)).await? {
-            Some(true) => Answer::Yes,
-            Some(false) => Answer::No,
+        Asking::Person => match ask(ask::question(&assessment))
+            .await
+            .map_err(|error| crate::Error::within("could not ask about the project", error))?
+        {
+            Some(typed) if ask::trusts(&typed) => Answer::Yes,
+            Some(_) => Answer::No,
             None => Answer::NoOne,
         },
     };

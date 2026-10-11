@@ -15,7 +15,7 @@ pub fn explain(loaded: &Loaded, provider: Option<&str>) -> (String, bool) {
     let choices = match &settled {
         Ok(choices) => choices,
         Err(error) => {
-            problems.push(format!("{error:#}"));
+            problems.push(error.chain());
             &loaded.choices
         }
     };

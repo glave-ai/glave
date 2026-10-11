@@ -1100,6 +1100,7 @@ dependencies = [
  "aws-lc-rs",
  "getrandom 0.4.3",
  "glave-computer",
+ "glave-config",
  "glave-event",
  "glave-gateway",
  "glave-gateway-service",
@@ -1158,6 +1159,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "glave-config"
+version = "0.0.0"
+dependencies = [
+ "glave-computer",
+ "glave-harness",
+ "glave-mcp",
+ "glave-memory",
+ "glave-ports",
+ "glave-web",
+ "globset",
+ "insta",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "toml",
+]
+
+[[package]]
 name = "glave-eval"
 version = "0.0.0"
 dependencies = [
@@ -1213,12 +1233,11 @@ dependencies = [
  "bytes",
  "glave-event",
  "glave-gateway",
- "glave-harness",
+ "glave-identity",
  "glave-mcp",
  "glave-ports",
  "glave-provider-anthropic",
  "glave-provider-openai",
- "glave-session",
  "http",
  "http-body-util",
  "hyper",
@@ -1237,9 +1256,9 @@ dependencies = [
 name = "glave-harness"
 version = "0.0.0"
 dependencies = [
- "getrandom 0.4.3",
  "glave-computer",
  "glave-event",
+ "glave-identity",
  "glave-ports",
  "glave-shell",
  "jiff",
@@ -1251,6 +1270,21 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "glave-identity"
+version = "0.0.0"
+dependencies = [
+ "glave-event",
+ "glave-ports",
+ "jiff",
+ "jsonwebtoken",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
 ]
 
 [[package]]
@@ -1315,6 +1349,7 @@ dependencies = [
 name = "glave-ports"
 version = "0.0.0"
 dependencies = [
+ "getrandom 0.4.3",
  "glave-event",
  "jiff",
  "proptest",
@@ -1362,6 +1397,7 @@ dependencies = [
  "glave-computer",
  "glave-event",
  "glave-harness",
+ "glave-identity",
  "glave-keys",
  "glave-memory",
  "glave-ports",
@@ -1369,13 +1405,11 @@ dependencies = [
  "hyper",
  "hyper-util",
  "jiff",
- "jsonwebtoken",
  "proptest",
  "reqwest",
  "schemars",
  "serde",
  "serde_json",
- "sha2",
  "thiserror",
  "tokio",
  "uuid",

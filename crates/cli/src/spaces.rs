@@ -40,7 +40,7 @@ pub async fn here(store: &Store, folder: &Path, person: PrincipalId) -> anyhow::
         .await
         .unwrap_or_else(|_| folder.to_owned());
     let mut keys = vec![FolderKey::Path(canonical.to_string_lossy().into_owned())];
-    if let Some(remote) = crate::trust::remote(&canonical).await {
+    if let Some(remote) = glave_config::trust::remote(&canonical).await {
         keys.push(FolderKey::Remote(remote));
     }
     let name = canonical.file_name().map_or_else(

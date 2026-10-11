@@ -16,13 +16,12 @@ mod workers;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use anyhow::Context as _;
 use glave_harness::Hook;
 
 pub use choices::{Choices, Chosen, Layer, Level, Source};
 pub use effective::{check_model, check_own_servers, unsandboxed};
 pub use explain::explain;
-pub use files::{Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, config};
+pub use files::{Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, TaskRules, config};
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use rules::Constraints;
 pub use web::WebFile;
@@ -91,7 +90,7 @@ pub struct ProjectTrust {
 
 impl Loaded {
     /// The choices within the constraints, or why they cannot be.
-    pub fn settle(&self) -> anyhow::Result<Choices> {
+    pub fn settle(&self) -> crate::Result<Choices> {
         let choices = effective::settle(self.choices.clone(), &self.constraints)?;
         Ok(match &self.no_sandbox_here {
             Some(why) => effective::unsandboxed(choices, why, &self.constraints),
@@ -101,12 +100,20 @@ impl Loaded {
 }
 
 /// The policy files that exist at `locations`, organization first.
-pub async fn policies(locations: &Locations) -> anyhow::Result<Vec<(PathBuf, PolicyFile)>> {
+pub async fn policies(locations: &Locations) -> crate::Result<Vec<(PathBuf, PolicyFile)>> {
     policy_files(&locations.policies).await
 }
 
+/// The rules of one policy file, `text`, as if it were at `path`.
+pub fn constraints(text: &str, path: &Path) -> crate::Result<Constraints> {
+    Ok(Constraints::of(&[(
+        path.to_owned(),
+        files::policy(text, path)?,
+    )]))
+}
+
 /// The files of `paths` that exist, read as policies, in order.
-pub async fn policy_files(paths: &[PathBuf]) -> anyhow::Result<Vec<(PathBuf, PolicyFile)>> {
+pub async fn policy_files(paths: &[PathBuf]) -> crate::Result<Vec<(PathBuf, PolicyFile)>> {
     let mut policies = Vec::new();
     for path in paths {
         if let Some(text) = read(path).await? {
@@ -124,7 +131,7 @@ pub async fn load(
     project: Option<ConfigFile>,
     flags: ConfigFile,
     env: ConfigFile,
-) -> anyhow::Result<Loaded> {
+) -> crate::Result<Loaded> {
     let person = match read(&locations.person).await? {
         Some(text) => Some(files::config(&text, &locations.person)?),
         None => None,
@@ -194,10 +201,10 @@ pub fn assemble(
 }
 
 /// The text of `path`, or nothing when there is no such file.
-async fn read(path: &Path) -> anyhow::Result<Option<String>> {
+async fn read(path: &Path) -> crate::Result<Option<String>> {
     match tokio::fs::read_to_string(path).await {
         Ok(text) => Ok(Some(text)),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error).with_context(|| format!("could not read {}", path.display())),
+        Err(error) => Err(crate::Error::io("read", path)(error)),
     }
 }

@@ -10,12 +10,13 @@ use std::sync::{Arc, Mutex};
 use glave_event::{Body, RawEvent, Seq, ThreadId, decode};
 use glave_gateway::{Budgets, Gateway, Model, Routes, Target};
 use glave_gateway_service::{Policy, Service, Wiring, serve, stream_id};
-use glave_harness::{Caller, Entropy};
+use glave_identity::Caller;
+use glave_identity::signin::{SignIn, Trust, person};
 use glave_mcp::{Limits, McpServer, ServerConfig};
+use glave_ports::Entropy;
 use glave_ports::{EventLog, LogError, MemoryLog, OrgId, Purpose, Scope, SpaceId};
 use glave_provider_openai::fake::{FakeServer, Reply};
 use glave_provider_openai::{Config, OpenAiCompatible};
-use glave_session::signin::{SignIn, Trust, person};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 

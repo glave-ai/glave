@@ -3,7 +3,7 @@
 //! (`space_memory`, which a project's file may choose), and an organization's `[memory]`
 //! constraints, which only narrow.
 
-use anyhow::bail;
+use crate::error::refuse;
 use glave_memory::SpaceMemory;
 use serde::Deserialize;
 
@@ -104,7 +104,7 @@ pub struct MemorySettings {
 }
 
 /// The memory settings of `choices` under `constraints`, or why they are not allowed.
-pub fn settle(choices: &Choices, constraints: &Constraints) -> anyhow::Result<MemorySettings> {
+pub fn settle(choices: &Choices, constraints: &Constraints) -> crate::Result<MemorySettings> {
     let rules: Vec<_> = constraints
         .rules()
         .iter()
@@ -116,7 +116,7 @@ pub fn settle(choices: &Choices, constraints: &Constraints) -> anyhow::Result<Me
     let mut on = choices.memory.value;
     if let Some((rule, _)) = rules.iter().find(|(_, m)| m.enabled == Some(false)) {
         if on && choices.memory.from != Source::Default {
-            bail!(
+            refuse!(
                 "memory = \"on\" (from {}) is not allowed by {rule}",
                 choices.memory.from
             );
@@ -142,7 +142,7 @@ pub fn settle(choices: &Choices, constraints: &Constraints) -> anyhow::Result<Me
         allowed.first().copied().unwrap_or(SpaceMemory::Off)
     } else {
         let rules: Vec<String> = rules.iter().map(|(rule, _)| rule.to_string()).collect();
-        bail!(
+        refuse!(
             "space_memory = {:?} (from {}) is not allowed by {}",
             chosen.value.as_str(),
             chosen.from,

@@ -19,7 +19,7 @@ use glave_session::OnWorkers;
 
 use crate::client::Glave;
 use crate::home;
-use crate::policy::{Backend, Choices, Constraints, On, WorkersFile};
+use glave_config::policy::{Backend, Choices, Constraints, On, WorkersFile};
 
 /// Threads on workers, when `on` is `cloud`, or only tasks' threads when `tasks` and a backend
 /// is set up: what the session server needs, and the workers themselves, to remove any left at
@@ -218,13 +218,13 @@ mod tests {
 
     #[test]
     fn on_cloud_without_a_backend_or_an_environment_says_what_is_missing() {
-        use crate::policy::{Layer, Level, assemble};
+        use glave_config::policy::{Layer, Level, assemble};
         let dir = std::env::temp_dir().join(format!("glave-cloud-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let chosen = |text: &str| {
             let layer = Layer {
                 level: Level::File(dir.join("config.toml")),
-                values: crate::policy::config(text, &dir).unwrap(),
+                values: glave_config::policy::config(text, &dir).unwrap(),
             };
             assemble(&[layer], &[], None).choices
         };

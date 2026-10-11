@@ -17,7 +17,6 @@ mod keys;
 mod mcp;
 mod memory;
 mod model;
-mod policy;
 mod serving;
 mod session;
 mod setup;
@@ -27,7 +26,6 @@ mod system;
 mod tasks;
 mod terminal;
 mod threads;
-mod trust;
 mod waiting;
 mod worktrees;
 

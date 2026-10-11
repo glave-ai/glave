@@ -15,7 +15,7 @@ use glave_ports::Purpose;
 
 use crate::config::Endpoint;
 use crate::model::Model;
-use crate::policy::{Constraints, Source, check_model};
+use glave_config::policy::{Constraints, Source, check_model};
 
 /// Which models a policy allows, and where the main and judge models were chosen.
 pub struct Allowed<'a> {
@@ -54,8 +54,17 @@ pub fn gateway(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    /// The rules of one policy file at the organization's place.
+    pub(crate) fn constraints(text: &str) -> Constraints {
+        glave_config::policy::constraints(
+            text,
+            std::path::Path::new(glave_config::policy::ORGANIZATION_POLICY),
+        )
+        .unwrap()
+    }
     use glave_provider_openai::Config;
 
     fn endpoint() -> Endpoint {
@@ -100,7 +109,7 @@ mod tests {
 
     #[test]
     fn a_model_the_policy_does_not_allow_is_refused_naming_the_rule() {
-        let policy = |text: &str| crate::policy::tests::constraints(text);
+        let policy = constraints;
         let only_small = policy("version = 1\n[models]\nallow = [\"openrouter/small\"]\n");
         let refused = built(None, &only_small).unwrap_err().to_string();
         assert_eq!(

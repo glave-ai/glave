@@ -10,7 +10,7 @@ use aws_lc_rs::rsa::KeySize;
 use aws_lc_rs::signature::{
     ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair as _, RSA_PKCS1_SHA256, RsaKeyPair,
 };
-use glave_harness::Clock;
+use glave_ports::Clock;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
