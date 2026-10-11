@@ -8,12 +8,13 @@ use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_computer::LocalComputers;
-use glave_event::{Arguments, ModelRef, Part, StopReason, TokenCounts, Usage};
+use glave_event::{Arguments, ModelRef, Part, RawEvent, StopReason, ThreadId, TokenCounts, Usage};
 use glave_harness::{Clock, Entropy, Settings, Workspace};
 use glave_ports::{
-    Completion, Delta, EventLog, MemoryBlobs, MemoryLog, ModelProvider, ModelRequest, OrgId,
-    ProviderError, RequestedCall, Scope, SpaceId,
+    BlobStore, Completion, Delta, EventLog, MemoryBlobs, MemoryLog, ModelProvider, ModelRequest,
+    OrgId, ProviderError, RequestedCall, Scope, SpaceId,
 };
+use glave_session::protocol::{ApiError, Meta, Reply, Request};
 use glave_session::{Answering, Server, Wiring};
 use jiff::Timestamp;
 use tokio::sync::Notify;
@@ -22,14 +23,20 @@ use tokio::sync::Notify;
 pub struct Script {
     answers: Mutex<VecDeque<Completion>>,
     gate: Option<Arc<Notify>>,
+    /// Every request received, as JSON.
+    seen: Arc<Mutex<Vec<String>>>,
 }
 
 impl ModelProvider for Script {
     fn complete(
         &self,
-        _request: &ModelRequest,
+        request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
+        self.seen
+            .lock()
+            .unwrap()
+            .push(serde_json::to_string(request).unwrap());
         let next = self.answers.lock().unwrap().pop_front();
         if let Some(Part::Text { text }) = next.as_ref().and_then(|c| c.parts.first()) {
             on_delta(Delta::Text(text.clone()));
@@ -140,10 +147,37 @@ pub async fn server_with<L: EventLog + 'static>(
     seed: u64,
     settings: Settings,
 ) -> Server<Script, L, MemoryBlobs> {
+    build(dir, answers, gate, log, answering, seed, settings, None)
+        .await
+        .0
+}
+
+/// Like `server_with`, also giving every request the model receives (as JSON), and keeping
+/// worktrees under `worktrees` when it is given.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a test helper that mirrors server_with"
+)]
+pub async fn build<L: EventLog + 'static>(
+    dir: &PathBuf,
+    answers: Vec<Completion>,
+    gate: Option<Arc<Notify>>,
+    log: L,
+    answering: Answering,
+    seed: u64,
+    settings: Settings,
+    worktrees: Option<PathBuf>,
+) -> (Server<Script, L, MemoryBlobs>, Arc<Mutex<Vec<String>>>) {
+    let recorded = Arc::new(Mutex::new(Vec::new()));
+    let computers = match &worktrees {
+        Some(base) => LocalComputers::for_here(std::env::vars_os()).with_worktrees(base),
+        None => LocalComputers::for_here(std::env::vars_os()),
+    };
     let wiring = Wiring {
         provider: Script {
             answers: Mutex::new(answers.into()),
             gate,
+            seen: Arc::clone(&recorded),
         },
         log,
         blobs: MemoryBlobs::new(),
@@ -152,16 +186,15 @@ pub async fn server_with<L: EventLog + 'static>(
         ))),
         entropy: Box::new(Counting(AtomicU64::new(seed << 32))),
         workspace: {
-            let (computers, info) = LocalComputers::here(dir, std::env::vars_os())
-                .await
-                .unwrap();
+            let (computers, info) = computers.open_here(dir).await.unwrap();
             Workspace::new(computers, info)
         },
         tools: Vec::new(),
         worktree: false,
         hooks: glave_harness::Hooks::default(),
+        workers: None,
     };
-    Server::new(wiring, settings, scope(), answering)
+    (Server::new(wiring, settings, scope(), answering), recorded)
 }
 
 pub async fn server(
@@ -170,4 +203,71 @@ pub async fn server(
     answering: Answering,
 ) -> Server<Script, MemoryLog, MemoryBlobs> {
     server_on(dir, answers, None, MemoryLog::new(), answering, 1).await
+}
+
+/// Starts a thread, in a worktree of its own when `worktree`.
+pub async fn start<P, L, B>(server: &Server<P, L, B>, worktree: bool) -> ThreadId
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    let started = Request::ThreadStart {
+        worktree: worktree.then_some(true),
+    };
+    match server.request(started).await.unwrap() {
+        Reply::Thread { thread } => thread.id,
+        other => panic!("a thread, not {other:?}"),
+    }
+}
+
+/// Runs a turn that says "go".
+pub async fn turn<P, L, B>(server: &Server<P, L, B>, thread: ThreadId) -> Result<Reply, ApiError>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    server
+        .request(Request::TurnStart {
+            thread,
+            prompt: "go".into(),
+            meta: Meta::default(),
+        })
+        .await
+}
+
+/// The thread's events, checked to be numbered 1, 2, 3, ... with no gap or repeat.
+pub async fn events<P, L, B>(server: &Server<P, L, B>, thread: ThreadId) -> Vec<RawEvent>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    let page = Request::ThreadEvents {
+        thread,
+        after: None,
+        limit: None,
+    };
+    let Reply::Events { events, .. } = server.request(page).await.unwrap() else {
+        panic!("events")
+    };
+    let seqs: Vec<u64> = events.iter().map(|event| event.seq.get()).collect();
+    let want: Vec<u64> = (1..=u64::try_from(events.len()).unwrap()).collect();
+    assert_eq!(seqs, want, "the thread's numbering has a gap or a repeat");
+    events
+}
+
+/// The types of the thread's events, in order.
+pub async fn kinds<P, L, B>(server: &Server<P, L, B>, thread: ThreadId) -> Vec<String>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    events(server, thread)
+        .await
+        .iter()
+        .map(|event| event.kind.as_str().to_owned())
+        .collect()
 }

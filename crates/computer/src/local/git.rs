@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::process::Stdio;
 
-use glave_ports::{ComputerError, Save, Saved};
+use glave_ports::{ComputerError, GitCredential, Save, Saved};
 
 use super::files::total_size;
 use super::registry::Opened;
@@ -23,7 +23,15 @@ pub(crate) struct Git<'a> {
     pub(crate) environment: &'a [(OsString, OsString)],
     pub(crate) at: &'a Path,
     pub(crate) options: Vec<OsString>,
+    /// Handed to git by a credential helper that reads it from this one process's
+    /// environment, so it never reaches a file, the repository's config, or commands.
+    pub(crate) credential: Option<&'a GitCredential>,
 }
+
+/// The helper git runs for a credential: it answers `get` from two variables set only on
+/// that git process. Any helper configured elsewhere is cleared first (the empty value).
+const HELPER: &str = "!f() { test \"$1\" = get || exit 0; \
+    printf 'username=%s\\npassword=%s\\n' \"$GLAVE_GIT_USERNAME\" \"$GLAVE_GIT_PASSWORD\"; }; f";
 
 impl<'a> Git<'a> {
     /// git in the folder `at`.
@@ -32,17 +40,30 @@ impl<'a> Git<'a> {
             environment,
             at,
             options: Vec::new(),
+            credential: None,
         }
     }
 
     /// Runs git with `args`; its output, or what it said when it failed.
     pub(crate) async fn run(&self, args: &[&str]) -> Result<String, String> {
-        let output = tokio::process::Command::new("git")
+        let mut command = tokio::process::Command::new("git");
+        if self.credential.is_some() {
+            command
+                .args(["-c", "credential.helper=", "-c"])
+                .arg(format!("credential.helper={HELPER}"));
+        }
+        let output = command
             .args(&self.options)
             .args(args)
             .current_dir(self.at)
             .env_clear()
             .envs(self.environment.iter().map(|(name, value)| (name, value)))
+            .envs(self.credential.iter().flat_map(|credential| {
+                [
+                    ("GLAVE_GIT_USERNAME", credential.username.as_str()),
+                    ("GLAVE_GIT_PASSWORD", credential.password.as_str()),
+                ]
+            }))
             .env("GIT_TERMINAL_PROMPT", "0")
             .stdin(Stdio::null())
             .output()
@@ -78,6 +99,7 @@ pub(crate) async fn clone(
     url: &str,
     at: Option<&str>,
     dest: &Path,
+    credential: Option<&GitCredential>,
 ) -> Result<(), ComputerError> {
     not_an_option("the repository", url)?;
     if let Some(at) = at {
@@ -93,6 +115,7 @@ pub(crate) async fn clone(
         environment,
         at: parent,
         options: Vec::new(),
+        credential,
     };
     let dest_text = dest.to_string_lossy();
     git.must(&["clone", "--quiet", "--", url, &dest_text])
@@ -102,6 +125,7 @@ pub(crate) async fn clone(
             environment,
             at: dest,
             options: Vec::new(),
+            credential,
         };
         if let Err(error) = inside.run(&["checkout", "--quiet", at, "--"]).await {
             let _ = tokio::fs::remove_dir_all(dest).await;
@@ -178,6 +202,7 @@ async fn repository(opened: &Opened) -> Result<Git<'_>, ComputerError> {
         environment: &opened.environment,
         at: &opened.root,
         options: Vec::new(),
+        credential: opened.credential.as_ref(),
     };
     if tokio::fs::try_exists(opened.root.join(".git"))
         .await

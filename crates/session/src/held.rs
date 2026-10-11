@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, PoisonError};
 
 use glave_event::ThreadId;
-use glave_harness::{Cancel, HarnessError, Thread};
+use glave_harness::{Cancel, HarnessError, Standing, Thread};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::sync::watch;
 
@@ -30,10 +30,14 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Loads `thread` from the log unless it is already held.
+    /// Loads `thread` from the log unless it is already held. A deleted thread is not there.
     pub(crate) async fn load(&self, thread: ThreadId) -> Result<(), ApiError> {
-        if self.lock().contains_key(&thread) {
-            return Ok(());
+        match self.lock().get(&thread) {
+            Some(Slot::Idle(held)) if held.standing() == Standing::Deleted => {
+                return Err(no_thread(thread));
+            }
+            Some(_) => return Ok(()),
+            None => {}
         }
         let resumed = self
             .inner
@@ -41,6 +45,9 @@ where
             .resume_thread(self.inner.scope, thread)
             .await
             .map_err(|error| api(&error))?;
+        if resumed.standing() == Standing::Deleted {
+            return Err(no_thread(thread));
+        }
         if !self.lock().contains_key(&thread) {
             self.keep(thread, resumed);
         }
@@ -91,6 +98,22 @@ where
         F: std::future::Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
         R: Send + Sync + 'static,
     {
+        self.occupy_for(thread, done, Use::Turn, work).await
+    }
+
+    /// Like [`Server::occupy`], for work of the kind `purpose` says.
+    pub(crate) async fn occupy_for<W, F, R>(
+        &self,
+        thread: ThreadId,
+        done: Finish<R>,
+        purpose: Use,
+        work: W,
+    ) -> Result<(), ApiError>
+    where
+        W: FnOnce(Arc<Inner<P, L, B>>, Thread, Cancel) -> F + Send + 'static,
+        F: std::future::Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
+        R: Send + Sync + 'static,
+    {
         self.load(thread).await?;
         let cancel = Cancel::new();
         let (finish, finished) = watch::channel(false);
@@ -101,6 +124,13 @@ where
                 finished,
             };
             match threads.insert(thread, busy) {
+                // Turns and compactions do not run in an archived thread.
+                Some(Slot::Idle(held))
+                    if purpose == Use::Turn && held.standing() == Standing::Archived =>
+                {
+                    threads.insert(thread, Slot::Idle(held));
+                    return Err(api(&HarnessError::Archived(thread)));
+                }
                 Some(Slot::Idle(held)) => *held,
                 Some(running) => {
                     threads.insert(thread, running);
@@ -119,11 +149,18 @@ where
         let task = tokio::spawn(async move {
             let (held, result) = work(Arc::clone(&inner), held, cancel).await;
             inner.approvals.forget(thread);
-            inner
-                .threads
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(thread, Slot::Idle(Box::new(held)));
+            let mut threads = inner.threads.lock().unwrap_or_else(PoisonError::into_inner);
+            // Archived or deleted from outside while held: the work stopped where it was, so
+            // the thread is read again from the log next time, which closes what it left open.
+            if matches!(
+                result,
+                Err(HarnessError::Archived(_) | HarnessError::NotFound(_))
+            ) {
+                threads.remove(&thread);
+            } else {
+                threads.insert(thread, Slot::Idle(Box::new(held)));
+            }
+            drop(threads);
             let _ = finish.send(true);
             // Kept even when no one is following any more: a retry may still ask for it.
             done.send_replace(Some(Arc::new(result)));
@@ -137,6 +174,15 @@ where
         tasks.push(task);
         Ok(())
     }
+}
+
+/// What work on a thread is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Use {
+    /// A turn, a goal or a compaction: refused in an archived thread.
+    Turn,
+    /// Changing whether the thread is shown.
+    Manage,
 }
 
 /// Where work on a thread sends its result: nothing until it ends, then how it ended. Shared,

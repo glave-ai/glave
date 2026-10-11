@@ -84,6 +84,7 @@ where
         child.above.extend_from_slice(&parent.above);
         // A subagent works where its parent does.
         child.workspace.clone_from(&parent.workspace);
+        child.note.clone_from(&parent.note);
         let id = child.id;
         let send = |update: Live| {
             let mut live = live.lock().unwrap_or_else(PoisonError::into_inner);

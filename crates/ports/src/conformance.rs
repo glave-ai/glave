@@ -133,6 +133,8 @@ pub async fn event_log<L: EventLog>(log: &L) -> Verdict {
         .map_err(|e| e.to_string())?;
     ensure(seqs(&page) == [2], "reads must page from after the cursor")?;
 
+    latest_of_types(log, here, t).await?;
+
     let isolated = read_all(elsewhere, t).await.map_err(|e| e.to_string())?;
     ensure(
         isolated.is_empty(),
@@ -148,6 +150,27 @@ pub async fn event_log<L: EventLog>(log: &L) -> Verdict {
     )?;
 
     thread_listing(log, here, elsewhere, t, other).await
+}
+
+/// `latest_of` finds a thread's last event of the given types, and nothing when there is none.
+async fn latest_of_types<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verdict {
+    let last = log
+        .latest_of(&here, t, &["turn.started", "turn.ended"])
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        last.is_some_and(|event| event.seq.get() == 3),
+        "latest_of must find the thread's last event of the given types",
+    )?;
+    let none = log
+        .latest_of(&here, t, &["thread.archived"])
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        none.is_none(),
+        "latest_of must find nothing when no event has a given type",
+    )?;
+    Ok(())
 }
 
 /// Thread listings order by most recent write, honor the limit, and stay inside the scope.

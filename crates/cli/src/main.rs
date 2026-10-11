@@ -4,6 +4,7 @@
 mod args;
 mod asking;
 mod client;
+mod cloud;
 mod commands;
 mod computer;
 mod config;
@@ -20,6 +21,7 @@ mod setup;
 mod skills;
 mod system;
 mod terminal;
+mod threads;
 mod trust;
 mod waiting;
 mod worktrees;

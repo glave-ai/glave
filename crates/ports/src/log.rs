@@ -37,7 +37,37 @@ pub trait EventLog: Send + Sync {
         scope: &Scope,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send;
+
+    /// The thread's latest event whose type is one of `kinds`, if it has one. The default reads
+    /// the thread from the start; an adapter that can ask its storage answers faster.
+    fn latest_of(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: &[&str],
+    ) -> impl Future<Output = Result<Option<RawEvent>, LogError>> + Send {
+        async move {
+            let mut latest = None;
+            let mut after: Option<Seq> = None;
+            loop {
+                let page = self.read(scope, thread, after, LATEST_PAGE).await?;
+                let full = page.len() == LATEST_PAGE;
+                after = page.last().map(|event| event.seq).or(after);
+                for event in page {
+                    if kinds.contains(&event.kind.as_str()) {
+                        latest = Some(event);
+                    }
+                }
+                if !full {
+                    return Ok(latest);
+                }
+            }
+        }
+    }
 }
+
+/// Events the default `latest_of` reads per page.
+const LATEST_PAGE: usize = 1_000;
 
 /// Why an append or a read failed.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

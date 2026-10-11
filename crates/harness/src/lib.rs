@@ -19,6 +19,7 @@ mod hooks;
 mod instructions;
 mod join;
 mod judge;
+mod outside;
 mod prompt;
 mod question;
 mod removed;
@@ -28,11 +29,13 @@ mod retry;
 mod room;
 mod sandbox;
 mod skills;
+mod standing;
 mod subagent;
 mod todo;
 mod tools;
 mod toolset;
 mod turn;
+mod worker;
 
 pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};
 pub use bind::{Place, branch_for};
@@ -59,8 +62,10 @@ pub use skills::{
     Found, MAX_LISTED, MAX_SKILLS, PROJECT_FOLDERS, SKILL, SKILL_MD, Skill, Skills, find_skills,
     skill_folders,
 };
+pub use standing::{Change, Standing, change_standing, standing_of};
 pub use subagent::{AGENT, SubagentType};
 pub use todo::{TODO, Todo};
 pub use tools::workspace::Workspace;
 pub use tools::{Tool, ToolOutcome};
 pub use turn::{Live, TurnSummary};
+pub use worker::{ATTACHMENTS, HAND_BACK, ReleasedWorker, Workers, wip_branch};

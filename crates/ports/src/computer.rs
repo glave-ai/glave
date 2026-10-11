@@ -4,6 +4,7 @@
 //! machine and one across the network answer the same calls in the same way.
 
 mod bytes;
+mod credential;
 mod environment;
 mod finding;
 mod sandbox;
@@ -12,6 +13,7 @@ mod types;
 use crate::tools::{BoxFuture, Cancellation};
 
 pub use bytes::Bytes;
+pub use credential::GitCredential;
 pub use environment::{Environment, Image, Network, Size};
 pub use finding::{Glob, Globbed, Match, Search, Searched, Stat, looks_binary};
 pub use sandbox::{PROTECTED, Sandbox, SandboxLevel, is_protected};
@@ -50,6 +52,23 @@ pub trait Computers: Send + Sync {
         computer: ComputerId,
         sources: &'a Sources,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>>;
+
+    /// Opens `sources` as [`Computers::open`] does, fetching (and later saving) them with
+    /// `credential` (`workspace/open` with a `credential`). The computer keeps it in memory for
+    /// the workspace's life and hands it to git through a credential helper for each use; it
+    /// is never written to a disk, the repository's config, or the commands' environment. A
+    /// computer that cannot keep a credential that way refuses it.
+    fn open_with_credential<'a>(
+        &'a self,
+        computer: ComputerId,
+        sources: &'a Sources,
+        credential: &'a GitCredential,
+    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
+        let _ = (computer, sources, credential);
+        Box::pin(std::future::ready(Err(ComputerError::Unsupported(
+            "this computer cannot keep a credential for its sources".into(),
+        ))))
+    }
 
     /// Removes a workspace (`workspace/close`): a copy is deleted, a folder worked on in place
     /// is only forgotten.

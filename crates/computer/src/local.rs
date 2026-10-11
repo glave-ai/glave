@@ -22,10 +22,12 @@ use std::sync::{Arc, Mutex};
 use glave_ports::secrets::without_secrets;
 use glave_ports::{
     BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, Glob, Globbed, Image, Listed, Listing, Network, Output, Save,
-    Saved, Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
+    Environment, FileWrite, Finished, GitCredential, Glob, Globbed, Image, Listed, Listing,
+    Network, Output, Save, Saved, Search, Searched, Size, Sources, Stat, State, WorkspaceId,
+    WorkspaceInfo,
 };
 
+pub(crate) use registry::new_id;
 use registry::{Opened, Registry};
 
 pub use sandbox::sandbox_available;
@@ -121,7 +123,11 @@ impl LocalComputers {
         &self,
         computer: ComputerId,
         sources: &Sources,
+        credential: Option<&GitCredential>,
     ) -> Result<WorkspaceInfo, ComputerError> {
+        if let Some(credential) = credential {
+            credential.check()?;
+        }
         let environment = self
             .registry
             .environment(computer)?
@@ -132,7 +138,7 @@ impl LocalComputers {
             Sources::Git { url, at } => {
                 let dest = self.base.join(computer.to_string()).join(id.to_string());
                 let env = self.command_environment(&environment);
-                git::clone(&env, url, at.as_deref(), &dest).await?;
+                git::clone(&env, url, at.as_deref(), &dest, credential).await?;
                 (paths::folder(&dest.to_string_lossy()).await?, true, None)
             }
             Sources::Worktree {
@@ -171,6 +177,7 @@ impl LocalComputers {
             copy,
             git_common,
             environment,
+            credential: credential.cloned(),
             prepared: Mutex::new(None),
         };
         if let Err(error) = self.registry.add_workspace(id, opened) {
@@ -265,7 +272,16 @@ impl Computers for LocalComputers {
         computer: ComputerId,
         sources: &'a Sources,
     ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
-        Box::pin(self.open_now(computer, sources))
+        Box::pin(self.open_now(computer, sources, None))
+    }
+
+    fn open_with_credential<'a>(
+        &'a self,
+        computer: ComputerId,
+        sources: &'a Sources,
+        credential: &'a GitCredential,
+    ) -> BoxFuture<'a, Result<WorkspaceInfo, ComputerError>> {
+        Box::pin(self.open_now(computer, sources, Some(credential)))
     }
 
     fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>> {

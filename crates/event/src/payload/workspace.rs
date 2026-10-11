@@ -86,6 +86,9 @@ pub enum RemovedReason {
     RepositoryGone,
     /// The person pruned it.
     Pruned,
+    /// Its worker was released when its session ended: unsaved work was pushed to `branch`
+    /// first, and the worker destroyed.
+    Released,
 }
 
 impl Payload for WorkspaceBound {

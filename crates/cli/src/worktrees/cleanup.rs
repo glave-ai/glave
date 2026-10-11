@@ -33,6 +33,7 @@ fn named(reason: RemovedReason) -> &'static str {
         RemovedReason::Idle => "idle",
         RemovedReason::RepositoryGone => "repository_gone",
         RemovedReason::Pruned => "pruned",
+        RemovedReason::Released => "released",
     }
 }
 
@@ -159,14 +160,6 @@ impl<L: EventLog> Cleanup<'_, L> {
     }
 
     /// The thread in `scope` was archived or deleted: its worktrees are released.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the hook for archiving and deleting threads, which the session API has not \
-                      got yet"
-        )
-    )]
     pub async fn archived(&self, kept: &[Kept], scope: Scope, thread: ThreadId) -> Vec<String> {
         let owner = owner_label(scope, thread);
         let mut lines = Vec::new();

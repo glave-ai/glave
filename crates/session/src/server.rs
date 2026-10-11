@@ -7,10 +7,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::{Seq, ThreadId};
 use glave_harness::{
-    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Place, Settings, TurnSummary,
-    Workspace,
+    Caller, Change, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Place, ReleasedWorker,
+    Settings, TurnSummary, Workers, Workspace,
 };
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, ToolSource};
+use glave_ports::{BlobStore, Environment, EventLog, ModelProvider, Scope, ToolSource};
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
@@ -23,7 +23,7 @@ use crate::protocol::{
 };
 
 /// The most events or threads one page returns.
-const MAX_PAGE: usize = 5_000;
+pub(crate) const MAX_PAGE: usize = 5_000;
 
 /// What a server is built from: the harness's parts, less the approver, which is the API.
 pub struct Wiring<P, L, B> {
@@ -40,6 +40,16 @@ pub struct Wiring<P, L, B> {
     pub worktree: bool,
     /// Commands run at points of every turn.
     pub hooks: Hooks,
+    /// When set, every new thread works on a worker of its own (`--on cloud`) unless
+    /// `thread/start` asks for a worktree; none by default.
+    pub workers: Option<OnWorkers>,
+}
+
+/// Threads on workers: where workers come from, and the environment each is made from.
+#[derive(Debug, Clone)]
+pub struct OnWorkers {
+    pub workers: Workers,
+    pub environment: Environment,
 }
 
 /// A session server for one workspace and one scope. Clones share it.
@@ -62,6 +72,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) scope: Scope,
     /// Whether new threads get a worktree when `thread/start` does not say.
     pub(crate) worktree: bool,
+    /// The environment new threads' workers are made from, when they work on workers.
+    pub(crate) worker: Option<Environment>,
     pub(crate) hub: Arc<Hub>,
     pub(crate) approvals: Approvals,
     pub(crate) threads: Mutex<HashMap<ThreadId, Slot>>,
@@ -95,9 +107,13 @@ where
         };
         Self {
             inner: Arc::new(Inner {
-                harness: Harness::new(parts, settings)
-                    .with_tools(wiring.tools)
-                    .with_hooks(wiring.hooks),
+                harness: match wiring.workers.clone() {
+                    Some(on) => Harness::new(parts, settings).with_workers(on.workers),
+                    None => Harness::new(parts, settings),
+                }
+                .with_tools(wiring.tools)
+                .with_hooks(wiring.hooks),
+                worker: wiring.workers.map(|on| on.environment),
                 scope,
                 worktree: wiring.worktree,
                 hub,
@@ -124,7 +140,12 @@ where
                 protocols: vec![PROTOCOL.to_owned()],
             })),
             Request::ThreadStart { worktree } => self.start_thread(caller, worktree).await,
-            Request::ThreadList { limit } => self.list(limit).await,
+            Request::ThreadList { limit, show } => self.list(limit, show.unwrap_or_default()).await,
+            Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
+            Request::ThreadUnarchive { thread } => {
+                self.change(caller, thread, Change::Unarchive).await
+            }
+            Request::ThreadDelete { thread } => self.change(caller, thread, Change::Delete).await,
             Request::ThreadGet { thread } => {
                 self.load(thread).await?;
                 Ok(Reply::Thread {
@@ -175,6 +196,36 @@ where
         self.inner.hub.watch(thread)
     }
 
+    /// Releases the worker of every thread held idle that works on one (call after
+    /// [`Server::shutdown`], when no turn runs): what each left behind, or why it could not be
+    /// released.
+    pub async fn release_workers(&self) -> Vec<(ThreadId, Result<ReleasedWorker, HarnessError>)> {
+        let idle: Vec<(ThreadId, Box<glave_harness::Thread>)> = {
+            let mut threads = self.lock();
+            let ids: Vec<ThreadId> = threads
+                .iter()
+                .filter(|(_, slot)| matches!(slot, Slot::Idle(_)))
+                .map(|(id, _)| *id)
+                .collect();
+            ids.into_iter()
+                .filter_map(|id| match threads.remove(&id) {
+                    Some(Slot::Idle(thread)) => Some((id, thread)),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut released = Vec::new();
+        for (id, mut thread) in idle {
+            match self.inner.harness.release_worker(&mut thread).await {
+                Ok(Some(left)) => released.push((id, Ok(left))),
+                Ok(None) => {}
+                Err(error) => released.push((id, Err(error))),
+            }
+            self.lock().insert(id, Slot::Idle(thread));
+        }
+        released
+    }
+
     /// Cancels every running turn and waits for each to end. Call before dropping the server.
     pub async fn shutdown(&self) {
         let finished: Vec<watch::Receiver<bool>> = {
@@ -214,10 +265,11 @@ where
         caller: &Caller,
         worktree: Option<bool>,
     ) -> Result<Reply, ApiError> {
-        let place = if worktree.unwrap_or(self.inner.worktree) {
-            Place::Worktree
-        } else {
-            Place::Here
+        let place = match (worktree, &self.inner.worker) {
+            (Some(true), _) => Place::Worktree,
+            (None, Some(environment)) => Place::Worker(environment.clone()),
+            (None, None) if self.inner.worktree => Place::Worktree,
+            _ => Place::Here,
         };
         let thread = self
             .inner
@@ -232,20 +284,6 @@ where
         })
     }
 
-    async fn list(&self, limit: Option<usize>) -> Result<Reply, ApiError> {
-        let limit = limit.unwrap_or(20).clamp(1, MAX_PAGE);
-        let ids = self
-            .inner
-            .harness
-            .log()
-            .threads(&self.inner.scope, limit)
-            .await
-            .map_err(|err| ApiError::new(code::INTERNAL, err.to_string()))?;
-        Ok(Reply::Threads {
-            threads: ids.into_iter().map(|id| self.summary(id)).collect(),
-        })
-    }
-
     async fn events(
         &self,
         thread: ThreadId,
@@ -253,6 +291,7 @@ where
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
         let limit = limit.unwrap_or(500).clamp(1, MAX_PAGE);
+        self.ensure_not_deleted(thread).await?;
         let events = self
             .inner
             .harness
@@ -322,6 +361,7 @@ pub(crate) fn api(error: &HarnessError) -> ApiError {
             }),
         },
         HarnessError::NotFound(thread) => no_thread(*thread),
+        HarnessError::Archived(_) => ApiError::new(code::ARCHIVED, error.to_string()),
         HarnessError::Cancelled => ApiError::new(code::CANCELLED, "cancelled"),
         HarnessError::NoGoal(_) => ApiError::new(code::NO_GOAL, error.to_string()),
         HarnessError::Workspace(_) => ApiError::new(code::WORKSPACE, error.to_string()),

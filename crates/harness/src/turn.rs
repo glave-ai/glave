@@ -211,6 +211,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        self.reopen_removed(thread).await?;
         // The person's own prompts pass the `UserPromptSubmit` hooks first.
         if !prompt.by_glave
             && !thread.delegated()
@@ -388,7 +389,7 @@ where
         // A new thread opens with the project's instructions.
         let opening = thread.messages.is_empty();
         let mut parts = self
-            .instruction_parts()
+            .opening_parts(thread)
             .filter(|_| opening)
             .unwrap_or_default();
         parts.push(Part::Text {
