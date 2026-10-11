@@ -117,20 +117,25 @@ impl<L: EventLog + 'static> MemoryServer<L> {
     }
 }
 
-const REMEMBER: &str = "Save one short statement to memory, for later threads. Keep what will \
-     help later and cannot be read from the workspace or its instructions: the person's \
-     preferences, corrections they made, and decisions with their reasons. Do not save what \
-     AGENTS.md or a skill already says, the code's structure, what was done in this thread, \
-     secrets (keys, tokens, passwords), or sensitive details (health, money, beliefs, other \
-     people) unless the person asks. When something corrects a memory, replace it with \
-     `replaces` instead of adding a second. Saving needs no approval; the person sees every \
-     save and can edit or forget it.";
+const REMEMBER: &str = "Save one short statement to memory, so later threads know it. Save \
+     when the person asks you to remember something, states a preference, or corrects you, and \
+     when you learn a lasting fact about this project that its files do not make obvious (a \
+     setup step the tests need, a decision and its reason). Do not save what AGENTS.md or a \
+     skill already says, what was done in this thread, secrets (keys, tokens, passwords), or \
+     sensitive details (health, money, beliefs, other people) unless the person asks. When a \
+     fact changes, pass the old memory's id as `replaces` instead of adding a second, \
+     contradicting one; for a new memory leave `replaces` out. Saved memories are listed with \
+     their ids under # Memory at the start of the conversation; when there is no such list, \
+     nothing is saved yet. Saving needs no approval; the person sees every save and can edit \
+     or forget it.";
 
-const EDIT: &str = "Change a memory's text, by its id: to correct it, or to merge another \
-     into it (then forget the other).";
+const EDIT: &str = "Change a memory's text, by its id (listed with each memory under # Memory \
+     at the start of the conversation): to correct or update it, or to merge another into it \
+     (then forget the other).";
 
-const FORGET: &str = "Forget a memory, by its id: when it is wrong or no longer true, or the \
-     person asks. It is erased for good.";
+const FORGET: &str = "Forget a memory, by its id (listed with each memory under # Memory at \
+     the start of the conversation): when the person asks you to forget it, or it is wrong and \
+     nothing replaces it. It is erased for good.";
 
 fn schema(value: &serde_json::Value) -> Arc<JsonObject> {
     Arc::new(value.as_object().cloned().unwrap_or_default())
@@ -146,7 +151,7 @@ fn tools() -> Vec<Tool> {
                 "enum": ["personal", "space"],
                 "description": "personal: about the person, read in all their threads. space: about this space's work, read by everyone working in it."
             },
-            "replaces": {"type": "string", "description": "The id of a memory this corrects or replaces."},
+            "replaces": {"type": "string", "description": "The id of the memory this corrects or replaces. Leave it out for a new memory."},
             "force": {"type": "boolean", "description": "Save even though a similar memory exists."}
         },
         "required": ["text", "scope"]
@@ -203,15 +208,20 @@ fn text_of(request: &CallToolRequestParams, name: &str) -> Option<String> {
 }
 
 fn memory_of(request: &CallToolRequestParams, name: &str) -> Result<Option<MemoryId>, String> {
-    match text_of(request, name) {
-        None => Ok(None),
-        Some(text) => text
-            .trim()
-            .trim_matches(['[', ']'])
-            .parse::<MemoryId>()
-            .map(Some)
-            .map_err(|_| format!("{text:?} is not a memory id; ids are listed with each memory")),
+    let Some(text) = text_of(request, name) else {
+        return Ok(None);
+    };
+    let id = text.trim().trim_matches(['[', ']']);
+    // Models that fill every argument send an empty (or "none") id for "no memory".
+    if id.is_empty() || id.eq_ignore_ascii_case("none") || id.eq_ignore_ascii_case("null") {
+        return Ok(None);
     }
+    id.parse::<MemoryId>().map(Some).map_err(|_| {
+        format!(
+            "{text:?} is not a memory id: ids are listed with each memory under # Memory at \
+             the start of the conversation; leave `{name}` out when there is none"
+        )
+    })
 }
 
 fn line(memory: &Remembered) -> String {

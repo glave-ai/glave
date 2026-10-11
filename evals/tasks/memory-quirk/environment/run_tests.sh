@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs the tests against the test database, which is torn down after every run.
+state=missing
 if [ ! -f .db/ready ]; then
-	echo "error: the test database is missing; set it up with make db, then run the tests again" >&2
+	echo "error: the test database is $state; set it up with make db, then run the tests again" >&2
 	exit 1
 fi
 trap 'rm -rf .db' EXIT

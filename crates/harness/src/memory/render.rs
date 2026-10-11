@@ -9,12 +9,18 @@ use glave_event::{At, MemoryId};
 
 use super::Remembered;
 
-const START: &str = "# Memory\n\nWhat you remembered in earlier threads, about the person and \
-     this space. The person can see, edit and forget these. Their messages come first, then the \
-     instructions above, then these: when a memory conflicts with the instructions, follow the \
-     instructions and say so. Change memories only with the memory tools, naming their ids.";
+const START: &str = "# Memory\n\n<MEMORY>\nWhat you saved with the memory tools in earlier \
+     threads, about the person (personal) and this space (space). The person can see, edit and \
+     forget these. They are background: the person's messages and the project's instructions \
+     come first; when a memory conflicts with the instructions, follow the instructions and say \
+     so. When the person corrects or updates one, replace it (`remember` with `replaces`, or \
+     `edit`); when they ask you to forget one, `forget` it. Each takes the id in brackets.";
+
+const END: &str = "</MEMORY>";
 
 const NOTE: &str = "[Memory updates since we last spoke]";
+
+const NOTE_END: &str = "[End of memory updates]";
 
 /// One line of a note.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +39,7 @@ pub(crate) fn start(memories: &[Remembered]) -> Option<String> {
     for memory in memories {
         let _ = write!(text, "\n- {}", line(memory));
     }
+    let _ = write!(text, "\n{END}");
     Some(text)
 }
 
@@ -49,6 +56,7 @@ pub(crate) fn note(lines: &[Line]) -> Option<String> {
             Line::Forgotten(memory) => write!(text, "\n- forgotten [{memory}]"),
         };
     }
+    let _ = write!(text, "\n{NOTE_END}");
     Some(text)
 }
 
@@ -119,12 +127,12 @@ mod tests {
     fn the_start_lists_each_memory_with_its_id_scope_and_dates() {
         assert_eq!(start(&[]), None);
         let text = start(&[memory(1, 1, "use tabs"), memory(2, 2, "make db first")]).unwrap();
-        assert!(text.starts_with("# Memory\n\n"), "{text}");
+        assert!(text.starts_with("# Memory\n\n<MEMORY>\n"), "{text}");
         assert!(
             text.ends_with(
                 "\n- [0192f5c3-0000-7000-8000-000000000001] (space, saved 2026-10-02) use tabs\
                  \n- [0192f5c3-0000-7000-8000-000000000002] (space, saved 2026-10-02, edited \
-                 2026-10-05) make db first"
+                 2026-10-05) make db first\n</MEMORY>"
             ),
             "{text}"
         );
@@ -144,7 +152,8 @@ mod tests {
             "[Memory updates since we last spoke]\
              \n- changed [0192f5c3-0000-7000-8000-000000000002] (space, saved 2026-10-02, edited 2026-10-05) edited\
              \n- added [0192f5c3-0000-7000-8000-000000000003] (space, saved 2026-10-02) new\
-             \n- forgotten [0192f5c3-0000-7000-8000-000000000001]"
+             \n- forgotten [0192f5c3-0000-7000-8000-000000000001]\
+             \n[End of memory updates]"
         );
         assert_eq!(
             note(&changes(&known, &[memory(1, 1, ""), memory(2, 1, "")])),
