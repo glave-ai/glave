@@ -238,20 +238,23 @@ where
             Request::GoalGet { thread } => Ok(Reply::Goal {
                 goal: self.goal(thread).await?,
             }),
-            other @ (Request::TasksList { .. }
-            | Request::TasksStop { .. }
-            | Request::ScheduleCreate { .. }
-            | Request::ScheduleList {}
-            | Request::ScheduleDelete { .. }) => self
-                .tasks_request(caller, other)
-                .await
-                .unwrap_or_else(|_| Err(ApiError::new(code::INTERNAL, "not a task request"))),
+            // Tasks, schedules and memory.
+            other => self.other_request(caller, other).await,
+        }
+    }
+
+    async fn other_request(&self, caller: &Caller, request: Request) -> Result<Reply, ApiError> {
+        match request {
             other @ (Request::MemoryList { .. }
             | Request::MemorySave { .. }
             | Request::MemoryEdit { .. }
             | Request::MemoryMove { .. }
             | Request::MemoryForget { .. }
             | Request::MemoryRestore { .. }) => self.memory_request(caller, other).await,
+            other => self
+                .tasks_request(caller, other)
+                .await
+                .unwrap_or_else(|_| Err(ApiError::new(code::INTERNAL, "not a task request"))),
         }
     }
 

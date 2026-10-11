@@ -58,6 +58,11 @@ pub fn main() -> ExitCode {
         return crate::threads::main(rest);
     }
     if let Some((first, rest)) = words.split_first()
+        && first == "memory"
+    {
+        return crate::memory::main(rest);
+    }
+    if let Some((first, rest)) = words.split_first()
         && first == "tasks"
     {
         return crate::tasks::tasks_main(rest);
@@ -128,6 +133,8 @@ struct Wired {
     choices: Choices,
     /// The workers threads work on, with `--on cloud`.
     workers: Option<Arc<WorkerComputers>>,
+    /// Memory, when it is on.
+    memory: Option<crate::memory::Running>,
 }
 
 /// Builds the session server on this computer's store and the current folder.
@@ -180,6 +187,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let scope = store
         .local_scope(&root, random_uuid(), random_uuid())
         .await?;
+    let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let wiring = Wiring {
         provider,
         log: store.log(),
@@ -198,7 +206,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         hooks: Hooks::new(setup.hooks.clone())?,
         workers: on_workers,
         tasks: setup.loaded.constraints.task_limits(),
-        memory: None,
+        memory: memory.as_ref().map(crate::memory::Running::handle),
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
@@ -208,6 +216,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
         choices: setup.choices,
         workers,
+        memory,
     })
 }
 
@@ -323,6 +332,7 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         crate::cloud::release(&wired.server, workers).await;
     }
     wired.servers.close().await;
+    close_memory(&wired).await;
     ran
 }
 
@@ -349,6 +359,7 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
         crate::cloud::release(&wired.server, workers).await;
     }
     wired.servers.close().await;
+    close_memory(&wired).await;
     served?;
     Ok(ExitCode::SUCCESS)
 }
@@ -387,6 +398,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         files,
         choices,
         workers: _,
+        memory: _,
     } = wired;
     crate::tasks::at_start(server, args).await;
     let (thread, note) = pick_thread(server, args.resume).await?;
@@ -489,11 +501,38 @@ async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
             client.compact(printer).await;
             continue;
         }
+        if line == "/memory" {
+            show_memory(client.server).await;
+            continue;
+        }
         if !line.is_empty() {
             code = client.turn(line, printer).await;
         }
     }
     code
+}
+
+/// Batches the session's forgets into a space-key rotation, then stops memory.
+async fn close_memory(wired: &Wired) {
+    if let Some(memory) = &wired.memory {
+        memory.housekeep().await;
+        memory.memory.close().await;
+    }
+}
+
+/// `/memory`: the memories this session's threads read, through the session API.
+async fn show_memory(server: &Glave) {
+    match server.request(Request::MemoryList { scope: None }).await {
+        Ok(Reply::Memories { memories }) if memories.is_empty() => println!("no memories here"),
+        Ok(Reply::Memories { memories }) => {
+            for memory in &memories {
+                println!("{}", crate::memory::line(memory));
+            }
+            println!("change them with: glave memory edit|move|forget <id>");
+        }
+        Ok(_) => {}
+        Err(error) => println!("{error}"),
+    }
 }
 
 /// Writes the thread's events as JSON Lines, one event per line, exactly as stored.

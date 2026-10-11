@@ -1106,6 +1106,7 @@ dependencies = [
  "glave-harness",
  "glave-keys",
  "glave-mcp",
+ "glave-memory",
  "glave-ports",
  "glave-provider-anthropic",
  "glave-provider-openai",

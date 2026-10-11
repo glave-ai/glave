@@ -9,6 +9,7 @@ use glave_harness::ApprovalMode;
 use globset::Glob;
 
 use crate::policy::files::{JudgeRule, PolicyFile, TaskRules};
+use crate::policy::memory::MemoryRules;
 use crate::policy::workers::{NetworkRule, WorkerRules, limits};
 
 /// The approval modes there are, cautious first.
@@ -46,6 +47,8 @@ pub enum Kind {
     Workers(WorkerRules),
     /// How many tasks may run, and schedules be kept.
     Tasks(TaskRules),
+    /// What memory may be.
+    Memory(MemoryRules),
 }
 
 impl fmt::Display for Kind {
@@ -70,6 +73,7 @@ impl fmt::Display for Kind {
             Self::ProjectsTrusted(globs) => write!(f, "[projects] trusted = {}", quoted(globs)),
             Self::HooksOwnForbidden => f.write_str("[hooks] own = false"),
             Self::Workers(rules) => f.write_str(&rules.describe()),
+            Self::Memory(rules) => f.write_str(&rules.describe()),
             Self::Tasks(rules) => {
                 let parts: Vec<String> = [
                     ("max_running", rules.max_running),
@@ -147,6 +151,9 @@ impl Constraints {
             }
             if file.tasks != TaskRules::default() {
                 add(Kind::Tasks(file.tasks));
+            }
+            if !file.memory.is_empty() {
+                add(Kind::Memory(file.memory.clone()));
             }
         }
         Self { rules }
@@ -309,6 +316,10 @@ impl Constraints {
                 }) => Some((
                     rule,
                     "an allow-list of hosts is not enforced on workers yet",
+                )),
+                Kind::Memory(ref memory) if memory.other_server() => Some((
+                    rule,
+                    "memory from another MCP server is not built yet: only glave's own serves it",
                 )),
                 _ => None,
             })

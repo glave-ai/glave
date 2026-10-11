@@ -15,6 +15,7 @@ mod identity;
 mod input;
 mod keys;
 mod mcp;
+mod memory;
 mod model;
 mod policy;
 mod session;

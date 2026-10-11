@@ -7,8 +7,10 @@ use std::path::PathBuf;
 use glave_harness::{ApprovalMode, SandboxLevel};
 
 use crate::policy::files::{Approval, ConfigFile, SandboxChoice};
+use crate::policy::memory::{MemoryChoice, SpaceChoice};
 use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkersFile};
+use glave_memory::SpaceMemory;
 
 /// Where a value came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +102,10 @@ pub struct Choices {
     pub gateway: Option<Chosen<String>>,
     /// What `web_fetch` may reach: on, public hosts only, by default.
     pub web: Chosen<WebFile>,
+    /// Whether glave reads and writes memory for this person: off by default for now.
+    pub memory: Chosen<bool>,
+    /// This space's memory setting: shared by default.
+    pub space_memory: Chosen<SpaceMemory>,
 }
 
 /// One level choices come from.
@@ -172,6 +178,18 @@ pub fn resolve(layers: &[Layer]) -> Choices {
         web: defaulted(
             nearest(layers, "web", |file| file.web.clone()),
             WebFile::default(),
+        ),
+        memory: defaulted(
+            nearest(layers, "memory", |file| {
+                file.memory.map(|choice| choice == MemoryChoice::On)
+            }),
+            false,
+        ),
+        space_memory: defaulted(
+            nearest(layers, "space_memory", |file| {
+                file.space_memory.map(SpaceChoice::setting)
+            }),
+            SpaceMemory::Shared,
         ),
     }
 }

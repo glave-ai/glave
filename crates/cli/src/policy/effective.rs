@@ -18,6 +18,7 @@ pub fn settle(mut choices: Choices, constraints: &Constraints) -> anyhow::Result
     choices.approval = approval(choices.approval, constraints)?;
     choices.judge = judge(choices.judge, constraints)?;
     choices.sandbox = sandbox(choices.sandbox, constraints)?;
+    crate::policy::memory::settle(&choices, constraints)?;
     Ok(choices)
 }
 

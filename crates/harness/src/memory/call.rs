@@ -105,12 +105,14 @@ where
         if let Some(change) = &done.change {
             thread.memory.apply(change);
             thread.memory.structured = Some(structured(change));
-            live(shown(change));
         }
         live(Live::ToolFinished {
             summary,
             is_error: done.output.is_error,
         });
+        if let Some(change) = &done.change {
+            live(shown(change));
+        }
         self.after_tool(thread, &hooked, done.output, cancel).await
     }
 }

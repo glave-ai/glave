@@ -56,9 +56,9 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
         let (ours, theirs) = tokio::io::duplex(BUFFER);
         // The server settles on a lifecycle only at the first request after `discover`, so it
         // serves on its own task while the client connects.
-        let served = MemoryServer::new(memories.clone());
+        let handler = MemoryServer::new(memories.clone());
         let server = tokio::spawn(async move {
-            if let Ok(running) = served.serve(theirs).await {
+            if let Ok(running) = handler.serve(theirs).await {
                 let _ = running.waiting().await;
             }
         });
