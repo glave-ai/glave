@@ -1,0 +1,6 @@
+@if (icon(); as drawing) {
+  <glz-icon class="icon" [icon]="drawing" />
+}
+<p class="heading">{{ heading() }}</p>
+<div class="text"><ng-content /></div>
+<div class="actions"><ng-content select="[glzEmptyStateAction]" /></div>

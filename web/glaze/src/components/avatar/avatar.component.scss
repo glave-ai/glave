@@ -1,0 +1,43 @@
+:host {
+  --glz-avatar-size: 2rem;
+
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--glz-avatar-size);
+  height: var(--glz-avatar-size);
+  border-radius: var(--glz-radius-full);
+  background: var(--glz-color-accent-soft);
+  color: var(--glz-color-text);
+  font-size: calc(var(--glz-avatar-size) * 0.4);
+  font-weight: var(--glz-weight-bold);
+}
+
+:host(.glz-avatar-sm) {
+  --glz-avatar-size: 1.5rem;
+}
+
+:host(.glz-avatar-lg) {
+  --glz-avatar-size: 3rem;
+}
+
+.picture {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+// Hope's presence: a sun-gold dot, ringed by the page so it reads on any picture.
+.presence {
+  position: absolute;
+  right: -0.0625rem;
+  bottom: -0.0625rem;
+  width: calc(var(--glz-avatar-size) * 0.32);
+  height: calc(var(--glz-avatar-size) * 0.32);
+  border: 2px solid var(--glz-surface-page);
+  border-radius: var(--glz-radius-full);
+  background: var(--glz-color-hope);
+}

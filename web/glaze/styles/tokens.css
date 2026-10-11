@@ -1,0 +1,124 @@
+/*
+ * Glaze design tokens. Every colour, size and shadow a Glaze component uses comes from one of
+ * these custom properties, so an app re-skins Glaze by overriding them (on :root, or on any
+ * element for a part of the page). Nothing else is needed: no SCSS, no build step.
+ *
+ * Two themes share one set of names: light and dark. Each colour is a
+ * light-dark() pair, chosen by `color-scheme`: the system's preference unless the page sets
+ * data-theme="light" or data-theme="dark" on <html>. Glaze itself keeps no theme state.
+ *
+ * The defaults are deliberately plain, a starting point for a visual design still to come.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Colour: accents and tones. Leaf green is the accent; sun gold is only for Hope's presence. */
+  --glz-color-accent: light-dark(#1d7f48, #5cc98a);
+  --glz-color-accent-hover: light-dark(#176a3b, #7dd6a2);
+  --glz-color-accent-soft: light-dark(#e3f2e9, #1c3326);
+  --glz-color-on-accent: light-dark(#fff, #0b1a11);
+  --glz-color-hope: light-dark(#d99a0b, #f2b938);
+  --glz-color-success: light-dark(#0f766e, #4fd1c5);
+  --glz-color-success-soft: light-dark(#e0f2f1, #12302e);
+  --glz-color-warning: light-dark(#a15c07, #f0b45a);
+  --glz-color-warning-soft: light-dark(#fdf3e2, #362814);
+  --glz-color-danger: light-dark(#b42318, #ff8a80);
+  --glz-color-danger-hover: light-dark(#912018, #ffaba3);
+  --glz-color-danger-soft: light-dark(#fdecea, #3a1d1b);
+  --glz-color-on-danger: light-dark(#fff, #2a0b08);
+
+  /* Colour: text and lines. Muted text keeps 4.5:1 or more on every surface. */
+  --glz-color-text: light-dark(#18201b, #e6ebe8);
+  --glz-color-text-muted: light-dark(#4f5b54, #a8b3ad);
+  --glz-color-text-disabled: light-dark(#8a948e, #6b756f);
+  --glz-color-border: light-dark(#d5dcd8, #333d37);
+  --glz-color-border-strong: light-dark(#8d9892, #66726b);
+  --glz-color-focus: var(--glz-color-accent);
+  --glz-color-scrim: light-dark(rgb(16 22 18 / 40%), rgb(0 0 0 / 60%));
+
+  /* Surfaces, from the page up: each level sits on the one before it. */
+  --glz-surface-page: light-dark(#f7f9f8, #111513);
+  --glz-surface-sunken: light-dark(#eef2f0, #0c0f0d);
+  --glz-surface-card: light-dark(#fff, #181d1a);
+  --glz-surface-raised: light-dark(#fff, #1f2622);
+  --glz-surface-overlay: light-dark(#fff, #27302b);
+  --glz-surface-hover: light-dark(rgb(24 32 27 / 6%), rgb(230 235 232 / 8%));
+  --glz-surface-selected: var(--glz-color-accent-soft);
+
+  /* Hover washes over filled surfaces: accent and danger buttons, and the inverse surface. */
+  --glz-color-hover-on-accent: light-dark(rgb(0 0 0 / 12%), rgb(0 0 0 / 16%));
+  --glz-color-hover-on-inverse: light-dark(rgb(255 255 255 / 14%), rgb(0 0 0 / 10%));
+  --glz-surface-inverse: light-dark(#18201b, #e6ebe8);
+  --glz-color-on-inverse: light-dark(#f7f9f8, #111513);
+
+  /* Type: Atkinson Hyperlegible Next for text, its Mono for code. */
+  --glz-font-sans: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --glz-font-mono: 'Atkinson Hyperlegible Mono', ui-monospace, 'SF Mono', menlo, monospace;
+  --glz-text-xs: 0.75rem;
+  --glz-text-sm: 0.875rem;
+  --glz-text-md: 1rem;
+  --glz-text-lg: 1.125rem;
+  --glz-text-xl: 1.375rem;
+  --glz-text-2xl: 1.75rem;
+  --glz-leading-tight: 1.25;
+  --glz-leading-normal: 1.5;
+  --glz-weight-regular: 400;
+  --glz-weight-bold: 700;
+
+  /* Space: a 4px scale. */
+  --glz-space-1: 0.25rem;
+  --glz-space-2: 0.5rem;
+  --glz-space-3: 0.75rem;
+  --glz-space-4: 1rem;
+  --glz-space-5: 1.5rem;
+  --glz-space-6: 2rem;
+  --glz-space-7: 3rem;
+  --glz-space-8: 4rem;
+
+  /* Shape. */
+  --glz-radius-sm: 4px;
+  --glz-radius-md: 8px;
+  --glz-radius-lg: 12px;
+  --glz-radius-full: 999px;
+  --glz-border-width: 1px;
+
+  /* Elevation: shadows for raised and overlay surfaces. */
+  --glz-shadow-color: light-dark(rgb(16 22 18 / 12%), rgb(0 0 0 / 50%));
+  --glz-elevation-0: none;
+  --glz-elevation-1: 0 1px 2px var(--glz-shadow-color);
+  --glz-elevation-2: 0 2px 8px var(--glz-shadow-color);
+  --glz-elevation-3: 0 8px 24px var(--glz-shadow-color);
+
+  /* Controls. */
+  --glz-control-height-sm: 2rem;
+  --glz-control-height-md: 2.5rem;
+  --glz-control-height-lg: 3rem;
+  --glz-focus-ring: 0 0 0 2px var(--glz-surface-page), 0 0 0 4px var(--glz-color-focus);
+
+  /* Layout. */
+  --glz-sidenav-width: 17rem;
+  --glz-rail-width: 4.5rem;
+  --glz-top-bar-height: 3.5rem;
+  --glz-content-width: 48rem;
+
+  /* Motion: none at all when the person asks for less. */
+  --glz-duration-fast: 120ms;
+  --glz-duration-normal: 200ms;
+  --glz-easing: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --glz-duration-fast: 0ms;
+    --glz-duration-normal: 0ms;
+  }
+}

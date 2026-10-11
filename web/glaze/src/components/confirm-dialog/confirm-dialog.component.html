@@ -1,0 +1,18 @@
+<glz-dialog
+  [testId]="testId()"
+  [heading]="heading()"
+  [open]="open()"
+  (openChange)="openChanged($event)"
+>
+  @if (hasMessage()) {
+    <p class="message">{{ message() }}</p>
+  }
+  <div glzDialogActions>
+    <button glzButton [attr.data-testid]="ids().cancel" (click)="cancel()">
+      {{ cancelLabel() }}
+    </button>
+    <button glzButton [attr.data-testid]="ids().ok" [variant]="variant()" (click)="confirm()">
+      {{ confirmLabel() }}
+    </button>
+  </div>
+</glz-dialog>

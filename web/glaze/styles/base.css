@@ -1,0 +1,97 @@
+/* Glaze's page base: type, colours and focus on the document, from the tokens. */
+
+html {
+  background: var(--glz-surface-page);
+  color: var(--glz-color-text);
+  font-family: var(--glz-font-sans);
+  font-size: 100%;
+  line-height: var(--glz-leading-normal);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--glz-surface-page);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  line-height: var(--glz-leading-tight);
+  font-weight: var(--glz-weight-bold);
+  margin: 0 0 var(--glz-space-3);
+}
+
+h1 {
+  font-size: var(--glz-text-2xl);
+}
+
+h2 {
+  font-size: var(--glz-text-xl);
+}
+
+h3 {
+  font-size: var(--glz-text-lg);
+}
+
+h4 {
+  font-size: var(--glz-text-md);
+}
+
+p {
+  margin: 0 0 var(--glz-space-3);
+}
+
+a {
+  color: var(--glz-color-accent);
+  text-underline-offset: 0.15em;
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--glz-font-mono);
+  font-size: 0.925em;
+}
+
+pre {
+  overflow-x: auto;
+  padding: var(--glz-space-3);
+  border-radius: var(--glz-radius-md);
+  background: var(--glz-surface-sunken);
+}
+
+:focus-visible {
+  outline: 2px solid var(--glz-color-focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--glz-color-accent-soft);
+}
+
+/* Hidden on screen, read by screen readers. */
+.glz-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The CDK's overlays (menus) sit above the page. */
+.cdk-overlay-container {
+  z-index: 1000;
+}

@@ -1,0 +1,62 @@
+<p class="heading" [id]="headingId">{{ heading() }}</p>
+@for (question of shown(); track question.index) {
+  <div class="question" role="group" [attr.aria-labelledby]="question.id">
+    <p class="text" [id]="question.id">{{ question.text }}</p>
+    @if (isAnswered()) {
+      <p class="answer" [attr.data-testid]="ids().answer">{{ question.answer }}</p>
+    } @else {
+      @if (question.hasChoices) {
+        @if (question.multiple) {
+          @for (choice of question.choices; track choice.label) {
+            <glz-checkbox
+              [testId]="ids().choice"
+              [checked]="choice.checked"
+              (checkedChange)="pickMany(question.index, choice.label, $event)"
+            >
+              {{ choice.label }}
+              @if (choice.description) {
+                <span class="description">{{ choice.description }}</span>
+              }
+            </glz-checkbox>
+          }
+        } @else {
+          <glz-radio-group
+            [label]="question.text"
+            [value]="question.picked"
+            (valueChange)="pickOne(question.index, $event)"
+          >
+            @for (choice of question.choices; track choice.label) {
+              <glz-radio [attr.data-testid]="ids().choice" [value]="choice.label">
+                {{ choice.label }}
+                @if (choice.description) {
+                  <span class="description">{{ choice.description }}</span>
+                }
+              </glz-radio>
+            }
+          </glz-radio-group>
+        }
+      }
+      <input
+        class="glz-input own"
+        [attr.data-testid]="ids().own"
+        [attr.aria-label]="ownWordsLabel()"
+        [placeholder]="ownWordsLabel()"
+        [value]="question.ownWords"
+        (input)="typed(question.index, $event)"
+      />
+    }
+  </div>
+}
+@if (!isAnswered()) {
+  <div class="actions">
+    <button
+      glzButton
+      variant="primary"
+      [attr.data-testid]="ids().submit"
+      [disabled]="cannotSubmit()"
+      (click)="submit()"
+    >
+      {{ submitLabel() }}
+    </button>
+  </div>
+}

@@ -1,0 +1,20 @@
+:host {
+  display: block;
+  padding: var(--glz-space-2);
+}
+
+.heading {
+  margin: 0;
+  padding: var(--glz-space-2) var(--glz-space-3) var(--glz-space-1);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+  font-weight: var(--glz-weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}

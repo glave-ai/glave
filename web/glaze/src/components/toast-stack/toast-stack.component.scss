@@ -1,0 +1,69 @@
+:host {
+  inset: auto 0 0;
+  margin: 0 auto;
+  border: 0;
+  background: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glz-space-2);
+  padding: var(--glz-space-4);
+}
+
+:host(:not(:popover-open)) {
+  display: none;
+}
+
+.toast {
+  --glz-toast-accent: var(--glz-color-on-inverse);
+
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-3);
+  min-width: min(20rem, calc(100vw - 2rem));
+  max-width: min(32rem, calc(100vw - 2rem));
+  padding: var(--glz-space-2) var(--glz-space-2) var(--glz-space-2) var(--glz-space-4);
+  border-inline-start: 4px solid var(--glz-toast-accent);
+  border-radius: var(--glz-radius-md);
+  background: var(--glz-surface-inverse);
+  color: var(--glz-color-on-inverse);
+  box-shadow: var(--glz-elevation-3);
+}
+
+.tone-success {
+  --glz-toast-accent: var(--glz-color-success);
+}
+
+.tone-warning {
+  --glz-toast-accent: var(--glz-color-warning);
+}
+
+.tone-danger {
+  --glz-toast-accent: var(--glz-color-danger);
+}
+
+.message {
+  flex: 1;
+}
+
+.action {
+  padding: var(--glz-space-1) var(--glz-space-2);
+  border: 0;
+  border-radius: var(--glz-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--glz-weight-bold);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.action:focus-visible {
+  outline: 2px solid currentcolor;
+}
+
+// The dismiss button sits on the inverse surface, so it takes the inverse text colour.
+.toast [glzIconButton] {
+  --glz-button-fg: var(--glz-color-on-inverse);
+  --glz-button-hover: var(--glz-color-hover-on-inverse);
+}
