@@ -165,4 +165,11 @@ impl<L: EventLog> EventLog for Observed<L> {
     ) -> impl Future<Output = Result<Option<RawEvent>, LogError>> + Send {
         self.inner.latest_of(scope, thread, kinds)
     }
+
+    fn locate(
+        &self,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+        self.inner.locate(thread)
+    }
 }

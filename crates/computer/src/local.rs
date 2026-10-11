@@ -12,6 +12,7 @@ mod paths;
 mod registry;
 mod replace;
 mod sandbox;
+mod scratch;
 mod walk;
 pub(crate) mod worktree;
 
@@ -39,6 +40,9 @@ pub struct LocalComputers {
     /// Where threads' worktrees are kept, outside every repository; none means this machine
     /// opens no worktrees.
     worktrees: Option<PathBuf>,
+    /// Where threads with no project get a scratch folder each; none means this machine
+    /// makes none.
+    scratch: Option<PathBuf>,
     /// A program that runs [`crate::sandbox_helper`], for Linux's Landlock fallback.
     sandbox_helper: Option<PathBuf>,
     environment: Arc<Vec<(OsString, OsString)>>,
@@ -56,6 +60,7 @@ impl LocalComputers {
         Self {
             base: base.into(),
             worktrees: None,
+            scratch: None,
             sandbox_helper: None,
             environment: Arc::new(without_secrets(environment)),
             registry: Registry::default(),
@@ -84,6 +89,14 @@ impl LocalComputers {
     #[must_use]
     pub fn with_worktrees(mut self, folder: impl Into<PathBuf>) -> Self {
         self.worktrees = Some(folder.into());
+        self
+    }
+
+    /// Makes threads' scratch folders under `folder`, so a computer here can open
+    /// [`Sources::Scratch`]. Like worktrees, they outlive the computer.
+    #[must_use]
+    pub fn with_scratch(mut self, folder: impl Into<PathBuf>) -> Self {
+        self.scratch = Some(folder.into());
         self
     }
 
@@ -167,6 +180,18 @@ impl LocalComputers {
                 let env = self.command_environment(&environment);
                 let made = worktree::open(&env, base, path, branch, owner.as_deref()).await?;
                 (made.root, false, Some(made.common))
+            }
+            Sources::Scratch { name, owner } => {
+                let base = self.scratch.as_ref().ok_or_else(|| {
+                    ComputerError::Unsupported(
+                        "this computer makes no scratch folders; work in a project folder".into(),
+                    )
+                })?;
+                (
+                    scratch::open(base, name, owner.as_deref()).await?,
+                    false,
+                    None,
+                )
             }
         };
         let environment = self.command_environment(&environment);

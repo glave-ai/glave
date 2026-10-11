@@ -89,6 +89,14 @@ pub enum Sources {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         owner: Option<String>,
     },
+    /// A folder of its own for a thread with no project, such as a one-off chat: made empty
+    /// under `name` (letters, digits and `-`) in a place the computer chooses, and reopened,
+    /// as it was left, when opened again. `owner` is kept beside it, as for a worktree.
+    Scratch {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner: Option<String>,
+    },
 }
 
 /// A workspace: where it is and what it came from.

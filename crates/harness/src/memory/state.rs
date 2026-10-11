@@ -127,7 +127,7 @@ where
             return None;
         }
         let on = MemoryContext {
-            person: self.actors.person,
+            person: thread.for_,
             agent: self.actors.agent,
             scope: thread.scope,
             thread: thread.id,

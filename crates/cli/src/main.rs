@@ -21,6 +21,7 @@ mod policy;
 mod session;
 mod setup;
 mod skills;
+mod spaces;
 mod system;
 mod tasks;
 mod terminal;

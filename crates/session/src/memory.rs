@@ -52,7 +52,7 @@ where
         };
         let access = Access {
             person: caller.person,
-            scope: self.inner.scope,
+            scope: self.inner.home,
         };
         match memory.control(&access, control).await {
             Ok(memories) => Ok(Reply::Memories { memories }),

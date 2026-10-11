@@ -73,6 +73,71 @@ pub(crate) const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (org, space)
     ) STRICT;
     ",
+    // 3: spaces as records. Each space has a kind, a name, an owner (a principal as JSON; ''
+    // for a space made before records, until the local person claims it), members, and
+    // times. Folders lead to spaces through `space_folders` (`path:<path>` or
+    // `remote:<url>`), so a folder is an index, not the space. The old path-to-space table's
+    // rows become records and folder keys; the stand-in personal spaces (`glave:personal/<id>`)
+    // become their person's personal space. Threads are found by id alone through an index.
+    "
+    CREATE INDEX events_by_thread ON events (thread);
+
+    CREATE TABLE space_records (
+        org         TEXT NOT NULL,
+        id          TEXT NOT NULL,
+        kind        TEXT NOT NULL,
+        name        TEXT NOT NULL,
+        owner       TEXT NOT NULL,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL,
+        PRIMARY KEY (org, id)
+    ) STRICT;
+
+    CREATE UNIQUE INDEX one_personal_space ON space_records (org, owner)
+        WHERE kind = 'personal';
+
+    CREATE TABLE space_members (
+        org       TEXT    NOT NULL,
+        space     TEXT    NOT NULL,
+        position  INTEGER NOT NULL,
+        member    TEXT    NOT NULL,
+        PRIMARY KEY (org, space, position)
+    ) STRICT;
+
+    CREATE INDEX space_members_by_member ON space_members (org, member);
+
+    CREATE TABLE space_folders (
+        org    TEXT NOT NULL,
+        key    TEXT NOT NULL,
+        space  TEXT NOT NULL,
+        PRIMARY KEY (org, key)
+    ) STRICT;
+
+    INSERT INTO space_records (org, id, kind, name, owner, created_at, updated_at)
+    SELECT
+        (SELECT value FROM settings WHERE key = 'org'),
+        id,
+        CASE WHEN path LIKE 'glave:personal/%' THEN 'personal' ELSE 'project' END,
+        CASE WHEN path LIKE 'glave:personal/%' THEN 'Inbox'
+             ELSE COALESCE(NULLIF(replace(path, rtrim(path, replace(path, '/', '')), ''), ''), path)
+        END,
+        CASE WHEN path LIKE 'glave:personal/%'
+             THEN '{\"kind\":\"person\",\"id\":\"' || substr(path, 16) || '\"}'
+             ELSE ''
+        END,
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    FROM spaces
+    WHERE EXISTS (SELECT 1 FROM settings WHERE key = 'org');
+
+    INSERT INTO space_folders (org, key, space)
+    SELECT (SELECT value FROM settings WHERE key = 'org'), 'path:' || path, id
+    FROM spaces
+    WHERE path NOT LIKE 'glave:personal/%'
+      AND EXISTS (SELECT 1 FROM settings WHERE key = 'org');
+
+    DROP TABLE spaces;
+    ",
 ];
 
 /// The schema version this build writes.

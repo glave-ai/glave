@@ -57,6 +57,8 @@ pub enum Opened {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         at: Option<String>,
     },
+    /// A folder of the thread's own, for a thread with no project (version 2).
+    Scratch { path: String },
 }
 
 /// The thread's worktree was removed, or moved to the Trash, by a cleanup. Its branch is kept,
@@ -97,7 +99,8 @@ pub enum RemovedReason {
 
 impl Payload for WorkspaceBound {
     const TYPE: &'static str = BOUND;
-    const VERSION: u32 = 1;
+    /// 2 added the `scratch` kind of `opened`. Version 1 reads as it is: it never has one.
+    const VERSION: u32 = 2;
 }
 
 impl Payload for WorkspaceRemoved {
@@ -108,7 +111,7 @@ impl Payload for WorkspaceRemoved {
 
 pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<WorkspaceBound>> {
     match version {
-        1 => Some(parse(data)),
+        1 | 2 => Some(parse(data)),
         _ => None,
     }
 }

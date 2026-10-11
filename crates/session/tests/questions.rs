@@ -21,6 +21,7 @@ mod questions {
     async fn new_thread(server: &Scripted) -> ThreadId {
         match server
             .request(Request::ThreadStart {
+                space: None,
                 background: false,
                 worktree: None,
             })

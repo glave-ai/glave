@@ -27,6 +27,7 @@ mod standing {
         B: glave_ports::BlobStore + 'static,
     {
         let request = Request::ThreadList {
+            space: None,
             limit: None,
             show: Some(show),
         };

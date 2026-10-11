@@ -115,6 +115,13 @@ where
             let owner = owner_label(thread.scope, thread.id);
             let worktree = self.workspace.worktree(branch, Some(&owner)).await?;
             thread.workspace = Some(Arc::new(worktree));
+        } else if let Some(Sources::Scratch { name, owner }) = thread
+            .workspace
+            .as_ref()
+            .map(|workspace| workspace.info().sources.clone())
+        {
+            let scratch = self.workspace.scratch(&name, owner.as_deref()).await?;
+            thread.workspace = Some(Arc::new(scratch));
         }
         thread.removed = false;
         Ok(())

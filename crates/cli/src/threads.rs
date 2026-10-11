@@ -11,7 +11,6 @@ use glave_store_sqlite::Store;
 use jiff::Timestamp;
 use uuid::Uuid;
 
-use crate::system::random_uuid;
 use crate::{home, keys, worktrees};
 
 pub const USAGE: &str = "\
@@ -98,9 +97,8 @@ async fn run(command: Command) -> anyhow::Result<()> {
         keys::settings(&home, home::relocated()).await?,
     )
     .await?;
-    let scope = store
-        .local_scope(&std::env::current_dir()?, random_uuid(), random_uuid())
-        .await?;
+    let person = crate::identity::load_or_make(&home).await?.person;
+    let scope = crate::spaces::here(&store, &std::env::current_dir()?, person).await?;
     let log = store.log();
     match command {
         Command::List(wanted) => {

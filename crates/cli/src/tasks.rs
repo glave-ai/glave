@@ -137,6 +137,7 @@ pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
     let folder = std::env::current_dir()?;
     let mut host = Host::connect_or_start(&folder, args).await?;
     let started = Request::ThreadStart {
+        space: None,
         worktree: args.worktree.then_some(true),
         background: true,
     };

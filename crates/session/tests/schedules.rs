@@ -213,6 +213,7 @@ mod schedules {
             create(&server, cron("0 9 * * *"), 10).await.unwrap();
             let Reply::Threads { threads } = server
                 .request(Request::ThreadList {
+                    space: None,
                     limit: None,
                     show: None,
                 })

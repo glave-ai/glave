@@ -237,7 +237,7 @@ fn shows(definition: &Value) -> String {
 
 /// The `origin` remote's url, read from `.git/config` without running git (which a
 /// repository's own config can make run programs).
-async fn remote(root: &Path) -> Option<String> {
+pub async fn remote(root: &Path) -> Option<String> {
     let text = tokio::fs::read_to_string(root.join(".git").join("config"))
         .await
         .ok()?;

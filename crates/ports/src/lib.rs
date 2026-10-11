@@ -17,6 +17,7 @@ mod memory;
 mod model;
 mod scope;
 pub mod secrets;
+mod spaces;
 mod tools;
 
 pub use blob::{BlobError, BlobStore, digest};
@@ -35,6 +36,7 @@ pub use model::{
     Served, ToolCall, ToolChoice, ToolSpec,
 };
 pub use scope::{OrgId, Scope, SpaceId};
+pub use spaces::{FolderKey, MAX_NAME, MemorySpaces, Space, SpaceError, SpaceKind, Spaces};
 pub use tools::{
     Assessment, BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource,
     describe_call, unless_cancelled,

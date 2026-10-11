@@ -42,10 +42,11 @@ where
             Some(_) => return Ok(()),
             None => {}
         }
+        let scope = self.scope_of(thread).await?;
         let resumed = self
             .inner
             .harness
-            .resume_thread(self.inner.scope, thread)
+            .resume_thread(scope, thread)
             .await
             .map_err(|error| api(&error))?;
         if resumed.standing() == Standing::Deleted {

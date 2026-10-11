@@ -37,6 +37,7 @@ mod session {
     {
         match server
             .request(Request::ThreadStart {
+                space: None,
                 background: false,
                 worktree: None,
             })
@@ -101,6 +102,7 @@ mod session {
             assert_eq!(turn.model_calls, 1);
             match server
                 .request(Request::ThreadList {
+                    space: None,
                     limit: None,
                     show: None,
                 })

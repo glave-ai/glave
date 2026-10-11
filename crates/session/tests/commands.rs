@@ -61,6 +61,7 @@ mod commands {
             .await;
             let Reply::Thread { thread } = server
                 .request(Request::ThreadStart {
+                    space: None,
                     background: false,
                     worktree: None,
                 })

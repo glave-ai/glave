@@ -4,9 +4,10 @@
 
 use glave_event::{Auth, Principal, PrincipalId};
 
-use crate::harness::Harness;
+use crate::harness::{Harness, Thread};
 
-/// Who asked. The default is the local person, who is every thread's `for`.
+/// Who asked. The default is the local person. A thread started by a caller is for them: its
+/// `for` is the caller, or the local person by default.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Caller {
     /// The person who asked; `None` for the local person.
@@ -16,10 +17,14 @@ pub struct Caller {
 }
 
 impl<P, L, B, A> Harness<P, L, B, A> {
-    /// `person` as a principal to record, unless it is the thread's `for`, which is implied.
-    pub(crate) fn other_than_for(&self, person: Option<PrincipalId>) -> Option<Principal> {
+    /// `person` as a principal to record, unless it is `thread`'s `for`, which is implied.
+    /// `None` is the local person, who never needs naming in the local person's threads.
+    pub(crate) fn other_than_for(
+        thread: &Thread,
+        person: Option<PrincipalId>,
+    ) -> Option<Principal> {
         person
-            .filter(|person| Some(*person) != self.actors.person)
+            .filter(|person| Some(*person) != thread.for_)
             .map(Principal::person)
     }
 }

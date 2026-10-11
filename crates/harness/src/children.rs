@@ -67,7 +67,7 @@ where
             call_id: call.call_id.clone(),
         };
         let mut child = match self
-            .start_thread_from(parent.scope, Some(started), &Caller::default(), None)
+            .start_thread_from(parent.scope, Some(started), &for_parent(parent), None)
             .await
         {
             Ok(child) => child,
@@ -135,5 +135,13 @@ where
             ok: !result.0.is_error,
         });
         result
+    }
+}
+
+/// Who starts a subagent's thread: the person its parent is for, so the child is for them too.
+fn for_parent(parent: &Thread) -> Caller {
+    Caller {
+        person: parent.for_,
+        auth: None,
     }
 }

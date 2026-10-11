@@ -29,6 +29,7 @@ where
         thread: ThreadId,
         goal: Option<Goal>,
     ) -> Result<TurnStream, ApiError> {
+        self.authorize(caller, thread).await?;
         if goal.is_none() && !self.goal(thread).await?.is_some_and(|g| g.resumable()) {
             return Err(no_goal(thread));
         }
@@ -94,9 +95,10 @@ where
 
     /// `thread`'s latest goal, read from the log.
     pub(crate) async fn goal(&self, thread: ThreadId) -> Result<Option<GoalProgress>, ApiError> {
+        let scope = self.scope_of(thread).await?;
         self.inner
             .harness
-            .goal(self.inner.scope, thread)
+            .goal(scope, thread)
             .await
             .map_err(|error| api(&error))
     }

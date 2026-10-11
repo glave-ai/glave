@@ -11,8 +11,8 @@ use glave_computer::LocalComputers;
 use glave_event::{Arguments, ModelRef, Part, RawEvent, StopReason, ThreadId, TokenCounts, Usage};
 use glave_harness::{Clock, Entropy, Settings, Workspace};
 use glave_ports::{
-    BlobStore, Completion, Delta, EventLog, MemoryBlobs, MemoryLog, ModelProvider, ModelRequest,
-    OrgId, ProviderError, RequestedCall, Scope, SpaceId,
+    BlobStore, Completion, Delta, EventLog, MemoryBlobs, MemoryLog, MemorySpaces, ModelProvider,
+    ModelRequest, OrgId, ProviderError, RequestedCall, Scope, Space, SpaceId, SpaceKind,
 };
 use glave_session::protocol::{ApiError, Meta, Reply, Request};
 use glave_session::{Answering, Server, Wiring};
@@ -169,9 +169,12 @@ pub async fn build<L: EventLog + 'static>(
     worktrees: Option<PathBuf>,
 ) -> (Server<Script, L, MemoryBlobs>, Arc<Mutex<Vec<String>>>) {
     let recorded = Arc::new(Mutex::new(Vec::new()));
+    // Threads outside the server's own space get scratch folders beside the test's folder.
+    let computers =
+        LocalComputers::for_here(std::env::vars_os()).with_scratch(dir.with_extension("scratch"));
     let computers = match &worktrees {
-        Some(base) => LocalComputers::for_here(std::env::vars_os()).with_worktrees(base),
-        None => LocalComputers::for_here(std::env::vars_os()),
+        Some(base) => computers.with_worktrees(base),
+        None => computers,
     };
     let wiring = Wiring {
         provider: Script {
@@ -195,8 +198,32 @@ pub async fn build<L: EventLog + 'static>(
         workers: None,
         tasks: glave_session::TaskLimits::default(),
         memory: None,
+        spaces: Arc::new(MemorySpaces::new()),
     };
-    (Server::new(wiring, settings, scope(), answering), recorded)
+    let server = Server::new(wiring, settings, scope(), answering);
+    keep_home(&server, Vec::new()).await;
+    (server, recorded)
+}
+
+/// Keeps the server's own space as its person's project, with `members` working in it too,
+/// at a fixed time, so nothing a test checks depends on when it was first asked for.
+pub async fn keep_home<P, L, B>(server: &Server<P, L, B>, members: Vec<glave_event::Principal>)
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    let at = glave_event::At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
+    let home = Space {
+        id: scope().space,
+        kind: SpaceKind::Project,
+        name: "test".into(),
+        owner: glave_event::Principal::person(server.person().unwrap()),
+        members,
+        created_at: at,
+        updated_at: at,
+    };
+    server.spaces().create(scope().org, &home).await.unwrap();
 }
 
 /// A server on `log` whose threads use `memory`, with the person `settings` names.
@@ -227,6 +254,7 @@ pub async fn with_memory<L: EventLog + 'static>(
         workers: None,
         tasks: glave_session::TaskLimits::default(),
         memory: Some(memory),
+        spaces: Arc::new(MemorySpaces::new()),
     };
     Server::new(wiring, settings, scope(), Answering::NoOne)
 }
@@ -247,6 +275,7 @@ where
     B: BlobStore + 'static,
 {
     let started = Request::ThreadStart {
+        space: None,
         background: false,
         worktree: worktree.then_some(true),
     };

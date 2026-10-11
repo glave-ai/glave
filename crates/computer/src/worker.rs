@@ -322,7 +322,7 @@ impl WorkerComputers {
                 ));
             }
             Sources::Git { url, .. } => self.credentials.for_url(url).await?,
-            Sources::Folder { .. } | Sources::Worktree { .. } => None,
+            Sources::Folder { .. } | Sources::Worktree { .. } | Sources::Scratch { .. } => None,
         };
         let info = match &credential {
             Some(credential) => {

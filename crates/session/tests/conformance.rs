@@ -314,6 +314,7 @@ mod conformance {
     async fn thread_of(client: &mut impl Client) -> ThreadId {
         let reply = client
             .call(Request::ThreadStart {
+                space: None,
                 background: false,
                 worktree: None,
             })
