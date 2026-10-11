@@ -9,9 +9,9 @@ use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeNa
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
     ApprovalDecided, ApprovalRequested, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
-    HookRan, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MessageAdded,
-    ModelResponded, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived,
-    ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
+    HookRan, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryTidied,
+    MessageAdded, ModelResponded, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted,
+    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
     ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
     approval, gateway, goal, hook, memory, message, model, standing, task, thread, tool, turn,
     workspace,
@@ -67,7 +67,9 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (memory::SAVED, 1),
     (memory::EDITED, 1),
     (memory::FORGOTTEN, 1),
+    (memory::FORGOTTEN, 2),
     (memory::RESTORED, 1),
+    (memory::TIDIED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -109,6 +111,7 @@ pub enum Body {
     MemoryEdited(MemoryEdited),
     MemoryForgotten(MemoryForgotten),
     MemoryRestored(MemoryRestored),
+    MemoryTidied(MemoryTidied),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -265,6 +268,7 @@ impl Event {
             Body::MemoryEdited(payload) => encode(header, payload),
             Body::MemoryForgotten(payload) => encode(header, payload),
             Body::MemoryRestored(payload) => encode(header, payload),
+            Body::MemoryTidied(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,
@@ -290,6 +294,7 @@ fn decode_memory(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         memory::RESTORED => {
             memory::decode_restored(version, data).map(|r| r.map(Body::MemoryRestored))
         }
+        memory::TIDIED => memory::decode_tidied(version, data).map(|r| r.map(Body::MemoryTidied)),
         _ => None,
     }
 }

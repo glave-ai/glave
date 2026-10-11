@@ -76,6 +76,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::MemoryEdited(_)
         | Body::MemoryForgotten(_)
         | Body::MemoryRestored(_)
+        | Body::MemoryTidied(_)
         | Body::Unknown(_) => {}
     }
 }

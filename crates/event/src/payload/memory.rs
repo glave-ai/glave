@@ -1,4 +1,4 @@
-//! `memory.saved`, `memory.edited`, `memory.forgotten` and `memory.restored`: what glave
+//! `memory.saved`, `memory.edited`, `memory.forgotten`, `memory.restored` and `memory.tidied`: what glave
 //! remembers for later threads (`specs/memory.md`). They are kept in the space's memory ledger,
 //! glave's own stream under a reserved id, never in a conversation. A memory's text is sealed
 //! under a data key of its own, so forgetting it destroys every version at once.
@@ -15,6 +15,7 @@ pub(crate) const SAVED: &str = "memory.saved";
 pub(crate) const EDITED: &str = "memory.edited";
 pub(crate) const FORGOTTEN: &str = "memory.forgotten";
 pub(crate) const RESTORED: &str = "memory.restored";
+pub(crate) const TIDIED: &str = "memory.tidied";
 
 /// Where a memory belongs: to the person, or to the space it was saved in.
 #[derive(
@@ -99,8 +100,32 @@ pub struct MemoryForgotten {
     pub memory: MemoryId,
     /// When its key is destroyed: at once when the person forgets, 30 days on when glave does.
     pub erase_at: At,
+    /// Where it was saved, kept here because the saved event's text (and its source with it)
+    /// is erased: `recall` never returns that turn of the conversation again. Since version 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<MemorySource>,
     /// Who forgot it.
     pub by: Principal,
+}
+
+/// Version 1, before a forget named where the memory was saved.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemoryForgottenV1 {
+    memory: MemoryId,
+    erase_at: At,
+    by: Principal,
+}
+
+impl From<MemoryForgottenV1> for MemoryForgotten {
+    fn from(old: MemoryForgottenV1) -> Self {
+        Self {
+            memory: old.memory,
+            erase_at: old.erase_at,
+            source: None,
+            by: old.by,
+        }
+    }
 }
 
 /// A change glave made to a memory was undone.
@@ -111,6 +136,20 @@ pub struct MemoryRestored {
     /// The event undone: glave's `memory.edited` or `memory.forgotten`.
     pub undone: EventId,
     /// Who undid it.
+    pub by: Principal,
+}
+
+/// Tidy-up ran over a ledger. Its changes are `memory.edited` and `memory.forgotten` events of
+/// their own, `by` glave; this records that it looked, and the pairs of memories it could not
+/// reconcile, which wait for the person to say which holds. Content-free.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryTidied {
+    /// Pairs of memories that disagree where tidy-up could not tell which holds: both are
+    /// kept, and the person is asked, until one of them changes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<[MemoryId; 2]>,
+    /// Who tidied: glave.
     pub by: Principal,
 }
 
@@ -126,11 +165,16 @@ impl Payload for MemoryEdited {
 
 impl Payload for MemoryForgotten {
     const TYPE: &'static str = FORGOTTEN;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for MemoryRestored {
     const TYPE: &'static str = RESTORED;
+    const VERSION: u32 = 1;
+}
+
+impl Payload for MemoryTidied {
+    const TYPE: &'static str = TIDIED;
     const VERSION: u32 = 1;
 }
 
@@ -152,13 +196,24 @@ pub(crate) fn decode_forgotten(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<MemoryForgotten>> {
-    (version == 1).then(|| parse(data))
+    match version {
+        1 => Some(parse::<MemoryForgottenV1>(data).map(MemoryForgotten::from)),
+        2 => Some(parse(data)),
+        _ => None,
+    }
 }
 
 pub(crate) fn decode_restored(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<MemoryRestored>> {
+    (version == 1).then(|| parse(data))
+}
+
+pub(crate) fn decode_tidied(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<MemoryTidied>> {
     (version == 1).then(|| parse(data))
 }
 

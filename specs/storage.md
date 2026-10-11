@@ -64,6 +64,15 @@ A space is a record, not a folder: an id (UUID v7), a kind, a name, an owner, me
 - **In storage** its object name is HMAC-SHA-256 of that hash under the space key. Someone with access to the bucket cannot check whether a known file is stored.
 - **Each blob's referencing threads are recorded,** so erasing a thread can remove the blobs only it used. Blobs are shared only within a space, never across spaces.
 
+## Search index
+
+`recall` (`memory.md`) searches past conversations with the store's own full-text engine: SQLite FTS5 (the `event_search` table), Postgres full-text search (`event_search`, a `tsvector` with a GIN index).
+
+- **What is indexed:** the text of each `message.added` and each successful `tool.call.completed`, as normalised words (`glave_ports::search`: lowercase letters and digits, a plural's `s` dropped, common words left out, at most 2,048 distinct words an event). The index row is written in the same transaction as its event. Nothing else is indexed, memories included: `recall` matches those in the memory view, so forgetting one leaves nothing behind in the index.
+- **No word in the clear.** Each word is stored as HMAC-SHA-256 under the space key's naming half (the half that names blobs), labelled `glave/search/v1`, its first 16 bytes in hex. The same words match until the space is erased; another space's never do; once the space key is destroyed, nothing in the index can be matched again.
+- **Results are positions,** `(thread, seq)`, best match first (BM25 in SQLite, `ts_rank` in Postgres), then newest first. The event itself is read and opened as any other read; one whose key was destroyed no longer opens and is skipped.
+- **Before schema 5** (SQLite and Postgres) nothing was indexed: conversations from before the index are not found.
+
 ## Erasure
 
 - **A space** is erased by destroying its space key. Everything sealed under it, in the store and in every backup, becomes unreadable at once.

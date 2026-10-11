@@ -68,3 +68,40 @@ fn another_root_cannot_open_what_this_one_sealed() {
     ));
     assert!(matches!(opened, Err(KeyError::Tampered(_))), "{opened:?}");
 }
+
+#[test]
+fn search_terms_are_keyed_per_space_and_stable() {
+    let keys = keys(16);
+    let scope = |space| Scope {
+        org: glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
+        space: glave_ports::SpaceId::from_uuid(uuid::Uuid::from_u128(space)),
+    };
+    let words = vec!["deploy".to_owned(), "render".to_owned()];
+    assert_eq!(
+        block_on(keys.search_terms(&scope(2), &words)).unwrap(),
+        None,
+        "a space with no key finds nothing"
+    );
+    let event = conformance::event(1, 1, "2026-10").unwrap();
+    block_on(keys.seal_event(&scope(2), &event)).unwrap();
+    block_on(keys.seal_event(&scope(3), &event)).unwrap();
+    let here = block_on(keys.search_terms(&scope(2), &words))
+        .unwrap()
+        .unwrap();
+    assert_eq!(here.len(), 2);
+    assert!(
+        here.iter()
+            .all(|term| term.len() == 32 && !term.contains("deploy"))
+    );
+    assert_ne!(here.first(), here.get(1));
+    assert_eq!(
+        block_on(keys.search_terms(&scope(2), &words))
+            .unwrap()
+            .unwrap(),
+        here
+    );
+    let there = block_on(keys.search_terms(&scope(3), &words))
+        .unwrap()
+        .unwrap();
+    assert_ne!(there, here, "another space's words never match");
+}

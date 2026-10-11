@@ -7,7 +7,7 @@
 use glave_ports::{BlobStore, Effect, EventLog, ModelProvider, ToolCall, ToolOutput};
 
 use super::state::structured;
-use super::{EDIT_MEMORY, MemoryChange as Change, REMEMBER};
+use super::{EDIT_MEMORY, MemoryChange as Change, RECALL, REMEMBER};
 use crate::approval::{ApprovalRequest, Approver};
 use crate::calls::{Flagged, Judged, NOT_RUN};
 use crate::cancel::Cancel;
@@ -45,7 +45,8 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Runs a call of `remember`, `edit` or `forget`.
+    /// Runs a call of `remember`, `edit`, `forget` or `recall`. A recall that found untrusted
+    /// output comes back marked so, and the thread counts it as untrusted content read.
     pub(crate) async fn call_memory(
         &self,
         thread: &mut Thread,
@@ -123,6 +124,7 @@ fn canonical(name: &str) -> &'static str {
     match name.as_str() {
         n if n == REMEMBER => REMEMBER,
         n if n == EDIT_MEMORY => EDIT_MEMORY,
+        n if n == RECALL => RECALL,
         _ => super::FORGET,
     }
 }

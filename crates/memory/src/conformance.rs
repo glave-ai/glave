@@ -1,11 +1,14 @@
 //! The conformance suite for memory servers: what any [`Memory`] must do, glave's own or one a
 //! company plugs in (`[memory] server`). It speaks only through the trait, so through MCP with
 //! who and where in `_meta`: scope kept apart by the context, never by the model's arguments,
-//! the near-duplicate check, the budget refusal, and forgetting that leaves nothing to read.
+//! the near-duplicate check, the budget refusal, forgetting that leaves nothing to read, and
+//! `recall` that finds by keyword only what the thread may read.
 //! It returns the first violation it finds.
 
 use glave_event::{Arguments, MemoryId};
-use glave_harness::{EDIT_MEMORY, FORGET, Memory, MemoryChange, MemoryContext, REMEMBER, Shown};
+use glave_harness::{
+    EDIT_MEMORY, FORGET, Memory, MemoryChange, MemoryContext, RECALL, REMEMBER, Shown,
+};
 use serde_json::json;
 
 type Verdict = Result<(), String>;
@@ -59,6 +62,7 @@ pub async fn memory(memory: &dyn Memory, fixture: &Fixture) -> Verdict {
     scopes(memory, fixture).await?;
     duplicates(memory, fixture).await?;
     forgetting(memory, fixture).await?;
+    recalling(memory, fixture).await?;
     budget(memory, fixture).await
 }
 
@@ -173,6 +177,36 @@ async fn forgetting(memory: &dyn Memory, f: &Fixture) -> Verdict {
     ensure(
         left.is_empty(),
         "no version of a forgotten memory can be read",
+    )
+}
+
+/// What `recall` of `query` from `on` says, or why it failed.
+async fn recall(memory: &dyn Memory, on: &MemoryContext, query: &str) -> Result<String, String> {
+    let call = json!({"query": query});
+    let done = memory.call(on, RECALL, &arguments(&call)).await;
+    let text = format!("{:?}", done.output.parts);
+    if done.output.is_error {
+        Err(text)
+    } else {
+        Ok(text)
+    }
+}
+
+async fn recalling(memory: &dyn Memory, f: &Fixture) -> Verdict {
+    let found = recall(memory, &f.here, "tests make db").await?;
+    ensure(
+        found.contains("make db first"),
+        "recall finds a memory by keyword",
+    )?;
+    let elsewhere = recall(memory, &f.elsewhere, "tests make db").await?;
+    ensure(
+        !elsewhere.contains("make db first"),
+        "recall never finds another space's memory",
+    )?;
+    let isolated = recall(memory, &f.isolated, "short answers headings").await?;
+    ensure(
+        !isolated.contains("Ada prefers"),
+        "recall in an isolated space never finds personal memory",
     )
 }
 

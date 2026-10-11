@@ -279,6 +279,10 @@ mod loading {
             let without = run(false).await;
             let with = run(true).await;
             assert_eq!(format!("{without:?}"), format!("{with:?}"));
+            assert!(
+                !format!("{with:?}").contains(glave_harness::RECALL),
+                "no memory tool, recall included, is offered where memory is off"
+            );
         });
     }
 
