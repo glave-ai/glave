@@ -21,12 +21,12 @@ pub use error::{DecodeError, EncodeError, InvalidValue};
 pub use id::{CallId, EventId, PrincipalId, ScheduleId, ThreadId};
 pub use money::{Currency, Money};
 pub use payload::{
-    ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, ForkPoint, GoalEnded,
-    GoalReason, GoalResumed, GoalSet, HookPoint, HookRan, HookResult, MessageAdded, ModelRef,
-    ModelResponded, Opaque, Origin, OriginKind, Outcome, ParentCall, Part, Principal,
-    PrincipalKind, Producer, Role, StopReason, ThreadArchived, ThreadCompacted, ThreadDeleted,
-    ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted, ToolCallRequested, TraceId,
-    TurnEnded, TurnStarted, Usage, Verdict,
+    ApprovalDecided, ApprovalRequested, Arguments, Auth, AuthMethod, Cost, ForkPoint,
+    GatewayToolCalled, GoalEnded, GoalReason, GoalResumed, GoalSet, HookPoint, HookRan, HookResult,
+    MessageAdded, ModelRef, ModelResponded, Opaque, Origin, OriginKind, Outcome, ParentCall, Part,
+    Principal, PrincipalKind, Producer, Role, StopReason, ThreadArchived, ThreadCompacted,
+    ThreadDeleted, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
+    ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
 };
 pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,

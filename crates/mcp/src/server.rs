@@ -82,7 +82,7 @@ impl McpServer {
                 let process = process(command, args, env, environment, dir);
                 Self::program(name, process, command, limits)
             }
-            ServerConfig::Http { url, headers } => Self::http(name, url, headers, limits),
+            ServerConfig::Http { url, headers } => Self::http(name, url, headers, limits, false),
         };
         started.unwrap_or_else(|error| Self::failed(name, error, limits))
     }
@@ -100,6 +100,19 @@ impl McpServer {
         Ok(Self::connect(name, transport, limits))
     }
 
+    /// A gateway's catalog at `url` (its `/mcp`), sent `headers` with every request: one
+    /// server whose tools are named `<server>__<tool>` after the servers that offer them, so
+    /// the model sees each as `mcp__<server>__<tool>`, as if the server were the person's own.
+    pub fn catalog(
+        name: &str,
+        url: &str,
+        headers: &BTreeMap<String, String>,
+        limits: Limits,
+    ) -> Self {
+        Self::http(name, url, headers, limits, true)
+            .unwrap_or_else(|error| Self::failed(name, error, limits))
+    }
+
     /// A server over Streamable HTTP, sent `headers` with every request. A header's value is
     /// never shown, since it is often a key.
     fn http(
@@ -107,6 +120,7 @@ impl McpServer {
         url: &str,
         headers: &BTreeMap<String, String>,
         limits: Limits,
+        catalog: bool,
     ) -> Result<Self, McpError> {
         let mut sent = HashMap::new();
         for (header, value) in headers {
@@ -119,11 +133,20 @@ impl McpServer {
         }
         let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(sent);
         let transport = StreamableHttpClientTransport::from_config(config);
-        Ok(Self::connect(name, transport, limits))
+        Ok(Self::open(name, transport, limits, catalog))
     }
 
     /// Starts talking MCP over `transport`.
     pub fn connect<T, E, A>(name: &str, transport: T, limits: Limits) -> Self
+    where
+        T: IntoTransport<RoleClient, E, A> + Send + 'static,
+        E: std::error::Error + Send + Sync + 'static,
+        A: 'static,
+    {
+        Self::open(name, transport, limits, false)
+    }
+
+    fn open<T, E, A>(name: &str, transport: T, limits: Limits, catalog: bool) -> Self
     where
         T: IntoTransport<RoleClient, E, A> + Send + 'static,
         E: std::error::Error + Send + Sync + 'static,
@@ -136,7 +159,7 @@ impl McpServer {
         let (sender, state) = watch::channel(State::Starting);
         let owned = name.to_owned();
         let starting = runtime.spawn(async move {
-            let opened = Connection::open(&owned, transport, limits.startup).await;
+            let opened = Connection::open(&owned, transport, limits.startup, catalog).await;
             sender.send_replace(match opened {
                 Ok(connection) => State::Ready(Arc::new(connection)),
                 Err(err) => State::Failed(err),
@@ -210,6 +233,27 @@ impl McpServer {
         if let State::Ready(connection) = state {
             connection.close().await;
         }
+    }
+
+    /// The server's tools exactly as it lists them, once started: for a gateway that serves
+    /// them on, annotations and all.
+    pub async fn listing(&self) -> Result<Vec<rmcp::model::Tool>, McpError> {
+        let connection = self.connection().await?;
+        connection
+            .listing()
+            .await
+            .map_err(|message| McpError::start(&self.name, message))
+    }
+
+    /// Calls the server's `tool` with `arguments`, within the call limit, giving back the
+    /// server's own result: for a gateway that serves its tools on. Why it failed otherwise.
+    pub async fn forward(
+        &self,
+        tool: &str,
+        arguments: Option<rmcp::model::JsonObject>,
+    ) -> Result<rmcp::model::CallToolResult, String> {
+        let connection = self.connection().await.map_err(|err| err.to_string())?;
+        connection.forward(tool, arguments, self.call_limit).await
     }
 
     async fn list(&self) -> Result<Vec<ToolInfo>, ToolError> {

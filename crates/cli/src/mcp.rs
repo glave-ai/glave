@@ -2,6 +2,11 @@
 //! project's `.mcp.json` brings: started in the background with the session, waited for before
 //! the first turn, and closed when glave ends. A `config.toml` may turn on only some of them,
 //! and a policy may forbid them.
+//!
+//! The organization's catalog (`[mcp] catalog`) comes from its gateway when `[gateway] url` is
+//! set: one source, first, so a catalog tool wins over a server of the person's with the same
+//! name. Without a gateway, the servers of `mcp.json` the catalog names are the catalog's, and
+//! only the others are the person's own, which `[mcp] own = false` forbids.
 
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
@@ -13,6 +18,7 @@ use anyhow::{Context as _, bail};
 use glave_mcp::{Limits, McpServer, Resources, ServerConfig};
 use glave_ports::ToolSource;
 
+use crate::gateway::remote::Remote;
 use crate::policy::{Chosen, Constraints, check_own_servers};
 use crate::terminal::Printer;
 
@@ -36,14 +42,16 @@ pub struct Servers {
 
 impl Servers {
     /// Starts the servers in `home`'s settings and the trusted `project` servers (a
-    /// `.mcp.json`'s text), in `root`: those `chosen`, or every one. With no settings file there
-    /// are none. Fails when `constraints` forbid the person's own.
+    /// `.mcp.json`'s text), in `root`: those `chosen`, or every one; and first the catalog of
+    /// the `remote` gateway, when there is one. With no settings file there are none of the
+    /// person's. Fails when `constraints` forbid the person's own.
     pub async fn start(
         home: &Path,
         root: &Path,
         chosen: Option<&Chosen<Vec<String>>>,
         constraints: &Constraints,
         project: Option<&str>,
+        remote: Option<&Remote>,
     ) -> anyhow::Result<Self> {
         let path = home.join(FILE);
         let text = match tokio::fs::read_to_string(&path).await {
@@ -76,15 +84,21 @@ impl Servers {
             }
         }
         let configs = turned_on(configs, chosen, &path)?;
+        // Without a gateway, the catalog's servers are the ones in mcp.json it names.
+        let catalog = match (remote, constraints.mcp_catalog()) {
+            (None, Some((names, _))) => names,
+            _ => Vec::new(),
+        };
         let on: Vec<&str> = mine
             .iter()
-            .filter(|name| configs.contains_key(*name))
+            .filter(|name| configs.contains_key(*name) && !catalog.contains(name))
             .map(String::as_str)
             .collect();
         check_own_servers(&on, constraints)?;
-        let servers = configs
-            .iter()
-            .map(|(name, config)| {
+        let offered = remote.map(|remote| Arc::new(remote.catalog()));
+        let servers = offered
+            .into_iter()
+            .chain(configs.iter().map(|(name, config)| {
                 Arc::new(McpServer::start(
                     name,
                     config,
@@ -92,7 +106,7 @@ impl Servers {
                     root,
                     Limits::default(),
                 ))
-            })
+            }))
             .collect();
         Ok(Self {
             started: servers,
@@ -200,7 +214,7 @@ mod tests {
             .build()
             .unwrap();
         let start =
-            |chosen| runtime.block_on(Servers::start(&home, &home, chosen, &forbidden, None));
+            |chosen| runtime.block_on(Servers::start(&home, &home, chosen, &forbidden, None, None));
         let refused = start(None).err().unwrap().to_string();
         assert!(
             refused.contains("mine") && refused.contains("[mcp] own = false"),
@@ -211,5 +225,14 @@ mod tests {
             from: crate::policy::Source::Default,
         };
         assert_eq!(start(Some(&none)).unwrap().names(), Vec::<&str>::new());
+        let offered = constraints("version = 1\n[mcp]\nown = false\ncatalog = [\"mine\"]\n");
+        let started = runtime
+            .block_on(Servers::start(&home, &home, None, &offered, None, None))
+            .unwrap();
+        assert_eq!(
+            started.names(),
+            ["mine"],
+            "without a gateway, a server of mcp.json the catalog names is the catalog's"
+        );
     }
 }

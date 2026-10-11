@@ -33,6 +33,32 @@ pub struct ConfigFile {
     /// Commands to run at points of a turn. They add up across files rather than the
     /// nearest winning: the person's run, and a trusted project's run too.
     pub hooks: Option<HooksFile>,
+    /// A gateway elsewhere to send model calls to, and to take the tool catalog from. Only
+    /// the person's own file may set it: the person's sign-in goes there.
+    pub gateway: Option<GatewayFile>,
+}
+
+/// `[gateway]`: the organization's gateway (`specs/gateway.md`, "Client mode").
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GatewayFile {
+    /// Where it is, such as `https://gateway.example.com`: https, or http only on this
+    /// computer.
+    pub url: String,
+}
+
+impl GatewayFile {
+    /// Whether `url` is one glave sends a sign-in to: https, or http to this computer.
+    fn safe(&self) -> bool {
+        let url = self.url.trim();
+        let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"]
+            .iter()
+            .any(|start| {
+                url.strip_prefix(start)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '/']))
+            });
+        url.starts_with("https://") || local
+    }
 }
 
 /// `[hooks]`: each point's hooks, under the names Claude Code and Codex give the points.
@@ -264,6 +290,16 @@ pub fn config(text: &str, path: &Path) -> anyhow::Result<ConfigFile> {
         toml::from_str(text).map_err(|error| anyhow!("{}: {error}", path.display()))?;
     if let Some(hooks) = &file.hooks {
         Hooks::new(hooks.hooks()).map_err(|error| anyhow!("{}: {error}", path.display()))?;
+    }
+    if let Some(gateway) = &file.gateway
+        && !gateway.safe()
+    {
+        bail!(
+            "{}: [gateway] url = {:?} is not https (http only to this computer): your sign-in \
+             goes there",
+            path.display(),
+            gateway.url
+        );
     }
     Ok(file)
 }

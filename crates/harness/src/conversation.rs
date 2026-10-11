@@ -63,6 +63,7 @@ pub fn conversation(events: &[Event]) -> Vec<Message> {
             | Body::TaskEnded(_)
             | Body::ScheduleCreated(_)
             | Body::ScheduleDeleted(_)
+            | Body::GatewayToolCalled(_)
             | Body::Unknown(_) => {}
         }
     }

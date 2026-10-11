@@ -116,6 +116,7 @@ mod server {
                     ("mcp__tests__grow", Effect::Runs, false),
                     ("mcp__tests__listed", Effect::Runs, false),
                     ("mcp__tests__flood", Effect::Runs, false),
+                    ("mcp__tests__web", Effect::Runs, false),
                 ]
             );
             assert_eq!(tools[0].spec.description, "Say the text back.");
@@ -232,7 +233,7 @@ mod server {
         block_on(async {
             let server = launch("tests", &stdio(SERVER, &[], &[]), Limits::default());
             let tools = server.tools().await.unwrap();
-            assert_eq!(tools.len(), 8);
+            assert_eq!(tools.len(), 9);
             server.close().await;
         });
     }

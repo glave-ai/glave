@@ -8,11 +8,11 @@ use serde_json::value::RawValue;
 use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeName};
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
-    ApprovalDecided, ApprovalRequested, GoalEnded, GoalResumed, GoalSet, HookRan, MessageAdded,
-    ModelResponded, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived,
-    ThreadCompacted, ThreadDeleted, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
-    ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, goal,
-    hook, message, model, standing, task, thread, tool, turn, workspace,
+    ApprovalDecided, ApprovalRequested, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
+    HookRan, MessageAdded, ModelResponded, ScheduleCreated, ScheduleDeleted, TaskEnded,
+    TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadStarted, ThreadUnarchived,
+    ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
+    approval, gateway, goal, hook, message, model, standing, task, thread, tool, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -58,6 +58,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (task::ENDED, 1),
     (task::CREATED, 1),
     (task::DELETED, 1),
+    (gateway::TOOL_CALLED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -93,6 +94,7 @@ pub enum Body {
     TaskEnded(TaskEnded),
     ScheduleCreated(ScheduleCreated),
     ScheduleDeleted(ScheduleDeleted),
+    GatewayToolCalled(GatewayToolCalled),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -187,6 +189,9 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         task::ENDED => task::decode_ended(version, data).map(|r| r.map(Body::TaskEnded)),
         task::CREATED => task::decode_created(version, data).map(|r| r.map(Body::ScheduleCreated)),
         task::DELETED => task::decode_deleted(version, data).map(|r| r.map(Body::ScheduleDeleted)),
+        gateway::TOOL_CALLED => {
+            gateway::decode(version, data).map(|r| r.map(Body::GatewayToolCalled))
+        }
         _ => None,
     };
     let body = match known {
@@ -237,6 +242,7 @@ impl Event {
             Body::TaskEnded(payload) => encode(header, payload),
             Body::ScheduleCreated(payload) => encode(header, payload),
             Body::ScheduleDeleted(payload) => encode(header, payload),
+            Body::GatewayToolCalled(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,

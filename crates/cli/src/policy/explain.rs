@@ -95,7 +95,7 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
         .sandbox
         .value
         .map_or("off", glave_harness::SandboxLevel::name);
-    vec![
+    let mut rows = vec![
         match &choices.model {
             Some(model) => row("model", model.value.clone(), &model.from),
             None => row(
@@ -129,14 +129,22 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
             &choices.worktree.from,
         ),
         row("on", choices.on.value.name().to_owned(), &choices.on.from),
-    ]
+    ];
+    if let Some(gateway) = &choices.gateway {
+        rows.push(row("gateway", gateway.value.clone(), &gateway.from));
+    }
+    rows
 }
 
-/// Why the main and judge models are refused, if they are.
+/// Why the main and judge models are refused, if they are. Through a gateway elsewhere, the
+/// gateway decides, by its own policy, for each caller.
 fn refused_models(choices: &Choices, provider: &str, loaded: &Loaded) -> Vec<String> {
     let Some(main) = &choices.model else {
         return Vec::new();
     };
+    if choices.gateway.is_some() {
+        return Vec::new();
+    }
     let mut models = vec![(main.value.clone(), &main.from)];
     if let Some(judge) = choices.judge.value.model(&main.value)
         && judge != main.value

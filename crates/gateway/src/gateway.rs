@@ -5,7 +5,7 @@ use std::future::Future;
 
 use glave_ports::{Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Served};
 
-use crate::budget::{Budget, Budgets, Charge, Ledger, OverBudget};
+use crate::budget::{Budget, Budgets, Caller, Charge, Ledger, OverBudget};
 use crate::estimate::Needs;
 use crate::plan::{candidates, prepare};
 use crate::routes::Routes;
@@ -46,26 +46,53 @@ impl Gateway {
         self.ledger.spent(budget)
     }
 
+    /// Counts `amount`, in the budget's limit's unit, as spent in `budget` already: what a
+    /// gateway serving many reads back from its log when a caller first returns.
+    pub fn add_spent(&self, budget: Budget, amount: u64) {
+        self.ledger.add_spent(budget, amount);
+    }
+
+    /// The budgets calls count in.
+    pub fn budgets(&self) -> Budgets {
+        self.ledger.limits()
+    }
+
+    /// Serves `request` for `caller`, a signed-in person whose own budget it counts in, on
+    /// `targets` when given (tried in order, as a route's) or else on its purpose's route.
+    pub async fn complete_for(
+        &self,
+        caller: Caller,
+        targets: Option<&[Target]>,
+        request: &ModelRequest,
+        on_delta: &mut (dyn FnMut(Delta) + Send),
+    ) -> Result<Completion, ProviderError> {
+        let targets = targets.unwrap_or_else(|| self.routes.targets(request.purpose));
+        self.serve(Some(caller), targets, request, on_delta).await
+    }
+
     async fn serve(
         &self,
+        caller: Option<Caller>,
+        targets: &[Target],
         request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> Result<Completion, ProviderError> {
         let needs = Needs::of(request);
-        let targets = candidates(self.routes.targets(request.purpose), request, &needs)?;
+        let targets = candidates(targets, request, &needs)?;
         let mut failed: Option<ProviderError> = None;
         let mut over: Option<OverBudget> = None;
         for target in targets {
-            let hold = match self
-                .ledger
-                .reserve(&request.threads, worst(target, request, &needs))
-            {
-                Ok(hold) => hold,
-                Err(refused) => {
-                    over.get_or_insert(refused);
-                    continue;
-                }
-            };
+            let hold =
+                match self
+                    .ledger
+                    .reserve(caller, &request.threads, worst(target, request, &needs))
+                {
+                    Ok(hold) => hold,
+                    Err(refused) => {
+                        over.get_or_insert(refused);
+                        continue;
+                    }
+                };
             let (sent, stripped) = prepare(request, target, &needs);
             match target.handle.send(&sent, on_delta).await {
                 Ok(mut completion) => {
@@ -105,7 +132,12 @@ impl ModelProvider for Gateway {
         request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
-        self.serve(request, on_delta)
+        self.serve(
+            None,
+            self.routes.targets(request.purpose),
+            request,
+            on_delta,
+        )
     }
 }
 

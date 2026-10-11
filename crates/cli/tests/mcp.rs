@@ -68,6 +68,7 @@ mod mcp {
                 "mcp__tests__grow",
                 "mcp__tests__listed",
                 "mcp__tests__flood",
+                "mcp__tests__web",
                 "list_mcp_resources",
                 "read_mcp_resource",
                 "agent",

@@ -92,8 +92,13 @@ impl Loaded {
 
 /// The policy files that exist at `locations`, organization first.
 pub async fn policies(locations: &Locations) -> anyhow::Result<Vec<(PathBuf, PolicyFile)>> {
+    policy_files(&locations.policies).await
+}
+
+/// The files of `paths` that exist, read as policies, in order.
+pub async fn policy_files(paths: &[PathBuf]) -> anyhow::Result<Vec<(PathBuf, PolicyFile)>> {
     let mut policies = Vec::new();
-    for path in &locations.policies {
+    for path in paths {
         if let Some(text) = read(path).await? {
             policies.push((path.clone(), files::policy(&text, path)?));
         }
@@ -130,6 +135,11 @@ pub async fn load(
         },
     ];
     if let Some(values) = project {
+        // A project never chooses the gateway: the person's sign-in would go where it said.
+        let values = ConfigFile {
+            gateway: None,
+            ..values
+        };
         layers.push(Layer {
             level: Level::File(locations.project.clone()),
             values,
