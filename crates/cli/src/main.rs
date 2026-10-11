@@ -29,5 +29,8 @@ mod waiting;
 mod worktrees;
 
 fn main() -> std::process::ExitCode {
+    if let Some(code) = computer::sandbox_helper() {
+        return code;
+    }
     session::main()
 }

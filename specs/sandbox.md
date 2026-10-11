@@ -4,7 +4,7 @@ An opt-in wall around the commands the model runs, enforced by the operating sys
 
 ## Status
 
-Draft. Version 1 (macOS) is built. Whether and when the sandbox is on by default is decided later, from use and from live-task measurements; this document only makes it available.
+Draft. Version 1 is built on macOS (Seatbelt) and Linux (bubblewrap and seccomp, Landlock as a fallback at `read-only`). Whether and when the sandbox is on by default is decided later, from use and from live-task measurements; this document only makes it available.
 
 ## Why opt-in
 
@@ -81,7 +81,7 @@ Off unless `--network`, and off includes Unix sockets: `docker.sock` is root on 
 | Where | How | Status |
 | --- | --- | --- |
 | macOS | `/usr/bin/sandbox-exec`, by absolute path so a planted `sandbox-exec` earlier in `PATH` cannot stand in, with a profile glave writes for each command. It starts from "deny everything" (based on Codex's audited base policy, Apache-2.0) and allows reads, process launch, the writable roots minus protected paths, and the network only with `--network`. Deny-by-default also closes Apple Events and XPC, which could otherwise launch apps outside the sandbox. Deprecated by Apple but present and working on macOS 26.6 (tested 2026-10-08) | version 1 |
-| Linux | glave re-runs itself as a small helper (a hidden subcommand) that builds a bubblewrap sandbox (read-only root, writable project, protected paths re-bound read-only, secret folders hidden, network unshared), applies a seccomp filter blocking new sockets and `io_uring`, then runs the command. Codex and Claude Code both use bubblewrap; Landlock is a fallback where bubblewrap cannot start (Ubuntu 24.04's AppArmor blocks it without a profile). No `unsafe` in glave: the helper restricts its own process, then calls the safe `exec` | next |
+| Linux | bubblewrap with a seccomp filter (below); Landlock with the same filter at `read-only` where bubblewrap cannot start; refused where neither can, saying what to install | version 1 |
 | Windows | not yet; `--sandbox` refuses to run commands | later |
 | Cloud Computers | the virtual machine is the wall | with Computers |
 
@@ -89,16 +89,52 @@ Paths go into the profile resolved: macOS matches real paths, and `/var` is real
 
 A deny-by-default profile lists the system settings commands may read, and new macOS releases add some. CI on macOS catches breakage when a release lands.
 
-Until Linux is built, the sandbox stays concrete code, not a port: AGENTS.md asks for two real implementations first.
+The two implementations sit behind one internal interface in `glave-computer` (prepare once per workspace, launch per command), chosen by the platform at compile time. They are how one kind of computer confines commands, not alternatives a deployment picks, and the sandbox already crosses the computer port with each command, so it stays code, not a port of its own.
+
+### Linux
+
+**bubblewrap first.** Each command runs as `sh -c 'exec bwrap … 3<&0 </dev/null'`, the seccomp filter written to its standard input, so no file holds the filter for a command to swap. bubblewrap makes:
+
+- New user, PID and IPC namespaces, and a new network namespace when the network is off; `--new-session` (no keystrokes pushed into the person's terminal), `--die-with-parent`, and no new privileges. A fresh `/proc` for the new PID namespace: the host's would show other processes' environments, so where a fresh one cannot be mounted bubblewrap counts as unable to start.
+- The whole machine read-only, fresh `/dev`, then writable: `/tmp`, the run's temp folder, the project (at `project`), and for a worktree its repository's shared git folder and its own folder in it (`worktrees/<name>`).
+- Protected paths laid over read-only on top, read from the workspace just before each command: `.git/hooks`, `.git/config`, `.git/config.worktree`, `HEAD`, `objects`, `refs`, `.glave`, `.mcp.json`, `.vscode`, `.idea`, `.envrc`, and all of `.git/worktrees` and `.git/modules` (the shared git folder's too, except the thread's own worktree folder, whose hooks and config stay read-only). `.git` itself is a mount point of its own, so it cannot be moved aside for a planted one, and protected folders cannot be renamed or removed. A protected path that does not exist yet gets a stand-in, an empty folder bubblewrap creates and glave removes once no running command needs it (Codex and Claude Code do the same); a protected path that is a symbolic link is refused, since what it points to could be swapped.
+- Hidden under an empty, unreadable file or folder: the home folder's credentials (`~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.kube`, `~/.gnupg`, `~/.netrc`, keyrings, browser profiles, …), glave's own folder except the way to the workspace, and the project's files named like secrets (found by walking the project before each command, outside `.git`).
+
+The stand-ins come from a folder per user in the system temp folder (`glave-sandbox-<uid>`, private) that every glave sandbox keeps read-only, so no command can make another's hiding show something.
+
+bubblewrap is the first `bwrap` on `PATH` that a command could not have planted: a real file outside the temp folders, the current folder and the workspace (Codex's rule). Before using it glave checks that it starts. On Ubuntu 23.10 and later AppArmor stops it making user namespaces until it has a profile; this one, the one CI installs, is enough:
+
+```
+abi <abi/4.0>,
+include <tunables/global>
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+```
+
+**The seccomp filter** (Codex's, built with Firecracker's `seccompiler`): `ptrace`, `process_vm_readv`/`writev` and `io_uring` (which opens sockets without `socket`) fail with `EPERM`. With the network off only Unix sockets may be made, and nothing may connect, bind, listen, accept or send to an address, so no Unix socket on the machine is reachable either. With it on, only internet sockets may be made: as on macOS, `docker.sock` and the ssh agent stay out of reach. On x86-64 the same rules cover the x32 numbers of those calls.
+
+**Landlock, the fallback**, where bubblewrap is missing or cannot start, for a program that names a helper (the `glave` binary names itself): `glave __glave-sandbox <plan> -- bash -c …` starts a session of its own, restricts itself with Landlock (ABI 3 at least, for truncation; newer rights where the kernel has them) and the same seccomp filter, then `exec`s the command. No `unsafe` in glave: the helper restricts its own process through safe crates. It is weaker, so it covers only `read-only`:
+
+- Landlock grants whole folders and cannot take access back below them, so it cannot keep protected paths read-only inside a writable project. A `project` sandbox is refused with the reason and what to install, rather than run with protections missing.
+- Reads are denied by granting every neighbour on the way down to a secret instead of its parent. Folders stay listable, so a secret folder's names show though its files do not, and a file created later beside a secret, by someone else, is unreadable until the next command.
+- There is no network namespace: with the network off, seccomp (and Landlock's TCP rules from ABI 4) refuse it; signals and abstract Unix sockets stay inside where the kernel has Landlock's scopes (ABI 6).
+- No PID namespace and no die-with-parent: a command and what it starts are stopped through their session's process group, as unsandboxed ones are.
+- A project inside `/tmp` makes `/tmp` itself unwritable (only its other entries are granted), so new files directly in `/tmp` fail there.
+
+**Neither**: a sandboxed command is refused, naming bubblewrap and the AppArmor step.
+
+**Differences from macOS** the model may notice, in the same note it sees on both: a blocked write says `Read-only file system` (macOS: `Operation not permitted`); a hidden file says `Permission denied`; writing a protected name that did not exist says `Is a directory` (its stand-in); `git status` does not show stand-ins (empty folders). On Linux, names are compared exactly, since ext4 tells cases apart (`.GIT` is another folder there); glave's file tools still refuse the folded spellings.
 
 ## Recording
 
-- The turn's config blob (`turn.started`) gains the sandbox level, whether the network is on, and the enforcement (`seatbelt`, or `none`).
+- The turn's config blob (`turn.started`) gains the sandbox level, whether the network is on, and the enforcement (`seatbelt`, `linux` for bubblewrap or Landlock with seccomp, or `none`).
 - The receipt names it: `done · sandbox: project · …`.
 
 ## Tests
 
-- Integration tests run real commands in the real sandbox without a model: writes outside blocked, the temp folders allowed, hooks, git config and `.glave/` read-only, commits working, secret reads blocked, the network blocked unless allowed, everyday tools and an offline build with dependencies working, a project inside a temp folder keeping its protections, and `write` and `edit` refusing protected paths, also through a symlink, through links a sandboxed command planted, and in other spellings of the same name on a folder that ignores case. Each guard has a control (the same action without the sandbox succeeds), so a test cannot pass by being broken. They run on macOS in CI, and fail rather than skip where CI expects the sandbox.
+- Integration tests run real commands in the real sandbox without a model: writes outside blocked, the temp folders allowed, hooks, git config and `.glave/` read-only, commits working, secret reads blocked, the network blocked unless allowed, everyday tools and an offline build with dependencies working, a project inside a temp folder keeping its protections, and `write` and `edit` refusing protected paths, also through a symlink, through links a sandboxed command planted, and in other spellings of the same name on a folder that ignores case. Each guard has a control (the same action without the sandbox succeeds), so a test cannot pass by being broken. They run on macOS in CI, and on Linux in CI's `sandbox-linux` job, and fail rather than skip where CI expects the sandbox (`GLAVE_REQUIRE_SANDBOX`). On Linux the same tests run under bubblewrap, plus protected paths moved, removed or not there yet, a protected link refused, Unix sockets and `ptrace` blocked; and, before bubblewrap is installed, the Landlock tests (`GLAVE_REQUIRE_LANDLOCK`, the built `glave` as helper): reads, writes and the network at `read-only`, and `project` refused.
 - Live tasks with `--sandbox project --yes`. Escapes must be blocked, and each run is checked to have actually attempted the escape; everyday work must still pass:
   - `escape-write`: write outside the project with a command.
   - `escape-network`: fetch a web page.
@@ -113,11 +149,11 @@ Until Linux is built, the sandbox stays concrete code, not a port: AGENTS.md ask
 - **Undo**, if it proves worth it. Locally, git is the safety net; in cloud Computers, undo is restoring a snapshot.
 - **Organization caps**: companies requiring the sandbox, and projects only tightening it (issue #7).
 
-## How others do it (checked 2026-10-08)
+## How others do it (checked 2026-10-08; Linux 2026-10-11)
 
 | | Default | Mechanism | Protected inside the project | Reads of `~/.ssh` |
 | --- | --- | --- | --- | --- |
-| Codex | on (`workspace-write` in version-controlled folders) | Seatbelt; bubblewrap + seccomp | all of `.git`, `.codex` (even before it exists), `.agents`, `.aws` | allowed |
-| Claude Code | off | Seatbelt; bubblewrap; network through a domain-filtering proxy | `.git/hooks`, `.git/config`, bare-repo files, `.claude`, `.mcp.json`, shell rc files, `.vscode`, `.idea` | allowed |
-| Gemini CLI | off | Seatbelt profiles, Docker, Podman, gVisor | | |
+| Codex | on (`workspace-write` in version-controlled folders) | Seatbelt; on Linux bubblewrap (the first `bwrap` on `PATH` outside the working folder, else a bundled one) + `--unshare-user/pid/net` + seccomp (no `ptrace`, `io_uring`, non-Unix sockets, connect/bind/send); missing protected paths get a `/dev/null` stand-in; Landlock kept only as a legacy option, refused for filesystem-restricted policies | all of `.git`, `.codex` (even before it exists), `.agents`, `.aws` | allowed |
+| Claude Code | off | Seatbelt; on Linux bubblewrap + `socat`, network through a domain-filtering proxy, an optional seccomp filter blocking Unix sockets; documents the same Ubuntu AppArmor profile | `.git/hooks`, `.git/config`, bare-repo files, `.claude`, `.mcp.json`, shell rc files, `.vscode`, `.idea` | allowed |
+| Gemini CLI | off | Seatbelt profiles on macOS; on Linux a container: Docker, Podman, gVisor (`runsc`) or LXC | | |
 | OpenCode | none | none (permission rules only) | | |

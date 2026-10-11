@@ -1,5 +1,6 @@
 //! Real commands under the real sandbox, without a model. They run only where the sandbox is
-//! available (macOS); elsewhere preparing it must fail, never run unconfined.
+//! available (macOS, and Linux with bubblewrap); elsewhere preparing it must fail, never run
+//! unconfined.
 
 use std::path::{Path, PathBuf};
 
@@ -436,7 +437,8 @@ fn a_project_inside_a_temp_folder_keeps_its_protections() {
         return;
     }
     let system_temp = std::fs::canonicalize(std::env::temp_dir()).unwrap();
-    for base in [system_temp, PathBuf::from("/private/tmp")] {
+    let shared_tmp = std::fs::canonicalize("/tmp").unwrap();
+    for base in [system_temp, shared_tmp] {
         let dir = base.join(format!("glave-sbx-in-temp-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let project = dir.join("project");

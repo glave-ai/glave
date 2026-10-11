@@ -10,9 +10,19 @@ pub(crate) fn recorded(sandbox: &Sandbox) -> Recorded {
     Recorded {
         level: sandbox.level,
         network: sandbox.network,
-        enforcement: "seatbelt",
+        enforcement: ENFORCEMENT,
     }
 }
+
+/// How this platform enforces the sandbox: Seatbelt on macOS; on Linux bubblewrap and
+/// seccomp, or Landlock and seccomp at `read-only` where bubblewrap cannot start.
+const ENFORCEMENT: &str = if cfg!(target_os = "macos") {
+    "seatbelt"
+} else if cfg!(target_os = "linux") {
+    "linux"
+} else {
+    "none"
+};
 
 /// A note for the model when a failed command looks blocked by the sandbox, so it stops trying
 /// instead of guessing. Follows Codex's heuristic: a failure other than usage (2), not

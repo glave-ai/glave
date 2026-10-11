@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use glave_ports::{PROTECTED, SandboxLevel};
 
+use super::secrets::{ENV_FILES, OTHER_SECRET_FILES, TEMPLATE_WORDS};
+
 const BASE: &str = include_str!("base.sbpl");
 const PREFERENCES: &str = include_str!("preferences.sbpl");
 const NETWORK: &str = include_str!("network.sbpl");
@@ -33,12 +35,6 @@ const HOME_SECRETS: &[&str] = &[
     "Library/Application Support/Arc",
     "Library/Application Support/Firefox",
 ];
-
-/// Secret files by name, the rule the read tool uses: env files, unless templates...
-const ENV_FILES: &str = r"(\.env|\.env\.[^/]*|[^/]*\.env)";
-const TEMPLATE_WORDS: &str = "(example|sample|template|dist|defaults)";
-/// ...and keys and credential files.
-const OTHER_SECRET_FILES: &str = r"(\.envrc|\.netrc|\.npmrc|\.pypirc|\.pgpass|\.git-credentials|\.htpasswd|credentials|credentials\.json|id_rsa|id_dsa|id_ecdsa|id_ed25519|secrets\.[^/]*|[^/]*\.(pem|key|p12|pfx|jks|keystore))";
 
 /// When the network is allowed: the internet and local servers, and name lookups, but not
 /// other Unix sockets (`docker.sock` is root on the machine; the ssh agent signs as the person).
