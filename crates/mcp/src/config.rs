@@ -2,7 +2,7 @@
 //! from `{"mcpServers": {"name": {...}}}`. `${VAR}` and `${VAR:-default}` in a server's command,
 //! arguments, environment, URL and headers are filled from the environment.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
@@ -43,22 +43,29 @@ struct Raw {
     url: Option<String>,
     #[serde(default)]
     headers: BTreeMap<String, String>,
-    /// glave's own key: what the server's tools return is untrusted, as web content is.
-    #[serde(default)]
-    untrusted: bool,
+    /// glave's own key: whether what the server's tools return is untrusted, as web content
+    /// is. Unset, whoever reads the file decides (see `ServerConfig::is_remote`).
+    untrusted: Option<bool>,
 }
 
-/// The servers in a `.mcp.json` file's text marked `"untrusted": true`: what their tools
-/// return comes from outside and no one vouches for it, as with a web page.
-pub fn untrusted(text: &str) -> Result<BTreeSet<String>, McpError> {
+/// The servers in a `.mcp.json` file's text that say `"untrusted"`, with what they say:
+/// `true` when what their tools return comes from outside and no one vouches for it, as with
+/// a web page; `false` when the file's author vouches for it.
+pub fn marks(text: &str) -> Result<BTreeMap<String, bool>, McpError> {
     let settings: File =
         serde_json::from_str(text).map_err(|err| McpError::Config(err.to_string()))?;
     Ok(settings
         .servers
         .into_iter()
-        .filter(|(_, raw)| raw.untrusted)
-        .map(|(name, _)| name)
+        .filter_map(|(name, raw)| Some((name, raw.untrusted?)))
         .collect())
+}
+
+impl ServerConfig {
+    /// Whether the server is reached across a network, rather than started on this computer.
+    pub fn is_remote(&self) -> bool {
+        matches!(self, Self::Http { .. })
+    }
 }
 
 /// Reads the servers in a `.mcp.json` file's text, filling `${VAR}` from `environment`.
@@ -180,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn servers_can_be_marked_untrusted() {
+    fn servers_can_be_marked_untrusted_or_trusted() {
         let text = r#"{"mcpServers": {
             "search": {"command": "brave-mcp", "untrusted": true},
             "docs": {"command": "docs-mcp", "untrusted": false},
@@ -188,8 +195,14 @@ mod tests {
         }}"#;
         assert_eq!(parse(text, &env()).unwrap().len(), 3);
         assert_eq!(
-            untrusted(text).unwrap(),
-            BTreeSet::from(["search".to_owned()])
+            marks(text).unwrap(),
+            BTreeMap::from([("docs".to_owned(), false), ("search".to_owned(), true)])
         );
+        let servers = parse(
+            r#"{"mcpServers": {"tracker": {"url": "https://x"}}}"#,
+            &env(),
+        );
+        assert!(servers.unwrap()["tracker"].is_remote());
+        assert!(!parse(text, &env()).unwrap()["docs"].is_remote());
     }
 }
