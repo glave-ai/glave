@@ -395,7 +395,7 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         if asks { Asking::Person } else { Asking::NoOne },
     )
     .await?;
-    let ran = session(&args, &wired, asks).await;
+    let ran = Box::pin(session(&args, &wired, asks)).await;
     wired.server.shutdown().await;
     if let Some(workers) = &wired.workers {
         crate::cloud::release(&wired.server, workers).await;
