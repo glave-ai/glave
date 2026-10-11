@@ -14,5 +14,6 @@ grep -qE '^kind = "added"$' "$record" || fail "$record: kind is not \"added\""
 grep -qE '^summary = ".*days_in_month.*\."$' "$record" \
     || fail "$record: the summary does not name days_in_month in one sentence ending with a period"
 [ "$(grep -c . "$record")" -eq 2 ] || fail "$record: it holds more than kind and summary"
+mkdir -p tests
 cp "$here/months.rs" tests/hidden_months.rs
 cargo test --quiet

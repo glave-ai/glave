@@ -6,5 +6,6 @@ if grep -rn calc_total --include='*.rs' --include='*.md' src tests README.md; th
     echo "calc_total is still mentioned"
     exit 1
 fi
+mkdir -p tests
 cp "$here/renamed.rs" tests/hidden_renamed.rs
 cargo test --quiet

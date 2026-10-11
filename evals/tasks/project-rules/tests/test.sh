@@ -9,5 +9,6 @@ grep -B1 'pub fn days_in_month' src/lib.rs | head -1 | grep -q '^ *///' \
 ! grep -rnE 'unwrap\(|expect\(|panic!' src || fail "src/ uses unwrap, expect or panic!"
 ! grep -rnE '#\[(cfg\(test\)|test)\]' src || fail "src/ has tests in it"
 grep -lq days_in_month tests/*.rs || fail "no test in tests/ uses days_in_month"
+mkdir -p tests
 cp "$here/months.rs" tests/hidden_months.rs
 cargo test --quiet
