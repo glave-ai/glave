@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+use crate::credentials::prints_credential;
 use crate::judge::{Caution, Context, Kind};
 use crate::parse::{Command, Word};
 use crate::paths::{basename, critical, inside, resolve};
@@ -58,11 +59,15 @@ fn flags(words: &[Word], takes_value: &[&str]) -> usize {
 /// Why `command` needs the person, if it does.
 pub(crate) fn caution(command: &Command, context: &Context<'_>) -> Option<Caution> {
     let cwd = command.cwd.as_deref();
+    let words = unwrapped(&command.words);
+    let name = words.first().and_then(Word::literal).map(basename);
+    // Before `sudo`'s own caution, which a judge may clear: this one it never may.
+    if let Some(found) = name.and_then(|name| prints_credential(name, words)) {
+        return Some(found);
+    }
     if let Some(found) = admin(&command.words) {
         return Some(found);
     }
-    let words = unwrapped(&command.words);
-    let name = words.first().and_then(Word::literal).map(basename);
     let found = match name {
         Some("rm") => removes(words, cwd, context),
         Some("git") => git(words),
