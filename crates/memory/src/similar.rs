@@ -16,7 +16,7 @@ const NEAR: f64 = 0.6;
 
 /// The normalised words of `text`: lowercase, letters and digits only, a plural's `s` dropped,
 /// single letters and common words left out.
-fn words(text: &str) -> BTreeSet<String> {
+pub(crate) fn words(text: &str) -> BTreeSet<String> {
     text.split(|c: char| !c.is_alphanumeric())
         .map(str::to_lowercase)
         .filter(|word| word.chars().count() > 1 && !STOP.contains(&word.as_str()))

@@ -8,6 +8,7 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use glave_event::{BlobRef, Principal, RawEvent, Seq, Sha256, ThreadId};
 use glave_memory::Shredder;
+use glave_ports::search::Found;
 use glave_ports::{
     BlobError, BlobStore, EventLog, LogError, OrgId, Scope, Spaces, ThreadQuery, ThreadView,
 };
@@ -154,6 +155,18 @@ impl EventLog for DataLog {
         match self {
             Self::Sqlite(log) => log.threads(scope, limit).await,
             Self::Postgres(log) => log.threads(scope, limit).await,
+        }
+    }
+
+    async fn search(
+        &self,
+        scope: &Scope,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<Found>, LogError> {
+        match self {
+            Self::Sqlite(log) => log.search(scope, query, limit).await,
+            Self::Postgres(log) => log.search(scope, query, limit).await,
         }
     }
 

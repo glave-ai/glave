@@ -1,14 +1,18 @@
 //! Memory for one attempt (`specs/memory.md`, "Evals"): a sealed store of the attempt's own, the
 //! spaces its threads work in, glave's memory server over them when memory is on, the memories
-//! seeded before the first thread, and afterwards what the memory ledgers hold, for the checks.
+//! seeded before the first thread, the past conversations `recall` searches, tidy-up when the
+//! task asks for it, and afterwards what the memory ledgers hold, for the checks.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use glave_event::{Body, MemoryId, MemoryScope, Principal, PrincipalId, decode};
-use glave_harness::{OsEntropy, SystemClock, memory_ledger};
+use glave_event::{
+    Body, EventId, Header, MemoryId, MemoryScope, MessageAdded, Part, Principal, PrincipalId, Role,
+    Seq, ThreadId, decode, encode,
+};
+use glave_harness::{Clock as _, Entropy as _, OsEntropy, SystemClock, memory_ledger};
 use glave_keys::{KeySettings, MemoryRoot};
-use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory, Writer};
+use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory, Tidier, Writer};
 use glave_ports::{EventLog, OrgId, Scope, SpaceId};
 use glave_store_sqlite::{SqliteLog, Store};
 
@@ -116,20 +120,9 @@ impl Remembering {
                 Box::new(OsEntropy),
             )
         };
-        let seeding = memories();
-        let writer = Writer {
-            person: Some(person),
-            scope: space(None),
-            by: Principal::person(person),
-            source: None,
-            untrusted_read: false,
-        };
-        for seed in &task.memories {
-            let which = MemoryScope::named(&seed.scope).unwrap_or(MemoryScope::Space);
-            seeding
-                .remember(&writer, &seed.text, which, None, true)
-                .await
-                .map_err(|e| fail(&e))?;
+        seed(&store, &rules, person, &task.memories).await?;
+        for past in &task.past {
+            write_past(&store, space(past.space.as_deref()), &past.messages).await?;
         }
         let memory = if on {
             Some(Arc::new(
@@ -143,6 +136,27 @@ impl Remembering {
             memory,
             scopes,
         })
+    }
+
+    /// Tidies every space's memory now, on `model`, whether or not it is due. What each run
+    /// did, for the transcript.
+    pub async fn tidy(&self, model: &dyn Tidier) -> Result<Vec<String>, EvalError> {
+        let Some(memory) = &self.memory else {
+            return Ok(Vec::new());
+        };
+        let mut done = Vec::new();
+        for scope in &self.scopes {
+            let tidied = memory
+                .memories()
+                .tidy(*scope, model)
+                .await
+                .map_err(|e| EvalError::Setup(format!("tidy-up failed: {e}")))?;
+            done.push(format!(
+                "merged {}, forgot {}, asked {}, refused {:?}",
+                tidied.merged, tidied.forgotten, tidied.questions, tidied.refused
+            ));
+        }
+        Ok(done)
     }
 
     /// What the memory ledgers hold now.
@@ -199,6 +213,83 @@ impl Remembering {
         }
         Ok(report)
     }
+}
+
+/// Saves `seeds` before the first thread, each as if that many days ago.
+async fn seed(
+    store: &Store,
+    rules: &Rules,
+    person: PrincipalId,
+    seeds: &[crate::task::Seeded],
+) -> Result<(), EvalError> {
+    let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("memory: {error}"));
+    let now = SystemClock.now();
+    for (order, seed) in (0_i64..).zip(seeds) {
+        // Saved that many days ago (a second apart, in the order listed), so which came
+        // later is as plain as in life.
+        let saved = now
+            .checked_sub(jiff::SignedDuration::from_hours(
+                i64::from(seed.days_ago).saturating_mul(24),
+            ))
+            .and_then(|day| day.checked_add(jiff::SignedDuration::from_secs(order)))
+            .map_err(|e| fail(&e))?;
+        let seeding = Memories::new(
+            store.log(),
+            store.keyring(),
+            rules.clone(),
+            Box::new(Fixed(saved)),
+            Box::new(OsEntropy),
+        );
+        let writer = Writer {
+            person: Some(person),
+            scope: space(None),
+            by: Principal::person(person),
+            source: None,
+            untrusted_read: seed.untrusted,
+        };
+        let which = MemoryScope::named(&seed.scope).unwrap_or(MemoryScope::Space);
+        seeding
+            .remember(&writer, &seed.text, which, None, true)
+            .await
+            .map_err(|e| fail(&e))?;
+    }
+    Ok(())
+}
+
+/// A clock that always reads one time: when a seeded memory was saved.
+struct Fixed(jiff::Timestamp);
+
+impl glave_harness::Clock for Fixed {
+    fn now(&self) -> jiff::Timestamp {
+        self.0
+    }
+}
+
+/// A past conversation in `scope`: the person's `messages`, in a thread of their own.
+async fn write_past(store: &Store, scope: Scope, messages: &[String]) -> Result<(), EvalError> {
+    let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("past thread: {error}"));
+    let now = SystemClock.now();
+    let thread = ThreadId::new(now, OsEntropy.bytes()).map_err(|e| fail(&e))?;
+    let mut events = Vec::new();
+    for (seq, text) in (1_u64..).zip(messages) {
+        let header = Header {
+            id: EventId::new(now, OsEntropy.bytes()).map_err(|e| fail(&e))?,
+            thread,
+            seq: Seq::new(seq).map_err(|e| fail(&e))?,
+            at: now.into(),
+        };
+        let message = MessageAdded {
+            role: Role::User,
+            parts: vec![Part::Text { text: text.clone() }],
+            author: None,
+        };
+        events.push(encode(header, &message).map_err(|e| fail(&e))?);
+    }
+    store
+        .log()
+        .append(&scope, &events)
+        .await
+        .map_err(|e| fail(&e))
 }
 
 #[cfg(test)]

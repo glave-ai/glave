@@ -9,7 +9,7 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use glave_event::{MemoryId, MemoryScope, PrincipalId};
 use glave_harness::{Access, Control, Memory, OsEntropy, Remembered, SystemClock};
-use glave_memory::{GlaveMemory, Memories, Personal, Rules};
+use glave_memory::{GlaveMemory, Memories, Personal, Rules, Tidier};
 use glave_ports::Scope;
 
 use crate::args::Args;
@@ -43,6 +43,14 @@ impl Running {
     /// Memory as the session server and its threads use it.
     pub fn handle(&self) -> Arc<dyn Memory> {
         Arc::clone(&self.memory) as Arc<dyn Memory>
+    }
+
+    /// Tidies this person's and this space's memory in the background with `tidier` (the
+    /// gateway's `summary` route): now, when due, and after saves that bring a scope near its
+    /// budget.
+    pub fn tidy_with(&self, tidier: Arc<dyn Tidier>) {
+        self.memory.tidy_with(tidier);
+        self.memory.tidy_soon(&self.scopes);
     }
 
     /// Housekeeping: retention, erasure that is due, and rotating space keys once keys were
