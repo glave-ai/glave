@@ -157,8 +157,22 @@ fn ids(views: &[ThreadView]) -> Vec<ThreadId> {
     views.iter().map(|view| view.thread).collect()
 }
 
+/// Whether `view` is thread `a` as the suite wrote it: one whole turn.
+fn worked(view: &ThreadView) -> bool {
+    view.title_seq == Seq::new(2).ok()
+        && view.turns == 1
+        && view.outcome == Some(Outcome::Completed)
+        && view.tokens.input == 100
+        && view.tokens.output == 10
+        && view.cost.is_some_and(|cost| cost.micros == 5_000)
+        && view.for_ == person().ok()
+        && at(0).is_ok_and(|start| view.created_at == start)
+        && at(4).is_ok_and(|end| view.updated_at == end)
+        && view.last_seq.get() == 5
+}
+
 /// Every [`EventLog`] keeps a view of each thread as it is appended: listed by standing, most
-/// recently updated first, in pages after a cursor, inside its scope; ledgers (no
+/// recently written first, in pages after a cursor, inside its scope; ledgers (no
 /// `thread.started`) have none; and rebuilding a view from the log gives the same view.
 pub async fn thread_views<L: EventLog>(log: &L) -> Verdict {
     let (here, elsewhere) = (scope(11), scope(12));
@@ -194,22 +208,10 @@ pub async fn thread_views<L: EventLog>(log: &L) -> Verdict {
     let active = list(log, &here, Standing::Active, 10).await?;
     ensure(
         ids(&active) == [c, b, a],
-        "views must list most recently updated first, and only threads",
+        "views must list most recently written first, and only threads",
     )?;
-    let one = active.iter().find(|view| view.thread == a);
     ensure(
-        one.is_some_and(|view| {
-            view.title_seq == Seq::new(2).ok()
-                && view.turns == 1
-                && view.outcome == Some(Outcome::Completed)
-                && view.tokens.input == 100
-                && view.tokens.output == 10
-                && view.cost.is_some_and(|cost| cost.micros == 5_000)
-                && view.for_ == person().ok()
-                && at(0).is_ok_and(|start| view.created_at == start)
-                && at(4).is_ok_and(|end| view.updated_at == end)
-                && view.last_seq.get() == 5
-        }),
+        active.iter().any(|view| view.thread == a && worked(view)),
         "a view must hold the thread's start, title event, turns, usage and cost",
     )?;
     paging(log, &here, &active).await?;
