@@ -1,0 +1,15 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-width: 11rem;
+  max-width: 20rem;
+  padding: var(--glz-space-1);
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-md);
+  background: var(--glz-surface-overlay);
+  box-shadow: var(--glz-elevation-3);
+}
+
+:host(:focus-visible) {
+  outline: none;
+}

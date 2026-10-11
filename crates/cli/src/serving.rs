@@ -2,6 +2,8 @@
 //! local token made at every start, kept in `GLAVE_HOME/serve.token` (readable only by you)
 //! and given once as a link whose fragment carries it, so it never reaches a server log or a
 //! query string. Callers on other computers sign in with OIDC (`--issuer`, `--audience`).
+//! The web app is served at `/` beside the API: the build in `--web`, else the `web` folder
+//! beside the binary, as a release ships them.
 
 use std::io::IsTerminal as _;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -9,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use glave_harness::SystemClock;
+use glave_session::http::Site;
 use glave_session::signin::{LOCAL_BYTES, LocalToken, SignIn, Trust};
 use tokio::net::TcpListener;
 
@@ -17,6 +20,9 @@ use crate::client::Glave;
 
 /// The file the local token is kept in, in glave's folder.
 const TOKEN_FILE: &str = "serve.token";
+
+/// The folder beside the binary a release puts the built web app in.
+const WEB_FOLDER: &str = "web";
 
 /// Serves `server` on `address` until Ctrl-C.
 pub async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyhow::Result<()> {
@@ -30,6 +36,7 @@ pub async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyh
         };
         SignIn::new(trust, Box::new(SystemClock))?.with_local(token.clone())
     };
+    let site = site(args)?;
     let listener = TcpListener::bind(address)
         .await
         .with_context(|| format!("could not listen on {address}"))?;
@@ -37,6 +44,11 @@ pub async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyh
     let path = crate::home::database().await?.with_file_name(TOKEN_FILE);
     keep(&path, token.reveal())?;
     eprintln!("glave: serving the session API on http://{bound}");
+    if site.is_none() {
+        eprintln!(
+            "glave: no web app beside glave; build it (npm run build in web/) and pass --web <folder>"
+        );
+    }
     // Shown only to a person at a terminal: a service's error output often ends up in a log.
     if std::io::stderr().is_terminal() {
         eprintln!(
@@ -56,11 +68,22 @@ pub async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyh
             std::future::pending::<()>().await;
         }
     };
-    let ended = glave_session::http::serve(server, signin, listener, stop).await;
+    let ended = glave_session::http::serve_site(server, signin, site, listener, stop).await;
     // The token is good only while this server runs; the next start makes another.
     let _ = std::fs::remove_file(&path);
     ended?;
     Ok(())
+}
+
+/// The web app to serve: `--web`, which must hold a build, else the one beside the binary.
+fn site(args: &Args) -> anyhow::Result<Option<Site>> {
+    if let Some(folder) = &args.web {
+        return Ok(Some(Site::folder(folder.clone())?));
+    }
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(WEB_FOLDER)));
+    Ok(beside.and_then(|folder| Site::folder(folder).ok()))
 }
 
 /// Random bytes for the local token, from the operating system.

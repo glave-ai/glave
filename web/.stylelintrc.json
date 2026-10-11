@@ -1,0 +1,15 @@
+{
+  "extends": ["stylelint-config-standard-scss"],
+  "ignoreFiles": ["dist/**", "out-tsc/**", ".angular/**", "node_modules/**"],
+  "rules": {
+    "selector-class-pattern": null,
+    "custom-property-pattern": null,
+    "keyframes-name-pattern": "^glz-[a-z-]+$",
+    "selector-pseudo-element-no-unknown": [true, { "ignorePseudoElements": ["ng-deep"] }],
+    "color-function-notation": "modern",
+    "declaration-property-value-no-unknown": null,
+    "property-no-unknown": [true, { "ignoreProperties": ["field-sizing"] }],
+    "scss/at-mixin-pattern": null,
+    "no-descending-specificity": null
+  }
+}

@@ -1,0 +1,27 @@
+@if (labelable()) {
+  <label class="label" [id]="labelId" [for]="id">
+    {{ label() }}
+    @if (required()) {
+      <span class="required" aria-hidden="true">{{ requiredMark }}</span>
+    }
+  </label>
+} @else {
+  <span class="label" [id]="labelId">
+    {{ label() }}
+    @if (required()) {
+      <span class="required" aria-hidden="true">{{ requiredMark }}</span>
+    }
+  </span>
+}
+<div class="control"><ng-content /></div>
+<div class="errors" [id]="errorId" aria-live="polite">
+  @if (showError()) {
+    <ng-content select="glz-error" />
+    @for (message of messages(); track message) {
+      <glz-error>{{ message }}</glz-error>
+    }
+  }
+</div>
+@if (showHint()) {
+  <p class="hint" [id]="hintId">{{ hint() }}</p>
+}

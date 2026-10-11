@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true, "types": ["vitest/globals", "node"] },
+  "include": ["glaze/src/**/*.ts", "app/src/**/*.ts", "e2e/**/*.ts", "client/src/**/*.ts"]
+}
