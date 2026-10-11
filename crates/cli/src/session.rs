@@ -276,8 +276,9 @@ async fn workspace(
     network: bool,
     database: &Path,
 ) -> anyhow::Result<Workspace> {
-    let (computers, here) = LocalComputers::for_here(std::env::vars_os())
-        .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER))
+    let computers = LocalComputers::for_here(std::env::vars_os())
+        .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER));
+    let (computers, here) = crate::computer::with_sandbox_helper(computers)
         .open_here(folder)
         .await?;
     let workspace = Workspace::new(computers, here);

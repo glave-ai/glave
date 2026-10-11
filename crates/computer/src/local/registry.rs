@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -39,7 +39,12 @@ pub(crate) struct Opened {
 
 impl Opened {
     /// `sandbox`, prepared for this workspace.
-    pub(crate) async fn sandbox(&self, sandbox: &Sandbox) -> Result<Arc<Prepared>, ComputerError> {
+    /// `helper` runs the Linux sandbox's helper (see [`crate::sandbox_helper`]).
+    pub(crate) async fn sandbox(
+        &self,
+        sandbox: &Sandbox,
+        helper: Option<&Path>,
+    ) -> Result<Arc<Prepared>, ComputerError> {
         let kept = self
             .prepared
             .lock()
@@ -49,8 +54,8 @@ impl Opened {
         if let Some(kept) = kept {
             return Ok(kept);
         }
-        let prepared =
-            Arc::new(Prepared::new(sandbox, &self.root, self.git_common.as_deref()).await?);
+        let prepared = Prepared::new(sandbox, &self.root, self.git_common.as_deref(), helper);
+        let prepared = Arc::new(prepared.await?);
         if let Ok(mut kept) = self.prepared.lock() {
             *kept = Some(Arc::clone(&prepared));
         }

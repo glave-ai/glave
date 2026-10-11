@@ -1,15 +1,16 @@
 //! Running one command at a workspace root: bash in a fresh process group, output streamed
 //! as it arrives, stopped with everything it started on a timeout or a cancel.
 
+use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use glave_ports::{Cancellation, Command, ComputerError, Ending, Finished, Output};
-use tokio::io::AsyncReadExt as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::process::{Child, ChildStdout};
 
 use super::registry::Opened;
-use super::sandbox::Prepared;
+use super::sandbox::Launch;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
@@ -19,11 +20,13 @@ const DRAIN: Duration = Duration::from_millis(500);
 /// How long a stopped command gets between SIGTERM and SIGKILL.
 const GRACE: Duration = Duration::from_secs(3);
 
+/// Runs `command` in `opened`. `helper` runs the Linux sandbox's helper, if this machine has one.
 pub(crate) async fn run(
     opened: &Opened,
     command: &Command,
     output: &dyn Output,
     cancel: &dyn Cancellation,
+    helper: Option<&Path>,
 ) -> Result<Finished, ComputerError> {
     if command.script.trim().is_empty() {
         return Err(ComputerError::Refused("the command is empty".into()));
@@ -33,13 +36,26 @@ pub(crate) async fn run(
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
         .clamp(1, MAX_TIMEOUT_SECS);
     let sandbox = match &command.sandbox {
-        Some(sandbox) => Some(opened.sandbox(sandbox).await?),
+        Some(sandbox) => Some(opened.sandbox(sandbox, helper).await?),
+        None => None,
+    };
+    // Held until the command ends: what launching it left in the workspace is removed then.
+    let launch = match &sandbox {
+        Some(sandbox) => Some((sandbox.launch().await?, sandbox.temp())),
         None => None,
     };
     let started = Instant::now();
-    let mut child = bash(opened, &command.script, sandbox.as_deref())
+    let mut child = bash(opened, &command.script, launch.as_ref())
         .spawn()
         .map_err(|error| ComputerError::Failed(format!("could not start bash: {error}")))?;
+    let input = launch
+        .as_ref()
+        .and_then(|(launch, _)| launch.input.as_deref());
+    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+        // Small (a seccomp filter), so it fits the pipe; a wrapper that failed early and
+        // never reads it is reported by its own output.
+        let _ = stdin.write_all(input).await;
+    }
     let stdout = child.stdout.take();
     let pump = pump(stdout, output);
     let waiting = wait(&mut child, limit, cancel);
@@ -60,33 +76,39 @@ pub(crate) async fn run(
 
 /// `script` run by bash at the workspace root, in the sandbox if there is one, with the
 /// workspace's environment and output that reads well as text.
-fn bash(opened: &Opened, script: &str, sandbox: Option<&Prepared>) -> tokio::process::Command {
+fn bash(
+    opened: &Opened,
+    script: &str,
+    sandbox: Option<&(Launch, &Path)>,
+) -> tokio::process::Command {
     let mut command = match sandbox {
-        Some(sandbox) => {
-            let (program, args) = sandbox.wrapper();
-            let mut command = tokio::process::Command::new(program);
-            command.args(args).arg("bash");
+        Some((launch, _)) => {
+            let mut command = tokio::process::Command::new(&launch.program);
+            command.args(&launch.args).arg("bash");
             command
         }
         None => tokio::process::Command::new("bash"),
     };
+    let input = sandbox.is_some_and(|(launch, _)| launch.input.is_some());
     command
         .arg("-c")
         .arg(format!("exec 2>&1\n{script}"))
         .current_dir(&opened.root)
         .env_clear()
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
-        .envs(sandbox.map(|sandbox| ("TMPDIR", sandbox.temp())))
+        .envs(sandbox.map(|(_, temp)| ("TMPDIR", temp)))
         .env("NO_COLOR", "1")
         .env("TERM", "dumb")
         .env("PAGER", "cat")
         .env("GIT_PAGER", "cat")
-        .stdin(Stdio::null())
+        .stdin(if input { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
     #[cfg(unix)]
-    command.process_group(0);
+    if !sandbox.is_some_and(|(launch, _)| launch.own_session) {
+        command.process_group(0);
+    }
     command
 }
 

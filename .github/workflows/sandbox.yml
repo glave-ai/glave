@@ -1,7 +1,8 @@
 name: sandbox
 
-# The sandbox tests need macOS. macOS minutes cost 10x on private repos, so pull requests run
-# them only when they touch the sandbox or what it wraps. `main` runs them in the full macOS job.
+# The macOS sandbox's tests (Linux's run in ci.yml's sandbox-linux job on every push). macOS
+# minutes cost 10x on private repos, so pull requests run them only when they touch the
+# sandbox or what it wraps. `main` runs them in the full macOS job.
 on:
   pull_request:
     paths:
@@ -9,6 +10,9 @@ on:
       - crates/harness/src/sandbox/**
       - crates/harness/src/tools/bash.rs
       - crates/harness/src/tools/workspace.rs
+      - crates/computer/src/local/sandbox.rs
+      - crates/computer/src/local/sandbox/**
+      - crates/computer/src/local/command.rs
       - .github/workflows/sandbox.yml
   workflow_dispatch:
 
@@ -34,3 +38,4 @@ jobs:
         with:
           tool: cargo-nextest
       - run: cargo nextest run -p glave-harness
+      - run: cargo nextest run -p glave-computer -E 'test(/sandbox/)'

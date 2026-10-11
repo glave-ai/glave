@@ -30,7 +30,7 @@ use glave_ports::{
 pub(crate) use registry::new_id;
 use registry::{Opened, Registry};
 
-pub use sandbox::sandbox_available;
+pub use sandbox::{SANDBOX_HELPER_ARG, sandbox_available, sandbox_helper};
 
 /// This machine's computers.
 #[derive(Debug)]
@@ -39,6 +39,8 @@ pub struct LocalComputers {
     /// Where threads' worktrees are kept, outside every repository; none means this machine
     /// opens no worktrees.
     worktrees: Option<PathBuf>,
+    /// A program that runs [`crate::sandbox_helper`], for Linux's Landlock fallback.
+    sandbox_helper: Option<PathBuf>,
     environment: Arc<Vec<(OsString, OsString)>>,
     registry: Registry,
 }
@@ -54,6 +56,7 @@ impl LocalComputers {
         Self {
             base: base.into(),
             worktrees: None,
+            sandbox_helper: None,
             environment: Arc::new(without_secrets(environment)),
             registry: Registry::default(),
         }
@@ -81,6 +84,16 @@ impl LocalComputers {
     #[must_use]
     pub fn with_worktrees(mut self, folder: impl Into<PathBuf>) -> Self {
         self.worktrees = Some(folder.into());
+        self
+    }
+
+    /// Names `program` as the sandbox's helper: a program (usually this one, from
+    /// `std::env::current_exe`) that calls [`crate::sandbox_helper`] first thing in `main`.
+    /// Linux needs it to confine `read-only` commands with Landlock where bubblewrap cannot
+    /// start; without it, such a machine refuses sandboxed commands.
+    #[must_use]
+    pub fn with_sandbox_helper(mut self, program: impl Into<PathBuf>) -> Self {
+        self.sandbox_helper = Some(program.into());
         self
     }
 
@@ -310,7 +323,8 @@ impl Computers for LocalComputers {
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
         Box::pin(async move {
             let opened = self.registry.workspace(workspace)?;
-            command::run(&opened, command, output, cancel).await
+            let helper = self.sandbox_helper.as_deref();
+            command::run(&opened, command, output, cancel, helper).await
         })
     }
 

@@ -114,6 +114,44 @@ jobs:
             exit 1
           fi
 
+  # The sandbox on Linux, for real: first Landlock, the fallback, with bubblewrap absent (glave
+  # itself is the helper), then bubblewrap and seccomp, with every sandbox test required to
+  # run rather than skip.
+  sandbox-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo build -p glave
+      - name: Landlock, without bubblewrap
+        env:
+          GLAVE_REQUIRE_LANDLOCK: "1"
+          GLAVE_TEST_SANDBOX_HELPER: ${{ github.workspace }}/target/debug/glave
+        run: |
+          sudo apt-get remove -y bubblewrap >/dev/null 2>&1 || true
+          if command -v bwrap; then echo "bubblewrap is still installed"; exit 1; fi
+          cargo nextest run -p glave-computer -E 'test(/landlock/)'
+      # Ubuntu 23.10 and later let only programs AppArmor allows create user namespaces; this
+      # is the profile the person adds too (specs/sandbox.md).
+      - name: Install bubblewrap, with an AppArmor profile that lets it make user namespaces
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q bubblewrap
+          if [ -d /etc/apparmor.d ]; then
+            printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile bwrap /usr/bin/bwrap flags=(unconfined) {\n  userns,\n  include if exists <local/bwrap>\n}\n' | sudo tee /etc/apparmor.d/bwrap >/dev/null
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          fi
+          bwrap --version
+      - name: bubblewrap and seccomp
+        env:
+          GLAVE_REQUIRE_SANDBOX: "1"
+        run: cargo nextest run -p glave-computer -p glave-harness -E 'test(/sandbox/)'
+
   # macOS minutes cost 10x on private repos, so this runs on main only (and on demand).
   macos:
     if: github.event_name != 'pull_request'

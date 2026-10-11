@@ -2,6 +2,7 @@
 //! computer protocol (`specs/computers.md`) on stdio, on TCP at 127.0.0.1, or over TLS at any
 //! address (how a worker is reached).
 
+use std::ffi::OsString;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -40,6 +41,24 @@ enum Transport {
     Stdio,
     Tcp(SocketAddr),
     Tls(SocketAddr, PathBuf),
+}
+
+/// Runs glave as the Linux sandbox's helper when it was started as one (`specs/sandbox.md`):
+/// it confines itself, then becomes the command, so this returns only on failure.
+pub fn sandbox_helper() -> Option<ExitCode> {
+    let args: Vec<OsString> = std::env::args_os().collect();
+    let failure = glave_computer::sandbox_helper(&args)?;
+    eprintln!("glave sandbox: {failure}");
+    Some(ExitCode::from(126))
+}
+
+/// `computers` with this program as the sandbox's helper, which Linux needs where
+/// bubblewrap cannot start.
+pub fn with_sandbox_helper(computers: LocalComputers) -> LocalComputers {
+    match std::env::current_exe() {
+        Ok(program) => computers.with_sandbox_helper(program),
+        Err(_) => computers,
+    }
 }
 
 fn address(text: &str, flag: &str) -> Result<SocketAddr, String> {
@@ -118,10 +137,10 @@ async fn read(folder: &Path, name: &str) -> anyhow::Result<String> {
 
 async fn run(transport: Transport) -> anyhow::Result<()> {
     let home = home::folder()?;
-    let computers = Arc::new(
+    let computers = Arc::new(with_sandbox_helper(
         LocalComputers::new(home.join("workspaces"), std::env::vars_os())
             .with_worktrees(home.join(crate::worktrees::FOLDER)),
-    );
+    ));
     match transport {
         Transport::Stdio => {
             let input = BufReader::new(tokio::io::stdin());

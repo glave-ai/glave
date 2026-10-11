@@ -1,6 +1,7 @@
 //! A sandboxed worktree, under the real sandbox: it writes its own folder and its repository's
 //! shared git folder, so `git commit` works, and nothing else of the repository's. Runs only
-//! where the sandbox is (macOS), unless `GLAVE_REQUIRE_SANDBOX` says it must.
+//! where the sandbox is (macOS, Linux with bubblewrap), unless `GLAVE_REQUIRE_SANDBOX` says
+//! it must.
 
 use std::ffi::OsString;
 use std::fmt::Write as _;

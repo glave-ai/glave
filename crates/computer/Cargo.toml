@@ -45,6 +45,15 @@ tokio-rustls.workspace = true
 toml.workspace = true
 uuid.workspace = true
 
+# The sandbox on Linux: Landlock where bubblewrap cannot start, and the seccomp filter that
+# blocks the network and escape-relevant syscalls inside either.
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock.workspace = true
+libc.workspace = true
+# The Landlock helper's own session, and the user id that names the sandbox's folder.
+rustix = { workspace = true, features = ["process"] }
+seccompiler.workspace = true
+
 [features]
 # The worker backend on Kubernetes.
 kubernetes = ["dep:kube", "dep:k8s-openapi"]
