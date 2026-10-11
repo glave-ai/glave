@@ -69,6 +69,29 @@ pub struct Task {
     pub threads: Vec<TaskThread>,
     /// Memories saved before the first thread.
     pub memories: Vec<Seeded>,
+    /// Past conversations, written to the store before the first thread, for `recall`.
+    pub past: Vec<PastThread>,
+    /// Whether tidy-up runs over every space's memory once the threads are done, on the model
+    /// under test (`specs/memory.md`, "Tidy-up"): `[glave] tidy = true`.
+    pub tidy: Tidying,
+}
+
+/// When an attempt tidies memory.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Tidying {
+    #[default]
+    Never,
+    /// Once every thread is done.
+    AfterThreads,
+}
+
+/// A past conversation: `[[glave.past]]`, the person's messages in a thread of their own.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PastThread {
+    pub messages: Vec<String>,
+    /// The space it was in, by name; the first thread's when absent.
+    pub space: Option<String>,
 }
 
 /// A thread after the first: `[[glave.threads]]`.
@@ -90,6 +113,12 @@ pub struct Seeded {
     pub text: String,
     /// `personal` or `space` (the first thread's).
     pub scope: String,
+    /// Saved in a thread that had read untrusted content.
+    #[serde(default)]
+    pub untrusted: bool,
+    /// How many days ago it was saved; today when absent.
+    #[serde(default)]
+    pub days_ago: u32,
 }
 
 /// A goal, as `[glave] goal = { budget = 200000 }` sets it. How to verify it is the
@@ -180,6 +209,10 @@ struct Glave {
     threads: Vec<TaskThread>,
     #[serde(default)]
     memories: Vec<Seeded>,
+    #[serde(default)]
+    past: Vec<PastThread>,
+    #[serde(default)]
+    tidy: bool,
 }
 
 /// Loads the task in `dir`. Its paths are absolute, since the grader runs from the workspace.
@@ -251,6 +284,12 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         space_memory: glave.space_memory,
         threads: glave.threads,
         memories: glave.memories,
+        past: glave.past,
+        tidy: if glave.tidy {
+            Tidying::AfterThreads
+        } else {
+            Tidying::Never
+        },
     })
 }
 

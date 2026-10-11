@@ -11,7 +11,7 @@ use glave_ports::{BlobStore, EventLog, Message, ModelProvider};
 use serde::Deserialize;
 
 use super::render::{self, Line};
-use super::state::{ConfigMemory, MemoryState};
+use super::state::{ConfigMemory, MemoryState, among};
 use super::{EDIT_MEMORY, FORGET, REMEMBER, Remembered, Shown};
 use crate::approval::Approver;
 use crate::conversation::follow;
@@ -32,14 +32,19 @@ enum Change {
     Added(Shown),
     Changed(Shown),
     Forgotten(MemoryId),
+    Asked([MemoryId; 2]),
 }
 
 /// What a thread was shown, as ids and versions.
 #[derive(Default)]
 struct Trace {
     start: Vec<Shown>,
+    /// The contradictions the start asked about.
+    asked: Vec<[MemoryId; 2]>,
     notes: Vec<Noted>,
     known: BTreeMap<MemoryId, u32>,
+    /// The contradictions known now.
+    questions: Vec<[MemoryId; 2]>,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -60,7 +65,7 @@ where
         for (_, changes) in &trace.notes {
             wanted.extend(changes.iter().filter_map(|change| match change {
                 Change::Added(shown) | Change::Changed(shown) => Some(*shown),
-                Change::Forgotten(_) => None,
+                Change::Forgotten(_) | Change::Asked(_) => None,
             }));
         }
         wanted.extend(trace.known.iter().map(|(memory, version)| Shown {
@@ -82,24 +87,26 @@ where
                     Change::Added(shown) => pick(shown).map(Line::Added),
                     Change::Changed(shown) => pick(shown).map(Line::Changed),
                     Change::Forgotten(memory) => Some(Line::Forgotten(*memory)),
+                    Change::Asked(pair) => Some(Line::Asked(*pair)),
                 })
                 .collect();
             render::note(&lines).map(|note| (*index, note))
         });
-        thread.memory = MemoryState {
-            start: render::start(&start),
-            notes: notes.collect(),
-            known: trace
-                .known
-                .iter()
-                .filter_map(|(memory, version)| {
-                    pick(&Shown {
-                        memory: *memory,
-                        version: *version,
-                    })
+        let known: Vec<Remembered> = trace
+            .known
+            .iter()
+            .filter_map(|(memory, version)| {
+                pick(&Shown {
+                    memory: *memory,
+                    version: *version,
                 })
-                .map(|m| (m.memory, m))
-                .collect(),
+            })
+            .collect();
+        thread.memory = MemoryState {
+            start: render::start(&start, &among(&trace.asked, &start)),
+            notes: notes.collect(),
+            questions: among(&trace.questions, &known),
+            known: known.into_iter().map(|m| (m.memory, m)).collect(),
             structured: None,
         };
     }
@@ -119,7 +126,7 @@ where
                         configs.insert(sha.clone(), read);
                     }
                     if let Some(Some(config)) = configs.get(&sha) {
-                        trace.look(messages.len(), &config.memories);
+                        trace.look(messages.len(), config);
                     }
                 }
                 Body::ToolCallRequested(requested) => {
@@ -144,6 +151,7 @@ where
                             version: *version,
                         })
                         .collect();
+                    trace.asked.clone_from(&trace.questions);
                     trace.notes.clear();
                 }
                 _ => {}
@@ -163,9 +171,11 @@ where
 
 impl Trace {
     /// A turn started knowing `now`; its user message will be at `index`.
-    fn look(&mut self, index: usize, now: &[Shown]) {
+    fn look(&mut self, index: usize, config: &ConfigMemory) {
+        let now = config.memories.as_slice();
         if index == 0 {
             self.start = now.to_vec();
+            self.asked.clone_from(&config.questions);
             self.notes.clear();
         } else {
             let mut changes = Vec::new();
@@ -183,11 +193,19 @@ impl Trace {
                     changes.push(Change::Forgotten(*memory));
                 }
             }
+            changes.extend(
+                config
+                    .questions
+                    .iter()
+                    .filter(|pair| !self.questions.contains(pair))
+                    .map(|pair| Change::Asked(*pair)),
+            );
             if !changes.is_empty() {
                 self.notes.push((index, changes));
             }
         }
         self.known = now.iter().map(|s| (s.memory, s.version)).collect();
+        self.questions.clone_from(&config.questions);
     }
 
     /// One of the thread's own memory calls, as its result recorded it.

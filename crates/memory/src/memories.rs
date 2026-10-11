@@ -3,12 +3,14 @@
 //! the caller and the space, and goes only to the ledgers the rules allow them.
 
 mod housekeep;
+mod recall;
+mod tidy;
 mod write;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use glave_event::{At, EventId, Header, MemoryScope, Payload, PrincipalId, Seq, encode};
+use glave_event::{At, EventId, Header, MemoryId, MemoryScope, Payload, PrincipalId, Seq, encode};
 use glave_harness::{Clock, Entropy, MemoryContext, MemoryError, Remembered, Shown, memory_ledger};
 use glave_ports::{EventLog, LogError, Scope};
 
@@ -17,6 +19,8 @@ use crate::rules::Rules;
 use crate::shred::Shredder;
 
 pub use housekeep::Housekept;
+pub use recall::{DEFAULT_HITS, MOST_HITS, Recalled, Source};
+pub use tidy::{ModelTidier, Tidied, Tidier};
 pub use write::{Remembering, Writer};
 
 /// Ledger events read per page.
@@ -188,6 +192,16 @@ impl<L: EventLog + 'static> Memories<L> {
             memories.extend(live.into_iter().filter(|memory| memory.scope == kind));
         }
         Ok(memories)
+    }
+
+    /// The contradictions tidy-up left for the person among the memories a thread of `on`
+    /// reads: both are kept until one of them changes.
+    pub async fn questions(&self, on: &MemoryContext) -> Result<Vec<[MemoryId; 2]>, MemoryError> {
+        let mut open = Vec::new();
+        for (_, ledger) in self.inner.rules.readable(on.person, on.scope) {
+            open.extend(self.with_book(ledger, Book::open_questions).await?);
+        }
+        Ok(open)
     }
 
     /// The memories in `wanted` at those versions, from the ledgers a thread of `on` reads.
