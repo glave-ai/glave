@@ -64,10 +64,11 @@ impl RemoteComputers {
         let (outgoing, mut queued) = mpsc::channel::<String>(QUEUE);
         let writer = tokio::spawn(async move {
             let mut output = output;
-            while let Some(line) = queued.recv().await {
+            while let Some(mut line) = queued.recv().await {
+                // One write per message, so TCP never holds the newline back.
+                line.push('\n');
                 let written = async {
                     output.write_all(line.as_bytes()).await?;
-                    output.write_all(b"\n").await?;
                     output.flush().await
                 };
                 if written.await.is_err() {
