@@ -58,6 +58,7 @@ pub(crate) struct Prepared {
     /// What it was prepared from, so a command asking for another sandbox gets its own.
     pub(crate) sandbox: Sandbox,
     temp: PathBuf,
+    caches: PathBuf,
     enforcer: platform::Enforcer,
 }
 
@@ -85,11 +86,15 @@ impl Prepared {
         git_common: Option<&Path>,
         helper: Option<&Path>,
     ) -> Result<Self, ComputerError> {
+        let cache = cache_home(sandbox.glave_home.as_deref()).await;
         let (enforcer, temp) =
-            platform::Enforcer::prepare(sandbox, root, git_common, helper).await?;
+            platform::Enforcer::prepare(sandbox, root, git_common, helper, cache.as_deref())
+                .await?;
+        let caches = cache.unwrap_or_else(|| temp.join("caches"));
         Ok(Self {
             sandbox: sandbox.clone(),
             temp,
+            caches,
             enforcer,
         })
     }
@@ -99,10 +104,37 @@ impl Prepared {
         &self.temp
     }
 
+    /// Where package managers keep their caches in the sandbox: glave's sandbox cache folder,
+    /// kept between runs, or without glave's folder one in the sandbox's temp folder.
+    pub(crate) fn caches(&self) -> &Path {
+        &self.caches
+    }
+
     /// How to start the next command, from the workspace as it is now.
     pub(crate) async fn launch(&self) -> Result<Launch, ComputerError> {
         self.enforcer.launch().await
     }
+}
+
+/// The folder in glave's own where sandboxed commands keep package caches between runs.
+pub(crate) const CACHE_FOLDER: &str = "sandbox-cache";
+
+/// glave's sandbox cache folder, made private if it is not there yet, resolved; none without
+/// glave's own folder.
+async fn cache_home(glave_home: Option<&Path>) -> Option<PathBuf> {
+    let glave_home = tokio::fs::canonicalize(glave_home?).await.ok()?;
+    let cache = glave_home.join(CACHE_FOLDER);
+    let mut builder = tokio::fs::DirBuilder::new();
+    #[cfg(unix)]
+    builder.mode(0o700);
+    match builder.create(&cache).await {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(_) => return None,
+    }
+    // A link planted in its place would lead the cache, and its writes, elsewhere.
+    let meta = tokio::fs::symlink_metadata(&cache).await.ok()?;
+    meta.is_dir().then_some(cache)
 }
 
 /// A path resolved if it exists; one that does not exist needs no protecting yet.

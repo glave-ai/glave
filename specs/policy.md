@@ -28,7 +28,7 @@ Project trust (issue #83), in `crates/config/src/trust`:
 Web and untrusted servers (issue #94; `approvals.md`, "Untrusted content"):
 
 - `[web]` in `config.toml` (`fetch`, `allow`, `deny`, `private_addresses`) is one choice, the nearest table winning; patterns are checked when read. Without trust a project's `[web]` keeps only `fetch` and `deny`. `glave policy explain` shows it.
-- A server in `mcp.json` or a project's `.mcp.json` may say `"untrusted": true`, and `[mcp] untrusted` in a policy names servers: what they return is labelled untrusted. Marks only add up.
+- What an untrusted MCP server returns is labelled untrusted. A project's servers and remote (HTTP) servers are untrusted by default; the person's own stdio servers are trusted. The person's `mcp.json` may mark a server of theirs either way (`"untrusted": true` or `false`); a project's `.mcp.json` may only add `"untrusted": true`. `[mcp] untrusted` in a policy names servers that are untrusted whatever else says; `[mcp] trusted` vouches for remote and project servers left unmarked, and, like `[projects] trusted`, any file may add to it, but it never lifts an `untrusted` mark (`approvals.md`, "Untrusted content").
 - Not built yet: `[web]` rules in `policy.toml` (an organization's allow and deny lists), and fetches leaving through the gateway.
 
 Hooks (issue #46; `approvals.md`, "Hooks"):
@@ -129,6 +129,7 @@ required = true
 catalog = ["github", "jira"]                      # servers the organization offers (its gateway's)
 own = false                                       # may people add their own servers
 untrusted = ["search"]                            # servers whose output is untrusted (approvals.md)
+trusted = ["docs"]                                # remote or project servers vouched for
 
 [budget]
 person_per_day_usd = 20
@@ -192,6 +193,6 @@ A laptop's own config can never loosen a constraint, because the constraint arri
   trusted = true          # false: declined, and not asked again until it changes
   ```
 - A project's `network = false` applies at once; its `network = true` is ignored, so a project can take the network from sandboxed commands but never give it back.
-- What needs trust: each server in the project's `.mcp.json`, each hook in its `config.toml` (item `hook:<Point>:<n>`, its definition the hook's point, command, matcher and timeout as JSON), and `approval = "auto"` or `sandbox = "off"` in its `config.toml`, `[web] private_addresses = true` or a `[web] allow` list (a host it names exactly may be private), and a `judge_model` other than `"off"` (a repository must not choose who judges its own actions; `off` only makes glave ask more and applies at once). Nothing else asks. Servers in `~/.glave/mcp.json` are the person's own and always trusted; on a name clash the person's wins.
+- What needs trust: each server in the project's `.mcp.json`, each hook in its `config.toml` (item `hook:<Point>:<n>`, its definition the hook's point, command, matcher and timeout as JSON), and `approval = "auto"` or `sandbox = "off"` in its `config.toml`, `[web] private_addresses = true` or a `[web] allow` list (a host it names exactly may be private), and a `judge_model` other than `"off"` (a repository must not choose who judges its own actions; `off` only makes glave ask more and applies at once). Nothing else asks. Servers in `~/.glave/mcp.json` are the person's own and always trusted to start; on a name clash the person's wins. Trusting a project lets its servers start; what they return is still labelled untrusted unless vouched for (above).
 - An organization's policy can pre-trust projects (`[projects] trusted`), or forbid project MCP servers (`[mcp] own = false`) or hooks (`[hooks] own = false`) entirely. A forbid wins over a pre-trust and over the person's yes.
 - With no one to answer, an untrusted project's servers stay off, and the model is told why: its instructions gain a "Project tools that are off" section listing what is off and why. Hooks that stay off are told to the person only: the model never calls a hook.

@@ -21,24 +21,26 @@ pub(crate) fn label(parts: Vec<Part>) -> Vec<Part> {
         .into_iter()
         .map(|part| match part {
             Part::Text { text } => Part::Text {
-                text: format!("{LABEL}\n{OPEN}\n{}\n{CLOSE}", defuse(&text)),
+                text: format!("{LABEL}\n{OPEN}\n{}\n{CLOSE}", defuse(&text, "untrusted")),
             },
             other => other,
         })
         .collect()
 }
 
-/// `text` with every `</untrusted`, in any case, broken up as `</ untrusted`.
-fn defuse(text: &str) -> String {
-    const NEEDLE: &str = "</untrusted";
+/// `text` with every closing `</tag`, in any case, broken up as `</ tag`, so text shown
+/// between `<tag>` and `</tag>` cannot end the block early. `tag` is lowercase ASCII.
+pub(crate) fn defuse(text: &str, tag: &str) -> String {
+    let needle = format!("</{tag}");
     let lower = text.to_ascii_lowercase();
     let mut out = String::with_capacity(text.len());
     let mut from = 0;
-    while let Some(found) = lower.get(from..).and_then(|rest| rest.find(NEEDLE)) {
+    while let Some(found) = lower.get(from..).and_then(|rest| rest.find(&needle)) {
         let at = from.saturating_add(found);
         out.push_str(text.get(from..at).unwrap_or_default());
-        out.push_str("</ untrusted");
-        from = at.saturating_add(NEEDLE.len());
+        out.push_str("</ ");
+        out.push_str(tag);
+        from = at.saturating_add(needle.len());
     }
     out.push_str(text.get(from..).unwrap_or_default());
     out
@@ -69,7 +71,11 @@ mod tests {
 
     #[test]
     fn defusing_keeps_other_text_whole() {
-        assert_eq!(defuse("café </Untrusted> ok"), "café </ untrusted> ok");
-        assert_eq!(defuse("plain"), "plain");
+        assert_eq!(
+            defuse("café </Untrusted> ok", "untrusted"),
+            "café </ untrusted> ok"
+        );
+        assert_eq!(defuse("plain", "untrusted"), "plain");
+        assert_eq!(defuse("a </ACTION> b", "action"), "a </ action> b");
     }
 }

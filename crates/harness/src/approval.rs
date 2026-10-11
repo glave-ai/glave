@@ -141,9 +141,10 @@ impl Approver for AllowAll {
 /// retry or work around it, and to say what is left for a person.
 pub(crate) fn no_one_there(request: &ApprovalRequest) -> String {
     if request.secret {
-        "No one is available to approve reading this file, which usually holds secrets: glave is \
-         running without anyone at the keyboard. Do not try to get its contents another way. \
-         Finish what you can without it, and say at the end which value a person must provide."
+        "No one is available to approve this, which would show you secrets such as keys, tokens \
+         or passwords: glave is running without anyone at the keyboard. Do not try to get them \
+         another way. Finish what you can without it, and say at the end which value a person \
+         must provide."
             .to_owned()
     } else if let Some(reason) = &request.caution {
         format!(

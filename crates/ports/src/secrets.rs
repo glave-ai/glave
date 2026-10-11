@@ -46,18 +46,11 @@ const SECRET_NAMES: &[&str] = &[
     "id_ed25519",
 ];
 
-/// Certificate bundles, which are public though named like keys: certifi's `cacert.pem`, in
-/// every Python environment that makes HTTPS requests, and gRPC's `roots.pem`.
-const CERTIFICATE_BUNDLES: &[&str] = &[
-    "cacert.pem",
-    "cacerts.pem",
-    "ca-bundle.pem",
-    "ca-certificates.pem",
-    "roots.pem",
-];
-
-/// Files that hold secrets, by extension: private keys and key stores.
-const SECRET_EXTENSIONS: &[&str] = &["pem", "key", "p12", "pfx", "jks", "keystore"];
+/// Files that hold secrets, by extension: private keys and key stores. Not `.pem` alone, as
+/// often a public certificate (`cert.pem`, `fullchain.pem`, certifi's `cacert.pem`), nor Java's
+/// `.jks` and `.keystore`, which are password-protected and include Android's shared
+/// `debug.keystore`.
+const SECRET_EXTENSIONS: &[&str] = &["key", "p12", "pfx"];
 
 /// The extensions of a `secrets.` file that holds data; `secrets.rs` or `secrets.py` is code.
 const SECRETS_DATA: &[&str] = &["yaml", "yml", "json", "toml", "env", "txt", "properties"];
@@ -81,8 +74,20 @@ pub fn is_secret_file(path: &Path) -> bool {
         || name
             .strip_prefix("secrets.")
             .is_some_and(|rest| SECRETS_DATA.contains(&rest))
-        || (extension.is_some_and(|extension| SECRET_EXTENSIONS.contains(&extension))
-            && !CERTIFICATE_BUNDLES.contains(&name.as_str()))
+        || extension.is_some_and(|extension| SECRET_EXTENSIONS.contains(&extension))
+        || private_pem(&name)
+}
+
+/// A `.pem` whose name says it holds a private key: `privkey.pem` (Let's Encrypt's),
+/// `*private*.pem`, `*-key.pem` (mkcert's, cfssl's) and `*.key.pem`.
+fn private_pem(name: &str) -> bool {
+    name.strip_suffix(".pem").is_some_and(|stem| {
+        stem == "privkey"
+            || stem.contains("private")
+            || stem
+                .strip_suffix("key")
+                .is_some_and(|rest| rest.ends_with(['-', '.']))
+    })
 }
 
 #[cfg(test)]
@@ -129,8 +134,12 @@ mod tests {
             ".env.production",
             "prod.env",
             ".envrc",
-            "certs/server.pem",
+            "certs/privkey.pem",
+            "server-private.pem",
+            "localhost+2-key.pem",
+            "tls.key.pem",
             "tls.key",
+            "client.p12",
             "id_ed25519",
             ".npmrc",
             "secrets.yaml",
@@ -155,6 +164,12 @@ mod tests {
             "environment.md",
             ".venv/lib/python3.12/site-packages/certifi/cacert.pem",
             "grpc/_cython/_credentials/roots.pem",
+            "cert.pem",
+            "fullchain.pem",
+            "certs/server.pem",
+            "android/debug.keystore",
+            "release.jks",
+            "keys/public-key.pub",
             ".",
         ] {
             assert!(!is_secret_file(Path::new(path)), "{path}");

@@ -3,14 +3,13 @@
 
 use regex::Regex;
 
-use super::super::secrets::{CERTIFICATE_BUNDLES, ENV_FILES, OTHER_SECRET_FILES, TEMPLATE_WORDS};
+use super::super::secrets::{ENV_FILES, OTHER_SECRET_FILES, TEMPLATE_WORDS};
 
 #[derive(Debug)]
 pub(super) struct SecretNames {
     env: Regex,
     template: Regex,
     other: Regex,
-    bundle: Regex,
 }
 
 impl SecretNames {
@@ -19,14 +18,12 @@ impl SecretNames {
             env: Regex::new(&format!("(?i)^{ENV_FILES}$"))?,
             template: Regex::new(&format!("(?i){TEMPLATE_WORDS}"))?,
             other: Regex::new(&format!("(?i)^{OTHER_SECRET_FILES}$"))?,
-            bundle: Regex::new(&format!("(?i)^{CERTIFICATE_BUNDLES}$"))?,
         })
     }
 
     /// Whether a file named `name` holds secrets.
     pub(super) fn is_secret(&self, name: &str) -> bool {
-        (self.other.is_match(name) && !self.bundle.is_match(name))
-            || (self.env.is_match(name) && !self.template.is_match(name))
+        self.other.is_match(name) || (self.env.is_match(name) && !self.template.is_match(name))
     }
 }
 
@@ -41,7 +38,8 @@ mod tests {
             ".env",
             ".ENV.local",
             "prod.env",
-            "server.pem",
+            "privkey.pem",
+            "localhost-key.pem",
             "id_ed25519",
             "secrets.yaml",
             "SECRETS.json",
@@ -61,6 +59,9 @@ mod tests {
             "secrets.go",
             "cacert.pem",
             "roots.pem",
+            "cert.pem",
+            "fullchain.pem",
+            "debug.keystore",
         ] {
             assert!(!names.is_secret(open), "{open}");
         }

@@ -290,6 +290,9 @@ pub struct McpRules {
     /// Servers whose tools return untrusted content, as web pages are.
     #[serde(default)]
     pub untrusted: Vec<String>,
+    /// Servers vouched for: remote ones and a project's, untrusted by default, are trusted.
+    #[serde(default)]
+    pub trusted: Vec<String>,
 }
 
 /// `[budget]`.
