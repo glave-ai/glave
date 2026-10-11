@@ -85,6 +85,18 @@ export type Meta = {
   readonly idempotency_key?: IdempotencyKey | null;
 };
 
+/** One model a thread may be sent to. */
+export type ModelInfo = {
+  /** Whether threads that choose no model use this one. Exactly one model is the default. */
+  readonly default: boolean;
+  /** Whether this is Hope, glave's own model, for clients to show as such. */
+  readonly hope: boolean;
+  /** What `thread/start` and `turn/start` take as `model`: the name the gateway knows it by. */
+  readonly id: string;
+  /** A name to show for it, when one is configured. */
+  readonly name?: string | null;
+};
+
 /**
  * An exact amount: `micros` millionths of one unit of `currency`. `{"micros": 4200,
  * "currency": "USD"}` is $0.0042.
@@ -480,6 +492,13 @@ export type MemorySaveResult = {
   readonly memories: readonly (Remembered)[];
 };
 
+export type ModelListParams = Readonly<Record<string, never>>;
+
+/** The models a thread may be sent to, the default first. */
+export type ModelListResult = {
+  readonly models: readonly (ModelInfo)[];
+};
+
 export type QuestionAnswerParams = {
   readonly answers: readonly (string)[];
   readonly question: CallId;
@@ -640,6 +659,11 @@ export type ThreadStartParams = {
    */
   readonly background?: boolean;
   /**
+   * The model the thread's turns go to, one `model/list` names; the server's default
+   * when absent.
+   */
+  readonly model?: string | null;
+  /**
    * The space the thread is in: by default the server's own, for a caller who works in
    * it, else the caller's personal space.
    */
@@ -673,6 +697,11 @@ export type TurnStartParams = {
   readonly background?: boolean;
   /** With `background`, tokens the turn may use, subagents' included. */
   readonly budget?: number | null;
+  /**
+   * The model this turn, and the thread's turns after it, go to: one `model/list`
+   * names. The thread's latest choice when absent, else the server's default.
+   */
+  readonly model?: string | null;
   readonly prompt: string;
   readonly thread: ThreadId;
 };
@@ -695,6 +724,7 @@ export interface Methods {
   readonly "memory/move": { readonly params: MemoryMoveParams; readonly result: MemoryMoveResult };
   readonly "memory/restore": { readonly params: MemoryRestoreParams; readonly result: MemoryRestoreResult };
   readonly "memory/save": { readonly params: MemorySaveParams; readonly result: MemorySaveResult };
+  readonly "model/list": { readonly params: ModelListParams; readonly result: ModelListResult };
   readonly "question/answer": { readonly params: QuestionAnswerParams; readonly result: QuestionAnswerResult };
   readonly "schedule/create": { readonly params: ScheduleCreateParams; readonly result: ScheduleCreateResult };
   readonly "schedule/delete": { readonly params: ScheduleDeleteParams; readonly result: ScheduleDeleteResult };
@@ -773,6 +803,8 @@ export const ErrorCode = {
   NO_MEMORY: -32017,
   /** No such method */
   NO_METHOD: -32601,
+  /** No such model here, or not one this server may run */
+  NO_MODEL: -32021,
   /** No such question is waiting */
   NO_QUESTION: -32006,
   /** No such schedule */

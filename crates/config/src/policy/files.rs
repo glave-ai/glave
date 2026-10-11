@@ -28,6 +28,8 @@ pub struct ConfigFile {
     pub network: Option<bool>,
     /// The MCP servers to turn on.
     pub mcp: Option<Vec<String>>,
+    /// Models a person may choose for a thread besides `model`, as `[[models]]`.
+    pub models: Option<Vec<ModelEntry>>,
     /// Whether each new thread works in a worktree of its own.
     pub worktree: Option<bool>,
     /// Where new threads work: here, or on a worker of their own.
@@ -46,6 +48,20 @@ pub struct ConfigFile {
     pub memory: Option<MemoryChoice>,
     /// This space's memory: shared with the person's, isolated, or off.
     pub space_memory: Option<SpaceChoice>,
+}
+
+/// One of `[[models]]`: a model offered for a thread besides the default, at the same
+/// endpoint, as `model/list` shows it (`session.md`).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelEntry {
+    /// The model's id, as `model` would name it.
+    pub id: String,
+    /// A name to show for it.
+    pub name: Option<String>,
+    /// Whether this model is Hope, glave's own, for clients to show as such.
+    #[serde(default)]
+    pub hope: bool,
 }
 
 /// `[gateway]`: the organization's gateway (`specs/gateway.md`, "Client mode").

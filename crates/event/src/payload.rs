@@ -2,6 +2,7 @@
 //! decoder, which upgrades older versions on read.
 
 pub(crate) mod approval;
+pub(crate) mod chosen;
 pub(crate) mod gateway;
 pub(crate) mod goal;
 pub(crate) mod hook;
@@ -18,6 +19,7 @@ pub(crate) mod turn;
 pub(crate) mod workspace;
 
 pub use approval::{ApprovalDecided, ApprovalRequested, Verdict};
+pub use chosen::ModelChosen;
 pub use gateway::GatewayToolCalled;
 pub use goal::{GoalEnded, GoalReason, GoalResumed, GoalSet};
 pub use hook::{HookPoint, HookRan, HookResult};

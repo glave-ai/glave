@@ -2,6 +2,7 @@
 //! notifications a turn sends, and errors. Every transport carries these same types; in-process
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
+mod models;
 mod tasks;
 
 use glave_event::{
@@ -12,6 +13,7 @@ use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
 use glave_ports::{Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
+pub use models::ModelInfo;
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 
 /// The protocol version this server speaks.
@@ -23,6 +25,9 @@ pub const PROTOCOL: &str = "2026-10";
 pub enum Request {
     #[serde(rename = "server/discover")]
     Discover {},
+    /// The models this server can run: the default first.
+    #[serde(rename = "model/list")]
+    ModelList {},
     #[serde(rename = "thread/start")]
     ThreadStart {
         /// The space the thread is in: by default the server's own, for a caller who works in
@@ -37,6 +42,10 @@ pub enum Request {
         /// even when other threads work here.
         #[serde(default, skip_serializing_if = "is_false")]
         background: bool,
+        /// The model the thread's turns go to, one `model/list` names; the server's default
+        /// when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
     },
     #[serde(rename = "thread/list")]
     ThreadList {
@@ -84,6 +93,10 @@ pub enum Request {
         /// With `background`, tokens the turn may use, subagents' included.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         budget: Option<u64>,
+        /// The model this turn, and the thread's turns after it, go to: one `model/list`
+        /// names. The thread's latest choice when absent, else the server's default.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
         #[serde(rename = "_meta", default, skip_serializing_if = "Meta::is_empty")]
         meta: Meta,
     },
@@ -212,6 +225,7 @@ impl Request {
     pub fn method(&self) -> &'static str {
         match self {
             Self::Discover {} => "server/discover",
+            Self::ModelList {} => "model/list",
             Self::ThreadStart { .. } => "thread/start",
             Self::ThreadList { .. } => "thread/list",
             Self::ThreadRename { .. } => "thread/rename",
@@ -484,6 +498,9 @@ pub enum Reply {
     /// Memories listed, or the ones a change touched.
     #[schemars(title = "Memories")]
     Memories { memories: Vec<Remembered> },
+    /// The models a thread may be sent to, the default first.
+    #[schemars(title = "Models")]
+    Models { models: Vec<ModelInfo> },
     // After every reply with a field of its own, since a missing `goal` reads as `null`;
     // before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.
@@ -665,6 +682,8 @@ pub mod code {
     /// No valid sign-in, on a network transport.
     pub const NO_SIGN_IN: i64 = -32013;
     pub const PROVIDER: i64 = -32020;
+    /// No such model here, or not one this server may run.
+    pub const NO_MODEL: i64 = -32021;
     /// A policy limit was reached: too many tasks running, or too many schedules.
     pub const LIMIT: i64 = -32015;
     /// No such schedule.

@@ -99,6 +99,36 @@ fn each_choice_comes_from_the_nearest_level_that_sets_it() {
 }
 
 #[test]
+fn models_offered_come_from_the_nearest_file_that_lists_them() {
+    let project = file(
+        PROJECT,
+        "[[models]]\nid = \"hope-12b\"\nname = \"Hope\"\nhope = true\n\n[[models]]\nid = \"small\"\n",
+    );
+    let person = file(PERSON, "[[models]]\nid = \"mine\"\n");
+    let none = ConfigFile::default;
+    let choices = choices::resolve(&layers(none(), none(), vec![project, person]));
+    let models = choices.models.unwrap();
+    assert_eq!(models.from, file_source(PROJECT));
+    assert_eq!(
+        models.value,
+        [
+            files::ModelEntry {
+                id: "hope-12b".into(),
+                name: Some("Hope".into()),
+                hope: true,
+            },
+            files::ModelEntry {
+                id: "small".into(),
+                name: None,
+                hope: false,
+            },
+        ]
+    );
+    let unknown = files::config("[[models]]\nid = \"x\"\nprice = 1\n", Path::new(PERSON));
+    assert!(unknown.is_err(), "an unknown key is refused");
+}
+
+#[test]
 fn with_nothing_set_every_choice_is_the_default() {
     let choices = choices::resolve(&layers(
         ConfigFile::default(),

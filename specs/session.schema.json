@@ -282,6 +282,36 @@
       },
       "type": "object"
     },
+    "ModelInfo": {
+      "description": "One model a thread may be sent to.",
+      "properties": {
+        "default": {
+          "description": "Whether threads that choose no model use this one. Exactly one model is the default.",
+          "type": "boolean"
+        },
+        "hope": {
+          "description": "Whether this is Hope, glave's own model, for clients to show as such.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "What `thread/start` and `turn/start` take as `model`: the name the gateway knows it by.",
+          "type": "string"
+        },
+        "name": {
+          "description": "A name to show for it, when one is configured.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "default",
+        "hope"
+      ],
+      "type": "object"
+    },
     "Money": {
       "additionalProperties": false,
       "description": "An exact amount: `micros` millionths of one unit of `currency`. `{\"micros\": 4200,\n\"currency\": \"USD\"}` is $0.0042.",
@@ -1382,6 +1412,10 @@
       "code": -32601,
       "message": "No such method"
     },
+    "NO_MODEL": {
+      "code": -32021,
+      "message": "No such model here, or not one this server may run"
+    },
     "NO_QUESTION": {
       "code": -32006,
       "message": "No such question is waiting"
@@ -1770,6 +1804,27 @@
         },
         "required": [
           "memories"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "model/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "The models a thread may be sent to, the default first.",
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/$defs/ModelInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "models"
         ],
         "type": "object"
       },
@@ -2309,6 +2364,13 @@
             "description": "For a thread that runs as a task: it works on a worker when the server has them,\neven when other threads work here.",
             "type": "boolean"
           },
+          "model": {
+            "description": "The model the thread's turns go to, one `model/list` names; the server's default\nwhen absent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "space": {
             "anyOf": [
               {
@@ -2393,6 +2455,13 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "model": {
+            "description": "The model this turn, and the thread's turns after it, go to: one `model/list`\nnames. The thread's latest choice when absent, else the server's default.",
+            "type": [
+              "string",
               "null"
             ]
           },

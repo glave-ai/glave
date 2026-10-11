@@ -61,6 +61,38 @@ mod routes {
     }
 
     #[test]
+    fn a_chosen_model_replaces_main_but_never_a_purpose_with_its_own_route() {
+        let provider = Fake::new("openrouter");
+        let routes = Routes::new(vec![provider.target("big"), provider.target("backup")])
+            .unwrap()
+            .with_route(Purpose::Judge, vec![provider.target("small")])
+            .unwrap()
+            .with_choices(vec![provider.target("other")]);
+        let gateway = Gateway::new(routes);
+        let asking = |purpose, model: &str| {
+            let mut asked = request(purpose);
+            asked.model = model.into();
+            block_on(gateway.complete(&asked, &mut |_| {}))
+                .unwrap()
+                .served
+                .unwrap()
+                .target
+        };
+        assert_eq!(asking(Purpose::Main, "other"), "openrouter/other");
+        assert_eq!(
+            asking(Purpose::Subagent, "openrouter/other"),
+            "openrouter/other"
+        );
+        assert_eq!(asking(Purpose::Summary, "other"), "openrouter/other");
+        assert_eq!(asking(Purpose::Judge, "other"), "openrouter/small");
+        // The default, and a model that is not a choice, keep the route as it is.
+        assert_eq!(asking(Purpose::Main, "big"), "openrouter/big");
+        assert_eq!(asking(Purpose::Main, "unknown"), "openrouter/big");
+        let models: Vec<String> = provider.seen().into_iter().map(|r| r.model).collect();
+        assert_eq!(models, ["other", "other", "other", "small", "big", "big"]);
+    }
+
+    #[test]
     fn a_route_needs_a_target() {
         assert_eq!(
             Routes::new(Vec::new()).unwrap_err(),

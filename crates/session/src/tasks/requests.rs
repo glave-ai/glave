@@ -27,9 +27,10 @@ where
                 prompt,
                 background: true,
                 budget,
+                model,
                 ..
             } => self
-                .start_task(caller, thread, Work::Turn(prompt), budget, None)
+                .start_task(caller, thread, Work::Turn(prompt, model), budget, None)
                 .await
                 .map(|task| Reply::Task { task }),
             Request::GoalStart {
