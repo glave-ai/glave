@@ -3,8 +3,8 @@
 //! the first turn, and closed when glave ends. A `config.toml` may turn on only some of them,
 //! and a policy may forbid them.
 
-use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -82,16 +82,22 @@ impl Servers {
             .map(String::as_str)
             .collect();
         check_own_servers(&on, constraints)?;
+        // Servers marked untrusted in either file or by a policy: marking only tightens, so a
+        // project's mark applies whatever the person's file says.
+        let mut marked = if text.is_empty() {
+            BTreeSet::new()
+        } else {
+            glave_mcp::untrusted(&text).with_context(|| format!("in {}", path.display()))?
+        };
+        if let Some(project) = project {
+            marked.extend(glave_mcp::untrusted(project)?);
+        }
         let servers = configs
             .iter()
             .map(|(name, config)| {
-                Arc::new(McpServer::start(
-                    name,
-                    config,
-                    &environment,
-                    root,
-                    Limits::default(),
-                ))
+                let untrusted = marked.contains(name) || constraints.mcp_untrusted(name).is_some();
+                let server = McpServer::start(name, config, &environment, root, Limits::default());
+                Arc::new(server.untrusted(untrusted))
             })
             .collect();
         Ok(Self {
@@ -188,6 +194,14 @@ fn turned_on(
 mod tests {
     use super::*;
     use crate::policy::tests::constraints;
+
+    #[test]
+    fn a_policy_can_mark_servers_untrusted() {
+        let rules = constraints("version = 1\n[mcp]\nuntrusted = [\"search\"]\n");
+        let rule = rules.mcp_untrusted("search").unwrap().to_string();
+        assert!(rule.starts_with("[mcp] untrusted = [\"search\"]"), "{rule}");
+        assert!(rules.mcp_untrusted("docs").is_none());
+    }
 
     #[test]
     fn a_policy_that_forbids_people_s_own_servers_stops_them_starting() {

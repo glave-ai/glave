@@ -55,9 +55,12 @@ glave-provider-openai = { path = "crates/provider-openai" }
 glave-session = { path = "crates/session" }
 glave-shell = { path = "crates/shell" }
 glave-store-sqlite = { path = "crates/store-sqlite" }
+glave-web = { path = "crates/web" }
 getrandom = "0.4"
 globset = "0.4"
 hmac = "0.13"
+# HTML to Markdown for web_fetch: small, maintained, Turndown's design, on html5ever.
+htmd = "0.5"
 http = "1"
 http-body-util = "0.1"
 hyper = { version = "1", default-features = false }
@@ -94,6 +97,7 @@ tokio-postgres = { version = "0.7", default-features = false, features = ["runti
 toml = { version = "1", default-features = false, features = ["display", "parse", "serde", "std"] }
 tree-sitter = "0.27"
 tree-sitter-bash = "0.25"
+url = "2"
 uuid = { version = "1", default-features = false, features = ["std", "serde"] }
 zeroize = "1"
 

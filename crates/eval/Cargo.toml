@@ -19,6 +19,8 @@ glave-harness.workspace = true
 glave-ports.workspace = true
 glave-provider-openai.workspace = true
 glave-shell.workspace = true
+# web_fetch, and a task's pages served on 127.0.0.1.
+glave-web = { workspace = true, features = ["pages"] }
 jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true

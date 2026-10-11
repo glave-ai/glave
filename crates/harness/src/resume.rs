@@ -51,6 +51,7 @@ where
             note: None,
             standing: crate::standing::Standing::of(&events),
             removed: false,
+            untrusted: read_untrusted(&events),
         };
         self.repair(&mut thread, &events).await?;
         Ok(thread)
@@ -115,6 +116,7 @@ where
                 is_error: true,
                 output: output.clone(),
                 structured: None,
+                untrusted: false,
             };
             self.stage(thread, &mut staged, &completed)?;
         }
@@ -197,6 +199,14 @@ fn by_person(added: &glave_event::MessageAdded) -> bool {
             .author
             .as_ref()
             .is_none_or(|author| author.kind != glave_event::PrincipalKind::Glave)
+}
+
+/// Whether the thread has read untrusted content: any call's output marked so.
+fn read_untrusted(events: &[Event]) -> bool {
+    events.iter().any(|event| match &event.body {
+        Body::ToolCallCompleted(done) => done.untrusted,
+        _ => false,
+    })
 }
 
 /// The tools the person allowed for the rest of the thread, from its recorded approvals.

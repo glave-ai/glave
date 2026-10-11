@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use glave_harness::{ApprovalMode, SandboxLevel};
 
 use crate::policy::files::{Approval, ConfigFile, SandboxChoice};
+use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkersFile};
 
 /// Where a value came from.
@@ -95,6 +96,8 @@ pub struct Choices {
     pub on: Chosen<On>,
     /// The backend workers run on, if one is set up.
     pub workers: Option<Chosen<WorkersFile>>,
+    /// What `web_fetch` may reach: on, public hosts only, by default.
+    pub web: Chosen<WebFile>,
 }
 
 /// One level choices come from.
@@ -159,6 +162,10 @@ pub fn resolve(layers: &[Layer]) -> Choices {
         worktree: defaulted(nearest(layers, "worktree", |file| file.worktree), false),
         on: defaulted(nearest(layers, "on", |file| file.on), On::Here),
         workers: nearest(layers, "workers", |file| file.workers.clone()),
+        web: defaulted(
+            nearest(layers, "web", |file| file.web.clone()),
+            WebFile::default(),
+        ),
     }
 }
 

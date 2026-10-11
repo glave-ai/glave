@@ -6,6 +6,7 @@
 //!   task.toml        Harbor's [task] and [agent], plus glave's own [glave] section
 //!   environment/     the files the agent starts with
 //!   tests/test.sh    optional: run in the workspace afterwards; exit 0 means it passed
+//!   web/             optional, glave's own: pages served on 127.0.0.1 at `{web}` (`web.rs`)
 //! ```
 //!
 //! The agent never sees `tests/`, so it cannot read or weaken the grader.
@@ -78,6 +79,11 @@ impl Task {
     /// The starting files, copied into each run's workspace.
     pub fn environment(&self) -> PathBuf {
         self.dir.join("environment")
+    }
+
+    /// The pages served on 127.0.0.1 while the task runs, if it has any (`web.rs`).
+    pub fn web_pages(&self) -> Option<PathBuf> {
+        Some(self.dir.join("web")).filter(|path| path.is_dir())
     }
 
     /// The grader, if the task has one.
