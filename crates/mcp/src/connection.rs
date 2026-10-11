@@ -41,8 +41,9 @@ pub(crate) struct Connection {
     listed: Mutex<Option<Vec<ToolInfo>>>,
     /// Set when the server says its tools changed.
     stale: Arc<AtomicBool>,
-    /// The model's name for each tool, to the server's, from the latest listing.
-    named: Mutex<HashMap<String, String>>,
+    /// The model's name for each tool, to the server's and whether the tool says it reaches an
+    /// open world (`openWorldHint`), from the latest listing.
+    named: Mutex<HashMap<String, (String, bool)>>,
     /// Hearing about changes from a server on the newer protocol, while connected.
     watching: Mutex<Option<JoinHandle<()>>>,
 }
@@ -178,7 +179,14 @@ impl Connection {
                 },
                 parallel: read_only,
             });
-            named.insert(model_name, tool.name.to_string());
+            // MCP's flag for a tool that reaches beyond the server, such as a web search: what
+            // it returns is untrusted, as a web page is.
+            let open_world = tool
+                .annotations
+                .as_ref()
+                .and_then(|hints| hints.open_world_hint)
+                .unwrap_or(false);
+            named.insert(model_name, (tool.name.to_string(), open_world));
         }
         *self.named.lock().unwrap_or_else(PoisonError::into_inner) = named;
         *self.listed.lock().unwrap_or_else(PoisonError::into_inner) = Some(infos.clone());
@@ -239,7 +247,7 @@ impl Connection {
         cancel: &dyn Cancellation,
         limit: Duration,
     ) -> ToolOutput {
-        let Some(tool) = self
+        let Some((tool, open_world)) = self
             .named
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -248,6 +256,19 @@ impl Connection {
         else {
             return ToolOutput::text(true, format!("There is no tool named {name:?}."));
         };
+        let mut output = self.send(tool, arguments, cancel, limit).await;
+        output.untrusted |= open_world;
+        output
+    }
+
+    /// Sends one call of the server's `tool`, for at most `limit`.
+    async fn send(
+        &self,
+        tool: String,
+        arguments: &Arguments,
+        cancel: &dyn Cancellation,
+        limit: Duration,
+    ) -> ToolOutput {
         let Arguments::Json(arguments) = arguments else {
             return ToolOutput::text(true, "The arguments were not valid JSON.");
         };

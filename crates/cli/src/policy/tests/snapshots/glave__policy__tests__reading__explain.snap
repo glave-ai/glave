@@ -10,6 +10,7 @@ Settings (the nearest wins: flags, environment, project, person, default)
   mcp          ["github"]  from /home/ada/.glave/config.toml
   worktree     off         from default
   on           here        from default
+  web          fetch on    from default
 
 Config files
   /home/ada/.glave/config.toml

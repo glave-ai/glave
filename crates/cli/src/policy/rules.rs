@@ -35,6 +35,8 @@ pub enum Kind {
     McpCatalog(Vec<String>),
     /// People may not add MCP servers of their own.
     McpOwnForbidden,
+    /// What these MCP servers return is untrusted, as web pages are.
+    McpUntrusted(Vec<String>),
     PersonPerDayUsd(f64),
     /// Projects at these paths (globs) are trusted without asking.
     ProjectsTrusted(Vec<String>),
@@ -61,6 +63,7 @@ impl fmt::Display for Kind {
             Self::SandboxRequired => f.write_str("[sandbox] required = true"),
             Self::McpCatalog(names) => write!(f, "[mcp] catalog = {}", quoted(names)),
             Self::McpOwnForbidden => f.write_str("[mcp] own = false"),
+            Self::McpUntrusted(names) => write!(f, "[mcp] untrusted = {}", quoted(names)),
             Self::PersonPerDayUsd(usd) => write!(f, "[budget] person_per_day_usd = {usd}"),
             Self::ProjectsTrusted(globs) => write!(f, "[projects] trusted = {}", quoted(globs)),
             Self::HooksOwnForbidden => f.write_str("[hooks] own = false"),
@@ -114,6 +117,9 @@ impl Constraints {
             }
             if file.mcp.own == Some(false) {
                 add(Kind::McpOwnForbidden);
+            }
+            if !file.mcp.untrusted.is_empty() {
+                add(Kind::McpUntrusted(file.mcp.untrusted.clone()));
             }
             if let Some(usd) = file.budget.person_per_day_usd {
                 add(Kind::PersonPerDayUsd(usd));
@@ -194,6 +200,13 @@ impl Constraints {
     /// The first rule that forbids people's own MCP servers.
     pub fn own_mcp_forbidden(&self) -> Option<&Rule> {
         self.first(|kind| matches!(kind, Kind::McpOwnForbidden))
+    }
+
+    /// The first rule that marks the MCP server `name` untrusted.
+    pub fn mcp_untrusted(&self, name: &str) -> Option<&Rule> {
+        self.first(
+            |kind| matches!(kind, Kind::McpUntrusted(names) if names.iter().any(|n| n == name)),
+        )
     }
 
     /// The first rule that forbids people's and projects' own hooks.

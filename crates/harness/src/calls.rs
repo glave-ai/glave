@@ -262,6 +262,7 @@ where
             rules: self.settings.instructions.as_deref(),
             action: summary,
             flagged: reason,
+            untrusted: thread.untrusted,
         };
         let model = &self.settings.model;
         let asking = judge(&self.provider, model, &case, thread.lineage());
@@ -361,16 +362,24 @@ where
         call_id: CallId,
         outcome: ToolOutput,
     ) -> Result<(), HarnessError> {
-        let output = outcome.parts;
+        // Only content that came back is labelled; an error is glave's own words.
+        let untrusted = outcome.untrusted && !outcome.is_error;
+        let output = if untrusted {
+            crate::untrusted::label(outcome.parts)
+        } else {
+            outcome.parts
+        };
         let completed = ToolCallCompleted {
             call_id: call_id.clone(),
             is_error: outcome.is_error,
             output: output.clone(),
             structured: None,
+            untrusted,
         };
         let mut events = Vec::new();
         self.stage(thread, &mut events, &completed)?;
         self.commit(thread, events).await?;
+        thread.untrusted |= untrusted;
         thread.messages.push(Message::Tool {
             call_id,
             is_error: outcome.is_error,

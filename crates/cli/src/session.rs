@@ -14,10 +14,12 @@ use glave_harness::{
     AGENTS_MD, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings, SystemClock,
     Workspace, agents_md,
 };
+use glave_ports::ToolSource;
 use glave_session::protocol::{Reply, Request};
 use glave_session::signin::{SignIn, Trust};
 use glave_session::{Answering, Server, Wiring};
 use glave_store_sqlite::Store;
+use glave_web::{Web, WebSettings};
 use tokio::net::TcpListener;
 
 use crate::args::{self, Action, Args, USAGE};
@@ -170,8 +172,13 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         clock: Box::new(SystemClock),
         entropy: Box::new(OsEntropy),
         workspace,
-        // The project's skills first, then the MCP servers' tools.
-        tools: [crate::skills::offered(&root).await?, servers.sources()].concat(),
+        // web_fetch first, then the project's skills, then the MCP servers' tools.
+        tools: [
+            web(choices)?,
+            crate::skills::offered(&root).await?,
+            servers.sources(),
+        ]
+        .concat(),
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
         workers: on_workers,
@@ -184,6 +191,20 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
         choices: setup.choices,
         workers,
+    })
+}
+
+/// `web_fetch`, as `[web]` sets it up; nothing when it is off.
+fn web(choices: &Choices) -> anyhow::Result<Vec<Arc<dyn ToolSource>>> {
+    let settings = WebSettings {
+        policy: choices.web.value.policy()?,
+        limits: glave_web::Limits::default(),
+    };
+    let web = Web::new(settings).context("could not set up web_fetch")?;
+    Ok(if web.offers_any() {
+        vec![Arc::new(web)]
+    } else {
+        Vec::new()
     })
 }
 

@@ -78,6 +78,29 @@ fn settings_that_loosen_wait_for_trust_and_the_rest_apply_at_once() {
 }
 
 #[test]
+fn a_project_cannot_let_web_fetch_reach_private_addresses_without_trust() {
+    let dir = scratch("web");
+    let text = "[web]\nprivate_addresses = true\nallow = [\"10.0.0.5\"]\ndeny = [\"x.com\"]\n";
+    let project = repository(&dir, "", Some(text));
+    let assessment = assess(project, &Record::default(), &Constraints::default());
+    assert_eq!(assessment.undecided().len(), 1);
+    let outcome = assessment.clone().apply(Answer::NoOne);
+    let web = outcome.config.unwrap().web.unwrap();
+    assert_eq!((web.private_addresses, web.allow.len()), (None, 0));
+    assert_eq!(
+        web.deny,
+        ["x.com"],
+        "a deny only narrows, so it applies at once"
+    );
+    assert!(outcome.withheld[0].contains("[web] private_addresses = true"));
+    let trusted = assessment.apply(Answer::Yes).config.unwrap().web.unwrap();
+    assert_eq!(trusted.private_addresses, Some(true));
+    let narrowing = repository(&scratch("web-off"), "", Some("[web]\nfetch = false\n"));
+    let assessment = assess(narrowing, &Record::default(), &Constraints::default());
+    assert_eq!(assessment.items.len(), 0, "turning fetch off never asks");
+}
+
+#[test]
 fn a_project_cannot_pick_its_own_judge_without_trust_but_may_turn_it_off() {
     let dir = scratch("judge");
     let rules = Constraints::default();

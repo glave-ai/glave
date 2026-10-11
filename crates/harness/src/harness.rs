@@ -169,6 +169,10 @@ pub struct Thread {
     /// A cleanup removed the thread's worktree while it was held: it is opened again before
     /// the thread's next turn (`outside.rs`).
     pub(crate) removed: bool,
+    /// Whether the thread has read untrusted content, such as a web page: risky actions after
+    /// it are judged knowing that (`untrusted.rs`). A subagent's thread starts with its
+    /// parent's.
+    pub(crate) untrusted: bool,
 }
 
 impl Thread {
@@ -365,6 +369,7 @@ where
             unnumbered: u64::from(bound.is_some()),
             standing: Standing::Active,
             removed: false,
+            untrusted: false,
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {

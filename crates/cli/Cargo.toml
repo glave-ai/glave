@@ -26,6 +26,7 @@ glave-provider-anthropic.workspace = true
 glave-provider-openai.workspace = true
 glave-session.workspace = true
 glave-store-sqlite.workspace = true
+glave-web.workspace = true
 globset.workspace = true
 # Times for the daily check of worktrees: how long a thread has been idle.
 jiff.workspace = true

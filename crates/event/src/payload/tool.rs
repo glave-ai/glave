@@ -57,11 +57,39 @@ pub struct ToolCallCompleted {
     pub output: Vec<Part>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub structured: Option<Value>,
+    /// The output holds content from outside that no one vouches for, such as a web page,
+    /// labelled so for the model. Once a thread has one, risky actions are judged knowing it.
+    /// Since version 2; absent means `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub untrusted: bool,
+}
+
+/// Version 1, before output could be marked untrusted.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ToolCallCompletedV1 {
+    call_id: CallId,
+    is_error: bool,
+    output: Vec<Part>,
+    #[serde(default)]
+    structured: Option<Value>,
+}
+
+impl From<ToolCallCompletedV1> for ToolCallCompleted {
+    fn from(old: ToolCallCompletedV1) -> Self {
+        Self {
+            call_id: old.call_id,
+            is_error: old.is_error,
+            output: old.output,
+            structured: old.structured,
+            untrusted: false,
+        }
+    }
 }
 
 impl Payload for ToolCallCompleted {
     const TYPE: &'static str = COMPLETED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 pub(crate) fn decode_completed(
@@ -69,7 +97,8 @@ pub(crate) fn decode_completed(
     data: &RawValue,
 ) -> Option<serde_json::Result<ToolCallCompleted>> {
     match version {
-        1 => Some(parse(data)),
+        1 => Some(parse::<ToolCallCompletedV1>(data).map(ToolCallCompleted::from)),
+        2 => Some(parse(data)),
         _ => None,
     }
 }
