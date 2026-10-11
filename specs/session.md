@@ -27,8 +27,9 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | Method | Params | Result |
 | --- | --- | --- |
 | `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
-| `thread/start` | optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`); optional `background`: `true` for a thread that will run as a task, which works on a worker when the server has a worker backend, even if other threads work here | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
-| `thread/list` | optional `limit` (default 20); optional `show`: `active` (default), `archived`, or `deleted` (waiting for erasure, for the operator that does it) | `threads`: summaries, newest first |
+| `thread/start` | optional `space` (default: the server's own space, when the caller works in it; else the caller's personal space, made the first time, as for a one-off chat from the web); optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`); optional `background`: `true` for a thread that will run as a task, which works on a worker when the server has a worker backend, even if other threads work here | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
+| `thread/list` | optional `space` (default as `thread/start` picks it); optional `limit` (default 20); optional `show`: `active` (default), `archived`, or `deleted` (waiting for erasure, for the operator that does it); optional `cursor`, the `next` of the page before | `threads`: summaries, most recently written first, read from the threads view a page at a time (its cost is the page's, however many threads or events the space has); `next`, the cursor of the following page, when there is one. A `cursor` this server did not make is refused with `-32602` |
+| `thread/rename` | `thread`; `title`: 1 to 200 characters, trimmed, not only spaces | `thread`: its summary with the new title. Records `thread.renamed`, glave's own record, so the model is sent the same. A title that is empty or too long is refused with `-32602`; a thread with a turn running with `-32002` |
 | `thread/archive` | `thread` | `{}`. Records `thread.archived`; the thread leaves `thread/list` and search but stays in the log and readable by id. A turn, goal or compaction in it is refused with `-32014`. Archiving an archived thread records nothing |
 | `thread/unarchive` | `thread` | `{}`. Records `thread.unarchived` |
 | `thread/delete` | `thread` | `{}`. Records `thread.deleted`: the thread is hidden for good, and every method but `thread/list` with `show: deleted` answers `-32001` for it |
@@ -48,6 +49,10 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | `schedule/create` | `when`: `{"cron": "<five fields>"}` (UTC) or `{"at": "<RFC 3339>"}`; `prompt`; optional `goal` (`true`: each run works toward `prompt` as a goal); `budget` (tokens each run may use, required, more than 0); optional `worktree` | `schedule`: `schedule` (its id), `when`, `prompt`, `goal`, `budget`, `worktree`, `created_at`, `last` (when the latest run was due), `next` (absent once a one-off has run). A cron expression that does not parse is refused with `-32602` |
 | `schedule/list` | none | `schedules` |
 | `schedule/delete` | `schedule` | `{}`; no more runs start. `-32016` for no such schedule |
+| `space/list` | optional `limit` (default 100) | `spaces`: the spaces the caller owns or is a member of, in id order. A space is `id`, `kind` (`project` or `personal`), `name`, `owner`, `members` (principals), `created_at`, `updated_at` (`storage.md`, "Spaces") |
+| `space/get` | `space` | `space` |
+| `space/create` | `name`; optional `members` (principals) | `space`: a new project space owned by the caller. A name of only spaces, or of more than 200 characters, is refused with `-32602` |
+| `space/rename` | `space`; `name` | `space`, renamed. Only its owner renames it; anyone else is refused with `-32012` |
 | `memory/list` | optional `scope` (`personal` or `space`) | `memories`: the person's and this space's memories (`memory.md`), each with `memory`, `version`, `scope`, `text`, `saved_at`, optional `edited_at`, `untrusted_read` and `source` |
 | `memory/save` | `text`; `scope` | `memories`: the one saved. A credential, more than 500 characters, or a full scope is refused with `-32602` |
 | `memory/edit` | `memory`; `text` | `memories`: the one edited |
@@ -55,18 +60,26 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | `memory/forget` | `memory`, or `all: true` with `scope` | `memories`: those forgotten. Their keys are destroyed at once |
 | `memory/restore` | `memory` | `memories`: the one restored, when glave changed it in the last 30 days |
 
-A **thread summary** has `id` and `status`: `idle`, `running` or `waiting` (a turn is paused for an approval or an answer). Titles, creation and update times arrive with a threads view built from the log.
+A **thread summary** is the thread's row of the threads view (`events.md`, "Storage"), with what it is doing now: `id`; `space`; `status`: `idle`, `running` or `waiting` (a turn is paused for an approval or an answer); `standing`: `active`, `archived` or `deleted`; `title`, when it has one: the latest `thread.renamed`'s, else the first line of the person's first message, trimmed and cut to 80 characters (an ellipsis marks the cut); `for` and `origin`, as `thread.started` records them; `parent`, for a subagent's thread; `created_at` and `updated_at`, when its first and latest events were recorded; `turns`, how many it has started; `outcome`, how the latest ended; `tokens`, what its own model calls used (a subagent's are in its own thread); and `cost`, while every call reported one in one currency. The title is read from the one event that gives it, so the view itself holds no content.
 
 A **task** has `thread`, `kind` (`agent`; background commands come later), `title` (the prompt or objective's first line, shortened), `model`, `tokens` and `cost` so far (subagents' included), `budget`, `started_at`, `elapsed_ms`, `status` (`running` in this server, `elsewhere` when started and not ended by another, `finished`), `outcome` once finished, and `schedule` when one started it.
 
 A **turn result** has `outcome` (`completed`, `cancelled`, `failed`, `interrupted`, `limit_reached`), `model_calls`, `tool_calls`, `tokens` and `cost` as in `events.md`.
 
-Each server serves one workspace and one scope in version 1. Choosing among several workspaces arrives with issue #29; choosing a space arrives with organizations (issue #22).
+Each server serves one organization's spaces, and one folder: its own space's. A thread in its own space works in that folder (or a worktree or worker, as above); a thread in any other space works in a scratch folder of its own (`computers.md`). The server's tasks, schedules and memory are its own space's: a task in a thread of another space is refused with `-32602` for now.
+
+## Spaces and who may do what
+
+Every request that acts on a thread (`thread/get`, `thread/events`, `thread/archive`, `thread/unarchive`, `thread/delete`, `thread/compact`, `turn/start`, `turn/cancel`, `approval/decide`, `question/answer`, `goal/*`, `tasks/stop`), on a space (`thread/start` and `thread/list` with a `space`, `space/get`, `space/rename`), or on the server's own space as a whole (`tasks/list`, `schedule/*`, `memory/*`) is checked against the caller before anything is read or recorded: they must be the space's owner or one of its members. Anyone else is refused with `-32012`, whether or not the thread exists; a thread no space here holds is `-32001`. The thread's space comes from the data store's one lookup by bare thread id (`storage.md`, "Scope"), remembered by the server, since a thread's space never changes.
+
+- **Local transports** (in-process, stdio, the Unix socket) act as the local person, who owns the folder's space.
+- **Network transports** act as the signed-in person. A thread they start is for them: `thread.started.for` is that person, so `author`, `by` and `origin.by` name someone only when it is not them (`events.md`, "Who acted").
+- Members are set when a space is made (`space/create`), or by the host through the spaces port; managing them over the API comes later.
 
 ## Archiving, deleting and records from outside
 
 - **Archive and delete are events** (`thread.archived`, `thread.unarchived`, `thread.deleted`), appended through the thread when the server holds it. A thread with a turn running is refused with `-32002`.
-- **Records from outside.** Glave's own records about a thread may be appended by another glave process while a server holds the thread: `glave threads archive|unarchive|delete` and worktree cleanup (`glave worktrees prune`, the daily check, archiving) write straight to the log. When the holding server's next append meets the log's `(thread, seq)` conflict, it reads what was written after its last event. If all of it is `workspace.removed`, `thread.archived`, `thread.unarchived` or `thread.deleted` (records that do not change the conversation, which call ids do not count), it takes them in and appends after them, so the model is sent the same. A removed worktree is opened again from its branch, as resuming does. If the thread is now archived the turn stops with `-32014`, deleted with `-32001`, and the server reads the thread from the log again next time, which closes what the turn left open. Anything else written from outside, such as a message, means another harness is running the thread, and stays a conflict.
+- **Records from outside.** Glave's own records about a thread may be appended by another glave process while a server holds the thread: `glave threads archive|unarchive|delete` and worktree cleanup (`glave worktrees prune`, the daily check, archiving) write straight to the log. When the holding server's next append meets the log's `(thread, seq)` conflict, it reads what was written after its last event. If all of it is `workspace.removed`, `thread.archived`, `thread.unarchived`, `thread.deleted` or `thread.renamed` (records that do not change the conversation, which call ids do not count), it takes them in and appends after them, so the model is sent the same. A removed worktree is opened again from its branch, as resuming does. If the thread is now archived the turn stops with `-32014`, deleted with `-32001`, and the server reads the thread from the log again next time, which closes what the turn left open. Anything else written from outside, such as a message, means another harness is running the thread, and stays a conflict.
 - **Worktrees.** `glave threads archive|delete` removes the thread's worktree at once when that loses nothing (no uncommitted changes, every commit on a remote) and records `workspace.removed` with reason `archived`; its branch stays. A worktree that would lose work is kept and marked held, and the command says why. The session methods record the change only: worktree cleanup works on the computer's files, which the session crate reaches only through the computer port, and that port has no cleanup operations yet.
 
 ## Notifications
@@ -163,6 +176,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32016` | No such schedule |
 | `-32017` | No such memory here |
 | `-32018` | Memory is off for this server |
+| `-32019` | No such space |
 | `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
 
 ## Transports
@@ -172,7 +186,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | In-process | Typed messages over a channel; nothing is serialized | The CLI; programs that link glave's crates | None: same process |
 | stdio | One JSON message per line (`glave serve --stdio`) | Programs that run glave as a child process | None: the parent started it |
 | Unix socket | One JSON message per line (`glave serve --socket`, the folder's task host) | Local clients of a long-running glave | File permissions on the socket (`0600`, in the person's private GLAVE_HOME) |
-| HTTP + SSE | `POST` one request; the answer is JSON, or for streaming methods an `text/event-stream` of notifications ending with the response. The method is also sent as the `Glave-Method` header, so proxies and logs can see it | Web, desktop and remote clients | Required |
+| HTTP + SSE | `POST` one request; the answer is JSON, or for streaming methods an `text/event-stream` of notifications ending with the response. The method is also sent as the `Glave-Method` header, so proxies and logs can see it | Web, desktop and remote clients | Required: the local token from this computer, or OIDC |
 | WebSocket | One JSON message per text frame | Clients that want one connection for many threads; later, realtime features | Required |
 
 A network listener never runs without authentication: there is no "add it later". Closing a streaming HTTP response stops only that stream; the turn goes on, and `thread/watch` picks it up again.
@@ -184,6 +198,7 @@ What changes when a client is on another machine: who is calling, how a server t
 ### Signing in
 
 - **Local transports need no sign-in:** in-process, stdio and a Unix socket act as the local person.
+- **A browser on the person's own computer signs in with the local token.** `glave serve --http` makes a new random token (32 bytes) every time it starts, writes it to `GLAVE_HOME/serve.token`, readable only by the person, and deletes it when it stops. It accepts the token (`Authorization: Bearer glave_local_…`) only from a loopback address (`127.0.0.0/8`, `::1`), as the local person, recorded as `auth.method` `local`; from anywhere else it is refused with `-32013`. The web UI it serves gets the token once, from a link `glave serve` prints to the terminal, `http://127.0.0.1:<port>/#token=<token>`: in the fragment, which browsers never send, so it never reaches a server log or a query string. Without `--issuer`, the local token is the only sign-in, and the listener must be on this computer.
 - **Network transports always need it.** A server accepts:
   - **OIDC access tokens** (`Authorization: Bearer …`), checked against the identity provider's published keys (JWKS), with `iss`, `aud` and expiry verified. The CLI gets one by the device flow; browsers and the desktop app by authorization code with PKCE.
   - **SAML,** for organizations that use it: a browser signs in through the identity provider, and glave issues its own short-lived session token, signed by the organization's key.
@@ -200,22 +215,26 @@ What changes when a client is on another machine: who is calling, how a server t
 ### Several clients
 
 - Any number of clients may `thread/watch` the same thread; each sees every event once, in `seq` order.
-- Who may do what (start a turn, answer an approval, read a thread) is checked against the caller on every request, from the space's owner and the organization's policy (issue #22). A request from someone who may not make it is refused with error `-32012` and never recorded; a network request without a valid sign-in is refused with `-32013`.
+- Who may do what (start a turn, answer an approval, read a thread) is checked against the caller on every request, from the space's owner and members ("Spaces and who may do what"), and later the organization's policy. A request from someone who may not make it is refused with error `-32012` and never recorded; a network request without a valid sign-in is refused with `-32013`.
 
 ## Status
 
-Version 1, in-process (`glave-session`, used by the CLI), over stdio (`glave serve --stdio`, the same server through `rpc::serve`), over a Unix socket (`glave serve --socket`, through `rpc::serve_connection`, where a client that leaves stops nothing) and over HTTP with server-sent events (`glave serve --http <address> --issuer <url> --audience <name>`, requests `POST`ed to `/`); one conformance suite runs over all three. Every method but `thread/watch`, whose in-process form is `Server::watch`.
+Version 1, in-process (`glave-session`, used by the CLI), over stdio (`glave serve --stdio`, the same server through `rpc::serve`), over a Unix socket (`glave serve --socket`, through `rpc::serve_connection`, where a client that leaves stops nothing) and over HTTP with server-sent events (`glave serve --http <address> [--issuer <url> --audience <name>]`, requests `POST`ed to `/`); one conformance suite runs over all three. Every method but `thread/watch`, whose in-process form is `Server::watch`.
+
+- **The schema:** `specs/session.schema.json` is a JSON Schema (draft 2020-12) of every method's params and result, every notification and every error code, generated from the Rust protocol types (`glave_session::schema`, deriving `schemars` beside serde). `cargo xtask schema` writes it, and the TypeScript types of the web client (`web/client/src/generated/api.ts`) from it; `cargo xtask ci` fails when either no longer matches the code. `web/client` is a small typed client (no framework): `call` for any method, `stream` for a turn's server-sent events, errors as `ApiError` with their code. CI type-checks it with TypeScript, strict.
+- **The threads view** (issue #64): built in both stores (`storage.md`); `thread/list` and the summaries read it, and `thread/rename` titles a thread.
+- **Local sign-in:** built, for the web UI that `glave serve` will serve.
 
 - **Sign-in on HTTP:** OIDC access tokens signed with RS256 or ES256, checked against the keys the issuer's discovery document points to, with `iss`, `aud`, `exp` and `nbf` verified and a minute of clock skew forgiven. Keys are cached and fetched again for a key not seen yet, at most every 30 seconds. An issuer must be `https`, or `http` on the same computer. The person is derived from the issuer and subject (a UUID v7 at time zero whose random bits are the start of a SHA-256 of both) until an identity source maps them. The caller is stamped as "Who is calling" describes. The listener has no TLS of its own: across machines it sits behind a proxy that has.
 - **Retries:** `turn/start` honours `_meta.idempotency_key` for the 1,024 most recent keys, in memory.
 - Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted.
 - **Archive, delete, cleanup:** built (issue #131). **Deleting does not erase yet:** today's keys are per space and month, so one thread's content cannot be destroyed alone (`storage.md`). `thread/delete` hides the thread for good and lists it (`thread/list` with `show: deleted`) for the erasure that arrives with data keys per thread. Archiving or deleting through the session API does not remove the thread's worktree yet (above); `glave threads` does, and the daily check removes it once the thread has been idle 30 days.
 - **Tasks and schedules:** built (issue #44). The CLI's task host is `glave serve --socket`, one per folder, which `glave --background`, `glave tasks` and `glave schedule` start when it is not running and which exits once no task runs, no schedule waits and no client is connected; a session in the folder starts it when a schedule waits, and says which tasks finished since the last one. It keeps the settings it started with (model, config, AGENTS.md) until it exits. Not yet: background commands (the model starting a long-running shell process), a task's worker released when the task ends (it is released when the host exits), schedules in the person's time zone, the `origin` of a scheduled thread recorded as `schedule`, desktop notifications, running the scheduler in `glave serve --http`, and the operating system starting the host at login (launchd, systemd).
-- Still to come from "Over the network" (issue #64): SAML and glave session tokens, durable paused turns, leases, WebSocket, and enforcing `-32011` and `-32012`.
+- **Spaces and authorization** (issue #64): built. The server serves many spaces, `space/*` and the `space` of `thread/start` and `thread/list`; a network caller's threads are for them; `-32012` is enforced on every request above, over every transport, from the space's owner and members. Not yet: promoting a one-off chat into a project (`storage.md`), managing members over the API, tasks and schedules in spaces other than the server's own, and the organization's policy in the check.
+- Still to come from "Over the network" (issue #64): SAML and glave session tokens, durable paused turns, leases, WebSocket, and enforcing `-32011`.
 
 ## Later
 
 - WebSocket-only realtime channels, such as voice (issue #58), as optional features.
 - Steering and queueing turns.
 - ACP and A2A adapters, when a real client needs them.
-- A JSON Schema of every message, generated from the Rust types, and a TypeScript client generated from it.

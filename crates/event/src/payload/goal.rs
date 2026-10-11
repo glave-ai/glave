@@ -75,7 +75,7 @@ pub struct GoalEnded {
 }
 
 /// Why a goal ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GoalReason {
     /// The model verified the goal is met and said so with `update_goal`.

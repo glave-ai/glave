@@ -5,13 +5,12 @@
 use std::process::ExitCode;
 
 use glave_event::ThreadId;
-use glave_harness::{Change, Entropy, OsEntropy, Standing, change_standing, standing_of};
-use glave_ports::{EventLog, Scope};
+use glave_harness::{Change, Entropy, OsEntropy, Standing, change_standing};
+use glave_ports::{EventLog, Scope, ThreadQuery};
 use glave_store_sqlite::Store;
 use jiff::Timestamp;
 use uuid::Uuid;
 
-use crate::system::random_uuid;
 use crate::{home, keys, worktrees};
 
 pub const USAGE: &str = "\
@@ -98,18 +97,19 @@ async fn run(command: Command) -> anyhow::Result<()> {
         keys::settings(&home, home::relocated()).await?,
     )
     .await?;
-    let scope = store
-        .local_scope(&std::env::current_dir()?, random_uuid(), random_uuid())
-        .await?;
+    let person = crate::identity::load_or_make(&home).await?.person;
+    let scope = crate::spaces::here(&store, &std::env::current_dir()?, person).await?;
     let log = store.log();
     match command {
-        Command::List(wanted) => {
-            for thread in log.threads(&scope, MOST_LISTED).await? {
-                if glave_session::is_ledger(thread) {
-                    continue;
-                }
-                if standing_of(&log, &scope, thread).await? == wanted {
-                    println!("{thread}");
+        Command::List(standing) => {
+            let query = ThreadQuery {
+                standing,
+                limit: MOST_LISTED,
+                after: None,
+            };
+            for view in log.thread_views(&scope, &query).await? {
+                if !glave_session::is_ledger(view.thread) {
+                    println!("{}", view.thread);
                 }
             }
             Ok(())

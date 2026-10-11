@@ -11,9 +11,10 @@ use crate::payload::{
     ApprovalDecided, ApprovalRequested, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
     HookRan, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MessageAdded,
     ModelResponded, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived,
-    ThreadCompacted, ThreadDeleted, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
-    ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, gateway,
-    goal, hook, memory, message, model, standing, task, thread, tool, turn, workspace,
+    ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
+    ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
+    approval, gateway, goal, hook, memory, message, model, standing, task, thread, tool, turn,
+    workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -34,6 +35,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (standing::ARCHIVED, 1),
     (standing::UNARCHIVED, 1),
     (standing::DELETED, 1),
+    (standing::RENAMED, 1),
     (turn::STARTED, 1),
     (turn::STARTED, 2),
     (message::TYPE, 1),
@@ -53,6 +55,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (goal::ENDED, 2),
     (goal::RESUMED, 1),
     (workspace::BOUND, 1),
+    (workspace::BOUND, 2),
     (workspace::REMOVED, 1),
     (workspace::REMOVED, 2),
     (hook::TYPE, 1),
@@ -82,6 +85,7 @@ pub enum Body {
     ThreadArchived(ThreadArchived),
     ThreadUnarchived(ThreadUnarchived),
     ThreadDeleted(ThreadDeleted),
+    ThreadRenamed(ThreadRenamed),
     TurnStarted(TurnStarted),
     MessageAdded(MessageAdded),
     ToolCallRequested(ToolCallRequested),
@@ -171,6 +175,9 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         standing::DELETED => {
             standing::decode_deleted(version, data).map(|r| r.map(Body::ThreadDeleted))
         }
+        standing::RENAMED => {
+            standing::decode_renamed(version, data).map(|r| r.map(Body::ThreadRenamed))
+        }
         turn::STARTED => turn::decode_started(version, data).map(|r| r.map(Body::TurnStarted)),
         message::TYPE => message::decode(version, data).map(|r| r.map(Body::MessageAdded)),
         tool::REQUESTED => {
@@ -234,6 +241,7 @@ impl Event {
             Body::ThreadArchived(payload) => encode(header, payload),
             Body::ThreadUnarchived(payload) => encode(header, payload),
             Body::ThreadDeleted(payload) => encode(header, payload),
+            Body::ThreadRenamed(payload) => encode(header, payload),
             Body::TurnStarted(payload) => encode(header, payload),
             Body::MessageAdded(payload) => encode(header, payload),
             Body::ToolCallRequested(payload) => encode(header, payload),

@@ -6,8 +6,10 @@ use std::sync::Arc;
 
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
 use glave_keys::{EventFields, KeyError, Sealed, erased_payload};
-use glave_ports::{EventLog, LogError, Scope, check_append};
-use rusqlite::{Connection, ErrorCode, TransactionBehavior, params};
+use glave_ports::{
+    EventLog, LogError, OrgId, Scope, SpaceId, ThreadQuery, ThreadView, check_append,
+};
+use rusqlite::{Connection, ErrorCode, OptionalExtension as _, TransactionBehavior, params};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
@@ -199,6 +201,62 @@ impl EventLog for SqliteLog {
                 .collect()
         }
     }
+
+    fn thread_views(
+        &self,
+        scope: &Scope,
+        query: &ThreadQuery,
+    ) -> impl Future<Output = Result<Vec<ThreadView>, LogError>> + Send {
+        let (scope, query, connection) = (*scope, *query, self.connection.clone());
+        async move { crate::views::page(&connection, &scope, &query).await }
+    }
+
+    fn thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send {
+        let (scope, connection) = (*scope, self.connection.clone());
+        async move { crate::views::one(&connection, &scope, thread).await }
+    }
+
+    fn rebuild_thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send {
+        let (scope, this) = (*scope, self.clone());
+        async move { crate::views::rebuild(&this, &this.connection, &scope, thread).await }
+    }
+
+    fn locate(
+        &self,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+        let connection = self.connection.clone();
+        async move {
+            let found = run(&connection, move |connection| {
+                let mut statement = connection.prepare_cached(
+                    "SELECT org, space FROM events WHERE thread = ?1 ORDER BY org, space LIMIT 1",
+                )?;
+                statement
+                    .query_row(params![thread.to_string()], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .optional()
+            })
+            .await
+            .map_err(|e| LogError::Storage(e.to_string()))?;
+            found
+                .map(|(org, space)| {
+                    Ok(Scope {
+                        org: OrgId::from_uuid(parse_uuid(&org)?),
+                        space: SpaceId::from_uuid(parse_uuid(&space)?),
+                    })
+                })
+                .transpose()
+        }
+    }
 }
 
 fn append_now(
@@ -255,6 +313,8 @@ fn append_now(
             ])?;
         }
     }
+    let position = transaction.last_insert_rowid();
+    crate::views::fold_in(&transaction, scope, events, position)?;
     transaction.commit()?;
     Ok(())
 }

@@ -1186,6 +1186,7 @@ version = "0.0.0"
 dependencies = [
  "jiff",
  "proptest",
+ "schemars",
  "serde",
  "serde_json",
  "thiserror",
@@ -1244,6 +1245,7 @@ dependencies = [
  "jiff",
  "proptest",
  "regex",
+ "schemars",
  "serde",
  "serde_json",
  "thiserror",
@@ -1316,6 +1318,7 @@ dependencies = [
  "glave-event",
  "jiff",
  "proptest",
+ "schemars",
  "serde",
  "serde_json",
  "sha2",
@@ -1369,6 +1372,7 @@ dependencies = [
  "jsonwebtoken",
  "proptest",
  "reqwest",
+ "schemars",
  "serde",
  "serde_json",
  "sha2",
@@ -3250,6 +3254,7 @@ dependencies = [
  "schemars_derive",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -4618,6 +4623,9 @@ dependencies = [
 [[package]]
 name = "xtask"
 version = "0.0.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "yasna"

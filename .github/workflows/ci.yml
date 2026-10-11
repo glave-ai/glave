@@ -78,6 +78,18 @@ jobs:
             exit 1
           fi
 
+  # The web client's TypeScript, strict: the types generated from the session API's schema
+  # (`cargo xtask ci` checks they match the Rust types) and the client written against them.
+  web-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Type-check the web client
+        run: npx --yes --package typescript@5.9.3 tsc -p web/client
+
   # Workers on Kubernetes: a kind cluster on the runner, and the Kubernetes backend's tests
   # against it (a stub in glave's place, then the glave this job builds in real workers, over
   # TLS through port-forward and over attach). Everything they make is labelled

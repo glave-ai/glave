@@ -5,11 +5,11 @@
 mod tasks;
 
 use glave_event::{
-    CallId, MemoryId, MemoryScope, Money, Outcome, RawEvent, ScheduleId, Seq, ThreadId,
-    TokenCounts, When,
+    At, CallId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal, RawEvent, ScheduleId,
+    Seq, ThreadId, TokenCounts, When,
 };
 use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
-use glave_ports::Failure;
+use glave_ports::{Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
@@ -18,13 +18,17 @@ pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub const PROTOCOL: &str = "2026-10";
 
 /// A request, by method.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
     #[serde(rename = "server/discover")]
     Discover {},
     #[serde(rename = "thread/start")]
     ThreadStart {
+        /// The space the thread is in: by default the server's own, for a caller who works in
+        /// it, else the caller's personal space.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<SpaceId>,
         /// Whether the thread works in a worktree of its own rather than in the folder itself;
         /// the server's default (`worktree` in `config.toml`) when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -36,12 +40,21 @@ pub enum Request {
     },
     #[serde(rename = "thread/list")]
     ThreadList {
+        /// The space whose threads to list, by default as `thread/start` picks one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<SpaceId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
         /// Which threads: the active ones by default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         show: Option<Show>,
+        /// Where the page starts: the `next` of the page before.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cursor: Option<String>,
     },
+    /// Gives a thread a title of the person's own.
+    #[serde(rename = "thread/rename")]
+    ThreadRename { thread: ThreadId, title: String },
     /// Hides a thread from lists, keeping it in the log.
     #[serde(rename = "thread/archive")]
     ThreadArchive { thread: ThreadId },
@@ -137,6 +150,24 @@ pub enum Request {
     ScheduleList {},
     #[serde(rename = "schedule/delete")]
     ScheduleDelete { schedule: ScheduleId },
+    /// The spaces the caller works in: owns, or is a member of.
+    #[serde(rename = "space/list")]
+    SpaceList {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<usize>,
+    },
+    #[serde(rename = "space/get")]
+    SpaceGet { space: SpaceId },
+    /// A new project space, owned by the caller, with `members` working in it too.
+    #[serde(rename = "space/create")]
+    SpaceCreate {
+        name: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        members: Vec<glave_event::Principal>,
+    },
+    /// Renames a space: its owner only.
+    #[serde(rename = "space/rename")]
+    SpaceRename { space: SpaceId, name: String },
     /// The memories here: the person's and the space's, or one `scope`.
     #[serde(rename = "memory/list")]
     MemoryList {
@@ -183,6 +214,7 @@ impl Request {
             Self::Discover {} => "server/discover",
             Self::ThreadStart { .. } => "thread/start",
             Self::ThreadList { .. } => "thread/list",
+            Self::ThreadRename { .. } => "thread/rename",
             Self::ThreadArchive { .. } => "thread/archive",
             Self::ThreadUnarchive { .. } => "thread/unarchive",
             Self::ThreadDelete { .. } => "thread/delete",
@@ -201,6 +233,10 @@ impl Request {
             Self::ScheduleCreate { .. } => "schedule/create",
             Self::ScheduleList {} => "schedule/list",
             Self::ScheduleDelete { .. } => "schedule/delete",
+            Self::SpaceList { .. } => "space/list",
+            Self::SpaceGet { .. } => "space/get",
+            Self::SpaceCreate { .. } => "space/create",
+            Self::SpaceRename { .. } => "space/rename",
             Self::MemoryList { .. } => "memory/list",
             Self::MemorySave { .. } => "memory/save",
             Self::MemoryEdit { .. } => "memory/edit",
@@ -211,8 +247,51 @@ impl Request {
     }
 }
 
+impl Request {
+    /// The thread a request acts on, when it names one: whose space decides whether the
+    /// caller may make it.
+    pub fn thread(&self) -> Option<ThreadId> {
+        match self {
+            Self::ThreadArchive { thread }
+            | Self::ThreadUnarchive { thread }
+            | Self::ThreadDelete { thread }
+            | Self::ThreadRename { thread, .. }
+            | Self::ThreadGet { thread }
+            | Self::ThreadEvents { thread, .. }
+            | Self::TurnStart { thread, .. }
+            | Self::TurnCancel { thread }
+            | Self::ThreadCompact { thread }
+            | Self::ApprovalDecide { thread, .. }
+            | Self::QuestionAnswer { thread, .. }
+            | Self::GoalStart { thread, .. }
+            | Self::GoalStop { thread }
+            | Self::GoalGet { thread }
+            | Self::TasksStop { thread } => Some(*thread),
+            _ => None,
+        }
+    }
+
+    /// Whether the request acts in the server's own space as a whole: its tasks, schedules
+    /// and memory.
+    pub(crate) fn in_home(&self) -> bool {
+        matches!(
+            self,
+            Self::TasksList { .. }
+                | Self::ScheduleCreate { .. }
+                | Self::ScheduleList {}
+                | Self::ScheduleDelete { .. }
+                | Self::MemoryList { .. }
+                | Self::MemorySave { .. }
+                | Self::MemoryEdit { .. }
+                | Self::MemoryMove { .. }
+                | Self::MemoryForget { .. }
+                | Self::MemoryRestore { .. }
+        )
+    }
+}
+
 /// What a request may carry besides its params, in `params._meta`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Meta {
     /// For `turn/start`: the same key for the same thread returns the turn already started
     /// instead of starting another, so a client may retry safely.
@@ -227,7 +306,7 @@ impl Meta {
 }
 
 /// A client's name for one attempt at a turn: 1 to 255 bytes of text.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "String", into = "String")]
 pub struct IdempotencyKey(String);
 
@@ -263,7 +342,9 @@ impl From<IdempotencyKey> for String {
 }
 
 /// Which threads `thread/list` shows.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Show {
     /// Threads that are neither archived nor deleted.
@@ -275,7 +356,7 @@ pub enum Show {
 }
 
 /// The person's answer to an approval.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Answer {
     AllowOnce,
@@ -284,7 +365,7 @@ pub enum Answer {
 }
 
 /// What the server is.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ServerInfo {
     pub name: String,
     pub version: String,
@@ -292,15 +373,38 @@ pub struct ServerInfo {
     pub protocols: Vec<String>,
 }
 
-/// A thread, as a list shows it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A thread, as a list shows it: from the threads view, with what it is doing now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ThreadSummary {
     pub id: ThreadId,
+    pub space: SpaceId,
     pub status: Status,
+    pub standing: Standing,
+    /// The title the person gave it, else the first line of their first message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Whose work it is; absent in threads from before it was recorded (the local person).
+    #[serde(rename = "for", default, skip_serializing_if = "Option::is_none")]
+    pub for_: Option<Principal>,
+    pub origin: Origin,
+    /// The thread whose call started this one, for a subagent's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<ThreadId>,
+    pub created_at: At,
+    pub updated_at: At,
+    pub turns: u64,
+    /// How its latest turn ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<Outcome>,
+    /// Tokens its own model calls used.
+    pub tokens: TokenCounts,
+    /// What they cost, when every call reported a cost.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<Money>,
 }
 
 /// What a thread is doing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
     Idle,
@@ -310,7 +414,7 @@ pub enum Status {
 }
 
 /// How a turn ended and what it cost.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TurnResult {
     pub outcome: Outcome,
     pub model_calls: u32,
@@ -337,54 +441,60 @@ impl From<TurnSummary> for TurnResult {
 }
 
 /// A reply, by the shape of its result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum Reply {
+    #[schemars(title = "Server")]
     Server(ServerInfo),
-    Thread {
-        thread: ThreadSummary,
-    },
+    #[schemars(title = "Thread")]
+    Thread { thread: ThreadSummary },
+    #[schemars(title = "Threads")]
     Threads {
         threads: Vec<ThreadSummary>,
+        /// The cursor of the next page, when there is one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        next: Option<String>,
     },
+    #[schemars(title = "Events")]
     Events {
         events: Vec<RawEvent>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         next: Option<Seq>,
     },
-    Turn {
-        turn: TurnResult,
-    },
+    #[schemars(title = "Turn")]
+    Turn { turn: TurnResult },
+    #[schemars(title = "Compacted")]
     Compacted {
         before_tokens: u64,
         after_tokens: u64,
     },
-    Task {
-        task: TaskInfo,
-    },
-    Tasks {
-        tasks: Vec<TaskInfo>,
-    },
-    Schedule {
-        schedule: ScheduleInfo,
-    },
-    Schedules {
-        schedules: Vec<ScheduleInfo>,
-    },
+    #[schemars(title = "Task")]
+    Task { task: TaskInfo },
+    #[schemars(title = "Tasks")]
+    Tasks { tasks: Vec<TaskInfo> },
+    #[schemars(title = "Schedule")]
+    Schedule { schedule: ScheduleInfo },
+    #[schemars(title = "Schedules")]
+    Schedules { schedules: Vec<ScheduleInfo> },
+    /// A space: one asked for, made or renamed.
+    #[schemars(title = "Space")]
+    Space { space: Space },
+    #[schemars(title = "Spaces")]
+    Spaces { spaces: Vec<Space> },
     /// Memories listed, or the ones a change touched.
-    Memories {
-        memories: Vec<Remembered>,
-    },
-    /// After every reply with a field of its own, since a missing `goal` reads as `null`;
-    /// before `Done`, which takes any object.
-    Goal {
-        goal: Option<GoalProgress>,
-    },
+    #[schemars(title = "Memories")]
+    Memories { memories: Vec<Remembered> },
+    // After every reply with a field of its own, since a missing `goal` reads as `null`;
+    // before `Done`, which takes any object.
+    /// The thread's latest goal, or `null`.
+    #[schemars(title = "Goal")]
+    Goal { goal: Option<GoalProgress> },
+    #[schemars(title = "Done")]
     Done {},
 }
 
 /// Something a turn or a watched thread sends while it runs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "method", content = "params")]
 pub enum Notification {
     /// A stored event, as it is appended.
@@ -399,7 +509,7 @@ pub enum Notification {
 }
 
 /// Progress while a turn runs: the live side of `Live`, in a form any transport carries.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Update {
     Text {
@@ -518,7 +628,7 @@ impl From<Live> for Update {
 }
 
 /// A request that failed, as JSON-RPC carries it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ApiError {
     pub code: i64,
     pub message: String,
@@ -527,7 +637,7 @@ pub struct ApiError {
 }
 
 /// Why a model call failed, for a client to say what to fix.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ErrorData {
     pub failure: Failure,
 }
@@ -543,6 +653,10 @@ pub mod code {
     pub const NO_GOAL: i64 = -32007;
     /// The thread's workspace could not be opened, such as a worktree outside a repository.
     pub const WORKSPACE: i64 = -32009;
+    /// The client speaks no protocol version this server does.
+    pub const UNSUPPORTED_PROTOCOL: i64 = -32010;
+    /// The thread is running in another server of this deployment.
+    pub const RUNNING_ELSEWHERE: i64 = -32011;
     /// The thread is archived: unarchive it before running a turn in it.
     pub const ARCHIVED: i64 = -32014;
     /// A hook stopped the prompt before the model saw it.
@@ -561,6 +675,8 @@ pub mod code {
     pub const NO_MEMORY: i64 = -32017;
     /// Memory is off here.
     pub const MEMORY_OFF: i64 = -32018;
+    /// No such space, or none the caller works in.
+    pub const NO_SPACE: i64 = -32019;
     /// The request's parameters do not make sense together.
     pub const INVALID_PARAMS: i64 = -32602;
 }

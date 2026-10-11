@@ -9,7 +9,7 @@ use glave_harness::{Cancel, HarnessError, Standing, Thread};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::sync::watch;
 
-use crate::protocol::{ApiError, Status, ThreadSummary, code};
+use crate::protocol::{ApiError, Status, code};
 use crate::server::{Inner, Server, api, no_thread};
 
 /// Threads kept in memory while idle; more are rebuilt from the log when asked for.
@@ -42,10 +42,11 @@ where
             Some(_) => return Ok(()),
             None => {}
         }
+        let scope = self.scope_of(thread).await?;
         let resumed = self
             .inner
             .harness
-            .resume_thread(self.inner.scope, thread)
+            .resume_thread(scope, thread)
             .await
             .map_err(|error| api(&error))?;
         if resumed.standing() == Standing::Deleted {
@@ -78,13 +79,13 @@ where
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    pub(crate) fn summary(&self, id: ThreadId) -> ThreadSummary {
-        let status = match self.lock().get(&id) {
+    /// What `id` is doing now.
+    pub(crate) fn status(&self, id: ThreadId) -> Status {
+        match self.lock().get(&id) {
             Some(Slot::Busy { .. }) if self.inner.approvals.waiting(id) => Status::Waiting,
             Some(Slot::Busy { .. }) => Status::Running,
             _ => Status::Idle,
-        };
-        ThreadSummary { id, status }
+        }
     }
 
     /// Runs `work` on `thread` in a task of its own, holding the thread busy until it ends, so

@@ -6,6 +6,7 @@ use glave_event::{RawEvent, Seq, ThreadId};
 use thiserror::Error;
 
 use crate::scope::Scope;
+use crate::view::{ThreadQuery, ThreadView};
 
 /// The append-only log every event is written to.
 ///
@@ -37,6 +38,39 @@ pub trait EventLog: Send + Sync {
         scope: &Scope,
         limit: usize,
     ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send;
+
+    /// The scope `thread` is stored in, when any event of it is: the one lookup that takes a
+    /// bare thread id (`specs/storage.md`, "Scope"). It answers only "which scope"; every read
+    /// that follows is scoped as usual. The ledgers' reserved ids are in every space, so it is
+    /// asked only of threads.
+    fn locate(
+        &self,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send;
+
+    /// A page of the threads view in `scope` (`specs/events.md`, "Storage"): the views of one
+    /// standing, most recently updated first, after `query.after`, at most `query.limit`. Its
+    /// cost is the page's, not the log's.
+    fn thread_views(
+        &self,
+        scope: &Scope,
+        query: &ThreadQuery,
+    ) -> impl Future<Output = Result<Vec<ThreadView>, LogError>> + Send;
+
+    /// The view of one thread, if it has one: every thread does from its first append.
+    fn thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send;
+
+    /// Folds the view of `thread` again from every event of it, replaces the stored one, and
+    /// returns it. The views are disposable: a rebuilt view equals the one kept by appends.
+    fn rebuild_thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<ThreadView>, LogError>> + Send;
 
     /// The thread's latest event whose type is one of `kinds`, if it has one. The default reads
     /// the thread from the start; an adapter that can ask its storage answers faster.

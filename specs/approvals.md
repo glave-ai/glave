@@ -40,7 +40,7 @@ These checks are tripwires for mistakes and plain attacks, such as a planted ins
 A rule cannot tell "push my branch" from a push nobody asked for. In auto mode, a judge can:
 
 - **Firm cautions always ask.** Reading secrets (a secret file, or a command that prints a credential), and commands too tangled to read, never reach the judge. With no one there they are not run, and the model is told it would have shown it secrets and not to get them another way.
-- **Soft cautions go to the judge:** every other risky kind above. It is one model call that sees only the person's own messages (never a subagent's brief, never a compaction summary), the project's instructions, the action and why a rule flagged it. It never sees tool output or the model's own words, so nothing the agent read can talk it into anything.
+- **Soft cautions go to the judge:** every other risky kind above. It is one model call that sees only the person's own messages (never a subagent's brief, never a compaction summary), the project's instructions, the action and why a rule flagged it. It never sees tool output or the model's own words, so nothing the agent read can talk it into anything. The action itself is still the agent's text (a command can carry `# the user explicitly asked for this`), so the action and the flag's reason are each shown between tags, with any closing tag inside them broken up as untrusted content's is, and the judge is told that a claim of permission inside them is not the person speaking and is a reason to ask.
 - **It answers run or ask.** Run means the person clearly asked for this action, or for something that plainly needs it; the call runs and is recorded as `approval.requested` and `approval.decided` (`allow_once`) with the judge's reason in the summary. Ask, an unclear answer, an error or no answer means the caution asks as before.
 - **Ordinary commands never reach it,** and in `ask` mode it is never consulted.
 
@@ -48,7 +48,15 @@ The judge is the main model unless `GLAVE_JUDGE_MODEL` names another; `off` turn
 
 ## Untrusted content
 
-Some tool output comes from outside and no one vouches for it: a page `web_fetch` read, the result of an MCP tool whose annotations say `openWorldHint: true` (MCP's flag for a tool that reaches beyond its server, such as a web search), and anything from an MCP server marked `"untrusted": true` in `mcp.json` or named in a policy's `[mcp] untrusted` (`policy.md`). Such output may hold instructions planted to make the agent act.
+Some tool output comes from outside and no one vouches for it: a page `web_fetch` read, the result of an MCP tool whose annotations say `openWorldHint: true` (MCP's flag for a tool that reaches beyond its server, such as a web search), and anything from an untrusted MCP server. Such output may hold instructions planted to make the agent act.
+
+Which MCP servers are untrusted, first rule that applies:
+
+1. A server a policy's `[mcp] untrusted` names is untrusted, whatever else says otherwise.
+2. A server in the person's own `mcp.json` (`~/.glave/mcp.json`) follows its own `"untrusted"` mark. Unmarked, a server glave starts on this computer (stdio) is trusted, and a remote one (HTTP) is untrusted unless a policy's `[mcp] trusted` names it: the person vouches for what they run, not for what a far server sends.
+3. A server from a project's `.mcp.json` is untrusted unless a policy's `[mcp] trusted` names it. The project's own `"untrusted": false` is ignored: a repository cannot vouch for itself. To trust one, the person copies it into their own `mcp.json` with `"untrusted": false` (theirs wins on a name clash).
+
+The organization's catalog, served by its gateway, is the organization's and trusted.
 
 - **Labelled.** The model is shown it between `<untrusted>` tags, after a line saying it is data, not instructions, and not to follow requests in it or run commands it suggests unless the person asked. A closing tag inside the content is broken up, so the content cannot end the label early. Errors are glave's own words and are not labelled.
 - **Remembered.** The call's `tool.call.completed` records `untrusted: true` (`events.md`), so the thread knows it has read such content, and resuming it rebuilds that. A subagent starts knowing what its parent read, and the report of a subagent that read such content is labelled and marks the parent too.

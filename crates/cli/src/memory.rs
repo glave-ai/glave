@@ -3,7 +3,6 @@
 //! which lists, edits, moves and forgets memories from the terminal.
 
 use std::fmt::Write as _;
-use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -17,7 +16,6 @@ use glave_store_sqlite::{SqliteLog, Store};
 use crate::args::Args;
 use crate::policy::MemorySettings;
 use crate::setup::Setup;
-use crate::system::random_uuid;
 use crate::trust::Asking;
 use crate::{home, identity, keys};
 
@@ -34,16 +32,6 @@ Usage:
 
 Memory is on when `memory = \"on\"` is in your config.toml (glave policy explain shows it).
 In a session, /memory lists them.";
-
-/// The person's own space on this computer, where their personal memory lives: until spaces
-/// are first-class (with an Inbox), derived as every local space is, from a name only this
-/// person has. The one place this is decided, so the spaces work can replace it.
-pub async fn personal_space(store: &Store, person: PrincipalId) -> anyhow::Result<Scope> {
-    let name = format!("glave:personal/{person}");
-    Ok(store
-        .local_scope(Path::new(&name), random_uuid(), random_uuid())
-        .await?)
-}
 
 /// Memory as running here: the server, and the spaces it keeps.
 pub struct Running {
@@ -87,7 +75,7 @@ pub async fn start(
     if !settings.on {
         return Ok(None);
     }
-    let personal = personal_space(store, person).await?;
+    let personal = crate::spaces::personal(store, person).await?;
     let mut rules = Rules {
         personal: settings.personal.then_some(Personal {
             scope: personal,
@@ -204,9 +192,7 @@ async fn run(command: Command) -> anyhow::Result<()> {
     )
     .await?;
     let person = identity::load_or_make(&home).await?.person;
-    let scope = store
-        .local_scope(&folder, random_uuid(), random_uuid())
-        .await?;
+    let scope = crate::spaces::here(&store, &folder, person).await?;
     let on = MemorySettings {
         on: true,
         ..settings

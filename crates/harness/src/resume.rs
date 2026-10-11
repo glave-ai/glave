@@ -49,11 +49,12 @@ where
             workspace: self.reopen(scope, id, &events).await?,
             unnumbered: crate::bind::own_records(&events),
             note: None,
-            standing: crate::standing::Standing::of(&events),
+            standing: crate::standing::standing_after(crate::Standing::Active, &events),
             removed: false,
             untrusted: read_untrusted(&events),
             read_secret: read_secret(&events),
             memory: crate::memory::MemoryState::default(),
+            for_: for_of(&events).or(self.actors.person),
         };
         self.rebuild_memory(&mut thread, &events).await;
         self.repair(&mut thread, &events).await?;
@@ -162,7 +163,19 @@ fn asked(events: &[Event]) -> Vec<String> {
         .collect()
 }
 
-/// Whether a call in another thread started this one.
+/// The person a thread is for, as `thread.started` records it; `None` when it records none,
+/// which means the local person.
+fn for_of(events: &[Event]) -> Option<glave_event::PrincipalId> {
+    events.iter().find_map(|event| match &event.body {
+        Body::ThreadStarted(started) => started
+            .for_
+            .as_ref()
+            .filter(|principal| principal.kind == glave_event::PrincipalKind::Person)
+            .and_then(|principal| principal.id),
+        _ => None,
+    })
+}
+
 /// The thread that started this one, if an `agent` call did. Subagents start no subagents of
 /// their own, so there is never more than one.
 fn above(events: &[Event]) -> Vec<ThreadId> {

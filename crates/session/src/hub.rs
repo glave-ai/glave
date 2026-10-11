@@ -165,4 +165,35 @@ impl<L: EventLog> EventLog for Observed<L> {
     ) -> impl Future<Output = Result<Option<RawEvent>, LogError>> + Send {
         self.inner.latest_of(scope, thread, kinds)
     }
+
+    fn locate(
+        &self,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+        self.inner.locate(thread)
+    }
+
+    fn thread_views(
+        &self,
+        scope: &Scope,
+        query: &glave_ports::ThreadQuery,
+    ) -> impl Future<Output = Result<Vec<glave_ports::ThreadView>, LogError>> + Send {
+        self.inner.thread_views(scope, query)
+    }
+
+    fn thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<glave_ports::ThreadView>, LogError>> + Send {
+        self.inner.thread_view(scope, thread)
+    }
+
+    fn rebuild_thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<glave_ports::ThreadView>, LogError>> + Send {
+        self.inner.rebuild_thread_view(scope, thread)
+    }
 }

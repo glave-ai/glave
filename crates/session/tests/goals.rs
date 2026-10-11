@@ -46,6 +46,7 @@ mod goals {
     async fn new_thread(server: &Tested) -> ThreadId {
         match server
             .request(Request::ThreadStart {
+                space: None,
                 background: false,
                 worktree: None,
             })

@@ -126,7 +126,10 @@ async fn threads(dir: &Path) -> anyhow::Result<(Duration, Duration)> {
         Ok(KeySettings::new(std::sync::Arc::new(root)))
     };
     let store = Store::open(&database, keys()?).await?;
-    let scope = store.local_scope(&project, uuid(1), uuid(2)).await?;
+    let scope = glave_ports::Scope {
+        org: store.org(uuid(1)).await?,
+        space: glave_ports::SpaceId::from_uuid(uuid(2)),
+    };
     let harness = harness_on(&store, &project).await?;
     let mut thread = harness.start_thread(scope).await?;
     let started = Instant::now();

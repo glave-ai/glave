@@ -20,8 +20,28 @@ pub struct Served {
     serving: Option<JoinHandle<std::io::Result<()>>>,
 }
 
-/// Serves `server` over HTTP, trusting `issuer` for `AUDIENCE`.
+/// Serves `server` over HTTP, trusting `issuer` for `AUDIENCE`, with `ada` of that issuer
+/// working in the server's own space beside its person.
 pub async fn serve_http<P, L, B>(server: Server<P, L, B>, issuer: &Issuer) -> Served
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    let mut home = server.home_space().await.unwrap();
+    let ada = glave_session::signin::person(&issuer.url, "ada").unwrap();
+    home.members.push(glave_event::Principal::person(ada));
+    let org = glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1));
+    server.spaces().update(org, &home).await.unwrap();
+    let trust = Trust {
+        issuers: vec![issuer.url.clone()],
+        audience: AUDIENCE.into(),
+    };
+    serve_with(server, SignIn::new(trust, Box::new(Fixed)).unwrap()).await
+}
+
+/// Serves `server` over HTTP on 127.0.0.1, each request signed in through `signin`.
+pub async fn serve_with<P, L, B>(server: Server<P, L, B>, signin: SignIn) -> Served
 where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
@@ -29,11 +49,6 @@ where
 {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/", listener.local_addr().unwrap());
-    let trust = Trust {
-        issuers: vec![issuer.url.clone()],
-        audience: AUDIENCE.into(),
-    };
-    let signin = SignIn::new(trust, Box::new(Fixed)).unwrap();
     let (stop, stopped) = oneshot::channel::<()>();
     let serving = tokio::spawn(glave_session::http::serve(
         server,

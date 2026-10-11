@@ -46,6 +46,34 @@ impl EventLog for SharedLog {
     async fn threads(&self, scope: &Scope, limit: usize) -> Result<Vec<ThreadId>, LogError> {
         self.0.threads(scope, limit).await
     }
+
+    async fn locate(&self, thread: ThreadId) -> Result<Option<Scope>, LogError> {
+        self.0.locate(thread).await
+    }
+
+    async fn thread_views(
+        &self,
+        scope: &Scope,
+        query: &glave_ports::ThreadQuery,
+    ) -> Result<Vec<glave_ports::ThreadView>, LogError> {
+        self.0.thread_views(scope, query).await
+    }
+
+    async fn thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> Result<Option<glave_ports::ThreadView>, LogError> {
+        self.0.thread_view(scope, thread).await
+    }
+
+    async fn rebuild_thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> Result<Option<glave_ports::ThreadView>, LogError> {
+        self.0.rebuild_thread_view(scope, thread).await
+    }
 }
 
 /// Bob may not use the judge's model, nor any tool of the `tracker` server.

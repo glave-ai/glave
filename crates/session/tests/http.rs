@@ -106,10 +106,7 @@ mod http {
             ];
             for (case, token) in refused {
                 let mut web = Web::new(&served, token.clone());
-                let (message, _) = web.message(&Request::ThreadStart {
-                    background: false,
-                    worktree: None,
-                });
+                let (message, _) = web.message(&Request::ScheduleList {});
                 let answered = web.post(&message).await;
                 assert_eq!(answered.status, 401, "{case}");
                 assert_eq!(
@@ -128,8 +125,10 @@ mod http {
             let mut web = Web::new(&served, Some(late));
             let listed = web
                 .call(&Request::ThreadList {
+                    space: None,
                     limit: None,
                     show: None,
+                    cursor: None,
                 })
                 .await;
             assert_eq!(listed["result"]["threads"], json!([]), "{listed}");
@@ -259,6 +258,7 @@ mod http {
             let mut web = Web::new(&served, Some(token.clone()));
             let started = web
                 .call(&Request::ThreadStart {
+                    space: None,
                     background: false,
                     worktree: None,
                 })
@@ -286,10 +286,10 @@ mod http {
             assert!(dir.join("ran.txt").exists());
             let ada = json!({"kind": "person", "id": person(&issuer.url, "ada").unwrap()});
             let events = events(&mut web, &thread).await;
-            assert_eq!(
-                of_type(&events, "thread.started")[0]["data"]["origin"]["by"],
-                ada
-            );
+            // The thread is ada's work: she is its `for`, so nothing else names her.
+            let started = &of_type(&events, "thread.started")[0]["data"];
+            assert_eq!(started["for"], ada);
+            assert_eq!(started["origin"]["by"], Value::Null);
             assert_eq!(
                 of_type(&events, "turn.started")[0]["data"]["auth"],
                 json!({"method": "oidc", "issuer": issuer.url, "subject": "ada",
@@ -299,8 +299,11 @@ mod http {
                 .into_iter()
                 .find(|event| event["data"]["role"] == "user")
                 .unwrap();
-            assert_eq!(user["data"]["author"], ada);
-            assert_eq!(of_type(&events, "approval.decided")[0]["data"]["by"], ada);
+            assert_eq!(user["data"]["author"], Value::Null);
+            assert_eq!(
+                of_type(&events, "approval.decided")[0]["data"]["by"],
+                Value::Null
+            );
             for event in &events {
                 assert!(!event.to_string().contains(&token), "{event}");
             }
@@ -319,6 +322,7 @@ mod http {
                 serve_http(server(&dir, Vec::new(), Answering::Clients).await, &issuer).await;
             let mut web = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
             let (message, _) = web.message(&Request::ThreadStart {
+                space: None,
                 background: false,
                 worktree: None,
             });
@@ -351,6 +355,7 @@ mod http {
             let mut web = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
             let started = web
                 .call(&Request::ThreadStart {
+                    space: None,
                     background: false,
                     worktree: None,
                 })

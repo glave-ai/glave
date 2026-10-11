@@ -2,7 +2,6 @@
 //! the terminal as its client, for one turn or an interactive session.
 
 use std::io::IsTerminal as _;
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -16,11 +15,9 @@ use glave_harness::{
 };
 use glave_ports::ToolSource;
 use glave_session::protocol::{Reply, Request};
-use glave_session::signin::{SignIn, Trust};
 use glave_session::{Answering, Server, Wiring};
 use glave_store_sqlite::Store;
 use glave_web::{Web, WebSettings};
-use tokio::net::TcpListener;
 
 use crate::args::{self, Action, Args, USAGE};
 use crate::client::{Client, Glave};
@@ -32,7 +29,6 @@ use crate::mcp::Servers;
 use crate::model::Model;
 use crate::policy::{self, Choices, On, Source};
 use crate::setup::{self, Setup};
-use crate::system::random_uuid;
 use crate::terminal::Printer;
 use crate::trust::{self, Asking};
 use crate::{gateway, home, identity, keys};
@@ -184,9 +180,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     // The task host puts tasks on workers whenever a backend is set up.
     let (on_workers, workers) =
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder, args.socket).await?;
-    let scope = store
-        .local_scope(&root, random_uuid(), random_uuid())
-        .await?;
+    let scope = crate::spaces::here(&store, &root, identity.person).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let wiring = Wiring {
         provider,
@@ -207,6 +201,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         workers: on_workers,
         tasks: setup.loaded.constraints.task_limits(),
         memory: memory.as_ref().map(crate::memory::Running::handle),
+        spaces: Arc::new(store.spaces()),
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
@@ -322,7 +317,8 @@ async fn workspace(folder: &Path, setup: &mut Setup, database: &Path) -> anyhow:
 /// The workspace in `folder` on this computer, without a sandbox yet.
 async fn open_here(folder: &Path) -> anyhow::Result<Workspace> {
     let computers = LocalComputers::for_here(std::env::vars_os())
-        .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER));
+        .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER))
+        .with_scratch(home::folder()?.join(crate::worktrees::SCRATCH));
     let (computers, here) = crate::computer::with_sandbox_helper(computers)
         .open_here(folder)
         .await?;
@@ -379,7 +375,7 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
         let folder = std::env::current_dir()?;
         crate::daemon::host(&wired.server, &crate::daemon::socket(&folder)?).await
     } else if let Some(address) = args.http {
-        serve_http(&args, wired.server.clone(), address).await
+        crate::serving::serve_http(&args, wired.server.clone(), address).await
     } else {
         let input = tokio::io::BufReader::new(tokio::io::stdin());
         glave_session::rpc::serve(wired.server.clone(), input, tokio::io::stdout())
@@ -396,30 +392,6 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
     close_memory(&wired).await;
     served?;
     Ok(ExitCode::SUCCESS)
-}
-
-/// Serves the session API over HTTP on `address`, each client signed in by OIDC.
-async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyhow::Result<()> {
-    let trust = Trust {
-        issuers: args.issuers.clone(),
-        audience: args.audience.clone().unwrap_or_default(),
-    };
-    let signin = SignIn::new(trust, Box::new(SystemClock))?;
-    let listener = TcpListener::bind(address)
-        .await
-        .with_context(|| format!("could not listen on {address}"))?;
-    eprintln!(
-        "glave: serving the session API on http://{}",
-        listener.local_addr()?
-    );
-    let stop = async {
-        // Without Ctrl-C, the server runs until it is stopped some other way.
-        if tokio::signal::ctrl_c().await.is_err() {
-            std::future::pending::<()>().await;
-        }
-    };
-    glave_session::http::serve(server, signin, listener, stop).await?;
-    Ok(())
 }
 
 /// Picks the thread, runs the turn or the session, and exports the events when asked.
@@ -481,12 +453,14 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
     if resume {
         let latest = match server
             .request(Request::ThreadList {
+                space: None,
                 limit: Some(1),
                 show: None,
+                cursor: None,
             })
             .await?
         {
-            Reply::Threads { threads } => threads.first().map(|thread| thread.id),
+            Reply::Threads { threads, .. } => threads.first().map(|thread| thread.id),
             _ => None,
         };
         if let Some(thread) = latest {
@@ -502,6 +476,7 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
     };
     match server
         .request(Request::ThreadStart {
+            space: None,
             background: false,
             worktree: None,
         })

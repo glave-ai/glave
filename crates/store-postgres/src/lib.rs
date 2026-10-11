@@ -11,10 +11,14 @@ mod blobs;
 mod keys;
 mod log;
 mod schema;
+mod spaces;
 mod store;
+mod views;
 
 pub use blobs::PostgresBlobs;
 pub use keys::PostgresKeys;
 pub use log::PostgresLog;
+pub use spaces::PostgresSpaces;
 pub use store::{PostgresKeyring, Store, StoreError};
 pub use tokio_postgres::Config;
+pub use views::Rebuilt;

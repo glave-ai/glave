@@ -29,7 +29,7 @@ pub use message::{MessageAdded, Role};
 pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};
 pub use principal::{Principal, PrincipalKind};
-pub use standing::{ThreadArchived, ThreadDeleted, ThreadUnarchived};
+pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
 pub use task::{Fired, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, When};
 pub use thread::{
     ForkPoint, Origin, OriginKind, ParentCall, Producer, ThreadCompacted, ThreadStarted,

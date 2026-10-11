@@ -2,6 +2,32 @@
 
 use std::process::Command;
 
+/// Runs `program` with `args` from the workspace root and returns what it wrote to standard
+/// output; standard error passes through.
+///
+/// Fails if the program cannot start or exits unsuccessfully.
+pub fn output(program: &str, args: &[&str]) -> Result<String, String> {
+    let output = Command::new(program)
+        .args(args)
+        .current_dir(crate::workspace::root()?)
+        .stderr(std::process::Stdio::inherit())
+        .output()
+        .map_err(|err| format!("could not start `{program}`: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "`{program} {}` failed ({})",
+            args.join(" "),
+            output.status
+        ));
+    }
+    String::from_utf8(output.stdout).map_err(|err| {
+        format!(
+            "`{program} {}` wrote something not UTF-8: {err}",
+            args.join(" ")
+        )
+    })
+}
+
 /// Runs `program` with `args` from the workspace root, streaming its output.
 ///
 /// Fails if the program cannot start or exits unsuccessfully.

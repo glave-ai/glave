@@ -320,7 +320,7 @@ where
         let by = if matches!(verdict, Verdict::NoOneThere | Verdict::Cancelled) {
             Some(Principal::glave())
         } else {
-            self.other_than_for(person)
+            Self::other_than_for(thread, person)
         };
         let decided = ApprovalDecided {
             call_id: request.call_id.clone(),

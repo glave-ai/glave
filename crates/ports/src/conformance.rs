@@ -3,11 +3,15 @@
 //! Each suite returns the first violation it finds as an error message.
 
 mod computers;
+mod spaces;
+mod threads;
 
 pub use computers::{
     Confinement, computers, confinement_case, confinement_escapes, confinement_fixture,
     confinement_paths, confinement_targets, confinement_untouched,
 };
+pub use spaces::spaces;
+pub use threads::thread_views;
 
 use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
 use uuid::{Builder, Uuid};
@@ -134,6 +138,7 @@ pub async fn event_log<L: EventLog>(log: &L) -> Verdict {
     ensure(seqs(&page) == [2], "reads must page from after the cursor")?;
 
     latest_of_types(log, here, t).await?;
+    locating(log, here, t).await?;
 
     let isolated = read_all(elsewhere, t).await.map_err(|e| e.to_string())?;
     ensure(
@@ -171,6 +176,20 @@ async fn latest_of_types<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verd
         "latest_of must find nothing when no event has a given type",
     )?;
     Ok(())
+}
+
+/// `locate` names the scope a thread is stored in, and nothing for a thread never written.
+async fn locating<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verdict {
+    let located = log.locate(t).await.map_err(|e| e.to_string())?;
+    ensure(
+        located == Some(here),
+        "locate must name the scope a thread is stored in",
+    )?;
+    let nowhere = log.locate(thread(9)?).await.map_err(|e| e.to_string())?;
+    ensure(
+        nowhere.is_none(),
+        "locate must find nothing for a thread never written",
+    )
 }
 
 /// Thread listings order by most recent write, honor the limit, and stay inside the scope.

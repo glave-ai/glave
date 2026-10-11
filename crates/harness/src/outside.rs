@@ -15,7 +15,7 @@ use glave_ports::{BlobStore, EventLog, LogError, ModelProvider, Sources};
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::owner_label;
-use crate::standing::{KINDS, Standing};
+use crate::standing::{KINDS, Standing, standing_after};
 
 /// The most records taken in at once; more than this from outside is not a cleanup.
 const MOST: usize = 100;
@@ -31,6 +31,7 @@ fn takes_in(event: &Event) -> bool {
             | Body::ThreadArchived(_)
             | Body::ThreadUnarchived(_)
             | Body::ThreadDeleted(_)
+            | Body::ThreadRenamed(_)
     )
 }
 
@@ -60,7 +61,7 @@ where
         let count = u64::try_from(events.len()).map_err(|e| HarnessError::Event(e.to_string()))?;
         thread.next_seq = Seq::new(thread.next_seq.get().saturating_add(count))?;
         thread.unnumbered = thread.unnumbered.saturating_add(count);
-        thread.standing = Standing::after(thread.standing, &events);
+        thread.standing = standing_after(thread.standing, &events);
         if thread.workspace.is_some()
             && events
                 .iter()
@@ -115,6 +116,13 @@ where
             let owner = owner_label(thread.scope, thread.id);
             let worktree = self.workspace.worktree(branch, Some(&owner)).await?;
             thread.workspace = Some(Arc::new(worktree));
+        } else if let Some(Sources::Scratch { name, owner }) = thread
+            .workspace
+            .as_ref()
+            .map(|workspace| workspace.info().sources.clone())
+        {
+            let scratch = self.workspace.scratch(&name, owner.as_deref()).await?;
+            thread.workspace = Some(Arc::new(scratch));
         }
         thread.removed = false;
         Ok(())

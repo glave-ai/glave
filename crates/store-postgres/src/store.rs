@@ -12,6 +12,8 @@ use crate::blobs::PostgresBlobs;
 use crate::keys::PostgresKeys;
 use crate::log::PostgresLog;
 use crate::schema;
+use crate::spaces::PostgresSpaces;
+use crate::views::Rebuilt;
 
 /// Why the store could not open or answer.
 #[derive(Debug, Error)]
@@ -46,7 +48,9 @@ impl Store {
     }
 
     /// Connects with a prepared configuration, for settings a URL cannot carry, and brings the
-    /// schema up to date. The tables live in the connection's `search_path`.
+    /// schema up to date. The tables live in the connection's `search_path`. The threads view
+    /// is filled from the log the first time, and again whenever this build folds threads
+    /// differently from the one that filled it.
     pub async fn connect_with(config: Config, keys: KeySettings) -> Result<Self, StoreError> {
         let manager = Manager::from_config(
             config,
@@ -63,8 +67,16 @@ impl Store {
             .await
             .map_err(|e| StoreError::Connect(e.to_string()))?;
         schema::migrate(&mut client).await?;
+        drop(client);
         let keys = Arc::new(Keys::new(keys, PostgresKeys::new(pool.clone())));
-        Ok(Self { pool, keys })
+        let store = Self { pool, keys };
+        crate::views::refresh(&store.log(), &store.pool).await?;
+        Ok(store)
+    }
+
+    /// Rebuilds the view of every thread from the log, as the views are disposable.
+    pub async fn rebuild_views(&self) -> Result<Rebuilt, StoreError> {
+        crate::views::rebuild_all(&self.log(), &self.pool).await
     }
 
     pub fn log(&self) -> PostgresLog {
@@ -73,6 +85,11 @@ impl Store {
 
     pub fn blobs(&self) -> PostgresBlobs {
         PostgresBlobs::new(self.pool.clone(), Arc::clone(&self.keys))
+    }
+
+    /// The spaces: their records, members, and the folders that lead to them.
+    pub fn spaces(&self) -> PostgresSpaces {
+        PostgresSpaces::new(self.pool.clone())
     }
 
     /// The keys content is sealed under, and erased by destroying.

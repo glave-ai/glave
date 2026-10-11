@@ -2,7 +2,8 @@
 //! and removing, holding or trashing it. A worktree is safe to remove when it has no
 //! uncommitted changes and every commit on it is on some remote (so a squash-merged branch
 //! counts); removing one never deletes its branch. One whose repository is gone is moved to
-//! the Trash, never deleted.
+//! the Trash, never deleted. Threads' scratch folders are kept and cleaned up the same way:
+//! an empty one is removed, and one holding files goes to the Trash, so nothing is lost.
 
 mod trash;
 
@@ -24,7 +25,7 @@ const MAX_LISTED: usize = 1_000;
 pub struct Kept {
     /// The worktree's folder.
     pub path: PathBuf,
-    /// Its repository's shared git folder.
+    /// Its repository's shared git folder; empty for a scratch folder.
     pub repository: PathBuf,
     /// The branch it is on; `None` when it is detached or unknown.
     pub branch: Option<String>,
@@ -48,14 +49,19 @@ pub enum Condition {
     },
     /// Its repository's shared git folder no longer exists.
     RepositoryGone,
+    /// A thread's scratch folder, not a worktree: `empty` when it holds nothing.
+    Scratch { empty: bool },
 }
 
 impl Kept {
     /// Why removing it would lose work, as the person reads it; `None` when it would not.
     pub fn at_risk(&self) -> Option<String> {
         match self.condition {
-            Condition::Safe => None,
+            Condition::Safe | Condition::Scratch { empty: true } => None,
             Condition::RepositoryGone => Some("its repository is gone".into()),
+            Condition::Scratch { empty: false } => {
+                Some("files in a scratch folder, which go to the Trash".into())
+            }
             Condition::Unsafe { changed, unpushed } => {
                 let mut parts = Vec::new();
                 if changed {
@@ -106,6 +112,33 @@ pub async fn list(
     Ok(found)
 }
 
+/// The scratch folders under `base`, sorted by path. Folders glave did not record are left
+/// out.
+pub async fn list_scratch(base: &Path) -> Result<Vec<Kept>, ComputerError> {
+    let mut found = Vec::new();
+    for path in folders(base).await? {
+        let Some(record) = read_record(&path).await else {
+            continue;
+        };
+        let Ok(path) = tokio::fs::canonicalize(&path).await else {
+            continue;
+        };
+        let empty = match tokio::fs::read_dir(&path).await {
+            Ok(mut entries) => matches!(entries.next_entry().await, Ok(None)),
+            Err(_) => false,
+        };
+        found.push(Kept {
+            path,
+            repository: PathBuf::new(),
+            branch: None,
+            owner: record.owner,
+            held: record.held,
+            condition: Condition::Scratch { empty },
+        });
+    }
+    Ok(found)
+}
+
 /// A cleanup wants `kept` gone for `why` (such as `idle`): removed when that is safe, moved
 /// to `trash` when its repository is gone, and otherwise kept and marked held for `why`.
 pub async fn release(
@@ -115,11 +148,11 @@ pub async fn release(
     trash: Option<&Trash>,
 ) -> Result<Released, ComputerError> {
     match kept.condition {
-        Condition::Safe => {
+        Condition::Safe | Condition::Scratch { empty: true } => {
             remove(kept, environment).await?;
             Ok(Released::Removed)
         }
-        Condition::RepositoryGone => match trash {
+        Condition::RepositoryGone | Condition::Scratch { empty: false } => match trash {
             Some(trash) => {
                 let moved = trash.put(&kept.path).await?;
                 let _ = tokio::fs::remove_file(record_path(&kept.path)).await;
@@ -140,6 +173,15 @@ pub async fn remove(
     kept: &Kept,
     environment: &[(OsString, OsString)],
 ) -> Result<(), ComputerError> {
+    if matches!(kept.condition, Condition::Scratch { .. }) {
+        tokio::fs::remove_dir_all(&kept.path)
+            .await
+            .map_err(|error| {
+                ComputerError::Failed(format!("could not remove {}: {error}", kept.path.display()))
+            })?;
+        let _ = tokio::fs::remove_file(record_path(&kept.path)).await;
+        return Ok(());
+    }
     let mut git_dir = OsString::from("--git-dir=");
     git_dir.push(&kept.repository);
     let git = Git {
