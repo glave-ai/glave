@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
 
-import { GLZ_FORM_FIELD, type GlzFieldControl, type GlzFieldHost } from '../../lib/forms';
-import { injectId } from '../../lib/ids';
+import { GLZ_FORM_FIELD, type GlzFieldControl, type GlzFieldHost } from '../../tokens/forms';
+import { injectId } from '../../tokens/ids';
 import { GlzErrorComponent } from '../error/error.component';
 
 /** The mark after a required field's label; screen readers hear "required" from the control. */

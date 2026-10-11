@@ -1,4 +1,4 @@
 <details class="details" [open]="open()" (toggle)="toggled($event)">
-  <summary class="summary" data-testid="reasoning-summary">{{ summary() }}</summary>
+  <summary class="summary" [attr.data-testid]="ids().summary">{{ summary() }}</summary>
   <div class="text"><ng-content /></div>
 </details>

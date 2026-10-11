@@ -61,5 +61,8 @@ export * from './lib/options';
 export * from './lib/popover';
 export * from './lib/questions';
 export * from './lib/shortcuts';
-export { GLZ_FORM_FIELD, bindValueAccessor, injectFormState } from './lib/forms';
-export type { GlzFieldControl, GlzFieldHost, GlzFormState } from './lib/forms';
+
+export * from './tokens/icons';
+export * from './tokens/ids';
+export { GLZ_FORM_FIELD, bindValueAccessor, injectFormState } from './tokens/forms';
+export type { GlzFieldControl, GlzFieldHost, GlzFormState } from './tokens/forms';

@@ -12,8 +12,8 @@ import {
 import type { ControlValueAccessor } from '@angular/forms';
 import type { FormValueControl } from '@angular/forms/signals';
 
-import { GLZ_FORM_FIELD, bindValueAccessor, injectFormState } from '../../lib/forms';
-import { injectId } from '../../lib/ids';
+import { GLZ_FORM_FIELD, bindValueAccessor, injectFormState } from '../../tokens/forms';
+import { injectId } from '../../tokens/ids';
 
 /**
  * A group of radio buttons, one of which may be picked. Each `<glz-radio>` is a native radio

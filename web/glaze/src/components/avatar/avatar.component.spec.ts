@@ -6,6 +6,7 @@ import { GlzAvatarComponent } from './avatar.component';
 describe('GlzAvatarComponent', () => {
   it('shows initials, named for screen readers', async () => {
     const fixture = TestBed.createComponent(GlzAvatarComponent);
+    fixture.componentRef.setInput('testId', 'avatar');
     fixture.componentRef.setInput('name', 'Ada Lovelace');
     await fixture.whenStable();
     const host: HTMLElement = fixture.nativeElement;
@@ -18,6 +19,7 @@ describe('GlzAvatarComponent', () => {
 
   it('shows a picture, and Hope presence when asked', async () => {
     const fixture = TestBed.createComponent(GlzAvatarComponent);
+    fixture.componentRef.setInput('testId', 'avatar');
     fixture.componentRef.setInput('name', 'Hope');
     fixture.componentRef.setInput('src', '/hope.png');
     fixture.componentRef.setInput('hope', true);

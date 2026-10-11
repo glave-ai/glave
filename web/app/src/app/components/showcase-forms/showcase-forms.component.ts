@@ -61,6 +61,12 @@ const MODELS: readonly GlzOption[] = [
   { value: 'flash', label: 'DeepSeek V4.1 Flash' },
 ];
 
+const APPROVALS: readonly GlzOption[] = [
+  { value: 'ask', label: COPY.ask },
+  { value: 'auto', label: COPY.auto },
+  { value: 'never', label: COPY.never },
+];
+
 /** The showcase's form controls, under reactive forms and under signal forms. */
 @Component({
   selector: 'app-showcase-forms',
@@ -86,6 +92,8 @@ export class ShowcaseFormsComponent {
   protected readonly copy = COPY;
   protected readonly regions = REGIONS;
   protected readonly models = MODELS;
+  protected readonly approvals = APPROVALS;
+  protected readonly values = { notesRows: 2, budgetMin: 0, budgetMax: 100 } as const;
   private readonly toasts = inject(GlzToastService);
 
   private readonly forms = inject(NonNullableFormBuilder);

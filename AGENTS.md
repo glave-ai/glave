@@ -79,7 +79,7 @@ cargo xtask eval        # the harness on evals/tasks against three real models, 
 cargo xtask eval judge  # the action judge scored on evals/judge (the deterministic checks today)
 cargo fmt --all         # format
 cargo build --profile debugging   # full debug info, for a debugger
-(cd web && npm run check)         # the web checks alone (cargo xtask ci runs them when Node is installed)
+(cd web && npm run check)         # the web checks alone; cargo xtask ci runs them (Node 22.22.3+, or GLAVE_SKIP_WEB=1)
 ```
 
 ## Definition of done
@@ -170,7 +170,7 @@ cargo build --profile debugging   # full debug info, for a debugger
 - Glaze (`web/glaze`) for every component, not Angular Material. Web platform first (native `<dialog>`, popover, `<details>`, native inputs, CSS `field-sizing`), checked against Baseline; then the Angular CDK where the platform has nothing (keyboard models, LiveAnnouncer, menus, clipboard, layout); our own code last. Styled only through design tokens: CSS custom properties, light and dark from `light-dark()` and `color-scheme`. Glaze keeps no app state: its only services are the toast queue.
 - Every component is four files, made with `ng generate`: `x.component.ts`, `.html`, `.scss`, `.spec.ts`. Folders by kind: `components/`, `directives/`, `services/` (stateful, signal state), `guards/`, `interceptors/`, `pipes/`, and `lib/` for pure functions.
 - No logic in templates beyond native control flow: no computation, no expressions beyond reading a signal or field, no user-visible strings or hard-coded values. Derive in the controller (`computed()`, readonly constants). angular-eslint enforces what it can (`conditional-complexity` 1, `prefer-control-flow`, `no-inline-styles`, `no-call-expression` is not used since signals are calls).
-- Test hooks: every element an end-to-end test needs has `data-testid="<area>-<part>"` (`composer-send`, `showcase-open-dialog`); end-to-end tests select only by these.
+- Test hooks: every element an end-to-end test needs has a `data-testid` (`showcase-open-dialog`); end-to-end tests select only by these. Glaze never names hooks itself: its components take a `testId` input and give their parts `<testId>-<part>` (`testId="thread-composer"` gives `thread-composer-send`).
 - Linted and formatted: angular-eslint (recommended, template and accessibility), typescript-eslint strict and stylistic type-checked, stylelint for SCSS and CSS, Prettier across `web/`. CI checks all of it.
 - Tested: unit tests (Vitest) for every component, directive, service and `lib/` function, with axe on what they render; end-to-end smoke tests with axe in light and dark.
 - Accessibility: WCAG 2.2 AA, passes axe.

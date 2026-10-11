@@ -81,15 +81,27 @@ jobs:
           fi
 
   # web/: the session API's TypeScript client, Glaze and the app. Format, lint (eslint and
-  # stylelint), type-check, unit tests with axe, the library and app builds, and end-to-end
-  # smoke tests in Chromium with axe in light and dark, under glave's Content Security Policy.
+  # stylelint), type-check, the licences and audit of what ships, unit tests with axe, the
+  # library and app builds, and end-to-end tests in Chromium with axe in light and dark,
+  # against the real `glave serve --http --web` (built here) and its Content Security Policy.
   web:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: web
+    env:
+      GLAVE_BIN: ${{ github.workspace }}/target/debug/glave
     steps:
       - uses: actions/checkout@v7
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+        working-directory: .
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build glave, which serves the app in the end-to-end tests
+        run: cargo build -p glave
+        working-directory: .
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -103,6 +115,8 @@ jobs:
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
+      - run: npm run licenses
+      - run: npm run audit
       - run: npm test
       - run: npm run build:glaze
       - run: npm run build

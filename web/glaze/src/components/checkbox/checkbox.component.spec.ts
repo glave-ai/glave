@@ -13,7 +13,7 @@ import { GlzCheckboxComponent } from './checkbox.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <glz-form-field label="Terms">
-      <glz-checkbox [formControl]="agree">I agree</glz-checkbox>
+      <glz-checkbox testId="checkbox" [formControl]="agree">I agree</glz-checkbox>
       <glz-error>Agree to go on.</glz-error>
     </glz-form-field>
   `,
@@ -25,7 +25,9 @@ class ReactiveHostComponent {
 @Component({
   imports: [GlzCheckboxComponent, FormField],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<glz-checkbox [formField]="settings.remember">Remember</glz-checkbox>`,
+  template: `<glz-checkbox testId="checkbox" [formField]="settings.remember"
+    >Remember</glz-checkbox
+  >`,
 })
 class SignalHostComponent {
   readonly model = signal({ remember: true });
@@ -37,7 +39,9 @@ class SignalHostComponent {
 @Component({
   imports: [GlzCheckboxComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<glz-checkbox [(checked)]="on" indeterminate disabled>All</glz-checkbox>`,
+  template: `<glz-checkbox testId="checkbox" [(checked)]="on" indeterminate disabled
+    >All</glz-checkbox
+  >`,
 })
 class ModelHostComponent {
   readonly on = signal(false);

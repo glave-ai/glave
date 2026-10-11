@@ -18,6 +18,7 @@ import {
   GlzMessageComponent,
   type GlzOption,
   type GlzQuestion,
+  type GlzReceiptStatus,
   GlzQuestionCardComponent,
   GlzReasoningComponent,
   GlzReceiptComponent,
@@ -64,6 +65,43 @@ const QUESTIONS: readonly GlzQuestion[] = [
   },
 ];
 
+/** The demo's tool calls. */
+const RECEIPTS: readonly {
+  readonly tool: string;
+  readonly summary: string;
+  readonly status: GlzReceiptStatus;
+  readonly durationMs: number;
+  readonly tokens: number | null;
+  readonly cost: GlzMoney | null;
+  readonly evidence: string;
+}[] = [
+  {
+    tool: 'search',
+    summary: 'parse_date',
+    status: 'done',
+    durationMs: 120,
+    tokens: null,
+    cost: null,
+    evidence: 'src/dates.rs:41',
+  },
+  {
+    tool: 'bash',
+    summary: 'cargo test',
+    status: 'failed',
+    durationMs: 4200,
+    tokens: 1200,
+    cost: { micros: 4200, currency: 'USD' },
+    evidence: 'test dates::parses_utc ... FAILED',
+  },
+];
+
+/** The demo's approval. */
+const APPROVAL = {
+  tool: 'bash',
+  summary: 'Run the whole test suite again',
+  command: 'cargo test --workspace',
+} as const;
+
 /** A message in the demo thread. */
 interface DemoMessage {
   readonly id: number;
@@ -95,7 +133,8 @@ export class ShowcaseAiComponent {
   protected readonly copy = COPY;
   protected readonly models = MODELS;
   protected readonly questions = QUESTIONS;
-  protected readonly cost: GlzMoney = { micros: 4200, currency: 'USD' };
+  protected readonly receipts = RECEIPTS;
+  protected readonly approval = APPROVAL;
   protected readonly decision = signal<GlzDecision | null>(null);
   protected readonly answers = signal<readonly string[] | null>(null);
   protected readonly draft = signal('');

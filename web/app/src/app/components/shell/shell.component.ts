@@ -20,4 +20,5 @@ const COPY = {
 })
 export class ShellComponent {
   protected readonly copy = COPY;
+  protected readonly mainLink = '#main';
 }

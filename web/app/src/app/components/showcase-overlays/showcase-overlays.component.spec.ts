@@ -25,7 +25,7 @@ describe('ShowcaseOverlaysComponent', () => {
 
     click(root, 'showcase-open-confirm');
     await fixture.whenStable();
-    click(root, 'confirm-ok');
+    click(root, 'showcase-confirm-ok');
     await fixture.whenStable();
     expect(toasts.toasts().at(-1)?.message).toBe('Thread deleted');
   });

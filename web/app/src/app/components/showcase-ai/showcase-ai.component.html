@@ -6,24 +6,26 @@
     </glz-message>
     <glz-message from="model" hope [author]="copy.hope">
       <glz-reasoning>{{ copy.reasoning }}</glz-reasoning>
-      <glz-receipt tool="search" summary="parse_date" status="done" [durationMs]="120" />
-      <glz-receipt
-        tool="bash"
-        summary="cargo test"
-        status="failed"
-        [durationMs]="4200"
-        [tokens]="1200"
-        [cost]="cost"
-      >
-        <pre>test dates::parses_utc ... FAILED</pre>
-      </glz-receipt>
+      @for (receipt of receipts; track receipt.summary) {
+        <glz-receipt
+          [tool]="receipt.tool"
+          [summary]="receipt.summary"
+          [status]="receipt.status"
+          [durationMs]="receipt.durationMs"
+          [tokens]="receipt.tokens"
+          [cost]="receipt.cost"
+        >
+          <pre>{{ receipt.evidence }}</pre>
+        </glz-receipt>
+      }
       <glz-approval-card
-        tool="bash"
-        summary="Run the whole test suite again"
+        testId="showcase-approval"
+        [tool]="approval.tool"
+        [summary]="approval.summary"
         [decision]="decision()"
         (decide)="decide($event)"
       >
-        <pre>cargo test --workspace</pre>
+        <pre>{{ approval.command }}</pre>
       </glz-approval-card>
       <glz-question-card [questions]="questions" [answered]="answers()" (answer)="answer($event)" />
       <p class="text">{{ copy.reply }}</p>
@@ -40,7 +42,7 @@
   }
   <glz-composer
     class="demo"
-    data-testid="showcase-composer"
+    testId="showcase-composer"
     [busy]="busy()"
     [(value)]="draft"
     (send)="send($event)"

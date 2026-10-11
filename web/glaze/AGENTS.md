@@ -38,7 +38,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 
 ## Rules
 
-- Do: label every control (form field or `label`); give icon buttons a `label`; put a `data-testid` on what tests touch; keep templates to control flow and signal reads; check with axe.
+- Do: label every control (form field or `label`); give icon buttons a `label`; give components tests reach a `testId` (their parts get `<testId>-<part>`, such as `composer-send`), and plain elements a `data-testid`; keep templates to control flow and signal reads; check with axe.
 - Do not: add inline styles, `!important` overrides of Glaze classes, a second toast stack, or state to Glaze (app state lives in the app's services); do not use colour alone to say something.
 - Prefer the platform: native elements keep their keyboard, autofill and screen-reader behaviour.
 

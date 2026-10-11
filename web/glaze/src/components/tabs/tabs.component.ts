@@ -16,8 +16,12 @@ import {
   viewChildren,
 } from '@angular/core';
 
-import { injectId } from '../../lib/ids';
+import { injectId } from '../../tokens/ids';
 import { GlzTabComponent } from '../tab/tab.component';
+import { testIds } from '../../lib/test-ids';
+
+/** The parts end-to-end tests reach, as `<testId>-<part>`. */
+const PARTS = { tab: 'tab', panel: 'panel' } as const;
 
 /** A tab as the tab list shows it. */
 interface ShownTab {
@@ -49,8 +53,13 @@ interface ShownTab {
   templateUrl: './tabs.component.html',
   styleUrl: './tabs.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '[attr.data-testid]': 'testId()' },
 })
 export class GlzTabsComponent {
+  /** The test hook for this component; its parts get `<testId>-<part>`. */
+  readonly testId = input<string | null>(null);
+  protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+
   /** The selected tab's index. */
   readonly selected = model(0);
   /** Names the tab list for screen readers. */

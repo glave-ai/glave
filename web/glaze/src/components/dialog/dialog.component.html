@@ -1,7 +1,7 @@
 <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -- a click on the dialog itself is on its backdrop; Escape closes it natively -->
 <dialog
   #dialog
-  data-testid="dialog"
+  [attr.data-testid]="testId()"
   [class]="kindClass()"
   [attr.aria-labelledby]="headingId"
   (close)="closed()"
@@ -10,7 +10,12 @@
   <div class="surface">
     <div class="header">
       <h2 class="heading" [id]="headingId">{{ heading() }}</h2>
-      <button glzIconButton data-testid="dialog-close" [label]="closeLabel()" (click)="close()">
+      <button
+        glzIconButton
+        [attr.data-testid]="ids().close"
+        [label]="closeLabel()"
+        (click)="close()"
+      >
         <glz-icon [icon]="closeIcon" />
       </button>
     </div>

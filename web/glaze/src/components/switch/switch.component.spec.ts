@@ -9,8 +9,8 @@ import { GlzSwitchComponent } from './switch.component';
   imports: [GlzSwitchComponent, ReactiveFormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <glz-switch [(checked)]="cloud">Run in the cloud</glz-switch>
-    <glz-switch [formControl]="memory">Memory</glz-switch>
+    <glz-switch testId="switch" [(checked)]="cloud">Run in the cloud</glz-switch>
+    <glz-switch testId="switch" [formControl]="memory">Memory</glz-switch>
   `,
 })
 class HostComponent {

@@ -82,4 +82,5 @@ export class ShowcaseLayoutComponent {
     thread: Hash,
   };
   protected readonly tab = signal(0);
+  protected readonly values = { link: '#layout', narrow: '(max-width: 40rem)' } as const;
 }

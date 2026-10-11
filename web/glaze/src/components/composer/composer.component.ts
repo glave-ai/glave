@@ -12,10 +12,22 @@ import {
 import { ArrowUp, Paperclip, Square, X } from 'lucide';
 
 import { formatBytes } from '../../lib/format';
-import { injectId } from '../../lib/ids';
+import { injectId } from '../../tokens/ids';
 import { isApple } from '../../lib/shortcuts';
 import { GlzIconComponent } from '../icon/icon.component';
 import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
+import { testIds } from '../../lib/test-ids';
+
+/** The parts end-to-end tests reach, as `<testId>-<part>`. */
+const PARTS = {
+  removeFile: 'remove-file',
+  input: 'input',
+  files: 'files',
+  attach: 'attach',
+  stop: 'stop',
+  send: 'send',
+  fileInput: 'file-input',
+} as const;
 
 /** What the person sends: the text, trimmed, and any files attached. */
 export interface GlzComposed {
@@ -53,11 +65,16 @@ interface ShownFile {
   styleUrl: './composer.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    '[attr.data-testid]': 'testId()',
     '(dragover)': 'dragOver($event)',
     '(drop)': 'dropped($event)',
   },
 })
 export class GlzComposerComponent {
+  /** The test hook for this component; its parts get `<testId>-<part>`. */
+  readonly testId = input<string | null>(null);
+  protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+
   /** The draft. */
   readonly value = model('');
   /** Files attached to the draft. */

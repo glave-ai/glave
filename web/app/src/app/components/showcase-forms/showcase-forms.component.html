@@ -10,7 +10,7 @@
       }
     </glz-form-field>
     <glz-form-field [label]="copy.notes" [hint]="copy.notesHint">
-      <textarea glzInput rows="2" formControlName="notes"></textarea>
+      <textarea glzInput formControlName="notes" [rows]="values.notesRows"></textarea>
     </glz-form-field>
     <glz-form-field [label]="copy.region">
       <select glzInput formControlName="region">
@@ -26,14 +26,15 @@
       <input
         type="range"
         glzSlider
-        min="0"
-        max="100"
+        [min]="values.budgetMin"
+        [max]="values.budgetMax"
         formControlName="budget"
         [valueText]="budgetText()"
       />
     </glz-form-field>
     <glz-form-field [label]="copy.model">
       <glz-combobox
+        testId="showcase-model"
         formControlName="model"
         [options]="models"
         [placeholder]="copy.modelPlaceholder"
@@ -41,9 +42,9 @@
     </glz-form-field>
     <glz-form-field [label]="copy.approval">
       <glz-radio-group formControlName="approval">
-        <glz-radio value="ask">{{ copy.ask }}</glz-radio>
-        <glz-radio value="auto">{{ copy.auto }}</glz-radio>
-        <glz-radio value="never">{{ copy.never }}</glz-radio>
+        @for (mode of approvals; track mode.value) {
+          <glz-radio [value]="mode.value">{{ mode.label }}</glz-radio>
+        }
       </glz-radio-group>
     </glz-form-field>
     <div class="stack">

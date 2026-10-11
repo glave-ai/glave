@@ -9,6 +9,7 @@ import { type GlzDecision, GlzApprovalCardComponent } from './approval-card.comp
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <glz-approval-card
+      testId="approval"
       tool="bash"
       summary="Delete the build folder"
       [decision]="decision()"

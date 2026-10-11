@@ -10,6 +10,7 @@ import { type GlzReceiptStatus, GlzReceiptComponent } from './receipt.component'
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <glz-receipt
+      testId="receipt"
       tool="bash"
       summary="cargo test"
       [status]="status()"

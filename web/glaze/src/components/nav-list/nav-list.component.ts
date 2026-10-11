@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 
-import { injectId } from '../../lib/ids';
+import { injectId } from '../../tokens/ids';
 
 /**
  * A list of links in a side nav, under an optional heading that names the group for screen

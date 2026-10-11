@@ -1,13 +1,19 @@
 //! The web app's files, served beside the API by `glave serve --http`: any `GET` is a file of
 //! the built app (`web/`, `npm run build`), and a path that names no file is the app's
 //! `index.html`, so its routes load. Every answer carries a strict Content Security Policy: no
-//! inline script at all, and inline styles only with the nonce made for that load, which
-//! `index.html` hands to Angular (`ngCspNonce`) for the styles it adds.
+//! inline script at all, Trusted Types for what script there is, and inline styles only with
+//! the nonce made for that load, which `index.html` hands to Angular (`ngCspNonce`) for the
+//! styles it adds.
+//!
+//! The folder is served to anyone who can reach the listener, without sign-in, so it must hold
+//! only the built app and must not be writable by an agent: a file put there would be served
+//! from glave's own origin. Only files inside it are served: a symbolic link that leads out of
+//! it is refused, and so is any `.html` page but `index.html`.
 
 use std::fmt::Write as _;
 use std::path::{Component, Path, PathBuf};
 
-use hyper::header::{self, HeaderValue};
+use hyper::header::{self, HeaderName, HeaderValue};
 use hyper::{Response, StatusCode};
 
 use super::body::Answer;
@@ -15,9 +21,16 @@ use super::body::Answer;
 /// The placeholder in `index.html` each load's nonce replaces.
 const NONCE_PLACEHOLDER: &str = "GLAVE_CSP_NONCE";
 
+/// Random bytes in a nonce.
+const NONCE_BYTES: usize = 16;
+
+/// The one page the site serves as HTML.
+const INDEX: &str = "index.html";
+
 /// The built web app, in a folder.
 #[derive(Debug, Clone)]
 pub struct Site {
+    /// The folder, canonical: every file served must resolve inside it.
     root: PathBuf,
 }
 
@@ -30,33 +43,31 @@ impl Site {
     /// The app built into `root`, the folder that holds its `index.html`.
     pub fn folder(root: impl Into<PathBuf>) -> Result<Self, NoSite> {
         let root = root.into();
-        if root.join("index.html").is_file() {
+        let shown = root.display().to_string();
+        let root = std::fs::canonicalize(&root).map_err(|_| NoSite(shown.clone()))?;
+        if root.join(INDEX).is_file() {
             Ok(Self { root })
         } else {
-            Err(NoSite(root.display().to_string()))
+            Err(NoSite(shown))
         }
     }
 
-    /// The answer to `GET path`, with `nonce` for this load's inline styles.
-    pub(crate) async fn answer(&self, path: &str, nonce: &str) -> Response<Answer> {
+    /// The answer to `GET path`: a file, or `index.html` for a route of the app.
+    pub(crate) async fn answer(&self, path: &str) -> Response<Answer> {
+        // Without randomness there is no nonce, and without a nonce no page is safe to serve.
+        let Some(nonce) = fresh_nonce() else {
+            return status(StatusCode::INTERNAL_SERVER_ERROR);
+        };
         let Some(relative) = relative(path) else {
-            return secured(status(StatusCode::NOT_FOUND), nonce);
+            return secured(status(StatusCode::NOT_FOUND), &nonce);
         };
         // A path with an extension names a file; anything else is a route of the app.
         if relative.extension().is_some() {
-            return match tokio::fs::read(self.root.join(&relative)).await {
-                Ok(bytes) => {
-                    let mut response = Response::new(Answer::bytes(bytes));
-                    set(&mut response, header::CONTENT_TYPE, content_type(&relative));
-                    set(&mut response, header::CACHE_CONTROL, "no-cache");
-                    secured(response, nonce)
-                }
-                Err(_) => secured(status(StatusCode::NOT_FOUND), nonce),
-            };
+            return secured(self.file(&relative).await, &nonce);
         }
-        match tokio::fs::read_to_string(self.root.join("index.html")).await {
-            Ok(page) => {
-                let page = page.replace(NONCE_PLACEHOLDER, nonce);
+        match self.read_inside(Path::new(INDEX)).await {
+            Some(page) => {
+                let page = String::from_utf8_lossy(&page).replace(NONCE_PLACEHOLDER, &nonce);
                 let mut response = Response::new(Answer::once(page));
                 set(
                     &mut response,
@@ -64,15 +75,46 @@ impl Site {
                     "text/html; charset=utf-8",
                 );
                 set(&mut response, header::CACHE_CONTROL, "no-store");
-                secured(response, nonce)
+                secured(response, &nonce)
             }
-            Err(_) => secured(status(StatusCode::NOT_FOUND), nonce),
+            None => secured(status(StatusCode::NOT_FOUND), &nonce),
         }
+    }
+
+    /// A file of the app, or 404. `.html` other than `index.html` is never served.
+    async fn file(&self, relative: &Path) -> Response<Answer> {
+        let is_html = relative
+            .extension()
+            .is_some_and(|extension| extension == "html");
+        if is_html && relative != Path::new(INDEX) {
+            return status(StatusCode::NOT_FOUND);
+        }
+        let Some(bytes) = self.read_inside(relative).await else {
+            return status(StatusCode::NOT_FOUND);
+        };
+        let mut response = Response::new(Answer::bytes(bytes));
+        set(&mut response, header::CONTENT_TYPE, content_type(relative));
+        set(
+            &mut response,
+            header::CACHE_CONTROL,
+            cache_control(relative),
+        );
+        response
+    }
+
+    /// The bytes of `relative`, if it resolves, links followed, to a file inside the folder.
+    async fn read_inside(&self, relative: &Path) -> Option<Vec<u8>> {
+        let resolved = tokio::fs::canonicalize(self.root.join(relative))
+            .await
+            .ok()?;
+        if !resolved.starts_with(&self.root) {
+            return None;
+        }
+        tokio::fs::read(resolved).await.ok()
     }
 }
 
 /// The policy every answer carries; `nonce` admits the styles Angular adds at run time.
-/// web/e2e/serve.mjs serves the end-to-end tests with the same one.
 pub(crate) fn policy(nonce: &str) -> String {
     [
         "default-src 'none'",
@@ -85,12 +127,20 @@ pub(crate) fn policy(nonce: &str) -> String {
         "base-uri 'self'",
         "form-action 'none'",
         "frame-ancestors 'none'",
+        "require-trusted-types-for 'script'",
+        "trusted-types angular angular#bundler",
     ]
     .join("; ")
 }
 
-/// A nonce for one load: random bytes as hex.
-pub(crate) fn nonce(bytes: &[u8]) -> String {
+/// A new nonce from the operating system's randomness, as hex; `None` if it has none to give.
+fn fresh_nonce() -> Option<String> {
+    let mut bytes = [0u8; NONCE_BYTES];
+    getrandom::fill(&mut bytes).ok()?;
+    Some(hex(&bytes))
+}
+
+fn hex(bytes: &[u8]) -> String {
     bytes.iter().fold(String::new(), |mut text, byte| {
         let _ = write!(text, "{byte:02x}");
         text
@@ -112,6 +162,28 @@ fn relative(path: &str) -> Option<PathBuf> {
         .then_some(inside)
 }
 
+/// Whether a file's name carries its content hash, as the build names every asset
+/// (`main-HFNTQ2NX.js`, `media/font-ABCD1234.woff2`): its content never changes.
+fn is_hashed(path: &Path) -> bool {
+    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return false;
+    };
+    stem.rsplit_once('-').is_some_and(|(_, hash)| {
+        hash.len() == 8
+            && hash
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+    })
+}
+
+fn cache_control(path: &Path) -> &'static str {
+    if is_hashed(path) {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    }
+}
+
 fn content_type(path: &Path) -> &'static str {
     match path.extension().and_then(|extension| extension.to_str()) {
         Some("html") => "text/html; charset=utf-8",
@@ -131,10 +203,11 @@ fn content_type(path: &Path) -> &'static str {
 fn status(code: StatusCode) -> Response<Answer> {
     let mut response = Response::new(Answer::empty());
     *response.status_mut() = code;
+    set(&mut response, header::CACHE_CONTROL, "no-store");
     response
 }
 
-fn set(response: &mut Response<Answer>, name: header::HeaderName, value: &'static str) {
+fn set(response: &mut Response<Answer>, name: HeaderName, value: &'static str) {
     response
         .headers_mut()
         .insert(name, HeaderValue::from_static(value));
@@ -142,19 +215,19 @@ fn set(response: &mut Response<Answer>, name: header::HeaderName, value: &'stati
 
 /// `response` with the security headers every answer from the site carries.
 fn secured(mut response: Response<Answer>, nonce: &str) -> Response<Answer> {
-    let headers = response.headers_mut();
     if let Ok(policy) = HeaderValue::from_str(&policy(nonce)) {
-        headers.insert(header::CONTENT_SECURITY_POLICY, policy);
+        response
+            .headers_mut()
+            .insert(header::CONTENT_SECURITY_POLICY, policy);
     }
-    headers.insert(
-        header::X_CONTENT_TYPE_OPTIONS,
-        HeaderValue::from_static("nosniff"),
+    set(&mut response, header::X_CONTENT_TYPE_OPTIONS, "nosniff");
+    set(&mut response, header::REFERRER_POLICY, "no-referrer");
+    set(&mut response, header::X_FRAME_OPTIONS, "DENY");
+    set(
+        &mut response,
+        HeaderName::from_static("cross-origin-opener-policy"),
+        "same-origin",
     );
-    headers.insert(
-        header::REFERRER_POLICY,
-        HeaderValue::from_static("no-referrer"),
-    );
-    headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     response
 }
 
@@ -185,11 +258,29 @@ mod tests {
         assert!(!policy.contains("unsafe-inline"));
         assert!(policy.contains("style-src 'self' 'nonce-abc'"));
         assert!(policy.contains("frame-ancestors 'none'"));
+        assert!(policy.contains("require-trusted-types-for 'script'"));
     }
 
     #[test]
-    fn a_nonce_is_hex() {
-        assert_eq!(nonce(&[0, 15, 255]), "000fff");
+    fn a_nonce_is_sixteen_random_bytes_in_hex() {
+        assert_eq!(hex(&[0, 15, 255]), "000fff");
+        let nonce = fresh_nonce().unwrap();
+        assert_eq!(nonce.len(), NONCE_BYTES * 2);
+        assert_ne!(fresh_nonce().unwrap(), nonce);
+    }
+
+    #[test]
+    fn hashed_assets_are_cached_for_good_and_others_revalidated() {
+        assert_eq!(
+            cache_control(Path::new("main-HFNTQ2NX.js")),
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(
+            cache_control(Path::new("media/atkinson-latin-400-ABCD1234.woff2")),
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(cache_control(Path::new("favicon.svg")), "no-cache");
+        assert_eq!(cache_control(Path::new("my-file.js")), "no-cache");
     }
 
     #[test]

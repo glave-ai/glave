@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Send } from 'lucide';
 
-import { provideGlazeIcons } from '../../lib/icons';
+import { provideGlazeIcons } from '../../tokens/icons';
 import { expectAccessible } from '../../testing/axe';
 import { GlzIconComponent } from './icon.component';
 

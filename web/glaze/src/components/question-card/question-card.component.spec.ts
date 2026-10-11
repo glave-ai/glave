@@ -19,6 +19,7 @@ const QUESTIONS: readonly GlzQuestion[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <glz-question-card
+      testId="question"
       [questions]="questions"
       [answered]="answered()"
       (answer)="answers.push($event)"

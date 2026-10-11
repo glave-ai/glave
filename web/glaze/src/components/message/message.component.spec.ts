@@ -28,7 +28,7 @@ describe('GlzMessageComponent', () => {
     expect(reply?.getAttribute('aria-label')).toBe('Hope');
     expect(reply?.getAttribute('aria-busy')).toBe('true');
     expect(reply?.querySelector('.caret')).not.toBeNull();
-    expect(reply?.querySelector('[data-testid="avatar-hope"]')).not.toBeNull();
+    expect(reply?.querySelector('glz-avatar .presence')).not.toBeNull();
     expect(root.querySelector('[data-testid="note"] glz-avatar')).toBeNull();
     await expectAccessible(root);
 

@@ -10,7 +10,7 @@ import { GlzSidenavLayoutComponent } from './sidenav-layout.component';
   imports: [GlzSidenavLayoutComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <glz-sidenav-layout label="Spaces">
+    <glz-sidenav-layout testId="sidenav" label="Spaces">
       <nav glzSidenav aria-label="Spaces"><a href="/a">A space</a></nav>
       <main>Content</main>
     </glz-sidenav-layout>
@@ -38,7 +38,7 @@ describe('GlzSidenavLayoutComponent', () => {
   });
 
   function sidenav(root: HTMLElement): HTMLElement {
-    const found = root.querySelector<HTMLElement>('[data-testid="sidenav"]');
+    const found = root.querySelector<HTMLElement>('[data-testid="sidenav-nav"]');
     if (found === null) {
       throw new Error('no side nav');
     }

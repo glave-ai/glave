@@ -10,6 +10,10 @@ import {
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { map, switchMap } from 'rxjs';
+import { testIds } from '../../lib/test-ids';
+
+/** The parts end-to-end tests reach, as `<testId>-<part>`. */
+const PARTS = { scrim: 'scrim', nav: 'nav' } as const;
 
 /** Below this width the side nav slides over the content instead of sitting beside it. */
 export const GLZ_NARROW = '(max-width: 48rem)';
@@ -33,12 +37,17 @@ export const GLZ_NARROW = '(max-width: 48rem)';
   styleUrl: './sidenav-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    '[attr.data-testid]': 'testId()',
     '[class.narrow]': 'narrow()',
     '[class.open]': 'open()',
     '(keydown.escape)': 'escape()',
   },
 })
 export class GlzSidenavLayoutComponent {
+  /** The test hook for this component; its parts get `<testId>-<part>`. */
+  readonly testId = input<string | null>(null);
+  protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+
   /** Whether the side nav shows. */
   readonly open = model(true);
   /** Names the side nav's region for screen readers. */

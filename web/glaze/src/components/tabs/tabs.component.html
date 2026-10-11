@@ -5,7 +5,7 @@
       type="button"
       class="tab"
       role="tab"
-      data-testid="tabs-tab"
+      [attr.data-testid]="ids().tab"
       [id]="tab.tabId"
       [attr.aria-selected]="tab.selected"
       [attr.aria-controls]="tab.controls"
@@ -22,7 +22,7 @@
     class="panel"
     role="tabpanel"
     tabindex="0"
-    data-testid="tabs-panel"
+    [attr.data-testid]="ids().panel"
     [id]="tab.panelId"
     [attr.aria-labelledby]="tab.tabId"
   >

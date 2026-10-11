@@ -1,5 +1,5 @@
 //! `cargo xtask ci`: the full local gate, identical to what CI runs: the Rust checks, then the
-//! web checks when Node is installed (`web.rs`).
+//! web checks (`web.rs`), which need Node unless `GLAVE_SKIP_WEB=1` skips them.
 
 use crate::cmd;
 use crate::lock::{self, Mode};

@@ -1,5 +1,5 @@
 @if (hasFiles()) {
-  <ul class="files" data-testid="composer-files">
+  <ul class="files" [attr.data-testid]="ids().files">
     @for (file of shownFiles(); track file.index) {
       <li class="file">
         <span class="name">{{ file.name }}</span>
@@ -7,7 +7,7 @@
         <button
           glzIconButton
           size="sm"
-          data-testid="composer-remove-file"
+          [attr.data-testid]="ids().removeFile"
           [label]="file.removeLabel"
           (click)="remove(file.index)"
         >
@@ -21,7 +21,7 @@
   #textarea
   class="input"
   rows="1"
-  data-testid="composer-input"
+  [attr.data-testid]="ids().input"
   [attr.aria-label]="label()"
   [attr.aria-describedby]="hintId"
   [placeholder]="placeholder()"
@@ -37,7 +37,7 @@
     @if (attachments()) {
       <button
         glzIconButton
-        data-testid="composer-attach"
+        [attr.data-testid]="ids().attach"
         [label]="attachLabel()"
         [disabled]="disabled()"
         (click)="chooseFiles()"
@@ -53,7 +53,7 @@
       <button
         glzIconButton
         variant="secondary"
-        data-testid="composer-stop"
+        [attr.data-testid]="ids().stop"
         [label]="stopLabel()"
         (click)="stopped()"
       >
@@ -63,7 +63,7 @@
       <button
         glzIconButton
         variant="primary"
-        data-testid="composer-send"
+        [attr.data-testid]="ids().send"
         [label]="sendLabel()"
         [disabled]="sendDisabled()"
         (click)="submit()"
@@ -78,6 +78,6 @@
   type="file"
   multiple
   hidden
-  data-testid="composer-file-input"
+  [attr.data-testid]="ids().fileInput"
   (change)="picked($event)"
 />

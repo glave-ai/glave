@@ -18,10 +18,14 @@ import {
 import type { ControlValueAccessor } from '@angular/forms';
 import type { FormValueControl } from '@angular/forms/signals';
 
-import { GLZ_FORM_FIELD, bindValueAccessor, injectFormState } from '../../lib/forms';
-import { injectId } from '../../lib/ids';
+import { GLZ_FORM_FIELD, bindValueAccessor, injectFormState } from '../../tokens/forms';
+import { injectId } from '../../tokens/ids';
 import { type GlzOption, filterOptions, labelOf } from '../../lib/options';
 import { positionPopover } from '../../lib/popover';
+import { testIds } from '../../lib/test-ids';
+
+/** The parts end-to-end tests reach, as `<testId>-<part>`. */
+const PARTS = { input: 'input', listbox: 'listbox', option: 'option' } as const;
 
 /** An option as the list shows it. */
 interface ShownOption extends GlzOption {
@@ -48,8 +52,13 @@ interface ShownOption extends GlzOption {
   templateUrl: './combobox.component.html',
   styleUrl: './combobox.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '[attr.data-testid]': 'testId()' },
 })
 export class GlzComboboxComponent implements ControlValueAccessor, FormValueControl<string | null> {
+  /** The test hook for this component; its parts get `<testId>-<part>`. */
+  readonly testId = input<string | null>(null);
+  protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+
   /** The picked option's value, or `null`. */
   readonly value = model<string | null>(null);
   readonly options = input<readonly GlzOption[]>([]);

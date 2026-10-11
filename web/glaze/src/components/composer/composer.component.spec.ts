@@ -9,6 +9,7 @@ import { type GlzComposed, GlzComposerComponent } from './composer.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <glz-composer
+      testId="composer"
       [(value)]="draft"
       [(files)]="files"
       [busy]="busy()"

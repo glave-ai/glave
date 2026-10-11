@@ -45,6 +45,10 @@
   --glz-surface-overlay: light-dark(#fff, #27302b);
   --glz-surface-hover: light-dark(rgb(24 32 27 / 6%), rgb(230 235 232 / 8%));
   --glz-surface-selected: var(--glz-color-accent-soft);
+
+  /* Hover washes over filled surfaces: accent and danger buttons, and the inverse surface. */
+  --glz-color-hover-on-accent: light-dark(rgb(0 0 0 / 12%), rgb(0 0 0 / 16%));
+  --glz-color-hover-on-inverse: light-dark(rgb(255 255 255 / 14%), rgb(0 0 0 / 10%));
   --glz-surface-inverse: light-dark(#18201b, #e6ebe8);
   --glz-color-on-inverse: light-dark(#f7f9f8, #111513);
 
