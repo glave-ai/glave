@@ -94,6 +94,19 @@ impl Printer {
         );
     }
 
+    /// The banner of a session on a server elsewhere, which chooses the model.
+    pub fn banner_elsewhere(&self, server: &str, note: &str) {
+        println!(
+            "{} {}",
+            paint(self.color, GREEN, "glave"),
+            paint(self.color, DIM, &format!("· on {server} · {note}"))
+        );
+        println!(
+            "{}",
+            paint(self.color, DIM, "Type a request. /exit to leave.")
+        );
+    }
+
     pub fn ask(&self) {
         print!("\n{} ", paint(self.color, GREEN, "›"));
         flush();

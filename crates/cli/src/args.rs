@@ -79,6 +79,9 @@ Options:
   --max-steps <n>    end each turn after n model calls, the last one a text report of
                      what is done and what is left (default: no limit)
   --events <file>    save the thread's events to this file as JSON Lines
+  --server <url>     be a client of the session server at this URL (or [server] url in
+                     config.toml): threads, turns and approvals run there and show here;
+                     sign in with GLAVE_SERVER_TOKEN
   --log <file>       append glave's spans and metrics to this file: ids, names, counts and
                      timings, never prompts, answers, file contents or secrets
   --help             show this help
@@ -97,6 +100,7 @@ Environment:
                      summarizes a thread near 80% of it
   GLAVE_IDLE_TIMEOUT    seconds the model may send nothing before a call fails (default:
                      300); failures that may pass are tried 4 more times
+  GLAVE_SERVER_TOKEN an access token for the server --server names
   GLAVE_STORE_URL    a Postgres database to keep history in, as [store] url in config.toml
                      (default: the SQLite file in GLAVE_HOME)
   GLAVE_LOG          how much --log records: error, warn, info (the default), debug or trace
@@ -185,6 +189,8 @@ pub struct Args {
     pub events: Option<PathBuf>,
     /// Append glave's spans and metrics to this file.
     pub log: Option<PathBuf>,
+    /// Be a client of the session server at this URL.
+    pub server: Option<String>,
     /// The one-shot prompt; empty starts an interactive session.
     pub prompt: String,
     /// Serve over HTTP on this address, rather than stdio.
@@ -228,6 +234,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--events" => {
                 args.events = Some(PathBuf::from(rest.next().ok_or("--events needs a file")?));
             }
+            "--server" => args.server = Some(rest.next().ok_or("--server needs a URL")?),
             "--log" => args.log = Some(PathBuf::from(rest.next().ok_or("--log needs a file")?)),
             "--approval" => {
                 let mode = rest.next().ok_or("--approval needs a mode: auto or ask")?;

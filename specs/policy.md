@@ -93,6 +93,9 @@ private_addresses = false                     # default false; a host allow name
 [gateway]                                     # the person's file only: the organization's gateway
 url = "https://gateway.example.com"           # model calls and the tool catalog go through it
 
+[server]                                      # the person's file only: a session server elsewhere
+url = "https://glave.example.com"             # glave runs threads there (glave --server); sign in with GLAVE_SERVER_TOKEN
+
 [store]                                       # the person's or server's file only; also GLAVE_STORE_URL
 url = "postgres://glave:...@db.example.com/glave"  # the one data store; the local SQLite file when absent.
                                               # TLS off this computer unless sslmode=disable; shown without its password

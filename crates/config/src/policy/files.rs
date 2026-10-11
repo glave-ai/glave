@@ -51,6 +51,18 @@ pub struct ConfigFile {
     pub telemetry: Option<TelemetryFile>,
     /// The data store. Only the person's or the server's own file sets it.
     pub store: Option<StoreFile>,
+    /// A session server elsewhere this CLI is a client of. Only the person's own file sets
+    /// it: their sign-in goes there.
+    pub server: Option<ServerFile>,
+}
+
+/// `[server]`: a session server elsewhere (`glave --server`), such as an organization's.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ServerFile {
+    /// Where it is, such as `https://glave.example.com`: https, or http only on this
+    /// computer.
+    pub url: String,
 }
 
 /// `[store]`: the one data store (AGENTS.md, "One of each"). The local SQLite file in glave's
@@ -92,15 +104,20 @@ pub struct GatewayFile {
 impl GatewayFile {
     /// Whether `url` is one glave sends a sign-in to: https, or http to this computer.
     fn safe(&self) -> bool {
-        let url = self.url.trim();
-        let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"]
-            .iter()
-            .any(|start| {
-                url.strip_prefix(start)
-                    .is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '/']))
-            });
-        url.starts_with("https://") || local
+        signs_in_safely(&self.url)
     }
+}
+
+/// Whether `url` is one glave sends a sign-in to: https, or http to this computer.
+pub fn signs_in_safely(url: &str) -> bool {
+    let url = url.trim();
+    let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"]
+        .iter()
+        .any(|start| {
+            url.strip_prefix(start)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '/']))
+        });
+    url.starts_with("https://") || local
 }
 
 /// `[hooks]`: each point's hooks, under the names Claude Code and Codex give the points.
@@ -360,6 +377,16 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
                 telemetry.otlp
             );
         }
+    }
+    if let Some(server) = &file.server
+        && !signs_in_safely(&server.url)
+    {
+        invalid!(
+            "{}: [server] url = {:?} is not https (http only to this computer): your sign-in \
+             goes there",
+            path.display(),
+            server.url
+        );
     }
     if let Some(store) = &file.store
         && !StoreFile::postgres(&store.url)

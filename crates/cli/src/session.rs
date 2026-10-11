@@ -19,7 +19,7 @@ use glave_session::{Answering, Server, Wiring};
 use glave_web::{Web, WebSettings};
 
 use crate::args::{self, Action, Args, USAGE};
-use crate::client::{Client, Glave};
+use crate::client::{Client, Glave, Session};
 use crate::config::{self, Endpoint};
 use crate::data::Data;
 use crate::gateway::Allowed;
@@ -353,6 +353,9 @@ fn unsandboxed_notice(choices: &Choices, why: &str) -> String {
 }
 
 async fn run(args: Args) -> anyhow::Result<ExitCode> {
+    if let Some(url) = crate::remote::chosen(&args).await? {
+        return crate::remote::run(&args, &url).await;
+    }
     if args.background {
         return crate::tasks::background(&args).await;
     }
@@ -421,18 +424,19 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         _telemetry: _,
     } = wired;
     crate::tasks::at_start(server, args).await;
-    let (thread, note) = pick_thread(server, args.resume).await?;
+    let here = Session::Here(server);
+    let (thread, note) = pick_thread(here, args.resume, None).await?;
     if let Some(working) = crate::worktrees::note(server, thread).await {
         eprintln!("glave: {working}");
     }
     let input = Input::start();
     let client = Client {
-        server,
+        server: here,
         thread,
         input: &input,
-        endpoint,
+        endpoint: Some(endpoint),
         asks,
-        servers,
+        servers: Some(servers),
     };
     let mut printer = Printer::new(&endpoint.model, protections(choices));
     let code = if let Some(objective) = &args.goal {
@@ -457,13 +461,18 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         client.turn(&args.prompt, &mut printer).await
     };
     if let Some(path) = &args.events {
-        export(server, thread, path).await?;
+        export(here, thread, path).await?;
     }
     Ok(code)
 }
 
-/// The thread to use: the newest one here with `--continue`, otherwise a new one.
-async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, &'static str)> {
+/// The thread to use: the newest one here with `--continue`, otherwise a new one, in a
+/// worktree of its own when `worktree` says so (the server's choice when it says nothing).
+pub async fn pick_thread(
+    server: Session<'_>,
+    resume: bool,
+    worktree: Option<bool>,
+) -> anyhow::Result<(ThreadId, &'static str)> {
     if resume {
         let latest = match server
             .request(Request::ThreadList {
@@ -492,7 +501,7 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
         .request(Request::ThreadStart {
             space: None,
             background: false,
-            worktree: None,
+            worktree,
             computer: None,
         })
         .await?
@@ -504,7 +513,7 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
 
 /// The interactive session: each line typed is a turn, until `/exit`, the end of input, or
 /// Ctrl-C at the prompt. Ctrl-C during a turn or `/compact` cancels just that.
-async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
+pub async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
     let mut code = ExitCode::SUCCESS;
     loop {
         printer.ask();
@@ -545,7 +554,7 @@ async fn close_memory(wired: &Wired) {
 }
 
 /// `/memory`: the memories this session's threads read, through the session API.
-async fn show_memory(server: &Glave) {
+async fn show_memory(server: Session<'_>) {
     match server.request(Request::MemoryList { scope: None }).await {
         Ok(Reply::Memories { memories }) if memories.is_empty() => println!("no memories here"),
         Ok(Reply::Memories { memories }) => {
@@ -560,7 +569,7 @@ async fn show_memory(server: &Glave) {
 }
 
 /// Writes the thread's events as JSON Lines, one event per line, exactly as stored.
-async fn export(server: &Glave, thread: ThreadId, path: &Path) -> anyhow::Result<()> {
+pub async fn export(server: Session<'_>, thread: ThreadId, path: &Path) -> anyhow::Result<()> {
     let mut lines = String::new();
     let mut after = None;
     loop {

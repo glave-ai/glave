@@ -3,6 +3,7 @@
 //! in-process to the network, carries the same messages. Network transports need a sign-in.
 
 mod approvals;
+pub mod client;
 mod cron;
 mod goal;
 mod held;

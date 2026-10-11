@@ -18,6 +18,7 @@ mod keys;
 mod mcp;
 mod memory;
 mod model;
+mod remote;
 mod serving;
 mod session;
 mod setup;

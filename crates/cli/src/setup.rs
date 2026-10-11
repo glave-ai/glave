@@ -10,7 +10,9 @@ use glave_harness::Hook;
 
 use crate::args::Args;
 use crate::{config, home, mcp};
-use glave_config::policy::{self, Choices, ConfigFile, Loaded, Locations, ProjectTrust, StoreFile};
+use glave_config::policy::{
+    self, Choices, ConfigFile, Loaded, Locations, ProjectTrust, ServerFile, StoreFile,
+};
 use glave_config::trust::{self, Asking, Outcome, Project};
 
 /// Why the sandbox cannot run, as `glave policy explain` says it without trying.
@@ -162,6 +164,7 @@ fn flags(args: &Args) -> ConfigFile {
         network: args.network,
         worktree: args.worktree.then_some(true),
         on: args.on,
+        server: args.server.clone().map(|url| ServerFile { url }),
         ..ConfigFile::default()
     }
 }

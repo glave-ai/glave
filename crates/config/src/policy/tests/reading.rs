@@ -262,6 +262,34 @@ fn telemetry_goes_only_where_the_person_says_never_where_a_project_does() {
 }
 
 #[test]
+fn the_server_to_sign_in_to_is_the_person_s_choice_alone() {
+    let dir = scratch("server");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let text = "[server]\nurl = \"https://glave.example.com\"\n";
+    let project = files::config(text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.server, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let chosen = loaded.choices.server.as_ref().unwrap();
+    assert_eq!(chosen.value, "https://glave.example.com");
+    assert!(
+        explain(&loaded, None)
+            .0
+            .contains("https://glave.example.com")
+    );
+    let plain = "[server]\nurl = \"http://glave.example.com\"\n";
+    let refused = files::config(plain, &locations.person)
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("[server] url"), "{refused}");
+    assert!(files::config("[server]\nurl = \"http://127.0.0.1:8080\"\n", &home).is_ok());
+}
+
+#[test]
 fn the_store_is_the_person_s_choice_and_its_password_never_shown() {
     let dir = scratch("store");
     let home = dir.join("home");
