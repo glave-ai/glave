@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use glave_ports::{PROTECTED, SandboxLevel};
 
 use super::names::SecretNames;
+use crate::local::sandbox::own_git_folder;
 
 /// Under the home folder: where credentials live. Never readable from the sandbox.
 const HOME_SECRETS: &[&str] = &[
@@ -41,8 +42,8 @@ const HOME_SECRETS: &[&str] = &[
 /// submodules, whose own hooks and config would.
 const GIT_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", "worktrees", "modules"];
 
-/// Inside a worktree's own git folder: what runs code later.
-const WORKTREE_PROTECTED: &[&str] = &["hooks", "config", "config.worktree"];
+/// Inside a worktree's own git folder: what runs code later, and its submodules' folders.
+const WORKTREE_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", "modules"];
 
 /// Everything a command's mounts depend on, fixed when the sandbox is prepared.
 #[derive(Debug)]
@@ -220,15 +221,6 @@ impl Protect<'_> {
             Ok(_) => Ok(State::File),
         }
     }
-}
-
-/// A worktree's own folder in its repository's shared git folder, from the `gitdir:` line
-/// of its `.git` file, if it is where a worktree's folder belongs.
-fn own_git_folder(root: &Path, common: &Path) -> Option<PathBuf> {
-    let text = std::fs::read_to_string(root.join(".git")).ok()?;
-    let line = text.lines().find_map(|line| line.strip_prefix("gitdir:"))?;
-    let own = std::fs::canonicalize(root.join(line.trim())).ok()?;
-    (own.parent() == Some(&common.join("worktrees"))).then_some(own)
 }
 
 /// glave's own folder, all of it, except the way to the workspace when it lives there.

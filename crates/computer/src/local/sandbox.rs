@@ -114,6 +114,16 @@ async fn resolved(path: Option<&Path>) -> Option<PathBuf> {
     }
 }
 
+/// A worktree's own folder in its repository's shared git folder, from the `gitdir:` line
+/// of its `.git` file, if it is where a worktree's folder belongs. Blocking.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn own_git_folder(root: &Path, common: &Path) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(root.join(".git")).ok()?;
+    let line = text.lines().find_map(|line| line.strip_prefix("gitdir:"))?;
+    let own = std::fs::canonicalize(root.join(line.trim())).ok()?;
+    (own.parent() == Some(&common.join("worktrees"))).then_some(own)
+}
+
 /// What preparing the sandbox failed on.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn failed(error: &std::io::Error) -> ComputerError {

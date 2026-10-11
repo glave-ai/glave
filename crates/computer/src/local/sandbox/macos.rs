@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::{ComputerError, Sandbox};
 
 use super::profile::{Places, profile};
-use super::{Launch, failed, resolved};
+use super::{Launch, failed, own_git_folder, resolved};
 
 /// The only `sandbox-exec` trusted: an earlier one in `PATH` could be planted.
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
@@ -49,12 +49,24 @@ impl Enforcer {
         let temp = run_temp(&system_temp)
             .await
             .map_err(|error| failed(&error))?;
+        let git_common = resolved(git_common).await;
+        let git_own = match git_common.clone() {
+            Some(common) => {
+                let root = root.to_owned();
+                tokio::task::spawn_blocking(move || own_git_folder(&root, &common))
+                    .await
+                    .ok()
+                    .flatten()
+            }
+            None => None,
+        };
         let places = Places {
             root: root.to_owned(),
             temp: temp.clone(),
             home: resolved(sandbox.home.as_deref()).await,
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
-            git_common: resolved(git_common).await,
+            git_common,
+            git_own,
         };
         let profile = profile(&places, sandbox.level, sandbox.network);
         let mut args: Vec<OsString> = vec!["-p".into(), profile.text.into()];

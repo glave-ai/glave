@@ -55,6 +55,8 @@ pub(crate) struct Places {
     pub glave_home: Option<PathBuf>,
     /// For a worktree: the repository's shared git folder, where its commits go.
     pub git_common: Option<PathBuf>,
+    /// For a worktree: its own folder in the shared one (`worktrees/<name>`).
+    pub git_own: Option<PathBuf>,
 }
 
 /// A profile and the paths it names, passed as `sandbox-exec -p <text> -D<name>=<path>`.
@@ -135,49 +137,85 @@ fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
     profile
         .params
         .push(("GIT".into(), places.root.join(".git")));
+    // Never the folders themselves: Seatbelt matches a rename by its two paths, not by what
+    // the moved folder holds, so the project or `.git` swapped for a prepared copy would
+    // bring its own hooks past every rule below.
     let mut conditions = vec![
         r#"(subpath (param "ROOT"))"#.to_owned(),
+        r#"(require-not (literal (param "ROOT")))"#.to_owned(),
         r#"(require-not (literal (param "GIT")))"#.to_owned(),
     ];
-    for (index, path) in PROTECTED.iter().enumerate() {
-        let name = format!("PROTECTED_{index}");
-        // Both forms: `subpath` alone leaves room to create the protected path itself.
-        conditions.push(format!(r#"(require-not (literal (param "{name}")))"#));
-        conditions.push(format!(r#"(require-not (subpath (param "{name}")))"#));
-        profile.params.push((name, places.root.join(path)));
-    }
-    let root = regex_escape(&places.root);
-    conditions.push(format!(
-        r#"(require-not (regex #"^{root}/\.git/(worktrees|modules)/.+/(hooks(/.*)?|config(\.worktree)?)$"))"#
-    ));
-    let _ = writeln!(
-        profile.text,
-        "; writes: the project, except what runs code later\n(allow file-write*\n  (require-all\n    {}))",
-        conditions.join("\n    ")
-    );
+    let git = places.root.join(".git");
+    let protected = PROTECTED
+        .iter()
+        .map(|path| places.root.join(path))
+        .chain(NESTED_GIT.iter().map(|name| git.join(name)));
+    unless(profile, &mut conditions, "PROTECTED", protected);
+    allow_writes(profile, "the project", &conditions);
     if let Some(common) = &places.git_common {
-        git_common_writes(profile, common);
+        git_common_writes(profile, common, places.git_own.as_deref());
     }
 }
 
+/// Inside a git folder: the folders of other worktrees and of submodules, each a git folder
+/// with hooks and config of its own. Whole, since a folder moved in whole brings its own.
+const NESTED_GIT: &[&str] = &["worktrees", "modules"];
+
+/// Inside any git folder: what runs code later.
+const GIT_RUNS_CODE: &[&str] = &["hooks", "config", "config.worktree"];
+
 /// A worktree's repository's shared git folder: its objects, refs and logs, so commits work,
-/// but never its hooks or config, which would run code in every checkout of it.
-fn git_common_writes(profile: &mut Profile, common: &Path) {
+/// but never its hooks or config, which would run code in every checkout of it, nor other
+/// worktrees' or submodules' folders. Its own folder there (`worktrees/<name>`) is writable
+/// but for its hooks, config and submodules, and cannot itself be replaced.
+fn git_common_writes(profile: &mut Profile, common: &Path, own: Option<&Path>) {
     profile.params.push(("COMMON".into(), common.to_owned()));
-    let mut conditions = vec![r#"(subpath (param "COMMON"))"#.to_owned()];
-    for (index, path) in ["hooks", "config", "config.worktree"].iter().enumerate() {
-        let name = format!("COMMON_PROTECTED_{index}");
+    let mut conditions = vec![
+        r#"(subpath (param "COMMON"))"#.to_owned(),
+        r#"(require-not (literal (param "COMMON")))"#.to_owned(),
+    ];
+    let protected = GIT_RUNS_CODE
+        .iter()
+        .chain(NESTED_GIT)
+        .map(|name| common.join(name));
+    unless(profile, &mut conditions, "COMMON_PROTECTED", protected);
+    allow_writes(profile, "the repository's shared git folder", &conditions);
+    let Some(own) = own else {
+        return;
+    };
+    profile.params.push(("OWN".into(), own.to_owned()));
+    let mut conditions = vec![
+        r#"(subpath (param "OWN"))"#.to_owned(),
+        r#"(require-not (literal (param "OWN")))"#.to_owned(),
+    ];
+    let protected = GIT_RUNS_CODE
+        .iter()
+        .chain(&["modules"])
+        .map(|name| own.join(name));
+    unless(profile, &mut conditions, "OWN_PROTECTED", protected);
+    allow_writes(profile, "the worktree's own git folder", &conditions);
+}
+
+/// Leaves out each of `paths` and everything below it, as parameters `<prefix>_<index>`.
+fn unless(
+    profile: &mut Profile,
+    conditions: &mut Vec<String>,
+    prefix: &str,
+    paths: impl Iterator<Item = PathBuf>,
+) {
+    for (index, path) in paths.enumerate() {
+        let name = format!("{prefix}_{index}");
+        // Both forms: `subpath` alone leaves room to create the protected path itself.
         conditions.push(format!(r#"(require-not (literal (param "{name}")))"#));
         conditions.push(format!(r#"(require-not (subpath (param "{name}")))"#));
-        profile.params.push((name, common.join(path)));
+        profile.params.push((name, path));
     }
-    let common = regex_escape(common);
-    conditions.push(format!(
-        r#"(require-not (regex #"^{common}/(worktrees|modules)/.+/(hooks(/.*)?|config(\.worktree)?)$"))"#
-    ));
+}
+
+fn allow_writes(profile: &mut Profile, what: &str, conditions: &[String]) {
     let _ = writeln!(
         profile.text,
-        "; writes: the repository's shared git folder, except what runs code later\n(allow file-write*\n  (require-all\n    {}))",
+        "; writes: {what}, except what runs code later\n(allow file-write*\n  (require-all\n    {}))",
         conditions.join("\n    ")
     );
 }
@@ -221,6 +259,7 @@ mod tests {
             home: Some(PathBuf::from("/Users/me")),
             glave_home: Some(PathBuf::from("/Users/me/.glave")),
             git_common: None,
+            git_own: None,
         }
     }
 
@@ -241,15 +280,18 @@ mod tests {
             param(&profile, "ROOT"),
             Some(Path::new("/Users/me/my.project"))
         );
-        let protected: Vec<&Path> = (0..PROTECTED.len())
+        let protected: Vec<&Path> = (0..PROTECTED.len() + NESTED_GIT.len())
             .filter_map(|i| param(&profile, &format!("PROTECTED_{i}")))
             .collect();
         assert!(protected.contains(&Path::new("/Users/me/my.project/.git/hooks")));
         assert!(protected.contains(&Path::new("/Users/me/my.project/.glave")));
+        assert!(protected.contains(&Path::new("/Users/me/my.project/.git/modules")));
+        assert!(protected.contains(&Path::new("/Users/me/my.project/.git/worktrees")));
         assert!(
             profile
                 .text
-                .contains(r"^/Users/me/my\.project/\.git/(worktrees|modules)")
+                .contains(r#"(require-not (literal (param "ROOT")))"#),
+            "the project itself cannot be swapped"
         );
         assert!(!profile.text.contains("network-outbound"), "network off");
     }
@@ -289,10 +331,24 @@ mod tests {
         assert_eq!(param(&profile, "COMMON"), None, "not a worktree");
         let mut worktree = places();
         worktree.git_common = Some(PathBuf::from("/Users/me/code/app/.git"));
+        worktree.git_own = Some(PathBuf::from("/Users/me/code/app/.git/worktrees/w"));
         let profile = super::profile(&worktree, SandboxLevel::Project, false);
         assert_eq!(
             param(&profile, "COMMON_PROTECTED_0"),
             Some(Path::new("/Users/me/code/app/.git/hooks"))
+        );
+        assert_eq!(
+            param(&profile, "COMMON_PROTECTED_3"),
+            Some(Path::new("/Users/me/code/app/.git/worktrees"))
+        );
+        assert_eq!(
+            param(&profile, "OWN_PROTECTED_3"),
+            Some(Path::new("/Users/me/code/app/.git/worktrees/w/modules"))
+        );
+        assert!(
+            profile
+                .text
+                .contains(r#"(require-not (literal (param "OWN")))"#)
         );
         assert!(profile.text.contains("[eE][nN][vV]"), "env files, any case");
     }
