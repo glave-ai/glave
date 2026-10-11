@@ -47,14 +47,14 @@ crates/store-postgres/  glave-store-postgres: the event log, blob store and wrap
 crates/shell/       glave-shell: shell commands read before they run (tree-sitter-bash): read-only, risky with a reason, or neither
 crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`)
 crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash) run on a computer through the port, approvals, resume, AGENTS.md, skills (agentskills.io), custom commands, hooks
-crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (with the opt-in sandbox), environments from devcontainer.json or environment.toml, workers on Docker, served (`glave computer serve`, TLS across machines) and reached over JSON-RPC
+crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (with the opt-in sandbox), environments from devcontainer.json or environment.toml, workers on Docker or Kubernetes (the `kubernetes` feature), served (`glave computer serve`, TLS across machines) and reached over JSON-RPC
 crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC sign-in; every surface, the CLI first, runs threads through it
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
 specs/              the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
-.github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main)
+.github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main); workers on a `kind` cluster (Linux)
 ```
 
 **Dependency rule.** Shared types depend on nothing in Glave. Ports depend only on types. Domain crates (log, harness, gateway) depend on types and ports, never on each other's internals or on adapters. Adapters depend on types, ports and their one external library. Only the binary depends on everything.

@@ -21,6 +21,19 @@ pub struct Limits {
     /// The most network a worker may have; `None` allows it all. An allow-list is not
     /// enforced yet, so a policy asking for one is refused before workers start.
     pub network: Option<Network>,
+    /// How far apart from its host a worker must be kept.
+    pub isolation: Isolation,
+}
+
+/// How a worker is kept apart from the machine it runs on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Isolation {
+    /// A container: its own namespaces and limits on a shared kernel.
+    #[default]
+    Container,
+    /// A sandbox with a kernel of its own (gVisor) or a virtual machine (Kata), from a
+    /// Kubernetes runtime class; untrusted code needs it.
+    Vm,
 }
 
 /// A worker's settings once its environment passed the limits.

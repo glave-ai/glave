@@ -1,5 +1,5 @@
 //! glave's computers (`specs/computers.md`): this machine as a computer, the environments
-//! computers are made from, workers (disposable computers on Docker), and the JSON-RPC
+//! computers are made from, workers (disposable computers on Docker or Kubernetes), and the JSON-RPC
 //! protocol that serves a computer to a harness elsewhere and reaches one from here.
 //!
 //! [`LocalComputers`] runs work on the machine it is on. [`serve`] offers any computers over
@@ -26,5 +26,9 @@ pub use remote::RemoteComputers;
 pub use serve::{serve, serve_tcp, serve_tls};
 pub use tls::{Fingerprint, Identity, connect_tls};
 pub use token::{MIN_SECRET, Token};
-pub use worker::{Clock, Credentials, Docker, DockerSettings, Limits, WorkerComputers, https_url};
+pub use worker::{
+    Clock, Credentials, Docker, DockerSettings, Isolation, Limits, WorkerComputers, https_url,
+};
+#[cfg(feature = "kubernetes")]
+pub use worker::{Kubernetes, KubernetesSettings};
 pub use worktrees::{Condition, Kept, Released, Trash};

@@ -315,6 +315,7 @@ impl Docker {
         Ok(Link::Tls {
             address: std::net::SocketAddr::from(([127, 0, 0, 1], port)),
             fingerprint: spec.identity.fingerprint.clone(),
+            forward: None,
         })
     }
 
@@ -355,7 +356,7 @@ impl Docker {
 }
 
 /// The ELF machine of a 64-bit little-endian executable; `None` for anything else.
-fn elf_machine(bytes: &[u8]) -> Option<u16> {
+pub(crate) fn elf_machine(bytes: &[u8]) -> Option<u16> {
     let head = bytes.first_chunk::<20>()?;
     let [0x7f, b'E', b'L', b'F', 2, 1, .., low, high] = *head else {
         return None;
