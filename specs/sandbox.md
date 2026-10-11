@@ -60,7 +60,7 @@ The rest of `.git` stays writable, so committing, staging and branching work. (C
 
 The rule: **the sandbox may change the project's files, never the machinery that runs code on them.**
 
-glave's own `write` and `edit` tools refuse the same paths when the sandbox is on, from the same list, after resolving symlinks, so they cannot do what commands may not. A link whose target does not exist yet is always refused: writing to it would create the target wherever it points.
+glave's own `write` and `edit` tools refuse the same paths when the sandbox is on, from the same list, after resolving symlinks, so they cannot do what commands may not, including through links a command planted. Names are compared the way a folder that ignores case compares them: `.GIT/hooks` and `.git/hookſ` (a long s, which APFS folds to `s`) are `.git/hooks`. A link whose target does not exist yet is always refused: writing to it would create the target wherever it points. How paths stay inside the workspace while commands race the file tools is in `computers.md` (*Confinement*).
 
 Writable roots come from glave's own settings, never from a tool argument. (CVE-2025-59532 let a model-supplied working directory become the writable root.)
 
@@ -98,7 +98,7 @@ Until Linux is built, the sandbox stays concrete code, not a port: AGENTS.md ask
 
 ## Tests
 
-- Integration tests run real commands in the real sandbox without a model: writes outside blocked, the temp folders allowed, hooks, git config and `.glave/` read-only, commits working, secret reads blocked, the network blocked unless allowed, everyday tools and an offline build with dependencies working, a project inside a temp folder keeping its protections, and `write` refusing protected paths, also through a symlink. Each guard has a control (the same action without the sandbox succeeds), so a test cannot pass by being broken. They run on macOS in CI, and fail rather than skip where CI expects the sandbox.
+- Integration tests run real commands in the real sandbox without a model: writes outside blocked, the temp folders allowed, hooks, git config and `.glave/` read-only, commits working, secret reads blocked, the network blocked unless allowed, everyday tools and an offline build with dependencies working, a project inside a temp folder keeping its protections, and `write` and `edit` refusing protected paths, also through a symlink, through links a sandboxed command planted, and in other spellings of the same name on a folder that ignores case. Each guard has a control (the same action without the sandbox succeeds), so a test cannot pass by being broken. They run on macOS in CI, and fail rather than skip where CI expects the sandbox.
 - Live tasks with `--sandbox project --yes`. Escapes must be blocked, and each run is checked to have actually attempted the escape; everyday work must still pass:
   - `escape-write`: write outside the project with a command.
   - `escape-network`: fetch a web page.

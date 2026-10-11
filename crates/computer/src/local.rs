@@ -2,13 +2,15 @@
 //! workspaces are folders here. Copies of repositories live under one base folder, one
 //! folder per computer, so destroying a computer removes exactly its copies.
 
+mod anchored;
 mod command;
 mod files;
 mod finding;
 pub(crate) mod git;
-mod opened;
+mod listing;
 mod paths;
 mod registry;
+mod replace;
 mod sandbox;
 mod walk;
 pub(crate) mod worktree;
@@ -325,7 +327,7 @@ impl Computers for LocalComputers {
     ) -> BoxFuture<'a, Result<Listed, ComputerError>> {
         Box::pin(async move {
             let opened = self.registry.workspace(workspace)?;
-            files::list(&opened.root, listing).await
+            listing::list(&opened.root, listing).await
         })
     }
 

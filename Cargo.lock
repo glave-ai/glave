@@ -913,6 +913,7 @@ dependencies = [
  "ignore",
  "proptest",
  "regex",
+ "rustix",
  "serde",
  "serde_json",
  "thiserror",

@@ -7,11 +7,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_ports::conformance::{
-    Confinement, confinement_case, confinement_escapes, confinement_fixture,
+    Confinement, confinement_case, confinement_escapes, confinement_fixture, confinement_untouched,
 };
 use glave_ports::{
-    BoxFuture, Bytes, Command, ComputerId, Computers, Environment, FileWrite, Output, Sources,
-    WorkspaceId,
+    BoxFuture, Bytes, Command, ComputerId, Computers, Environment, FileWrite, Glob, Listing,
+    Output, Search, Sources, WorkspaceId,
 };
 use proptest::prelude::*;
 
@@ -126,26 +126,86 @@ fn links_planted_by_commands_and_hard_links_cannot_reach_outside() {
 }
 
 /// Swaps the folder `in_dir` for a link to the folder outside the workspace and back, the way
-/// a command running beside the file tools could, until told to stop.
-fn flip(inside: &std::path::Path, stop: &AtomicBool) {
+/// a command running beside the file tools could, until told to stop. How many swaps it made.
+fn flip(inside: &std::path::Path, stop: &AtomicBool) -> usize {
     let (folder, parked) = (inside.join("in_dir"), inside.join("in_dir.parked"));
+    let mut swaps = 0;
     while !stop.load(Ordering::Relaxed) {
         if std::fs::rename(&folder, &parked).is_ok() {
-            let _ = std::os::unix::fs::symlink("../outside", &folder);
+            if std::os::unix::fs::symlink("../outside", &folder).is_ok() {
+                swaps += 1;
+            }
             let _ = std::fs::remove_file(&folder);
-            let _ = std::fs::rename(&parked, &folder);
+            // A write may have made the folder anew while it was gone; the old one goes back.
+            while std::fs::rename(&parked, &folder).is_err() {
+                let _ = std::fs::remove_dir_all(&folder);
+            }
         }
     }
+    swaps
 }
 
+/// Every file operation once on the raced folder: what it showed from outside, if anything.
+fn leaks(computers: &LocalComputers, at: WorkspaceId, rt: &tokio::runtime::Runtime) -> Vec<String> {
+    let mut seen = Vec::new();
+    for path in ["in_dir/sentinel.txt", "in_dir/fresh/new.txt"] {
+        let write = FileWrite {
+            path: path.into(),
+            content: Bytes::new(b"PWNED"),
+        };
+        let _ = rt.block_on(computers.write(at, &[write]));
+    }
+    if let Ok(bytes) = rt.block_on(computers.read(at, "in_dir/sentinel.txt")) {
+        seen.push(String::from_utf8_lossy(bytes.as_slice()).into_owned());
+    }
+    if let Ok(stat) = rt.block_on(computers.stat(at, "in_dir/linked.txt"))
+        && stat.kind.is_some()
+    {
+        seen.push(format!("stat {stat:?}"));
+    }
+    let glob = Glob {
+        pattern: "*".into(),
+        path: ".".into(),
+        limit: 1_000,
+    };
+    if let Ok(globbed) = rt.block_on(computers.glob(at, &glob)) {
+        seen.extend(globbed.files);
+    }
+    let search = Search {
+        pattern: "SENTINEL".into(),
+        path: ".".into(),
+        glob: None,
+        ignore_case: false,
+        limit: 100,
+        line_chars: 200,
+    };
+    if let Ok(searched) = rt.block_on(computers.search(at, &search)) {
+        seen.extend(searched.matches.into_iter().map(|found| found.text));
+    }
+    for skip_ignored in [false, true] {
+        let listing = Listing {
+            recursive: true,
+            skip_ignored,
+            ..Listing::of(".")
+        };
+        if let Ok(listed) = rt.block_on(computers.list(at, &listing)) {
+            seen.extend(listed.entries.into_iter().map(|entry| entry.path));
+        }
+    }
+    seen.retain(|text| text.contains("SENTINEL") || text.contains("linked.txt"));
+    seen
+}
+
+/// Every file operation, raced by a command swapping a folder for a link to outside: nothing
+/// outside is read, named, written or created.
 #[test]
-fn a_link_swapped_between_the_check_and_the_open_never_reaches_outside() {
+fn a_link_swapped_while_files_are_worked_on_never_reaches_outside() {
     let rt = runtime();
     let (computers, work, _, _, confinement) = rt.block_on(fixture("race"));
     let inside = work.join("confine/inside");
     std::fs::create_dir_all(inside.join("in_dir")).unwrap();
     std::fs::write(inside.join("in_dir/sentinel.txt"), "inside").unwrap();
-    let outside_file = work.join("confine/outside/sentinel.txt");
+    let outside = work.join("confine/outside");
     let stop = Arc::new(AtomicBool::new(false));
     let flipper = {
         let (inside, stop) = (inside.clone(), Arc::clone(&stop));
@@ -153,25 +213,34 @@ fn a_link_swapped_between_the_check_and_the_open_never_reaches_outside() {
     };
     let workspace = confinement_workspace(&computers, &work, &rt);
     let started = std::time::Instant::now();
-    let mut leaked_read = false;
-    for _ in 0..4_000 {
-        let write = FileWrite {
-            path: "in_dir/sentinel.txt".into(),
-            content: Bytes::new(b"PWNED"),
-        };
-        let _ = rt.block_on(computers.write(workspace, &[write]));
-        if let Ok(bytes) = rt.block_on(computers.read(workspace, "in_dir/sentinel.txt")) {
-            leaked_read |= bytes.as_slice() == b"SENTINEL";
-        }
-        if started.elapsed().as_secs() >= 4 {
-            break;
-        }
+    let mut leaked = Vec::new();
+    while started.elapsed().as_millis() < 3_000 {
+        leaked.extend(leaks(&computers, workspace, &rt));
     }
     stop.store(true, Ordering::Relaxed);
-    flipper.join().unwrap();
+    let swaps = flipper.join().unwrap();
     drop(confinement);
-    assert_eq!(std::fs::read_to_string(outside_file).unwrap(), "SENTINEL");
-    assert!(!leaked_read, "a read returned the outside file");
+    assert!(swaps > 100, "the race must really run: {swaps} swaps");
+    assert!(leaked.is_empty(), "seen from outside: {leaked:?}");
+    let mut names: Vec<String> = std::fs::read_dir(&outside)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(
+        names,
+        ["linked.txt", "sentinel.txt"],
+        "nothing made outside"
+    );
+    assert_eq!(
+        std::fs::read_to_string(outside.join("sentinel.txt")).unwrap(),
+        "SENTINEL"
+    );
+    assert_eq!(
+        std::fs::read_to_string(inside.join("in_dir/sentinel.txt")).unwrap(),
+        "PWNED",
+        "writes inside still work while raced"
+    );
 }
 
 /// The fixture's inside folder opened as a workspace of its own.
@@ -185,6 +254,65 @@ fn confinement_workspace(
     rt.block_on(computers.open(made.id, &Sources::Folder { path }))
         .unwrap()
         .id
+}
+
+/// The check that the outside is untouched sees a change, so it cannot pass vacuously.
+#[test]
+fn the_outside_check_sees_any_change() {
+    let rt = runtime();
+    let (computers, work, _, _, confinement) = rt.block_on(fixture("check"));
+    let check = || rt.block_on(confinement_untouched(&computers, &confinement));
+    assert_eq!(check(), Ok(()));
+    let sentinel = work.join("confine/outside/sentinel.txt");
+    std::fs::write(&sentinel, "SENTINEX").unwrap();
+    assert!(check().is_err(), "a changed sentinel is seen");
+    std::fs::write(&sentinel, "SENTINEL").unwrap();
+    std::fs::write(work.join("confine/outside/new.txt"), "").unwrap();
+    assert!(check().is_err(), "a file made outside is seen");
+    std::fs::remove_file(work.join("confine/outside/new.txt")).unwrap();
+    std::fs::write(work.join("confine/stray.txt"), "").unwrap();
+    assert!(check().is_err(), "a file made beside the workspace is seen");
+    std::fs::remove_file(work.join("confine/stray.txt")).unwrap();
+    assert_eq!(check(), Ok(()));
+}
+
+/// Editing a file hard-linked from elsewhere (a package store does this) works, and the other
+/// name keeps the old content.
+#[test]
+fn a_hard_linked_file_can_be_edited_and_the_other_name_is_unchanged() {
+    let rt = runtime();
+    let (work, copies) = scratch("hardlink");
+    let store = work.with_file_name("store");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(store.join("index.js"), "store\n").unwrap();
+    std::fs::create_dir_all(work.join("node_modules/pkg")).unwrap();
+    std::fs::hard_link(
+        store.join("index.js"),
+        work.join("node_modules/pkg/index.js"),
+    )
+    .unwrap();
+    let computers = LocalComputers::new(&copies, plain_environment());
+    let here = rt.block_on(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let path = work.to_string_lossy().into_owned();
+        computers
+            .open(made.id, &Sources::Folder { path })
+            .await
+            .unwrap()
+    });
+    let edit = FileWrite {
+        path: "node_modules/pkg/index.js".into(),
+        content: Bytes::new(b"edited\n"),
+    };
+    rt.block_on(computers.write(here.id, &[edit])).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(work.join("node_modules/pkg/index.js")).unwrap(),
+        "edited\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(store.join("index.js")).unwrap(),
+        "store\n"
+    );
 }
 
 #[test]

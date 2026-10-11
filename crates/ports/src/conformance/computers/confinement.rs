@@ -1,25 +1,33 @@
 //! Files stay inside their workspace, however the path is spelled and whatever links a
 //! command planted. A fixture holds links to inside, outside, the parent, chains, loops and a
 //! hard link, with a sentinel file next to the workspace. Every file operation on any path
-//! must either stay inside or be refused, and the sentinel is never read or changed.
+//! must either stay inside or be refused: no answer names or holds anything outside, a write
+//! that succeeds lands inside (it reads back), and the folder around the workspace is
+//! unchanged.
+
+mod escapes;
+
+pub use escapes::confinement_escapes;
 
 use super::helpers::{failed, run, run_quietly};
 use super::{Verdict, ensure};
 use crate::blob::digest;
 use crate::computer::{
     Bytes, Command, ComputerError, ComputerId, Computers, Ending, FileWrite, Glob, Listing, Search,
-    Sources, WorkspaceId, is_protected,
+    Sources, WorkspaceId,
 };
 
 /// What the outside file holds; no answer may ever contain it.
 const SENTINEL: &str = "SENTINEL";
 /// What the hard-linked outside file holds; reading it through its link is allowed.
 const LINKED: &str = "HARDLINK";
+/// What every write in the suite writes.
+const WRITTEN: &[u8] = b"PWNED";
 
 /// The links and files the fixture builds in the workspace, next to a folder outside it.
 const BUILD: &str = "mkdir -p confine/inside/sub confine/inside/.glave confine/outside && \
     cd confine && printf SENTINEL > outside/sentinel.txt && printf HARDLINK > outside/linked.txt && \
-    cd inside && printf inside > file.txt && printf hook > .glave/hook.sh &&printf nested > sub/deep.txt && \
+    cd inside && printf inside > file.txt && printf hook > .glave/hook.sh && printf nested > sub/deep.txt && \
     ln -s ../outside out_dir && ln -s ../outside/sentinel.txt out_file && \
     ln -s .. up && ln -s ../.. grand && ln -s . self && ln -s sub in_link && \
     ln -s l2 l1 && ln -s out_dir l2 && ln -s a b && ln -s b a && \
@@ -27,9 +35,44 @@ const BUILD: &str = "mkdir -p confine/inside/sub confine/inside/.glave confine/o
     ln -s ../../outside/sentinel.txt sub/deep_out && ln ../outside/linked.txt hard.txt && \
     ln -s .glave/hook.sh hooklink";
 
-/// What the outside folder must hold after every operation.
-const OUTSIDE_STATE: &str = "cd ../outside && ls -A | tr '\\n' ' ' && cat sentinel.txt linked.txt";
-const OUTSIDE_UNTOUCHED: &str = "linked.txt sentinel.txt SENTINELHARDLINK";
+/// What is around the workspace (the `confine` folder), then the outside folder, then its two
+/// files: all of it must be exactly as the fixture made it after every operation.
+const OUTSIDE_STATE: &str = "cd .. && ls -A | tr '\\n' ' ' && ls -A outside | tr '\\n' ' ' && \
+    cat outside/sentinel.txt outside/linked.txt";
+const OUTSIDE_UNTOUCHED: &str = "inside outside linked.txt sentinel.txt SENTINELHARDLINK";
+
+/// Every link and name of the fixture that leads somewhere interesting.
+const LINKS: &[&str] = &[
+    "out_dir",
+    "out_file",
+    "up",
+    "grand",
+    "self",
+    "in_link",
+    "l1",
+    "l2",
+    "a",
+    "dangling",
+    "rootlink",
+    "sub/deep_out",
+    "hard.txt",
+    "hooklink",
+    "file.txt",
+    "sub",
+    ".glave",
+];
+
+/// What follows a link in the fixed cases: itself, as a folder, the files it may hold, a way
+/// back out.
+const SUFFIXES: &[&str] = &[
+    "",
+    "/",
+    "//",
+    "/sentinel.txt",
+    "/new.txt",
+    "/../outside/sentinel.txt",
+    "/confine/outside/sentinel.txt",
+];
 
 /// Path pieces that make trouble: dot segments, empty ones, roots, links of every kind,
 /// odd and long names, other systems' separators.
@@ -80,7 +123,7 @@ const PIECES: &[&str] = &[
     "a\nb",
 ];
 
-/// The fixture: a workspace, and the absolute path of the folder outside it.
+/// The fixture: a workspace, and the absolute path of its root.
 pub struct Confinement {
     workspace: WorkspaceId,
     root: String,
@@ -110,6 +153,33 @@ pub async fn confinement_fixture<C: Computers>(
         root: inside.root,
         long: "n".repeat(300),
     })
+}
+
+/// The whole confinement suite: every link with every suffix, a seeded sample of odd paths,
+/// what plainly inside must still work, and the targeted escapes.
+pub(super) async fn confinement<C: Computers>(
+    computers: &C,
+    computer: ComputerId,
+    here: WorkspaceId,
+    scratch: &str,
+) -> Verdict {
+    let fixture = confinement_fixture(computers, computer, here, scratch).await?;
+    confinement_untouched(computers, &fixture).await?;
+    for path in confinement_targets()
+        .into_iter()
+        .chain(confinement_paths(0x5eed, 24))
+    {
+        confinement_case(computers, &fixture, &path).await?;
+    }
+    confinement_escapes(computers, &fixture).await
+}
+
+/// Every link of the fixture followed by every suffix, in a fixed order.
+pub fn confinement_targets() -> Vec<String> {
+    LINKS
+        .iter()
+        .flat_map(|link| SUFFIXES.iter().map(move |suffix| format!("{link}{suffix}")))
+        .collect()
 }
 
 /// Paths from a fixed seed: `count` of them, the same on every run.
@@ -187,7 +257,7 @@ async fn one_path<C: Computers>(computers: &C, fixture: &Confinement, path: &str
             &shown("a stat named or hashed the outside:"),
         )?;
     }
-    for (recursive, skip_ignored) in [(false, false), (true, false), (true, true)] {
+    for (recursive, skip_ignored) in [(false, false), (true, false), (true, true), (false, true)] {
         let listing = Listing {
             recursive,
             skip_ignored,
@@ -206,24 +276,33 @@ async fn one_path<C: Computers>(computers: &C, fixture: &Confinement, path: &str
         }
     }
     finding(computers, fixture, path).await?;
-    let write = computers
-        .write(
-            here,
-            &[FileWrite {
-                path: path.to_owned(),
-                content: Bytes::new(b"PWNED"),
-            }],
-        )
-        .await;
+    writing(computers, fixture, path).await
+}
+
+/// A write is refused, or lands inside: the path then resolves inside and reads back what was
+/// written. Either way the outside is as it was.
+async fn writing<C: Computers>(computers: &C, fixture: &Confinement, path: &str) -> Verdict {
+    let here = fixture.workspace;
+    let write = computers.write(here, &[plain(path, WRITTEN)]).await;
     ensure(
         acceptable(&write),
-        &shown("writing must be answered or refused:"),
+        &format!("writing must be answered or refused: {path:?}"),
     )?;
     // A refused write wrote nothing, so only the others need a look at the outside.
     if matches!(write, Err(ComputerError::Refused(_))) {
         return Ok(());
     }
-    outside_untouched(computers, here, &shown("a write changed the outside:")).await
+    if write.is_ok() {
+        let landed = computers.stat(here, path).await;
+        ensure(
+            landed
+                .as_ref()
+                .is_ok_and(|stat| names_inside(&stat.path) && stat.digest == Some(digest(WRITTEN))),
+            &format!("a write that succeeded did not land inside: {path:?} {landed:?}"),
+        )?;
+    }
+    let violation = format!("a write changed the outside: {path:?}");
+    outside_unchanged(computers, here, &violation).await
 }
 
 async fn finding<C: Computers>(computers: &C, fixture: &Confinement, path: &str) -> Verdict {
@@ -266,8 +345,13 @@ async fn finding<C: Computers>(computers: &C, fixture: &Confinement, path: &str)
     Ok(())
 }
 
-/// The outside folder holds exactly what the fixture put there.
-async fn outside_untouched<C: Computers>(
+/// Whether the folder around the workspace holds exactly what the fixture put there. Run on
+/// its own, it shows the check itself works.
+pub async fn confinement_untouched<C: Computers>(computers: &C, fixture: &Confinement) -> Verdict {
+    outside_unchanged(computers, fixture.workspace, "the outside changed:").await
+}
+
+async fn outside_unchanged<C: Computers>(
     computers: &C,
     here: WorkspaceId,
     violation: &str,
@@ -276,90 +360,6 @@ async fn outside_untouched<C: Computers>(
     ensure(
         finished.ending == (Ending::Exited { code: 0 }) && output.trim_end() == OUTSIDE_UNTOUCHED,
         &format!("{violation} {output:?}"),
-    )
-}
-
-/// The targeted escapes: links a command plants, a hard link, a name too long, and links into
-/// protected paths.
-pub async fn confinement_escapes<C: Computers>(computers: &C, fixture: &Confinement) -> Verdict {
-    let here = fixture.workspace;
-    run_quietly(
-        computers,
-        here,
-        "ln -s ../outside/sentinel.txt planted && ln -s ../outside planted_dir",
-    )
-    .await?;
-    for path in [
-        "planted",
-        "planted_dir/sentinel.txt",
-        "planted_dir/made.txt",
-    ] {
-        ensure(
-            matches!(
-                computers.read(here, path).await,
-                Err(ComputerError::Refused(_))
-            ) || path.ends_with("made.txt"),
-            "reading through a planted link must be refused",
-        )?;
-        let write = computers.write(here, &[plain(path, b"PWNED")]).await;
-        ensure(
-            matches!(write, Err(ComputerError::Refused(_))),
-            "writing through a planted link must be refused",
-        )?;
-    }
-    // A trailing slash must not stop a link to a file from being followed.
-    for path in ["out_file/", "planted/", "out_file//"] {
-        ensure(
-            matches!(
-                computers.read(here, path).await,
-                Err(ComputerError::Refused(_))
-            ),
-            "a link to an outside file read with a trailing slash must be refused",
-        )?;
-        ensure(
-            matches!(
-                computers.write(here, &[plain(path, b"PWNED")]).await,
-                Err(ComputerError::Refused(_))
-            ),
-            "a link to an outside file written with a trailing slash must be refused",
-        )?;
-    }
-    outside_untouched(computers, here, "a planted link let a write through:").await?;
-    // A hard link shares the file itself, so no path check can tell: reading it is fine (it
-    // is a file of the workspace), but writing it would change the outside file, so a file
-    // with other hard links is never written.
-    let linked = computers.read(here, "hard.txt").await;
-    ensure(
-        linked.is_ok_and(|bytes| bytes.as_slice() == LINKED.as_bytes()),
-        "a hard link reads as the file it is",
-    )?;
-    ensure(
-        matches!(
-            computers.write(here, &[plain("hard.txt", b"PWNED")]).await,
-            Err(ComputerError::Refused(_))
-        ),
-        "writing a file that has other hard links must be refused",
-    )?;
-    outside_untouched(computers, here, "a hard link let a write through:").await?;
-    let long = computers.write(here, &[plain(&fixture.long, b"x")]).await;
-    ensure(acceptable(&long), "a name too long must fail cleanly")?;
-    protected(computers, fixture).await
-}
-
-/// A link into a protected path resolves to that path, so the harness's check sees it.
-async fn protected<C: Computers>(computers: &C, fixture: &Confinement) -> Verdict {
-    let here = fixture.workspace;
-    let stat = computers
-        .stat(here, "hooklink")
-        .await
-        .map_err(failed("stat a link into .glave"))?;
-    ensure(
-        stat.path == ".glave/hook.sh"
-            && is_protected(
-                std::path::Path::new(&fixture.root),
-                &std::path::Path::new(&fixture.root).join(&stat.path),
-            ),
-        "a link into a protected path must resolve to it",
     )
 }
 

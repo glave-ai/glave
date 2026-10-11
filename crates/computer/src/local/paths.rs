@@ -1,8 +1,7 @@
-//! Paths inside a workspace: every path a caller gives is resolved and confined to the
-//! workspace root. Symlinks and `..` are followed before the check, so neither can escape.
-//! Refusals are whole sentences, written to be shown to the model as they are.
+//! Workspace folders and paths shown relative to them. Paths a caller gives are resolved
+//! and confined in `anchored`.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use glave_ports::ComputerError;
 
@@ -18,58 +17,6 @@ pub(crate) async fn folder(path: &str) -> Result<PathBuf, ComputerError> {
         Ok(root)
     } else {
         Err(ComputerError::Refused(format!("{path} is not a folder")))
-    }
-}
-
-/// Resolves `path` (relative to `root`, or absolute inside it) to a path inside `root`.
-pub(crate) async fn resolve(root: &Path, path: &str) -> Result<PathBuf, ComputerError> {
-    if path.trim().is_empty() {
-        return Err(ComputerError::Refused("The path is empty.".into()));
-    }
-    // Rebuilt from its components so a trailing slash is gone: asked about `link/`, the system
-    // answers "not a folder" for a link to a file, which would pass for "does not exist" and
-    // leave the link unresolved.
-    let candidate: PathBuf = root.join(path).components().collect();
-    let mut existing = candidate.as_path();
-    let mut tail = Vec::new();
-    while !tokio::fs::try_exists(existing).await.unwrap_or(false) {
-        // A link to something that does not exist yet: writing through it would create its
-        // target, wherever that is, so it cannot be checked. Refuse it.
-        if tokio::fs::symlink_metadata(existing).await.is_ok() {
-            return Err(ComputerError::Refused(format!(
-                "{path} goes through a link to something that does not exist, so it cannot be \
-                 checked to stay inside the workspace."
-            )));
-        }
-        let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
-            return Err(ComputerError::Refused(format!(
-                "{path} cannot be resolved."
-            )));
-        };
-        tail.push(name.to_owned());
-        existing = parent;
-    }
-    let mut resolved = tokio::fs::canonicalize(existing)
-        .await
-        .map_err(|error| ComputerError::Failed(format!("{path} cannot be resolved: {error}")))?;
-    for name in tail.iter().rev() {
-        if !matches!(
-            Path::new(name).components().next(),
-            Some(Component::Normal(_))
-        ) {
-            return Err(ComputerError::Refused(format!(
-                "{path} uses '..' or '.' through a folder that does not exist."
-            )));
-        }
-        resolved.push(name);
-    }
-    if resolved.starts_with(root) {
-        Ok(resolved)
-    } else {
-        Err(ComputerError::Refused(format!(
-            "{path} is outside the workspace ({}).",
-            root.display()
-        )))
     }
 }
 

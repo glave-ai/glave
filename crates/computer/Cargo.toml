@@ -18,6 +18,9 @@ globset.workspace = true
 ignore.workspace = true
 # The expressions files/search looks for.
 regex.workspace = true
+# Resolving every path one name at a time from an open handle on the workspace root
+# (openat, no-follow), so a link swapped in by a command cannot lead a file tool outside.
+rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

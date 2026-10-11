@@ -1,26 +1,21 @@
-//! Reading, writing and listing files in a workspace, confined to its root and bounded in
-//! size.
+//! Reading, writing and describing files in a workspace, confined to its root (every path
+//! resolved from an open handle on it, `anchored`) and bounded in size.
 
+use std::io::Read as _;
+use std::os::fd::AsFd as _;
 use std::path::{Path, PathBuf};
 
-use tokio::fs::OpenOptions;
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use glave_ports::{Bytes, ComputerError, EntryKind, FileWrite, Stat, digest};
+use rustix::fs::FileType;
 
-use glave_ports::{
-    Bytes, ComputerError, Entry, EntryKind, FileWrite, Listed, Listing, Stat, digest,
-};
-
+use super::anchored::{Found, Root, count, open_to_read, resolve, shown};
 use super::git::HISTORY;
-use super::opened::checked;
-use super::paths::{relative, resolve};
-use super::walk;
+use super::replace::{make_folders, replace};
 
 /// The largest file read or written in one call, so it fits in one message on the wire.
 pub(crate) const MAX_FILE: u64 = 20 * 1024 * 1024;
-/// The most entries one listing returns.
-pub(crate) const MAX_ENTRIES: usize = 10_000;
 
-fn io(path: &str, error: &std::io::Error) -> ComputerError {
+pub(crate) fn io(path: &str, error: &std::io::Error) -> ComputerError {
     if error.kind() == std::io::ErrorKind::NotFound {
         ComputerError::NotFound(format!("{path}: no such file"))
     } else {
@@ -28,208 +23,129 @@ fn io(path: &str, error: &std::io::Error) -> ComputerError {
     }
 }
 
+/// Runs file work off the async threads: it is a run of blocking system calls.
+pub(crate) async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, ComputerError> + Send + 'static,
+) -> Result<T, ComputerError> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|error| ComputerError::Failed(format!("file work stopped: {error}")))?
+}
+
 pub(crate) async fn read(root: &Path, path: &str) -> Result<Bytes, ComputerError> {
-    let resolved = resolve(root, path).await?;
-    let mut options = OpenOptions::new();
-    options.read(true);
-    let mut file = checked(root, path, &resolved, &options, false).await?;
-    let metadata = file.metadata().await.map_err(|error| io(path, &error))?;
-    if metadata.is_dir() {
+    let (root, path) = (root.to_owned(), path.to_owned());
+    blocking(move || {
+        let root = Root::open(&root)?;
+        let found = resolve(&root, &path)?;
+        read_found(&path, &found).map(Bytes::new)
+    })
+    .await
+}
+
+/// The whole content of the file `found` names.
+fn read_found(path: &str, found: &Found) -> Result<Vec<u8>, ComputerError> {
+    if found.is_folder() {
         return Err(ComputerError::Refused(format!(
             "{path} is a folder; list it instead"
         )));
     }
-    if metadata.len() > MAX_FILE {
+    let (Some(name), Some(_)) = (&found.name, &found.stat) else {
+        return Err(ComputerError::NotFound(format!("{path}: no such file")));
+    };
+    let file = open_to_read(found.folder.as_fd(), name).map_err(|error| io(path, &error))?;
+    let size = file.metadata().map_err(|error| io(path, &error))?.len();
+    if size > MAX_FILE {
         return Err(ComputerError::Refused(format!(
-            "{path} is {} bytes; files over {MAX_FILE} bytes are not read whole",
-            metadata.len()
+            "{path} is {size} bytes; files over {MAX_FILE} bytes are not read whole"
         )));
     }
     let mut content = Vec::new();
-    file.read_to_end(&mut content)
-        .await
+    file.take(MAX_FILE)
+        .read_to_end(&mut content)
         .map_err(|error| io(path, &error))?;
-    Ok(Bytes::new(content))
+    Ok(content)
 }
 
-/// Checks every path first, so a refused path means nothing was written.
+/// Checks every path first, so a refused path means nothing was written. Each file is
+/// replaced whole (`replace`), never written in place.
 pub(crate) async fn write(root: &Path, files: &[FileWrite]) -> Result<(), ComputerError> {
-    let mut resolved = Vec::with_capacity(files.len());
-    for file in files {
-        let size = u64::try_from(file.content.as_slice().len()).unwrap_or(u64::MAX);
-        if size > MAX_FILE {
-            return Err(ComputerError::Refused(format!(
-                "{} is {size} bytes; files over {MAX_FILE} bytes are not written whole",
-                file.path
-            )));
+    let (root, files) = (root.to_owned(), files.to_vec());
+    blocking(move || {
+        let root = Root::open(&root)?;
+        let mut resolved = Vec::with_capacity(files.len());
+        for file in &files {
+            let size = u64::try_from(file.content.as_slice().len()).unwrap_or(u64::MAX);
+            if size > MAX_FILE {
+                return Err(ComputerError::Refused(format!(
+                    "{} is {size} bytes; files over {MAX_FILE} bytes are not written whole",
+                    file.path
+                )));
+            }
+            let found = resolve(&root, &file.path)?;
+            if found.is_folder() || found.name.is_none() {
+                return Err(ComputerError::Refused(format!(
+                    "{} is a folder, not a file.",
+                    file.path
+                )));
+            }
+            resolved.push(found);
         }
-        resolved.push(resolve(root, &file.path).await?);
-    }
-    for (file, path) in files.iter().zip(resolved) {
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
+        for (file, found) in files.iter().zip(resolved) {
+            let Some(name) = found.name else {
+                continue;
+            };
+            let folder =
+                make_folders(found.folder, &found.missing).map_err(|e| io(&file.path, &e))?;
+            replace(folder.as_fd(), &name, file.content.as_slice())
                 .map_err(|error| io(&file.path, &error))?;
         }
-        // Opened without truncating, checked, and only then emptied and written, so a path
-        // swapped for a link to somewhere else never costs that file its contents.
-        let mut options = OpenOptions::new();
-        options.write(true).create(true).truncate(false);
-        let mut handle = checked(root, &file.path, &path, &options, true).await?;
-        handle
-            .set_len(0)
-            .await
-            .map_err(|error| io(&file.path, &error))?;
-        handle
-            .write_all(file.content.as_slice())
-            .await
-            .map_err(|error| io(&file.path, &error))?;
-        handle
-            .flush()
-            .await
-            .map_err(|error| io(&file.path, &error))?;
-    }
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 /// What is at `path`: nothing, a folder, or a file with its size and, when small enough to
 /// read whole, its digest.
 pub(crate) async fn stat(root: &Path, path: &str) -> Result<Stat, ComputerError> {
-    let resolved = resolve(root, path).await?;
-    let shown = relative(root, &resolved);
-    let Ok(metadata) = tokio::fs::metadata(&resolved).await else {
-        return Ok(Stat {
-            path: shown,
-            kind: None,
-            size: 0,
-            digest: None,
-        });
-    };
-    if metadata.is_dir() {
-        return Ok(Stat {
-            path: shown,
-            kind: Some(EntryKind::Folder),
-            size: 0,
-            digest: None,
-        });
-    }
-    let digest = if metadata.len() <= MAX_FILE {
-        read(root, path)
-            .await
-            .ok()
-            .map(|bytes| digest(bytes.as_slice()))
-    } else {
-        None
-    };
-    Ok(Stat {
-        path: shown,
-        kind: Some(EntryKind::File),
-        size: metadata.len(),
-        digest,
-    })
-}
-
-pub(crate) async fn list(root: &Path, listing: &Listing) -> Result<Listed, ComputerError> {
-    let start = resolve(root, &listing.path).await?;
-    if listing.skip_ignored {
-        return discover(root, start, listing).await;
-    }
-    let mut entries = Vec::new();
-    let mut folders = vec![start];
-    let mut truncated = false;
-    while let Some(folder) = folders.pop() {
-        let mut reading = tokio::fs::read_dir(&folder)
-            .await
-            .map_err(|error| io(&listing.path, &error))?;
-        while let Some(found) = reading
-            .next_entry()
-            .await
-            .map_err(|error| io(&listing.path, &error))?
-        {
-            if entries.len() >= MAX_ENTRIES {
-                truncated = true;
-                break;
-            }
-            let path = found.path();
-            let metadata = tokio::fs::symlink_metadata(&path)
-                .await
-                .map_err(|error| io(&listing.path, &error))?;
-            let kind = if metadata.is_symlink() {
-                EntryKind::Link
-            } else if metadata.is_dir() {
-                EntryKind::Folder
-            } else {
-                EntryKind::File
-            };
-            if listing.recursive && kind == EntryKind::Folder && !is_history(root, &path) {
-                folders.push(path.clone());
-            }
-            entries.push(Entry {
-                path: relative(root, &path),
-                kind,
-                size: if kind == EntryKind::File {
-                    metadata.len()
-                } else {
-                    0
-                },
+    let (root, path) = (root.to_owned(), path.to_owned());
+    blocking(move || {
+        let root = Root::open(&root)?;
+        let found = resolve(&root, &path)?;
+        let shown = shown(&found.names);
+        let Some(stat) = found.stat.as_ref() else {
+            return Ok(Stat {
+                path: shown,
+                kind: None,
+                size: 0,
+                digest: None,
+            });
+        };
+        if found.is_folder() {
+            return Ok(Stat {
+                path: shown,
+                kind: Some(EntryKind::Folder),
+                size: 0,
+                digest: None,
             });
         }
-        if truncated {
-            break;
-        }
-    }
-    entries.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(Listed {
-        entries,
-        truncated,
-        ignored: 0,
-    })
-}
-
-/// A listing the way git sees the folder: what it ignores is left out and counted.
-async fn discover(root: &Path, start: PathBuf, listing: &Listing) -> Result<Listed, ComputerError> {
-    let shown = listing.path.clone();
-    let recursive = listing.recursive;
-    let walked = tokio::task::spawn_blocking(move || {
-        if recursive {
-            let entries: Vec<(PathBuf, EntryKind)> = walk::files(&start)
-                .take(MAX_ENTRIES.saturating_add(1))
-                .map(|path| (path, EntryKind::File))
-                .collect();
-            Ok((entries, 0))
-        } else {
-            walk::entries(&start)
-        }
+        let size = count(stat.st_size);
+        let regular = FileType::from_raw_mode(stat.st_mode) == FileType::RegularFile;
+        let digest = (regular && size <= MAX_FILE)
+            .then(|| read_found(&path, &found).ok())
+            .flatten()
+            .map(|bytes| digest(&bytes));
+        Ok(Stat {
+            path: shown,
+            kind: Some(EntryKind::File),
+            size,
+            digest,
+        })
     })
     .await
-    .map_err(|error| ComputerError::Failed(format!("{shown}: {error}")))?
-    .map_err(|error| io(&listing.path, &error))?;
-    let (found, ignored) = walked;
-    let truncated = found.len() > MAX_ENTRIES;
-    let mut entries = Vec::with_capacity(found.len().min(MAX_ENTRIES));
-    for (path, kind) in found.into_iter().take(MAX_ENTRIES) {
-        let size = if kind == EntryKind::File {
-            tokio::fs::symlink_metadata(&path)
-                .await
-                .map_or(0, |metadata| metadata.len())
-        } else {
-            0
-        };
-        entries.push(Entry {
-            path: relative(root, &path),
-            kind,
-            size,
-        });
-    }
-    Ok(Listed {
-        entries,
-        truncated,
-        ignored: u64::try_from(ignored).unwrap_or(u64::MAX),
-    })
 }
 
 /// Folders a recursive listing does not descend into: git's own records.
-fn is_history(root: &Path, path: &Path) -> bool {
+pub(crate) fn is_history(root: &Path, path: &Path) -> bool {
     path.file_name().is_some_and(|name| name == ".git") || path == root.join(HISTORY)
 }
 
