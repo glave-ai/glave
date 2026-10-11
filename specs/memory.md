@@ -6,7 +6,20 @@ Memory is the first of four tiers of context: memory (small, always in view), hi
 
 ## Status
 
-Accepted. Nothing is built. The evals at the end decide whether it is on by default.
+Accepted. The evals at the end decide whether it is on by default.
+
+**Built** (the core, issue #93), in `glave-memory`, the harness, the session API and the CLI. **Off by default** (`memory = "on"` turns it on) until the evals have been measured.
+
+- **The server:** glave's own MCP server (`remember`, `edit`, `forget`; `glave://memory`, and `glave://memory/{memory}/{version}` for a memory at one of its versions, which resuming needs), in-process over an in-memory connection, glave its only client. Who and where travel in each request's `_meta` (`glave/context`: organization, space, person, agent, thread, `seq`, whether the thread read untrusted content), set from the session and the thread, never from the model; the store applies the rules to every read and write. The model's tools reach it as `mcp__memory__remember`, `mcp__memory__edit` and `mcp__memory__forget`. The person's controls (`memory/*`, `glave memory`) go to the store directly: they are the person's actions, not the model's.
+- **A plugged-in server is trusted to enforce scope**, as glave's own does: glave sends who and where with every request and cannot check what another server does with it. `glave-memory`'s conformance suite (the `conformance` feature: scope kept apart by `_meta`, the duplicate check, the budget refusal, forgetting that leaves nothing to read) is what such a server must pass. Until one is built in, `[memory] server` naming anything but `glave` is refused at load as not enforced.
+- **Personal memory** lives in a personal space the host provides (`Rules.personal`). There is no Inbox yet: the CLI derives one space per person from a name only that person has, the way it derives every local space (`personal_space` in `crates/cli/src/memory.rs`, the one place to replace when spaces become first-class).
+- **A space's setting** is `space_memory` in `config.toml` (the person's or a project's: `shared`, `isolated` or `off`; narrowing only, so a project needs no trust for it). `memory` itself is the person's own choice: a project's file cannot set it.
+- **Writing:** the credential check (`glave_ports::secrets::looks_like_credential`), the near-duplicate check (normalised words, Dice overlap ≥ 0.6), the budget (about 1,000 tokens a scope, counting each line's id and dates), `replaces` (the new memory is saved and the old forgotten at once), at most 500 characters on one line.
+- **Loading:** the start goes before the last part of the first message (after AGENTS.md, before the person's words) and is laid over the conversation each time it is sent, never stored in the thread; each turn's configuration (now versioned, `v: 2`) records `memory.memories`, the ids and versions the model knew at its start. A memory call's `tool.call.completed` records in `structured` what it changed (ids and versions), so the thread's own saves need no note. Resuming reads those back and rebuilds the start and every note from the memories at those versions. Compaction asks for its summary without memory (so a summary never stores a memory's text) and restarts with everything the thread knows.
+- **Safety:** after untrusted content or a secrets file, `remember` and `edit` are a soft caution (`REMEMBER_CAUTION`): the judge, told untrusted content was read, lets it run only on the person's word; in ask mode the person is asked; with no one there nothing is saved. `evals/judge/memory.jsonl` holds the judge cases.
+- **Forgetting:** each memory's text is sealed under `v1/<space>/memory/<memory>/<n>`; a forget by the person (or the model for them) destroys it at once, and its events then read with empty `data` (`{}`), envelopes kept. The space key is rotated by housekeeping, which batches the forgets since it last ran: when glave starts, when `glave memory` runs, and when a session ends. Retention (`retention_days`) forgets by glave, erased 30 days on unless restored.
+
+**Not yet:** tidy-up and `recall` (the next change), the memory page on web and desktop, rotation on a schedule of its own in `glave serve --http` (it rotates when the server's session ends), and plugged-in memory servers.
 
 ## What others learned
 

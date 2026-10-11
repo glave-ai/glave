@@ -2,12 +2,15 @@
 //! `conformance` feature and run it against their own key storage. It returns the first
 //! violation it finds as an error message.
 
-use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
+use glave_event::{
+    At, EventId, Header, MemoryId, MemorySaved, MemoryScope, Outcome, Principal, RawEvent, Seq,
+    ThreadId, TurnEnded, encode,
+};
 use glave_ports::{OrgId, Scope, SpaceId};
 use uuid::{Builder, Uuid};
 
 use crate::error::KeyError;
-use crate::key_id::KeyId;
+use crate::key_id::{KeyId, Period};
 use crate::keys::{EventFields, Keys};
 use crate::storage::KeyStorage;
 
@@ -53,6 +56,91 @@ pub fn event(thread: u64, seq: u64, month: &str) -> Result<RawEvent, String> {
     .map_err(|e| e.to_string())
 }
 
+/// A `memory.saved` event for memory `memory`, at position `seq` of the memory ledger.
+pub fn memory_event(memory: u64, seq: u64) -> Result<RawEvent, String> {
+    let header = Header {
+        id: EventId::try_from(uuid_v7(8_000 + seq)).map_err(|e| e.to_string())?,
+        thread: ThreadId::try_from(uuid_v7(9_499)).map_err(|e| e.to_string())?,
+        seq: Seq::new(seq).map_err(|e| e.to_string())?,
+        at: At::try_from("2026-10-11T09:00:00.000Z".to_owned()).map_err(|e| e.to_string())?,
+    };
+    let saved = MemorySaved {
+        memory: MemoryId::try_from(uuid_v7(7_000 + memory)).map_err(|e| e.to_string())?,
+        scope: MemoryScope::Space,
+        text: format!("remembered thing {memory}"),
+        source: None,
+        untrusted_read: false,
+        by: Principal::glave(),
+    };
+    encode(header, &saved).map_err(|e| e.to_string())
+}
+
+/// Each memory is sealed under a key of its own; destroying it erases that memory alone, and
+/// rotating the space key afterwards keeps every other key readable.
+async fn memory_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
+    let here = scope(8);
+    let (first, second) = (memory_event(1, 1)?, memory_event(2, 2)?);
+    let month = event(3, 1, "2026-10")?;
+    let mut sealed = Vec::new();
+    for event in [&first, &second, &month] {
+        sealed.push(keys.seal_event(&here, event).await.map_err(text)?);
+    }
+    let [one, two, plain] = sealed.as_slice() else {
+        return Err("three events were sealed".into());
+    };
+    let id: KeyId = one.key_id.parse().map_err(text)?;
+    ensure(
+        matches!(id.period, Period::Memory(memory) if memory == uuid_v7(7_001)),
+        "a memory's text is sealed under v1/<space>/memory/<memory>/<n>",
+    )?;
+    ensure(
+        one.key_id != two.key_id && plain.key_id.ends_with("/2026-10/1"),
+        "each memory has its own key, apart from the month's",
+    )?;
+    keys.destroy_memory_key(&here, uuid_v7(7_001))
+        .await
+        .map_err(text)?;
+    ensure(
+        matches!(
+            open(keys, &here, &first, one).await,
+            Err(KeyError::Destroyed(_))
+        ),
+        "a forgotten memory no longer opens",
+    )?;
+    ensure(
+        keys.rotation_due(&here).await.map_err(text)?,
+        "a destroyed memory key leaves a rotation due",
+    )?;
+    ensure(
+        keys.rotate_space_key(&here).await.map_err(text)?,
+        "a due rotation rotates",
+    )?;
+    ensure(
+        !keys.rotation_due(&here).await.map_err(text)?,
+        "a rotation settles what was due",
+    )?;
+    ensure(
+        open(keys, &here, &second, two).await.is_ok()
+            && open(keys, &here, &month, plain).await.is_ok(),
+        "other memories and months still open after the rotation",
+    )?;
+    ensure(
+        !keys.rotate_space_key(&here).await.map_err(text)?,
+        "nothing to rotate when nothing was destroyed since",
+    )
+}
+
+async fn open<S: KeyStorage>(
+    keys: &Keys<S>,
+    scope: &Scope,
+    event: &RawEvent,
+    sealed: &crate::keys::Sealed,
+) -> Result<Vec<u8>, KeyError> {
+    let fields = EventFields::from(event);
+    keys.open_event(scope, &fields, &sealed.key_id, &sealed.bytes)
+        .await
+}
+
 fn text(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
@@ -64,6 +152,7 @@ pub async fn keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     erasing_a_space(keys).await?;
     destroying_a_data_key(keys).await?;
     blobs(keys).await?;
+    memory_keys(keys).await?;
     compare_and_swap(keys.storage()).await
 }
 
@@ -73,7 +162,7 @@ async fn sealing<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     let sealed = keys.seal_event(&here, &event).await.map_err(text)?;
     let id: KeyId = sealed.key_id.parse().map_err(text)?;
     ensure(
-        id.space == here.space && id.month.to_string() == "2026-10" && id.n == 1,
+        id.space == here.space && id.period.to_string() == "2026-10" && id.n == 1,
         "the first key of a space and month is v1/<space>/<month>/1",
     )?;
     ensure(

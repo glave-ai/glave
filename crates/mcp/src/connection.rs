@@ -12,8 +12,9 @@ use glave_ports::{
     Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSpec, unless_cancelled,
 };
 use rmcp::model::{
-    CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, JsonObject,
-    ProtocolVersion, ReadResourceRequestParams, Resource, ResourceContents, ServerResult, Tool,
+    CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, JsonObject, MetaObject,
+    ProtocolVersion, ReadResourceRequestParams, RequestMetaObject, Resource, ResourceContents,
+    ServerResult, Tool,
 };
 use rmcp::service::{
     ClientLifecycleMode, ClientServiceExt as _, Peer, PeerRequestOptions, RoleClient,
@@ -216,12 +217,14 @@ impl Connection {
         &self,
         tool: &str,
         arguments: Option<JsonObject>,
+        meta: Option<JsonObject>,
         limit: Duration,
     ) -> Result<CallToolResult, String> {
         let mut params = CallToolRequestParams::new(tool.to_owned());
         if let Some(arguments) = arguments {
             params = params.with_arguments(arguments);
         }
+        params.meta = meta.map(|meta| RequestMetaObject(MetaObject(meta)));
         let request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
         let sent = self
             .peer
@@ -270,10 +273,12 @@ impl Connection {
     pub(crate) async fn read(
         &self,
         uri: &str,
+        meta: Option<JsonObject>,
         cancel: &dyn Cancellation,
         limit: Duration,
     ) -> Result<Vec<ResourceContents>, String> {
-        let params = ReadResourceRequestParams::new(uri);
+        let mut params = ReadResourceRequestParams::new(uri);
+        params.meta = meta.map(|meta| RequestMetaObject(MetaObject(meta)));
         let read = tokio::time::timeout(limit, self.peer.read_resource(params));
         match unless_cancelled(cancel, read).await {
             Some(Ok(Ok(result))) => Ok(result.contents),

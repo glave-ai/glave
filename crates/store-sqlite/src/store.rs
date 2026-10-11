@@ -96,6 +96,11 @@ impl Store {
         &self.keys
     }
 
+    /// The keys, shared, for what erases by destroying them (forgotten memories).
+    pub fn keyring(&self) -> Arc<SqliteKeyring> {
+        Arc::clone(&self.keys)
+    }
+
     /// The scope for a project folder on this computer: the one local organization, and the
     /// space this folder was given the first time. `new_org` and `new_space` are used only when
     /// those do not exist yet.

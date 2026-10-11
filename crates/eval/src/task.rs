@@ -54,6 +54,35 @@ pub struct Task {
     pub outcome: Outcome,
     /// Run the instruction as a goal, worked toward across turns, rather than as one turn.
     pub goal: Option<TaskGoal>,
+    /// Whether memory is on for the task (`specs/memory.md`); `--memory` overrides it.
+    pub memory: bool,
+    /// The first thread's space setting: `shared` (default), `isolated` or `off`.
+    pub space_memory: Option<String>,
+    /// Threads after the first, each new, run in order in the same store.
+    pub threads: Vec<TaskThread>,
+    /// Memories saved before the first thread.
+    pub memories: Vec<Seeded>,
+}
+
+/// A thread after the first: `[[glave.threads]]`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskThread {
+    /// Its messages, in order; each after the first resumes it from its log.
+    pub messages: Vec<String>,
+    /// The space it works in, by name; the first thread's when absent.
+    pub space: Option<String>,
+    /// That space's setting, when it is a space of its own.
+    pub space_memory: Option<String>,
+}
+
+/// A memory seeded before the first thread: `[[glave.memories]]`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Seeded {
+    pub text: String,
+    /// `personal` or `space` (the first thread's).
+    pub scope: String,
 }
 
 /// A goal, as `[glave] goal = { budget = 200000 }` sets it. How to verify it is the
@@ -138,6 +167,13 @@ struct Glave {
     max_steps: Option<u32>,
     outcome: Option<Outcome>,
     goal: Option<TaskGoal>,
+    #[serde(default)]
+    memory: bool,
+    space_memory: Option<String>,
+    #[serde(default)]
+    threads: Vec<TaskThread>,
+    #[serde(default)]
+    memories: Vec<Seeded>,
 }
 
 /// Loads the task in `dir`. Its paths are absolute, since the grader runs from the workspace.
@@ -182,6 +218,7 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
     if glave.context_window.is_some_and(|tokens| tokens < 1_000) {
         return Err(bad("context_window is under 1,000 tokens".into()));
     }
+    memory_named(&glave).map_err(bad)?;
     let mut turns = vec![instruction];
     turns.extend(glave.turns);
     Ok(Task {
@@ -201,7 +238,39 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         max_steps: glave.max_steps,
         outcome: glave.outcome.unwrap_or(Outcome::Completed),
         goal: glave.goal,
+        memory: glave.memory,
+        space_memory: glave.space_memory,
+        threads: glave.threads,
+        memories: glave.memories,
     })
+}
+
+/// Whether the memory settings and seeded memories of `glave` name things that exist.
+fn memory_named(glave: &Glave) -> Result<(), String> {
+    let settings = glave.space_memory.iter().chain(
+        glave
+            .threads
+            .iter()
+            .filter_map(|thread| thread.space_memory.as_ref()),
+    );
+    for name in settings {
+        if glave_memory::SpaceMemory::named(name).is_none() {
+            return Err(format!(
+                "space_memory is shared, isolated or off, not {name:?}"
+            ));
+        }
+    }
+    match glave
+        .memories
+        .iter()
+        .find(|seed| glave_event::MemoryScope::named(&seed.scope).is_none())
+    {
+        Some(seed) => Err(format!(
+            "a seeded memory's scope is personal or space, not {:?}",
+            seed.scope
+        )),
+        None => Ok(()),
+    }
 }
 
 /// Loads every task folder under `root`, sorted by name.

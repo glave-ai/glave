@@ -19,6 +19,7 @@ mod hooks;
 mod instructions;
 mod join;
 mod judge;
+mod memory;
 mod outside;
 mod prompt;
 mod question;
@@ -55,6 +56,11 @@ pub use harness::{Harness, HarnessError, Parts, Settings, Thread};
 pub use hooks::{HOOK_TIMEOUT_SECS, Hook, HookError, HookPoint, Hooks, point_name};
 pub use instructions::{AGENTS_MD, Instructions, agents_md};
 pub use judge::{JudgeCase, Ruling, judge};
+pub use memory::{
+    Access, Control, EDIT_MEMORY, FORGET, MEMORY_SERVER, Memory, MemoryChange, MemoryContext,
+    MemoryError, MemoryOutput, MemoryVerb, REMEMBER, REMEMBER_CAUTION, Remembered, Shown,
+    memory_ledger,
+};
 pub use prompt::system_prompt;
 pub use question::{Choice, QUESTION, Question, QuestionRequest};
 pub use removed::{last_active, owner_label, owner_of, record_removed};

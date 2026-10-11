@@ -36,7 +36,8 @@ options:
   --baseline <file>    an earlier report.json to compare with
   --tasks <folder>     where the tasks are (default evals/tasks)
   --todo               offer the model the todo list
-  --subagents          let the model hand work to child threads with task";
+  --subagents          let the model hand work to child threads with task
+  --memory <on|off>    memory on or off for every task (default: each task's own [glave] memory)";
 
 /// The parsed command line.
 #[derive(Debug, PartialEq)]
@@ -51,6 +52,7 @@ struct Options {
     tasks: PathBuf,
     todo: bool,
     subagents: bool,
+    memory: Option<bool>,
 }
 
 pub fn main() -> ExitCode {
@@ -99,6 +101,7 @@ fn run(options: &Options) -> Result<bool, String> {
         environment: std::env::vars_os().collect(),
         todo: options.todo,
         subagents: options.subagents,
+        memory: options.memory,
     });
     let attempts = options
         .repeat
@@ -228,6 +231,7 @@ fn options(args: &[String]) -> Result<Options, String> {
         tasks: PathBuf::from("evals/tasks"),
         todo: false,
         subagents: false,
+        memory: None,
     };
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -257,6 +261,13 @@ fn options(args: &[String]) -> Result<Options, String> {
             "--tasks" => options.tasks = PathBuf::from(value()?),
             "--todo" => options.todo = true,
             "--subagents" => options.subagents = true,
+            "--memory" => {
+                options.memory = match value()?.as_str() {
+                    "on" => Some(true),
+                    "off" => Some(false),
+                    other => return Err(format!("--memory is on or off, not {other:?}")),
+                };
+            }
             other => return Err(format!("unknown option {other}\n{USAGE}")),
         }
     }
@@ -332,6 +343,8 @@ mod tests {
             "t",
             "--todo",
             "--subagents",
+            "--memory",
+            "on",
         ])
         .unwrap();
         assert_eq!(
@@ -347,6 +360,7 @@ mod tests {
                 tasks: "t".into(),
                 todo: true,
                 subagents: true,
+                memory: Some(true),
             }
         );
     }

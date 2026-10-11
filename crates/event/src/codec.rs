@@ -9,10 +9,11 @@ use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeNa
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
     ApprovalDecided, ApprovalRequested, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
-    HookRan, MessageAdded, ModelResponded, ScheduleCreated, ScheduleDeleted, TaskEnded,
-    TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadStarted, ThreadUnarchived,
-    ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
-    approval, gateway, goal, hook, message, model, standing, task, thread, tool, turn, workspace,
+    HookRan, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MessageAdded,
+    ModelResponded, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived,
+    ThreadCompacted, ThreadDeleted, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
+    ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, gateway,
+    goal, hook, memory, message, model, standing, task, thread, tool, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -60,6 +61,10 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (task::CREATED, 1),
     (task::DELETED, 1),
     (gateway::TOOL_CALLED, 1),
+    (memory::SAVED, 1),
+    (memory::EDITED, 1),
+    (memory::FORGOTTEN, 1),
+    (memory::RESTORED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -96,6 +101,10 @@ pub enum Body {
     ScheduleCreated(ScheduleCreated),
     ScheduleDeleted(ScheduleDeleted),
     GatewayToolCalled(GatewayToolCalled),
+    MemorySaved(MemorySaved),
+    MemoryEdited(MemoryEdited),
+    MemoryForgotten(MemoryForgotten),
+    MemoryRestored(MemoryRestored),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -193,7 +202,7 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         gateway::TOOL_CALLED => {
             gateway::decode(version, data).map(|r| r.map(Body::GatewayToolCalled))
         }
-        _ => None,
+        other => decode_memory(other, version, data),
     };
     let body = match known {
         Some(Ok(body)) => body,
@@ -244,6 +253,10 @@ impl Event {
             Body::ScheduleCreated(payload) => encode(header, payload),
             Body::ScheduleDeleted(payload) => encode(header, payload),
             Body::GatewayToolCalled(payload) => encode(header, payload),
+            Body::MemorySaved(payload) => encode(header, payload),
+            Body::MemoryEdited(payload) => encode(header, payload),
+            Body::MemoryForgotten(payload) => encode(header, payload),
+            Body::MemoryRestored(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,
@@ -255,6 +268,21 @@ impl Event {
                 data: unknown.data.clone(),
             }),
         }
+    }
+}
+
+/// Decodes the memory ledger's types; `None` for any type that is not one of them.
+fn decode_memory(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
+    match kind {
+        memory::SAVED => memory::decode_saved(version, data).map(|r| r.map(Body::MemorySaved)),
+        memory::EDITED => memory::decode_edited(version, data).map(|r| r.map(Body::MemoryEdited)),
+        memory::FORGOTTEN => {
+            memory::decode_forgotten(version, data).map(|r| r.map(Body::MemoryForgotten))
+        }
+        memory::RESTORED => {
+            memory::decode_restored(version, data).map(|r| r.map(Body::MemoryRestored))
+        }
+        _ => None,
     }
 }
 

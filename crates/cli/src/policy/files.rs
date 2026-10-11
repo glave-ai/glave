@@ -7,6 +7,7 @@ use anyhow::{anyhow, bail};
 use glave_harness::{ApprovalMode, Hook, HookPoint, Hooks, SandboxLevel};
 use globset::Glob;
 
+use crate::policy::memory::{MemoryChoice, MemoryRules, SpaceChoice};
 use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkerRules, WorkersFile};
 use serde::Deserialize;
@@ -39,6 +40,10 @@ pub struct ConfigFile {
     /// A gateway elsewhere to send model calls to, and to take the tool catalog from. Only
     /// the person's own file may set it: the person's sign-in goes there.
     pub gateway: Option<GatewayFile>,
+    /// Whether glave reads and writes memory for this person. Only the person's own file sets it.
+    pub memory: Option<MemoryChoice>,
+    /// This space's memory: shared with the person's, isolated, or off.
+    pub space_memory: Option<SpaceChoice>,
 }
 
 /// `[gateway]`: the organization's gateway (`specs/gateway.md`, "Client mode").
@@ -197,6 +202,8 @@ pub struct PolicyFile {
     pub workers: WorkerRules,
     #[serde(default)]
     pub tasks: TaskRules,
+    #[serde(default)]
+    pub memory: MemoryRules,
 }
 
 /// `[tasks]`: what one person may run with no one attached, and keep scheduled.

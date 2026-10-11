@@ -52,7 +52,10 @@ where
             standing: crate::standing::Standing::of(&events),
             removed: false,
             untrusted: read_untrusted(&events),
+            read_secret: read_secret(&events),
+            memory: crate::memory::MemoryState::default(),
         };
+        self.rebuild_memory(&mut thread, &events).await;
         self.repair(&mut thread, &events).await?;
         Ok(thread)
     }
@@ -205,6 +208,28 @@ fn by_person(added: &glave_event::MessageAdded) -> bool {
 fn read_untrusted(events: &[Event]) -> bool {
     events.iter().any(|event| match &event.body {
         Body::ToolCallCompleted(done) => done.untrusted,
+        _ => false,
+    })
+}
+
+/// Whether the model has been shown a file that usually holds secrets: an approval for one
+/// that was allowed.
+fn read_secret(events: &[Event]) -> bool {
+    let mut asked: HashSet<&CallId> = HashSet::new();
+    events.iter().any(|event| match &event.body {
+        Body::ApprovalRequested(requested) => {
+            if requested.secret {
+                asked.insert(&requested.call_id);
+            }
+            false
+        }
+        Body::ApprovalDecided(decided) => {
+            asked.contains(&decided.call_id)
+                && matches!(
+                    decided.decision,
+                    Verdict::AllowOnce | Verdict::AllowForThread
+                )
+        }
         _ => false,
     })
 }

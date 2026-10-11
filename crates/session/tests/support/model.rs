@@ -194,8 +194,41 @@ pub async fn build<L: EventLog + 'static>(
         hooks: glave_harness::Hooks::default(),
         workers: None,
         tasks: glave_session::TaskLimits::default(),
+        memory: None,
     };
     (Server::new(wiring, settings, scope(), answering), recorded)
+}
+
+/// A server on `log` whose threads use `memory`, with the person `settings` names.
+pub async fn with_memory<L: EventLog + 'static>(
+    dir: &PathBuf,
+    log: L,
+    memory: Arc<dyn glave_harness::Memory>,
+    settings: Settings,
+) -> Server<Script, L, MemoryBlobs> {
+    let (computers, info) = LocalComputers::for_here(std::env::vars_os())
+        .open_here(dir)
+        .await
+        .unwrap();
+    let wiring = Wiring {
+        provider: Script {
+            answers: Mutex::new(VecDeque::new()),
+            gate: None,
+            seen: Arc::new(Mutex::new(Vec::new())),
+        },
+        log,
+        blobs: MemoryBlobs::new(),
+        clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
+        entropy: Box::new(Counting(AtomicU64::new(1 << 32))),
+        workspace: Workspace::new(computers, info),
+        tools: Vec::new(),
+        worktree: false,
+        hooks: glave_harness::Hooks::default(),
+        workers: None,
+        tasks: glave_session::TaskLimits::default(),
+        memory: Some(memory),
+    };
+    Server::new(wiring, settings, scope(), Answering::NoOne)
 }
 
 pub async fn server(

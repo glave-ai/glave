@@ -4,8 +4,11 @@
 
 mod tasks;
 
-use glave_event::{CallId, Money, Outcome, RawEvent, ScheduleId, Seq, ThreadId, TokenCounts, When};
-use glave_harness::{GoalProgress, Live, Question, TurnSummary};
+use glave_event::{
+    CallId, MemoryId, MemoryScope, Money, Outcome, RawEvent, ScheduleId, Seq, ThreadId,
+    TokenCounts, When,
+};
+use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
 use glave_ports::Failure;
 use serde::{Deserialize, Serialize};
 
@@ -134,6 +137,35 @@ pub enum Request {
     ScheduleList {},
     #[serde(rename = "schedule/delete")]
     ScheduleDelete { schedule: ScheduleId },
+    /// The memories here: the person's and the space's, or one `scope`.
+    #[serde(rename = "memory/list")]
+    MemoryList {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<MemoryScope>,
+    },
+    #[serde(rename = "memory/save")]
+    MemorySave { text: String, scope: MemoryScope },
+    #[serde(rename = "memory/edit")]
+    MemoryEdit { memory: MemoryId, text: String },
+    /// Saved in the new scope, forgotten in the old.
+    #[serde(rename = "memory/move")]
+    MemoryMove {
+        memory: MemoryId,
+        scope: MemoryScope,
+    },
+    /// Forgets one memory, or with `all`, every memory of `scope`.
+    #[serde(rename = "memory/forget")]
+    MemoryForget {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        memory: Option<MemoryId>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        all: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<MemoryScope>,
+    },
+    /// Undoes glave's latest change to a memory, within 30 days.
+    #[serde(rename = "memory/restore")]
+    MemoryRestore { memory: MemoryId },
 }
 
 #[expect(
@@ -169,6 +201,12 @@ impl Request {
             Self::ScheduleCreate { .. } => "schedule/create",
             Self::ScheduleList {} => "schedule/list",
             Self::ScheduleDelete { .. } => "schedule/delete",
+            Self::MemoryList { .. } => "memory/list",
+            Self::MemorySave { .. } => "memory/save",
+            Self::MemoryEdit { .. } => "memory/edit",
+            Self::MemoryMove { .. } => "memory/move",
+            Self::MemoryForget { .. } => "memory/forget",
+            Self::MemoryRestore { .. } => "memory/restore",
         }
     }
 }
@@ -333,6 +371,10 @@ pub enum Reply {
     Schedules {
         schedules: Vec<ScheduleInfo>,
     },
+    /// Memories listed, or the ones a change touched.
+    Memories {
+        memories: Vec<Remembered>,
+    },
     /// After every reply with a field of its own, since a missing `goal` reads as `null`;
     /// before `Done`, which takes any object.
     Goal {
@@ -406,6 +448,13 @@ pub enum Update {
         subagent: ThreadId,
         ok: bool,
     },
+    /// A memory was saved, edited or forgotten: `change` is `remembered`, `edited` or `forgot`.
+    Memory {
+        change: String,
+        memory: MemoryId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+    },
 }
 
 impl From<Live> for Update {
@@ -457,6 +506,11 @@ impl From<Live> for Update {
                 subagent: thread,
                 ok,
             },
+            Live::Memory { verb, memory, text } => Self::Memory {
+                change: verb.as_str().to_owned(),
+                memory,
+                text,
+            },
             // Published under the child's thread; see `Server::start_turn`.
             Live::Child { update, .. } => Self::from(*update),
         }
@@ -501,6 +555,12 @@ pub mod code {
     pub const LIMIT: i64 = -32015;
     /// No such schedule.
     pub const NO_SCHEDULE: i64 = -32016;
+    /// The caller may not do this, such as change another person's memory.
+    pub const NOT_ALLOWED: i64 = -32012;
+    /// No such memory here.
+    pub const NO_MEMORY: i64 = -32017;
+    /// Memory is off here.
+    pub const MEMORY_OFF: i64 = -32018;
     /// The request's parameters do not make sense together.
     pub const INVALID_PARAMS: i64 = -32602;
 }

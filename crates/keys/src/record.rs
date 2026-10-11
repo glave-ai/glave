@@ -4,7 +4,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::KeyError;
-use crate::key_id::Month;
+use uuid::Uuid;
+
+use crate::key_id::{Month, Period};
 
 /// The record's format version.
 const FORMAT: u32 = 1;
@@ -24,12 +26,23 @@ pub(crate) struct SpaceVersion {
 }
 
 /// One data key, wrapped by version `space_version` of the space key. `None` once destroyed.
+/// A memory's own key has `memory` set; its `month` is only when it was made.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct DataKey {
     pub(crate) month: Month,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) memory: Option<Uuid>,
     pub(crate) n: u32,
     pub(crate) space_version: u32,
     pub(crate) wrapped: Option<Vec<u8>>,
+}
+
+impl DataKey {
+    /// What the key seals.
+    pub(crate) fn period(&self) -> Period {
+        self.memory
+            .map_or(Period::Month(self.month), Period::Memory)
+    }
 }
 
 impl Default for SpaceRecord {
@@ -76,28 +89,39 @@ impl SpaceRecord {
         next(self.versions.iter().map(|entry| entry.version))
     }
 
-    /// The data key that seals `month`'s new content: its newest key not destroyed.
-    pub(crate) fn sealing(&self, month: Month) -> Option<&DataKey> {
+    /// The data key that seals `period`'s new content: its newest key not destroyed.
+    pub(crate) fn sealing(&self, period: Period) -> Option<&DataKey> {
         self.data
             .iter()
-            .filter(|key| key.month == month && key.wrapped.is_some())
+            .filter(|key| key.period() == period && key.wrapped.is_some())
             .max_by_key(|key| key.n)
     }
 
-    pub(crate) fn data_key(&self, month: Month, n: u32) -> Option<&DataKey> {
+    pub(crate) fn data_key(&self, period: Period, n: u32) -> Option<&DataKey> {
         self.data
             .iter()
-            .find(|key| key.month == month && key.n == n)
+            .find(|key| key.period() == period && key.n == n)
     }
 
-    /// The number `month`'s next data key takes.
-    pub(crate) fn next_n(&self, month: Month) -> u32 {
+    /// The number `period`'s next data key takes.
+    pub(crate) fn next_n(&self, period: Period) -> u32 {
         next(
             self.data
                 .iter()
-                .filter(|key| key.month == month)
+                .filter(|key| key.period() == period)
                 .map(|key| key.n),
         )
+    }
+
+    /// Whether a data key was destroyed under the space key in use: backups that hold this
+    /// version can still unwrap it, until the space key is rotated (`specs/storage.md`).
+    pub(crate) fn rotation_due(&self) -> bool {
+        let Some(live) = self.live() else {
+            return false;
+        };
+        self.data
+            .iter()
+            .any(|key| key.wrapped.is_none() && key.space_version == live.version)
     }
 }
 
@@ -122,17 +146,50 @@ mod tests {
         });
         record.data.push(DataKey {
             month: month("2026-10"),
+            memory: None,
             n: 1,
             space_version: 1,
             wrapped: None,
         });
+        let october = Period::Month(month("2026-10"));
         assert!(record.live().is_none());
         assert_eq!(record.next_version(), 2);
-        assert!(record.sealing(month("2026-10")).is_none());
-        assert_eq!(record.next_n(month("2026-10")), 2);
-        assert_eq!(record.next_n(month("2026-11")), 1);
+        assert!(record.sealing(october).is_none());
+        assert_eq!(record.next_n(october), 2);
+        assert_eq!(record.next_n(Period::Month(month("2026-11"))), 1);
         let decoded = SpaceRecord::decode(&record.encode().unwrap()).unwrap();
-        assert_eq!(decoded.next_n(month("2026-10")), 2);
+        assert_eq!(decoded.next_n(october), 2);
+    }
+
+    #[test]
+    fn a_memory_key_is_its_own_period_and_old_records_read_as_month_keys() {
+        let mut record = SpaceRecord::default();
+        record.versions.push(SpaceVersion {
+            version: 1,
+            wrapped: Some(vec![1]),
+        });
+        let memory = Uuid::from_u128(7);
+        record.data.push(DataKey {
+            month: month("2026-10"),
+            memory: Some(memory),
+            n: 1,
+            space_version: 1,
+            wrapped: Some(vec![2]),
+        });
+        assert!(record.sealing(Period::Month(month("2026-10"))).is_none());
+        assert!(record.sealing(Period::Memory(memory)).is_some());
+        assert!(!record.rotation_due());
+        if let Some(key) = record.data.first_mut() {
+            key.wrapped = None;
+        }
+        assert!(record.rotation_due(), "destroyed under the live space key");
+        let old = br#"{"glave_keys":1,"versions":[],"data":[{"month":"2026-09","n":1,"space_version":1,"wrapped":null}]}"#;
+        let decoded = SpaceRecord::decode(old).unwrap();
+        assert!(
+            decoded
+                .data_key(Period::Month(month("2026-09")), 1)
+                .is_some()
+        );
     }
 
     #[test]

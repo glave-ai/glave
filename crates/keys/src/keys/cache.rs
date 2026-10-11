@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use glave_ports::{OrgId, Scope};
 
-use crate::key_id::{KeyId, Month};
+use crate::key_id::{KeyId, Period};
 use crate::secret::Secret;
 
 use super::hierarchy::SpaceKey;
@@ -18,8 +18,8 @@ pub(crate) enum Slot {
     /// The space-key version in use.
     Live(Scope),
     Data(Scope, KeyId),
-    /// The data key that seals a month's new content.
-    Sealing(Scope, Month),
+    /// The data key that seals a period's new content.
+    Sealing(Scope, Period),
 }
 
 impl Slot {

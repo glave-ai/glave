@@ -130,6 +130,16 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
         ),
         row("on", choices.on.value.name().to_owned(), &choices.on.from),
         row("web", choices.web.value.describe(), &choices.web.from),
+        row(
+            "memory",
+            if choices.memory.value { "on" } else { "off" }.to_owned(),
+            &choices.memory.from,
+        ),
+        row(
+            "space_memory",
+            choices.space_memory.value.as_str().to_owned(),
+            &choices.space_memory.from,
+        ),
     ];
     if let Some(gateway) = &choices.gateway {
         rows.push(row("gateway", gateway.value.clone(), &gateway.from));

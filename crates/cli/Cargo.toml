@@ -22,6 +22,7 @@ glave-gateway-service.workspace = true
 glave-harness.workspace = true
 glave-keys = { workspace = true, features = ["keychain"] }
 glave-mcp.workspace = true
+glave-memory.workspace = true
 glave-ports.workspace = true
 glave-provider-anthropic.workspace = true
 glave-provider-openai.workspace = true

@@ -6,6 +6,10 @@
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
 
+mod credential;
+
+pub use credential::looks_like_credential;
+
 /// Words that mark an environment variable as secret anywhere in its name, ignoring case:
 /// `OPENROUTER_API_KEY`, `GITHUB_TOKEN`, `DB_PASSWORD`.
 const SECRET_WORDS: &[&str] = &["KEY", "SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL"];

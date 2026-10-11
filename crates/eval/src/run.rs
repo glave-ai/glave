@@ -12,14 +12,16 @@ use glave_harness::{
     Caller, Cancel, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, OsEntropy, Parts, Sandbox,
     Settings, Skills, SystemClock, Todo, Workspace, agents_md, find_skills, skill_folders,
 };
-use glave_ports::{EventLog, MemoryBlobs, MemoryLog, OrgId, Scope, SpaceId, ToolSource};
+use glave_ports::{EventLog, ToolSource};
 use glave_provider_openai::{Config, OpenAiCompatible};
+use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 use glave_web::pages::Pages;
 use glave_web::{Domain, Limits, Web, WebPolicy, WebSettings};
 use serde::{Deserialize, Serialize};
 
 use crate::check::{Context, ended};
 use crate::error::EvalError;
+use crate::memory::{MemoryReport, Remembering};
 use crate::prepare::{Environment, Prepared, last_lines, prepare, script, tidy};
 use crate::task::Task;
 use crate::trace::{self, Trace};
@@ -37,6 +39,8 @@ pub struct Setup {
     pub todo: bool,
     /// Whether the model may hand work to child threads with `task`, to measure what it does.
     pub subagents: bool,
+    /// Memory on or off for every task, to measure what it does; each task's own when `None`.
+    pub memory: Option<bool>,
 }
 
 /// How one attempt went.
@@ -114,7 +118,7 @@ pub async fn attempt(
     };
     let web = pages.as_ref().map(Pages::base);
     let start = Instant::now();
-    let (events, transcript, mut failures) = converse(
+    let (events, transcript, mut failures, memory) = converse(
         setup,
         task,
         model,
@@ -125,6 +129,7 @@ pub async fn attempt(
     let seconds = start.elapsed().as_secs_f64();
     write(dir.join("events.jsonl"), &events).await?;
     write(dir.join("transcript.txt"), &transcript).await?;
+    write(dir.join("memory.jsonl"), &memory.ledger).await?;
     if let Some(key) = &setup.endpoint.api_key
         && key.len() >= 8
         && events.contains(key.as_str())
@@ -152,12 +157,15 @@ pub async fn attempt(
             ));
         }
     }
+    let last = trace::parse(&crate::trace::last_thread(&events)).unwrap_or_default();
     let cx = Context {
         trace: &trace,
+        last: &last,
         events: &events,
         workspace: &workspace,
         original: &task.environment(),
         model,
+        memory: &memory,
     };
     failures.extend(
         task.checks
@@ -178,7 +186,8 @@ async fn wire(
     model: &str,
     environment: &Environment,
     (root, web): (&Path, Option<&str>),
-) -> Result<Harness<OpenAiCompatible, MemoryLog, MemoryBlobs, NoOneToAsk>, EvalError> {
+    remembering: &Remembering,
+) -> Result<Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, NoOneToAsk>, EvalError> {
     let (computers, info) = LocalComputers::here(root, environment.clone())
         .await
         .map_err(|error| EvalError::io("open", root)(std::io::Error::other(error)))?;
@@ -204,6 +213,7 @@ async fn wire(
         .map(|loaded| loaded.text);
     settings.approval = task.approval;
     settings.subagents = setup.subagents;
+    settings.person = Some(crate::memory::person()?);
     // As the CLI runs it: the model under test also judges flagged actions in auto mode.
     settings.judge = true;
     // The harness has no cap of its own, so an attempt gets one and its cost stays bounded.
@@ -213,8 +223,8 @@ async fn wire(
     }
     let parts = Parts {
         provider,
-        log: MemoryLog::new(),
-        blobs: MemoryBlobs::new(),
+        log: remembering.store.log(),
+        blobs: remembering.store.blobs(),
         approver: NoOneToAsk,
         clock: Box::new(SystemClock),
         entropy: Box::new(OsEntropy),
@@ -245,88 +255,145 @@ async fn wire(
     if setup.todo {
         tools.push(Arc::new(Todo));
     }
-    Ok(Harness::new(parts, settings).with_tools(tools))
+    let memory = remembering
+        .memory
+        .clone()
+        .map(|memory| memory as Arc<dyn glave_harness::Memory>);
+    Ok(Harness::new(parts, settings)
+        .with_tools(tools)
+        .with_memory_if(memory))
 }
 
-/// Sends every turn, each after the first to a thread resumed from the log, and returns the
-/// events as JSON Lines, a readable transcript, and anything that stopped the conversation.
+/// What one attempt left: its threads' events as JSON Lines, a readable transcript, anything
+/// that stopped the conversation, and what memory holds.
+type Conversed = (String, String, Vec<String>, MemoryReport);
+
+/// Sends every turn of every thread, in order, each turn after a thread's first to the thread
+/// resumed from the log, all in one store.
 async fn converse(
     setup: &Setup,
     task: &Task,
     model: &str,
     environment: &Environment,
     (root, web): (&Path, Option<&str>),
-) -> Result<(String, String, Vec<String>), EvalError> {
-    let harness = wire(setup, task, model, environment, (root, web)).await?;
-    let scope = Scope {
-        org: OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        space: SpaceId::from_uuid(uuid::Uuid::from_u128(2)),
-    };
-    let fail = |err: glave_harness::HarnessError| EvalError::Setup(err.to_string());
-    let mut thread = harness.start_thread(scope).await.map_err(fail)?;
+) -> Result<Conversed, EvalError> {
+    let remembering = Remembering::open(task, setup.memory.unwrap_or(task.memory)).await?;
+    let harness = wire(setup, task, model, environment, (root, web), &remembering).await?;
     let deadline = Instant::now() + task.timeout;
-    let mut transcript = String::new();
-    let mut failures = Vec::new();
-    let turns: Vec<String> = task
-        .turns
-        .iter()
-        .map(|turn| web.map_or_else(|| turn.clone(), |base| crate::web::fill(turn, base)))
-        .collect();
-    for (index, prompt) in turns.iter().enumerate() {
-        if index > 0 {
-            thread = harness
-                .resume_thread(scope, thread.id)
-                .await
-                .map_err(fail)?;
-        }
-        let _ = write!(transcript, "\n> {prompt}\n");
-        // Past the deadline the turn is cancelled, so it still ends cleanly in the log.
-        let cancel = Cancel::new();
-        let _deadline = Deadline::cancels(&cancel, deadline);
-        let mut show = |live| note(&mut transcript, live);
-        let ran = match (&task.goal, index) {
-            (Some(goal), 0) => {
-                let goal = Goal {
-                    objective: prompt.clone(),
-                    token_budget: goal.budget.unwrap_or(DEFAULT_BUDGET),
-                };
-                harness
-                    .start_goal(&mut thread, goal, &Caller::default(), &cancel, &mut show)
-                    .await
-            }
-            _ => {
-                harness
-                    .run_turn(&mut thread, prompt, &cancel, &mut show)
-                    .await
-            }
-        };
-        match ran {
-            Ok(_) if cancel.is_cancelled() => {
-                failures.push(format!("took longer than {}s", task.timeout.as_secs()));
-                break;
-            }
-            Ok(_) => {}
-            Err(err) => {
-                failures.push(format!("turn {} failed: {err}", index + 1));
-                break;
-            }
-        }
+    let mut conversation = Talk {
+        harness: &harness,
+        task,
+        deadline,
+        transcript: String::new(),
+        failures: Vec::new(),
+    };
+    let fill =
+        |turn: &String| web.map_or_else(|| turn.clone(), |base| crate::web::fill(turn, base));
+    let mut threads = vec![(None, task.turns.iter().map(fill).collect::<Vec<_>>())];
+    for thread in &task.threads {
+        threads.push((
+            thread.space.clone(),
+            thread.messages.iter().map(fill).collect(),
+        ));
     }
-    let events = harness
-        .log()
-        .read(&scope, thread.id, None, usize::MAX)
-        .await
-        .map_err(|err| EvalError::Setup(err.to_string()))?;
     let mut lines = String::new();
-    for event in &events {
-        lines.push_str(
-            &event
+    for (index, (space, turns)) in threads.iter().enumerate() {
+        let scope = crate::memory::space(space.as_deref());
+        let goal = task.goal.as_ref().filter(|_| index == 0);
+        let Some(thread) = conversation.thread(scope, turns, goal).await? else {
+            break;
+        };
+        let events = harness
+            .log()
+            .read(&scope, thread, None, usize::MAX)
+            .await
+            .map_err(|err| EvalError::Setup(err.to_string()))?;
+        for event in &events {
+            let line = event
                 .to_json()
-                .map_err(|err| EvalError::Setup(err.to_string()))?,
-        );
-        lines.push('\n');
+                .map_err(|err| EvalError::Setup(err.to_string()))?;
+            lines.push_str(&line);
+            lines.push('\n');
+        }
+        if !conversation.failures.is_empty() {
+            break;
+        }
     }
-    Ok((lines, transcript, failures))
+    let memory = remembering.report().await?;
+    Ok((
+        lines,
+        conversation.transcript,
+        conversation.failures,
+        memory,
+    ))
+}
+
+/// One attempt's conversation so far.
+struct Talk<'a> {
+    harness: &'a Harness<OpenAiCompatible, SqliteLog, SqliteBlobs, NoOneToAsk>,
+    task: &'a Task,
+    deadline: Instant,
+    transcript: String,
+    failures: Vec<String>,
+}
+
+impl Talk<'_> {
+    /// Runs `turns` in a new thread in `scope`, the first as `goal` when there is one, and
+    /// gives the thread's id; `None` when it could not start.
+    async fn thread(
+        &mut self,
+        scope: glave_ports::Scope,
+        turns: &[String],
+        goal: Option<&crate::task::TaskGoal>,
+    ) -> Result<Option<glave_event::ThreadId>, EvalError> {
+        let fail = |err: glave_harness::HarnessError| EvalError::Setup(err.to_string());
+        let harness = self.harness;
+        let mut thread = harness.start_thread(scope).await.map_err(fail)?;
+        for (index, prompt) in turns.iter().enumerate() {
+            if index > 0 {
+                thread = harness
+                    .resume_thread(scope, thread.id)
+                    .await
+                    .map_err(fail)?;
+            }
+            let _ = write!(self.transcript, "\n> {prompt}\n");
+            // Past the deadline the turn is cancelled, so it still ends cleanly in the log.
+            let cancel = Cancel::new();
+            let _deadline = Deadline::cancels(&cancel, self.deadline);
+            let transcript = &mut self.transcript;
+            let mut show = |live| note(transcript, live);
+            let ran = match (goal, index) {
+                (Some(goal), 0) => {
+                    let goal = Goal {
+                        objective: prompt.clone(),
+                        token_budget: goal.budget.unwrap_or(DEFAULT_BUDGET),
+                    };
+                    harness
+                        .start_goal(&mut thread, goal, &Caller::default(), &cancel, &mut show)
+                        .await
+                }
+                _ => {
+                    harness
+                        .run_turn(&mut thread, prompt, &cancel, &mut show)
+                        .await
+                }
+            };
+            match ran {
+                Ok(_) if cancel.is_cancelled() => {
+                    let seconds = self.task.timeout.as_secs();
+                    self.failures.push(format!("took longer than {seconds}s"));
+                    break;
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    self.failures
+                        .push(format!("turn {} failed: {err}", index + 1));
+                    break;
+                }
+            }
+        }
+        Ok(Some(thread.id))
+    }
 }
 
 /// Cancels a [`Cancel`] at a deadline, for as long as this lives.
@@ -382,6 +449,12 @@ fn note(transcript: &mut String, live: Live) {
         Live::SubagentEnded { ok, .. } => {
             writeln!(transcript, "[agent {}]", if ok { "done" } else { "failed" })
         }
+        Live::Memory { verb, text, .. } => writeln!(
+            transcript,
+            "[memory] {} {}",
+            verb.as_str(),
+            text.unwrap_or_default()
+        ),
         Live::Asked { questions, .. } => {
             let asked: Vec<&str> = questions.iter().map(|q| q.question.as_str()).collect();
             writeln!(transcript, "[asked] {}", asked.join(" / "))

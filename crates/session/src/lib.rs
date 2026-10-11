@@ -10,6 +10,7 @@ pub mod http;
 mod hub;
 mod keyed;
 mod ledger;
+mod memory;
 pub mod protocol;
 pub mod rpc;
 mod schedule;

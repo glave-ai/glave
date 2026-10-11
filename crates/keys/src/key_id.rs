@@ -68,12 +68,29 @@ impl From<Month> for String {
     }
 }
 
-/// Names one data key: the space it belongs to, its month, and which of that month's keys
+/// What one data key seals: a month of the space's content, or one item with a key of its own
+/// (`specs/memory.md`: each memory, so forgetting it erases every version at once).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Period {
+    Month(Month),
+    Memory(Uuid),
+}
+
+impl fmt::Display for Period {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Month(month) => month.fmt(f),
+            Self::Memory(memory) => write!(f, "memory/{memory}"),
+        }
+    }
+}
+
+/// Names one data key: the space it belongs to, what it seals, and which of that period's keys
 /// it is (a month gets a new key after its key is destroyed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct KeyId {
     pub space: SpaceId,
-    pub month: Month,
+    pub period: Period,
     pub n: u32,
 }
 
@@ -83,24 +100,25 @@ const VERSION: &str = "v1";
 
 impl fmt::Display for KeyId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{VERSION}/{}/{}/{}", self.space, self.month, self.n)
+        write!(f, "{VERSION}/{}/{}/{}", self.space, self.period, self.n)
     }
 }
 
 impl FromStr for KeyId {
     type Err = KeyError;
 
+    /// `v1/<space>/<YYYY-MM>/<n>` or `v1/<space>/memory/<memory>/<n>`.
     fn from_str(text: &str) -> Result<Self, KeyError> {
         let invalid = || KeyError::InvalidKeyId(text.to_owned());
-        let mut parts = text.split('/');
-        let (Some(VERSION), Some(space), Some(month), Some(n), None) = (
-            parts.next(),
-            parts.next(),
-            parts.next(),
-            parts.next(),
-            parts.next(),
-        ) else {
-            return Err(invalid());
+        let parts: Vec<&str> = text.split('/').collect();
+        let (space, period, n) = match parts.as_slice() {
+            [VERSION, space, month, n] => (*space, Period::Month(month.parse()?), *n),
+            [VERSION, space, "memory", memory, n] => (
+                *space,
+                Period::Memory(Uuid::parse_str(memory).map_err(|_| invalid())?),
+                *n,
+            ),
+            _ => return Err(invalid()),
         };
         let space = Uuid::parse_str(space).map_err(|_| invalid())?;
         let n: u32 = n.parse().map_err(|_| invalid())?;
@@ -109,7 +127,7 @@ impl FromStr for KeyId {
         }
         Ok(Self {
             space: SpaceId::from_uuid(space),
-            month: month.parse().map_err(|_| invalid())?,
+            period,
             n,
         })
     }
@@ -123,12 +141,23 @@ mod tests {
     fn a_key_id_round_trips_through_its_text() {
         let id = KeyId {
             space: SpaceId::from_uuid(Uuid::from_u128(5)),
-            month: "2026-10".parse().unwrap(),
+            period: Period::Month("2026-10".parse().unwrap()),
             n: 2,
         };
         let text = id.to_string();
         assert_eq!(text, "v1/00000000-0000-0000-0000-000000000005/2026-10/2");
         assert_eq!(text.parse::<KeyId>().unwrap(), id);
+        let memory = KeyId {
+            period: Period::Memory(Uuid::from_u128(9)),
+            n: 1,
+            ..id
+        };
+        let text = memory.to_string();
+        assert_eq!(
+            text,
+            "v1/00000000-0000-0000-0000-000000000005/memory/00000000-0000-0000-0000-000000000009/1"
+        );
+        assert_eq!(text.parse::<KeyId>().unwrap(), memory);
     }
 
     #[test]
@@ -140,6 +169,8 @@ mod tests {
             "v1/00000000-0000-0000-0000-000000000005/2026-13/1",
             "v1/00000000-0000-0000-0000-000000000005/2026-10/0",
             "v1/00000000-0000-0000-0000-000000000005/2026-10/1/extra",
+            "v1/00000000-0000-0000-0000-000000000005/memory/nope/1",
+            "v1/00000000-0000-0000-0000-000000000005/notes/00000000-0000-0000-0000-000000000009/1",
         ] {
             assert!(text.parse::<KeyId>().is_err(), "{text}");
         }

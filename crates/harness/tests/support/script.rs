@@ -251,6 +251,10 @@ pub fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::ScheduleCreated(_) => "schedule.created",
             Body::ScheduleDeleted(_) => "schedule.deleted",
             Body::GatewayToolCalled(_) => "gateway.tool.called",
+            Body::MemorySaved(_) => "memory.saved",
+            Body::MemoryEdited(_) => "memory.edited",
+            Body::MemoryForgotten(_) => "memory.forgotten",
+            Body::MemoryRestored(_) => "memory.restored",
             Body::Unknown(_) => "unknown",
         })
         .collect()
