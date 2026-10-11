@@ -1,0 +1,89 @@
+<div class="thread">
+  <div class="heading">
+    <h1 class="title" data-testid="thread-title">{{ title() }}</h1>
+    @if (mark(); as mark) {
+      <glz-badge [tone]="mark.tone">{{ mark.text }}</glz-badge>
+    }
+  </div>
+  <section
+    class="items"
+    data-testid="thread-items"
+    glzStickToBottom
+    [attr.aria-label]="copy.conversation"
+    [(atBottom)]="atBottom"
+  >
+    @for (item of shown(); track item.key) {
+      @switch (item.kind) {
+        @case ('message') {
+          <glz-message
+            data-testid="thread-message"
+            [from]="item.from"
+            [author]="item.author"
+            [hope]="item.hope"
+          >
+            @if (item.reasoning) {
+              <glz-reasoning>{{ item.reasoning }}</glz-reasoning>
+            }
+            <p class="text">{{ item.text }}</p>
+          </glz-message>
+        }
+        @case ('call') {
+          <glz-receipt
+            class="aside"
+            data-testid="thread-receipt"
+            [tool]="item.tool"
+            [summary]="item.summary"
+            [status]="item.status"
+          >
+            <pre class="output">{{ item.output }}</pre>
+          </glz-receipt>
+        }
+        @case ('approval') {
+          <glz-approval-card
+            class="aside"
+            data-testid="thread-approval"
+            [tool]="item.tool"
+            [summary]="item.summary"
+            [decision]="item.decision"
+            [busy]="service.sending()"
+            (decide)="decide(item.approval, $event)"
+          />
+        }
+        @case ('question') {
+          <glz-question-card
+            class="aside"
+            data-testid="thread-question"
+            [questions]="item.questions"
+            [answered]="item.answers"
+            [busy]="service.sending()"
+            (answer)="answer(item.call, $event)"
+          />
+        }
+      }
+    }
+    @if (service.hasReply()) {
+      <glz-message from="model" hope streaming data-testid="thread-reply" [author]="copy.model">
+        @if (service.reply().reasoning) {
+          <glz-reasoning streaming>{{ service.reply().reasoning }}</glz-reasoning>
+        }
+        <p class="text">{{ service.reply().text }}</p>
+      </glz-message>
+    }
+  </section>
+  @if (service.error(); as error) {
+    <p class="error" role="alert" data-testid="thread-error">{{ copy.failed }} {{ error }}</p>
+  }
+  @if (awayFromBottom()) {
+    <button glzButton size="sm" class="latest" (click)="jumpToLatest()">{{ copy.latest }}</button>
+  }
+  <glz-composer
+    class="composer"
+    data-testid="thread-composer"
+    [attachments]="false"
+    [placeholder]="copy.placeholder"
+    [busy]="service.busy()"
+    [(value)]="draft"
+    (send)="send($event)"
+    (stop)="stop()"
+  />
+</div>

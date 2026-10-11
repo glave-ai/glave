@@ -6,7 +6,7 @@ Four parts, one npm project:
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `client/` | The session API's TypeScript client. Its types are generated from `specs/session.schema.json` by `cargo xtask schema`.                        |
 | `glaze/`  | **Glaze** (`@glave/glaze`), glave's Angular component library. See [glaze/README.md](glaze/README.md) and [glaze/AGENTS.md](glaze/AGENTS.md). |
-| `app/`    | The web app `glave serve --http` serves. Today it is the shell and Glaze's showcase at `/glaze`.                                              |
+| `app/`    | The web app `glave serve --http` serves: sign-in, spaces and threads, a live thread, tasks, memory, settings; Glaze's showcase at `/glaze`.   |
 | `e2e/`    | End-to-end smoke tests (Playwright and axe) of the production build, served under glave's Content Security Policy.                            |
 
 Angular 22 (standalone, zoneless, signals), TypeScript 6.0, Vitest for unit tests, Playwright for end-to-end tests. Node 22.22.3 or later (Angular's minimum).
@@ -52,6 +52,13 @@ npm run e2e            # Playwright in Chromium, axe in light and dark (npm run 
 `cargo xtask ci` runs `npm run check` when Node is installed, and skips it with a message when it is not, or is too old. `GLAVE_SKIP_WEB=1` skips it.
 
 Playwright's Chromium is installed into `node_modules` (`PLAYWRIGHT_BROWSERS_PATH=0`), nothing global.
+
+## How the app is built
+
+- `services/`: `SessionService` (the token and every call), `SpacesService` (spaces and their threads, read again every ten seconds), `ThreadService` (one open thread: its events, the reply streaming in, decisions and answers; each thread view has its own), `TasksService`, `MemoryService`, `ThemeService` (the person's light or dark choice, until settings live on the server).
+- `lib/`: pure functions: the thread built from its events (`conversation.ts`), the token from the link (`token.ts`), thread titles and marks.
+- `components/`: one per page or part (workspace, spaces nav, home, thread, tasks, memory, settings, sign-in, the showcase).
+- The sign-in token comes from the link's fragment, is taken out of the address bar before the router starts, and is kept only in the tab's session storage. It is never in a URL, a cookie or a log.
 
 ## Rules
 

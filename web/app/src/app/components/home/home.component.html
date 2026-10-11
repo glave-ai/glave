@@ -1,0 +1,14 @@
+<div class="home">
+  <h1 class="heading">{{ copy.heading }}</h1>
+  @if (error(); as error) {
+    <p class="error" role="alert" data-testid="home-error">{{ copy.failed }} {{ error }}</p>
+  }
+  <glz-composer
+    data-testid="home-composer"
+    [attachments]="false"
+    [placeholder]="copy.placeholder"
+    [disabled]="starting()"
+    [(value)]="draft"
+    (send)="send($event)"
+  />
+</div>

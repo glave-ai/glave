@@ -1,0 +1,73 @@
+<div class="page">
+  <div class="heading">
+    <h1>{{ copy.heading }}</h1>
+  </div>
+  <p class="intro">{{ copy.intro }}</p>
+  @if (service.error(); as error) {
+    <p class="error" role="alert">{{ copy.failed }} {{ error }}</p>
+  }
+  @if (off()) {
+    <glz-empty-state [heading]="copy.offHeading" [icon]="icon">{{ copy.offText }}</glz-empty-state>
+  }
+  @if (empty()) {
+    <glz-empty-state [heading]="copy.emptyHeading" [icon]="icon">{{
+      copy.emptyText
+    }}</glz-empty-state>
+  }
+  <div class="list">
+    @for (row of rows(); track row.id) {
+      <glz-card data-testid="memory">
+        <p class="text">{{ row.text }}</p>
+        <p class="details">
+          <glz-badge>{{ row.scope }}</glz-badge>
+          @if (row.untrusted) {
+            <glz-badge tone="warning">{{ copy.untrusted }}</glz-badge>
+          }
+        </p>
+        <div glzCardFooter>
+          <button
+            glzButton
+            size="sm"
+            data-testid="memory-edit"
+            [attr.aria-label]="row.editLabel"
+            (click)="edit(row.memory)"
+          >
+            {{ copy.edit }}
+          </button>
+          <button
+            glzButton
+            size="sm"
+            variant="danger"
+            data-testid="memory-forget"
+            [attr.aria-label]="row.forgetLabel"
+            (click)="forget(row.memory)"
+          >
+            {{ copy.forget }}
+          </button>
+        </div>
+      </glz-card>
+    }
+  </div>
+</div>
+<glz-dialog [heading]="copy.editHeading" [(open)]="editOpen">
+  <glz-form-field [label]="copy.text">
+    <textarea glzInput rows="3" data-testid="memory-text" [formControl]="text"></textarea>
+    @if (textMissing()) {
+      <glz-error>{{ copy.textMissing }}</glz-error>
+    }
+  </glz-form-field>
+  <div glzDialogActions>
+    <button glzButton (click)="cancelEdit()">{{ copy.cancel }}</button>
+    <button glzButton variant="primary" data-testid="memory-save" (click)="save()">
+      {{ copy.save }}
+    </button>
+  </div>
+</glz-dialog>
+<glz-confirm-dialog
+  danger
+  [heading]="copy.forgetHeading"
+  [message]="copy.forgetMessage"
+  [confirmLabel]="copy.forget"
+  [(open)]="forgetOpen"
+  (decided)="decided($event)"
+/>
