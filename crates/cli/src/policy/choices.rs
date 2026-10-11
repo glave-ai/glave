@@ -96,6 +96,8 @@ pub struct Choices {
     pub on: Chosen<On>,
     /// The backend workers run on, if one is set up.
     pub workers: Option<Chosen<WorkersFile>>,
+    /// The gateway elsewhere model calls go to, if any: its URL.
+    pub gateway: Option<Chosen<String>>,
     /// What `web_fetch` may reach: on, public hosts only, by default.
     pub web: Chosen<WebFile>,
 }
@@ -162,6 +164,11 @@ pub fn resolve(layers: &[Layer]) -> Choices {
         worktree: defaulted(nearest(layers, "worktree", |file| file.worktree), false),
         on: defaulted(nearest(layers, "on", |file| file.on), On::Here),
         workers: nearest(layers, "workers", |file| file.workers.clone()),
+        gateway: nearest(layers, "gateway", |file| {
+            file.gateway
+                .as_ref()
+                .map(|gateway| gateway.url.trim().to_owned())
+        }),
         web: defaulted(
             nearest(layers, "web", |file| file.web.clone()),
             WebFile::default(),

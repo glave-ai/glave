@@ -270,11 +270,30 @@ fn limits_take_the_smallest_and_unenforced_rules_refuse_to_run() {
         .to_string();
     assert!(refused.contains("not enforced yet"), "{refused}");
     assert!(refused.contains("person_per_day_usd = 5.5"), "{refused}");
-    let catalog = constraints("version = 1\n[mcp]\ncatalog = [\"github\"]\n");
-    let refused = effective::settle(no_choices(), &catalog)
-        .unwrap_err()
-        .to_string();
-    assert!(refused.contains("[mcp] catalog") && refused.contains("not enforced yet"));
+    assert_eq!(rules.person_per_day_micros(), Some(5_500_000));
+    assert!(
+        rules.not_enforced_by_the_gateway().is_empty(),
+        "a gateway serving many keeps daily budgets"
+    );
+}
+
+#[test]
+fn catalogs_are_enforced_and_narrow_one_another() {
+    let catalog = Constraints::of(&[
+        policy_at(
+            ORG,
+            "version = 1\n[mcp]\ncatalog = [\"github\", \"jira\"]\n",
+        ),
+        policy_at(
+            SPACE,
+            "version = 1\n[mcp]\ncatalog = [\"jira\", \"docs\"]\n",
+        ),
+    ]);
+    assert!(effective::settle(no_choices(), &catalog).is_ok());
+    let (names, rule) = catalog.mcp_catalog().unwrap();
+    assert_eq!(names, ["jira"]);
+    assert_eq!(rule.from, Path::new(ORG));
+    assert!(Constraints::default().mcp_catalog().is_none());
 }
 
 #[test]

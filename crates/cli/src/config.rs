@@ -17,6 +17,8 @@ pub struct Endpoint {
     pub model: String,
     /// True when the model runs on this computer, so a missing cost means $0.
     pub local: bool,
+    /// The gateway elsewhere the endpoint is, when `[gateway] url` sends calls to one.
+    pub gateway: Option<String>,
 }
 
 /// The endpoint for `model`, the model chosen; an error saying how to choose one when none is.
@@ -43,11 +45,15 @@ pub fn endpoint(model: Option<String>) -> anyhow::Result<Endpoint> {
         local: provider.is_local(),
         provider,
         model,
+        gateway: None,
     })
 }
 
 /// What to change when a model call fails in a way the person can fix, naming the setting.
 pub fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
+    if let Some(gateway) = &endpoint.gateway {
+        return through_gateway(failure, gateway, &endpoint.model);
+    }
     let host = endpoint
         .provider
         .host()
@@ -96,6 +102,34 @@ pub fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
     })
 }
 
+/// What to change when a call through the gateway at `gateway` fails: the gateway holds the
+/// keys and the policy, so the person's part is their sign-in and their choices.
+fn through_gateway(failure: Failure, gateway: &str, model: &str) -> Option<String> {
+    Some(match failure {
+        Failure::Refused => format!(
+            "the gateway at {gateway} refused: renew your sign-in in GLAVE_GATEWAY_TOKEN, or ask \
+             whether your organization's policy allows {model}"
+        ),
+        Failure::NoCredit | Failure::OverBudget => {
+            "a budget the gateway keeps for you is spent: it says which".to_owned()
+        }
+        Failure::UnknownModel => format!(
+            "the gateway has no model {model}: choose another with --model or model in \
+             config.toml, or leave it unset for the gateway's own"
+        ),
+        Failure::Unreachable => {
+            format!("check the network, and [gateway] url in your config.toml ({gateway})")
+        }
+        Failure::TooLong => "the conversation is longer than the model's context window: run \
+             /compact, or start a new thread"
+            .to_owned(),
+        Failure::RateLimited | Failure::Unavailable | Failure::Silent | Failure::Malformed => {
+            format!("the gateway at {gateway} could not get an answer: try again shortly")
+        }
+        Failure::Rejected => return None,
+    })
+}
+
 /// How long the model may send nothing, from `GLAVE_IDLE_TIMEOUT` in seconds, when it is set.
 pub fn idle_timeout() -> anyhow::Result<Option<Duration>> {
     match std::env::var("GLAVE_IDLE_TIMEOUT") {
@@ -137,6 +171,7 @@ mod tests {
             local: provider.is_local(),
             provider,
             model: "anthropic/claude-haiku-5.5".into(),
+            gateway: None,
         }
     }
 

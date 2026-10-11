@@ -38,6 +38,9 @@ Usage:
                                 The address is host:port, or a port on 127.0.0.1; the
                                 listener has no TLS, so put it behind a proxy that has.
                                 --issuer may be given more than once
+  glave gateway serve --http <address> --issuer <url> --audience <name>
+                                serve the gateway to an organization: model calls and the
+                                tool catalog, every call signed in (glave gateway --help)
   glave computer serve --stdio | --tcp <port>
                                 serve this machine as a computer to a harness elsewhere
                                 (glave computer --help)
@@ -369,6 +372,10 @@ fn transport(args: &Args, stdio: bool) -> Result<(), String> {
 }
 
 /// The value of `--http`: `host:port`, or a port alone on 127.0.0.1.
+pub fn http_address(value: Option<String>) -> Result<SocketAddr, String> {
+    address(value)
+}
+
 fn address(value: Option<String>) -> Result<SocketAddr, String> {
     let value = value.ok_or("--http needs an address: host:port, or a port")?;
     if let Ok(port) = value.parse::<u16>() {

@@ -46,6 +46,7 @@ deadpool-postgres = { version = "0.14", default-features = false, features = ["r
 glave-computer = { path = "crates/computer" }
 glave-event = { path = "crates/event" }
 glave-gateway = { path = "crates/gateway" }
+glave-gateway-service = { path = "crates/gateway-service" }
 glave-harness = { path = "crates/harness" }
 glave-keys = { path = "crates/keys" }
 glave-mcp = { path = "crates/mcp" }

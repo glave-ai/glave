@@ -186,3 +186,43 @@ fn the_person_s_hooks_are_read_shown_and_refused_when_the_policy_forbids_them() 
         "{text}"
     );
 }
+
+#[test]
+fn only_the_person_s_own_file_chooses_a_gateway_and_only_a_safe_one() {
+    let dir = scratch("gateway");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(
+        home.join("config.toml"),
+        "[gateway]\nurl = \"https://gw.example.com\"\n",
+    )
+    .unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![dir.join("policy.toml")];
+    let theirs = files::config(
+        "[gateway]\nurl = \"https://evil.example.com\"\n",
+        &dir.join("project.toml"),
+    )
+    .unwrap();
+    let loaded = load_all(&locations, Some(theirs)).unwrap();
+    let gateway = loaded.settle().unwrap().gateway.unwrap();
+    assert_eq!(
+        gateway.value, "https://gw.example.com",
+        "a project never chooses it"
+    );
+    assert_eq!(gateway.from, Source::File(home.join("config.toml")));
+    let plain = files::config("[gateway]\nurl = \"http://gw.example.com\"\n", &home);
+    assert!(plain.unwrap_err().to_string().contains("not https"));
+    for local in [
+        "http://127.0.0.1:8080",
+        "http://localhost",
+        "http://[::1]:9/",
+    ] {
+        let text = format!("[gateway]\nurl = \"{local}\"\n");
+        assert!(files::config(&text, &home).is_ok(), "{local}");
+    }
+    let lookalike = files::config("[gateway]\nurl = \"http://localhost.evil.com\"\n", &home);
+    assert!(lookalike.is_err());
+    let typo = files::config("[gateway]\nurls = \"https://x\"\n", &home);
+    assert!(typo.unwrap_err().to_string().contains("urls"));
+}

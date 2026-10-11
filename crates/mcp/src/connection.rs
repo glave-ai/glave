@@ -12,8 +12,8 @@ use glave_ports::{
     Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSpec, unless_cancelled,
 };
 use rmcp::model::{
-    CallToolRequest, CallToolRequestParams, ClientRequest, ProtocolVersion,
-    ReadResourceRequestParams, Resource, ResourceContents, ServerResult,
+    CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, JsonObject,
+    ProtocolVersion, ReadResourceRequestParams, Resource, ResourceContents, ServerResult, Tool,
 };
 use rmcp::service::{
     ClientLifecycleMode, ClientServiceExt as _, Peer, PeerRequestOptions, RoleClient,
@@ -24,7 +24,7 @@ use tokio::task::JoinHandle;
 
 use crate::McpError;
 use crate::client::{Client, watch_tools};
-use crate::names::exposed;
+use crate::names::{catalog, exposed};
 use crate::output::output;
 use crate::reason::reason;
 
@@ -34,6 +34,8 @@ pub(crate) const CANCELLED: &str = "[stopped: the person cancelled the turn]";
 /// An open connection.
 pub(crate) struct Connection {
     name: String,
+    /// Whether the server is a gateway's catalog, whose tools carry their own server's name.
+    catalog: bool,
     peer: Peer<RoleClient>,
     /// The running connection, until it is closed.
     service: Mutex<Option<RunningService<RoleClient, Client>>>,
@@ -55,6 +57,7 @@ impl Connection {
         name: &str,
         transport: T,
         limit: Duration,
+        catalog: bool,
     ) -> Result<Self, McpError>
     where
         T: IntoTransport<RoleClient, E, A>,
@@ -89,6 +92,7 @@ impl Connection {
             announces.then(|| tokio::spawn(watch_tools(peer.clone(), Arc::clone(&stale))));
         Ok(Self {
             name: name.to_owned(),
+            catalog,
             peer,
             service: Mutex::new(Some(service)),
             listed: Mutex::new(None),
@@ -154,7 +158,11 @@ impl Connection {
         let mut named = HashMap::new();
         let mut infos = Vec::with_capacity(tools.len());
         for tool in tools {
-            let model_name = exposed(&self.name, &tool.name);
+            let model_name = if self.catalog {
+                catalog(&tool.name)
+            } else {
+                exposed(&self.name, &tool.name)
+            };
             let read_only = tool
                 .annotations
                 .as_ref()
@@ -191,6 +199,42 @@ impl Connection {
         *self.named.lock().unwrap_or_else(PoisonError::into_inner) = named;
         *self.listed.lock().unwrap_or_else(PoisonError::into_inner) = Some(infos.clone());
         Ok(infos)
+    }
+
+    /// The server's tools exactly as it lists them, for a gateway that serves them on.
+    pub(crate) async fn listing(&self) -> Result<Vec<Tool>, String> {
+        self.peer
+            .list_all_tools()
+            .await
+            .map_err(|err| format!("{}: {err}", self.name))
+    }
+
+    /// Calls `tool` with `arguments` for at most `limit`, giving back the server's own result,
+    /// for a gateway that serves its tools on. A call that is dropped leaves the server to
+    /// finish it.
+    pub(crate) async fn forward(
+        &self,
+        tool: &str,
+        arguments: Option<JsonObject>,
+        limit: Duration,
+    ) -> Result<CallToolResult, String> {
+        let mut params = CallToolRequestParams::new(tool.to_owned());
+        if let Some(arguments) = arguments {
+            params = params.with_arguments(arguments);
+        }
+        let request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
+        let sent = self
+            .peer
+            .send_cancellable_request(request, PeerRequestOptions::no_options())
+            .await
+            .map_err(|err| format!("{}: {err}", self.name))?;
+        match tokio::time::timeout(limit, sent.rx).await {
+            Ok(Ok(Ok(ServerResult::CallToolResult(result)))) => Ok(result),
+            Ok(Ok(Ok(_))) => Err(format!("{} answered something else.", self.name)),
+            Ok(Ok(Err(err))) => Err(format!("{}: {err}", self.name)),
+            Ok(Err(_)) => Err(format!("{} stopped answering.", self.name)),
+            Err(_) => Err(format!("{} did not answer within {limit:?}.", self.name)),
+        }
     }
 
     /// What the server says about using its tools, if anything.

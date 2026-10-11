@@ -98,6 +98,13 @@ impl Target {
         self
     }
 
+    /// Another model at the same provider, through the same handle: assumed able to do
+    /// everything, with no price, and named `provider/model`.
+    #[must_use]
+    pub fn sibling(&self, model: impl Into<String>) -> Self {
+        Self::new(Arc::clone(&self.handle), self.provider.clone(), model)
+    }
+
     #[must_use]
     pub fn with_capabilities(mut self, can: Capabilities) -> Self {
         self.can = can;

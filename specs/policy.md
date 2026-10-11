@@ -10,8 +10,10 @@ First cut built, in the CLI (`crates/cli/src/policy`):
 - Choices resolve nearest-wins across flags (`--model`, `--approval`, `--sandbox`, which now takes `off`), the environment (`GLAVE_MODEL`, `GLAVE_JUDGE_MODEL`), the person's file and the defaults, each remembering its source. `mcp` turns on only the named servers of `mcp.json`. `worktree` (`true` or `false`, default `false`; also `--worktree`) gives each new thread a git worktree of its own instead of the folder itself (`computers.md`); it is a plain choice, needs no trust in a project's file, and `glave policy explain` shows it with its source. `on` (`here` or `cloud`, default `here`; also `--on`) puts each new thread on a worker of its own, made on the backend `[workers]` names (`backend = "docker"` or `"kubernetes"`, `glave`, the Linux build that goes into workers; for Docker optionally `socket`; for Kubernetes optionally `kubeconfig`, `namespace` and `runtime_class`; a key the backend does not use is an error); `--on cloud` without `[workers]` is an error saying so.
 - Constraints only narrow: allow-lists intersect, deny lists add up, a requirement anywhere holds, limits take the smallest, and contradictions (no approval mode left, a judge both required and off) are errors.
 - A choice someone made outside the constraints is an error naming the rule, its file and the choice's source. Only glave's own defaults give way, to what the policy leaves (shown as "default, narrowed by" the file).
-- Enforced: `[models]` when the gateway's targets are built, `[approval] modes` and `judge` in the settings the harness runs with, `[sandbox] required` before the workspace exists, `[mcp] own = false` before any server starts, `[workers]` (cpu, memory_gb, max_minutes, per_person, network on or off, isolation) by the worker adapter: limits take the smallest, `off` wins over `on`, and `vm` over `container`; a policy requiring `vm` refuses every worker on a backend without a runtime class.
-- Refused at load as not enforced yet, so glave will not run under them: `[budget]` (the gateway keeps budgets per run, not per day) and `[mcp] catalog` (glave cannot start servers an organization offers), and `[workers] network = "allowlist"` (no egress allow-list on workers yet).
+- Enforced: `[models]` when the gateway's targets are built (and by a gateway serving many, on every call, for each caller), `[approval] modes` and `judge` in the settings the harness runs with, `[sandbox] required` before the workspace exists, `[mcp] own = false` before any server starts, `[mcp] catalog` (below), `[budget] person_per_day_usd` by a gateway serving many, for each person each UTC day (`gateway.md`), `[workers]` (cpu, memory_gb, max_minutes, per_person, network on or off, isolation) by the worker adapter: limits take the smallest, `off` wins over `on`, and `vm` over `container`; a policy requiring `vm` refuses every worker on a backend without a runtime class.
+- Refused at load as not enforced yet, so glave will not run under them: `[budget]` in glave itself (only a gateway serving many keeps a daily budget; glave keeps budgets for one run), and `[workers] network = "allowlist"` (no egress allow-list on workers yet).
+- `[mcp] catalog` names the servers the organization offers; several catalogs narrow one another. A gateway serving many offers exactly those, from its own `mcp.json`, at `/mcp`, and refuses to start when one has no settings there (`gateway.md`, "Remote tools"). glave with `[gateway] url` takes the catalog from that gateway, and every server of the person's `mcp.json` is then their own. Without a gateway, the servers of the person's `mcp.json` the catalog names count as the catalog's, so `[mcp] own = false` leaves them on and refuses only the others; an organization that needs the catalog's settings out of people's hands serves it from a gateway.
+- `[gateway] url` (a choice, `https`, or `http` only to this computer) sends model calls to that gateway and adds its catalog (`gateway.md`, "Client mode"). Only the person's own `config.toml` sets it: a project's is ignored, since the person's sign-in goes there.
 - `glave policy explain` prints every setting with its source, every rule with its file, and why glave would refuse to run; it exits non-zero when it would.
 
 Project trust (issue #83), in `crates/cli/src/trust`:
@@ -81,6 +83,9 @@ allow = ["docs.rs", "*.example.com"]          # hosts it may fetch; every host w
 deny = ["*.internal.example.com"]             # hosts it never fetches; a deny wins
 private_addresses = false                     # default false; a host allow names exactly may be private anyway
 
+[gateway]                                     # the person's file only: the organization's gateway
+url = "https://gateway.example.com"           # model calls and the tool catalog go through it
+
 [[hooks.PreToolUse]]                          # commands run at points of a turn (approvals.md)
 matcher = "bash"
 command = "./scripts/guard.sh"
@@ -114,7 +119,7 @@ judge = "required"                                # or "allowed", "off"
 required = true
 
 [mcp]
-catalog = ["github", "jira"]                      # servers the organization offers
+catalog = ["github", "jira"]                      # servers the organization offers (its gateway's)
 own = false                                       # may people add their own servers
 untrusted = ["search"]                            # servers whose output is untrusted (approvals.md)
 
@@ -150,10 +155,10 @@ Each constraint is enforced where it cannot be bypassed:
 
 | Constraint | Enforced by |
 | --- | --- |
-| models, budgets | the gateway, which holds the keys |
+| models, budgets | the gateway, which holds the keys: in glave, or as a service for each caller |
 | approval modes, the judge | the session API and the harness's tool gate |
 | sandbox | the computer port, before any command runs |
-| MCP servers | the harness, when it starts servers |
+| MCP servers | glave, when it starts servers; the gateway, which serves only the catalog's |
 | hooks | the CLI, before the harness is built: forbidden hooks are never handed to it |
 | workers | the worker adapter (`WorkerComputers`), before a worker starts and on every call to it |
 

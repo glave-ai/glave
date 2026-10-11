@@ -2,7 +2,11 @@
 //! the `main` route, and `GLAVE_JUDGE_MODEL`, when it names another model at the same
 //! endpoint, the `judge` route. Every other purpose uses `main`, and there are no budgets, so
 //! nothing changes for anyone who sets nothing new. A policy's `[models]` rules are kept
-//! here: a target they do not allow is refused before the gateway exists.
+//! here: a target they do not allow is refused before the gateway exists. With `[gateway]
+//! url`, the endpoint is the organization's gateway, which keeps them itself, for each caller.
+
+pub mod remote;
+pub mod serve;
 
 use std::sync::Arc;
 
@@ -33,11 +37,17 @@ pub fn gateway(
     let name = &endpoint.provider.provider;
     let main = Target::new(Arc::clone(&handle), name.clone(), endpoint.model.clone());
     let chosen = allowed.main.unwrap_or(&Source::Default);
-    check_model(&main.name, chosen, allowed.constraints)?;
+    // A gateway elsewhere keeps the policy's models itself, for each caller.
+    let checks = endpoint.gateway.is_none();
+    if checks {
+        check_model(&main.name, chosen, allowed.constraints)?;
+    }
     let mut routes = Routes::new(vec![main])?;
     if let Some(model) = judge.filter(|model| *model != endpoint.model) {
         let target = Target::new(handle, name.clone(), model);
-        check_model(&target.name, allowed.judge, allowed.constraints)?;
+        if checks {
+            check_model(&target.name, allowed.judge, allowed.constraints)?;
+        }
         routes = routes.with_route(Purpose::Judge, vec![target])?;
     }
     Ok(Gateway::new(routes))
@@ -54,6 +64,7 @@ mod tests {
             local: false,
             provider,
             model: "big".into(),
+            gateway: None,
         }
     }
 

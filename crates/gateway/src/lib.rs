@@ -21,7 +21,7 @@ mod price;
 mod routes;
 mod target;
 
-pub use budget::{Budget, Budgets, Limit, OverBudget};
+pub use budget::{Budget, Budgets, Caller, Limit, OverBudget};
 pub use gateway::Gateway;
 pub use price::Price;
 pub use routes::{RouteError, Routes};
