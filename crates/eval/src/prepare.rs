@@ -36,10 +36,17 @@ pub async fn prepare(
 ) -> Result<Prepared, EvalError> {
     let workspace = dir.join("workspace");
     copy_files(task.environment(), workspace.clone()).await?;
+    // `{path}` is the `PATH` commands get otherwise, so a task can put its own tools first.
+    let path = base
+        .iter()
+        .find(|(name, _)| name == "PATH")
+        .map(|(_, value)| value.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let fill = |text: &str| {
         text.replace("{dir}", &dir.display().to_string())
             .replace("{workspace}", &workspace.display().to_string())
             .replace("{task}", &task.dir.display().to_string())
+            .replace("{path}", &path)
     };
     let mut environment: Environment = base.iter().cloned().collect();
     // Each run builds in its own folder: runs at once would otherwise overwrite each other's

@@ -8,8 +8,8 @@
 //! name. Without a gateway, the servers of `mcp.json` the catalog names are the catalog's, and
 //! only the others are the person's own, which `[mcp] own = false` forbids.
 
+use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -95,21 +95,22 @@ impl Servers {
             .map(String::as_str)
             .collect();
         check_own_servers(&on, constraints)?;
-        // Servers marked untrusted in either file or by a policy: marking only tightens, so a
-        // project's mark applies whatever the person's file says.
-        let mut marked = if text.is_empty() {
-            BTreeSet::new()
-        } else {
-            glave_mcp::untrusted(&text).with_context(|| format!("in {}", path.display()))?
+        let marks = Marks {
+            mine: if text.is_empty() {
+                BTreeMap::new()
+            } else {
+                glave_mcp::marks(&text).with_context(|| format!("in {}", path.display()))?
+            },
+            project: match project {
+                Some(project) => glave_mcp::marks(project)?,
+                None => BTreeMap::new(),
+            },
         };
-        if let Some(project) = project {
-            marked.extend(glave_mcp::untrusted(project)?);
-        }
         let offered = remote.map(|remote| Arc::new(remote.catalog()));
         let servers = offered
             .into_iter()
             .chain(configs.iter().map(|(name, config)| {
-                let untrusted = marked.contains(name) || constraints.mcp_untrusted(name).is_some();
+                let untrusted = marks.untrusted(name, config, &mine, constraints);
                 let server = McpServer::start(name, config, &environment, root, Limits::default());
                 Arc::new(server.untrusted(untrusted))
             }))
@@ -175,6 +176,40 @@ impl Servers {
     }
 }
 
+/// The `"untrusted"` marks of the person's `mcp.json` and of the project's `.mcp.json`.
+struct Marks {
+    mine: BTreeMap<String, bool>,
+    project: BTreeMap<String, bool>,
+}
+
+impl Marks {
+    /// Whether what the server `name` returns is untrusted, as a web page is. A policy's
+    /// `[mcp] untrusted` always wins. The person's own servers (`mine`) follow their own mark;
+    /// unmarked, one on this computer is trusted and a remote one is not. A project's servers
+    /// are untrusted unless a policy's `[mcp] trusted` vouches for them: a repository cannot
+    /// vouch for itself, and the person who wants to trust one copies it into `mcp.json`.
+    fn untrusted(
+        &self,
+        name: &str,
+        config: &ServerConfig,
+        mine: &[String],
+        constraints: &Constraints,
+    ) -> bool {
+        if constraints.mcp_untrusted(name).is_some() {
+            return true;
+        }
+        let vouched = constraints.mcp_trusted(name).is_some();
+        if mine.iter().any(|own| own == name) {
+            match self.mine.get(name) {
+                Some(&marked) => marked,
+                None => config.is_remote() && !vouched,
+            }
+        } else {
+            self.project.get(name) == Some(&true) || !vouched
+        }
+    }
+}
+
 /// The servers of `configs` that `chosen` names, or all of them when it names none. A name
 /// with no server in the settings file is an error, so a typo never quietly turns one off.
 fn turned_on(
@@ -215,6 +250,41 @@ mod tests {
         let rule = rules.mcp_untrusted("search").unwrap().to_string();
         assert!(rule.starts_with("[mcp] untrusted = [\"search\"]"), "{rule}");
         assert!(rules.mcp_untrusted("docs").is_none());
+    }
+
+    #[test]
+    fn project_and_remote_servers_are_untrusted_unless_vouched_for() {
+        let env = BTreeMap::new();
+        let mine_text = r#"{"mcpServers": {
+            "local": {"command": "local-mcp"},
+            "remote": {"url": "https://mcp.example.com/mcp"},
+            "vouched": {"url": "https://docs.example.com/mcp", "untrusted": false},
+            "doubted": {"command": "search-mcp", "untrusted": true}
+        }}"#;
+        let project_text = r#"{"mcpServers": {
+            "repo": {"command": "repo-mcp"},
+            "claims": {"command": "claims-mcp", "untrusted": false}
+        }}"#;
+        let mut configs = glave_mcp::parse(mine_text, &env).unwrap();
+        let mine: Vec<String> = configs.keys().cloned().collect();
+        configs.extend(glave_mcp::parse(project_text, &env).unwrap());
+        let marks = Marks {
+            mine: glave_mcp::marks(mine_text).unwrap(),
+            project: glave_mcp::marks(project_text).unwrap(),
+        };
+        let untrusted = |rules: &Constraints| -> Vec<&str> {
+            configs
+                .iter()
+                .filter(|(name, config)| marks.untrusted(name, config, &mine, rules))
+                .map(|(name, _)| name.as_str())
+                .collect()
+        };
+        let none = constraints("version = 1\n");
+        assert_eq!(untrusted(&none), ["claims", "doubted", "remote", "repo"]);
+        let policy = constraints(
+            "version = 1\n[mcp]\ntrusted = [\"repo\", \"remote\", \"doubted\"]\nuntrusted = [\"local\"]\n",
+        );
+        assert_eq!(untrusted(&policy), ["claims", "doubted", "local"]);
     }
 
     #[test]
