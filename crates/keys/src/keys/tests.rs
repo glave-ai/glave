@@ -40,7 +40,7 @@ fn blobs_are_sealed_under_the_clocks_month() {
     let sha = glave_ports::digest(b"x");
     let (_, sealed) = block_on(keys.seal_blob(&scope, &sha, b"x")).unwrap();
     let id: KeyId = sealed.key_id.parse().unwrap();
-    assert_eq!(id.month.to_string(), "2026-10");
+    assert_eq!(id.period.to_string(), "2026-10");
 }
 
 #[test]

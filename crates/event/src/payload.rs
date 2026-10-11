@@ -5,6 +5,7 @@ pub(crate) mod approval;
 pub(crate) mod gateway;
 pub(crate) mod goal;
 pub(crate) mod hook;
+pub(crate) mod memory;
 pub(crate) mod message;
 pub(crate) mod model;
 pub(crate) mod part;
@@ -20,6 +21,10 @@ pub use approval::{ApprovalDecided, ApprovalRequested, Verdict};
 pub use gateway::GatewayToolCalled;
 pub use goal::{GoalEnded, GoalReason, GoalResumed, GoalSet};
 pub use hook::{HookPoint, HookRan, HookResult};
+pub use memory::{
+    MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryScope, MemorySource,
+    sealed_under_memory,
+};
 pub use message::{MessageAdded, Role};
 pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};

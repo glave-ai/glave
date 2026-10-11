@@ -1285,6 +1285,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "glave-memory"
+version = "0.0.0"
+dependencies = [
+ "glave-computer",
+ "glave-event",
+ "glave-harness",
+ "glave-keys",
+ "glave-mcp",
+ "glave-ports",
+ "glave-store-sqlite",
+ "jiff",
+ "proptest",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "glave-ports"
 version = "0.0.0"
 dependencies = [
@@ -1335,6 +1356,7 @@ dependencies = [
  "glave-event",
  "glave-harness",
  "glave-keys",
+ "glave-memory",
  "glave-ports",
  "glave-store-sqlite",
  "hyper",

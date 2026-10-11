@@ -30,9 +30,9 @@ pub(crate) fn ledger_id() -> Option<ThreadId> {
     ThreadId::new(Timestamp::UNIX_EPOCH, [0; 10]).ok()
 }
 
-/// Whether `thread` is the space's task ledger rather than a thread.
+/// Whether `thread` is one of the space's ledgers (tasks, or memory) rather than a thread.
 pub fn is_ledger(thread: ThreadId) -> bool {
-    ledger_id() == Some(thread)
+    ledger_id() == Some(thread) || glave_harness::memory_ledger() == Some(thread)
 }
 
 /// A schedule that has not been deleted.

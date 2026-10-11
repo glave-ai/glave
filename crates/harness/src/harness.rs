@@ -23,6 +23,7 @@ use crate::compaction::{Compaction, Measured};
 use crate::env::{Clock, Entropy};
 use crate::goal::{GoalProgress, Pursuit};
 use crate::hooks::Hooks;
+use crate::memory::{Memory, MemoryState};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
 use crate::standing::Standing;
@@ -132,6 +133,9 @@ pub struct Harness<P, L, B, A> {
     pub(crate) learned_window: AtomicU64,
     /// Where threads placed on a worker get one; none by default.
     pub(crate) workers: Option<Workers>,
+    /// What threads remember from one to the next; none by default, so the model is sent
+    /// exactly what it is sent without memory.
+    pub(crate) memory: Option<Arc<dyn Memory>>,
 }
 
 /// One thread: where it is stored, where it continues, and the conversation so far.
@@ -173,6 +177,11 @@ pub struct Thread {
     /// it are judged knowing that (`untrusted.rs`). A subagent's thread starts with its
     /// parent's.
     pub(crate) untrusted: bool,
+    /// Whether the model has been shown a file that usually holds secrets: like untrusted
+    /// content, it makes a save to memory a caution.
+    pub(crate) read_secret: bool,
+    /// What the model is shown of memory (`memory.rs`); empty when memory is off.
+    pub(crate) memory: MemoryState,
 }
 
 impl Thread {
@@ -270,7 +279,28 @@ where
             settings,
             learned_window: AtomicU64::new(0),
             workers: None,
+            memory: None,
         }
+    }
+
+    /// Gives threads `memory`: loaded at their start, its tools offered, the person's controls
+    /// served (`specs/memory.md`).
+    #[must_use]
+    pub fn with_memory(mut self, memory: Arc<dyn Memory>) -> Self {
+        self.memory = Some(memory);
+        self
+    }
+
+    /// Gives threads `memory` when there is one; none leaves them without.
+    #[must_use]
+    pub fn with_memory_if(mut self, memory: Option<Arc<dyn Memory>>) -> Self {
+        self.memory = memory;
+        self
+    }
+
+    /// The memory threads use, if any.
+    pub fn memory(&self) -> Option<&Arc<dyn Memory>> {
+        self.memory.as_ref()
     }
 
     /// Places threads asked to work on a worker ([`crate::Place::Worker`]) with `workers`.
@@ -296,9 +326,14 @@ where
     }
 
     /// The tools on offer now in `thread`, from every source.
-    pub(crate) async fn tools(&self, thread: ThreadId) -> ToolSet {
+    pub(crate) async fn tools(&self, thread: &Thread) -> ToolSet {
         let mut set = ToolSet::gather(&self.sources, &self.settings.system_prompt).await;
-        if self.approver.can_answer(thread) {
+        if let Some((memory, _)) = self.memory_for(thread)
+            && let Ok(tools) = memory.tools().await
+        {
+            set.offer_memory(tools);
+        }
+        if self.approver.can_answer(thread.id) {
             set.offer_question();
         }
         if self.settings.subagents {
@@ -370,6 +405,8 @@ where
             standing: Standing::Active,
             removed: false,
             untrusted: false,
+            read_secret: false,
+            memory: MemoryState::default(),
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {

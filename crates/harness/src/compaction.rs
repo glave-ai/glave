@@ -215,7 +215,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Compacted, HarnessError> {
-        let offer = self.tools(thread.id).await;
+        let offer = self.tools(thread).await;
         self.compact_with(thread, &offer, cancel, live).await
     }
 
@@ -279,6 +279,10 @@ where
         self.commit(thread, events).await?;
         thread.messages = vec![Message::User { parts }];
         thread.measured = None;
+        // The start shows every memory the thread knows now, and the notes fold away.
+        if self.memory_for(thread).is_some() {
+            thread.memory.restart();
+        }
         let after_tokens = next_request_tokens(thread, offer);
         live(Live::Compacted {
             before_tokens,

@@ -271,8 +271,32 @@ impl McpServer {
         tool: &str,
         arguments: Option<rmcp::model::JsonObject>,
     ) -> Result<rmcp::model::CallToolResult, String> {
+        self.forward_with(tool, arguments, None).await
+    }
+
+    /// Calls the server's `tool` as [`McpServer::forward`] does, sending `meta` as the
+    /// request's `_meta`: who and where the call is for, when glave's own server needs it.
+    pub async fn forward_with(
+        &self,
+        tool: &str,
+        arguments: Option<rmcp::model::JsonObject>,
+        meta: Option<rmcp::model::JsonObject>,
+    ) -> Result<rmcp::model::CallToolResult, String> {
         let connection = self.connection().await.map_err(|err| err.to_string())?;
-        connection.forward(tool, arguments, self.call_limit).await
+        connection
+            .forward(tool, arguments, meta, self.call_limit)
+            .await
+    }
+
+    /// Reads the resource at `uri`, sending `meta` as the request's `_meta`.
+    pub async fn read_with(
+        &self,
+        uri: &str,
+        meta: Option<rmcp::model::JsonObject>,
+        cancel: &dyn Cancellation,
+    ) -> Result<Vec<rmcp::model::ResourceContents>, String> {
+        let connection = self.connection().await.map_err(|err| err.to_string())?;
+        connection.read(uri, meta, cancel, self.call_limit).await
     }
 
     async fn list(&self) -> Result<Vec<ToolInfo>, ToolError> {

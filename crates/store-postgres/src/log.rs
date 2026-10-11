@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use deadpool_postgres::Pool;
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
-use glave_keys::{EventFields, KeyError};
+use glave_keys::{EventFields, KeyError, erased_payload};
 use glave_ports::{EventLog, LogError, Scope, check_append};
 use jiff::Timestamp;
 use serde_json::value::RawValue;
@@ -246,9 +246,12 @@ async fn event(keys: &PostgresKeyring, scope: &Scope, row: &Row) -> Result<RawEv
                 kind: kind.as_str(),
                 v: v.get(),
             };
-            keys.open_event(scope, &fields, &key_id, &data)
-                .await
-                .map_err(|e| opening(seq, &e))?
+            match keys.open_event(scope, &fields, &key_id, &data).await {
+                Ok(opened) => opened,
+                Err(error) => {
+                    erased_payload(&key_id, &error).ok_or_else(|| opening(seq, &error))?
+                }
+            }
         }
     };
     let data = String::from_utf8(data).map_err(corrupt)?;

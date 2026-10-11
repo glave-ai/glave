@@ -198,6 +198,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         hooks: Hooks::new(setup.hooks.clone())?,
         workers: on_workers,
         tasks: setup.loaded.constraints.task_limits(),
+        memory: None,
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),

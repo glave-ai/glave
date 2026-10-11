@@ -101,16 +101,14 @@ where
         let tools = &step.toolset;
         if tools.is_question(&call.tool) {
             return Ok(self.put_questions(thread, call, cancel, live).await);
-        }
-        if tools.is_goal(&call.tool) {
+        } else if tools.is_goal(&call.tool) {
             return Ok(crate::goal::update(thread, &call.arguments));
+        } else if tools.is_memory(&call.tool) {
+            return self.call_memory(thread, call, step, cancel, live).await;
         }
         let Some((index, info)) = tools.get(&call.tool) else {
-            let names = tools.names().join(", ");
-            let text = format!(
-                "There is no tool named {:?}. The tools are {names}.",
-                call.tool
-            );
+            let (tool, names) = (&call.tool, tools.names().join(", "));
+            let text = format!("There is no tool named {tool:?}. The tools are {names}.");
             return Ok(ToolOutput::text(true, text));
         };
         let Some(source) = self.source_for(thread, index) else {
@@ -182,7 +180,7 @@ where
     /// Runs the `PreToolUse` hooks: the result the model is given instead of running the
     /// call, when one stopped it or the turn was cancelled meanwhile; `None` to go on. A hook
     /// only stops calls: what passes is still asked about as before.
-    async fn stopped_by_hook(
+    pub(crate) async fn stopped_by_hook(
         &self,
         thread: &mut Thread,
         hooked: &ToolHook<'_>,
@@ -241,7 +239,7 @@ where
     /// In auto mode with a judge, asks it whether a soft caution may run because the person
     /// asked for it. The judge's call is recorded and counted in the turn, as model usage this
     /// thread caused; a cleared action is recorded as an approval glave decided.
-    async fn judged(
+    pub(crate) async fn judged(
         &self,
         thread: &mut Thread,
         flagged: &Flagged<'_>,
@@ -295,7 +293,7 @@ where
 
     /// Asks the person about `request`, recording the question and the answer. `None` when the
     /// call may go ahead; otherwise the result the model is given instead.
-    async fn ask(
+    pub(crate) async fn ask(
         &self,
         thread: &mut Thread,
         request: &ApprovalRequest,
@@ -330,6 +328,10 @@ where
             by,
         };
         self.record(thread, &decided).await?;
+        // The model is about to see a file that usually holds secrets.
+        if request.secret && matches!(verdict, Verdict::AllowOnce | Verdict::AllowForThread) {
+            thread.read_secret = true;
+        }
         Ok(match verdict {
             Verdict::AllowOnce => None,
             Verdict::AllowForThread => {
@@ -373,7 +375,8 @@ where
             call_id: call_id.clone(),
             is_error: outcome.is_error,
             output: output.clone(),
-            structured: None,
+            // Only a memory call records anything here: which memory, at which version.
+            structured: thread.memory.structured.take(),
             untrusted,
         };
         let mut events = Vec::new();
@@ -390,7 +393,7 @@ where
 }
 
 /// What the judge made of a soft caution.
-enum Judged {
+pub(crate) enum Judged {
     /// The person asked for it: it runs without asking.
     Cleared,
     /// The person decides, as for any caution.
@@ -401,9 +404,9 @@ enum Judged {
 
 /// A call a rule flagged, as the judge is told about it.
 #[derive(Clone, Copy)]
-struct Flagged<'a> {
-    call: &'a ToolCall,
-    name: &'a str,
-    summary: &'a str,
-    reason: &'a str,
+pub(crate) struct Flagged<'a> {
+    pub(crate) call: &'a ToolCall,
+    pub(crate) name: &'a str,
+    pub(crate) summary: &'a str,
+    pub(crate) reason: &'a str,
 }

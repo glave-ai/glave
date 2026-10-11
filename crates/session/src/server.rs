@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::{PrincipalId, Seq, ThreadId};
 use glave_harness::{
-    Caller, Change, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Place, ReleasedWorker,
-    Settings, TurnSummary, Workers, Workspace,
+    Caller, Change, Clock, Entropy, Harness, HarnessError, Hooks, Memory, Parts, Place,
+    ReleasedWorker, Settings, TurnSummary, Workers, Workspace,
 };
 use glave_ports::{BlobStore, Environment, EventLog, ModelProvider, Scope, ToolSource};
 use jiff::Timestamp;
@@ -48,6 +48,8 @@ pub struct Wiring<P, L, B> {
     pub workers: Option<OnWorkers>,
     /// What one person may run at once and keep scheduled.
     pub tasks: TaskLimits,
+    /// What threads remember from one to the next (`specs/memory.md`); none when memory is off.
+    pub memory: Option<Arc<dyn Memory>>,
 }
 
 /// Threads on workers: where workers come from, and the environment each is made from.
@@ -90,6 +92,8 @@ pub(crate) struct Inner<P, L, B> {
     /// The space's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
+    /// Memory, for the person's controls (`memory/*`).
+    pub(crate) memory: Option<Arc<dyn Memory>>,
     /// What the space's task ledger says, as far as this server has read it.
     pub(crate) ledger: Mutex<Ledger>,
     /// Tasks running in this server.
@@ -137,7 +141,8 @@ where
                     None => Harness::new(parts, settings),
                 }
                 .with_tools(wiring.tools)
-                .with_hooks(wiring.hooks),
+                .with_hooks(wiring.hooks)
+                .with_memory_if(wiring.memory.clone()),
                 worker: wiring.workers.map(|on| on.environment),
                 every_thread,
                 clock,
@@ -145,6 +150,7 @@ where
                 model,
                 person,
                 limits: wiring.tasks,
+                memory: wiring.memory,
                 ledger: Mutex::new(Ledger::default()),
                 running: Mutex::new(Tasks::new()),
                 scope,
@@ -240,6 +246,12 @@ where
                 .tasks_request(caller, other)
                 .await
                 .unwrap_or_else(|_| Err(ApiError::new(code::INTERNAL, "not a task request"))),
+            other @ (Request::MemoryList { .. }
+            | Request::MemorySave { .. }
+            | Request::MemoryEdit { .. }
+            | Request::MemoryMove { .. }
+            | Request::MemoryForget { .. }
+            | Request::MemoryRestore { .. }) => self.memory_request(caller, other).await,
         }
     }
 

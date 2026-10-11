@@ -50,6 +50,7 @@ glave-gateway-service = { path = "crates/gateway-service" }
 glave-harness = { path = "crates/harness" }
 glave-keys = { path = "crates/keys" }
 glave-mcp = { path = "crates/mcp" }
+glave-memory = { path = "crates/memory" }
 glave-ports = { path = "crates/ports" }
 glave-provider-anthropic = { path = "crates/provider-anthropic" }
 glave-provider-openai = { path = "crates/provider-openai" }

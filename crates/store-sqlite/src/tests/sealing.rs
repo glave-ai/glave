@@ -87,7 +87,7 @@ fn payloads_are_sealed_in_the_file_and_read_back_as_written() {
     let (data, key_id) = stored(&raw, &here, &written[0]);
     let key_id: KeyId = key_id.expect("a new row is sealed").parse().unwrap();
     assert_eq!(
-        (key_id.space, key_id.month.to_string()),
+        (key_id.space, key_id.period.to_string()),
         (here.space, "2026-10".into())
     );
     assert!(!String::from_utf8_lossy(&data).contains("completed"));

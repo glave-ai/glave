@@ -110,6 +110,7 @@ impl Setup {
             hooks: glave_harness::Hooks::default(),
             workers: None,
             tasks: self.limits,
+            memory: None,
         };
         (
             Server::new(wiring, self.settings, scope(), self.answering),

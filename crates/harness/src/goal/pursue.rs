@@ -115,7 +115,7 @@ where
                     .await?;
                 break;
             }
-            let mut toolset = self.tools(thread.id).await;
+            let mut toolset = self.tools(thread).await;
             toolset.offer_goal();
             let opened = opening.take();
             let text = match opened {

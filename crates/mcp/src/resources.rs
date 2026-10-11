@@ -117,7 +117,10 @@ impl Resources {
                 else {
                     return ToolOutput::text(true, format!("No server named {chosen:?}."));
                 };
-                match connection.read(uri, cancel, server.call_limit()).await {
+                match connection
+                    .read(uri, None, cancel, server.call_limit())
+                    .await
+                {
                     Ok(contents) => {
                         let mut output = ToolOutput::text(false, cut(contents_text(&contents)));
                         output.untrusted = server.is_untrusted();
