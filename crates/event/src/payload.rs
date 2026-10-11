@@ -9,6 +9,7 @@ pub(crate) mod model;
 pub(crate) mod part;
 pub(crate) mod principal;
 pub(crate) mod standing;
+pub(crate) mod task;
 pub(crate) mod thread;
 pub(crate) mod tool;
 pub(crate) mod turn;
@@ -22,6 +23,7 @@ pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};
 pub use principal::{Principal, PrincipalKind};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadUnarchived};
+pub use task::{Fired, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, When};
 pub use thread::{
     ForkPoint, Origin, OriginKind, ParentCall, Producer, ThreadCompacted, ThreadStarted,
 };

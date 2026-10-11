@@ -32,6 +32,9 @@ where
 {
     /// Loads `thread` from the log unless it is already held. A deleted thread is not there.
     pub(crate) async fn load(&self, thread: ThreadId) -> Result<(), ApiError> {
+        if crate::ledger::is_ledger(thread) {
+            return Err(no_thread(thread));
+        }
         match self.lock().get(&thread) {
             Some(Slot::Idle(held)) if held.standing() == Standing::Deleted => {
                 return Err(no_thread(thread));

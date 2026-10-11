@@ -291,10 +291,10 @@ where
         self
     }
 
-    /// The tools on offer now, from every source.
-    pub(crate) async fn tools(&self) -> ToolSet {
+    /// The tools on offer now in `thread`, from every source.
+    pub(crate) async fn tools(&self, thread: ThreadId) -> ToolSet {
         let mut set = ToolSet::gather(&self.sources, &self.settings.system_prompt).await;
-        if self.approver.can_answer() {
+        if self.approver.can_answer(thread) {
             set.offer_question();
         }
         if self.settings.subagents {

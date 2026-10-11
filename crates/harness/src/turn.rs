@@ -179,7 +179,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
-        let toolset: ToolSet = self.tools().await;
+        let toolset: ToolSet = self.tools(thread.id).await;
         // A prompt that names a command sends the command's text.
         let expanded = invoked(&self.settings.commands, prompt)
             .map(|(command, arguments)| command.expand(arguments));

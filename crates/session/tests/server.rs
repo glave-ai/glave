@@ -36,7 +36,10 @@ mod session {
         B: glave_ports::BlobStore + 'static,
     {
         match server
-            .request(Request::ThreadStart { worktree: None })
+            .request(Request::ThreadStart {
+                background: false,
+                worktree: None,
+            })
             .await
             .unwrap()
         {
@@ -55,7 +58,7 @@ mod session {
             .filter_map(|item| match item {
                 TurnItem::Note(note) => match note.as_ref() {
                     Notification::Event { event, .. } => Some(event.kind.as_str().to_owned()),
-                    Notification::Live { .. } => None,
+                    Notification::Live { .. } | Notification::TaskFinished { .. } => None,
                 },
                 _ => None,
             })
@@ -244,6 +247,8 @@ mod session {
             let thread = new_thread(&server).await;
             let reply = server
                 .request(Request::TurnStart {
+                    background: false,
+                    budget: None,
                     thread,
                     prompt: "touch it".into(),
                     meta: Meta::default(),
@@ -294,6 +299,8 @@ mod session {
             let thread = new_thread(&first).await;
             first
                 .request(Request::TurnStart {
+                    background: false,
+                    budget: None,
                     thread,
                     prompt: "one".into(),
                     meta: Meta::default(),
@@ -316,6 +323,8 @@ mod session {
             .await;
             let reply = second
                 .request(Request::TurnStart {
+                    background: false,
+                    budget: None,
                     thread,
                     prompt: "two".into(),
                     meta: Meta::default(),
@@ -361,6 +370,8 @@ mod session {
     fn messages_have_the_shape_the_spec_gives() {
         let thread = glave_event::ThreadId::new(Timestamp::UNIX_EPOCH, [1; 10]).unwrap();
         let request = Request::TurnStart {
+            background: false,
+            budget: None,
             thread,
             prompt: "hi".into(),
             meta: Meta::default(),

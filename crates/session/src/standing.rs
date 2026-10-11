@@ -27,6 +27,10 @@ where
         thread: ThreadId,
         change: Change,
     ) -> Result<Reply, ApiError> {
+        // A task in a thread being put away stops first.
+        if change != Change::Unarchive {
+            self.stop_task_if_any(caller, thread).await;
+        }
         let (finish, mut done) = watch::channel(None);
         let caller = caller.clone();
         self.occupy_for(
@@ -70,6 +74,9 @@ where
                 .map_err(|err| ApiError::new(code::INTERNAL, err.to_string()))?;
             let fetched = ids.len();
             for id in ids.into_iter().skip(scanned) {
+                if crate::ledger::is_ledger(id) {
+                    continue;
+                }
                 if self.standing(id).await? == wanted {
                     found.push(self.summary(id));
                     if found.len() == limit {

@@ -132,6 +132,41 @@ impl fmt::Display for ThreadId {
     }
 }
 
+/// Identifies one schedule: a prompt or goal that runs as a task at set times.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "Uuid", into = "Uuid")]
+pub struct ScheduleId(Uuid);
+
+impl ScheduleId {
+    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
+        build_v7("schedule id", at, random).map(Self)
+    }
+
+    pub fn as_uuid(self) -> Uuid {
+        self.0
+    }
+}
+
+impl TryFrom<Uuid> for ScheduleId {
+    type Error = InvalidValue;
+
+    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
+        require_v7("schedule id", uuid).map(Self)
+    }
+}
+
+impl From<ScheduleId> for Uuid {
+    fn from(id: ScheduleId) -> Self {
+        id.0
+    }
+}
+
+impl fmt::Display for ScheduleId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Links a tool call to its result: 1 to 128 printable ASCII characters.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
