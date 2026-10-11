@@ -40,7 +40,7 @@ impl SpaceMemory {
 }
 
 /// Where a person's own memory lives: the personal space the host provides for them, in their
-/// organization. Until spaces are first-class, the host derives it (the CLI: `personal_space`).
+/// organization (the CLI: `spaces::personal`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Personal {
     pub scope: Scope,

@@ -206,6 +206,70 @@ fn a_release_removes_what_is_safe_and_holds_the_rest_keeping_every_branch() {
 }
 
 #[test]
+fn scratch_folders_reopen_as_left_and_go_empty_away_or_full_to_the_trash() {
+    let base = std::env::temp_dir().join(format!("glave-scratch-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let computers =
+        LocalComputers::new(base.join("copies"), environment()).with_scratch(base.join("scratch"));
+    let env = environment();
+    let scratch = |name: &str| Sources::Scratch {
+        name: name.to_owned(),
+        owner: Some(format!("org/space/{name}")),
+    };
+    block_on(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let refused = computers.open(made.id, &scratch("../escape")).await;
+        assert!(
+            matches!(refused, Err(ComputerError::Refused(_))),
+            "{refused:?}"
+        );
+        let full = computers.open(made.id, &scratch("full")).await.unwrap();
+        computers
+            .write(full.id, &[file("notes.md", b"keep me")])
+            .await
+            .unwrap();
+        computers.open(made.id, &scratch("empty")).await.unwrap();
+        let again = computers.open(made.id, &scratch("full")).await.unwrap();
+        assert_eq!(again.root, full.root, "the same folder again");
+        assert!(
+            Path::new(&again.root).join("notes.md").exists(),
+            "as it was left"
+        );
+
+        let kept = list_scratch(&base.join("scratch")).await.unwrap();
+        let conditions: Vec<_> = kept.iter().map(|kept| kept.condition).collect();
+        assert_eq!(
+            conditions,
+            [
+                Condition::Scratch { empty: true },
+                Condition::Scratch { empty: false }
+            ]
+        );
+        assert_eq!(kept[0].owner.as_deref(), Some("org/space/empty"));
+        assert_eq!(kept[0].at_risk(), None);
+        assert_eq!(
+            release(&kept[0], &env, "idle", None).await.unwrap(),
+            Released::Removed
+        );
+        assert_eq!(
+            release(&kept[1], &env, "idle", None).await.unwrap(),
+            Released::NoTrash,
+            "files are never deleted outright"
+        );
+        let trash = Trash::Folder(base.join("Trash"));
+        let Released::Trashed(moved) = release(&kept[1], &env, "idle", Some(&trash)).await.unwrap()
+        else {
+            panic!("trashed")
+        };
+        assert!(
+            moved.join("notes.md").exists(),
+            "everything is in the Trash"
+        );
+        assert_eq!(list_scratch(&base.join("scratch")).await.unwrap(), []);
+    });
+}
+
+#[test]
 fn a_worktree_whose_repository_is_gone_goes_to_the_trash_never_away() {
     let (repo, base) = repository("gone");
     let computers = computers(&base);

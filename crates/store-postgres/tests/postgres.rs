@@ -45,6 +45,20 @@ mod postgres {
     }
 
     #[test]
+    fn the_spaces_pass_the_spaces_conformance_suite() {
+        block_on(async {
+            let Some(scratch) = Scratch::new("spaces").await else {
+                return;
+            };
+            let store = scratch.store().await.unwrap();
+            let verdict = conformance::spaces(&store.spaces()).await;
+            drop(store);
+            scratch.drop_schema().await;
+            assert_eq!(verdict, Ok(()));
+        });
+    }
+
+    #[test]
     fn the_log_passes_the_event_log_conformance_suite() {
         block_on(async {
             let Some(scratch) = Scratch::new("log").await else {

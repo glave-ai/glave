@@ -46,6 +46,10 @@ impl EventLog for SharedLog {
     async fn threads(&self, scope: &Scope, limit: usize) -> Result<Vec<ThreadId>, LogError> {
         self.0.threads(scope, limit).await
     }
+
+    async fn locate(&self, thread: ThreadId) -> Result<Option<Scope>, LogError> {
+        self.0.locate(thread).await
+    }
 }
 
 /// Bob may not use the judge's model, nor any tool of the `tracker` server.

@@ -10,6 +10,8 @@ The harness's six tools run on a computer through the port. The harness's `Works
 
 Workers (cloud computers) on Docker or Kubernetes: `--on cloud` (or `on = "cloud"` in `config.toml`) puts each new thread on a worker of its own; on Kubernetes a runtime class (gVisor or Kata) gives each one a kernel or machine of its own. See "Workers" below.
 
+Scratch folders (#64): a thread in a space other than the session server's own (a one-off chat in a person's personal space, or a thread in another project with no folder here) opens `{"kind": "scratch", "name"}`: a folder of its own at `~/.glave/scratch/<thread>`, made empty, in the same sandbox as a project, recorded as `workspace.bound` with `opened` `scratch` and opened again when the thread resumes (made again, empty, if a cleanup removed it). It is kept and cleaned up as worktrees are (below): an empty one is removed; one holding files goes to the Trash, so nothing is lost; triggers and `glave worktrees` are the same. A computer with no scratch folder answers unsupported.
+
 Worktrees per thread (#29): a thread works in the folder in place by default, exactly as before. With `worktree = true` in `config.toml` (the person's or the project's, nearest wins), `--worktree`, or `thread/start`'s `worktree`, it gets a git worktree of its own instead (below). Every thread the session API starts records `workspace.bound` (`events.md`), and resuming a thread reads it to open the same worktree again.
 
 ## The nouns

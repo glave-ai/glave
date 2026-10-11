@@ -50,6 +50,13 @@ impl EventLog for Shared {
     ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send {
         self.0.threads(scope, limit)
     }
+
+    fn locate(
+        &self,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+        self.0.locate(thread)
+    }
 }
 
 /// A clock that stands still until a test moves it.
@@ -111,6 +118,7 @@ impl Setup {
             workers: None,
             tasks: self.limits,
             memory: None,
+            spaces: Arc::new(glave_ports::MemorySpaces::new()),
         };
         (
             Server::new(wiring, self.settings, scope(), self.answering),

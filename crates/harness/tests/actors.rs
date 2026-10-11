@@ -79,7 +79,7 @@ mod actors {
     }
 
     #[test]
-    fn a_caller_other_than_the_threads_person_is_recorded_and_the_person_is_implied() {
+    fn a_thread_is_for_its_caller_and_anyone_else_who_acts_in_it_is_recorded() {
         let dir = folder("actors-caller");
         block_on(async {
             let answers = vec![
@@ -118,11 +118,15 @@ mod actors {
                     .unwrap();
             }
             let mut origin = None;
+            let mut for_ = None;
             let mut auths = Vec::new();
             let mut authors = Vec::new();
             for event in events(harness.log(), thread.id).await {
                 match event.body {
-                    Body::ThreadStarted(started) => origin = started.origin.by,
+                    Body::ThreadStarted(started) => {
+                        origin = started.origin.by;
+                        for_ = started.for_;
+                    }
                     Body::TurnStarted(turn) => auths.push(turn.auth),
                     Body::MessageAdded(added) if added.role == Role::User => {
                         authors.push(added.author);
@@ -130,12 +134,18 @@ mod actors {
                     _ => {}
                 }
             }
-            assert_eq!(origin, Some(Principal::person(ada)));
+            assert_eq!(
+                for_,
+                Some(Principal::person(ada)),
+                "the thread is ada's work"
+            );
+            assert_eq!(origin, None, "she started it, as its for says");
             assert_eq!(auths, [Some(auth), None]);
+            let owner = owner.map(Principal::person);
             assert_eq!(
                 authors,
-                [Some(Principal::person(ada)), None],
-                "the owner is implied"
+                [None, owner],
+                "ada is implied; the harness's own person, acting in her thread, is named"
             );
         });
     }

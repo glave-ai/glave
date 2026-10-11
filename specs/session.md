@@ -27,8 +27,8 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | Method | Params | Result |
 | --- | --- | --- |
 | `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
-| `thread/start` | optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`); optional `background`: `true` for a thread that will run as a task, which works on a worker when the server has a worker backend, even if other threads work here | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
-| `thread/list` | optional `limit` (default 20); optional `show`: `active` (default), `archived`, or `deleted` (waiting for erasure, for the operator that does it) | `threads`: summaries, newest first |
+| `thread/start` | optional `space` (default: the server's own space, when the caller works in it; else the caller's personal space, made the first time, as for a one-off chat from the web); optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`); optional `background`: `true` for a thread that will run as a task, which works on a worker when the server has a worker backend, even if other threads work here | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
+| `thread/list` | optional `space` (default as `thread/start` picks it); optional `limit` (default 20); optional `show`: `active` (default), `archived`, or `deleted` (waiting for erasure, for the operator that does it) | `threads`: summaries, newest first |
 | `thread/archive` | `thread` | `{}`. Records `thread.archived`; the thread leaves `thread/list` and search but stays in the log and readable by id. A turn, goal or compaction in it is refused with `-32014`. Archiving an archived thread records nothing |
 | `thread/unarchive` | `thread` | `{}`. Records `thread.unarchived` |
 | `thread/delete` | `thread` | `{}`. Records `thread.deleted`: the thread is hidden for good, and every method but `thread/list` with `show: deleted` answers `-32001` for it |
@@ -48,6 +48,10 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | `schedule/create` | `when`: `{"cron": "<five fields>"}` (UTC) or `{"at": "<RFC 3339>"}`; `prompt`; optional `goal` (`true`: each run works toward `prompt` as a goal); `budget` (tokens each run may use, required, more than 0); optional `worktree` | `schedule`: `schedule` (its id), `when`, `prompt`, `goal`, `budget`, `worktree`, `created_at`, `last` (when the latest run was due), `next` (absent once a one-off has run). A cron expression that does not parse is refused with `-32602` |
 | `schedule/list` | none | `schedules` |
 | `schedule/delete` | `schedule` | `{}`; no more runs start. `-32016` for no such schedule |
+| `space/list` | optional `limit` (default 100) | `spaces`: the spaces the caller owns or is a member of, in id order. A space is `id`, `kind` (`project` or `personal`), `name`, `owner`, `members` (principals), `created_at`, `updated_at` (`storage.md`, "Spaces") |
+| `space/get` | `space` | `space` |
+| `space/create` | `name`; optional `members` (principals) | `space`: a new project space owned by the caller. A name of only spaces, or of more than 200 characters, is refused with `-32602` |
+| `space/rename` | `space`; `name` | `space`, renamed. Only its owner renames it; anyone else is refused with `-32012` |
 | `memory/list` | optional `scope` (`personal` or `space`) | `memories`: the person's and this space's memories (`memory.md`), each with `memory`, `version`, `scope`, `text`, `saved_at`, optional `edited_at`, `untrusted_read` and `source` |
 | `memory/save` | `text`; `scope` | `memories`: the one saved. A credential, more than 500 characters, or a full scope is refused with `-32602` |
 | `memory/edit` | `memory`; `text` | `memories`: the one edited |
@@ -61,7 +65,15 @@ A **task** has `thread`, `kind` (`agent`; background commands come later), `titl
 
 A **turn result** has `outcome` (`completed`, `cancelled`, `failed`, `interrupted`, `limit_reached`), `model_calls`, `tool_calls`, `tokens` and `cost` as in `events.md`.
 
-Each server serves one workspace and one scope in version 1. Choosing among several workspaces arrives with issue #29; choosing a space arrives with organizations (issue #22).
+Each server serves one organization's spaces, and one folder: its own space's. A thread in its own space works in that folder (or a worktree or worker, as above); a thread in any other space works in a scratch folder of its own (`computers.md`). The server's tasks, schedules and memory are its own space's: a task in a thread of another space is refused with `-32602` for now.
+
+## Spaces and who may do what
+
+Every request that acts on a thread (`thread/get`, `thread/events`, `thread/archive`, `thread/unarchive`, `thread/delete`, `thread/compact`, `turn/start`, `turn/cancel`, `approval/decide`, `question/answer`, `goal/*`, `tasks/stop`), on a space (`thread/start` and `thread/list` with a `space`, `space/get`, `space/rename`), or on the server's own space as a whole (`tasks/list`, `schedule/*`, `memory/*`) is checked against the caller before anything is read or recorded: they must be the space's owner or one of its members. Anyone else is refused with `-32012`, whether or not the thread exists; a thread no space here holds is `-32001`. The thread's space comes from the data store's one lookup by bare thread id (`storage.md`, "Scope"), remembered by the server, since a thread's space never changes.
+
+- **Local transports** (in-process, stdio, the Unix socket) act as the local person, who owns the folder's space.
+- **Network transports** act as the signed-in person. A thread they start is for them: `thread.started.for` is that person, so `author`, `by` and `origin.by` name someone only when it is not them (`events.md`, "Who acted").
+- Members are set when a space is made (`space/create`), or by the host through the spaces port; managing them over the API comes later.
 
 ## Archiving, deleting and records from outside
 
@@ -163,6 +175,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32016` | No such schedule |
 | `-32017` | No such memory here |
 | `-32018` | Memory is off for this server |
+| `-32019` | No such space |
 | `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
 
 ## Transports
@@ -200,7 +213,7 @@ What changes when a client is on another machine: who is calling, how a server t
 ### Several clients
 
 - Any number of clients may `thread/watch` the same thread; each sees every event once, in `seq` order.
-- Who may do what (start a turn, answer an approval, read a thread) is checked against the caller on every request, from the space's owner and the organization's policy (issue #22). A request from someone who may not make it is refused with error `-32012` and never recorded; a network request without a valid sign-in is refused with `-32013`.
+- Who may do what (start a turn, answer an approval, read a thread) is checked against the caller on every request, from the space's owner and members ("Spaces and who may do what"), and later the organization's policy. A request from someone who may not make it is refused with error `-32012` and never recorded; a network request without a valid sign-in is refused with `-32013`.
 
 ## Status
 
@@ -211,7 +224,8 @@ Version 1, in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted.
 - **Archive, delete, cleanup:** built (issue #131). **Deleting does not erase yet:** today's keys are per space and month, so one thread's content cannot be destroyed alone (`storage.md`). `thread/delete` hides the thread for good and lists it (`thread/list` with `show: deleted`) for the erasure that arrives with data keys per thread. Archiving or deleting through the session API does not remove the thread's worktree yet (above); `glave threads` does, and the daily check removes it once the thread has been idle 30 days.
 - **Tasks and schedules:** built (issue #44). The CLI's task host is `glave serve --socket`, one per folder, which `glave --background`, `glave tasks` and `glave schedule` start when it is not running and which exits once no task runs, no schedule waits and no client is connected; a session in the folder starts it when a schedule waits, and says which tasks finished since the last one. It keeps the settings it started with (model, config, AGENTS.md) until it exits. Not yet: background commands (the model starting a long-running shell process), a task's worker released when the task ends (it is released when the host exits), schedules in the person's time zone, the `origin` of a scheduled thread recorded as `schedule`, desktop notifications, running the scheduler in `glave serve --http`, and the operating system starting the host at login (launchd, systemd).
-- Still to come from "Over the network" (issue #64): SAML and glave session tokens, durable paused turns, leases, WebSocket, and enforcing `-32011` and `-32012`.
+- **Spaces and authorization** (issue #64): built. The server serves many spaces, `space/*` and the `space` of `thread/start` and `thread/list`; a network caller's threads are for them; `-32012` is enforced on every request above, over every transport, from the space's owner and members. Not yet: promoting a one-off chat into a project (`storage.md`), managing members over the API, tasks and schedules in spaces other than the server's own, and the organization's policy in the check.
+- Still to come from "Over the network" (issue #64): SAML and glave session tokens, durable paused turns, leases, WebSocket, and enforcing `-32011`.
 
 ## Later
 

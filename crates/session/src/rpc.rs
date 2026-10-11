@@ -49,6 +49,10 @@ const METHODS: &[&str] = &[
     "schedule/create",
     "schedule/list",
     "schedule/delete",
+    "space/list",
+    "space/get",
+    "space/create",
+    "space/rename",
 ];
 
 /// JSON-RPC's own error codes.
@@ -307,6 +311,7 @@ mod tests {
         assert_eq!(
             request,
             Request::ThreadStart {
+                space: None,
                 worktree: None,
                 background: false
             }
@@ -317,6 +322,7 @@ mod tests {
         assert_eq!(
             request,
             Request::ThreadStart {
+                space: None,
                 worktree: Some(true),
                 background: false
             }

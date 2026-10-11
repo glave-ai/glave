@@ -4,7 +4,7 @@
 
 use glave_event::ThreadId;
 use glave_harness::{Caller, Change, Standing, standing_of};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, SpaceId};
 use tokio::sync::watch;
 
 use crate::held::{Slot, Use, finished};
@@ -53,8 +53,17 @@ where
         Ok(Reply::Done {})
     }
 
-    /// The threads of `show`, most recently written first.
-    pub(crate) async fn list(&self, limit: Option<usize>, show: Show) -> Result<Reply, ApiError> {
+    /// The threads of `show` in `space`, most recently written first.
+    pub(crate) async fn list(
+        &self,
+        space: SpaceId,
+        limit: Option<usize>,
+        show: Show,
+    ) -> Result<Reply, ApiError> {
+        let scope = Scope {
+            org: self.inner.home.org,
+            space,
+        };
         let limit = limit.unwrap_or(20).clamp(1, MAX_PAGE);
         let wanted = match show {
             Show::Active => Standing::Active,
@@ -69,7 +78,7 @@ where
                 .inner
                 .harness
                 .log()
-                .threads(&self.inner.scope, window)
+                .threads(&scope, window)
                 .await
                 .map_err(|err| ApiError::new(code::INTERNAL, err.to_string()))?;
             let fetched = ids.len();
@@ -77,6 +86,7 @@ where
                 if crate::ledger::is_ledger(id) {
                     continue;
                 }
+                self.place(id, scope);
                 if self.standing(id).await? == wanted {
                     found.push(self.summary(id));
                     if found.len() == limit {
@@ -100,7 +110,8 @@ where
             Some(Slot::Busy { .. }) => return Ok(Standing::Active),
             None => {}
         }
-        standing_of(self.inner.harness.log(), &self.inner.scope, thread)
+        let scope = self.scope_of(thread).await?;
+        standing_of(self.inner.harness.log(), &scope, thread)
             .await
             .map_err(|error| api(&error))
     }

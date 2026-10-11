@@ -1,12 +1,13 @@
-//! The database file: opening and migrating it, the local organization and the space for each
-//! project folder, and running work off the async runtime.
+//! The database file: opening and migrating it, the local organization, and running work off
+//! the async runtime.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use glave_event::Principal;
 use glave_keys::{KeySettings, Keys};
-use glave_ports::{OrgId, Scope, SpaceId};
-use rusqlite::{Connection, OptionalExtension as _, params};
+use glave_ports::OrgId;
+use rusqlite::{Connection, params};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -14,6 +15,7 @@ use crate::blobs::SqliteBlobs;
 use crate::keys::SqliteKeys;
 use crate::log::SqliteLog;
 use crate::schema;
+use crate::spaces::SqliteSpaces;
 
 /// Why the store could not open or answer.
 #[derive(Debug, Error)]
@@ -101,54 +103,32 @@ impl Store {
         Arc::clone(&self.keys)
     }
 
-    /// The scope for a project folder on this computer: the one local organization, and the
-    /// space this folder was given the first time. `new_org` and `new_space` are used only when
-    /// those do not exist yet.
-    pub async fn local_scope(
-        &self,
-        folder: &Path,
-        new_org: Uuid,
-        new_space: Uuid,
-    ) -> Result<Scope, StoreError> {
-        let folder = folder.to_string_lossy().into_owned();
-        run(&self.connection, move |connection| {
-            let transaction = connection.transaction()?;
-            transaction.execute(
+    /// The spaces: their records, members, and the folders that lead to them.
+    pub fn spaces(&self) -> SqliteSpaces {
+        SqliteSpaces::new(Arc::clone(&self.connection))
+    }
+
+    /// The one organization on this computer, made with the id `new` the first time.
+    pub async fn org(&self, new: Uuid) -> Result<OrgId, StoreError> {
+        let org: String = run(&self.connection, move |connection| {
+            connection.execute(
                 "INSERT OR IGNORE INTO settings (key, value) VALUES ('org', ?1)",
-                params![new_org.to_string()],
+                params![new.to_string()],
             )?;
-            let org: String = transaction.query_row(
-                "SELECT value FROM settings WHERE key = 'org'",
-                [],
-                |row| row.get(0),
-            )?;
-            transaction.execute(
-                "INSERT OR IGNORE INTO spaces (path, id) VALUES (?1, ?2)",
-                params![folder, new_space.to_string()],
-            )?;
-            let space: Option<String> = transaction
-                .query_row(
-                    "SELECT id FROM spaces WHERE path = ?1",
-                    params![folder],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            transaction.commit()?;
-            Ok((org, space))
-        })
-        .await
-        .and_then(|(org, space)| {
-            let parse = |text: &str| {
-                Uuid::parse_str(text)
-                    .map_err(|e| StoreError::Storage(format!("bad id {text:?}: {e}")))
-            };
-            let space = space
-                .ok_or_else(|| StoreError::Storage("the folder's space was not recorded".into()))?;
-            Ok(Scope {
-                org: OrgId::from_uuid(parse(&org)?),
-                space: SpaceId::from_uuid(parse(&space)?),
+            connection.query_row("SELECT value FROM settings WHERE key = 'org'", [], |row| {
+                row.get(0)
             })
         })
+        .await?;
+        Uuid::parse_str(&org)
+            .map(OrgId::from_uuid)
+            .map_err(|e| StoreError::Storage(format!("bad organization id {org:?}: {e}")))
+    }
+
+    /// Gives every space made before spaces were records to `owner`, the local person: on a
+    /// person's own computer, every such space was theirs. How many it gave.
+    pub async fn claim_spaces(&self, owner: &Principal) -> Result<usize, StoreError> {
+        crate::spaces::claim(&self.connection, owner).await
     }
 }
 

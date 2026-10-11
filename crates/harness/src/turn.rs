@@ -432,7 +432,7 @@ where
             author: if by_glave {
                 Some(Principal::glave())
             } else {
-                self.other_than_for(caller.person)
+                Self::other_than_for(thread, caller.person)
             },
         };
         self.stage(thread, &mut events, &message)?;
