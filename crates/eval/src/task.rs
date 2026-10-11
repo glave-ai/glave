@@ -36,8 +36,14 @@ pub struct Task {
     /// the way a person returns to it later.
     pub turns: Vec<String>,
     pub tier: Tier,
+    /// As glave chooses it: `auto` in the sandbox, `ask` without one, unless the task says.
     pub approval: ApprovalMode,
+    /// `project` unless the task says otherwise, as glave runs by default; `None` is off.
     pub sandbox: Option<SandboxLevel>,
+    /// Whether the task names its sandbox. One it names must run; glave's default gives way
+    /// where this computer has none, as it does in glave.
+    pub sandbox_named: bool,
+    /// Whether sandboxed commands may use the network: on unless the task says otherwise.
     pub network: bool,
     pub context_window: Option<u64>,
     /// Shell commands run in the workspace before the first turn, outside any sandbox.
@@ -152,8 +158,7 @@ struct Glave {
     tier: Tier,
     approval: Option<String>,
     sandbox: Option<String>,
-    #[serde(default)]
-    network: bool,
+    network: Option<bool>,
     context_window: Option<u64>,
     #[serde(default)]
     setup: Vec<String>,
@@ -198,17 +203,19 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         return Err(bad("instruction.md is empty".into()));
     }
     let glave = file.glave;
-    let approval = match glave.approval.as_deref() {
-        None => ApprovalMode::default(),
-        Some(name) => ApprovalMode::named(name)
-            .ok_or_else(|| bad(format!("no approval mode is named {name:?}")))?,
-    };
     let sandbox = match glave.sandbox.as_deref() {
-        None => None,
+        None => Some(SandboxLevel::Project),
+        Some("off") => None,
         Some(name) => Some(
             SandboxLevel::named(name)
                 .ok_or_else(|| bad(format!("no sandbox is named {name:?}")))?,
         ),
+    };
+    let approval = match glave.approval.as_deref() {
+        None if sandbox.is_some() => ApprovalMode::Auto,
+        None => ApprovalMode::Ask,
+        Some(name) => ApprovalMode::named(name)
+            .ok_or_else(|| bad(format!("no approval mode is named {name:?}")))?,
     };
     let timeout = match file.agent.timeout_sec {
         None => DEFAULT_TIMEOUT,
@@ -229,7 +236,8 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         tier: glave.tier,
         approval,
         sandbox,
-        network: glave.network,
+        sandbox_named: glave.sandbox.is_some(),
+        network: glave.network.unwrap_or(true),
         context_window: glave.context_window,
         setup: glave.setup,
         env: glave.env,
@@ -347,7 +355,19 @@ mod tests {
         let task = load(&folder("bare", "", "Hello.")).unwrap();
         assert_eq!(task.tier, Tier::Fast);
         assert_eq!(task.approval, ApprovalMode::Auto);
-        assert_eq!(task.sandbox, None);
+        assert_eq!(
+            task.sandbox,
+            Some(SandboxLevel::Project),
+            "as glave runs by default"
+        );
+        assert!(task.network);
+        let off = load(&folder("off", "[glave]\nsandbox = \"off\"\n", "Hi.")).unwrap();
+        assert_eq!(off.sandbox, None);
+        assert_eq!(
+            off.approval,
+            ApprovalMode::Ask,
+            "as glave asks without a sandbox"
+        );
         assert_eq!(task.timeout, DEFAULT_TIMEOUT);
         assert_eq!(task.checks, []);
         assert_eq!(task.outcome, Outcome::Completed);

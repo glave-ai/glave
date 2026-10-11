@@ -19,7 +19,41 @@ pub fn settle(mut choices: Choices, constraints: &Constraints) -> anyhow::Result
     choices.judge = judge(choices.judge, constraints)?;
     choices.sandbox = sandbox(choices.sandbox, constraints)?;
     crate::policy::memory::settle(&choices, constraints)?;
-    Ok(choices)
+    Ok(asks_unconfined(choices, constraints))
+}
+
+/// `choices` once glave's default sandbox turned out not to run here, for the reason `why`:
+/// no sandbox, and commands asking unless someone chose otherwise. A sandbox someone chose,
+/// or a policy requires, never gets here: without it glave refuses to run commands.
+pub fn unsandboxed(mut choices: Choices, why: &str, constraints: &Constraints) -> Choices {
+    if choices.sandbox.from == Source::Default {
+        choices.sandbox = Chosen {
+            value: None,
+            from: Source::Unavailable(why.to_owned()),
+        };
+    }
+    asks_unconfined(choices, constraints)
+}
+
+/// Auto approval runs commands without asking, which is safe inside the sandbox. Outside it,
+/// a command would run as the person with no one asked, so only someone who chose both
+/// `sandbox = "off"` and `approval = "auto"` gets that, or a policy that leaves only `auto`.
+/// Otherwise approval becomes `ask`.
+fn asks_unconfined(mut choices: Choices, constraints: &Constraints) -> Choices {
+    let chosen = |from: &Source| matches!(from, Source::Flag(_) | Source::File(_));
+    let unconfined_by_choice = chosen(&choices.sandbox.from) && chosen(&choices.approval.from);
+    let (allowed, _) = constraints.approval_modes();
+    if choices.sandbox.value.is_none()
+        && choices.approval.value == ApprovalMode::Auto
+        && !unconfined_by_choice
+        && allowed.contains(&ApprovalMode::Ask)
+    {
+        choices.approval = Chosen {
+            value: ApprovalMode::Ask,
+            from: Source::Unsandboxed,
+        };
+    }
+    choices
 }
 
 fn approval(
@@ -80,6 +114,11 @@ fn sandbox(
         return Ok(chosen);
     };
     match (chosen.value, &chosen.from) {
+        // The default sandbox is now the policy's: it may not give way when it cannot run.
+        (Some(level), Source::Default) => Ok(Chosen {
+            value: Some(level),
+            from: Source::Narrowed(rule.from.clone()),
+        }),
         (Some(_), _) => Ok(chosen),
         (None, Source::Default) => Ok(Chosen {
             value: Some(SandboxLevel::Project),

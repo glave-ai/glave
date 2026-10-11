@@ -13,7 +13,7 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
         .block_on(future)
 }
 
-fn scratch(name: &str) -> PathBuf {
+pub(super) fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("glave-policy-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -22,7 +22,10 @@ fn scratch(name: &str) -> PathBuf {
 
 /// Reads the policy files at `locations`, then everything else with `project` as the
 /// project's choices.
-fn load_all(locations: &Locations, project: Option<ConfigFile>) -> anyhow::Result<Loaded> {
+pub(super) fn load_all(
+    locations: &Locations,
+    project: Option<ConfigFile>,
+) -> anyhow::Result<Loaded> {
     block_on(async {
         let policies = policies(locations).await?;
         load(

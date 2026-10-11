@@ -116,7 +116,13 @@ fn with_nothing_set_every_choice_is_the_default() {
     );
     assert_eq!(
         (choices.sandbox.value, choices.sandbox.from),
-        (None, Source::Default)
+        (Some(SandboxLevel::Project), Source::Default),
+        "the sandbox is on by default"
+    );
+    assert_eq!(
+        (choices.network.value, choices.network.from),
+        (true, Source::Default),
+        "with the network, so installs and fetches work"
     );
     assert_eq!(choices.mcp, None);
     assert_eq!(
@@ -444,3 +450,4 @@ fn people_s_own_mcp_servers_are_refused_when_the_policy_forbids_them() {
 }
 
 mod reading;
+mod sandboxing;

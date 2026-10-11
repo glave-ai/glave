@@ -24,6 +24,8 @@ pub struct ConfigFile {
     pub judge_model: Option<String>,
     pub approval: Option<Approval>,
     pub sandbox: Option<SandboxChoice>,
+    /// Whether sandboxed commands may use the network. A project's file may only turn it off.
+    pub network: Option<bool>,
     /// The MCP servers to turn on.
     pub mcp: Option<Vec<String>>,
     /// Whether each new thread works in a worktree of its own.
