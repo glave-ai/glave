@@ -49,6 +49,7 @@ The first release people and companies can adopt.
 | Identity | SAML and SCIM: teams, groups, and spending caps per team |
 | Plan mode ([#92](https://github.com/seashell86/glave/issues/92)), errands ([#95](https://github.com/seashell86/glave/issues/95)), voice ([#58](https://github.com/seashell86/glave/issues/58)) | the rest of the harness |
 | Cloud homes | a persistent disk per person for loose files, that sleeps cheaply |
+| Cheap code execution on Glave Cloud | a warm pool of small gVisor workers on the Kubernetes backend, snapshots if start time matters, WebAssembly Python only if measurements say most cloud chats are simple data work. Locally and on a company's own server, the sandbox already runs code for free |
 | Desktop app | the web interface, packaged |
 
 ## How we decide
