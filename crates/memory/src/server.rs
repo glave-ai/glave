@@ -177,7 +177,7 @@ fn tools() -> Vec<Tool> {
 }
 
 /// The context a request carries, from its `_meta`.
-fn context(
+fn caller_context(
     meta: Option<&rmcp::model::RequestMetaObject>,
     fallback: &rmcp::model::RequestMetaObject,
 ) -> Result<Context, ErrorData> {
@@ -377,7 +377,7 @@ impl<L: EventLog + 'static> ServerHandler for MemoryServer<L> {
         request: ReadResourceRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, ErrorData> {
-        let cx = context_from(request.meta.as_ref(), &context.meta)?;
+        let cx = caller_context(request.meta.as_ref(), &context.meta)?;
         match self.read(&cx, &request.uri).await {
             Ok(text) => Ok(ReadResourceResult::new(vec![
                 ResourceContents::text(text, request.uri.clone())
@@ -394,7 +394,7 @@ impl<L: EventLog + 'static> ServerHandler for MemoryServer<L> {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        let cx = context_from(request.meta.as_ref(), &context.meta)?;
+        let cx = caller_context(request.meta.as_ref(), &context.meta)?;
         let result = match request.name.as_ref() {
             "remember" => self.remember(&cx, &request).await,
             "edit" => self.edit(&cx, &request).await,
@@ -403,11 +403,4 @@ impl<L: EventLog + 'static> ServerHandler for MemoryServer<L> {
         };
         Ok(CallToolResponse::Complete(result))
     }
-}
-
-fn context_from(
-    meta: Option<&rmcp::model::RequestMetaObject>,
-    fallback: &rmcp::model::RequestMetaObject,
-) -> Result<Context, ErrorData> {
-    context(meta, fallback)
 }

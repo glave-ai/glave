@@ -99,6 +99,7 @@ mod loading {
     }
 
     #[test]
+    #[expect(clippy::too_many_lines, reason = "one scenario, end to end")]
     fn returning_after_changes_gets_a_note_and_resuming_rebuilds_the_same_requests() {
         block_on(async {
             let kit = Kit::new();
@@ -272,8 +273,7 @@ mod loading {
                         .run_turn(&mut thread, "again", &Cancel::new(), &mut |_| {})
                         .await
                         .unwrap();
-                    let requests = seen.lock().unwrap().clone();
-                    requests
+                    seen.lock().unwrap().clone()
                 }
             };
             let without = run(false).await;

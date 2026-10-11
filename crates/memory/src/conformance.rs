@@ -149,8 +149,8 @@ async fn forgetting(memory: &dyn Memory, f: &Fixture) -> Verdict {
         matches!(edited.change, Some(MemoryChange::Edited(_))),
         "an edit changes the memory",
     )?;
-    let forget = json!({"memory": gone.to_string()});
-    let forgot = memory.call(&f.here, FORGET, &arguments(&forget)).await;
+    let request = json!({"memory": gone.to_string()});
+    let forgot = memory.call(&f.here, FORGET, &arguments(&request)).await;
     ensure(
         forgot.change == Some(MemoryChange::Forgotten(gone)),
         "forget forgets",

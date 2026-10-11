@@ -118,15 +118,8 @@ mod memory {
                 })
                 .await;
             assert!(forgot.is_ok(), "{forgot:?}");
-            assert!(
-                listed(
-                    server
-                        .request(Request::MemoryList { scope: None })
-                        .await
-                        .unwrap()
-                )
-                .is_empty()
-            );
+            let left = server.request(Request::MemoryList { scope: None }).await;
+            assert_eq!(listed(left.unwrap()).len(), 0);
             let missing = server
                 .request(Request::MemoryRestore { memory: id })
                 .await

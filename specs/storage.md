@@ -13,6 +13,7 @@ Settled while building, within this contract:
 - The data store keeps one wrapped key per organization and one record of wrapped keys per space, replaced whole by compare-and-swap on a revision, so a rotation is a single atomic write. A destroyed key's entry stays, emptied, so numbers are never reused.
 - A blob's associated data is a `glave/blob/v1` tag, organization, space, stored name and `key_id`, length-prefixed like an event's.
 - Unwrapped keys are cached per process. Another process (a second server on the same Postgres) keeps a destroyed key until it leaves its cache.
+- **Per-item keys, first for memory** (`memory.md`): `memory.saved` and `memory.edited` are sealed under the memory's own data key, `v1/<space>/memory/<memory>/<n>`, kept in the space's record beside the month keys. Forgetting destroys it alone, at once, without a rotation; the space key is rotated afterwards (`rotate_space_key`, which rotates only when a key was destroyed under the live space key), batching the forgets since the last rotation. An event sealed under a destroyed memory key reads with `data` `{}`; one under a destroyed month key still fails the read.
 
 ## Scope
 

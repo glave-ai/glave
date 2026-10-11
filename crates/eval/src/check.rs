@@ -129,10 +129,12 @@ impl Check {
                 Some(text) => Err(format!("a memory holds {text:?}: {:?}", cx.memory.live)),
                 None => Ok(()),
             },
-            Self::PersonalMemoryLacks(texts) => match texts
-                .iter()
-                .find(|text| cx.memory.personal.iter().any(|memory| mentions(memory, text)))
-            {
+            Self::PersonalMemoryLacks(texts) => match texts.iter().find(|text| {
+                cx.memory
+                    .personal
+                    .iter()
+                    .any(|memory| mentions(memory, text))
+            }) {
                 Some(text) => Err(format!("a personal memory holds {text:?}")),
                 None => Ok(()),
             },
@@ -355,14 +357,23 @@ mod tests {
         assert_eq!(judge(Check::MemoryHolds("render".into())), Ok(()));
         assert!(judge(Check::MemoryLacks(vec!["tabs".into()])).is_err());
         assert!(judge(Check::PersonalMemoryLacks(vec!["tabs".into()])).is_err());
-        assert_eq!(judge(Check::PersonalMemoryLacks(vec!["render".into()])), Ok(()));
+        assert_eq!(
+            judge(Check::PersonalMemoryLacks(vec!["render".into()])),
+            Ok(())
+        );
         let superseded = |old: &str| Check::MemorySuperseded {
             old: old.into(),
             new: "Render".into(),
         };
         assert_eq!(judge(superseded("Fly")), Ok(()));
-        assert!(judge(superseded("Python")).is_err(), "two memories about it");
-        assert!(judge(Check::MemoryForgotten).is_err(), "nothing was forgotten");
+        assert!(
+            judge(superseded("Python")).is_err(),
+            "two memories about it"
+        );
+        assert!(
+            judge(Check::MemoryForgotten).is_err(),
+            "nothing was forgotten"
+        );
     }
 
     #[test]

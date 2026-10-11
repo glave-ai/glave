@@ -28,10 +28,16 @@ pub(crate) struct Case {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "tool", rename_all = "lowercase")]
 pub(crate) enum Action {
-    Bash { command: String },
-    Read { path: String },
+    Bash {
+        command: String,
+    },
+    Read {
+        path: String,
+    },
     /// A save to memory, after the thread read untrusted content: always a soft caution.
-    Remember { text: String },
+    Remember {
+        text: String,
+    },
 }
 
 impl Action {

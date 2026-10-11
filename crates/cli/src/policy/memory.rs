@@ -185,25 +185,36 @@ mod tests {
 
     #[test]
     fn a_policy_only_narrows_memory() {
-        let no_personal = constraints("version = 1\n[memory]\npersonal = false\nretention_days = 90");
+        let no_personal =
+            constraints("version = 1\n[memory]\npersonal = false\nretention_days = 90");
         let settled = settle(&chosen("memory = \"on\""), &no_personal).unwrap();
         assert!(!settled.personal);
-        assert_eq!(settled.space, SpaceMemory::Isolated, "the default gives way");
+        assert_eq!(
+            settled.space,
+            SpaceMemory::Isolated,
+            "the default gives way"
+        );
         assert_eq!(settled.retention_days, Some(90));
         let shared = settle(&chosen("space_memory = \"shared\""), &no_personal);
-        assert!(shared.is_err(), "a choice outside the policy is an error naming it");
+        assert!(
+            shared.is_err(),
+            "a choice outside the policy is an error naming it"
+        );
         let disabled = constraints("version = 1\n[memory]\nenabled = false");
         assert!(settle(&chosen("memory = \"on\""), &disabled).is_err());
         assert!(!settle(&chosen(""), &disabled).unwrap().on);
         let only_off = constraints("version = 1\n[memory]\nspaces = [\"off\"]");
-        assert_eq!(settle(&chosen(""), &only_off).unwrap().space, SpaceMemory::Off);
+        assert_eq!(
+            settle(&chosen(""), &only_off).unwrap().space,
+            SpaceMemory::Off
+        );
     }
 
     #[test]
     fn another_memory_server_is_refused_until_it_is_built() {
         let other = constraints("version = 1\n[memory]\nserver = \"corp-memory\"");
-        assert!(!other.not_enforced().is_empty());
+        assert_ne!(other.not_enforced().len(), 0);
         let glave = constraints("version = 1\n[memory]\nserver = \"glave\"");
-        assert!(glave.not_enforced().is_empty());
+        assert_eq!(glave.not_enforced().len(), 0);
     }
 }

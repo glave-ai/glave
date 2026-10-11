@@ -98,7 +98,7 @@ mod store {
                 ["The client is BLUEHERON"],
                 "personal memory never enters an isolated space"
             );
-            assert!(memories.list(&on(off())).await.unwrap().is_empty());
+            assert_eq!(memories.list(&on(off())).await.unwrap().len(), 0);
             let refused = memories
                 .remember(
                     &writer(isolated()),
@@ -320,7 +320,7 @@ mod store {
                 "the forget itself is content-free and kept"
             );
             let live = memories.list(&on(shared())).await.unwrap();
-            assert_eq!(live, [kept.clone()]);
+            assert_eq!(live, std::slice::from_ref(&kept));
             assert!(kit.store.keys().rotation_due(&shared()).await.unwrap());
             let done = memories.housekeep(&[shared(), inbox()]).await.unwrap();
             assert_eq!(done.rotated, 1, "housekeeping rotates the space key");
@@ -349,7 +349,7 @@ mod store {
                 .fetch_add(2 * 86_400_000, std::sync::atomic::Ordering::SeqCst);
             let done = memories.housekeep(&[shared()]).await.unwrap();
             assert_eq!(done.forgotten, 1);
-            assert!(memories.list(&on(shared())).await.unwrap().is_empty());
+            assert_eq!(memories.list(&on(shared())).await.unwrap().len(), 0);
             let restored = memories.restore(&mine, old.memory).await.unwrap();
             assert_eq!(restored.text, "An old fact");
             assert_eq!(memories.list(&on(shared())).await.unwrap().len(), 1);

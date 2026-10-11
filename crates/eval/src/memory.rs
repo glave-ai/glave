@@ -17,8 +17,10 @@ use crate::task::Task;
 
 /// The person every attempt works for.
 pub fn person() -> Result<PrincipalId, EvalError> {
-    PrincipalId::try_from(uuid::Uuid::from_u128(0x0192_f5c0_0000_7000_8000_0000_0000_0001))
-        .map_err(|error| EvalError::Setup(error.to_string()))
+    PrincipalId::try_from(uuid::Uuid::from_u128(
+        0x0192_f5c0_0000_7000_8000_0000_0000_0001,
+    ))
+    .map_err(|error| EvalError::Setup(error.to_string()))
 }
 
 fn org() -> OrgId {
@@ -29,9 +31,9 @@ fn org() -> OrgId {
 pub fn space(name: Option<&str>) -> Scope {
     let space = match name {
         None => 2,
-        Some(name) => name
-            .bytes()
-            .fold(0x0100_u128, |sum, byte| sum.wrapping_mul(31).wrapping_add(u128::from(byte))),
+        Some(name) => name.bytes().fold(0x0100_u128, |sum, byte| {
+            sum.wrapping_mul(31).wrapping_add(u128::from(byte))
+        }),
     };
     Scope {
         org: org(),
@@ -80,7 +82,8 @@ impl Remembering {
     pub async fn open(task: &Task, on: bool) -> Result<Self, EvalError> {
         let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("memory: {error}"));
         let root = MemoryRoot::new().map_err(|e| fail(&e))?;
-        let store = Store::open_in_memory(KeySettings::new(Arc::new(root))).map_err(|e| fail(&e))?;
+        let store =
+            Store::open_in_memory(KeySettings::new(Arc::new(root))).map_err(|e| fail(&e))?;
         let person = person()?;
         let mut rules = Rules {
             personal: Some(Personal {
@@ -157,7 +160,9 @@ impl Remembering {
             let mut texts: BTreeMap<MemoryId, (MemoryScope, String)> = BTreeMap::new();
             let mut forgotten = Vec::new();
             for event in raw {
-                report.ledger.push_str(&event.to_json().map_err(|e| fail(&e))?);
+                report
+                    .ledger
+                    .push_str(&event.to_json().map_err(|e| fail(&e))?);
                 report.ledger.push('\n');
                 // A memory whose key was destroyed reads as erased: it does not decode.
                 match decode(event).map(|event| event.body) {
@@ -202,7 +207,10 @@ mod tests {
 
     #[test]
     fn spaces_are_named_apart_and_the_first_is_the_usual_one() {
-        assert_eq!(space(None).space, SpaceId::from_uuid(uuid::Uuid::from_u128(2)));
+        assert_eq!(
+            space(None).space,
+            SpaceId::from_uuid(uuid::Uuid::from_u128(2))
+        );
         assert_ne!(space(Some("client")), space(Some("other")));
         assert_eq!(space(Some("client")), space(Some("client")));
         assert_ne!(space(Some("client")), personal());

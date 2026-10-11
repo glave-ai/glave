@@ -4,7 +4,6 @@
 
 #[cfg(test)]
 #[path = "support/binary.rs"]
-#[expect(dead_code, reason = "shared helpers; this file uses some of them")]
 mod support;
 
 #[cfg(test)]

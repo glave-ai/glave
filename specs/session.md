@@ -48,6 +48,12 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | `schedule/create` | `when`: `{"cron": "<five fields>"}` (UTC) or `{"at": "<RFC 3339>"}`; `prompt`; optional `goal` (`true`: each run works toward `prompt` as a goal); `budget` (tokens each run may use, required, more than 0); optional `worktree` | `schedule`: `schedule` (its id), `when`, `prompt`, `goal`, `budget`, `worktree`, `created_at`, `last` (when the latest run was due), `next` (absent once a one-off has run). A cron expression that does not parse is refused with `-32602` |
 | `schedule/list` | none | `schedules` |
 | `schedule/delete` | `schedule` | `{}`; no more runs start. `-32016` for no such schedule |
+| `memory/list` | optional `scope` (`personal` or `space`) | `memories`: the person's and this space's memories (`memory.md`), each with `memory`, `version`, `scope`, `text`, `saved_at`, optional `edited_at`, `untrusted_read` and `source` |
+| `memory/save` | `text`; `scope` | `memories`: the one saved. A credential, more than 500 characters, or a full scope is refused with `-32602` |
+| `memory/edit` | `memory`; `text` | `memories`: the one edited |
+| `memory/move` | `memory`; `scope` | `memories`: the one saved in the new scope; the old is forgotten |
+| `memory/forget` | `memory`, or `all: true` with `scope` | `memories`: those forgotten. Their keys are destroyed at once |
+| `memory/restore` | `memory` | `memories`: the one restored, when glave changed it in the last 30 days |
 
 A **thread summary** has `id` and `status`: `idle`, `running` or `waiting` (a turn is paused for an approval or an answer). Titles, creation and update times arrive with a threads view built from the log.
 
@@ -70,7 +76,7 @@ Two kinds, sent while a turn runs or a client watches:
 | Method | Params | Kept |
 | --- | --- | --- |
 | `thread/event` | `thread`; `event`, a stored event with its `seq` | Yes: it is in the log, and `thread/events` returns it again |
-| `turn/live` | `thread`; `update`: `text` or `reasoning` (a fragment), `tool_started`, `tool_finished`, `waiting`, `retrying`, `compacted`, `asked`, `subagent_started` (`subagent`, `description`), `subagent_ended` (`subagent`, `ok`) | No: live updates are for showing progress, never replayed |
+| `turn/live` | `thread`; `update`: `text` or `reasoning` (a fragment), `tool_started`, `tool_finished`, `waiting`, `retrying`, `compacted`, `asked`, `subagent_started` (`subagent`, `description`), `subagent_ended` (`subagent`, `ok`), `memory` (`change`: `remembered`, `edited` or `forgot`; `memory`; `text`) | No: live updates are for showing progress, never replayed |
 | `task/finished` | `thread`; `task`, as `tasks/list` shows it | In the ledger as `task.ended` |
 
 A thread's notifications include its subagents': a child thread started by an `agent` call sends its events and progress to whoever follows its parent too, each under the child's own `thread`. Its first event, `thread.started`, names the parent call, and `subagent_started` gives its description. A client answers a subagent's approval with the subagent's thread.
@@ -155,6 +161,8 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32014` | The thread is archived; unarchive it first |
 | `-32015` | A policy limit was reached: `[tasks] max_running` or `max_schedules` |
 | `-32016` | No such schedule |
+| `-32017` | No such memory here |
+| `-32018` | Memory is off for this server |
 | `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
 
 ## Transports

@@ -13,15 +13,15 @@ use glave_harness::{
     Settings, Skills, SystemClock, Todo, Workspace, agents_md, find_skills, skill_folders,
 };
 use glave_ports::{EventLog, ToolSource};
-use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 use glave_provider_openai::{Config, OpenAiCompatible};
+use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 use glave_web::pages::Pages;
 use glave_web::{Domain, Limits, Web, WebPolicy, WebSettings};
 use serde::{Deserialize, Serialize};
 
 use crate::check::{Context, ended};
-use crate::memory::{MemoryReport, Remembering};
 use crate::error::EvalError;
+use crate::memory::{MemoryReport, Remembering};
 use crate::prepare::{Environment, Prepared, last_lines, prepare, script, tidy};
 use crate::task::Task;
 use crate::trace::{self, Trace};
@@ -287,10 +287,14 @@ async fn converse(
         transcript: String::new(),
         failures: Vec::new(),
     };
-    let fill = |turn: &String| web.map_or_else(|| turn.clone(), |base| crate::web::fill(turn, base));
+    let fill =
+        |turn: &String| web.map_or_else(|| turn.clone(), |base| crate::web::fill(turn, base));
     let mut threads = vec![(None, task.turns.iter().map(fill).collect::<Vec<_>>())];
     for thread in &task.threads {
-        threads.push((thread.space.clone(), thread.messages.iter().map(fill).collect()));
+        threads.push((
+            thread.space.clone(),
+            thread.messages.iter().map(fill).collect(),
+        ));
     }
     let mut lines = String::new();
     for (index, (space, turns)) in threads.iter().enumerate() {
@@ -305,7 +309,9 @@ async fn converse(
             .await
             .map_err(|err| EvalError::Setup(err.to_string()))?;
         for event in &events {
-            let line = event.to_json().map_err(|err| EvalError::Setup(err.to_string()))?;
+            let line = event
+                .to_json()
+                .map_err(|err| EvalError::Setup(err.to_string()))?;
             lines.push_str(&line);
             lines.push('\n');
         }
@@ -314,7 +320,12 @@ async fn converse(
         }
     }
     let memory = remembering.report().await?;
-    Ok((lines, conversation.transcript, conversation.failures, memory))
+    Ok((
+        lines,
+        conversation.transcript,
+        conversation.failures,
+        memory,
+    ))
 }
 
 /// One attempt's conversation so far.
@@ -340,7 +351,10 @@ impl Talk<'_> {
         let mut thread = harness.start_thread(scope).await.map_err(fail)?;
         for (index, prompt) in turns.iter().enumerate() {
             if index > 0 {
-                thread = harness.resume_thread(scope, thread.id).await.map_err(fail)?;
+                thread = harness
+                    .resume_thread(scope, thread.id)
+                    .await
+                    .map_err(fail)?;
             }
             let _ = write!(self.transcript, "\n> {prompt}\n");
             // Past the deadline the turn is cancelled, so it still ends cleanly in the log.
@@ -358,7 +372,11 @@ impl Talk<'_> {
                         .start_goal(&mut thread, goal, &Caller::default(), &cancel, &mut show)
                         .await
                 }
-                _ => harness.run_turn(&mut thread, prompt, &cancel, &mut show).await,
+                _ => {
+                    harness
+                        .run_turn(&mut thread, prompt, &cancel, &mut show)
+                        .await
+                }
             };
             match ran {
                 Ok(_) if cancel.is_cancelled() => {
@@ -368,7 +386,8 @@ impl Talk<'_> {
                 }
                 Ok(_) => {}
                 Err(err) => {
-                    self.failures.push(format!("turn {} failed: {err}", index + 1));
+                    self.failures
+                        .push(format!("turn {} failed: {err}", index + 1));
                     break;
                 }
             }

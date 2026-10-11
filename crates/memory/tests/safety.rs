@@ -228,7 +228,7 @@ mod safety {
                 .run_turn(&mut thread, "use this key", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
-            assert!(ledger_texts(&kit).await.is_empty());
+            assert_eq!(ledger_texts(&kit).await.len(), 0);
             let told = format!(
                 "{:?}",
                 seen.lock()
