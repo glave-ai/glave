@@ -27,7 +27,19 @@ pub enum Request {
     ThreadList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
+        /// Which threads: the active ones by default.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        show: Option<Show>,
     },
+    /// Hides a thread from lists, keeping it in the log.
+    #[serde(rename = "thread/archive")]
+    ThreadArchive { thread: ThreadId },
+    /// Brings an archived thread back.
+    #[serde(rename = "thread/unarchive")]
+    ThreadUnarchive { thread: ThreadId },
+    /// Hides a thread for good and marks it for erasure.
+    #[serde(rename = "thread/delete")]
+    ThreadDelete { thread: ThreadId },
     #[serde(rename = "thread/get")]
     ThreadGet { thread: ThreadId },
     #[serde(rename = "thread/events")]
@@ -89,6 +101,9 @@ impl Request {
             Self::Discover {} => "server/discover",
             Self::ThreadStart { .. } => "thread/start",
             Self::ThreadList { .. } => "thread/list",
+            Self::ThreadArchive { .. } => "thread/archive",
+            Self::ThreadUnarchive { .. } => "thread/unarchive",
+            Self::ThreadDelete { .. } => "thread/delete",
             Self::ThreadGet { .. } => "thread/get",
             Self::ThreadEvents { .. } => "thread/events",
             Self::TurnStart { .. } => "turn/start",
@@ -152,6 +167,18 @@ impl From<IdempotencyKey> for String {
     fn from(key: IdempotencyKey) -> Self {
         key.0
     }
+}
+
+/// Which threads `thread/list` shows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Show {
+    /// Threads that are neither archived nor deleted.
+    #[default]
+    Active,
+    Archived,
+    /// Deleted threads, waiting for their content to be erased: for the operator that does it.
+    Deleted,
 }
 
 /// The person's answer to an approval.
@@ -391,6 +418,8 @@ pub mod code {
     pub const NO_GOAL: i64 = -32007;
     /// The thread's workspace could not be opened, such as a worktree outside a repository.
     pub const WORKSPACE: i64 = -32009;
+    /// The thread is archived: unarchive it before running a turn in it.
+    pub const ARCHIVED: i64 = -32014;
     /// A hook stopped the prompt before the model saw it.
     pub const PROMPT_BLOCKED: i64 = -32008;
     pub const CANCELLED: i64 = -32005;

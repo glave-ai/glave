@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::{Seq, ThreadId};
 use glave_harness::{
-    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Place, ReleasedWorker, Settings,
-    TurnSummary, Workers, Workspace,
+    Caller, Change, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Place, ReleasedWorker,
+    Settings, TurnSummary, Workers, Workspace,
 };
 use glave_ports::{BlobStore, Environment, EventLog, ModelProvider, Scope, ToolSource};
 use tokio::sync::{broadcast, watch};
@@ -23,7 +23,7 @@ use crate::protocol::{
 };
 
 /// The most events or threads one page returns.
-const MAX_PAGE: usize = 5_000;
+pub(crate) const MAX_PAGE: usize = 5_000;
 
 /// What a server is built from: the harness's parts, less the approver, which is the API.
 pub struct Wiring<P, L, B> {
@@ -140,7 +140,12 @@ where
                 protocols: vec![PROTOCOL.to_owned()],
             })),
             Request::ThreadStart { worktree } => self.start_thread(caller, worktree).await,
-            Request::ThreadList { limit } => self.list(limit).await,
+            Request::ThreadList { limit, show } => self.list(limit, show.unwrap_or_default()).await,
+            Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
+            Request::ThreadUnarchive { thread } => {
+                self.change(caller, thread, Change::Unarchive).await
+            }
+            Request::ThreadDelete { thread } => self.change(caller, thread, Change::Delete).await,
             Request::ThreadGet { thread } => {
                 self.load(thread).await?;
                 Ok(Reply::Thread {
@@ -279,20 +284,6 @@ where
         })
     }
 
-    async fn list(&self, limit: Option<usize>) -> Result<Reply, ApiError> {
-        let limit = limit.unwrap_or(20).clamp(1, MAX_PAGE);
-        let ids = self
-            .inner
-            .harness
-            .log()
-            .threads(&self.inner.scope, limit)
-            .await
-            .map_err(|err| ApiError::new(code::INTERNAL, err.to_string()))?;
-        Ok(Reply::Threads {
-            threads: ids.into_iter().map(|id| self.summary(id)).collect(),
-        })
-    }
-
     async fn events(
         &self,
         thread: ThreadId,
@@ -300,6 +291,7 @@ where
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
         let limit = limit.unwrap_or(500).clamp(1, MAX_PAGE);
+        self.ensure_not_deleted(thread).await?;
         let events = self
             .inner
             .harness
@@ -369,6 +361,7 @@ pub(crate) fn api(error: &HarnessError) -> ApiError {
             }),
         },
         HarnessError::NotFound(thread) => no_thread(*thread),
+        HarnessError::Archived(_) => ApiError::new(code::ARCHIVED, error.to_string()),
         HarnessError::Cancelled => ApiError::new(code::CANCELLED, "cancelled"),
         HarnessError::NoGoal(_) => ApiError::new(code::NO_GOAL, error.to_string()),
         HarnessError::Workspace(_) => ApiError::new(code::WORKSPACE, error.to_string()),

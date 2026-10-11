@@ -97,7 +97,10 @@ mod session {
             assert_eq!(turn.outcome, Outcome::Completed);
             assert_eq!(turn.model_calls, 1);
             match server
-                .request(Request::ThreadList { limit: None })
+                .request(Request::ThreadList {
+                    limit: None,
+                    show: None,
+                })
                 .await
                 .unwrap()
             {

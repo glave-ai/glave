@@ -19,6 +19,7 @@ mod hooks;
 mod instructions;
 mod join;
 mod judge;
+mod outside;
 mod prompt;
 mod question;
 mod removed;
@@ -28,6 +29,7 @@ mod retry;
 mod room;
 mod sandbox;
 mod skills;
+mod standing;
 mod subagent;
 mod todo;
 mod tools;
@@ -60,6 +62,7 @@ pub use skills::{
     Found, MAX_LISTED, MAX_SKILLS, PROJECT_FOLDERS, SKILL, SKILL_MD, Skill, Skills, find_skills,
     skill_folders,
 };
+pub use standing::{Change, Standing, change_standing, standing_of};
 pub use subagent::{AGENT, SubagentType};
 pub use todo::{TODO, Todo};
 pub use tools::workspace::Workspace;

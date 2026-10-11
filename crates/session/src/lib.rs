@@ -12,6 +12,7 @@ pub mod protocol;
 pub mod rpc;
 mod server;
 pub mod signin;
+mod standing;
 mod turn;
 
 pub use approvals::Answering;

@@ -211,6 +211,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        self.reopen_removed(thread).await?;
         // The person's own prompts pass the `UserPromptSubmit` hooks first.
         if !prompt.by_glave
             && !thread.delegated()

@@ -21,6 +21,7 @@ mod setup;
 mod skills;
 mod system;
 mod terminal;
+mod threads;
 mod trust;
 mod waiting;
 mod worktrees;
