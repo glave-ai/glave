@@ -37,7 +37,10 @@ pub struct Trust {
 /// Why a request was not signed in. Says what is wrong, never what the token was.
 #[derive(Debug, Error)]
 pub enum SignInError {
-    #[error("no sign-in: send an OIDC access token as `Authorization: Bearer <token>`")]
+    #[error(
+        "no sign-in: send an OIDC access token, or from this computer the local token in \
+         serve.token, as `Authorization: Bearer <token>`"
+    )]
     Missing,
     #[error("the token is not a JWT signed with RS256 or ES256: {0}")]
     Malformed(String),
