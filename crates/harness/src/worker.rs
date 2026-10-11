@@ -174,6 +174,7 @@ where
             trash: None,
         };
         self.record(thread, &removed).await?;
+        thread.unnumbered = thread.unnumbered.saturating_add(1);
         thread.note = None;
         Ok(Some(ReleasedWorker { branch, files }))
     }
