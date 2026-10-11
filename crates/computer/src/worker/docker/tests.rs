@@ -206,6 +206,7 @@ async fn published(docker: &Docker) {
     let Link::Tls {
         address,
         fingerprint,
+        ..
     } = link.unwrap()
     else {
         panic!("a worker with a network is reached over TLS");

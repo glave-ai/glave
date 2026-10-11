@@ -15,7 +15,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 getrandom.workspace = true
-glave-computer.workspace = true
+glave-computer = { workspace = true, features = ["kubernetes"] }
 glave-event.workspace = true
 glave-gateway.workspace = true
 glave-harness.workspace = true

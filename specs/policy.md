@@ -7,10 +7,10 @@ How glave is set up: what a person or project chooses, and what an organization 
 First cut built, in the CLI (`crates/cli/src/policy`):
 
 - `~/.glave/config.toml` (in `GLAVE_HOME`) and `/etc/glave/policy.toml` are read as typed TOML; unknown keys, and a policy without `version = 1`, are errors naming the file and key.
-- Choices resolve nearest-wins across flags (`--model`, `--approval`, `--sandbox`, which now takes `off`), the environment (`GLAVE_MODEL`, `GLAVE_JUDGE_MODEL`), the person's file and the defaults, each remembering its source. `mcp` turns on only the named servers of `mcp.json`. `worktree` (`true` or `false`, default `false`; also `--worktree`) gives each new thread a git worktree of its own instead of the folder itself (`computers.md`); it is a plain choice, needs no trust in a project's file, and `glave policy explain` shows it with its source. `on` (`here` or `cloud`, default `here`; also `--on`) puts each new thread on a worker of its own, made on the backend `[workers]` names (`backend = "docker"`, `glave`, the Linux build that goes into workers, and optionally `socket`); `--on cloud` without `[workers]` is an error saying so.
+- Choices resolve nearest-wins across flags (`--model`, `--approval`, `--sandbox`, which now takes `off`), the environment (`GLAVE_MODEL`, `GLAVE_JUDGE_MODEL`), the person's file and the defaults, each remembering its source. `mcp` turns on only the named servers of `mcp.json`. `worktree` (`true` or `false`, default `false`; also `--worktree`) gives each new thread a git worktree of its own instead of the folder itself (`computers.md`); it is a plain choice, needs no trust in a project's file, and `glave policy explain` shows it with its source. `on` (`here` or `cloud`, default `here`; also `--on`) puts each new thread on a worker of its own, made on the backend `[workers]` names (`backend = "docker"` or `"kubernetes"`, `glave`, the Linux build that goes into workers; for Docker optionally `socket`; for Kubernetes optionally `kubeconfig`, `namespace` and `runtime_class`; a key the backend does not use is an error); `--on cloud` without `[workers]` is an error saying so.
 - Constraints only narrow: allow-lists intersect, deny lists add up, a requirement anywhere holds, limits take the smallest, and contradictions (no approval mode left, a judge both required and off) are errors.
 - A choice someone made outside the constraints is an error naming the rule, its file and the choice's source. Only glave's own defaults give way, to what the policy leaves (shown as "default, narrowed by" the file).
-- Enforced: `[models]` when the gateway's targets are built, `[approval] modes` and `judge` in the settings the harness runs with, `[sandbox] required` before the workspace exists, `[mcp] own = false` before any server starts, `[workers]` (cpu, memory_gb, max_minutes, per_person, network on or off) by the worker adapter: limits take the smallest, and `off` wins over `on`.
+- Enforced: `[models]` when the gateway's targets are built, `[approval] modes` and `judge` in the settings the harness runs with, `[sandbox] required` before the workspace exists, `[mcp] own = false` before any server starts, `[workers]` (cpu, memory_gb, max_minutes, per_person, network on or off, isolation) by the worker adapter: limits take the smallest, `off` wins over `on`, and `vm` over `container`; a policy requiring `vm` refuses every worker on a backend without a runtime class.
 - Refused at load as not enforced yet, so glave will not run under them: `[budget]` (the gateway keeps budgets per run, not per day) and `[mcp] catalog` (glave cannot start servers an organization offers), and `[workers] network = "allowlist"` (no egress allow-list on workers yet).
 - `glave policy explain` prints every setting with its source, every rule with its file, and why glave would refuse to run; it exits non-zero when it would.
 
@@ -77,6 +77,10 @@ command = "./scripts/guard.sh"
 backend = "docker"
 glave = "/opt/glave/linux-arm64/glave"         # a Linux build of glave for the backend's processor
 socket = "/var/run/docker.sock"              # optional: Docker's socket
+# backend = "kubernetes"                      # or a cluster, with optionally:
+# kubeconfig = "/etc/glave/kubeconfig"        # default KUBECONFIG, ~/.kube/config, or in-cluster
+# namespace = "glave-workers"                 # default the kubeconfig's
+# runtime_class = "gvisor"                    # gVisor's runsc or Kata: a kernel or VM per worker
 ```
 
 Hooks are the one thing in `config.toml` that adds up across files rather than the nearest winning: the person's and a trusted project's all run.
@@ -116,6 +120,7 @@ memory_gb = 8
 max_minutes = 120                                 # after this, a worker takes no new work
 per_person = 3                                    # workers one person may have at once
 network = "on"                                    # or "off"; "allowlist" is refused for now
+isolation = "vm"                                  # or "container": "vm" needs a runtime class
 ```
 
 Unknown keys are errors that name the key and file, so a typo never silently does nothing.

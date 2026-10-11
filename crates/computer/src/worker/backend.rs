@@ -1,6 +1,6 @@
 //! What a worker backend does: start a disposable machine from a pinned image with glave in
-//! it serving the computer protocol, say how to reach it, and remove it. Docker is the first
-//! backend and Kubernetes the next; until it exists this stays a small trait inside the crate.
+//! it serving the computer protocol, say how to reach it, and remove it. Docker and Kubernetes
+//! are the two; the trait stays inside the crate until a protocol for it is needed.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -10,6 +10,7 @@ use glave_ports::{BoxFuture, ComputerError};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::JoinHandle;
 
+use super::limits::Isolation;
 use crate::tls::{Fingerprint, Identity};
 use crate::token::Token;
 
@@ -35,10 +36,13 @@ pub(crate) struct Spec {
 
 /// How the harness reaches a started worker.
 pub(crate) enum Link {
-    /// Over TLS at `address`, trusting only the certificate with `fingerprint`.
+    /// Over TLS at `address`, trusting only the certificate with `fingerprint`. `forward`,
+    /// when the backend reaches the worker through a forwarder of its own (Kubernetes'
+    /// port-forward), moves the bytes, and stops when the worker is removed.
     Tls {
         address: SocketAddr,
         fingerprint: Fingerprint,
+        forward: Option<JoinHandle<()>>,
     },
     /// Over a stream the backend opened to glave's standard input and output, for a worker
     /// with no network. `task` moves its bytes, and stops when the worker is removed.
@@ -55,6 +59,7 @@ impl fmt::Debug for Link {
             Self::Tls {
                 address,
                 fingerprint,
+                ..
             } => write!(f, "Tls({address}, {fingerprint:?})"),
             Self::Stream { .. } => f.write_str("Stream"),
         }
@@ -68,8 +73,13 @@ pub(crate) struct Started {
     pub(crate) link: Link,
 }
 
-/// A place workers run: Docker on this machine first.
+/// A place workers run: Docker on this machine, or a Kubernetes cluster.
 pub(crate) trait Backend: Send + Sync {
+    /// How workers here are kept apart from the machine they run on.
+    fn isolation(&self) -> Isolation {
+        Isolation::Container
+    }
+
     /// Starts a worker from `spec`, with glave serving in it. A worker that cannot start is
     /// removed before this returns.
     fn start<'a>(&'a self, spec: &'a Spec) -> BoxFuture<'a, Result<Started, ComputerError>>;

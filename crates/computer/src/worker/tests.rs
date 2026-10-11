@@ -71,6 +71,7 @@ impl Backend for InProcess {
                 let link = Link::Tls {
                     address,
                     fingerprint: spec.identity.fingerprint.clone(),
+                    forward: None,
                 };
                 (link, task)
             } else {
@@ -262,6 +263,24 @@ fn a_worker_with_no_network_is_reached_by_stream_and_clones_nothing() {
             .unwrap();
         assert_eq!(finished.ending, Ending::Exited { code: 0 });
         workers.destroy(made.id).await.unwrap();
+    });
+}
+
+#[test]
+fn a_policy_requiring_vm_isolation_refuses_a_backend_without_it() {
+    let dir = scratch("isolation");
+    let backend = InProcess::new(&dir.join("copies"));
+    let limits = Limits {
+        isolation: Isolation::Vm,
+        ..Limits::default()
+    };
+    let workers = WorkerComputers::on(Box::new(backend), limits, Credentials::None);
+    block_on(async {
+        let refused = workers.create(&environment()).await;
+        assert!(
+            matches!(&refused, Err(ComputerError::Refused(m)) if m.contains("isolation = \"vm\"")),
+            "{refused:?}"
+        );
     });
 }
 
