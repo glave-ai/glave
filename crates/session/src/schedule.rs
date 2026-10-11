@@ -208,7 +208,10 @@ where
     /// Starts `schedule`'s run that was due at `at`, in a thread of its own.
     async fn fire(&self, schedule: &ScheduleCreated, at: Timestamp) -> Result<ThreadId, ApiError> {
         let caller = Caller::default();
-        let thread = self.new_thread(&caller, schedule.worktree, true).await?;
+        let home = self.inner.home.space;
+        let thread = self
+            .new_thread(&caller, home, schedule.worktree, true)
+            .await?;
         let work = if schedule.goal {
             Work::Goal(Some(Goal {
                 objective: schedule.prompt.clone(),

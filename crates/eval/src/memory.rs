@@ -120,36 +120,7 @@ impl Remembering {
                 Box::new(OsEntropy),
             )
         };
-        let now = SystemClock.now();
-        for (order, seed) in (0_i64..).zip(&task.memories) {
-            // Saved that many days ago (a second apart, in the order listed), so which came
-            // later is as plain as in life.
-            let saved = now
-                .checked_sub(jiff::SignedDuration::from_hours(
-                    i64::from(seed.days_ago).saturating_mul(24),
-                ))
-                .and_then(|day| day.checked_add(jiff::SignedDuration::from_secs(order)))
-                .map_err(|e| fail(&e))?;
-            let seeding = Memories::new(
-                store.log(),
-                store.keyring(),
-                rules.clone(),
-                Box::new(Fixed(saved)),
-                Box::new(OsEntropy),
-            );
-            let writer = Writer {
-                person: Some(person),
-                scope: space(None),
-                by: Principal::person(person),
-                source: None,
-                untrusted_read: seed.untrusted,
-            };
-            let which = MemoryScope::named(&seed.scope).unwrap_or(MemoryScope::Space);
-            seeding
-                .remember(&writer, &seed.text, which, None, true)
-                .await
-                .map_err(|e| fail(&e))?;
-        }
+        seed(&store, &rules, person, &task.memories).await?;
         for past in &task.past {
             write_past(&store, space(past.space.as_deref()), &past.messages).await?;
         }
@@ -242,6 +213,47 @@ impl Remembering {
         }
         Ok(report)
     }
+}
+
+/// Saves `seeds` before the first thread, each as if that many days ago.
+async fn seed(
+    store: &Store,
+    rules: &Rules,
+    person: PrincipalId,
+    seeds: &[crate::task::Seeded],
+) -> Result<(), EvalError> {
+    let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("memory: {error}"));
+    let now = SystemClock.now();
+    for (order, seed) in (0_i64..).zip(seeds) {
+        // Saved that many days ago (a second apart, in the order listed), so which came
+        // later is as plain as in life.
+        let saved = now
+            .checked_sub(jiff::SignedDuration::from_hours(
+                i64::from(seed.days_ago).saturating_mul(24),
+            ))
+            .and_then(|day| day.checked_add(jiff::SignedDuration::from_secs(order)))
+            .map_err(|e| fail(&e))?;
+        let seeding = Memories::new(
+            store.log(),
+            store.keyring(),
+            rules.clone(),
+            Box::new(Fixed(saved)),
+            Box::new(OsEntropy),
+        );
+        let writer = Writer {
+            person: Some(person),
+            scope: space(None),
+            by: Principal::person(person),
+            source: None,
+            untrusted_read: seed.untrusted,
+        };
+        let which = MemoryScope::named(&seed.scope).unwrap_or(MemoryScope::Space);
+        seeding
+            .remember(&writer, &seed.text, which, None, true)
+            .await
+            .map_err(|e| fail(&e))?;
+    }
+    Ok(())
 }
 
 /// A clock that always reads one time: when a seeded memory was saved.

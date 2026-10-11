@@ -86,7 +86,7 @@ Types are at version 1 unless the table says otherwise.
 | `goal.set` | The person set a goal: the thread keeps working across turns until it ends. It replaces any goal the thread had | `objective`, the person's words, which say how to verify it if they want that; `token_budget`, the tokens (in and out, subagents' included) its turns may use; optional `by` (see "Who acted"). Version 2: version 1 also had an optional `check` command, which is read as a sentence appended to the objective ("The goal is met when \`<check>\` passes.") |
 | `goal.ended` | The thread's goal ended | `reason`: `met` (the model verified it and said so with `update_goal`), `paused` (the model cannot go on without the person and said so with `update_goal`; the goal can be resumed), `stopped` (the person stopped it or cancelled its turn), `budget` (its token budget ran out) or `stalled` (three turns in a row without a tool call); `tokens`, what its turns used; optional `by`; with `paused`, `note`, the model's words to the person: what it needs from them. Version 2: version 1's `met_by_check` and `met_per_model` are read as `met` |
 | `goal.resumed` | The person resumed a paused goal: it is active again, its tokens and turns counting on from where it paused | optional `by` |
-| `workspace.bound` | A thread is bound to the workspace its tools act in: right after `thread.started` for a thread the session API starts; resuming reads the latest one. Glave's own record: call ids (`call_<n>`) do not count it, so the model is sent the same either way | `workspace`, its id; `computer` (`id`, `kind`: `local`, or `worker` for computers glave makes elsewhere, reserved); `opened`: `{"kind": "folder", "path"}` (worked on in place), `{"kind": "worktree", "repository", "branch"}` or `{"kind": "clone", "url", "at"?}`; `root`, the absolute workspace root as the computer names it |
+| `workspace.bound` | A thread is bound to the workspace its tools act in: right after `thread.started` for a thread the session API starts; resuming reads the latest one. Glave's own record: call ids (`call_<n>`) do not count it, so the model is sent the same either way | `workspace`, its id; `computer` (`id`, `kind`: `local`, or `worker` for computers glave makes elsewhere, reserved); `opened`: `{"kind": "folder", "path"}` (worked on in place), `{"kind": "worktree", "repository", "branch"}`, `{"kind": "clone", "url", "at"?}` or `{"kind": "scratch", "path"}` (a folder of the thread's own, for a thread with no project; version 2, `computers.md`); `root`, the absolute workspace root as the computer names it |
 | `workspace.removed` | A cleanup removed the thread's worktree, or moved it to the Trash (`computers.md`). Its branch is kept, so resuming the thread checks it out again. Like `workspace.bound`, call ids do not count it | `root`, the worktree's folder; optional `branch`; `reason`: `archived` (its thread was archived or deleted), `idle` (no events for 30 days), `repository_gone` (moved to the Trash) `pruned` (`glave worktrees prune`) or `released` (a worker released when its session ended; `branch` is where unsaved work was pushed, if any); optional `trash`, where it went; optional `lost` (version 2), for a released worker whose work could not be checked or pushed before it was destroyed: why, so nothing it had not pushed is lost silently |
 | `thread.archived` | The thread was archived: hidden from lists and search, kept in the log. The latest of `thread.archived`, `thread.unarchived` and `thread.deleted` decides whether a thread is shown. Like `workspace.bound`, call ids do not count it | optional `by` (see "Who acted") |
 | `thread.unarchived` | An archived thread was brought back | optional `by` |
@@ -166,7 +166,7 @@ A subagent's thread has the parent's `for`, the subagent's profile as `agent` (t
 ### Who writes them
 
 - `by`, `author` and `origin.by` come from the caller the session API verified (see `session.md`), never from request parameters. Locally, the caller is the local person.
-- `for` and `agent` are set by the harness when the thread starts, from the space's owner and the chosen profile.
+- `for` and `agent` are set by the harness when the thread starts: `for` is the caller who started it (on a network transport the signed-in person; locally the local person), and `agent` the chosen profile. A subagent's thread has its parent's `for`.
 - The model never sets any of them: none is a tool argument.
 
 ### Reading older versions
@@ -177,6 +177,7 @@ Each conversion is total, and changes no meaning:
 - `turn.started` v1 reads as v2 with no `trace` and no `auth`.
 - `message.added` v1 reads as v2 with no `author`.
 - `approval.decided` v1 reads as v2 with no `by`, except that `no_one_there` and `cancelled` read with `by` `{"kind": "glave"}`.
+- `workspace.bound` v1 reads as v2 unchanged: version 1 never has a `scratch` kind.
 
 ## Storage
 

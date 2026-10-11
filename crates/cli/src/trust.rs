@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 pub use assess::{Answer, Outcome, assess};
-pub use project::Project;
+pub use project::{Project, remote};
 pub use record::Record;
 
 use crate::policy::Constraints;

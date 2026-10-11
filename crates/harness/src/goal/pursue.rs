@@ -33,7 +33,7 @@ where
         let set = GoalSet {
             objective: goal.objective.clone(),
             token_budget: goal.token_budget,
-            by: self.other_than_for(caller.person),
+            by: Self::other_than_for(thread, caller.person),
         };
         self.record(thread, &set).await?;
         thread.goal = Some(Pursuit::of(GoalProgress {
@@ -62,7 +62,7 @@ where
             return Err(HarnessError::NoGoal(thread.id));
         };
         if !goal.active() {
-            let by = self.other_than_for(caller.person);
+            let by = Self::other_than_for(thread, caller.person);
             self.record(thread, &GoalResumed { by }).await?;
             if let Some(goal) = thread.goal.as_mut() {
                 goal.progress.ended = None;
@@ -81,7 +81,7 @@ where
         if !thread.goal().is_some_and(GoalProgress::active) {
             return Ok(false);
         }
-        let by = self.other_than_for(caller.person);
+        let by = Self::other_than_for(thread, caller.person);
         self.end_goal(thread, GoalReason::Stopped, by, None).await?;
         Ok(true)
     }
@@ -135,7 +135,7 @@ where
             total.outcome = turn.outcome;
             let verdict = note_turn(thread, &turn);
             if turn.outcome == Outcome::Cancelled || cancel.is_cancelled() {
-                let by = self.other_than_for(caller.person);
+                let by = Self::other_than_for(thread, caller.person);
                 self.end_goal(thread, GoalReason::Stopped, by, None).await?;
                 break;
             }

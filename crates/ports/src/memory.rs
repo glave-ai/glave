@@ -172,6 +172,24 @@ impl EventLog for MemoryLog {
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send {
         ready(self.search_now(scope, query, limit))
     }
+
+    fn locate(
+        &self,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+        let found = self
+            .threads
+            .lock()
+            .map_err(|_| LogError::Storage("the in-memory log's lock is poisoned".into()))
+            .map(|threads| {
+                threads
+                    .keys()
+                    .filter(|(_, id)| *id == thread)
+                    .map(|(scope, _)| *scope)
+                    .min()
+            });
+        ready(found)
+    }
 }
 
 /// A blob store held in memory, keyed by scope and hash.

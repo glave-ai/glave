@@ -75,6 +75,13 @@ where
         budget: Option<u64>,
         schedule: Option<Fired>,
     ) -> Result<TaskInfo, ApiError> {
+        // A space's tasks are kept in its own ledger; this server keeps only its own space's.
+        if self.authorize(caller, thread).await?.space != self.inner.home.space {
+            return Err(ApiError::new(
+                code::INVALID_PARAMS,
+                "tasks run only in threads of this server's own space",
+            ));
+        }
         if let Some(max) = self.inner.limits.max_running {
             let running = self.running_for(caller.person);
             if running >= max {

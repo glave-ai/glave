@@ -33,7 +33,6 @@ use crate::mcp::Servers;
 use crate::model::Model;
 use crate::policy::{self, Choices, On, Source};
 use crate::setup::{self, Setup};
-use crate::system::random_uuid;
 use crate::terminal::Printer;
 use crate::trust::{self, Asking};
 use crate::{gateway, home, identity, keys};
@@ -185,9 +184,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     // The task host puts tasks on workers whenever a backend is set up.
     let (on_workers, workers) =
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder, args.socket).await?;
-    let scope = store
-        .local_scope(&root, random_uuid(), random_uuid())
-        .await?;
+    let scope = crate::spaces::here(&store, &root, identity.person).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     tidy(memory.as_ref(), &setup, &endpoint)?;
     let wiring = Wiring {
@@ -209,6 +206,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         workers: on_workers,
         tasks: setup.loaded.constraints.task_limits(),
         memory: memory.as_ref().map(crate::memory::Running::handle),
+        spaces: Arc::new(store.spaces()),
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
@@ -338,7 +336,8 @@ async fn workspace(folder: &Path, setup: &mut Setup, database: &Path) -> anyhow:
 /// The workspace in `folder` on this computer, without a sandbox yet.
 async fn open_here(folder: &Path) -> anyhow::Result<Workspace> {
     let computers = LocalComputers::for_here(std::env::vars_os())
-        .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER));
+        .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER))
+        .with_scratch(home::folder()?.join(crate::worktrees::SCRATCH));
     let (computers, here) = crate::computer::with_sandbox_helper(computers)
         .open_here(folder)
         .await?;
@@ -497,6 +496,7 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
     if resume {
         let latest = match server
             .request(Request::ThreadList {
+                space: None,
                 limit: Some(1),
                 show: None,
             })
@@ -518,6 +518,7 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
     };
     match server
         .request(Request::ThreadStart {
+            space: None,
             background: false,
             worktree: None,
         })

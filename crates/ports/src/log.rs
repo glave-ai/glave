@@ -50,6 +50,15 @@ pub trait EventLog: Send + Sync {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<Found>, LogError>> + Send;
 
+    /// The scope `thread` is stored in, when any event of it is: the one lookup that takes a
+    /// bare thread id (`specs/storage.md`, "Scope"). It answers only "which scope"; every read
+    /// that follows is scoped as usual. The ledgers' reserved ids are in every space, so it is
+    /// asked only of threads.
+    fn locate(
+        &self,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send;
+
     /// The thread's latest event whose type is one of `kinds`, if it has one. The default reads
     /// the thread from the start; an adapter that can ask its storage answers faster.
     fn latest_of(

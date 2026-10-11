@@ -3,6 +3,7 @@
 
 mod cleanup;
 
+use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -23,6 +24,9 @@ pub use cleanup::Cleanup;
 
 /// The folder in glave's folder where threads' worktrees are kept, one folder per repository.
 pub const FOLDER: &str = "worktrees";
+
+/// The folder in glave's folder where threads with no project get a scratch folder each.
+pub const SCRATCH: &str = "scratch";
 
 /// The file in glave's folder holding when worktrees were last checked.
 const SWEPT: &str = "worktrees-checked";
@@ -103,10 +107,17 @@ fn forced_names(words: &[String]) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
+/// The worktrees and scratch folders kept under `home`.
+async fn kept(home: &Path, environment: &[(OsString, OsString)]) -> anyhow::Result<Vec<Kept>> {
+    let mut kept = worktrees::list(&home.join(FOLDER), environment).await?;
+    kept.extend(worktrees::list_scratch(&home.join(SCRATCH)).await?);
+    Ok(kept)
+}
+
 async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
     let home = home::folder()?;
     let environment = without_secrets(std::env::vars_os());
-    let kept = worktrees::list(&home.join(FOLDER), &environment).await?;
+    let kept = kept(&home, &environment).await?;
     if !prune {
         print!("{}", listing(&kept, &home.join(FOLDER)));
         return Ok(());
@@ -139,7 +150,7 @@ pub async fn release_archived<L: EventLog>(
     thread: ThreadId,
 ) -> anyhow::Result<Vec<String>> {
     let environment = without_secrets(std::env::vars_os());
-    let kept = worktrees::list(&home::folder()?.join(FOLDER), &environment).await?;
+    let kept = kept(&home::folder()?, &environment).await?;
     let now = Timestamp::now();
     let trash = this_machines_trash(now);
     let cleanup = Cleanup {
@@ -192,14 +203,19 @@ pub async fn check_if_due<L: EventLog>(home: &Path, cleanup: &Cleanup<'_, L>) ->
     if last.is_some_and(|last| cleanup.now.duration_since(last) < EVERY) {
         return Vec::new();
     }
-    let base = home.join(FOLDER);
-    if !tokio::fs::try_exists(&base).await.unwrap_or(false) {
+    let mut any = false;
+    for base in [FOLDER, SCRATCH] {
+        any |= tokio::fs::try_exists(home.join(base))
+            .await
+            .unwrap_or(false);
+    }
+    if !any {
         return Vec::new();
     }
     if let Err(error) = tokio::fs::write(&stamp, cleanup.now.to_string()).await {
         return vec![format!("could not write {}: {error}", stamp.display())];
     }
-    match worktrees::list(&base, cleanup.environment).await {
+    match kept(home, cleanup.environment).await {
         Ok(kept) => cleanup.idle(&kept).await,
         Err(error) => vec![format!("could not check worktrees: {error}")],
     }
@@ -248,6 +264,7 @@ pub async fn note(server: &Glave, thread: ThreadId) -> Option<String> {
                 Opened::Worktree { branch, .. } => {
                     Some(format!("working in {} on {branch}", bound.root))
                 }
+                Opened::Scratch { path } => Some(format!("working in a scratch folder, {path}")),
                 Opened::Folder { .. } | Opened::Clone { .. } => None,
             },
             _ => None,

@@ -182,6 +182,9 @@ pub struct Thread {
     pub(crate) read_secret: bool,
     /// What the model is shown of memory (`memory.rs`); empty when memory is off.
     pub(crate) memory: MemoryState,
+    /// The person whose work this thread is, its `for`: the caller who started it, or the
+    /// harness's person. A subagent's thread has its parent's.
+    pub(crate) for_: Option<PrincipalId>,
 }
 
 impl Thread {
@@ -193,6 +196,11 @@ impl Thread {
     /// The thread's latest goal and how far it has come, active or ended.
     pub fn goal(&self) -> Option<&GoalProgress> {
         self.goal.as_ref().map(|goal| &goal.progress)
+    }
+
+    /// The person whose work this thread is: its recorded `for`.
+    pub fn for_person(&self) -> Option<PrincipalId> {
+        self.for_
     }
 
     /// Whether an agent, not the person, writes this thread's prompts: a subagent's thread.
@@ -296,6 +304,12 @@ where
     pub fn with_memory_if(mut self, memory: Option<Arc<dyn Memory>>) -> Self {
         self.memory = memory;
         self
+    }
+
+    /// The person threads work for unless their caller is someone else: from the settings, or
+    /// made once.
+    pub fn person(&self) -> Option<PrincipalId> {
+        self.actors.person
     }
 
     /// The memory threads use, if any.
@@ -407,6 +421,7 @@ where
             untrusted: false,
             read_secret: false,
             memory: MemoryState::default(),
+            for_: caller.person.or(self.actors.person),
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {
@@ -414,7 +429,7 @@ where
         } else {
             OriginKind::Prompt
         });
-        origin.by = self.other_than_for(caller.person);
+        origin.by = Self::other_than_for(&thread, caller.person);
         let producer = Producer {
             name: "glave".into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -427,7 +442,7 @@ where
                 producer,
                 fork: None,
                 parent,
-                for_: self.actors.person.map(Principal::person),
+                for_: thread.for_.map(Principal::person),
                 agent: self.actors.agent.map(Principal::agent),
             },
         )?;

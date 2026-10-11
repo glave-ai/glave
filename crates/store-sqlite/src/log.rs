@@ -7,8 +7,8 @@ use std::sync::Arc;
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
 use glave_keys::{EventFields, KeyError, Sealed, erased_payload};
 use glave_ports::search::{Found, indexed, query_terms};
-use glave_ports::{EventLog, LogError, Scope, check_append};
-use rusqlite::{Connection, ErrorCode, TransactionBehavior, params};
+use glave_ports::{EventLog, LogError, OrgId, Scope, SpaceId, check_append};
+use rusqlite::{Connection, ErrorCode, OptionalExtension as _, TransactionBehavior, params};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
@@ -259,6 +259,35 @@ impl EventLog for SqliteLog {
             ids.iter()
                 .map(|id| parse_uuid(id).and_then(|uuid| ThreadId::try_from(uuid).map_err(corrupt)))
                 .collect()
+        }
+    }
+
+    fn locate(
+        &self,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+        let connection = self.connection.clone();
+        async move {
+            let found = run(&connection, move |connection| {
+                let mut statement = connection.prepare_cached(
+                    "SELECT org, space FROM events WHERE thread = ?1 ORDER BY org, space LIMIT 1",
+                )?;
+                statement
+                    .query_row(params![thread.to_string()], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .optional()
+            })
+            .await
+            .map_err(|e| LogError::Storage(e.to_string()))?;
+            found
+                .map(|(org, space)| {
+                    Ok(Scope {
+                        org: OrgId::from_uuid(parse_uuid(&org)?),
+                        space: SpaceId::from_uuid(parse_uuid(&space)?),
+                    })
+                })
+                .transpose()
         }
     }
 }

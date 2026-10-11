@@ -66,7 +66,44 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (org, space)
     );
     ",
-    // 3: keyword search over conversations (`specs/memory.md`, "Recall"): the words of each
+    // 3: spaces as records: kind, name, owner (a principal as JSON text), members in order,
+    // and times; the folder keys (`path:<path>` or `remote:<url>`) that lead to them; one
+    // personal space per person; and threads found by id alone through an index.
+    "
+    CREATE INDEX events_by_thread ON events (thread);
+
+    CREATE TABLE space_records (
+        org         uuid        NOT NULL,
+        id          uuid        NOT NULL,
+        kind        text        NOT NULL,
+        name        text        NOT NULL,
+        owner       text        NOT NULL,
+        created_at  timestamptz NOT NULL,
+        updated_at  timestamptz NOT NULL,
+        PRIMARY KEY (org, id)
+    );
+
+    CREATE UNIQUE INDEX one_personal_space ON space_records (org, owner)
+        WHERE kind = 'personal';
+
+    CREATE TABLE space_members (
+        org       uuid   NOT NULL,
+        space     uuid   NOT NULL,
+        position  bigint NOT NULL,
+        member    text   NOT NULL,
+        PRIMARY KEY (org, space, position)
+    );
+
+    CREATE INDEX space_members_by_member ON space_members (org, member);
+
+    CREATE TABLE space_folders (
+        org    uuid NOT NULL,
+        key    text NOT NULL,
+        space  uuid NOT NULL,
+        PRIMARY KEY (org, key)
+    );
+    ",
+    // 4: keyword search over conversations (`specs/memory.md`, "Recall"): the words of each
     // message and tool output, as keyed hashes under its space key (`Keys::search_terms`), so
     // the index holds no word in the clear. Written in the same transaction as the events.
     "

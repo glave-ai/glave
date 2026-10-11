@@ -54,6 +54,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (goal::ENDED, 2),
     (goal::RESUMED, 1),
     (workspace::BOUND, 1),
+    (workspace::BOUND, 2),
     (workspace::REMOVED, 1),
     (workspace::REMOVED, 2),
     (hook::TYPE, 1),

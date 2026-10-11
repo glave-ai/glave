@@ -194,13 +194,12 @@ impl Hidden {
             .collect();
         for source in sources {
             let key = (source.thread, source.seq);
-            let (first, last) = match self.turns.get(&key) {
-                Some(turn) => *turn,
-                None => {
-                    let turn = turn_of(log, ledger, source).await.unwrap_or((1, u64::MAX));
-                    self.turns.insert(key, turn);
-                    turn
-                }
+            let (first, last) = if let Some(turn) = self.turns.get(&key) {
+                *turn
+            } else {
+                let turn = turn_of(log, ledger, source).await.unwrap_or((1, u64::MAX));
+                self.turns.insert(key, turn);
+                turn
             };
             if (first..=last).contains(&found.seq.get()) {
                 return true;

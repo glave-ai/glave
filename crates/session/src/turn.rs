@@ -171,6 +171,7 @@ where
         prompt: &str,
         key: Option<&IdempotencyKey>,
     ) -> Result<TurnStream, ApiError> {
+        self.authorize(caller, thread).await?;
         let (finish, done) = watch::channel(None);
         if let Some(key) = key
             && let Some(started) = self.inner.keyed.claim(thread, key, &done)

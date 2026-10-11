@@ -9,7 +9,7 @@ use glave_event::{
     TokenCounts, When,
 };
 use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
-use glave_ports::Failure;
+use glave_ports::{Failure, Space, SpaceId};
 use serde::{Deserialize, Serialize};
 
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
@@ -25,6 +25,10 @@ pub enum Request {
     Discover {},
     #[serde(rename = "thread/start")]
     ThreadStart {
+        /// The space the thread is in: by default the server's own, for a caller who works in
+        /// it, else the caller's personal space.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<SpaceId>,
         /// Whether the thread works in a worktree of its own rather than in the folder itself;
         /// the server's default (`worktree` in `config.toml`) when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -36,6 +40,9 @@ pub enum Request {
     },
     #[serde(rename = "thread/list")]
     ThreadList {
+        /// The space whose threads to list, by default as `thread/start` picks one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<SpaceId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
         /// Which threads: the active ones by default.
@@ -137,6 +144,24 @@ pub enum Request {
     ScheduleList {},
     #[serde(rename = "schedule/delete")]
     ScheduleDelete { schedule: ScheduleId },
+    /// The spaces the caller works in: owns, or is a member of.
+    #[serde(rename = "space/list")]
+    SpaceList {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<usize>,
+    },
+    #[serde(rename = "space/get")]
+    SpaceGet { space: SpaceId },
+    /// A new project space, owned by the caller, with `members` working in it too.
+    #[serde(rename = "space/create")]
+    SpaceCreate {
+        name: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        members: Vec<glave_event::Principal>,
+    },
+    /// Renames a space: its owner only.
+    #[serde(rename = "space/rename")]
+    SpaceRename { space: SpaceId, name: String },
     /// The memories here: the person's and the space's, or one `scope`.
     #[serde(rename = "memory/list")]
     MemoryList {
@@ -201,6 +226,10 @@ impl Request {
             Self::ScheduleCreate { .. } => "schedule/create",
             Self::ScheduleList {} => "schedule/list",
             Self::ScheduleDelete { .. } => "schedule/delete",
+            Self::SpaceList { .. } => "space/list",
+            Self::SpaceGet { .. } => "space/get",
+            Self::SpaceCreate { .. } => "space/create",
+            Self::SpaceRename { .. } => "space/rename",
             Self::MemoryList { .. } => "memory/list",
             Self::MemorySave { .. } => "memory/save",
             Self::MemoryEdit { .. } => "memory/edit",
@@ -208,6 +237,48 @@ impl Request {
             Self::MemoryForget { .. } => "memory/forget",
             Self::MemoryRestore { .. } => "memory/restore",
         }
+    }
+}
+
+impl Request {
+    /// The thread a request acts on, when it names one: whose space decides whether the
+    /// caller may make it.
+    pub fn thread(&self) -> Option<ThreadId> {
+        match self {
+            Self::ThreadArchive { thread }
+            | Self::ThreadUnarchive { thread }
+            | Self::ThreadDelete { thread }
+            | Self::ThreadGet { thread }
+            | Self::ThreadEvents { thread, .. }
+            | Self::TurnStart { thread, .. }
+            | Self::TurnCancel { thread }
+            | Self::ThreadCompact { thread }
+            | Self::ApprovalDecide { thread, .. }
+            | Self::QuestionAnswer { thread, .. }
+            | Self::GoalStart { thread, .. }
+            | Self::GoalStop { thread }
+            | Self::GoalGet { thread }
+            | Self::TasksStop { thread } => Some(*thread),
+            _ => None,
+        }
+    }
+
+    /// Whether the request acts in the server's own space as a whole: its tasks, schedules
+    /// and memory.
+    pub(crate) fn in_home(&self) -> bool {
+        matches!(
+            self,
+            Self::TasksList { .. }
+                | Self::ScheduleCreate { .. }
+                | Self::ScheduleList {}
+                | Self::ScheduleDelete { .. }
+                | Self::MemoryList { .. }
+                | Self::MemorySave { .. }
+                | Self::MemoryEdit { .. }
+                | Self::MemoryMove { .. }
+                | Self::MemoryForget { .. }
+                | Self::MemoryRestore { .. }
+        )
     }
 }
 
@@ -370,6 +441,13 @@ pub enum Reply {
     },
     Schedules {
         schedules: Vec<ScheduleInfo>,
+    },
+    /// A space: one asked for, made or renamed.
+    Space {
+        space: Space,
+    },
+    Spaces {
+        spaces: Vec<Space>,
     },
     /// Memories listed, or the ones a change touched.
     Memories {
@@ -561,6 +639,8 @@ pub mod code {
     pub const NO_MEMORY: i64 = -32017;
     /// Memory is off here.
     pub const MEMORY_OFF: i64 = -32018;
+    /// No such space, or none the caller works in.
+    pub const NO_SPACE: i64 = -32019;
     /// The request's parameters do not make sense together.
     pub const INVALID_PARAMS: i64 = -32602;
 }

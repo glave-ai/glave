@@ -24,7 +24,6 @@ use crate::config;
 use crate::gateway::{Allowed, gateway};
 use crate::model::Model;
 use crate::policy::{self, Constraints, ORGANIZATION_POLICY, Source};
-use crate::system::random_uuid;
 use crate::{home, keys, mcp};
 
 pub const USAGE: &str = "\
@@ -182,9 +181,7 @@ async fn run(options: Options) -> anyhow::Result<()> {
         keys::settings(&home, home::relocated()).await?,
     )
     .await?;
-    let scope = store
-        .local_scope(Path::new(SCOPE), random_uuid(), random_uuid())
-        .await?;
+    let scope = crate::spaces::named(&store, SCOPE).await?;
     let trust = Trust {
         issuers: options.issuers,
         audience: options.audience,

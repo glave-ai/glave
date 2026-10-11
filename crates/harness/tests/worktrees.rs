@@ -217,6 +217,57 @@ mod worktrees {
     }
 
     #[test]
+    fn a_scratch_thread_works_in_its_own_folder_and_resumes_there_never_in_the_project() {
+        let (repo, base) = repository("worktrees-scratch");
+        let scratch = base.with_file_name("scratch");
+        block_on(async {
+            let (computers, info) = LocalComputers::for_here(environment())
+                .with_scratch(&scratch)
+                .open_here(&repo)
+                .await
+                .unwrap();
+            let answers = [writes("notes.txt", "one\n"), writes("more.txt", "two\n")].concat();
+            let (harness, _) = harness_with(
+                Workspace::new(computers, info),
+                answers,
+                AllowAll,
+                MemoryLog::new(),
+                1,
+                settings(),
+            );
+            let mut thread = harness
+                .start_thread_in(scope(), &Caller::default(), Place::Scratch)
+                .await
+                .unwrap();
+            harness
+                .run_turn(&mut thread, "add notes", &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            let events = events(harness.log(), thread.id).await;
+            let recorded = bound(&events);
+            let [bound] = &recorded[..] else {
+                panic!("one binding: {recorded:?}")
+            };
+            assert!(matches!(&bound.opened, Opened::Scratch { .. }), "{bound:?}");
+            let root = PathBuf::from(&bound.root);
+            assert_eq!(
+                root,
+                std::fs::canonicalize(&scratch)
+                    .unwrap()
+                    .join(thread.id.to_string())
+            );
+            assert!(root.join("notes.txt").exists());
+            let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
+            harness
+                .run_turn(&mut resumed, "add more", &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            assert!(root.join("more.txt").exists(), "resumed in its own folder");
+            assert!(!repo.join("notes.txt").exists() && !repo.join("more.txt").exists());
+        });
+    }
+
+    #[test]
     fn threads_started_together_get_their_own_worktrees() {
         let (repo, base) = repository("worktrees-together");
         block_on(async {

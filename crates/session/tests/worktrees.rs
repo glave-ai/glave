@@ -21,6 +21,7 @@ mod worktrees {
             let server = server(&dir, Vec::new(), Answering::NoOne).await;
             let Reply::Thread { thread } = server
                 .request(Request::ThreadStart {
+                    space: None,
                     background: false,
                     worktree: None,
                 })
@@ -50,6 +51,7 @@ mod worktrees {
             // This server's computer keeps no worktrees, so asking for one is refused.
             let refused = server
                 .request(Request::ThreadStart {
+                    space: None,
                     background: false,
                     worktree: Some(true),
                 })

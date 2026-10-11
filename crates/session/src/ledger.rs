@@ -134,7 +134,7 @@ where
                 .inner
                 .harness
                 .log()
-                .read(&self.inner.scope, ledger, after, PAGE)
+                .read(&self.inner.home, ledger, after, PAGE)
                 .await
                 .map_err(|error| internal(&error.to_string()))?;
             let full = page.len() == PAGE;
@@ -167,7 +167,7 @@ where
                 .inner
                 .harness
                 .log()
-                .append(&self.inner.scope, std::slice::from_ref(&raw))
+                .append(&self.inner.home, std::slice::from_ref(&raw))
                 .await
             {
                 Ok(()) => {

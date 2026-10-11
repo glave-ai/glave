@@ -168,7 +168,7 @@ where
             Plan::Nothing => return Ok(()),
             Plan::Record => {}
         }
-        let by = self.other_than_for(caller.person);
+        let by = Self::other_than_for(thread, caller.person);
         match change {
             Change::Archive => self.record(thread, &ThreadArchived { by }).await,
             Change::Unarchive => self.record(thread, &ThreadUnarchived { by }).await,

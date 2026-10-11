@@ -8,7 +8,7 @@ use deadpool_postgres::Pool;
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
 use glave_keys::{EventFields, KeyError, erased_payload};
 use glave_ports::search::{Found, indexed, query_terms};
-use glave_ports::{EventLog, LogError, Scope, check_append};
+use glave_ports::{EventLog, LogError, OrgId, Scope, SpaceId, check_append};
 use jiff::Timestamp;
 use serde_json::value::RawValue;
 use tokio_postgres::Row;
@@ -240,6 +240,36 @@ impl EventLog for PostgresLog {
                     ThreadId::try_from(id).map_err(corrupt)
                 })
                 .collect()
+        }
+    }
+
+    fn locate(
+        &self,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+        let pool = self.pool.clone();
+        async move {
+            let client = connection(&pool).await.map_err(storage)?;
+            let statement = client
+                .prepare_cached(
+                    "SELECT org, space FROM events WHERE thread = $1
+                     ORDER BY org, space LIMIT 1",
+                )
+                .await
+                .map_err(database)?;
+            let row = client
+                .query_opt(&statement, &[&thread.as_uuid()])
+                .await
+                .map_err(database)?;
+            row.map(|row| {
+                let org: Uuid = row.try_get(0).map_err(corrupt)?;
+                let space: Uuid = row.try_get(1).map_err(corrupt)?;
+                Ok(Scope {
+                    org: OrgId::from_uuid(org),
+                    space: SpaceId::from_uuid(space),
+                })
+            })
+            .transpose()
         }
     }
 }
