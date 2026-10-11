@@ -2,10 +2,14 @@
 //! notifications a turn sends, and errors. Every transport carries these same types; in-process
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
-use glave_event::{CallId, Money, Outcome, RawEvent, Seq, ThreadId, TokenCounts};
+mod tasks;
+
+use glave_event::{CallId, Money, Outcome, RawEvent, ScheduleId, Seq, ThreadId, TokenCounts, When};
 use glave_harness::{GoalProgress, Live, Question, TurnSummary};
 use glave_ports::Failure;
 use serde::{Deserialize, Serialize};
+
+pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 
 /// The protocol version this server speaks.
 pub const PROTOCOL: &str = "2026-10";
@@ -22,6 +26,10 @@ pub enum Request {
         /// the server's default (`worktree` in `config.toml`) when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worktree: Option<bool>,
+        /// For a thread that runs as a task: it works on a worker when the server has them,
+        /// even when other threads work here.
+        #[serde(default, skip_serializing_if = "is_false")]
+        background: bool,
     },
     #[serde(rename = "thread/list")]
     ThreadList {
@@ -54,6 +62,12 @@ pub enum Request {
     TurnStart {
         thread: ThreadId,
         prompt: String,
+        /// Runs the turn as a task, with no one attached: answered at once with the task.
+        #[serde(default, skip_serializing_if = "is_false")]
+        background: bool,
+        /// With `background`, tokens the turn may use, subagents' included.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        budget: Option<u64>,
         #[serde(rename = "_meta", default, skip_serializing_if = "Meta::is_empty")]
         meta: Meta,
     },
@@ -85,6 +99,9 @@ pub enum Request {
         /// Tokens the goal may use; glave's default when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         budget: Option<u64>,
+        /// Works toward the goal as a task, with no one attached: answered at once.
+        #[serde(default, skip_serializing_if = "is_false")]
+        background: bool,
     },
     /// Stops the thread's active goal, cancelling its running turn.
     #[serde(rename = "goal/stop")]
@@ -92,6 +109,39 @@ pub enum Request {
     /// The thread's latest goal and how far it has come.
     #[serde(rename = "goal/get")]
     GoalGet { thread: ThreadId },
+    /// Tasks running and recently finished, running first, then newest first.
+    #[serde(rename = "tasks/list")]
+    TasksList {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<usize>,
+    },
+    /// Stops the task running in a thread.
+    #[serde(rename = "tasks/stop")]
+    TasksStop { thread: ThreadId },
+    /// Runs a prompt, or works toward a goal, as a task at set times.
+    #[serde(rename = "schedule/create")]
+    ScheduleCreate {
+        when: When,
+        prompt: String,
+        #[serde(default, skip_serializing_if = "is_false")]
+        goal: bool,
+        /// Tokens each run may use. Required: no schedule runs unbounded.
+        budget: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worktree: Option<bool>,
+    },
+    #[serde(rename = "schedule/list")]
+    ScheduleList {},
+    #[serde(rename = "schedule/delete")]
+    ScheduleDelete { schedule: ScheduleId },
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if"
+)]
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl Request {
@@ -114,6 +164,11 @@ impl Request {
             Self::GoalStart { .. } => "goal/start",
             Self::GoalStop { .. } => "goal/stop",
             Self::GoalGet { .. } => "goal/get",
+            Self::TasksList { .. } => "tasks/list",
+            Self::TasksStop { .. } => "tasks/stop",
+            Self::ScheduleCreate { .. } => "schedule/create",
+            Self::ScheduleList {} => "schedule/list",
+            Self::ScheduleDelete { .. } => "schedule/delete",
         }
     }
 }
@@ -266,7 +321,20 @@ pub enum Reply {
         before_tokens: u64,
         after_tokens: u64,
     },
-    /// Before `Done`, which takes any object.
+    Task {
+        task: TaskInfo,
+    },
+    Tasks {
+        tasks: Vec<TaskInfo>,
+    },
+    Schedule {
+        schedule: ScheduleInfo,
+    },
+    Schedules {
+        schedules: Vec<ScheduleInfo>,
+    },
+    /// After every reply with a field of its own, since a missing `goal` reads as `null`;
+    /// before `Done`, which takes any object.
     Goal {
         goal: Option<GoalProgress>,
     },
@@ -283,6 +351,9 @@ pub enum Notification {
     /// Progress, never stored.
     #[serde(rename = "turn/live")]
     Live { thread: ThreadId, update: Update },
+    /// A task ended: sent to the thread's watchers. Never stored as such; the ledger keeps it.
+    #[serde(rename = "task/finished")]
+    TaskFinished { thread: ThreadId, task: TaskInfo },
 }
 
 /// Progress while a turn runs: the live side of `Live`, in a form any transport carries.
@@ -426,6 +497,12 @@ pub mod code {
     /// No valid sign-in, on a network transport.
     pub const NO_SIGN_IN: i64 = -32013;
     pub const PROVIDER: i64 = -32020;
+    /// A policy limit was reached: too many tasks running, or too many schedules.
+    pub const LIMIT: i64 = -32015;
+    /// No such schedule.
+    pub const NO_SCHEDULE: i64 = -32016;
+    /// The request's parameters do not make sense together.
+    pub const INVALID_PARAMS: i64 = -32602;
 }
 
 impl ApiError {

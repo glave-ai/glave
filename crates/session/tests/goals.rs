@@ -45,7 +45,10 @@ mod goals {
 
     async fn new_thread(server: &Tested) -> ThreadId {
         match server
-            .request(Request::ThreadStart { worktree: None })
+            .request(Request::ThreadStart {
+                background: false,
+                worktree: None,
+            })
             .await
             .unwrap()
         {
@@ -172,6 +175,7 @@ mod goals {
             let stop = server.request(Request::GoalStop { thread }).await;
             assert_eq!(stop.unwrap_err().code, code::NO_GOAL);
             let resume = Request::GoalStart {
+                background: false,
                 thread,
                 objective: None,
                 budget: None,

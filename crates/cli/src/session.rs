@@ -54,6 +54,16 @@ pub fn main() -> ExitCode {
     {
         return crate::threads::main(rest);
     }
+    if let Some((first, rest)) = words.split_first()
+        && first == "tasks"
+    {
+        return crate::tasks::tasks_main(rest);
+    }
+    if let Some((first, rest)) = words.split_first()
+        && first == "schedule"
+    {
+        return crate::tasks::schedule_main(rest);
+    }
     let args = match args::parse(words) {
         Ok(args) => args,
         Err(message) => {
@@ -158,8 +168,9 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
             .as_deref(),
     )
     .await?;
+    // The task host puts tasks on workers whenever a backend is set up.
     let (on_workers, workers) =
-        crate::cloud::workers(choices, &setup.loaded.constraints, &folder).await?;
+        crate::cloud::workers(choices, &setup.loaded.constraints, &folder, args.socket).await?;
     let scope = store
         .local_scope(&root, random_uuid(), random_uuid())
         .await?;
@@ -175,6 +186,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
         workers: on_workers,
+        tasks: setup.loaded.constraints.task_limits(),
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
@@ -243,6 +255,9 @@ async fn workspace(
 }
 
 async fn run(args: Args) -> anyhow::Result<ExitCode> {
+    if args.background {
+        return crate::tasks::background(&args).await;
+    }
     // Ask in the terminal when there is one; otherwise no one is there to answer.
     let asks = std::io::stdin().is_terminal();
     let answering = if asks {
@@ -270,7 +285,10 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
 async fn serve(args: Args) -> anyhow::Result<ExitCode> {
     // The session API owns standard input, so there is no one to ask about a project.
     let wired = wire(&args, Answering::Clients, Asking::NoOne).await?;
-    let served = if let Some(address) = args.http {
+    let served = if args.socket {
+        let folder = std::env::current_dir()?;
+        crate::daemon::host(&wired.server, &crate::daemon::socket(&folder)?).await
+    } else if let Some(address) = args.http {
         serve_http(&args, wired.server.clone(), address).await
     } else {
         let input = tokio::io::BufReader::new(tokio::io::stdin());
@@ -278,8 +296,10 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
             .await
             .map_err(anyhow::Error::from)
     };
-    if let Some(workers) = &wired.workers {
+    if args.socket || wired.workers.is_some() {
         wired.server.shutdown().await;
+    }
+    if let Some(workers) = &wired.workers {
         crate::cloud::release(&wired.server, workers).await;
     }
     wired.servers.close().await;
@@ -322,6 +342,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         choices,
         workers: _,
     } = wired;
+    crate::tasks::at_start(server, args).await;
     let (thread, note) = pick_thread(server, args.resume).await?;
     if let Some(working) = crate::worktrees::note(server, thread).await {
         eprintln!("glave: {working}");
@@ -388,7 +409,10 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
         "new thread"
     };
     match server
-        .request(Request::ThreadStart { worktree: None })
+        .request(Request::ThreadStart {
+            background: false,
+            worktree: None,
+        })
         .await?
     {
         Reply::Thread { thread } => Ok((thread.id, note)),

@@ -27,7 +27,7 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | Method | Params | Result |
 | --- | --- | --- |
 | `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
-| `thread/start` | optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`) | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
+| `thread/start` | optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`); optional `background`: `true` for a thread that will run as a task, which works on a worker when the server has a worker backend, even if other threads work here | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
 | `thread/list` | optional `limit` (default 20); optional `show`: `active` (default), `archived`, or `deleted` (waiting for erasure, for the operator that does it) | `threads`: summaries, newest first |
 | `thread/archive` | `thread` | `{}`. Records `thread.archived`; the thread leaves `thread/list` and search but stays in the log and readable by id. A turn, goal or compaction in it is refused with `-32014`. Archiving an archived thread records nothing |
 | `thread/unarchive` | `thread` | `{}`. Records `thread.unarchived` |
@@ -35,16 +35,23 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | `thread/get` | `thread` | `thread`: its summary |
 | `thread/events` | `thread`; optional `after` (a `seq`), `limit` (default 500) | `events`: stored events in `seq` order, exactly as `events.md` defines them; `next`, when there are more |
 | `thread/watch` | `thread`; optional `after` | streams the thread's notifications from `after` on, until the client stops listening |
-| `turn/start` | `thread`; `prompt` | streams notifications while the turn runs, then answers with `turn`: how it ended and what it cost |
+| `turn/start` | `thread`; `prompt`; optional `background` (see "Tasks"), and with it optional `budget` (tokens) | streams notifications while the turn runs, then answers with `turn`: how it ended and what it cost. With `background`, answers at once with `task` |
 | `turn/cancel` | `thread` | `{}` once the running turn, or compaction, has ended as cancelled |
 | `thread/compact` | `thread` | `before_tokens`, `after_tokens` |
 | `approval/decide` | `thread`; `approval` (its id); `decision`: `allow_once`, `allow_for_thread` or `deny` | `{}`; the paused turn continues |
 | `question/answer` | `thread`; `question` (the `question` call's id); `answers`, one string for each question, in order | `{}`; the paused turn continues |
-| `goal/start` | `thread`; `objective`, with how to verify it in words; optional `budget` (tokens; default 1,000,000). Without `objective`, continues the thread's active goal, as after a restart, or resumes its paused one | streams every turn of the goal as `turn/start` streams one, then answers with `turn`: how its last turn ended, with every turn's calls, tokens and cost added up |
+| `goal/start` | `thread`; `objective`, with how to verify it in words; optional `budget` (tokens; default 1,000,000); optional `background`. Without `objective`, continues the thread's active goal, as after a restart, or resumes its paused one | streams every turn of the goal as `turn/start` streams one, then answers with `turn`: how its last turn ended, with every turn's calls, tokens and cost added up |
 | `goal/stop` | `thread` | `{}` once the goal is recorded as stopped, its running turn cancelled |
 | `goal/get` | `thread` | `goal`: the thread's latest goal (`objective`, `token_budget`, `tokens` used, `turns`, `ended`, the reason, once it has, and `note`, what the model needs, while it is paused), or `null` |
+| `tasks/list` | optional `limit` (default 20) | `tasks`: running here first, then started elsewhere and not ended, then finished, newest first |
+| `tasks/stop` | `thread` | `{}` once the task in it has ended as cancelled (a goal is recorded as stopped). `-32003` when no task runs in it in this server |
+| `schedule/create` | `when`: `{"cron": "<five fields>"}` (UTC) or `{"at": "<RFC 3339>"}`; `prompt`; optional `goal` (`true`: each run works toward `prompt` as a goal); `budget` (tokens each run may use, required, more than 0); optional `worktree` | `schedule`: `schedule` (its id), `when`, `prompt`, `goal`, `budget`, `worktree`, `created_at`, `last` (when the latest run was due), `next` (absent once a one-off has run). A cron expression that does not parse is refused with `-32602` |
+| `schedule/list` | none | `schedules` |
+| `schedule/delete` | `schedule` | `{}`; no more runs start. `-32016` for no such schedule |
 
 A **thread summary** has `id` and `status`: `idle`, `running` or `waiting` (a turn is paused for an approval or an answer). Titles, creation and update times arrive with a threads view built from the log.
+
+A **task** has `thread`, `kind` (`agent`; background commands come later), `title` (the prompt or objective's first line, shortened), `model`, `tokens` and `cost` so far (subagents' included), `budget`, `started_at`, `elapsed_ms`, `status` (`running` in this server, `elsewhere` when started and not ended by another, `finished`), `outcome` once finished, and `schedule` when one started it.
 
 A **turn result** has `outcome` (`completed`, `cancelled`, `failed`, `interrupted`, `limit_reached`), `model_calls`, `tool_calls`, `tokens` and `cost` as in `events.md`.
 
@@ -64,6 +71,7 @@ Two kinds, sent while a turn runs or a client watches:
 | --- | --- | --- |
 | `thread/event` | `thread`; `event`, a stored event with its `seq` | Yes: it is in the log, and `thread/events` returns it again |
 | `turn/live` | `thread`; `update`: `text` or `reasoning` (a fragment), `tool_started`, `tool_finished`, `waiting`, `retrying`, `compacted`, `asked`, `subagent_started` (`subagent`, `description`), `subagent_ended` (`subagent`, `ok`) | No: live updates are for showing progress, never replayed |
+| `task/finished` | `thread`; `task`, as `tasks/list` shows it | In the ledger as `task.ended` |
 
 A thread's notifications include its subagents': a child thread started by an `agent` call sends its events and progress to whoever follows its parent too, each under the child's own `thread`. Its first event, `thread.started`, names the parent call, and `subagent_started` gives its description. A client answers a subagent's approval with the subagent's thread.
 
@@ -95,6 +103,29 @@ A goal keeps a thread working across turns until the model ends it, the person s
 - A goal's turns are turns: `turn/cancel` cancels the running one, which stops the goal; a second `turn/start` or `goal/start` is refused with `-32002`.
 - `goal/stop` on a thread with no active goal, or `goal/start` without `objective` on a thread with no active or paused goal, is refused with `-32007`.
 
+## Tasks
+
+A task is a thread working with no one attached: a turn, or a goal's turns, that the server runs after the client that asked has gone. The person can close their laptop when the server is not on it (Glave Cloud, a company's servers), or when its threads work on workers.
+
+- **Starting one.** `turn/start` or `goal/start` with `background: true` starts the work as either would, and answers at once with the task. Everything is recorded as usual: `thread/watch` and `thread/events` follow it or read it afterwards, from any client.
+- **Nobody is asked.** In a task, and in its subagents, approvals are answered as with no one at the keyboard (`approvals.md`): in auto mode the judge still lets through what the person asked for, and anything else that would ask is declined (`no_one_there`); `question` is not offered. A task never waits for an answer. Otherwise the model is sent exactly what it is sent in a turn someone follows.
+- **Where it runs.** A thread started with `background: true` works on a worker when the server has a worker backend (`[workers]` in `config.toml`, within policy), else where the server puts any thread.
+- **Budget.** A turn may carry `budget`: once its model calls (subagents' included) have used that many tokens, in and out, the turn is cancelled and the task ends as `limit_reached`; it may overshoot by the call that crossed it. A goal keeps to its own budget. A `budget` on a turn that is not a task is refused (`-32602`) rather than ignored.
+- **Tokens and cost so far** come from the task's `model.responded` events as they are recorded; when it ends, from the turn's own totals.
+- **Ending.** `tasks/stop` stops it; archiving or deleting its thread stops it first. When a task ends, its thread's watchers get `task/finished` (`thread`, `task`).
+- **The ledger.** Each server records `task.started` and `task.ended` in the space's task ledger (`events.md`), so any server or client lists tasks, finished ones included, after a restart. A server that runs a space's tasks calls `recover_tasks` when it starts: tasks the ledger has open that no one runs any more are recorded as `interrupted`.
+- **Policy.** `[tasks] max_running` caps the tasks one person has running in a server; one more is refused with `-32015`, naming the limit.
+
+## Schedules
+
+A schedule starts a task at set times: once (`at`), or whenever a five-field cron expression matches (`minute hour day month weekday`, in UTC; `*`, numbers, `a-b`, steps and lists; when both day and weekday are restricted, either matches, as in cron). Each run is a new thread (placed as `thread/start` with `background` places it) whose first prompt is `prompt`, or whose goal is `prompt` with `goal`, with the schedule's `budget`. Schedules live in the space's task ledger (`schedule.created`, `schedule.deleted`), so every server of the space sees the same ones.
+
+- **The scheduler.** The server that runs a space's tasks fires due schedules (`Server::tick`, which `Server::run_scheduler` calls when the next run is due and at least every minute, so it finds schedules other processes made). Time comes from the server's injected clock.
+- **Missed runs** while no server ran the schedule run once, as soon as one does, never once per missed time: systemd's `Persistent=true`, and Claude Code's desktop scheduled tasks. A run the task limit holds back starts on a later tick, once.
+- **Budgets are required:** a schedule without a positive `budget` is refused.
+- **Policy.** `[tasks] max_schedules` caps the schedules that will still run; one more is refused with `-32015`.
+- One server per space fires schedules; two would each start the run. Leases (issue #64) make that safe across servers.
+
 ## Turns
 
 - One turn runs per thread at a time. A second `turn/start` is refused with `-32002`. Queueing and steering a running turn come later.
@@ -122,6 +153,8 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32012` | The caller may not do this |
 | `-32013` | No valid sign-in (network transports) |
 | `-32014` | The thread is archived; unarchive it first |
+| `-32015` | A policy limit was reached: `[tasks] max_running` or `max_schedules` |
+| `-32016` | No such schedule |
 | `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
 
 ## Transports
@@ -130,7 +163,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | --- | --- | --- | --- |
 | In-process | Typed messages over a channel; nothing is serialized | The CLI; programs that link glave's crates | None: same process |
 | stdio | One JSON message per line (`glave serve --stdio`) | Programs that run glave as a child process | None: the parent started it |
-| Unix socket | One JSON message per line | Local clients of a long-running glave | File permissions on the socket |
+| Unix socket | One JSON message per line (`glave serve --socket`, the folder's task host) | Local clients of a long-running glave | File permissions on the socket (`0600`, in the person's private GLAVE_HOME) |
 | HTTP + SSE | `POST` one request; the answer is JSON, or for streaming methods an `text/event-stream` of notifications ending with the response. The method is also sent as the `Glave-Method` header, so proxies and logs can see it | Web, desktop and remote clients | Required |
 | WebSocket | One JSON message per text frame | Clients that want one connection for many threads; later, realtime features | Required |
 
@@ -163,12 +196,13 @@ What changes when a client is on another machine: who is calling, how a server t
 
 ## Status
 
-Version 1, in-process (`glave-session`, used by the CLI), over stdio (`glave serve --stdio`, the same server through `rpc::serve`) and over HTTP with server-sent events (`glave serve --http <address> --issuer <url> --audience <name>`, requests `POST`ed to `/`); one conformance suite runs over all three. Every method but `thread/watch`, whose in-process form is `Server::watch`.
+Version 1, in-process (`glave-session`, used by the CLI), over stdio (`glave serve --stdio`, the same server through `rpc::serve`), over a Unix socket (`glave serve --socket`, through `rpc::serve_connection`, where a client that leaves stops nothing) and over HTTP with server-sent events (`glave serve --http <address> --issuer <url> --audience <name>`, requests `POST`ed to `/`); one conformance suite runs over all three. Every method but `thread/watch`, whose in-process form is `Server::watch`.
 
 - **Sign-in on HTTP:** OIDC access tokens signed with RS256 or ES256, checked against the keys the issuer's discovery document points to, with `iss`, `aud`, `exp` and `nbf` verified and a minute of clock skew forgiven. Keys are cached and fetched again for a key not seen yet, at most every 30 seconds. An issuer must be `https`, or `http` on the same computer. The person is derived from the issuer and subject (a UUID v7 at time zero whose random bits are the start of a SHA-256 of both) until an identity source maps them. The caller is stamped as "Who is calling" describes. The listener has no TLS of its own: across machines it sits behind a proxy that has.
 - **Retries:** `turn/start` honours `_meta.idempotency_key` for the 1,024 most recent keys, in memory.
 - Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted.
 - **Archive, delete, cleanup:** built (issue #131). **Deleting does not erase yet:** today's keys are per space and month, so one thread's content cannot be destroyed alone (`storage.md`). `thread/delete` hides the thread for good and lists it (`thread/list` with `show: deleted`) for the erasure that arrives with data keys per thread. Archiving or deleting through the session API does not remove the thread's worktree yet (above); `glave threads` does, and the daily check removes it once the thread has been idle 30 days.
+- **Tasks and schedules:** built (issue #44). The CLI's task host is `glave serve --socket`, one per folder, which `glave --background`, `glave tasks` and `glave schedule` start when it is not running and which exits once no task runs, no schedule waits and no client is connected; a session in the folder starts it when a schedule waits, and says which tasks finished since the last one. It keeps the settings it started with (model, config, AGENTS.md) until it exits. Not yet: background commands (the model starting a long-running shell process), a task's worker released when the task ends (it is released when the host exits), schedules in the person's time zone, the `origin` of a scheduled thread recorded as `schedule`, desktop notifications, running the scheduler in `glave serve --http`, and the operating system starting the host at login (launchd, systemd).
 - Still to come from "Over the network" (issue #64): SAML and glave session tokens, durable paused turns, leases, WebSocket, and enforcing `-32011` and `-32012`.
 
 ## Later

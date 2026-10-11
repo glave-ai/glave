@@ -1,7 +1,9 @@
 //! JSON-RPC 2.0 over any stream of lines: one message per line, as on stdio and Unix sockets.
 //! These transports are local, so every request comes from the local person.
 //! Requests run concurrently, so a client can cancel a turn or answer an approval while another
-//! request is still streaming. When the client's input ends, its turns are cancelled.
+//! request is still streaming. When the client's input ends, its turns are cancelled over stdio
+//! (`serve`), where it was the only client; a long-running server's connections
+//! (`serve_connection`, as on a Unix socket) stop nothing when they end.
 
 use std::sync::Arc;
 
@@ -42,6 +44,11 @@ const METHODS: &[&str] = &[
     "goal/start",
     "goal/stop",
     "goal/get",
+    "tasks/list",
+    "tasks/stop",
+    "schedule/create",
+    "schedule/list",
+    "schedule/delete",
 ];
 
 /// JSON-RPC's own error codes.
@@ -79,11 +86,45 @@ struct Outgoing<'a> {
     error: Option<&'a ApiError>,
 }
 
-/// Serves `server` to one client reading `input` and writing `output` until its input ends.
+/// Serves `server` to one client reading `input` and writing `output` until its input ends,
+/// then stops the server's turns: the client was the server's only one, as on stdio.
 pub async fn serve<P, L, B, R, W>(
     server: Server<P, L, B>,
     input: R,
     output: W,
+) -> std::io::Result<()>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    serve_client(server, input, output, true).await
+}
+
+/// Serves one of many clients of a long-running server, as on a Unix socket: when its input
+/// ends, what it started goes on, tasks above all.
+pub async fn serve_connection<P, L, B, R, W>(
+    server: Server<P, L, B>,
+    input: R,
+    output: W,
+) -> std::io::Result<()>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    serve_client(server, input, output, false).await
+}
+
+async fn serve_client<P, L, B, R, W>(
+    server: Server<P, L, B>,
+    input: R,
+    output: W,
+    only_client: bool,
 ) -> std::io::Result<()>
 where
     P: ModelProvider + 'static,
@@ -129,8 +170,11 @@ where
         requests.spawn(async move { handle(&server, &line, &lines).await });
         while requests.try_join_next().is_some() {}
     };
-    // The client is gone: stop its turns, finish what is in flight, then the writes.
-    server.shutdown().await;
+    // The client is gone: stop its turns when it was the only one, finish what is in
+    // flight, then the writes.
+    if only_client {
+        server.shutdown().await;
+    }
     while requests.join_next().await.is_some() {}
     drop(lines);
     let written = writer.await.map_err(std::io::Error::other)?;
@@ -260,14 +304,21 @@ mod tests {
         );
         let (id, request) = parse(r#"{"jsonrpc":"2.0","id":"a","method":"thread/start"}"#).unwrap();
         assert_eq!(id, Some(Id::Text("a".into())));
-        assert_eq!(request, Request::ThreadStart { worktree: None });
+        assert_eq!(
+            request,
+            Request::ThreadStart {
+                worktree: None,
+                background: false
+            }
+        );
         let (_, request) =
             parse(r#"{"jsonrpc":"2.0","id":2,"method":"thread/start","params":{"worktree":true}}"#)
                 .unwrap();
         assert_eq!(
             request,
             Request::ThreadStart {
-                worktree: Some(true)
+                worktree: Some(true),
+                background: false
             }
         );
     }
