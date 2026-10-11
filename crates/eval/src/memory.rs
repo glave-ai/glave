@@ -120,8 +120,23 @@ impl Remembering {
                 Box::new(OsEntropy),
             )
         };
-        let seeding = memories();
-        for seed in &task.memories {
+        let now = SystemClock.now();
+        for (order, seed) in (0_i64..).zip(&task.memories) {
+            // Saved that many days ago (a second apart, in the order listed), so which came
+            // later is as plain as in life.
+            let saved = now
+                .checked_sub(jiff::SignedDuration::from_hours(
+                    i64::from(seed.days_ago).saturating_mul(24),
+                ))
+                .and_then(|day| day.checked_add(jiff::SignedDuration::from_secs(order)))
+                .map_err(|e| fail(&e))?;
+            let seeding = Memories::new(
+                store.log(),
+                store.keyring(),
+                rules.clone(),
+                Box::new(Fixed(saved)),
+                Box::new(OsEntropy),
+            );
             let writer = Writer {
                 person: Some(person),
                 scope: space(None),
@@ -134,8 +149,6 @@ impl Remembering {
                 .remember(&writer, &seed.text, which, None, true)
                 .await
                 .map_err(|e| fail(&e))?;
-            // Apart in time, so which came later is plain to tidy-up.
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
         for past in &task.past {
             write_past(&store, space(past.space.as_deref()), &past.messages).await?;
@@ -228,6 +241,15 @@ impl Remembering {
             memory.close().await;
         }
         Ok(report)
+    }
+}
+
+/// A clock that always reads one time: when a seeded memory was saved.
+struct Fixed(jiff::Timestamp);
+
+impl glave_harness::Clock for Fixed {
+    fn now(&self) -> jiff::Timestamp {
+        self.0
     }
 }
 

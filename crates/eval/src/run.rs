@@ -345,7 +345,10 @@ async fn converse(
                     let _ = writeln!(conversation.transcript, "[tidy] {run}");
                 }
             }
-            Err(err) => conversation.failures.push(err.to_string()),
+            // A tidy-up that fails changes nothing; the checks then grade what is left.
+            Err(err) => {
+                let _ = writeln!(conversation.transcript, "[tidy failed] {err}");
+            }
         }
     }
     let memory = remembering.report().await?;

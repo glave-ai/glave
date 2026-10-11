@@ -14,8 +14,8 @@ use super::Tidier;
 use crate::book::Entry;
 use crate::similar::words;
 
-/// The longest answer tidy-up reads, in tokens.
-const ANSWER_TOKENS: u32 = 2_000;
+/// The longest answer tidy-up reads, in tokens: room for a reasoning model to think first.
+const ANSWER_TOKENS: u32 = 8_000;
 /// Words a merged text may add that no source has: joining words, never facts.
 const MOST_NEW_WORDS: usize = 2;
 /// The share of each source's words, in percent, a merged text must keep.
@@ -31,9 +31,11 @@ const SYSTEM: &str = "You tidy the memories an assistant keeps about a person an
      to compact, closely related memories about one subject. Give the merged text: one short \
      statement, at most 500 characters, using the memories' own words and every detail they \
      hold.\n\
-     - conflict: two memories that say different things about the same fact. clear is true \
-     when the newer one plainly replaces the older (the fact changed), false when it is \
-     unclear which holds or both could be meant.\n\
+     - conflict: two memories that say different things about the same fact (such as where \
+     the project deploys, or which tool it uses). The person said both, at different times, \
+     so the later one is how things are now: clear is true. clear is false only when both \
+     could hold at once (they are about different contexts) or you cannot tell they are \
+     about the same fact.\n\
      \n\
      Leave everything else alone; an empty answer is fine. Answer with JSON only, in this \
      shape:\n\
@@ -78,11 +80,16 @@ struct Conflict {
     clear: bool,
 }
 
-fn day(at: At) -> String {
-    at.to_string().chars().take(10).collect()
+/// When, to the minute.
+fn minute(at: At) -> String {
+    at.to_string()
+        .chars()
+        .take(16)
+        .collect::<String>()
+        .replace('T', " ")
 }
 
-/// The request: the candidates as a numbered list, oldest first, with their dates.
+/// The request: the candidates as a numbered list, oldest first, with their times.
 fn request(model: &str, candidates: &[Entry], compact: bool) -> ModelRequest {
     let mut text = String::from("The memories, oldest first:\n");
     for (number, entry) in (1_usize..).zip(candidates) {
@@ -92,10 +99,10 @@ fn request(model: &str, candidates: &[Entry], compact: bool) -> ModelRequest {
         let saved = entry
             .versions
             .first()
-            .map_or_else(String::new, |v| day(v.at));
+            .map_or_else(String::new, |v| minute(v.at));
         let _ = write!(text, "\n{number}. (saved {saved}");
         if entry.versions.len() > 1 {
-            let _ = write!(text, ", changed {}", day(current.at));
+            let _ = write!(text, ", changed {}", minute(current.at));
         }
         let _ = write!(text, ") {}", current.text);
     }
@@ -119,37 +126,97 @@ fn request(model: &str, candidates: &[Entry], compact: bool) -> ModelRequest {
     }
 }
 
-/// Asks the model what to tidy, and returns its answer's text.
+/// What a second ask adds when the first answer held no proposals in the shape asked for.
+const REMINDER: &str = "Answer with the JSON object only, in the shape given: {\"merge\": [...], \
+     \"conflict\": [...]}. Use empty lists when there is nothing to do.";
+
+/// Asks the model what to tidy, once more with a terse reminder when the first answer cannot
+/// be read. The proposals, or why there are none.
 pub(super) async fn ask(
     tidier: &dyn Tidier,
     candidates: &[Entry],
     compact: bool,
-) -> Result<String, MemoryError> {
+) -> Result<Result<Vec<Proposal>, String>, MemoryError> {
+    let mut request = request(tidier.model(), candidates, compact);
+    let first = answer(tidier, &request).await?;
+    let why = match parse(&first, candidates.len()) {
+        Ok(proposals) => return Ok(Ok(proposals)),
+        Err(why) => why,
+    };
+    request.messages.push(Message::Assistant {
+        parts: vec![Part::Text { text: first }],
+        tool_calls: Vec::new(),
+    });
+    request.messages.push(Message::User {
+        parts: vec![Part::Text {
+            text: REMINDER.to_owned(),
+        }],
+    });
+    let second = answer(tidier, &request).await?;
+    Ok(parse(&second, candidates.len()).map_err(|again| format!("{why}; asked again: {again}")))
+}
+
+/// The answer's text; its readable reasoning when it gave no text, as some reasoning models do.
+async fn answer(tidier: &dyn Tidier, request: &ModelRequest) -> Result<String, MemoryError> {
     let completion = tidier
-        .complete(request(tidier.model(), candidates, compact))
+        .complete(request.clone())
         .await
         .map_err(|error| MemoryError::Storage(format!("tidy-up's model failed: {error}")))?;
-    Ok(completion
+    let text: String = completion
         .parts
-        .into_iter()
+        .iter()
         .filter_map(|part| match part {
-            Part::Text { text } => Some(text),
+            Part::Text { text } => Some(text.as_str()),
             _ => None,
         })
-        .collect::<String>())
+        .collect();
+    if text.contains('{') {
+        return Ok(text);
+    }
+    let reasoning: String = completion
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            Part::Reasoning {
+                text: Some(text), ..
+            } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    Ok(if reasoning.contains('{') {
+        reasoning
+    } else {
+        text
+    })
 }
 
 /// The proposals in `answer`: the JSON object in it, however it is wrapped. Numbers outside the
 /// list are left for the checks to refuse one by one.
 pub(super) fn parse(answer: &str, listed: usize) -> Result<Vec<Proposal>, String> {
-    let (Some(start), Some(end)) = (answer.find('{'), answer.rfind('}')) else {
-        return Err(format!(
-            "tidy-up's model gave no JSON among {listed} memories"
+    let mut wrong = None;
+    let mut found = None;
+    // The first object that reads as an answer, wherever it starts: after prose, inside a
+    // code fence, before more text.
+    for (start, _) in answer.match_indices('{') {
+        let rest = answer.get(start..).unwrap_or_default();
+        match serde_json::Deserializer::from_str(rest)
+            .into_iter::<Answer>()
+            .next()
+        {
+            Some(Ok(parsed)) => {
+                found = Some(parsed);
+                break;
+            }
+            Some(Err(error)) if wrong.is_none() => wrong = Some(error.to_string()),
+            _ => {}
+        }
+    }
+    let Some(parsed) = found else {
+        return Err(wrong.map_or_else(
+            || format!("tidy-up's model gave no JSON among {listed} memories"),
+            |error| format!("tidy-up's model answered in the wrong shape: {error}"),
         ));
     };
-    let json = answer.get(start..=end).unwrap_or_default();
-    let parsed: Answer = serde_json::from_str(json)
-        .map_err(|error| format!("tidy-up's model answered in the wrong shape: {error}"))?;
     let merges = parsed.merge.into_iter().map(|merge| Proposal::Merge {
         memories: merge.memories,
         text: merge.text,
@@ -228,6 +295,9 @@ mod tests {
         assert_eq!(parse("{}", 2).unwrap(), []);
         assert!(parse("nothing to do", 2).is_err());
         assert!(parse("{\"merge\": 3}", 2).is_err());
+        let prose = "Looking at {these} memories, 1 and 2 match.\n{\"merge\": [], \"conflict\": \
+                     [{\"memories\": [1, 2], \"clear\": true}]}\nDone {ok}.";
+        assert_eq!(parse(prose, 2).unwrap().len(), 1);
     }
 
     #[test]

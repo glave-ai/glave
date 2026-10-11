@@ -22,16 +22,21 @@ mod tidy {
 
     use super::support::*;
 
-    /// A tidier that answers every request with one scripted text, and keeps what it was sent.
+    /// A tidier that answers with scripted texts in turn (the last one again once they run
+    /// out), and keeps what it was sent.
     struct Scripted {
-        answer: String,
+        answers: Mutex<Vec<String>>,
         seen: Mutex<Vec<ModelRequest>>,
     }
 
     impl Scripted {
         fn new(answer: &str) -> Self {
+            Self::answering(&[answer])
+        }
+
+        fn answering(answers: &[&str]) -> Self {
             Self {
-                answer: answer.to_owned(),
+                answers: Mutex::new(answers.iter().rev().map(|a| (*a).to_owned()).collect()),
                 seen: Mutex::new(Vec::new()),
             }
         }
@@ -52,7 +57,13 @@ mod tidy {
             request: ModelRequest,
         ) -> BoxFuture<'_, Result<Completion, ProviderError>> {
             self.seen.lock().unwrap().push(request);
-            Box::pin(std::future::ready(Ok(said(&self.answer))))
+            let mut answers = self.answers.lock().unwrap();
+            let answer = if answers.len() > 1 {
+                answers.pop().unwrap()
+            } else {
+                answers.last().cloned().unwrap()
+            };
+            Box::pin(std::future::ready(Ok(said(&answer))))
         }
     }
 
@@ -247,13 +258,43 @@ mod tidy {
                 );
                 assert!(!tidied.refused.is_empty(), "{answer}");
             }
+            // An answer that cannot be read is asked for once more, then changes nothing.
+            let unreadable = Scripted::new("no idea");
+            let tidied = memories.tidy(shared(), &unreadable).await.unwrap();
+            assert_eq!(unreadable.seen.lock().unwrap().len(), 2, "asked again once");
             assert!(
-                memories
-                    .tidy(shared(), &Scripted::new("no idea"))
-                    .await
-                    .is_err()
+                unreadable.sent().contains("JSON object only"),
+                "{}",
+                unreadable.sent()
+            );
+            assert!(
+                tidied.refused.iter().any(|why| why.contains("no JSON")),
+                "{tidied:?}"
             );
             assert_eq!(live(&kit).await, before);
+        });
+    }
+
+    #[test]
+    fn prose_first_then_json_after_the_reminder_is_carried_out() {
+        block_on(async {
+            let kit = Kit::new();
+            seed(&kit, FLY, false).await;
+            let render = seed(&kit, RENDER, false).await;
+            let script = Scripted::answering(&[
+                "Memories 1 and 2 disagree; the newer wins.",
+                "```json\n{\"merge\": [], \"conflict\": [{\"memories\": [1, 2], \"clear\": true}]}\n```",
+            ]);
+            let memories = kit.memories(rules(), 1);
+            let tidied = memories.tidy(shared(), &script).await.unwrap();
+            assert_eq!(tidied.forgotten, 1, "{tidied:?}");
+            let now: Vec<_> = live(&kit).await.into_iter().map(|(id, _, _)| id).collect();
+            assert_eq!(now, [render], "the more recent stays");
+            let first = format!("{:?}", script.seen.lock().unwrap()[0].messages);
+            assert!(
+                first.contains("saved 2026-10-03 "),
+                "times to the minute: {first}"
+            );
         });
     }
 

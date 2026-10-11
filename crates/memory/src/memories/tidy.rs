@@ -18,7 +18,7 @@ use glave_ports::{
 };
 use jiff::SignedDuration;
 
-use self::plan::{Proposal, ask, keeps_facts, parse};
+use self::plan::{Proposal, ask, keeps_facts};
 use super::Memories;
 use super::write::{BUDGET_TOKENS, checked, tokens};
 use crate::book::Entry;
@@ -142,8 +142,14 @@ impl<L: EventLog + 'static> Memories<L> {
         let mut tidied = Tidied::default();
         let mut questions = Vec::new();
         if candidates.len() >= 2 {
-            let answer = ask(model, &candidates, near).await?;
-            let proposals = parse(&answer, candidates.len()).map_err(MemoryError::Storage)?;
+            // An answer that cannot be read changes nothing; the run is still recorded.
+            let proposals = match ask(model, &candidates, near).await? {
+                Ok(proposals) => proposals,
+                Err(why) => {
+                    tidied.refused.push(why);
+                    Vec::new()
+                }
+            };
             let mut used_ids = BTreeSet::new();
             for proposal in proposals {
                 let outcome = self

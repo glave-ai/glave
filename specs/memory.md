@@ -114,15 +114,15 @@ Reconciliation keeps memory small and true. In 1.0.
 - **It never touches a memory with `untrusted_read`.**
 - **Every change is an event `by: glave`,** shown on the memory page, and undoable for 30 days: the old versions are kept until then (below).
 - **It runs** as a background task when a scope passes 90% of its budget, and weekly, on the `summary` route (the cheap model). The memory server owns the task; a session asks it to look when it starts, and every save or edit asks again for the ledgers it changed. A ledger is due when it has two memories tidy-up may change and it was last tidied (`memory.tidied`) a week ago or never, or an hour ago once past 90%.
-- **How it decides.** The model is shown the memories it may change as a numbered list with their dates (never their ids, nor any memory saved after untrusted content, nor one waiting on the person) and answers with merges (memories and the merged text) and contradictions (two memories, and whether the newer plainly replaces the older); past 90% it is also asked to compact related memories. Each proposal is checked first: the numbers name listed memories, each once per run; a merged text passes the same checks as a save, adds at most two words no source has and no number none has, and keeps at least half of each source's words. A refused proposal changes nothing.
-- **A merge** edits the oldest memory to the merged text (an edit by glave), then forgets the others (by glave, erased in 30 days); stopping between the two leaves a duplicate, never a loss. **A contradiction** marked plain forgets the older (by `saved`, or the last edit); one marked unclear, or with both from the same moment, keeps both and records the pair in `memory.tidied`.
+- **How it decides.** The model is shown the memories it may change as a numbered list with their dates (never their ids, nor any memory saved after untrusted content, nor one waiting on the person) and answers with merges (memories and the merged text) and contradictions (two memories, and whether the newer plainly replaces the older); past 90% it is also asked to compact related memories. Each proposal is checked first: the numbers name listed memories, each once per run; a merged text passes the same checks as a save, adds at most two words no source has and no number none has, and keeps at least half of each source's words. A refused proposal changes nothing. An answer with no proposals in the shape asked for (the first JSON object in it, wherever it starts, or the readable reasoning when the answer has no text) is asked for once more with a terse reminder; if that fails too, nothing changes and the run is still recorded.
+- **A merge** edits the oldest memory to the merged text (an edit by glave), then forgets the others (by glave, erased in 30 days); stopping between the two leaves a duplicate, never a loss. **A contradiction** marked plain forgets the older (by `saved`, or the last edit); the model is told that the person's later statement about the same fact is how things are now, and to mark one unclear only when both could hold at once; one marked unclear, or with both from the same moment, keeps both and records the pair in `memory.tidied`.
 - **Asking.** An open pair is shown at the end of the memory block of the next thread (or in the note of a thread returned to): "Unsure: … ask the person which is right (with the question tool when you can), then forget or replace the wrong one". The turn's configuration records the pairs it showed, so resuming reads the same. Any change to either memory (an edit, a forget, a restore) answers it.
 
 ## Recall
 
 `recall` searches memories and past conversations by keyword, with the store's built-in full-text search (SQLite FTS5, Postgres full-text search). In 1.0, full-text only.
 
-- **Scoped exactly like memory:** personal threads and this space's in a `shared` space, this space's only in an `isolated` one, nothing when `off`. The thread asking is left out.
+- **Scoped exactly like memory:** personal threads and this space's in a `shared` space, this space's only in an `isolated` one, nothing when `off`. The thread asking is left out, and so is every turn a forgotten memory was saved in.
 - **Results are labelled** with their source (memory, or thread and `seq`). A hit from untrusted output is labelled untrusted and counts as untrusted content read (`approvals.md`): the whole result is shown inside the untrusted label, and the thread is marked as having read untrusted content.
 - **`query`** is a few keywords; `limit` is 5 when left out and at most 10. Memories come first, the ones sharing most words first; then this space's conversations, then the person's, best match first. A conversation hit shows at most 400 characters around the first word found. Keywords only: nothing is ranked by meaning.
 - Semantic search comes after 1.0, with the embedding model shared with the knowledge pack (#144).
@@ -133,7 +133,7 @@ Reconciliation keeps memory small and true. In 1.0.
 - **CLI:** `glave memory` lists both scopes with their sources; `glave memory edit|move|forget <id>`; `glave memory forget --all [--space | --personal]`. In a session, `/memory`.
 - **Web and desktop:** a memory page for the person and one per space, each memory linked to the thread it came from, glave's changes marked with an undo.
 - **Forgetting really forgets.** Each memory is sealed under its own data key (`key_id` `v1/<space>/memory/<memory>/<n>`, extending `storage.md`'s month keys with the per-item keys it leaves room for). Edits seal under the same key, so forgetting erases every version. When the person forgets, the key is destroyed at once; the space key is rotated within a day, batching the day's forgets, so backups lose it too (`storage.md`, "Erasure"). When glave forgets in tidy-up, the key is destroyed after 30 days, unless restored first.
-- **The conversation it came from is untouched.** Deleting a conversation is a separate action, never part of forgetting.
+- **The conversation it came from is untouched,** but `recall` never returns the turn it was saved in again (the forget records where, `source`, since the saved event's text is erased): forgetting must not leave the fact a search away. Restoring a forget by glave brings the turn back. Deleting a conversation is a separate action, never part of forgetting.
 
 ## Events
 
@@ -143,7 +143,7 @@ Memory has a ledger of its own in each space, as tasks do: the reserved thread i
 | --- | --- | --- |
 | `memory.saved` | A memory was saved | `memory`; `scope`; `text`; optional `source`; `untrusted_read`. Sealed under the memory's key |
 | `memory.edited` | Its text changed (tidy-up merges are edits) | `memory`; `text`. Sealed under the memory's key |
-| `memory.forgotten` | It was forgotten | `memory`; `erase_at` (now, or 30 days on for glave). Content-free |
+| `memory.forgotten` | It was forgotten | `memory`; `erase_at` (now, or 30 days on for glave); `source`, where it was saved (version 2). Content-free |
 | `memory.restored` | A change by glave was undone | `memory`; the event undone |
 | `memory.tidied` | Tidy-up ran | optional `questions`: pairs it could not reconcile, open until either changes. Content-free |
 
@@ -184,7 +184,7 @@ A space's policy only narrows its organization's. `glave policy explain` shows t
 
 ## Evals
 
-Each task runs on the three default models, `--repeat 3`, with memory on and off. The runner gains `[glave] threads` (new threads after the instruction, each with its messages and optionally its own space and setting, run in order in one store) and `[glave] memories` (memories seeded before the first thread, `untrusted = true` for one saved after untrusted content), `[glave] past` (past conversations, each the person's messages in a space, written before the first thread for `recall`) and `[glave] tidy` (tidy-up over every space once the threads are done, on the model under test). Safety checks read the memory ledger as well as the answer.
+Each task runs on the three default models, `--repeat 3`, with memory on and off. The runner gains `[glave] threads` (new threads after the instruction, each with its messages and optionally its own space and setting, run in order in one store) and `[glave] memories` (memories seeded before the first thread, `untrusted = true` for one saved after untrusted content, `days_ago` for when it was saved), `[glave] past` (past conversations, each the person's messages in a space, written before the first thread for `recall`) and `[glave] tidy` (tidy-up over every space once the threads are done, on the model under test). Safety checks read the memory ledger as well as the answer.
 
 | Task | First | Later | Passes when |
 | --- | --- | --- | --- |

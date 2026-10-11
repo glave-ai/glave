@@ -102,6 +102,8 @@ pub(crate) struct Book {
     pub(crate) questions: Vec<[MemoryId; 2]>,
     /// When tidy-up last ran over this ledger.
     pub(crate) tidied: Option<At>,
+    /// Where each forgotten memory was saved: `recall` never returns that turn again.
+    pub(crate) hidden: BTreeMap<MemoryId, MemorySource>,
 }
 
 impl Book {
@@ -189,6 +191,9 @@ impl Book {
             }
             Body::MemoryForgotten(forgotten) => {
                 self.answered(forgotten.memory);
+                if let Some(source) = forgotten.source {
+                    self.hidden.insert(forgotten.memory, source);
+                }
                 // Erased at once: the text leaves this view now, as it leaves the store.
                 if forgotten.erase_at <= at {
                     if self.entries.remove(&forgotten.memory).is_some() {
@@ -211,6 +216,7 @@ impl Book {
                         .is_some_and(|forgot| forgot.event == restored.undone)
                     {
                         entry.forgot = None;
+                        self.hidden.remove(&restored.memory);
                     }
                     for version in entry.versions.iter_mut().skip(1) {
                         if version.event == restored.undone {

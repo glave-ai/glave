@@ -232,6 +232,87 @@ mod recall {
     }
 
     #[test]
+    fn forgetting_a_memory_takes_the_turn_it_came_from_out_of_recall() {
+        block_on(async {
+            let kit = Kit::new();
+            let memory = kit.memory(rules(), 2).await;
+            let dir = folder("recall-forget");
+            let save = json!({"text": "The favourite flower is marigold", "scope": "personal"});
+            let answers = vec![
+                answer(None, vec![(glave_harness::REMEMBER, save)]),
+                said("OK, remembered marigold."),
+                said("Marigold beds need sun."),
+            ];
+            let (harness, _) = kit
+                .harness(&dir, answers, AllowAll, Some(memory), settings())
+                .await;
+            let mut first = harness.start_thread(shared()).await.unwrap();
+            harness
+                .run_turn(
+                    &mut first,
+                    "Remember: my favourite flower is marigold.",
+                    &Cancel::new(),
+                    &mut |_| {},
+                )
+                .await
+                .unwrap();
+            harness
+                .run_turn(
+                    &mut first,
+                    "Where do marigold beds go?",
+                    &Cancel::new(),
+                    &mut |_| {},
+                )
+                .await
+                .unwrap();
+            let memories = kit.memories(rules(), 3);
+            let asking = on(shared(), thread(9));
+            let before = memories.recall(&asking, "marigold", 10).await.unwrap();
+            let saved = before
+                .iter()
+                .find_map(|hit| match hit.source {
+                    Source::Memory { memory, .. } => Some(memory),
+                    Source::Thread { .. } => None,
+                })
+                .unwrap();
+            let writer = Writer {
+                person: Some(person()),
+                scope: shared(),
+                by: Principal::person(person()),
+                source: None,
+                untrusted_read: false,
+            };
+            memories.forget(&writer, saved).await.unwrap();
+
+            // A process that never saw the memory, reading the ledger afresh, hides it too.
+            let fresh = kit.memories(rules(), 4);
+            let after = fresh.recall(&asking, "marigold", 10).await.unwrap();
+            assert!(
+                after
+                    .iter()
+                    .all(|hit| !hit.text.contains("favourite flower is marigold")
+                        && !hit.text.contains("remembered marigold")),
+                "{after:?}"
+            );
+            assert!(
+                after.iter().any(|hit| hit.text.contains("beds")),
+                "a later turn still is found: {after:?}"
+            );
+            let kept = kit
+                .store
+                .log()
+                .read(&shared(), first.id, None, usize::MAX)
+                .await
+                .unwrap();
+            assert!(
+                kept.iter()
+                    .any(|event| event.data.get().contains("favourite flower is marigold")),
+                "the conversation itself stays"
+            );
+        });
+    }
+
+    #[test]
     fn the_model_recalls_through_the_server_and_untrusted_hits_mark_the_thread() {
         block_on(async {
             let kit = Kit::new();

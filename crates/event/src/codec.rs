@@ -65,6 +65,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (memory::SAVED, 1),
     (memory::EDITED, 1),
     (memory::FORGOTTEN, 1),
+    (memory::FORGOTTEN, 2),
     (memory::RESTORED, 1),
     (memory::TIDIED, 1),
 ];

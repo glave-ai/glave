@@ -194,9 +194,15 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         erase_at: Option<At>,
     ) -> Result<(), MemoryError> {
         let now = self.now();
+        let source = self
+            .with_book(ledger, |book| {
+                book.entries.get(&memory).and_then(|entry| entry.source)
+            })
+            .await?;
         let forgotten = MemoryForgotten {
             memory,
             erase_at: erase_at.unwrap_or(now),
+            source,
             by: by.clone(),
         };
         self.append(ledger, &forgotten).await?;

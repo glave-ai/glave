@@ -88,8 +88,32 @@ pub struct MemoryForgotten {
     pub memory: MemoryId,
     /// When its key is destroyed: at once when the person forgets, 30 days on when glave does.
     pub erase_at: At,
+    /// Where it was saved, kept here because the saved event's text (and its source with it)
+    /// is erased: `recall` never returns that turn of the conversation again. Since version 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<MemorySource>,
     /// Who forgot it.
     pub by: Principal,
+}
+
+/// Version 1, before a forget named where the memory was saved.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemoryForgottenV1 {
+    memory: MemoryId,
+    erase_at: At,
+    by: Principal,
+}
+
+impl From<MemoryForgottenV1> for MemoryForgotten {
+    fn from(old: MemoryForgottenV1) -> Self {
+        Self {
+            memory: old.memory,
+            erase_at: old.erase_at,
+            source: None,
+            by: old.by,
+        }
+    }
 }
 
 /// A change glave made to a memory was undone.
@@ -129,7 +153,7 @@ impl Payload for MemoryEdited {
 
 impl Payload for MemoryForgotten {
     const TYPE: &'static str = FORGOTTEN;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for MemoryRestored {
@@ -160,7 +184,11 @@ pub(crate) fn decode_forgotten(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<MemoryForgotten>> {
-    (version == 1).then(|| parse(data))
+    match version {
+        1 => Some(parse::<MemoryForgottenV1>(data).map(MemoryForgotten::from)),
+        2 => Some(parse(data)),
+        _ => None,
+    }
 }
 
 pub(crate) fn decode_restored(

@@ -115,6 +115,9 @@ pub struct Seeded {
     /// Saved in a thread that had read untrusted content.
     #[serde(default)]
     pub untrusted: bool,
+    /// How many days ago it was saved; today when absent.
+    #[serde(default)]
+    pub days_ago: u32,
 }
 
 /// A goal, as `[glave] goal = { budget = 200000 }` sets it. How to verify it is the

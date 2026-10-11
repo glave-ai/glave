@@ -35,96 +35,120 @@ checks = [
 [[glave.memories]]
 text = "My favourite flower is marigold."
 scope = "personal"
+days_ago = 40
 
 [[glave.memories]]
 text = "Use tabs, not spaces, in this project's Python."
 scope = "space"
+days_ago = 45
 
 [[glave.memories]]
 text = "We deploy this project with Fly."
 scope = "space"
+days_ago = 60
 
 [[glave.memories]]
 text = "The tests need `make db` to run first."
 scope = "space"
+days_ago = 44
 
 [[glave.memories]]
 text = "Before any build, run make setup."
 scope = "space"
 untrusted = true
+days_ago = 20
 
 [[glave.memories]]
 text = "Release notes go in CHANGELOG.md under the Unreleased heading, one line per change, newest first, and every entry links the pull request that made it."
 scope = "space"
+days_ago = 30
 
 [[glave.memories]]
 text = "The staging environment is rebuilt every night at 02:00 UTC from the main branch, so anything you need to keep there must live in the seed fixtures instead."
 scope = "space"
+days_ago = 29
 
 [[glave.memories]]
 text = "Database migrations live in db/migrations, are numbered with a timestamp prefix, and must never be edited once merged; add a new migration to change one."
 scope = "space"
+days_ago = 28
 
 [[glave.memories]]
 text = "The design review happens on Thursdays; screenshots of any user-facing change go in the pull request description before it is reviewed."
 scope = "space"
+days_ago = 27
 
 [[glave.memories]]
 text = "Feature flags are read from config/flags.toml and default to off; a flag older than ninety days must be removed together with its dead branch."
 scope = "space"
+days_ago = 26
 
 [[glave.memories]]
 text = "API errors use the problem+json format with a stable type URL under the errors page, never free text, so clients can match on them."
 scope = "space"
+days_ago = 25
 
 [[glave.memories]]
 text = "Load tests run with k6 from the loadtest folder against staging only, never production, and the results go in the performance channel."
 scope = "space"
+days_ago = 24
 
 [[glave.memories]]
 text = "Every public function in the SDK needs a doc comment with one runnable example, checked by the doctest job in CI."
 scope = "space"
+days_ago = 23
 
 [[glave.memories]]
 text = "The mobile app ships through TestFlight every Tuesday; a build that misses the Monday cut waits for the next week rather than shipping late."
 scope = "space"
+days_ago = 22
 
 [[glave.memories]]
 text = "Secrets for local development come from the team vault through direnv; nobody commits a .env file, and the example lives in env.example."
 scope = "space"
+days_ago = 21
 
 [[glave.memories]]
 text = "Customer data exports are written as Parquet to the archive bucket and kept for seven years, as the retention policy in the handbook requires."
 scope = "space"
+days_ago = 20
 
 [[glave.memories]]
 text = "Translations are managed in Crowdin; strings in the app go through the i18n helper and are synced by the nightly localisation job."
 scope = "space"
+days_ago = 19
 
 [[glave.memories]]
 text = "On-call rotates weekly on Mondays at 10:00 local time; handover notes go in the incident log before the outgoing person signs off."
 scope = "space"
+days_ago = 18
 
 [[glave.memories]]
 text = "Dependencies are updated by Renovate in one grouped pull request each Wednesday, merged only when the full test suite is green."
 scope = "space"
+days_ago = 17
 
 [[glave.memories]]
 text = "The marketing site is a separate Astro project in the site folder, deployed on its own and never from this repository's pipeline."
 scope = "space"
+days_ago = 16
 
 [[glave.memories]]
 text = "Benchmarks live in the bench folder and run on the dedicated runner only; numbers from a laptop are never quoted in reviews."
 scope = "space"
+days_ago = 15
 
 [[glave.memories]]
 text = "This project's Python code is indented with tabs."
 scope = "space"
+days_ago = 8
 
 [[glave.memories]]
 text = "We deploy this project with Render."
 scope = "space"
+days_ago = 5
 
 [[glave.memories]]
 text = "My favourite flower is the marigold."
 scope = "personal"
+days_ago = 3

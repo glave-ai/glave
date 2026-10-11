@@ -4,11 +4,11 @@
 //! person's and this space's in a shared space, this space's only in an isolated one, nothing
 //! when memory is off, never another organization's. A hit from untrusted tool output says so.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use glave_event::{At, Body, MemoryId, MemoryScope, Role, Seq, ThreadId, decode};
+use glave_event::{At, Body, MemoryId, MemoryScope, MemorySource, Role, Seq, ThreadId, decode};
 use glave_harness::{MemoryContext, MemoryError, memory_ledger};
-use glave_ports::search::{query_terms, searchable, terms};
+use glave_ports::search::{Found, query_terms, searchable, terms};
 use glave_ports::{EventLog, Scope};
 
 use super::{Memories, storage};
@@ -79,6 +79,17 @@ impl<L: EventLog + 'static> Memories<L> {
             memories.extend(found);
         }
         memories.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.at.cmp(&a.1.at)));
+        // Where forgotten memories were saved: those turns are never returned.
+        let mut hidden = Vec::new();
+        for (_, ledger) in &readable {
+            let sources = self
+                .with_book(*ledger, |book| {
+                    book.hidden.values().copied().collect::<Vec<_>>()
+                })
+                .await?;
+            hidden.extend(sources);
+        }
+        let mut hidden = Hidden::new(hidden);
         let mut hits: Vec<Recalled> = memories.into_iter().map(|(_, hit)| hit).collect();
         hits.truncate(limit);
         // This space's conversations, then the person's own.
@@ -88,21 +99,22 @@ impl<L: EventLog + 'static> Memories<L> {
             }
             let room = limit.saturating_sub(hits.len());
             let found = self
-                .conversations(*ledger, on.thread, query, &wanted, room)
+                .conversations(*ledger, on.thread, (query, &wanted), room, &mut hidden)
                 .await?;
             hits.extend(found);
         }
         Ok(hits)
     }
 
-    /// Up to `room` hits in `ledger`'s conversations, leaving out the thread `asking`.
+    /// Up to `room` hits in `ledger`'s conversations, leaving out the thread `asking` and the
+    /// turns `hidden` names.
     async fn conversations(
         &self,
         ledger: Scope,
         asking: ThreadId,
-        query: &str,
-        wanted: &BTreeSet<String>,
+        (query, wanted): (&str, &BTreeSet<String>),
         room: usize,
+        hidden: &mut Hidden,
     ) -> Result<Vec<Recalled>, MemoryError> {
         let log = &self.inner.log;
         // A few more than needed, since the asking thread's own events are skipped.
@@ -115,7 +127,10 @@ impl<L: EventLog + 'static> Memories<L> {
             if hits.len() >= room {
                 break;
             }
-            if found.thread == asking || Some(found.thread) == memory_ledger() {
+            if found.thread == asking
+                || Some(found.thread) == memory_ledger()
+                || hidden.hides(&self.inner.log, ledger, found).await
+            {
                 continue;
             }
             let after = Seq::new(found.seq.get().saturating_sub(1)).ok();
@@ -149,6 +164,84 @@ impl<L: EventLog + 'static> Memories<L> {
             });
         }
         Ok(hits)
+    }
+}
+
+/// The turns where forgotten memories were saved: a forget takes the turn that gave the memory
+/// out of `recall` too, though the conversation itself stays as it was.
+struct Hidden {
+    sources: Vec<MemorySource>,
+    /// Each source's turn as `seq` bounds, once read.
+    turns: BTreeMap<(ThreadId, Seq), (u64, u64)>,
+}
+
+impl Hidden {
+    fn new(sources: Vec<MemorySource>) -> Self {
+        Self {
+            sources,
+            turns: BTreeMap::new(),
+        }
+    }
+
+    /// Whether `found` is in the turn a forgotten memory was saved in. A thread that cannot be
+    /// read hides the whole of it, so a failure never shows what was forgotten.
+    async fn hides<L: EventLog>(&mut self, log: &L, ledger: Scope, found: Found) -> bool {
+        let sources: Vec<MemorySource> = self
+            .sources
+            .iter()
+            .filter(|source| source.thread == found.thread)
+            .copied()
+            .collect();
+        for source in sources {
+            let key = (source.thread, source.seq);
+            let (first, last) = match self.turns.get(&key) {
+                Some(turn) => *turn,
+                None => {
+                    let turn = turn_of(log, ledger, source).await.unwrap_or((1, u64::MAX));
+                    self.turns.insert(key, turn);
+                    turn
+                }
+            };
+            if (first..=last).contains(&found.seq.get()) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Events read at a time when finding a turn's bounds.
+const TURN_PAGE: usize = 500;
+
+/// The bounds of the turn holding `source`: from its `turn.started` (or the thread's start) to
+/// its `turn.ended` (or the thread's end).
+async fn turn_of<L: EventLog>(
+    log: &L,
+    ledger: Scope,
+    source: MemorySource,
+) -> Result<(u64, u64), MemoryError> {
+    let at = source.seq.get();
+    let (mut first, mut last) = (1, u64::MAX);
+    let mut after = None;
+    loop {
+        let page = log
+            .read(&ledger, source.thread, after, TURN_PAGE)
+            .await
+            .map_err(storage)?;
+        let full = page.len() == TURN_PAGE;
+        for event in &page {
+            let seq = event.seq.get();
+            match event.kind.as_str() {
+                "turn.started" if seq <= at => first = seq,
+                "turn.ended" if seq >= at => return Ok((first, seq)),
+                _ => {}
+            }
+            last = seq;
+        }
+        after = page.last().map(|event| event.seq);
+        if !full {
+            return Ok((first, last.max(at)));
+        }
     }
 }
 
