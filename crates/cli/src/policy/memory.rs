@@ -175,12 +175,12 @@ mod tests {
     }
 
     #[test]
-    fn memory_is_off_by_default_and_on_by_the_persons_choice() {
+    fn memory_is_on_by_default_and_off_by_the_persons_choice() {
         let none = constraints("version = 1");
-        let off = settle(&chosen(""), &none).unwrap();
-        assert!(!off.on);
-        assert_eq!(off.space, SpaceMemory::Shared);
-        assert!(settle(&chosen("memory = \"on\""), &none).unwrap().on);
+        let on = settle(&chosen(""), &none).unwrap();
+        assert!(on.on);
+        assert_eq!(on.space, SpaceMemory::Shared);
+        assert!(!settle(&chosen("memory = \"off\""), &none).unwrap().on);
     }
 
     #[test]

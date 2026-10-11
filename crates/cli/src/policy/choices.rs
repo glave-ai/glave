@@ -102,7 +102,7 @@ pub struct Choices {
     pub gateway: Option<Chosen<String>>,
     /// What `web_fetch` may reach: on, public hosts only, by default.
     pub web: Chosen<WebFile>,
-    /// Whether glave reads and writes memory for this person: off by default for now.
+    /// Whether glave reads and writes memory for this person: on by default.
     pub memory: Chosen<bool>,
     /// This space's memory setting: shared by default.
     pub space_memory: Chosen<SpaceMemory>,
@@ -183,7 +183,7 @@ pub fn resolve(layers: &[Layer]) -> Choices {
             nearest(layers, "memory", |file| {
                 file.memory.map(|choice| choice == MemoryChoice::On)
             }),
-            false,
+            true,
         ),
         space_memory: defaulted(
             nearest(layers, "space_memory", |file| {
