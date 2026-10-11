@@ -153,7 +153,7 @@ impl Client<'_> {
                 let asked = match decoded.body {
                     Body::ApprovalRequested(asked) => asked,
                     Body::GoalEnded(ended) => {
-                        printer.goal_ended(ended.reason, ended.tokens);
+                        printer.goal_ended(ended.reason, ended.tokens, ended.note.as_deref());
                         return false;
                     }
                     Body::MessageAdded(added)

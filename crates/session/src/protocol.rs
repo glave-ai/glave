@@ -63,15 +63,13 @@ pub enum Request {
         answers: Vec<String>,
     },
     /// Sets a goal and works toward it across turns; without `objective`, continues the
-    /// thread's active goal, as after a restart.
+    /// thread's active goal, as after a restart, or resumes the one the model paused.
     #[serde(rename = "goal/start")]
     GoalStart {
         thread: ThreadId,
+        /// What to achieve, with how to verify it in the person's words.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         objective: Option<String>,
-        /// A command whose success means the goal is met.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        check: Option<String>,
         /// Tokens the goal may use; glave's default when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         budget: Option<u64>,

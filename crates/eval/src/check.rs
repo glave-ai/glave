@@ -37,7 +37,7 @@ pub enum Check {
     Sent(String),
     /// An event of this type was recorded, such as `thread.compacted`.
     Recorded(String),
-    /// The task's goal ended for one of these reasons, such as `met_by_check`.
+    /// The task's goal ended for one of these reasons, such as `met`.
     GoalEnded(Vec<GoalReason>),
 }
 

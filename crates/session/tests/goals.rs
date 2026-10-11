@@ -1,6 +1,6 @@
 //! Goals through the session API against a scripted model: `goal/start` streams every turn of
-//! a goal until its check passes, over JSON-RPC as in-process; `goal/stop` stops a running
-//! goal; `goal/get` shows progress from the log; and the errors when there is no goal.
+//! a goal until the model says it is met, over JSON-RPC as in-process; `goal/stop` stops a
+//! running goal; `goal/get` shows progress from the log; and the errors when there is no goal.
 
 #[cfg(test)]
 #[path = "support/model.rs"]
@@ -62,7 +62,7 @@ mod goals {
     }
 
     #[test]
-    fn goal_start_streams_every_turn_until_the_check_passes_over_json_rpc() {
+    fn goal_start_streams_every_turn_until_the_model_says_it_is_met_over_json_rpc() {
         let dir = folder("goal-rpc");
         block_on(async {
             let answers = vec![
@@ -71,6 +71,7 @@ mod goals {
                     None,
                     Some(("write", json!({"path": "ok.txt", "content": "ok"}))),
                 ),
+                answer(None, Some(("update_goal", json!({"status": "complete"})))),
                 answer(Some("Done."), None),
             ];
             let server = auto(&dir, answers, None).await;
@@ -85,7 +86,7 @@ mod goals {
             let mut lines = BufReader::new(client_in).lines();
             let mut to_server = client_out;
             let request = json!({"jsonrpc": "2.0", "id": 1, "method": "goal/start", "params": {
-                "thread": thread, "objective": "make ok.txt", "check": "test -f ok.txt"
+                "thread": thread, "objective": "make ok.txt; check it exists"
             }});
             to_server
                 .write_all(format!("{request}\n").as_bytes())
@@ -108,7 +109,7 @@ mod goals {
                 }
             };
             assert_eq!(
-                result["result"]["turn"]["model_calls"], 3,
+                result["result"]["turn"]["model_calls"], 4,
                 "{result} {types:?}"
             );
             assert_eq!(types.first().map(String::as_str), Some("goal.set"));
@@ -121,7 +122,7 @@ mod goals {
             drop(to_server);
             serving.await.unwrap().unwrap();
             let progress = goal(&server, thread).await.unwrap();
-            assert_eq!(progress.ended, Some(GoalReason::MetByCheck));
+            assert_eq!(progress.ended, Some(GoalReason::Met));
             assert_eq!(progress.turns, 2);
         });
     }
@@ -173,7 +174,6 @@ mod goals {
             let resume = Request::GoalStart {
                 thread,
                 objective: None,
-                check: None,
                 budget: None,
             };
             assert_eq!(
