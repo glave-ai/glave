@@ -1394,6 +1394,7 @@ name = "glave-session"
 version = "0.0.0"
 dependencies = [
  "aws-lc-rs",
+ "getrandom 0.4.3",
  "glave-computer",
  "glave-event",
  "glave-harness",
