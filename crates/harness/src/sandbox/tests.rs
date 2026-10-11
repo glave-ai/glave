@@ -164,7 +164,17 @@ fn secret_locations_are_unreadable() {
     std::fs::write(dir.join(".glave/glave.db"), "canary-db\n").unwrap();
     std::fs::write(project.join(".env"), "canary-env\n").unwrap();
     std::fs::write(project.join(".ENV.local"), "canary-env-local\n").unwrap();
-    std::fs::write(project.join("server.pem"), "canary-pem\n").unwrap();
+    std::fs::write(project.join("privkey.pem"), "canary-pem\n").unwrap();
+    std::fs::create_dir_all(dir.join(".config/gh")).unwrap();
+    std::fs::write(dir.join(".config/gh/hosts.yml"), "canary-gh\n").unwrap();
+    std::fs::create_dir_all(dir.join(".cargo")).unwrap();
+    std::fs::write(dir.join(".cargo/credentials.toml"), "canary-cargo\n").unwrap();
+    std::fs::write(dir.join(".cargo/config.toml"), "cargo-config-ok\n").unwrap();
+    std::fs::write(dir.join(".zsh_history"), "canary-history\n").unwrap();
+    // Public certificates and Java key stores are not hidden.
+    std::fs::write(project.join("cert.pem"), "cert-ok\n").unwrap();
+    std::fs::write(project.join("fullchain.pem"), "chain-ok\n").unwrap();
+    std::fs::write(project.join("debug.keystore"), "keystore-ok\n").unwrap();
     std::fs::write(project.join(".env.example"), "example-ok\n").unwrap();
     std::fs::write(project.join("secrets.yaml"), "canary-yaml\n").unwrap();
     // Source modules named `secrets` are code, not secrets.
@@ -179,12 +189,14 @@ fn secret_locations_are_unreadable() {
         &project,
         &sandbox(SandboxLevel::Project, false, &dir),
         &format!(
-            "for f in {}/.ssh/id_ed25519 {}/.glave/glave.db .env .ENV.local server.pem secrets.yaml .env.example secrets.rs secrets.py notes.md .venv/lib/certifi/cacert.pem; do cat \"$f\"; done; true",
-            dir.display(),
-            dir.display()
+            "for f in {home}/.ssh/id_ed25519 {home}/.glave/glave.db {home}/.config/gh/hosts.yml {home}/.cargo/credentials.toml {home}/.cargo/config.toml {home}/.zsh_history .env .ENV.local privkey.pem secrets.yaml .env.example secrets.rs secrets.py notes.md .venv/lib/certifi/cacert.pem cert.pem fullchain.pem debug.keystore; do cat \"$f\"; done; true",
+            home = dir.display(),
         ),
     );
     assert!(!out.text.contains("canary"), "{}", out.text);
+    for open in ["cargo-config-ok", "cert-ok", "chain-ok", "keystore-ok"] {
+        assert!(out.text.contains(open), "{open}: {}", out.text);
+    }
     assert!(out.text.contains("example-ok"), "{}", out.text);
     assert!(out.text.contains("notes-ok"), "{}", out.text);
     assert!(out.text.contains("bundle-ok"), "{}", out.text);
@@ -198,30 +210,80 @@ fn secret_locations_are_unreadable() {
         &project,
         None,
         &format!(
-            "cat {}/.ssh/id_ed25519 .env .ENV.local server.pem",
+            "cat {}/.ssh/id_ed25519 .env .ENV.local privkey.pem",
             dir.display()
         ),
     );
     assert_eq!(open.text.matches("canary").count(), 4, "{}", open.text);
 }
 
-/// Package managers keep their caches in the home folder, which sandboxed commands cannot
-/// write; in the sandbox they go in its temp folder, so installing a dependency works.
+/// A hidden file is refused, as on every platform, never read as empty: the command fails,
+/// and the model is told the sandbox hides secrets.
 #[test]
-fn package_caches_are_in_the_sandbox_s_temp_folder() {
+fn reading_a_hidden_file_fails_and_says_so() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("hidden");
+    let project = dir.join("project");
+    std::fs::write(project.join(".env"), "canary-env\n").unwrap();
+    let out = run(
+        &project,
+        &sandbox(SandboxLevel::Project, false, &dir),
+        "cat .env",
+    );
+    assert!(out.is_error, "{}", out.text);
+    assert!(!out.text.contains("canary"), "{}", out.text);
+    let said = out.text.to_ascii_lowercase();
+    assert!(
+        said.contains("permission denied") || said.contains("operation not permitted"),
+        "{}",
+        out.text
+    );
+    assert!(out.text.contains("files such as .env"), "{}", out.text);
+}
+
+/// Package managers keep their caches in the home folder, which sandboxed commands cannot
+/// write; in the sandbox they go in glave's sandbox cache folder, kept between runs, so
+/// installing a dependency works and stays fast. The rest of glave's folder stays hidden.
+#[test]
+fn package_caches_are_in_glave_s_sandbox_cache_and_stay_warm() {
     if !enforced() {
         return;
     }
     let dir = scratch("caches");
     let project = dir.join("project");
+    std::fs::create_dir_all(dir.join(".glave")).unwrap();
+    std::fs::write(dir.join(".glave/glave.db"), "canary-db\n").unwrap();
+    let cache = std::fs::canonicalize(dir.join(".glave"))
+        .unwrap()
+        .join("sandbox-cache");
+    let sandbox = sandbox(SandboxLevel::Project, true, &dir);
+    let variables = "XDG_CACHE_HOME npm_config_cache npm_config_store_dir YARN_CACHE_FOLDER \
+        BUN_INSTALL_CACHE_DIR PIP_CACHE_DIR UV_CACHE_DIR UV_PYTHON_INSTALL_DIR POETRY_CACHE_DIR \
+        PRE_COMMIT_HOME HF_HOME DENO_DIR GOPATH GOMODCACHE GOCACHE GRADLE_USER_HOME";
     let out = run(
         &project,
-        &sandbox(SandboxLevel::Project, true, &dir),
-        "for v in XDG_CACHE_HOME npm_config_cache YARN_CACHE_FOLDER PIP_CACHE_DIR UV_CACHE_DIR \
-         GOPATH GOMODCACHE GOCACHE; do case \"${!v}\" in \"$TMPDIR\"/*) mkdir -p \"${!v}\" && \
-         touch \"${!v}/x\" && echo \"$v writable\";; *) echo \"$v is ${!v}\";; esac; done",
+        &sandbox,
+        &format!(
+            "for v in {variables}; do case \"${{!v}}\" in {cache}/*) mkdir -p \"${{!v}}\" && \
+             echo warm > \"${{!v}}/x\" && echo \"$v writable\";; *) echo \"$v is ${{!v}}\";; esac; done; \
+             echo \"maven: $MAVEN_OPTS\"; cat {glave}/glave.db",
+            cache = cache.display(),
+            glave = dir.join(".glave").display(),
+        ),
     );
-    assert_eq!(out.text.matches("writable").count(), 8, "{}", out.text);
+    assert_eq!(out.text.matches("writable").count(), 16, "{}", out.text);
+    assert!(
+        out.text
+            .contains(&format!("-Dmaven.repo.local={}/maven", cache.display())),
+        "{}",
+        out.text
+    );
+    assert!(!out.text.contains("canary"), "{}", out.text);
+    // The next run, in a sandbox prepared afresh, finds what the last one left.
+    let again = run(&project, &sandbox, "cat \"$PIP_CACHE_DIR/x\"");
+    assert!(again.text.contains("warm"), "{}", again.text);
 }
 
 #[test]

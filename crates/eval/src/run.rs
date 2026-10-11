@@ -167,6 +167,7 @@ pub async fn attempt(
         original: &task.environment(),
         model,
         memory: &memory,
+        requested: &pages.as_ref().map(Pages::requested).unwrap_or_default(),
     };
     failures.extend(
         task.checks
