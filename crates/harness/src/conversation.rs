@@ -54,6 +54,9 @@ pub fn conversation(events: &[Event]) -> Vec<Message> {
             | Body::GoalEnded(_)
             | Body::WorkspaceBound(_)
             | Body::WorkspaceRemoved(_)
+            | Body::ThreadArchived(_)
+            | Body::ThreadUnarchived(_)
+            | Body::ThreadDeleted(_)
             | Body::HookRan(_)
             | Body::Unknown(_) => {}
         }

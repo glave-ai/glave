@@ -1,34 +1,24 @@
 //! `glave worktrees`: the worktrees threads made on this machine (with `worktree = true` or
 //! `--worktree`), and cleaning them up: by hand with `prune`, and once a day when glave starts.
 
-mod cleanup;
-
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use glave_computer::worktrees::{self, Kept, Trash};
+use glave_computer::worktrees::Trash;
 use glave_event::{Body, Opened, ThreadId, decode};
 use glave_harness::OsEntropy;
 use glave_ports::EventLog;
 use glave_ports::secrets::without_secrets;
-use glave_session::protocol::{Reply, Request};
+pub use glave_session::cleanup::FOLDER;
+use glave_session::cleanup::{Cleaning, Cleanup, InLog, Ledger, is_due};
+use glave_session::protocol::{Reply, Request, WorktreeInfo};
 use glave_store_sqlite::Store;
-use jiff::{SignedDuration, Timestamp};
+use jiff::Timestamp;
 
 use crate::client::Glave;
+use crate::local::Peer;
 use crate::{home, keys};
-
-pub use cleanup::Cleanup;
-
-/// The folder in glave's folder where threads' worktrees are kept, one folder per repository.
-pub const FOLDER: &str = "worktrees";
-
-/// The file in glave's folder holding when worktrees were last checked.
-const SWEPT: &str = "worktrees-checked";
-
-/// How often glave checks worktrees as it starts.
-const EVERY: SignedDuration = SignedDuration::from_hours(24);
 
 pub const USAGE: &str = "\
 glave worktrees: the worktrees threads made on this machine
@@ -103,99 +93,135 @@ fn forced_names(words: &[String]) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
+/// Where this machine's worktrees are kept and what cleaning them needs.
+pub fn cleaning() -> anyhow::Result<Cleaning> {
+    Ok(Cleaning {
+        base: home::folder()?.join(FOLDER),
+        environment: without_secrets(std::env::vars_os()),
+        home: std::env::var_os("HOME").map(PathBuf::from),
+        data_home: std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
+    })
+}
+
 async fn run(prune: bool, forced: &[String]) -> anyhow::Result<()> {
-    let home = home::folder()?;
-    let environment = without_secrets(std::env::vars_os());
-    let kept = worktrees::list(&home.join(FOLDER), &environment).await?;
+    let cleaning = cleaning()?;
+    // A running glave is the one writer of its threads, so it does the work when there is one.
+    let mut peer = Peer::connect().await;
     if !prune {
-        print!("{}", listing(&kept, &home.join(FOLDER)));
+        let shown = match &mut peer {
+            Some(peer) => match peer.call(&Request::WorktreesList {}).await? {
+                Reply::Worktrees { worktrees } => worktrees,
+                other => anyhow::bail!("the running glave answered worktrees/list with {other:?}"),
+            },
+            None => cleaning
+                .list()
+                .await?
+                .iter()
+                .map(glave_session::worktree_info)
+                .collect(),
+        };
+        print!("{}", listing(&shown, &cleaning.base));
         return Ok(());
     }
-    let store = Store::open(
-        home::database().await?,
-        keys::settings(&home, home::relocated()).await?,
-    )
-    .await?;
-    let now = Timestamp::now();
-    let trash = this_machines_trash(now);
-    let cleanup = Cleanup {
-        log: &store.log(),
-        environment: &environment,
-        trash: trash.as_ref(),
-        now,
-        entropy: &OsEntropy,
+    let lines = if let Some(peer) = &mut peer {
+        let request = Request::WorktreesPrune {
+            force: forced.to_vec(),
+        };
+        match peer.call(&request).await? {
+            Reply::Cleaned { notes } => notes,
+            other => anyhow::bail!("the running glave answered worktrees/prune with {other:?}"),
+        }
+    } else {
+        let home = home::folder()?;
+        let store = Store::open(
+            home::database().await?,
+            keys::settings(&home, home::relocated()).await?,
+        )
+        .await?;
+        let log = store.log();
+        let now = Timestamp::now();
+        let trash = cleaning.trash(now);
+        let ledger = InLog(&log);
+        let cleanup = in_process(&ledger, &cleaning, trash.as_ref(), now);
+        cleanup.prune(&cleaning.list().await?, forced).await
     };
-    for line in cleanup.prune(&kept, forced).await {
+    for line in lines {
         println!("{line}");
     }
     Ok(())
 }
 
-/// The person's Trash on this machine, if it has one glave knows.
-fn this_machines_trash(now: Timestamp) -> Option<Trash> {
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    let data_home = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
-    let deleted_at = now.strftime("%Y-%m-%dT%H:%M:%S").to_string();
-    Trash::for_home(&home, data_home.as_deref(), &deleted_at)
+/// A cleanup over `ledger` (the log itself, when no glave is running) with this machine's
+/// worktree settings.
+fn in_process<'a, T: Ledger>(
+    ledger: &'a T,
+    cleaning: &'a Cleaning,
+    trash: Option<&'a Trash>,
+    now: Timestamp,
+) -> Cleanup<'a, T> {
+    Cleanup {
+        ledger,
+        environment: &cleaning.environment,
+        trash,
+        now,
+        entropy: &OsEntropy,
+    }
 }
 
 /// Checks this machine's worktrees as glave starts, at most once a day, with what `log`
-/// holds; says what it did on standard error. Never stops glave from starting.
+/// holds, or by asking a glave that is already running; says what it did on standard error.
+/// Never stops glave from starting.
 pub async fn check_at_start<L: EventLog>(log: &L) {
     let Ok(home) = home::folder() else {
         return;
     };
-    let environment = without_secrets(std::env::vars_os());
-    let now = Timestamp::now();
-    let trash = this_machines_trash(now);
-    let cleanup = Cleanup {
-        log,
-        environment: &environment,
-        trash: trash.as_ref(),
-        now,
-        entropy: &OsEntropy,
+    let Ok(cleaning) = cleaning() else {
+        return;
     };
-    for line in check_if_due(&home, &cleanup).await {
+    let now = Timestamp::now();
+    match is_due(&home, now).await {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(message) => {
+            eprintln!("glave: {message}");
+            return;
+        }
+    }
+    let lines = if let Some(mut peer) = Peer::connect().await {
+        match peer.call(&Request::WorktreesIdle {}).await {
+            Ok(Reply::Cleaned { notes }) => notes,
+            Ok(_) => Vec::new(),
+            Err(error) => vec![format!("could not check worktrees: {error}")],
+        }
+    } else {
+        match cleaning.list().await {
+            Ok(kept) => {
+                let trash = cleaning.trash(now);
+                let ledger = InLog(log);
+                in_process(&ledger, &cleaning, trash.as_ref(), now)
+                    .idle(&kept)
+                    .await
+            }
+            Err(error) => vec![format!("could not check worktrees: {error}")],
+        }
+    };
+    for line in lines {
         eprintln!("glave: {line}");
     }
 }
 
-/// The daily check, when the last one was a day or more before `cleanup.now`: it records the
-/// time first, so a check that fails is not retried until tomorrow.
-pub async fn check_if_due<L: EventLog>(home: &Path, cleanup: &Cleanup<'_, L>) -> Vec<String> {
-    let stamp = home.join(SWEPT);
-    let last = tokio::fs::read_to_string(&stamp)
-        .await
-        .ok()
-        .and_then(|text| text.trim().parse::<Timestamp>().ok());
-    if last.is_some_and(|last| cleanup.now.duration_since(last) < EVERY) {
-        return Vec::new();
-    }
-    let base = home.join(FOLDER);
-    if !tokio::fs::try_exists(&base).await.unwrap_or(false) {
-        return Vec::new();
-    }
-    if let Err(error) = tokio::fs::write(&stamp, cleanup.now.to_string()).await {
-        return vec![format!("could not write {}: {error}", stamp.display())];
-    }
-    match worktrees::list(&base, cleanup.environment).await {
-        Ok(kept) => cleanup.idle(&kept).await,
-        Err(error) => vec![format!("could not check worktrees: {error}")],
-    }
-}
-
 /// One line per worktree: its folder, branch, and whether removing it would lose work.
-fn listing(kept: &[Kept], base: &Path) -> String {
-    if kept.is_empty() {
+fn listing(shown: &[WorktreeInfo], base: &Path) -> String {
+    if shown.is_empty() {
         return format!("no worktrees in {}\n", base.display());
     }
     let mut out = String::new();
-    for kept in kept {
-        let standing = match kept.at_risk() {
-            None => "safe to remove".to_owned(),
-            Some(risk) => risk,
-        };
-        let held = kept
+    for worktree in shown {
+        let standing = worktree
+            .at_risk
+            .clone()
+            .unwrap_or_else(|| "safe to remove".to_owned());
+        let held = worktree
             .held
             .as_deref()
             .map(|why| format!("; held ({why})"))
@@ -203,8 +229,8 @@ fn listing(kept: &[Kept], base: &Path) -> String {
         let _ = writeln!(
             out,
             "{}  {}  ({standing}{held})",
-            kept.path.display(),
-            kept.branch.as_deref().unwrap_or("(no branch)"),
+            worktree.path,
+            worktree.branch.as_deref().unwrap_or("(no branch)"),
         );
     }
     out

@@ -32,6 +32,9 @@ Usage:
   glave policy explain [options] show every setting and where it came from, and every
                                 constraint and the policy file that set it
   glave skills                  list the skills the model is offered here
+  glave threads [archive|unarchive|delete <id>]
+                                list this folder's threads, or archive, restore or delete one
+                                (glave threads --help)
   glave worktrees [prune]       list the worktrees threads made, or remove the merged ones
                                 (glave worktrees --help)
   glave commands                list the custom commands you can type here as /name

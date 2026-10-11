@@ -47,6 +47,11 @@ pub fn main() -> ExitCode {
     {
         return crate::worktrees::main(rest);
     }
+    if let Some((first, rest)) = words.split_first()
+        && first == "threads"
+    {
+        return crate::threads::main(rest);
+    }
     let args = match args::parse(words) {
         Ok(args) => args,
         Err(message) => {
@@ -174,6 +179,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         tools: [crate::skills::offered(&root).await?, servers.sources()].concat(),
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
+        worktrees: Some(crate::worktrees::cleaning()?),
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
@@ -236,7 +242,11 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         if asks { Asking::Person } else { Asking::NoOne },
     )
     .await?;
+    let listening = crate::local::Listening::start(wired.server.clone()).await;
     let ran = session(&args, &wired, asks).await;
+    if let Some(listening) = listening {
+        listening.stop().await;
+    }
     wired.server.shutdown().await;
     wired.servers.close().await;
     ran
@@ -247,6 +257,7 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
 async fn serve(args: Args) -> anyhow::Result<ExitCode> {
     // The session API owns standard input, so there is no one to ask about a project.
     let wired = wire(&args, Answering::Clients, Asking::NoOne).await?;
+    let listening = crate::local::Listening::start(wired.server.clone()).await;
     let served = if let Some(address) = args.http {
         serve_http(&args, wired.server, address).await
     } else {
@@ -255,6 +266,9 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
             .await
             .map_err(anyhow::Error::from)
     };
+    if let Some(listening) = listening {
+        listening.stop().await;
+    }
     wired.servers.close().await;
     served?;
     Ok(ExitCode::SUCCESS)
@@ -340,7 +354,10 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
 async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, &'static str)> {
     if resume {
         let latest = match server
-            .request(Request::ThreadList { limit: Some(1) })
+            .request(Request::ThreadList {
+                limit: Some(1),
+                show: None,
+            })
             .await?
         {
             Reply::Threads { threads } => threads.first().map(|thread| thread.id),

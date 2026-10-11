@@ -29,6 +29,12 @@ const METHODS: &[&str] = &[
     "server/discover",
     "thread/start",
     "thread/list",
+    "thread/archive",
+    "thread/unarchive",
+    "thread/delete",
+    "worktrees/list",
+    "worktrees/prune",
+    "worktrees/idle",
     "thread/get",
     "thread/events",
     "turn/start",
@@ -89,6 +95,40 @@ where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin + Send + 'static,
 {
+    serving(server, input, output, true).await
+}
+
+/// Like [`serve`], for a short-lived client of a server that has other clients, such as a
+/// command asking a running `glave` to archive a thread. When this client goes away, only its
+/// own requests are finished; turns other clients started keep running.
+pub async fn serve_peer<P, L, B, R, W>(
+    server: Server<P, L, B>,
+    input: R,
+    output: W,
+) -> std::io::Result<()>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    serving(server, input, output, false).await
+}
+
+async fn serving<P, L, B, R, W>(
+    server: Server<P, L, B>,
+    input: R,
+    output: W,
+    owns_server: bool,
+) -> std::io::Result<()>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
     let (lines, mut queued) = mpsc::channel::<String>(WRITE_AHEAD);
     let writer = tokio::spawn(async move {
         let mut output = output;
@@ -126,12 +166,64 @@ where
         requests.spawn(async move { handle(&server, &line, &lines).await });
         while requests.try_join_next().is_some() {}
     };
-    // The client is gone: stop its turns, finish what is in flight, then the writes.
-    server.shutdown().await;
+    // The client is gone: stop its turns, finish what is in flight, then the writes. A peer
+    // leaves the server's other turns alone.
+    if owns_server {
+        server.shutdown().await;
+    }
     while requests.join_next().await.is_some() {}
     drop(lines);
     let written = writer.await.map_err(std::io::Error::other)?;
     read.and(written)
+}
+
+/// A response, as `call` reads it.
+#[derive(Deserialize)]
+struct Answer {
+    result: Option<Reply>,
+    error: Option<ApiError>,
+}
+
+/// Sends `request` as one JSON-RPC message and reads its reply: for a client of a server that
+/// answers a request with one message, as everything but `turn/start` and `goal/start` does.
+pub async fn call<R, W>(input: &mut R, output: &mut W, request: &Request) -> Result<Reply, ApiError>
+where
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let broken = |what: &str, err: &dyn std::fmt::Display| {
+        ApiError::new(
+            crate::protocol::code::INTERNAL,
+            format!("could not {what} the running glave: {err}"),
+        )
+    };
+    let mut message = serde_json::to_value(request).map_err(|err| broken("ask", &err))?;
+    if let Value::Object(fields) = &mut message {
+        fields.insert("jsonrpc".into(), "2.0".into());
+        fields.insert("id".into(), 1.into());
+    }
+    let mut line = message.to_string();
+    line.push('\n');
+    output
+        .write_all(line.as_bytes())
+        .await
+        .map_err(|err| broken("ask", &err))?;
+    output.flush().await.map_err(|err| broken("ask", &err))?;
+    let mut answer = String::new();
+    let got = (&mut *input)
+        .take(MAX_LINE)
+        .read_line(&mut answer)
+        .await
+        .map_err(|err| broken("hear from", &err))?;
+    if got == 0 {
+        return Err(broken("hear from", &"it closed the connection"));
+    }
+    let answer: Answer = serde_json::from_str(&answer).map_err(|err| broken("read", &err))?;
+    match (answer.result, answer.error) {
+        (_, Some(error)) => Err(error),
+        (Some(reply), None) => Ok(reply),
+        (None, None) => Err(broken("read", &"an answer with no result")),
+    }
 }
 
 /// Answers one message, streaming a turn's notifications before its response.

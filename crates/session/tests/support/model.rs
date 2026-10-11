@@ -22,14 +22,20 @@ use tokio::sync::Notify;
 pub struct Script {
     answers: Mutex<VecDeque<Completion>>,
     gate: Option<Arc<Notify>>,
+    /// Every request received, as JSON.
+    seen: Arc<Mutex<Vec<String>>>,
 }
 
 impl ModelProvider for Script {
     fn complete(
         &self,
-        _request: &ModelRequest,
+        request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),
     ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
+        self.seen
+            .lock()
+            .unwrap()
+            .push(serde_json::to_string(request).unwrap());
         let next = self.answers.lock().unwrap().pop_front();
         if let Some(Part::Text { text }) = next.as_ref().and_then(|c| c.parts.first()) {
             on_delta(Delta::Text(text.clone()));
@@ -140,10 +146,37 @@ pub async fn server_with<L: EventLog + 'static>(
     seed: u64,
     settings: Settings,
 ) -> Server<Script, L, MemoryBlobs> {
+    build(dir, answers, gate, log, answering, seed, settings, None)
+        .await
+        .0
+}
+
+/// Like `server_with`, also giving every request the model receives (as JSON), and keeping
+/// worktrees under `worktrees` when it is given.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a test helper that mirrors server_with"
+)]
+pub async fn build<L: EventLog + 'static>(
+    dir: &PathBuf,
+    answers: Vec<Completion>,
+    gate: Option<Arc<Notify>>,
+    log: L,
+    answering: Answering,
+    seed: u64,
+    settings: Settings,
+    worktrees: Option<PathBuf>,
+) -> (Server<Script, L, MemoryBlobs>, Arc<Mutex<Vec<String>>>) {
+    let recorded = Arc::new(Mutex::new(Vec::new()));
+    let computers = match &worktrees {
+        Some(base) => LocalComputers::for_here(std::env::vars_os()).with_worktrees(base),
+        None => LocalComputers::for_here(std::env::vars_os()),
+    };
     let wiring = Wiring {
         provider: Script {
             answers: Mutex::new(answers.into()),
             gate,
+            seen: Arc::clone(&recorded),
         },
         log,
         blobs: MemoryBlobs::new(),
@@ -152,16 +185,20 @@ pub async fn server_with<L: EventLog + 'static>(
         ))),
         entropy: Box::new(Counting(AtomicU64::new(seed << 32))),
         workspace: {
-            let (computers, info) = LocalComputers::here(dir, std::env::vars_os())
-                .await
-                .unwrap();
+            let (computers, info) = computers.open_here(dir).await.unwrap();
             Workspace::new(computers, info)
         },
         tools: Vec::new(),
         worktree: false,
         hooks: glave_harness::Hooks::default(),
+        worktrees: worktrees.map(|base| glave_session::cleanup::Cleaning {
+            base,
+            environment: std::env::vars_os().collect(),
+            home: None,
+            data_home: None,
+        }),
     };
-    Server::new(wiring, settings, scope(), answering)
+    (Server::new(wiring, settings, scope(), answering), recorded)
 }
 
 pub async fn server(

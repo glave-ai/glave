@@ -28,7 +28,13 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | --- | --- | --- |
 | `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
 | `thread/start` | optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`) | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
-| `thread/list` | optional `limit` (default 20) | `threads`: summaries, newest first |
+| `thread/list` | optional `limit` (default 20); optional `show`: `active` (default), `archived`, or `deleted` (waiting for erasure, for the operator that does it) | `threads`: summaries, newest first |
+| `thread/archive` | `thread` | `notes`: one line for each worktree of the thread that was removed or held (below). Records `thread.archived`; the thread leaves `thread/list` and search but stays in the log and readable by id. A turn, goal or compaction in it is refused with `-32014`. Archiving an archived thread records nothing |
+| `thread/unarchive` | `thread` | `{}`. Records `thread.unarchived` |
+| `thread/delete` | `thread` | `notes`, as `thread/archive`. Records `thread.deleted`: the thread is hidden for good, and every method but `thread/list` with `show: deleted` answers `-32001` for it |
+| `worktrees/list` | none | `worktrees`: each worktree threads made on this computer (`path`, `name`, `branch`, `at_risk`, `held`) |
+| `worktrees/prune` | optional `force`: folder names to remove whatever they hold | `notes`: one line for each worktree |
+| `worktrees/idle` | none | `notes`. The daily check: worktrees whose repository is gone, and those whose thread did nothing for 30 days |
 | `thread/get` | `thread` | `thread`: its summary |
 | `thread/events` | `thread`; optional `after` (a `seq`), `limit` (default 500) | `events`: stored events in `seq` order, exactly as `events.md` defines them; `next`, when there are more |
 | `thread/watch` | `thread`; optional `after` | streams the thread's notifications from `after` on, until the client stops listening |
@@ -46,6 +52,12 @@ A **thread summary** has `id` and `status`: `idle`, `running` or `waiting` (a tu
 A **turn result** has `outcome` (`completed`, `cancelled`, `failed`, `interrupted`, `limit_reached`), `model_calls`, `tool_calls`, `tokens` and `cost` as in `events.md`.
 
 Each server serves one workspace and one scope in version 1. Choosing among several workspaces arrives with issue #29; choosing a space arrives with organizations (issue #22).
+
+## Archiving, deleting and worktree cleanup
+
+- **Archive and delete are events** (`thread.archived`, `thread.unarchived`, `thread.deleted`), appended by the server that holds the thread, so they never conflict with a thread open in it. A thread with a turn running is refused with `-32002`.
+- **Worktrees.** Archiving or deleting a thread removes its worktree at once when that loses nothing (no uncommitted changes, every commit on a remote) and records `workspace.removed` with reason `archived`; its branch stays. A worktree that would lose work is kept and marked held, and the reply's `notes` say why. A worktree whose thread has a turn running is never touched.
+- **One writer.** Cleanup (`worktrees/prune`, `worktrees/idle`, and the two above) runs inside the server, which appends `workspace.removed` through the thread it holds. The CLI asks a running glave over `session.sock` in `GLAVE_HOME` (JSON-RPC, one message per line, served by whichever `glave` or `glave serve` started first); when nothing answers it does the same work itself, appending to the log directly.
 
 ## Notifications
 
@@ -112,6 +124,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32011` | The thread is running in another server of this deployment |
 | `-32012` | The caller may not do this |
 | `-32013` | No valid sign-in (network transports) |
+| `-32014` | The thread is archived; unarchive it first |
 | `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
 
 ## Transports
@@ -158,6 +171,7 @@ Version 1, in-process (`glave-session`, used by the CLI), over stdio (`glave ser
 - **Sign-in on HTTP:** OIDC access tokens signed with RS256 or ES256, checked against the keys the issuer's discovery document points to, with `iss`, `aud`, `exp` and `nbf` verified and a minute of clock skew forgiven. Keys are cached and fetched again for a key not seen yet, at most every 30 seconds. An issuer must be `https`, or `http` on the same computer. The person is derived from the issuer and subject (a UUID v7 at time zero whose random bits are the start of a SHA-256 of both) until an identity source maps them. The caller is stamped as "Who is calling" describes. The listener has no TLS of its own: across machines it sits behind a proxy that has.
 - **Retries:** `turn/start` honours `_meta.idempotency_key` for the 1,024 most recent keys, in memory.
 - Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted.
+- **Archive, delete, cleanup:** built (issue #131). **Deleting does not erase yet:** today's keys are per space and month, so one thread's content cannot be destroyed alone (`storage.md`). `thread/delete` hides the thread for good and lists it (`thread/list` with `show: deleted`) for the erasure that arrives with data keys per thread. Only the first `glave` in a `GLAVE_HOME` listens on `session.sock`; a second one, in another folder, keeps its own threads in memory and can still meet a cleanup appended to them from outside, which the log's `(thread, seq)` check turns into an error on its next turn, never into corruption.
 - Still to come from "Over the network" (issue #64): SAML and glave session tokens, durable paused turns, leases, WebSocket, and enforcing `-32011` and `-32012`.
 
 ## Later

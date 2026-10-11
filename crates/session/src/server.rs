@@ -7,14 +7,15 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::{Seq, ThreadId};
 use glave_harness::{
-    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Place, Settings, TurnSummary,
-    Workspace,
+    Caller, Change, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Place, Settings,
+    TurnSummary, Workspace,
 };
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, ToolSource};
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
 use crate::approvals::{Answering, Approvals};
+use crate::cleanup::Cleaning;
 use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
@@ -23,7 +24,7 @@ use crate::protocol::{
 };
 
 /// The most events or threads one page returns.
-const MAX_PAGE: usize = 5_000;
+pub(crate) const MAX_PAGE: usize = 5_000;
 
 /// What a server is built from: the harness's parts, less the approver, which is the API.
 pub struct Wiring<P, L, B> {
@@ -40,6 +41,9 @@ pub struct Wiring<P, L, B> {
     pub worktree: bool,
     /// Commands run at points of every turn.
     pub hooks: Hooks,
+    /// Where threads' worktrees are kept, so archiving a thread can remove its worktree and
+    /// `worktrees/*` can clean up; `None` on a computer that keeps none.
+    pub worktrees: Option<Cleaning>,
 }
 
 /// A session server for one workspace and one scope. Clones share it.
@@ -68,6 +72,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) tasks: Mutex<Vec<JoinHandle<()>>>,
     /// Turns started with an idempotency key, for retries.
     pub(crate) keyed: Keyed,
+    /// Where worktrees are kept, when this computer keeps any.
+    pub(crate) cleaning: Option<Cleaning>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -105,6 +111,7 @@ where
                 threads: Mutex::new(HashMap::new()),
                 tasks: Mutex::new(Vec::new()),
                 keyed: Keyed::default(),
+                cleaning: wiring.worktrees,
             }),
         }
     }
@@ -124,7 +131,15 @@ where
                 protocols: vec![PROTOCOL.to_owned()],
             })),
             Request::ThreadStart { worktree } => self.start_thread(caller, worktree).await,
-            Request::ThreadList { limit } => self.list(limit).await,
+            Request::ThreadList { limit, show } => self.list(limit, show.unwrap_or_default()).await,
+            Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
+            Request::ThreadUnarchive { thread } => {
+                self.change(caller, thread, Change::Unarchive).await
+            }
+            Request::ThreadDelete { thread } => self.change(caller, thread, Change::Delete).await,
+            Request::WorktreesList {} => self.worktrees_list().await,
+            Request::WorktreesPrune { force } => self.worktrees_prune(&force).await,
+            Request::WorktreesIdle {} => self.worktrees_idle().await,
             Request::ThreadGet { thread } => {
                 self.load(thread).await?;
                 Ok(Reply::Thread {
@@ -232,20 +247,6 @@ where
         })
     }
 
-    async fn list(&self, limit: Option<usize>) -> Result<Reply, ApiError> {
-        let limit = limit.unwrap_or(20).clamp(1, MAX_PAGE);
-        let ids = self
-            .inner
-            .harness
-            .log()
-            .threads(&self.inner.scope, limit)
-            .await
-            .map_err(|err| ApiError::new(code::INTERNAL, err.to_string()))?;
-        Ok(Reply::Threads {
-            threads: ids.into_iter().map(|id| self.summary(id)).collect(),
-        })
-    }
-
     async fn events(
         &self,
         thread: ThreadId,
@@ -253,6 +254,7 @@ where
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
         let limit = limit.unwrap_or(500).clamp(1, MAX_PAGE);
+        self.ensure_not_deleted(thread).await?;
         let events = self
             .inner
             .harness

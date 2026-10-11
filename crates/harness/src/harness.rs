@@ -25,6 +25,7 @@ use crate::goal::{GoalProgress, Pursuit};
 use crate::hooks::Hooks;
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
+use crate::standing::Standing;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
 
@@ -157,6 +158,8 @@ pub struct Thread {
     /// Events glave recorded for itself that call ids do not count: the thread's
     /// `workspace.bound` events. Each takes a `seq` before any later call, so ids stay unique.
     pub(crate) unnumbered: u64,
+    /// Whether the thread is shown, archived or deleted.
+    pub(crate) standing: Standing,
 }
 
 impl Thread {
@@ -284,6 +287,16 @@ where
         &self.workspace
     }
 
+    /// The harness's clock.
+    pub fn clock(&self) -> &dyn Clock {
+        self.clock.as_ref()
+    }
+
+    /// The harness's source of randomness for ids.
+    pub fn entropy(&self) -> &dyn Entropy {
+        self.entropy.as_ref()
+    }
+
     /// The log events are written to.
     pub fn log(&self) -> &L {
         &self.log
@@ -339,6 +352,7 @@ where
             goal: None,
             workspace,
             unnumbered: u64::from(bound.is_some()),
+            standing: Standing::Active,
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {

@@ -229,6 +229,9 @@ pub fn kinds(events: &[Event]) -> Vec<&'static str> {
         .map(|e| match e.body {
             Body::ThreadStarted(_) => "thread.started",
             Body::ThreadCompacted(_) => "thread.compacted",
+            Body::ThreadArchived(_) => "thread.archived",
+            Body::ThreadUnarchived(_) => "thread.unarchived",
+            Body::ThreadDeleted(_) => "thread.deleted",
             Body::TurnStarted(_) => "turn.started",
             Body::MessageAdded(_) => "message.added",
             Body::ToolCallRequested(_) => "tool.call.requested",

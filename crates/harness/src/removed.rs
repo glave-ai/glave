@@ -2,7 +2,7 @@
 //! beside it), when its thread last did anything, and recording its removal as
 //! `workspace.removed` on the thread.
 
-use glave_event::{EventId, Header, RawEvent, Seq, ThreadId, WorkspaceRemoved, encode};
+use glave_event::{EventId, Header, Payload, RawEvent, Seq, ThreadId, WorkspaceRemoved, encode};
 use glave_ports::{EventLog, OrgId, Scope, SpaceId};
 use jiff::Timestamp;
 use uuid::Uuid;
@@ -79,6 +79,18 @@ pub async fn record_removed<L: EventLog>(
     random: [u8; 10],
     removed: &WorkspaceRemoved,
 ) -> Result<(), HarnessError> {
+    append_next(log, scope, thread, at, random, removed).await
+}
+
+/// Appends `payload` as the thread's next event, made `at` with `random` for its id.
+pub(crate) async fn append_next<L: EventLog, T: Payload>(
+    log: &L,
+    scope: &Scope,
+    thread: ThreadId,
+    at: Timestamp,
+    random: [u8; 10],
+    payload: &T,
+) -> Result<(), HarnessError> {
     let last = last_event(log, scope, thread)
         .await?
         .ok_or(HarnessError::NotFound(thread))?;
@@ -92,6 +104,6 @@ pub async fn record_removed<L: EventLog>(
         seq,
         at: at.into(),
     };
-    log.append(scope, &[encode(header, removed)?]).await?;
+    log.append(scope, &[encode(header, payload)?]).await?;
     Ok(())
 }

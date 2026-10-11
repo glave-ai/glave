@@ -9,9 +9,9 @@ use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeNa
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
     ApprovalDecided, ApprovalRequested, GoalEnded, GoalSet, HookRan, MessageAdded, ModelResponded,
-    ThreadCompacted, ThreadStarted, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted,
-    WorkspaceBound, WorkspaceRemoved, approval, goal, hook, message, model, thread, tool, turn,
-    workspace,
+    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadStarted, ThreadUnarchived,
+    ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
+    approval, goal, hook, message, model, standing, thread, tool, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -29,6 +29,9 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (thread::TYPE, 2),
     (thread::TYPE, 3),
     (thread::COMPACTED, 1),
+    (standing::ARCHIVED, 1),
+    (standing::UNARCHIVED, 1),
+    (standing::DELETED, 1),
     (turn::STARTED, 1),
     (turn::STARTED, 2),
     (message::TYPE, 1),
@@ -60,6 +63,9 @@ pub struct Event {
 pub enum Body {
     ThreadStarted(ThreadStarted),
     ThreadCompacted(ThreadCompacted),
+    ThreadArchived(ThreadArchived),
+    ThreadUnarchived(ThreadUnarchived),
+    ThreadDeleted(ThreadDeleted),
     TurnStarted(TurnStarted),
     MessageAdded(MessageAdded),
     ToolCallRequested(ToolCallRequested),
@@ -130,6 +136,15 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         thread::COMPACTED => {
             thread::decode_compacted(version, data).map(|r| r.map(Body::ThreadCompacted))
         }
+        standing::ARCHIVED => {
+            standing::decode_archived(version, data).map(|r| r.map(Body::ThreadArchived))
+        }
+        standing::UNARCHIVED => {
+            standing::decode_unarchived(version, data).map(|r| r.map(Body::ThreadUnarchived))
+        }
+        standing::DELETED => {
+            standing::decode_deleted(version, data).map(|r| r.map(Body::ThreadDeleted))
+        }
         turn::STARTED => turn::decode_started(version, data).map(|r| r.map(Body::TurnStarted)),
         message::TYPE => message::decode(version, data).map(|r| r.map(Body::MessageAdded)),
         tool::REQUESTED => {
@@ -182,6 +197,9 @@ impl Event {
         match &self.body {
             Body::ThreadStarted(payload) => encode(header, payload),
             Body::ThreadCompacted(payload) => encode(header, payload),
+            Body::ThreadArchived(payload) => encode(header, payload),
+            Body::ThreadUnarchived(payload) => encode(header, payload),
+            Body::ThreadDeleted(payload) => encode(header, payload),
             Body::TurnStarted(payload) => encode(header, payload),
             Body::MessageAdded(payload) => encode(header, payload),
             Body::ToolCallRequested(payload) => encode(header, payload),

@@ -33,14 +33,18 @@ pub fn branch_for(thread: ThreadId) -> String {
 }
 
 /// How many of `events` are glave's own record of where the thread works (bindings and
-/// removals), which call ids do not count.
+/// removals) and of whether the thread is shown, which call ids do not count.
 pub(crate) fn own_records(events: &[Event]) -> u64 {
     let count = events
         .iter()
         .filter(|event| {
             matches!(
                 event.body,
-                Body::WorkspaceBound(_) | Body::WorkspaceRemoved(_)
+                Body::WorkspaceBound(_)
+                    | Body::WorkspaceRemoved(_)
+                    | Body::ThreadArchived(_)
+                    | Body::ThreadUnarchived(_)
+                    | Body::ThreadDeleted(_)
             )
         })
         .count();

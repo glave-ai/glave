@@ -27,7 +27,32 @@ pub enum Request {
     ThreadList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
+        /// Which threads: the active ones by default.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        show: Option<Show>,
     },
+    /// Hides a thread from lists, keeping it in the log; its idle worktree is removed.
+    #[serde(rename = "thread/archive")]
+    ThreadArchive { thread: ThreadId },
+    /// Brings an archived thread back.
+    #[serde(rename = "thread/unarchive")]
+    ThreadUnarchive { thread: ThreadId },
+    /// Hides a thread for good and marks it for erasure; its idle worktree is removed.
+    #[serde(rename = "thread/delete")]
+    ThreadDelete { thread: ThreadId },
+    /// The worktrees threads made on this machine.
+    #[serde(rename = "worktrees/list")]
+    WorktreesList {},
+    /// Removes every worktree that is safe to remove, and the ones named in `force`
+    /// (by folder name) whatever they hold.
+    #[serde(rename = "worktrees/prune")]
+    WorktreesPrune {
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        force: Vec<String>,
+    },
+    /// The daily check: worktrees whose repository is gone, and those idle for 30 days.
+    #[serde(rename = "worktrees/idle")]
+    WorktreesIdle {},
     #[serde(rename = "thread/get")]
     ThreadGet { thread: ThreadId },
     #[serde(rename = "thread/events")]
@@ -91,6 +116,12 @@ impl Request {
             Self::Discover {} => "server/discover",
             Self::ThreadStart { .. } => "thread/start",
             Self::ThreadList { .. } => "thread/list",
+            Self::ThreadArchive { .. } => "thread/archive",
+            Self::ThreadUnarchive { .. } => "thread/unarchive",
+            Self::ThreadDelete { .. } => "thread/delete",
+            Self::WorktreesList { .. } => "worktrees/list",
+            Self::WorktreesPrune { .. } => "worktrees/prune",
+            Self::WorktreesIdle { .. } => "worktrees/idle",
             Self::ThreadGet { .. } => "thread/get",
             Self::ThreadEvents { .. } => "thread/events",
             Self::TurnStart { .. } => "turn/start",
@@ -156,6 +187,18 @@ impl From<IdempotencyKey> for String {
     }
 }
 
+/// Which threads `thread/list` shows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Show {
+    /// Threads that are neither archived nor deleted.
+    #[default]
+    Active,
+    Archived,
+    /// Deleted threads, waiting for their content to be erased: for the operator that does it.
+    Deleted,
+}
+
 /// The person's answer to an approval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -179,6 +222,23 @@ pub struct ServerInfo {
 pub struct ThreadSummary {
     pub id: ThreadId,
     pub status: Status,
+}
+
+/// A worktree a thread made.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorktreeInfo {
+    /// Its folder.
+    pub path: String,
+    /// The folder's name, which `worktrees/prune` takes in `force`.
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Why removing it would lose work; absent when it is safe to remove.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at_risk: Option<String>,
+    /// Why a cleanup wanted it gone but kept it, such as `idle`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held: Option<String>,
 }
 
 /// What a thread is doing.
@@ -240,6 +300,13 @@ pub enum Reply {
     Compacted {
         before_tokens: u64,
         after_tokens: u64,
+    },
+    /// What a cleanup did, one line for each worktree it looked at.
+    Cleaned {
+        notes: Vec<String>,
+    },
+    Worktrees {
+        worktrees: Vec<WorktreeInfo>,
     },
     /// Before `Done`, which takes any object.
     Goal {
@@ -393,6 +460,8 @@ pub mod code {
     pub const NO_GOAL: i64 = -32007;
     /// The thread's workspace could not be opened, such as a worktree outside a repository.
     pub const WORKSPACE: i64 = -32009;
+    /// The thread is archived: unarchive it before running a turn in it.
+    pub const ARCHIVED: i64 = -32014;
     /// A hook stopped the prompt before the model saw it.
     pub const PROMPT_BLOCKED: i64 = -32008;
     pub const CANCELLED: i64 = -32005;
