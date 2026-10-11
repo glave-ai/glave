@@ -296,6 +296,8 @@ mod safety {
             assert!(!format!("{:?}", child.messages).contains("SPACE-CANARY"));
             let parent = &requests[0];
             assert!(format!("{:?}", parent.messages).contains("SPACE-CANARY"));
+            assert!(parent.system.contains("Memory: before your final answer"));
+            assert!(!child.system.contains("Memory:"), "{}", child.system);
         });
     }
 }
