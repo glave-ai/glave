@@ -22,6 +22,7 @@ mod system;
 mod terminal;
 mod trust;
 mod waiting;
+mod worktrees;
 
 fn main() -> std::process::ExitCode {
     session::main()

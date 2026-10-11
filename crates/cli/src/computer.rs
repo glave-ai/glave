@@ -89,10 +89,11 @@ pub fn main(arguments: &[String]) -> ExitCode {
 }
 
 async fn run(transport: Transport) -> anyhow::Result<()> {
-    let computers = Arc::new(LocalComputers::new(
-        home::folder()?.join("workspaces"),
-        std::env::vars_os(),
-    ));
+    let home = home::folder()?;
+    let computers = Arc::new(
+        LocalComputers::new(home.join("workspaces"), std::env::vars_os())
+            .with_worktrees(home.join(crate::worktrees::FOLDER)),
+    );
     match transport {
         Transport::Stdio => {
             let input = BufReader::new(tokio::io::stdin());

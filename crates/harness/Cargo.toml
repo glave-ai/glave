@@ -20,13 +20,14 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "process", "rt", "sync", "time"] }
+# Reading back the ids in a worktree's owner label (already in every glave crate's tree).
+uuid.workspace = true
 
 [dev-dependencies]
 # Tests run the tools on this machine as a computer, as the CLI does.
 glave-computer.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }
 proptest.workspace = true
-uuid.workspace = true
 
 [lints]
 workspace = true

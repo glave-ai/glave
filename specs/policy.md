@@ -7,7 +7,7 @@ How glave is set up: what a person or project chooses, and what an organization 
 First cut built, in the CLI (`crates/cli/src/policy`):
 
 - `~/.glave/config.toml` (in `GLAVE_HOME`) and `/etc/glave/policy.toml` are read as typed TOML; unknown keys, and a policy without `version = 1`, are errors naming the file and key.
-- Choices resolve nearest-wins across flags (`--model`, `--approval`, `--sandbox`, which now takes `off`), the environment (`GLAVE_MODEL`, `GLAVE_JUDGE_MODEL`), the person's file and the defaults, each remembering its source. `mcp` turns on only the named servers of `mcp.json`.
+- Choices resolve nearest-wins across flags (`--model`, `--approval`, `--sandbox`, which now takes `off`), the environment (`GLAVE_MODEL`, `GLAVE_JUDGE_MODEL`), the person's file and the defaults, each remembering its source. `mcp` turns on only the named servers of `mcp.json`. `worktree` (`true` or `false`, default `false`; also `--worktree`) gives each new thread a git worktree of its own instead of the folder itself (`computers.md`); it is a plain choice, needs no trust in a project's file, and `glave policy explain` shows it with its source.
 - Constraints only narrow: allow-lists intersect, deny lists add up, a requirement anywhere holds, limits take the smallest, and contradictions (no approval mode left, a judge both required and off) are errors.
 - A choice someone made outside the constraints is an error naming the rule, its file and the choice's source. Only glave's own defaults give way, to what the policy leaves (shown as "default, narrowed by" the file).
 - Enforced: `[models]` when the gateway's targets are built, `[approval] modes` and `judge` in the settings the harness runs with, `[sandbox] required` before the workspace exists, `[mcp] own = false` before any server starts.
@@ -66,6 +66,7 @@ judge_model = "anthropic/claude-haiku-5-5"   # or "off"
 approval = "auto"                             # or "ask"
 sandbox = "project"                           # or "off", "read-only"
 mcp = ["github", "jira"]                      # servers to turn on, from the catalog
+worktree = true                               # each thread in a worktree of its own; default false
 
 [[hooks.PreToolUse]]                          # commands run at points of a turn (approvals.md)
 matcher = "bash"

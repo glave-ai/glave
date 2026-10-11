@@ -96,6 +96,7 @@ mod glave_binary {
             types,
             [
                 "thread.started",
+                "workspace.bound",
                 "turn.started",
                 "message.added",
                 "tool.call.requested",

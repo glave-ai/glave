@@ -5,11 +5,12 @@
 mod command;
 mod files;
 mod finding;
-mod git;
+pub(crate) mod git;
 mod paths;
 mod registry;
 mod sandbox;
 mod walk;
+pub(crate) mod worktree;
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -30,6 +31,9 @@ pub use sandbox::sandbox_available;
 #[derive(Debug)]
 pub struct LocalComputers {
     base: PathBuf,
+    /// Where threads' worktrees are kept, outside every repository; none means this machine
+    /// opens no worktrees.
+    worktrees: Option<PathBuf>,
     environment: Arc<Vec<(OsString, OsString)>>,
     registry: Registry,
 }
@@ -44,6 +48,7 @@ impl LocalComputers {
     ) -> Self {
         Self {
             base: base.into(),
+            worktrees: None,
             environment: Arc::new(without_secrets(environment)),
             registry: Registry::default(),
         }
@@ -56,10 +61,30 @@ impl LocalComputers {
         folder: impl AsRef<Path>,
         environment: impl IntoIterator<Item = (OsString, OsString)>,
     ) -> Result<(Arc<Self>, WorkspaceInfo), ComputerError> {
-        let computers = Arc::new(Self::new(
-            std::env::temp_dir().join("glave-workspaces"),
-            environment,
-        ));
+        Self::for_here(environment).open_here(folder).await
+    }
+
+    /// This machine's computers as [`LocalComputers::here`] makes them, before a folder is
+    /// opened: to choose where worktrees are kept first.
+    pub fn for_here(environment: impl IntoIterator<Item = (OsString, OsString)>) -> Self {
+        Self::new(std::env::temp_dir().join("glave-workspaces"), environment)
+    }
+
+    /// Keeps threads' worktrees under `folder`, one folder per repository, so a computer here
+    /// can open [`Sources::Worktree`]. They outlive the computer: removing them is the
+    /// person's choice.
+    #[must_use]
+    pub fn with_worktrees(mut self, folder: impl Into<PathBuf>) -> Self {
+        self.worktrees = Some(folder.into());
+        self
+    }
+
+    /// A host computer made from these computers, with `folder` open on it in place.
+    pub async fn open_here(
+        self,
+        folder: impl AsRef<Path>,
+    ) -> Result<(Arc<Self>, WorkspaceInfo), ComputerError> {
+        let computers = Arc::new(self);
         let computer = computers.create(&Environment::host()).await?;
         let sources = Sources::Folder {
             path: folder.as_ref().to_string_lossy().into_owned(),
@@ -99,13 +124,27 @@ impl LocalComputers {
             .environment(computer)?
             .ok_or_else(|| ComputerError::NotFound(format!("no computer {computer}")))?;
         let id = WorkspaceId::from_uuid(registry::new_id());
-        let (root, copy) = match sources {
-            Sources::Folder { path } => (paths::folder(path).await?, false),
+        let (root, copy, git_common) = match sources {
+            Sources::Folder { path } => (paths::folder(path).await?, false, None),
             Sources::Git { url, at } => {
                 let dest = self.base.join(computer.to_string()).join(id.to_string());
                 let env = self.command_environment(&environment);
                 git::clone(&env, url, at.as_deref(), &dest).await?;
-                (paths::folder(&dest.to_string_lossy()).await?, true)
+                (paths::folder(&dest.to_string_lossy()).await?, true, None)
+            }
+            Sources::Worktree {
+                path,
+                branch,
+                owner,
+            } => {
+                let base = self.worktrees.as_ref().ok_or_else(|| {
+                    ComputerError::Unsupported(
+                        "this computer keeps no worktrees; work in the folder itself".into(),
+                    )
+                })?;
+                let env = self.command_environment(&environment);
+                let made = worktree::open(&env, base, path, branch, owner.as_deref()).await?;
+                (made.root, false, Some(made.common))
             }
         };
         let environment = self.command_environment(&environment);
@@ -127,6 +166,7 @@ impl LocalComputers {
             computer,
             root,
             copy,
+            git_common,
             environment,
             prepared: Mutex::new(None),
         };

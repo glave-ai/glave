@@ -3,6 +3,7 @@
 //! step is recorded as events, so the log alone can rebuild and resume any thread.
 
 mod approval;
+mod bind;
 mod builtins;
 mod caller;
 mod calls;
@@ -20,6 +21,7 @@ mod join;
 mod judge;
 mod prompt;
 mod question;
+mod removed;
 mod repeats;
 mod resume;
 mod retry;
@@ -33,6 +35,7 @@ mod toolset;
 mod turn;
 
 pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};
+pub use bind::{Place, branch_for};
 pub use caller::Caller;
 pub use cancel::Cancel;
 pub use commands::{
@@ -50,6 +53,7 @@ pub use instructions::{AGENTS_MD, Instructions, agents_md};
 pub use judge::{JudgeCase, Ruling, judge};
 pub use prompt::system_prompt;
 pub use question::{Choice, QUESTION, Question, QuestionRequest};
+pub use removed::{last_active, owner_label, owner_of, record_removed};
 pub use retry::Retries;
 pub use skills::{
     Found, MAX_LISTED, MAX_SKILLS, PROJECT_FOLDERS, SKILL, SKILL_MD, Skill, Skills, find_skills,

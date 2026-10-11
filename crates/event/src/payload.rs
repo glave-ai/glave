@@ -11,6 +11,7 @@ pub(crate) mod principal;
 pub(crate) mod thread;
 pub(crate) mod tool;
 pub(crate) mod turn;
+pub(crate) mod workspace;
 
 pub use approval::{ApprovalDecided, ApprovalRequested, Verdict};
 pub use goal::{GoalEnded, GoalReason, GoalResumed, GoalSet};
@@ -24,3 +25,6 @@ pub use thread::{
 };
 pub use tool::{Arguments, ToolCallCompleted, ToolCallRequested};
 pub use turn::{Auth, AuthMethod, Outcome, TraceId, TurnEnded, TurnStarted};
+pub use workspace::{
+    ComputerKind, ComputerRef, Opened, RemovedReason, WorkspaceBound, WorkspaceRemoved,
+};

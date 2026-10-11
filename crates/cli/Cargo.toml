@@ -27,6 +27,8 @@ glave-provider-openai.workspace = true
 glave-session.workspace = true
 glave-store-sqlite.workspace = true
 globset.workspace = true
+# Times for the daily check of worktrees: how long a thread has been idle.
+jiff.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["fs", "io-std", "io-util", "net", "rt", "signal", "sync", "time"] }

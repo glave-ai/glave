@@ -35,7 +35,11 @@ mod session {
         L: EventLog + 'static,
         B: glave_ports::BlobStore + 'static,
     {
-        match server.request(Request::ThreadStart {}).await.unwrap() {
+        match server
+            .request(Request::ThreadStart { worktree: None })
+            .await
+            .unwrap()
+        {
             Reply::Thread { thread } => {
                 assert_eq!(thread.status, Status::Idle);
                 thread.id

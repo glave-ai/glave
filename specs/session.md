@@ -27,7 +27,7 @@ Every request is made by a verified caller, a principal as `events.md` defines i
 | Method | Params | Result |
 | --- | --- | --- |
 | `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
-| `thread/start` | none | `thread`: a thread summary |
+| `thread/start` | optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`) | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
 | `thread/list` | optional `limit` (default 20) | `threads`: summaries, newest first |
 | `thread/get` | `thread` | `thread`: its summary |
 | `thread/events` | `thread`; optional `after` (a `seq`), `limit` (default 500) | `events`: stored events in `seq` order, exactly as `events.md` defines them; `next`, when there are more |
@@ -107,6 +107,7 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32006` | No such question is waiting |
 | `-32007` | The thread has no active goal (or, to resume, no paused one) |
 | `-32008` | A `UserPromptSubmit` hook stopped the prompt; the message gives its reason, and the model never saw the prompt (`approvals.md`, "Hooks") |
+| `-32009` | The thread's workspace could not be opened, such as a worktree outside a repository |
 | `-32010` | Unsupported protocol version; `data.supported` lists the spoken ones |
 | `-32011` | The thread is running in another server of this deployment |
 | `-32012` | The caller may not do this |

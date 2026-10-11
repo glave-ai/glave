@@ -132,6 +132,7 @@ fn flags(args: &Args) -> ConfigFile {
         model: args.model.clone(),
         approval: args.approval.map(Into::into),
         sandbox: args.sandbox,
+        worktree: args.worktree.then_some(true),
         ..ConfigFile::default()
     }
 }

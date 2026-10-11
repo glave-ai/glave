@@ -2,7 +2,7 @@
 //! runs on the workspace's computer (in its sandbox, when there is one), and is recorded as
 //! `hook.ran`. They run one after another, and the first that blocks ends the rest.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use glave_event::{Arguments, CallId, HookPoint, HookRan, HookResult, Outcome, Part};
 use glave_ports::{BlobStore, BoxFuture, Ending, EventLog, ModelProvider, Output, ToolOutput};
@@ -12,7 +12,7 @@ use super::{HOOK_TIMEOUT_SECS, Hook, point_name};
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::tools::workspace::explain;
+use crate::tools::workspace::{Workspace, explain};
 
 /// The most output kept from a hook, in bytes; the rest is dropped.
 const MAX_OUTPUT: usize = 64 * 1024;
@@ -138,13 +138,14 @@ where
         }
         input.insert("hook_event_name".into(), point_name(point).into());
         input.insert("session_id".into(), thread.id.to_string().into());
-        let root = self.workspace.root().display().to_string();
+        let workspace = Arc::clone(self.workspace_for(thread));
+        let root = workspace.root().display().to_string();
         input.insert("cwd".into(), root.into());
         let mode = self.settings.approval.name();
         input.insert("permission_mode".into(), mode.into());
         let input = Value::Object(input).to_string();
         for hook in hooks {
-            let ran = self.run_hook(hook, &input, cancel).await;
+            let ran = Self::run_hook(&workspace, hook, &input, cancel).await;
             let blocked = (ran.result == HookResult::Blocked)
                 .then(|| ran.reason.clone())
                 .flatten();
@@ -165,7 +166,7 @@ where
     }
 
     /// Runs one hook with `input` on its standard input, and reads its answer.
-    async fn run_hook(&self, hook: &Hook, input: &str, cancel: &Cancel) -> Ran {
+    async fn run_hook(workspace: &Workspace, hook: &Hook, input: &str, cancel: &Cancel) -> Ran {
         // The input goes in as a here-document; one line of JSON never ends it early.
         let script = format!(
             "{{\n{}\n}} <<'{END_OF_INPUT}'\n{input}\n{END_OF_INPUT}\n",
@@ -173,7 +174,7 @@ where
         );
         let timeout = hook.timeout_secs.unwrap_or(HOOK_TIMEOUT_SECS);
         let output = Kept::default();
-        let finished = self.workspace.run(script, timeout, &output, cancel).await;
+        let finished = workspace.run(script, timeout, &output, cancel).await;
         let text = output.text();
         let ending = match finished {
             Ok(finished) => finished.ending,

@@ -123,6 +123,11 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
                 &Source::Default,
             ),
         },
+        row(
+            "worktree",
+            if choices.worktree.value { "on" } else { "off" }.to_owned(),
+            &choices.worktree.from,
+        ),
     ]
 }
 

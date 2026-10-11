@@ -59,7 +59,10 @@ mod commands {
                 settings,
             )
             .await;
-            let Reply::Thread { thread } = server.request(Request::ThreadStart {}).await.unwrap()
+            let Reply::Thread { thread } = server
+                .request(Request::ThreadStart { worktree: None })
+                .await
+                .unwrap()
             else {
                 panic!("expected a thread");
             };

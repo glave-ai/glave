@@ -158,6 +158,7 @@ pub async fn server_with<L: EventLog + 'static>(
             Workspace::new(computers, info)
         },
         tools: Vec::new(),
+        worktree: false,
         hooks: glave_harness::Hooks::default(),
     };
     Server::new(wiring, settings, scope(), answering)

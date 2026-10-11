@@ -257,7 +257,16 @@ mod tests {
         );
         let (id, request) = parse(r#"{"jsonrpc":"2.0","id":"a","method":"thread/start"}"#).unwrap();
         assert_eq!(id, Some(Id::Text("a".into())));
-        assert_eq!(request, Request::ThreadStart {});
+        assert_eq!(request, Request::ThreadStart { worktree: None });
+        let (_, request) =
+            parse(r#"{"jsonrpc":"2.0","id":2,"method":"thread/start","params":{"worktree":true}}"#)
+                .unwrap();
+        assert_eq!(
+            request,
+            Request::ThreadStart {
+                worktree: Some(true)
+            }
+        );
     }
 
     #[test]

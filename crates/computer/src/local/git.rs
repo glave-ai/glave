@@ -19,15 +19,24 @@ const IGNORED: &str = "history.git";
 const MAX_PLAIN_BYTES: u64 = 100 * 1024 * 1024;
 
 /// One git invocation: the environment it runs with, the folder, and any leading options.
-struct Git<'a> {
-    environment: &'a [(OsString, OsString)],
-    at: &'a Path,
-    options: Vec<OsString>,
+pub(crate) struct Git<'a> {
+    pub(crate) environment: &'a [(OsString, OsString)],
+    pub(crate) at: &'a Path,
+    pub(crate) options: Vec<OsString>,
 }
 
-impl Git<'_> {
+impl<'a> Git<'a> {
+    /// git in the folder `at`.
+    pub(crate) fn at(environment: &'a [(OsString, OsString)], at: &'a Path) -> Self {
+        Self {
+            environment,
+            at,
+            options: Vec::new(),
+        }
+    }
+
     /// Runs git with `args`; its output, or what it said when it failed.
-    async fn run(&self, args: &[&str]) -> Result<String, String> {
+    pub(crate) async fn run(&self, args: &[&str]) -> Result<String, String> {
         let output = tokio::process::Command::new("git")
             .args(&self.options)
             .args(args)
@@ -47,13 +56,13 @@ impl Git<'_> {
         }
     }
 
-    async fn must(&self, args: &[&str]) -> Result<String, ComputerError> {
+    pub(crate) async fn must(&self, args: &[&str]) -> Result<String, ComputerError> {
         self.run(args).await.map_err(ComputerError::Failed)
     }
 }
 
 /// Refuses text git would read as an option.
-fn not_an_option(what: &str, value: &str) -> Result<(), ComputerError> {
+pub(crate) fn not_an_option(what: &str, value: &str) -> Result<(), ComputerError> {
     if value.starts_with('-') || value.trim().is_empty() {
         Err(ComputerError::Refused(format!(
             "{what} {value:?} is not valid"
