@@ -26,6 +26,7 @@ impl Enforcer {
         _root: &Path,
         _git_common: Option<&Path>,
         _helper: Option<&Path>,
+        _cache: Option<&Path>,
     ) -> std::future::Ready<Result<(Self, PathBuf), ComputerError>> {
         std::future::ready(Err(ComputerError::Unsupported(
             "the sandbox is not available on this computer (macOS and Linux only for now)".into(),
