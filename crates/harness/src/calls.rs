@@ -26,9 +26,9 @@ const NO_ANSWER: &str = "No one answered. Choose what seems best, go on, and say
 const DECLINED: &str = "The person declined this action. Ask them what they would like \
      instead, or take a different approach.";
 
-const DECLINED_SECRET: &str = "Reading this file was declined: it usually holds secrets such \
-     as keys or passwords. Do not try to get its contents another way. If you need a specific \
-     value, ask the person for it.";
+const DECLINED_SECRET: &str = "Declined: this would show you secrets such as keys, tokens or \
+     passwords. Do not try to get them another way. If you need a specific value, ask the \
+     person for it.";
 
 impl<P, L, B, A> Harness<P, L, B, A>
 where

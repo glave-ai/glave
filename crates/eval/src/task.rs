@@ -49,8 +49,9 @@ pub struct Task {
     /// Shell commands run in the workspace before the first turn, outside any sandbox.
     pub setup: Vec<String>,
     /// Extra environment for the agent's commands, the setup and the tests. Here and in
-    /// `setup`, `{dir}` is replaced with the run's folder, `{workspace}` with the workspace
-    /// and `{task}` with the task's folder, where setup scripts the agent never sees can live.
+    /// `setup`, `{dir}` is replaced with the run's folder, `{workspace}` with the workspace,
+    /// `{task}` with the task's folder, where setup scripts the agent never sees can live, and
+    /// `{path}` with the `PATH` commands would otherwise get.
     pub env: BTreeMap<String, String>,
     pub checks: Vec<Check>,
     pub timeout: Duration,

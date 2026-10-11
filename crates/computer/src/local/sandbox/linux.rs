@@ -67,6 +67,7 @@ impl Enforcer {
         root: &Path,
         git_common: Option<&Path>,
         helper: Option<&Path>,
+        cache: Option<&Path>,
     ) -> Result<(Self, PathBuf), ComputerError> {
         let git_common = resolved(git_common).await;
         let how = choose(sandbox, root, git_common.as_deref(), helper).await?;
@@ -86,6 +87,8 @@ impl Enforcer {
             shared_tmp: resolved(Some(Path::new("/tmp"))).await,
             home: resolved(sandbox.home.as_deref()).await,
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
+            cache: cache.map(Path::to_path_buf),
+            runtime: resolved(Some(runtime_folder().as_path())).await,
             git_common,
             names,
         };
@@ -134,6 +137,18 @@ impl Enforcer {
             }
         }
     }
+}
+
+/// The user's runtime folder, where Podman keeps its sign-ins: `$XDG_RUNTIME_DIR`, or
+/// `/run/user/<uid>` where that is unset.
+fn runtime_folder() -> PathBuf {
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .filter(|folder| folder.is_absolute())
+        .unwrap_or_else(|| {
+            let uid = rustix::process::getuid().as_raw();
+            PathBuf::from(format!("/run/user/{uid}"))
+        })
 }
 
 /// bubblewrap if it starts here; otherwise Landlock if the level allows it and the kernel and
@@ -196,6 +211,7 @@ fn landlock_plan(layout: &Layout) -> Result<landlocked::Plan, String> {
         .iter()
         .filter(|glave_home| layout.root.starts_with(glave_home))
         .map(|_| layout.root.clone())
+        .chain(layout.cache.iter().cloned())
         .collect();
     unreadable.sort();
     unreadable.dedup();
@@ -205,6 +221,7 @@ fn landlock_plan(layout: &Layout) -> Result<landlocked::Plan, String> {
             .shared_tmp
             .iter()
             .chain([&layout.temp])
+            .chain(&layout.cache)
             .cloned()
             .collect(),
         // Not glave's sandbox folder: it guards bubblewrap's stand-ins, which a machine

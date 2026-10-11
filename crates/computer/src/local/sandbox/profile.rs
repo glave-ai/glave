@@ -7,25 +7,15 @@ use std::path::{Path, PathBuf};
 
 use glave_ports::{PROTECTED, SandboxLevel};
 
-use super::secrets::{CERTIFICATE_BUNDLES, ENV_FILES, OTHER_SECRET_FILES, TEMPLATE_WORDS};
+use super::secrets::{ENV_FILES, HOME_SECRETS, OTHER_SECRET_FILES, TEMPLATE_WORDS};
 
 const BASE: &str = include_str!("base.sbpl");
 const PREFERENCES: &str = include_str!("preferences.sbpl");
 const NETWORK: &str = include_str!("network.sbpl");
 
-/// Under the home folder: where credentials live. Never readable from the sandbox.
-const HOME_SECRETS: &[&str] = &[
-    ".ssh",
-    ".aws",
-    ".azure",
-    ".config/gcloud",
-    ".kube",
-    ".docker/config.json",
-    ".gnupg",
-    ".netrc",
-    ".npmrc",
-    ".pypirc",
-    ".git-credentials",
+/// Under the home folder, on macOS besides the common list: the keychains, and browser
+/// profiles (cookies are credentials).
+const MACOS_HOME_SECRETS: &[&str] = &[
     "Library/Keychains",
     "Library/Cookies",
     "Library/Safari",
@@ -34,12 +24,23 @@ const HOME_SECRETS: &[&str] = &[
     "Library/Application Support/Microsoft Edge",
     "Library/Application Support/Arc",
     "Library/Application Support/Firefox",
+    "Library/Application Support/ngrok",
 ];
+
+/// The home folder's credential stores, as paths: hidden whether they exist yet or not.
+pub(crate) fn home_secrets(home: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+    HOME_SECRETS
+        .iter()
+        .chain(MACOS_HOME_SECRETS)
+        .map(move |secret| home.join(secret))
+}
 
 /// When the network is allowed: the internet and local servers, and name lookups, but not
 /// other Unix sockets (`docker.sock` is root on the machine; the ssh agent signs as the person).
 const NETWORK_RULES: &str = r#"; network: allowed
 (allow network-outbound (remote ip))
+; Seatbelt accepts only `*` or `localhost` as a host here, so the cloud metadata address
+; (169.254.169.254) cannot be singled out: blocking it needs a proxy (specs/sandbox.md).
 (allow network-inbound (local ip))
 (allow network-bind (local ip))
 (allow network-outbound (remote unix-socket (literal "/private/var/run/mDNSResponder")))
@@ -51,8 +52,11 @@ const NETWORK_RULES: &str = r#"; network: allowed
 pub(crate) struct Places {
     pub root: PathBuf,
     pub temp: PathBuf,
-    pub home: Option<PathBuf>,
     pub glave_home: Option<PathBuf>,
+    /// Credential stores, hidden: the home folder's, and where links among them lead.
+    pub hidden: Vec<PathBuf>,
+    /// glave's sandbox cache folder, readable and writable inside glave's own.
+    pub cache: Option<PathBuf>,
     /// For a worktree: the repository's shared git folder, where its commits go.
     pub git_common: Option<PathBuf>,
     /// For a worktree: its own folder in the shared one (`worktrees/<name>`).
@@ -82,34 +86,34 @@ pub(crate) fn profile(places: &Places, level: SandboxLevel, network: bool) -> Pr
 
 fn reads(profile: &mut Profile, places: &Places) {
     let mut conditions = vec![r#"(subpath "/")"#.to_owned()];
-    let home_secrets = places
-        .home
-        .iter()
-        .flat_map(|home| HOME_SECRETS.iter().map(move |secret| home.join(secret)));
-    for (index, path) in home_secrets.enumerate() {
+    for (index, path) in places.hidden.iter().cloned().enumerate() {
         let name = format!("SECRET_{index}");
         conditions.push(format!(r#"(require-not (subpath (param "{name}")))"#));
         profile.params.push((name, path));
     }
     if let Some(glave_home) = &places.glave_home {
-        // glave's own folder, except the workspace when it lives there: a thread's worktree.
-        conditions.push(
-            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))) (subpath (param "ROOT")))"#
-                .to_owned(),
-        );
+        // glave's own folder, except the workspace when it lives there (a thread's worktree)
+        // and the sandbox's cache folder.
+        let cache = if places.cache.is_some() {
+            r#" (subpath (param "CACHE"))"#
+        } else {
+            ""
+        };
+        conditions.push(format!(
+            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))) (subpath (param "ROOT")){cache})"#
+        ));
         profile
             .params
             .push(("GLAVE_HOME".into(), glave_home.clone()));
     }
     let root = regex_escape(&places.root);
-    let (env, templates, others, bundles) = (
+    let (env, templates, others) = (
         any_case(ENV_FILES),
         any_case(TEMPLATE_WORDS),
         any_case(OTHER_SECRET_FILES),
-        any_case(CERTIFICATE_BUNDLES),
     );
     conditions.push(format!(
-        r#"(require-any (require-not (regex #"^{root}/(.*/)?{others}$")) (regex #"^{root}/(.*/)?{bundles}$"))"#
+        r#"(require-not (regex #"^{root}/(.*/)?{others}$"))"#
     ));
     conditions.push(format!(
         r#"(require-any (require-not (regex #"^{root}/(.*/)?{env}$")) (regex #"^{root}/(.*/)?[^/]*{templates}[^/]*$"))"#
@@ -119,6 +123,13 @@ fn reads(profile: &mut Profile, places: &Places) {
         "; reads: everywhere except secret locations\n(allow file-read*\n  (require-all\n    {}))",
         conditions.join("\n    ")
     );
+    if places.glave_home.is_some() {
+        // That glave's folder is a folder, not what it holds: `mkdir -p` checks each folder
+        // on the way to the cache or a worktree inside it.
+        profile
+            .text
+            .push_str("(allow file-read-metadata (literal (param \"GLAVE_HOME\")))\n");
+    }
 }
 
 fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
@@ -132,6 +143,14 @@ fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
          (allow file-write* (require-all (subpath \"/private/tmp\") (require-not (subpath (param \"ROOT\")))))\n\
          (allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\") (regex #\"^/dev/fd/\"))\n",
     );
+    if let Some(cache) = &places.cache {
+        // What is inside it, never the folder itself, which a link could replace.
+        profile.params.push(("CACHE".into(), cache.clone()));
+        profile.text.push_str(
+            "; writes: the sandbox's package caches, kept between runs\n\
+             (allow file-write* (require-all (subpath (param \"CACHE\")) (require-not (literal (param \"CACHE\")))))\n",
+        );
+    }
     if level != SandboxLevel::Project {
         return;
     }
@@ -257,8 +276,9 @@ mod tests {
         Places {
             root: PathBuf::from("/Users/me/my.project"),
             temp: PathBuf::from("/private/var/folders/x/T"),
-            home: Some(PathBuf::from("/Users/me")),
             glave_home: Some(PathBuf::from("/Users/me/.glave")),
+            hidden: home_secrets(Path::new("/Users/me")).collect(),
+            cache: Some(PathBuf::from("/Users/me/.glave/sandbox-cache")),
             git_common: None,
             git_own: None,
         }
@@ -321,13 +341,32 @@ mod tests {
             .filter(|(name, _)| name.starts_with("SECRET_"))
             .map(|(_, path)| path.as_path())
             .collect();
-        assert!(secrets.contains(&Path::new("/Users/me/.ssh")));
+        for secret in [
+            "/Users/me/.ssh",
+            "/Users/me/.config/gh",
+            "/Users/me/.cargo/credentials.toml",
+            "/Users/me/.zsh_history",
+            "/Users/me/Library/Keychains",
+        ] {
+            assert!(secrets.contains(&Path::new(secret)), "{secret}");
+        }
+        assert!(
+            !secrets.contains(&Path::new("/Users/me/.cargo")),
+            "Cargo's home stays readable"
+        );
         assert_eq!(
             param(&profile, "GLAVE_HOME"),
             Some(Path::new("/Users/me/.glave"))
         );
         assert!(profile.text.contains(
-            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))) (subpath (param "ROOT")))"#
+            r#"(require-any (require-not (subpath (param "GLAVE_HOME"))) (subpath (param "ROOT")) (subpath (param "CACHE")))"#
+        ));
+        assert_eq!(
+            param(&profile, "CACHE"),
+            Some(Path::new("/Users/me/.glave/sandbox-cache"))
+        );
+        assert!(profile.text.contains(
+            r#"(allow file-write* (require-all (subpath (param "CACHE")) (require-not (literal (param "CACHE")))))"#
         ));
         assert_eq!(param(&profile, "COMMON"), None, "not a worktree");
         let mut worktree = places();
