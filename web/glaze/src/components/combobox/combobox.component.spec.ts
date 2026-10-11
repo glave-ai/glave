@@ -19,7 +19,7 @@ const MODELS = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <glz-form-field label="Model">
-      <glz-combobox [options]="models" [formControl]="model" />
+      <glz-combobox testId="combobox" [options]="models" [formControl]="model" />
     </glz-form-field>
   `,
 })
@@ -31,7 +31,12 @@ class ReactiveHostComponent {
 @Component({
   imports: [GlzComboboxComponent, FormField],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<glz-combobox label="Model" [options]="models" [formField]="settings.model" />`,
+  template: `<glz-combobox
+    testId="combobox"
+    label="Model"
+    [options]="models"
+    [formField]="settings.model"
+  />`,
 })
 class SignalHostComponent {
   readonly models = MODELS;

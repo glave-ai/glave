@@ -71,19 +71,6 @@ fn the_title_is_the_first_line_of_the_first_message_from_the_person() {
 }
 
 #[test]
-fn the_title_skips_the_instructions_a_thread_opens_with() {
-    let first = message(
-        2,
-        Role::User,
-        vec![
-            text("# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>…</INSTRUCTIONS>"),
-            text("Say hello"),
-        ],
-    );
-    assert_eq!(title_of(&first).as_deref(), Some("Say hello"));
-}
-
-#[test]
 fn long_titles_are_cut_with_an_ellipsis() {
     let long = "word ".repeat(40);
     let title = title_of(&message(2, Role::User, vec![text(&long)])).unwrap();

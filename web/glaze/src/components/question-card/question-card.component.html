@@ -3,13 +3,13 @@
   <div class="question" role="group" [attr.aria-labelledby]="question.id">
     <p class="text" [id]="question.id">{{ question.text }}</p>
     @if (isAnswered()) {
-      <p class="answer" data-testid="question-answer">{{ question.answer }}</p>
+      <p class="answer" [attr.data-testid]="ids().answer">{{ question.answer }}</p>
     } @else {
       @if (question.hasChoices) {
         @if (question.multiple) {
           @for (choice of question.choices; track choice.label) {
             <glz-checkbox
-              data-testid="question-choice"
+              [testId]="ids().choice"
               [checked]="choice.checked"
               (checkedChange)="pickMany(question.index, choice.label, $event)"
             >
@@ -26,7 +26,7 @@
             (valueChange)="pickOne(question.index, $event)"
           >
             @for (choice of question.choices; track choice.label) {
-              <glz-radio data-testid="question-choice" [value]="choice.label">
+              <glz-radio [attr.data-testid]="ids().choice" [value]="choice.label">
                 {{ choice.label }}
                 @if (choice.description) {
                   <span class="description">{{ choice.description }}</span>
@@ -38,7 +38,7 @@
       }
       <input
         class="glz-input own"
-        data-testid="question-own"
+        [attr.data-testid]="ids().own"
         [attr.aria-label]="ownWordsLabel()"
         [placeholder]="ownWordsLabel()"
         [value]="question.ownWords"
@@ -52,7 +52,7 @@
     <button
       glzButton
       variant="primary"
-      data-testid="question-submit"
+      [attr.data-testid]="ids().submit"
       [disabled]="cannotSubmit()"
       (click)="submit()"
     >

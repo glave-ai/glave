@@ -7,7 +7,7 @@ import { GlzReasoningComponent } from './reasoning.component';
 @Component({
   imports: [GlzReasoningComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<glz-reasoning [streaming]="streaming()" [(open)]="open"
+  template: `<glz-reasoning testId="reasoning" [streaming]="streaming()" [(open)]="open"
     >Weighing it up</glz-reasoning
   >`,
 })

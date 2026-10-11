@@ -109,8 +109,7 @@ where
                 async move {
                     let answered = match site.as_ref() {
                         Some(site) if is_read(request.method()) => {
-                            let nonce = site::nonce(&server.nonce());
-                            site.answer(request.uri().path(), &nonce).await
+                            site.answer(request.uri().path()).await
                         }
                         _ => answer(&server, &signin, peer, request).await,
                     };

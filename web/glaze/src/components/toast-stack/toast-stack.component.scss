@@ -65,5 +65,5 @@
 // The dismiss button sits on the inverse surface, so it takes the inverse text colour.
 .toast [glzIconButton] {
   --glz-button-fg: var(--glz-color-on-inverse);
-  --glz-button-hover: rgb(255 255 255 / 12%);
+  --glz-button-hover: var(--glz-color-hover-on-inverse);
 }

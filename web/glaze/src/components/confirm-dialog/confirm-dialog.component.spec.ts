@@ -9,6 +9,7 @@ import { GlzConfirmDialogComponent } from './confirm-dialog.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <glz-confirm-dialog
+      testId="confirm"
       heading="Delete the thread?"
       message="It cannot be undone."
       confirmLabel="Delete"
@@ -49,7 +50,7 @@ describe('GlzConfirmDialogComponent', () => {
     await fixture.whenStable();
     fixture.componentInstance.open.set(true);
     await fixture.whenStable();
-    find(root, 'dialog-close')?.click();
+    find(root, 'confirm-close')?.click();
     await fixture.whenStable();
     expect(fixture.componentInstance.decisions).toEqual([false, false]);
   });

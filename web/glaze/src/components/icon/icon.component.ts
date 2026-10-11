@@ -8,7 +8,8 @@ import {
   input,
 } from '@angular/core';
 
-import { GLZ_ICONS, type GlzIconData, iconSvg } from '../../lib/icons';
+import { type GlzIconData, iconSvg } from '../../lib/icons';
+import { GLZ_ICONS } from '../../tokens/icons';
 
 /**
  * An SVG icon from Lucide (ISC licence): the icon itself, or a name registered with

@@ -43,7 +43,10 @@ Usage:
                                 TLS, so put it behind a proxy that has.
                                 --issuer may be given more than once. The web app is
                                 served at / too, from --web <folder> (the app's build), or
-                                else from the web folder beside the glave binary, if any
+                                else from the web folder beside the glave binary, if any.
+                                Anyone who reaches the listener gets that folder's files
+                                without signing in, so it must hold only the build and must
+                                not be writable by an agent
   glave gateway serve --http <address> --issuer <url> --audience <name>
                                 serve the gateway to an organization: model calls and the
                                 tool catalog, every call signed in (glave gateway --help)

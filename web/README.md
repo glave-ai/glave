@@ -46,10 +46,12 @@ npm run typecheck      # tsc, strict
 npm test               # Vitest: every component, directive, service and lib function, with axe
 npm run build:glaze    # Glaze as a publishable Angular package (ng-packagr)
 npm run build          # the app, production
-npm run e2e            # Playwright in Chromium, axe in light and dark (npm run e2e:install first)
+npm run licenses       # every production dependency's licence is one deny.toml allows (plus OFL fonts, 0BSD)
+npm run audit          # npm audit of production dependencies, high and above
+npm run e2e            # Playwright in Chromium against glave serve --http --web, axe in light and dark
 ```
 
-`cargo xtask ci` runs `npm run check` when Node is installed, and skips it with a message when it is not, or is too old. `GLAVE_SKIP_WEB=1` skips it.
+`cargo xtask ci` runs `npm run check`, after building `glave` for the end-to-end tests, which run against the real `glave serve --http --web`. It needs Node 22.22.3 or later; `GLAVE_SKIP_WEB=1` skips it. Run `npm run e2e` by itself after `cargo build -p glave` (or set `GLAVE_BIN`).
 
 Playwright's Chromium is installed into `node_modules` (`PLAYWRIGHT_BROWSERS_PATH=0`), nothing global.
 

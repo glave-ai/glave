@@ -311,11 +311,6 @@ where
         released
     }
 
-    /// Random bytes from the server's entropy, for a web page's nonce.
-    pub(crate) fn nonce(&self) -> [u8; 10] {
-        self.inner.entropy.bytes()
-    }
-
     /// Cancels every running turn and waits for each to end. Call before dropping the server.
     pub async fn shutdown(&self) {
         let finished: Vec<watch::Receiver<bool>> = {

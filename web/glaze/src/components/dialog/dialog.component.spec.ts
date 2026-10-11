@@ -8,7 +8,7 @@ import { GlzDialogComponent } from './dialog.component';
   imports: [GlzDialogComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <glz-dialog heading="Settings" [kind]="kind()" [(open)]="open">
+    <glz-dialog testId="dialog" heading="Settings" [kind]="kind()" [(open)]="open">
       <p>Body</p>
       <div glzDialogActions><button type="button">Save</button></div>
     </glz-dialog>

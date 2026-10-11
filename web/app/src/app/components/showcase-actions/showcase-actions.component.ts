@@ -59,6 +59,15 @@ const COPY = {
   newChat: 'New chat',
 } as const;
 
+/** The demo's values that are not words. */
+const VALUES = {
+  link: '#actions',
+  shortcut: 'mod+shift+k',
+  avatar: '2rem',
+  lineLong: '80%',
+  lineShort: '55%',
+} as const;
+
 /** The showcase's buttons, badges, avatars, progress, cards and empty states. */
 @Component({
   selector: 'app-showcase-actions',
@@ -90,6 +99,7 @@ export class ShowcaseActionsComponent {
     copy: Copy,
     chat: MessagesSquare,
   };
+  protected readonly values = VALUES;
   protected readonly budget = signal(62);
   private readonly toasts = inject(GlzToastService);
 

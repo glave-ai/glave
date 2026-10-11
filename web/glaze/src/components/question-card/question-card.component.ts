@@ -9,12 +9,16 @@ import {
   signal,
 } from '@angular/core';
 
-import { injectId } from '../../lib/ids';
+import { injectId } from '../../tokens/ids';
 import { type GlzQuestion, composeAnswer, replaceAt, togglePick } from '../../lib/questions';
 import { GlzButtonComponent } from '../button/button.component';
 import { GlzCheckboxComponent } from '../checkbox/checkbox.component';
 import { GlzRadioComponent } from '../radio/radio.component';
 import { GlzRadioGroupComponent } from '../radio-group/radio-group.component';
+import { testIds } from '../../lib/test-ids';
+
+/** The parts end-to-end tests reach, as `<testId>-<part>`. */
+const PARTS = { choice: 'choice', own: 'own', submit: 'submit', answer: 'answer' } as const;
 
 /** A choice as the card shows it. */
 interface ShownChoice {
@@ -52,11 +56,16 @@ interface ShownQuestion {
   styleUrl: './question-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    '[attr.data-testid]': 'testId()',
     role: 'group',
     '[attr.aria-labelledby]': 'headingId',
   },
 })
 export class GlzQuestionCardComponent {
+  /** The test hook for this component; its parts get `<testId>-<part>`. */
+  readonly testId = input<string | null>(null);
+  protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+
   readonly questions = input.required<readonly GlzQuestion[]>();
   /** The answers given, once there are some. */
   readonly answered = input<readonly string[] | null>(null);

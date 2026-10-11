@@ -8,9 +8,18 @@ import {
 } from '@angular/core';
 import { ShieldQuestion } from 'lucide';
 
-import { injectId } from '../../lib/ids';
+import { injectId } from '../../tokens/ids';
 import { GlzButtonComponent } from '../button/button.component';
 import { GlzIconComponent } from '../icon/icon.component';
+import { testIds } from '../../lib/test-ids';
+
+/** The parts end-to-end tests reach, as `<testId>-<part>`. */
+const PARTS = {
+  decided: 'decided',
+  deny: 'deny',
+  allowThread: 'allow-thread',
+  allowOnce: 'allow-once',
+} as const;
 
 /** The person's answer to an approval. */
 export type GlzDecision = 'allow_once' | 'allow_for_thread' | 'deny';
@@ -45,12 +54,17 @@ const DECIDED: GlzDecisionLabels = {
   styleUrl: './approval-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    '[attr.data-testid]': 'testId()',
     role: 'group',
     '[attr.aria-labelledby]': 'headingId',
     '[attr.aria-busy]': 'ariaBusy()',
   },
 })
 export class GlzApprovalCardComponent {
+  /** The test hook for this component; its parts get `<testId>-<part>`. */
+  readonly testId = input<string | null>(null);
+  protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+
   /** What wants to run, in a line. */
   readonly summary = input.required<string>();
   readonly tool = input('');

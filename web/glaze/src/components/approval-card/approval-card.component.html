@@ -10,15 +10,15 @@
 </p>
 <div class="detail"><ng-content /></div>
 @if (decidedText(); as decided) {
-  <p class="decided" data-testid="approval-decided">{{ decided }}</p>
+  <p class="decided" [attr.data-testid]="ids().decided">{{ decided }}</p>
 } @else {
   <div class="actions">
-    <button glzButton data-testid="approval-deny" [disabled]="busy()" (click)="deny()">
+    <button glzButton [attr.data-testid]="ids().deny" [disabled]="busy()" (click)="deny()">
       {{ denyLabel() }}
     </button>
     <button
       glzButton
-      data-testid="approval-allow-thread"
+      [attr.data-testid]="ids().allowThread"
       [disabled]="busy()"
       (click)="allowForThread()"
     >
@@ -27,7 +27,7 @@
     <button
       glzButton
       variant="primary"
-      data-testid="approval-allow-once"
+      [attr.data-testid]="ids().allowOnce"
       [disabled]="busy()"
       (click)="allowOnce()"
     >

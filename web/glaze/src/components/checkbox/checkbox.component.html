@@ -2,7 +2,7 @@
   <input
     type="checkbox"
     class="native"
-    data-testid="checkbox-input"
+    [attr.data-testid]="ids().input"
     [checked]="checked()"
     [indeterminate]="indeterminate()"
     [disabled]="isDisabled()"

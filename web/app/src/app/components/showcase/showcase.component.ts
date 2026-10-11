@@ -42,6 +42,7 @@ const COPY = {
 })
 export class ShowcaseComponent {
   protected readonly copy = COPY;
+  protected readonly sectionSelector = 'section[id]';
   protected readonly active = signal<string | null>(null);
   protected readonly sections = computed(() =>
     SECTIONS.map((section) => ({

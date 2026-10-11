@@ -4,5 +4,5 @@
   <span class="initials" aria-hidden="true">{{ initials() }}</span>
 }
 @if (hope()) {
-  <span class="presence" data-testid="avatar-hope" aria-hidden="true"></span>
+  <span class="presence" [attr.data-testid]="ids().hope" aria-hidden="true"></span>
 }

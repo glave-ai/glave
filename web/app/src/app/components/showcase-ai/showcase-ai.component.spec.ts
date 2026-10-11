@@ -14,9 +14,9 @@ describe('ShowcaseAiComponent', () => {
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelectorAll('glz-receipt')).toHaveLength(2);
     await expectAccessible(root);
-    root.querySelector<HTMLButtonElement>('[data-testid="approval-allow-once"]')?.click();
+    root.querySelector<HTMLButtonElement>('[data-testid="showcase-approval-allow-once"]')?.click();
     await fixture.whenStable();
-    expect(root.querySelector('[data-testid="approval-decided"]')?.textContent).toBe(
+    expect(root.querySelector('[data-testid="showcase-approval-decided"]')?.textContent).toBe(
       'Allowed once',
     );
   });
@@ -26,21 +26,23 @@ describe('ShowcaseAiComponent', () => {
     const fixture = TestBed.createComponent(ShowcaseAiComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    const input = root.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]');
+    const input = root.querySelector<HTMLTextAreaElement>(
+      '[data-testid="showcase-composer-input"]',
+    );
     if (input) {
       input.value = 'Hello';
       input.dispatchEvent(new Event('input'));
     }
     await fixture.whenStable();
-    root.querySelector<HTMLButtonElement>('[data-testid="composer-send"]')?.click();
+    root.querySelector<HTMLButtonElement>('[data-testid="showcase-composer-send"]')?.click();
     vi.advanceTimersByTime(160);
     await fixture.whenStable();
     const messages = root.querySelectorAll('[data-testid="showcase-message"]');
     expect(messages).toHaveLength(2);
     expect(messages[0]?.textContent).toContain('Hello');
-    expect(root.querySelector('[data-testid="composer-stop"]')).not.toBeNull();
-    root.querySelector<HTMLButtonElement>('[data-testid="composer-stop"]')?.click();
+    expect(root.querySelector('[data-testid="showcase-composer-stop"]')).not.toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-testid="showcase-composer-stop"]')?.click();
     await fixture.whenStable();
-    expect(root.querySelector('[data-testid="composer-send"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="showcase-composer-send"]')).not.toBeNull();
   });
 });

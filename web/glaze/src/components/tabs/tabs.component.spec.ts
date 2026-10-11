@@ -9,7 +9,7 @@ import { GlzTabsComponent } from './tabs.component';
   imports: [GlzTabsComponent, GlzTabComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <glz-tabs label="Details" [(selected)]="tab">
+    <glz-tabs testId="tabs" label="Details" [(selected)]="tab">
       <glz-tab label="Conversation">Talk</glz-tab>
       <glz-tab label="Events">Every event</glz-tab>
       <glz-tab label="Cost">Money</glz-tab>

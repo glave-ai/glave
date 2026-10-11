@@ -11,7 +11,7 @@ import {
 import type { ControlValueAccessor } from '@angular/forms';
 import type { FormCheckboxControl } from '@angular/forms/signals';
 
-import { GLZ_FORM_FIELD, bindValueAccessor, injectFormState } from '../lib/forms';
+import { GLZ_FORM_FIELD, bindValueAccessor, injectFormState } from '../tokens/forms';
 
 /**
  * What a checkbox and a switch share: a `checked` model bound to reactive forms, `ngModel`,

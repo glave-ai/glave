@@ -1,6 +1,6 @@
 import { DestroyRef, Directive, ElementRef, effect, inject, input } from '@angular/core';
 
-import { injectId } from '../lib/ids';
+import { injectId } from '../tokens/ids';
 import { type GlzSide, positionPopover } from '../lib/popover';
 
 /**
@@ -77,7 +77,6 @@ export class GlzTooltipDirective {
     panel.className = 'glz-tooltip';
     panel.setAttribute('popover', 'manual');
     panel.setAttribute('role', 'tooltip');
-    panel.dataset['testid'] = 'tooltip';
     document.body.appendChild(panel);
     return panel;
   }

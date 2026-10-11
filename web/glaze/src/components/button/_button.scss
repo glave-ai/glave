@@ -45,7 +45,7 @@
     --glz-button-bg: var(--glz-color-accent);
     --glz-button-fg: var(--glz-color-on-accent);
     --glz-button-border: var(--glz-color-accent);
-    --glz-button-hover: rgb(0 0 0 / 12%);
+    --glz-button-hover: var(--glz-color-hover-on-accent);
   }
 
   :host(.glz-button--ghost) {
@@ -57,7 +57,7 @@
     --glz-button-bg: var(--glz-color-danger);
     --glz-button-fg: var(--glz-color-on-danger);
     --glz-button-border: var(--glz-color-danger);
-    --glz-button-hover: rgb(0 0 0 / 12%);
+    --glz-button-hover: var(--glz-color-hover-on-accent);
   }
 
   :host(.glz-button--sm) {

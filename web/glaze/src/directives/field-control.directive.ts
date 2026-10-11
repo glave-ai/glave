@@ -1,6 +1,6 @@
 import { Directive, computed, inject } from '@angular/core';
 
-import { GLZ_FORM_FIELD, injectFormState } from '../lib/forms';
+import { GLZ_FORM_FIELD, injectFormState } from '../tokens/forms';
 
 /**
  * Ties a native form element to the `<glz-form-field>` around it: the field's id (so its

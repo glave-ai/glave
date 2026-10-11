@@ -4,6 +4,10 @@ import { Ban, Check, LoaderCircle, TriangleAlert } from 'lucide';
 import { type GlzMoney, formatDuration, formatMoney, formatTokens } from '../../lib/format';
 import type { GlzIconData } from '../../lib/icons';
 import { GlzIconComponent } from '../icon/icon.component';
+import { testIds } from '../../lib/test-ids';
+
+/** The parts end-to-end tests reach, as `<testId>-<part>`. */
+const PARTS = { summary: 'summary', evidence: 'evidence' } as const;
 
 /** Where a tool call stands. */
 export type GlzReceiptStatus = 'running' | 'done' | 'failed' | 'declined';
@@ -39,9 +43,16 @@ const STATUS_WORDS: Readonly<Record<GlzReceiptStatus, string>> = {
   templateUrl: './receipt.component.html',
   styleUrl: './receipt.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[class]': 'statusClass()' },
+  host: {
+    '[attr.data-testid]': 'testId()',
+    '[class]': 'statusClass()',
+  },
 })
 export class GlzReceiptComponent {
+  /** The test hook for this component; its parts get `<testId>-<part>`. */
+  readonly testId = input<string | null>(null);
+  protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+
   /** What it did, in a few words: the command, the file, the search. */
   readonly summary = input.required<string>();
   /** The tool's name. */

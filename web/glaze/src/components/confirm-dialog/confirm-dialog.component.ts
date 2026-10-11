@@ -10,6 +10,10 @@ import {
 
 import { type GlzButtonVariant, GlzButtonComponent } from '../button/button.component';
 import { GlzDialogComponent } from '../dialog/dialog.component';
+import { testIds } from '../../lib/test-ids';
+
+/** The parts end-to-end tests reach, as `<testId>-<part>`. */
+const PARTS = { cancel: 'cancel', ok: 'ok' } as const;
 
 /**
  * Asks the person to confirm before something happens: a question, Cancel, and the action.
@@ -30,6 +34,10 @@ import { GlzDialogComponent } from '../dialog/dialog.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class GlzConfirmDialogComponent {
+  /** The test hook for this component; its parts get `<testId>-<part>`. */
+  readonly testId = input<string | null>(null);
+  protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+
   readonly open = model(false);
   readonly heading = input.required<string>();
   /** What will happen, in a sentence or two. */

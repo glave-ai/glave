@@ -11,9 +11,13 @@ import {
 } from '@angular/core';
 import { X } from 'lucide';
 
-import { injectId } from '../../lib/ids';
+import { injectId } from '../../tokens/ids';
 import { GlzIconComponent } from '../icon/icon.component';
 import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
+import { testIds } from '../../lib/test-ids';
+
+/** The parts end-to-end tests reach, as `<testId>-<part>`. */
+const PARTS = { close: 'close' } as const;
 
 /** How a dialog shows: centred, or as a drawer along one side. */
 export type GlzDialogKind = 'dialog' | 'drawer-start' | 'drawer-end';
@@ -42,6 +46,10 @@ export type GlzDialogKind = 'dialog' | 'drawer-start' | 'drawer-end';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class GlzDialogComponent {
+  /** The test hook for this component; its parts get `<testId>-<part>`. */
+  readonly testId = input<string | null>(null);
+  protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+
   readonly heading = input.required<string>();
   /** Whether the dialog is open. */
   readonly open = model(false);

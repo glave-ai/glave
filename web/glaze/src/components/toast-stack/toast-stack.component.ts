@@ -12,6 +12,10 @@ import { X } from 'lucide';
 import { GlzToastService } from '../../services/toast.service';
 import { GlzIconComponent } from '../icon/icon.component';
 import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
+import { testIds } from '../../lib/test-ids';
+
+/** The parts end-to-end tests reach, as `<testId>-<part>`. */
+const PARTS = { item: 'item', action: 'action', dismiss: 'dismiss' } as const;
 
 /**
  * Where `GlzToastService`'s toasts show: place it once, at the end of the app's root
@@ -30,12 +34,17 @@ import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
   styleUrl: './toast-stack.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    '[attr.data-testid]': 'testId()',
     role: 'region',
     popover: 'manual',
     '[attr.aria-label]': 'label()',
   },
 })
 export class GlzToastStackComponent {
+  /** The test hook for this component; its parts get `<testId>-<part>`. */
+  readonly testId = input<string | null>(null);
+  protected readonly ids = computed(() => testIds(this.testId(), PARTS));
+
   readonly label = input('Notifications');
   readonly dismissLabel = input('Dismiss');
 

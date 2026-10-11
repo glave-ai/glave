@@ -3,7 +3,7 @@
     type="checkbox"
     role="switch"
     class="native"
-    data-testid="switch-input"
+    [attr.data-testid]="ids().input"
     [checked]="checked()"
     [disabled]="isDisabled()"
     [attr.aria-checked]="checked()"
