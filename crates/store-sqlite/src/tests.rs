@@ -185,3 +185,55 @@ fn folders_get_their_own_spaces_in_one_organization() {
         assert_eq!(threads.len(), 0, "a new space has no threads");
     });
 }
+
+#[test]
+fn the_log_passes_the_threads_view_conformance_suite() {
+    let store = Store::open_in_memory(keys()).unwrap();
+    assert_eq!(block_on(conformance::thread_views(&store.log())), Ok(()));
+}
+
+/// Every row of the threads view, in a stable order.
+fn views(path: &std::path::Path) -> Vec<(String, String, String, String)> {
+    let connection = rusqlite::Connection::open(path).unwrap();
+    let mut statement = connection
+        .prepare("SELECT org, space, thread, view FROM threads ORDER BY org, space, thread")
+        .unwrap();
+    statement
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+#[test]
+fn views_rebuilt_from_the_log_equal_the_kept_ones() {
+    let path = temp_db("views");
+    block_on(async {
+        let store = Store::open(&path, file_keys(&path)).await.unwrap();
+        assert_eq!(conformance::thread_views(&store.log()).await, Ok(()));
+        drop(store);
+        let kept = views(&path);
+        assert_eq!(kept.len(), 3);
+
+        // As after the upgrade that made the table: no views, and no version recorded.
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute_batch("DELETE FROM threads; DELETE FROM settings WHERE key = 'threads_view';")
+            .unwrap();
+        drop(connection);
+        let reopened = Store::open(&path, file_keys(&path)).await.unwrap();
+        assert_eq!(views(&path), kept, "opening fills the view from the log");
+
+        let rebuilt = reopened.rebuild_views().await.unwrap();
+        assert_eq!(
+            rebuilt,
+            Rebuilt {
+                threads: 3,
+                failed: 0
+            }
+        );
+        assert_eq!(views(&path), kept);
+    });
+}

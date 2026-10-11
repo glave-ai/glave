@@ -49,7 +49,7 @@ where
             workspace: self.reopen(scope, id, &events).await?,
             unnumbered: crate::bind::own_records(&events),
             note: None,
-            standing: crate::standing::Standing::of(&events),
+            standing: crate::standing::standing_after(crate::Standing::Active, &events),
             removed: false,
             untrusted: read_untrusted(&events),
             read_secret: read_secret(&events),

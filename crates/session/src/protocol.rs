@@ -5,11 +5,11 @@
 mod tasks;
 
 use glave_event::{
-    CallId, MemoryId, MemoryScope, Money, Outcome, RawEvent, ScheduleId, Seq, ThreadId,
-    TokenCounts, When,
+    At, CallId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal, RawEvent, ScheduleId,
+    Seq, ThreadId, TokenCounts, When,
 };
 use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
-use glave_ports::{Failure, Space, SpaceId};
+use glave_ports::{Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
@@ -48,7 +48,13 @@ pub enum Request {
         /// Which threads: the active ones by default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         show: Option<Show>,
+        /// Where the page starts: the `next` of the page before.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cursor: Option<String>,
     },
+    /// Gives a thread a title of the person's own.
+    #[serde(rename = "thread/rename")]
+    ThreadRename { thread: ThreadId, title: String },
     /// Hides a thread from lists, keeping it in the log.
     #[serde(rename = "thread/archive")]
     ThreadArchive { thread: ThreadId },
@@ -208,6 +214,7 @@ impl Request {
             Self::Discover {} => "server/discover",
             Self::ThreadStart { .. } => "thread/start",
             Self::ThreadList { .. } => "thread/list",
+            Self::ThreadRename { .. } => "thread/rename",
             Self::ThreadArchive { .. } => "thread/archive",
             Self::ThreadUnarchive { .. } => "thread/unarchive",
             Self::ThreadDelete { .. } => "thread/delete",
@@ -248,6 +255,7 @@ impl Request {
             Self::ThreadArchive { thread }
             | Self::ThreadUnarchive { thread }
             | Self::ThreadDelete { thread }
+            | Self::ThreadRename { thread, .. }
             | Self::ThreadGet { thread }
             | Self::ThreadEvents { thread, .. }
             | Self::TurnStart { thread, .. }
@@ -363,11 +371,34 @@ pub struct ServerInfo {
     pub protocols: Vec<String>,
 }
 
-/// A thread, as a list shows it.
+/// A thread, as a list shows it: from the threads view, with what it is doing now.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThreadSummary {
     pub id: ThreadId,
+    pub space: SpaceId,
     pub status: Status,
+    pub standing: Standing,
+    /// The title the person gave it, else the first line of their first message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Whose work it is; absent in threads from before it was recorded (the local person).
+    #[serde(rename = "for", default, skip_serializing_if = "Option::is_none")]
+    pub for_: Option<Principal>,
+    pub origin: Origin,
+    /// The thread whose call started this one, for a subagent's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<ThreadId>,
+    pub created_at: At,
+    pub updated_at: At,
+    pub turns: u64,
+    /// How its latest turn ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<Outcome>,
+    /// Tokens its own model calls used.
+    pub tokens: TokenCounts,
+    /// What they cost, when every call reported a cost.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<Money>,
 }
 
 /// What a thread is doing.
@@ -417,6 +448,9 @@ pub enum Reply {
     },
     Threads {
         threads: Vec<ThreadSummary>,
+        /// The cursor of the next page, when there is one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        next: Option<String>,
     },
     Events {
         events: Vec<RawEvent>,

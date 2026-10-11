@@ -57,6 +57,30 @@ impl EventLog for Shared {
     ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
         self.0.locate(thread)
     }
+
+    fn thread_views(
+        &self,
+        scope: &Scope,
+        query: &glave_ports::ThreadQuery,
+    ) -> impl Future<Output = Result<Vec<glave_ports::ThreadView>, LogError>> + Send {
+        self.0.thread_views(scope, query)
+    }
+
+    fn thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<glave_ports::ThreadView>, LogError>> + Send {
+        self.0.thread_view(scope, thread)
+    }
+
+    fn rebuild_thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<glave_ports::ThreadView>, LogError>> + Send {
+        self.0.rebuild_thread_view(scope, thread)
+    }
 }
 
 /// A clock that stands still until a test moves it.

@@ -19,6 +19,7 @@ mod scope;
 pub mod secrets;
 mod spaces;
 mod tools;
+mod view;
 
 pub use blob::{BlobError, BlobStore, digest};
 pub use computer::{
@@ -40,4 +41,8 @@ pub use spaces::{FolderKey, MAX_NAME, MemorySpaces, Space, SpaceError, SpaceKind
 pub use tools::{
     Assessment, BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource,
     describe_call, unless_cancelled,
+};
+pub use view::{
+    Standing, THREAD_VIEW_VERSION, TITLE_CHARS, ThreadCursor, ThreadQuery, ThreadView,
+    fold_from_log, title_of,
 };

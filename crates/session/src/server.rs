@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::{PrincipalId, Seq, ThreadId};
 use glave_harness::{
-    Caller, Change, Clock, Entropy, Harness, HarnessError, Hooks, Memory, Parts, Place,
-    ReleasedWorker, Settings, TurnSummary, Workers, Workspace,
+    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Memory, Parts, Place, ReleasedWorker,
+    Settings, TurnSummary, Workers, Workspace,
 };
 use glave_ports::{
     BlobStore, Environment, EventLog, ModelProvider, Scope, SpaceId, Spaces, ToolSource,
@@ -206,32 +206,13 @@ where
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 protocols: vec![PROTOCOL.to_owned()],
             })),
-            Request::ThreadStart {
-                space,
-                worktree,
-                background,
-            } => {
-                let space = self.space_for(caller, space).await?.id;
-                let thread = self.new_thread(caller, space, worktree, background).await?;
-                Ok(Reply::Thread {
-                    thread: self.summary(thread),
-                })
-            }
-            Request::ThreadList { space, limit, show } => {
-                let space = self.space_for(caller, space).await?.id;
-                self.list(space, limit, show.unwrap_or_default()).await
-            }
-            Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
-            Request::ThreadUnarchive { thread } => {
-                self.change(caller, thread, Change::Unarchive).await
-            }
-            Request::ThreadDelete { thread } => self.change(caller, thread, Change::Delete).await,
-            Request::ThreadGet { thread } => {
-                self.load(thread).await?;
-                Ok(Reply::Thread {
-                    thread: self.summary(thread),
-                })
-            }
+            threads @ (Request::ThreadStart { .. }
+            | Request::ThreadList { .. }
+            | Request::ThreadRename { .. }
+            | Request::ThreadArchive { .. }
+            | Request::ThreadUnarchive { .. }
+            | Request::ThreadDelete { .. }
+            | Request::ThreadGet { .. }) => self.thread_request(caller, threads).await,
             Request::ThreadEvents {
                 thread,
                 after,
@@ -511,6 +492,7 @@ pub(crate) fn api(error: &HarnessError) -> ApiError {
         HarnessError::NoGoal(_) => ApiError::new(code::NO_GOAL, error.to_string()),
         HarnessError::Workspace(_) => ApiError::new(code::WORKSPACE, error.to_string()),
         HarnessError::PromptBlocked(_) => ApiError::new(code::PROMPT_BLOCKED, error.to_string()),
+        HarnessError::Invalid(_) => ApiError::new(code::INVALID_PARAMS, error.to_string()),
         _ => ApiError::new(code::INTERNAL, error.to_string()),
     }
 }

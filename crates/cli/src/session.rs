@@ -483,10 +483,11 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
                 space: None,
                 limit: Some(1),
                 show: None,
+                cursor: None,
             })
             .await?
         {
-            Reply::Threads { threads } => threads.first().map(|thread| thread.id),
+            Reply::Threads { threads, .. } => threads.first().map(|thread| thread.id),
             _ => None,
         };
         if let Some(thread) = latest {
