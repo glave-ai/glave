@@ -24,6 +24,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use super::backend::{Backend, Link, Spec, Started};
 use super::docker::elf_machine;
 use super::limits::Isolation;
+use crate::token::Token;
 use objects::{Progress, Shape};
 
 /// How long a Pod has to start running: long enough to pull a large image.
@@ -309,6 +310,14 @@ impl Backend for Kubernetes {
                 }
             }
         })
+    }
+
+    fn renew<'a>(
+        &'a self,
+        name: &'a str,
+        token: &'a Token,
+    ) -> BoxFuture<'a, Result<(), ComputerError>> {
+        Box::pin(async move { self.copy_in(name, &super::tar::token_file(token)?).await })
     }
 
     fn remove<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<(), ComputerError>> {

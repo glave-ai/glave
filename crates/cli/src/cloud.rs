@@ -172,6 +172,9 @@ pub async fn release(server: &Glave, workers: &WorkerComputers) {
                 if let Some(branch) = &left.branch {
                     eprintln!("glave: the worker's unpushed work is on the branch {branch}");
                 }
+                if let Some(lost) = &left.lost {
+                    eprintln!("glave: work on the worker of {thread} could not be kept: {lost}");
+                }
                 if !left.files.is_empty() {
                     match save(&thread.to_string(), &left.files).await {
                         Ok(folder) => eprintln!(

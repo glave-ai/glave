@@ -50,6 +50,24 @@ pub(crate) fn archive(entries: &[Entry<'_>]) -> Result<Vec<u8>, TooLong> {
     Ok(out)
 }
 
+/// Where a worker's token lives, from `/`.
+pub(crate) const TOKEN: &str = "opt/glave/tls/token";
+
+/// An archive of just a worker's token, put at `/` to renew it.
+pub(crate) fn token_file(
+    token: &crate::token::Token,
+) -> Result<Vec<u8>, glave_ports::ComputerError> {
+    let file = token.to_file();
+    archive(&[Entry::File {
+        name: TOKEN,
+        mode: 0o600,
+        content: file.as_bytes(),
+    }])
+    .map_err(|long| {
+        glave_ports::ComputerError::Failed(format!("{} is too long a name for tar", long.0))
+    })
+}
+
 /// `bytes` written into `header` at `offset`.
 fn put(header: &mut [u8; BLOCK], offset: usize, bytes: &[u8]) {
     for (slot, byte) in header.iter_mut().skip(offset).zip(bytes) {

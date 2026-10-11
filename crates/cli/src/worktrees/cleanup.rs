@@ -100,6 +100,7 @@ impl<L: EventLog> Cleanup<'_, L> {
             branch: kept.branch.clone(),
             reason,
             trash: trash.map(|path| path.to_string_lossy().into_owned()),
+            lost: None,
         };
         let random = self.entropy.bytes();
         match record_removed(self.log, &scope, thread, self.now, random, &removed).await {

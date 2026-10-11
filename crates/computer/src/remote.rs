@@ -2,9 +2,9 @@
 //! one request; a command's output streams back as notifications, and cancelling sends
 //! `command/cancel`.
 
-use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use glave_ports::{
     BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers,
@@ -14,26 +14,30 @@ use glave_ports::{
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::wire::{self, Chunk, MAX_LINE, OUTPUT, Request};
+use crate::wire::{self, Request};
+use reader::{Answer, Shared};
+
+mod reader;
 
 /// Messages queued ahead of a slow connection.
 const QUEUE: usize = 256;
 /// Output chunks held for a command whose caller is slow to take them.
 const CHUNKS: usize = 64;
+/// How long a quick call (files, listings, status) waits for its answer.
+const QUICK: Duration = Duration::from_mins(5);
+/// How long a slow call waits: making or removing a computer, opening or saving a workspace
+/// (a clone or a push), and a command that names no timeout of its own.
+const SLOW: Duration = Duration::from_mins(30);
+/// How much longer than its own timeout a command's answer may take.
+const GRACE: Duration = Duration::from_secs(60);
 
-type Answer = Result<Value, Value>;
-
-struct Shared {
-    /// Calls waiting for their answer; `None` once the connection has closed.
-    pending: Mutex<Option<HashMap<u64, oneshot::Sender<Answer>>>>,
-    streams: Mutex<HashMap<String, mpsc::Sender<String>>>,
-}
-
-/// Computers reached over one connection.
+/// Computers reached over one connection. Every call either gets its answer or fails within
+/// its deadline. A call is never sent twice: when the connection ends first, its error says
+/// the computer may or may not have done it.
 pub struct RemoteComputers {
     shared: Arc<Shared>,
     outgoing: mpsc::Sender<String>,
@@ -50,6 +54,23 @@ impl Drop for RemoteComputers {
     }
 }
 
+/// A call waiting for its answer; forgotten if it stops waiting.
+struct Waiting<'a> {
+    shared: &'a Shared,
+    id: u64,
+    answered: oneshot::Receiver<Answer>,
+}
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut pending) = self.shared.pending.lock()
+            && let Some(waiting) = pending.as_mut()
+        {
+            waiting.remove(&self.id);
+        }
+    }
+}
+
 impl RemoteComputers {
     /// Speaks the protocol over `input` and `output`: a child's stdio, or a TCP stream.
     pub fn connect<R, W>(input: R, output: W) -> Self
@@ -57,32 +78,24 @@ impl RemoteComputers {
         R: AsyncRead + Unpin + Send + 'static,
         W: AsyncWrite + Unpin + Send + 'static,
     {
-        let shared = Arc::new(Shared {
-            pending: Mutex::new(Some(HashMap::new())),
-            streams: Mutex::new(HashMap::new()),
+        let shared = Arc::new(Shared::new());
+        let (outgoing, queued) = mpsc::channel::<String>(QUEUE);
+        let writer = tokio::spawn(write(output, queued, Arc::clone(&shared)));
+        let reading = Arc::clone(&shared);
+        let reader = tokio::spawn(async move {
+            reader::read(BufReader::new(input), &reading).await;
         });
-        let (outgoing, mut queued) = mpsc::channel::<String>(QUEUE);
-        let writer = tokio::spawn(async move {
-            let mut output = output;
-            while let Some(mut line) = queued.recv().await {
-                // One write per message, so TCP never holds the newline back.
-                line.push('\n');
-                let written = async {
-                    output.write_all(line.as_bytes()).await?;
-                    output.flush().await
-                };
-                if written.await.is_err() {
-                    break;
-                }
-            }
-        });
-        let reader = tokio::spawn(read(BufReader::new(input), Arc::clone(&shared)));
         Self {
             shared,
             outgoing,
             next: AtomicU64::new(1),
             tasks: [reader, writer],
         }
+    }
+
+    /// Why the connection ended, once it has: no call on it can succeed after that.
+    pub fn closed(&self) -> Option<String> {
+        self.shared.ended()
     }
 
     /// Presents the token a TCP server asks for; the first call on such a connection.
@@ -111,8 +124,19 @@ impl RemoteComputers {
         }
     }
 
-    /// Sends a request; its answer arrives on the receiver.
-    async fn send(&self, request: &Request) -> Result<oneshot::Receiver<Answer>, ComputerError> {
+    /// Why the connection is gone, for a call that failed because of it.
+    fn why_gone(&self) -> String {
+        self.shared
+            .ended()
+            .unwrap_or_else(|| "the connection to the computer closed".into())
+    }
+
+    /// Sends a request; its answer arrives on the returned call.
+    async fn send(&self, request: &Request) -> Result<Waiting<'_>, ComputerError> {
+        let not_sent = || {
+            let why = self.why_gone();
+            unreachable(&format!("{why}; {} was not sent", request.method()))
+        };
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (answer, answered) = oneshot::channel();
         self.shared
@@ -120,18 +144,27 @@ impl RemoteComputers {
             .lock()
             .map_err(|_| unreachable("the pending table's lock is poisoned"))?
             .as_mut()
-            .ok_or_else(|| unreachable("the connection is closed"))?
+            .ok_or_else(not_sent)?
             .insert(id, answer);
+        let waiting = Waiting {
+            shared: &self.shared,
+            id,
+            answered,
+        };
         self.outgoing
             .send(wire::request(id, request))
             .await
-            .map_err(|_| unreachable("the connection is closed"))?;
-        Ok(answered)
+            .map_err(|_| not_sent())?;
+        Ok(waiting)
     }
 
     async fn call(&self, request: &Request) -> Result<Value, ComputerError> {
-        let answered = self.send(request).await?;
-        settle(answered.await)
+        let mut waiting = self.send(request).await?;
+        let limit = deadline(request);
+        match tokio::time::timeout(limit, &mut waiting.answered).await {
+            Ok(answer) => self.settle(request.method(), answer),
+            Err(_) => Err(late(request.method(), limit)),
+        }
     }
 
     async fn typed<T: DeserializeOwned>(&self, request: &Request) -> Result<T, ComputerError> {
@@ -159,27 +192,32 @@ impl RemoteComputers {
             command: command.clone(),
             run: run.clone(),
         };
-        let answered = self.send(&request).await;
-        let answer = match answered {
-            Ok(mut answered) => {
-                let mut cancelled = cancel.cancelled();
-                let mut asked_to_cancel = false;
-                loop {
-                    tokio::select! {
-                        biased;
-                        answer = &mut answered => break answer,
-                        Some(text) = chunks.recv() => output.write(&text).await,
-                        () = &mut cancelled, if !asked_to_cancel => {
-                            asked_to_cancel = true;
-                            let stop = wire::notify("command/cancel", &json!({"run": run}));
-                            let _ = self.outgoing.send(stop).await;
-                        }
-                    }
-                }
-            }
+        let limit = deadline(&request);
+        let mut waiting = match self.send(&request).await {
+            Ok(waiting) => waiting,
             Err(error) => {
                 self.forget(&run);
                 return Err(error);
+            }
+        };
+        let stop = || wire::notify("command/cancel", &json!({"run": run}));
+        let timer = tokio::time::sleep(limit);
+        tokio::pin!(timer);
+        let mut cancelled = cancel.cancelled();
+        let mut asked_to_cancel = false;
+        let answer = loop {
+            tokio::select! {
+                biased;
+                answer = &mut waiting.answered => break Some(answer),
+                Some(text) = chunks.recv() => output.write(&text).await,
+                () = &mut cancelled, if !asked_to_cancel => {
+                    asked_to_cancel = true;
+                    let _ = self.outgoing.send(stop()).await;
+                }
+                () = &mut timer => {
+                    let _ = self.outgoing.try_send(stop());
+                    break None;
+                }
             }
         };
         // Output sent before the answer is already here; hand it over before returning.
@@ -187,7 +225,10 @@ impl RemoteComputers {
             output.write(&text).await;
         }
         self.forget(&run);
-        let value = settle(answer)?;
+        let Some(answer) = answer else {
+            return Err(late(request.method(), limit));
+        };
+        let value = self.settle(request.method(), answer)?;
         serde_json::from_value(value)
             .map_err(|error| unreachable(&format!("the computer's answer made no sense: {error}")))
     }
@@ -197,95 +238,91 @@ impl RemoteComputers {
             streams.remove(run);
         }
     }
+
+    /// A response as the computer meant it: its result, or its error as it was raised.
+    fn settle(
+        &self,
+        method: &str,
+        answer: Result<Answer, oneshot::error::RecvError>,
+    ) -> Result<Value, ComputerError> {
+        match answer {
+            Err(_) => Err(unreachable(&format!(
+                "{} before the computer answered {method}: it may or may not have done it, and \
+                 glave does not send it again",
+                self.why_gone()
+            ))),
+            Ok(Ok(result)) => Ok(result),
+            Ok(Err(error)) => {
+                if let Some(raised) = error
+                    .get("data")
+                    .and_then(|data| ComputerError::deserialize(data).ok())
+                {
+                    return Err(raised);
+                }
+                let message = error
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("no message");
+                Err(unreachable(&format!(
+                    "the computer refused the request: {message}"
+                )))
+            }
+        }
+    }
+}
+
+/// Writes queued messages until the connection ends, then closes the output so the
+/// computer sees it end too.
+async fn write<W: AsyncWrite + Unpin>(
+    mut output: W,
+    mut queued: mpsc::Receiver<String>,
+    shared: Arc<Shared>,
+) {
+    loop {
+        let line = tokio::select! {
+            line = queued.recv() => line,
+            () = shared.stop.notified() => None,
+        };
+        let Some(mut line) = line else { break };
+        // One write per message, so TCP never holds the newline back.
+        line.push('\n');
+        let written = async {
+            output.write_all(line.as_bytes()).await?;
+            output.flush().await
+        };
+        if let Err(error) = written.await {
+            shared.end(format!("the connection to the computer failed: {error}"));
+            break;
+        }
+    }
+    let _ = output.shutdown().await;
 }
 
 fn unreachable(message: &str) -> ComputerError {
     ComputerError::Unreachable(message.to_owned())
 }
 
-/// A response as the computer meant it: its result, or its error as it was raised.
-fn settle(answer: Result<Answer, oneshot::error::RecvError>) -> Result<Value, ComputerError> {
-    match answer {
-        Err(_) => Err(unreachable(
-            "the connection closed before the computer answered",
-        )),
-        Ok(Ok(result)) => Ok(result),
-        Ok(Err(error)) => {
-            if let Some(raised) = error
-                .get("data")
-                .and_then(|data| ComputerError::deserialize(data).ok())
-            {
-                return Err(raised);
-            }
-            let message = error
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("no message");
-            Err(unreachable(&format!(
-                "the computer refused the request: {message}"
-            )))
-        }
+/// How long `request` waits for its answer before it fails.
+fn deadline(request: &Request) -> Duration {
+    match request {
+        Request::Run { command, .. } => command
+            .timeout_secs
+            .map_or(SLOW, |secs| Duration::from_secs(secs).saturating_add(GRACE)),
+        Request::Create { .. }
+        | Request::Destroy { .. }
+        | Request::Open { .. }
+        | Request::Save { .. } => SLOW,
+        _ => QUICK,
     }
 }
 
-/// Reads answers and output until the connection ends, then fails what is still waiting.
-async fn read<R: AsyncRead + Unpin>(mut input: BufReader<R>, shared: Arc<Shared>) {
-    loop {
-        let mut line = String::new();
-        let got = tokio::io::AsyncReadExt::take(&mut input, MAX_LINE)
-            .read_line(&mut line)
-            .await;
-        match got {
-            Ok(0) | Err(_) => break,
-            Ok(_) => dispatch(&shared, &line).await,
-        }
-    }
-    // Dropping the senders tells every waiting call that the connection is gone.
-    if let Ok(mut pending) = shared.pending.lock() {
-        *pending = None;
-    }
-    if let Ok(mut streams) = shared.streams.lock() {
-        streams.clear();
-    }
-}
-
-async fn dispatch(shared: &Shared, line: &str) {
-    let Ok(message) = serde_json::from_str::<Value>(line) else {
-        return;
-    };
-    if message.get("method").and_then(Value::as_str) == Some(OUTPUT) {
-        let Some(chunk) = message
-            .get("params")
-            .and_then(|params| Chunk::deserialize(params).ok())
-        else {
-            return;
-        };
-        let stream = shared
-            .streams
-            .lock()
-            .ok()
-            .and_then(|streams| streams.get(&chunk.run).cloned());
-        if let Some(stream) = stream {
-            let _ = stream.send(chunk.text).await;
-        }
-        return;
-    }
-    let Some(id) = message.get("id").and_then(Value::as_u64) else {
-        return;
-    };
-    let waiting = shared
-        .pending
-        .lock()
-        .ok()
-        .and_then(|mut pending| pending.as_mut().and_then(|waiting| waiting.remove(&id)));
-    if let Some(waiting) = waiting {
-        let answer = match (message.get("result"), message.get("error")) {
-            (Some(result), None) => Ok(result.clone()),
-            (_, Some(error)) => Err(error.clone()),
-            (None, None) => Err(json!({"message": "an answer with neither result nor error"})),
-        };
-        let _ = waiting.send(answer);
-    }
+/// A call that waited past its deadline.
+fn late(method: &str, limit: Duration) -> ComputerError {
+    unreachable(&format!(
+        "the computer did not answer {method} within {} s: it may still be doing it, and \
+         glave does not send it again",
+        limit.as_secs()
+    ))
 }
 
 impl Computers for RemoteComputers {

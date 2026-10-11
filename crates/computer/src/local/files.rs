@@ -18,6 +18,11 @@ pub(crate) const MAX_FILE: u64 = 20 * 1024 * 1024;
 pub(crate) fn io(path: &str, error: &std::io::Error) -> ComputerError {
     if error.kind() == std::io::ErrorKind::NotFound {
         ComputerError::NotFound(format!("{path}: no such file"))
+    } else if error.kind() == std::io::ErrorKind::StorageFull {
+        // Files are replaced whole, so a write that did not fit left the old one as it was.
+        ComputerError::Failed(format!(
+            "{path}: the computer's disk is full ({error}); {path} is as it was"
+        ))
     } else {
         ComputerError::Failed(format!("{path}: {error}"))
     }

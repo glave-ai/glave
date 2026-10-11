@@ -84,6 +84,14 @@ pub(crate) trait Backend: Send + Sync {
     /// removed before this returns.
     fn start<'a>(&'a self, spec: &'a Spec) -> BoxFuture<'a, Result<Started, ComputerError>>;
 
+    /// Gives the running worker `name` a fresh `token`, replacing the one it was started with,
+    /// so a connection that died can be opened again after the first token has expired.
+    fn renew<'a>(
+        &'a self,
+        name: &'a str,
+        token: &'a Token,
+    ) -> BoxFuture<'a, Result<(), ComputerError>>;
+
     /// Removes the worker named `name` and its disk. A worker already gone is not an error.
     fn remove<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<(), ComputerError>>;
 }
