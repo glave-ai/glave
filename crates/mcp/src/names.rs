@@ -11,6 +11,13 @@ pub fn exposed(server: &str, tool: &str) -> String {
     name.chars().take(MAX).collect()
 }
 
+/// The name the model sees for `tool` of a catalog a gateway serves, whose tools are already
+/// named `<server>__<tool>`: `mcp__<server>__<tool>`, as if the server were the person's own.
+pub fn catalog(tool: &str) -> String {
+    let name = format!("mcp__{}", clean(tool));
+    name.chars().take(MAX).collect()
+}
+
 fn clean(part: &str) -> String {
     part.chars()
         .map(|c| {
@@ -35,5 +42,7 @@ mod tests {
         );
         assert_eq!(exposed("my docs", "search.v2"), "mcp__my_docs__search_v2");
         assert_eq!(exposed("x", &"t".repeat(300)).len(), 128);
+        assert_eq!(catalog("github__create_issue"), "mcp__github__create_issue");
+        assert_eq!(catalog("my docs__search.v2"), "mcp__my_docs__search_v2");
     }
 }

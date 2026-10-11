@@ -26,6 +26,7 @@ use crate::args::{self, Action, Args, USAGE};
 use crate::client::{Client, Glave};
 use crate::config::{self, Endpoint};
 use crate::gateway::Allowed;
+use crate::gateway::remote::Remote;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::model::Model;
@@ -65,6 +66,11 @@ pub fn main() -> ExitCode {
         && first == "schedule"
     {
         return crate::tasks::schedule_main(rest);
+    }
+    if let Some((first, rest)) = words.split_first()
+        && first == "gateway"
+    {
+        return crate::gateway::serve::main(rest);
     }
     let args = match args::parse(words) {
         Ok(args) => args,
@@ -132,10 +138,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         eprintln!("glave: {notice}");
     }
     let choices = &setup.choices;
-    let mut endpoint = config::endpoint(choices.model.as_ref().map(|m| m.value.clone()))?;
-    if let Some(idle) = config::idle_timeout()? {
-        endpoint.provider.idle_timeout = idle;
-    }
+    let (remote, endpoint) = endpoint(choices)?;
     let (provider, judge) = provider(&setup, &endpoint)?;
     let database = home::database().await?;
     let workspace = workspace(&folder, choices, args.network, &database).await?;
@@ -168,6 +171,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         (!setup.project_servers.is_empty())
             .then(|| trust::mcp_json(&setup.project_servers))
             .as_deref(),
+        remote.as_ref(),
     )
     .await?;
     // The task host puts tasks on workers whenever a backend is set up.
@@ -204,6 +208,25 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         choices: setup.choices,
         workers,
     })
+}
+
+/// The gateway elsewhere, when `[gateway] url` names one, and the endpoint model calls go to:
+/// that gateway, or the model chosen.
+fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Endpoint)> {
+    let remote = choices
+        .gateway
+        .as_ref()
+        .map(Remote::from_choice)
+        .transpose()?;
+    let model = choices.model.as_ref().map(|m| m.value.clone());
+    let mut endpoint = match &remote {
+        Some(remote) => remote.endpoint(model)?,
+        None => config::endpoint(model)?,
+    };
+    if let Some(idle) = config::idle_timeout()? {
+        endpoint.provider.idle_timeout = idle;
+    }
+    Ok((remote, endpoint))
 }
 
 /// `web_fetch`, as `[web]` sets it up; nothing when it is off.

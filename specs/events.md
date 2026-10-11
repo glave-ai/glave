@@ -97,8 +97,11 @@ Types are at version 1 unless the table says otherwise.
 | `schedule.created` | A schedule was made. In the task ledger | `schedule` (a UUID v7); `when`: `{"cron": "<five fields>"}` (UTC) or `{"at": "<time>"}`; `prompt`; `goal` (true when each run works toward `prompt` as a goal; absent is false); `budget`, tokens each run may use; optional `worktree`; optional `by` |
 | `schedule.deleted` | A schedule was deleted; it starts no more runs. In the task ledger | `schedule`; optional `by` |
 | `thread.compacted` | The conversation was summarized to fit the model's context window | `through`, the last `seq` the summary covers; `parts`, the message the conversation restarts from (the summary and the person's latest request). Rebuilding a conversation starts from the latest one; earlier events stay in the log |
+| `gateway.tool.called` | A gateway serving many forwarded a call of a catalog tool (`gateway.md`, "Remote tools"). In the caller's gateway stream | `server`, the catalog server as the gateway's policy names it; `tool`, its name there; `is_error`; `millis`, how long the server took. Content-free: never the arguments or the result |
 
 **The task ledger.** A space's tasks and schedules are glave's own records about the space, not a conversation, so they live in a stream of their own: the reserved thread id `00000000-0000-7000-8000-000000000000` (a UUID v7 at time zero with nothing random, which no thread can have). Its events are only `task.started`, `task.ended`, `schedule.created` and `schedule.deleted`; it has no `thread.started`. Thread lists and reads leave it out. Any glave process of the deployment may append to it: a writer that meets the `(thread, seq)` conflict reads what was written and appends after it.
+
+**Gateway streams.** A gateway serving many (`glave gateway serve`) records each caller's calls in a stream of their own in the gateway's own scope, whose thread id is the caller's person id (a UUID v7 at time zero, `session.md`, so it is never a thread's). Its events are only `model.responded`, one for each model call, and `gateway.tool.called`; it has no `thread.started`. Who called is the stream itself. Any number of gateway processes may append to it: an append that meets another's `(thread, seq)` reads what was written and tries again after it.
 
 Details shared by several types:
 

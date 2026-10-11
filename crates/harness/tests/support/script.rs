@@ -250,6 +250,7 @@ pub fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::TaskEnded(_) => "task.ended",
             Body::ScheduleCreated(_) => "schedule.created",
             Body::ScheduleDeleted(_) => "schedule.deleted",
+            Body::GatewayToolCalled(_) => "gateway.tool.called",
             Body::Unknown(_) => "unknown",
         })
         .collect()

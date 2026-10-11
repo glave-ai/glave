@@ -253,22 +253,56 @@ impl Constraints {
             .map(|(_, rule)| rule)
     }
 
+    /// The smallest daily budget per person in millionths of a US dollar, rounded down.
+    pub fn person_per_day_micros(&self) -> Option<u64> {
+        self.person_per_day_usd().and_then(|rule| match rule.kind {
+            Kind::PersonPerDayUsd(usd) => {
+                // Checked finite and not negative when read; at most a few billion dollars.
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a finite, non-negative amount of dollars, as checked when read"
+                )]
+                let micros = (usd * 1_000_000.0).floor() as u64;
+                Some(micros)
+            }
+            _ => None,
+        })
+    }
+
+    /// The servers every `[mcp] catalog` rule offers (each narrows the one before), and the
+    /// first such rule; `None` when no rule names a catalog.
+    pub fn mcp_catalog(&self) -> Option<(Vec<String>, &Rule)> {
+        let mut found: Option<(Vec<String>, &Rule)> = None;
+        for rule in &self.rules {
+            if let Kind::McpCatalog(names) = &rule.kind {
+                found = Some(match found {
+                    None => (names.clone(), rule),
+                    Some((kept, first)) => (
+                        kept.into_iter()
+                            .filter(|name| names.contains(name))
+                            .collect(),
+                        first,
+                    ),
+                });
+            }
+        }
+        found
+    }
+
     /// The rules glave cannot enforce yet, with why. glave refuses to run under any of them,
     /// rather than quietly not keeping them.
     pub fn not_enforced(&self) -> Vec<(&Rule, &'static str)> {
         let budget = self.person_per_day_usd().map(|rule| {
             (
                 rule,
-                "the gateway keeps budgets for one run, not per day, yet",
+                "glave keeps a daily budget only as a gateway serving many (glave gateway \
+                 serve); in glave itself it keeps budgets for one run",
             )
         });
         self.rules
             .iter()
             .filter_map(|rule| match rule.kind {
-                Kind::McpCatalog(_) => Some((
-                    rule,
-                    "glave cannot start servers an organization offers yet",
-                )),
                 Kind::Workers(WorkerRules {
                     network: Some(NetworkRule::Allowlist),
                     ..
@@ -279,6 +313,14 @@ impl Constraints {
                 _ => None,
             })
             .chain(budget)
+            .collect()
+    }
+
+    /// The rules a gateway serving many cannot enforce yet: the daily budget it keeps.
+    pub fn not_enforced_by_the_gateway(&self) -> Vec<(&Rule, &'static str)> {
+        self.not_enforced()
+            .into_iter()
+            .filter(|(rule, _)| !matches!(rule.kind, Kind::PersonPerDayUsd(_)))
             .collect()
     }
 
