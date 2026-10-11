@@ -267,6 +267,67 @@ mod workers {
     }
 
     #[test]
+    fn a_released_worker_does_not_shift_the_call_ids_the_model_sees() {
+        let dir = folder("workers-numbering");
+        let origin = origin(&dir);
+        let here = dir.join("here");
+        std::fs::create_dir_all(&here).unwrap();
+        block_on(async {
+            let mut answers = script();
+            answers.push(answer(
+                None,
+                vec![("read", json!({"path": "a.txt"}))],
+                StopReason::ToolUse,
+            ));
+            answers.push(answer(Some("Read it."), vec![], StopReason::EndTurn));
+            let (harness, _) = harness_with(
+                workspace(&here).await,
+                answers,
+                AllowAll,
+                MemoryLog::new(),
+                1,
+                settings(),
+            );
+            let harness = harness.with_workers(workers(&dir, &origin));
+            let mut thread = harness
+                .start_thread_in(
+                    scope(),
+                    &Caller::default(),
+                    Place::Worker(Environment::host()),
+                )
+                .await
+                .unwrap();
+            harness
+                .run_turn(&mut thread, "do it", &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            harness.release_worker(&mut thread).await.unwrap().unwrap();
+            // The next tool call after the release is numbered by the in-memory thread. A
+            // fresh resume numbers from the log, where each binding and removal is a record
+            // of glave's own that call ids skip; a released worker cannot be resumed, so the
+            // expected id is worked out from the log the same way.
+            let _ = harness
+                .run_turn(&mut thread, "read it", &Cancel::new(), &mut |_| {})
+                .await;
+            let recorded = events(harness.log(), thread.id).await;
+            let mut own = 0_u64;
+            let mut expected = Vec::new();
+            for event in &recorded {
+                match &event.body {
+                    Body::WorkspaceBound(_) | Body::WorkspaceRemoved(_) => own += 1,
+                    Body::ToolCallRequested(call) => {
+                        let seq = event.header.seq.get();
+                        expected.push((call.call_id.as_str().to_owned(), seq - own));
+                    }
+                    _ => {}
+                }
+            }
+            let (last_id, last_expected) = expected.last().unwrap().clone();
+            assert_eq!(last_id, format!("call_{last_expected}"), "{expected:?}");
+        });
+    }
+
+    #[test]
     fn without_workers_a_worker_thread_is_refused_and_nothing_is_recorded() {
         let dir = folder("workers-none");
         block_on(async {
