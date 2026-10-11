@@ -12,7 +12,6 @@ mod home;
 mod identity;
 mod input;
 mod keys;
-mod local;
 mod mcp;
 mod model;
 mod policy;

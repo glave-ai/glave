@@ -2,9 +2,7 @@
 //! deleted (hidden for good, marked for erasure). The latest `thread.archived`,
 //! `thread.unarchived` or `thread.deleted` in its log decides.
 
-use glave_event::{
-    Body, Event, ThreadArchived, ThreadDeleted, ThreadId, ThreadUnarchived, WorkspaceRemoved,
-};
+use glave_event::{Body, Event, ThreadArchived, ThreadDeleted, ThreadId, ThreadUnarchived};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 use jiff::Timestamp;
 
@@ -14,7 +12,7 @@ use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::append_next;
 
 /// The event types that decide a thread's standing.
-const KINDS: &[&str] = &["thread.archived", "thread.unarchived", "thread.deleted"];
+pub(crate) const KINDS: &[&str] = &["thread.archived", "thread.unarchived", "thread.deleted"];
 
 /// Whether a thread is shown.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -31,9 +29,14 @@ pub enum Standing {
 impl Standing {
     /// The standing the thread's `events` leave it in.
     pub(crate) fn of(events: &[Event]) -> Self {
+        Self::Active.after(events)
+    }
+
+    /// The standing `events` leave a thread in that was in `self` before them.
+    pub(crate) fn after(self, events: &[Event]) -> Self {
         events
             .iter()
-            .fold(Self::Active, |standing, event| match event.body {
+            .fold(self, |standing, event| match event.body {
                 Body::ThreadArchived(_) => Self::Archived,
                 Body::ThreadUnarchived(_) => Self::Active,
                 Body::ThreadDeleted(_) => Self::Deleted,
@@ -95,10 +98,9 @@ pub async fn standing_of<L: EventLog>(
 }
 
 /// Applies `change` to a thread straight in the log, made `at` with `random` for its id, as the
-/// local person (so `by` is not recorded): for
-/// when no server holds the thread. A thread running in a harness at the same moment makes one
-/// of the two appends fail, never both land. Returns the standing afterwards; a change that
-/// leaves things as they are records nothing.
+/// local person (so `by` is not recorded), from outside any harness: a harness holding the
+/// thread takes the change in before its next event (`outside.rs`). A change that leaves
+/// things as they are records nothing.
 pub async fn change_standing<L: EventLog>(
     log: &L,
     scope: &Scope,
@@ -106,13 +108,13 @@ pub async fn change_standing<L: EventLog>(
     at: Timestamp,
     random: [u8; 10],
     change: Change,
-) -> Result<Standing, HarnessError> {
+) -> Result<(), HarnessError> {
     if log.read(scope, thread, None, 1).await?.is_empty() {
         return Err(HarnessError::NotFound(thread));
     }
     match change.plan(standing_of(log, scope, thread).await?) {
         Plan::Missing => return Err(HarnessError::NotFound(thread)),
-        Plan::Nothing => return Ok(change.result()),
+        Plan::Nothing => return Ok(()),
         Plan::Record => {}
     }
     match change {
@@ -133,8 +135,7 @@ pub async fn change_standing<L: EventLog>(
         Change::Delete => {
             append_next(log, scope, thread, at, random, &ThreadDeleted { by: None }).await
         }
-    }?;
-    Ok(change.result())
+    }
 }
 
 impl Thread {
@@ -152,13 +153,16 @@ where
     A: Approver,
 {
     /// Applies `change` for `caller` to a thread this harness holds, recording it as the
-    /// thread's next event. A change that leaves things as they are records nothing.
+    /// thread's next event, after taking in any change made from outside meanwhile. A change
+    /// that leaves things as they are records nothing.
     pub async fn change_standing(
         &self,
         thread: &mut Thread,
         caller: &Caller,
         change: Change,
     ) -> Result<(), HarnessError> {
+        // Anything else written from outside makes the record below a conflict, as ever.
+        self.take_in(thread).await?;
         match change.plan(thread.standing) {
             Plan::Missing => return Err(HarnessError::NotFound(thread.id)),
             Plan::Nothing => return Ok(()),
@@ -172,17 +176,6 @@ where
         }?;
         thread.standing = change.result();
         // Glave's own record: call ids do not count it, so the model is sent the same.
-        thread.unnumbered = thread.unnumbered.saturating_add(1);
-        Ok(())
-    }
-
-    /// Records, as the held thread's next event, that a cleanup removed its worktree.
-    pub async fn record_removal(
-        &self,
-        thread: &mut Thread,
-        removed: &WorkspaceRemoved,
-    ) -> Result<(), HarnessError> {
-        self.record(thread, removed).await?;
         thread.unnumbered = thread.unnumbered.saturating_add(1);
         Ok(())
     }

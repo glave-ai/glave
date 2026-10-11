@@ -19,6 +19,7 @@ mod hooks;
 mod instructions;
 mod join;
 mod judge;
+mod outside;
 mod prompt;
 mod question;
 mod removed;

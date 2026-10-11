@@ -49,6 +49,7 @@ where
             workspace: self.reopen(scope, id, &events).await?,
             unnumbered: crate::bind::own_records(&events),
             standing: crate::standing::Standing::of(&events),
+            removed: false,
         };
         self.repair(&mut thread, &events).await?;
         Ok(thread)

@@ -20,8 +20,7 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Archives, unarchives or deletes `thread` for `caller`. Archiving or deleting also
-    /// releases the thread's worktrees; the reply says what became of each.
+    /// Archives, unarchives or deletes `thread` for `caller`.
     pub(crate) async fn change(
         &self,
         caller: &Caller,
@@ -47,12 +46,7 @@ where
             .await
             .ok_or_else(|| ApiError::new(code::INTERNAL, "the change stopped"))?;
         ended.as_ref().as_ref().map_err(api)?;
-        if change == Change::Unarchive {
-            return Ok(Reply::Done {});
-        }
-        Ok(Reply::Cleaned {
-            notes: self.release_worktrees(thread).await,
-        })
+        Ok(Reply::Done {})
     }
 
     /// The threads of `show`, most recently written first.

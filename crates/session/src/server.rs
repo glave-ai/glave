@@ -15,7 +15,6 @@ use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
 use crate::approvals::{Answering, Approvals};
-use crate::cleanup::Cleaning;
 use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
@@ -41,9 +40,6 @@ pub struct Wiring<P, L, B> {
     pub worktree: bool,
     /// Commands run at points of every turn.
     pub hooks: Hooks,
-    /// Where threads' worktrees are kept, so archiving a thread can remove its worktree and
-    /// `worktrees/*` can clean up; `None` on a computer that keeps none.
-    pub worktrees: Option<Cleaning>,
 }
 
 /// A session server for one workspace and one scope. Clones share it.
@@ -72,8 +68,6 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) tasks: Mutex<Vec<JoinHandle<()>>>,
     /// Turns started with an idempotency key, for retries.
     pub(crate) keyed: Keyed,
-    /// Where worktrees are kept, when this computer keeps any.
-    pub(crate) cleaning: Option<Cleaning>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -111,7 +105,6 @@ where
                 threads: Mutex::new(HashMap::new()),
                 tasks: Mutex::new(Vec::new()),
                 keyed: Keyed::default(),
-                cleaning: wiring.worktrees,
             }),
         }
     }
@@ -137,9 +130,6 @@ where
                 self.change(caller, thread, Change::Unarchive).await
             }
             Request::ThreadDelete { thread } => self.change(caller, thread, Change::Delete).await,
-            Request::WorktreesList {} => self.worktrees_list().await,
-            Request::WorktreesPrune { force } => self.worktrees_prune(&force).await,
-            Request::WorktreesIdle {} => self.worktrees_idle().await,
             Request::ThreadGet { thread } => {
                 self.load(thread).await?;
                 Ok(Reply::Thread {
@@ -324,6 +314,7 @@ pub(crate) fn api(error: &HarnessError) -> ApiError {
             }),
         },
         HarnessError::NotFound(thread) => no_thread(*thread),
+        HarnessError::Archived(_) => ApiError::new(code::ARCHIVED, error.to_string()),
         HarnessError::Cancelled => ApiError::new(code::CANCELLED, "cancelled"),
         HarnessError::NoGoal(_) => ApiError::new(code::NO_GOAL, error.to_string()),
         HarnessError::Workspace(_) => ApiError::new(code::WORKSPACE, error.to_string()),

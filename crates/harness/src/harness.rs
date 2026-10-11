@@ -155,11 +155,14 @@ pub struct Thread {
     /// The workspace the thread's tools act on when it is not the harness's own, such as its
     /// worktree. A subagent's thread shares its parent's.
     pub(crate) workspace: Option<Arc<Workspace>>,
-    /// Events glave recorded for itself that call ids do not count: the thread's
-    /// `workspace.bound` events. Each takes a `seq` before any later call, so ids stay unique.
+    /// Events glave recorded for itself that call ids do not count (`bind::own_records`).
+    /// Each takes a `seq` before any later call, so ids stay unique.
     pub(crate) unnumbered: u64,
     /// Whether the thread is shown, archived or deleted.
     pub(crate) standing: Standing,
+    /// A cleanup removed the thread's worktree while it was held: it is opened again before
+    /// the thread's next turn (`outside.rs`).
+    pub(crate) removed: bool,
 }
 
 impl Thread {
@@ -200,6 +203,9 @@ pub enum HarnessError {
     Event(String),
     #[error("thread {0} has no events in this space")]
     NotFound(ThreadId),
+    /// The thread was archived, from outside this harness, while it held the thread.
+    #[error("thread {0} is archived; unarchive it first")]
+    Archived(ThreadId),
     #[error("cancelled")]
     Cancelled,
     #[error("thread {0} has no active goal")]
@@ -353,6 +359,7 @@ where
             workspace,
             unnumbered: u64::from(bound.is_some()),
             standing: Standing::Active,
+            removed: false,
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {
@@ -427,18 +434,21 @@ where
         Ok(())
     }
 
-    /// Writes a batch all-or-nothing, then moves the thread past it.
+    /// Writes a batch all-or-nothing, then moves the thread past it. When glave's own records
+    /// were written to the thread from outside meanwhile, the batch follows them (`outside.rs`).
     pub(crate) async fn commit(
         &self,
         thread: &mut Thread,
-        events: Vec<RawEvent>,
+        mut events: Vec<RawEvent>,
     ) -> Result<(), HarnessError> {
         if events.is_empty() {
             return Ok(());
         }
-        let next = Self::seq_after(thread, &events)?;
-        self.log.append(&thread.scope, &events).await?;
-        thread.next_seq = next;
+        if let Err(error) = self.log.append(&thread.scope, &events).await {
+            self.follow(thread, error, &mut events).await?;
+            self.log.append(&thread.scope, &events).await?;
+        }
+        thread.next_seq = Self::seq_after(thread, &events)?;
         Ok(())
     }
 }

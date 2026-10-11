@@ -9,6 +9,7 @@ use glave_event::{
 use glave_ports::{Computers, Environment, MemoryLog, OrgId, Sources, SpaceId};
 
 use super::*;
+use crate::worktrees::{FOLDER, SWEPT, check_if_due};
 
 struct Counting(AtomicU64);
 
@@ -148,7 +149,7 @@ fn idle_threads_lose_their_worktrees_only_when_nothing_is_lost() {
         let recent_root = worktree(&home, &repo, "glave/recent", Some(recent)).await;
         sh(&busy_root, COMMIT);
         let cleanup = Cleanup {
-            ledger: &InLog(&log),
+            log: &log,
             environment: &env,
             trash: None,
             now: day(31),
@@ -191,27 +192,24 @@ fn the_check_runs_at_most_once_a_day() {
         let quiet = thread(&log, 1, day(0)).await;
         worktree(&home, &repo, "glave/quiet", Some(quiet)).await;
         let entropy = Counting(AtomicU64::new(100));
-        let ledger = InLog(&log);
         let at = |now| Cleanup {
-            ledger: &ledger,
+            log: &log,
             environment: &env,
             trash: None,
             now,
             entropy: &entropy,
         };
-        // Day 10: due, and the stamp says so; nothing is idle yet.
-        assert!(is_due(&home, day(10)).await.unwrap());
+        // Day 10: checked, nothing idle yet.
         assert_eq!(
-            at(day(10)).idle(&kept(&home).await).await,
+            check_if_due(&home, &at(day(10))).await,
             Vec::<String>::new()
         );
         // Day 31, but a check ran less than a day ago (the stamp says day 30.5).
         std::fs::write(home.join(SWEPT), day(30).to_string()).unwrap();
         let soon = day(30) + SignedDuration::from_hours(12);
-        assert!(!is_due(&home, soon).await.unwrap());
+        assert_eq!(check_if_due(&home, &at(soon)).await, Vec::<String>::new());
         assert_eq!(kept(&home).await.len(), 1);
-        assert!(is_due(&home, day(31)).await.unwrap());
-        let lines = at(day(31)).idle(&kept(&home).await).await;
+        let lines = check_if_due(&home, &at(day(31))).await;
         assert!(lines[0].starts_with("removed"), "{lines:?}");
         let stamp = std::fs::read_to_string(home.join(SWEPT)).unwrap();
         assert_eq!(stamp, day(31).to_string());
@@ -229,7 +227,7 @@ fn a_gone_repositorys_worktree_goes_to_the_trash_and_is_recorded() {
         std::fs::remove_dir_all(&repo).unwrap();
         let entropy = Counting(AtomicU64::new(100));
         let none = Cleanup {
-            ledger: &InLog(&log),
+            log: &log,
             environment: &env,
             trash: None,
             now: day(31),
@@ -272,7 +270,7 @@ fn prune_removes_the_safe_explains_the_rest_and_forces_only_by_name() {
         sh(&ahead, COMMIT);
         std::fs::write(dirty.join("new.txt"), "work").unwrap();
         let cleanup = Cleanup {
-            ledger: &InLog(&log),
+            log: &log,
             environment: &env,
             trash: None,
             now: day(31),
@@ -313,7 +311,7 @@ fn archiving_a_thread_releases_only_its_worktrees() {
         let untouched = worktree(&home, &repo, "glave/other", Some(other)).await;
         std::fs::write(kept_dirty.join("new.txt"), "work").unwrap();
         let cleanup = Cleanup {
-            ledger: &InLog(&log),
+            log: &log,
             environment: &env,
             trash: None,
             now: day(31),

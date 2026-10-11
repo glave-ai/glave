@@ -1,19 +1,16 @@
 //! `glave threads`: the threads in this folder, and archiving, unarchiving and deleting them.
-//! A change is asked of the glave that is running, when there is one, so that glave stays the
-//! one writer of its threads; otherwise it is made straight in the log.
+//! A change is made straight in the log; a glave holding the thread takes it in before its
+//! next event, so the two never fight.
 
 use std::process::ExitCode;
 
 use glave_event::ThreadId;
 use glave_harness::{Change, Entropy, OsEntropy, Standing, change_standing, standing_of};
 use glave_ports::{EventLog, Scope};
-use glave_session::cleanup::{Cleanup, InLog};
-use glave_session::protocol::{Reply, Request, Show, code};
 use glave_store_sqlite::Store;
 use jiff::Timestamp;
 use uuid::Uuid;
 
-use crate::local::Peer;
 use crate::system::random_uuid;
 use crate::{home, keys, worktrees};
 
@@ -32,10 +29,13 @@ changes, every commit on a remote) and keeps it, saying why, otherwise. A thread
 erased by the operator of the deployment; today's local keys cannot erase one thread alone
 (specs/storage.md), so a deleted thread stays in the database, hidden.";
 
+/// The most threads listed.
+const MOST_LISTED: usize = 1_000;
+
 /// What was asked.
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
-    List(Show),
+    List(Standing),
     Change(Change, ThreadId),
 }
 
@@ -47,9 +47,9 @@ fn parse(words: &[String]) -> Result<Command, String> {
         Ok(Command::Change(change, id))
     };
     match words.as_slice() {
-        [] => Ok(Command::List(Show::Active)),
-        ["--archived"] => Ok(Command::List(Show::Archived)),
-        ["--deleted"] => Ok(Command::List(Show::Deleted)),
+        [] => Ok(Command::List(Standing::Active)),
+        ["--archived"] => Ok(Command::List(Standing::Archived)),
+        ["--deleted"] => Ok(Command::List(Standing::Deleted)),
         ["archive", id] => change(Change::Archive, id),
         ["unarchive", id] => change(Change::Unarchive, id),
         ["delete", id] => change(Change::Delete, id),
@@ -83,7 +83,7 @@ pub fn main(arguments: &[String]) -> ExitCode {
         }
     };
     match runtime.block_on(run(command)) {
-        Ok(code) => code,
+        Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("glave: {error:#}");
             ExitCode::FAILURE
@@ -91,7 +91,7 @@ pub fn main(arguments: &[String]) -> ExitCode {
     }
 }
 
-async fn run(command: Command) -> anyhow::Result<ExitCode> {
+async fn run(command: Command) -> anyhow::Result<()> {
     let home = home::folder()?;
     let store = Store::open(
         home::database().await?,
@@ -103,87 +103,39 @@ async fn run(command: Command) -> anyhow::Result<ExitCode> {
         .await?;
     let log = store.log();
     match command {
-        Command::List(show) => list(&log, &scope, show).await,
-        Command::Change(change, thread) => apply(&log, &scope, change, thread).await,
-    }
-}
-
-/// Lists the threads of `show`. Reading needs no writer, so it reads the log itself.
-async fn list<L: EventLog>(log: &L, scope: &Scope, show: Show) -> anyhow::Result<ExitCode> {
-    let wanted = match show {
-        Show::Active => Standing::Active,
-        Show::Archived => Standing::Archived,
-        Show::Deleted => Standing::Deleted,
-    };
-    for thread in log.threads(scope, 1_000).await? {
-        if standing_of(log, scope, thread).await? == wanted {
-            println!("{thread}");
+        Command::List(wanted) => {
+            for thread in log.threads(&scope, MOST_LISTED).await? {
+                if standing_of(&log, &scope, thread).await? == wanted {
+                    println!("{thread}");
+                }
+            }
+            Ok(())
         }
+        Command::Change(change, thread) => apply(&log, scope, change, thread).await,
     }
-    Ok(ExitCode::SUCCESS)
 }
 
-/// Changes `thread`, through the running glave when it knows the thread.
+/// Changes `thread`, and releases its worktrees when it is archived or deleted.
 async fn apply<L: EventLog>(
     log: &L,
-    scope: &Scope,
+    scope: Scope,
     change: Change,
     thread: ThreadId,
-) -> anyhow::Result<ExitCode> {
-    if let Some(mut peer) = Peer::connect().await {
-        let request = match change {
-            Change::Archive => Request::ThreadArchive { thread },
-            Change::Unarchive => Request::ThreadUnarchive { thread },
-            Change::Delete => Request::ThreadDelete { thread },
-        };
-        match peer.call(&request).await {
-            Ok(Reply::Cleaned { notes }) => return Ok(done(change, thread, &notes)),
-            Ok(_) => return Ok(done(change, thread, &[])),
-            // Not in the running glave's folder: it is made here.
-            Err(error) if error.code == code::NO_THREAD => {}
-            Err(error) => {
-                eprintln!("glave: {error}");
-                return Ok(ExitCode::FAILURE);
-            }
-        }
-    }
+) -> anyhow::Result<()> {
     let now = Timestamp::now();
-    if let Err(error) =
-        change_standing(log, scope, thread, now, Entropy::bytes(&OsEntropy), change).await
-    {
-        eprintln!("glave: {error}");
-        return Ok(ExitCode::FAILURE);
-    }
-    let mut notes = Vec::new();
-    if change != Change::Unarchive {
-        let cleaning = worktrees::cleaning()?;
-        let ledger = InLog(log);
-        let trash = cleaning.trash(now);
-        let cleanup = Cleanup {
-            ledger: &ledger,
-            environment: &cleaning.environment,
-            trash: trash.as_ref(),
-            now,
-            entropy: &OsEntropy,
-        };
-        notes = cleanup
-            .archived(&cleaning.list().await?, *scope, thread)
-            .await;
-    }
-    Ok(done(change, thread, &notes))
-}
-
-fn done(change: Change, thread: ThreadId, notes: &[String]) -> ExitCode {
+    change_standing(log, &scope, thread, now, OsEntropy.bytes(), change).await?;
     let verb = match change {
         Change::Archive => "archived",
         Change::Unarchive => "unarchived",
         Change::Delete => "deleted",
     };
     println!("{verb} {thread}");
-    for note in notes {
-        println!("{note}");
+    if change != Change::Unarchive {
+        for line in worktrees::release_archived(log, scope, thread).await? {
+            println!("{line}");
+        }
     }
-    ExitCode::SUCCESS
+    Ok(())
 }
 
 #[cfg(test)]
@@ -193,10 +145,10 @@ mod tests {
     #[test]
     fn the_words_after_threads_pick_a_command() {
         let words = |text: &[&str]| text.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
-        assert_eq!(parse(&words(&[])), Ok(Command::List(Show::Active)));
+        assert_eq!(parse(&words(&[])), Ok(Command::List(Standing::Active)));
         assert_eq!(
             parse(&words(&["--archived"])),
-            Ok(Command::List(Show::Archived))
+            Ok(Command::List(Standing::Archived))
         );
         assert!(parse(&words(&["archive"])).is_err());
         assert!(parse(&words(&["archive", "nope"])).is_err());

@@ -3,7 +3,6 @@
 //! in-process to the network, carries the same messages. Network transports need a sign-in.
 
 mod approvals;
-pub mod cleanup;
 mod goal;
 mod held;
 pub mod http;
@@ -15,10 +14,8 @@ mod server;
 pub mod signin;
 mod standing;
 mod turn;
-mod worktrees;
 
 pub use approvals::Answering;
 pub use glave_harness::Caller;
 pub use server::{Server, Wiring};
 pub use turn::{TurnItem, TurnStream};
-pub use worktrees::info as worktree_info;

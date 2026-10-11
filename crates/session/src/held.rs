@@ -114,9 +114,7 @@ where
         F: std::future::Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
         R: Send + Sync + 'static,
     {
-        if purpose != Use::Record {
-            self.load(thread).await?;
-        }
+        self.load(thread).await?;
         let cancel = Cancel::new();
         let (finish, finished) = watch::channel(false);
         let held = {
@@ -131,10 +129,7 @@ where
                     if purpose == Use::Turn && held.standing() == Standing::Archived =>
                 {
                     threads.insert(thread, Slot::Idle(held));
-                    return Err(ApiError::new(
-                        code::ARCHIVED,
-                        format!("thread {thread} is archived; unarchive it first"),
-                    ));
+                    return Err(api(&HarnessError::Archived(thread)));
                 }
                 Some(Slot::Idle(held)) => *held,
                 Some(running) => {
@@ -154,11 +149,18 @@ where
         let task = tokio::spawn(async move {
             let (held, result) = work(Arc::clone(&inner), held, cancel).await;
             inner.approvals.forget(thread);
-            inner
-                .threads
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(thread, Slot::Idle(Box::new(held)));
+            let mut threads = inner.threads.lock().unwrap_or_else(PoisonError::into_inner);
+            // Archived or deleted from outside while held: the work stopped where it was, so
+            // the thread is read again from the log next time, which closes what it left open.
+            if matches!(
+                result,
+                Err(HarnessError::Archived(_) | HarnessError::NotFound(_))
+            ) {
+                threads.remove(&thread);
+            } else {
+                threads.insert(thread, Slot::Idle(Box::new(held)));
+            }
+            drop(threads);
             let _ = finish.send(true);
             // Kept even when no one is following any more: a retry may still ask for it.
             done.send_replace(Some(Arc::new(result)));
@@ -181,8 +183,6 @@ pub(crate) enum Use {
     Turn,
     /// Changing whether the thread is shown.
     Manage,
-    /// Recording a removed worktree on a thread already held, even one deleted.
-    Record,
 }
 
 /// Where work on a thread sends its result: nothing until it ends, then how it ended. Shared,

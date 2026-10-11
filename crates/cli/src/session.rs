@@ -179,7 +179,6 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         tools: [crate::skills::offered(&root).await?, servers.sources()].concat(),
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
-        worktrees: Some(crate::worktrees::cleaning()?),
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
@@ -242,11 +241,7 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         if asks { Asking::Person } else { Asking::NoOne },
     )
     .await?;
-    let listening = crate::local::Listening::start(wired.server.clone()).await;
     let ran = session(&args, &wired, asks).await;
-    if let Some(listening) = listening {
-        listening.stop().await;
-    }
     wired.server.shutdown().await;
     wired.servers.close().await;
     ran
@@ -257,7 +252,6 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
 async fn serve(args: Args) -> anyhow::Result<ExitCode> {
     // The session API owns standard input, so there is no one to ask about a project.
     let wired = wire(&args, Answering::Clients, Asking::NoOne).await?;
-    let listening = crate::local::Listening::start(wired.server.clone()).await;
     let served = if let Some(address) = args.http {
         serve_http(&args, wired.server, address).await
     } else {
@@ -266,9 +260,6 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
             .await
             .map_err(anyhow::Error::from)
     };
-    if let Some(listening) = listening {
-        listening.stop().await;
-    }
     wired.servers.close().await;
     served?;
     Ok(ExitCode::SUCCESS)

@@ -8,12 +8,15 @@ use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_computer::LocalComputers;
-use glave_event::{Arguments, ModelRef, Part, StopReason, TokenCounts, Usage};
+use glave_event::{
+    Arguments, ModelRef, Part, RawEvent, StopReason, ThreadId, TokenCounts, Usage,
+};
 use glave_harness::{Clock, Entropy, Settings, Workspace};
 use glave_ports::{
-    Completion, Delta, EventLog, MemoryBlobs, MemoryLog, ModelProvider, ModelRequest, OrgId,
-    ProviderError, RequestedCall, Scope, SpaceId,
+    BlobStore, Completion, Delta, EventLog, MemoryBlobs, MemoryLog, ModelProvider, ModelRequest,
+    OrgId, ProviderError, RequestedCall, Scope, SpaceId,
 };
+use glave_session::protocol::{ApiError, Meta, Reply, Request};
 use glave_session::{Answering, Server, Wiring};
 use jiff::Timestamp;
 use tokio::sync::Notify;
@@ -191,12 +194,6 @@ pub async fn build<L: EventLog + 'static>(
         tools: Vec::new(),
         worktree: false,
         hooks: glave_harness::Hooks::default(),
-        worktrees: worktrees.map(|base| glave_session::cleanup::Cleaning {
-            base,
-            environment: std::env::vars_os().collect(),
-            home: None,
-            data_home: None,
-        }),
     };
     (Server::new(wiring, settings, scope(), answering), recorded)
 }
@@ -207,4 +204,71 @@ pub async fn server(
     answering: Answering,
 ) -> Server<Script, MemoryLog, MemoryBlobs> {
     server_on(dir, answers, None, MemoryLog::new(), answering, 1).await
+}
+
+/// Starts a thread, in a worktree of its own when `worktree`.
+pub async fn start<P, L, B>(server: &Server<P, L, B>, worktree: bool) -> ThreadId
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    let started = Request::ThreadStart {
+        worktree: worktree.then_some(true),
+    };
+    match server.request(started).await.unwrap() {
+        Reply::Thread { thread } => thread.id,
+        other => panic!("a thread, not {other:?}"),
+    }
+}
+
+/// Runs a turn that says "go".
+pub async fn turn<P, L, B>(server: &Server<P, L, B>, thread: ThreadId) -> Result<Reply, ApiError>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    server
+        .request(Request::TurnStart {
+            thread,
+            prompt: "go".into(),
+            meta: Meta::default(),
+        })
+        .await
+}
+
+/// The thread's events, checked to be numbered 1, 2, 3, ... with no gap or repeat.
+pub async fn events<P, L, B>(server: &Server<P, L, B>, thread: ThreadId) -> Vec<RawEvent>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    let page = Request::ThreadEvents {
+        thread,
+        after: None,
+        limit: None,
+    };
+    let Reply::Events { events, .. } = server.request(page).await.unwrap() else {
+        panic!("events")
+    };
+    let seqs: Vec<u64> = events.iter().map(|event| event.seq.get()).collect();
+    let want: Vec<u64> = (1..=u64::try_from(events.len()).unwrap()).collect();
+    assert_eq!(seqs, want, "the thread's numbering has a gap or a repeat");
+    events
+}
+
+/// The types of the thread's events, in order.
+pub async fn kinds<P, L, B>(server: &Server<P, L, B>, thread: ThreadId) -> Vec<String>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    events(server, thread)
+        .await
+        .iter()
+        .map(|event| event.kind.as_str().to_owned())
+        .collect()
 }
