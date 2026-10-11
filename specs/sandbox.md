@@ -12,7 +12,11 @@ The default approval mode is `auto`: glave acts without asking (`approvals.md`).
 
 There are two safe defaults: ask before each command (Claude Code, Gemini CLI), or a wall that makes asking unnecessary for everyday work (Codex, whose `workspace-write` sandbox is on with its `on-request` approvals in version-controlled folders). Asking costs the person a prompt per command, and enough prompts send people to "turn it all off"; a wall costs nothing until a command needs to leave it. glave keeps acting on the person's behalf, so it takes the wall: commands run in the `project` sandbox, nothing asks inside it, and only what it blocks needs the person.
 
-The network stays on inside it, so installing a dependency, fetching a page or pushing to a review still works; the walls that matter stay up: writes confined to the project and temp folders, secret files unreadable, git hooks and settings read-only.
+The network stays on inside it, so installing a dependency, fetching a page or pushing to a review still works; the other walls stay up: writes confined to the project and temp folders, common credential stores and secret-named project files hidden, git hooks and settings read-only.
+
+**Why the network is on in version 1.** There is no way yet to let one blocked command out of the sandbox with the person's approval (Codex and Claude Code have one; it is a follow-up below). Until there is, a sandbox with the network off would make installing a dependency impossible, not one prompt away, and people would turn the sandbox off altogether. With the network on, the cost is exfiltration: a command planted in fetched content can send what it can read. `--no-network` (or `network = false`) is the real stop for that, for work that needs no network.
+
+**What the read limits do and do not hide.** Hidden from sandboxed commands: common credential stores in the home folder (`~/.ssh`, `~/.aws`, `~/.config/gcloud`, `~/.kube`, `~/.gnupg`, `~/.netrc`, `~/.npmrc`, keyrings, browser profiles, …), glave's own folder, and project files named like secrets (`.env` and its variants, private keys, credential files, `secrets.yaml` and other `secrets.` data files, but not source such as `secrets.rs`). Still reachable: the macOS keychain while the network is on (through `securityd`, which the profile allows then, as Codex's does, for TLS to work), tokens stored anywhere else (a tool's own config folder, an unusual file name), and every readable project file. With the network on, any of those can be sent out.
 
 What protects against what:
 
@@ -21,8 +25,8 @@ What protects against what:
 | Secrets reaching the model | always on: commands get no secret-named variables, and secret files need approval (shipped) |
 | Damage outside the project (`rm -rf ~`, shell startup files, other repositories) | the sandbox; without it, the person approving each command |
 | Code planted to run later (git hooks, agent settings) | the sandbox's protected paths; without it, the same |
-| Secrets read by a command | the sandbox's read limits |
-| Secrets sent out over the network | the read limits, so there is nothing to send; `--no-network` for work that needs no network |
+| Secrets read by a command | the sandbox's read limits, for common credential stores and secret-named project files; not the macOS keychain or tokens stored elsewhere |
+| Secrets or project files sent out over the network | `--no-network`; with the network on (the default), whatever a command can read can be sent |
 | Destruction inside the project (`rm -rf src`, `git checkout .`) | the cautions that ask in every mode, and the judge (`approvals.md`) |
 
 ## Using it
@@ -79,11 +83,11 @@ Writable roots come from glave's own settings, never from a tool argument. (CVE-
 
 ### Reads
 
-Everywhere except secret locations. This is stricter than Codex and Claude Code, which both let sandboxed commands read `~/.ssh`.
+Everywhere except secret locations. This is stricter than Codex and Claude Code, which both let sandboxed commands read `~/.ssh`. All three leave the macOS keychain reachable through `securityd` when the network is on: a sandboxed `security find-generic-password` can read an item the keychain lets the person's programs read without a prompt.
 
 - In the home folder: `~/.ssh`, `~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.docker/config.json`, `~/.gnupg`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`, `~/Library/Keychains`, and browser profiles (cookies are credentials).
 - glave's own data: `~/.glave` (or `$GLAVE_HOME`), so a command cannot read or rewrite the event log; except the workspace itself, when it is a thread's worktree there.
-- In the project: files named like secrets, the same rule `read` uses (`.env` and its variants but not templates, private keys, credential files). Certificate bundles named like keys are public and stay readable: `cacert.pem` (certifi's, which every Python environment making HTTPS requests reads), `cacerts.pem`, `ca-bundle.pem`, `ca-certificates.pem` and `roots.pem` (gRPC's).
+- In the project: files named like secrets, the same rule `read` uses (`.env` and its variants but not templates, private keys, credential files, and `secrets.` with a data file's extension: `yaml`, `yml`, `json`, `toml`, `env`, `txt`, `properties`; `secrets.rs` or `secrets.py` is source and stays readable). Certificate bundles named like keys are public and stay readable: `cacert.pem` (certifi's, which every Python environment making HTTPS requests reads), `cacerts.pem`, `ca-bundle.pem`, `ca-certificates.pem` and `roots.pem` (gRPC's).
 
 ### Network
 

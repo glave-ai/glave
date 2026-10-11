@@ -44,6 +44,8 @@ mod tests {
             "server.pem",
             "id_ed25519",
             "secrets.yaml",
+            "SECRETS.json",
+            "secrets.properties",
         ] {
             assert!(names.is_secret(secret), "{secret}");
         }
@@ -53,6 +55,10 @@ mod tests {
             "notes.md",
             "environment.ts",
             "keys.rs",
+            "secrets.rs",
+            "secrets.py",
+            "secrets.ts",
+            "secrets.go",
             "cacert.pem",
             "roots.pem",
         ] {

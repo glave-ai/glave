@@ -166,6 +166,10 @@ fn secret_locations_are_unreadable() {
     std::fs::write(project.join(".ENV.local"), "canary-env-local\n").unwrap();
     std::fs::write(project.join("server.pem"), "canary-pem\n").unwrap();
     std::fs::write(project.join(".env.example"), "example-ok\n").unwrap();
+    std::fs::write(project.join("secrets.yaml"), "canary-yaml\n").unwrap();
+    // Source modules named `secrets` are code, not secrets.
+    std::fs::write(project.join("secrets.rs"), "rs-ok\n").unwrap();
+    std::fs::write(project.join("secrets.py"), "py-ok\n").unwrap();
     std::fs::write(project.join("notes.md"), "notes-ok\n").unwrap();
     // A certificate bundle is public: Python's HTTPS needs certifi's in a project's venv.
     let certifi = project.join(".venv/lib/certifi");
@@ -175,7 +179,7 @@ fn secret_locations_are_unreadable() {
         &project,
         &sandbox(SandboxLevel::Project, false, &dir),
         &format!(
-            "for f in {}/.ssh/id_ed25519 {}/.glave/glave.db .env .ENV.local server.pem .env.example notes.md .venv/lib/certifi/cacert.pem; do cat \"$f\"; done; true",
+            "for f in {}/.ssh/id_ed25519 {}/.glave/glave.db .env .ENV.local server.pem secrets.yaml .env.example secrets.rs secrets.py notes.md .venv/lib/certifi/cacert.pem; do cat \"$f\"; done; true",
             dir.display(),
             dir.display()
         ),
@@ -184,6 +188,11 @@ fn secret_locations_are_unreadable() {
     assert!(out.text.contains("example-ok"), "{}", out.text);
     assert!(out.text.contains("notes-ok"), "{}", out.text);
     assert!(out.text.contains("bundle-ok"), "{}", out.text);
+    assert!(
+        out.text.contains("rs-ok") && out.text.contains("py-ok"),
+        "{}",
+        out.text
+    );
     // Control: without the sandbox every canary is readable.
     let open = run_in(
         &project,
@@ -529,4 +538,33 @@ fn builds_with_dependencies_work_offline_in_the_sandbox() {
         build,
     );
     assert!(sandboxed.text.contains("built"), "{}", sandboxed.text);
+}
+
+/// A crate with a `secrets` module builds and tests in the default sandbox: the name rule
+/// hides secret data files, never source.
+#[test]
+fn a_crate_with_a_secrets_module_builds_and_tests_in_the_sandbox() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("secrets-module");
+    let project = dir.join("project");
+    std::fs::create_dir_all(project.join("src")).unwrap();
+    std::fs::write(
+        project.join("Cargo.toml"),
+        "[package]\nname = \"vault\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\n",
+    )
+    .unwrap();
+    std::fs::write(project.join("src/lib.rs"), "pub mod secrets;\n").unwrap();
+    std::fs::write(
+        project.join("src/secrets.rs"),
+        "pub fn masked() -> &'static str { \"***\" }\n\n#[test]\nfn masks() { assert_eq!(masked(), \"***\"); }\n",
+    )
+    .unwrap();
+    let out = run(
+        &project,
+        &sandbox(SandboxLevel::Project, true, &dir),
+        "CARGO_TARGET_DIR=target cargo test --offline --quiet 2>&1 && echo tested",
+    );
+    assert!(out.text.contains("tested"), "{}", out.text);
 }
