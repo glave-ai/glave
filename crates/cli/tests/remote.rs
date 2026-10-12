@@ -19,6 +19,9 @@ mod remote {
 
     /// `glave serve --http` for `place`, and where it listens.
     fn serve(place: &Place, server: &FakeServer) -> (Child, String) {
+        // No titles: a title call would race the next turn for the fake model's replies.
+        std::fs::create_dir_all(&place.home).unwrap();
+        std::fs::write(place.home.join("config.toml"), "titles = false\n").unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_glave"))
             .args(["serve", "--http", "127.0.0.1:0", "--model", "fake-model"])
             .current_dir(&place.project)
