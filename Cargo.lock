@@ -1317,7 +1317,9 @@ version = "0.0.0"
 dependencies = [
  "aws-credential-types",
  "aws-sigv4",
+ "glave-event",
  "glave-ports",
+ "glave-provider-anthropic",
  "jiff",
  "reqwest",
  "serde",
@@ -1467,6 +1469,24 @@ dependencies = [
  "thiserror",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "glave-google"
+version = "0.0.0"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "glave-event",
+ "glave-ports",
+ "glave-provider-openai",
+ "jiff",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
 ]
 
 [[package]]

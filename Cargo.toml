@@ -43,8 +43,12 @@ aws-credential-types = { version = "1.3", default-features = false }
 # AWS Signature Version 4 for Bedrock without the SDK: AWS's own signer, tested against
 # AWS's published suite; only HTTP request signing (it needs `http1` to build).
 aws-sigv4 = { version = "1.6", default-features = false, features = ["sign-http", "http1"] }
-# Only for tests: signing tokens as a fake identity provider. rustls already builds it.
+# The crypto rustls already builds: signing Google service account assertions (RS256), and,
+# in tests, tokens as a fake identity provider.
 aws-lc-rs = { version = "1", default-features = false, features = ["aws-lc-sys", "ring-io"] }
+# PEM keys and JWT segments for Google service accounts (already in the tree, under
+# jsonwebtoken and kube).
+base64 = "0.22"
 bytes = "1"
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
@@ -55,6 +59,7 @@ glave-config = { path = "crates/config" }
 glave-event = { path = "crates/event" }
 glave-gateway = { path = "crates/gateway" }
 glave-gateway-service = { path = "crates/gateway-service" }
+glave-google = { path = "crates/google" }
 glave-harness = { path = "crates/harness" }
 glave-identity = { path = "crates/identity" }
 glave-keys = { path = "crates/keys" }

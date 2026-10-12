@@ -1,4 +1,12 @@
-import { PANEL_DEFAULT, toPanelState } from './panel';
+import { PANEL_DEFAULT, SIDE_NAV_DEFAULT, toPanelState, toSideNavState } from './panel';
+
+describe('toSideNavState', () => {
+  it('reads back what was stored, and the default for anything wrong', () => {
+    expect(toSideNavState({ open: false, width: 301.6 })).toEqual({ open: false, width: 302 });
+    expect(toSideNavState(null)).toEqual(SIDE_NAV_DEFAULT);
+    expect(toSideNavState({ open: 1, width: 0 })).toEqual(SIDE_NAV_DEFAULT);
+  });
+});
 
 describe('toPanelState', () => {
   it('reads back what was stored', () => {

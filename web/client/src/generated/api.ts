@@ -220,10 +220,15 @@ export type Seq = number;
 /** What the server is. */
 export type ServerInfo = {
   /**
-   * How much this server asks before acting, in every thread it runs: `--approval` or
-   * `approval` in `config.toml` (`specs/approvals.md`). Choosing it per thread comes later.
+   * How much this server asks before acting in a thread that chose no mode: `--approval` or
+   * `approval` in `config.toml` (`specs/approvals.md`).
    */
   readonly approval: ApprovalMode;
+  /**
+   * The modes a thread may choose (`approval` on `thread/start` and `turn/start`): those
+   * the policy leaves, cautious first.
+   */
+  readonly approvals: readonly (ApprovalMode)[];
   readonly name: string;
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
@@ -295,6 +300,8 @@ export type ThreadId = string;
 
 /** A thread, as a list shows it: from the threads view, with what it is doing now. */
 export type ThreadSummary = {
+  /** How much its turns ask before acting: the mode last chosen for it, else the server's. */
+  readonly approval: ApprovalMode;
   /** What they cost, when every call reported a cost. */
   readonly cost?: Money | null;
   readonly created_at: At;
@@ -670,6 +677,11 @@ export type ThreadRenameResult = {
 
 export type ThreadStartParams = {
   /**
+   * How much the thread's turns ask before acting, one of the server's `approvals`;
+   * the server's own mode when absent.
+   */
+  readonly approval?: ApprovalMode | null;
+  /**
    * For a thread that runs as a task: it works on a worker when the server has them,
    * even when other threads work here.
    */
@@ -714,6 +726,11 @@ export type TurnCancelResult = Readonly<Record<string, never>>;
 
 export type TurnStartParams = {
   readonly _meta?: Meta;
+  /**
+   * How much this turn, and the thread's turns after it, ask before acting: one of the
+   * server's `approvals`. The thread's latest choice when absent, else the server's.
+   */
+  readonly approval?: ApprovalMode | null;
   /** Runs the turn as a task, with no one attached: answered at once with the task. */
   readonly background?: boolean;
   /** With `background`, tokens the turn may use, subagents' included. */

@@ -1,5 +1,13 @@
 <a class="skip" [href]="contentLink" data-testid="workspace-skip">{{ copy.skip }}</a>
-<glz-sidenav-layout testId="workspace" [label]="copy.sideNav" [(open)]="navOpen">
+<glz-sidenav-layout
+  testId="workspace"
+  [label]="copy.sideNav"
+  [resizeLabel]="copy.resize"
+  [resizeHint]="hint"
+  [shortcut]="shortcut"
+  [(open)]="navOpen"
+  [(width)]="navWidth"
+>
   <app-side-nav
     glzSidenav
     class="side"

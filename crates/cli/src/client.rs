@@ -105,6 +105,7 @@ impl Client<'_> {
                 background: false,
                 budget: None,
                 model: None,
+                approval: None,
                 meta: Meta::default(),
             })
             .await;

@@ -88,6 +88,7 @@ where
         child.untrusted = parent.untrusted;
         child.read_secret = parent.read_secret;
         child.model.clone_from(&parent.model);
+        child.approval = parent.approval;
         let id = child.id;
         let send = |update: Live| {
             let mut live = live.lock().unwrap_or_else(PoisonError::into_inner);

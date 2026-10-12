@@ -24,7 +24,7 @@ use rmcp::transport::IntoTransport;
 use tokio::task::JoinHandle;
 
 use crate::McpError;
-use crate::client::{Client, watch_tools};
+use crate::client::{Client, subscribe, watch_tools};
 use crate::names::{catalog, exposed};
 use crate::output::output;
 use crate::reason::reason;
@@ -89,8 +89,21 @@ impl Connection {
                 .as_ref()
                 .is_some_and(|tools| tools.list_changed == Some(true))
         });
-        let watching =
-            announces.then(|| tokio::spawn(watch_tools(peer.clone(), Arc::clone(&stale))));
+        // Subscribed before the connection is handed out, so a change made right after is heard.
+        let subscription = if announces {
+            let Ok(subscription) = tokio::time::timeout(limit, subscribe(&peer)).await else {
+                let _ = service.cancel().await;
+                return Err(McpError::start(
+                    name,
+                    format!("it did not answer within {limit:?}"),
+                ));
+            };
+            subscription
+        } else {
+            None
+        };
+        let watching = subscription
+            .map(|subscription| tokio::spawn(watch_tools(subscription, Arc::clone(&stale))));
         Ok(Self {
             name: name.to_owned(),
             catalog,

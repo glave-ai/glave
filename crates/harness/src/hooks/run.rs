@@ -141,7 +141,7 @@ where
         let workspace = Arc::clone(self.workspace_for(thread));
         let root = workspace.root().display().to_string();
         input.insert("cwd".into(), root.into());
-        let mode = self.settings.approval.name();
+        let mode = self.approval_for(thread).name();
         input.insert("permission_mode".into(), mode.into());
         let input = Value::Object(input).to_string();
         for hook in hooks {

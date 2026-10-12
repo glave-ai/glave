@@ -67,6 +67,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::ThreadDeleted(_)
         | Body::ThreadRenamed(_)
         | Body::ModelChosen(_)
+        | Body::ApprovalModeChosen(_)
         | Body::HookRan(_)
         | Body::TaskStarted(_)
         | Body::TaskEnded(_)

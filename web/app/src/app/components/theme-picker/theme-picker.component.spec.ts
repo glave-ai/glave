@@ -14,10 +14,10 @@ describe('ThemePickerComponent', () => {
     const button = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
       '[data-testid="theme-picker"]',
     );
-    expect(button?.getAttribute('aria-label')).toContain('as the system');
+    expect(button?.getAttribute('aria-label')).toContain('Theme: System');
     button?.click();
     await fixture.whenStable();
     expect(TestBed.inject(ThemeService).choice()).toBe('light');
-    expect(button?.getAttribute('aria-label')).toContain('Theme: light');
+    expect(button?.getAttribute('aria-label')).toBe('Theme: Light. Switch to Dark');
   });
 });

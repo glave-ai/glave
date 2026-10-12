@@ -9,8 +9,10 @@ const COPY = {
 } as const;
 
 /**
- * The bar across the top of a page: the side nav's toggle, the page's own heading (projected),
- * and its actions at the end (`[appPageHeaderEnd]`).
+ * The bar across the top of a page, floating over it: no border and no solid bar, but a fade
+ * from the page's colour to transparent, so the page scrolls softly under it. It holds the
+ * page's own heading (projected), its actions at the end (`[appPageHeaderEnd]`) and, on narrow
+ * screens, where the side nav is a drawer, the button that opens it.
  */
 @Component({
   selector: 'app-page-header',
@@ -24,6 +26,8 @@ export class PageHeaderComponent {
   protected readonly icon = PanelLeft;
   private readonly nav = inject(NavService);
   protected readonly open = this.nav.open;
+  protected readonly narrow = this.nav.narrow;
+  protected readonly shortcut = this.nav.ariaShortcut;
 
   protected toggle(): void {
     this.nav.toggle();

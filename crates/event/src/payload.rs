@@ -19,7 +19,7 @@ pub(crate) mod turn;
 pub(crate) mod workspace;
 
 pub use approval::{ApprovalDecided, ApprovalRequested, Verdict};
-pub use chosen::ModelChosen;
+pub use chosen::{ApprovalMode, ApprovalModeChosen, ModelChosen};
 pub use gateway::GatewayToolCalled;
 pub use goal::{GoalEnded, GoalReason, GoalResumed, GoalSet};
 pub use hook::{HookPoint, HookRan, HookResult};

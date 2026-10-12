@@ -1,3 +1,5 @@
+@use '../../styles/splitter';
+
 :host {
   position: relative;
   display: flex;
@@ -10,8 +12,9 @@
   flex: none;
   flex-direction: column;
   width: var(--glz-sidenav-width);
+  max-width: 50%;
   overflow-y: auto;
-  border-right: var(--glz-border-width) solid var(--glz-color-border);
+  border-inline-end: var(--glz-border-width) solid var(--glz-color-border);
   background: var(--glz-sidenav-surface);
 }
 
@@ -22,6 +25,8 @@
 :host(:not(.open)) .sidenav {
   display: none;
 }
+
+@include splitter.splitter;
 
 .content {
   display: flex;
