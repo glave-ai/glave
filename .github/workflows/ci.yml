@@ -41,7 +41,8 @@ jobs:
           --health-retries 15
     # The runner's own Docker, so the Docker worker backend runs its tests here too (a small
     # alpine image pinned by digest, a stub in glave's place). Everything they make is
-    # labelled glave.test=<run id>, and they check by that label that nothing is left.
+    # labelled glave.test=<run id>, which this job sweeps, and glave.test.case=<id> per test,
+    # which each test checks so it never sees the containers of a test running beside it.
     env:
       GLAVE_TEST_POSTGRES_URL: postgres://postgres:glave@localhost:5432/postgres
       GLAVE_TEST_DOCKER: "1"
