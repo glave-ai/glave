@@ -20,7 +20,7 @@ A **route** names a purpose and maps it to an ordered list of **targets** (provi
 
 - Purposes are a stable public vocabulary: `main`, `judge`, `summary` (compaction), `subagent`, `title` (a thread's title, `session.md`), and later `voice.listen`, `voice.speak`. A purpose with no route uses `main`.
 - Routes are choices (nearest wins) and the models they may name are constraints (`policy.md`).
-- **Choices.** Besides its routes, the gateway may offer targets a thread may choose (`session.md`, "Models"): in-process, the judge's model when it is another, and each of `[[models]]`. A call whose purpose uses `main`'s route and that asks for a choice by its name or model goes to that target alone; a purpose with a route of its own keeps it, and a call asking for `main`'s first model, or for any model that is not a choice, goes by its route as before.
+- **Choices.** Besides its routes, the gateway may offer targets a thread may choose (`session.md`, "Choosing a model and an approval mode"): in-process, the judge's model when it is another, and each of `[[models]]`. A call whose purpose uses `main`'s route and that asks for a choice by its name or model goes to that target alone; a purpose with a route of its own keeps it, and a call asking for `main`'s first model, or for any model that is not a choice, goes by its route as before.
 - `model.responded` records the route and the target that actually served each call, so fallback is auditable.
 
 ## Fallback
