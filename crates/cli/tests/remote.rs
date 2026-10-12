@@ -1,7 +1,8 @@
 //! The CLI as a client of a session server elsewhere: `glave serve --http` in one home, and
 //! `glave --server` from another with nothing of its own, signed in with the server's token.
 //! The turn runs there and shows here, `--continue` continues it there, and nothing is kept
-//! on the client's side. Without a token, it says how to sign in.
+//! on the client's side. Without a token, it says how to sign in; a model it names goes to
+//! the server, which refuses one it does not run.
 
 #[cfg(test)]
 #[path = "support/binary.rs"]
@@ -108,12 +109,14 @@ mod remote {
             "{}",
             text(&unsigned)
         );
-        let local = client(
+        // A model goes to the server, which refuses one it does not run.
+        let unknown = client(
             &place,
             &["--server", &url, "--model", "m", "hi"],
             Some(&token),
         );
-        assert!(text(&local).contains("--model"), "{}", text(&local));
+        assert!(!unknown.status.success());
+        assert!(text(&unknown).contains("model/list"), "{}", text(&unknown));
         let _ = served.kill();
         let _ = served.wait();
     }

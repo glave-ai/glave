@@ -8,9 +8,9 @@ use std::collections::BTreeSet;
 use glave_event::{Body, Part, RawEvent, Seq, ThreadId, decode};
 
 /// Distinct words one event is indexed under, at most: a long output is found by its first.
-pub const MOST_TERMS: usize = 2_048;
+const MOST_TERMS: usize = 2_048;
 /// Words of one query searched for, at most.
-pub const MOST_QUERY_TERMS: usize = 16;
+const MOST_QUERY_TERMS: usize = 16;
 /// Characters of the text one event is indexed by, at most.
 const MOST_CHARS: usize = 200_000;
 /// The longest word indexed, in characters: longer runs are ids and hashes, not words.
@@ -59,16 +59,22 @@ pub fn terms(text: &str, most: usize) -> Vec<String> {
     terms
 }
 
-/// The text `event` is found by, when it is one a search looks in: a message's text, or a
-/// tool's output. Everything else (configuration, approvals, memory ledgers) is never indexed.
-pub fn searchable(event: &RawEvent) -> Option<String> {
+/// The text `event` is found by, when it is one a search looks in ([`searchable_body`]).
+fn searchable(event: &RawEvent) -> Option<String> {
     let kind = event.kind.as_str();
     if kind != "message.added" && kind != "tool.call.completed" {
         return None;
     }
-    let parts = match decode(event.clone()).ok()?.body {
-        Body::MessageAdded(message) => message.parts,
-        Body::ToolCallCompleted(done) if !done.is_error => done.output,
+    searchable_body(&decode(event.clone()).ok()?.body)
+}
+
+/// The text an event's `body` is found by, when it is one a search looks in: a message's text,
+/// or a tool's output. Everything else (configuration, approvals, memory ledgers) is never
+/// indexed.
+pub fn searchable_body(body: &Body) -> Option<String> {
+    let parts = match body {
+        Body::MessageAdded(message) => &message.parts,
+        Body::ToolCallCompleted(done) if !done.is_error => &done.output,
         _ => return None,
     };
     let mut text = String::new();
@@ -77,7 +83,7 @@ pub fn searchable(event: &RawEvent) -> Option<String> {
             if !text.is_empty() {
                 text.push('\n');
             }
-            text.push_str(&part);
+            text.push_str(part);
         }
         if text.len() >= MOST_CHARS {
             break;

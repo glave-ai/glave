@@ -13,7 +13,7 @@ use glave_harness::{
     AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings,
     SystemClock, Workspace, agents_md,
 };
-use glave_memory::ModelTidier;
+use glave_memory::Tidier;
 use glave_ports::ToolSource;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, Server, Wiring};
@@ -255,7 +255,10 @@ fn tidy(
 ) -> anyhow::Result<()> {
     if let Some(memory) = memory {
         let (summary, _) = provider(setup, endpoint)?;
-        memory.tidy_with(Arc::new(ModelTidier::new(summary, endpoint.model.clone())));
+        memory.tidy_with(Tidier {
+            provider: summary,
+            model: endpoint.model.clone(),
+        });
     }
     Ok(())
 }
@@ -467,7 +470,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
     } = wired;
     crate::tasks::at_start(server, args).await;
     let here = Session::Here(server);
-    let (thread, note) = pick_thread(here, args.resume, None).await?;
+    let (thread, note) = pick_thread(here, args.resume, None, None, None).await?;
     if let Some(working) = crate::worktrees::note(server, thread).await {
         eprintln!("glave: {working}");
     }
@@ -479,6 +482,8 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         endpoint: Some(endpoint),
         asks,
         servers: Some(servers),
+        model: None,
+        approval: None,
     };
     let mut printer = Printer::new(&endpoint.model, protections(choices));
     let code = if let Some(objective) = &args.goal {
@@ -509,11 +514,14 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
 }
 
 /// The thread to use: the newest one here with `--continue`, otherwise a new one, in a
-/// worktree of its own when `worktree` says so (the server's choice when it says nothing).
+/// worktree of its own when `worktree` says so (the server's choice when it says nothing),
+/// choosing `model` and `approval` when they are given.
 pub async fn pick_thread(
     server: Session<'_>,
     resume: bool,
     worktree: Option<bool>,
+    model: Option<String>,
+    approval: Option<ApprovalMode>,
 ) -> anyhow::Result<(ThreadId, &'static str)> {
     if resume {
         let latest = match server
@@ -545,8 +553,8 @@ pub async fn pick_thread(
             background: false,
             worktree,
             computer: None,
-            model: None,
-            approval: None,
+            model,
+            approval,
         })
         .await?
     {

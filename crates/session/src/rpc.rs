@@ -17,7 +17,8 @@ use tokio::io::{
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
-use crate::protocol::{ApiError, Notification, Reply, Request};
+use crate::dispatch::Answered;
+use crate::protocol::{ApiError, Notification, Reply, Request, code};
 use crate::server::Server;
 use crate::turn::TurnItem;
 
@@ -25,51 +26,6 @@ use crate::turn::TurnItem;
 const MAX_LINE: u64 = 16 * 1024 * 1024;
 /// Lines written ahead of a slow client.
 const WRITE_AHEAD: usize = 256;
-
-/// Every method a request may name.
-pub(crate) const METHODS: &[&str] = &[
-    "server/discover",
-    "model/list",
-    "thread/start",
-    "thread/list",
-    "thread/rename",
-    "thread/archive",
-    "thread/unarchive",
-    "thread/delete",
-    "thread/get",
-    "thread/events",
-    "turn/start",
-    "turn/cancel",
-    "thread/compact",
-    "approval/decide",
-    "question/answer",
-    "goal/start",
-    "goal/stop",
-    "goal/get",
-    "tasks/list",
-    "tasks/stop",
-    "schedule/create",
-    "schedule/list",
-    "schedule/delete",
-    "space/list",
-    "space/get",
-    "space/create",
-    "space/rename",
-    "memory/list",
-    "memory/save",
-    "memory/edit",
-    "memory/move",
-    "memory/forget",
-    "memory/restore",
-];
-
-/// JSON-RPC's own error codes.
-pub(crate) mod error {
-    pub const PARSE: i64 = -32700;
-    pub const INVALID_REQUEST: i64 = -32600;
-    pub const NO_METHOD: i64 = -32601;
-    pub const INVALID_PARAMS: i64 = -32602;
-}
 
 /// A request's id: a number or a string, echoed in its response.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -167,11 +123,10 @@ where
             break Ok(());
         }
         if !line.ends_with('\n') && u64::try_from(line.len()).unwrap_or(u64::MAX) >= MAX_LINE {
-            let too_long = ApiError {
-                code: error::PARSE,
-                message: format!("a message is longer than {MAX_LINE} bytes"),
-                data: None,
-            };
+            let too_long = ApiError::new(
+                code::PARSE,
+                format!("a message is longer than {MAX_LINE} bytes"),
+            );
             let _ = lines.send(respond(None, Err(&too_long))).await;
             break Ok(());
         }
@@ -208,28 +163,18 @@ where
         }
     };
     // Local transports act as the local person.
-    let local = Caller::default();
-    let answered = match server.start_streaming(&local, request).await {
-        Ok(started) => match started {
-            Ok(mut stream) => loop {
-                match stream.next().await {
-                    Some(TurnItem::Note(note)) => {
-                        let _ = lines.send(notify(&note)).await;
-                    }
-                    Some(TurnItem::Missed(_)) => {}
-                    Some(TurnItem::Ended(ended)) => break ended.map(|turn| Reply::Turn { turn }),
-                    None => {
-                        break Err(ApiError {
-                            code: crate::protocol::code::INTERNAL,
-                            message: "the turn stopped".into(),
-                            data: None,
-                        });
-                    }
+    let answered = match server.call(&Caller::default(), request).await {
+        Answered::Reply(reply) => reply,
+        Answered::Stream(mut stream) => loop {
+            match stream.next().await {
+                Some(TurnItem::Note(note)) => {
+                    let _ = lines.send(notify(&note)).await;
                 }
-            },
-            Err(failed) => Err(failed),
+                Some(TurnItem::Missed(_)) => {}
+                Some(TurnItem::Ended(ended)) => break ended.map(|turn| Reply::Turn { turn }),
+                None => break Err(ApiError::new(code::INTERNAL, "the turn stopped")),
+            }
         },
-        Err(other) => server.request_as(&local, *other).await,
     };
     // A request without an id is a notification, which is never answered.
     if let Some(id) = id {
@@ -239,30 +184,27 @@ where
 
 /// Reads one message as a request, or says why it is not one.
 pub(crate) fn parse(line: &str) -> Result<(Option<Id>, Request), (Option<Id>, ApiError)> {
-    let failed = |code, message: String| ApiError {
-        code,
-        message,
-        data: None,
-    };
+    let failed = ApiError::new;
     let incoming: Incoming = serde_json::from_str(line)
-        .map_err(|err| (None, failed(error::PARSE, format!("not JSON-RPC: {err}"))))?;
+        .map_err(|err| (None, failed(code::PARSE, format!("not JSON-RPC: {err}"))))?;
     let id = incoming.id;
     if incoming.jsonrpc.as_deref() != Some("2.0") {
         let message = "expected \"jsonrpc\": \"2.0\"".to_owned();
-        return Err((id, failed(error::INVALID_REQUEST, message)));
+        return Err((id, failed(code::INVALID_REQUEST, message)));
     }
     let Some(method) = incoming.method else {
-        return Err((id, failed(error::INVALID_REQUEST, "no method".to_owned())));
+        return Err((id, failed(code::INVALID_REQUEST, "no method".to_owned())));
     };
-    if !METHODS.contains(&method.as_str()) {
-        return Err((
-            id,
-            failed(error::NO_METHOD, format!("no method {method:?}")),
-        ));
-    }
     let params = incoming.params.unwrap_or_else(|| json!({}));
-    let request = serde_json::from_value(json!({"method": method, "params": params}))
-        .map_err(|err| failed(error::INVALID_PARAMS, format!("{method}: {err}")));
+    let request =
+        serde_json::from_value(json!({"method": method, "params": params})).map_err(|err| {
+            // serde names a method the table does not have an unknown variant.
+            if err.to_string().starts_with("unknown variant") {
+                failed(code::NO_METHOD, format!("no method {method:?}"))
+            } else {
+                failed(code::INVALID_PARAMS, format!("{method}: {err}"))
+            }
+        });
     match request {
         Ok(request) => Ok((id, request)),
         Err(failed) => Err((id, failed)),
@@ -294,6 +236,33 @@ pub(crate) fn notify(note: &Arc<Notification>) -> String {
     message.to_string()
 }
 
+/// `request` as a client sends it: a JSON-RPC message with `id`.
+pub fn message(id: u64, request: &Request) -> Value {
+    let mut message = serde_json::to_value(request).unwrap_or(Value::Null);
+    if let Value::Object(fields) = &mut message {
+        fields.insert("jsonrpc".into(), "2.0".into());
+        fields.insert("id".into(), id.into());
+    }
+    message
+}
+
+/// What a JSON-RPC response says, as a client reads it: the reply in its `result`, or its
+/// `error`.
+pub fn outcome(response: &Value) -> Result<Reply, ApiError> {
+    if let Some(error) = response.get("error") {
+        return Err(serde_json::from_value(error.clone()).unwrap_or_else(|_| {
+            ApiError::new(code::INTERNAL, format!("the server failed: {error}"))
+        }));
+    }
+    let result = response.get("result").cloned().unwrap_or_else(|| json!({}));
+    serde_json::from_value(result).map_err(|e| {
+        ApiError::new(
+            code::INTERNAL,
+            format!("the server's answer is not one glave knows: {e}"),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,18 +270,18 @@ mod tests {
     #[test]
     fn malformed_messages_get_the_standard_codes() {
         let code = |line: &str| parse(line).err().map(|(_, failed)| failed.code);
-        assert_eq!(code("not json"), Some(error::PARSE));
+        assert_eq!(code("not json"), Some(code::PARSE));
         assert_eq!(
             code(r#"{"id":1,"method":"thread/start"}"#),
-            Some(error::INVALID_REQUEST)
+            Some(code::INVALID_REQUEST)
         );
         assert_eq!(
             code(r#"{"jsonrpc":"2.0","id":1,"method":"thread/explode"}"#),
-            Some(error::NO_METHOD)
+            Some(code::NO_METHOD)
         );
         assert_eq!(
             code(r#"{"jsonrpc":"2.0","id":1,"method":"thread/get","params":{"thread":7}}"#),
-            Some(error::INVALID_PARAMS)
+            Some(code::INVALID_PARAMS)
         );
         let (id, request) = parse(r#"{"jsonrpc":"2.0","id":"a","method":"thread/start"}"#).unwrap();
         assert_eq!(id, Some(Id::Text("a".into())));

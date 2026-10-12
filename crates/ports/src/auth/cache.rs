@@ -69,32 +69,19 @@ impl<T: Clone> Refreshing<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     use super::*;
-
-    struct Ticking(AtomicI64);
-
-    impl Clock for Ticking {
-        fn now(&self) -> Timestamp {
-            Timestamp::from_second(self.0.load(Ordering::SeqCst)).unwrap()
-        }
-    }
-
-    fn block_on<F: Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
+    use crate::block_on;
+    use crate::testing::ManualClock;
 
     #[test]
     fn credentials_are_kept_until_shortly_before_they_expire() {
-        let clock = Arc::new(Ticking(AtomicI64::new(1_000)));
-        let cache = Refreshing::new(clock.clone(), SignedDuration::from_secs(300));
+        let clock = ManualClock::at_second(1_000);
+        let cache = Refreshing::new(Arc::new(clock.clone()), SignedDuration::from_secs(300));
         let fetches = AtomicU32::new(0);
         let get = || {
-            block_on(cache.get(|| async {
+            block_on!(cache.get(|| async {
                 let n = fetches.fetch_add(1, Ordering::SeqCst) + 1;
                 Ok(Fresh {
                     value: format!("token-{n}"),
@@ -104,19 +91,19 @@ mod tests {
             .unwrap()
         };
         assert_eq!(get(), "token-1");
-        clock.0.store(1_000 + 3_000, Ordering::SeqCst);
+        clock.advance_seconds(3_000);
         assert_eq!(get(), "token-1", "still more than five minutes left");
-        clock.0.store(1_000 + 3_301, Ordering::SeqCst);
+        clock.advance_seconds(301);
         assert_eq!(get(), "token-2", "within five minutes of expiring");
     }
 
     #[test]
     fn a_failed_fetch_keeps_nothing_and_says_why() {
-        let clock = Arc::new(Ticking(AtomicI64::new(0)));
+        let clock = Arc::new(ManualClock::at_second(0));
         let cache: Refreshing<String> = Refreshing::new(clock, SignedDuration::from_secs(300));
-        let error = block_on(cache.get(|| async { Err(AuthError::unreachable("down")) }));
+        let error = block_on!(cache.get(|| async { Err(AuthError::unreachable("down")) }));
         assert_eq!(error.unwrap_err().to_string(), "down");
-        let kept = block_on(cache.get(|| async {
+        let kept = block_on!(cache.get(|| async {
             Ok(Fresh {
                 value: "t".to_owned(),
                 expires: Timestamp::MAX,

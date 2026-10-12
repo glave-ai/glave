@@ -151,13 +151,6 @@ impl EventLog for DataLog {
         }
     }
 
-    async fn threads(&self, scope: &Scope, limit: usize) -> Result<Vec<ThreadId>, LogError> {
-        match self {
-            Self::Sqlite(log) => log.threads(scope, limit).await,
-            Self::Postgres(log) => log.threads(scope, limit).await,
-        }
-    }
-
     async fn search(
         &self,
         scope: &Scope,

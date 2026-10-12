@@ -5,8 +5,6 @@
 //! task's start and end in the space's ledger. `tasks/list` and `tasks/stop` show and stop
 //! them; `task/finished` tells the thread's watchers when one ends.
 
-pub(crate) mod requests;
-
 use std::collections::HashMap;
 
 use glave_event::{
@@ -14,7 +12,7 @@ use glave_event::{
     ThreadId, TokenCounts, decode,
 };
 use glave_harness::{Caller, Goal};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_ports::{BlobStore, EventLog, ModelProvider, title_from};
 
 use crate::held::Slot;
 use crate::ledger::Recorded;
@@ -24,9 +22,6 @@ use crate::protocol::{
 };
 use crate::server::Server;
 use crate::turn::{TurnItem, TurnStream};
-
-/// Characters of the prompt a task's title keeps.
-const TITLE_CHARS: usize = 80;
 
 /// What a person may run at once and keep scheduled (`[tasks]` in `policy.toml`): no limit
 /// when `None`.
@@ -112,16 +107,9 @@ where
     ) -> Result<TaskInfo, ApiError> {
         self.may_start_task(caller, thread).await?;
         let (title, goal) = match &work {
-            Work::Turn(prompt, _) => (title(prompt), false),
-            Work::Goal(Some(goal)) => (title(&goal.objective), true),
+            Work::Turn(prompt, _) => (title_from(prompt).unwrap_or_default(), false),
+            Work::Goal(Some(goal)) => (title_from(&goal.objective).unwrap_or_default(), true),
             Work::Goal(None) => ("continuing the thread's goal".to_owned(), true),
-        };
-        let model = match &work {
-            Work::Turn(_, choice) => {
-                self.check_approval(thread, choice.approval).await?;
-                self.model_of(thread, choice.model.as_deref()).await?
-            }
-            Work::Goal(_) => self.model_of(thread, None).await?,
         };
         self.inner.approvals.unattend(thread);
         let stream = match work {
@@ -141,14 +129,14 @@ where
         let started = TaskStarted {
             thread,
             title,
-            model,
+            model: stream.model.clone(),
             budget,
             schedule,
             by: self.other_than_person(caller.person),
         };
         let running = Running {
             started: started.clone(),
-            at: At::from(self.inner.clock.now()),
+            at: At::from(self.inner.harness.clock().now()),
             goal,
             by: caller.person,
             tokens: TokenCounts::default(),
@@ -191,7 +179,7 @@ where
         let ended = settle(&running, &ended);
         // Recorded on a best effort: the thread's own events hold the work either way.
         let _ = self.record_in_ledger(&ended).await;
-        let now = At::from(self.inner.clock.now());
+        let now = At::from(self.inner.harness.clock().now());
         let recorded = Recorded {
             started: running.started,
             at: running.at,
@@ -409,7 +397,7 @@ where
     }
 
     fn elapsed(&self, from: At, to: Option<At>) -> u64 {
-        let to = to.map_or_else(|| self.inner.clock.now(), At::timestamp);
+        let to = to.map_or_else(|| self.inner.harness.clock().now(), At::timestamp);
         let millis = to
             .as_millisecond()
             .saturating_sub(from.timestamp().as_millisecond());
@@ -450,16 +438,6 @@ fn add(total: &mut TokenCounts, counts: &TokenCounts) {
     total.cache_write = total.cache_write.saturating_add(counts.cache_write);
     total.output = total.output.saturating_add(counts.output);
     total.reasoning = total.reasoning.saturating_add(counts.reasoning);
-}
-
-/// The first line of `prompt`, at most [`TITLE_CHARS`] characters.
-pub(crate) fn title(prompt: &str) -> String {
-    let line = prompt.lines().next().unwrap_or_default().trim();
-    let mut title: String = line.chars().take(TITLE_CHARS).collect();
-    if line.chars().count() > TITLE_CHARS || prompt.trim().lines().count() > 1 {
-        title.push('…');
-    }
-    title
 }
 
 impl<P, L, B> Server<P, L, B> {

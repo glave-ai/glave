@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use glave_event::Arguments;
+use glave_ports::block_on;
 
 use glave_computer::sandbox_available;
 use glave_ports::{Sandbox, SandboxLevel, is_protected};
@@ -22,14 +23,6 @@ fn enforced() -> bool {
         "GLAVE_REQUIRE_SANDBOX is set but the sandbox is not available here"
     );
     available
-}
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
 }
 
 /// A scratch folder outside the system temp folder, which the sandbox lets commands write.
@@ -55,7 +48,7 @@ fn sandbox(level: SandboxLevel, network: bool, home: &Path) -> Sandbox {
 fn run_in(project: &Path, sandbox: Option<&Sandbox>, command: &str) -> crate::tools::ToolOutcome {
     let arguments =
         Arguments::Json(serde_json::from_value(serde_json::json!({ "command": command })).unwrap());
-    block_on(async {
+    block_on!(async {
         let mut workspace = Workspace::open(project, std::env::vars_os()).await.unwrap();
         if let Some(sandbox) = sandbox {
             workspace = workspace.with_sandbox(sandbox).await.unwrap();
@@ -74,7 +67,7 @@ fn without_a_sandbox_on_this_computer_preparing_fails() {
         return;
     }
     let dir = scratch("unavailable");
-    let prepared = block_on(async {
+    let prepared = block_on!(async {
         Workspace::open(&dir, std::env::vars_os())
             .await
             .unwrap()
@@ -384,7 +377,7 @@ fn the_file_tools_refuse_protected_paths_in_a_sandbox() {
             serde_json::from_value(serde_json::json!({ "path": path, "content": "echo pwned\n" }))
                 .unwrap(),
         );
-        block_on(async {
+        block_on!(async {
             let mut workspace = Workspace::open(&project, std::env::vars_os())
                 .await
                 .unwrap();
@@ -468,7 +461,7 @@ fn the_file_tools_refuse_links_a_command_planted_into_protected_paths() {
     assert!(planted.text.contains("planted"), "{}", planted.text);
     let tool = |tool: Tool, arguments: serde_json::Value| {
         let arguments = Arguments::Json(serde_json::from_value(arguments).unwrap());
-        block_on(async {
+        block_on!(async {
             let workspace = Workspace::open(&project, std::env::vars_os())
                 .await
                 .unwrap()

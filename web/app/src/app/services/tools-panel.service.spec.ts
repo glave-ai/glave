@@ -24,11 +24,11 @@ describe('ToolsPanelService', () => {
     expect(JSON.parse(localStorage.getItem('glave-tools-panel') ?? 'null')).toEqual({
       open: true,
       width: 420,
-      tab: 'files',
+      tab: 'changes',
     });
     TestBed.resetTestingModule();
     const again = TestBed.inject(ToolsPanelService);
-    expect([again.open(), again.width(), again.tab()]).toEqual([true, 420, 'files']);
+    expect([again.open(), again.width(), again.tab()]).toEqual([true, 420, 'changes']);
   });
 
   it('toggles on its shortcut', () => {

@@ -1,19 +1,22 @@
-import { PANEL_DEFAULT, SIDE_NAV_DEFAULT, toPanelState, toSideNavState } from './panel';
+import { PANEL_DEFAULT, SIDE_NAV_DEFAULT, toPaneState, toPanelState } from './panel';
 
-describe('toSideNavState', () => {
-  it('reads back what was stored, and the default for anything wrong', () => {
-    expect(toSideNavState({ open: false, width: 301.6 })).toEqual({ open: false, width: 302 });
-    expect(toSideNavState(null)).toEqual(SIDE_NAV_DEFAULT);
-    expect(toSideNavState({ open: 1, width: 0 })).toEqual(SIDE_NAV_DEFAULT);
+describe('toPaneState', () => {
+  it('reads back what was stored, and the fallback for anything wrong', () => {
+    expect(toPaneState({ open: false, width: 301.6 }, SIDE_NAV_DEFAULT)).toEqual({
+      open: false,
+      width: 302,
+    });
+    expect(toPaneState(null, SIDE_NAV_DEFAULT)).toEqual(SIDE_NAV_DEFAULT);
+    expect(toPaneState({ open: 1, width: 0 }, SIDE_NAV_DEFAULT)).toEqual(SIDE_NAV_DEFAULT);
   });
 });
 
 describe('toPanelState', () => {
   it('reads back what was stored', () => {
-    expect(toPanelState({ open: true, width: 412.4, tab: 'files' })).toEqual({
+    expect(toPanelState({ open: true, width: 412.4, tab: 'changes' })).toEqual({
       open: true,
       width: 412,
-      tab: 'files',
+      tab: 'changes',
     });
   });
 

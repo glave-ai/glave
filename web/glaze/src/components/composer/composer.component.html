@@ -1,22 +1,3 @@
-@if (hasFiles()) {
-  <ul class="files" [attr.data-testid]="ids().files">
-    @for (file of shownFiles(); track file.index) {
-      <li class="file">
-        <span class="name">{{ file.name }}</span>
-        <span class="size">{{ file.size }}</span>
-        <button
-          glzIconButton
-          size="sm"
-          [attr.data-testid]="ids().removeFile"
-          [label]="file.removeLabel"
-          (click)="remove(file.index)"
-        >
-          <glz-icon [icon]="removeIcon" />
-        </button>
-      </li>
-    }
-  </ul>
-}
 <textarea
   #textarea
   class="input"
@@ -29,22 +10,10 @@
   [value]="value()"
   (input)="typed($event)"
   (keydown)="keydown($event)"
-  (paste)="pasted($event)"
 ></textarea>
 <p class="glz-visually-hidden" [id]="hintId">{{ hint() }}</p>
 <div class="bar">
   <div class="start">
-    @if (attachments()) {
-      <button
-        glzIconButton
-        [attr.data-testid]="ids().attach"
-        [label]="attachLabel()"
-        [disabled]="disabled()"
-        (click)="chooseFiles()"
-      >
-        <glz-icon [icon]="attachIcon" />
-      </button>
-    }
     <ng-content select="[glzComposerStart]" />
   </div>
   <div class="end">
@@ -73,11 +42,3 @@
     }
   </div>
 </div>
-<input
-  #fileInput
-  type="file"
-  multiple
-  hidden
-  [attr.data-testid]="ids().fileInput"
-  (change)="picked($event)"
-/>

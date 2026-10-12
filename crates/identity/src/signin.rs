@@ -12,7 +12,8 @@ mod local;
 use std::net::IpAddr;
 
 use glave_event::{Auth, AuthMethod, PrincipalId};
-use glave_ports::Clock;
+use glave_ports::auth::safe_to_send;
+use glave_ports::{Caller, Clock};
 use jsonwebtoken::{Algorithm, Validation, decode, decode_header};
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
@@ -20,7 +21,6 @@ use thiserror::Error;
 
 use self::keys::Keys;
 pub use self::local::{LOCAL_BYTES, LOCAL_PREFIX, LocalToken, is_loopback};
-use crate::Caller;
 
 /// How far the clocks of the server and the identity provider may disagree, in seconds.
 const SKEW: f64 = 60.0;
@@ -107,7 +107,7 @@ impl SignIn {
             .issuers
             .into_iter()
             .map(|issuer| {
-                if keys::allowed(&issuer) {
+                if safe_to_send(&issuer, &[]) {
                     Ok(Keys::new(issuer, http.clone()))
                 } else {
                     Err(SignInError::Insecure(issuer))

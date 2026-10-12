@@ -11,8 +11,6 @@
 mod adc;
 mod endpoint;
 mod external;
-#[cfg(test)]
-mod fake;
 mod jwt;
 mod metadata;
 mod token;

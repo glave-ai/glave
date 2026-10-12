@@ -1,0 +1,36 @@
+<section id="overlays" aria-labelledby="overlays-heading">
+  <h2 id="overlays-heading">{{ copy.heading }}</h2>
+
+  <div class="row">
+    <button glzButton data-testid="showcase-open-dialog" (click)="openRename()">
+      {{ copy.openDialog }}
+    </button>
+    <button glzButton variant="danger" data-testid="showcase-open-confirm" (click)="openConfirm()">
+      {{ copy.openConfirm }}
+    </button>
+  </div>
+  <glz-dialog [heading]="copy.dialogHeading" [(open)]="renaming">
+    <glz-form-field [label]="copy.title">
+      <input glzInput data-testid="showcase-dialog-title" />
+    </glz-form-field>
+    <div glzDialogActions>
+      <button glzButton (click)="closeRename()">{{ copy.cancel }}</button>
+      <button
+        glzButton
+        variant="primary"
+        data-testid="showcase-dialog-save"
+        (click)="closeRename()"
+      >
+        {{ copy.save }}
+      </button>
+    </div>
+  </glz-dialog>
+  <glz-confirm-dialog
+    testId="showcase-confirm"
+    danger
+    [heading]="copy.confirmHeading"
+    [message]="copy.confirmMessage"
+    [confirmLabel]="copy.delete"
+    [(open)]="confirming"
+  />
+</section>

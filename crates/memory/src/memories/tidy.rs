@@ -13,9 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use glave_event::{At, MemoryEdited, MemoryId, MemoryTidied, Principal};
 use glave_harness::MemoryError;
-use glave_ports::{
-    BoxFuture, Completion, EventLog, ModelProvider, ModelRequest, ProviderError, Scope,
-};
+use glave_ports::{EventLog, ModelProvider, Scope};
 use jiff::SignedDuration;
 
 use self::plan::{Proposal, ask, keeps_facts};
@@ -33,40 +31,10 @@ const NEAR_PERCENT: usize = 90;
 const NEAR_EVERY_HOURS: i64 = 1;
 
 /// The cheap model tidy-up asks: the gateway's `summary` route.
-pub trait Tidier: Send + Sync {
+pub struct Tidier<P> {
+    pub provider: P,
     /// The model named in the request; a gateway routes by the request's purpose.
-    fn model(&self) -> &str;
-
-    /// Sends one request and returns the finished answer.
-    fn complete(&self, request: ModelRequest) -> BoxFuture<'_, Result<Completion, ProviderError>>;
-}
-
-/// A [`ModelProvider`] as tidy-up's model.
-pub struct ModelTidier<P> {
-    provider: P,
-    model: String,
-}
-
-impl<P> ModelTidier<P> {
-    pub fn new(provider: P, model: impl Into<String>) -> Self {
-        Self {
-            provider,
-            model: model.into(),
-        }
-    }
-}
-
-impl<P: ModelProvider> Tidier for ModelTidier<P> {
-    fn model(&self) -> &str {
-        &self.model
-    }
-
-    fn complete(&self, request: ModelRequest) -> BoxFuture<'_, Result<Completion, ProviderError>> {
-        Box::pin(async move {
-            let mut ignore = |_| {};
-            self.provider.complete(&request, &mut ignore).await
-        })
-    }
+    pub model: String,
 }
 
 /// What one tidy-up did.
@@ -114,7 +82,11 @@ impl<L: EventLog + 'static> Memories<L> {
 
     /// Tidies `ledger` now, asking `model`. Records that it ran, with any contradiction it
     /// leaves for the person, even when nothing changed.
-    pub async fn tidy(&self, ledger: Scope, model: &dyn Tidier) -> Result<Tidied, MemoryError> {
+    pub async fn tidy<P: ModelProvider>(
+        &self,
+        ledger: Scope,
+        model: &Tidier<P>,
+    ) -> Result<Tidied, MemoryError> {
         let (entries, open) = self
             .with_book(ledger, |book| {
                 let entries: Vec<Entry> = book

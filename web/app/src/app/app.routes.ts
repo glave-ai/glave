@@ -1,12 +1,11 @@
 import type { Routes } from '@angular/router';
 
-import { ShellComponent } from './components/shell/shell.component';
 import { WorkspaceComponent } from './components/workspace/workspace.component';
 import { signedInGuard } from './guards/signed-in.guard';
 
 /**
  * The app's pages: the workspace (chat, a thread, tasks, memory, settings) for a signed-in
- * person; the sign-in page; and Glaze's showcase, open to anyone.
+ * person, and the sign-in page.
  */
 export const routes: Routes = [
   {
@@ -48,22 +47,10 @@ export const routes: Routes = [
     ],
   },
   {
-    path: '',
-    component: ShellComponent,
-    children: [
-      {
-        path: 'sign-in',
-        title: 'Sign in · glave',
-        loadComponent: () =>
-          import('./components/sign-in/sign-in.component').then((m) => m.SignInComponent),
-      },
-      {
-        path: 'glaze',
-        title: 'Glaze',
-        loadComponent: () =>
-          import('./components/showcase/showcase.component').then((m) => m.ShowcaseComponent),
-      },
-    ],
+    path: 'sign-in',
+    title: 'Sign in · glave',
+    loadComponent: () =>
+      import('./components/sign-in/sign-in.component').then((m) => m.SignInComponent),
   },
   { path: '**', redirectTo: '' },
 ];

@@ -2,13 +2,8 @@ import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
 import type { Space, SpaceId, ThreadId, ThreadSummary } from '@glave/client';
 
+import type { SpaceWithThreads } from '../lib/nav';
 import { SessionService } from './session.service';
-
-/** A space with its threads, as the side nav lists them. */
-export interface SpaceThreads {
-  readonly space: Space;
-  readonly threads: readonly ThreadSummary[];
-}
 
 /** How often the lists are read again while the app is open, in milliseconds. */
 export const REFRESH_MS = 10_000;
@@ -23,7 +18,7 @@ export class SpacesService {
   private readonly document = inject(DOCUMENT);
   /** The read under way, which a second asks join rather than start another. */
   private pending: Promise<void> | null = null;
-  private readonly lists = signal<readonly SpaceThreads[]>([]);
+  private readonly lists = signal<readonly SpaceWithThreads[]>([]);
   private readonly failed = signal<string | null>(null);
   private readonly done = signal(false);
 

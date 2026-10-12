@@ -18,7 +18,7 @@ mod fallback {
     /// The name of the target that served `request`, or why none did.
     fn serve(targets: Vec<Target>, request: &ModelRequest) -> Result<String, ProviderError> {
         let routes = Routes::new(targets).map_err(|e| ProviderError::Protocol(e.to_string()))?;
-        let answer = block_on(Gateway::new(routes).complete(request, &mut |_| {}))?;
+        let answer = block_on!(Gateway::new(routes).complete(request, &mut |_| {}))?;
         Ok(answer
             .served
             .map(|served| served.target)
@@ -193,7 +193,7 @@ mod fallback {
         let other = Fake::new("openai");
         let asked = with_reasoning(request(Purpose::Main), "anthropic", "sonnet");
         let gateway = Gateway::new(Routes::new(vec![other.target("gpt")]).unwrap());
-        let answer = block_on(gateway.complete(&asked, &mut |_| {})).unwrap();
+        let answer = block_on!(gateway.complete(&asked, &mut |_| {})).unwrap();
         assert!(answer.served.unwrap().reasoning_stripped);
         let sent = &other.seen()[0].messages;
         let Message::Assistant { parts, .. } = &sent[1] else {
@@ -204,7 +204,7 @@ mod fallback {
             &[Part::Text { text: "Hi.".into() }],
             "the text stays"
         );
-        let plain = block_on(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap();
+        let plain = block_on!(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap();
         assert!(!plain.served.unwrap().reasoning_stripped);
     }
 
@@ -214,7 +214,7 @@ mod fallback {
         let asked = with_reasoning(request(Purpose::Main), "anthropic", "sonnet");
         let target = limited(own.target("sonnet"), |can| can.reasoning = false);
         let gateway = Gateway::new(Routes::new(vec![target]).unwrap());
-        let answer = block_on(gateway.complete(&asked, &mut |_| {})).unwrap();
+        let answer = block_on!(gateway.complete(&asked, &mut |_| {})).unwrap();
         assert!(answer.served.unwrap().reasoning_stripped);
     }
 }

@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use glave_ports::auth::{AuthError, Fresh, Secret};
+use glave_ports::auth::{AuthError, Fresh, Secret, safe_to_send};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 
 use crate::Region;
@@ -16,9 +16,6 @@ const VERSION: &str = "2011-06-15";
 
 /// The session name when `AWS_ROLE_SESSION_NAME` gives none: it shows in CloudTrail.
 const SESSION_NAME: &str = "glave";
-
-/// How much of an STS error message to keep.
-const ERROR_CHARS: usize = 300;
 
 /// A role assumed with the cluster's web identity token.
 pub struct WebIdentity {
@@ -120,10 +117,7 @@ impl WebIdentity {
 /// An STS endpoint given in the environment: https, or http only on this computer.
 fn checked(url: &str) -> Result<String, AuthError> {
     let url = url.trim();
-    let local = ["http://localhost:", "http://127.0.0.1:", "http://[::1]:"]
-        .iter()
-        .any(|start| url.starts_with(start));
-    if (url.starts_with("https://") || local) && !url.contains('@') {
+    if safe_to_send(url, &[]) {
         Ok(url.to_owned())
     } else {
         Err(AuthError::refused(format!(
@@ -136,15 +130,13 @@ fn checked(url: &str) -> Result<String, AuthError> {
 fn refusal(status: u16, body: &str) -> AuthError {
     let code = tag(body, "Code").unwrap_or_else(|| format!("HTTP {status}"));
     let message = tag(body, "Message").unwrap_or_default();
-    let detail: String = format!("{code}: {message}")
-        .chars()
-        .take(ERROR_CHARS)
-        .collect();
-    let message = format!("AWS STS refused AssumeRoleWithWebIdentity: {detail}");
-    if status == 429 || status >= 500 || code == "Throttling" || code == "IDPCommunicationError" {
-        AuthError::unreachable(message)
+    let detail = format!("{code}: {message}");
+    let refused = AuthError::answered(status, "AWS STS refused AssumeRoleWithWebIdentity", &detail);
+    // STS throttling, or its trouble reaching the identity provider, passes too.
+    if code == "Throttling" || code == "IDPCommunicationError" {
+        AuthError::unreachable(refused.to_string())
     } else {
-        AuthError::refused(message)
+        refused
     }
 }
 

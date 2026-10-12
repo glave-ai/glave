@@ -2,23 +2,19 @@
 
 `@glave/glaze`: glave's Angular component library. Accessible (WCAG 2.2 AA, axe in every test), themed only through CSS custom properties, built on the web platform first and the Angular CDK second. Open source with glave; it will be published as 0.x once the app's design settles.
 
-See every component live at `/glaze` in the app (`npm start` in `web/`). Coding agents: [AGENTS.md](AGENTS.md) says how to use it. A Glaze CLI (a schematic) will later add that guidance to a consuming project's own AGENTS.md.
+See every component live in the showcase (`npm run showcase` in `web/`), a dev-only app that ships with neither glave nor Glaze. Coding agents: [AGENTS.md](AGENTS.md) says how to use it. A Glaze CLI (a schematic) will later add that guidance to a consuming project's own AGENTS.md.
 
 ## What is in it
 
-**Actions and display**: `button[glzButton]`, `button[glzIconButton]`, `glz-icon`, `glz-badge`, `glz-avatar`, `glz-card`, `glz-empty-state`, `glz-progress`, `glz-spinner`, `glz-skeleton`.
+Only what glave's app uses: a piece the app stops using leaves Glaze.
 
-**Forms**: `glz-form-field` with `glz-error`; `glzInput` on native inputs, textareas and selects (date and time included); `glzSlider` on range inputs; `glzFieldControl` for any other native control; `glz-checkbox`, `glz-switch`, `glz-radio-group` with `glz-radio`, `glz-combobox`. Reactive forms, `ngModel`, signal forms and `model()` all bind.
+- **Actions and display**: `glzButton`, `glzIconButton`, `glz-icon`, `glz-badge`, `glz-avatar`, `glz-card`, `glz-empty-state`.
+- **Forms**: `glz-form-field`, `glz-error`, `glzInput`, `glz-checkbox`, `glz-radio-group`, `glz-radio`.
+- **Layout**: `glz-sidenav-layout`, `glz-panel-layout`, `glz-top-bar`, `glz-nav-list`, `glzNavItem`, `glz-tabs`, `glz-tab`.
+- **Overlays**: `glz-dialog`, `glz-confirm-dialog`, `glz-menu-select`, `glz-picker`, `glzTooltip`.
+- **Conversation**: `glz-composer`, `glz-message`, `glz-reasoning`, `glz-receipt`, `glz-steps`, `glz-approval-card`, `glz-question-card`, `glzStickToBottom`, `glzCopy`.
 
-**Layout and navigation**: `glz-sidenav-layout` and `glz-panel-layout` (a side nav at the start, a panel at the end: each resized and collapsed by its edge, a window splitter, and a drawer or sheet on narrow screens), `glz-top-bar`, `glz-rail` with `glzRailItem`, `glz-nav-list` (collapsible) with `glzNavItem`, `glz-tabs` with `glz-tab`, `glz-breadcrumbs` with `glz-breadcrumb`.
-
-**Overlays**: `glz-dialog` (dialog or drawer), `glz-confirm-dialog`, `glz-menu` with `glzMenuItem` and `glzMenuTrigger`, `glz-menu-select` (a compact choice among a few), `glz-picker` (a choice among many, searched as you type, with pins at the top: a model picker), `glzTooltip`, `glz-toast-stack` with `GlzToastService`.
-
-**Conversation**: `glz-composer`, `glz-message`, `glz-reasoning`, `glz-receipt`, `glz-approval-card`, `glz-question-card`.
-
-**Behaviour**: `glzStickToBottom`, `glzCopy`, `glzShortcut`, `glzClickOutside`, `glzAutofocus`, `glzScrollSpy`.
-
-Each component's doc comment has a short usage example.
+`src/public-api.ts` lists every export; each one's doc comment has a short usage example.
 
 ## Example
 
@@ -74,4 +70,4 @@ Light and dark follow the system; `data-theme="light"` or `"dark"` on `<html>` f
 
 ## Structure
 
-`src/components/<name>/<name>.component.{ts,html,scss,spec.ts}`, `src/directives/`, `src/services/` (the toast queue only), `src/lib/` (pure functions), `styles/` (the global CSS). `npm run build:glaze` builds the package with ng-packagr into `dist/glaze`.
+`src/components/<name>/<name>.component.{ts,html,scss,spec.ts}`, `src/directives/`, `src/lib/` (pure functions), `styles/` (the global CSS), `showcase/` (the showcase app). `npm run build:glaze` builds the package with ng-packagr into `dist/glaze`.

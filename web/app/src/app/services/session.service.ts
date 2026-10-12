@@ -9,7 +9,8 @@ import {
   type StreamingMethod,
 } from '@glave/client';
 
-import { forgetToken, takeToken } from '../lib/token';
+import { forget, storageOf } from '../lib/storage';
+import { TOKEN_KEY, takeToken } from '../lib/token';
 
 /** The calls the app makes of the session API: `GlaveClient`'s, or a test's stand-in. */
 export interface SessionClient {
@@ -46,6 +47,7 @@ export const SESSION_CLIENT_FACTORY = new InjectionToken<(token: () => string) =
 @Service()
 export class SessionService {
   private readonly document = inject(DOCUMENT);
+  private readonly storage = storageOf(this.document, 'sessionStorage');
   private readonly token = signal<string | null>(this.read());
 
   readonly signedIn = computed(() => this.token() !== null);
@@ -81,7 +83,7 @@ export class SessionService {
 
   signOut(): void {
     this.token.set(null);
-    forgetToken(this.storage());
+    forget(this.storage, TOKEN_KEY);
   }
 
   private noticeSignOut(error: unknown): void {
@@ -95,14 +97,6 @@ export class SessionService {
     if (view === null) {
       return null;
     }
-    return takeToken({ location: view.location, history: view.history, storage: this.storage() });
-  }
-
-  private storage(): Storage | null {
-    try {
-      return this.document.defaultView?.sessionStorage ?? null;
-    } catch {
-      return null;
-    }
+    return takeToken({ location: view.location, history: view.history, storage: this.storage });
   }
 }

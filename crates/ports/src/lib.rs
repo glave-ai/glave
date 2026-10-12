@@ -9,6 +9,7 @@
 
 pub mod auth;
 mod blob;
+mod caller;
 mod computer;
 #[cfg(any(test, feature = "conformance"))]
 pub mod conformance;
@@ -21,10 +22,14 @@ mod scope;
 pub mod search;
 pub mod secrets;
 mod spaces;
+mod sse;
+#[cfg(any(test, feature = "conformance"))]
+pub mod testing;
 mod tools;
 mod view;
 
 pub use blob::{BlobError, BlobStore, digest};
+pub use caller::Caller;
 pub use computer::{
     Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Entry, EntryKind,
     Environment, FileWrite, Finished, GitCredential, Glob, Globbed, Image, Listed, Listing, Match,
@@ -42,11 +47,12 @@ pub use model::{
 };
 pub use scope::{OrgId, Scope, SpaceId};
 pub use spaces::{FolderKey, MAX_NAME, MemorySpaces, Space, SpaceError, SpaceKind, Spaces};
+pub use sse::{SseDecoder, SseError};
 pub use tools::{
-    Assessment, BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource,
-    describe_call, unless_cancelled,
+    Assessment, BoxFuture, Cancellation, Effect, NeverCancelled, ToolError, ToolInfo, ToolOutput,
+    ToolSource, describe_call, unless_cancelled,
 };
 pub use view::{
     Standing, THREAD_VIEW_VERSION, TITLE_CHARS, ThreadCursor, ThreadQuery, ThreadView,
-    fold_from_log, title_of,
+    fold_from_log, title_from, title_of,
 };

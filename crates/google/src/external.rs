@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use glave_ports::auth::{AuthError, Fresh, Secret};
+use glave_ports::auth::{AuthError, Fresh, Secret, safe_to_send, signs_in};
 use jiff::Timestamp;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::Deserialize;
@@ -187,10 +187,7 @@ impl ExternalAccount {
 /// A Google endpoint named in a credentials file: https, or http only on this computer.
 pub(crate) fn https<'a>(field: &str, url: &'a str) -> Result<&'a str, AuthError> {
     let url = url.trim();
-    let local = ["http://localhost:", "http://127.0.0.1:", "http://[::1]:"]
-        .iter()
-        .any(|start| url.starts_with(start));
-    if (url.starts_with("https://") || local) && !signs_in(url) {
+    if safe_to_send(url, &[]) {
         Ok(url)
     } else {
         Err(AuthError::refused(format!(
@@ -209,15 +206,6 @@ fn plain_url(url: &str) -> Result<&str, AuthError> {
             "the external account's credential_source url = {url:?} is not an http(s) address"
         )))
     }
-}
-
-/// Whether `url` carries a user name or password before its host, where a mistake could put
-/// a secret. An `@` later, in a path such as a service account's email, is fine.
-fn signs_in(url: &str) -> bool {
-    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
-    rest.split(['/', '?', '#'])
-        .next()
-        .is_some_and(|authority| authority.contains('@'))
 }
 
 #[cfg(test)]

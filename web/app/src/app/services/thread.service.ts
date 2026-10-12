@@ -2,14 +2,8 @@ import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
 import type { ApprovalMode, RawEvent, ThreadId, TurnStartParams } from '@glave/client';
 import type { GlzDecision } from '@glave/glaze';
 
-import {
-  NO_DRAFT,
-  applyUpdate,
-  latestModel,
-  mergeEvents,
-  threadItems,
-  type Draft,
-} from '../lib/conversation';
+import { NO_DRAFT, applyUpdate, mergeEvents, threadItems, type Draft } from '../lib/conversation';
+import { changedFiles } from '../lib/files';
 import { chosenModel } from '../lib/models';
 import { SessionService } from './session.service';
 import { SpacesService } from './spaces.service';
@@ -32,15 +26,13 @@ export class ThreadService {
   private controller: AbortController | null = null;
 
   readonly thread = this.id.asReadonly();
-  /** The thread's events, in `seq` order. */
-  readonly log = this.events.asReadonly();
   readonly items = computed(() => threadItems(this.events()));
+  /** The files the thread changed with its own `write` and `edit` calls. */
+  readonly files = computed(() => changedFiles(this.events()));
   readonly reply = this.draft.asReadonly();
   readonly busy = this.running.asReadonly();
   readonly error = this.failed.asReadonly();
   readonly sending = this.deciding.asReadonly();
-  /** The model the latest turn runs on, for the reply streaming in. */
-  readonly model = computed(() => latestModel(this.events()));
   readonly hasReply = computed(() => this.draft().text !== '' || this.draft().reasoning !== '');
   /** The model the thread chose for its turns, or `null` for the server's default. */
   readonly chosen = computed(() => chosenModel(this.events()));

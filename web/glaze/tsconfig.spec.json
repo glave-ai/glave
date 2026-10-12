@@ -1,5 +1,5 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": { "outDir": "../out-tsc/glaze-spec", "types": ["vitest/globals"] },
-  "include": ["src/**/*.d.ts", "src/**/*.spec.ts"]
+  "include": ["src/**/*.d.ts", "src/**/*.spec.ts", "showcase/src/**/*.spec.ts"]
 }

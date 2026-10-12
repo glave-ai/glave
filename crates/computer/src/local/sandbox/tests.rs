@@ -10,6 +10,7 @@ use std::process::Command as Process;
 
 use glave_ports::{
     Command, Computers, Ending, Environment, Output, Sandbox, SandboxLevel, Sources, WorkspaceId,
+    block_on,
 };
 
 use super::sandbox_available;
@@ -22,14 +23,6 @@ fn enforced() -> bool {
         "GLAVE_REQUIRE_SANDBOX is set but the sandbox is not available here"
     );
     available
-}
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
 }
 
 /// A folder outside the system temp folder, which the sandbox lets every command write.
@@ -161,7 +154,7 @@ fn a_sandboxed_repository_commits_but_nothing_moves_into_its_git_folder() {
     let repo = committed_repo(&dir, "repo");
     std::fs::create_dir_all(repo.join(".git/modules/a")).unwrap();
     let (computers, sandbox) = computers(&dir);
-    block_on(async {
+    block_on!(async {
         let computer = computers.create(&Environment::host()).await.unwrap();
         let path = repo.to_string_lossy().into_owned();
         let here = computers
@@ -207,7 +200,7 @@ fn a_sandboxed_worktree_commits_but_never_writes_the_main_checkout() {
     let dir = scratch("worktree");
     let repo = committed_repo(&dir, "app");
     let (computers, sandbox) = computers(&dir);
-    block_on(async {
+    block_on!(async {
         let computer = computers.create(&Environment::host()).await.unwrap();
         let open = |branch: &str| Sources::Worktree {
             path: repo.to_string_lossy().into_owned(),
@@ -338,7 +331,7 @@ fn other_spellings_of_protected_paths_are_protected_too() {
         }
         root
     };
-    block_on(async {
+    block_on!(async {
         let computer = computers.create(&Environment::host()).await.unwrap();
         if !enforced {
             let root = project("unconfined", false);

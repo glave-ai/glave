@@ -1,22 +1,19 @@
 import { DOCUMENT } from '@angular/common';
 import { Service, effect, inject, signal } from '@angular/core';
 
-/** The person's theme: the system's, or one they picked. */
-export type ThemeChoice = 'system' | 'light' | 'dark';
+import { readStored, storageOf, writeStored } from '../lib/storage';
 
-/** The choices in the order the picker moves through them. */
-export const THEME_CHOICES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
+/** The person's theme: the system's, or one they picked. */
+type ThemeChoice = 'system' | 'light' | 'dark';
+
+/** The choices, in the order Settings lists them. */
+const THEME_CHOICES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
 
 const KEY = 'glave-theme';
 
 /** Whether `value` is one of the theme choices. */
 export function isChoice(value: unknown): value is ThemeChoice {
   return THEME_CHOICES.some((choice) => choice === value);
-}
-
-/** The choice after `choice`: system, light, dark, then system again. */
-export function nextTheme(choice: ThemeChoice): ThemeChoice {
-  return THEME_CHOICES[(THEME_CHOICES.indexOf(choice) + 1) % THEME_CHOICES.length] ?? 'system';
 }
 
 /**
@@ -27,6 +24,7 @@ export function nextTheme(choice: ThemeChoice): ThemeChoice {
 @Service()
 export class ThemeService {
   private readonly document = inject(DOCUMENT);
+  private readonly storage = storageOf(this.document, 'localStorage');
   private readonly chosen = signal<ThemeChoice>(this.read());
 
   readonly choice = this.chosen.asReadonly();
@@ -45,23 +43,11 @@ export class ThemeService {
 
   set(choice: ThemeChoice): void {
     this.chosen.set(choice);
-    try {
-      this.document.defaultView?.localStorage.setItem(KEY, choice);
-    } catch {
-      // Storage may be off, as in some private windows: the choice lasts for this page.
-    }
-  }
-
-  cycle(): void {
-    this.set(nextTheme(this.chosen()));
+    writeStored(this.storage, KEY, choice);
   }
 
   private read(): ThemeChoice {
-    try {
-      const saved = this.document.defaultView?.localStorage.getItem(KEY);
-      return isChoice(saved) ? saved : 'system';
-    } catch {
-      return 'system';
-    }
+    const saved = readStored(this.storage, KEY);
+    return isChoice(saved) ? saved : 'system';
   }
 }

@@ -117,7 +117,6 @@ describe('ThreadService', () => {
     const service = make(fake);
     await service.open('thread-1');
     expect(service.chosen()).toBe('gpt-6-luna');
-    expect(service.log()).toHaveLength(1);
     await service.send('hi', 'hope-12b');
     expect(fake.paramsOf('turn/start')).toEqual([
       { thread: 'thread-1', prompt: 'hi', model: 'hope-12b' },

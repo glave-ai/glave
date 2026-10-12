@@ -11,7 +11,8 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use anyhow::{Context as _, bail};
-use glave_session::protocol::{ApiError, Reply, Request};
+use glave_session::protocol::{Reply, Request};
+use glave_session::rpc;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
 use tokio::net::UnixStream;
@@ -98,7 +99,7 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 pub struct Host {
     lines: Lines<BufReader<OwnedReadHalf>>,
     writer: OwnedWriteHalf,
-    next_id: i64,
+    next_id: u64,
 }
 
 impl Host {
@@ -140,12 +141,7 @@ impl Host {
     pub async fn request(&mut self, request: Request) -> anyhow::Result<Reply> {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
-        let mut message = serde_json::to_value(&request)?;
-        if let Value::Object(fields) = &mut message {
-            fields.insert("jsonrpc".into(), json!("2.0"));
-            fields.insert("id".into(), json!(id));
-        }
-        let mut line = message.to_string();
+        let mut line = rpc::message(id, &request).to_string();
         line.push('\n');
         self.writer.write_all(line.as_bytes()).await?;
         self.writer.flush().await?;
@@ -155,13 +151,7 @@ impl Host {
                 // A notification, for clients that follow turns.
                 continue;
             }
-            if let Some(error) = message.get("error") {
-                let error: ApiError = serde_json::from_value(error.clone())?;
-                bail!("{error}");
-            }
-            let result = message.get("result").cloned().unwrap_or(Value::Null);
-            return serde_json::from_value(result)
-                .context("the task host answered with something this glave cannot read");
+            return rpc::outcome(&message).map_err(|error| anyhow::anyhow!("{error}"));
         }
         bail!("the task host closed the connection")
     }

@@ -5,6 +5,7 @@
 mod approvals;
 pub mod client;
 mod cron;
+mod dispatch;
 mod goal;
 mod held;
 pub mod http;
@@ -27,7 +28,9 @@ mod trace;
 mod turn;
 
 pub use approvals::Answering;
-pub use glave_identity::{Caller, signin};
+pub use dispatch::Answered;
+pub use glave_identity::signin;
+pub use glave_ports::Caller;
 pub use ledger::is_ledger;
 pub use server::{OnWorkers, Server, Wiring};
 pub use spaces::PERSONAL_NAME;

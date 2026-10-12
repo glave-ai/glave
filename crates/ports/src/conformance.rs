@@ -21,6 +21,7 @@ use uuid::{Builder, Uuid};
 use crate::blob::{BlobStore, digest};
 use crate::log::{EventLog, LogError};
 use crate::scope::{OrgId, Scope, SpaceId};
+use crate::tools::NeverCancelled;
 
 type Verdict = Result<(), String>;
 
@@ -156,7 +157,7 @@ pub async fn event_log<L: EventLog>(log: &L) -> Verdict {
         "writing another scope must not touch this one",
     )?;
 
-    thread_listing(log, here, elsewhere, t, other).await
+    Ok(())
 }
 
 /// `latest_of` finds a thread's last event of the given types, and nothing when there is none.
@@ -192,37 +193,6 @@ async fn locating<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verdict {
         nowhere.is_none(),
         "locate must find nothing for a thread never written",
     )
-}
-
-/// Thread listings order by most recent write, honor the limit, and stay inside the scope.
-async fn thread_listing<L: EventLog>(
-    log: &L,
-    here: Scope,
-    elsewhere: Scope,
-    t: ThreadId,
-    other: ThreadId,
-) -> Verdict {
-    log.append(&here, &events(other, &[1])?)
-        .await
-        .map_err(|e| e.to_string())?;
-    let recent = log.threads(&here, 10).await.map_err(|e| e.to_string())?;
-    ensure(
-        recent == [other, t],
-        "threads must list most recently written first",
-    )?;
-    log.append(&here, &events(t, &[4])?)
-        .await
-        .map_err(|e| e.to_string())?;
-    let recent = log.threads(&here, 1).await.map_err(|e| e.to_string())?;
-    ensure(
-        recent == [t],
-        "writing a thread must move it to the front, and limit must hold",
-    )?;
-    let there = log
-        .threads(&elsewhere, 10)
-        .await
-        .map_err(|e| e.to_string())?;
-    ensure(there == [t], "thread listings must not cross scopes")
 }
 
 /// Every [`BlobStore`] must name content by its SHA-256, keep one copy of identical content,
@@ -279,19 +249,6 @@ pub async fn blob_store<B: BlobStore>(blobs: &B) -> Verdict {
         .await
         .map_err(|e| e.to_string())?;
     ensure(missing.is_none(), "unknown content must read as missing")
-}
-
-/// A cancellation that never fires, for calls the suite lets finish.
-struct NeverCancelled;
-
-impl crate::tools::Cancellation for NeverCancelled {
-    fn is_cancelled(&self) -> bool {
-        false
-    }
-
-    fn cancelled(&self) -> crate::tools::BoxFuture<'_, ()> {
-        Box::pin(std::future::pending())
-    }
 }
 
 /// What every tool source must do: list tools with names a model can call (1 to 128 of

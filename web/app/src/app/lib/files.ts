@@ -1,7 +1,7 @@
 import type { RawEvent } from '@glave/client';
 
 /** One line of a change: kept, taken out or put in. */
-export interface DiffLine {
+interface DiffLine {
   readonly kind: 'same' | 'removed' | 'added';
   /** The mark that says which, so colour is never the only sign: ` `, `-` or `+`. */
   readonly sign: string;
@@ -19,7 +19,7 @@ export interface FileChange {
 }
 
 /** A file the thread changed, with its changes in order and what they added and removed. */
-export interface ChangedFile {
+interface ChangedFile {
   readonly path: string;
   readonly changes: readonly FileChange[];
   readonly added: number;

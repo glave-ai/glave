@@ -5,16 +5,17 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use glave_event::{
-    At, EncodeError, EventId, Header, InvalidValue, Origin, OriginKind, ParentCall, Part, Payload,
-    Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, encode,
+    ApprovalMode, At, EncodeError, EventId, Header, InvalidValue, Origin, OriginKind, ParentCall,
+    Part, Payload, Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted,
+    encode,
 };
 use glave_ports::{
-    BlobError, BlobStore, ComputerError, EventLog, LogError, Message, ModelProvider, ProviderError,
-    Scope, ToolSource,
+    BlobError, BlobStore, Caller, ComputerError, EventLog, LogError, Message, ModelProvider,
+    ProviderError, Scope, ToolSource,
 };
 use thiserror::Error;
 
-use crate::approval::{ApprovalMode, Approver};
+use crate::approval::Approver;
 use crate::bind::Place;
 use crate::builtins::Builtins;
 use crate::commands::Command;
@@ -28,7 +29,6 @@ use crate::standing::Standing;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
 use crate::worker::Workers;
-use glave_identity::Caller;
 use glave_ports::{Clock, Entropy};
 
 /// How the harness runs.
@@ -374,6 +374,21 @@ where
     /// The log events are written to.
     pub fn log(&self) -> &L {
         &self.log
+    }
+
+    /// What the harness was set up with: the default model and approval mode among them.
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    /// The clock events are stamped with.
+    pub fn clock(&self) -> &dyn Clock {
+        self.clock.as_ref()
+    }
+
+    /// Where the random part of new ids comes from.
+    pub fn entropy(&self) -> &dyn Entropy {
+        self.entropy.as_ref()
     }
 
     /// Who is asked before anything changes.

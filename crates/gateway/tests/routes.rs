@@ -24,7 +24,7 @@ mod routes {
             Purpose::Summary,
             Purpose::Subagent,
         ] {
-            let answer = block_on(gateway.complete(&request(purpose), &mut |_| {})).unwrap();
+            let answer = block_on!(gateway.complete(&request(purpose), &mut |_| {})).unwrap();
             assert_eq!(
                 answer.served,
                 Some(Served {
@@ -52,8 +52,8 @@ mod routes {
             )
             .unwrap();
         let gateway = Gateway::new(routes);
-        let judged = block_on(gateway.complete(&request(Purpose::Judge), &mut |_| {})).unwrap();
-        let main = block_on(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap();
+        let judged = block_on!(gateway.complete(&request(Purpose::Judge), &mut |_| {})).unwrap();
+        let main = block_on!(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap();
         assert_eq!(judged.served.unwrap().target, "cheap judge");
         assert_eq!(main.served.unwrap().target, "openrouter/big");
         let models: Vec<String> = provider.seen().into_iter().map(|r| r.model).collect();
@@ -72,7 +72,7 @@ mod routes {
         let asking = |purpose, model: &str| {
             let mut asked = request(purpose);
             asked.model = model.into();
-            block_on(gateway.complete(&asked, &mut |_| {}))
+            block_on!(gateway.complete(&asked, &mut |_| {}))
                 .unwrap()
                 .served
                 .unwrap()
@@ -117,7 +117,7 @@ mod routes {
         };
         let gateway =
             Gateway::new(Routes::new(vec![provider.target("hope").with_price(price)]).unwrap());
-        let answer = block_on(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap();
+        let answer = block_on!(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap();
         let cost = answer.cost.unwrap();
         // 100 in at $1 and 10 out at $2, per million.
         assert_eq!(

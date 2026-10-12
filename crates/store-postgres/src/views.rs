@@ -227,18 +227,9 @@ pub(crate) async fn rebuild(
     )))
 }
 
-/// What rebuilding every view did.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Rebuilt {
-    /// Threads whose view was rebuilt.
-    pub threads: usize,
-    /// Threads that could not be read, such as ones sealed under an erased key: they have no
-    /// view, and are not listed.
-    pub failed: usize,
-}
-
-/// Rebuilds the view of every thread in the database.
-pub(crate) async fn rebuild_all(log: &PostgresLog, pool: &Pool) -> Result<Rebuilt, StoreError> {
+/// Rebuilds the view of every thread in the database. A thread that cannot be read, such as
+/// one sealed under an erased key, gets no view and is not listed.
+pub(crate) async fn rebuild_all(log: &PostgresLog, pool: &Pool) -> Result<(), StoreError> {
     let client = connection(pool).await?;
     let rows = client
         .query(
@@ -248,7 +239,6 @@ pub(crate) async fn rebuild_all(log: &PostgresLog, pool: &Pool) -> Result<Rebuil
         .await
         .map_err(|e| StoreError::Storage(describe(&e)))?;
     drop(client);
-    let mut rebuilt = Rebuilt::default();
     for row in rows {
         let found = (|| {
             let org: Uuid = row.try_get(0).ok()?;
@@ -260,17 +250,11 @@ pub(crate) async fn rebuild_all(log: &PostgresLog, pool: &Pool) -> Result<Rebuil
             };
             Some((scope, ThreadId::try_from(thread).ok()?))
         })();
-        let done = match found {
-            Some((scope, thread)) => rebuild(log, pool, &scope, thread).await.is_ok(),
-            None => false,
-        };
-        if done {
-            rebuilt.threads = rebuilt.threads.saturating_add(1);
-        } else {
-            rebuilt.failed = rebuilt.failed.saturating_add(1);
+        if let Some((scope, thread)) = found {
+            let _ = rebuild(log, pool, &scope, thread).await;
         }
     }
-    Ok(rebuilt)
+    Ok(())
 }
 
 /// Rebuilds every view when the stored ones were built by an older fold (or none was built

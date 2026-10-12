@@ -1,0 +1,59 @@
+<section id="ai" aria-labelledby="ai-heading">
+  <h2 id="ai-heading">{{ copy.heading }}</h2>
+  <div class="thread demo" data-testid="showcase-thread" glzStickToBottom [(atBottom)]="atBottom">
+    <glz-message from="person" [author]="copy.you">
+      <p class="text">{{ copy.ask }}</p>
+    </glz-message>
+    <glz-message from="model" [author]="copy.replyAuthor">
+      <glz-reasoning>{{ copy.reasoning }}</glz-reasoning>
+      <glz-steps [summary]="copy.steps" [(open)]="stepsOpen">
+        @for (receipt of receipts; track receipt.summary) {
+          <glz-receipt
+            [icon]="receipt.icon"
+            [tool]="receipt.tool"
+            [summary]="receipt.summary"
+            [status]="receipt.status"
+          >
+            <pre>{{ receipt.evidence }}</pre>
+          </glz-receipt>
+        }
+      </glz-steps>
+      <glz-approval-card
+        testId="showcase-approval"
+        [tool]="approval.tool"
+        [summary]="approval.summary"
+        [decision]="decision()"
+        (decide)="decide($event)"
+      >
+        <pre>{{ approval.command }}</pre>
+      </glz-approval-card>
+      <glz-question-card [questions]="questions" [answered]="answers()" (answer)="answer($event)" />
+      <p class="text">{{ copy.reply }}</p>
+    </glz-message>
+    <glz-message from="note" [author]="copy.noteAuthor">{{ copy.note }}</glz-message>
+    @for (message of messages(); track message.id) {
+      <glz-message data-testid="showcase-message" [from]="message.from" [author]="message.author">
+        <p class="text">{{ message.text }}</p>
+      </glz-message>
+    }
+  </div>
+  @if (awayFromBottom()) {
+    <button glzButton size="sm" class="latest" (click)="jumpToLatest()">{{ copy.latest }}</button>
+  }
+  <glz-composer
+    class="demo"
+    testId="showcase-composer"
+    [busy]="busy()"
+    [(value)]="draft"
+    (send)="send($event)"
+    (stop)="stop()"
+  >
+    <glz-menu-select
+      glzComposerEnd
+      testId="showcase-model-select"
+      [label]="copy.model"
+      [options]="models"
+      [(value)]="model"
+    />
+  </glz-composer>
+</section>

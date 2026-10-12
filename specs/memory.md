@@ -11,7 +11,7 @@ Accepted. **On by default** since 2026-10-11, decided by Chris after the evals: 
 **Built** (the core, issue #93), in `glave-memory`, the harness, the session API and the CLI.
 
 - **The server:** glave's own MCP server (`remember`, `edit`, `forget`, `recall`; `glave://memory`, and `glave://memory/{memory}/{version}` for a memory at one of its versions, which resuming needs), in-process over an in-memory connection, glave its only client. Who and where travel in each request's `_meta` (`glave/context`: organization, space, person, agent, thread, `seq`, whether the thread read untrusted content), set from the session and the thread, never from the model; the store applies the rules to every read and write. The model's tools reach it as `mcp__memory__remember`, `mcp__memory__edit`, `mcp__memory__forget` and `mcp__memory__recall`. The person's controls (`memory/*`, `glave memory`) go to the store directly: they are the person's actions, not the model's.
-- **A plugged-in server is trusted to enforce scope**, as glave's own does: glave sends who and where with every request and cannot check what another server does with it. `glave-memory`'s conformance suite (the `conformance` feature: scope kept apart by `_meta`, the duplicate check, the budget refusal, forgetting that leaves nothing to read, `recall` kept to what the thread may read) is what such a server must pass. Until one is built in, `[memory] server` naming anything but `glave` is refused at load as not enforced.
+- **One server, glave's own.** The MCP seam stays so another can plug in later. Such a server would be trusted to enforce scope from `_meta`, since glave cannot check what it does; its policy key and a conformance suite for it come with the first one.
 - **Personal memory** lives in the person's personal space (`Rules.personal`; `storage.md`, "Spaces"), the CLI's `spaces::personal`. The stand-in spaces earlier versions derived from a name only that person had became their personal spaces, memories and all.
 - **A space's setting** is `space_memory` in `config.toml` (the person's or a project's: `shared`, `isolated` or `off`; narrowing only, so a project needs no trust for it). `memory` itself is the person's own choice: a project's file cannot set it.
 - **Writing:** the credential check (`glave_ports::secrets::looks_like_credential`), the near-duplicate check (normalised words, Dice overlap ≥ 0.6), the budget (about 1,000 tokens a scope, counting each line's id and dates), `replaces` (the new memory is saved and the old forgotten at once), at most 500 characters on one line.
@@ -20,8 +20,9 @@ Accepted. **On by default** since 2026-10-11, decided by Chris after the evals: 
 - **Forgetting:** each memory's text is sealed under `v1/<space>/memory/<memory>/<n>`; a forget by the person (or the model for them) destroys it at once, and its events then read with empty `data` (`{}`), envelopes kept. The space key is rotated by housekeeping, which batches the forgets since it last ran: when glave starts, when `glave memory` runs, and when a session ends. Retention (`retention_days`) forgets by glave, erased 30 days on unless restored.
 - **Tidy-up** (`Memories::tidy`, `memories/tidy.rs`): the cheap model on the `summary` route proposes merges and contradictions over a numbered list; every proposal is checked before anything changes (below). It runs in the background on a task the memory server owns (`GlaveMemory::tidy_with`), asked when a session starts and after each save or edit, over each ledger that is due.
 - **Recall** (`Memories::recall`, `memories/recall.rs`): the fourth tool. Memories are matched in the memory view; conversations through the store's full-text index (`storage.md`, "Search index"), which both stores keep (schema 5), with the event log port's `search` and its conformance suite.
+- **The web memory page** (`/memory` in the app `glave serve --http` serves): the person's and the space's memories, each marked with its scope, edited and forgotten in place.
 
-**Not yet:** the memory page on web and desktop, rotation on a schedule of its own in `glave serve --http` (it rotates when the server's session ends), and plugged-in memory servers.
+**Not yet:** on the memory page, moving a memory between scopes, each memory linked to the thread it came from, and glave's changes marked with an undo; the page on desktop; rotation on a schedule of its own in `glave serve --http` (it rotates when the server's session ends); and plugged-in memory servers.
 
 ## What others learned
 
@@ -48,7 +49,7 @@ Memory is an MCP server. Glave, as the MCP client, calls its tools and reads its
 - **Glave ships its own memory server,** backed by the data store, running in-process by default: no extra process, no setup. Glave treats it as first-party, so the harness's own rules for these tools apply (below), not the generic rules for MCP tools.
 - **Not through the gateway.** Memory is the person's own data, not egress.
 - **Scope comes from the session,** never from the model: glave passes the caller and the thread's space with every request (`_meta`), and the data store enforces it on every read. The model's `scope` only picks between the scopes the space allows.
-- **A company can plug in another memory server** (`[memory] server`, below) that speaks the same tools and resource. Serving glave's memory to other agents over the network comes after 1.0.
+- **Another memory server can plug in at the same seam later,** speaking the same tools and resource; none can today. Serving glave's memory to other agents over the network comes after 1.0.
 
 ## A memory
 
@@ -170,7 +171,6 @@ enabled = true                # false: no memory anywhere in the organization
 personal = true               # false: no personal memory; spaces may only be "isolated" or "off"
 spaces = ["isolated", "off"]  # the space settings allowed; "shared" absent here forbids it
 retention_days = 365          # memories not saved or edited for this long are forgotten (by glave)
-server = "glave"              # or the name of an MCP server in mcp.json that serves memory instead
 ```
 
 A space's policy only narrows its organization's. `glave policy explain` shows the memory setting and its source.

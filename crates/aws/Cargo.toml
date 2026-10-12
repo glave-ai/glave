@@ -26,6 +26,7 @@ url.workspace = true
 
 [dev-dependencies]
 glave-event.workspace = true
+glave-ports = { workspace = true, features = ["conformance"] }
 # Claude at Bedrock's /anthropic route, end to end against the fake Messages server.
 glave-provider-anthropic = { workspace = true, features = ["fake-server"] }
 tokio = { workspace = true, features = ["rt"] }

@@ -15,23 +15,6 @@
   background: var(--glz-color-scrim);
 }
 
-.drawer-start,
-.drawer-end {
-  width: min(var(--glz-drawer-width, 24rem), 90vw);
-  height: 100vh;
-  max-height: 100vh;
-  margin: 0;
-  border-radius: 0;
-}
-
-.drawer-start {
-  inset: 0 auto 0 0;
-}
-
-.drawer-end {
-  inset: 0 0 0 auto;
-}
-
 .surface {
   display: flex;
   flex-direction: column;

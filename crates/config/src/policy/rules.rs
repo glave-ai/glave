@@ -128,9 +128,7 @@ impl Constraints {
                 add(Kind::ModelsDeny(file.models.deny.clone()));
             }
             if let Some(modes) = &file.approval.modes {
-                add(Kind::ApprovalModes(
-                    modes.iter().map(|m| m.mode()).collect(),
-                ));
+                add(Kind::ApprovalModes(modes.clone()));
             }
             if let Some(judge) = file.approval.judge.filter(|j| *j != JudgeRule::Allowed) {
                 add(Kind::Judge(judge));
@@ -342,10 +340,6 @@ impl Constraints {
                 }) => Some((
                     rule,
                     "an allow-list of hosts is not enforced on workers yet",
-                )),
-                Kind::Memory(ref memory) if memory.other_server() => Some((
-                    rule,
-                    "memory from another MCP server is not built yet: only glave's own serves it",
                 )),
                 _ => None,
             })

@@ -15,7 +15,6 @@ mod error;
 mod events;
 #[cfg(feature = "fake-server")]
 pub mod fake;
-mod sse;
 mod wire;
 
 pub use api::Api;

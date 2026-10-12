@@ -16,7 +16,7 @@ mod payload;
 
 pub use blob::{BlobRef, Sha256};
 pub use codec::{Body, Event, KNOWN_VERSIONS, Payload, Unknown, decode, encode};
-pub use envelope::{At, ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, Seq, TypeName};
+pub use envelope::{At, Header, PayloadVersion, RawEvent, Seq, TypeName};
 pub use error::{DecodeError, EncodeError, InvalidValue};
 pub use id::{CallId, EventId, MemoryId, PrincipalId, ScheduleId, ThreadId};
 pub use money::{Currency, Money};

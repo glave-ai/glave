@@ -37,7 +37,7 @@
       "type": "object"
     },
     "ApprovalMode": {
-      "description": "How much glave asks before acting (`specs/approvals.md`, \"Modes\").",
+      "description": "How much glave asks the person before acting (`specs/approvals.md`, \"Modes\"). Secret files\nask in every mode.",
       "oneOf": [
         {
           "const": "ask",
@@ -46,7 +46,7 @@
         },
         {
           "const": "auto",
-          "description": "Changes and commands go through; risky ones still ask.",
+          "description": "Changes and commands go through: in the sandbox when it is on, as the person when not;\nrisky ones still ask. glave chooses it by default only where commands run in the\nsandbox.",
           "type": "string"
         }
       ]
@@ -1501,17 +1501,9 @@
       "code": -32020,
       "message": "The model provider failed"
     },
-    "RUNNING_ELSEWHERE": {
-      "code": -32011,
-      "message": "The thread is running in another server of this deployment"
-    },
     "TURN_RUNNING": {
       "code": -32002,
       "message": "A turn is already running in this thread"
-    },
-    "UNSUPPORTED_PROTOCOL": {
-      "code": -32010,
-      "message": "Unsupported protocol version"
     },
     "WORKSPACE": {
       "code": -32009,

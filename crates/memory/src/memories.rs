@@ -19,8 +19,9 @@ use crate::rules::Rules;
 use crate::shred::Shredder;
 
 pub use housekeep::Housekept;
-pub use recall::{DEFAULT_HITS, MOST_HITS, Recalled, Source};
-pub use tidy::{ModelTidier, Tidied, Tidier};
+pub(crate) use recall::DEFAULT_HITS;
+pub use recall::{MOST_HITS, Recalled, Source};
+pub use tidy::{Tidied, Tidier};
 pub use write::{Remembering, Writer};
 
 /// Ledger events read per page.

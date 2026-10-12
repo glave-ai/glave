@@ -1293,19 +1293,15 @@ dependencies = [
  "glave-store-postgres",
  "glave-store-sqlite",
  "glave-web",
- "globset",
  "hyper",
  "hyper-util",
- "insta",
  "jiff",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
- "serde",
  "serde_json",
  "tokio",
  "tokio-postgres",
- "toml",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -1467,7 +1463,6 @@ dependencies = [
  "rmcp",
  "serde",
  "serde_json",
- "thiserror",
  "tokio",
  "uuid",
 ]
@@ -1496,7 +1491,6 @@ version = "0.0.0"
 dependencies = [
  "glave-computer",
  "glave-event",
- "glave-identity",
  "glave-ports",
  "glave-shell",
  "jiff",
@@ -1579,7 +1573,6 @@ dependencies = [
  "rmcp",
  "serde",
  "serde_json",
- "thiserror",
  "tokio",
  "uuid",
 ]
@@ -1620,11 +1613,9 @@ version = "0.0.0"
 dependencies = [
  "glave-event",
  "glave-ports",
- "proptest",
  "reqwest",
  "serde",
  "serde_json",
- "thiserror",
  "tokio",
 ]
 

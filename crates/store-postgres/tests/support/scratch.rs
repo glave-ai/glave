@@ -4,17 +4,10 @@
 use std::sync::Arc;
 
 use glave_keys::{KeySettings, MemoryRoot};
+pub use glave_ports::block_on;
 use glave_store_postgres::{Config, Store, StoreError};
 use tokio::task::JoinHandle;
 use tokio_postgres::{Client, NoTls};
-
-pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 /// A schema of the test's own, an admin connection to make, inspect and drop it, and the
 /// root every store on it shares.

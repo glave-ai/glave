@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use glave_ports::auth::{AuthError, Fresh, Secret};
+use glave_ports::auth::{AuthError, Fresh, Secret, safe_to_send};
 use reqwest::header::{AUTHORIZATION, HeaderValue};
 use serde::Deserialize;
 
@@ -13,16 +13,9 @@ use crate::keys::{Keys, expiration};
 /// ECS's credentials endpoint, under which a relative URI is.
 const ECS: &str = "http://169.254.170.2";
 
-/// Hosts a plain-http credentials endpoint may be on, as AWS's libraries allow: this computer,
-/// ECS's endpoint, and EKS Pod Identity's agent.
-const LOCAL_HOSTS: &[&str] = &[
-    "127.0.0.1",
-    "localhost",
-    "[::1]",
-    "169.254.170.2",
-    "169.254.170.23",
-    "[fd00:ec2::23]",
-];
+/// Hosts besides this computer a plain-http credentials endpoint may be on, as AWS's libraries
+/// allow: ECS's endpoint, and EKS Pod Identity's agent.
+const NODE_HOSTS: &[&str] = &["169.254.170.2", "169.254.170.23", "[fd00:ec2::23]"];
 
 /// A container credentials endpoint and how the pod proves itself to it.
 pub struct Container {
@@ -137,18 +130,7 @@ impl Container {
 
 /// A full URI the environment gives: https, or http only to the hosts AWS's libraries allow.
 fn checked(uri: &str) -> Result<String, AuthError> {
-    let host = uri
-        .strip_prefix("http://")
-        .map(|rest| rest.split('/').next().unwrap_or_default())
-        .map(|authority| match authority.rsplit_once(':') {
-            Some((host, port)) if port.bytes().all(|b| b.is_ascii_digit()) => host,
-            _ => authority,
-        });
-    let allowed = match host {
-        Some(host) => LOCAL_HOSTS.contains(&host),
-        None => uri.starts_with("https://"),
-    };
-    if allowed && !uri.contains('@') {
+    if safe_to_send(uri, NODE_HOSTS) {
         Ok(uri.to_owned())
     } else {
         Err(AuthError::refused(

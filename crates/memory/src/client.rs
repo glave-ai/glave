@@ -7,7 +7,7 @@
 //! owns: asked after each save or edit, and by the host when it starts, it tidies each ledger
 //! that is due (a week since the last time, or past 90% of its budget).
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use glave_event::{Arguments, MemoryId, Principal};
 use glave_harness::{
@@ -15,7 +15,9 @@ use glave_harness::{
     Remembered, Shown,
 };
 use glave_mcp::{Limits, McpServer, tool_output};
-use glave_ports::{BoxFuture, Cancellation, EventLog, Scope, ToolError, ToolInfo, ToolSource};
+use glave_ports::{
+    BoxFuture, EventLog, ModelProvider, NeverCancelled, Scope, ToolError, ToolInfo, ToolSource,
+};
 use rmcp::ServiceExt as _;
 use rmcp::model::ResourceContents;
 use serde::Deserialize;
@@ -24,7 +26,7 @@ use tokio::task::JoinHandle;
 
 use crate::memories::{Memories, Remembering, Tidier, Writer};
 use crate::rules::SpaceMemory;
-use crate::server::{Context, MemoryServer, RESOURCE};
+use crate::server::{MemoryServer, RESOURCE, meta};
 
 /// Bytes the in-process connection buffers each way.
 const BUFFER: usize = 64 * 1024;
@@ -46,19 +48,6 @@ struct Listed {
     memories: Vec<Remembered>,
     #[serde(default)]
     questions: Vec<[MemoryId; 2]>,
-}
-
-/// A read that is never cancelled: memory reads are short and bounded by the call limit.
-struct Never;
-
-impl Cancellation for Never {
-    fn is_cancelled(&self) -> bool {
-        false
-    }
-
-    fn cancelled(&self) -> BoxFuture<'_, ()> {
-        Box::pin(std::future::pending())
-    }
 }
 
 impl<L: EventLog + 'static> GlaveMemory<L> {
@@ -88,34 +77,25 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
 
     /// Tidies in the background with `tidier` from now on: each ledger asked for with
     /// [`GlaveMemory::tidy_soon`], and those a save or an edit changes, when they are due.
-    pub fn tidy_with(&self, tidier: Arc<dyn Tidier>) {
+    pub fn tidy_with<P: ModelProvider + 'static>(&self, tidier: Tidier<P>) {
         let (sender, mut asked) = mpsc::channel::<Scope>(TIDY_QUEUE);
         let memories = self.memories.clone();
         let task = tokio::spawn(async move {
             while let Some(ledger) = asked.recv().await {
                 // A failed tidy-up changes nothing it did not record; the next one tries again.
                 if memories.tidy_due(ledger).await.unwrap_or(false) {
-                    let _ = memories.tidy(ledger, tidier.as_ref()).await;
+                    let _ = memories.tidy(ledger, &tidier).await;
                 }
             }
         });
-        let previous = self
-            .tidying
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .replace((sender, task));
-        if let Some((_, task)) = previous {
+        if let Some((_, task)) = lock(&self.tidying).replace((sender, task)) {
             task.abort();
         }
     }
 
     /// Asks for `ledgers` to be tidied, when they are due and a tidier was given.
     pub fn tidy_soon(&self, ledgers: &[Scope]) {
-        let tidying = self
-            .tidying
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some((sender, _)) = tidying.as_ref() {
+        if let Some((sender, _)) = lock(&self.tidying).as_ref() {
             for ledger in ledgers {
                 let _ = sender.try_send(*ledger);
             }
@@ -130,25 +110,22 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
     /// Closes the connection and stops the server and any tidy-up. Tidy-up changes one memory
     /// at a time, merged text first, so one stopped halfway leaves a duplicate, never a loss.
     pub async fn close(&self) {
-        let tidying = self
-            .tidying
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some((_, task)) = tidying {
+        let (tidying, server) = self.take_tasks();
+        if let Some(task) = tidying {
             task.abort();
             let _ = task.await;
         }
         self.client.close().await;
-        let server = self
-            .server
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
         if let Some(server) = server {
             server.abort();
             let _ = server.await;
         }
+    }
+
+    /// Takes the tidy-up task and the server's, to stop them.
+    fn take_tasks(&self) -> (Option<JoinHandle<()>>, Option<JoinHandle<()>>) {
+        let tidying = lock(&self.tidying).take().map(|(_, task)| task);
+        (tidying, lock(&self.server).take())
     }
 
     async fn read(&self, on: &MemoryContext, uri: &str) -> Result<Vec<Remembered>, MemoryError> {
@@ -158,7 +135,7 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
     async fn listing(&self, on: &MemoryContext, uri: &str) -> Result<Listed, MemoryError> {
         let contents = self
             .client
-            .read_with(uri, Context::of(on).meta(), &Never)
+            .read_with(uri, meta(on), &NeverCancelled)
             .await
             .map_err(MemoryError::Storage)?;
         let mut all = Listed {
@@ -192,7 +169,7 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
             .next()
             .unwrap_or_default()
             .to_owned();
-        let meta = Context::of(on).meta();
+        let meta = meta(on);
         let result = match self
             .client
             .forward_with(&tool, Some(arguments.clone()), meta)
@@ -270,23 +247,16 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
 
 impl<L: EventLog + 'static> Drop for GlaveMemory<L> {
     fn drop(&mut self) {
-        if let Some(server) = self
-            .server
-            .get_mut()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
-        {
-            server.abort();
-        }
-        if let Some((_, task)) = self
-            .tidying
-            .get_mut()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
-        {
+        let (tidying, server) = self.take_tasks();
+        for task in [tidying, server].into_iter().flatten() {
             task.abort();
         }
     }
+}
+
+/// `mutex`'s value, also after a panic elsewhere: what it guards is only ever replaced whole.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// What a tool's structured result says it changed.

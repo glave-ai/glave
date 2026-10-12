@@ -9,20 +9,8 @@
 }
 
 .author {
-  display: flex;
-  align-items: center;
-  gap: var(--glz-space-2);
   margin: 0 0 var(--glz-space-1);
-  font-size: var(--glz-text-sm);
   font-weight: var(--glz-weight-bold);
-}
-
-// Hope's sun: the one place its colour appears in a conversation, and only for Hope.
-.sun {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: var(--glz-radius-full);
-  background: var(--glz-color-hope);
 }
 
 .body {
@@ -52,6 +40,38 @@
 :host(.from-note) {
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-sm);
+}
+
+// The message's actions, under it: at the bubble's end, or at the reply's start. With a
+// pointer they show on hover and whenever focus is inside the message, so the keyboard finds
+// them; on touch, where nothing hovers, they always show.
+.actions {
+  display: flex;
+  gap: var(--glz-space-1);
+
+  // An icon button's own padding pulled back, so its icon lines up with the text.
+  margin: var(--glz-space-1) calc(-1 * var(--glz-space-2)) 0;
+  opacity: 0;
+  transition: opacity var(--glz-duration-fast) var(--glz-easing);
+}
+
+.actions:empty {
+  display: none;
+}
+
+:host(.from-person) .actions {
+  justify-content: flex-end;
+}
+
+:host(:hover) .actions,
+:host(:focus-within) .actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .actions {
+    opacity: 1;
+  }
 }
 
 .caret {

@@ -22,7 +22,7 @@ mod catalog {
     use glave_event::{Arguments, Body, Part};
     use glave_gateway::Budgets;
     use glave_mcp::{Limits, McpServer};
-    use glave_ports::{BoxFuture, Cancellation, ToolOutput, ToolSource as _};
+    use glave_ports::{NeverCancelled, ToolOutput, ToolSource as _};
     use serde_json::json;
 
     use super::world::{World, block_on};
@@ -38,17 +38,6 @@ mod catalog {
             &headers,
             Limits::default(),
         )
-    }
-
-    struct Never;
-
-    impl Cancellation for Never {
-        fn is_cancelled(&self) -> bool {
-            false
-        }
-        fn cancelled(&self) -> BoxFuture<'_, ()> {
-            Box::pin(std::future::pending())
-        }
     }
 
     fn text(output: &ToolOutput) -> String {
@@ -68,7 +57,7 @@ mod catalog {
 
     #[test]
     fn two_servers_become_one_catalog_named_by_server_and_tool() {
-        block_on(async {
+        block_on!(async {
             let world = World::start(Vec::new(), Budgets::default(), true).await;
             let alice = catalog(&world, "alice");
             let tools = alice.tools().await.unwrap();
@@ -100,7 +89,7 @@ mod catalog {
                 .call(
                     "mcp__docs__lookup",
                     &arguments(&json!({"text": "rust"})),
-                    &Never,
+                    &NeverCancelled,
                 )
                 .await;
             assert!(
@@ -111,7 +100,7 @@ mod catalog {
                 .call(
                     "mcp__docs__echo",
                     &arguments(&json!({"text": "hello"})),
-                    &Never,
+                    &NeverCancelled,
                 )
                 .await;
             assert!(!said.is_error, "{said:?}");
@@ -132,7 +121,7 @@ mod catalog {
 
     #[test]
     fn each_caller_sees_and_calls_only_the_tools_their_policy_allows() {
-        block_on(async {
+        block_on!(async {
             let world = World::start(Vec::new(), Budgets::default(), true).await;
             let bob = catalog(&world, "bob");
             let names: Vec<String> = bob
@@ -162,7 +151,7 @@ mod catalog {
             assert!(said.contains("not allowed"), "{said}");
             assert!(world.recorded("bob").await.is_empty());
             let failed = bob
-                .call("mcp__docs__fail", &arguments(&json!({})), &Never)
+                .call("mcp__docs__fail", &arguments(&json!({})), &NeverCancelled)
                 .await;
             assert!(failed.is_error);
             let recorded = world.recorded("bob").await;

@@ -57,8 +57,21 @@ pub async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
     let Reply::Server(_) = elsewhere.request(Request::Discover {}).await? else {
         bail!("{url} is not a glave session server");
     };
+    if args.resume && args.goal.is_some() && (args.model.is_some() || args.approval.is_some()) {
+        bail!(
+            "--model and --approval choose for a new thread or a turn; a goal on a thread you \
+             continue keeps the thread's choice"
+        );
+    }
     let worktree = args.worktree.then_some(true);
-    let (thread, note) = pick_thread(elsewhere, args.resume, worktree).await?;
+    let (thread, note) = pick_thread(
+        elsewhere,
+        args.resume,
+        worktree,
+        args.model.clone(),
+        args.approval,
+    )
+    .await?;
     let input = Input::start();
     let client = Client {
         server: elsewhere,
@@ -67,6 +80,8 @@ pub async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
         endpoint: None,
         asks: std::io::stdin().is_terminal(),
         servers: None,
+        model: args.model.clone(),
+        approval: args.approval,
     };
     let mut printer = Printer::new("glave", format!("on {}", remote.url()));
     let code = if let Some(objective) = &args.goal {
@@ -90,8 +105,6 @@ pub async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
 /// The first flag `args` has that only means something for glave running here.
 fn local_only(args: &Args) -> Option<&'static str> {
     [
-        (args.model.is_some(), "--model"),
-        (args.approval.is_some(), "--approval"),
         (args.sandbox.is_some(), "--sandbox"),
         (args.network.is_some(), "--network"),
         (args.on.is_some(), "--on"),
@@ -109,14 +122,17 @@ mod tests {
     #[test]
     fn what_only_this_computer_chooses_is_refused_with_a_server() {
         let args = Args {
-            model: Some("m".into()),
+            background: true,
             ..Args::default()
         };
-        assert_eq!(local_only(&args), Some("--model"));
+        assert_eq!(local_only(&args), Some("--background"));
+        // The server's API takes a model and an approval mode, so these go to it.
         let args = Args {
             prompt: "hi".into(),
             resume: true,
             worktree: true,
+            model: Some("m".into()),
+            approval: Some(glave_harness::ApprovalMode::Ask),
             ..Args::default()
         };
         assert_eq!(local_only(&args), None);

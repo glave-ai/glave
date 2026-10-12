@@ -76,7 +76,7 @@ async function type(root: HTMLElement, text: string): Promise<void> {
     input.dispatchEvent(new Event('input'));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
   }
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await settle();
 }
 
 describe('ThreadComponent', () => {
@@ -109,15 +109,58 @@ describe('ThreadComponent', () => {
     ]);
   });
 
-  it('names each reply by the model that wrote it, with Hope’s mark only for Hope', async () => {
+  it('names no model over a reply, and gives every message a copy button', async () => {
     const { root } = await open(session(ANSWERED));
     const messages = root.querySelectorAll('[data-testid="thread-message"]');
     expect(messages[0]?.getAttribute('aria-label')).toBe('You');
-    expect(messages[1]?.getAttribute('aria-label')).toBe('Hope');
+    expect(messages[1]?.getAttribute('aria-label')).toBe('Reply');
     expect(root.querySelector('glz-avatar')).toBeNull();
-    expect(messages[1]?.querySelector('.author .sun')).not.toBeNull();
-    expect(messages[0]?.querySelector('.author')).toBeNull();
+    expect(root.querySelector('[data-testid="thread-items"] .author')).toBeNull();
+    expect(root.querySelector('[data-testid="thread-items"]')?.textContent).not.toContain('Hope');
     expect(messages[0]?.querySelector('app-message-text')?.textContent).toContain('Hi');
+    for (const message of messages) {
+      expect(message.querySelector('.actions [data-testid="message-copy"]')).not.toBeNull();
+    }
+    await expectAccessible(root);
+  });
+
+  it('folds tool calls in a row under one line that opens to each, its tool and target', async () => {
+    const call = (seq: number, id: string, tool: string, json: Record<string, unknown>): unknown =>
+      event(seq, 'tool.call.requested', { call_id: id, tool, arguments: { json } });
+    const done = (seq: number, id: string): unknown =>
+      event(seq, 'tool.call.completed', { call_id: id, is_error: false, output: [] });
+    const { root, fixture } = await open(
+      session([
+        event(1, 'message.added', { role: 'user', parts: [{ type: 'text', text: 'Fix it' }] }),
+        call(2, 'a', 'bash', { command: 'cargo test' }),
+        done(3, 'a'),
+        call(4, 'b', 'edit', { path: 'src/parse.rs' }),
+        done(5, 'b'),
+        call(6, 'c', 'write', { path: 'tests/empty.rs' }),
+        done(7, 'c'),
+        event(8, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Done' }] }),
+      ]),
+    );
+    const steps = root.querySelector('[data-testid="thread-steps"]');
+    const summary = root.querySelector<HTMLElement>('[data-testid="thread-steps-summary"]');
+    expect(summary?.textContent.trim()).toBe('Ran 3 steps');
+    expect(steps?.querySelector('details')?.open).toBe(false);
+    const receipts = Array.from(steps?.querySelectorAll('[data-testid="thread-receipt"]') ?? []);
+    expect(receipts.map((receipt) => receipt.querySelector('.tool')?.textContent)).toEqual([
+      'bash',
+      'edit',
+      'write',
+    ]);
+    expect(receipts.map((receipt) => receipt.querySelector('.what')?.textContent)).toEqual([
+      'cargo test',
+      'src/parse.rs',
+      'tests/empty.rs',
+    ]);
+    expect(receipts.every((receipt) => receipt.querySelector('.kind svg') !== null)).toBe(true);
+    summary?.click();
+    await fixture.whenStable();
+    expect(steps?.querySelector('details')?.open).toBe(true);
+    await expectAccessible(root);
   });
 
   it('sends from the composer and shows the reply streaming in', async () => {

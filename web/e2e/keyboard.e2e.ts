@@ -1,9 +1,7 @@
 import { type Page, expect, test } from '@playwright/test';
 
 import { THREAD, type Request, fakeApi } from './fake-api';
-import { byTestId, expectAccessible } from './support';
-
-const SIGNED_IN = '#token=glave_local_test';
+import { SIGNED_IN, byTestId, expectAccessible } from './support';
 
 /**
  * Presses Tab (or Shift+Tab, `back`) until the element with `testId` has focus, as someone on
@@ -88,7 +86,7 @@ test('a message is written and sent by keyboard alone', async ({ page }) => {
   await tabTo(page, 'thread-composer-input');
   await page.keyboard.type('Thanks');
   await page.keyboard.press('Enter');
-  await expect(byTestId(page, 'thread-message').last()).toContainText('Hello from Hope.');
+  await expect(byTestId(page, 'thread-message').last()).toContainText('Glad to help.');
 });
 
 test('a model is searched, picked and pinned by keyboard alone', async ({ page }) => {
@@ -114,7 +112,7 @@ test('a model is searched, picked and pinned by keyboard alone', async ({ page }
   await tabTo(page, 'thread-composer-input', true);
   await page.keyboard.type('Go on');
   await page.keyboard.press('Enter');
-  await expect(byTestId(page, 'thread-message').last()).toContainText('Hello from Hope.');
+  await expect(byTestId(page, 'thread-message').last()).toContainText('Glad to help.');
   const turn = requests.find((request) => request.method === 'turn/start');
   expect(turn?.params).toMatchObject({ prompt: 'Go on', model: 'openai/gpt-6-luna' });
 });
@@ -134,7 +132,7 @@ test('the approval mode is chosen by keyboard and goes with the next turn', asyn
   await tabTo(page, 'thread-composer-input', true);
   await page.keyboard.type('Carefully');
   await page.keyboard.press('Enter');
-  await expect(byTestId(page, 'thread-message').last()).toContainText('Hello from Hope.');
+  await expect(byTestId(page, 'thread-message').last()).toContainText('Glad to help.');
   const turn = requests.find((request) => request.method === 'turn/start');
   expect(turn?.params).toMatchObject({ prompt: 'Carefully', approval: 'ask' });
 });

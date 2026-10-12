@@ -82,7 +82,7 @@ mod sources {
     #[test]
     fn other_tools_are_offered_after_the_built_ins_and_called_through_the_harness() {
         let dir = folder("sources-offered");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -121,7 +121,7 @@ mod sources {
     #[test]
     fn a_tool_that_runs_things_asks_like_a_command() {
         let dir = folder("sources-asks");
-        block_on(async {
+        block_on!(async {
             let create = (
                 "mcp__tracker__create_issue",
                 json!({"title": "Broken build"}),
@@ -151,7 +151,7 @@ mod sources {
     #[test]
     fn allowed_for_the_thread_by_name() {
         let dir = folder("sources-allowed");
-        block_on(async {
+        block_on!(async {
             let create = ("mcp__tracker__create_issue", json!({"title": "One"}));
             let answers = vec![
                 answer(None, vec![create.clone()], StopReason::ToolUse),
@@ -196,7 +196,7 @@ mod sources {
     #[test]
     fn what_a_source_says_about_its_tools_follows_the_system_prompt() {
         let dir = folder("sources-noted");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(Some("Noted."), vec![], StopReason::EndTurn),
                 answer(Some("Plain."), vec![], StopReason::EndTurn),
@@ -225,7 +225,7 @@ mod sources {
     #[test]
     fn without_notes_the_system_prompt_is_glaves_own() {
         let dir = folder("sources-plain");
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(Some("Plain."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
                 harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings()).await;
@@ -242,7 +242,7 @@ mod sources {
     #[test]
     fn an_unknown_tool_names_every_tool_on_offer() {
         let dir = folder("sources-unknown");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,

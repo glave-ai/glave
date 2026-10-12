@@ -67,7 +67,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-nextest,cargo-deny
+          tool: cargo-nextest,cargo-deny,cargo-machete
       - run: cargo xtask ci
       - name: Disk space after the build
         if: always()
@@ -132,6 +132,7 @@ jobs:
       - run: npm test
       - run: npm run build:glaze
       - run: npm run build
+      - run: npm run build:showcase
       - run: npm run e2e
 
   # Workers on Kubernetes: a kind cluster on the runner, and the Kubernetes backend's tests
@@ -258,5 +259,5 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-nextest,cargo-deny
+          tool: cargo-nextest,cargo-deny,cargo-machete
       - run: cargo xtask ci

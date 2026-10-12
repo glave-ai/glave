@@ -3,15 +3,9 @@
 use std::path::PathBuf;
 
 use glave_harness::ApprovalMode;
+use glave_ports::block_on;
 
 use super::*;
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 pub(super) fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("glave-policy-{name}-{}", std::process::id()));
@@ -26,7 +20,7 @@ pub(super) fn load_all(
     locations: &Locations,
     project: Option<ConfigFile>,
 ) -> crate::Result<Loaded> {
-    block_on(async {
+    block_on!(async {
         let policies = policies(locations).await?;
         load(
             locations,
@@ -75,7 +69,7 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
     assert_eq!(choices.approval.value, ApprovalMode::Ask, "the person's");
     assert_eq!(choices.sandbox.from, Source::Narrowed(org));
     let theirs = ConfigFile {
-        approval: Some(Approval::Auto),
+        approval: Some(ApprovalMode::Auto),
         ..ConfigFile::default()
     };
     let loaded = load_all(&locations, Some(theirs)).unwrap();
@@ -103,7 +97,7 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
 fn explain_shows_every_setting_and_rule_with_its_source() {
     let chosen = layers(
         ConfigFile {
-            approval: Some(Approval::Ask),
+            approval: Some(ApprovalMode::Ask),
             ..ConfigFile::default()
         },
         ConfigFile {

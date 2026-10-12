@@ -21,7 +21,7 @@ pub mod worktrees;
 
 pub use cancel::Switch;
 pub use environment::{EnvironmentError, Found, read_environment};
-pub use local::{LocalComputers, SANDBOX_HELPER_ARG, sandbox_available, sandbox_helper};
+pub use local::{LocalComputers, sandbox_available, sandbox_helper};
 pub use remote::RemoteComputers;
 pub use serve::{serve, serve_tcp, serve_tls};
 pub use tls::{Fingerprint, Identity, connect_tls};

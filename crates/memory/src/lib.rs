@@ -8,8 +8,6 @@
 
 mod book;
 mod client;
-#[cfg(any(test, feature = "conformance"))]
-pub mod conformance;
 mod memories;
 mod rules;
 mod server;
@@ -18,9 +16,7 @@ mod similar;
 
 pub use client::GlaveMemory;
 pub use memories::{
-    DEFAULT_HITS, Housekept, MOST_HITS, Memories, ModelTidier, Recalled, Remembering, Source,
-    Tidied, Tidier, Writer,
+    Housekept, MOST_HITS, Memories, Recalled, Remembering, Source, Tidied, Tidier, Writer,
 };
 pub use rules::{Personal, Rules, SpaceMemory};
-pub use server::{CONTEXT, MemoryServer, RESOURCE};
-pub use shred::{NoKeys, Shredder};
+pub use shred::Shredder;

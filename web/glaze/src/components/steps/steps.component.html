@@ -1,0 +1,7 @@
+<details class="details" [open]="open()" (toggle)="toggled($event)">
+  <summary class="line" [attr.data-testid]="ids().summary">
+    <span class="what">{{ summary() }}</span>
+    <glz-icon class="chevron" [icon]="chevron" />
+  </summary>
+  <div class="steps" [attr.data-testid]="ids().steps"><ng-content /></div>
+</details>

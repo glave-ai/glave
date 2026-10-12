@@ -3,7 +3,6 @@
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
 mod models;
-mod modes;
 mod tasks;
 
 use glave_event::{
@@ -14,24 +13,53 @@ use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
 use glave_ports::{ComputerId, Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
+pub use glave_event::ApprovalMode;
 pub use models::ModelInfo;
-pub use modes::ApprovalMode;
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 
 /// The protocol version this server speaks.
 pub const PROTOCOL: &str = "2026-10";
 
-/// A request, by method.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(tag = "method", content = "params")]
-pub enum Request {
-    #[serde(rename = "server/discover")]
-    Discover {},
+/// The one table of methods: each method's name, its request's params, and the replies it
+/// answers with, by the titles of their [`Reply`] variants. It makes [`Request`], whose serde
+/// names are the methods, [`Request::method`], and [`RESULTS`] for the schema.
+macro_rules! methods {
+    ($(
+        $(#[$doc:meta])*
+        $method:literal => $variant:ident { $($params:tt)* } -> [$($reply:ident),+],
+    )*) => {
+        /// A request, by method.
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+        #[serde(tag = "method", content = "params")]
+        pub enum Request {
+            $(
+                $(#[$doc])*
+                #[serde(rename = $method)]
+                $variant { $($params)* },
+            )*
+        }
+
+        impl Request {
+            /// The method's name, as JSON-RPC and the `Glave-Method` header carry it.
+            pub fn method(&self) -> &'static str {
+                match self {
+                    $(Self::$variant { .. } => $method,)*
+                }
+            }
+        }
+
+        /// Every method, with the titles of the replies it answers with.
+        pub(crate) const RESULTS: &[(&str, &[&str])] = &[
+            $(($method, &[$(stringify!($reply)),+]),)*
+        ];
+    };
+}
+
+methods! {
+    "server/discover" => Discover {} -> [Server],
     /// The models this server can run: the default first.
-    #[serde(rename = "model/list")]
-    ModelList {},
-    #[serde(rename = "thread/start")]
-    ThreadStart {
+    "model/list" => ModelList {} -> [Models],
+    "thread/start" => ThreadStart {
         /// The space the thread is in: by default the server's own, for a caller who works in
         /// it, else the caller's personal space.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -56,9 +84,8 @@ pub enum Request {
         /// the server's own mode when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         approval: Option<ApprovalMode>,
-    },
-    #[serde(rename = "thread/list")]
-    ThreadList {
+    } -> [Thread],
+    "thread/list" => ThreadList {
         /// The space whose threads to list, by default as `thread/start` picks one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         space: Option<SpaceId>,
@@ -70,31 +97,24 @@ pub enum Request {
         /// Where the page starts: the `next` of the page before.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cursor: Option<String>,
-    },
+    } -> [Threads],
     /// Gives a thread a title of the person's own.
-    #[serde(rename = "thread/rename")]
-    ThreadRename { thread: ThreadId, title: String },
+    "thread/rename" => ThreadRename { thread: ThreadId, title: String } -> [Thread],
     /// Hides a thread from lists, keeping it in the log.
-    #[serde(rename = "thread/archive")]
-    ThreadArchive { thread: ThreadId },
+    "thread/archive" => ThreadArchive { thread: ThreadId } -> [Done],
     /// Brings an archived thread back.
-    #[serde(rename = "thread/unarchive")]
-    ThreadUnarchive { thread: ThreadId },
+    "thread/unarchive" => ThreadUnarchive { thread: ThreadId } -> [Done],
     /// Hides a thread for good and marks it for erasure.
-    #[serde(rename = "thread/delete")]
-    ThreadDelete { thread: ThreadId },
-    #[serde(rename = "thread/get")]
-    ThreadGet { thread: ThreadId },
-    #[serde(rename = "thread/events")]
-    ThreadEvents {
+    "thread/delete" => ThreadDelete { thread: ThreadId } -> [Done],
+    "thread/get" => ThreadGet { thread: ThreadId } -> [Thread],
+    "thread/events" => ThreadEvents {
         thread: ThreadId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         after: Option<Seq>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
-    },
-    #[serde(rename = "turn/start")]
-    TurnStart {
+    } -> [Events],
+    "turn/start" => TurnStart {
         thread: ThreadId,
         prompt: String,
         /// Runs the turn as a task, with no one attached: answered at once with the task.
@@ -113,28 +133,23 @@ pub enum Request {
         approval: Option<ApprovalMode>,
         #[serde(rename = "_meta", default, skip_serializing_if = "Meta::is_empty")]
         meta: Meta,
-    },
-    #[serde(rename = "turn/cancel")]
-    TurnCancel { thread: ThreadId },
-    #[serde(rename = "thread/compact")]
-    ThreadCompact { thread: ThreadId },
-    #[serde(rename = "approval/decide")]
-    ApprovalDecide {
+    } -> [Turn, Task],
+    "turn/cancel" => TurnCancel { thread: ThreadId } -> [Done],
+    "thread/compact" => ThreadCompact { thread: ThreadId } -> [Compacted],
+    "approval/decide" => ApprovalDecide {
         thread: ThreadId,
         approval: CallId,
         decision: Answer,
-    },
+    } -> [Done],
     /// Answers the model's questions: one answer for each, in order.
-    #[serde(rename = "question/answer")]
-    QuestionAnswer {
+    "question/answer" => QuestionAnswer {
         thread: ThreadId,
         question: CallId,
         answers: Vec<String>,
-    },
+    } -> [Done],
     /// Sets a goal and works toward it across turns; without `objective`, continues the
     /// thread's active goal, as after a restart, or resumes the one the model paused.
-    #[serde(rename = "goal/start")]
-    GoalStart {
+    "goal/start" => GoalStart {
         thread: ThreadId,
         /// What to achieve, with how to verify it in the person's words.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -145,25 +160,20 @@ pub enum Request {
         /// Works toward the goal as a task, with no one attached: answered at once.
         #[serde(default, skip_serializing_if = "is_false")]
         background: bool,
-    },
+    } -> [Turn, Task],
     /// Stops the thread's active goal, cancelling its running turn.
-    #[serde(rename = "goal/stop")]
-    GoalStop { thread: ThreadId },
+    "goal/stop" => GoalStop { thread: ThreadId } -> [Done],
     /// The thread's latest goal and how far it has come.
-    #[serde(rename = "goal/get")]
-    GoalGet { thread: ThreadId },
+    "goal/get" => GoalGet { thread: ThreadId } -> [Goal],
     /// Tasks running and recently finished, running first, then newest first.
-    #[serde(rename = "tasks/list")]
-    TasksList {
+    "tasks/list" => TasksList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
-    },
+    } -> [Tasks],
     /// Stops the task running in a thread.
-    #[serde(rename = "tasks/stop")]
-    TasksStop { thread: ThreadId },
+    "tasks/stop" => TasksStop { thread: ThreadId } -> [Done],
     /// Runs a prompt, or works toward a goal, as a task at set times.
-    #[serde(rename = "schedule/create")]
-    ScheduleCreate {
+    "schedule/create" => ScheduleCreate {
         when: When,
         prompt: String,
         #[serde(default, skip_serializing_if = "is_false")]
@@ -172,58 +182,46 @@ pub enum Request {
         budget: u64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worktree: Option<bool>,
-    },
-    #[serde(rename = "schedule/list")]
-    ScheduleList {},
-    #[serde(rename = "schedule/delete")]
-    ScheduleDelete { schedule: ScheduleId },
+    } -> [Schedule],
+    "schedule/list" => ScheduleList {} -> [Schedules],
+    "schedule/delete" => ScheduleDelete { schedule: ScheduleId } -> [Done],
     /// The spaces the caller works in: owns, or is a member of.
-    #[serde(rename = "space/list")]
-    SpaceList {
+    "space/list" => SpaceList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
-    },
-    #[serde(rename = "space/get")]
-    SpaceGet { space: SpaceId },
+    } -> [Spaces],
+    "space/get" => SpaceGet { space: SpaceId } -> [Space],
     /// A new project space, owned by the caller, with `members` working in it too.
-    #[serde(rename = "space/create")]
-    SpaceCreate {
+    "space/create" => SpaceCreate {
         name: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         members: Vec<glave_event::Principal>,
-    },
+    } -> [Space],
     /// Renames a space: its owner only.
-    #[serde(rename = "space/rename")]
-    SpaceRename { space: SpaceId, name: String },
+    "space/rename" => SpaceRename { space: SpaceId, name: String } -> [Space],
     /// The memories here: the person's and the space's, or one `scope`.
-    #[serde(rename = "memory/list")]
-    MemoryList {
+    "memory/list" => MemoryList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<MemoryScope>,
-    },
-    #[serde(rename = "memory/save")]
-    MemorySave { text: String, scope: MemoryScope },
-    #[serde(rename = "memory/edit")]
-    MemoryEdit { memory: MemoryId, text: String },
+    } -> [Memories],
+    "memory/save" => MemorySave { text: String, scope: MemoryScope } -> [Memories],
+    "memory/edit" => MemoryEdit { memory: MemoryId, text: String } -> [Memories],
     /// Saved in the new scope, forgotten in the old.
-    #[serde(rename = "memory/move")]
-    MemoryMove {
+    "memory/move" => MemoryMove {
         memory: MemoryId,
         scope: MemoryScope,
-    },
+    } -> [Memories],
     /// Forgets one memory, or with `all`, every memory of `scope`.
-    #[serde(rename = "memory/forget")]
-    MemoryForget {
+    "memory/forget" => MemoryForget {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         memory: Option<MemoryId>,
         #[serde(default, skip_serializing_if = "is_false")]
         all: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<MemoryScope>,
-    },
+    } -> [Memories],
     /// Undoes glave's latest change to a memory, within 30 days.
-    #[serde(rename = "memory/restore")]
-    MemoryRestore { memory: MemoryId },
+    "memory/restore" => MemoryRestore { memory: MemoryId } -> [Memories],
 }
 
 #[expect(
@@ -232,47 +230,6 @@ pub enum Request {
 )]
 fn is_false(value: &bool) -> bool {
     !*value
-}
-
-impl Request {
-    /// The method's name, as JSON-RPC and the `Glave-Method` header carry it.
-    pub fn method(&self) -> &'static str {
-        match self {
-            Self::Discover {} => "server/discover",
-            Self::ModelList {} => "model/list",
-            Self::ThreadStart { .. } => "thread/start",
-            Self::ThreadList { .. } => "thread/list",
-            Self::ThreadRename { .. } => "thread/rename",
-            Self::ThreadArchive { .. } => "thread/archive",
-            Self::ThreadUnarchive { .. } => "thread/unarchive",
-            Self::ThreadDelete { .. } => "thread/delete",
-            Self::ThreadGet { .. } => "thread/get",
-            Self::ThreadEvents { .. } => "thread/events",
-            Self::TurnStart { .. } => "turn/start",
-            Self::TurnCancel { .. } => "turn/cancel",
-            Self::ThreadCompact { .. } => "thread/compact",
-            Self::ApprovalDecide { .. } => "approval/decide",
-            Self::QuestionAnswer { .. } => "question/answer",
-            Self::GoalStart { .. } => "goal/start",
-            Self::GoalStop { .. } => "goal/stop",
-            Self::GoalGet { .. } => "goal/get",
-            Self::TasksList { .. } => "tasks/list",
-            Self::TasksStop { .. } => "tasks/stop",
-            Self::ScheduleCreate { .. } => "schedule/create",
-            Self::ScheduleList {} => "schedule/list",
-            Self::ScheduleDelete { .. } => "schedule/delete",
-            Self::SpaceList { .. } => "space/list",
-            Self::SpaceGet { .. } => "space/get",
-            Self::SpaceCreate { .. } => "space/create",
-            Self::SpaceRename { .. } => "space/rename",
-            Self::MemoryList { .. } => "memory/list",
-            Self::MemorySave { .. } => "memory/save",
-            Self::MemoryEdit { .. } => "memory/edit",
-            Self::MemoryMove { .. } => "memory/move",
-            Self::MemoryForget { .. } => "memory/forget",
-            Self::MemoryRestore { .. } => "memory/restore",
-        }
-    }
 }
 
 impl Request {
@@ -664,7 +621,7 @@ impl From<Live> for Update {
                 memory,
                 text,
             },
-            // Published under the child's thread; see `Server::start_turn`.
+            // Published under the child's thread; see `turn::publish`.
             Live::Child { update, .. } => Self::from(*update),
         }
     }
@@ -685,47 +642,48 @@ pub struct ErrorData {
     pub failure: Failure,
 }
 
-/// glave's error codes (`specs/session.md`).
+/// Every error a request can be answered with (`specs/session.md`): JSON-RPC's own, then
+/// glave's. Each is a constant and a row of [`code::ALL`], from one table.
 pub mod code {
-    pub const INTERNAL: i64 = -32603;
-    pub const NO_THREAD: i64 = -32001;
-    pub const TURN_RUNNING: i64 = -32002;
-    pub const NO_TURN: i64 = -32003;
-    pub const NO_APPROVAL: i64 = -32004;
-    pub const NO_QUESTION: i64 = -32006;
-    pub const NO_GOAL: i64 = -32007;
-    /// The thread's workspace could not be opened, such as a worktree outside a repository.
-    pub const WORKSPACE: i64 = -32009;
-    /// The client speaks no protocol version this server does.
-    pub const UNSUPPORTED_PROTOCOL: i64 = -32010;
-    /// The thread is running in another server of this deployment.
-    pub const RUNNING_ELSEWHERE: i64 = -32011;
-    /// The thread is archived: unarchive it before running a turn in it.
-    pub const ARCHIVED: i64 = -32014;
-    /// A hook stopped the prompt before the model saw it.
-    pub const PROMPT_BLOCKED: i64 = -32008;
-    pub const CANCELLED: i64 = -32005;
-    /// No valid sign-in, on a network transport.
-    pub const NO_SIGN_IN: i64 = -32013;
-    pub const PROVIDER: i64 = -32020;
-    /// No such model here, or not one this server may run.
-    pub const NO_MODEL: i64 = -32021;
-    /// A policy limit was reached: too many tasks running, or too many schedules.
-    pub const LIMIT: i64 = -32015;
-    /// No such schedule.
-    pub const NO_SCHEDULE: i64 = -32016;
-    /// The caller may not do this, such as change another person's memory.
-    pub const NOT_ALLOWED: i64 = -32012;
-    /// No such memory here.
-    pub const NO_MEMORY: i64 = -32017;
-    /// Memory is off here.
-    pub const MEMORY_OFF: i64 = -32018;
-    /// No such space, or none the caller works in.
-    pub const NO_SPACE: i64 = -32019;
-    /// The request's parameters do not make sense together.
-    pub const INVALID_PARAMS: i64 = -32602;
-    /// What was asked for is not built yet, such as a thread on a computer that dialled in.
-    pub const NOT_AVAILABLE: i64 = -32022;
+    macro_rules! codes {
+        ($($name:ident = $code:literal, $meaning:literal;)*) => {
+            $(
+                #[doc = $meaning]
+                pub const $name: i64 = $code;
+            )*
+
+            /// Every code: its number, a name for clients, and its meaning.
+            pub const ALL: &[(i64, &str, &str)] = &[$(($code, stringify!($name), $meaning)),*];
+        };
+    }
+
+    codes! {
+        PARSE = -32700, "The message is not JSON-RPC";
+        INVALID_REQUEST = -32600, "The message is not a valid request";
+        NO_METHOD = -32601, "No such method";
+        INVALID_PARAMS = -32602, "The params are not valid";
+        INTERNAL = -32603, "The server failed";
+        NO_THREAD = -32001, "No such thread";
+        TURN_RUNNING = -32002, "A turn is already running in this thread";
+        NO_TURN = -32003, "No turn is running in this thread";
+        NO_APPROVAL = -32004, "No such approval is pending";
+        CANCELLED = -32005, "The operation was cancelled";
+        NO_QUESTION = -32006, "No such question is waiting";
+        NO_GOAL = -32007, "The thread has no active goal (or, to resume, no paused one)";
+        PROMPT_BLOCKED = -32008, "A hook stopped the prompt";
+        WORKSPACE = -32009, "The thread's workspace could not be opened";
+        NOT_ALLOWED = -32012, "The caller may not do this";
+        NO_SIGN_IN = -32013, "No valid sign-in (network transports)";
+        ARCHIVED = -32014, "The thread is archived; unarchive it first";
+        LIMIT = -32015, "A policy limit was reached";
+        NO_SCHEDULE = -32016, "No such schedule";
+        NO_MEMORY = -32017, "No such memory here";
+        MEMORY_OFF = -32018, "Memory is off for this server";
+        NO_SPACE = -32019, "No such space";
+        PROVIDER = -32020, "The model provider failed";
+        NO_MODEL = -32021, "No such model here, or not one this server may run";
+        NOT_AVAILABLE = -32022, "Not available yet, such as a thread on a computer of the person's own";
+    }
 }
 
 impl ApiError {

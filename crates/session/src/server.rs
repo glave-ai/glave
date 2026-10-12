@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use glave_event::{PrincipalId, Seq, ThreadId};
+use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
 use glave_harness::{
     Caller, Clock, Entropy, Harness, HarnessError, Hooks, Memory, Parts, Place, ReleasedWorker,
     Settings, TurnSummary, Workers, Workspace,
@@ -14,7 +14,6 @@ use glave_harness::{
 use glave_ports::{
     BlobStore, Environment, EventLog, ModelProvider, Scope, SpaceId, Spaces, ToolSource,
 };
-use jiff::Timestamp;
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
@@ -24,10 +23,7 @@ use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
 use crate::ledger::{Ledger, is_ledger};
 use crate::modes::Choice;
-use crate::protocol::{
-    ApiError, ApprovalMode, ErrorData, ModelInfo, Notification, PROTOCOL, Reply, Request,
-    ServerInfo, code,
-};
+use crate::protocol::{ApiError, ApprovalMode, ErrorData, ModelInfo, Notification, Reply, code};
 use crate::spaces::Places;
 use crate::tasks::{TaskLimits, Tasks};
 
@@ -105,21 +101,13 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) worker: Option<Environment>,
     /// Whether every new thread works on a worker, or only tasks' threads.
     pub(crate) every_thread: bool,
-    pub(crate) clock: Arc<dyn Clock>,
-    pub(crate) entropy: Arc<dyn Entropy>,
-    /// The model turns are sent to when a thread chose none.
-    pub(crate) model: String,
     /// The models threads may be sent to, the default first.
     pub(crate) models: Vec<ModelInfo>,
-    /// How much the harness asks before acting, in a thread that chose no mode.
-    pub(crate) approval: ApprovalMode,
     /// The modes a thread may choose, cautious first.
     pub(crate) modes: Vec<ApprovalMode>,
     /// The space's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
-    /// Memory, for the person's controls (`memory/*`).
-    pub(crate) memory: Option<Arc<dyn Memory>>,
     /// What the space's task ledger says, as far as this server has read it.
     pub(crate) ledger: Mutex<Ledger>,
     /// Tasks running in this server.
@@ -147,19 +135,16 @@ where
     ) -> Self {
         let hub = Arc::new(Hub::default());
         let approvals = Approvals::new(answering, Arc::clone(&hub));
-        let clock: Arc<dyn Clock> = Arc::from(wiring.clock);
-        let entropy: Arc<dyn Entropy> = Arc::from(wiring.entropy);
-        let model = settings.model.clone();
         let person = settings.person;
-        let approval = ApprovalMode::from(settings.approval);
-        let choosable = crate::modes::choosable(approval, &wiring.modes);
+        let catalog = crate::models::catalog(&settings.model, wiring.models);
+        let choosable = crate::modes::choosable(settings.approval, &wiring.modes);
         let parts = Parts {
             provider: wiring.provider,
             log: Observed::new(wiring.log, Arc::clone(&hub)),
             blobs: wiring.blobs,
             approver: approvals.clone(),
-            clock: Box::new(SharedClock(Arc::clone(&clock))),
-            entropy: Box::new(SharedEntropy(Arc::clone(&entropy))),
+            clock: wiring.clock,
+            entropy: wiring.entropy,
             workspace: wiring.workspace,
         };
         let every_thread = wiring.workers.as_ref().is_some_and(|on| on.every_thread);
@@ -171,18 +156,13 @@ where
                 }
                 .with_tools(wiring.tools)
                 .with_hooks(wiring.hooks)
-                .with_memory_if(wiring.memory.clone()),
+                .with_memory_if(wiring.memory),
                 worker: wiring.workers.map(|on| on.environment),
                 every_thread,
-                clock,
-                entropy,
-                models: crate::models::catalog(&model, wiring.models),
-                model,
-                approval,
+                models: catalog,
                 modes: choosable,
                 person,
                 limits: wiring.tasks,
-                memory: wiring.memory,
                 ledger: Mutex::new(Ledger::default()),
                 running: Mutex::new(Tasks::new()),
                 home,
@@ -198,12 +178,6 @@ where
         }
     }
 
-    /// Answers one request from the local person. `turn/start` answers when the turn has
-    /// ended; to follow it as it runs, use [`Server::start_turn`].
-    pub async fn request(&self, request: Request) -> Result<Reply, ApiError> {
-        self.request_as(&Caller::default(), request).await
-    }
-
     /// The person threads are for unless someone else starts them.
     pub fn person(&self) -> Option<PrincipalId> {
         self.inner.harness.person()
@@ -212,95 +186,6 @@ where
     /// The spaces this server serves, for a host to manage.
     pub fn spaces(&self) -> &Arc<dyn Spaces> {
         &self.inner.spaces
-    }
-
-    /// Answers one request from `caller`, the person the transport verified. A request on a
-    /// thread, or on the server's tasks, schedules or memory, is refused with `-32012` unless
-    /// the caller works in that space.
-    pub async fn request_as(&self, caller: &Caller, request: Request) -> Result<Reply, ApiError> {
-        let span = crate::trace::span(&request);
-        tracing::Instrument::instrument(self.answer(caller, request), span).await
-    }
-
-    async fn answer(&self, caller: &Caller, request: Request) -> Result<Reply, ApiError> {
-        self.allow(caller, &request).await?;
-        match request {
-            Request::Discover {} => Ok(Reply::Server(ServerInfo {
-                name: "glave".to_owned(),
-                version: env!("CARGO_PKG_VERSION").to_owned(),
-                protocols: vec![PROTOCOL.to_owned()],
-                approval: self.inner.approval,
-                approvals: self.inner.modes.clone(),
-            })),
-            Request::ModelList {} => Ok(self.list_models()),
-            threads @ (Request::ThreadStart { .. }
-            | Request::ThreadList { .. }
-            | Request::ThreadRename { .. }
-            | Request::ThreadArchive { .. }
-            | Request::ThreadUnarchive { .. }
-            | Request::ThreadDelete { .. }
-            | Request::ThreadGet { .. }) => self.thread_request(caller, threads).await,
-            Request::ThreadEvents {
-                thread,
-                after,
-                limit,
-            } => self.events(thread, after, limit).await,
-            streams @ (Request::TurnStart { .. } | Request::GoalStart { .. }) => {
-                match self.stream(caller, streams).await {
-                    Ok(started) => started?.finish().await.map(|turn| Reply::Turn { turn }),
-                    Err(background) => self
-                        .tasks_request(caller, *background)
-                        .await
-                        .unwrap_or_else(|_| Err(ApiError::new(code::INTERNAL, "not a turn"))),
-                }
-            }
-            Request::TurnCancel { thread } => self.cancel(thread).await,
-            Request::ThreadCompact { thread } => self.compact(thread).await,
-            Request::ApprovalDecide {
-                thread,
-                approval,
-                decision,
-            } => {
-                let by = caller.person;
-                self.inner
-                    .approvals
-                    .decide(thread, &approval, decision, by)?;
-                Ok(Reply::Done {})
-            }
-            Request::QuestionAnswer {
-                thread,
-                question,
-                answers,
-            } => {
-                self.inner.approvals.respond(thread, &question, answers)?;
-                Ok(Reply::Done {})
-            }
-            Request::GoalStop { thread } => self.stop_goal(caller, thread).await,
-            Request::GoalGet { thread } => Ok(Reply::Goal {
-                goal: self.goal(thread).await?,
-            }),
-            // Tasks, schedules and memory.
-            other => self.other_request(caller, other).await,
-        }
-    }
-
-    async fn other_request(&self, caller: &Caller, request: Request) -> Result<Reply, ApiError> {
-        match request {
-            other @ (Request::SpaceList { .. }
-            | Request::SpaceGet { .. }
-            | Request::SpaceCreate { .. }
-            | Request::SpaceRename { .. }) => self.space_request(caller, other).await,
-            other @ (Request::MemoryList { .. }
-            | Request::MemorySave { .. }
-            | Request::MemoryEdit { .. }
-            | Request::MemoryMove { .. }
-            | Request::MemoryForget { .. }
-            | Request::MemoryRestore { .. }) => self.memory_request(caller, other).await,
-            other => self
-                .tasks_request(caller, other)
-                .await
-                .unwrap_or_else(|_| Err(ApiError::new(code::INTERNAL, "not a task request"))),
-        }
     }
 
     /// Everything `thread` publishes from now on: its events as they are stored, and progress.
@@ -426,7 +311,33 @@ where
         Ok(id)
     }
 
-    async fn events(
+    /// The latest event of type `kind` in `thread`, decoded: how a choice the thread made is
+    /// read back from the log, by any server of the deployment.
+    pub(crate) async fn latest(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kind: &str,
+    ) -> Result<Option<Body>, ApiError> {
+        let failed =
+            |error: &dyn std::fmt::Display| ApiError::new(code::INTERNAL, error.to_string());
+        let latest = self
+            .inner
+            .harness
+            .log()
+            .latest_of(scope, thread, &[kind])
+            .await
+            .map_err(|error| failed(&error))?;
+        latest
+            .map(|raw| {
+                decode(raw)
+                    .map(|event| event.body)
+                    .map_err(|error| failed(&error))
+            })
+            .transpose()
+    }
+
+    pub(crate) async fn events(
         &self,
         thread: ThreadId,
         after: Option<Seq>,
@@ -454,7 +365,7 @@ where
         Ok(Reply::Events { events, next })
     }
 
-    async fn cancel(&self, thread: ThreadId) -> Result<Reply, ApiError> {
+    pub(crate) async fn cancel(&self, thread: ThreadId) -> Result<Reply, ApiError> {
         let mut finished = {
             let threads = self
                 .inner
@@ -478,7 +389,7 @@ where
         Ok(Reply::Done {})
     }
 
-    async fn compact(&self, thread: ThreadId) -> Result<Reply, ApiError> {
+    pub(crate) async fn compact(&self, thread: ThreadId) -> Result<Reply, ApiError> {
         let (finish, mut done) = watch::channel(None);
         self.occupy(thread, finish, |inner, mut held, cancel| async move {
             let compacted = inner.harness.compact(&mut held, &cancel, &mut |_| {}).await;
@@ -493,24 +404,6 @@ where
             before_tokens: compacted.before_tokens,
             after_tokens: compacted.after_tokens,
         })
-    }
-}
-
-/// The server's clock, shared with its harness.
-struct SharedClock(Arc<dyn Clock>);
-
-impl Clock for SharedClock {
-    fn now(&self) -> Timestamp {
-        self.0.now()
-    }
-}
-
-/// The server's randomness, shared with its harness.
-struct SharedEntropy(Arc<dyn Entropy>);
-
-impl Entropy for SharedEntropy {
-    fn bytes(&self) -> [u8; 10] {
-        self.0.bytes()
     }
 }
 

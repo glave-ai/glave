@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import type { ApprovalMode, ThreadStartParams } from '@glave/client';
-import { type GlzComposed, GlzComposerComponent } from '@glave/glaze';
+import { GlzComposerComponent } from '@glave/glaze';
 
 import { SessionService } from '../../services/session.service';
 import { SpacesService } from '../../services/spaces.service';
@@ -56,7 +56,7 @@ export class HomeComponent {
     return found === undefined ? null : `${COPY.in} ${found.name}`;
   });
 
-  protected async send(composed: GlzComposed): Promise<void> {
+  protected async send(prompt: string): Promise<void> {
     this.starting.set(true);
     this.error.set(null);
     try {
@@ -69,11 +69,11 @@ export class HomeComponent {
         ...(approval === null ? {} : { approval }),
       };
       const { thread } = await this.session.call('thread/start', params);
-      const state: FirstPrompt = { prompt: composed.text };
+      const state: FirstPrompt = { prompt };
       await this.router.navigate(['/t', thread.id], { state });
       void this.spaces.refresh();
     } catch (error: unknown) {
-      this.draft.set(composed.text);
+      this.draft.set(prompt);
       this.error.set(error instanceof Error ? error.message : String(error));
     } finally {
       this.starting.set(false);

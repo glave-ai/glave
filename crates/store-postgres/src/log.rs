@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use deadpool_postgres::Pool;
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
-use glave_keys::{EventFields, KeyError, erased_payload};
+use glave_keys::{EventFields, erased_payload};
 use glave_ports::search::{Found, indexed, query_terms};
 use glave_ports::{
     EventLog, LogError, OrgId, Scope, SpaceId, ThreadQuery, ThreadView, check_append,
@@ -89,7 +89,11 @@ impl EventLog for PostgresLog {
                     .try_get(0)
                     .map_err(database)?;
                 let last = last
-                    .map(|seq| u64::try_from(seq).map_err(corrupt).and_then(stored_seq))
+                    .map(|seq| {
+                        u64::try_from(seq)
+                            .map_err(LogError::corrupt)
+                            .and_then(stored_seq)
+                    })
                     .transpose()?;
                 check_append(last, &events)?;
                 let insert = transaction.prepare_cached(INSERT).await.map_err(database)?;
@@ -124,7 +128,7 @@ impl EventLog for PostgresLog {
                 }
                 let mut position = 0_i64;
                 for row in &inserted {
-                    position = position.max(row.try_get::<_, i64>(0).map_err(corrupt)?);
+                    position = position.max(row.try_get::<_, i64>(0).map_err(LogError::corrupt)?);
                 }
                 crate::views::fold_in(&transaction, &scope, &events, position).await?;
                 transaction.commit().await.map_err(database)
@@ -147,7 +151,11 @@ impl EventLog for PostgresLog {
             if words.is_empty() || limit == 0 {
                 return Ok(Vec::new());
             }
-            let Some(hashed) = keys.search_terms(&scope, &words).await.map_err(sealing)? else {
+            let Some(hashed) = keys
+                .search_terms(&scope, &words)
+                .await
+                .map_err(LogError::sealing)?
+            else {
                 return Ok(Vec::new());
             };
             // Hashes are hex, so quoting each is all the query syntax needs.
@@ -168,11 +176,11 @@ impl EventLog for PostgresLog {
                 .map_err(database)?;
             rows.iter()
                 .map(|row| {
-                    let thread: Uuid = row.try_get(0).map_err(corrupt)?;
-                    let seq: i64 = row.try_get(1).map_err(corrupt)?;
+                    let thread: Uuid = row.try_get(0).map_err(LogError::corrupt)?;
+                    let seq: i64 = row.try_get(1).map_err(LogError::corrupt)?;
                     Ok(Found {
-                        thread: ThreadId::try_from(thread).map_err(corrupt)?,
-                        seq: stored_seq(u64::try_from(seq).map_err(corrupt)?)?,
+                        thread: ThreadId::try_from(thread).map_err(LogError::corrupt)?,
+                        seq: stored_seq(u64::try_from(seq).map_err(LogError::corrupt)?)?,
                     })
                 })
                 .collect()
@@ -249,39 +257,6 @@ impl EventLog for PostgresLog {
         }
     }
 
-    fn threads(
-        &self,
-        scope: &Scope,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send {
-        let scope = *scope;
-        let pool = self.pool.clone();
-        async move {
-            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-            let client = connection(&pool).await.map_err(storage)?;
-            let statement = client
-                .prepare_cached(
-                    "SELECT thread FROM events WHERE org = $1 AND space = $2
-                     GROUP BY thread ORDER BY MAX(pos) DESC LIMIT $3",
-                )
-                .await
-                .map_err(database)?;
-            let rows = client
-                .query(
-                    &statement,
-                    &[&scope.org.as_uuid(), &scope.space.as_uuid(), &limit],
-                )
-                .await
-                .map_err(database)?;
-            rows.iter()
-                .map(|row| {
-                    let id: Uuid = row.try_get(0).map_err(corrupt)?;
-                    ThreadId::try_from(id).map_err(corrupt)
-                })
-                .collect()
-        }
-    }
-
     fn locate(
         &self,
         thread: ThreadId,
@@ -301,8 +276,8 @@ impl EventLog for PostgresLog {
                 .await
                 .map_err(database)?;
             row.map(|row| {
-                let org: Uuid = row.try_get(0).map_err(corrupt)?;
-                let space: Uuid = row.try_get(1).map_err(corrupt)?;
+                let org: Uuid = row.try_get(0).map_err(LogError::corrupt)?;
+                let space: Uuid = row.try_get(1).map_err(LogError::corrupt)?;
                 Ok(Scope {
                     org: OrgId::from_uuid(org),
                     space: SpaceId::from_uuid(space),
@@ -354,14 +329,19 @@ impl Columns {
             columns.kind.push(event.kind.as_str().to_owned());
             columns.v.push(i64::from(event.v.get()));
             columns.glave.push(i64::from(event.glave));
-            let sealed = keys.seal_event(scope, event).await.map_err(sealing)?;
+            let sealed = keys
+                .seal_event(scope, event)
+                .await
+                .map_err(LogError::sealing)?;
             columns.data.push(sealed.bytes);
             columns.key_id.push(sealed.key_id);
             let words = indexed(event);
             let hashed = if words.is_empty() {
                 None
             } else {
-                keys.search_terms(scope, &words).await.map_err(sealing)?
+                keys.search_terms(scope, &words)
+                    .await
+                    .map_err(LogError::sealing)?
             };
             columns.words.push(hashed.map(|hashed| hashed.join(" ")));
         }
@@ -371,20 +351,21 @@ impl Columns {
 
 /// A stored row back into an event, checking every column and opening the payload.
 async fn event(keys: &PostgresKeyring, scope: &Scope, row: &Row) -> Result<RawEvent, LogError> {
-    let glave: i64 = row.try_get("glave").map_err(corrupt)?;
-    let id: Uuid = row.try_get("id").map_err(corrupt)?;
-    let thread: Uuid = row.try_get("thread").map_err(corrupt)?;
-    let seq: i64 = row.try_get("seq").map_err(corrupt)?;
-    let at: Timestamp = row.try_get("at").map_err(corrupt)?;
-    let kind: String = row.try_get("type").map_err(corrupt)?;
-    let v: i64 = row.try_get("v").map_err(corrupt)?;
-    let data: Vec<u8> = row.try_get("data").map_err(corrupt)?;
-    let key_id: Option<String> = row.try_get("key_id").map_err(corrupt)?;
-    let glave = u32::try_from(glave).map_err(corrupt)?;
-    let thread = ThreadId::try_from(thread).map_err(corrupt)?;
-    let seq = stored_seq(u64::try_from(seq).map_err(corrupt)?)?;
-    let kind = TypeName::new(kind).map_err(corrupt)?;
-    let v = PayloadVersion::new(u32::try_from(v).map_err(corrupt)?).map_err(corrupt)?;
+    let glave: i64 = row.try_get("glave").map_err(LogError::corrupt)?;
+    let id: Uuid = row.try_get("id").map_err(LogError::corrupt)?;
+    let thread: Uuid = row.try_get("thread").map_err(LogError::corrupt)?;
+    let seq: i64 = row.try_get("seq").map_err(LogError::corrupt)?;
+    let at: Timestamp = row.try_get("at").map_err(LogError::corrupt)?;
+    let kind: String = row.try_get("type").map_err(LogError::corrupt)?;
+    let v: i64 = row.try_get("v").map_err(LogError::corrupt)?;
+    let data: Vec<u8> = row.try_get("data").map_err(LogError::corrupt)?;
+    let key_id: Option<String> = row.try_get("key_id").map_err(LogError::corrupt)?;
+    let glave = u32::try_from(glave).map_err(LogError::corrupt)?;
+    let thread = ThreadId::try_from(thread).map_err(LogError::corrupt)?;
+    let seq = stored_seq(u64::try_from(seq).map_err(LogError::corrupt)?)?;
+    let kind = TypeName::new(kind).map_err(LogError::corrupt)?;
+    let v = PayloadVersion::new(u32::try_from(v).map_err(LogError::corrupt)?)
+        .map_err(LogError::corrupt)?;
     let data = match key_id {
         // Written before sealing: stored as written.
         None => data,
@@ -399,42 +380,26 @@ async fn event(keys: &PostgresKeyring, scope: &Scope, row: &Row) -> Result<RawEv
             match keys.open_event(scope, &fields, &key_id, &data).await {
                 Ok(opened) => opened,
                 Err(error) => {
-                    erased_payload(&key_id, &error).ok_or_else(|| opening(seq, &error))?
+                    erased_payload(&key_id, &error).ok_or_else(|| LogError::opening(seq, &error))?
                 }
             }
         }
     };
-    let data = String::from_utf8(data).map_err(corrupt)?;
+    let data = String::from_utf8(data).map_err(LogError::corrupt)?;
     Ok(RawEvent {
         glave,
-        id: EventId::try_from(id).map_err(corrupt)?,
+        id: EventId::try_from(id).map_err(LogError::corrupt)?,
         thread,
         seq,
         at: At::from(at),
         kind,
         v,
-        data: RawValue::from_string(data).map_err(corrupt)?,
+        data: RawValue::from_string(data).map_err(LogError::corrupt)?,
     })
 }
 
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "taken by value to pass straight to map_err"
-)]
-fn sealing(error: KeyError) -> LogError {
-    LogError::Storage(format!("could not seal an event: {error}"))
-}
-
-fn opening(seq: Seq, error: &KeyError) -> LogError {
-    LogError::Storage(format!("event {} could not be opened: {error}", seq.get()))
-}
-
 fn stored_seq(seq: u64) -> Result<Seq, LogError> {
-    Seq::new(seq).map_err(corrupt)
-}
-
-fn corrupt(error: impl std::fmt::Display) -> LogError {
-    LogError::Storage(format!("a stored event is corrupt: {error}"))
+    Seq::new(seq).map_err(LogError::corrupt)
 }
 
 fn storage(error: impl std::fmt::Display) -> LogError {

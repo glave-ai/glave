@@ -1,12 +1,6 @@
-use super::*;
+use glave_ports::block_on;
 
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
+use super::*;
 
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("glave-ws-{name}-{}", std::process::id()));
@@ -19,7 +13,7 @@ fn scratch(name: &str) -> PathBuf {
 #[test]
 fn paths_stay_inside_the_workspace() {
     let dir = scratch("confine");
-    block_on(async {
+    block_on!(async {
         let ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
         let root = ws.root().to_owned();
         assert_eq!(ws.stat("src/main.rs").await.unwrap().path, "src/main.rs");
@@ -53,7 +47,7 @@ fn paths_stay_inside_the_workspace() {
 fn symlinks_cannot_escape() {
     let dir = scratch("symlink");
     std::os::unix::fs::symlink(std::env::temp_dir(), dir.join("out")).unwrap();
-    block_on(async {
+    block_on!(async {
         let ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
         assert!(ws.stat("out/anything").await.is_err());
     });
@@ -68,7 +62,7 @@ fn dangling_symlinks_are_refused() {
     let outside = std::env::temp_dir().join(format!("glave-ws-escape-{}", std::process::id()));
     let _ = std::fs::remove_file(&outside);
     std::os::unix::fs::symlink(&outside, dir.join("escape")).unwrap();
-    block_on(async {
+    block_on!(async {
         let ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
         assert!(ws.stat("escape").await.is_err());
         assert!(ws.stat("escape/deeper.txt").await.is_err());
@@ -78,7 +72,7 @@ fn dangling_symlinks_are_refused() {
 #[test]
 fn changes_need_a_fresh_read() {
     let dir = scratch("fresh");
-    block_on(async {
+    block_on!(async {
         let ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
         let file = ws.stat("src/main.rs").await.unwrap();
         let now = file.digest.as_ref();
@@ -145,7 +139,7 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
     };
     let mut refusals = Vec::new();
     let mut landed = 0usize;
-    block_on(async {
+    block_on!(async {
         let mut ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
         // The sandbox as the binding records it; no command runs here.
         ws.sandbox = Some(Sandbox {

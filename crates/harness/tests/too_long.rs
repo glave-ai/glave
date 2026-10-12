@@ -11,11 +11,11 @@ mod support;
 mod too_long {
     use std::collections::VecDeque;
     use std::future::{Future, ready};
-    use std::sync::atomic::{AtomicI64, AtomicU64};
     use std::sync::{Arc, Mutex};
 
     use glave_event::{Outcome, Part, StopReason};
     use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Parts};
+    use glave_ports::testing::{CountingEntropy, ManualClock};
     use glave_ports::{
         Completion, Delta, Failure, MemoryBlobs, MemoryLog, Message, ModelProvider, ModelRequest,
         ProviderError,
@@ -86,8 +86,8 @@ mod too_long {
             log: MemoryLog::new(),
             blobs: MemoryBlobs::new(),
             approver: AllowAll,
-            clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
-            entropy: Box::new(Counting(AtomicU64::new(1))),
+            clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
+            entropy: Box::new(CountingEntropy::starting_at(1)),
             workspace: workspace(&dir).await,
         };
         (Harness::new(parts, settings()), seen)
@@ -102,7 +102,7 @@ mod too_long {
 
     #[test]
     fn a_step_too_long_for_the_model_compacts_and_tries_again() {
-        block_on(async {
+        block_on!(async {
             let mut answers = first_turn();
             answers.extend([
                 too_long(),
@@ -147,7 +147,7 @@ mod too_long {
 
     #[test]
     fn a_step_still_too_long_after_compacting_fails_with_the_refusal() {
-        block_on(async {
+        block_on!(async {
             let mut answers = first_turn();
             answers.extend([too_long(), Ok(text("Summary.")), too_long()]);
             let (harness, _) = harness("too-long-fails", answers).await;
@@ -169,7 +169,7 @@ mod too_long {
 
     #[test]
     fn a_first_message_too_long_is_not_tried_again() {
-        block_on(async {
+        block_on!(async {
             let (harness, seen) = harness("too-long-first", vec![too_long()]).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let failed = harness

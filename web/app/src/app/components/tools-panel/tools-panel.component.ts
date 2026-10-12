@@ -7,7 +7,6 @@ import {
 } from '@glave/glaze';
 import { X } from 'lucide';
 
-import { changedFiles } from '../../lib/files';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { TaskListComponent } from '../task-list/task-list.component';
@@ -18,11 +17,11 @@ const COPY = {
   close: 'Close the tools',
   tabs: 'Tools',
   tasks: 'Tasks',
-  files: 'Files',
+  changes: 'Changes',
 } as const;
 
 /**
- * The thread's tools, beside it: the background tasks, and the files this thread changed.
+ * The thread's tools, beside it: the background tasks, and the changes this thread made to files.
  * Its tab is remembered with the panel. As a sheet on a narrow screen it has a close button;
  * beside the page, its edge collapses it.
  */
@@ -48,9 +47,9 @@ export class ToolsPanelComponent {
   protected readonly tab = this.panel.tabIndex;
   /** Whether the panel is a sheet over the page, which has a close button of its own. */
   protected readonly narrow = this.panel.narrow;
-  protected readonly filesLabel = computed(() => {
-    const count = changedFiles(this.thread.log()).length;
-    return count === 0 ? COPY.files : `${COPY.files} (${String(count)})`;
+  protected readonly changesLabel = computed(() => {
+    const count = this.thread.files().length;
+    return count === 0 ? COPY.changes : `${COPY.changes} (${String(count)})`;
   });
 
   protected select(index: number): void {

@@ -4,18 +4,10 @@
 #[cfg(test)]
 mod over_http {
     use glave_event::{Arguments, Part, StopReason};
-    use glave_ports::{Message, ModelProvider, ModelRequest, ProviderError, ToolChoice};
+    use glave_ports::{Message, ModelProvider, ModelRequest, ProviderError, ToolChoice, block_on};
     use glave_provider_openai::fake::{FakeServer, Reply};
     use glave_provider_openai::{Config, IDLE_TIMEOUT, OpenAiCompatible};
     use serde_json::json;
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
 
     fn provider(base_url: &str, key: Option<&str>) -> OpenAiCompatible {
         OpenAiCompatible::new(Config {
@@ -48,7 +40,7 @@ mod over_http {
         provider: &OpenAiCompatible,
     ) -> (Result<glave_ports::Completion, ProviderError>, String) {
         let mut live = String::new();
-        let result = block_on(provider.complete(&request(), &mut |delta| {
+        let result = block_on!(provider.complete(&request(), &mut |delta| {
             if let glave_ports::Delta::Text(text) = delta {
                 live.push_str(&text);
             }
@@ -87,7 +79,7 @@ mod over_http {
             idle_timeout: std::time::Duration::from_millis(200),
         })
         .unwrap();
-        let error = block_on(quick.complete(&request(), &mut |_| {})).unwrap_err();
+        let error = block_on!(quick.complete(&request(), &mut |_| {})).unwrap_err();
         assert_eq!(error, ProviderError::Timeout { seconds: 0 });
         assert!(error.is_transient(), "a silence is worth one more try");
     }
@@ -104,8 +96,8 @@ mod over_http {
         .unwrap();
         let mut anthropic = request();
         anthropic.model = "anthropic/claude-haiku-5.5".into();
-        block_on(openrouter.complete(&anthropic, &mut |_| {})).unwrap();
-        block_on(openrouter.complete(&request(), &mut |_| {})).unwrap();
+        block_on!(openrouter.complete(&anthropic, &mut |_| {})).unwrap();
+        block_on!(openrouter.complete(&request(), &mut |_| {})).unwrap();
         let received = server.received();
         assert_eq!(
             received[0].body["cache_control"],

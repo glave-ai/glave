@@ -13,7 +13,7 @@ use glave_event::{
 use glave_harness::{Clock as _, Entropy as _, OsEntropy, SystemClock, memory_ledger};
 use glave_keys::{KeySettings, MemoryRoot};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory, Tidier, Writer};
-use glave_ports::{EventLog, OrgId, Scope, SpaceId};
+use glave_ports::{EventLog, ModelProvider, OrgId, Scope, SpaceId};
 use glave_store_sqlite::{SqliteLog, Store};
 
 use crate::error::EvalError;
@@ -140,7 +140,10 @@ impl Remembering {
 
     /// Tidies every space's memory now, on `model`, whether or not it is due. What each run
     /// did, for the transcript.
-    pub async fn tidy(&self, model: &dyn Tidier) -> Result<Vec<String>, EvalError> {
+    pub async fn tidy<P: ModelProvider>(
+        &self,
+        model: &Tidier<P>,
+    ) -> Result<Vec<String>, EvalError> {
         let Some(memory) = &self.memory else {
             return Ok(Vec::new());
         };

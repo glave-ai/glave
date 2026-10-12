@@ -70,7 +70,7 @@ mod checks {
     #[test]
     fn in_auto_a_risky_command_with_no_one_there_is_not_run_and_the_model_learns_why() {
         let dir = folder("checks-auto");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, vec![bash("git reset --hard")], StopReason::ToolUse),
                 answer(Some("I left it."), vec![], StopReason::EndTurn),
@@ -93,7 +93,7 @@ mod checks {
     fn in_ask_mode_a_command_that_only_reads_runs_without_asking() {
         let dir = folder("checks-reads");
         std::fs::write(dir.join("notes.txt"), "hello\n").unwrap();
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -125,7 +125,7 @@ mod checks {
     #[test]
     fn allowing_bash_for_the_thread_never_silences_a_risky_command() {
         let dir = folder("checks-allowed");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, vec![bash("touch a.txt")], StopReason::ToolUse),
                 answer(None, vec![bash("git clean -fdx")], StopReason::ToolUse),

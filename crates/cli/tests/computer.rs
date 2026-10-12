@@ -9,17 +9,9 @@ mod computer_tests {
 
     use glave_computer::RemoteComputers;
     use glave_ports::{
-        BoxFuture, Cancellation, Command, Computers, Ending, Environment, Output, Sources,
-        conformance,
+        BoxFuture, Command, Computers, Ending, Environment, NeverCancelled, Output, Sources,
+        block_on, conformance,
     };
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
 
     #[derive(Default)]
     struct Collect(Mutex<String>);
@@ -31,24 +23,13 @@ mod computer_tests {
         }
     }
 
-    struct Never;
-
-    impl Cancellation for Never {
-        fn is_cancelled(&self) -> bool {
-            false
-        }
-        fn cancelled(&self) -> BoxFuture<'_, ()> {
-            Box::pin(std::future::pending())
-        }
-    }
-
     #[test]
     fn the_binary_serves_a_computer_that_passes_the_suite() {
         let dir = std::env::temp_dir().join(format!("glave-e2e-computer-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let work = dir.join("work");
         std::fs::create_dir_all(&work).unwrap();
-        block_on(async {
+        block_on!(async {
             let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_glave"))
                 .args(["computer", "serve", "--stdio"])
                 .env("GLAVE_HOME", dir.join("home"))
@@ -71,7 +52,7 @@ mod computer_tests {
                 .unwrap();
             let seen = Collect::default();
             let finished = remote
-                .run(here.id, &Command::new("env"), &seen, &Never)
+                .run(here.id, &Command::new("env"), &seen, &NeverCancelled)
                 .await
                 .unwrap();
             assert_eq!(finished.ending, Ending::Exited { code: 0 });

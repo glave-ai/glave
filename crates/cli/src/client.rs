@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use glave_event::{Body, CallId, GoalReason, Outcome, PrincipalKind, ThreadId, decode};
 use glave_gateway::Gateway;
-use glave_harness::{Caller, Cancel, Goal, Question};
+use glave_harness::{ApprovalMode, Caller, Cancel, Goal, Question};
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
 use glave_session::protocol::{Answer, ApiError, Notification, Reply, Request, Update, code};
@@ -47,16 +47,9 @@ impl Session<'_> {
     /// Starts `request`, a turn or a goal, and follows it.
     pub async fn start(&self, request: Request) -> Result<Following, ApiError> {
         match self {
-            Self::Here(server) => {
-                match Box::pin(server.start_streaming(&Caller::default(), request)).await {
-                    Ok(started) => started.map(Following::Here),
-                    Err(other) => Err(ApiError {
-                        code: code::INTERNAL,
-                        message: format!("{} does not stream", other.method()),
-                        data: None,
-                    }),
-                }
-            }
+            Self::Here(server) => Box::pin(server.start_streaming(&Caller::default(), request))
+                .await
+                .map(Following::Here),
             Self::Elsewhere(remote) => Box::pin(remote.start(&request))
                 .await
                 .map(Following::Elsewhere),
@@ -91,6 +84,10 @@ pub struct Client<'a> {
     pub asks: bool,
     /// The MCP servers started here, if any.
     pub servers: Option<&'a Servers>,
+    /// The model and approval mode each turn chooses for the thread, when the person named
+    /// them for a server elsewhere: the server records a choice only when it changes.
+    pub model: Option<String>,
+    pub approval: Option<ApprovalMode>,
 }
 
 impl Client<'_> {
@@ -104,8 +101,8 @@ impl Client<'_> {
                 prompt: prompt.to_owned(),
                 background: false,
                 budget: None,
-                model: None,
-                approval: None,
+                model: self.model.clone(),
+                approval: self.approval,
                 meta: Meta::default(),
             })
             .await;

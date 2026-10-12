@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicI64, Ordering};
 
 use aws_lc_rs::signature::{
     KeyPair as _, RSA_PKCS1_2048_8192_SHA256, RsaKeyPair, UnparsedPublicKey,
@@ -7,28 +6,12 @@ use aws_lc_rs::signature::{
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use glave_ports::auth::Auth;
+use glave_ports::block_on;
+use glave_ports::testing::{FakeHttp, ManualClock, Received};
 
 use super::*;
-use crate::fake::FakeGoogle;
 
 mod gemini;
-
-/// A clock the test moves.
-struct Manual(AtomicI64);
-
-impl Clock for Manual {
-    fn now(&self) -> Timestamp {
-        Timestamp::from_second(self.0.load(Ordering::SeqCst)).unwrap()
-    }
-}
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 const REQUEST: Outgoing<'static> = Outgoing {
     method: "POST",
@@ -47,10 +30,17 @@ fn token(answer: &str, expires_in: u32) -> (u16, String) {
     )
 }
 
+/// A request's body as a form.
+fn form(received: &Received) -> HashMap<String, String> {
+    url::form_urlencoded::parse(received.body.as_bytes())
+        .into_owned()
+        .collect()
+}
+
 /// A folder of credential files, and a clock.
 struct Pod {
     folder: PathBuf,
-    clock: Arc<Manual>,
+    clock: ManualClock,
 }
 
 impl Pod {
@@ -60,7 +50,7 @@ impl Pod {
         std::fs::create_dir_all(&folder).unwrap();
         Self {
             folder,
-            clock: Arc::new(Manual(AtomicI64::new(1_000_000))),
+            clock: ManualClock::at_second(1_000_000),
         }
     }
 
@@ -75,7 +65,11 @@ impl Pod {
             .iter()
             .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
             .collect();
-        let adc = Adc::from_env(|name| vars.get(name).cloned(), SCOPE, self.clock.clone());
+        let adc = Adc::from_env(
+            |name| vars.get(name).cloned(),
+            SCOPE,
+            Arc::new(self.clock.clone()),
+        );
         Auth::Changing(Arc::new(adc.unwrap()))
     }
 }
@@ -87,7 +81,7 @@ impl Drop for Pod {
 }
 
 fn bearer(auth: &Auth) -> Result<String, AuthError> {
-    let headers = block_on(auth.headers(&REQUEST))?;
+    let headers = block_on!(auth.headers(&REQUEST))?;
     assert_eq!(headers.len(), 1);
     assert_eq!(headers[0].name, "authorization");
     Ok(headers[0].value.expose().to_owned())
@@ -95,14 +89,15 @@ fn bearer(auth: &Auth) -> Result<String, AuthError> {
 
 #[test]
 fn on_gke_the_metadata_server_s_token_is_kept_until_near_expiry() {
-    let google = FakeGoogle::start(vec![token("ya29.meta-1", 3599), token("ya29.meta-2", 3599)]);
+    let google =
+        FakeHttp::start(vec![token("ya29.meta-1", 3599), token("ya29.meta-2", 3599)]).unwrap();
     let pod = Pod::new("metadata");
     let home = pod.folder.display().to_string();
     let auth = pod.adc(&[("GCE_METADATA_HOST", &google.host), ("HOME", &home)]);
     assert_eq!(bearer(&auth).unwrap(), "Bearer ya29.meta-1");
-    pod.clock.0.fetch_add(3_000, Ordering::SeqCst);
+    pod.clock.advance_seconds(3_000);
     assert_eq!(bearer(&auth).unwrap(), "Bearer ya29.meta-1", "kept");
-    pod.clock.0.fetch_add(400, Ordering::SeqCst);
+    pod.clock.advance_seconds(400);
     assert_eq!(bearer(&auth).unwrap(), "Bearer ya29.meta-2", "replaced");
     let received = google.received();
     assert_eq!(received.len(), 2);
@@ -116,7 +111,7 @@ fn on_gke_the_metadata_server_s_token_is_kept_until_near_expiry() {
 
 #[test]
 fn a_service_account_key_signs_an_assertion_google_can_verify() {
-    let google = FakeGoogle::start(vec![token("ya29.sa", 3600)]);
+    let google = FakeHttp::start(vec![token("ya29.sa", 3600)]).unwrap();
     let pod = Pod::new("service-account");
     let file = serde_json::json!({
         "type": "service_account",
@@ -132,7 +127,7 @@ fn a_service_account_key_signs_an_assertion_google_can_verify() {
     let token_uri = format!("{}/token", google.url);
     let received = google.received();
     assert_eq!(received[0].path, "/token");
-    let form = received[0].form();
+    let form = form(&received[0]);
     assert_eq!(
         form["grant_type"],
         "urn:ietf:params:oauth:grant-type:jwt-bearer"
@@ -173,7 +168,7 @@ fn a_service_account_key_signs_an_assertion_google_can_verify() {
 
 #[test]
 fn gcloud_s_user_credentials_are_found_and_refreshed() {
-    let google = FakeGoogle::start(vec![token("ya29.user", 3599)]);
+    let google = FakeHttp::start(vec![token("ya29.user", 3599)]).unwrap();
     let pod = Pod::new("gcloud");
     let file = serde_json::json!({
         "type": "authorized_user",
@@ -189,7 +184,7 @@ fn gcloud_s_user_credentials_are_found_and_refreshed() {
         ("GCE_METADATA_HOST", "127.0.0.1:9"),
     ]);
     assert_eq!(bearer(&auth).unwrap(), "Bearer ya29.user");
-    let form = google.received()[0].form();
+    let form = form(&google.received()[0]);
     assert_eq!(form["grant_type"], "refresh_token");
     assert_eq!(form["refresh_token"], "1//refresh");
     assert_eq!(form["client_id"], "client-1.apps.googleusercontent.com");
@@ -197,13 +192,14 @@ fn gcloud_s_user_credentials_are_found_and_refreshed() {
 
 #[test]
 fn an_external_account_exchanges_its_token_then_impersonates() {
-    let google = FakeGoogle::start(vec![
+    let google = FakeHttp::start(vec![
         token("ya29.federated", 3600),
         (
             200,
             r#"{"accessToken":"ya29.impersonated","expireTime":"1970-01-12T14:46:40Z"}"#.into(),
         ),
-    ]);
+    ])
+    .unwrap();
     let pod = Pod::new("external");
     let subject = pod.file("subject", "cluster-jwt-1\n");
     let file = serde_json::json!({
@@ -219,7 +215,7 @@ fn an_external_account_exchanges_its_token_then_impersonates() {
     let auth = pod.adc(&[("GOOGLE_APPLICATION_CREDENTIALS", &path)]);
     assert_eq!(bearer(&auth).unwrap(), "Bearer ya29.impersonated");
     let received = google.received();
-    let sts = received[0].form();
+    let sts = form(&received[0]);
     assert_eq!(received[0].path, "/v1/token");
     assert_eq!(sts["grant_type"], GRANT);
     assert_eq!(sts["subject_token"], "cluster-jwt-1");
@@ -249,10 +245,11 @@ const GRANT: &str = "urn:ietf:params:oauth:grant-type:token-exchange";
 
 #[test]
 fn an_external_account_reads_a_json_token_from_a_url() {
-    let google = FakeGoogle::start(vec![
+    let google = FakeHttp::start(vec![
         (200, r#"{"access_token":"idp-token-1"}"#.into()),
         token("ya29.federated", 3600),
-    ]);
+    ])
+    .unwrap();
     let pod = Pod::new("external-url");
     let file = serde_json::json!({
         "type": "external_account",
@@ -271,18 +268,19 @@ fn an_external_account_reads_a_json_token_from_a_url() {
     let received = google.received();
     assert_eq!(received[0].path, "/identity");
     assert_eq!(received[0].headers["metadata"], "True");
-    assert_eq!(received[1].form()["subject_token"], "idp-token-1");
+    assert_eq!(form(&received[1])["subject_token"], "idp-token-1");
 }
 
 #[test]
 fn a_refused_exchange_says_why_without_any_secret() {
-    let google = FakeGoogle::start(vec![
+    let google = FakeHttp::start(vec![
         (
             400,
             r#"{"error":"invalid_grant","error_description":"Invalid JWT Signature."}"#.into(),
         ),
         (503, "{}".into()),
-    ]);
+    ])
+    .unwrap();
     let pod = Pod::new("refused");
     let file = serde_json::json!({
         "type": "service_account",
@@ -355,7 +353,7 @@ fn off_google_cloud_the_metadata_server_s_absence_says_what_to_set() {
         error.to_string().contains("GOOGLE_APPLICATION_CREDENTIALS"),
         "{error}"
     );
-    let clock: Arc<dyn Clock> = Arc::new(Manual(AtomicI64::new(0)));
+    let clock: Arc<dyn Clock> = Arc::new(ManualClock::at_second(0));
     let wrong = Adc::from_env(
         |name| (name == "GCE_METADATA_HOST").then(|| "evil.com/x?".to_owned()),
         SCOPE,

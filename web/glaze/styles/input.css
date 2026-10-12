@@ -1,5 +1,5 @@
 /*
- * Native inputs, textareas, selects and sliders marked glzInput or glzSlider. They are styled
+ * Native inputs, textareas and selects marked glzInput. They are styled
  * here, globally, because they stay native elements (directives carry no styles).
  */
 
@@ -56,14 +56,4 @@ select.glz-input {
     calc(100% - 0.8rem) 55%;
   background-size: 0.3rem 0.3rem;
   background-repeat: no-repeat;
-}
-
-.glz-slider {
-  width: 100%;
-  accent-color: var(--glz-color-accent);
-}
-
-.glz-slider:focus-visible {
-  outline: 2px solid var(--glz-color-focus);
-  outline-offset: 4px;
 }

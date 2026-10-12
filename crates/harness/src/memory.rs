@@ -45,20 +45,25 @@ pub fn memory_ledger() -> Option<ThreadId> {
 }
 
 /// Who and where a memory request is for: always from the session or the thread, never from
-/// the model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// the model. A memory server receives it in each request's `_meta`, flat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryContext {
     /// The person the thread works for; personal memory is theirs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub person: Option<PrincipalId>,
     /// The agent that runs the thread: who a memory the model saves is `by`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<PrincipalId>,
     /// The thread's organization and space.
+    #[serde(flatten)]
     pub scope: Scope,
     /// The thread asking, and the `seq` a save in it is recorded at.
     pub thread: ThreadId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seq: Option<Seq>,
     /// Whether the thread has read untrusted content or a secrets file: a memory saved now
     /// records `untrusted_read`.
+    #[serde(default)]
     pub untrusted_read: bool,
 }
 

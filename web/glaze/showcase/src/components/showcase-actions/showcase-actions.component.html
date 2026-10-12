@@ -1,0 +1,69 @@
+<section id="actions" aria-labelledby="actions-heading">
+  <h2 id="actions-heading">{{ copy.heading }}</h2>
+
+  <h3>{{ copy.buttons }}</h3>
+  <div class="row">
+    <button glzButton variant="primary" data-testid="showcase-primary">{{ copy.primary }}</button>
+    <button glzButton>{{ copy.secondary }}</button>
+    <button glzButton variant="ghost">{{ copy.ghost }}</button>
+    <button glzButton variant="danger">{{ copy.danger }}</button>
+    <button glzButton size="sm">{{ copy.small }}</button>
+    <button glzButton size="lg">{{ copy.large }}</button>
+    <a glzButton [href]="values.link">{{ copy.link }}</a>
+  </div>
+
+  <h3>{{ copy.iconButtons }}</h3>
+  <div class="row">
+    <button glzIconButton variant="primary" [label]="copy.add">
+      <glz-icon [icon]="icons.add" />
+    </button>
+    <button glzIconButton [label]="copy.edit" [tooltip]="false" [glzTooltip]="copy.editHint">
+      <glz-icon [icon]="icons.edit" />
+    </button>
+    <button glzIconButton variant="danger" [label]="copy.remove">
+      <glz-icon [icon]="icons.remove" />
+    </button>
+    <button
+      glzButton
+      data-testid="showcase-copy"
+      [glzCopy]="copy.copyText"
+      (copied)="copied($event)"
+    >
+      <glz-icon [icon]="icons.copy" /> {{ copyLabel() }}
+    </button>
+  </div>
+
+  <h3>{{ copy.badges }}</h3>
+  <div class="row">
+    <glz-badge>{{ copy.neutral }}</glz-badge>
+    <glz-badge tone="accent">{{ copy.accent }}</glz-badge>
+    <glz-badge tone="success">{{ copy.success }}</glz-badge>
+    <glz-badge tone="warning">{{ copy.warning }}</glz-badge>
+    <glz-badge tone="danger">{{ copy.dangerBadge }}</glz-badge>
+    <glz-avatar [name]="copy.person" />
+    <glz-avatar size="lg" hope [name]="copy.hope" />
+  </div>
+
+  <h3>{{ copy.cards }}</h3>
+  <div class="cards">
+    <glz-card>
+      <h4 glzCardHeader>{{ copy.card }}</h4>
+      {{ copy.cardBody }}
+    </glz-card>
+    <glz-card surface="raised">
+      <h4 glzCardHeader>{{ copy.raised }}</h4>
+      {{ copy.cardBody }}
+      <div glzCardFooter>
+        <button glzButton size="sm">{{ copy.ghost }}</button>
+      </div>
+    </glz-card>
+    <glz-card surface="sunken">
+      <h4 glzCardHeader>{{ copy.sunken }}</h4>
+      {{ copy.cardBody }}
+    </glz-card>
+  </div>
+  <glz-empty-state [heading]="copy.emptyHeading" [icon]="icons.chat">
+    {{ copy.emptyText }}
+    <button glzEmptyStateAction glzButton variant="primary">{{ copy.newChat }}</button>
+  </glz-empty-state>
+</section>

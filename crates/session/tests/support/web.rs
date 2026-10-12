@@ -2,78 +2,77 @@
 //! small client for it: JSON-RPC requests posted one at a time, and server-sent events read
 //! as they arrive.
 
-use glave_ports::{BlobStore, EventLog, ModelProvider};
-use glave_session::Server;
+use std::collections::VecDeque;
+use std::net::SocketAddr;
+
+use glave_ports::{EventLog, SseDecoder};
+use glave_session::http::Site;
 use glave_session::protocol::Request;
+use glave_session::rpc;
 use glave_session::signin::{SignIn, Trust};
-use serde_json::{Value, json};
+use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use super::issuer::{AUDIENCE, Fixed, Issuer};
+use super::issuer::{AUDIENCE, Issuer, fixed_clock};
+use super::setup::{Tested, scope};
 
 /// A session server listening over HTTP until it is closed.
 pub struct Served {
+    pub address: SocketAddr,
     pub url: String,
-    stop: Option<oneshot::Sender<()>>,
-    serving: Option<JoinHandle<std::io::Result<()>>>,
+    stop: oneshot::Sender<()>,
+    serving: JoinHandle<std::io::Result<()>>,
 }
 
 /// Serves `server` over HTTP, trusting `issuer` for `AUDIENCE`, with `ada` of that issuer
 /// working in the server's own space beside its person.
-pub async fn serve_http<P, L, B>(server: Server<P, L, B>, issuer: &Issuer) -> Served
-where
-    P: ModelProvider + 'static,
-    L: EventLog + 'static,
-    B: BlobStore + 'static,
-{
+pub async fn serve_http<L: EventLog + 'static>(server: Tested<L>, issuer: &Issuer) -> Served {
     let mut home = server.home_space().await.unwrap();
     let ada = glave_session::signin::person(&issuer.url, "ada").unwrap();
     home.members.push(glave_event::Principal::person(ada));
-    let org = glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1));
-    server.spaces().update(org, &home).await.unwrap();
+    server.spaces().update(scope().org, &home).await.unwrap();
     let trust = Trust {
         issuers: vec![issuer.url.clone()],
         audience: AUDIENCE.into(),
     };
-    serve_with(server, SignIn::new(trust, Box::new(Fixed)).unwrap()).await
+    let signin = SignIn::new(trust, Box::new(fixed_clock())).unwrap();
+    serve_with(server, signin, None).await
 }
 
-/// Serves `server` over HTTP on 127.0.0.1, each request signed in through `signin`.
-pub async fn serve_with<P, L, B>(server: Server<P, L, B>, signin: SignIn) -> Served
-where
-    P: ModelProvider + 'static,
-    L: EventLog + 'static,
-    B: BlobStore + 'static,
-{
+/// Serves `server` over HTTP on 127.0.0.1, each request signed in through `signin`, with the
+/// web app in `site` beside it.
+pub async fn serve_with<L: EventLog + 'static>(
+    server: Tested<L>,
+    signin: SignIn,
+    site: Option<Site>,
+) -> Served {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}/", listener.local_addr().unwrap());
+    let address = listener.local_addr().unwrap();
     let (stop, stopped) = oneshot::channel::<()>();
     let serving = tokio::spawn(glave_session::http::serve(
         server,
         signin,
+        site,
         listener,
         async move {
             let _ = stopped.await;
         },
     ));
     Served {
-        url,
-        stop: Some(stop),
-        serving: Some(serving),
+        address,
+        url: format!("http://{address}/"),
+        stop,
+        serving,
     }
 }
 
 impl Served {
     /// Stops the server and waits until it has.
-    pub async fn close(mut self) {
-        if let Some(stop) = self.stop.take() {
-            let _ = stop.send(());
-        }
-        if let Some(serving) = self.serving.take() {
-            serving.await.unwrap().unwrap();
-        }
+    pub async fn close(self) {
+        let _ = self.stop.send(());
+        self.serving.await.unwrap().unwrap();
     }
 }
 
@@ -82,7 +81,7 @@ pub struct Web {
     http: reqwest::Client,
     url: String,
     pub token: Option<String>,
-    next_id: i64,
+    next_id: u64,
 }
 
 /// What came back for one request.
@@ -105,12 +104,9 @@ impl Web {
     }
 
     /// `request` as a JSON-RPC message with the next id, and that id.
-    pub fn message(&mut self, request: &Request) -> (Value, i64) {
+    pub fn message(&mut self, request: &Request) -> (Value, u64) {
         self.next_id += 1;
-        let mut message = serde_json::to_value(request).unwrap();
-        message["jsonrpc"] = json!("2.0");
-        message["id"] = json!(self.next_id);
-        (message, self.next_id)
+        (rpc::message(self.next_id, request), self.next_id)
     }
 
     /// Posts `message`, naming `method` in the Glave-Method header when given.
@@ -169,35 +165,44 @@ impl Web {
 /// Server-sent events, read as they arrive.
 pub struct Events {
     response: reqwest::Response,
-    buffer: String,
+    decoder: SseDecoder,
+    /// Events decoded and not yet read.
+    ready: VecDeque<String>,
 }
 
 impl Events {
     pub fn new(response: reqwest::Response) -> Self {
         Self {
             response,
-            buffer: String::new(),
+            decoder: SseDecoder::default(),
+            ready: VecDeque::new(),
         }
     }
 
     /// The next event's message, or `None` at the end of the stream.
     pub async fn next(&mut self) -> Option<Value> {
         loop {
-            if let Some(end) = self.buffer.find("\n\n") {
-                let event: String = self.buffer.drain(..end + 2).collect();
-                let data = event.trim_end().strip_prefix("data: ").unwrap();
-                return Some(serde_json::from_str(data).unwrap());
+            if let Some(data) = self.ready.pop_front() {
+                return Some(serde_json::from_str(&data).unwrap());
             }
-            let chunk = self.response.chunk().await.unwrap()?;
-            self.buffer.push_str(std::str::from_utf8(&chunk).unwrap());
+            match self.response.chunk().await.unwrap() {
+                Some(chunk) => self.ready.extend(self.decoder.push(&chunk).unwrap()),
+                None => {
+                    return self
+                        .decoder
+                        .finish()
+                        .map(|data| serde_json::from_str(&data).unwrap());
+                }
+            }
         }
     }
 
-    /// Everything not read yet, as text.
-    pub async fn rest(&mut self) -> String {
+    /// The whole answer, as text, when it is not a stream.
+    pub async fn rest(mut self) -> String {
+        let mut text = Vec::new();
         while let Some(chunk) = self.response.chunk().await.unwrap() {
-            self.buffer.push_str(std::str::from_utf8(&chunk).unwrap());
+            text.extend_from_slice(&chunk);
         }
-        std::mem::take(&mut self.buffer)
+        String::from_utf8(text).unwrap()
     }
 }

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use glave_harness::{ApprovalMode, Hook, point_name};
 use serde_json::Value;
 
-use crate::policy::{self, Approval, ConfigFile, HooksFile, SandboxChoice, WebFile};
+use crate::policy::{self, ConfigFile, HooksFile, SandboxChoice, WebFile};
 
 /// A project's MCP servers, in Claude Code's format, at the repository's root.
 pub const MCP_FILE: &str = ".mcp.json";
@@ -150,7 +150,7 @@ impl Project {
     /// and no hooks.
     pub fn config_without_trust(&self) -> Option<ConfigFile> {
         self.config.as_ref().map(|config| ConfigFile {
-            approval: config.approval.filter(|a| *a != Approval::Auto),
+            approval: config.approval.filter(|a| *a != ApprovalMode::Auto),
             sandbox: config.sandbox.filter(|s| *s != SandboxChoice::Off),
             judge_model: config.judge_model.clone().filter(|j| j.trim() == "off"),
             web: config.web.as_ref().map(WebFile::without_trust),
@@ -166,7 +166,7 @@ impl Project {
 /// else only tightens, or picks a model.
 fn loosening(config: &ConfigFile) -> Option<Item> {
     let mut parts = Vec::new();
-    if config.approval.map(Approval::mode) == Some(ApprovalMode::Auto) {
+    if config.approval == Some(ApprovalMode::Auto) {
         parts.push("approval = \"auto\"");
     }
     if config.sandbox == Some(SandboxChoice::Off) {

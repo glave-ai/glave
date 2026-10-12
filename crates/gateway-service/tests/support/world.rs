@@ -3,24 +3,24 @@
 //! the log is in memory, and the catalog is glave's MCP test server, started twice.
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use glave_event::{Body, RawEvent, Seq, ThreadId, decode};
 use glave_gateway::{Budgets, Gateway, Model, Routes, Target};
 use glave_gateway_service::{Policy, Service, Wiring, serve, stream_id};
-use glave_identity::Caller;
 use glave_identity::signin::{SignIn, Trust, person};
 use glave_mcp::{Limits, McpServer, ServerConfig};
-use glave_ports::Entropy;
+use glave_ports::Caller;
+pub use glave_ports::block_on;
+use glave_ports::testing::CountingEntropy;
 use glave_ports::{EventLog, LogError, MemoryLog, OrgId, Purpose, Scope, SpaceId};
 use glave_provider_openai::fake::{FakeServer, Reply};
 use glave_provider_openai::{Config, OpenAiCompatible};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use super::issuer::{AUDIENCE, Fixed, Issuer, Signer};
+use super::issuer::{AUDIENCE, Issuer, Signer, fixed_clock};
 
 /// The key the gateway holds for its model provider.
 pub const KEY: &str = "sk-upstream-secret-0123456789";
@@ -42,10 +42,6 @@ impl EventLog for SharedLog {
         limit: usize,
     ) -> Result<Vec<RawEvent>, LogError> {
         self.0.read(scope, thread, after, limit).await
-    }
-
-    async fn threads(&self, scope: &Scope, limit: usize) -> Result<Vec<ThreadId>, LogError> {
-        self.0.threads(scope, limit).await
     }
 
     async fn search(
@@ -107,16 +103,6 @@ fn subject(caller: &Caller) -> &str {
         .as_ref()
         .and_then(|auth| auth.subject.as_deref())
         .unwrap_or("")
-}
-
-struct Counting(Mutex<u8>);
-
-impl Entropy for Counting {
-    fn bytes(&self) -> [u8; 10] {
-        let mut next = self.0.lock().unwrap();
-        *next = next.wrapping_add(1);
-        [*next; 10]
-    }
 }
 
 /// glave's MCP test server, built beside this test by `cargo xtask ci`.
@@ -214,11 +200,11 @@ impl World {
         let service = Service::new(Wiring {
             gateway: Gateway::new(routes).with_budgets(budgets),
             policy: Arc::new(Rules),
-            signin: SignIn::new(trust, Box::new(Fixed)).unwrap(),
+            signin: SignIn::new(trust, Box::new(fixed_clock())).unwrap(),
             log: self.log.clone(),
             scope: self.scope,
-            clock: Box::new(Fixed),
-            entropy: Box::new(Counting(Mutex::new(0))),
+            clock: Box::new(fixed_clock()),
+            entropy: Box::new(CountingEntropy::starting_at(1)),
             catalog: if with_catalog { catalog() } else { Vec::new() },
             secrets: vec![KEY.to_owned()],
             notices: Arc::new(move |notice: &str| notices.lock().unwrap().push(notice.into())),
@@ -267,13 +253,4 @@ impl World {
 
 fn uuid(n: u8) -> uuid::Uuid {
     uuid::Uuid::from_bytes([n; 16])
-}
-
-/// Runs `future` on a runtime of its own, as glave's tests do.
-pub fn block_on<F: Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
 }

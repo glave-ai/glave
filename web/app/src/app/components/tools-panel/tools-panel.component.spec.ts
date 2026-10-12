@@ -24,7 +24,7 @@ describe('ToolsPanelComponent', () => {
     localStorage.clear();
   });
 
-  it('shows the tasks and the files in tabs, remembers the tab, and closes as a sheet', async () => {
+  it('shows the tasks and the changes in tabs, remembers the tab, and closes as a sheet', async () => {
     const fake = new FakeSession()
       .answer('thread/events', { events: EDITED })
       .answer('tasks/list', { tasks: [task('t9', 'Nightly build')] });
@@ -45,12 +45,12 @@ describe('ToolsPanelComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const tabs = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="tools-tabs-tab"]'));
-    expect(tabs.map((tab) => tab.textContent.trim())).toEqual(['Tasks', 'Files (1)']);
+    expect(tabs.map((tab) => tab.textContent.trim())).toEqual(['Tasks', 'Changes (1)']);
     expect(root.querySelectorAll('[data-testid="task"]')).toHaveLength(1);
     await expectAccessible(root);
     tabs[1]?.click();
     await fixture.whenStable();
-    expect(panel.tab()).toBe('files');
+    expect(panel.tab()).toBe('changes');
     expect(root.querySelectorAll('[data-testid="file"]')).toHaveLength(1);
     root.querySelector<HTMLButtonElement>('[data-testid="tools-close"]')?.click();
     expect(panel.open()).toBe(false);

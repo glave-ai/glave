@@ -21,6 +21,7 @@ tokio = { workspace = true, features = ["fs"] }
 url.workspace = true
 
 [dev-dependencies]
+glave-ports = { workspace = true, features = ["conformance"] }
 tokio = { workspace = true, features = ["rt"] }
 
 [lints]
