@@ -1501,17 +1501,9 @@
       "code": -32020,
       "message": "The model provider failed"
     },
-    "RUNNING_ELSEWHERE": {
-      "code": -32011,
-      "message": "The thread is running in another server of this deployment"
-    },
     "TURN_RUNNING": {
       "code": -32002,
       "message": "A turn is already running in this thread"
-    },
-    "UNSUPPORTED_PROTOCOL": {
-      "code": -32010,
-      "message": "Unsupported protocol version"
     },
     "WORKSPACE": {
       "code": -32009,

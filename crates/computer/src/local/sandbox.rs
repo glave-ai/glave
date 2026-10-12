@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use glave_ports::{ComputerError, Sandbox};
 
 /// The first argument that makes glave the Linux sandbox's helper (see [`sandbox_helper`]).
-pub const SANDBOX_HELPER_ARG: &str = "__glave-sandbox";
+pub(crate) const SANDBOX_HELPER_ARG: &str = "__glave-sandbox";
 
 /// Whether this machine can enforce every sandbox level: Seatbelt on macOS, bubblewrap on
 /// Linux. (Landlock, Linux's fallback, enforces only `read-only`, and only for a program that

@@ -31,7 +31,7 @@ use glave_ports::{
 pub(crate) use registry::new_id;
 use registry::{Opened, Registry};
 
-pub use sandbox::{SANDBOX_HELPER_ARG, sandbox_available, sandbox_helper};
+pub use sandbox::{sandbox_available, sandbox_helper};
 
 /// This machine's computers.
 #[derive(Debug)]

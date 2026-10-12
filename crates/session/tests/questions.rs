@@ -77,7 +77,9 @@ mod questions {
             ];
             let server = server(&dir, answers, Answering::Clients).await;
             let thread = new_thread(&server).await;
-            let mut stream = server.start_turn(thread, "set up storage").await.unwrap();
+            let mut stream = stream_turn(&server, thread, "set up storage", None)
+                .await
+                .unwrap();
             let mut asked = Vec::new();
             let mut ended = None;
             while let Some(item) = stream.next().await {
@@ -138,7 +140,9 @@ mod questions {
             let answers = vec![answer(None, Some(("question", asks())))];
             let server = server(&dir, answers, Answering::Clients).await;
             let thread = new_thread(&server).await;
-            let mut stream = server.start_turn(thread, "set up storage").await.unwrap();
+            let mut stream = stream_turn(&server, thread, "set up storage", None)
+                .await
+                .unwrap();
             let mut ended = None;
             while let Some(item) = stream.next().await {
                 match item {

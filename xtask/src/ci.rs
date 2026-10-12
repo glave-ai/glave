@@ -35,6 +35,8 @@ pub fn run() -> Result<(), String> {
         )
     })?;
     step("dependencies", || cmd::run("cargo", &["deny", "check"]))?;
+    // Called directly: run as `cargo machete` under `cargo xtask`, it takes `machete` for a path.
+    step("unused dependencies", || cmd::run("cargo-machete", &[]))?;
     step("file sizes", crate::file_sizes::check)?;
     step("api schema", || crate::schema::run(&["--check".to_owned()]))?;
     step("web", crate::web::check)?;

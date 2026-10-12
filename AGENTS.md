@@ -87,7 +87,7 @@ cargo build --profile debugging   # full debug info, for a debugger
 
 ## Definition of done
 
-`cargo xtask ci` passes: format, clippy with `-D warnings`, all tests, `cargo deny`, file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
+`cargo xtask ci` passes: format, clippy with `-D warnings`, all tests, `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
 
 ## Rust
 
