@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { NEW_THREAD, THREAD, fakeApi } from './fake-api';
-import { byTestId, expectAccessible, shownOpacity, watchForProblems, SIGNED_IN } from './support';
+import { SIGNED_IN, byTestId, expectAccessible, shownOpacity, watchForProblems } from './support';
 
 test('without a sign-in, the app says how to get one', async ({ page }) => {
   await fakeApi(page);

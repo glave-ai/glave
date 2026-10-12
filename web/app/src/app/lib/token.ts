@@ -1,6 +1,6 @@
 import { tokenFromFragment } from '@glave/client';
 
-import { type Store, forget, readStored, writeStored } from './storage';
+import { type Store, readStored, writeStored } from './storage';
 
 /** Where the sign-in token is kept for this tab: never in a URL, a cookie or a log. */
 export const TOKEN_KEY = 'glave-token';
@@ -26,9 +26,4 @@ export function takeToken(place: TokenPlace): string | null {
   place.history.replaceState(null, '', `${place.location.pathname}${place.location.search}`);
   writeStored(place.storage, TOKEN_KEY, fromLink);
   return fromLink;
-}
-
-/** Forgets the token kept in this tab. */
-export function forgetToken(storage: Store): void {
-  forget(storage, TOKEN_KEY);
 }

@@ -132,6 +132,7 @@ jobs:
       - run: npm test
       - run: npm run build:glaze
       - run: npm run build
+      - run: npm run build:showcase
       - run: npm run e2e
 
   # Workers on Kubernetes: a kind cluster on the runner, and the Kubernetes backend's tests

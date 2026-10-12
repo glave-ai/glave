@@ -1,4 +1,5 @@
-import { TOKEN_KEY, forgetToken, takeToken } from './token';
+import { forget } from './storage';
+import { TOKEN_KEY, takeToken } from './token';
 
 function storage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> & {
   readonly kept: Map<string, string>;
@@ -33,7 +34,7 @@ describe('token', () => {
     const place = { location: { hash: '', pathname: '/', search: '' }, history: { replaceState } };
     expect(takeToken({ ...place, storage: kept })).toBe('kept');
     expect(replaceState).not.toHaveBeenCalled();
-    forgetToken(kept);
+    forget(kept, TOKEN_KEY);
     expect(takeToken({ ...place, storage: kept })).toBeNull();
     expect(takeToken({ ...place, storage: null })).toBeNull();
   });

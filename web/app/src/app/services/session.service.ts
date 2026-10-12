@@ -9,8 +9,8 @@ import {
   type StreamingMethod,
 } from '@glave/client';
 
-import { storageOf } from '../lib/storage';
-import { forgetToken, takeToken } from '../lib/token';
+import { forget, storageOf } from '../lib/storage';
+import { TOKEN_KEY, takeToken } from '../lib/token';
 
 /** The calls the app makes of the session API: `GlaveClient`'s, or a test's stand-in. */
 export interface SessionClient {
@@ -83,7 +83,7 @@ export class SessionService {
 
   signOut(): void {
     this.token.set(null);
-    forgetToken(this.storage);
+    forget(this.storage, TOKEN_KEY);
   }
 
   private noticeSignOut(error: unknown): void {
