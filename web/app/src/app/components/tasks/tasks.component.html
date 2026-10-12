@@ -1,0 +1,43 @@
+<div class="page">
+  <div class="heading">
+    <h1>{{ copy.heading }}</h1>
+    <button glzButton size="sm" data-testid="tasks-refresh" (click)="refresh()">
+      {{ copy.refresh }}
+    </button>
+  </div>
+  <p class="intro">{{ copy.intro }}</p>
+  @if (service.error(); as error) {
+    <p class="error" role="alert">{{ copy.failed }} {{ error }}</p>
+  }
+  <div class="list">
+    @for (task of rows(); track task.thread) {
+      <glz-card data-testid="task">
+        <div glzCardHeader class="task-heading">
+          <a class="title" [routerLink]="task.link">{{ task.title }}</a>
+          <glz-badge [tone]="task.tone">{{ task.status }}</glz-badge>
+        </div>
+        <p class="details">{{ task.details }}</p>
+        @if (task.running) {
+          <div glzCardFooter>
+            <button
+              glzButton
+              size="sm"
+              variant="danger"
+              data-testid="task-stop"
+              [attr.aria-label]="task.stopLabel"
+              (click)="stop(task.thread)"
+            >
+              {{ copy.stop }}
+            </button>
+          </div>
+        }
+      </glz-card>
+    } @empty {
+      @if (service.loaded()) {
+        <glz-empty-state [heading]="copy.emptyHeading" [icon]="icon">{{
+          copy.emptyText
+        }}</glz-empty-state>
+      }
+    }
+  </div>
+</div>

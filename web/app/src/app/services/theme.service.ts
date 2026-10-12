@@ -9,7 +9,8 @@ export const THEME_CHOICES: readonly ThemeChoice[] = ['system', 'light', 'dark']
 
 const KEY = 'glave-theme';
 
-function isChoice(value: unknown): value is ThemeChoice {
+/** Whether `value` is one of the theme choices. */
+export function isChoice(value: unknown): value is ThemeChoice {
   return THEME_CHOICES.some((choice) => choice === value);
 }
 
