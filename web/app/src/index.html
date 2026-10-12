@@ -7,6 +7,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <!-- Installable as an app. The colours are Glaze's page surface (tokens.css), light and dark. -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f9f8" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111513" />
   </head>
   <body>
     <!-- glave serve puts a fresh nonce here on every load, for the styles Angular adds (CSP). -->

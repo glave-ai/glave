@@ -76,10 +76,11 @@
   --glz-space-7: 3rem;
   --glz-space-8: 4rem;
 
-  /* Shape. */
-  --glz-radius-sm: 4px;
-  --glz-radius-md: 8px;
-  --glz-radius-lg: 12px;
+  /* Shape: soft and friendly. Small for marks and tags, medium for buttons, fields and menus,
+     large for cards, bubbles and the composer. */
+  --glz-radius-sm: 6px;
+  --glz-radius-md: 12px;
+  --glz-radius-lg: 20px;
   --glz-radius-full: 999px;
   --glz-border-width: 1px;
 
@@ -103,6 +104,8 @@
   --glz-panel-surface: var(--glz-surface-card);
   --glz-rail-width: 4.5rem;
   --glz-top-bar-height: 3.5rem;
+  --glz-top-bar-surface: var(--glz-surface-card);
+  --glz-top-bar-border: var(--glz-border-width) solid var(--glz-color-border);
   --glz-content-width: 48rem;
 
   /* Motion: none at all when the person asks for less. */

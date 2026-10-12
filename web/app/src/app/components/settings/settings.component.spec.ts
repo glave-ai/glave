@@ -30,6 +30,10 @@ describe('SettingsComponent', () => {
       'glave 0.1.0 · protocol 2026-10 · approvals: auto',
     );
     expect(root.textContent).toContain('glave policy explain');
+    const themes = Array.from(root.querySelectorAll('glz-radio'), (radio) =>
+      radio.textContent.trim(),
+    );
+    expect(themes).toEqual(['System', 'Light', 'Dark']);
     await expectAccessible(root);
 
     root.querySelectorAll<HTMLInputElement>('input[type="radio"]')[2]?.click();

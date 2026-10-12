@@ -190,6 +190,7 @@ fn content_type(path: &Path) -> &'static str {
         Some("js" | "mjs") => "text/javascript; charset=utf-8",
         Some("css") => "text/css; charset=utf-8",
         Some("json" | "map") => "application/json",
+        Some("webmanifest") => "application/manifest+json",
         Some("svg") => "image/svg+xml",
         Some("png") => "image/png",
         Some("ico") => "image/x-icon",
@@ -258,6 +259,7 @@ mod tests {
         assert!(!policy.contains("unsafe-inline"));
         assert!(policy.contains("style-src 'self' 'nonce-abc'"));
         assert!(policy.contains("frame-ancestors 'none'"));
+        assert!(policy.contains("manifest-src 'self'"));
         assert!(policy.contains("require-trusted-types-for 'script'"));
     }
 
@@ -290,6 +292,11 @@ mod tests {
             "text/javascript; charset=utf-8"
         );
         assert_eq!(content_type(Path::new("a.woff2")), "font/woff2");
+        assert_eq!(
+            content_type(Path::new("manifest.webmanifest")),
+            "application/manifest+json"
+        );
+        assert_eq!(content_type(Path::new("icon-192.png")), "image/png");
         assert_eq!(content_type(Path::new("a.bin")), "application/octet-stream");
     }
 }

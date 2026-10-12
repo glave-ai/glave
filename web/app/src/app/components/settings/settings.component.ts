@@ -17,9 +17,9 @@ const COPY = {
   heading: 'Settings',
   appearance: 'Appearance',
   theme: 'Theme',
-  system: 'As the system',
+  system: 'System',
   light: 'Light',
-  dark: 'Evening',
+  dark: 'Dark',
   policy: 'Settings and policy',
   policyText:
     'Settings come from config.toml files and flags, nearest first; policy only narrows them. Changing them here comes later. To see every setting and where it came from, run this in your project:',

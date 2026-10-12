@@ -1,0 +1,60 @@
+// The look of a layout's window splitter (`glzSplitter` on `.handle`), for a host that has the
+// class `open` while its panel shows.
+@mixin splitter {
+  // Open, the edge takes no room: it sits across the panel's border, wider than it looks so it
+  // is easy to grab, and shows a line on hover, focus and drag.
+  .handle {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    width: var(--glz-space-2);
+    margin-inline: calc(-1 * var(--glz-space-1));
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .handle::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: calc(var(--glz-space-1) - 1px);
+    width: 2px;
+    background: transparent;
+    transition: background var(--glz-duration-fast) var(--glz-easing);
+  }
+
+  .handle:hover::after,
+  .handle:focus-visible::after,
+  .handle.dragging::after {
+    background: var(--glz-color-focus);
+  }
+
+  .handle:focus-visible {
+    outline: none;
+  }
+
+  // Collapsed, the edge stays at the side of the page as a slim strip with a grip, to drag or
+  // click the panel back.
+  :host(:not(.open)) .handle {
+    width: var(--glz-space-3);
+    margin-inline: 0;
+  }
+
+  :host(:not(.open)) .handle::after {
+    inset-block: calc(50% - var(--glz-space-4));
+    inset-inline-start: calc(50% - 1.5px);
+    width: 3px;
+    border-radius: var(--glz-radius-full);
+    background: var(--glz-color-text-muted);
+  }
+
+  :host(:not(.open)) .handle:hover::after,
+  :host(:not(.open)) .handle:focus-visible::after,
+  :host(:not(.open)) .handle.dragging::after {
+    background: var(--glz-color-focus);
+  }
+
+  :host(:not(.open)) .handle:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--glz-color-focus);
+  }
+}
