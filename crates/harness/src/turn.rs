@@ -1,28 +1,30 @@
 //! One turn: the person's prompt, then model calls and tool calls until the model is done.
 
 use glave_event::{
-    CallId, Currency, MessageAdded, ModelRef, Money, Outcome, Part, Principal, Role, StopReason,
-    ThreadId, TokenCounts, ToolCallRequested, TurnEnded, TurnStarted,
+    ApprovalMode, CallId, Currency, MemoryId, MessageAdded, ModelRef, Money, Outcome, Part,
+    Principal, Role, StopReason, ThreadId, TokenCounts, ToolCallRequested, TurnEnded, TurnStarted,
 };
 use glave_ports::{
-    BlobStore, BoxFuture, Completion, Delta, EventLog, Failure, Message, ModelProvider,
+    BlobStore, BoxFuture, Caller, Completion, Delta, EventLog, Failure, Message, ModelProvider,
     ModelRequest, ProviderError, Purpose, ToolCall, ToolChoice, ToolSpec,
 };
 use std::time::Duration;
 
 use serde::Serialize;
 
-use crate::approval::{ApprovalMode, Approver};
-use crate::caller::Caller;
+use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::commands::invoked;
 use crate::compaction::{Measured, chars, responded};
 use crate::goal::{BUDGET_SPENT, counted};
 use crate::harness::{Harness, HarnessError, Thread};
+use crate::memory::{ConfigMemory, MemoryVerb};
 use crate::question::Question;
 use crate::repeats::Repeats;
 use crate::sandbox::{Recorded, recorded};
+use crate::telemetry;
 use crate::toolset::ToolSet;
+use tracing::Instrument as _;
 
 /// What the model is told after a cancelled turn, as Codex tells it.
 const CANCELLED: &str = "[The person cancelled this turn on purpose. A command that was stopped \
@@ -76,6 +78,13 @@ pub enum Live {
     SubagentEnded {
         thread: ThreadId,
         ok: bool,
+    },
+    /// A memory was saved, edited or forgotten in this turn: shown at once in every client.
+    Memory {
+        verb: MemoryVerb,
+        memory: MemoryId,
+        /// Its text, when it was saved or edited.
+        text: Option<String>,
     },
     /// The model was asked, and nothing has come back yet.
     Waiting,
@@ -134,9 +143,14 @@ impl TurnSummary {
     }
 }
 
+/// The version of the turn configuration blob.
+const CONFIG_VERSION: u32 = 2;
+
 /// The full configuration of a turn, stored once by hash and referenced from `turn.started`.
 #[derive(Serialize)]
 struct TurnConfig<'a> {
+    /// The blob's format: 2 since it records memory. Blobs without `v` are version 1.
+    v: u32,
     model: &'a str,
     provider: &'a str,
     system: &'a str,
@@ -146,6 +160,10 @@ struct TurnConfig<'a> {
     /// The sandbox commands ran in; absent when there was none.
     #[serde(skip_serializing_if = "Option::is_none")]
     sandbox: Option<Recorded>,
+    /// The memories the model knew at the turn's start, at their versions; absent when the
+    /// thread reads no memory, so a configuration without memory is what it always was.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    memory: Option<ConfigMemory>,
 }
 
 impl<P, L, B, A> Harness<P, L, B, A>
@@ -179,7 +197,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
-        let toolset: ToolSet = self.tools(thread.id).await;
+        let toolset: ToolSet = self.tools(thread).await;
         // A prompt that names a command sends the command's text.
         let expanded = invoked(&self.settings.commands, prompt)
             .map(|(command, arguments)| command.expand(arguments));
@@ -200,7 +218,18 @@ where
         cancel: &'a Cancel,
         live: &'a mut (dyn FnMut(Live) + Send),
     ) -> BoxFuture<'a, Result<TurnSummary, HarnessError>> {
-        Box::pin(self.turn(thread, prompt, toolset, cancel, live))
+        Box::pin(async move {
+            let span = telemetry::turn(thread.id, prompt.caller.trace.as_ref());
+            let began = std::time::Instant::now();
+            let ran = self
+                .turn(thread, prompt, toolset, cancel, live)
+                .instrument(span.clone())
+                .await;
+            let ended = ran.as_ref().ok();
+            let ended = ended.map(|turn| (turn.outcome, turn.model_calls, turn.tool_calls));
+            telemetry::turn_ended(&span, began, ended);
+            ran
+        })
     }
 
     async fn turn(
@@ -368,14 +397,17 @@ where
             caller,
             by_glave,
         } = prompt;
+        let memory = self.look_at_memory(thread).await;
         let config = TurnConfig {
-            model: &self.settings.model,
+            v: CONFIG_VERSION,
+            model: self.model_for(thread),
             provider: &self.settings.provider,
             system: &offer.system,
             tools: &offer.specs,
             max_output_tokens: self.settings.max_output_tokens,
-            approval: self.settings.approval,
+            approval: self.approval_for(thread),
             sandbox: self.workspace_for(thread).sandbox().map(recorded),
+            memory,
         };
         let bytes = serde_json::to_vec(&config).map_err(|e| HarnessError::Event(e.to_string()))?;
         let config = self
@@ -384,7 +416,7 @@ where
             .await?;
         let model = ModelRef {
             provider: self.settings.provider.clone(),
-            name: self.settings.model.clone(),
+            name: self.model_for(thread).to_owned(),
         };
         // A new thread opens with the project's instructions.
         let opening = thread.messages.is_empty();
@@ -402,7 +434,7 @@ where
             &TurnStarted {
                 model,
                 config,
-                trace: None,
+                trace: caller.trace.clone(),
                 auth: caller.auth.clone(),
             },
         )?;
@@ -412,7 +444,7 @@ where
             author: if by_glave {
                 Some(Principal::glave())
             } else {
-                self.other_than_for(caller.person)
+                Self::other_than_for(thread, caller.person)
             },
         };
         self.stage(thread, &mut events, &message)?;
@@ -437,9 +469,9 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Completion, HarnessError> {
         let request = ModelRequest {
-            model: self.settings.model.clone(),
+            model: self.model_for(thread).to_owned(),
             system: offer.system.clone(),
-            messages: thread.messages.clone(),
+            messages: self.sent(thread),
             tools: offer.specs.clone(),
             tool_choice,
             max_output_tokens: self.settings.max_output_tokens,

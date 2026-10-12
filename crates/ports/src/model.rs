@@ -56,16 +56,19 @@ pub enum Purpose {
     Summary,
     /// A subagent's turn.
     Subagent,
+    /// A thread's short title, after its first exchange.
+    Title,
 }
 
 impl Purpose {
-    /// The purpose's stable id: `main`, `judge`, `summary` or `subagent`.
+    /// The purpose's stable id: `main`, `judge`, `summary`, `subagent` or `title`.
     pub fn id(self) -> &'static str {
         match self {
             Self::Main => "main",
             Self::Judge => "judge",
             Self::Summary => "summary",
             Self::Subagent => "subagent",
+            Self::Title => "title",
         }
     }
 
@@ -177,6 +180,10 @@ pub enum ProviderError {
     /// The provider answered with an error status.
     #[error("the model provider returned HTTP {status}: {body}")]
     Http { status: u16, body: String },
+    /// Credentials for the provider could not be had: a token file missing, or an identity
+    /// provider that refused. Never holds a secret.
+    #[error("could not get credentials for the model provider: {0}")]
+    Credentials(String),
     /// The provider could not be reached, or the connection broke.
     #[error("could not reach the model provider: {0}")]
     Transport(String),
@@ -197,4 +204,11 @@ pub enum ProviderError {
     /// A gateway sent nothing: the call could exceed this budget.
     #[error("the {budget} budget would be exceeded: {detail}")]
     OverBudget { budget: String, detail: String },
+}
+
+/// An event stream that cannot be read is a response that does not follow its protocol.
+impl From<crate::SseError> for ProviderError {
+    fn from(error: crate::SseError) -> Self {
+        Self::Protocol(error.to_string())
+    }
 }

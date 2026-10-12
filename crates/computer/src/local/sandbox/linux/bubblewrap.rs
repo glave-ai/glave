@@ -14,13 +14,18 @@ const SHELL: &str = r#"exec "$0" "$@" 3<&0 </dev/null"#;
 pub(super) const SH: &str = "/bin/sh";
 
 /// A new session (so a command cannot push keystrokes into the person's terminal), killed
-/// with its parent, in namespaces of its own; with no new privileges, which bubblewrap sets.
+/// with its parent, in namespaces of its own; with no new privileges, which bubblewrap sets,
+/// and no capabilities. bubblewrap keeps them all for a command that is root inside, as it is
+/// when glave runs as root (containers, cloud machines): root could then read through the
+/// unreadable stand-ins over hidden files and see them empty instead of refused.
 const ISOLATION: &[&str] = &[
     "--new-session",
     "--die-with-parent",
     "--unshare-user",
     "--unshare-pid",
     "--unshare-ipc",
+    "--cap-drop",
+    "ALL",
 ];
 
 /// The first `bwrap` on `PATH` that a command could not have planted: a real file outside

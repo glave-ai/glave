@@ -1,0 +1,35 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.side {
+  height: 100%;
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.content:focus {
+  outline: none;
+}
+
+.skip {
+  position: absolute;
+  inset-inline-start: var(--glz-space-2);
+  top: -3rem;
+  z-index: 100;
+  padding: var(--glz-space-2) var(--glz-space-3);
+  border-radius: var(--glz-radius-md);
+  background: var(--glz-surface-overlay);
+}
+
+.skip:focus {
+  top: var(--glz-space-2);
+}

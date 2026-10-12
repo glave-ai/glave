@@ -6,12 +6,12 @@ use std::sync::Arc;
 
 use glave_event::{Body, ComputerKind, ComputerRef, Event, Opened, ThreadId, WorkspaceBound};
 use glave_ports::{
-    BlobStore, ComputerError, Environment, EventLog, ModelProvider, Scope, Sources, ToolSource,
+    BlobStore, Caller, ComputerError, ComputerId, Environment, EventLog, ModelProvider, Scope,
+    Sources, ToolSource,
 };
 
 use crate::approval::Approver;
 use crate::builtins::Builtins;
-use crate::caller::Caller;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
@@ -27,6 +27,13 @@ pub enum Place {
     /// A worker of its own, made from this environment by the harness's workers (see
     /// [`crate::Workers`]), with the project's repository cloned into it.
     Worker(Environment),
+    /// A folder of its own, made empty on the harness's computer, in the same sandbox: for a
+    /// thread with no project, such as a one-off chat in a person's own space.
+    Scratch,
+    /// A computer that is already running and dialled in, such as a person's own laptop
+    /// serving a server elsewhere. Not available yet: starting a thread there is refused until
+    /// computers can dial out to a server.
+    Computer(ComputerId),
 }
 
 /// The branch a thread's worktree is on: `glave/` and the last 12 hex digits of the thread's
@@ -50,6 +57,9 @@ pub(crate) fn own_records(events: &[Event]) -> u64 {
                     | Body::ThreadArchived(_)
                     | Body::ThreadUnarchived(_)
                     | Body::ThreadDeleted(_)
+                    | Body::ThreadRenamed(_)
+                    | Body::ModelChosen(_)
+                    | Body::ApprovalModeChosen(_)
             )
         })
         .count();
@@ -68,6 +78,9 @@ pub(crate) fn bound(workspace: &Workspace, kind: ComputerKind) -> WorkspaceBound
         Sources::Git { url, at } => Opened::Clone {
             url: url.clone(),
             at: at.clone(),
+        },
+        Sources::Scratch { .. } => Opened::Scratch {
+            path: info.root.clone(),
         },
     };
     WorkspaceBound {
@@ -121,6 +134,19 @@ where
                 Ok((Some(Arc::new(worktree)), recorded))
             }
             Place::Worker(environment) => self.place_worker(&environment).await,
+            Place::Computer(computer) => Err(HarnessError::Invalid(format!(
+                "a thread on computer {computer} is not available yet: computers cannot dial in \
+                 to a server until a later version"
+            ))),
+            Place::Scratch => {
+                let owner = owner_label(scope, id);
+                let scratch = self
+                    .workspace
+                    .scratch(&id.to_string(), Some(&owner))
+                    .await?;
+                let recorded = bound(&scratch, ComputerKind::Local);
+                Ok((Some(Arc::new(scratch)), recorded))
+            }
         }
     }
 
@@ -150,6 +176,15 @@ where
                 let owner = owner_label(scope, id);
                 let worktree = self.workspace.worktree(branch, Some(&owner)).await?;
                 Ok(Some(Arc::new(worktree)))
+            }
+            // Made again, empty, if a cleanup removed it.
+            Some(Opened::Scratch { .. }) => {
+                let owner = owner_label(scope, id);
+                let scratch = self
+                    .workspace
+                    .scratch(&id.to_string(), Some(&owner))
+                    .await?;
+                Ok(Some(Arc::new(scratch)))
             }
             Some(Opened::Folder { .. } | Opened::Clone { .. }) | None => Ok(None),
         }

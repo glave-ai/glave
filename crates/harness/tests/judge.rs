@@ -62,7 +62,7 @@ mod judging {
     #[test]
     fn an_action_the_person_asked_for_runs_and_the_judge_is_on_record() {
         let dir = folder("judge-run");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, bash("git push origin main"), StopReason::ToolUse),
                 answer(
@@ -99,7 +99,7 @@ mod judging {
     #[test]
     fn an_action_the_person_did_not_ask_for_still_asks() {
         let dir = folder("judge-ask");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, bash("npm publish"), StopReason::ToolUse),
                 answer(
@@ -133,7 +133,7 @@ mod judging {
     fn a_firm_caution_never_reaches_the_judge() {
         let dir = folder("judge-firm");
         std::fs::write(dir.join(".env"), "KEY=canary\n").unwrap();
-        block_on(async {
+        block_on!(async {
             // Had the judge been asked, it would have taken the final answer below.
             let answers = vec![
                 answer(None, bash("cat .env"), StopReason::ToolUse),
@@ -161,7 +161,7 @@ mod judging {
     #[test]
     fn in_the_cautious_mode_the_judge_is_never_consulted() {
         let dir = folder("judge-ask-mode");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, bash("git push origin main"), StopReason::ToolUse),
                 answer(Some("Waiting for you."), vec![], StopReason::EndTurn),

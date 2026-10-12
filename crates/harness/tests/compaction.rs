@@ -48,7 +48,7 @@ mod compacting {
     fn a_thread_that_outgrows_its_window_continues_from_a_summary() {
         let dir = folder("compact");
         std::fs::write(dir.join("big.txt"), "marigold\n".repeat(1_000)).unwrap();
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -131,7 +131,7 @@ mod compacting {
     fn a_thread_that_fits_is_left_alone() {
         let dir = folder("fits");
         std::fs::write(dir.join("small.txt"), "hello\n").unwrap();
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -156,7 +156,7 @@ mod compacting {
     #[test]
     fn compact_on_request_restarts_from_the_summary() {
         let dir = folder("manual");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(Some("Hi."), vec![], StopReason::EndTurn),
                 answer(Some("We said hello."), vec![], StopReason::EndTurn),
@@ -187,7 +187,7 @@ mod compacting {
     fn an_empty_summary_leaves_the_thread_as_it_was() {
         let dir = folder("empty-summary");
         std::fs::write(dir.join("big.txt"), "marigold\n".repeat(1_000)).unwrap();
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,

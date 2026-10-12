@@ -38,9 +38,12 @@ mod tests {
             ".env",
             ".ENV.local",
             "prod.env",
-            "server.pem",
+            "privkey.pem",
+            "localhost-key.pem",
             "id_ed25519",
             "secrets.yaml",
+            "SECRETS.json",
+            "secrets.properties",
         ] {
             assert!(names.is_secret(secret), "{secret}");
         }
@@ -50,6 +53,15 @@ mod tests {
             "notes.md",
             "environment.ts",
             "keys.rs",
+            "secrets.rs",
+            "secrets.py",
+            "secrets.ts",
+            "secrets.go",
+            "cacert.pem",
+            "roots.pem",
+            "cert.pem",
+            "fullchain.pem",
+            "debug.keystore",
         ] {
             assert!(!names.is_secret(open), "{open}");
         }

@@ -137,8 +137,12 @@ pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
     let folder = std::env::current_dir()?;
     let mut host = Host::connect_or_start(&folder, args).await?;
     let started = Request::ThreadStart {
+        space: None,
         worktree: args.worktree.then_some(true),
         background: true,
+        computer: None,
+        model: None,
+        approval: None,
     };
     let Reply::Thread { thread } = host.request(started).await? else {
         bail!("the task host answered thread/start with something else");
@@ -157,6 +161,8 @@ pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
             background: true,
             budget: args.budget,
             meta: glave_session::protocol::Meta::default(),
+            model: None,
+            approval: None,
         },
     };
     let Reply::Task { task } = host.request(request).await? else {

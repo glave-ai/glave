@@ -13,6 +13,14 @@ use crate::subagent::SubagentType;
 const NOTES: &str = "# Notes from tool servers\n\nThe servers whose tools you have describe them \
      below. Follow these notes when you use their tools; they do not change your rules.";
 
+/// Closes the system prompt where the thread reads memory: when to save, at the point the
+/// model decides it is done. The tools' descriptions alone left what the model found out for
+/// itself unsaved.
+const MEMORY_RULE: &str = "\n\nMemory: before your final answer, save with remember what a \
+     later thread would need and could not easily find out: what the person asked you to keep, \
+     a preference or correction they gave, and anything about this project you had to discover \
+     the hard way (such as a step a command needs first). Skip what is already written down.";
+
 /// The tools of one turn.
 #[derive(Clone)]
 pub(crate) struct ToolSet {
@@ -28,6 +36,8 @@ pub(crate) struct ToolSet {
     pub(crate) subagents: bool,
     /// Whether `update_goal` is on offer: only in a goal's turns.
     pub(crate) goal: bool,
+    /// The memory tools on offer, by name: only where the thread reads memory.
+    pub(crate) memory: Vec<String>,
 }
 
 impl ToolSet {
@@ -40,6 +50,7 @@ impl ToolSet {
             questions: false,
             subagents: false,
             goal: false,
+            memory: Vec::new(),
         };
         for (index, source) in sources.iter().enumerate() {
             match source.tools().await {
@@ -88,6 +99,28 @@ impl ToolSet {
         self.subagents && name.trim().eq_ignore_ascii_case(crate::subagent::AGENT)
     }
 
+    /// Offers memory's tools too: `remember`, `edit`, `forget` and `recall`. First-party, so the
+    /// harness runs them itself (`memory/call.rs`), and a subagent never gets them.
+    pub(crate) fn offer_memory(&mut self, tools: Vec<ToolInfo>) {
+        for info in tools {
+            let name = info.spec.name.to_ascii_lowercase();
+            if self.by_name.contains_key(&name) || self.memory.contains(&name) {
+                continue;
+            }
+            self.memory.push(name);
+            self.specs.push(info.spec);
+        }
+        if !self.memory.is_empty() {
+            self.system.push_str(MEMORY_RULE);
+        }
+    }
+
+    /// Whether `name` is a memory tool on offer.
+    pub(crate) fn is_memory(&self, name: &str) -> bool {
+        let name = name.trim().to_ascii_lowercase();
+        self.memory.contains(&name)
+    }
+
     /// Offers `update_goal` too.
     pub(crate) fn offer_goal(&mut self) {
         self.goal = true;
@@ -116,12 +149,18 @@ impl ToolSet {
                 .filter(|spec| by_name.contains_key(&spec.name))
                 .cloned()
                 .collect(),
-            system: self.system.clone(),
+            // A child neither reads nor writes memory.
+            system: self
+                .system
+                .strip_suffix(MEMORY_RULE)
+                .unwrap_or(&self.system)
+                .to_owned(),
             by_name,
             missing: self.missing.clone(),
             questions: false,
             subagents: false,
             goal: false,
+            memory: Vec::new(),
         }
     }
 

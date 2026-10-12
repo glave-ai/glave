@@ -51,19 +51,13 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime};
 
-    use super::*;
+    use glave_ports::block_on;
 
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
+    use super::*;
 
     fn run(dir: &Path, args: serde_json::Value) -> ToolOutcome {
         let args: GlobArgs = serde_json::from_value(args).unwrap();
-        block_on(async {
+        block_on!(async {
             let workspace = Workspace::open(dir, []).await.unwrap();
             glob(&workspace, args).await
         })

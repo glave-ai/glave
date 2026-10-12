@@ -66,6 +66,81 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (org, space)
     );
     ",
+    // 3: spaces as records: kind, name, owner (a principal as JSON text), members in order,
+    // and times; the folder keys (`path:<path>` or `remote:<url>`) that lead to them; one
+    // personal space per person; and threads found by id alone through an index.
+    "
+    CREATE INDEX events_by_thread ON events (thread);
+
+    CREATE TABLE space_records (
+        org         uuid        NOT NULL,
+        id          uuid        NOT NULL,
+        kind        text        NOT NULL,
+        name        text        NOT NULL,
+        owner       text        NOT NULL,
+        created_at  timestamptz NOT NULL,
+        updated_at  timestamptz NOT NULL,
+        PRIMARY KEY (org, id)
+    );
+
+    CREATE UNIQUE INDEX one_personal_space ON space_records (org, owner)
+        WHERE kind = 'personal';
+
+    CREATE TABLE space_members (
+        org       uuid   NOT NULL,
+        space     uuid   NOT NULL,
+        position  bigint NOT NULL,
+        member    text   NOT NULL,
+        PRIMARY KEY (org, space, position)
+    );
+
+    CREATE INDEX space_members_by_member ON space_members (org, member);
+
+    CREATE TABLE space_folders (
+        org    uuid NOT NULL,
+        key    text NOT NULL,
+        space  uuid NOT NULL,
+        PRIMARY KEY (org, key)
+    );
+    ",
+    // 4: the threads view: one row per thread, folded from its events as they are appended
+    // (`glave_ports::ThreadView`, as JSON), listed by standing, most recently written first.
+    // Content-free. The store fills it from the log when it connects (`views::refresh`), and
+    // records which fold built it in `glave_settings`.
+    "
+    CREATE TABLE threads (
+        org       uuid   NOT NULL,
+        space     uuid   NOT NULL,
+        thread    uuid   NOT NULL,
+        standing  text   NOT NULL,
+        -- The `pos` of the thread's latest event: the order of writes.
+        position  bigint NOT NULL,
+        view      text   NOT NULL,
+        PRIMARY KEY (org, space, thread)
+    );
+
+    CREATE INDEX threads_by_position ON threads (org, space, standing, position DESC);
+
+    CREATE TABLE glave_settings (
+        key    text PRIMARY KEY,
+        value  text NOT NULL
+    );
+    ",
+    // 5: keyword search over conversations (`specs/memory.md`, "Recall"): the words of each
+    // message and tool output, as keyed hashes under its space key (`Keys::search_terms`), so
+    // the index holds no word in the clear. Written in the same transaction as the events.
+    "
+    CREATE TABLE event_search (
+        pos     bigint   GENERATED ALWAYS AS IDENTITY,
+        org     uuid     NOT NULL,
+        space   uuid     NOT NULL,
+        thread  uuid     NOT NULL,
+        seq     bigint   NOT NULL,
+        terms   tsvector NOT NULL,
+        PRIMARY KEY (org, space, thread, seq)
+    );
+    CREATE INDEX event_search_terms ON event_search USING gin (terms);
+    ",
 ];
 
 /// The schema version this build writes.

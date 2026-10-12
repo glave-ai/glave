@@ -51,7 +51,8 @@ mod surfaces {
     fn anthropic(world: &World, token: &str) -> Anthropic {
         Anthropic::new(glave_provider_anthropic::Config {
             base_url: world.url.clone(),
-            api_key: Some(token.into()),
+            api: glave_provider_anthropic::Api::Messages,
+            auth: glave_ports::auth::Auth::key(glave_ports::auth::KeyHeader::XApiKey, token),
             provider: "gateway".into(),
             idle_timeout: glave_provider_anthropic::IDLE_TIMEOUT,
         })
@@ -60,7 +61,7 @@ mod surfaces {
 
     #[test]
     fn the_openai_surface_streams_an_answer_from_the_route_s_target() {
-        block_on(async {
+        block_on!(async {
             let world =
                 World::start(vec![Reply::text("Hello there.")], Budgets::default(), false).await;
             let mut live = Vec::new();
@@ -98,7 +99,7 @@ mod surfaces {
 
     #[test]
     fn the_anthropic_surface_streams_text_and_tool_calls() {
-        block_on(async {
+        block_on!(async {
             let replies = vec![Reply::tool_call("call_9", "ls", &json!({"path": "."}))];
             let world = World::start(replies, Budgets::default(), false).await;
             let mut request = ask("acme/big", "list the files");
@@ -126,7 +127,7 @@ mod surfaces {
 
     #[test]
     fn both_surfaces_answer_whole_when_no_stream_is_asked_for() {
-        block_on(async {
+        block_on!(async {
             let replies = vec![Reply::text("One."), Reply::text("Two.")];
             let world = World::start(replies, Budgets::default(), false).await;
             let token = world.token("alice");
@@ -161,7 +162,7 @@ mod surfaces {
 
     #[test]
     fn every_call_needs_a_sign_in() {
-        block_on(async {
+        block_on!(async {
             let world = World::start(vec![Reply::text("never")], Budgets::default(), true).await;
             let http = reqwest::Client::new();
             for path in ["/v1/chat/completions", "/v1/messages", "/mcp"] {
@@ -192,7 +193,7 @@ mod surfaces {
 
     #[test]
     fn each_caller_is_held_to_their_own_allow_list() {
-        block_on(async {
+        block_on!(async {
             let world = World::start(vec![Reply::text("Judged.")], Budgets::default(), false).await;
             let refused = openai(&world, &world.token("bob"))
                 .complete(&ask("judge", "hi"), &mut |_| {})
@@ -217,7 +218,7 @@ mod surfaces {
 
     #[test]
     fn each_caller_has_their_own_budget_and_a_restart_does_not_reset_it() {
-        block_on(async {
+        block_on!(async {
             let budgets = Budgets {
                 person: Some(Limit::Tokens(120)),
                 ..Budgets::default()
@@ -256,7 +257,7 @@ mod surfaces {
 
     #[test]
     fn the_gateway_s_key_never_reaches_a_caller_or_a_notice() {
-        block_on(async {
+        block_on!(async {
             let echoing = format!(r#"{{"error": {{"message": "bad request with key {KEY}"}}}}"#);
             let replies = vec![
                 Reply::Status(400, echoing),

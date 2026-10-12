@@ -18,7 +18,7 @@ fn scope(n: u128) -> Scope {
 /// A store on a fresh file, and a second, raw connection to the same file.
 fn on_disk(name: &str) -> (PathBuf, Store, Connection) {
     let path = temp_db(name);
-    let store = block_on(Store::open(&path, file_keys(&path))).unwrap();
+    let store = block_on!(Store::open(&path, file_keys(&path))).unwrap();
     let raw = Connection::open(&path).unwrap();
     (path, store, raw)
 }
@@ -38,7 +38,7 @@ fn lines(events: &[RawEvent]) -> Vec<String> {
 }
 
 fn read_all(store: &Store, scope: &Scope, thread: &RawEvent) -> Result<Vec<RawEvent>, LogError> {
-    block_on(store.log().read(scope, thread.thread, None, 100))
+    block_on!(store.log().read(scope, thread.thread, None, 100))
 }
 
 /// The stored `data` and `key_id` of one event.
@@ -73,7 +73,7 @@ fn overwrite(raw: &Connection, scope: &Scope, event: &RawEvent, row: &(Vec<u8>, 
 fn the_keys_pass_the_key_conformance_suite() {
     let store = Store::open_in_memory(keys()).unwrap();
     assert_eq!(
-        block_on(glave_keys::conformance::keys(store.keys())),
+        block_on!(glave_keys::conformance::keys(store.keys())),
         Ok(())
     );
 }
@@ -83,16 +83,16 @@ fn payloads_are_sealed_in_the_file_and_read_back_as_written() {
     let (path, store, raw) = on_disk("sealed");
     let here = scope(1);
     let written = events(1, &[(1, "2026-10"), (2, "2026-10")]);
-    block_on(store.log().append(&here, &written)).unwrap();
+    block_on!(store.log().append(&here, &written)).unwrap();
     let (data, key_id) = stored(&raw, &here, &written[0]);
     let key_id: KeyId = key_id.expect("a new row is sealed").parse().unwrap();
     assert_eq!(
-        (key_id.space, key_id.month.to_string()),
+        (key_id.space, key_id.period.to_string()),
         (here.space, "2026-10".into())
     );
     assert!(!String::from_utf8_lossy(&data).contains("completed"));
     drop(store);
-    let reopened = block_on(Store::open(&path, file_keys(&path))).unwrap();
+    let reopened = block_on!(Store::open(&path, file_keys(&path))).unwrap();
     assert_eq!(
         lines(&read_all(&reopened, &here, &written[0]).unwrap()),
         lines(&written)
@@ -105,9 +105,9 @@ fn a_sealed_payload_moved_to_another_row_thread_or_space_does_not_open() {
     let (here, there) = (scope(1), scope(2));
     let a = events(1, &[(1, "2026-10"), (2, "2026-10")]);
     let b = events(2, &[(1, "2026-10")]);
-    block_on(store.log().append(&here, &a)).unwrap();
-    block_on(store.log().append(&here, &b)).unwrap();
-    block_on(store.log().append(&there, &a[..1])).unwrap();
+    block_on!(store.log().append(&here, &a)).unwrap();
+    block_on!(store.log().append(&here, &b)).unwrap();
+    block_on!(store.log().append(&there, &a[..1])).unwrap();
     let first = stored(&raw, &here, &a[0]);
     for (scope, target) in [(here, &a[1]), (here, &b[0]), (there, &a[0])] {
         let original = stored(&raw, &scope, target);
@@ -158,10 +158,10 @@ fn rows_written_before_sealing_still_read_after_the_migration() {
         )
         .unwrap();
     }
-    let store = block_on(Store::open(&path, file_keys(&path))).unwrap();
+    let store = block_on!(Store::open(&path, file_keys(&path))).unwrap();
     let raw = Connection::open(&path).unwrap();
     let new = event(1, 2, "2026-10").unwrap();
-    block_on(store.log().append(&here, std::slice::from_ref(&new))).unwrap();
+    block_on!(store.log().append(&here, std::slice::from_ref(&new))).unwrap();
     assert_eq!(
         stored(&raw, &here, &old).1,
         None,
@@ -175,7 +175,7 @@ fn rows_written_before_sealing_still_read_after_the_migration() {
         lines(&read_all(&store, &here, &old).unwrap()),
         lines(&[old, new])
     );
-    let blob = block_on(store.blobs().get(&here, &sha)).unwrap();
+    let blob = block_on!(store.blobs().get(&here, &sha)).unwrap();
     assert_eq!(blob.as_deref(), Some(b"old blob".as_slice()));
 }
 
@@ -184,21 +184,21 @@ fn erasing_a_space_makes_its_events_and_blobs_unreadable() {
     let (_, store, _raw) = on_disk("erase-space");
     let (here, other) = (scope(1), scope(2));
     let written = events(1, &[(1, "2026-10")]);
-    block_on(store.log().append(&here, &written)).unwrap();
-    block_on(store.log().append(&other, &written)).unwrap();
-    let blob = block_on(
+    block_on!(store.log().append(&here, &written)).unwrap();
+    block_on!(store.log().append(&other, &written)).unwrap();
+    let blob = block_on!(
         store
             .blobs()
             .put(&here, written[0].thread, b"x".to_vec(), "t/p"),
     )
     .unwrap();
-    block_on(store.keys().erase_space(&here)).unwrap();
+    block_on!(store.keys().erase_space(&here)).unwrap();
     let read = read_all(&store, &here, &written[0]);
     assert!(
         matches!(&read, Err(LogError::Storage(message)) if message.contains("destroyed")),
         "{read:?}"
     );
-    let got = block_on(store.blobs().get(&here, &blob.sha256));
+    let got = block_on!(store.blobs().get(&here, &blob.sha256));
     assert!(!matches!(got, Ok(Some(_))), "{got:?}");
     assert_eq!(
         lines(&read_all(&store, &other, &written[0]).unwrap()),
@@ -211,11 +211,11 @@ fn destroying_a_month_key_erases_that_month_and_keeps_the_rest() {
     let (_, store, raw) = on_disk("erase-month");
     let here = scope(1);
     let written = events(1, &[(1, "2026-10"), (2, "2026-11")]);
-    block_on(store.log().append(&here, &written)).unwrap();
+    block_on!(store.log().append(&here, &written)).unwrap();
     let october: KeyId = stored(&raw, &here, &written[0]).1.unwrap().parse().unwrap();
-    block_on(store.keys().destroy_data_key(&here, october)).unwrap();
+    block_on!(store.keys().destroy_data_key(&here, october)).unwrap();
     assert!(read_all(&store, &here, &written[0]).is_err());
-    let november = block_on(
+    let november = block_on!(
         store
             .log()
             .read(&here, written[0].thread, Some(written[0].seq), 10),
@@ -231,13 +231,13 @@ fn blobs_are_stored_under_a_keyed_name_with_the_threads_that_use_them() {
         event(1, 1, "2026-10").unwrap(),
         event(2, 1, "2026-10").unwrap(),
     ];
-    let reference = block_on(
+    let reference = block_on!(
         store
             .blobs()
             .put(&here, a.thread, b"shared".to_vec(), "t/p"),
     )
     .unwrap();
-    block_on(
+    block_on!(
         store
             .blobs()
             .put(&here, b.thread, b"shared".to_vec(), "t/p"),
@@ -258,7 +258,7 @@ fn blobs_are_stored_under_a_keyed_name_with_the_threads_that_use_them() {
         )
         .unwrap();
     assert_eq!(threads, 2);
-    let got = block_on(store.blobs().get(&here, &reference.sha256)).unwrap();
+    let got = block_on!(store.blobs().get(&here, &reference.sha256)).unwrap();
     assert_eq!(got.as_deref(), Some(b"shared".as_slice()));
 }
 
@@ -267,8 +267,8 @@ fn another_root_cannot_read_the_file() {
     let (path, store, _raw) = on_disk("other-root");
     let here = scope(1);
     let written = events(1, &[(1, "2026-10")]);
-    block_on(store.log().append(&here, &written)).unwrap();
+    block_on!(store.log().append(&here, &written)).unwrap();
     drop(store);
-    let stranger = block_on(Store::open(&path, keys())).unwrap();
+    let stranger = block_on!(Store::open(&path, keys())).unwrap();
     assert!(read_all(&stranger, &here, &written[0]).is_err());
 }

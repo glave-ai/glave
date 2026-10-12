@@ -1,0 +1,57 @@
+@use '../../styles/splitter';
+
+:host {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  height: 100%;
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.panel {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: var(--glz-panel-width);
+  max-width: 70%;
+  min-height: 0;
+  border-inline-start: var(--glz-border-width) solid var(--glz-color-border);
+  background: var(--glz-panel-surface);
+}
+
+.panel:focus {
+  outline: none;
+}
+
+:host(:not(.open)) .panel {
+  display: none;
+}
+
+@include splitter.splitter;
+
+// Narrow screens: the panel slides over the content as a sheet.
+:host(.narrow) .panel {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  z-index: 20;
+  width: min(100%, 28rem);
+  max-width: 100%;
+  border-inline-start: 0;
+  box-shadow: var(--glz-elevation-3);
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--glz-color-scrim);
+}

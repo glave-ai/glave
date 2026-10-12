@@ -20,7 +20,7 @@ mod actors {
     #[test]
     fn a_thread_records_its_person_its_agent_and_that_a_prompt_started_it() {
         let dir = folder("actors-started");
-        block_on(async {
+        block_on!(async {
             let harness = harness(&dir, vec![], NoOneToAsk).await;
             let thread = harness.start_thread(scope()).await.unwrap();
             let first = events(harness.log(), thread.id).await;
@@ -48,7 +48,7 @@ mod actors {
     #[test]
     fn with_no_one_to_answer_the_refusal_is_recorded_as_glaves() {
         let dir = folder("actors-no-one");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -79,9 +79,9 @@ mod actors {
     }
 
     #[test]
-    fn a_caller_other_than_the_threads_person_is_recorded_and_the_person_is_implied() {
+    fn a_thread_is_for_its_caller_and_anyone_else_who_acts_in_it_is_recorded() {
         let dir = folder("actors-caller");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(Some("One."), vec![], StopReason::EndTurn),
                 answer(Some("Two."), vec![], StopReason::EndTurn),
@@ -103,6 +103,7 @@ mod actors {
             let signed_in = Caller {
                 person: Some(ada),
                 auth: Some(auth.clone()),
+                trace: None,
             };
             let mut thread = harness.start_thread_as(scope(), &signed_in).await.unwrap();
             for caller in [
@@ -110,6 +111,7 @@ mod actors {
                 &Caller {
                     person: owner,
                     auth: None,
+                    trace: None,
                 },
             ] {
                 harness
@@ -118,11 +120,15 @@ mod actors {
                     .unwrap();
             }
             let mut origin = None;
+            let mut for_ = None;
             let mut auths = Vec::new();
             let mut authors = Vec::new();
             for event in events(harness.log(), thread.id).await {
                 match event.body {
-                    Body::ThreadStarted(started) => origin = started.origin.by,
+                    Body::ThreadStarted(started) => {
+                        origin = started.origin.by;
+                        for_ = started.for_;
+                    }
                     Body::TurnStarted(turn) => auths.push(turn.auth),
                     Body::MessageAdded(added) if added.role == Role::User => {
                         authors.push(added.author);
@@ -130,12 +136,18 @@ mod actors {
                     _ => {}
                 }
             }
-            assert_eq!(origin, Some(Principal::person(ada)));
+            assert_eq!(
+                for_,
+                Some(Principal::person(ada)),
+                "the thread is ada's work"
+            );
+            assert_eq!(origin, None, "she started it, as its for says");
             assert_eq!(auths, [Some(auth), None]);
+            let owner = owner.map(Principal::person);
             assert_eq!(
                 authors,
-                [Some(Principal::person(ada)), None],
-                "the owner is implied"
+                [None, owner],
+                "ada is implied; the harness's own person, acting in her thread, is named"
             );
         });
     }

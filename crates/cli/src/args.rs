@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use glave_harness::ApprovalMode;
 
-use crate::policy::{On, SandboxChoice};
+use glave_config::policy::{On, SandboxChoice};
 
 pub const USAGE: &str = "\
 glave: run hope, or any model, on the project in this folder
@@ -32,12 +32,21 @@ Usage:
                                 be this folder's task host: serve the session API on a Unix
                                 socket in GLAVE_HOME/run and run its tasks and schedules
                                 until nothing is left (glave starts it when needed)
-  glave serve --http <address> --issuer <url> --audience <name> [options]
-                                serve the session API over HTTP to clients signed in with
-                                an OIDC access token from that issuer for that audience.
-                                The address is host:port, or a port on 127.0.0.1; the
-                                listener has no TLS, so put it behind a proxy that has.
-                                --issuer may be given more than once
+  glave serve --http <address> [--issuer <url> --audience <name>] [options]
+                                serve the session API over HTTP. A browser on this
+                                computer signs in with a token made at every start (kept in
+                                GLAVE_HOME/serve.token; glave prints a link with it); with
+                                --issuer and --audience, clients elsewhere sign in with an
+                                OIDC access token from that issuer for that audience.
+                                The address is host:port, or a port on 127.0.0.1; without
+                                --issuer it must be this computer's. The listener has no
+                                TLS, so put it behind a proxy that has.
+                                --issuer may be given more than once. The web app is
+                                served at / too, from --web <folder> (the app's build), or
+                                else from the web folder beside the glave binary, if any.
+                                Anyone who reaches the listener gets that folder's files
+                                without signing in, so it must hold only the build and must
+                                not be writable by an agent
   glave gateway serve --http <address> --issuer <url> --audience <name>
                                 serve the gateway to an organization: model calls and the
                                 tool catalog, every call signed in (glave gateway --help)
@@ -57,12 +66,15 @@ Usage:
 Options:
   --model <name>     the model to use (default: $GLAVE_MODEL)
   --continue, -c     continue your last thread in this folder
-  --approval <mode>  how much to ask before acting: auto (the default; only reading secret
-                     files asks) or ask (every change and command asks). With no one at
-                     the keyboard, anything that would ask is declined
-  --sandbox <level>  run commands in the macOS sandbox: read-only, or project (writes only
-                     the project and temp folder), or off; never reads secret locations
-  --network          let sandboxed commands use the network
+  --approval <mode>  how much to ask before acting: auto (only reading secret files asks;
+                     the default when commands run in the sandbox) or ask (every change
+                     and command asks; the default when they cannot). With no one at the
+                     keyboard, anything that would ask is declined
+  --sandbox <level>  the wall around commands: project (the default wherever this computer
+                     can run it: writes only the project and temp folders, hooks and
+                     settings stay read-only), read-only, or off; never reads secrets
+  --no-network       keep sandboxed commands off the network
+  --network          let sandboxed commands use the network (the default)
   --worktree         work in a new worktree of this repository, on a branch glave/<id>,
                      kept under GLAVE_HOME/worktrees, rather than in this folder itself
   --on <place>       where threads work: here (the default), or cloud: a disposable worker
@@ -72,6 +84,11 @@ Options:
   --max-steps <n>    end each turn after n model calls, the last one a text report of
                      what is done and what is left (default: no limit)
   --events <file>    save the thread's events to this file as JSON Lines
+  --server <url>     be a client of the session server at this URL (or [server] url in
+                     config.toml): threads, turns and approvals run there and show here;
+                     sign in with GLAVE_SERVER_TOKEN
+  --log <file>       append glave's spans and metrics to this file: ids, names, counts and
+                     timings, never prompts, answers, file contents or secrets
   --help             show this help
   --version          show the version
 
@@ -88,14 +105,20 @@ Environment:
                      summarizes a thread near 80% of it
   GLAVE_IDLE_TIMEOUT    seconds the model may send nothing before a call fails (default:
                      300); failures that may pass are tried 4 more times
+  GLAVE_SERVER_TOKEN an access token for the server --server names
+  GLAVE_STORE_URL    a Postgres database to keep history in, as [store] url in config.toml
+                     (default: the SQLite file in GLAVE_HOME)
+  GLAVE_LOG          how much --log records: error, warn, info (the default), debug or trace
   GLAVE_JUDGE_MODEL     in auto mode, the model that decides whether an action a rule
                      flagged may run because you asked for it (default: the main model;
                      `off` to always ask)
 
 Settings: config.toml in GLAVE_HOME may set model, judge_model, approval, sandbox,
 worktree (true or false), on (here or cloud), [workers] (backend = \"docker\" and glave,
-a Linux build of glave for workers) and mcp (the servers in mcp.json to turn on); flags and
-the environment win over it. An
+a Linux build of glave for workers), mcp (the servers in mcp.json to turn on) and
+[telemetry] (otlp = an OpenTelemetry collector's OTLP/HTTP URL, for builds with the otlp
+feature: spans and metrics, never content) and [store] (url = a postgres:// database, over TLS
+off this computer); flags and the environment win over it. An
 organization's policy at /etc/glave/policy.toml limits what may be chosen.
 
 A new thread starts with your AGENTS.md (in GLAVE_HOME), then every AGENTS.md from the
@@ -158,8 +181,8 @@ pub struct Args {
     pub approval: Option<ApprovalMode>,
     /// Run commands in the sandbox at this level, or not at all.
     pub sandbox: Option<SandboxChoice>,
-    /// Let sandboxed commands use the network.
-    pub network: bool,
+    /// Whether sandboxed commands may use the network; chosen elsewhere, or on, when not given.
+    pub network: Option<bool>,
     /// Work in a worktree of the repository of its own, on a new branch.
     pub worktree: bool,
     /// Where new threads work: here, or on a worker (`--on cloud`).
@@ -169,6 +192,10 @@ pub struct Args {
     /// Continue the most recent thread in this folder instead of starting one.
     pub resume: bool,
     pub events: Option<PathBuf>,
+    /// Append glave's spans and metrics to this file.
+    pub log: Option<PathBuf>,
+    /// Be a client of the session server at this URL.
+    pub server: Option<String>,
     /// The one-shot prompt; empty starts an interactive session.
     pub prompt: String,
     /// Serve over HTTP on this address, rather than stdio.
@@ -181,6 +208,8 @@ pub struct Args {
     pub issuers: Vec<String>,
     /// The audience those tokens must name.
     pub audience: Option<String>,
+    /// The built web app to serve over HTTP, rather than the one beside the binary.
+    pub web: Option<PathBuf>,
     /// Run the turn or goal as a task in the folder's task host, with no one attached.
     pub background: bool,
     /// With `background`, tokens the turn may use.
@@ -212,6 +241,8 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--events" => {
                 args.events = Some(PathBuf::from(rest.next().ok_or("--events needs a file")?));
             }
+            "--server" => args.server = Some(rest.next().ok_or("--server needs a URL")?),
+            "--log" => args.log = Some(PathBuf::from(rest.next().ok_or("--log needs a file")?)),
             "--approval" => {
                 let mode = rest.next().ok_or("--approval needs a mode: auto or ask")?;
                 args.approval =
@@ -227,7 +258,8 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
                     format!("unknown sandbox level {level:?}: use read-only, project or off")
                 })?);
             }
-            "--network" => args.network = true,
+            "--network" => args.network = Some(true),
+            "--no-network" => args.network = Some(false),
             "--worktree" => args.worktree = true,
             "--on" => args.on = Some(place(rest.next())?),
             "--max-steps" => args.max_steps = Some(steps(rest.next())?),
@@ -237,15 +269,15 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--budget" => args.budget = Some(tokens("--budget", rest.next())?),
             "--socket" if serving => args.socket = true,
             "--stdio" if serving => stdio = true,
-            "--http" if serving => {
-                args.http = Some(address(rest.next())?);
-            }
-            "--issuer" if serving => {
-                args.issuers
-                    .push(rest.next().ok_or("--issuer needs a URL")?);
-            }
+            "--http" if serving => args.http = Some(address(rest.next())?),
+            "--issuer" if serving => args
+                .issuers
+                .push(rest.next().ok_or("--issuer needs a URL")?),
             "--audience" if serving => {
                 args.audience = Some(rest.next().ok_or("--audience needs a name")?);
+            }
+            "--web" if serving => {
+                args.web = Some(rest.next().ok_or("--web needs a folder")?.into());
             }
             "--continue" | "-c" => args.resume = true,
             "--help" | "-h" => args.action = Action::Help,
@@ -255,8 +287,8 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             _ => words.push(argument),
         }
     }
-    if args.network && args.sandbox == Some(SandboxChoice::Off) {
-        return Err("--network only applies with a sandbox".into());
+    if args.network.is_some() && args.sandbox == Some(SandboxChoice::Off) {
+        return Err("--network and --no-network only apply with a sandbox".into());
     }
     args.prompt = words.join(" ");
     alone(&args)?;
@@ -355,18 +387,26 @@ fn transport(args: &Args, stdio: bool) -> Result<(), String> {
     if !args.prompt.is_empty() || args.resume || args.events.is_some() {
         return Err("glave serve takes no prompt, --continue or --events: clients choose".into());
     }
+    if args.web.is_some() && args.http.is_none() {
+        return Err("--web is for --http: the web app is served over HTTP".into());
+    }
     let signs_in = !args.issuers.is_empty() || args.audience.is_some();
     if (stdio || args.socket) && signs_in {
         return Err(
             "--issuer and --audience are for --http; stdio and the socket need no sign-in".into(),
         );
     }
-    if args.http.is_some() && (args.issuers.is_empty() || args.audience.is_none()) {
-        return Err(
-            "glave serve --http needs --issuer <url> and --audience <name>: a network \
-             listener never runs without sign-in"
-                .into(),
-        );
+    if let Some(address) = args.http {
+        if args.issuers.is_empty() != args.audience.is_none() {
+            return Err("--issuer and --audience go together: OIDC needs both".into());
+        }
+        if args.issuers.is_empty() && !address.ip().is_loopback() {
+            return Err(format!(
+                "glave serve --http {address} would listen beyond this computer: without \
+                 --issuer <url> and --audience <name> only a browser here can sign in, so \
+                 listen on 127.0.0.1 or ::1"
+            ));
+        }
     }
     Ok(())
 }
@@ -424,7 +464,10 @@ mod tests {
     fn the_sandbox_takes_a_level_and_optional_network() {
         let args = parse_words(&["--sandbox", "project", "--network", "go"]).unwrap();
         assert_eq!(args.sandbox, Some(SandboxChoice::Project));
-        assert!(args.network);
+        assert_eq!(args.network, Some(true));
+        let offline = parse_words(&["--no-network", "go"]).unwrap();
+        assert_eq!(offline.network, Some(false));
+        assert_eq!(parse_words(&["go"]).unwrap().network, None);
         let off = parse_words(&["--sandbox", "off", "go"]).unwrap();
         assert_eq!(off.sandbox, Some(SandboxChoice::Off));
         assert!(parse_words(&["--sandbox", "everything"]).is_err());
@@ -432,6 +475,10 @@ mod tests {
         assert!(
             parse_words(&["--sandbox", "off", "--network"]).is_err(),
             "network needs a sandbox"
+        );
+        assert!(
+            parse_words(&["--sandbox", "off", "--no-network"]).is_err(),
+            "no network needs a sandbox"
         );
         assert!(
             parse_words(&["--network"]).is_ok(),
@@ -493,8 +540,18 @@ mod tests {
             "a",
         ]);
         assert_eq!(anywhere.unwrap().http, Some("0.0.0.0:9".parse().unwrap()));
-        let unsigned = parse_words(&["serve", "--http", "8080"]).unwrap_err();
-        assert!(unsigned.contains("--issuer"), "{unsigned}");
+        // Without OIDC, only a browser on this computer signs in, with the local token.
+        let web = parse_words(&["serve", "--http", "8080", "--web", "dist/app"]).unwrap();
+        assert_eq!(web.web, Some(PathBuf::from("dist/app")));
+        assert!(parse_words(&["serve", "--stdio", "--web", "dist/app"]).is_err());
+        assert!(parse_words(&["serve", "--http", "8080", "--web"]).is_err());
+        let local = parse_words(&["serve", "--http", "8080"]).unwrap();
+        assert_eq!(local.http, Some("127.0.0.1:8080".parse().unwrap()));
+        assert!(parse_words(&["serve", "--http", "[::1]:8080"]).is_ok());
+        let exposed = parse_words(&["serve", "--http", "0.0.0.0:9"]).unwrap_err();
+        assert!(exposed.contains("--issuer"), "{exposed}");
+        let half = parse_words(&["serve", "--http", "8080", "--issuer", "i"]).unwrap_err();
+        assert!(half.contains("go together"), "{half}");
         assert!(parse_words(&["serve", "--http", "8080", "--stdio"]).is_err());
         assert!(parse_words(&["serve", "--stdio", "--audience", "a"]).is_err());
         assert!(parse_words(&["serve", "--http", "nowhere"]).is_err());

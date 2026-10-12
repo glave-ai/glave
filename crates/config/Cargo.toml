@@ -1,0 +1,34 @@
+[package]
+name = "glave-config"
+description = "glave's config and policy (specs/policy.md): choices nearest-wins, constraints that only narrow, project trust, and `glave policy explain`"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The settings config and policy choose and constrain are the domain crates' own types.
+glave-computer.workspace = true
+glave-harness.workspace = true
+# A project's `.mcp.json`, read the way glave's MCP client reads it.
+glave-mcp.workspace = true
+glave-memory.workspace = true
+glave-ports.workspace = true
+glave-web.workspace = true
+globset.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "rt"] }
+toml.workspace = true
+
+[dev-dependencies]
+glave-ports = { workspace = true, features = ["conformance"] }
+insta.workspace = true
+# Property tests for the URL redaction (AGENTS.md: parsers get property tests).
+proptest.workspace = true
+
+[lints]
+workspace = true

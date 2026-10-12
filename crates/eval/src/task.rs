@@ -36,15 +36,22 @@ pub struct Task {
     /// the way a person returns to it later.
     pub turns: Vec<String>,
     pub tier: Tier,
+    /// As glave chooses it: `auto` in the sandbox, `ask` without one, unless the task says.
     pub approval: ApprovalMode,
+    /// `project` unless the task says otherwise, as glave runs by default; `None` is off.
     pub sandbox: Option<SandboxLevel>,
+    /// Whether the task names its sandbox. One it names must run; glave's default gives way
+    /// where this computer has none, as it does in glave.
+    pub sandbox_named: bool,
+    /// Whether sandboxed commands may use the network: on unless the task says otherwise.
     pub network: bool,
     pub context_window: Option<u64>,
     /// Shell commands run in the workspace before the first turn, outside any sandbox.
     pub setup: Vec<String>,
     /// Extra environment for the agent's commands, the setup and the tests. Here and in
-    /// `setup`, `{dir}` is replaced with the run's folder, `{workspace}` with the workspace
-    /// and `{task}` with the task's folder, where setup scripts the agent never sees can live.
+    /// `setup`, `{dir}` is replaced with the run's folder, `{workspace}` with the workspace,
+    /// `{task}` with the task's folder, where setup scripts the agent never sees can live, and
+    /// `{path}` with the `PATH` commands would otherwise get.
     pub env: BTreeMap<String, String>,
     pub checks: Vec<Check>,
     pub timeout: Duration,
@@ -54,6 +61,64 @@ pub struct Task {
     pub outcome: Outcome,
     /// Run the instruction as a goal, worked toward across turns, rather than as one turn.
     pub goal: Option<TaskGoal>,
+    /// Whether memory is on for the task (`specs/memory.md`); `--memory` overrides it.
+    pub memory: bool,
+    /// The first thread's space setting: `shared` (default), `isolated` or `off`.
+    pub space_memory: Option<String>,
+    /// Threads after the first, each new, run in order in the same store.
+    pub threads: Vec<TaskThread>,
+    /// Memories saved before the first thread.
+    pub memories: Vec<Seeded>,
+    /// Past conversations, written to the store before the first thread, for `recall`.
+    pub past: Vec<PastThread>,
+    /// Whether tidy-up runs over every space's memory once the threads are done, on the model
+    /// under test (`specs/memory.md`, "Tidy-up"): `[glave] tidy = true`.
+    pub tidy: Tidying,
+}
+
+/// When an attempt tidies memory.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Tidying {
+    #[default]
+    Never,
+    /// Once every thread is done.
+    AfterThreads,
+}
+
+/// A past conversation: `[[glave.past]]`, the person's messages in a thread of their own.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PastThread {
+    pub messages: Vec<String>,
+    /// The space it was in, by name; the first thread's when absent.
+    pub space: Option<String>,
+}
+
+/// A thread after the first: `[[glave.threads]]`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskThread {
+    /// Its messages, in order; each after the first resumes it from its log.
+    pub messages: Vec<String>,
+    /// The space it works in, by name; the first thread's when absent.
+    pub space: Option<String>,
+    /// That space's setting, when it is a space of its own.
+    pub space_memory: Option<String>,
+}
+
+/// A memory seeded before the first thread: `[[glave.memories]]`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Seeded {
+    pub text: String,
+    /// `personal` or `space` (the first thread's).
+    pub scope: String,
+    /// Saved in a thread that had read untrusted content.
+    #[serde(default)]
+    pub untrusted: bool,
+    /// How many days ago it was saved; today when absent.
+    #[serde(default)]
+    pub days_ago: u32,
 }
 
 /// A goal, as `[glave] goal = { budget = 200000 }` sets it. How to verify it is the
@@ -123,8 +188,7 @@ struct Glave {
     tier: Tier,
     approval: Option<String>,
     sandbox: Option<String>,
-    #[serde(default)]
-    network: bool,
+    network: Option<bool>,
     context_window: Option<u64>,
     #[serde(default)]
     setup: Vec<String>,
@@ -138,6 +202,17 @@ struct Glave {
     max_steps: Option<u32>,
     outcome: Option<Outcome>,
     goal: Option<TaskGoal>,
+    #[serde(default)]
+    memory: bool,
+    space_memory: Option<String>,
+    #[serde(default)]
+    threads: Vec<TaskThread>,
+    #[serde(default)]
+    memories: Vec<Seeded>,
+    #[serde(default)]
+    past: Vec<PastThread>,
+    #[serde(default)]
+    tidy: bool,
 }
 
 /// Loads the task in `dir`. Its paths are absolute, since the grader runs from the workspace.
@@ -162,17 +237,19 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         return Err(bad("instruction.md is empty".into()));
     }
     let glave = file.glave;
-    let approval = match glave.approval.as_deref() {
-        None => ApprovalMode::default(),
-        Some(name) => ApprovalMode::named(name)
-            .ok_or_else(|| bad(format!("no approval mode is named {name:?}")))?,
-    };
     let sandbox = match glave.sandbox.as_deref() {
-        None => None,
+        None => Some(SandboxLevel::Project),
+        Some("off") => None,
         Some(name) => Some(
             SandboxLevel::named(name)
                 .ok_or_else(|| bad(format!("no sandbox is named {name:?}")))?,
         ),
+    };
+    let approval = match glave.approval.as_deref() {
+        None if sandbox.is_some() => ApprovalMode::Auto,
+        None => ApprovalMode::Ask,
+        Some(name) => ApprovalMode::named(name)
+            .ok_or_else(|| bad(format!("no approval mode is named {name:?}")))?,
     };
     let timeout = match file.agent.timeout_sec {
         None => DEFAULT_TIMEOUT,
@@ -182,6 +259,7 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
     if glave.context_window.is_some_and(|tokens| tokens < 1_000) {
         return Err(bad("context_window is under 1,000 tokens".into()));
     }
+    memory_named(&glave).map_err(bad)?;
     let mut turns = vec![instruction];
     turns.extend(glave.turns);
     Ok(Task {
@@ -192,7 +270,8 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         tier: glave.tier,
         approval,
         sandbox,
-        network: glave.network,
+        sandbox_named: glave.sandbox.is_some(),
+        network: glave.network.unwrap_or(true),
         context_window: glave.context_window,
         setup: glave.setup,
         env: glave.env,
@@ -201,7 +280,45 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         max_steps: glave.max_steps,
         outcome: glave.outcome.unwrap_or(Outcome::Completed),
         goal: glave.goal,
+        memory: glave.memory,
+        space_memory: glave.space_memory,
+        threads: glave.threads,
+        memories: glave.memories,
+        past: glave.past,
+        tidy: if glave.tidy {
+            Tidying::AfterThreads
+        } else {
+            Tidying::Never
+        },
     })
+}
+
+/// Whether the memory settings and seeded memories of `glave` name things that exist.
+fn memory_named(glave: &Glave) -> Result<(), String> {
+    let settings = glave.space_memory.iter().chain(
+        glave
+            .threads
+            .iter()
+            .filter_map(|thread| thread.space_memory.as_ref()),
+    );
+    for name in settings {
+        if glave_memory::SpaceMemory::named(name).is_none() {
+            return Err(format!(
+                "space_memory is shared, isolated or off, not {name:?}"
+            ));
+        }
+    }
+    match glave
+        .memories
+        .iter()
+        .find(|seed| glave_event::MemoryScope::named(&seed.scope).is_none())
+    {
+        Some(seed) => Err(format!(
+            "a seeded memory's scope is personal or space, not {:?}",
+            seed.scope
+        )),
+        None => Ok(()),
+    }
 }
 
 /// Loads every task folder under `root`, sorted by name.
@@ -278,7 +395,19 @@ mod tests {
         let task = load(&folder("bare", "", "Hello.")).unwrap();
         assert_eq!(task.tier, Tier::Fast);
         assert_eq!(task.approval, ApprovalMode::Auto);
-        assert_eq!(task.sandbox, None);
+        assert_eq!(
+            task.sandbox,
+            Some(SandboxLevel::Project),
+            "as glave runs by default"
+        );
+        assert!(task.network);
+        let off = load(&folder("off", "[glave]\nsandbox = \"off\"\n", "Hi.")).unwrap();
+        assert_eq!(off.sandbox, None);
+        assert_eq!(
+            off.approval,
+            ApprovalMode::Ask,
+            "as glave asks without a sandbox"
+        );
         assert_eq!(task.timeout, DEFAULT_TIMEOUT);
         assert_eq!(task.checks, []);
         assert_eq!(task.outcome, Outcome::Completed);

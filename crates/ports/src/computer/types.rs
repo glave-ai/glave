@@ -11,7 +11,19 @@ use super::environment::{Environment, Size};
 use super::sandbox::Sandbox;
 
 /// Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(transparent)]
 pub struct ComputerId(Uuid);
 
@@ -86,6 +98,14 @@ pub enum Sources {
     Worktree {
         path: String,
         branch: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner: Option<String>,
+    },
+    /// A folder of its own for a thread with no project, such as a one-off chat: made empty
+    /// under `name` (letters, digits and `-`) in a place the computer chooses, and reopened,
+    /// as it was left, when opened again. `owner` is kept beside it, as for a worktree.
+    Scratch {
+        name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         owner: Option<String>,
     },
@@ -244,7 +264,7 @@ pub struct Save {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Saved {
     pub commit: String,
-    /// False for a folder with nowhere to push to: the commit is kept in its own history.
+    /// False for a repository with no `origin`: the commit stays in it.
     pub pushed: bool,
 }
 

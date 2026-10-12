@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::{ModelRef, Opaque, Part, StopReason, TokenCounts, Usage};
 use glave_gateway::{Model, Target};
+pub use glave_ports::block_on;
 use glave_ports::{
     BoxFuture, Completion, Delta, Message, ModelRequest, ProviderError, Purpose, ToolChoice,
     ToolSpec,
@@ -157,12 +158,4 @@ pub fn with_reasoning(mut request: ModelRequest, provider: &str, model: &str) ->
         }],
     });
     request
-}
-
-/// Runs `future` to completion on a fresh single-threaded runtime.
-pub fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap()
-        .block_on(future)
 }

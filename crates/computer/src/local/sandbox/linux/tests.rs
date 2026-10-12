@@ -10,7 +10,7 @@ use std::process::Command as Process;
 
 use glave_ports::{
     Command, ComputerError, Computers, Ending, Environment, Output, Sandbox, SandboxLevel, Sources,
-    WorkspaceId,
+    WorkspaceId, block_on,
 };
 
 use super::landlocked;
@@ -36,14 +36,6 @@ fn landlock() -> Option<PathBuf> {
          GLAVE_TEST_SANDBOX_HELPER is unset"
     );
     helper.filter(|_| runs)
-}
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
 }
 
 /// A folder outside the system temp folder, which the sandbox lets every command write.
@@ -90,7 +82,7 @@ fn run(
         home: Some(dir.to_owned()),
         glave_home: Some(dir.join(".glave")),
     });
-    block_on(async {
+    block_on!(async {
         let computer = computers.create(&Environment::host()).await?;
         let sources = Sources::Folder {
             path: dir.join("project").to_string_lossy().into_owned(),

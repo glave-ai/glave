@@ -1,0 +1,93 @@
+// Quiet beside the conversation: no card, muted text, one line; a status other than done
+// keeps its colour, and its icon says it too, so colour never says it alone.
+:host {
+  --glz-receipt-status: var(--glz-color-text-muted);
+
+  display: block;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+:host(.status-failed) {
+  --glz-receipt-status: var(--glz-color-danger);
+}
+
+:host(.status-declined) {
+  --glz-receipt-status: var(--glz-color-warning);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-height: 1.75rem;
+
+  // Its icon lines up with the text around it; the padding is room for the hover and focus.
+  margin-inline: calc(-1 * var(--glz-space-1));
+  padding: 0 var(--glz-space-1);
+  border-radius: var(--glz-radius-sm);
+  cursor: pointer;
+  list-style: none;
+  transition: background-color var(--glz-duration-fast) var(--glz-easing);
+}
+
+.line::-webkit-details-marker {
+  display: none;
+}
+
+.line:hover {
+  background: var(--glz-surface-hover);
+}
+
+.line:focus-visible {
+  outline: 2px solid var(--glz-color-focus);
+  outline-offset: 0;
+}
+
+.kind {
+  flex: none;
+}
+
+.tool {
+  flex: none;
+  color: var(--glz-color-text);
+}
+
+.what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--glz-font-mono);
+  font-size: var(--glz-text-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.status {
+  flex: none;
+  color: var(--glz-receipt-status);
+}
+
+:host(.status-running) .status {
+  animation: glz-receipt-spin 1s linear infinite;
+}
+
+// The evidence hangs under the line, behind a rule, as reasoning does.
+.evidence {
+  margin: var(--glz-space-1) 0 var(--glz-space-2) var(--glz-space-3);
+  padding-inline-start: var(--glz-space-3);
+  overflow-x: auto;
+  border-inline-start: 2px solid var(--glz-color-border);
+}
+
+@keyframes glz-receipt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host(.status-running) .status {
+    animation: none;
+  }
+}

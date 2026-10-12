@@ -8,12 +8,12 @@ mod hierarchy;
 use std::fmt;
 use std::sync::Arc;
 
-use glave_event::{RawEvent, Seq, Sha256, ThreadId};
+use glave_event::{RawEvent, Seq, Sha256, ThreadId, sealed_under_memory};
 use glave_ports::Scope;
 use jiff::Timestamp;
 
 use crate::error::KeyError;
-use crate::key_id::{KeyId, Month};
+use crate::key_id::{KeyId, Month, Period};
 use crate::root::Root;
 use crate::seal::{associated, open, seal};
 use crate::storage::KeyStorage;
@@ -99,10 +99,14 @@ impl<S: KeyStorage> Keys<S> {
         &self.storage
     }
 
-    /// Seals `event`'s payload under its space's data key for the month it happened in.
+    /// Seals `event`'s payload under its space's data key for the month it happened in, or,
+    /// for an event holding a memory's text, under that memory's own key.
     pub async fn seal_event(&self, scope: &Scope, event: &RawEvent) -> Result<Sealed, KeyError> {
-        let month = Month::of(event.at.timestamp());
-        let (id, key) = self.sealing_key(scope, month).await?;
+        let period = sealed_under_memory(event).map_or_else(
+            || Period::Month(Month::of(event.at.timestamp())),
+            |memory| Period::Memory(memory.as_uuid()),
+        );
+        let (id, key) = self.sealing_key(scope, period).await?;
         let key_id = id.to_string();
         let aad = event_aad(scope, &EventFields::from(event), &key_id);
         let bytes = seal(&key, &aad, event.data.get().as_bytes())?;
@@ -135,6 +139,28 @@ impl<S: KeyStorage> Keys<S> {
         Ok(Some(space.name_blob(sha256)?))
     }
 
+    /// The words `terms` as `scope`'s full-text index holds them (`glave_ports::search`):
+    /// each a keyed hash under the space key's naming half, so the index reveals no word, the
+    /// same query finds the same words until the space is erased, and no other space's words
+    /// match. `None` when the space has no key yet (or it was erased): nothing can be found.
+    pub async fn search_terms(
+        &self,
+        scope: &Scope,
+        terms: &[String],
+    ) -> Result<Option<Vec<String>>, KeyError> {
+        if terms.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+        let Some(space) = self.live_space_key(scope).await? else {
+            return Ok(None);
+        };
+        terms
+            .iter()
+            .map(|term| space.name_term(term))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some)
+    }
+
     /// Seals a blob under the space's data key for this month. Returns the name to store it
     /// under and the sealed bytes.
     pub async fn seal_blob(
@@ -144,7 +170,7 @@ impl<S: KeyStorage> Keys<S> {
         bytes: &[u8],
     ) -> Result<(String, Sealed), KeyError> {
         let month = Month::of((self.clock)());
-        let (id, key) = self.sealing_key(scope, month).await?;
+        let (id, key) = self.sealing_key(scope, Period::Month(month)).await?;
         let name = self
             .blob_name(scope, sha256)
             .await?
@@ -171,6 +197,18 @@ impl<S: KeyStorage> Keys<S> {
         let key = self.data_key(scope, key_id.parse()?).await?;
         open(&key, &blob_aad(scope, name, key_id), sealed, key_id)
     }
+}
+
+/// What a payload reads as once the memory key that sealed it was destroyed: an empty object.
+/// Its envelope outlives it, so a memory ledger still reads in full after a forget, and its
+/// text is gone (`specs/memory.md`, "Forgetting really forgets"). `None` for any other
+/// failure, and for a destroyed month's key, which fails the read as before.
+pub fn erased_payload(key_id: &str, error: &KeyError) -> Option<Vec<u8>> {
+    let destroyed = matches!(error, KeyError::Destroyed(_));
+    let memory = key_id
+        .parse::<KeyId>()
+        .is_ok_and(|id| matches!(id.period, Period::Memory(_)));
+    (destroyed && memory).then(|| b"{}".to_vec())
 }
 
 /// What binds a sealed payload to its row: the envelope version, organization, space,

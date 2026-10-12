@@ -94,6 +94,19 @@ impl Printer {
         );
     }
 
+    /// The banner of a session on a server elsewhere, which chooses the model.
+    pub fn banner_elsewhere(&self, server: &str, note: &str) {
+        println!(
+            "{} {}",
+            paint(self.color, GREEN, "glave"),
+            paint(self.color, DIM, &format!("· on {server} · {note}"))
+        );
+        println!(
+            "{}",
+            paint(self.color, DIM, "Type a request. /exit to leave.")
+        );
+    }
+
     pub fn ask(&self) {
         print!("\n{} ", paint(self.color, GREEN, "›"));
         flush();
@@ -166,6 +179,11 @@ impl Printer {
             }
             // Shown by the client, which answers it.
             Update::Asked { .. } => {}
+            Update::Memory {
+                change,
+                memory,
+                text,
+            } => self.memory(&change, memory, text),
             Update::SubagentStarted { .. } | Update::SubagentEnded { .. } => self.subagent(update),
             Update::ToolFinished { is_error, .. } => {
                 if is_error {
@@ -176,6 +194,15 @@ impl Printer {
             }
         }
         flush();
+    }
+
+    /// A memory saved, edited or forgotten: shown at once, with how to change it.
+    fn memory(&mut self, change: &str, memory: glave_event::MemoryId, text: Option<String>) {
+        let detail = match text {
+            Some(text) => format!("\"{text}\" · glave memory edit|forget {memory}"),
+            None => memory.to_string(),
+        };
+        self.note(GREEN, &format!("{change}:"), &detail);
     }
 
     /// A line of its own about the turn: a word in `color`, then dim detail.

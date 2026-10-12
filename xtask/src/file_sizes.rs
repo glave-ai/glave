@@ -7,11 +7,19 @@ const SOFT_LIMIT: usize = 400;
 /// Above this many lines a file fails the check.
 const HARD_LIMIT: usize = 800;
 /// Directories scanned, relative to the workspace root.
-const SCANNED_DIRS: &[&str] = &["crates", "xtask", "apps"];
+const SCANNED_DIRS: &[&str] = &["crates", "xtask", "apps", "web"];
 /// Extensions counted as source code.
 const SOURCE_EXTENSIONS: &[&str] = &["rs", "ts"];
 /// Directory names never scanned (build output, dependencies, generated code).
-const SKIPPED_DIRS: &[&str] = &["target", "node_modules", "dist", "generated"];
+const SKIPPED_DIRS: &[&str] = &[
+    "target",
+    "node_modules",
+    "dist",
+    "generated",
+    ".angular",
+    "out-tsc",
+    "test-results",
+];
 
 /// How a file's length compares with the limits.
 #[derive(Debug, PartialEq, Eq)]

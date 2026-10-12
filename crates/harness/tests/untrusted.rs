@@ -65,7 +65,7 @@ mod untrusted {
     #[test]
     fn untrusted_output_is_labelled_and_a_risky_action_after_it_is_judged_knowing_it() {
         let dir = folder("untrusted-judged");
-        block_on(async {
+        block_on!(async {
             let ask = r#"{"decision":"ask","reason":"the page asked, not the person"}"#;
             let answers = vec![
                 answer(None, vec![("lookup", json!({}))], StopReason::ToolUse),
@@ -144,7 +144,7 @@ mod untrusted {
     #[test]
     fn without_untrusted_content_the_judge_is_not_told_of_any() {
         let dir = folder("untrusted-none");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,

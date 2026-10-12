@@ -4,7 +4,7 @@ How glave keeps what lasts: the event log, blobs, memory and attachments, sealed
 
 ## Status
 
-Partly built (issue #22). **Built:** the key hierarchy, sealing and erasure in `glave-keys`; both stores (SQLite and Postgres) seal every new event payload and blob and open them on read, and rows written before sealing (NULL `key_id`) still read as written; blobs are stored under their keyed name with the threads that use them; the person's root in the OS keychain, or a key file (0600) when there is no keychain or `GLAVE_HOME` moves glave's folder. **Archive and delete:** `thread.archived`, `thread.unarchived` and `thread.deleted` events (`events.md`) decide whether a thread is shown. Per-thread erasure is not possible with today's keys (data keys are per space and month), so delete is archive plus a permanent marker: the thread is hidden everywhere, its content stays sealed in the log, and `thread/list` with `show: deleted` lists the threads waiting for erasure. **Not yet:** the scope index, promotion, recording erasure as an event, legal holds, KMS roots, encrypting the whole local file, and data keys per thread.
+Partly built (issue #22). **Built:** the key hierarchy, sealing and erasure in `glave-keys`; both stores (SQLite and Postgres) seal every new event payload and blob and open them on read, and rows written before sealing (NULL `key_id`) still read as written; blobs are stored under their keyed name with the threads that use them; the person's root in the OS keychain, or a key file (0600) when there is no keychain or `GLAVE_HOME` moves glave's folder. **Archive and delete:** `thread.archived`, `thread.unarchived` and `thread.deleted` events (`events.md`) decide whether a thread is shown. Per-thread erasure is not possible with today's keys (data keys are per space and month), so delete is archive plus a permanent marker: the thread is hidden everywhere, its content stays sealed in the log, and `thread/list` with `show: deleted` lists the threads waiting for erasure. **Spaces as records** (issue #64): both stores keep each space's record, its members and the folder keys that lead to it (schema 3 in each), pass the spaces conformance suite, and find a thread's scope by its id alone (`EventLog::locate`, over an index on `events.thread`). Upgrading a local database turns each folder's space into a project record named after the folder, owned by no one until the local person opens glave (`Store::claim_spaces`), and each stand-in personal space (`glave:personal/<person>`) into that person's personal space, its memories kept. **The threads view** (`events.md`, "Storage"): a `threads` table in both stores (schema 4 in each), content-free: a thread's title is read from the sealed event that gives it, so erasing the content erases the title. **Which store:** the local SQLite file in glave's folder by default; `[store] url` in the person's or server's `config.toml`, or `GLAVE_STORE_URL`, names a Postgres database instead, for the CLI and `glave serve` alike (never a project's file). A database on another computer is reached over TLS (rustls, the operating system's verifier) unless its URL says `sslmode=disable`; the organization's id is kept in the database (`glave_settings`) the first time. **Not yet:** `glave gateway serve` on Postgres, promotion, recording erasure as an event, legal holds, KMS roots, encrypting the whole local file, and data keys per thread.
 
 Settled while building, within this contract:
 
@@ -13,13 +13,27 @@ Settled while building, within this contract:
 - The data store keeps one wrapped key per organization and one record of wrapped keys per space, replaced whole by compare-and-swap on a revision, so a rotation is a single atomic write. A destroyed key's entry stays, emptied, so numbers are never reused.
 - A blob's associated data is a `glave/blob/v1` tag, organization, space, stored name and `key_id`, length-prefixed like an event's.
 - Unwrapped keys are cached per process. Another process (a second server on the same Postgres) keeps a destroyed key until it leaves its cache.
+- **Per-item keys, first for memory** (`memory.md`): `memory.saved` and `memory.edited` are sealed under the memory's own data key, `v1/<space>/memory/<memory>/<n>`, kept in the space's record beside the month keys. Forgetting destroys it alone, at once, without a rotation; the space key is rotated afterwards (`rotate_space_key`, which rotates only when a key was destroyed under the live space key), batching the forgets since the last rotation. An event sealed under a destroyed memory key reads with `data` `{}`; one under a destroyed month key still fails the read.
+
+## Spaces
+
+A space is a record, not a folder: an id (UUID v7), a kind, a name, an owner, members, and when it was made and last changed.
+
+| Kind | Is | Owner |
+| --- | --- | --- |
+| `project` | the work of a team, a person or an agent: a repository, a folder, or none | whoever made it; later a team or an agent |
+| `personal` | a person's own space (the Inbox; the UI may call it something else): their one-off chats and their personal memory. Each person has exactly one in each organization, made the first time it is needed | that person |
+
+- **Who works in a space:** its owner and its members (principals, in order). Who may do what is decided from that on every request (`session.md`, "Spaces and who may do what"). Only the owner renames it.
+- **A folder leads to a space; it is not one.** The data store keeps folder keys: the folder's canonical path (`path:<path>`), and for a git repository its `origin` remote as `.git/config` names it (`remote:<url>`), as `trust.toml` recognises a project. A folder is looked up by path first, then by remote, so a moved or re-cloned project, or a second checkout of it, finds its space and keeps its history and `--continue`. A folder no key leads to gets a new project space, owned by the person who opened it, named after the folder. Every key of the folder then leads to that space, unless it already led elsewhere.
+- **Every thread has a space from birth**, and its `for` is the person it works for (`events.md`, "Who acted"). A thread started in a space other than the server's folder has no folder of its own to work in: it gets a scratch folder (`computers.md`).
 
 ## Scope
 
 - **Every table and every key carries the organization and the space.** Every storage call takes a scope, and no call can cross scopes. This is already true of the ports.
 - **A thread's space never changes.** Nothing stored is ever moved or rewritten in place.
 - **Promoting a one-off chat into a project copies, then archives.** The chat's history is written as a new thread in the project's space, sealed under the project's keys, by the same path that writes any new thread. Its first event records where it came from. The original in the Inbox is then archived as "moved to the project" and deleted (its keys destroyed) 30 days later, so a mistaken promotion can still be undone. Archived originals never appear in search, thread lists or memory; only the project's copy does.
-- **One-off chats live in each person's Inbox space,** created with their personal organization. Every thread has a space from birth.
+- **One-off chats live in each person's personal space** (the Inbox), made the first time they need it. Every thread has a space from birth.
 - **A thread id is resolved to its scope by one small index:** `(thread) → (organization, space)`, kept by the data store and written when a thread starts. It is the only lookup that takes a bare thread id. It answers only "which scope", and every read that follows is scoped as usual and checked against the caller.
 - **Exports carry their scope** in a header line, and an import names the scope it goes into. An import never takes the scope from the file.
 
@@ -49,6 +63,15 @@ Settled while building, within this contract:
 - **On the wire and in events** a blob is still named by its SHA-256, as `events.md` defines.
 - **In storage** its object name is HMAC-SHA-256 of that hash under the space key. Someone with access to the bucket cannot check whether a known file is stored.
 - **Each blob's referencing threads are recorded,** so erasing a thread can remove the blobs only it used. Blobs are shared only within a space, never across spaces.
+
+## Search index
+
+`recall` (`memory.md`) searches past conversations with the store's own full-text engine: SQLite FTS5 (the `event_search` table), Postgres full-text search (`event_search`, a `tsvector` with a GIN index).
+
+- **What is indexed:** the text of each `message.added` and each successful `tool.call.completed`, as normalised words (`glave_ports::search`: lowercase letters and digits, a plural's `s` dropped, common words left out, at most 2,048 distinct words an event). The index row is written in the same transaction as its event. Nothing else is indexed, memories included: `recall` matches those in the memory view, so forgetting one leaves nothing behind in the index.
+- **No word in the clear.** Each word is stored as HMAC-SHA-256 under the space key's naming half (the half that names blobs), labelled `glave/search/v1`, its first 16 bytes in hex. The same words match until the space is erased; another space's never do; once the space key is destroyed, nothing in the index can be matched again.
+- **Results are positions,** `(thread, seq)`, best match first (BM25 in SQLite, `ts_rank` in Postgres), then newest first. The event itself is read and opened as any other read; one whose key was destroyed no longer opens and is skipped.
+- **Before schema 5** (SQLite and Postgres) nothing was indexed: conversations from before the index are not found.
 
 ## Erasure
 

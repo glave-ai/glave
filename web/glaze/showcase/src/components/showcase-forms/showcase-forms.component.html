@@ -1,0 +1,50 @@
+<section id="forms" aria-labelledby="forms-heading">
+  <h2 id="forms-heading">{{ copy.heading }}</h2>
+
+  <h3>{{ copy.reactive }}</h3>
+  <form class="demo" data-testid="showcase-space-form" [formGroup]="space" (ngSubmit)="create()">
+    <glz-form-field [label]="copy.name" [hint]="copy.nameHint">
+      <input glzInput data-testid="showcase-space-name" formControlName="name" />
+      @if (nameMissing()) {
+        <glz-error>{{ copy.nameMissing }}</glz-error>
+      }
+    </glz-form-field>
+    <glz-form-field [label]="copy.notes" [hint]="copy.notesHint">
+      <textarea glzInput formControlName="notes" [rows]="values.notesRows"></textarea>
+    </glz-form-field>
+    <glz-form-field [label]="copy.region">
+      <select glzInput formControlName="region">
+        @for (region of regions; track region.value) {
+          <option [value]="region.value">{{ region.label }}</option>
+        }
+      </select>
+    </glz-form-field>
+    <glz-form-field [label]="copy.due">
+      <input glzInput type="date" formControlName="due" />
+    </glz-form-field>
+    <glz-form-field [label]="copy.approval">
+      <glz-radio-group formControlName="approval">
+        @for (mode of approvals; track mode.value) {
+          <glz-radio [value]="mode.value">{{ mode.label }}</glz-radio>
+        }
+      </glz-radio-group>
+    </glz-form-field>
+    <glz-form-field [label]="copy.policy">
+      <glz-checkbox formControlName="terms">{{ copy.terms }}</glz-checkbox>
+      @if (termsMissing()) {
+        <glz-error>{{ copy.termsMissing }}</glz-error>
+      }
+    </glz-form-field>
+    <button glzButton variant="primary" type="submit" data-testid="showcase-space-create">
+      {{ copy.create }}
+    </button>
+  </form>
+
+  <h3>{{ copy.signal }}</h3>
+  <div class="demo">
+    <glz-form-field [label]="copy.email" [hint]="copy.emailHint">
+      <input glzInput type="email" data-testid="showcase-email" [formField]="contactForm.email" />
+    </glz-form-field>
+    <button glzButton data-testid="showcase-email-save" (click)="save()">{{ copy.save }}</button>
+  </div>
+</section>

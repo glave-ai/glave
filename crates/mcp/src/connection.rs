@@ -12,8 +12,9 @@ use glave_ports::{
     Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSpec, unless_cancelled,
 };
 use rmcp::model::{
-    CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, JsonObject,
-    ProtocolVersion, ReadResourceRequestParams, Resource, ResourceContents, ServerResult, Tool,
+    CallToolRequest, CallToolRequestParams, CallToolResult, ClientRequest, JsonObject, MetaObject,
+    ProtocolVersion, ReadResourceRequestParams, RequestMetaObject, Resource, ResourceContents,
+    ServerResult, Tool,
 };
 use rmcp::service::{
     ClientLifecycleMode, ClientServiceExt as _, Peer, PeerRequestOptions, RoleClient,
@@ -23,7 +24,7 @@ use rmcp::transport::IntoTransport;
 use tokio::task::JoinHandle;
 
 use crate::McpError;
-use crate::client::{Client, watch_tools};
+use crate::client::{Client, subscribe, watch_tools};
 use crate::names::{catalog, exposed};
 use crate::output::output;
 use crate::reason::reason;
@@ -88,8 +89,21 @@ impl Connection {
                 .as_ref()
                 .is_some_and(|tools| tools.list_changed == Some(true))
         });
-        let watching =
-            announces.then(|| tokio::spawn(watch_tools(peer.clone(), Arc::clone(&stale))));
+        // Subscribed before the connection is handed out, so a change made right after is heard.
+        let subscription = if announces {
+            let Ok(subscription) = tokio::time::timeout(limit, subscribe(&peer)).await else {
+                let _ = service.cancel().await;
+                return Err(McpError::start(
+                    name,
+                    format!("it did not answer within {limit:?}"),
+                ));
+            };
+            subscription
+        } else {
+            None
+        };
+        let watching = subscription
+            .map(|subscription| tokio::spawn(watch_tools(subscription, Arc::clone(&stale))));
         Ok(Self {
             name: name.to_owned(),
             catalog,
@@ -216,12 +230,14 @@ impl Connection {
         &self,
         tool: &str,
         arguments: Option<JsonObject>,
+        meta: Option<JsonObject>,
         limit: Duration,
     ) -> Result<CallToolResult, String> {
         let mut params = CallToolRequestParams::new(tool.to_owned());
         if let Some(arguments) = arguments {
             params = params.with_arguments(arguments);
         }
+        params.meta = meta.map(|meta| RequestMetaObject(MetaObject(meta)));
         let request = ClientRequest::CallToolRequest(CallToolRequest::new(params));
         let sent = self
             .peer
@@ -270,10 +286,12 @@ impl Connection {
     pub(crate) async fn read(
         &self,
         uri: &str,
+        meta: Option<JsonObject>,
         cancel: &dyn Cancellation,
         limit: Duration,
     ) -> Result<Vec<ResourceContents>, String> {
-        let params = ReadResourceRequestParams::new(uri);
+        let mut params = ReadResourceRequestParams::new(uri);
+        params.meta = meta.map(|meta| RequestMetaObject(MetaObject(meta)));
         let read = tokio::time::timeout(limit, self.peer.read_resource(params));
         match unless_cancelled(cancel, read).await {
             Some(Ok(Ok(result))) => Ok(result.contents),

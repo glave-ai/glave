@@ -1,0 +1,13 @@
+<p class="text" [id]="textId" [class.folded]="folded()">{{ text() }}</p>
+@if (long()) {
+  <button
+    type="button"
+    class="toggle"
+    data-testid="message-text-toggle"
+    [attr.aria-expanded]="expanded()"
+    [attr.aria-controls]="textId"
+    (click)="toggle()"
+  >
+    {{ toggleText() }}
+  </button>
+}

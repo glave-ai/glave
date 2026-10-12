@@ -3,7 +3,7 @@ use std::fmt::Write as _;
 use serde_json::json;
 
 use super::*;
-use crate::sse::SseDecoder;
+use glave_ports::SseDecoder;
 
 fn run(events: &[Value]) -> (Result<Completion, ProviderError>, Vec<Delta>) {
     let mut assembler = Assembler::new("anthropic", "claude-haiku-5-5");

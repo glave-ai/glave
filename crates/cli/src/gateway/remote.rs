@@ -10,7 +10,7 @@ use glave_mcp::{Limits, McpServer};
 use glave_provider_openai::Config;
 
 use crate::config::Endpoint;
-use crate::policy::Chosen;
+use glave_config::policy::Chosen;
 
 /// The variable that holds the person's sign-in for the gateway: an OIDC access token.
 pub const TOKEN: &str = "GLAVE_GATEWAY_TOKEN";
@@ -59,8 +59,11 @@ impl Remote {
         Ok(Endpoint {
             local: false,
             provider,
+            claude: None,
             model: model.unwrap_or_else(|| MAIN.to_owned()),
             gateway: Some(self.url.clone()),
+            at: "[gateway] url".to_owned(),
+            key_from: TOKEN,
         })
     }
 
@@ -81,7 +84,7 @@ impl Remote {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::policy::Source;
+    use glave_config::policy::Source;
 
     #[test]
     fn the_gateway_is_reached_at_its_v1_with_the_sign_in_as_the_key() {
@@ -91,7 +94,14 @@ mod tests {
         };
         let endpoint = remote.endpoint(None).unwrap();
         assert_eq!(endpoint.provider.base_url, "https://gw.example.com/v1");
-        assert_eq!(endpoint.provider.api_key.as_deref(), Some("t0k"));
+        assert_eq!(
+            endpoint
+                .provider
+                .auth
+                .fixed_key()
+                .map(glave_ports::auth::Secret::expose),
+            Some("t0k")
+        );
         assert_eq!(endpoint.provider.provider, "gateway");
         assert_eq!(endpoint.model, "main", "the gateway's main route");
         assert_eq!(remote.endpoint(Some("big".into())).unwrap().model, "big");

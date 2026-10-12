@@ -10,11 +10,11 @@ mod support;
 #[cfg(test)]
 mod cancelling {
     use std::future::{Future, pending};
-    use std::sync::atomic::{AtomicI64, AtomicU64};
     use std::time::{Duration, Instant};
 
     use glave_event::{Outcome, Part, StopReason};
     use glave_harness::{AllowAll, ApprovalRequest, Approver, Cancel, Decision, Harness, Parts};
+    use glave_ports::testing::{CountingEntropy, ManualClock};
     use glave_ports::{
         Completion, Delta, MemoryBlobs, MemoryLog, Message, ModelProvider, ModelRequest,
         ProviderError,
@@ -68,7 +68,7 @@ mod cancelling {
     #[test]
     fn a_turn_cancelled_before_it_starts_asks_nothing_and_the_next_turn_carries_on() {
         let dir = folder("cancel-early");
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(Some("Here now."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
@@ -113,15 +113,15 @@ mod cancelling {
     #[test]
     fn a_model_that_never_answers_is_abandoned() {
         let dir = folder("cancel-model");
-        block_on(async {
+        block_on!(async {
             let cancel = Cancel::new();
             let parts = Parts {
                 provider: Stalls(cancel.clone()),
                 log: MemoryLog::new(),
                 blobs: MemoryBlobs::new(),
                 approver: AllowAll,
-                clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
-                entropy: Box::new(Counting(AtomicU64::new(1))),
+                clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
+                entropy: Box::new(CountingEntropy::starting_at(1)),
                 workspace: workspace(&dir).await,
             };
             let harness = Harness::new(parts, settings());
@@ -154,7 +154,7 @@ mod cancelling {
             .status()
             .unwrap();
         assert!(made.success());
-        block_on(async {
+        block_on!(async {
             let calls = vec![
                 (
                     "bash",
@@ -207,7 +207,7 @@ mod cancelling {
     #[test]
     fn an_unanswered_question_is_abandoned_and_the_action_never_runs() {
         let dir = folder("cancel-ask");
-        block_on(async {
+        block_on!(async {
             let cancel = Cancel::new();
             let calls = vec![("bash", json!({"command": "touch ran.txt"}))];
             let answers = vec![answer(None, calls, StopReason::ToolUse)];

@@ -37,22 +37,32 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 Cargo.toml          workspace: lints, profiles, shared dependencies
 xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
-crates/ports/       glave-ports: event log, blob store, model provider, tool source and computer ports, in-memory versions, conformance suites
+crates/ports/       glave-ports: event log, blob store, model provider (and how one is reached: a key, or credentials that change), tool source and computer ports, the caller, the clock and entropy, in-memory versions, conformance suites and the test doubles every crate shares
+crates/identity/    glave-identity: who is calling: OIDC and local sign-in that verify the caller, the person an issuer's subject is
+crates/config/      glave-config: config and policy (specs/policy.md): choices nearest-wins, constraints that only narrow, project trust, `policy explain`; shared by the CLI and the servers
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
-crates/provider-anthropic/  glave-provider-anthropic: Anthropic's native Messages API provider (thinking sent back signed)
+crates/provider-anthropic/  glave-provider-anthropic: Anthropic's native Messages API provider (thinking sent back signed), also as Vertex AI's rawPredict
+crates/azure/       glave-azure: Azure OpenAI's v1 endpoint, and Microsoft Entra tokens from AKS workload identity (a hand-rolled exchange)
+crates/aws/         glave-aws: Amazon Bedrock's OpenAI-compatible endpoints and Anthropic Messages route, and SigV4 (aws-sigv4) with keys from the environment, IRSA or EKS Pod Identity
+crates/google/      glave-google: Google Vertex AI's endpoints, and Application Default Credentials as a refreshing bearer token (the GKE metadata server, service account keys, gcloud's user credentials, workload identity federation), hand-rolled
 crates/gateway/     glave-gateway: the in-process gateway (specs/gateway.md): routes by purpose, safe fallback, budgets, metering
-crates/gateway-service/  glave-gateway-service: the gateway as a service (`glave gateway serve`): OpenAI and Anthropic surfaces, OIDC sign-in, per-caller policy, budgets and metering, the MCP tool catalog at /mcp
+crates/gateway-service/  glave-gateway-service: the gateway as a service (`glave gateway serve`): OpenAI and Anthropic surfaces, OIDC sign-in (glave-identity), per-caller policy, budgets and metering, the MCP tool catalog at /mcp
 crates/keys/        glave-keys: the key hierarchy (root, organization, space, data keys), sealing at rest, erasure; roots in the OS keychain (`keychain`) or a key file
 crates/store-sqlite/  glave-store-sqlite: the event log, blob store and wrapped keys on one local SQLite file, content sealed
-crates/store-postgres/  glave-store-postgres: the event log, blob store and wrapped keys on Postgres, an organization's one data store, content sealed
+crates/store-postgres/  glave-store-postgres: the event log, blob store and wrapped keys on Postgres, an organization's one data store (`[store] url`), TLS off this computer, content sealed
 crates/shell/       glave-shell: shell commands read before they run (tree-sitter-bash): read-only, risky with a reason, or neither
 crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`); open-world tools and servers marked untrusted return untrusted output
+crates/memory/      glave-memory: memory (specs/memory.md): an in-process MCP server over the data store, each memory sealed under its own key, scoped by the session
 crates/web/         glave-web: web_fetch as a tool source: private addresses refused at every hop, limits, a host policy, HTML as Markdown, output untrusted (a local page server behind `pages`)
 crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash) run on a computer through the port, approvals, resume, AGENTS.md, skills (agentskills.io), custom commands, hooks
-crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (with the opt-in sandbox), environments from devcontainer.json or environment.toml, workers on Docker or Kubernetes (the `kubernetes` feature), served (`glave computer serve`, TLS across machines) and reached over JSON-RPC
-crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC sign-in; every surface, the CLI first, runs threads through it
+crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (in the sandbox by default), environments from devcontainer.json or environment.toml, workers on Docker or Kubernetes (the `kubernetes` feature), served (`glave computer serve`, TLS across machines) and reached over JSON-RPC
+crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC or local sign-in (glave-identity), and its JSON Schema (specs/session.schema.json, generated); every surface, the CLI first, runs threads through it
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary
+web/client/         the session API's TypeScript client: types generated from the schema (`cargo xtask schema`), a small typed client, no framework
+web/glaze/          Glaze (`@glave/glaze`): glave's Angular component library, web platform first, then the Angular CDK, themed only through CSS custom properties (its AGENTS.md says how to use it); its showcase, a dev-only app (`glaze/showcase`)
+web/app/            the web app `glave serve --http` serves at `/`: sign-in; three panes (threads by space, a thread streaming live with approvals, questions and a model picker, its tools: tasks and changed files); tasks, memory, settings
+web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app and Glaze's showcase, served with glave's Content Security Policy
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
 specs/              the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
@@ -66,16 +76,29 @@ specs/              the contracts: events, storage, config and policy, computers
 ```sh
 cargo xtask ci          # the full gate; must pass before anything is "done"
 cargo xtask file-sizes  # line limits only
+cargo xtask schema      # regenerate specs/session.schema.json and the web client's types after changing the session API
 cargo xtask bench       # benchmarks, alone on the machine (see Performance)
 cargo xtask eval        # the harness on evals/tasks against three real models, graded (costs cents)
 cargo xtask eval judge  # the action judge scored on evals/judge (the deterministic checks today)
 cargo fmt --all         # format
 cargo build --profile debugging   # full debug info, for a debugger
+(cd web && npm run check)         # the web checks alone; cargo xtask ci runs them (Node 22.22.3+, or GLAVE_SKIP_WEB=1)
 ```
 
 ## Definition of done
 
-`cargo xtask ci` passes: format, clippy with `-D warnings`, all tests, `cargo deny`, file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
+`cargo xtask ci` passes: format, clippy with `-D warnings`, all tests, `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
+
+## Quality
+
+The bar is code a careful reader admires: every line earns its place, and each idea lives in one spot. Lints catch unsafe code. These rules are about what lints can't catch:
+
+- **One PR, one change.** A second feature, or a new workspace dependency, goes in its own PR. A PR over 40 files or 1,500 lines is split, or says in its description why it can't be.
+- **One concept, one definition.** A type that crosses crates is defined once, in the lowest crate that needs it (`glave-event` or `glave-ports`). Two enums with the same variants and a `From` between them is a defect.
+- **Search before writing.** Before adding a helper, parser, URL check, error mapper or storage wrapper, `git grep` for one. Where a second copy would go, share the first instead.
+- **Nothing before its second user.** A trait needs two real implementations, and a config key two values that both work today. Anything `pub` needs a caller outside its crate. Code whose last caller goes is deleted with it.
+- **Specs hold decisions and invariants,** never method tables, field lists or crate descriptions; the generated schema is the reference. A PR that changes a type rereads the spec section that describes it.
+- **Reviewed before merge.** Every feature PR gets an independent review (not its author) before it merges, beyond CI.
 
 ## Rust
 
@@ -83,7 +106,7 @@ cargo build --profile debugging   # full debug info, for a debugger
 - `unsafe` is forbidden. Use existing safe crates for anything that needs it (e.g. llama.cpp bindings).
 - No `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, `dbg!`, `process::exit` or unchecked indexing. These lints are **forbidden**: no attribute can switch them off. Tests get their exemptions only through `clippy.toml`. Use `?`, `.get()`, `match`, `ok_or_else`.
 - `#[allow]` is banned. If a style lint is genuinely wrong in one spot, use `#[expect(lint, reason = "...")]`, which fails the build if the lint ever stops firing. Safety lints can't be suppressed at all.
-- Don't use `#[tokio::main]` or `#[tokio::test]`: they emit `#[allow(clippy::expect_used)]`, which the forbidden lint rejects. Build the runtime explicitly in `main`; tests use a small `block_on` helper.
+- Don't use `#[tokio::main]` or `#[tokio::test]`: they emit `#[allow(clippy::expect_used)]`, which the forbidden lint rejects. Build the runtime explicitly in `main`; tests use `glave_ports::block_on!` (the `conformance` feature).
 - Libraries define typed errors with `thiserror`; binaries use `anyhow`. Errors say what failed and with what input.
 
 **Structure**
@@ -123,6 +146,8 @@ cargo build --profile debugging   # full debug info, for a debugger
 - Property tests (`proptest`) for parsers and state machines. Snapshot tests (`insta`) for stable formats such as receipts and events.
 - Tests are deterministic: no sleeps, no real clocks (inject a clock), no network in unit tests.
 - Run tests with `cargo nextest`. Measure coverage; don't chase a percentage.
+- Fakes live in one place: `glave-ports` ships the test doubles for its ports (clock, entropy, cancellation, `block_on`) behind the `conformance` feature. Never write a second copy in a crate.
+- A scenario is tested once: in the conformance suite when there is one, otherwise beside the code it tests.
 
 ## Performance
 
@@ -157,9 +182,16 @@ cargo build --profile debugging   # full debug info, for a debugger
 ## Web client (TypeScript)
 
 - Strict TypeScript. No `any`; use `unknown`. `const` and immutability everywhere; `readonly` arrays, maps and fields.
-- Angular (current choice): standalone components, signals as `readonly` fields, native control flow, `inject()`, `input()`/`output()`.
-- Angular Material, styled only through design tokens. Form fields use `appearance="outline"`.
-- Accessibility: WCAG AA, passes AXE.
+- Angular, current stable, fully modern: standalone, zoneless, OnPush, signals as `readonly` fields, `input()`/`output()`/`model()` (two-way binding with `model()` wherever a component owns a value its parent can change), `computed()`, `inject()`, native control flow. No `@Input`/`@Output` decorators, no NgModules.
+- Glaze (`web/glaze`) for every component, not Angular Material. Web platform first (native `<dialog>`, popover, `<details>`, native inputs, CSS `field-sizing`), checked against Baseline; then the Angular CDK where the platform has nothing (keyboard models, LiveAnnouncer, menus, clipboard, layout); our own code last. Styled only through design tokens: CSS custom properties, light and dark from `light-dark()` and `color-scheme`. Glaze keeps no app state and has no services.
+- Every component is four files, made with `ng generate`: `x.component.ts`, `.html`, `.scss`, `.spec.ts`. Folders by kind: `components/`, `directives/`, `services/` (stateful, signal state), `guards/`, `interceptors/`, `pipes/`, and `lib/` for pure functions.
+- No logic in templates beyond native control flow: no computation, no expressions beyond reading a signal or field, no user-visible strings or hard-coded values. Derive in the controller (`computed()`, readonly constants). angular-eslint enforces what it can (`conditional-complexity` 1, `prefer-control-flow`, `no-inline-styles`, `no-call-expression` is not used since signals are calls).
+- Test hooks: every element an end-to-end test needs has a `data-testid` (`showcase-open-dialog`); end-to-end tests select only by these. Glaze never names hooks itself: its components take a `testId` input and give their parts `<testId>-<part>` (`testId="thread-composer"` gives `thread-composer-send`).
+- Linted and formatted: angular-eslint (recommended, template and accessibility), typescript-eslint strict and stylistic type-checked, stylelint for SCSS and CSS, Prettier across `web/`. CI checks all of it.
+- Tested: unit tests (Vitest) for every component, directive, service and `lib/` function, with axe on what they render; end-to-end smoke tests with axe in light and dark.
+- Accessibility: WCAG 2.2 AA, passes axe.
+- A Glaze component, directive or input ships in the same PR as the app screen that uses it. The showcase demonstrates Glaze; it never justifies a piece.
+- The app is served under a strict Content Security Policy: no inline script; inline styles only with each load's nonce.
 
 ## Git
 

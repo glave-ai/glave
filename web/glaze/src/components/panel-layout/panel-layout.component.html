@@ -1,0 +1,34 @@
+<div class="content" [inert]="modal()"><ng-content /></div>
+@if (modal()) {
+  <div class="scrim" [attr.data-testid]="ids().scrim" aria-hidden="true" (click)="close()"></div>
+}
+@if (showHandle()) {
+  <div
+    class="handle"
+    side="end"
+    glzTooltipPosition="start"
+    [glzSplitter]="panelId"
+    [glzSplitterPanel]="panel"
+    [glzTooltip]="resizeHint()"
+    [minWidth]="minWidth"
+    [maxWidth]="maxWidth"
+    [attr.data-testid]="ids().handle"
+    [attr.aria-label]="resizeLabel()"
+    [attr.aria-keyshortcuts]="shortcut()"
+    [(open)]="open"
+    [(width)]="width"
+  ></div>
+}
+<aside
+  #panel
+  class="panel"
+  tabindex="-1"
+  [id]="panelId"
+  [attr.data-testid]="ids().panel"
+  [attr.aria-label]="label()"
+  [attr.role]="role()"
+  [attr.aria-modal]="ariaModal()"
+  [inert]="closed()"
+>
+  <ng-content select="[glzPanel]" />
+</aside>

@@ -38,7 +38,7 @@ pub struct ThreadStarted {
 }
 
 /// What started a thread, and who.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Origin {
     pub kind: OriginKind,

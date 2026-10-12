@@ -1,0 +1,17 @@
+@if (choosable()) {
+  <glz-menu-select
+    testId="approval-mode"
+    [label]="copy.label"
+    [options]="options()"
+    [value]="shown()"
+    (valueChange)="pick($event)"
+  />
+}
+@if (fixed(); as mode) {
+  <span class="mode" data-testid="approval-mode" [attr.title]="mode.title">
+    <glz-icon [icon]="mode.icon" />
+    <span class="glz-visually-hidden">{{ copy.prefix }}</span>
+    <span>{{ mode.text }}</span>
+    <span class="glz-visually-hidden">{{ mode.title }}</span>
+  </span>
+}

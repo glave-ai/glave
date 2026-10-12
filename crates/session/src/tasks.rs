@@ -5,8 +5,6 @@
 //! task's start and end in the space's ledger. `tasks/list` and `tasks/stop` show and stop
 //! them; `task/finished` tells the thread's watchers when one ends.
 
-pub(crate) mod requests;
-
 use std::collections::HashMap;
 
 use glave_event::{
@@ -14,18 +12,16 @@ use glave_event::{
     ThreadId, TokenCounts, decode,
 };
 use glave_harness::{Caller, Goal};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_ports::{BlobStore, EventLog, ModelProvider, title_from};
 
 use crate::held::Slot;
 use crate::ledger::Recorded;
+use crate::modes::Choice;
 use crate::protocol::{
     ApiError, Notification, Reply, TaskInfo, TaskKind, TaskStatus, TurnResult, code,
 };
 use crate::server::Server;
 use crate::turn::{TurnItem, TurnStream};
-
-/// Characters of the prompt a task's title keeps.
-const TITLE_CHARS: usize = 80;
 
 /// What a person may run at once and keep scheduled (`[tasks]` in `policy.toml`): no limit
 /// when `None`.
@@ -37,8 +33,8 @@ pub struct TaskLimits {
 
 /// What a task does.
 pub(crate) enum Work {
-    /// One turn with this prompt.
-    Turn(String),
+    /// One turn with this prompt, with the model and approval mode chosen with it, if any.
+    Turn(String, Choice),
     /// A goal's turns: a new goal, or the thread's active or paused one.
     Goal(Option<Goal>),
 }
@@ -66,15 +62,16 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Starts `work` in `thread` as a task for `caller`, and answers with it at once.
-    pub(crate) async fn start_task(
-        &self,
-        caller: &Caller,
-        thread: ThreadId,
-        work: Work,
-        budget: Option<u64>,
-        schedule: Option<Fired>,
-    ) -> Result<TaskInfo, ApiError> {
+    /// Refuses a task in `thread` for `caller` outside this server's own space, beyond the
+    /// policy's limit, or while a turn runs there.
+    async fn may_start_task(&self, caller: &Caller, thread: ThreadId) -> Result<(), ApiError> {
+        // A space's tasks are kept in its own ledger; this server keeps only its own space's.
+        if self.authorize(caller, thread).await?.space != self.inner.home.space {
+            return Err(ApiError::new(
+                code::INVALID_PARAMS,
+                "tasks run only in threads of this server's own space",
+            ));
+        }
         if let Some(max) = self.inner.limits.max_running {
             let running = self.running_for(caller.person);
             if running >= max {
@@ -96,14 +93,30 @@ where
                 format!("a turn is already running in thread {thread}"),
             ));
         }
+        Ok(())
+    }
+
+    /// Starts `work` in `thread` as a task for `caller`, and answers with it at once.
+    pub(crate) async fn start_task(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+        work: Work,
+        budget: Option<u64>,
+        schedule: Option<Fired>,
+    ) -> Result<TaskInfo, ApiError> {
+        self.may_start_task(caller, thread).await?;
         let (title, goal) = match &work {
-            Work::Turn(prompt) => (title(prompt), false),
-            Work::Goal(Some(goal)) => (title(&goal.objective), true),
+            Work::Turn(prompt, _) => (title_from(prompt).unwrap_or_default(), false),
+            Work::Goal(Some(goal)) => (title_from(&goal.objective).unwrap_or_default(), true),
             Work::Goal(None) => ("continuing the thread's goal".to_owned(), true),
         };
         self.inner.approvals.unattend(thread);
         let stream = match work {
-            Work::Turn(prompt) => self.start_turn_as(caller, thread, &prompt, None).await,
+            Work::Turn(prompt, chosen) => {
+                self.start_turn_with(caller, thread, &prompt, None, chosen)
+                    .await
+            }
             Work::Goal(goal) => self.start_goal_as(caller, thread, goal).await,
         };
         let stream = match stream {
@@ -116,14 +129,14 @@ where
         let started = TaskStarted {
             thread,
             title,
-            model: self.inner.model.clone(),
+            model: stream.model.clone(),
             budget,
             schedule,
             by: self.other_than_person(caller.person),
         };
         let running = Running {
             started: started.clone(),
-            at: At::from(self.inner.clock.now()),
+            at: At::from(self.inner.harness.clock().now()),
             goal,
             by: caller.person,
             tokens: TokenCounts::default(),
@@ -166,7 +179,7 @@ where
         let ended = settle(&running, &ended);
         // Recorded on a best effort: the thread's own events hold the work either way.
         let _ = self.record_in_ledger(&ended).await;
-        let now = At::from(self.inner.clock.now());
+        let now = At::from(self.inner.harness.clock().now());
         let recorded = Recorded {
             started: running.started,
             at: running.at,
@@ -384,7 +397,7 @@ where
     }
 
     fn elapsed(&self, from: At, to: Option<At>) -> u64 {
-        let to = to.map_or_else(|| self.inner.clock.now(), At::timestamp);
+        let to = to.map_or_else(|| self.inner.harness.clock().now(), At::timestamp);
         let millis = to
             .as_millisecond()
             .saturating_sub(from.timestamp().as_millisecond());
@@ -425,16 +438,6 @@ fn add(total: &mut TokenCounts, counts: &TokenCounts) {
     total.cache_write = total.cache_write.saturating_add(counts.cache_write);
     total.output = total.output.saturating_add(counts.output);
     total.reasoning = total.reasoning.saturating_add(counts.reasoning);
-}
-
-/// The first line of `prompt`, at most [`TITLE_CHARS`] characters.
-pub(crate) fn title(prompt: &str) -> String {
-    let line = prompt.lines().next().unwrap_or_default().trim();
-    let mut title: String = line.chars().take(TITLE_CHARS).collect();
-    if line.chars().count() > TITLE_CHARS || prompt.trim().lines().count() > 1 {
-        title.push('…');
-    }
-    title
 }
 
 impl<P, L, B> Server<P, L, B> {

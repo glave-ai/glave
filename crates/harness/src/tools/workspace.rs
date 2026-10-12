@@ -91,6 +91,21 @@ impl Workspace {
         }
     }
 
+    /// A scratch folder of its own named `name`, on the same computer and in the same sandbox:
+    /// the one already there, or a new, empty one. `owner` is kept beside it, as for a worktree.
+    pub async fn scratch(&self, name: &str, owner: Option<&str>) -> Result<Self, ComputerError> {
+        let sources = Sources::Scratch {
+            name: name.to_owned(),
+            owner: owner.map(str::to_owned),
+        };
+        let info = self.computers.open(self.info.computer, &sources).await?;
+        let scratch = Self::new(Arc::clone(&self.computers), info);
+        match &self.sandbox {
+            Some(sandbox) => scratch.with_sandbox(sandbox).await,
+            None => Ok(scratch),
+        }
+    }
+
     /// The computers this workspace is on.
     pub(crate) fn computers(&self) -> &Arc<dyn Computers> {
         &self.computers
@@ -209,9 +224,15 @@ impl Workspace {
             timeout_secs: Some(timeout_secs),
             sandbox: self.sandbox.clone(),
         };
-        self.computers
-            .run(self.info.id, &command, output, cancel)
-            .await
+        let span = crate::telemetry::command();
+        let finished = tracing::Instrument::instrument(
+            self.computers.run(self.info.id, &command, output, cancel),
+            span.clone(),
+        )
+        .await;
+        let ended = finished.as_ref().ok();
+        crate::telemetry::command_ended(&span, ended.map(|done| (&done.ending, done.millis)));
+        finished
     }
 
     /// Records that the model has seen `content` as the current state of `path`.

@@ -1,0 +1,10 @@
+<button
+  glzIconButton
+  size="sm"
+  data-testid="message-copy"
+  [label]="label()"
+  [glzCopy]="text()"
+  (copied)="copied($event)"
+>
+  <glz-icon [icon]="icon()" />
+</button>

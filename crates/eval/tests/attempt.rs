@@ -7,19 +7,12 @@ mod attempts {
     use std::sync::Arc;
 
     use glave_eval::{Plan, Setup, attempt, load};
+    use glave_ports::block_on;
     use glave_provider_openai::Config;
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;
 
     const KEY: &str = "sk-fake-eval-key-0123";
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
 
     fn folder(name: &str) -> PathBuf {
         let dir = std::env::temp_dir()
@@ -37,7 +30,23 @@ mod attempts {
         std::fs::create_dir_all(task.join("tests")).unwrap();
         std::fs::write(task.join("environment/README.md"), "# scratch\n").unwrap();
         std::fs::write(task.join("instruction.md"), "Write hello.txt saying hi.\n").unwrap();
-        std::fs::write(task.join("task.toml"), format!("[glave]\n{glave}\n")).unwrap();
+        // Unconfined and without asking unless a test says otherwise, so the runner's own
+        // behaviour is the same on a computer with no sandbox.
+        let sandbox = if glave.contains("sandbox") {
+            ""
+        } else {
+            "sandbox = \"off\"\n"
+        };
+        let approval = if glave.contains("approval") {
+            ""
+        } else {
+            "approval = \"auto\"\n"
+        };
+        std::fs::write(
+            task.join("task.toml"),
+            format!("[glave]\n{sandbox}{approval}{glave}\n"),
+        )
+        .unwrap();
         std::fs::write(task.join("tests/test.sh"), test).unwrap();
         load(&task).unwrap()
     }
@@ -50,6 +59,7 @@ mod attempts {
             environment,
             todo: false,
             subagents: false,
+            memory: None,
         }
     }
 
@@ -78,7 +88,7 @@ mod attempts {
         );
         let server = FakeServer::start(writes_hello()).unwrap();
         let run = dir.join("run");
-        let attempt = block_on(attempt(&setup(&server), &task, "fake-model", 1, &run)).unwrap();
+        let attempt = block_on!(attempt(&setup(&server), &task, "fake-model", 1, &run)).unwrap();
         assert_eq!(attempt.failures, Vec::<String>::new());
         assert!(attempt.passed());
         assert_eq!((attempt.model_calls, attempt.tool_calls), (2, 1));
@@ -112,7 +122,7 @@ mod attempts {
             "echo 'expected goodbye.txt'\nexit 1\n",
         );
         let server = FakeServer::start(writes_hello()).unwrap();
-        let attempt = block_on(attempt(
+        let attempt = block_on!(attempt(
             &setup(&server),
             &task,
             "fake-model",
@@ -145,7 +155,7 @@ mod attempts {
         let mut replies = writes_hello();
         replies.push(Reply::text("Still here."));
         let server = FakeServer::start(replies).unwrap();
-        let attempt = block_on(attempt(
+        let attempt = block_on!(attempt(
             &setup(&server),
             &task,
             "fake-model",
@@ -163,11 +173,53 @@ mod attempts {
     }
 
     #[test]
+    fn later_threads_share_one_store_with_memory_and_the_checks_read_it() {
+        let dir = folder("threads");
+        let task = task(
+            &dir,
+            r#"memory = true
+            checks = [{ memory_holds = "tabs" }, { personal_memory_lacks = ["tabs"] }]
+            [[glave.memories]]
+            text = "Ada likes short answers"
+            scope = "personal"
+            [[glave.threads]]
+            messages = ["Which indentation do we use?"]"#,
+            "exit 0\n",
+        );
+        let mut replies = writes_hello();
+        replies.insert(
+            1,
+            Reply::tool_call(
+                "call_m",
+                "mcp__memory__remember",
+                &json!({"text": "This project uses tabs", "scope": "space"}),
+            ),
+        );
+        replies.push(Reply::text("Tabs."));
+        let server = FakeServer::start(replies).unwrap();
+        let attempt = block_on!(attempt(
+            &setup(&server),
+            &task,
+            "fake-model",
+            1,
+            &dir.join("run"),
+        ))
+        .unwrap();
+        assert_eq!(attempt.failures, Vec::<String>::new());
+        let last = server.received().pop().unwrap().body.to_string();
+        assert!(last.contains("# Memory"), "{last}");
+        assert!(last.contains("This project uses tabs"), "{last}");
+        assert!(last.contains("Ada likes short answers"), "{last}");
+        let ledger = std::fs::read_to_string(dir.join("run/memory.jsonl")).unwrap();
+        assert!(ledger.contains("memory.saved"), "{ledger}");
+    }
+
+    #[test]
     fn a_model_that_errors_fails_the_attempt() {
         let dir = folder("errors");
         let task = task(&dir, "", "exit 0\n");
         let server = FakeServer::start(vec![Reply::Status(500, "down".into())]).unwrap();
-        let attempt = block_on(attempt(
+        let attempt = block_on!(attempt(
             &setup(&server),
             &task,
             "fake-model",
@@ -188,7 +240,7 @@ mod attempts {
         let dir = folder("setup");
         let task = task(&dir, r#"setup = ["false"]"#, "exit 0\n");
         let server = FakeServer::start(Vec::new()).unwrap();
-        let result = block_on(attempt(
+        let result = block_on!(attempt(
             &setup(&server),
             &task,
             "fake-model",
@@ -218,7 +270,7 @@ mod attempts {
             dir: dir.join("runs"),
         };
         let mut seen = 0;
-        let attempts = block_on(glave_eval::run(Arc::new(setup(&server)), plan, |_| {
+        let attempts = block_on!(glave_eval::run(Arc::new(setup(&server)), plan, |_| {
             seen += 1;
         }));
         assert_eq!(seen, 4);

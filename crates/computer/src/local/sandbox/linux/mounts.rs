@@ -13,23 +13,14 @@ use std::sync::{Arc, Mutex};
 
 use glave_ports::{PROTECTED, SandboxLevel};
 
+use super::super::secrets::HOME_SECRETS;
 use super::names::SecretNames;
+use crate::local::sandbox::own_git_folder;
 
-/// Under the home folder: where credentials live. Never readable from the sandbox.
-const HOME_SECRETS: &[&str] = &[
-    ".ssh",
-    ".aws",
-    ".azure",
-    ".config/gcloud",
-    ".kube",
-    ".docker/config.json",
-    ".gnupg",
-    ".netrc",
-    ".npmrc",
-    ".pypirc",
-    ".git-credentials",
+/// Under the home folder, on Linux besides the common list: keyrings and browser profiles
+/// (cookies are credentials).
+const LINUX_HOME_SECRETS: &[&str] = &[
     ".local/share/keyrings",
-    ".password-store",
     ".mozilla",
     ".config/google-chrome",
     ".config/chromium",
@@ -37,12 +28,15 @@ const HOME_SECRETS: &[&str] = &[
     ".config/microsoft-edge",
 ];
 
+/// Under the user's runtime folder (`$XDG_RUNTIME_DIR`): Podman's sign-ins.
+const RUNTIME_SECRETS: &[&str] = &["containers/auth.json"];
+
 /// Inside a git folder: what runs code later, and the folders of other worktrees and of
 /// submodules, whose own hooks and config would.
 const GIT_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", "worktrees", "modules"];
 
-/// Inside a worktree's own git folder: what runs code later.
-const WORKTREE_PROTECTED: &[&str] = &["hooks", "config", "config.worktree"];
+/// Inside a worktree's own git folder: what runs code later, and its submodules' folders.
+const WORKTREE_PROTECTED: &[&str] = &["hooks", "config", "config.worktree", "modules"];
 
 /// Everything a command's mounts depend on, fixed when the sandbox is prepared.
 #[derive(Debug)]
@@ -60,6 +54,10 @@ pub(super) struct Layout {
     pub(super) shared_tmp: Option<PathBuf>,
     pub(super) home: Option<PathBuf>,
     pub(super) glave_home: Option<PathBuf>,
+    /// glave's sandbox cache folder, writable, inside glave's own.
+    pub(super) cache: Option<PathBuf>,
+    /// The user's runtime folder (`$XDG_RUNTIME_DIR`).
+    pub(super) runtime: Option<PathBuf>,
     /// For a worktree: the repository's shared git folder, where its commits go.
     pub(super) git_common: Option<PathBuf>,
     pub(super) names: SecretNames,
@@ -138,6 +136,7 @@ pub(super) fn plan(layout: &Layout, stand_ins: &StandIns) -> Result<(Vec<Mount>,
         }
     }
     hide_glave_home(layout, &mut mounts);
+    mounts.extend(layout.cache.iter().cloned().map(Mount::Writable));
     hide_home_secrets(layout, &mut mounts);
     mounts.extend(secret_files.into_iter().map(Mount::HiddenFile));
     Ok((mounts, held))
@@ -222,33 +221,36 @@ impl Protect<'_> {
     }
 }
 
-/// A worktree's own folder in its repository's shared git folder, from the `gitdir:` line
-/// of its `.git` file, if it is where a worktree's folder belongs.
-fn own_git_folder(root: &Path, common: &Path) -> Option<PathBuf> {
-    let text = std::fs::read_to_string(root.join(".git")).ok()?;
-    let line = text.lines().find_map(|line| line.strip_prefix("gitdir:"))?;
-    let own = std::fs::canonicalize(root.join(line.trim())).ok()?;
-    (own.parent() == Some(&common.join("worktrees"))).then_some(own)
-}
-
-/// glave's own folder, all of it, except the way to the workspace when it lives there.
+/// glave's own folder, all of it, except the workspace when it lives there and the sandbox's
+/// cache folder, and the way to each.
 fn hide_glave_home(layout: &Layout, mounts: &mut Vec<Mount>) {
     let Some(glave_home) = &layout.glave_home else {
         return;
     };
-    let Ok(inside) = layout.root.strip_prefix(glave_home) else {
+    let kept: Vec<&PathBuf> = [Some(&layout.root), layout.cache.as_ref()]
+        .into_iter()
+        .flatten()
+        .filter(|kept| kept.starts_with(glave_home) && *kept != glave_home)
+        .collect();
+    if kept.is_empty() {
         hide(glave_home, mounts);
-        return;
-    };
-    let mut folder = glave_home.clone();
-    for part in inside.components() {
-        let next = folder.join(part);
-        for entry in std::fs::read_dir(&folder).into_iter().flatten().flatten() {
-            if entry.path() != next {
-                hide(&entry.path(), mounts);
-            }
+    } else {
+        hide_except(glave_home, &kept, mounts);
+    }
+}
+
+/// What `folder` holds, hidden, except each of `kept` and the way to it.
+fn hide_except(folder: &Path, kept: &[&PathBuf], mounts: &mut Vec<Mount>) {
+    for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if kept.iter().any(|kept| **kept == path) {
+            continue;
         }
-        folder = next;
+        if kept.iter().any(|kept| kept.starts_with(&path)) {
+            hide_except(&path, kept, mounts);
+        } else {
+            hide(&path, mounts);
+        }
     }
 }
 
@@ -262,12 +264,20 @@ fn hide_home_secrets(layout: &Layout, mounts: &mut Vec<Mount>) {
 /// The real paths of the home folder's credential folders and files that exist, except one
 /// that holds the workspace.
 fn home_secrets(layout: &Layout) -> Vec<PathBuf> {
-    let Some(home) = &layout.home else {
-        return Vec::new();
-    };
-    HOME_SECRETS
-        .iter()
-        .filter_map(|secret| std::fs::canonicalize(home.join(secret)).ok())
+    let in_home = layout.home.iter().flat_map(|home| {
+        HOME_SECRETS
+            .iter()
+            .chain(LINUX_HOME_SECRETS)
+            .map(move |secret| home.join(secret))
+    });
+    let in_runtime = layout.runtime.iter().flat_map(|runtime| {
+        RUNTIME_SECRETS
+            .iter()
+            .map(move |secret| runtime.join(secret))
+    });
+    in_home
+        .chain(in_runtime)
+        .filter_map(|secret| std::fs::canonicalize(secret).ok())
         .filter(|real| !layout.root.starts_with(real))
         .collect()
 }

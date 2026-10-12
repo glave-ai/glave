@@ -10,6 +10,7 @@ use std::process::Command as Process;
 
 use glave_ports::{
     Command, Computers, Ending, Environment, Output, Sandbox, SandboxLevel, Sources, WorkspaceId,
+    block_on,
 };
 
 use super::sandbox_available;
@@ -22,14 +23,6 @@ fn enforced() -> bool {
         "GLAVE_REQUIRE_SANDBOX is set but the sandbox is not available here"
     );
     available
-}
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
 }
 
 /// A folder outside the system temp folder, which the sandbox lets every command write.
@@ -70,13 +63,10 @@ async fn run(
     (finished.ending, output.0.lock().unwrap().clone())
 }
 
-#[test]
-fn a_sandboxed_worktree_commits_but_never_writes_the_main_checkout() {
-    if !enforced() {
-        return;
-    }
-    let dir = scratch("worktree");
-    let repo = dir.join("app");
+/// A repository with one commit on `main`, in `dir/<name>`.
+fn committed_repo(dir: &Path, name: &str) -> PathBuf {
+    let repo = dir.join(name);
+    std::fs::create_dir_all(&repo).unwrap();
     let made = Process::new("bash")
         .args([
             "-c",
@@ -87,6 +77,12 @@ fn a_sandboxed_worktree_commits_but_never_writes_the_main_checkout() {
         .status()
         .unwrap();
     assert!(made.success());
+    std::fs::canonicalize(repo).unwrap()
+}
+
+/// This machine's computers, keeping worktrees in glave's folder under `dir/home`, and the
+/// sandbox protecting that home.
+fn computers(dir: &Path) -> (LocalComputers, Sandbox) {
     let home = dir.join("home");
     let glave_home = home.join(".glave");
     let environment: Vec<(OsString, OsString)> = std::env::vars_os()
@@ -98,10 +94,113 @@ fn a_sandboxed_worktree_commits_but_never_writes_the_main_checkout() {
     let sandbox = Sandbox {
         level: SandboxLevel::Project,
         network: false,
-        home: Some(home.clone()),
+        home: Some(home),
         glave_home: Some(glave_home),
     };
-    block_on(async {
+    (computers, sandbox)
+}
+
+/// What a sandboxed command must still be able to do with git.
+const GIT_WORKS: &str = "export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com \
+    GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com && \
+    echo two > b.txt && git add b.txt && git commit -q -m two && \
+    git branch side && git checkout -q side && git checkout -q - && \
+    echo three >> a.txt && git stash -q && git stash list | grep -q 'stash@' && \
+    git stash pop -q && git commit -qam three && echo git-works";
+
+async fn git_works(computers: &LocalComputers, workspace: WorkspaceId, sandbox: &Sandbox) {
+    let (ending, said) = run(computers, workspace, sandbox, GIT_WORKS).await;
+    assert_eq!(ending, Ending::Exited { code: 0 }, "{said}");
+    assert!(said.contains("git-works"), "{said}");
+}
+
+/// `plant <folder>`: a folder holding a hook and a git config, ready to be moved into place.
+const PLANT: &str = "plant() { mkdir -p \"$1/hooks\" && echo x > \"$1/hooks/pre-commit\" && \
+    echo x > \"$1/config\"; }; ";
+
+/// Prepared folders moved in whole under `.git/worktrees`, `.git/modules` (one that is there
+/// and one nested in a submodule's), and `.glave`, and the project itself moved aside for a
+/// prepared copy of it. `aside` is a folder outside the project the command may write.
+fn moves_into_git(aside: &str) -> String {
+    format!(
+        "{PLANT} \
+         plant {aside}/w/x; mv {aside}/w .git/worktrees; \
+         plant {aside}/b; mv {aside}/b .git/modules/b; \
+         mkdir -p .git/modules/a/modules && plant {aside}/c && mv {aside}/c .git/modules/a/modules/c; \
+         mkdir -p {aside}/g && echo x > {aside}/g/settings.json && mv {aside}/g .glave; \
+         root=$(pwd -P); mkdir -p {aside}/p && cp -R . {aside}/p && plant {aside}/p/.git && mv \"$root\" {aside}/old && mv {aside}/p \"$root\"; \
+         echo done"
+    )
+}
+
+/// What [`moves_into_git`] plants when nothing stops it.
+const MOVED_INTO_GIT: &[&str] = &[
+    ".git/worktrees/x/hooks/pre-commit",
+    ".git/modules/b/hooks/pre-commit",
+    ".git/modules/a/modules/c/hooks/pre-commit",
+    ".glave/settings.json",
+    ".git/hooks/pre-commit",
+];
+
+/// Seatbelt matches a rename by its two paths, never by what the moved folder holds, so
+/// a prepared folder moved in whole must be stopped at its own name: nothing can be created
+/// or moved under `.git/modules` or `.git/worktrees`, and the project cannot be swapped.
+#[test]
+fn a_sandboxed_repository_commits_but_nothing_moves_into_its_git_folder() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("moves");
+    let repo = committed_repo(&dir, "repo");
+    std::fs::create_dir_all(repo.join(".git/modules/a")).unwrap();
+    let (computers, sandbox) = computers(&dir);
+    block_on!(async {
+        let computer = computers.create(&Environment::host()).await.unwrap();
+        let path = repo.to_string_lossy().into_owned();
+        let here = computers
+            .open(computer.id, &Sources::Folder { path })
+            .await
+            .unwrap();
+        git_works(&computers, here.id, &sandbox).await;
+        let (_, said) = run(
+            &computers,
+            here.id,
+            &sandbox,
+            &moves_into_git("\"$TMPDIR\""),
+        )
+        .await;
+        assert!(said.contains("done"), "{said}");
+        let planted: Vec<&&str> = MOVED_INTO_GIT
+            .iter()
+            .filter(|planted| repo.join(planted).exists())
+            .collect();
+        assert!(planted.is_empty(), "planted {planted:?}: {said}");
+    });
+    // Control: unsandboxed, the same moves plant every one, so the check above can fail.
+    let open = committed_repo(&dir, "open");
+    std::fs::create_dir_all(open.join(".git/modules/a")).unwrap();
+    let aside = dir.join("aside");
+    std::fs::create_dir_all(&aside).unwrap();
+    let made = Process::new("bash")
+        .args(["-c", &moves_into_git(&aside.to_string_lossy())])
+        .current_dir(&open)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    for planted in MOVED_INTO_GIT {
+        assert!(open.join(planted).exists(), "{planted}");
+    }
+}
+
+#[test]
+fn a_sandboxed_worktree_commits_but_never_writes_the_main_checkout() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("worktree");
+    let repo = committed_repo(&dir, "app");
+    let (computers, sandbox) = computers(&dir);
+    block_on!(async {
         let computer = computers.create(&Environment::host()).await.unwrap();
         let open = |branch: &str| Sources::Worktree {
             path: repo.to_string_lossy().into_owned(),
@@ -116,12 +215,7 @@ fn a_sandboxed_worktree_commits_but_never_writes_the_main_checkout() {
             .open(computer.id, &open("glave/other"))
             .await
             .unwrap();
-
-        let commit = "echo two > b.txt && git add b.txt && \
-            git -c user.name=t -c user.email=t@example.com commit -q -m two && echo committed";
-        let (ending, said) = run(&computers, mine.id, &sandbox, commit).await;
-        assert_eq!(ending, Ending::Exited { code: 0 }, "{said}");
-        assert!(said.contains("committed"), "{said}");
+        git_works(&computers, mine.id, &sandbox).await;
 
         let escapes = format!(
             "echo x > {main}/main.txt; echo x > {other}/theirs.txt; \
@@ -138,6 +232,41 @@ fn a_sandboxed_worktree_commits_but_never_writes_the_main_checkout() {
         assert!(!repo.join(".git/hooks/post-commit").exists(), "{said}");
         let config = std::fs::read_to_string(repo.join(".git/config")).unwrap();
         assert!(!config.ends_with("x\n"), "{config}");
+
+        // Prepared folders moved in whole: under the shared folder's `worktrees` and
+        // `modules`, under the worktree's own `modules`, and over its own folder and the
+        // shared folder themselves.
+        let common = repo.join(".git");
+        let own = common.join("worktrees").join("glave-mine");
+        assert!(own.is_dir(), "the worktree's own git folder");
+        let moves = format!(
+            "{PLANT} a=\"$TMPDIR\"; common='{common}'; own='{own}'; \
+             plant $a/n; mv $a/n \"$common/worktrees/n\"; \
+             plant $a/s/x; mv $a/s \"$common/modules\"; \
+             plant $a/o/x; mv $a/o \"$own/modules\"; \
+             cp -R \"$own\" $a/own && plant $a/own && mv \"$own\" $a/own-old && mv $a/own \"$own\"; \
+             mkdir -p $a/c && cp -R \"$common/.\" $a/c && plant $a/c && mv \"$common\" $a/c-old && mv $a/c \"$common\"; \
+             echo done",
+            common = common.display(),
+            own = own.display(),
+        );
+        let (_, said) = run(&computers, mine.id, &sandbox, &moves).await;
+        assert!(said.contains("done"), "{said}");
+        let planted: Vec<PathBuf> = [
+            common.join("worktrees/n/hooks/pre-commit"),
+            common.join("modules/x/hooks/pre-commit"),
+            own.join("modules/x/hooks/pre-commit"),
+            own.join("hooks/pre-commit"),
+            common.join("hooks/pre-commit"),
+        ]
+        .into_iter()
+        .filter(|planted| planted.exists())
+        .collect();
+        assert!(planted.is_empty(), "planted {planted:?}: {said}");
+        let commit = "echo four > d.txt && git add d.txt && \
+            git -c user.name=t -c user.email=t@example.com commit -q -m four && echo committed";
+        let (ending, said) = run(&computers, mine.id, &sandbox, commit).await;
+        assert_eq!(ending, Ending::Exited { code: 0 }, "{said}");
     });
 }
 
@@ -202,7 +331,7 @@ fn other_spellings_of_protected_paths_are_protected_too() {
         }
         root
     };
-    block_on(async {
+    block_on!(async {
         let computer = computers.create(&Environment::host()).await.unwrap();
         if !enforced {
             let root = project("unconfined", false);

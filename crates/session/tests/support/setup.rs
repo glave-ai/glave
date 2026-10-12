@@ -1,0 +1,218 @@
+//! A session server for a test, built from a `Setup` over a real temporary folder, and a log
+//! two servers can share.
+
+use std::future::Future;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use glave_computer::LocalComputers;
+use glave_event::{At, Principal, RawEvent, Seq, ThreadId};
+use glave_harness::{ApprovalMode, Memory, Settings, Workspace};
+use glave_keys::{KeyFileRoot, KeySettings};
+use glave_ports::testing::{CountingEntropy, ManualClock};
+use glave_ports::{
+    Completion, EventLog, LogError, MemoryBlobs, MemoryLog, MemorySpaces, OrgId, Scope, Space,
+    SpaceId, SpaceKind,
+};
+use glave_session::protocol::ModelInfo;
+use glave_session::{Answering, Server, TaskLimits, Wiring};
+use glave_store_sqlite::Store;
+use tokio::sync::Notify;
+
+use super::script::{Script, Seen};
+
+/// A test server on the log `L`.
+pub type Tested<L = MemoryLog> = Server<Script, L, MemoryBlobs>;
+
+/// A fresh folder for the test called `name`.
+pub fn folder(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("glave-session-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// The SQLite store at `database`, sealed under a key file beside it, so opening it again
+/// reads what was written before.
+pub async fn sqlite(database: &Path) -> Store {
+    let root = KeyFileRoot::open_or_create(database.with_extension("key")).unwrap();
+    Store::open(database, KeySettings::new(Arc::new(root)))
+        .await
+        .unwrap()
+}
+
+/// The organization and space every test server serves.
+pub fn scope() -> Scope {
+    Scope {
+        org: OrgId::from_uuid(uuid::Uuid::from_u128(1)),
+        space: SpaceId::from_uuid(uuid::Uuid::from_u128(2)),
+    }
+}
+
+/// What a test server is built from.
+pub struct Setup {
+    pub answers: Vec<Completion>,
+    /// Each answer waits here until the test lets it through.
+    pub gate: Option<Arc<Notify>>,
+    pub answering: Answering,
+    pub settings: Settings,
+    /// Ticks a millisecond a reading unless the test sets one it moves itself.
+    pub clock: ManualClock,
+    /// Where the ids start: a second server on the same log takes another, as another
+    /// process draws other ids.
+    pub seed: u64,
+    pub limits: TaskLimits,
+    /// Models offered beside the settings' own.
+    pub models: Vec<ModelInfo>,
+    /// The approval modes a thread may choose.
+    pub modes: Vec<ApprovalMode>,
+    pub memory: Option<Arc<dyn Memory>>,
+    /// Where worktrees are kept; with none, a thread asking for one is refused.
+    pub worktrees: Option<PathBuf>,
+}
+
+impl Setup {
+    /// A server answering `answers` in the product's defaults, with clients to ask.
+    pub fn new(answers: Vec<Completion>) -> Self {
+        Self {
+            answers,
+            gate: None,
+            answering: Answering::Clients,
+            settings: Settings::new("test-model", "script"),
+            clock: ManualClock::ticking(1_791_001_000_000),
+            seed: 1,
+            limits: TaskLimits::default(),
+            models: Vec::new(),
+            modes: vec![ApprovalMode::Ask, ApprovalMode::Auto],
+            memory: None,
+            worktrees: None,
+        }
+    }
+
+    /// A server answering `answers` in ask mode, so commands ask, with `answering` to ask.
+    pub fn asking(answers: Vec<Completion>, answering: Answering) -> Self {
+        let mut setup = Self::new(answers);
+        setup.answering = answering;
+        setup.settings.approval = ApprovalMode::Ask;
+        setup
+    }
+
+    /// The server on a log of its own; see `build_on`.
+    pub async fn build(self, dir: &Path) -> (Tested, Seen) {
+        self.build_on(dir, MemoryLog::new()).await
+    }
+
+    /// The server on `log`, working in `dir`, with its own space kept, and every request its
+    /// model receives. Threads outside that space get scratch folders beside `dir`.
+    pub async fn build_on<L: EventLog + 'static>(self, dir: &Path, log: L) -> (Tested<L>, Seen) {
+        let (provider, seen) = Script::new(self.answers, self.gate);
+        let computers = LocalComputers::for_here(std::env::vars_os())
+            .with_scratch(dir.with_extension("scratch"));
+        let computers = match &self.worktrees {
+            Some(base) => computers.with_worktrees(base),
+            None => computers,
+        };
+        let (computers, info) = computers.open_here(dir).await.unwrap();
+        let wiring = Wiring {
+            provider,
+            log,
+            blobs: MemoryBlobs::new(),
+            clock: Box::new(self.clock),
+            entropy: Box::new(CountingEntropy::starting_at(self.seed << 32)),
+            workspace: Workspace::new(computers, info),
+            tools: Vec::new(),
+            worktree: false,
+            hooks: glave_harness::Hooks::default(),
+            workers: None,
+            tasks: self.limits,
+            memory: self.memory,
+            spaces: Arc::new(MemorySpaces::new()),
+            models: self.models,
+            modes: self.modes,
+        };
+        let server = Server::new(wiring, self.settings, scope(), self.answering);
+        // The server's own space, kept as its person's project at a fixed time without reading
+        // the clock, so nothing a test checks depends on when it was first asked for.
+        let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
+        let home = Space {
+            id: scope().space,
+            kind: SpaceKind::Project,
+            name: "test".into(),
+            owner: Principal::person(server.person().unwrap()),
+            members: Vec::new(),
+            created_at: at,
+            updated_at: at,
+        };
+        server.spaces().create(scope().org, &home).await.unwrap();
+        (server, seen)
+    }
+}
+
+/// The server of `Setup::asking`.
+pub async fn server(dir: &Path, answers: Vec<Completion>, answering: Answering) -> Tested {
+    Setup::asking(answers, answering).build(dir).await.0
+}
+
+/// A log in memory that two servers can share, as two processes share a database.
+#[derive(Clone, Default)]
+pub struct Shared(pub Arc<MemoryLog>);
+
+impl EventLog for Shared {
+    fn append(
+        &self,
+        scope: &Scope,
+        events: &[RawEvent],
+    ) -> impl Future<Output = Result<(), LogError>> + Send {
+        self.0.append(scope, events)
+    }
+
+    fn read(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        after: Option<Seq>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
+        self.0.read(scope, thread, after, limit)
+    }
+
+    fn search(
+        &self,
+        scope: &Scope,
+        query: &str,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<glave_ports::search::Found>, LogError>> + Send {
+        self.0.search(scope, query, limit)
+    }
+
+    fn locate(
+        &self,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+        self.0.locate(thread)
+    }
+
+    fn thread_views(
+        &self,
+        scope: &Scope,
+        query: &glave_ports::ThreadQuery,
+    ) -> impl Future<Output = Result<Vec<glave_ports::ThreadView>, LogError>> + Send {
+        self.0.thread_views(scope, query)
+    }
+
+    fn thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<glave_ports::ThreadView>, LogError>> + Send {
+        self.0.thread_view(scope, thread)
+    }
+
+    fn rebuild_thread_view(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+    ) -> impl Future<Output = Result<Option<glave_ports::ThreadView>, LogError>> + Send {
+        self.0.rebuild_thread_view(scope, thread)
+    }
+}

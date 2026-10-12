@@ -1,17 +1,19 @@
 //! The session server: threads and turns behind the methods of `specs/session.md`. It keeps a
 //! thread in memory while it is used, and rebuilds any thread from the log on demand, so a
-//! fresh server answers for every thread the log holds.
+//! fresh server answers for every thread the log holds, in every space of its organization,
+//! to the callers who work in that space.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use glave_event::{PrincipalId, Seq, ThreadId};
+use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
 use glave_harness::{
-    Caller, Change, Clock, Entropy, Harness, HarnessError, Hooks, Parts, Place, ReleasedWorker,
+    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Memory, Parts, Place, ReleasedWorker,
     Settings, TurnSummary, Workers, Workspace,
 };
-use glave_ports::{BlobStore, Environment, EventLog, ModelProvider, Scope, ToolSource};
-use jiff::Timestamp;
+use glave_ports::{
+    BlobStore, Environment, EventLog, ModelProvider, Scope, SpaceId, Spaces, ToolSource,
+};
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
@@ -20,9 +22,9 @@ use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
 use crate::ledger::{Ledger, is_ledger};
-use crate::protocol::{
-    ApiError, ErrorData, Notification, PROTOCOL, Reply, Request, ServerInfo, code,
-};
+use crate::modes::Choice;
+use crate::protocol::{ApiError, ApprovalMode, ErrorData, ModelInfo, Notification, Reply, code};
+use crate::spaces::Places;
 use crate::tasks::{TaskLimits, Tasks};
 
 /// The most events or threads one page returns.
@@ -48,6 +50,16 @@ pub struct Wiring<P, L, B> {
     pub workers: Option<OnWorkers>,
     /// What one person may run at once and keep scheduled.
     pub tasks: TaskLimits,
+    /// What threads remember from one to the next (`specs/memory.md`); none when memory is off.
+    pub memory: Option<Arc<dyn Memory>>,
+    /// The spaces of the server's organization: who owns each and who works in it.
+    pub spaces: Arc<dyn Spaces>,
+    /// The models threads may choose besides the settings' own, the default (`model/list`).
+    /// The provider must serve each by its id: the gateway's choices.
+    pub models: Vec<ModelInfo>,
+    /// The approval modes a thread may choose besides the settings' own: those the policy
+    /// leaves, where auto runs behind a wall (`specs/approvals.md`).
+    pub modes: Vec<glave_harness::ApprovalMode>,
 }
 
 /// Threads on workers: where workers come from, and the environment each is made from.
@@ -59,7 +71,8 @@ pub struct OnWorkers {
     pub every_thread: bool,
 }
 
-/// A session server for one workspace and one scope. Clones share it.
+/// A session server for one workspace and the spaces of one organization, the folder's own
+/// first. Clones share it.
 pub struct Server<P, L, B> {
     pub(crate) inner: Arc<Inner<P, L, B>>,
 }
@@ -76,17 +89,22 @@ pub(crate) type Glave<P, L, B> = Harness<P, Observed<L>, B, Approvals>;
 
 pub(crate) struct Inner<P, L, B> {
     pub(crate) harness: Glave<P, L, B>,
-    pub(crate) scope: Scope,
+    /// The server's own space: the folder it serves, whose workspace its threads use. Its
+    /// tasks, schedules and memory are this space's.
+    pub(crate) home: Scope,
+    pub(crate) spaces: Arc<dyn Spaces>,
+    /// The spaces of threads looked up.
+    pub(crate) places: Mutex<Places>,
     /// Whether new threads get a worktree when `thread/start` does not say.
     pub(crate) worktree: bool,
     /// The environment new threads' workers are made from, when they work on workers.
     pub(crate) worker: Option<Environment>,
     /// Whether every new thread works on a worker, or only tasks' threads.
     pub(crate) every_thread: bool,
-    pub(crate) clock: Arc<dyn Clock>,
-    pub(crate) entropy: Arc<dyn Entropy>,
-    /// The model turns are sent to, as tasks record it.
-    pub(crate) model: String,
+    /// The models threads may be sent to, the default first.
+    pub(crate) models: Vec<ModelInfo>,
+    /// The modes a thread may choose, cautious first.
+    pub(crate) modes: Vec<ApprovalMode>,
     /// The space's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
@@ -108,25 +126,25 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
+    /// A server whose own space is `home`: the space of the folder `wiring.workspace` opens.
     pub fn new(
         wiring: Wiring<P, L, B>,
         settings: Settings,
-        scope: Scope,
+        home: Scope,
         answering: Answering,
     ) -> Self {
         let hub = Arc::new(Hub::default());
         let approvals = Approvals::new(answering, Arc::clone(&hub));
-        let clock: Arc<dyn Clock> = Arc::from(wiring.clock);
-        let entropy: Arc<dyn Entropy> = Arc::from(wiring.entropy);
-        let model = settings.model.clone();
         let person = settings.person;
+        let catalog = crate::models::catalog(&settings.model, wiring.models);
+        let choosable = crate::modes::choosable(settings.approval, &wiring.modes);
         let parts = Parts {
             provider: wiring.provider,
             log: Observed::new(wiring.log, Arc::clone(&hub)),
             blobs: wiring.blobs,
             approver: approvals.clone(),
-            clock: Box::new(SharedClock(Arc::clone(&clock))),
-            entropy: Box::new(SharedEntropy(Arc::clone(&entropy))),
+            clock: wiring.clock,
+            entropy: wiring.entropy,
             workspace: wiring.workspace,
         };
         let every_thread = wiring.workers.as_ref().is_some_and(|on| on.every_thread);
@@ -137,17 +155,19 @@ where
                     None => Harness::new(parts, settings),
                 }
                 .with_tools(wiring.tools)
-                .with_hooks(wiring.hooks),
+                .with_hooks(wiring.hooks)
+                .with_memory_if(wiring.memory),
                 worker: wiring.workers.map(|on| on.environment),
                 every_thread,
-                clock,
-                entropy,
-                model,
+                models: catalog,
+                modes: choosable,
                 person,
                 limits: wiring.tasks,
                 ledger: Mutex::new(Ledger::default()),
                 running: Mutex::new(Tasks::new()),
-                scope,
+                home,
+                spaces: wiring.spaces,
+                places: Mutex::new(Places::default()),
                 worktree: wiring.worktree,
                 hub,
                 approvals,
@@ -158,89 +178,14 @@ where
         }
     }
 
-    /// Answers one request from the local person. `turn/start` answers when the turn has
-    /// ended; to follow it as it runs, use [`Server::start_turn`].
-    pub async fn request(&self, request: Request) -> Result<Reply, ApiError> {
-        self.request_as(&Caller::default(), request).await
+    /// The person threads are for unless someone else starts them.
+    pub fn person(&self) -> Option<PrincipalId> {
+        self.inner.harness.person()
     }
 
-    /// Answers one request from `caller`, the person the transport verified.
-    pub async fn request_as(&self, caller: &Caller, request: Request) -> Result<Reply, ApiError> {
-        match request {
-            Request::Discover {} => Ok(Reply::Server(ServerInfo {
-                name: "glave".to_owned(),
-                version: env!("CARGO_PKG_VERSION").to_owned(),
-                protocols: vec![PROTOCOL.to_owned()],
-            })),
-            Request::ThreadStart {
-                worktree,
-                background,
-            } => {
-                let thread = self.new_thread(caller, worktree, background).await?;
-                Ok(Reply::Thread {
-                    thread: self.summary(thread),
-                })
-            }
-            Request::ThreadList { limit, show } => self.list(limit, show.unwrap_or_default()).await,
-            Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
-            Request::ThreadUnarchive { thread } => {
-                self.change(caller, thread, Change::Unarchive).await
-            }
-            Request::ThreadDelete { thread } => self.change(caller, thread, Change::Delete).await,
-            Request::ThreadGet { thread } => {
-                self.load(thread).await?;
-                Ok(Reply::Thread {
-                    thread: self.summary(thread),
-                })
-            }
-            Request::ThreadEvents {
-                thread,
-                after,
-                limit,
-            } => self.events(thread, after, limit).await,
-            streams @ (Request::TurnStart { .. } | Request::GoalStart { .. }) => {
-                match self.start_streaming(caller, streams).await {
-                    Ok(started) => started?.finish().await.map(|turn| Reply::Turn { turn }),
-                    Err(background) => self
-                        .tasks_request(caller, *background)
-                        .await
-                        .unwrap_or_else(|_| Err(ApiError::new(code::INTERNAL, "not a turn"))),
-                }
-            }
-            Request::TurnCancel { thread } => self.cancel(thread).await,
-            Request::ThreadCompact { thread } => self.compact(thread).await,
-            Request::ApprovalDecide {
-                thread,
-                approval,
-                decision,
-            } => {
-                let by = caller.person;
-                self.inner
-                    .approvals
-                    .decide(thread, &approval, decision, by)?;
-                Ok(Reply::Done {})
-            }
-            Request::QuestionAnswer {
-                thread,
-                question,
-                answers,
-            } => {
-                self.inner.approvals.respond(thread, &question, answers)?;
-                Ok(Reply::Done {})
-            }
-            Request::GoalStop { thread } => self.stop_goal(caller, thread).await,
-            Request::GoalGet { thread } => Ok(Reply::Goal {
-                goal: self.goal(thread).await?,
-            }),
-            other @ (Request::TasksList { .. }
-            | Request::TasksStop { .. }
-            | Request::ScheduleCreate { .. }
-            | Request::ScheduleList {}
-            | Request::ScheduleDelete { .. }) => self
-                .tasks_request(caller, other)
-                .await
-                .unwrap_or_else(|_| Err(ApiError::new(code::INTERNAL, "not a task request"))),
-        }
+    /// The spaces this server serves, for a host to manage.
+    pub fn spaces(&self) -> &Arc<dyn Spaces> {
+        &self.inner.spaces
     }
 
     /// Everything `thread` publishes from now on: its events as they are stored, and progress.
@@ -312,33 +257,87 @@ where
         }
     }
 
-    /// Starts a thread for `caller`: where `worktree` says, else on a worker when the server
-    /// puts every thread, or a task's (`background`), on one, else as the server is set.
+    /// Starts a thread for `caller` in `space`. In the server's own space: where `worktree`
+    /// says, else on a worker when the server puts every thread, or a task's (`background`),
+    /// on one, else as the server is set. In any other space there is no folder to work in, so
+    /// the thread gets a scratch folder of its own. With a model or an approval mode in
+    /// `choice`, its turns go to that model, or ask that much.
     pub(crate) async fn new_thread(
         &self,
         caller: &Caller,
+        space: SpaceId,
         worktree: Option<bool>,
         background: bool,
+        choice: &Choice,
     ) -> Result<ThreadId, ApiError> {
+        if let Some(model) = &choice.model {
+            self.known_model(model)?;
+        }
+        if let Some(mode) = choice.approval {
+            self.allowed_mode(mode)?;
+        }
+        let home = space == self.inner.home.space;
         let on_worker = self.inner.every_thread || background;
         let place = match (worktree, &self.inner.worker) {
+            (Some(true), _) if !home => {
+                return Err(ApiError::new(
+                    code::WORKSPACE,
+                    "a thread outside this server's own space has no repository to make a \
+                     worktree of",
+                ));
+            }
+            _ if !home => Place::Scratch,
             (Some(true), _) => Place::Worktree,
             (None, Some(environment)) if on_worker => Place::Worker(environment.clone()),
             (None, _) if self.inner.worktree => Place::Worktree,
             _ => Place::Here,
         };
-        let thread = self
+        let scope = Scope {
+            org: self.inner.home.org,
+            space,
+        };
+        let mut thread = self
             .inner
             .harness
-            .start_thread_in(self.inner.scope, caller, place)
+            .start_thread_in(scope, caller, place)
+            .await
+            .map_err(|error| api(&error))?;
+        crate::modes::record(&self.inner.harness, &mut thread, caller, choice)
             .await
             .map_err(|error| api(&error))?;
         let id = thread.id;
+        self.place(id, scope);
         self.keep(id, thread);
         Ok(id)
     }
 
-    async fn events(
+    /// The latest event of type `kind` in `thread`, decoded: how a choice the thread made is
+    /// read back from the log, by any server of the deployment.
+    pub(crate) async fn latest(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kind: &str,
+    ) -> Result<Option<Body>, ApiError> {
+        let failed =
+            |error: &dyn std::fmt::Display| ApiError::new(code::INTERNAL, error.to_string());
+        let latest = self
+            .inner
+            .harness
+            .log()
+            .latest_of(scope, thread, &[kind])
+            .await
+            .map_err(|error| failed(&error))?;
+        latest
+            .map(|raw| {
+                decode(raw)
+                    .map(|event| event.body)
+                    .map_err(|error| failed(&error))
+            })
+            .transpose()
+    }
+
+    pub(crate) async fn events(
         &self,
         thread: ThreadId,
         after: Option<Seq>,
@@ -349,11 +348,12 @@ where
             return Err(no_thread(thread));
         }
         self.ensure_not_deleted(thread).await?;
+        let scope = self.scope_of(thread).await?;
         let events = self
             .inner
             .harness
             .log()
-            .read(&self.inner.scope, thread, after, limit)
+            .read(&scope, thread, after, limit)
             .await
             .map_err(|err| ApiError::new(code::INTERNAL, err.to_string()))?;
         if events.is_empty() && after.is_none() {
@@ -365,7 +365,7 @@ where
         Ok(Reply::Events { events, next })
     }
 
-    async fn cancel(&self, thread: ThreadId) -> Result<Reply, ApiError> {
+    pub(crate) async fn cancel(&self, thread: ThreadId) -> Result<Reply, ApiError> {
         let mut finished = {
             let threads = self
                 .inner
@@ -389,7 +389,7 @@ where
         Ok(Reply::Done {})
     }
 
-    async fn compact(&self, thread: ThreadId) -> Result<Reply, ApiError> {
+    pub(crate) async fn compact(&self, thread: ThreadId) -> Result<Reply, ApiError> {
         let (finish, mut done) = watch::channel(None);
         self.occupy(thread, finish, |inner, mut held, cancel| async move {
             let compacted = inner.harness.compact(&mut held, &cancel, &mut |_| {}).await;
@@ -404,24 +404,6 @@ where
             before_tokens: compacted.before_tokens,
             after_tokens: compacted.after_tokens,
         })
-    }
-}
-
-/// The server's clock, shared with its harness.
-struct SharedClock(Arc<dyn Clock>);
-
-impl Clock for SharedClock {
-    fn now(&self) -> Timestamp {
-        self.0.now()
-    }
-}
-
-/// The server's randomness, shared with its harness.
-struct SharedEntropy(Arc<dyn Entropy>);
-
-impl Entropy for SharedEntropy {
-    fn bytes(&self) -> [u8; 10] {
-        self.0.bytes()
     }
 }
 
@@ -441,6 +423,7 @@ pub(crate) fn api(error: &HarnessError) -> ApiError {
         HarnessError::NoGoal(_) => ApiError::new(code::NO_GOAL, error.to_string()),
         HarnessError::Workspace(_) => ApiError::new(code::WORKSPACE, error.to_string()),
         HarnessError::PromptBlocked(_) => ApiError::new(code::PROMPT_BLOCKED, error.to_string()),
+        HarnessError::Invalid(_) => ApiError::new(code::INVALID_PARAMS, error.to_string()),
         _ => ApiError::new(code::INTERNAL, error.to_string()),
     }
 }

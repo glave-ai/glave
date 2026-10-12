@@ -1,49 +1,36 @@
 //! Whether a thread is shown: active, archived (hidden from lists, kept, reversible) or
 //! deleted (hidden for good, marked for erasure). The latest `thread.archived`,
-//! `thread.unarchived` or `thread.deleted` in its log decides.
+//! `thread.unarchived` or `thread.deleted` in its log decides. And renaming: a title of the
+//! person's own, recorded as `thread.renamed`.
 
-use glave_event::{Body, Event, ThreadArchived, ThreadDeleted, ThreadId, ThreadUnarchived};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
+use glave_event::{
+    Body, Event, ThreadArchived, ThreadDeleted, ThreadId, ThreadRenamed, ThreadUnarchived,
+};
+pub use glave_ports::Standing;
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
 use jiff::Timestamp;
 
 use crate::approval::Approver;
-use crate::caller::Caller;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::append_next;
 
 /// The event types that decide a thread's standing.
 pub(crate) const KINDS: &[&str] = &["thread.archived", "thread.unarchived", "thread.deleted"];
 
-/// Whether a thread is shown.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub enum Standing {
-    /// Shown in lists.
-    #[default]
-    Active,
-    /// Hidden from lists and kept in the log; `unarchive` brings it back.
-    Archived,
-    /// Hidden for good, and waiting for its content to be erased.
-    Deleted,
+/// The standing `events` leave a thread in that was in `before` them.
+pub(crate) fn standing_after(before: Standing, events: &[Event]) -> Standing {
+    events
+        .iter()
+        .fold(before, |standing, event| match event.body {
+            Body::ThreadArchived(_) => Standing::Archived,
+            Body::ThreadUnarchived(_) => Standing::Active,
+            Body::ThreadDeleted(_) => Standing::Deleted,
+            _ => standing,
+        })
 }
 
-impl Standing {
-    /// The standing the thread's `events` leave it in.
-    pub(crate) fn of(events: &[Event]) -> Self {
-        Self::Active.after(events)
-    }
-
-    /// The standing `events` leave a thread in that was in `self` before them.
-    pub(crate) fn after(self, events: &[Event]) -> Self {
-        events
-            .iter()
-            .fold(self, |standing, event| match event.body {
-                Body::ThreadArchived(_) => Self::Archived,
-                Body::ThreadUnarchived(_) => Self::Active,
-                Body::ThreadDeleted(_) => Self::Deleted,
-                _ => standing,
-            })
-    }
-}
+/// The longest title a person may give a thread, in characters.
+pub const MAX_TITLE: usize = 200;
 
 /// What to do to a thread's standing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,13 +155,43 @@ where
             Plan::Nothing => return Ok(()),
             Plan::Record => {}
         }
-        let by = self.other_than_for(caller.person);
+        let by = Self::other_than_for(thread, caller.person);
         match change {
             Change::Archive => self.record(thread, &ThreadArchived { by }).await,
             Change::Unarchive => self.record(thread, &ThreadUnarchived { by }).await,
             Change::Delete => self.record(thread, &ThreadDeleted { by }).await,
         }?;
         thread.standing = change.result();
+        // Glave's own record: call ids do not count it, so the model is sent the same.
+        thread.unnumbered = thread.unnumbered.saturating_add(1);
+        Ok(())
+    }
+
+    /// Gives a thread this harness holds the title `title` for `caller`, recorded as
+    /// `thread.renamed`. The title is trimmed; one that is empty or longer than [`MAX_TITLE`]
+    /// characters is refused. A deleted thread is no longer there to rename.
+    pub async fn rename(
+        &self,
+        thread: &mut Thread,
+        caller: &Caller,
+        title: &str,
+    ) -> Result<(), HarnessError> {
+        let title = title.trim();
+        if title.is_empty() || title.chars().count() > MAX_TITLE {
+            return Err(HarnessError::Invalid(format!(
+                "a title is 1 to {MAX_TITLE} characters, not only spaces"
+            )));
+        }
+        self.take_in(thread).await?;
+        if thread.standing == Standing::Deleted {
+            return Err(HarnessError::NotFound(thread.id));
+        }
+        let by = Self::other_than_for(thread, caller.person);
+        let renamed = ThreadRenamed {
+            title: title.to_owned(),
+            by,
+        };
+        self.record(thread, &renamed).await?;
         // Glave's own record: call ids do not count it, so the model is sent the same.
         thread.unnumbered = thread.unnumbered.saturating_add(1);
         Ok(())

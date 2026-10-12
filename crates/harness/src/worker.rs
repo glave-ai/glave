@@ -72,7 +72,7 @@ pub(crate) fn note(bound: &WorkspaceBound) -> Option<String> {
     let from = match &bound.opened {
         Opened::Clone { url, at: Some(at) } => format!("a fresh clone of {url} at {at}"),
         Opened::Clone { url, at: None } => format!("a fresh clone of {url}"),
-        Opened::Folder { path } => format!("the folder {path}"),
+        Opened::Folder { path } | Opened::Scratch { path } => format!("the folder {path}"),
         Opened::Worktree { repository, .. } => format!("a worktree of {repository}"),
     };
     Some(format!(

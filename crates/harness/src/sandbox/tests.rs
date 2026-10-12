@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use glave_event::Arguments;
+use glave_ports::block_on;
 
 use glave_computer::sandbox_available;
 use glave_ports::{Sandbox, SandboxLevel, is_protected};
@@ -22,14 +23,6 @@ fn enforced() -> bool {
         "GLAVE_REQUIRE_SANDBOX is set but the sandbox is not available here"
     );
     available
-}
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
 }
 
 /// A scratch folder outside the system temp folder, which the sandbox lets commands write.
@@ -55,7 +48,7 @@ fn sandbox(level: SandboxLevel, network: bool, home: &Path) -> Sandbox {
 fn run_in(project: &Path, sandbox: Option<&Sandbox>, command: &str) -> crate::tools::ToolOutcome {
     let arguments =
         Arguments::Json(serde_json::from_value(serde_json::json!({ "command": command })).unwrap());
-    block_on(async {
+    block_on!(async {
         let mut workspace = Workspace::open(project, std::env::vars_os()).await.unwrap();
         if let Some(sandbox) = sandbox {
             workspace = workspace.with_sandbox(sandbox).await.unwrap();
@@ -74,7 +67,7 @@ fn without_a_sandbox_on_this_computer_preparing_fails() {
         return;
     }
     let dir = scratch("unavailable");
-    let prepared = block_on(async {
+    let prepared = block_on!(async {
         Workspace::open(&dir, std::env::vars_os())
             .await
             .unwrap()
@@ -164,31 +157,126 @@ fn secret_locations_are_unreadable() {
     std::fs::write(dir.join(".glave/glave.db"), "canary-db\n").unwrap();
     std::fs::write(project.join(".env"), "canary-env\n").unwrap();
     std::fs::write(project.join(".ENV.local"), "canary-env-local\n").unwrap();
-    std::fs::write(project.join("server.pem"), "canary-pem\n").unwrap();
+    std::fs::write(project.join("privkey.pem"), "canary-pem\n").unwrap();
+    std::fs::create_dir_all(dir.join(".config/gh")).unwrap();
+    std::fs::write(dir.join(".config/gh/hosts.yml"), "canary-gh\n").unwrap();
+    std::fs::create_dir_all(dir.join(".cargo")).unwrap();
+    std::fs::write(dir.join(".cargo/credentials.toml"), "canary-cargo\n").unwrap();
+    std::fs::write(dir.join(".cargo/config.toml"), "cargo-config-ok\n").unwrap();
+    std::fs::write(dir.join(".zsh_history"), "canary-history\n").unwrap();
+    // Public certificates and Java key stores are not hidden.
+    std::fs::write(project.join("cert.pem"), "cert-ok\n").unwrap();
+    std::fs::write(project.join("fullchain.pem"), "chain-ok\n").unwrap();
+    std::fs::write(project.join("debug.keystore"), "keystore-ok\n").unwrap();
     std::fs::write(project.join(".env.example"), "example-ok\n").unwrap();
+    std::fs::write(project.join("secrets.yaml"), "canary-yaml\n").unwrap();
+    // Source modules named `secrets` are code, not secrets.
+    std::fs::write(project.join("secrets.rs"), "rs-ok\n").unwrap();
+    std::fs::write(project.join("secrets.py"), "py-ok\n").unwrap();
     std::fs::write(project.join("notes.md"), "notes-ok\n").unwrap();
+    // A certificate bundle is public: Python's HTTPS needs certifi's in a project's venv.
+    let certifi = project.join(".venv/lib/certifi");
+    std::fs::create_dir_all(&certifi).unwrap();
+    std::fs::write(certifi.join("cacert.pem"), "bundle-ok\n").unwrap();
     let out = run(
         &project,
         &sandbox(SandboxLevel::Project, false, &dir),
         &format!(
-            "for f in {}/.ssh/id_ed25519 {}/.glave/glave.db .env .ENV.local server.pem .env.example notes.md; do cat \"$f\"; done; true",
-            dir.display(),
-            dir.display()
+            "for f in {home}/.ssh/id_ed25519 {home}/.glave/glave.db {home}/.config/gh/hosts.yml {home}/.cargo/credentials.toml {home}/.cargo/config.toml {home}/.zsh_history .env .ENV.local privkey.pem secrets.yaml .env.example secrets.rs secrets.py notes.md .venv/lib/certifi/cacert.pem cert.pem fullchain.pem debug.keystore; do cat \"$f\"; done; true",
+            home = dir.display(),
         ),
     );
     assert!(!out.text.contains("canary"), "{}", out.text);
+    for open in ["cargo-config-ok", "cert-ok", "chain-ok", "keystore-ok"] {
+        assert!(out.text.contains(open), "{open}: {}", out.text);
+    }
     assert!(out.text.contains("example-ok"), "{}", out.text);
     assert!(out.text.contains("notes-ok"), "{}", out.text);
+    assert!(out.text.contains("bundle-ok"), "{}", out.text);
+    assert!(
+        out.text.contains("rs-ok") && out.text.contains("py-ok"),
+        "{}",
+        out.text
+    );
     // Control: without the sandbox every canary is readable.
     let open = run_in(
         &project,
         None,
         &format!(
-            "cat {}/.ssh/id_ed25519 .env .ENV.local server.pem",
+            "cat {}/.ssh/id_ed25519 .env .ENV.local privkey.pem",
             dir.display()
         ),
     );
     assert_eq!(open.text.matches("canary").count(), 4, "{}", open.text);
+}
+
+/// A hidden file is refused, as on every platform, never read as empty: the command fails,
+/// and the model is told the sandbox hides secrets.
+#[test]
+fn reading_a_hidden_file_fails_and_says_so() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("hidden");
+    let project = dir.join("project");
+    std::fs::write(project.join(".env"), "canary-env\n").unwrap();
+    let out = run(
+        &project,
+        &sandbox(SandboxLevel::Project, false, &dir),
+        "cat .env",
+    );
+    assert!(out.is_error, "{}", out.text);
+    assert!(!out.text.contains("canary"), "{}", out.text);
+    let said = out.text.to_ascii_lowercase();
+    assert!(
+        said.contains("permission denied") || said.contains("operation not permitted"),
+        "{}",
+        out.text
+    );
+    assert!(out.text.contains("files such as .env"), "{}", out.text);
+}
+
+/// Package managers keep their caches in the home folder, which sandboxed commands cannot
+/// write; in the sandbox they go in glave's sandbox cache folder, kept between runs, so
+/// installing a dependency works and stays fast. The rest of glave's folder stays hidden.
+#[test]
+fn package_caches_are_in_glave_s_sandbox_cache_and_stay_warm() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("caches");
+    let project = dir.join("project");
+    std::fs::create_dir_all(dir.join(".glave")).unwrap();
+    std::fs::write(dir.join(".glave/glave.db"), "canary-db\n").unwrap();
+    let cache = std::fs::canonicalize(dir.join(".glave"))
+        .unwrap()
+        .join("sandbox-cache");
+    let sandbox = sandbox(SandboxLevel::Project, true, &dir);
+    let variables = "XDG_CACHE_HOME npm_config_cache npm_config_store_dir YARN_CACHE_FOLDER \
+        BUN_INSTALL_CACHE_DIR PIP_CACHE_DIR UV_CACHE_DIR UV_PYTHON_INSTALL_DIR POETRY_CACHE_DIR \
+        PRE_COMMIT_HOME HF_HOME DENO_DIR GOPATH GOMODCACHE GOCACHE GRADLE_USER_HOME";
+    let out = run(
+        &project,
+        &sandbox,
+        &format!(
+            "for v in {variables}; do case \"${{!v}}\" in {cache}/*) mkdir -p \"${{!v}}\" && \
+             echo warm > \"${{!v}}/x\" && echo \"$v writable\";; *) echo \"$v is ${{!v}}\";; esac; done; \
+             echo \"maven: $MAVEN_OPTS\"; cat {glave}/glave.db",
+            cache = cache.display(),
+            glave = dir.join(".glave").display(),
+        ),
+    );
+    assert_eq!(out.text.matches("writable").count(), 16, "{}", out.text);
+    assert!(
+        out.text
+            .contains(&format!("-Dmaven.repo.local={}/maven", cache.display())),
+        "{}",
+        out.text
+    );
+    assert!(!out.text.contains("canary"), "{}", out.text);
+    // The next run, in a sandbox prepared afresh, finds what the last one left.
+    let again = run(&project, &sandbox, "cat \"$PIP_CACHE_DIR/x\"");
+    assert!(again.text.contains("warm"), "{}", again.text);
 }
 
 #[test]
@@ -289,7 +377,7 @@ fn the_file_tools_refuse_protected_paths_in_a_sandbox() {
             serde_json::from_value(serde_json::json!({ "path": path, "content": "echo pwned\n" }))
                 .unwrap(),
         );
-        block_on(async {
+        block_on!(async {
             let mut workspace = Workspace::open(&project, std::env::vars_os())
                 .await
                 .unwrap();
@@ -373,7 +461,7 @@ fn the_file_tools_refuse_links_a_command_planted_into_protected_paths() {
     assert!(planted.text.contains("planted"), "{}", planted.text);
     let tool = |tool: Tool, arguments: serde_json::Value| {
         let arguments = Arguments::Json(serde_json::from_value(arguments).unwrap());
-        block_on(async {
+        block_on!(async {
             let workspace = Workspace::open(&project, std::env::vars_os())
                 .await
                 .unwrap()
@@ -505,4 +593,33 @@ fn builds_with_dependencies_work_offline_in_the_sandbox() {
         build,
     );
     assert!(sandboxed.text.contains("built"), "{}", sandboxed.text);
+}
+
+/// A crate with a `secrets` module builds and tests in the default sandbox: the name rule
+/// hides secret data files, never source.
+#[test]
+fn a_crate_with_a_secrets_module_builds_and_tests_in_the_sandbox() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("secrets-module");
+    let project = dir.join("project");
+    std::fs::create_dir_all(project.join("src")).unwrap();
+    std::fs::write(
+        project.join("Cargo.toml"),
+        "[package]\nname = \"vault\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\n",
+    )
+    .unwrap();
+    std::fs::write(project.join("src/lib.rs"), "pub mod secrets;\n").unwrap();
+    std::fs::write(
+        project.join("src/secrets.rs"),
+        "pub fn masked() -> &'static str { \"***\" }\n\n#[test]\nfn masks() { assert_eq!(masked(), \"***\"); }\n",
+    )
+    .unwrap();
+    let out = run(
+        &project,
+        &sandbox(SandboxLevel::Project, true, &dir),
+        "CARGO_TARGET_DIR=target cargo test --offline --quiet 2>&1 && echo tested",
+    );
+    assert!(out.text.contains("tested"), "{}", out.text);
 }

@@ -3,14 +3,15 @@
 //! runs a stub in glave's place, so the lifecycle is tested without a Linux build of glave:
 //! the limits, the files put in before start, no network or a port on 127.0.0.1 only, the
 //! stream to a worker without a network, and removal. Everything made carries the label
-//! `glave.test=<run>`, and each test checks by that label that nothing is left behind.
+//! `glave.test=<run>` (CI sweeps the run by it) and `glave.test.case=<id>`, one per test, so
+//! each test checks that it left nothing behind without seeing the tests running beside it.
 //! `GLAVE_TEST_WORKER_GLAVE` (a Linux glave) and `GLAVE_TEST_WORKER_IMAGE` (an image with bash
 //! and git, pinned) add the whole path: a real worker reached over TLS.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use glave_ports::{Command, Computers, Ending, Environment, Image, Sources};
+use glave_ports::{Command, Computers, Ending, Environment, Image, Sources, block_on};
 use http::Method;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
@@ -31,21 +32,13 @@ const STUB: &[u8] = b"#!/bin/sh\necho \"args: $*\"\nls -l /opt/glave/tls/key.pem
 /// A stub that only waits, as a TLS server would, so its port stays published.
 const WAITS: &[u8] = b"#!/bin/sh\nexec sleep 300\n";
 
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
-
 /// The run's label value: CI's run id, or this process's.
 fn run_id() -> String {
     std::env::var("GITHUB_RUN_ID").unwrap_or_else(|_| format!("local-{}", std::process::id()))
 }
 
-/// Docker, when the test is asked for; `None` (and a note) otherwise.
-fn docker() -> Option<Docker> {
+/// Docker labelled for one test, and that test's case id; `None` (and a note) unless asked for.
+fn docker() -> Option<(Docker, String)> {
     if std::env::var("GLAVE_TEST_DOCKER").as_deref() != Ok("1") {
         eprintln!(
             "skipped: set GLAVE_TEST_DOCKER=1 with Docker running to test the Docker backend"
@@ -58,8 +51,15 @@ fn docker() -> Option<Docker> {
         glave: std::env::var_os("GLAVE_TEST_WORKER_GLAVE")
             .map_or_else(Default::default, Into::into),
     };
-    let labels = BTreeMap::from([("glave.test".to_owned(), run_id())]);
-    Some(Docker::new(settings, home.as_deref()).with_labels(labels))
+    let case = crate::local::new_id().simple().to_string();
+    let labels = BTreeMap::from([
+        ("glave.test".to_owned(), run_id()),
+        ("glave.test.case".to_owned(), case.clone()),
+    ]);
+    Some((
+        Docker::new(settings, home.as_deref()).with_labels(labels),
+        case,
+    ))
 }
 
 fn spec(network: bool) -> Spec {
@@ -92,9 +92,13 @@ async fn has_image(docker: &Docker, image: &str) -> bool {
     answer.status.is_success()
 }
 
-/// What this run left: containers, volumes and networks with its label.
-async fn left_behind(docker: &Docker) -> Vec<String> {
-    let filter = super::query(&json!({"label": [format!("glave.test={}", run_id())]}).to_string());
+/// What the test `case` left: containers, volumes and networks with its run's and its labels.
+async fn left_behind(docker: &Docker, case: &str) -> Vec<String> {
+    let labels = [
+        format!("glave.test={}", run_id()),
+        format!("glave.test.case={case}"),
+    ];
+    let filter = super::query(&json!({ "label": labels }).to_string());
     let mut left = Vec::new();
     for (kind, path, field) in [
         (
@@ -136,22 +140,24 @@ async fn forget_image(docker: &Docker, had: bool) {
 
 #[test]
 fn the_docker_backend_starts_limits_reaches_and_removes_workers() {
-    let Some(docker) = docker() else { return };
-    block_on(async {
+    let Some((docker, case)) = docker() else {
+        return;
+    };
+    block_on!(async {
         // One test, run in order, so removing the image it pulled never races another.
         let had = has_image(&docker, IMAGE).await;
         let checked = async {
-            limited(&docker).await;
-            streamed(&docker).await;
-            published(&docker).await;
+            limited(&docker, &case).await;
+            streamed(&docker, &case).await;
+            published(&docker, &case).await;
         };
         checked.await;
-        assert_eq!(left_behind(&docker).await, Vec::<String>::new());
+        assert_eq!(left_behind(&docker, &case).await, Vec::<String>::new());
         forget_image(&docker, had).await;
     });
 }
 
-async fn limited(docker: &Docker) {
+async fn limited(docker: &Docker, case: &str) {
     let name = format!("glave-worker-test-{}", crate::local::new_id().simple());
     let link = docker.start_with(&name, &spec(false), STUB).await;
     let inspected = get(docker, &format!("/containers/{name}/json")).await;
@@ -170,10 +176,10 @@ async fn limited(docker: &Docker) {
         "the key is a file, not a variable"
     );
     drop(link);
-    assert_eq!(left_behind(docker).await, Vec::<String>::new());
+    assert_eq!(left_behind(docker, case).await, Vec::<String>::new());
 }
 
-async fn streamed(docker: &Docker) {
+async fn streamed(docker: &Docker, case: &str) {
     let name = format!("glave-worker-test-{}", crate::local::new_id().simple());
     let link = docker.start_with(&name, &spec(false), STUB).await.unwrap();
     let Link::Stream {
@@ -194,10 +200,10 @@ async fn streamed(docker: &Docker) {
     assert_eq!(lines.next_line().await.unwrap().unwrap(), "hello");
     task.abort();
     docker.remove(&name).await.unwrap();
-    assert_eq!(left_behind(docker).await, Vec::<String>::new());
+    assert_eq!(left_behind(docker, case).await, Vec::<String>::new());
 }
 
-async fn published(docker: &Docker) {
+async fn published(docker: &Docker, case: &str) {
     let name = format!("glave-worker-test-{}", crate::local::new_id().simple());
     let wanted = spec(true);
     let link = docker.start_with(&name, &wanted, WAITS).await;
@@ -216,12 +222,14 @@ async fn published(docker: &Docker) {
     let bindings = &inspected["HostConfig"]["PortBindings"]["7070/tcp"][0];
     assert_eq!(bindings["HostIp"], json!("127.0.0.1"));
     assert_eq!(inspected["HostConfig"]["NetworkMode"], json!("bridge"));
-    assert_eq!(left_behind(docker).await, Vec::<String>::new());
+    assert_eq!(left_behind(docker, case).await, Vec::<String>::new());
 }
 
 #[test]
 fn a_real_worker_runs_a_command_over_tls() {
-    let Some(docker) = docker() else { return };
+    let Some((docker, case)) = docker() else {
+        return;
+    };
     let (Ok(_), Ok(image)) = (
         std::env::var("GLAVE_TEST_WORKER_GLAVE"),
         std::env::var("GLAVE_TEST_WORKER_IMAGE"),
@@ -232,7 +240,7 @@ fn a_real_worker_runs_a_command_over_tls() {
         );
         return;
     };
-    block_on(async {
+    block_on!(async {
         let workers = WorkerComputers::docker(docker.clone(), Limits::default(), Credentials::None);
         let environment = Environment {
             image: Image::Oci(image),
@@ -263,6 +271,6 @@ fn a_real_worker_runs_a_command_over_tls() {
             ran.unwrap(),
             (Ending::Exited { code: 0 }, "Linux".to_owned())
         );
-        assert_eq!(left_behind(&docker).await, Vec::<String>::new());
+        assert_eq!(left_behind(&docker, &case).await, Vec::<String>::new());
     });
 }

@@ -177,16 +177,10 @@ fn read(path: &Path) -> std::io::Result<zeroize::Zeroizing<Vec<u8>>> {
 
 #[cfg(test)]
 mod tests {
+    use glave_ports::block_on;
     use uuid::Uuid;
 
     use super::*;
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
 
     fn folder(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("glave-keys-{name}-{}", std::process::id()));
@@ -201,13 +195,13 @@ mod tests {
         let org = OrgId::from_uuid(Uuid::from_u128(1));
         let key = Secret::random().unwrap();
         let first = KeyFileRoot::open_or_create(&path).unwrap();
-        let wrapped = block_on(first.wrap(org, &key)).unwrap();
+        let wrapped = block_on!(first.wrap(org, &key)).unwrap();
         let again = KeyFileRoot::open_or_create(&path).unwrap();
-        let unwrapped = block_on(again.unwrap(org, &wrapped)).unwrap();
+        let unwrapped = block_on!(again.unwrap(org, &wrapped)).unwrap();
         assert_eq!(unwrapped.bytes(), key.bytes());
         let other = OrgId::from_uuid(Uuid::from_u128(2));
         assert!(
-            block_on(again.unwrap(other, &wrapped)).is_err(),
+            block_on!(again.unwrap(other, &wrapped)).is_err(),
             "a wrapped key is bound to its organization"
         );
         #[cfg(unix)]
@@ -233,7 +227,7 @@ mod tests {
     fn a_memory_root_cannot_unwrap_another_roots_keys() {
         let org = OrgId::from_uuid(Uuid::from_u128(1));
         let key = Secret::random().unwrap();
-        let wrapped = block_on(MemoryRoot::new().unwrap().wrap(org, &key)).unwrap();
-        assert!(block_on(MemoryRoot::new().unwrap().unwrap(org, &wrapped)).is_err());
+        let wrapped = block_on!(MemoryRoot::new().unwrap().wrap(org, &key)).unwrap();
+        assert!(block_on!(MemoryRoot::new().unwrap().unwrap(org, &wrapped)).is_err());
     }
 }

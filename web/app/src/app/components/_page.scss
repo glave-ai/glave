@@ -1,0 +1,44 @@
+// The layout of the workspace's list pages (tasks, memory, settings): they start below the
+// floating top bar and scroll under it.
+.page {
+  max-width: var(--glz-content-width);
+  margin: 0 auto;
+  padding: calc(var(--glz-top-bar-height) + var(--glz-space-5)) var(--glz-space-4)
+    var(--glz-space-5);
+}
+
+.heading,
+.task-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glz-space-3);
+}
+
+.heading h1 {
+  margin: 0;
+}
+
+.intro {
+  color: var(--glz-color-text-muted);
+}
+
+.error {
+  color: var(--glz-color-danger);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-3);
+}
+
+.title {
+  font-weight: var(--glz-weight-bold);
+}
+
+.details {
+  margin: 0;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}

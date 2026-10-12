@@ -1,0 +1,95 @@
+:host {
+  display: flex;
+  padding: var(--glz-space-3) 0;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+}
+
+.author {
+  margin: 0 0 var(--glz-space-1);
+  font-weight: var(--glz-weight-bold);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+  overflow-wrap: anywhere;
+}
+
+// The person's own messages are bubbles at the end of the line, with room before them, as in
+// a text conversation; replies read as full-width text.
+:host(.from-person) {
+  justify-content: flex-end;
+  padding-inline-start: var(--glz-message-gap);
+}
+
+:host(.from-person) .main {
+  flex: 0 1 auto;
+}
+
+:host(.from-person) .body {
+  padding: var(--glz-space-2) var(--glz-space-4);
+  border-radius: var(--glz-radius-lg);
+  background: var(--glz-message-person-surface);
+}
+
+:host(.from-note) {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+// The message's actions, under it: at the bubble's end, or at the reply's start. With a
+// pointer they show on hover and whenever focus is inside the message, so the keyboard finds
+// them; on touch, where nothing hovers, they always show.
+.actions {
+  display: flex;
+  gap: var(--glz-space-1);
+
+  // An icon button's own padding pulled back, so its icon lines up with the text.
+  margin: var(--glz-space-1) calc(-1 * var(--glz-space-2)) 0;
+  opacity: 0;
+  transition: opacity var(--glz-duration-fast) var(--glz-easing);
+}
+
+.actions:empty {
+  display: none;
+}
+
+:host(.from-person) .actions {
+  justify-content: flex-end;
+}
+
+:host(:hover) .actions,
+:host(:focus-within) .actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .actions {
+    opacity: 1;
+  }
+}
+
+.caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  background: var(--glz-color-accent);
+  animation: glz-blink 1s steps(1) infinite;
+}
+
+@keyframes glz-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    animation: none;
+  }
+}

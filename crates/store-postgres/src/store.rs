@@ -5,13 +5,16 @@ use std::sync::Arc;
 
 use deadpool_postgres::{Manager, ManagerConfig, Object, Pool, RecyclingMethod};
 use glave_keys::{KeySettings, Keys};
+use glave_ports::OrgId;
 use thiserror::Error;
-use tokio_postgres::{Config, NoTls};
+use tokio_postgres::Config;
 
 use crate::blobs::PostgresBlobs;
 use crate::keys::PostgresKeys;
 use crate::log::PostgresLog;
 use crate::schema;
+use crate::spaces::PostgresSpaces;
+use uuid::Uuid;
 
 /// Why the store could not open or answer.
 #[derive(Debug, Error)]
@@ -37,20 +40,25 @@ pub struct Store {
 
 impl Store {
     /// Connects to the database at `url` (`postgres://user:password@host/database`) and
-    /// brings its schema up to date. Content is sealed under keys that `keys.root` wraps.
+    /// brings its schema up to date. Content is sealed under keys that `keys.root` wraps. A
+    /// database on another computer is reached over TLS unless the URL says `sslmode=disable`.
     pub async fn connect(url: &str, keys: KeySettings) -> Result<Self, StoreError> {
-        let config = url
+        // The URL may hold a password, so the error never repeats it.
+        let mut config = url
             .parse::<Config>()
             .map_err(|e| StoreError::Connect(format!("the database URL is not valid: {e}")))?;
+        crate::tls::require_off_this_computer(&mut config);
         Self::connect_with(config, keys).await
     }
 
     /// Connects with a prepared configuration, for settings a URL cannot carry, and brings the
-    /// schema up to date. The tables live in the connection's `search_path`.
+    /// schema up to date. The tables live in the connection's `search_path`. The threads view
+    /// is filled from the log the first time, and again whenever this build folds threads
+    /// differently from the one that filled it.
     pub async fn connect_with(config: Config, keys: KeySettings) -> Result<Self, StoreError> {
         let manager = Manager::from_config(
             config,
-            NoTls,
+            crate::tls::connector()?,
             ManagerConfig {
                 recycling_method: RecyclingMethod::Fast,
             },
@@ -63,8 +71,11 @@ impl Store {
             .await
             .map_err(|e| StoreError::Connect(e.to_string()))?;
         schema::migrate(&mut client).await?;
+        drop(client);
         let keys = Arc::new(Keys::new(keys, PostgresKeys::new(pool.clone())));
-        Ok(Self { pool, keys })
+        let store = Self { pool, keys };
+        crate::views::refresh(&store.log(), &store.pool).await?;
+        Ok(store)
     }
 
     pub fn log(&self) -> PostgresLog {
@@ -75,9 +86,41 @@ impl Store {
         PostgresBlobs::new(self.pool.clone(), Arc::clone(&self.keys))
     }
 
+    /// The spaces: their records, members, and the folders that lead to them.
+    pub fn spaces(&self) -> PostgresSpaces {
+        PostgresSpaces::new(self.pool.clone())
+    }
+
     /// The keys content is sealed under, and erased by destroying.
     pub fn keys(&self) -> &PostgresKeyring {
         &self.keys
+    }
+
+    /// The keys, shared, for what destroys them (memory forgets by erasing a key).
+    pub fn keyring(&self) -> Arc<PostgresKeyring> {
+        Arc::clone(&self.keys)
+    }
+
+    /// The organization this database holds, made with the id `new` the first time.
+    pub async fn org(&self, new: Uuid) -> Result<OrgId, StoreError> {
+        let client = connection(&self.pool).await?;
+        let failed = |e: tokio_postgres::Error| StoreError::Storage(describe(&e));
+        client
+            .execute(
+                "INSERT INTO glave_settings (key, value) VALUES ('org', $1) ON CONFLICT DO NOTHING",
+                &[&new.to_string()],
+            )
+            .await
+            .map_err(failed)?;
+        let org: String = client
+            .query_one("SELECT value FROM glave_settings WHERE key = 'org'", &[])
+            .await
+            .map_err(failed)?
+            .try_get(0)
+            .map_err(failed)?;
+        Uuid::parse_str(&org)
+            .map(OrgId::from_uuid)
+            .map_err(|e| StoreError::Storage(format!("bad organization id {org:?}: {e}")))
     }
 }
 
@@ -94,4 +137,9 @@ pub(crate) fn describe(error: &tokio_postgres::Error) -> String {
     error
         .as_db_error()
         .map_or_else(|| error.to_string(), ToString::to_string)
+}
+
+/// A database failure as a port reports it, through that port's `storage` variant.
+pub(crate) fn database<E>(storage: fn(String) -> E) -> impl Fn(tokio_postgres::Error) -> E {
+    move |error| storage(format!("the database failed: {}", describe(&error)))
 }

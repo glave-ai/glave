@@ -1,13 +1,20 @@
 //! The session API over HTTP (`specs/session.md`, "Transports"). A client `POST`s one JSON-RPC
-//! request to `/` with an OIDC access token. The answer is JSON, or for `turn/start` a
+//! request to `/` with an OIDC access token, or from this computer with the server's local
+//! token. The answer is JSON, or for `turn/start` a
 //! `text/event-stream` of the turn's notifications ending with its response. The method may
 //! also be named in the `Glave-Method` header, for proxies and logs; when it is, it must match.
 //! Every request needs a valid sign-in: without one the answer is HTTP 401 with error `-32013`.
+//! Served with a [`Site`], any `GET` is the web app instead (`site`), with no sign-in: the app
+//! signs in to the API itself.
 
 mod body;
+mod site;
+
+pub use self::site::{NoSite, Site};
 
 use std::convert::Infallible;
 use std::future::{Future, poll_fn};
+use std::net::IpAddr;
 use std::pin::{Pin, pin};
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,8 +30,9 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use self::body::Answer;
+use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Request, code};
-use crate::rpc::{Id, error, parse, respond};
+use crate::rpc::{Id, parse, respond};
 use crate::server::Server;
 use crate::signin::{SignIn, SignInError};
 
@@ -41,10 +49,12 @@ const HEADER_TIMEOUT: Duration = Duration::from_secs(30);
 const METHOD_HEADER: &str = "glave-method";
 
 /// Serves `server` over HTTP on `listener`, each request signed in through `signin`, until
-/// `stop` completes. Then it cancels running turns and closes every connection.
+/// `stop` completes. Then it cancels running turns and closes every connection. With `site`,
+/// the web app too: every `GET` is one of its files.
 pub async fn serve<P, L, B, S>(
     server: Server<P, L, B>,
     signin: SignIn,
+    site: Option<Site>,
     listener: TcpListener,
     stop: S,
 ) -> std::io::Result<()>
@@ -55,6 +65,7 @@ where
     S: Future<Output = ()>,
 {
     let signin = Arc::new(signin);
+    let site = Arc::new(site);
     let mut connections = JoinSet::new();
     let mut stop = pin!(stop);
     loop {
@@ -72,14 +83,24 @@ where
             }
         };
         // A connection that failed to open is that client's problem, not the server's.
-        let Ok((stream, _)) = accepted else {
+        let Ok((stream, peer)) = accepted else {
             continue;
         };
-        let (server, signin) = (server.clone(), Arc::clone(&signin));
+        let peer = peer.ip();
+        let (server, signin, site) = (server.clone(), Arc::clone(&signin), Arc::clone(&site));
         connections.spawn(async move {
             let service = service_fn(move |request| {
-                let (server, signin) = (server.clone(), Arc::clone(&signin));
-                async move { Ok::<_, Infallible>(answer(&server, &signin, request).await) }
+                let (server, signin, site) =
+                    (server.clone(), Arc::clone(&signin), Arc::clone(&site));
+                async move {
+                    let answered = match site.as_ref() {
+                        Some(site) if is_read(request.method()) => {
+                            site.answer(request.uri().path()).await
+                        }
+                        _ => answer(&server, &signin, peer, request).await,
+                    };
+                    Ok::<_, Infallible>(answered)
+                }
             });
             // A client that goes away mid-request ends only its own connection.
             let _ = http1::Builder::new()
@@ -99,6 +120,7 @@ where
 async fn answer<P, L, B>(
     server: &Server<P, L, B>,
     signin: &SignIn,
+    peer: IpAddr,
     request: HttpRequest<Incoming>,
 ) -> Response<Answer>
 where
@@ -117,7 +139,7 @@ where
         return refused;
     }
     let caller = match bearer(request.headers()) {
-        Some(token) => signin.verify(token).await,
+        Some(token) => signin.verify_from(token, peer).await,
         None => Err(SignInError::Missing),
     };
     let caller = match caller {
@@ -140,7 +162,7 @@ where
         && named != request.method()
     {
         let failed = ApiError::new(
-            error::INVALID_REQUEST,
+            code::INVALID_REQUEST,
             format!(
                 "the Glave-Method header says {named:?}, the request {:?}",
                 request.method()
@@ -163,17 +185,21 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let answered = match server.start_streaming(caller, request).await {
+    let answered = match server.call(caller, request).await {
         // A notification is never answered; the turn goes on without anyone following.
-        Ok(Ok(_)) if id.is_none() => return accepted(),
-        Ok(Ok(stream)) => return events(Answer::turn(stream, id)),
-        Ok(Err(failed)) => Err(failed),
-        Err(other) => server.request_as(caller, *other).await,
+        Answered::Stream(_) if id.is_none() => return accepted(),
+        Answered::Stream(stream) => return events(Answer::turn(stream, id)),
+        Answered::Reply(reply) => reply,
     };
     match id {
         Some(id) => json(StatusCode::OK, respond(Some(&id), answered.as_ref())),
         None => accepted(),
     }
+}
+
+/// Whether `method` reads a page rather than calling the API.
+fn is_read(method: &Method) -> bool {
+    *method == Method::GET || *method == Method::HEAD
 }
 
 /// The token in `Authorization: Bearer <token>`, if there is one.
@@ -186,7 +212,7 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
 
 /// The request body as text, up to `MAX_BODY` bytes.
 async fn read(body: Incoming) -> Result<String, ApiError> {
-    let failed = |message: String| ApiError::new(error::PARSE, message);
+    let failed = |message: String| ApiError::new(code::PARSE, message);
     let mut body = pin!(body);
     let mut bytes = Vec::new();
     while let Some(frame) = poll_fn(|cx| Pin::as_mut(&mut body).poll_frame(cx)).await {

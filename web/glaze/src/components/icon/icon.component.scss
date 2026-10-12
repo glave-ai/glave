@@ -1,0 +1,8 @@
+// An icon sized by --glz-icon-size (by default a little larger than the text around it).
+:host {
+  display: inline-flex;
+  flex: none;
+  width: var(--glz-icon-size, 1.25em);
+  height: var(--glz-icon-size, 1.25em);
+  vertical-align: middle;
+}

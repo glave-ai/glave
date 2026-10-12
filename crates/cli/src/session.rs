@@ -2,7 +2,6 @@
 //! the terminal as its client, for one turn or an interactive session.
 
 use std::io::IsTerminal as _;
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -11,31 +10,29 @@ use anyhow::Context as _;
 use glave_computer::{LocalComputers, WorkerComputers};
 use glave_event::ThreadId;
 use glave_harness::{
-    AGENTS_MD, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings, SystemClock,
-    Workspace, agents_md,
+    AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings,
+    SystemClock, Workspace, agents_md,
 };
+use glave_memory::Tidier;
 use glave_ports::ToolSource;
 use glave_session::protocol::{Reply, Request};
-use glave_session::signin::{SignIn, Trust};
 use glave_session::{Answering, Server, Wiring};
-use glave_store_sqlite::Store;
 use glave_web::{Web, WebSettings};
-use tokio::net::TcpListener;
 
 use crate::args::{self, Action, Args, USAGE};
-use crate::client::{Client, Glave};
+use crate::client::{Client, Glave, Session};
 use crate::config::{self, Endpoint};
+use crate::data::Data;
 use crate::gateway::Allowed;
 use crate::gateway::remote::Remote;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::model::Model;
-use crate::policy::Choices;
 use crate::setup::{self, Setup};
-use crate::system::random_uuid;
 use crate::terminal::Printer;
-use crate::trust::{self, Asking};
-use crate::{gateway, home, identity, keys};
+use crate::{gateway, home, identity};
+use glave_config::policy::{self, Choices, On, Source};
+use glave_config::trust::{self, Asking};
 use glave_gateway::Gateway;
 
 pub fn main() -> ExitCode {
@@ -56,6 +53,11 @@ pub fn main() -> ExitCode {
         && first == "threads"
     {
         return crate::threads::main(rest);
+    }
+    if let Some((first, rest)) = words.split_first()
+        && first == "memory"
+    {
+        return crate::memory::main(rest);
     }
     if let Some((first, rest)) = words.split_first()
         && first == "tasks"
@@ -128,21 +130,55 @@ struct Wired {
     choices: Choices,
     /// The workers threads work on, with `--on cloud`.
     workers: Option<Arc<WorkerComputers>>,
+    /// Memory, when it is on.
+    memory: Option<crate::memory::Running>,
+    /// Logs and telemetry, stopped last.
+    _telemetry: crate::telemetry::Telemetry,
+}
+
+/// The task limits every `[tasks]` rule of `constraints` sets at once.
+fn task_limits(constraints: &policy::Constraints) -> glave_session::TaskLimits {
+    let rules = constraints.task_limits();
+    glave_session::TaskLimits {
+        max_running: rules.max_running,
+        max_schedules: rules.max_schedules,
+    }
+}
+
+/// The MCP servers the setup turns on in `root`: the person's, then the project's trusted
+/// ones, or the catalog of the gateway elsewhere.
+async fn mcp_servers(
+    setup: &Setup,
+    root: &Path,
+    remote: Option<&Remote>,
+) -> anyhow::Result<Servers> {
+    Servers::start(
+        &home::folder()?,
+        root,
+        setup.choices.mcp.as_ref(),
+        &setup.loaded.constraints,
+        (!setup.project_servers.is_empty())
+            .then(|| trust::mcp_json(&setup.project_servers))
+            .as_deref(),
+        remote,
+    )
+    .await
 }
 
 /// Builds the session server on this computer's store and the current folder.
 async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Result<Wired> {
     let folder = std::env::current_dir()?;
-    let setup = Setup::load(args, &folder, asking).await?;
+    let mut setup = Setup::load(args, &folder, asking).await?;
     if let Some(notice) = setup.notice() {
         eprintln!("glave: {notice}");
     }
+    let telemetry = crate::telemetry::start_for(args.log.as_deref(), &setup.choices)?;
+    let database = home::database().await?;
+    let workspace = workspace(&folder, &mut setup, &database).await?;
     let choices = &setup.choices;
     let (remote, endpoint) = endpoint(choices)?;
     let (provider, judge) = provider(&setup, &endpoint)?;
-    let database = home::database().await?;
-    let workspace = workspace(&folder, choices, args.network, &database).await?;
-    let store = store(database).await?;
+    let store = store(&setup).await?;
     let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
     let personal = home::folder()?.join(AGENTS_MD);
     let instructions = agents_md(workspace.root(), Some(&personal)).await?;
@@ -156,6 +192,9 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     settings.approval = choices.approval.value;
     settings.max_steps = args.max_steps;
     settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
+    // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt ends with its answer.
+    let one_shot = args.action == Action::Run && !args.prompt.is_empty();
+    settings.titles = choices.titles.value && !one_shot;
     settings.judge = judge.is_some();
     let identity = identity::load_or_make(&home::folder()?).await?;
     (settings.person, settings.agent) = (Some(identity.person), Some(identity.agent));
@@ -163,24 +202,17 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     settings.compaction.window_tokens = window;
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
-    let servers = Servers::start(
-        &home::folder()?,
-        &root,
-        choices.mcp.as_ref(),
-        &setup.loaded.constraints,
-        (!setup.project_servers.is_empty())
-            .then(|| trust::mcp_json(&setup.project_servers))
-            .as_deref(),
-        remote.as_ref(),
-    )
-    .await?;
+    let servers = mcp_servers(&setup, &root, remote.as_ref()).await?;
     // The task host puts tasks on workers whenever a backend is set up.
     let (on_workers, workers) =
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder, args.socket).await?;
-    let scope = store
-        .local_scope(&root, random_uuid(), random_uuid())
-        .await?;
+    let scope = crate::spaces::here(&store, &root, identity.person).await?;
+    let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
+    tidy(memory.as_ref(), &setup, &endpoint)?;
     let wiring = Wiring {
+        // Before the gateway moves in: the models it offers as choices.
+        models: gateway::offered(&provider, offered(&setup.choices)),
+        modes: policy::thread_modes(choices, &setup.loaded.constraints),
         provider,
         log: store.log(),
         blobs: store.blobs(),
@@ -197,7 +229,9 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
         workers: on_workers,
-        tasks: setup.loaded.constraints.task_limits(),
+        tasks: task_limits(&setup.loaded.constraints),
+        memory: memory.as_ref().map(crate::memory::Running::handle),
+        spaces: store.spaces(),
     };
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
@@ -207,7 +241,26 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
         choices: setup.choices,
         workers,
+        memory,
+        _telemetry: telemetry,
     })
+}
+
+/// Tidies memory in the background, when it is on: tidy-up asks a gateway of its own, which
+/// sends it on the `summary` route.
+fn tidy(
+    memory: Option<&crate::memory::Running>,
+    setup: &Setup,
+    endpoint: &Endpoint,
+) -> anyhow::Result<()> {
+    if let Some(memory) = memory {
+        let (summary, _) = provider(setup, endpoint)?;
+        memory.tidy_with(Tidier {
+            provider: summary,
+            model: endpoint.model.clone(),
+        });
+    }
+    Ok(())
 }
 
 /// The gateway elsewhere, when `[gateway] url` names one, and the endpoint model calls go to:
@@ -221,7 +274,7 @@ fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Endpoint)> {
     let model = choices.model.as_ref().map(|m| m.value.clone());
     let mut endpoint = match &remote {
         Some(remote) => remote.endpoint(model)?,
-        None => config::endpoint(model)?,
+        None => config::endpoint(model, choices.provider.as_ref())?,
     };
     if let Some(idle) = config::idle_timeout()? {
         endpoint.provider.idle_timeout = idle;
@@ -251,55 +304,103 @@ fn provider(setup: &Setup, endpoint: &Endpoint) -> anyhow::Result<(Gateway, Opti
         constraints: &setup.loaded.constraints,
         main: choices.model.as_ref().map(|m| &m.from),
         judge: &choices.judge.from,
+        models: choices
+            .models
+            .as_ref()
+            .map_or(&Source::Default, |m| &m.from),
     };
     let provider = gateway::gateway(
-        Model::for_endpoint(&endpoint.provider)?,
+        Model::for_endpoint(endpoint)?,
         endpoint,
         judge.as_deref(),
+        offered(choices),
         &allowed,
     )?;
     Ok((provider, judge))
 }
 
-/// The store in `database`, once this machine's worktrees have had their daily check.
-async fn store(database: PathBuf) -> anyhow::Result<Store> {
-    let keys = keys::settings(&home::folder()?, home::relocated()).await?;
-    let store = Store::open(database, keys).await?;
+/// The models `[[models]]` offers besides the main one.
+fn offered(choices: &Choices) -> &[policy::ModelEntry] {
+    choices.models.as_ref().map_or(&[], |models| &models.value)
+}
+
+/// The data store the setup's choices name, once this machine's worktrees have had their
+/// daily check.
+async fn store(setup: &Setup) -> anyhow::Result<Data> {
+    let store = Data::chosen(&setup.choices).await?;
     crate::worktrees::check_at_start(&store.log()).await;
     Ok(store)
 }
 
-/// The workspace in `folder`, in the sandbox `choices` ask for.
-async fn workspace(
-    folder: &Path,
-    choices: &Choices,
-    network: bool,
-    database: &Path,
-) -> anyhow::Result<Workspace> {
-    let computers = LocalComputers::for_here(std::env::vars_os())
-        .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER));
-    let (computers, here) = crate::computer::with_sandbox_helper(computers)
-        .open_here(folder)
-        .await?;
-    let workspace = Workspace::new(computers, here);
+/// The workspace in `folder`, in the sandbox the setup's choices ask for. Where glave's
+/// default sandbox cannot run, commands go unconfined and the choices say so: approval
+/// becomes `ask` (`policy::unsandboxed`), unless threads work on workers, whose own
+/// container or virtual machine is their wall. A sandbox someone chose, or a policy
+/// requires, is never given up: glave refuses to start instead.
+async fn workspace(folder: &Path, setup: &mut Setup, database: &Path) -> anyhow::Result<Workspace> {
+    let choices = &setup.choices;
     let Some(level) = choices.sandbox.value else {
-        return Ok(workspace);
+        return open_here(folder).await;
     };
     let sandbox = Sandbox {
         level,
-        network,
+        network: choices.network.value,
         home: std::env::var_os("HOME").map(PathBuf::from),
         glave_home: database.parent().map(Path::to_path_buf),
     };
-    workspace.with_sandbox(&sandbox).await.with_context(|| {
-        format!(
-            "the sandbox was asked for (by {}), so glave will not run commands without it",
-            choices.sandbox.from
-        )
-    })
+    let error = match open_here(folder).await?.with_sandbox(&sandbox).await {
+        Ok(workspace) => return Ok(workspace),
+        Err(error) => error,
+    };
+    if choices.sandbox.from != Source::Default {
+        return Err(error).with_context(|| {
+            format!(
+                "the sandbox was asked for (by {}), so glave will not run commands without it",
+                choices.sandbox.from
+            )
+        });
+    }
+    let why = error.to_string();
+    let approval = choices.approval.clone();
+    let constraints = &setup.loaded.constraints;
+    setup.choices = policy::unsandboxed(setup.choices.clone(), &why, constraints);
+    if setup.choices.on.value == On::Cloud {
+        setup.choices.approval = approval;
+    } else {
+        eprintln!("glave: {}", unsandboxed_notice(&setup.choices, &why));
+    }
+    open_here(folder).await
+}
+
+/// The workspace in `folder` on this computer, without a sandbox yet.
+async fn open_here(folder: &Path) -> anyhow::Result<Workspace> {
+    let computers = LocalComputers::for_here(std::env::vars_os())
+        .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER))
+        .with_scratch(home::folder()?.join(crate::worktrees::SCRATCH));
+    let (computers, here) = crate::computer::with_sandbox_helper(computers)
+        .open_here(folder)
+        .await?;
+    Ok(Workspace::new(computers, here))
+}
+
+/// What the person is told, once at startup, when glave's default sandbox cannot run here.
+fn unsandboxed_notice(choices: &Choices, why: &str) -> String {
+    let asks = if choices.approval.value == ApprovalMode::Ask {
+        "so every command and change asks you first (approval: ask)"
+    } else {
+        "and the policy allows only approval auto, so commands run as you without asking"
+    };
+    format!(
+        "the sandbox cannot run on this computer ({why}), {asks}. To run commands without \
+         the sandbox and without asking, choose both sandbox = \"off\" and approval = \"auto\" \
+         (--sandbox off --approval auto)."
+    )
 }
 
 async fn run(args: Args) -> anyhow::Result<ExitCode> {
+    if let Some(url) = crate::remote::chosen(&args).await? {
+        return crate::remote::run(&args, &url).await;
+    }
     if args.background {
         return crate::tasks::background(&args).await;
     }
@@ -316,12 +417,13 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         if asks { Asking::Person } else { Asking::NoOne },
     )
     .await?;
-    let ran = session(&args, &wired, asks).await;
+    let ran = Box::pin(session(&args, &wired, asks)).await;
     wired.server.shutdown().await;
     if let Some(workers) = &wired.workers {
         crate::cloud::release(&wired.server, workers).await;
     }
     wired.servers.close().await;
+    close_memory(&wired).await;
     ran
 }
 
@@ -334,7 +436,7 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
         let folder = std::env::current_dir()?;
         crate::daemon::host(&wired.server, &crate::daemon::socket(&folder)?).await
     } else if let Some(address) = args.http {
-        serve_http(&args, wired.server.clone(), address).await
+        crate::serving::serve_http(&args, wired.server.clone(), address).await
     } else {
         let input = tokio::io::BufReader::new(tokio::io::stdin());
         glave_session::rpc::serve(wired.server.clone(), input, tokio::io::stdout())
@@ -348,32 +450,9 @@ async fn serve(args: Args) -> anyhow::Result<ExitCode> {
         crate::cloud::release(&wired.server, workers).await;
     }
     wired.servers.close().await;
+    close_memory(&wired).await;
     served?;
     Ok(ExitCode::SUCCESS)
-}
-
-/// Serves the session API over HTTP on `address`, each client signed in by OIDC.
-async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyhow::Result<()> {
-    let trust = Trust {
-        issuers: args.issuers.clone(),
-        audience: args.audience.clone().unwrap_or_default(),
-    };
-    let signin = SignIn::new(trust, Box::new(SystemClock))?;
-    let listener = TcpListener::bind(address)
-        .await
-        .with_context(|| format!("could not listen on {address}"))?;
-    eprintln!(
-        "glave: serving the session API on http://{}",
-        listener.local_addr()?
-    );
-    let stop = async {
-        // Without Ctrl-C, the server runs until it is stopped some other way.
-        if tokio::signal::ctrl_c().await.is_err() {
-            std::future::pending::<()>().await;
-        }
-    };
-    glave_session::http::serve(server, signin, listener, stop).await?;
-    Ok(())
 }
 
 /// Picks the thread, runs the turn or the session, and exports the events when asked.
@@ -386,22 +465,27 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         files,
         choices,
         workers: _,
+        memory: _,
+        _telemetry: _,
     } = wired;
     crate::tasks::at_start(server, args).await;
-    let (thread, note) = pick_thread(server, args.resume).await?;
+    let here = Session::Here(server);
+    let (thread, note) = pick_thread(here, args.resume, None, None, None).await?;
     if let Some(working) = crate::worktrees::note(server, thread).await {
         eprintln!("glave: {working}");
     }
     let input = Input::start();
     let client = Client {
-        server,
+        server: here,
         thread,
         input: &input,
-        endpoint,
+        endpoint: Some(endpoint),
         asks,
-        servers,
+        servers: Some(servers),
+        model: None,
+        approval: None,
     };
-    let mut printer = Printer::new(&endpoint.model, protections(choices, args.network));
+    let mut printer = Printer::new(&endpoint.model, protections(choices));
     let code = if let Some(objective) = &args.goal {
         let goal = Goal {
             objective: objective.clone(),
@@ -424,22 +508,32 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         client.turn(&args.prompt, &mut printer).await
     };
     if let Some(path) = &args.events {
-        export(server, thread, path).await?;
+        export(here, thread, path).await?;
     }
     Ok(code)
 }
 
-/// The thread to use: the newest one here with `--continue`, otherwise a new one.
-async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, &'static str)> {
+/// The thread to use: the newest one here with `--continue`, otherwise a new one, in a
+/// worktree of its own when `worktree` says so (the server's choice when it says nothing),
+/// choosing `model` and `approval` when they are given.
+pub async fn pick_thread(
+    server: Session<'_>,
+    resume: bool,
+    worktree: Option<bool>,
+    model: Option<String>,
+    approval: Option<ApprovalMode>,
+) -> anyhow::Result<(ThreadId, &'static str)> {
     if resume {
         let latest = match server
             .request(Request::ThreadList {
+                space: None,
                 limit: Some(1),
                 show: None,
+                cursor: None,
             })
             .await?
         {
-            Reply::Threads { threads } => threads.first().map(|thread| thread.id),
+            Reply::Threads { threads, .. } => threads.first().map(|thread| thread.id),
             _ => None,
         };
         if let Some(thread) = latest {
@@ -455,8 +549,12 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
     };
     match server
         .request(Request::ThreadStart {
+            space: None,
             background: false,
-            worktree: None,
+            worktree,
+            computer: None,
+            model,
+            approval,
         })
         .await?
     {
@@ -467,7 +565,7 @@ async fn pick_thread(server: &Glave, resume: bool) -> anyhow::Result<(ThreadId, 
 
 /// The interactive session: each line typed is a turn, until `/exit`, the end of input, or
 /// Ctrl-C at the prompt. Ctrl-C during a turn or `/compact` cancels just that.
-async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
+pub async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
     let mut code = ExitCode::SUCCESS;
     loop {
         printer.ask();
@@ -488,6 +586,10 @@ async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
             client.compact(printer).await;
             continue;
         }
+        if line == "/memory" {
+            show_memory(client.server).await;
+            continue;
+        }
         if !line.is_empty() {
             code = client.turn(line, printer).await;
         }
@@ -495,8 +597,31 @@ async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
     code
 }
 
+/// Batches the session's forgets into a space-key rotation, then stops memory.
+async fn close_memory(wired: &Wired) {
+    if let Some(memory) = &wired.memory {
+        memory.housekeep().await;
+        memory.memory.close().await;
+    }
+}
+
+/// `/memory`: the memories this session's threads read, through the session API.
+async fn show_memory(server: Session<'_>) {
+    match server.request(Request::MemoryList { scope: None }).await {
+        Ok(Reply::Memories { memories }) if memories.is_empty() => println!("no memories here"),
+        Ok(Reply::Memories { memories }) => {
+            for memory in &memories {
+                println!("{}", crate::memory::line(memory));
+            }
+            println!("change them with: glave memory edit|move|forget <id>");
+        }
+        Ok(_) => {}
+        Err(error) => println!("{error}"),
+    }
+}
+
 /// Writes the thread's events as JSON Lines, one event per line, exactly as stored.
-async fn export(server: &Glave, thread: ThreadId, path: &Path) -> anyhow::Result<()> {
+pub async fn export(server: Session<'_>, thread: ThreadId, path: &Path) -> anyhow::Result<()> {
     let mut lines = String::new();
     let mut after = None;
     loop {
@@ -539,11 +664,15 @@ fn named(files: &[PathBuf]) -> Option<String> {
 }
 
 /// The protections commands run under, for the banner and receipts: `sandbox: project`.
-fn protections(choices: &Choices, network: bool) -> String {
+fn protections(choices: &Choices) -> String {
     let approval = format!("approval: {}", choices.approval.value.name());
     match choices.sandbox.value {
         Some(level) => {
-            let network = if network { " + network" } else { "" };
+            let network = if choices.network.value {
+                " + network"
+            } else {
+                ""
+            };
             format!("{approval} · sandbox: {}{network}", level.name())
         }
         None => approval,

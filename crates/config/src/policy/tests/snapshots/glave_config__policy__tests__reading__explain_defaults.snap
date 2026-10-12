@@ -1,0 +1,24 @@
+---
+source: crates/config/src/policy/tests/reading.rs
+expression: "explain(&empty, None).0"
+---
+Settings (the nearest wins: flags, environment, project, person, default)
+  model         none: set GLAVE_MODEL or pass --model  from default
+  judge_model   the main model                         from default
+  approval      auto                                   from default
+  sandbox       project                                from default
+  network       on                                     from default
+  mcp           every server in mcp.json               from default
+  models        none besides model                     from default
+  worktree      off                                    from default
+  titles        on                                     from default
+  on            here                                   from default
+  web           fetch on                               from default
+  memory        on                                     from default
+  space_memory  shared                                 from default
+
+Config files
+  none
+
+Constraints (they only narrow, and a deny always wins)
+  none: no policy applies here, so everything is allowed

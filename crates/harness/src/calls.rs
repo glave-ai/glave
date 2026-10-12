@@ -2,13 +2,13 @@
 //! the tool, and recording its result.
 
 use glave_event::{
-    ApprovalDecided, ApprovalRequested, CallId, Principal, ToolCallCompleted, Verdict,
+    ApprovalDecided, ApprovalMode, ApprovalRequested, CallId, Principal, ToolCallCompleted, Verdict,
 };
 use glave_ports::{
     Assessment, BlobStore, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
 };
 
-use crate::approval::{ApprovalMode, ApprovalRequest, Approver, Decision, no_one_there};
+use crate::approval::{ApprovalRequest, Approver, Decision, asks_for, no_one_there};
 use crate::cancel::Cancel;
 use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -26,9 +26,9 @@ const NO_ANSWER: &str = "No one answered. Choose what seems best, go on, and say
 const DECLINED: &str = "The person declined this action. Ask them what they would like \
      instead, or take a different approach.";
 
-const DECLINED_SECRET: &str = "Reading this file was declined: it usually holds secrets such \
-     as keys or passwords. Do not try to get its contents another way. If you need a specific \
-     value, ask the person for it.";
+const DECLINED_SECRET: &str = "Declined: this would show you secrets such as keys, tokens or \
+     passwords. Do not try to get them another way. If you need a specific value, ask the \
+     person for it.";
 
 impl<P, L, B, A> Harness<P, L, B, A>
 where
@@ -101,16 +101,14 @@ where
         let tools = &step.toolset;
         if tools.is_question(&call.tool) {
             return Ok(self.put_questions(thread, call, cancel, live).await);
-        }
-        if tools.is_goal(&call.tool) {
+        } else if tools.is_goal(&call.tool) {
             return Ok(crate::goal::update(thread, &call.arguments));
+        } else if tools.is_memory(&call.tool) {
+            return self.call_memory(thread, call, step, cancel, live).await;
         }
         let Some((index, info)) = tools.get(&call.tool) else {
-            let names = tools.names().join(", ");
-            let text = format!(
-                "There is no tool named {:?}. The tools are {names}.",
-                call.tool
-            );
+            let (tool, names) = (&call.tool, tools.names().join(", "));
+            let text = format!("There is no tool named {tool:?}. The tools are {names}.");
             return Ok(ToolOutput::text(true, text));
         };
         let Some(source) = self.source_for(thread, index) else {
@@ -150,7 +148,7 @@ where
         }
         // A caution asks even when the tool was allowed for the rest of the thread.
         let asks = caution.is_some()
-            || (self.settings.approval.asks_for(effect) && !thread.allowed.contains(name));
+            || (asks_for(self.approval_for(thread), effect) && !thread.allowed.contains(name));
         if asks {
             let request = ApprovalRequest {
                 thread: thread.id,
@@ -171,7 +169,8 @@ where
         live(Live::ToolStarted {
             summary: summary.clone(),
         });
-        let output = source.call(name, &call.arguments, cancel).await;
+        let output = source.call(name, &call.arguments, cancel);
+        let output = crate::telemetry::tool_call(name, output).await;
         live(Live::ToolFinished {
             summary,
             is_error: output.is_error,
@@ -182,7 +181,7 @@ where
     /// Runs the `PreToolUse` hooks: the result the model is given instead of running the
     /// call, when one stopped it or the turn was cancelled meanwhile; `None` to go on. A hook
     /// only stops calls: what passes is still asked about as before.
-    async fn stopped_by_hook(
+    pub(crate) async fn stopped_by_hook(
         &self,
         thread: &mut Thread,
         hooked: &ToolHook<'_>,
@@ -241,7 +240,7 @@ where
     /// In auto mode with a judge, asks it whether a soft caution may run because the person
     /// asked for it. The judge's call is recorded and counted in the turn, as model usage this
     /// thread caused; a cleared action is recorded as an approval glave decided.
-    async fn judged(
+    pub(crate) async fn judged(
         &self,
         thread: &mut Thread,
         flagged: &Flagged<'_>,
@@ -254,7 +253,7 @@ where
             summary,
             reason,
         } = *flagged;
-        if !self.settings.judge || self.settings.approval != ApprovalMode::Auto {
+        if !self.settings.judge || self.approval_for(thread) != ApprovalMode::Auto {
             return Ok(Judged::Ask);
         }
         let case = JudgeCase {
@@ -295,7 +294,7 @@ where
 
     /// Asks the person about `request`, recording the question and the answer. `None` when the
     /// call may go ahead; otherwise the result the model is given instead.
-    async fn ask(
+    pub(crate) async fn ask(
         &self,
         thread: &mut Thread,
         request: &ApprovalRequest,
@@ -322,14 +321,19 @@ where
         let by = if matches!(verdict, Verdict::NoOneThere | Verdict::Cancelled) {
             Some(Principal::glave())
         } else {
-            self.other_than_for(person)
+            Self::other_than_for(thread, person)
         };
+        crate::telemetry::approval(&request.tool, verdict);
         let decided = ApprovalDecided {
             call_id: request.call_id.clone(),
             decision: verdict,
             by,
         };
         self.record(thread, &decided).await?;
+        // The model is about to see a file that usually holds secrets.
+        if request.secret && matches!(verdict, Verdict::AllowOnce | Verdict::AllowForThread) {
+            thread.read_secret = true;
+        }
         Ok(match verdict {
             Verdict::AllowOnce => None,
             Verdict::AllowForThread => {
@@ -373,7 +377,8 @@ where
             call_id: call_id.clone(),
             is_error: outcome.is_error,
             output: output.clone(),
-            structured: None,
+            // Only a memory call records anything here: which memory, at which version.
+            structured: thread.memory.structured.take(),
             untrusted,
         };
         let mut events = Vec::new();
@@ -390,7 +395,7 @@ where
 }
 
 /// What the judge made of a soft caution.
-enum Judged {
+pub(crate) enum Judged {
     /// The person asked for it: it runs without asking.
     Cleared,
     /// The person decides, as for any caution.
@@ -401,9 +406,9 @@ enum Judged {
 
 /// A call a rule flagged, as the judge is told about it.
 #[derive(Clone, Copy)]
-struct Flagged<'a> {
-    call: &'a ToolCall,
-    name: &'a str,
-    summary: &'a str,
-    reason: &'a str,
+pub(crate) struct Flagged<'a> {
+    pub(crate) call: &'a ToolCall,
+    pub(crate) name: &'a str,
+    pub(crate) summary: &'a str,
+    pub(crate) reason: &'a str,
 }

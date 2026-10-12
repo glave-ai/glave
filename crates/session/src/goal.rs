@@ -29,6 +29,11 @@ where
         thread: ThreadId,
         goal: Option<Goal>,
     ) -> Result<TurnStream, ApiError> {
+        self.authorize(caller, thread).await?;
+        // A model the thread chose before must still be one this server runs.
+        let model = self.model_of(thread, None).await?;
+        // So must the approval mode it chose before be one the policy leaves.
+        self.check_approval(thread, None).await?;
         if goal.is_none() && !self.goal(thread).await?.is_some_and(|g| g.resumable()) {
             return Err(no_goal(thread));
         }
@@ -54,7 +59,7 @@ where
             (held, ran)
         })
         .await?;
-        Ok(TurnStream::new(Some(notes), done))
+        Ok(TurnStream::new(model, Some(notes), done))
     }
 
     /// Stops `thread`'s active goal for `caller`: cancels its running turn, if any, and
@@ -94,9 +99,10 @@ where
 
     /// `thread`'s latest goal, read from the log.
     pub(crate) async fn goal(&self, thread: ThreadId) -> Result<Option<GoalProgress>, ApiError> {
+        let scope = self.scope_of(thread).await?;
         self.inner
             .harness
-            .goal(self.inner.scope, thread)
+            .goal(scope, thread)
             .await
             .map_err(|error| api(&error))
     }

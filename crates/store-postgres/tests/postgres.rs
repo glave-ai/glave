@@ -45,8 +45,22 @@ mod postgres {
     }
 
     #[test]
+    fn the_spaces_pass_the_spaces_conformance_suite() {
+        block_on!(async {
+            let Some(scratch) = Scratch::new("spaces").await else {
+                return;
+            };
+            let store = scratch.store().await.unwrap();
+            let verdict = conformance::spaces(&store.spaces()).await;
+            drop(store);
+            scratch.drop_schema().await;
+            assert_eq!(verdict, Ok(()));
+        });
+    }
+
+    #[test]
     fn the_log_passes_the_event_log_conformance_suite() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("log").await else {
                 return;
             };
@@ -58,9 +72,68 @@ mod postgres {
         });
     }
 
+    /// Every row of the threads view, by thread.
+    async fn rows(scratch: &Scratch) -> Vec<(String, String)> {
+        let sql = format!(
+            "SELECT thread::text, view FROM {}.threads ORDER BY thread",
+            scratch.schema
+        );
+        scratch
+            .admin
+            .query(&sql, &[])
+            .await
+            .unwrap()
+            .iter()
+            .map(|row| (row.get::<_, String>(0), row.get::<_, String>(1)))
+            .collect()
+    }
+
+    #[test]
+    fn the_log_passes_the_threads_view_conformance_suite() {
+        block_on!(async {
+            let Some(scratch) = Scratch::new("views").await else {
+                return;
+            };
+            let store = scratch.store().await.unwrap();
+            let verdict = conformance::thread_views(&store.log()).await;
+            let kept = rows(&scratch).await;
+            // As after the upgrade that made the table: no views, and no version recorded.
+            scratch
+                .admin
+                .batch_execute(&format!(
+                    "DELETE FROM {0}.threads; DELETE FROM {0}.glave_settings;",
+                    scratch.schema
+                ))
+                .await
+                .unwrap();
+            drop(store);
+            let reconnected = scratch.store().await.unwrap();
+            let refilled = rows(&scratch).await;
+            drop(reconnected);
+            scratch.drop_schema().await;
+            assert_eq!(verdict, Ok(()));
+            assert_eq!(kept.len(), 4);
+            assert_eq!(refilled, kept, "connecting fills the view from the log");
+        });
+    }
+
+    #[test]
+    fn the_log_passes_the_search_conformance_suite() {
+        block_on!(async {
+            let Some(scratch) = Scratch::new("search").await else {
+                return;
+            };
+            let store = scratch.store().await.unwrap();
+            let verdict = conformance::search(&store.log()).await;
+            drop(store);
+            scratch.drop_schema().await;
+            assert_eq!(verdict, Ok(()));
+        });
+    }
+
     #[test]
     fn the_blobs_pass_the_blob_store_conformance_suite() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("blobs").await else {
                 return;
             };
@@ -74,7 +147,7 @@ mod postgres {
 
     #[test]
     fn data_survives_reconnecting_and_migrations_run_once() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("reconnect").await else {
                 return;
             };
@@ -100,13 +173,13 @@ mod postgres {
                 .get::<_, i64>(0);
             scratch.drop_schema().await;
             assert_eq!(kept, Ok(Some(b"kept".to_vec())));
-            assert_eq!(versions, 2, "each migration is recorded once");
+            assert_eq!(versions, 5, "each migration is recorded once");
         });
     }
 
     #[test]
     fn openers_racing_on_a_new_database_migrate_it_once() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("race").await else {
                 return;
             };
@@ -126,7 +199,7 @@ mod postgres {
 
     #[test]
     fn writers_racing_for_one_position_leave_exactly_one_winner() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("writers").await else {
                 return;
             };
@@ -155,7 +228,7 @@ mod postgres {
 
     #[test]
     fn a_newer_schema_is_refused() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("newer").await else {
                 return;
             };

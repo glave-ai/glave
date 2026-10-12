@@ -12,13 +12,11 @@ publish.workspace = true
 bytes.workspace = true
 glave-event.workspace = true
 glave-gateway.workspace = true
-# Clock and entropy, the same seams the rest of glave records events through.
-glave-harness.workspace = true
+# Sign-in: the same OIDC verifier as the session API, so both services trust callers alike.
+glave-identity.workspace = true
 # The catalog's servers, each reached through glave's MCP client.
 glave-mcp.workspace = true
 glave-ports.workspace = true
-# Sign-in: the session API's OIDC verifier, so both services trust callers the same way.
-glave-session.workspace = true
 http.workspace = true
 http-body-util.workspace = true
 hyper = { workspace = true, features = ["http1", "server"] }
@@ -28,16 +26,15 @@ jiff.workspace = true
 rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
 
 [dev-dependencies]
 aws-lc-rs.workspace = true
+glave-ports = { workspace = true, features = ["conformance"] }
 glave-provider-anthropic = { workspace = true, features = ["fake-server"] }
 glave-provider-openai = { workspace = true, features = ["fake-server"] }
 reqwest.workspace = true
 uuid.workspace = true
-tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 
 [lints]
 workspace = true

@@ -27,7 +27,19 @@ fn require_v7(what: &'static str, uuid: Uuid) -> Result<Uuid, InvalidValue> {
 }
 
 /// Identifies one event, unique everywhere.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(try_from = "Uuid", into = "Uuid")]
 pub struct EventId(Uuid);
 
@@ -63,7 +75,19 @@ impl fmt::Display for EventId {
 
 /// Identifies a principal: a person, an agent profile or a group. People, agents and groups
 /// share one id space, unique everywhere and never tied to one deployment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(try_from = "Uuid", into = "Uuid")]
 pub struct PrincipalId(Uuid);
 
@@ -98,7 +122,19 @@ impl fmt::Display for PrincipalId {
 }
 
 /// Identifies one thread: a conversation or task with its own ordered log.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(try_from = "Uuid", into = "Uuid")]
 pub struct ThreadId(Uuid);
 
@@ -133,7 +169,19 @@ impl fmt::Display for ThreadId {
 }
 
 /// Identifies one schedule: a prompt or goal that runs as a task at set times.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(try_from = "Uuid", into = "Uuid")]
 pub struct ScheduleId(Uuid);
 
@@ -167,8 +215,67 @@ impl fmt::Display for ScheduleId {
     }
 }
 
+/// Identifies one memory: a short statement kept for later threads (`specs/memory.md`).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(try_from = "Uuid", into = "Uuid")]
+pub struct MemoryId(Uuid);
+
+impl MemoryId {
+    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
+        build_v7("memory id", at, random).map(Self)
+    }
+
+    pub fn as_uuid(self) -> Uuid {
+        self.0
+    }
+}
+
+impl TryFrom<Uuid> for MemoryId {
+    type Error = InvalidValue;
+
+    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
+        require_v7("memory id", uuid).map(Self)
+    }
+}
+
+impl From<MemoryId> for Uuid {
+    fn from(id: MemoryId) -> Self {
+        id.0
+    }
+}
+
+impl fmt::Display for MemoryId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::str::FromStr for MemoryId {
+    type Err = InvalidValue;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let uuid = Uuid::parse_str(text.trim())
+            .map_err(|e| InvalidValue::new("memory id", format!("{text:?}: {e}")))?;
+        Self::try_from(uuid)
+    }
+}
+
 /// Links a tool call to its result: 1 to 128 printable ASCII characters.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(try_from = "String", into = "String")]
 pub struct CallId(String);
 

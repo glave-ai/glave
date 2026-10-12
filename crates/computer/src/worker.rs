@@ -21,7 +21,7 @@ use std::time::{Duration, SystemTime};
 
 use glave_ports::{
     BoxFuture, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending,
-    Environment, Output, Sources, WorkspaceId, WorkspaceInfo,
+    Environment, NeverCancelled, Output, Sources, WorkspaceId, WorkspaceInfo,
 };
 use tokio::task::JoinHandle;
 
@@ -292,7 +292,7 @@ impl WorkerComputers {
             let finished = self
                 .remote(worker)
                 .await?
-                .run(workspace, &command, &output, &route::Never)
+                .run(workspace, &command, &output, &NeverCancelled)
                 .await?;
             if finished.ending != (Ending::Exited { code: 0 }) {
                 return Err(ComputerError::Failed(format!(
@@ -322,7 +322,7 @@ impl WorkerComputers {
                 ));
             }
             Sources::Git { url, .. } => self.credentials.for_url(url).await?,
-            Sources::Folder { .. } | Sources::Worktree { .. } => None,
+            Sources::Folder { .. } | Sources::Worktree { .. } | Sources::Scratch { .. } => None,
         };
         let info = match &credential {
             Some(credential) => {

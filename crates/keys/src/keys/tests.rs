@@ -1,17 +1,12 @@
 use std::sync::Arc;
 
+use glave_ports::block_on;
+
 use crate::conformance;
 use crate::root::MemoryRoot;
 use crate::storage::MemoryKeyStorage;
 
 use super::*;
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 fn keys(cache_entries: usize) -> Keys<MemoryKeyStorage> {
     let mut settings = KeySettings::new(Arc::new(MemoryRoot::new().unwrap()));
@@ -22,12 +17,12 @@ fn keys(cache_entries: usize) -> Keys<MemoryKeyStorage> {
 
 #[test]
 fn memory_keys_pass_the_conformance_suite() {
-    assert_eq!(block_on(conformance::keys(&keys(4096))), Ok(()));
+    assert_eq!(block_on!(conformance::keys(&keys(4096))), Ok(()));
 }
 
 #[test]
 fn the_suite_passes_with_no_cache_so_every_key_is_unwrapped_from_storage() {
-    assert_eq!(block_on(conformance::keys(&keys(0))), Ok(()));
+    assert_eq!(block_on!(conformance::keys(&keys(0))), Ok(()));
 }
 
 #[test]
@@ -38,9 +33,9 @@ fn blobs_are_sealed_under_the_clocks_month() {
         space: glave_ports::SpaceId::from_uuid(uuid::Uuid::from_u128(2)),
     };
     let sha = glave_ports::digest(b"x");
-    let (_, sealed) = block_on(keys.seal_blob(&scope, &sha, b"x")).unwrap();
+    let (_, sealed) = block_on!(keys.seal_blob(&scope, &sha, b"x")).unwrap();
     let id: KeyId = sealed.key_id.parse().unwrap();
-    assert_eq!(id.month.to_string(), "2026-10");
+    assert_eq!(id.period.to_string(), "2026-10");
 }
 
 #[test]
@@ -55,16 +50,53 @@ fn another_root_cannot_open_what_this_one_sealed() {
         KeySettings::new(Arc::new(MemoryRoot::new().unwrap())),
         storage,
     );
-    let sealed = block_on(first.seal_event(&scope, &event)).unwrap();
+    let sealed = block_on!(first.seal_event(&scope, &event)).unwrap();
     let second = Keys::new(
         KeySettings::new(Arc::new(MemoryRoot::new().unwrap())),
         first.storage,
     );
-    let opened = block_on(second.open_event(
+    let opened = block_on!(second.open_event(
         &scope,
         &EventFields::from(&event),
         &sealed.key_id,
         &sealed.bytes,
     ));
     assert!(matches!(opened, Err(KeyError::Tampered(_))), "{opened:?}");
+}
+
+#[test]
+fn search_terms_are_keyed_per_space_and_stable() {
+    let keys = keys(16);
+    let scope = |space| Scope {
+        org: glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
+        space: glave_ports::SpaceId::from_uuid(uuid::Uuid::from_u128(space)),
+    };
+    let words = vec!["deploy".to_owned(), "render".to_owned()];
+    assert_eq!(
+        block_on!(keys.search_terms(&scope(2), &words)).unwrap(),
+        None,
+        "a space with no key finds nothing"
+    );
+    let event = conformance::event(1, 1, "2026-10").unwrap();
+    block_on!(keys.seal_event(&scope(2), &event)).unwrap();
+    block_on!(keys.seal_event(&scope(3), &event)).unwrap();
+    let here = block_on!(keys.search_terms(&scope(2), &words))
+        .unwrap()
+        .unwrap();
+    assert_eq!(here.len(), 2);
+    assert!(
+        here.iter()
+            .all(|term| term.len() == 32 && !term.contains("deploy"))
+    );
+    assert_ne!(here.first(), here.get(1));
+    assert_eq!(
+        block_on!(keys.search_terms(&scope(2), &words))
+            .unwrap()
+            .unwrap(),
+        here
+    );
+    let there = block_on!(keys.search_terms(&scope(3), &words))
+        .unwrap()
+        .unwrap();
+    assert_ne!(there, here, "another space's words never match");
 }

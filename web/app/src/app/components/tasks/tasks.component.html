@@ -1,0 +1,11 @@
+<app-page-header />
+<div class="page">
+  <div class="heading">
+    <h1>{{ copy.heading }}</h1>
+    <button glzButton size="sm" data-testid="tasks-refresh" (click)="refresh()">
+      {{ copy.refresh }}
+    </button>
+  </div>
+  <p class="intro">{{ copy.intro }}</p>
+  <app-task-list />
+</div>

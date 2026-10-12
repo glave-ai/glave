@@ -4,8 +4,8 @@ How every surface talks to the harness: the CLI, a desktop or web app, an editor
 
 ## Principles
 
-- **One protocol on every transport.** JSON-RPC 2.0, the format of MCP, A2A, ACP and LSP, over: in-process (the CLI), stdio, a Unix socket, HTTP with server-sent events, and WebSocket. The same conformance tests run over each. A transport changes how messages travel, never what they mean.
-- **No feature needs a particular transport.** Anything a client can do over WebSocket it can do over HTTP, perhaps with one more round trip.
+- **One protocol on every transport.** JSON-RPC 2.0, the format of MCP, A2A, ACP and LSP, over: in-process (the CLI), stdio, a Unix socket, HTTP with server-sent events, and later WebSocket. The same conformance tests run over each. A transport changes how messages travel, never what they mean.
+- **No feature needs a particular transport.** Anything a client can do over one transport it can do over another, perhaps with one more round trip.
 - **No state lives in a connection.** The log is the truth. A client that drops reconnects anywhere and asks for everything after the last `seq` it saw.
 - **Stateless hosting is real.** A server may keep an active thread in memory, or rebuild it from the log for every request; clients cannot tell the difference.
 - **The CLI is a client like any other.** It gets nothing the API does not offer.
@@ -14,72 +14,78 @@ How every surface talks to the harness: the CLI, a desktop or web app, an editor
 
 Standard JSON-RPC 2.0: requests carry `jsonrpc`, `id`, `method` and `params`; responses carry the same `id` and `result` or `error`; notifications have no `id`. Batches are not used.
 
-Every request may carry `params._meta.protocol`, the protocol version the client speaks (today `2026-10`). Without it, the server assumes the oldest version it supports. There is no handshake, so a stateless server needs no memory of the client. A server that does not speak the version answers with error `-32010` and the versions it does speak.
+**The reference is the schema.** Every method with its params and result, every notification and every error code is in `specs/session.schema.json`, generated from the Rust protocol types, where each is defined once (`cargo xtask schema` writes it and the web client's types; CI fails when either drifts). This spec holds the decisions behind them.
 
-Every request may also carry `params._meta.traceparent`, a W3C trace context. The server continues that trace, or starts one, and records the trace ID on each turn the request starts (`turn.started.trace`).
+A request may carry `params._meta`. Two members are read: `idempotency_key` ("Turns that outlive a server") and `traceparent`, a W3C trace context. The server records the trace ID on each turn the request starts (`turn.started.trace`); a value that is not a version-00 traceparent is ignored, as W3C says, never refused. Each request runs in a `session.request` span named by its method, which joins the caller's trace when glave exports to OpenTelemetry (the `otlp` feature). Spans and metrics are content-free: ids, names, counts, durations and outcomes, never prompts, answers, arguments, output, file contents or secrets.
+
+**Versions.** `server/discover` lists the protocol versions the server speaks (`protocols`; today only `2026-10`). There is no handshake, so a stateless server needs no memory of the client. Not yet: a client naming its version in `_meta.protocol`, which today is ignored, and the server refusing one it does not speak with an error that lists those it does.
 
 ### Who is calling
 
 Every request is made by a verified caller, a principal as `events.md` defines it. The transport establishes who: on in-process, stdio and Unix socket transports, the local person; on network transports, the person the server authenticated (OIDC or SAML, per request or per session). A caller is never taken from request parameters. The server stamps the caller into what it records: `origin.by` when a thread starts, `author` on a message from someone other than the thread's `for`, `by` on an approval decision, and `auth` on the turn's start.
 
-## Methods
+## Threads
 
-| Method | Params | Result |
-| --- | --- | --- |
-| `server/discover` | none | `name`, `version`, `protocols` (the versions spoken), `transports` |
-| `thread/start` | optional `worktree`: `true` for a git worktree of its own on a `glave/<id>` branch, `false` for the folder itself (default: the server's `worktree` choice, `policy.md`); optional `background`: `true` for a thread that will run as a task, which works on a worker when the server has a worker backend, even if other threads work here | `thread`: a thread summary. A worktree that cannot be made (the folder is not in a repository) is refused with `-32009`, and no thread starts |
-| `thread/list` | optional `limit` (default 20); optional `show`: `active` (default), `archived`, or `deleted` (waiting for erasure, for the operator that does it) | `threads`: summaries, newest first |
-| `thread/archive` | `thread` | `{}`. Records `thread.archived`; the thread leaves `thread/list` and search but stays in the log and readable by id. A turn, goal or compaction in it is refused with `-32014`. Archiving an archived thread records nothing |
-| `thread/unarchive` | `thread` | `{}`. Records `thread.unarchived` |
-| `thread/delete` | `thread` | `{}`. Records `thread.deleted`: the thread is hidden for good, and every method but `thread/list` with `show: deleted` answers `-32001` for it |
-| `thread/get` | `thread` | `thread`: its summary |
-| `thread/events` | `thread`; optional `after` (a `seq`), `limit` (default 500) | `events`: stored events in `seq` order, exactly as `events.md` defines them; `next`, when there are more |
-| `thread/watch` | `thread`; optional `after` | streams the thread's notifications from `after` on, until the client stops listening |
-| `turn/start` | `thread`; `prompt`; optional `background` (see "Tasks"), and with it optional `budget` (tokens) | streams notifications while the turn runs, then answers with `turn`: how it ended and what it cost. With `background`, answers at once with `task` |
-| `turn/cancel` | `thread` | `{}` once the running turn, or compaction, has ended as cancelled |
-| `thread/compact` | `thread` | `before_tokens`, `after_tokens` |
-| `approval/decide` | `thread`; `approval` (its id); `decision`: `allow_once`, `allow_for_thread` or `deny` | `{}`; the paused turn continues |
-| `question/answer` | `thread`; `question` (the `question` call's id); `answers`, one string for each question, in order | `{}`; the paused turn continues |
-| `goal/start` | `thread`; `objective`, with how to verify it in words; optional `budget` (tokens; default 1,000,000); optional `background`. Without `objective`, continues the thread's active goal, as after a restart, or resumes its paused one | streams every turn of the goal as `turn/start` streams one, then answers with `turn`: how its last turn ended, with every turn's calls, tokens and cost added up |
-| `goal/stop` | `thread` | `{}` once the goal is recorded as stopped, its running turn cancelled |
-| `goal/get` | `thread` | `goal`: the thread's latest goal (`objective`, `token_budget`, `tokens` used, `turns`, `ended`, the reason, once it has, and `note`, what the model needs, while it is paused), or `null` |
-| `tasks/list` | optional `limit` (default 20) | `tasks`: running here first, then started elsewhere and not ended, then finished, newest first |
-| `tasks/stop` | `thread` | `{}` once the task in it has ended as cancelled (a goal is recorded as stopped). `-32003` when no task runs in it in this server |
-| `schedule/create` | `when`: `{"cron": "<five fields>"}` (UTC) or `{"at": "<RFC 3339>"}`; `prompt`; optional `goal` (`true`: each run works toward `prompt` as a goal); `budget` (tokens each run may use, required, more than 0); optional `worktree` | `schedule`: `schedule` (its id), `when`, `prompt`, `goal`, `budget`, `worktree`, `created_at`, `last` (when the latest run was due), `next` (absent once a one-off has run). A cron expression that does not parse is refused with `-32602` |
-| `schedule/list` | none | `schedules` |
-| `schedule/delete` | `schedule` | `{}`; no more runs start. `-32016` for no such schedule |
+- **Where a thread works.** Each server serves one organization's spaces, and one folder: its own space's. `thread/start` puts a thread in the server's own space when the caller works in it, else in the caller's personal space, made the first time (as for a one-off chat from the web). A thread in the server's own space works in its folder, in a git worktree of its own on a `glave/<id>` branch (`worktree`, default the server's `worktree` choice, `policy.md`), or on a worker for a thread that will run as a task (`background`, when the server has a worker backend); a thread in any other space works in a scratch folder of its own (`computers.md`). A summary never says where a thread works, so a client never assumes a worker. A worktree that cannot be made is refused with `-32009`; a thread on a computer of the person's own (`computer`) is not available yet (`-32022`); either way no thread starts.
+- **Lists read the threads view** (`events.md`, "Storage"), a page at a time, most recently written first: a page costs the same however many threads or events the space has. A `cursor` this server did not make is refused with `-32602`.
+- **A summary** is the thread's row of the threads view with what it is doing now: `idle`, `running`, or `waiting` (a turn is paused for an approval or an answer). Its title is the latest `thread.renamed`'s (the person's own, or the one a model wrote after the first exchange, "Titles"), else the first line of what the person wrote in their first message (its last text part: the project's instructions a thread opens with come before it), trimmed and cut to 80 characters, an ellipsis marking the cut. The title is read from the one event that gives it, so the view itself holds no content. `tokens` and `cost` are the thread's own model calls'; a subagent's are in its own thread.
+- **Renaming** records `thread.renamed`, glave's own record, so the model is sent the same. A title is 1 to 200 characters, trimmed, not only spaces; anything else is refused with `-32602`.
+- **Events are returned exactly as `events.md` defines them,** in `seq` order, a page at a time.
 
-A **thread summary** has `id` and `status`: `idle`, `running` or `waiting` (a turn is paused for an approval or an answer). Titles, creation and update times arrive with a threads view built from the log.
+## Choosing a model and an approval mode
 
-A **task** has `thread`, `kind` (`agent`; background commands come later), `title` (the prompt or objective's first line, shortened), `model`, `tokens` and `cost` so far (subagents' included), `budget`, `started_at`, `elapsed_ms`, `status` (`running` in this server, `elsewhere` when started and not ended by another, `finished`), `outcome` once finished, and `schedule` when one started it.
+A client lets the person choose, per thread and per turn, which model answers and how much glave asks before acting (`approvals.md`, "Modes"). Codex's app server does the same (`model/list`; `model` and `approvalPolicy` on `thread/start`, and on `turn/start` "for this turn and subsequent turns"), as does OpenCode (a model per message) and Claude Code (a permission mode per session, changed between turns).
 
-A **turn result** has `outcome` (`completed`, `cancelled`, `failed`, `interrupted`, `limit_reached`), `model_calls`, `tool_calls`, `tokens` and `cost` as in `events.md`.
+- **Choosing.** `thread/start` or `turn/start` with `model` or `approval` records `model.chosen` or `approval.mode.chosen` (`events.md`) in the thread, unless that is already the thread's choice, and the turn, and every later turn, goal turn and subagent of the thread, goes to that model and runs in that mode: the tool gate, the judge (auto only), what hooks are told (`permission_mode`) and the turn's recorded configuration. A thread that never chose uses the server's default model and mode, whatever they are when its turn runs. The choice is in the log, so it survives a restart and any server of the deployment honours it.
+- **Only what the server offers.** `model/list` answers the server's own models, the default first, never paged: the default model, the judge's when it is another, and each of `[[models]]` in `config.toml` (`policy.md`), each checked against the policy's `[models]` rules as the default is; `hope` marks Hope, glave's own model. `server/discover`'s `approvals` are the modes a thread may choose: those the policy leaves (`[approval] modes`), and `auto` only where commands run in the sandbox, unless the server runs in auto anyway because someone chose both `sandbox = "off"` and `approval = "auto"` or the policy leaves only auto. Anything else is refused before anything is recorded: a model with `-32021`, a mode with `-32012`. So is a turn or goal in a thread whose earlier choice the server no longer offers, which the client answers by choosing again. A gateway elsewhere (`[gateway] url`) may still refuse a model for its caller under its own policy: the turn fails with `-32020`. A choice never loosens what asks in every mode (`approvals.md`, "Commands read before they run").
+- **Which model wrote what.** Every assistant `message.added` is followed in the same batch, before the next message, by the `model.responded` of the answer it came from: its `model` is the model that wrote it, and `target` the gateway target that served it. Each `turn.started` records the model the turn was sent to and the mode it ran in. A client labels each reply from these, never from the default. A thread summary's `approval` is the mode its next turn runs in, and a task shows the model its turn was sent to.
 
-Each server serves one workspace and one scope in version 1. Choosing among several workspaces arrives with issue #29; choosing a space arrives with organizations (issue #22).
+## Titles
+
+After a thread's first exchange, the person's first message and the first reply, a model writes the thread a short title, as Claude.ai and ChatGPT title a chat after its first answer and OpenCode's title agent titles a session from its first message.
+
+- **When.** Once the first turn has answered, in a task of its own: the turn's answer never waits for it. Only then: a thread past its first exchange (such as one from before titles existed) keeps the title it has, and a subagent's thread gets none.
+- **What the model sees.** Only the first message (what the person wrote, without the project's instructions), cut to 1,200 characters, and the first reply's text, cut to 800, each in a block it cannot close, under a prompt asking for 3 to 6 words in the conversation's language, with no quotes and no punctuation at the end. The answer may be at most 512 tokens (room for models that reason first); its first line is kept, without quotes, a `Title:` prefix or end punctuation, and cut as a message's title is (80 characters, an ellipsis marking the cut).
+- **Which model.** The gateway's `title` route (`gateway.md`); with none, as by default, the thread's own model.
+- **Recorded.** The call's `model.responded` (route `title`), so its usage and cost count in the thread's, then `thread.renamed` with `by` `{"kind": "glave"}`, in one append straight after the thread's last event. Recording a title is not work on the thread: it never holds the thread, so a `turn/start` at that moment is never refused. The log's `(thread, seq)` check orders the writes; a turn running meanwhile takes the two records in ("Records from outside"), and when another write lands first, the title is checked and appended again after it. No content is logged.
+- **Never over the person's.** A thread the person has titled with `thread/rename` is not sent to the model at all, and a rename that lands while the model writes wins: the title is not recorded.
+- **Failing quietly.** When the call fails, or the answer holds no title, nothing but its usage is recorded, and the thread keeps the title its first message gives it.
+- **Off.** `titles = false` in `config.toml` (`policy.md`): no call is made, and titles come from first messages as before.
+
+## Spaces and who may do what
+
+Every request that acts on a thread (`thread/get`, `thread/events`, `thread/archive`, `thread/unarchive`, `thread/delete`, `thread/compact`, `turn/start`, `turn/cancel`, `approval/decide`, `question/answer`, `goal/*`, `tasks/stop`), on a space (`thread/start` and `thread/list` with a `space`, `space/get`, `space/rename`), or on the server's own space as a whole (`tasks/list`, `schedule/*`, `memory/*`) is checked against the caller before anything is read or recorded: they must be the space's owner or one of its members. Anyone else is refused with `-32012`, whether or not the thread exists; a thread no space here holds is `-32001`. The thread's space comes from the data store's one lookup by bare thread id (`storage.md`, "Scope"), remembered by the server, since a thread's space never changes.
+
+- **Local transports** (in-process, stdio, the Unix socket) act as the local person, who owns the folder's space.
+- **Network transports** act as the signed-in person. A thread they start is for them: `thread.started.for` is that person, so `author`, `by` and `origin.by` name someone only when it is not them (`events.md`, "Who acted").
+- `space/list` answers the spaces the caller owns or is a member of (`storage.md`, "Spaces"). `space/create` makes a project space owned by the caller; a name of only spaces, or of more than 200 characters, is refused with `-32602`. Only a space's owner renames it.
+- Members are set when a space is made (`space/create`), or by the host through the spaces port; managing them over the API comes later.
 
 ## Archiving, deleting and records from outside
 
-- **Archive and delete are events** (`thread.archived`, `thread.unarchived`, `thread.deleted`), appended through the thread when the server holds it. A thread with a turn running is refused with `-32002`.
-- **Records from outside.** Glave's own records about a thread may be appended by another glave process while a server holds the thread: `glave threads archive|unarchive|delete` and worktree cleanup (`glave worktrees prune`, the daily check, archiving) write straight to the log. When the holding server's next append meets the log's `(thread, seq)` conflict, it reads what was written after its last event. If all of it is `workspace.removed`, `thread.archived`, `thread.unarchived` or `thread.deleted` (records that do not change the conversation, which call ids do not count), it takes them in and appends after them, so the model is sent the same. A removed worktree is opened again from its branch, as resuming does. If the thread is now archived the turn stops with `-32014`, deleted with `-32001`, and the server reads the thread from the log again next time, which closes what the turn left open. Anything else written from outside, such as a message, means another harness is running the thread, and stays a conflict.
+- **Archive and delete are events** (`thread.archived`, `thread.unarchived`, `thread.deleted`), appended through the thread when the server holds it. A thread with a turn running is refused with `-32002`. An archived thread leaves `thread/list` and search but stays in the log and readable by id; a turn, goal or compaction in it is refused with `-32014`, and archiving it again records nothing. A deleted thread is hidden for good: every method but `thread/list` with `show: deleted` (for the operator that erases it) answers `-32001` for it.
+- **Records from outside.** Glave's own records about a thread may be appended by another glave process while a server holds the thread: `glave threads archive|unarchive|delete` and worktree cleanup (`glave worktrees prune`, the daily check, archiving) write straight to the log, as the server's own title task does ("Titles"). When the holding server's next append meets the log's `(thread, seq)` conflict, it reads what was written after its last event. If all of it is `workspace.removed`, `thread.archived`, `thread.unarchived`, `thread.deleted`, `thread.renamed` or `model.responded` (records that do not change the conversation: the first five are ones call ids do not count, and a `model.responded` on its own is a title's call, "Titles"), it takes them in and appends after them, so the model is sent the same. A removed worktree is opened again from its branch, as resuming does. If the thread is now archived the turn stops with `-32014`, deleted with `-32001`, and the server reads the thread from the log again next time, which closes what the turn left open. Anything else written from outside, such as a message, means another harness is running the thread, and stays a conflict.
 - **Worktrees.** `glave threads archive|delete` removes the thread's worktree at once when that loses nothing (no uncommitted changes, every commit on a remote) and records `workspace.removed` with reason `archived`; its branch stays. A worktree that would lose work is kept and marked held, and the command says why. The session methods record the change only: worktree cleanup works on the computer's files, which the session crate reaches only through the computer port, and that port has no cleanup operations yet.
 
 ## Notifications
 
-Two kinds, sent while a turn runs or a client watches:
+Three kinds, sent while a turn runs or a client watches:
 
 | Method | Params | Kept |
 | --- | --- | --- |
 | `thread/event` | `thread`; `event`, a stored event with its `seq` | Yes: it is in the log, and `thread/events` returns it again |
-| `turn/live` | `thread`; `update`: `text` or `reasoning` (a fragment), `tool_started`, `tool_finished`, `waiting`, `retrying`, `compacted`, `asked`, `subagent_started` (`subagent`, `description`), `subagent_ended` (`subagent`, `ok`) | No: live updates are for showing progress, never replayed |
+| `turn/live` | `thread`; `update`, one of the kinds the schema lists: text or reasoning as it streams, a tool starting, finishing or declined, waiting, retrying, compaction done or failed, questions asked, a subagent started or ended, a memory changed | No: live updates are for showing progress, never replayed |
 | `task/finished` | `thread`; `task`, as `tasks/list` shows it | In the ledger as `task.ended` |
 
 A thread's notifications include its subagents': a child thread started by an `agent` call sends its events and progress to whoever follows its parent too, each under the child's own `thread`. Its first event, `thread.started`, names the parent call, and `subagent_started` gives its description. A client answers a subagent's approval with the subagent's thread.
 
-A client that only shows the conversation needs `thread/event` alone. Rebuilding a thread from `thread/events` and then following `thread/watch` gives exactly the same state as having watched from the start.
+A client that only shows the conversation needs `thread/event` alone. Rebuilding a thread from `thread/events` and then watching it gives exactly the same state as having watched from the start.
+
+**Watching** a thread without starting a turn is `Server::watch` in-process today. `thread/watch`, its method on every transport (`thread`, optional `after`), is not a request yet.
 
 ## Approvals
 
-A tool call that needs the person records `approval.requested` (`approval`, `call_id`, `tool`, `summary`, `secret`) and the turn pauses; the thread's status becomes `waiting`. Any client may answer with `approval/decide`, now or much later, from any transport. The answer is recorded as `approval.decided` (`approval`, `decision`), and the turn continues from the log, in whichever process receives it.
+A tool call that needs the person records `approval.requested` (`approval`, `call_id`, `tool`, `summary`, `secret`) and the turn pauses; the thread's status becomes `waiting`. Any client may answer with `approval/decide`, now or much later, from any transport. The answer is recorded as `approval.decided` (`approval`, `decision`), and the turn continues: today in the server that runs it, later in whichever server receives the answer ("Turns that outlive a server").
 
 - A decision for an approval that is not pending is refused with `-32004`.
 - `allow_for_thread` is recorded, so it survives resuming the thread.
@@ -98,7 +104,7 @@ When a client can answer, the model is offered `question`: up to four questions,
 
 ## Goals
 
-A goal keeps a thread working across turns until the model ends it, the person stops it, or its budget runs out. The person says in the objective how to verify it, if they want to ("... until `cargo test` passes"); glave runs no check of its own. Its first turn's prompt is the objective; each turn after it starts with a continuation glave writes (the objective again, the budget left, and a reminder to verify before completing), recorded with `author` glave. In every turn of an active goal, and in no other turn, the model is offered `update_goal`: `status` `complete` once it has verified the goal is met, with its own tools (commands run in the sandbox and ask as any would), or `paused` with a `reason` when it cannot go on without the person (a decision that is theirs, credentials, information only they have). A turn that reaches the budget gets a last step in text only. `goal.set`, `goal.ended` and `goal.resumed` (`events.md`) record it, so `goal/get` reads progress from the log while it runs, and a goal survives a restart: `goal/start` without an `objective` continues it. The same call resumes a paused goal, typically after the person has answered its `note` in a plain turn.
+A goal keeps a thread working across turns until the model ends it, the person stops it, or its budget runs out (1,000,000 tokens unless `goal/start` names one). The person says in the objective how to verify it, if they want to ("... until `cargo test` passes"); glave runs no check of its own. Its first turn's prompt is the objective; each turn after it starts with a continuation glave writes (the objective again, the budget left, and a reminder to verify before completing), recorded with `author` glave. In every turn of an active goal, and in no other turn, the model is offered `update_goal`: `status` `complete` once it has verified the goal is met, with its own tools (commands run in the sandbox and ask as any would), or `paused` with a `reason` when it cannot go on without the person (a decision that is theirs, credentials, information only they have). A turn that reaches the budget gets a last step in text only. `goal.set`, `goal.ended` and `goal.resumed` (`events.md`) record it, so `goal/get` reads progress from the log while it runs, and a goal survives a restart: `goal/start` without an `objective` continues it. The same call resumes a paused goal, typically after the person has answered its `note` in a plain turn.
 
 - A goal's turns are turns: `turn/cancel` cancels the running one, which stops the goal; a second `turn/start` or `goal/start` is refused with `-32002`.
 - `goal/stop` on a thread with no active goal, or `goal/start` without `objective` on a thread with no active or paused goal, is refused with `-32007`.
@@ -107,12 +113,12 @@ A goal keeps a thread working across turns until the model ends it, the person s
 
 A task is a thread working with no one attached: a turn, or a goal's turns, that the server runs after the client that asked has gone. The person can close their laptop when the server is not on it (Glave Cloud, a company's servers), or when its threads work on workers.
 
-- **Starting one.** `turn/start` or `goal/start` with `background: true` starts the work as either would, and answers at once with the task. Everything is recorded as usual: `thread/watch` and `thread/events` follow it or read it afterwards, from any client.
+- **Starting one.** `turn/start` or `goal/start` with `background: true` starts the work as either would, and answers at once with the task. Everything is recorded as usual: `thread/events` reads it while it runs or afterwards, from any client.
 - **Nobody is asked.** In a task, and in its subagents, approvals are answered as with no one at the keyboard (`approvals.md`): in auto mode the judge still lets through what the person asked for, and anything else that would ask is declined (`no_one_there`); `question` is not offered. A task never waits for an answer. Otherwise the model is sent exactly what it is sent in a turn someone follows.
 - **Where it runs.** A thread started with `background: true` works on a worker when the server has a worker backend (`[workers]` in `config.toml`, within policy), else where the server puts any thread.
 - **Budget.** A turn may carry `budget`: once its model calls (subagents' included) have used that many tokens, in and out, the turn is cancelled and the task ends as `limit_reached`; it may overshoot by the call that crossed it. A goal keeps to its own budget. A `budget` on a turn that is not a task is refused (`-32602`) rather than ignored.
 - **Tokens and cost so far** come from the task's `model.responded` events as they are recorded; when it ends, from the turn's own totals.
-- **Ending.** `tasks/stop` stops it; archiving or deleting its thread stops it first. When a task ends, its thread's watchers get `task/finished` (`thread`, `task`).
+- **Ending.** `tasks/stop` stops it (`-32003` when no task runs in the thread in this server); archiving or deleting its thread stops it first. When a task ends, its thread's watchers get `task/finished` (`thread`, `task`).
 - **The ledger.** Each server records `task.started` and `task.ended` in the space's task ledger (`events.md`), so any server or client lists tasks, finished ones included, after a restart. A server that runs a space's tasks calls `recover_tasks` when it starts: tasks the ledger has open that no one runs any more are recorded as `interrupted`.
 - **Policy.** `[tasks] max_running` caps the tasks one person has running in a server; one more is refused with `-32015`, naming the limit.
 
@@ -122,40 +128,26 @@ A schedule starts a task at set times: once (`at`), or whenever a five-field cro
 
 - **The scheduler.** The server that runs a space's tasks fires due schedules (`Server::tick`, which `Server::run_scheduler` calls when the next run is due and at least every minute, so it finds schedules other processes made). Time comes from the server's injected clock.
 - **Missed runs** while no server ran the schedule run once, as soon as one does, never once per missed time: systemd's `Persistent=true`, and Claude Code's desktop scheduled tasks. A run the task limit holds back starts on a later tick, once.
-- **Budgets are required:** a schedule without a positive `budget` is refused.
+- **Budgets are required:** a schedule without a positive `budget` is refused, as is a cron expression that does not parse (`-32602`). Deleting one stops its runs; deleting one that is not there is `-32016`.
 - **Policy.** `[tasks] max_schedules` caps the schedules that will still run; one more is refused with `-32015`.
 - One server per space fires schedules; two would each start the run. Leases (issue #64) make that safe across servers.
 
 ## Turns
 
 - One turn runs per thread at a time. A second `turn/start` is refused with `-32002`. Queueing and steering a running turn come later.
+- **A turn's result** says how it ended and what it cost, as `events.md` counts it; `estimated` is true when a usage count was estimated because a stream ended before the provider reported it.
 - **Custom commands.** A `prompt` that starts with `/name` where `name` is one of the server's commands (Markdown files in `.glave/commands` or `.claude/commands` in the project, then the person's own) is sent as that command's text, with `$ARGUMENTS` replaced by the rest of the prompt and `$1` to `$9` by each word of it; the stored `message.added` holds the text sent. Any other prompt, `/usr/bin is slow` included, is sent as written. Listing the commands over the API comes later; `glave commands` lists them.
 - A turn's notifications go to the client that started it and to every client watching the thread.
 - If the server stops mid-turn, the log ends without `turn.ended`. Resuming records the turn as `interrupted` and gives every unanswered tool call a result, so the thread continues.
 
 ## Errors
 
-Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
+Standard codes, `-32700` to `-32603`, for malformed messages; a method the server does not have is `-32601`. glave's own are in the schema with their meanings. Decisions about them:
 
-| Code | Meaning |
-| --- | --- |
-| `-32001` | No such thread |
-| `-32002` | A turn is already running in this thread |
-| `-32003` | No turn is running in this thread |
-| `-32004` | No such approval is pending |
-| `-32005` | The operation was cancelled, such as a compaction stopped by `turn/cancel` |
-| `-32006` | No such question is waiting |
-| `-32007` | The thread has no active goal (or, to resume, no paused one) |
-| `-32008` | A `UserPromptSubmit` hook stopped the prompt; the message gives its reason, and the model never saw the prompt (`approvals.md`, "Hooks") |
-| `-32009` | The thread's workspace could not be opened, such as a worktree outside a repository |
-| `-32010` | Unsupported protocol version; `data.supported` lists the spoken ones |
-| `-32011` | The thread is running in another server of this deployment |
-| `-32012` | The caller may not do this |
-| `-32013` | No valid sign-in (network transports) |
-| `-32014` | The thread is archived; unarchive it first |
-| `-32015` | A policy limit was reached: `[tasks] max_running` or `max_schedules` |
-| `-32016` | No such schedule |
-| `-32020` | The model provider failed; `data` has `failure` (its kind), `message` and, when the person can fix it, `fix` |
+- A refusal is answered before anything is recorded, so a refused request leaves no trace in the log.
+- `-32012` (not allowed) is answered whether or not the thread exists, so a caller learns nothing of threads in spaces they do not work in.
+- `-32020`, the model provider failed: `data` has `failure`, its kind (`Failure` in `glave-ports`), so a client can say what to fix; the CLI turns it into a fix for the person's own endpoint.
+- `-32011`, a turn running elsewhere, is reserved for leases ("Turns that outlive a server") and not answered yet.
 
 ## Transports
 
@@ -164,10 +156,11 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | In-process | Typed messages over a channel; nothing is serialized | The CLI; programs that link glave's crates | None: same process |
 | stdio | One JSON message per line (`glave serve --stdio`) | Programs that run glave as a child process | None: the parent started it |
 | Unix socket | One JSON message per line (`glave serve --socket`, the folder's task host) | Local clients of a long-running glave | File permissions on the socket (`0600`, in the person's private GLAVE_HOME) |
-| HTTP + SSE | `POST` one request; the answer is JSON, or for streaming methods an `text/event-stream` of notifications ending with the response. The method is also sent as the `Glave-Method` header, so proxies and logs can see it | Web, desktop and remote clients | Required |
-| WebSocket | One JSON message per text frame | Clients that want one connection for many threads; later, realtime features | Required |
+| HTTP + SSE | `POST` one request; the answer is JSON, or for streaming methods an `text/event-stream` of notifications ending with the response. The method is also sent as the `Glave-Method` header, so proxies and logs can see it | Web, desktop and remote clients | Required: the local token from this computer, or OIDC |
 
-A network listener never runs without authentication: there is no "add it later". Closing a streaming HTTP response stops only that stream; the turn goes on, and `thread/watch` picks it up again.
+WebSocket, one JSON message per text frame for clients that want one connection for many threads, comes later.
+
+A network listener never runs without authentication: there is no "add it later". Closing a streaming HTTP response stops only that stream; the turn goes on, and `thread/events` picks it up again.
 
 ## Over the network
 
@@ -176,38 +169,41 @@ What changes when a client is on another machine: who is calling, how a server t
 ### Signing in
 
 - **Local transports need no sign-in:** in-process, stdio and a Unix socket act as the local person.
+- **A browser on the person's own computer signs in with the local token.** `glave serve --http` makes a new random token (32 bytes) every time it starts, writes it to `GLAVE_HOME/serve.token`, readable only by the person, and deletes it when it stops. It accepts the token (`Authorization: Bearer glave_local_…`) only from a loopback address (`127.0.0.0/8`, `::1`), as the local person, recorded as `auth.method` `local`; from anywhere else it is refused with `-32013`. The web UI it serves gets the token once, from a link `glave serve` prints to the terminal, `http://127.0.0.1:<port>/#token=<token>`: in the fragment, which browsers never send, so it never reaches a server log or a query string. Without `--issuer`, the local token is the only sign-in, and the listener must be on this computer.
 - **Network transports always need it.** A server accepts:
   - **OIDC access tokens** (`Authorization: Bearer …`), checked against the identity provider's published keys (JWKS), with `iss`, `aud` and expiry verified. The CLI gets one by the device flow; browsers and the desktop app by authorization code with PKCE.
   - **SAML,** for organizations that use it: a browser signs in through the identity provider, and glave issues its own short-lived session token, signed by the organization's key.
   - **glave session tokens,** the same signed tokens, so any server of the organization can verify a caller without shared memory.
 - **Who the caller is:** the token's `iss` and `sub` map to a person through the identity source (SCIM provisions the mapping in an organization). The verified person is the caller for every request on that connection or HTTP request, and is stamped as "Who is calling" describes. A token never enters the log: `turn.started.auth` records the method, issuer, subject and session only.
-- **Expiry:** a stream outlives its token only until the token expires; the client reconnects with a fresh one and continues with `thread/watch` from its last `seq`.
+- **Expiry:** a stream outlives its token only until the token expires; the client reconnects with a fresh one and reads on with `thread/events` from its last `seq`.
 
 ### Turns that outlive a server
 
-- **A paused turn is durable.** Its `approval.requested` (or the `question` call) is already in the log. Any server of the deployment can take a `approval/decide` or `question/answer` for it, rebuild the thread from the log, record the decision and continue the turn. A server that stops while a turn waits no longer leaves it interrupted.
+- **A paused turn will be durable.** Its `approval.requested` (or the `question` call) is already in the log, so any server of the deployment could take an `approval/decide` or `question/answer` for it, rebuild the thread from the log, record the decision and continue the turn. Not built: today a turn waits in the memory of the server that runs it, and a server that stops while a turn waits leaves it to be resumed as interrupted.
 - **One harness at a time per thread.** A server running or continuing a turn holds a lease on the thread in the data store, renewed while it works. Another server asked to act on the thread answers error `-32011` (running elsewhere) until the lease ends. The log's unique `(thread, seq)` remains the final guard, so a lost lease can never corrupt a thread.
 - **Retrying is safe.** `turn/start` may carry `params._meta.idempotency_key`. A server that sees the same key for the same thread returns the turn already started instead of starting another, so a client retrying after a dropped connection never runs a turn twice.
 
 ### Several clients
 
-- Any number of clients may `thread/watch` the same thread; each sees every event once, in `seq` order.
-- Who may do what (start a turn, answer an approval, read a thread) is checked against the caller on every request, from the space's owner and the organization's policy (issue #22). A request from someone who may not make it is refused with error `-32012` and never recorded; a network request without a valid sign-in is refused with `-32013`.
+- Any number of clients may watch the same thread; each sees every event once, in `seq` order.
+- Who may do what (start a turn, answer an approval, read a thread) is checked against the caller on every request, from the space's owner and members ("Spaces and who may do what"), and later the organization's policy. A request from someone who may not make it is refused with error `-32012` and never recorded; a network request without a valid sign-in is refused with `-32013`.
 
 ## Status
 
-Version 1, in-process (`glave-session`, used by the CLI), over stdio (`glave serve --stdio`, the same server through `rpc::serve`), over a Unix socket (`glave serve --socket`, through `rpc::serve_connection`, where a client that leaves stops nothing) and over HTTP with server-sent events (`glave serve --http <address> --issuer <url> --audience <name>`, requests `POST`ed to `/`); one conformance suite runs over all three. Every method but `thread/watch`, whose in-process form is `Server::watch`.
+Version 1: in-process (`glave-session`, used by the CLI), over stdio (`glave serve --stdio`), over a Unix socket (`glave serve --socket`, where a client that leaves stops nothing) and over HTTP with server-sent events (`glave serve --http <address> [--issuer <url> --audience <name>]`, requests `POST`ed to `/`). One conformance suite runs over all four. `web/client` is the schema's small typed client (no framework), type-checked strict in CI.
 
-- **Sign-in on HTTP:** OIDC access tokens signed with RS256 or ES256, checked against the keys the issuer's discovery document points to, with `iss`, `aud`, `exp` and `nbf` verified and a minute of clock skew forgiven. Keys are cached and fetched again for a key not seen yet, at most every 30 seconds. An issuer must be `https`, or `http` on the same computer. The person is derived from the issuer and subject (a UUID v7 at time zero whose random bits are the start of a SHA-256 of both) until an identity source maps them. The caller is stamped as "Who is calling" describes. The listener has no TLS of its own: across machines it sits behind a proxy that has.
+- **Not yet,** for models and modes: the provider endpoint's own model list (its `/models`) in `model/list`; `model` and `approval` on `goal/start` and `schedule/create`; the thread's model in its summary; changing the mode while a turn runs. For titles: a goal's first exchange.
+- **Serving the web app:** every `GET` is one of its files, or its `index.html` for the app's routes, from `--web <folder>` or else the `web` folder beside the binary; `POST /` stays the API. Only files inside the folder are served (symbolic links are followed only to files inside it), and no HTML page but `index.html`. The folder is served without sign-in to anyone who reaches the listener, so it must hold only the build and must not be writable by an agent. Every answer carries a strict Content Security Policy (no inline script; Trusted Types; inline styles only with a nonce of 16 random bytes made for that load and put in `index.html`, and no page at all if the operating system gives no randomness), `Cross-Origin-Opener-Policy: same-origin`, `nosniff`, `no-referrer` and `DENY` framing. Hashed assets are cached for good; `index.html` never. Pages need no sign-in; the app signs in to the API with the local token from the link's fragment.
+- **The CLI as a client of a server elsewhere** (issue #171): `glave --server <url>`, or `[server] url` in the person's `config.toml`, makes the terminal a client over HTTP (`glave_session::client`): threads, turns, goals, approvals and questions go to the server and are followed exactly as in-process. Sign-in is a bearer token from `GLAVE_SERVER_TOKEN` (an OIDC access token for the server's audience, or the server's local token on its own computer); the server must be `https`, or `http` on the same computer. `--model` and `--approval` go to the server as the thread's choice ("Choosing a model and an approval mode"); a goal on a thread continued with `--continue` keeps the thread's choice, so naming one there is refused. Flags that choose how glave runs here (`--sandbox`, `--network`, `--on`, `--max-steps`, `--background`) are refused with `--server`. With no one at the terminal, an approval the server asks is declined. Not yet: sign-in from the terminal (OIDC device flow), and `--background` tasks on the server.
+- **Sign-in on HTTP:** OIDC access tokens signed with RS256 or ES256, checked against the keys the issuer's discovery document points to, with `iss`, `aud`, `exp` and `nbf` verified and a minute of clock skew forgiven. Keys are cached and fetched again for a key not seen yet, at most every 30 seconds. An issuer must be `https`, or `http` on the same computer. The person is derived from the issuer and subject (a UUID v7 at time zero whose random bits are the start of a SHA-256 of both) until an identity source maps them. The listener has no TLS of its own: across machines it sits behind a proxy that has.
 - **Retries:** `turn/start` honours `_meta.idempotency_key` for the 1,024 most recent keys, in memory.
-- Turns pause for approvals in memory: a server that stops while a turn waits leaves it to be resumed as interrupted.
-- **Archive, delete, cleanup:** built (issue #131). **Deleting does not erase yet:** today's keys are per space and month, so one thread's content cannot be destroyed alone (`storage.md`). `thread/delete` hides the thread for good and lists it (`thread/list` with `show: deleted`) for the erasure that arrives with data keys per thread. Archiving or deleting through the session API does not remove the thread's worktree yet (above); `glave threads` does, and the daily check removes it once the thread has been idle 30 days.
-- **Tasks and schedules:** built (issue #44). The CLI's task host is `glave serve --socket`, one per folder, which `glave --background`, `glave tasks` and `glave schedule` start when it is not running and which exits once no task runs, no schedule waits and no client is connected; a session in the folder starts it when a schedule waits, and says which tasks finished since the last one. It keeps the settings it started with (model, config, AGENTS.md) until it exits. Not yet: background commands (the model starting a long-running shell process), a task's worker released when the task ends (it is released when the host exits), schedules in the person's time zone, the `origin` of a scheduled thread recorded as `schedule`, desktop notifications, running the scheduler in `glave serve --http`, and the operating system starting the host at login (launchd, systemd).
-- Still to come from "Over the network" (issue #64): SAML and glave session tokens, durable paused turns, leases, WebSocket, and enforcing `-32011` and `-32012`.
+- **Deleting does not erase yet:** today's keys are per space and month, so one thread's content cannot be destroyed alone (`storage.md`); a deleted thread waits in `thread/list` with `show: deleted` for the erasure that arrives with data keys per thread. Archiving or deleting through the session API does not remove the thread's worktree yet (above); `glave threads` does, and the daily check removes it once the thread has been idle 30 days.
+- **Tasks and schedules** (issue #44): the CLI's task host is `glave serve --socket`, one per folder, which `glave --background`, `glave tasks` and `glave schedule` start when it is not running and which exits once no task runs, no schedule waits and no client is connected; a session in the folder starts it when a schedule waits, and says which tasks finished since the last one. It keeps the settings it started with (model, config, AGENTS.md) until it exits. Not yet: background commands (the model starting a long-running shell process), a task's worker released when the task ends (it is released when the host exits), schedules in the person's time zone, the `origin` of a scheduled thread recorded as `schedule`, desktop notifications, running the scheduler in `glave serve --http`, and the operating system starting the host at login (launchd, systemd).
+- **Spaces** (issue #64), not yet: promoting a one-off chat into a project (`storage.md`), managing members over the API, tasks and schedules in spaces other than the server's own, and the organization's policy in the check.
+- Still to come from "Over the network" (issue #64): `thread/watch` as a request, SAML and glave session tokens, durable paused turns, leases and `-32011`, and WebSocket.
 
 ## Later
 
 - WebSocket-only realtime channels, such as voice (issue #58), as optional features.
 - Steering and queueing turns.
 - ACP and A2A adapters, when a real client needs them.
-- A JSON Schema of every message, generated from the Rust types, and a TypeScript client generated from it.

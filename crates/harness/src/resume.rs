@@ -49,10 +49,16 @@ where
             workspace: self.reopen(scope, id, &events).await?,
             unnumbered: crate::bind::own_records(&events),
             note: None,
-            standing: crate::standing::Standing::of(&events),
+            standing: crate::standing::standing_after(crate::Standing::Active, &events),
             removed: false,
             untrusted: read_untrusted(&events),
+            read_secret: read_secret(&events),
+            memory: crate::memory::MemoryState::default(),
+            for_: for_of(&events).or(self.actors.person),
+            model: crate::chosen::chosen_in(&events),
+            approval: crate::chosen::approval_in(&events),
         };
+        self.rebuild_memory(&mut thread, &events).await;
         self.repair(&mut thread, &events).await?;
         Ok(thread)
     }
@@ -159,7 +165,19 @@ fn asked(events: &[Event]) -> Vec<String> {
         .collect()
 }
 
-/// Whether a call in another thread started this one.
+/// The person a thread is for, as `thread.started` records it; `None` when it records none,
+/// which means the local person.
+fn for_of(events: &[Event]) -> Option<glave_event::PrincipalId> {
+    events.iter().find_map(|event| match &event.body {
+        Body::ThreadStarted(started) => started
+            .for_
+            .as_ref()
+            .filter(|principal| principal.kind == glave_event::PrincipalKind::Person)
+            .and_then(|principal| principal.id),
+        _ => None,
+    })
+}
+
 /// The thread that started this one, if an `agent` call did. Subagents start no subagents of
 /// their own, so there is never more than one.
 fn above(events: &[Event]) -> Vec<ThreadId> {
@@ -205,6 +223,28 @@ fn by_person(added: &glave_event::MessageAdded) -> bool {
 fn read_untrusted(events: &[Event]) -> bool {
     events.iter().any(|event| match &event.body {
         Body::ToolCallCompleted(done) => done.untrusted,
+        _ => false,
+    })
+}
+
+/// Whether the model has been shown a file that usually holds secrets: an approval for one
+/// that was allowed.
+fn read_secret(events: &[Event]) -> bool {
+    let mut asked: HashSet<&CallId> = HashSet::new();
+    events.iter().any(|event| match &event.body {
+        Body::ApprovalRequested(requested) => {
+            if requested.secret {
+                asked.insert(&requested.call_id);
+            }
+            false
+        }
+        Body::ApprovalDecided(decided) => {
+            asked.contains(&decided.call_id)
+                && matches!(
+                    decided.decision,
+                    Verdict::AllowOnce | Verdict::AllowForThread
+                )
+        }
         _ => false,
     })
 }

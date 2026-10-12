@@ -1,0 +1,35 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.home {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--glz-space-4);
+  width: 100%;
+  max-width: var(--glz-content-width);
+  margin: 0 auto;
+  padding: var(--glz-space-5) var(--glz-space-4) 15vh;
+}
+
+.intro {
+  text-align: center;
+}
+
+.heading {
+  margin: 0;
+}
+
+.where {
+  margin: var(--glz-space-2) 0 0;
+  color: var(--glz-color-text-muted);
+}
+
+.error {
+  color: var(--glz-color-danger);
+}

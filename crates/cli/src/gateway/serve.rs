@@ -17,15 +17,13 @@ use glave_gateway_service::{Policy, Service, Wiring};
 use glave_harness::{Caller, OsEntropy, SystemClock};
 use glave_mcp::{Limits, McpServer, ServerConfig};
 use glave_session::signin::{SignIn, Trust};
-use glave_store_sqlite::Store;
 use tokio::net::TcpListener;
 
 use crate::config;
 use crate::gateway::{Allowed, gateway};
 use crate::model::Model;
-use crate::policy::{self, Constraints, ORGANIZATION_POLICY, Source};
-use crate::system::random_uuid;
-use crate::{home, keys, mcp};
+use crate::{home, mcp};
+use glave_config::policy::{self, Constraints, ORGANIZATION_POLICY, Source};
 
 pub const USAGE: &str = "\
 glave gateway: the gateway as a service, for everyone in an organization
@@ -156,14 +154,15 @@ async fn run(options: Options) -> anyhow::Result<()> {
             .ok()
             .filter(|value: &String| !value.trim().is_empty())
     };
-    let endpoint = config::endpoint(env("GLAVE_MODEL"))?;
+    let endpoint = config::endpoint(env("GLAVE_MODEL"), config::provider_here().await?.as_ref())?;
     let judge = env("GLAVE_JUDGE_MODEL");
     let allowed = Allowed {
         constraints: &constraints,
         main: Some(&Source::Env("GLAVE_MODEL")),
         judge: &Source::Env("GLAVE_JUDGE_MODEL"),
+        models: &Source::Default,
     };
-    let provider = Model::for_endpoint(&endpoint.provider)?;
+    let provider = Model::for_endpoint(&endpoint)?;
     let budgets = Budgets {
         person: constraints.person_per_day_micros().map(|micros| {
             Limit::Money(Money {
@@ -173,18 +172,19 @@ async fn run(options: Options) -> anyhow::Result<()> {
         }),
         ..Budgets::default()
     };
-    let gateway = gateway(provider, &endpoint, judge.as_deref(), &allowed)?.with_budgets(budgets);
+    let gateway =
+        gateway(provider, &endpoint, judge.as_deref(), &[], &allowed)?.with_budgets(budgets);
     let home = home::folder()?;
     let (catalog, mut secrets) = catalog(&home, &constraints).await?;
-    secrets.extend(endpoint.provider.api_key.clone());
-    let store = Store::open(
-        home::database().await?,
-        keys::settings(&home, home::relocated()).await?,
-    )
-    .await?;
-    let scope = store
-        .local_scope(Path::new(SCOPE), random_uuid(), random_uuid())
-        .await?;
+    secrets.extend(
+        endpoint
+            .provider
+            .auth
+            .fixed_key()
+            .map(|key| key.expose().to_owned()),
+    );
+    let store = crate::data::Data::open(None).await?;
+    let scope = crate::spaces::named(&store, SCOPE).await?;
     let trust = Trust {
         issuers: options.issuers,
         audience: options.audience,

@@ -38,23 +38,39 @@ allow_attributes_without_reason = "deny"
 
 [workspace.dependencies]
 anyhow = "1"
-# Only for tests: signing tokens as a fake identity provider. rustls already builds it.
+# The keys aws-sigv4 signs with: its own type for them, no SDK.
+aws-credential-types = { version = "1.3", default-features = false }
+# AWS Signature Version 4 for Bedrock without the SDK: AWS's own signer, tested against
+# AWS's published suite; only HTTP request signing (it needs `http1` to build).
+aws-sigv4 = { version = "1.6", default-features = false, features = ["sign-http", "http1"] }
+# The crypto rustls already builds: signing Google service account assertions (RS256), and,
+# in tests, tokens as a fake identity provider.
 aws-lc-rs = { version = "1", default-features = false, features = ["aws-lc-sys", "ring-io"] }
+# PEM keys and JWT segments for Google service accounts (already in the tree, under
+# jsonwebtoken and kube).
+base64 = "0.22"
 bytes = "1"
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
+glave-aws = { path = "crates/aws" }
+glave-azure = { path = "crates/azure" }
 glave-computer = { path = "crates/computer" }
+glave-config = { path = "crates/config" }
 glave-event = { path = "crates/event" }
 glave-gateway = { path = "crates/gateway" }
 glave-gateway-service = { path = "crates/gateway-service" }
+glave-google = { path = "crates/google" }
 glave-harness = { path = "crates/harness" }
+glave-identity = { path = "crates/identity" }
 glave-keys = { path = "crates/keys" }
 glave-mcp = { path = "crates/mcp" }
+glave-memory = { path = "crates/memory" }
 glave-ports = { path = "crates/ports" }
 glave-provider-anthropic = { path = "crates/provider-anthropic" }
 glave-provider-openai = { path = "crates/provider-openai" }
 glave-session = { path = "crates/session" }
 glave-shell = { path = "crates/shell" }
+glave-store-postgres = { path = "crates/store-postgres" }
 glave-store-sqlite = { path = "crates/store-sqlite" }
 glave-web = { path = "crates/web" }
 getrandom = "0.4"
@@ -83,6 +99,11 @@ keyring = { version = "4.2", default-features = false, features = ["v1"] }
 # The Kubernetes client for the worker backend on Kubernetes: kubeconfig and in-cluster auth,
 # rustls on aws-lc-rs as the rest of glave, and WebSockets for exec, attach and port-forward.
 kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "aws-lc-rs", "ws"] }
+# OpenTelemetry, only behind the `otlp` features: spans and metrics to an OTLP collector.
+opentelemetry = { version = "0.33", default-features = false, features = ["trace", "metrics"] }
+# OTLP over HTTP with protobuf, on the reqwest and rustls glave already uses (no gRPC stack).
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client", "reqwest-rustls", "trace", "metrics"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace", "metrics"] }
 proptest = "1"
 # Self-signed certificates for workers, on aws-lc-rs, the crypto rustls already uses.
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
@@ -90,18 +111,28 @@ regex = "1"
 rmcp = { version = "3.5.1", default-features = false }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2"] }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
+rustls-platform-verifier = "0.7"
 rusqlite = { version = "0.40", default-features = false, features = ["bundled", "cache"] }
 # Files opened one name at a time from a folder handle (openat), for confinement.
 rustix = { version = "1.1", default-features = false, features = ["fs", "std"] }
 # The Linux sandbox's seccomp filter, built and compiled to BPF in safe Rust (Firecracker's).
 seccompiler = { version = "0.5", default-features = false }
+# JSON Schema of the session API, derived beside serde (already in the tree, under rmcp).
+schemars = { version = "1.2", default-features = false, features = ["derive", "std", "uuid1"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.11"
 thiserror = "2"
 tokio = { version = "1", default-features = false }
+# Content-free spans and metrics events (already in the tree, under hyper and rmcp).
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+# tracing's spans as OpenTelemetry spans, and its counter and histogram events as metrics.
+tracing-opentelemetry = { version = "0.34", default-features = false, features = ["metrics"] }
+# Local logs (`--log`): spans written to a file, filtered by GLAVE_LOG.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "registry", "std"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs"] }
 tokio-postgres = { version = "0.7", default-features = false, features = ["runtime", "with-jiff-0_2", "with-uuid-1"] }
+tokio-postgres-rustls = { version = "0.14", default-features = false }
 toml = { version = "1", default-features = false, features = ["display", "parse", "serde", "std"] }
 tree-sitter = "0.27"
 tree-sitter-bash = "0.25"

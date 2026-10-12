@@ -1,0 +1,17 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.lists {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--glz-space-1) var(--glz-space-3);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}

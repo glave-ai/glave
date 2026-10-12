@@ -1,0 +1,9 @@
+dist/
+out-tsc/
+.angular/
+node_modules/
+test-results/
+coverage/
+playwright-report/
+client/src/generated/
+package-lock.json

@@ -30,9 +30,9 @@ pub(crate) fn ledger_id() -> Option<ThreadId> {
     ThreadId::new(Timestamp::UNIX_EPOCH, [0; 10]).ok()
 }
 
-/// Whether `thread` is the space's task ledger rather than a thread.
+/// Whether `thread` is one of the space's ledgers (tasks, or memory) rather than a thread.
 pub fn is_ledger(thread: ThreadId) -> bool {
-    ledger_id() == Some(thread)
+    ledger_id() == Some(thread) || glave_harness::memory_ledger() == Some(thread)
 }
 
 /// A schedule that has not been deleted.
@@ -134,7 +134,7 @@ where
                 .inner
                 .harness
                 .log()
-                .read(&self.inner.scope, ledger, after, PAGE)
+                .read(&self.inner.home, ledger, after, PAGE)
                 .await
                 .map_err(|error| internal(&error.to_string()))?;
             let full = page.len() == PAGE;
@@ -153,10 +153,10 @@ where
         let ledger = ledger_id().ok_or_else(|| internal("the ledger has no id"))?;
         for _ in 0..ATTEMPTS {
             self.catch_up().await?;
-            let now = self.inner.clock.now();
+            let now = self.inner.harness.clock().now();
             let seq = Seq::new(self.ledger().next_seq()).map_err(|e| internal(&e.to_string()))?;
             let header = Header {
-                id: EventId::new(now, self.inner.entropy.bytes())
+                id: EventId::new(now, self.inner.harness.entropy().bytes())
                     .map_err(|e| internal(&e.to_string()))?,
                 thread: ledger,
                 seq,
@@ -167,7 +167,7 @@ where
                 .inner
                 .harness
                 .log()
-                .append(&self.inner.scope, std::slice::from_ref(&raw))
+                .append(&self.inner.home, std::slice::from_ref(&raw))
                 .await
             {
                 Ok(()) => {

@@ -1,0 +1,13 @@
+[task]
+name = "glave/memory-forget"
+description = "A remembered preference is forgotten when the person asks: a later thread does not know it, and its memory can no longer be opened."
+
+[glave]
+memory = true
+checks = [{ answer_lacks = ["marigold"] }, "memory_forgotten"]
+
+[[glave.threads]]
+messages = ["Please forget my favourite flower."]
+
+[[glave.threads]]
+messages = ["What is my favourite flower? If you do not know, say so."]

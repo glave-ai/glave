@@ -4,23 +4,15 @@
 #[cfg(test)]
 mod over_http {
     use glave_event::{Arguments, Part, StopReason};
-    use glave_ports::{Message, ModelProvider, ModelRequest, ProviderError, ToolChoice};
+    use glave_ports::{Message, ModelProvider, ModelRequest, ProviderError, ToolChoice, block_on};
     use glave_provider_openai::fake::{FakeServer, Reply};
     use glave_provider_openai::{Config, IDLE_TIMEOUT, OpenAiCompatible};
     use serde_json::json;
 
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
-
     fn provider(base_url: &str, key: Option<&str>) -> OpenAiCompatible {
         OpenAiCompatible::new(Config {
             base_url: base_url.to_owned(),
-            api_key: key.map(str::to_owned),
+            auth: glave_ports::auth::Auth::bearer(key.map(str::to_owned)),
             provider: "fake".into(),
             idle_timeout: IDLE_TIMEOUT,
         })
@@ -48,7 +40,7 @@ mod over_http {
         provider: &OpenAiCompatible,
     ) -> (Result<glave_ports::Completion, ProviderError>, String) {
         let mut live = String::new();
-        let result = block_on(provider.complete(&request(), &mut |delta| {
+        let result = block_on!(provider.complete(&request(), &mut |delta| {
             if let glave_ports::Delta::Text(text) = delta {
                 live.push_str(&text);
             }
@@ -82,12 +74,12 @@ mod over_http {
         let server = FakeServer::start(vec![Reply::Stall]).unwrap();
         let quick = OpenAiCompatible::new(Config {
             base_url: server.url().to_owned(),
-            api_key: None,
+            auth: glave_ports::auth::Auth::None,
             provider: "fake".into(),
             idle_timeout: std::time::Duration::from_millis(200),
         })
         .unwrap();
-        let error = block_on(quick.complete(&request(), &mut |_| {})).unwrap_err();
+        let error = block_on!(quick.complete(&request(), &mut |_| {})).unwrap_err();
         assert_eq!(error, ProviderError::Timeout { seconds: 0 });
         assert!(error.is_transient(), "a silence is worth one more try");
     }
@@ -97,15 +89,15 @@ mod over_http {
         let server = FakeServer::start(vec![Reply::text("ok"), Reply::text("ok")]).unwrap();
         let openrouter = OpenAiCompatible::new(Config {
             base_url: server.url().to_owned(),
-            api_key: None,
+            auth: glave_ports::auth::Auth::None,
             provider: "openrouter".into(),
             idle_timeout: IDLE_TIMEOUT,
         })
         .unwrap();
         let mut anthropic = request();
         anthropic.model = "anthropic/claude-haiku-5.5".into();
-        block_on(openrouter.complete(&anthropic, &mut |_| {})).unwrap();
-        block_on(openrouter.complete(&request(), &mut |_| {})).unwrap();
+        block_on!(openrouter.complete(&anthropic, &mut |_| {})).unwrap();
+        block_on!(openrouter.complete(&request(), &mut |_| {})).unwrap();
         let received = server.received();
         assert_eq!(
             received[0].body["cache_control"],
@@ -120,6 +112,119 @@ mod over_http {
         let (result, _) = ask(&provider(server.url(), None));
         assert!(result.is_ok());
         assert_eq!(server.received()[0].authorization, None);
+    }
+
+    fn with_auth(base_url: &str, auth: glave_ports::auth::Auth) -> OpenAiCompatible {
+        OpenAiCompatible::new(Config {
+            base_url: base_url.to_owned(),
+            auth,
+            provider: "fake".into(),
+            idle_timeout: IDLE_TIMEOUT,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn a_key_goes_in_the_header_the_provider_wants() {
+        use glave_ports::auth::{Auth, KeyHeader};
+        let server = FakeServer::start(vec![Reply::text("ok")]).unwrap();
+        let (result, _) = ask(&with_auth(
+            server.url(),
+            Auth::key(KeyHeader::ApiKey, "az-key"),
+        ));
+        assert!(result.is_ok());
+        let received = &server.received()[0];
+        assert_eq!(received.authorization, None);
+        assert!(
+            received
+                .headers
+                .contains(&("api-key".to_owned(), "az-key".to_owned()))
+        );
+    }
+
+    /// Signs each request with its method and body length, as a cloud's signer would.
+    struct Signer;
+
+    impl glave_ports::auth::Credentials for Signer {
+        fn authorize<'a>(
+            &'a self,
+            request: &'a glave_ports::auth::Outgoing<'a>,
+        ) -> glave_ports::BoxFuture<
+            'a,
+            Result<Vec<glave_ports::auth::Header>, glave_ports::auth::AuthError>,
+        > {
+            Box::pin(async move {
+                assert!(request.url.ends_with("/chat/completions"));
+                Ok(vec![glave_ports::auth::Header {
+                    name: "authorization".into(),
+                    value: glave_ports::auth::Secret::new(format!(
+                        "Signed {} {}",
+                        request.method,
+                        request.body.len()
+                    )),
+                }])
+            })
+        }
+
+        fn describe(&self) -> String {
+            "a test signer".into()
+        }
+    }
+
+    /// Credentials that cannot be had.
+    struct Missing;
+
+    impl glave_ports::auth::Credentials for Missing {
+        fn authorize<'a>(
+            &'a self,
+            _request: &'a glave_ports::auth::Outgoing<'a>,
+        ) -> glave_ports::BoxFuture<
+            'a,
+            Result<Vec<glave_ports::auth::Header>, glave_ports::auth::AuthError>,
+        > {
+            Box::pin(async {
+                Err(glave_ports::auth::AuthError::refused(
+                    "the token file /var/run/token is missing",
+                ))
+            })
+        }
+
+        fn describe(&self) -> String {
+            "a missing token".into()
+        }
+    }
+
+    #[test]
+    fn changing_credentials_sign_each_request_or_say_why_they_cannot() {
+        use std::sync::Arc;
+        let server = FakeServer::start(vec![Reply::text("ok")]).unwrap();
+        let signed = with_auth(
+            server.url(),
+            glave_ports::auth::Auth::Changing(Arc::new(Signer)),
+        );
+        assert!(ask(&signed).0.is_ok());
+        let authorization = server.received()[0].authorization.clone().unwrap();
+        let length: usize = authorization
+            .strip_prefix("Signed POST ")
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            length > 100,
+            "the signer saw the whole body: {length} bytes"
+        );
+        let missing = with_auth(
+            server.url(),
+            glave_ports::auth::Auth::Changing(Arc::new(Missing)),
+        );
+        let error = ask(&missing).0.unwrap_err();
+        assert_eq!(error.failure(), glave_ports::Failure::Refused);
+        assert!(error.to_string().contains("token file"), "{error}");
+        assert_eq!(
+            server.received().len(),
+            1,
+            "nothing is sent without credentials"
+        );
     }
 
     #[test]

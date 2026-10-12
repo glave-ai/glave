@@ -1,0 +1,10 @@
+[task]
+name = "glave/memory-preference"
+description = "The person corrects the model once (tabs, not spaces, in this project's Python); a new thread later writes Python with tabs."
+
+[glave]
+memory = true
+turns = ["Thanks. One more thing for the future: use tabs, not spaces, in this project's Python. Always."]
+
+[[glave.threads]]
+messages = ["Add greet.py with a function main() that prints hello, called when the file is run as a script."]

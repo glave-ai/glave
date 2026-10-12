@@ -1,0 +1,33 @@
+<app-page-header>
+  <div class="heading">
+    @if (space(); as space) {
+      <span class="space" data-testid="thread-space">{{ space }}</span>
+    }
+    <h1 class="title" data-testid="thread-title">{{ title() }}</h1>
+    @if (mark(); as mark) {
+      <glz-badge [tone]="mark.tone">{{ mark.text }}</glz-badge>
+    }
+    <button
+      glzIconButton
+      size="sm"
+      data-testid="thread-rename"
+      [label]="copy.rename"
+      (click)="startRename()"
+    >
+      <glz-icon [icon]="icons.rename" />
+    </button>
+  </div>
+  @if (narrow()) {
+    <button
+      appPageHeaderEnd
+      glzIconButton
+      data-testid="thread-tools"
+      [label]="copy.tools"
+      [attr.aria-pressed]="panelOpen()"
+      [attr.aria-keyshortcuts]="shortcut"
+      (click)="togglePanel()"
+    >
+      <glz-icon [icon]="icons.tools" />
+    </button>
+  }
+</app-page-header>

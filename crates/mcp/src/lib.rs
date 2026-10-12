@@ -12,8 +12,9 @@ mod reason;
 mod resources;
 mod server;
 
-pub use config::{ServerConfig, parse, untrusted};
+pub use config::{ServerConfig, marks, parse};
 pub use error::McpError;
 pub use names::{catalog, exposed};
+pub use output::output as tool_output;
 pub use resources::Resources;
 pub use server::{Limits, McpServer};

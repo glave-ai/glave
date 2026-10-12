@@ -3,25 +3,36 @@
 //! in-process to the network, carries the same messages. Network transports need a sign-in.
 
 mod approvals;
+pub mod client;
 mod cron;
+mod dispatch;
 mod goal;
 mod held;
 pub mod http;
 mod hub;
 mod keyed;
 mod ledger;
+mod memory;
+mod models;
+mod modes;
 pub mod protocol;
 pub mod rpc;
 mod schedule;
+pub mod schema;
 mod server;
-pub mod signin;
+mod spaces;
 mod standing;
 mod tasks;
+mod titles;
+mod trace;
 mod turn;
 
 pub use approvals::Answering;
-pub use glave_harness::Caller;
+pub use dispatch::Answered;
+pub use glave_identity::signin;
+pub use glave_ports::Caller;
 pub use ledger::is_ledger;
 pub use server::{OnWorkers, Server, Wiring};
+pub use spaces::PERSONAL_NAME;
 pub use tasks::TaskLimits;
 pub use turn::{TurnItem, TurnStream};

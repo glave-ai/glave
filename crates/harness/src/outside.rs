@@ -1,8 +1,8 @@
 //! What was written to a thread from outside the harness holding it. Glave keeps a few records
 //! of its own about a thread that do not change the conversation: a cleanup removing its
-//! worktree, and archiving, unarchiving or deleting it. They may be appended by another glave
-//! process, such as `glave threads archive` or the daily worktree check, while this one holds
-//! the thread. When an append then meets the log's `(thread, seq)` conflict, the harness reads
+//! worktree, archiving, unarchiving, deleting or renaming it, and a title's call (`title.rs`).
+//! They may be appended by another glave process, such as `glave threads archive` or the daily
+//! worktree check, or by the server's own title task, while this one holds the thread. When an append then meets the log's `(thread, seq)` conflict, the harness reads
 //! what was written after its last event; if all of it is such a record, it takes it in and
 //! writes its own events after it. Anything else, such as a message, means another harness is
 //! running the thread, and stays a conflict.
@@ -15,14 +15,15 @@ use glave_ports::{BlobStore, EventLog, LogError, ModelProvider, Sources};
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::owner_label;
-use crate::standing::{KINDS, Standing};
+use crate::standing::{KINDS, Standing, standing_after};
 
 /// The most records taken in at once; more than this from outside is not a cleanup.
 const MOST: usize = 100;
 
 /// Whether `event` is one glave writes about a thread from outside, and can be taken in. These
 /// are the records call ids do not count (`bind::own_records`), less `workspace.bound`, which
-/// only the harness starting a thread writes, and which would move where its tools act.
+/// only the harness starting a thread writes, and which would move where its tools act; and a
+/// `model.responded` on its own, a title's call, which only adds to the thread's usage.
 /// `hook.ran` is not one: only a harness running a turn in the thread writes it.
 fn takes_in(event: &Event) -> bool {
     matches!(
@@ -31,6 +32,8 @@ fn takes_in(event: &Event) -> bool {
             | Body::ThreadArchived(_)
             | Body::ThreadUnarchived(_)
             | Body::ThreadDeleted(_)
+            | Body::ThreadRenamed(_)
+            | Body::ModelResponded(_)
     )
 }
 
@@ -43,7 +46,8 @@ where
 {
     /// Takes in the records written to `thread` from outside since its last event, and says
     /// whether it could: `false` when something else was written, which `thread` cannot follow.
-    /// Call ids do not count what it takes in, so the model is sent the same.
+    /// Call ids count what it takes in as resuming the thread would, so the model is sent the
+    /// same.
     pub(crate) async fn take_in(&self, thread: &mut Thread) -> Result<bool, HarnessError> {
         let last = Seq::new(thread.next_seq.get().saturating_sub(1)).ok();
         let page = self.log.read(&thread.scope, thread.id, last, MOST).await?;
@@ -59,8 +63,10 @@ where
         }
         let count = u64::try_from(events.len()).map_err(|e| HarnessError::Event(e.to_string()))?;
         thread.next_seq = Seq::new(thread.next_seq.get().saturating_add(count))?;
-        thread.unnumbered = thread.unnumbered.saturating_add(count);
-        thread.standing = Standing::after(thread.standing, &events);
+        thread.unnumbered = thread
+            .unnumbered
+            .saturating_add(crate::bind::own_records(&events));
+        thread.standing = standing_after(thread.standing, &events);
         if thread.workspace.is_some()
             && events
                 .iter()
@@ -115,6 +121,13 @@ where
             let owner = owner_label(thread.scope, thread.id);
             let worktree = self.workspace.worktree(branch, Some(&owner)).await?;
             thread.workspace = Some(Arc::new(worktree));
+        } else if let Some(Sources::Scratch { name, owner }) = thread
+            .workspace
+            .as_ref()
+            .map(|workspace| workspace.info().sources.clone())
+        {
+            let scratch = self.workspace.scratch(&name, owner.as_deref()).await?;
+            thread.workspace = Some(Arc::new(scratch));
         }
         thread.removed = false;
         Ok(())

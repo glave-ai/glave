@@ -1,4 +1,4 @@
-//! The opt-in sandbox around commands, as the harness sees it: the settings travel with every
+//! The sandbox around commands, as the harness sees it: the settings travel with every
 //! command to the computer, which enforces them (`specs/sandbox.md`); here they become a note
 //! for the model when a command looks blocked, and a record of what a turn ran under.
 
@@ -48,13 +48,15 @@ pub(crate) fn blocked_note(
     .any(|sign| output.contains(sign));
     refused.then_some(if sandbox.network {
         "[This command may have been blocked by the sandbox: commands here cannot write \
-         outside the project, change git hooks or config, or read secrets. That cannot \
-         be lifted from inside; do the task another way or tell the person what is needed.]"
+         outside the project, change git hooks or config, or read secrets (credential \
+         stores and files such as .env and private keys are hidden). That cannot be lifted \
+         from inside; do the task another way or tell the person what is needed.]"
     } else {
         "[This command may have been blocked by the sandbox: commands here cannot use the \
-         network, write outside the project, change git hooks or config, or read secrets. \
-         That cannot be lifted from inside; do the task another way or tell the person \
-         what is needed.]"
+         network, write outside the project, change git hooks or config, or read secrets \
+         (credential stores and files such as .env and private keys are hidden). That \
+         cannot be lifted from inside; do the task another way or tell the person what is \
+         needed.]"
     })
 }
 

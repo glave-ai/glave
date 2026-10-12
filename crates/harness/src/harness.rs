@@ -5,30 +5,31 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
 use glave_event::{
-    At, EncodeError, EventId, Header, InvalidValue, Origin, OriginKind, ParentCall, Part, Payload,
-    Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted, encode,
+    ApprovalMode, At, EncodeError, EventId, Header, InvalidValue, Origin, OriginKind, ParentCall,
+    Part, Payload, Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted,
+    encode,
 };
 use glave_ports::{
-    BlobError, BlobStore, ComputerError, EventLog, LogError, Message, ModelProvider, ProviderError,
-    Scope, ToolSource,
+    BlobError, BlobStore, Caller, ComputerError, EventLog, LogError, Message, ModelProvider,
+    ProviderError, Scope, ToolSource,
 };
 use thiserror::Error;
 
-use crate::approval::{ApprovalMode, Approver};
+use crate::approval::Approver;
 use crate::bind::Place;
 use crate::builtins::Builtins;
-use crate::caller::Caller;
 use crate::commands::Command;
 use crate::compaction::{Compaction, Measured};
-use crate::env::{Clock, Entropy};
 use crate::goal::{GoalProgress, Pursuit};
 use crate::hooks::Hooks;
+use crate::memory::{Memory, MemoryState};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
 use crate::standing::Standing;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
 use crate::worker::Workers;
+use glave_ports::{Clock, Entropy};
 
 /// How the harness runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +67,9 @@ pub struct Settings {
     /// The agent profile that runs every thread: recorded as the thread's `agent`. When
     /// `None`, made once like `person`.
     pub agent: Option<PrincipalId>,
+    /// Whether a model titles each thread after its first exchange (`title.rs`); off, a
+    /// thread's title is the first line of its first message. Off by default.
+    pub titles: bool,
 }
 
 impl Settings {
@@ -88,6 +92,7 @@ impl Settings {
             person: None,
             agent: None,
             commands: Vec::new(),
+            titles: false,
         }
     }
 }
@@ -132,6 +137,9 @@ pub struct Harness<P, L, B, A> {
     pub(crate) learned_window: AtomicU64,
     /// Where threads placed on a worker get one; none by default.
     pub(crate) workers: Option<Workers>,
+    /// What threads remember from one to the next; none by default, so the model is sent
+    /// exactly what it is sent without memory.
+    pub(crate) memory: Option<Arc<dyn Memory>>,
 }
 
 /// One thread: where it is stored, where it continues, and the conversation so far.
@@ -173,6 +181,18 @@ pub struct Thread {
     /// it are judged knowing that (`untrusted.rs`). A subagent's thread starts with its
     /// parent's.
     pub(crate) untrusted: bool,
+    /// Whether the model has been shown a file that usually holds secrets: like untrusted
+    /// content, it makes a save to memory a caution.
+    pub(crate) read_secret: bool,
+    /// What the model is shown of memory (`memory.rs`); empty when memory is off.
+    pub(crate) memory: MemoryState,
+    /// The person whose work this thread is, its `for`: the caller who started it, or the
+    /// harness's person. A subagent's thread has its parent's.
+    pub(crate) for_: Option<PrincipalId>,
+    /// The model chosen for the thread (`chosen.rs`); the harness's own when `None`.
+    pub(crate) model: Option<String>,
+    /// The approval mode chosen for the thread (`chosen.rs`); the harness's own when `None`.
+    pub(crate) approval: Option<ApprovalMode>,
 }
 
 impl Thread {
@@ -184,6 +204,11 @@ impl Thread {
     /// The thread's latest goal and how far it has come, active or ended.
     pub fn goal(&self) -> Option<&GoalProgress> {
         self.goal.as_ref().map(|goal| &goal.progress)
+    }
+
+    /// The person whose work this thread is: its recorded `for`.
+    pub fn for_person(&self) -> Option<PrincipalId> {
+        self.for_
     }
 
     /// Whether an agent, not the person, writes this thread's prompts: a subagent's thread.
@@ -226,6 +251,9 @@ pub enum HarnessError {
     /// A `UserPromptSubmit` hook stopped the prompt; the model never saw it.
     #[error("a hook stopped this prompt: {0}")]
     PromptBlocked(String),
+    /// What was asked for is not valid, such as an empty title.
+    #[error("{0}")]
+    Invalid(String),
 }
 
 impl From<EncodeError> for HarnessError {
@@ -270,7 +298,34 @@ where
             settings,
             learned_window: AtomicU64::new(0),
             workers: None,
+            memory: None,
         }
+    }
+
+    /// Gives threads `memory`: loaded at their start, its tools offered, the person's controls
+    /// served (`specs/memory.md`).
+    #[must_use]
+    pub fn with_memory(mut self, memory: Arc<dyn Memory>) -> Self {
+        self.memory = Some(memory);
+        self
+    }
+
+    /// Gives threads `memory` when there is one; none leaves them without.
+    #[must_use]
+    pub fn with_memory_if(mut self, memory: Option<Arc<dyn Memory>>) -> Self {
+        self.memory = memory;
+        self
+    }
+
+    /// The person threads work for unless their caller is someone else: from the settings, or
+    /// made once.
+    pub fn person(&self) -> Option<PrincipalId> {
+        self.actors.person
+    }
+
+    /// The memory threads use, if any.
+    pub fn memory(&self) -> Option<&Arc<dyn Memory>> {
+        self.memory.as_ref()
     }
 
     /// Places threads asked to work on a worker ([`crate::Place::Worker`]) with `workers`.
@@ -296,9 +351,14 @@ where
     }
 
     /// The tools on offer now in `thread`, from every source.
-    pub(crate) async fn tools(&self, thread: ThreadId) -> ToolSet {
-        let mut set = ToolSet::gather(&self.sources, &self.settings.system_prompt).await;
-        if self.approver.can_answer(thread) {
+    pub(crate) async fn tools(&self, thread: &Thread) -> ToolSet {
+        let mut set = ToolSet::gather(&self.sources, &self.system_for(thread)).await;
+        if let Some((memory, _)) = self.memory_for(thread)
+            && let Ok(tools) = memory.tools().await
+        {
+            set.offer_memory(tools);
+        }
+        if self.approver.can_answer(thread.id) {
             set.offer_question();
         }
         if self.settings.subagents {
@@ -314,6 +374,21 @@ where
     /// The log events are written to.
     pub fn log(&self) -> &L {
         &self.log
+    }
+
+    /// What the harness was set up with: the default model and approval mode among them.
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    /// The clock events are stamped with.
+    pub fn clock(&self) -> &dyn Clock {
+        self.clock.as_ref()
+    }
+
+    /// Where the random part of new ids comes from.
+    pub fn entropy(&self) -> &dyn Entropy {
+        self.entropy.as_ref()
     }
 
     /// Who is asked before anything changes.
@@ -370,6 +445,11 @@ where
             standing: Standing::Active,
             removed: false,
             untrusted: false,
+            read_secret: false,
+            memory: MemoryState::default(),
+            for_: caller.person.or(self.actors.person),
+            model: None,
+            approval: None,
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {
@@ -377,7 +457,7 @@ where
         } else {
             OriginKind::Prompt
         });
-        origin.by = self.other_than_for(caller.person);
+        origin.by = Self::other_than_for(&thread, caller.person);
         let producer = Producer {
             name: "glave".into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -390,7 +470,7 @@ where
                 producer,
                 fork: None,
                 parent,
-                for_: self.actors.person.map(Principal::person),
+                for_: thread.for_.map(Principal::person),
                 agent: self.actors.agent.map(Principal::agent),
             },
         )?;

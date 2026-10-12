@@ -8,7 +8,7 @@ use hmac::{Hmac, KeyInit as _, Mac as _};
 use zeroize::Zeroizing;
 
 use crate::error::KeyError;
-use crate::key_id::{KeyId, Month};
+use crate::key_id::{KeyId, Month, Period};
 use crate::record::{DataKey, SpaceRecord, SpaceVersion};
 use crate::seal::{associated, open, seal};
 use crate::secret::Secret;
@@ -44,6 +44,21 @@ impl SpaceKey {
         mac.update(sha256.as_str().as_bytes());
         let mut hex = String::with_capacity(64);
         for byte in mac.finalize().into_bytes() {
+            let _ = write!(hex, "{byte:02x}");
+        }
+        Ok(hex)
+    }
+
+    /// One word of a full-text index: HMAC-SHA-256 of the word under the naming half, kept
+    /// apart from blob names by its own label, its first 16 bytes in lowercase hex. The index
+    /// holds no word in the clear, and loses every word when the space is erased.
+    pub(super) fn name_term(&self, term: &str) -> Result<String, KeyError> {
+        let mut mac = Hmac::<sha2::Sha256>::new_from_slice(self.name.bytes())
+            .map_err(|e| KeyError::Corrupt(e.to_string()))?;
+        mac.update(b"glave/search/v1\0");
+        mac.update(term.as_bytes());
+        let mut hex = String::with_capacity(32);
+        for byte in mac.finalize().into_bytes().iter().take(16) {
             let _ = write!(hex, "{byte:02x}");
         }
         Ok(hex)
@@ -127,7 +142,7 @@ pub(super) fn unwrap_data(
 pub(super) fn key_id(scope: &Scope, entry: &DataKey) -> KeyId {
     KeyId {
         space: scope.space,
-        month: entry.month,
+        period: entry.period(),
         n: entry.n,
     }
 }
@@ -208,7 +223,7 @@ impl<S: KeyStorage> Keys<S> {
         }
         let (_, record) = self.load(scope).await?;
         let entry = record
-            .data_key(id.month, id.n)
+            .data_key(id.period, id.n)
             .ok_or_else(|| KeyError::Unknown(id.to_string()))?;
         if entry.wrapped.is_none() {
             return Err(KeyError::Destroyed(id.to_string()));
@@ -222,14 +237,14 @@ impl<S: KeyStorage> Keys<S> {
         Ok(key)
     }
 
-    /// The data key that seals `month`'s new content in `scope`, made (with the space key, if
+    /// The data key that seals `period`'s new content in `scope`, made (with the space key, if
     /// the space has none) the first time.
     pub(super) async fn sealing_key(
         &self,
         scope: &Scope,
-        month: Month,
+        period: Period,
     ) -> Result<(KeyId, Secret), KeyError> {
-        if let Some(Value::Id(id)) = self.cache.get(&Slot::Sealing(*scope, month))
+        if let Some(Value::Id(id)) = self.cache.get(&Slot::Sealing(*scope, period))
             && let Some(Value::Key(key)) = self.cache.get(&Slot::Data(*scope, id))
         {
             return Ok((id, key));
@@ -253,18 +268,23 @@ impl<S: KeyStorage> Keys<S> {
                 changed = true;
                 (version, space)
             };
-            let (id, key) = if let Some(entry) = record.sealing(month) {
+            let (id, key) = if let Some(entry) = record.sealing(period) {
                 let id = key_id(scope, entry);
                 (id, unwrap_data(&space, scope, &id, entry)?)
             } else {
                 let id = KeyId {
                     space: scope.space,
-                    month,
-                    n: record.next_n(month),
+                    period,
+                    n: record.next_n(period),
                 };
                 let key = Secret::random()?;
+                let (month, memory) = match period {
+                    Period::Month(month) => (month, None),
+                    Period::Memory(memory) => (Month::of((self.clock)()), Some(memory)),
+                };
                 record.data.push(DataKey {
                     month,
+                    memory,
                     n: id.n,
                     space_version: version,
                     wrapped: Some(wrap_data(&space, scope, &id, version, &key)?),
@@ -285,7 +305,7 @@ impl<S: KeyStorage> Keys<S> {
             self.cache.put(Slot::Live(*scope), Value::Version(version));
             self.cache
                 .put(Slot::Data(*scope, id), Value::Key(key.clone()));
-            self.cache.put(Slot::Sealing(*scope, month), Value::Id(id));
+            self.cache.put(Slot::Sealing(*scope, period), Value::Id(id));
             return Ok((id, key));
         }
         Err(KeyError::Contended(scope.to_string()))

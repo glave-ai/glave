@@ -1,0 +1,12 @@
+<div class="main">
+  @if (showAuthor()) {
+    <p class="author" aria-hidden="true">{{ author() }}</p>
+  }
+  <div class="body">
+    <ng-content />
+    @if (streaming()) {
+      <span class="caret" aria-hidden="true"></span>
+    }
+  </div>
+  <div class="actions"><ng-content select="[glzMessageActions]" /></div>
+</div>

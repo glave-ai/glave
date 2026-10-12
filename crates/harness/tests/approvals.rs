@@ -68,7 +68,7 @@ mod recorded {
     #[test]
     fn each_question_and_its_answer_are_recorded_before_the_result() {
         let dir = folder("approvals-recorded");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, touch("a"), StopReason::ToolUse),
                 answer(None, touch("b"), StopReason::ToolUse),
@@ -129,7 +129,7 @@ mod recorded {
     #[test]
     fn allow_for_thread_survives_resuming_the_thread() {
         let dir = folder("approvals-thread");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, touch("first"), StopReason::ToolUse),
                 answer(Some("One."), vec![], StopReason::EndTurn),
@@ -160,7 +160,7 @@ mod recorded {
     #[test]
     fn no_one_there_is_recorded_as_such() {
         let dir = folder("approvals-nobody");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, touch("x"), StopReason::ToolUse),
                 answer(Some("I could not."), vec![], StopReason::EndTurn),

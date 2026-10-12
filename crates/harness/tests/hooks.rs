@@ -90,7 +90,7 @@ mod hooks {
         let dir = folder("hooks-before");
         let guard = "cat > seen.json; echo 'no files here, ask first' >&2; exit 2";
         let hooks = vec![hook(HookPoint::PreToolUse, Some("bash"), guard)];
-        block_on(async {
+        block_on!(async {
             let (requests, events) = bash_turn(&dir, "touch made.txt", hooks, settings()).await;
             assert!(!dir.join("made.txt").exists(), "the call did not run");
             let input: Value =
@@ -120,7 +120,7 @@ mod hooks {
         let dir = folder("hooks-allow");
         let allow = r#"echo '{"hookSpecificOutput":{"permissionDecision":"allow"}}'"#;
         let hooks = vec![hook(HookPoint::PreToolUse, None, allow)];
-        block_on(async {
+        block_on!(async {
             let (_, events) = bash_turn(&dir, "touch made.txt", hooks, asking()).await;
             assert!(!dir.join("made.txt").exists(), "the person said no");
             assert_eq!(ran(&events)[0].result, HookResult::Passed);
@@ -134,7 +134,7 @@ mod hooks {
         let dir = folder("hooks-after");
         let lint = "cat > /dev/null; echo 'made.txt is not formatted'; exit 2";
         let hooks = vec![hook(HookPoint::PostToolUse, Some("bash|edit"), lint)];
-        block_on(async {
+        block_on!(async {
             let (requests, events) = bash_turn(&dir, "touch made.txt", hooks, settings()).await;
             assert!(dir.join("made.txt").exists(), "the call ran");
             let results = tool_results(requests.last().unwrap());
@@ -153,7 +153,7 @@ mod hooks {
         let mut slow = hook(HookPoint::PreToolUse, None, "sleep 30");
         slow.timeout_secs = Some(1);
         let broken = hook(HookPoint::PreToolUse, None, "exit 7");
-        block_on(async {
+        block_on!(async {
             let (_, events) =
                 bash_turn(&dir, "touch made.txt", vec![slow, broken], settings()).await;
             assert!(
@@ -176,7 +176,7 @@ mod hooks {
         let dir = folder("hooks-prompt");
         let guard = "grep -q secret && { echo 'that looks like a secret'; exit 2; }; exit 0";
         let hooks = Hooks::new(vec![hook(HookPoint::UserPromptSubmit, None, guard)]).unwrap();
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
                 harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings()).await;
@@ -208,7 +208,7 @@ mod hooks {
         let dir = folder("hooks-stop");
         let note = "cat > stopped.json; echo '{\"decision\":\"block\",\"reason\":\"more\"}'";
         let hooks = Hooks::new(vec![hook(HookPoint::Stop, None, note)]).unwrap();
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
                 harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings()).await;
@@ -259,7 +259,7 @@ mod hooks {
     fn with_no_hooks_or_none_that_apply_the_model_is_sent_exactly_what_it_was_before() {
         let dir = folder("hooks-none");
         std::fs::write(dir.join("notes.txt"), "hello\n").unwrap();
-        block_on(async {
+        block_on!(async {
             let before = reading_turn(&dir, None).await;
             assert_eq!(before, reading_turn(&dir, Some(Vec::new())).await);
             let elsewhere = vec![

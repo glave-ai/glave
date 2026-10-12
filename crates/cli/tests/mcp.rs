@@ -33,6 +33,8 @@ mod mcp {
     #[test]
     fn a_servers_tools_reach_the_model_and_its_calls_run() {
         let place = place("mcp-tools");
+        std::fs::create_dir_all(&place.home).unwrap();
+        std::fs::write(place.home.join("config.toml"), "memory = \"off\"\n").unwrap();
         let server = test_server();
         settings(&place, &json!({ "tests": { "command": server } }));
         let model = FakeServer::start(vec![
@@ -40,7 +42,21 @@ mod mcp {
             Reply::text("It said: from mcp."),
         ])
         .unwrap();
-        let output = glave(&place, &model, &["--model", "m", "echo it"], "");
+        // Unconfined and without asking, so the call runs wherever the sandbox cannot.
+        let output = glave(
+            &place,
+            &model,
+            &[
+                "--model",
+                "m",
+                "--sandbox",
+                "off",
+                "--approval",
+                "auto",
+                "echo it",
+            ],
+            "",
+        );
         let shown = text(&output);
         assert!(output.status.success(), "{shown}");
         assert!(shown.contains("It said: from mcp."), "{shown}");

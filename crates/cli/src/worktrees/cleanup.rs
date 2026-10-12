@@ -125,7 +125,8 @@ impl<L: EventLog> Cleanup<'_, L> {
                     kept.at_risk().unwrap_or_default(),
                     leaf(kept)
                 ),
-                Condition::Safe | Condition::RepositoryGone => {
+                // A scratch folder with files goes to the Trash, so nothing is lost.
+                Condition::Safe | Condition::RepositoryGone | Condition::Scratch { .. } => {
                     self.release(kept, RemovedReason::Pruned).await
                 }
             };

@@ -1,0 +1,25 @@
+@if (collapsible()) {
+  <div class="header">
+    <button
+      type="button"
+      class="heading toggle"
+      [id]="headingId"
+      [attr.data-testid]="ids().toggle"
+      [attr.aria-expanded]="expanded()"
+      [attr.aria-controls]="itemsId"
+      (click)="toggle()"
+    >
+      <glz-icon class="chevron" [icon]="chevron()" />
+      <span class="text">{{ heading() }}</span>
+    </button>
+    <span class="actions"><ng-content select="[glzNavListActions]" /></span>
+  </div>
+} @else if (hasHeading()) {
+  <div class="header">
+    <p class="heading" [id]="headingId">{{ heading() }}</p>
+    <span class="actions"><ng-content select="[glzNavListActions]" /></span>
+  </div>
+}
+<div class="items" [id]="itemsId" [attr.data-testid]="ids().items" [hidden]="collapsed()">
+  <ng-content />
+</div>

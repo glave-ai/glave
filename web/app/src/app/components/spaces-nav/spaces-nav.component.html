@@ -1,0 +1,44 @@
+<nav class="lists" [attr.aria-label]="copy.threads">
+  @for (group of groups(); track group.id) {
+    <glz-nav-list
+      testId="nav-space"
+      collapsible
+      [heading]="group.name"
+      [expanded]="group.expanded"
+      (expandedChange)="setExpanded(group.id, $event)"
+    >
+      <a
+        glzNavListActions
+        glzIconButton
+        size="sm"
+        data-testid="nav-space-new"
+        [label]="group.newLabel"
+        [routerLink]="newLink"
+        [queryParams]="group.newQuery"
+        (click)="followed()"
+      >
+        <glz-icon [icon]="addIcon" />
+      </a>
+      @for (thread of group.threads; track thread.id) {
+        <a
+          glzNavItem
+          data-testid="nav-thread"
+          [routerLink]="thread.link"
+          [current]="thread.current"
+          (click)="followed()"
+        >
+          {{ thread.title }}
+          @if (thread.mark; as mark) {
+            <glz-badge glzNavItemEnd [tone]="mark.tone">{{ mark.text }}</glz-badge>
+          }
+        </a>
+      } @empty {
+        <p class="empty">{{ copy.empty }}</p>
+      }
+    </glz-nav-list>
+  } @empty {
+    @if (searching()) {
+      <p class="empty" data-testid="nav-no-match">{{ copy.noMatch }}</p>
+    }
+  }
+</nav>

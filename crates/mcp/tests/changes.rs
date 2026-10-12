@@ -7,32 +7,12 @@ mod changes {
     use std::io::{BufRead as _, BufReader};
     use std::path::Path;
     use std::process::{Child, Command, Stdio};
-    use std::time::{Duration, Instant};
 
     use glave_event::{Arguments, Part};
     use glave_mcp::{Limits, McpServer, ServerConfig};
-    use glave_ports::{BoxFuture, Cancellation, ToolSource as _};
+    use glave_ports::{NeverCancelled, ToolSource as _, block_on};
 
     const SERVER: &str = env!("CARGO_BIN_EXE_glave-mcp-test-server");
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
-
-    struct Never;
-
-    impl Cancellation for Never {
-        fn is_cancelled(&self) -> bool {
-            false
-        }
-        fn cancelled(&self) -> BoxFuture<'_, ()> {
-            Box::pin(std::future::pending())
-        }
-    }
 
     fn launch(config: &ServerConfig) -> McpServer {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -49,7 +29,7 @@ mod changes {
 
     async fn call(server: &McpServer, tool: &str) -> String {
         let none = Arguments::Json(serde_json::Map::new());
-        let output = server.call(tool, &none, &Never).await;
+        let output = server.call(tool, &none, &NeverCancelled).await;
         match output.parts.as_slice() {
             [Part::Text { text }] => text.clone(),
             other => panic!("not one text part: {other:?}"),
@@ -68,10 +48,9 @@ mod changes {
         }
         assert_eq!(call(server, "mcp__t__listed").await, "1", "listed once");
         assert_eq!(call(server, "mcp__t__grow").await, "grown");
-        // The change arrives beside the answer, so give it a moment, bounded.
-        let deadline = Instant::now() + Duration::from_secs(10);
+        // The server sends the change before its answer, but over HTTP on another stream, so it
+        // may land a moment later. No clock: a change never heard hangs, and nextest stops it.
         while !offers_extra(server).await {
-            assert!(Instant::now() < deadline, "the change was never heard");
             tokio::task::yield_now().await;
         }
         assert_eq!(call(server, "mcp__t__extra").await, "extra here");
@@ -85,12 +64,12 @@ mod changes {
 
     #[test]
     fn on_mcp_2026_a_change_is_heard_on_a_subscription() {
-        block_on(async { changes_are_heard(&launch(&program(&[]))).await });
+        block_on!(async { changes_are_heard(&launch(&program(&[]))).await });
     }
 
     #[test]
     fn on_the_older_protocol_a_change_is_heard_as_a_notification() {
-        block_on(async { changes_are_heard(&launch(&program(&["--legacy"]))).await });
+        block_on!(async { changes_are_heard(&launch(&program(&["--legacy"]))).await });
     }
 
     /// The test server over HTTP, killed when this is dropped.
@@ -120,6 +99,6 @@ mod changes {
             url: url.trim().to_owned(),
             headers: BTreeMap::new(),
         };
-        block_on(async { changes_are_heard(&launch(&config)).await });
+        block_on!(async { changes_are_heard(&launch(&config)).await });
     }
 }

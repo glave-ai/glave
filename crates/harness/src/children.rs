@@ -4,10 +4,9 @@
 use std::sync::{Mutex, PoisonError};
 
 use glave_event::{Outcome, ParentCall};
-use glave_ports::{BlobStore, EventLog, ModelProvider, ToolCall, ToolOutput};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ToolCall, ToolOutput};
 
 use crate::approval::Approver;
-use crate::caller::Caller;
 use crate::calls::NOT_RUN;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -67,7 +66,7 @@ where
             call_id: call.call_id.clone(),
         };
         let mut child = match self
-            .start_thread_from(parent.scope, Some(started), &Caller::default(), None)
+            .start_thread_from(parent.scope, Some(started), &for_parent(parent), None)
             .await
         {
             Ok(child) => child,
@@ -86,6 +85,9 @@ where
         child.workspace.clone_from(&parent.workspace);
         child.note.clone_from(&parent.note);
         child.untrusted = parent.untrusted;
+        child.read_secret = parent.read_secret;
+        child.model.clone_from(&parent.model);
+        child.approval = parent.approval;
         let id = child.id;
         let send = |update: Live| {
             let mut live = live.lock().unwrap_or_else(PoisonError::into_inner);
@@ -134,5 +136,14 @@ where
             ok: !result.0.is_error,
         });
         result
+    }
+}
+
+/// Who starts a subagent's thread: the person its parent is for, so the child is for them too.
+fn for_parent(parent: &Thread) -> Caller {
+    Caller {
+        person: parent.for_,
+        auth: None,
+        trace: None,
     }
 }

@@ -48,7 +48,7 @@ mod budgets {
         };
         let gateway = gateway(&fake, budgets);
         let id = thread(1);
-        let refused = block_on(gateway.complete(&for_threads(&[id]), &mut |_| {})).unwrap_err();
+        let refused = block_on!(gateway.complete(&for_threads(&[id]), &mut |_| {})).unwrap_err();
         assert_eq!(refused.failure(), Failure::OverBudget);
         let ProviderError::OverBudget { budget, detail } = &refused else {
             panic!("{refused}")
@@ -58,7 +58,7 @@ mod budgets {
         assert!(detail.contains("105 more"), "{detail}");
         assert_eq!(fake.calls.load(Ordering::SeqCst), 0, "nothing was sent");
         assert!(
-            block_on(gateway.complete(&for_threads(&[]), &mut |_| {})).is_ok(),
+            block_on!(gateway.complete(&for_threads(&[]), &mut |_| {})).is_ok(),
             "a call for no thread counts in no thread budget"
         );
     }
@@ -73,8 +73,8 @@ mod budgets {
         };
         let gateway = gateway(&fake, budgets);
         let (parent, child) = (thread(1), thread(2));
-        block_on(gateway.complete(&for_threads(&[parent]), &mut |_| {})).unwrap();
-        block_on(gateway.complete(&for_threads(&[child, parent]), &mut |_| {})).unwrap();
+        block_on!(gateway.complete(&for_threads(&[parent]), &mut |_| {})).unwrap();
+        block_on!(gateway.complete(&for_threads(&[child, parent]), &mut |_| {})).unwrap();
         // The fake reports 100 tokens in and 10 out for each.
         assert_eq!(gateway.spent(Budget::Thread(child)), 110);
         assert_eq!(gateway.spent(Budget::Thread(parent)), 220);
@@ -82,9 +82,9 @@ mod budgets {
         assert_eq!(gateway.spent(Budget::Organization), 220);
         // The parent has 780 left, the child 890: the child's next call is held to its parent's.
         for _ in 0..7 {
-            block_on(gateway.complete(&for_threads(&[parent]), &mut |_| {})).unwrap();
+            block_on!(gateway.complete(&for_threads(&[parent]), &mut |_| {})).unwrap();
         }
-        let refused = block_on(gateway.complete(&for_threads(&[child, parent]), &mut |_| {}));
+        let refused = block_on!(gateway.complete(&for_threads(&[child, parent]), &mut |_| {}));
         let Err(ProviderError::OverBudget { budget, .. }) = refused else {
             panic!("{refused:?}")
         };
@@ -99,10 +99,10 @@ mod budgets {
             ..Budgets::default()
         };
         let gateway = gateway(&fake, budgets);
-        assert!(block_on(gateway.complete(&request(Purpose::Main), &mut |_| {})).is_err());
+        assert!(block_on!(gateway.complete(&request(Purpose::Main), &mut |_| {})).is_err());
         assert_eq!(gateway.spent(Budget::Person), 0);
         assert!(
-            block_on(gateway.complete(&request(Purpose::Main), &mut |_| {})).is_ok(),
+            block_on!(gateway.complete(&request(Purpose::Main), &mut |_| {})).is_ok(),
             "the whole budget is free again"
         );
     }
@@ -131,7 +131,7 @@ mod budgets {
             person: Some(Limit::Money(limit)),
             ..Budgets::default()
         });
-        let answer = block_on(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap();
+        let answer = block_on!(gateway.complete(&request(Purpose::Main), &mut |_| {})).unwrap();
         assert_eq!(answer.served.unwrap().target, "p/cheap");
         // 100 in and 10 out at $1 a million.
         assert_eq!(gateway.spent(Budget::Person), 110);
@@ -155,7 +155,7 @@ mod budgets {
                 ..Budgets::default()
             },
         ));
-        block_on(async {
+        block_on!(async {
             let mut calls = JoinSet::new();
             for _ in 0..8 {
                 let gateway = Arc::clone(&gateway);

@@ -1,0 +1,54 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+  padding: var(--glz-space-2) var(--glz-space-3);
+  border: var(--glz-border-width) solid var(--glz-color-border-strong);
+  border-radius: var(--glz-radius-lg);
+  background: var(--glz-surface-card);
+  box-shadow: var(--glz-elevation-1);
+}
+
+:host(:focus-within) {
+  border-color: var(--glz-color-focus);
+  box-shadow: var(--glz-focus-ring);
+}
+
+// Grows with its text (CSS field-sizing, Baseline 2026), up to --glz-composer-max-height,
+// then scrolls. A browser without field-sizing keeps it at its rows, which still works.
+.input {
+  field-sizing: content;
+  width: 100%;
+  min-height: 1.5lh;
+  max-height: var(--glz-composer-max-height, 14lh);
+  padding: var(--glz-space-1) 0;
+  border: 0;
+  background: none;
+  color: var(--glz-color-text);
+  font: inherit;
+  line-height: var(--glz-leading-normal);
+  resize: none;
+}
+
+.input:focus {
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--glz-color-text-muted);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glz-space-2);
+}
+
+.start,
+.end {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-width: 0;
+}

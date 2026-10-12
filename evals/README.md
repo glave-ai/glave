@@ -31,10 +31,11 @@ tasks/<name>/
 The agent never sees `tests/` or `solution/`. Every grader is checked in CI against its
 solution: it must fail on the untouched task and pass on the solved one.
 
-`[glave]` takes `tier` (`fast` or `hard`), `approval` (`ask`, `edits`, `auto`), `sandbox`
-(`read-only`, `project`), `network`, `context_window`, `setup` (shell commands run first),
+`[glave]` takes `tier` (`fast` or `hard`), `approval` (`ask` or `auto`; as glave chooses it
+when absent: `auto` in the sandbox, `ask` without), `sandbox` (`project` when absent, as glave
+runs by default; `read-only`, or `off`), `network` (on when absent), `context_window`, `setup` (shell commands run first),
 `env`, `turns` (messages after the instruction; each resumes the thread from its log),
 `goal` (run the instruction as a goal: `{ budget = 600000 }`, the budget optional; how to
 verify the goal is the instruction's to say, in words, and the model ends it; a goal's turns may end at the step limit and go on, so the check `goal_ended`
-grades it instead of each turn's ending) and `checks`. In `env` and `setup`, `{dir}`, `{workspace}` and `{task}` name the attempt's
-folder, the workspace and the task's folder. The checks are listed in `crates/eval/src/check.rs`.
+grades it instead of each turn's ending), `memory` (`true`: memory is on for the task; `--memory on|off` sets it for every task), `space_memory` (the first thread's space: `shared`, `isolated` or `off`), `threads` (`[[glave.threads]]`: new threads after the first, each with `messages` and optionally its own `space` and `space_memory`, run in order in one store) and `memories` (`[[glave.memories]]`: `text` and `scope`, saved before the first thread), and `checks`. Each attempt keeps its memory ledgers in `memory.jsonl`; the memory checks (`memory_holds`, `memory_lacks`, `personal_memory_lacks`, `memory_superseded`, `memory_forgotten`) read them, and `last_thread_never_printed` reads the last thread alone; `never_requested` reads what the task's pages (`web/`) were asked for, so a page can be a sink a planted instruction sends things to. In `env` and `setup`, `{dir}`, `{workspace}` and `{task}` name the attempt's
+folder, the workspace and the task's folder, and `{path}` the `PATH` commands would otherwise get (to put a task's own tools first). The checks are listed in `crates/eval/src/check.rs`.

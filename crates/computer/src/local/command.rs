@@ -1,6 +1,7 @@
 //! Running one command at a workspace root: bash in a fresh process group, output streamed
 //! as it arrives, stopped with everything it started on a timeout or a cancel.
 
+use std::ffi::OsString;
 use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
@@ -19,6 +20,52 @@ const MAX_TIMEOUT_SECS: u64 = 600;
 const DRAIN: Duration = Duration::from_millis(500);
 /// How long a stopped command gets between SIGTERM and SIGKILL.
 const GRACE: Duration = Duration::from_secs(3);
+/// Package managers' caches, kept in the home folder by default, where sandboxed commands
+/// cannot write. In the sandbox each goes in a folder of its own in glave's sandbox cache
+/// folder (`~/.glave/sandbox-cache`), kept between runs so installs stay fast, or, without
+/// glave's folder, in the sandbox's temp folder. Only sandboxed commands use it: nothing a
+/// command leaves there reaches a command outside the sandbox, though it does reach later
+/// sandboxed ones. Cargo's home is left alone: it holds the person's settings and installed
+/// tools beside the registry, so it cannot move, and its registry cannot be shared writable,
+/// since the person's own builds outside the sandbox compile and run what is there.
+const CACHES: &[(&str, &str)] = &[
+    ("XDG_CACHE_HOME", "xdg"),
+    ("npm_config_cache", "npm"),
+    ("npm_config_store_dir", "pnpm"),
+    ("YARN_CACHE_FOLDER", "yarn"),
+    ("BUN_INSTALL_CACHE_DIR", "bun"),
+    ("PIP_CACHE_DIR", "pip"),
+    ("UV_CACHE_DIR", "uv"),
+    ("UV_PYTHON_INSTALL_DIR", "uv-python"),
+    ("POETRY_CACHE_DIR", "poetry"),
+    ("PRE_COMMIT_HOME", "pre-commit"),
+    ("HF_HOME", "huggingface"),
+    ("DENO_DIR", "deno"),
+    ("GOPATH", "go"),
+    ("GOMODCACHE", "go/pkg/mod"),
+    ("GOCACHE", "go-build"),
+    ("GRADLE_USER_HOME", "gradle"),
+];
+
+/// Maven has no variable for its repository, only a property, passed through `MAVEN_OPTS`,
+/// which is split at spaces: a cache folder with a space in its path is left out.
+fn maven_opts(environment: &[(OsString, OsString)], caches: &Path) -> Option<OsString> {
+    let repository = caches.join("maven");
+    let repository = repository
+        .to_str()
+        .filter(|path| !path.contains(char::is_whitespace))?;
+    let mut opts = environment
+        .iter()
+        .find(|(name, _)| name == "MAVEN_OPTS")
+        .map(|(_, value)| {
+            let mut value = value.clone();
+            value.push(" ");
+            value
+        })
+        .unwrap_or_default();
+    opts.push(format!("-Dmaven.repo.local={repository}"));
+    Some(opts)
+}
 
 /// Runs `command` in `opened`. `helper` runs the Linux sandbox's helper, if this machine has one.
 pub(crate) async fn run(
@@ -41,7 +88,7 @@ pub(crate) async fn run(
     };
     // Held until the command ends: what launching it left in the workspace is removed then.
     let launch = match &sandbox {
-        Some(sandbox) => Some((sandbox.launch().await?, sandbox.temp())),
+        Some(sandbox) => Some((sandbox.launch().await?, sandbox.temp(), sandbox.caches())),
         None => None,
     };
     let started = Instant::now();
@@ -50,7 +97,7 @@ pub(crate) async fn run(
         .map_err(|error| ComputerError::Failed(format!("could not start bash: {error}")))?;
     let input = launch
         .as_ref()
-        .and_then(|(launch, _)| launch.input.as_deref());
+        .and_then(|(launch, _, _)| launch.input.as_deref());
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         // Small (a seccomp filter), so it fits the pipe; a wrapper that failed early and
         // never reads it is reported by its own output.
@@ -79,24 +126,34 @@ pub(crate) async fn run(
 fn bash(
     opened: &Opened,
     script: &str,
-    sandbox: Option<&(Launch, &Path)>,
+    sandbox: Option<&(Launch, &Path, &Path)>,
 ) -> tokio::process::Command {
     let mut command = match sandbox {
-        Some((launch, _)) => {
+        Some((launch, _, _)) => {
             let mut command = tokio::process::Command::new(&launch.program);
             command.args(&launch.args).arg("bash");
             command
         }
         None => tokio::process::Command::new("bash"),
     };
-    let input = sandbox.is_some_and(|(launch, _)| launch.input.is_some());
+    let input = sandbox.is_some_and(|(launch, _, _)| launch.input.is_some());
     command
         .arg("-c")
         .arg(format!("exec 2>&1\n{script}"))
         .current_dir(&opened.root)
         .env_clear()
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
-        .envs(sandbox.map(|(_, temp)| ("TMPDIR", temp)))
+        .envs(sandbox.map(|(_, temp, _)| ("TMPDIR", temp.to_path_buf())))
+        .envs(sandbox.into_iter().flat_map(|(_, _, caches)| {
+            CACHES
+                .iter()
+                .map(move |(name, folder)| (*name, caches.join(folder)))
+        }))
+        .envs(
+            sandbox
+                .and_then(|(_, _, caches)| maven_opts(&opened.environment, caches))
+                .map(|opts| ("MAVEN_OPTS", opts)),
+        )
         .env("NO_COLOR", "1")
         .env("TERM", "dumb")
         .env("PAGER", "cat")
@@ -106,7 +163,7 @@ fn bash(
         .stderr(Stdio::null())
         .kill_on_drop(true);
     #[cfg(unix)]
-    if !sandbox.is_some_and(|(launch, _)| launch.own_session) {
+    if !sandbox.is_some_and(|(launch, _, _)| launch.own_session) {
         command.process_group(0);
     }
     command
@@ -141,29 +198,43 @@ async fn wait(
     }
 }
 
-/// Stops a command and everything it started: SIGTERM to its process group, then SIGKILL if
-/// it is still running after a grace period.
+/// Stops a command and everything it started: SIGTERM to its process group, then SIGKILL to
+/// whatever of the group is still there after a grace period. Returns once the group is gone,
+/// not just bash: a child that outlives bash, or ignores SIGTERM, is stopped too.
 async fn stop(child: &mut Child) {
     #[cfg(unix)]
-    if let Some(pid) = child.id() {
-        signal_group("-TERM", pid).await;
-        if tokio::time::timeout(GRACE, child.wait()).await.is_err() {
-            signal_group("-KILL", pid).await;
+    if let Some(group) = child
+        .id()
+        .and_then(|pid| i32::try_from(pid).ok())
+        .and_then(rustix::process::Pid::from_raw)
+    {
+        use rustix::process::{Signal, kill_process_group};
+        let _ = kill_process_group(group, Signal::TERM);
+        if tokio::time::timeout(GRACE, gone(child, group))
+            .await
+            .is_err()
+        {
+            let _ = kill_process_group(group, Signal::KILL);
+            // SIGKILL cannot be ignored; this waits only for the kernel to finish the job.
+            let _ = tokio::time::timeout(GRACE, gone(child, group)).await;
         }
     }
     let _ = child.kill().await;
 }
 
+/// How often a stopped command's process group is checked for anything left in it.
 #[cfg(unix)]
-async fn signal_group(signal: &str, pid: u32) {
-    let _ = tokio::process::Command::new("kill")
-        .arg(signal)
-        .arg("--")
-        .arg(format!("-{pid}"))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await;
+const POLL: Duration = Duration::from_millis(10);
+
+/// Resolves once bash has exited and nothing is left in its process group, not even a process
+/// waiting to be reaped. Glave's workers run with an init that reaps orphans (Docker's `Init`,
+/// the Pod's shared process namespace), as does any desktop.
+#[cfg(unix)]
+async fn gone(child: &mut Child, group: rustix::process::Pid) {
+    let _ = child.wait().await;
+    while rustix::process::test_kill_process_group(group).is_ok() {
+        tokio::time::sleep(POLL).await;
+    }
 }
 
 /// Streams the command's output to `output` as text until it ends.

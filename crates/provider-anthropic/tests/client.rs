@@ -4,23 +4,19 @@
 #[cfg(test)]
 mod over_http {
     use glave_event::{Arguments, Part, StopReason};
-    use glave_ports::{Failure, Message, ModelProvider, ModelRequest, ProviderError, ToolChoice};
+    use glave_ports::{
+        Failure, Message, ModelProvider, ModelRequest, ProviderError, ToolChoice, block_on,
+    };
     use glave_provider_anthropic::fake::{FakeServer, Reply};
-    use glave_provider_anthropic::{Anthropic, Config, IDLE_TIMEOUT};
+    use glave_provider_anthropic::{Anthropic, Api, Config, IDLE_TIMEOUT};
     use serde_json::json;
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
 
     fn provider(base_url: &str, key: Option<&str>) -> Anthropic {
         Anthropic::new(Config {
             base_url: base_url.to_owned(),
-            api_key: key.map(str::to_owned),
+            api: Api::Messages,
+            auth: glave_ports::auth::Auth::bearer(key.map(str::to_owned))
+                .in_header(glave_ports::auth::KeyHeader::XApiKey),
             provider: "anthropic".into(),
             idle_timeout: IDLE_TIMEOUT,
         })
@@ -46,12 +42,39 @@ mod over_http {
 
     fn ask(provider: &Anthropic) -> (Result<glave_ports::Completion, ProviderError>, String) {
         let mut live = String::new();
-        let result = block_on(provider.complete(&request(), &mut |delta| {
+        let result = block_on!(provider.complete(&request(), &mut |delta| {
             if let glave_ports::Delta::Text(text) = delta {
                 live.push_str(&text);
             }
         }));
         (result, live)
+    }
+
+    #[test]
+    fn vertex_is_asked_at_stream_raw_predict_with_its_version_in_the_body() {
+        let server = FakeServer::start(vec![Reply::text("hi from vertex")]).unwrap();
+        let vertex = Anthropic::new(Config {
+            base_url: format!("{}/v1/projects/acme-ai/locations/global/", server.url()),
+            api: Api::Vertex,
+            auth: glave_ports::auth::Auth::bearer(Some("ya29.token".into())),
+            provider: "vertex".into(),
+            idle_timeout: IDLE_TIMEOUT,
+        })
+        .unwrap();
+        let (result, live) = ask(&vertex);
+        assert_eq!(result.unwrap().stop, StopReason::EndTurn);
+        assert_eq!(live, "hi from vertex");
+        let received = server.received();
+        assert_eq!(
+            received[0].path,
+            "/v1/projects/acme-ai/locations/global/publishers/anthropic/models/fake-model:streamRawPredict"
+        );
+        assert_eq!(received[0].version, None, "no anthropic-version header");
+        assert_eq!(received[0].api_key, None, "a bearer token, not x-api-key");
+        assert_eq!(received[0].body["anthropic_version"], "vertex-2023-10-16");
+        assert!(received[0].body.get("model").is_none());
+        assert_eq!(received[0].body["stream"], true);
+        assert_eq!(received[0].body["system"], "Be brief.");
     }
 
     #[test]
@@ -170,12 +193,13 @@ mod over_http {
         let server = FakeServer::start(vec![Reply::Stall]).unwrap();
         let quick = Anthropic::new(Config {
             base_url: server.url().to_owned(),
-            api_key: None,
+            api: Api::Messages,
+            auth: glave_ports::auth::Auth::None,
             provider: "anthropic".into(),
             idle_timeout: std::time::Duration::from_millis(200),
         })
         .unwrap();
-        let error = block_on(quick.complete(&request(), &mut |_| {})).unwrap_err();
+        let error = block_on!(quick.complete(&request(), &mut |_| {})).unwrap_err();
         assert_eq!(error, ProviderError::Timeout { seconds: 0 });
         assert!(error.is_transient(), "a silence is worth one more try");
     }

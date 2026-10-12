@@ -2,15 +2,22 @@
 //! within the policy (`specs/policy.md`), and `glave policy explain`, which shows them.
 
 use std::collections::BTreeMap;
+use std::io::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 
 use glave_harness::Hook;
 
 use crate::args::Args;
-use crate::policy::{self, Choices, ConfigFile, Loaded, Locations, ProjectTrust};
-use crate::trust::{self, Asking, Outcome, Project};
 use crate::{config, home, mcp};
+use glave_config::policy::{
+    self, Choices, ConfigFile, Loaded, Locations, ProjectTrust, ServerFile, StoreFile,
+};
+use glave_config::trust::{self, Asking, Outcome, Project};
+
+/// Why the sandbox cannot run, as `glave policy explain` says it without trying.
+const NO_SANDBOX: &str = "this computer has no sandbox glave can use (macOS's Seatbelt, or \
+                          bubblewrap on Linux)";
 
 /// What this run uses: the files read, and the choices within the constraints.
 pub struct Setup {
@@ -32,8 +39,12 @@ impl Setup {
     pub async fn load(args: &Args, folder: &Path, asking: Asking) -> anyhow::Result<Self> {
         let (loaded, outcome) = read(args, folder, asking).await?;
         let choices = loaded.settle()?;
-        if args.network && choices.sandbox.value.is_none() {
-            anyhow::bail!("--network only applies with a sandbox: pass --sandbox, or set one");
+        if args.network.is_some() && choices.sandbox.value.is_none() {
+            anyhow::bail!(
+                "--network and --no-network only apply with a sandbox, and the sandbox is off \
+                 here (from {})",
+                choices.sandbox.from
+            );
         }
         let mine = &loaded.person_hooks;
         if let Some(rule) = loaded.constraints.own_hooks_forbidden()
@@ -84,16 +95,20 @@ impl Setup {
 /// `glave policy explain`: prints every setting and constraint, and fails when glave would
 /// refuse to run here.
 pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
-    let (loaded, _) = read(args, &std::env::current_dir()?, Asking::Explaining).await?;
+    let (mut loaded, _) = read(args, &std::env::current_dir()?, Asking::Explaining).await?;
+    if !glave_computer::sandbox_available() {
+        loaded.no_sandbox_here = Some(NO_SANDBOX.to_owned());
+    }
     // The provider names models as the gateway sees them; without a model there is none.
     let model = loaded
         .choices
         .model
         .as_ref()
         .map(|model| model.value.clone());
-    let provider = match model {
-        Some(model) => Some(config::endpoint(Some(model))?.provider.provider),
-        None => None,
+    let provider = match (model, &loaded.choices.provider) {
+        (Some(_), Some(cloud)) => Some(cloud.value.name().to_owned()),
+        (Some(model), None) => Some(config::endpoint(Some(model), None)?.provider.provider),
+        (None, _) => None,
     };
     let (text, runs) = policy::explain(&loaded, provider.as_deref());
     print!("{text}");
@@ -110,7 +125,7 @@ async fn read(args: &Args, folder: &Path, asking: Asking) -> anyhow::Result<(Loa
     let policies = policy::policies(&locations).await?;
     let constraints = policy::Constraints::of(&policies);
     let project = Project::read(&locations.root, &mcp::environment()).await?;
-    let outcome = trust::resolve(&home, project, &constraints, asking).await?;
+    let outcome = trust::resolve(&home, project, &constraints, asking, ask).await?;
     let mut loaded = policy::load(
         &locations,
         &policies,
@@ -126,14 +141,31 @@ async fn read(args: &Args, folder: &Path, asking: Asking) -> anyhow::Result<(Loa
     Ok((loaded, outcome))
 }
 
+/// Shows `question` in the terminal and reads the line typed; nothing when input ends first.
+async fn ask(question: String) -> std::io::Result<Option<String>> {
+    tokio::task::spawn_blocking(move || {
+        let mut err = std::io::stderr();
+        let _ = write!(err, "{question}");
+        let _ = err.flush();
+        let mut line = String::new();
+        std::io::stdin()
+            .read_line(&mut line)
+            .map(|read| (read > 0).then_some(line))
+    })
+    .await
+    .map_err(std::io::Error::other)?
+}
+
 /// The choices made with flags.
 fn flags(args: &Args) -> ConfigFile {
     ConfigFile {
         model: args.model.clone(),
-        approval: args.approval.map(Into::into),
+        approval: args.approval,
         sandbox: args.sandbox,
+        network: args.network,
         worktree: args.worktree.then_some(true),
         on: args.on,
+        server: args.server.clone().map(|url| ServerFile { url }),
         ..ConfigFile::default()
     }
 }
@@ -148,6 +180,7 @@ fn environment() -> ConfigFile {
     ConfigFile {
         model: set("GLAVE_MODEL"),
         judge_model: set("GLAVE_JUDGE_MODEL"),
+        store: crate::data::environment().map(|url| StoreFile { url }),
         ..ConfigFile::default()
     }
 }

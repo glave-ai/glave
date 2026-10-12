@@ -1,0 +1,29 @@
+// The bar floats over the top of the page: it keeps its place while the page scrolls under it
+// (sticky in a page that scrolls, at the top of one that scrolls inside), takes no room of its
+// own, and fades from the page's colour to transparent instead of drawing a bar and a border.
+// Only what is on it takes the pointer.
+:host {
+  --glz-top-bar-surface: transparent;
+  --glz-top-bar-border: 0;
+
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: block;
+  flex: none;
+  margin-bottom: calc(-1 * (var(--glz-top-bar-height) + var(--glz-space-4)));
+  padding-bottom: var(--glz-space-4);
+  background: linear-gradient(to bottom, var(--glz-surface-page) 60%, transparent);
+  pointer-events: none;
+}
+
+.action,
+.end {
+  pointer-events: auto;
+}
+
+.end {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-1);
+}

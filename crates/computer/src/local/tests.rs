@@ -1,17 +1,9 @@
 use std::path::PathBuf;
 
-use glave_ports::conformance;
+use glave_ports::{block_on, conformance};
 
 use super::command::Utf8;
 use super::*;
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 /// An empty folder for one test, and another for the copies it makes.
 fn scratch(name: &str) -> (PathBuf, PathBuf) {
@@ -32,7 +24,7 @@ fn this_machine_passes_the_computers_suite() {
     let (work, copies) = scratch("suite");
     let computers = LocalComputers::new(&copies, safe_environment())
         .with_worktrees(copies.with_file_name("worktrees"));
-    let verdict = block_on(conformance::computers(&computers, &work.to_string_lossy()));
+    let verdict = block_on!(conformance::computers(&computers, &work.to_string_lossy()));
     assert_eq!(verdict, Ok(()));
     let left = std::fs::read_dir(&copies).map_or(0, Iterator::count);
     assert_eq!(left, 0, "destroying the computer removes its copies");
@@ -46,7 +38,7 @@ fn commands_see_this_machine_and_the_computer_but_nothing_else() {
     environment
         .env
         .insert("FROM_ENVIRONMENT".into(), "yes".into());
-    block_on(async {
+    block_on!(async {
         let made = computers.create(&environment).await.unwrap();
         let path = work.to_string_lossy().into_owned();
         let here = computers
@@ -78,6 +70,53 @@ impl Output for Collect {
     }
 }
 
+/// Output that cancels the command once it has said its child is running.
+struct CancelsWhenUp(Collect, crate::Switch);
+
+impl Output for CancelsWhenUp {
+    fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
+        let written = self.0.write(text);
+        if self.0.0.lock().is_ok_and(|all| all.contains("up")) {
+            self.1.cancel();
+        }
+        written
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_cancelled_command_returns_only_once_everything_it_started_has_gone() {
+    let (work, copies) = scratch("cancel-group");
+    let computers = LocalComputers::new(&copies, safe_environment());
+    block_on!(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let path = work.to_string_lossy().into_owned();
+        let here = computers
+            .open(made.id, &Sources::Folder { path })
+            .await
+            .unwrap();
+        let cancel = crate::Switch::default();
+        let output = CancelsWhenUp(Collect::default(), cancel.clone());
+        // One child that dies with bash, one that ignores SIGTERM and needs SIGKILL.
+        let script = "sleep 30 & echo $! > plain.pid; (trap '' TERM; exec sleep 30) & \
+            echo $! > stubborn.pid; echo up; wait";
+        let finished = computers
+            .run(here.id, &Command::new(script), &output, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(finished.ending, glave_ports::Ending::Cancelled);
+        for name in ["plain.pid", "stubborn.pid"] {
+            let pid = std::fs::read_to_string(work.join(name)).unwrap();
+            let alive = std::process::Command::new("kill")
+                .args(["-0", pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(!alive.success(), "{name} was stopped before run returned");
+        }
+    });
+}
+
 #[test]
 fn what_the_host_cannot_honour_is_refused() {
     let (_, copies) = scratch("refuse");
@@ -96,48 +135,12 @@ fn what_the_host_cannot_honour_is_refused() {
             ..Environment::host()
         },
     ] {
-        let refused = block_on(computers.create(&environment));
+        let refused = block_on!(computers.create(&environment));
         assert!(
             matches!(refused, Err(ComputerError::Unsupported(_))),
             "{refused:?}"
         );
     }
-}
-
-#[test]
-fn a_plain_folders_history_comes_with_a_gitignore() {
-    let (work, copies) = scratch("ignore");
-    let computers = LocalComputers::new(&copies, safe_environment());
-    block_on(async {
-        let made = computers.create(&Environment::host()).await.unwrap();
-        let path = work.to_string_lossy().into_owned();
-        let here = computers
-            .open(made.id, &Sources::Folder { path })
-            .await
-            .unwrap();
-        std::fs::write(work.join("notes.txt"), "hello").unwrap();
-        let save = glave_ports::Save {
-            branch: "glave/test".into(),
-            message: "first".into(),
-        };
-        computers.save(here.id, &save).await.unwrap();
-        assert!(work.join(".glave/history.git").is_dir());
-        let ignored = std::fs::read_to_string(work.join(".glave/.gitignore")).unwrap();
-        assert_eq!(ignored, "history.git\n");
-    });
-}
-
-#[test]
-fn the_history_line_is_added_once_and_other_lines_stay() {
-    let (work, _) = scratch("ignore-existing");
-    std::fs::create_dir_all(work.join(".glave")).unwrap();
-    std::fs::write(work.join(".glave/.gitignore"), "target/").unwrap();
-    block_on(async {
-        git::ignore_history(&work).await.unwrap();
-        git::ignore_history(&work).await.unwrap();
-    });
-    let text = std::fs::read_to_string(work.join(".glave/.gitignore")).unwrap();
-    assert_eq!(text, "target/\nhistory.git\n");
 }
 
 #[test]
@@ -212,7 +215,7 @@ fn a_credential_reaches_git_through_its_helper_and_never_a_disk() {
         .unwrap();
     assert!(made.success());
     let computers = LocalComputers::new(&copies, safe_environment());
-    block_on(async {
+    block_on!(async {
         let computer = computers.create(&Environment::host()).await.unwrap();
         // Over HTTP, git asks the helper, and sends exactly the credential.
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

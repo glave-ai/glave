@@ -1,0 +1,14 @@
+:host {
+  display: inline-flex;
+}
+
+.mode {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glz-space-1);
+  height: var(--glz-control-height-sm);
+  padding: 0 var(--glz-space-2);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  cursor: default;
+}

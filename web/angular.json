@@ -1,0 +1,221 @@
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "cli": {
+    "packageManager": "npm",
+    "analytics": false
+  },
+  "newProjectRoot": ".",
+  "projects": {
+    "app": {
+      "projectType": "application",
+      "root": "app",
+      "sourceRoot": "app/src",
+      "prefix": "app",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "app/src/main.ts",
+            "tsConfig": "app/tsconfig.app.json",
+            "outputPath": "dist/app",
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "app/public"
+              }
+            ],
+            "styles": [
+              "@fontsource/atkinson-hyperlegible-next/400.css",
+              "@fontsource/atkinson-hyperlegible-next/700.css",
+              "@fontsource/atkinson-hyperlegible-mono/400.css",
+              "glaze/styles/glaze.css",
+              "app/src/styles.css"
+            ],
+            "inlineStyleLanguage": "scss"
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "375kB",
+                  "maximumError": "390kB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "6kB",
+                  "maximumError": "10kB"
+                }
+              ],
+              "outputHashing": "all",
+              "optimization": {
+                "scripts": true,
+                "styles": {
+                  "minify": true,
+                  "inlineCritical": false
+                },
+                "fonts": false
+              }
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "options": {
+            "proxyConfig": "app/proxy.conf.mjs"
+          },
+          "configurations": {
+            "production": {
+              "buildTarget": "app:build:production"
+            },
+            "development": {
+              "buildTarget": "app:build:development"
+            }
+          },
+          "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "app/tsconfig.spec.json",
+            "setupFiles": ["glaze/src/testing/platform.ts"],
+            "coverage": true,
+            "coverageReporters": ["text-summary"]
+          }
+        }
+      },
+      "schematics": {
+        "@schematics/angular:component": {
+          "style": "scss",
+          "changeDetection": "OnPush",
+          "inlineStyle": false,
+          "inlineTemplate": false,
+          "type": "component",
+          "skipTests": false
+        },
+        "@schematics/angular:directive": {
+          "type": "directive"
+        },
+        "@schematics/angular:service": {
+          "type": "service"
+        },
+        "@schematics/angular:guard": {
+          "typeSeparator": "."
+        },
+        "@schematics/angular:interceptor": {
+          "typeSeparator": "."
+        },
+        "@schematics/angular:pipe": {
+          "typeSeparator": "."
+        }
+      }
+    },
+    "glaze": {
+      "projectType": "library",
+      "root": "glaze",
+      "sourceRoot": "glaze/src",
+      "prefix": "glz",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:ng-packagr",
+          "options": {
+            "project": "glaze/ng-package.json",
+            "tsConfig": "glaze/tsconfig.lib.json"
+          },
+          "configurations": {
+            "production": {},
+            "development": {}
+          },
+          "defaultConfiguration": "production"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "glaze/tsconfig.spec.json",
+            "setupFiles": ["glaze/src/testing/platform.ts"],
+            "coverage": true,
+            "coverageReporters": ["text-summary"],
+            "include": ["**/*.spec.ts", "../showcase/**/*.spec.ts"]
+          }
+        }
+      },
+      "schematics": {
+        "@schematics/angular:component": {
+          "style": "scss",
+          "changeDetection": "OnPush",
+          "inlineStyle": false,
+          "inlineTemplate": false,
+          "type": "component",
+          "skipTests": false
+        },
+        "@schematics/angular:directive": {
+          "type": "directive"
+        },
+        "@schematics/angular:service": {
+          "type": "service"
+        },
+        "@schematics/angular:guard": {
+          "typeSeparator": "."
+        },
+        "@schematics/angular:interceptor": {
+          "typeSeparator": "."
+        },
+        "@schematics/angular:pipe": {
+          "typeSeparator": "."
+        }
+      }
+    },
+    "showcase": {
+      "projectType": "application",
+      "root": "glaze/showcase",
+      "sourceRoot": "glaze/showcase/src",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "glaze/showcase/src/main.ts",
+            "index": "glaze/showcase/src/index.html",
+            "tsConfig": "glaze/showcase/tsconfig.app.json",
+            "outputPath": "dist/showcase",
+            "assets": [
+              {
+                "glob": "favicon.svg",
+                "input": "app/public"
+              }
+            ],
+            "styles": [
+              "@fontsource/atkinson-hyperlegible-next/400.css",
+              "@fontsource/atkinson-hyperlegible-next/700.css",
+              "@fontsource/atkinson-hyperlegible-mono/400.css",
+              "glaze/styles/glaze.css"
+            ],
+            "optimization": {
+              "styles": {
+                "inlineCritical": false
+              }
+            }
+          },
+          "configurations": {
+            "development": {
+              "optimization": false,
+              "sourceMap": true
+            }
+          }
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "options": {
+            "buildTarget": "showcase:build:development"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+:host {
+  display: block;
+}
+
+.page {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  gap: var(--glz-space-5);
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: var(--glz-space-5) var(--glz-space-4);
+}
+
+.contents {
+  position: sticky;
+  top: var(--glz-space-4);
+  align-self: start;
+}
+
+.intro {
+  max-width: var(--glz-content-width);
+  color: var(--glz-color-text-muted);
+}
+
+@media (width <= 48rem) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .contents {
+    position: static;
+  }
+}

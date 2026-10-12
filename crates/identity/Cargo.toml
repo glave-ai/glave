@@ -1,0 +1,26 @@
+[package]
+name = "glave-identity"
+description = "glave's identity: the verified caller, OIDC and local sign-in, and the person an issuer's subject is"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+glave-event.workspace = true
+# The clock tokens' lifetimes are checked against.
+glave-ports.workspace = true
+jiff.workspace = true
+# Verifying sign-in tokens against the identity provider's keys.
+jsonwebtoken.workspace = true
+# Fetching an identity provider's discovery document and keys.
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

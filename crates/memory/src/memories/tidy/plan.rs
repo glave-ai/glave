@@ -1,0 +1,334 @@
+//! What tidy-up asks the model and how its answer is read and checked: the memories as a
+//! numbered list (never their ids, which a cheap model copies badly), proposals back as JSON,
+//! and the check that a merged text keeps every source's facts and adds none.
+
+use std::collections::BTreeSet;
+use std::fmt::Write as _;
+
+use glave_event::{At, Part};
+use glave_harness::MemoryError;
+use glave_ports::{Message, ModelProvider, ModelRequest, Purpose, ToolChoice};
+use serde::Deserialize;
+
+use super::Tidier;
+use crate::book::Entry;
+use crate::similar::words;
+
+/// The longest answer tidy-up reads, in tokens: room for a reasoning model to think first.
+const ANSWER_TOKENS: u32 = 8_000;
+/// Words a merged text may add that no source has: joining words, never facts.
+const MOST_NEW_WORDS: usize = 2;
+/// The share of each source's words, in percent, a merged text must keep.
+const KEEP_PERCENT: usize = 50;
+/// Memories one merge may take in.
+const MOST_MERGED: usize = 8;
+
+const SYSTEM: &str = "You tidy the memories an assistant keeps about a person and their work, \
+     so they stay few and true. You only merge and settle what is listed: never add a fact, \
+     never drop a detail the person asked to keep, never reword a memory that needs no change.\n\
+     \n\
+     - merge: memories that say the same thing (duplicates, rewordings), or, only when asked \
+     to compact, closely related memories about one subject. Give the merged text: one short \
+     statement, at most 500 characters, using the memories' own words and every detail they \
+     hold.\n\
+     - conflict: two memories that say different things about the same fact (such as where \
+     the project deploys, or which tool it uses). The person said both, at different times, \
+     so the later one is how things are now: clear is true. clear is false only when both \
+     could hold at once (they are about different contexts) or you cannot tell they are \
+     about the same fact.\n\
+     \n\
+     Leave everything else alone; an empty answer is fine. Answer with JSON only, in this \
+     shape:\n\
+     {\"merge\": [{\"memories\": [1, 2], \"text\": \"...\"}], \"conflict\": [{\"memories\": [3, \
+     4], \"clear\": true}]}";
+
+/// One change the model proposes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Proposal {
+    /// These memories become one, with this text.
+    Merge { memories: Vec<usize>, text: String },
+    /// These two disagree; `clear` when the newer plainly replaces the older.
+    Conflict { memories: Vec<usize>, clear: bool },
+}
+
+impl Proposal {
+    pub(super) fn memories(&self) -> &[usize] {
+        match self {
+            Self::Merge { memories, .. } | Self::Conflict { memories, .. } => memories,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct Answer {
+    #[serde(default)]
+    merge: Vec<Merge>,
+    #[serde(default)]
+    conflict: Vec<Conflict>,
+}
+
+#[derive(Deserialize)]
+struct Merge {
+    memories: Vec<usize>,
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct Conflict {
+    memories: Vec<usize>,
+    #[serde(default)]
+    clear: bool,
+}
+
+/// When, to the minute.
+fn minute(at: At) -> String {
+    at.to_string()
+        .chars()
+        .take(16)
+        .collect::<String>()
+        .replace('T', " ")
+}
+
+/// The request: the candidates as a numbered list, oldest first, with their times.
+fn request(model: &str, candidates: &[Entry], compact: bool) -> ModelRequest {
+    let mut text = String::from("The memories, oldest first:\n");
+    for (number, entry) in (1_usize..).zip(candidates) {
+        let Some((_, current)) = entry.current() else {
+            continue;
+        };
+        let saved = entry
+            .versions
+            .first()
+            .map_or_else(String::new, |v| minute(v.at));
+        let _ = write!(text, "\n{number}. (saved {saved}");
+        if entry.versions.len() > 1 {
+            let _ = write!(text, ", changed {}", minute(current.at));
+        }
+        let _ = write!(text, ") {}", current.text);
+    }
+    text.push_str(if compact {
+        "\n\nThese memories are near their size limit: also compact closely related memories \
+         into fewer, shorter ones, keeping every detail."
+    } else {
+        "\n\nMerge only duplicates; do not compact."
+    });
+    ModelRequest {
+        model: model.to_owned(),
+        system: SYSTEM.to_owned(),
+        messages: vec![Message::User {
+            parts: vec![Part::Text { text }],
+        }],
+        tools: Vec::new(),
+        tool_choice: ToolChoice::None,
+        max_output_tokens: Some(ANSWER_TOKENS),
+        purpose: Purpose::Summary,
+        threads: Vec::new(),
+    }
+}
+
+/// What a second ask adds when the first answer held no proposals in the shape asked for.
+const REMINDER: &str = "Answer with the JSON object only, in the shape given: {\"merge\": [...], \
+     \"conflict\": [...]}. Use empty lists when there is nothing to do.";
+
+/// Asks the model what to tidy, once more with a terse reminder when the first answer cannot
+/// be read. The proposals, or why there are none.
+pub(super) async fn ask<P: ModelProvider>(
+    tidier: &Tidier<P>,
+    candidates: &[Entry],
+    compact: bool,
+) -> Result<Result<Vec<Proposal>, String>, MemoryError> {
+    let mut request = request(&tidier.model, candidates, compact);
+    let first = answer(tidier, &request).await?;
+    let why = match parse(&first, candidates.len()) {
+        Ok(proposals) => return Ok(Ok(proposals)),
+        Err(why) => why,
+    };
+    request.messages.push(Message::Assistant {
+        parts: vec![Part::Text { text: first }],
+        tool_calls: Vec::new(),
+    });
+    request.messages.push(Message::User {
+        parts: vec![Part::Text {
+            text: REMINDER.to_owned(),
+        }],
+    });
+    let second = answer(tidier, &request).await?;
+    Ok(parse(&second, candidates.len()).map_err(|again| format!("{why}; asked again: {again}")))
+}
+
+/// The answer's text; its readable reasoning when it gave no text, as some reasoning models do.
+async fn answer<P: ModelProvider>(
+    tidier: &Tidier<P>,
+    request: &ModelRequest,
+) -> Result<String, MemoryError> {
+    let completion = tidier
+        .provider
+        .complete(request, &mut |_| {})
+        .await
+        .map_err(|error| MemoryError::Storage(format!("tidy-up's model failed: {error}")))?;
+    let text: String = completion
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            Part::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    if text.contains('{') {
+        return Ok(text);
+    }
+    let reasoning: String = completion
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            Part::Reasoning {
+                text: Some(text), ..
+            } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    Ok(if reasoning.contains('{') {
+        reasoning
+    } else {
+        text
+    })
+}
+
+/// The proposals in `answer`: the JSON object in it, however it is wrapped. Numbers outside the
+/// list are left for the checks to refuse one by one.
+pub(super) fn parse(answer: &str, listed: usize) -> Result<Vec<Proposal>, String> {
+    let mut wrong = None;
+    let mut found = None;
+    // The first object that reads as an answer, wherever it starts: after prose, inside a
+    // code fence, before more text.
+    for (start, _) in answer.match_indices('{') {
+        let rest = answer.get(start..).unwrap_or_default();
+        match serde_json::Deserializer::from_str(rest)
+            .into_iter::<Answer>()
+            .next()
+        {
+            Some(Ok(parsed)) => {
+                found = Some(parsed);
+                break;
+            }
+            Some(Err(error)) if wrong.is_none() => wrong = Some(error.to_string()),
+            _ => {}
+        }
+    }
+    let Some(parsed) = found else {
+        return Err(wrong.map_or_else(
+            || format!("tidy-up's model gave no JSON among {listed} memories"),
+            |error| format!("tidy-up's model answered in the wrong shape: {error}"),
+        ));
+    };
+    let merges = parsed.merge.into_iter().map(|merge| Proposal::Merge {
+        memories: merge.memories,
+        text: merge.text,
+    });
+    let conflicts = parsed
+        .conflict
+        .into_iter()
+        .map(|conflict| Proposal::Conflict {
+            memories: conflict.memories,
+            clear: conflict.clear,
+        });
+    // Contradictions first: a memory a newer one replaces is forgotten, not merged.
+    Ok(conflicts.chain(merges).collect())
+}
+
+/// Whether `text` merges `sources` without inventing or losing a fact: it adds at most a couple
+/// of joining words (none with a digit), and keeps at least half of each source's words.
+pub(super) fn keeps_facts(text: &str, sources: &[String]) -> Result<(), String> {
+    if sources.len() > MOST_MERGED {
+        return Err(format!("a merge takes at most {MOST_MERGED} memories"));
+    }
+    let merged = words(text);
+    let all: BTreeSet<String> = sources.iter().flat_map(|source| words(source)).collect();
+    let new: Vec<&String> = merged.difference(&all).collect();
+    if new.len() > MOST_NEW_WORDS {
+        return Err(format!("the merged text adds words no memory has: {new:?}"));
+    }
+    let known: BTreeSet<String> = sources.iter().flat_map(|source| numbers(source)).collect();
+    if let Some(number) = numbers(text)
+        .into_iter()
+        .find(|number| !known.contains(number))
+    {
+        return Err(format!(
+            "the merged text adds {number:?}, which no memory has"
+        ));
+    }
+    for source in sources {
+        let theirs = words(source);
+        let kept = theirs.intersection(&merged).count();
+        if kept.saturating_mul(100) < theirs.len().saturating_mul(KEEP_PERCENT) {
+            return Err(format!("the merged text loses most of {source:?}"));
+        }
+    }
+    Ok(())
+}
+
+/// Every run of letters and digits in `text` that holds a digit: numbers, versions, names.
+fn numbers(text: &str) -> BTreeSet<String> {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|word| word.chars().any(|c| c.is_ascii_digit()))
+        .map(str::to_lowercase)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn answers_are_read_however_they_are_wrapped() {
+        let answer = "Here you go:\n```json\n{\"merge\": [{\"memories\": [1, 2], \"text\": \"Use \
+                      tabs\"}], \"conflict\": [{\"memories\": [3, 4], \"clear\": true}]}\n```";
+        assert_eq!(
+            parse(answer, 4).unwrap(),
+            [
+                Proposal::Conflict {
+                    memories: vec![3, 4],
+                    clear: true
+                },
+                Proposal::Merge {
+                    memories: vec![1, 2],
+                    text: "Use tabs".into()
+                },
+            ]
+        );
+        assert_eq!(parse("{}", 2).unwrap(), []);
+        assert!(parse("nothing to do", 2).is_err());
+        assert!(parse("{\"merge\": 3}", 2).is_err());
+        let prose = "Looking at {these} memories, 1 and 2 match.\n{\"merge\": [], \"conflict\": \
+                     [{\"memories\": [1, 2], \"clear\": true}]}\nDone {ok}.";
+        assert_eq!(parse(prose, 2).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_merge_may_join_but_never_invent_or_lose() {
+        let sources = [
+            "Use tabs, not spaces, in this project's Python".to_owned(),
+            "This project's Python code uses tabs for indentation".to_owned(),
+        ];
+        assert_eq!(
+            keeps_facts(
+                "Use tabs, not spaces, for indentation in this project's Python code",
+                &sources
+            ),
+            Ok(())
+        );
+        assert!(keeps_facts("Use tabs in Python and deploy to Render", &sources).is_err());
+        assert!(
+            keeps_facts(
+                "Use tabs, not spaces, width 8, in this project's Python code",
+                &sources
+            )
+            .is_err(),
+            "adds a number"
+        );
+        assert!(
+            keeps_facts("Python", &sources).is_err(),
+            "loses nearly everything"
+        );
+    }
+}

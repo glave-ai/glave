@@ -1,15 +1,15 @@
 //! The gateway as a model provider: each call goes by its purpose's route, to the first target
 //! that can serve it, within budget, and comes back saying who served it.
 
-use std::future::Future;
-
 use glave_ports::{Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Served};
+use tracing::Instrument as _;
 
 use crate::budget::{Budget, Budgets, Caller, Charge, Ledger, OverBudget};
 use crate::estimate::Needs;
 use crate::plan::{candidates, prepare};
 use crate::routes::Routes;
 use crate::target::Target;
+use crate::telemetry;
 
 /// The output a budget reserves when neither the request nor the target sets a limit.
 const DEFAULT_OUTPUT_TOKENS: u32 = 32_768;
@@ -94,14 +94,20 @@ impl Gateway {
                     }
                 };
             let (sent, stripped) = prepare(request, target, &needs);
-            match target.handle.send(&sent, on_delta).await {
+            let span = telemetry::model_call(request.purpose.id(), &target.name);
+            let sent = target.handle.send(&sent, on_delta).instrument(span.clone());
+            let sent = sent.await.map(|mut completion| {
+                if completion.cost.is_none() {
+                    completion.cost = target
+                        .price
+                        .as_ref()
+                        .map(|price| price.cost(&completion.usage.counts()));
+                }
+                completion
+            });
+            telemetry::model_ended(&span, request.purpose.id(), &target.name, &sent);
+            match sent {
                 Ok(mut completion) => {
-                    if completion.cost.is_none() {
-                        completion.cost = target
-                            .price
-                            .as_ref()
-                            .map(|price| price.cost(&completion.usage.counts()));
-                    }
                     hold.settle(actual(&completion));
                     completion.served = Some(Served {
                         route: request.purpose.id().to_owned(),
@@ -127,17 +133,13 @@ impl Gateway {
 }
 
 impl ModelProvider for Gateway {
-    fn complete(
+    async fn complete(
         &self,
         request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
-        self.serve(
-            None,
-            self.routes.targets(request.purpose),
-            request,
-            on_delta,
-        )
+    ) -> Result<Completion, ProviderError> {
+        let targets = self.routes.for_model(request.purpose, &request.model);
+        self.serve(None, &targets, request, on_delta).await
     }
 }
 
