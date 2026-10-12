@@ -1,9 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
-import { byTestId, expectAccessible, watchForProblems } from './support';
-
-const SIGNED_IN = '#token=glave_local_test';
+import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`the three panes pass axe with the tools open (${colorScheme})`, async ({ page }) => {

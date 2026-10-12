@@ -7,7 +7,6 @@ import {
 } from '@glave/glaze';
 import { X } from 'lucide';
 
-import { changedFiles } from '../../lib/files';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { TaskListComponent } from '../task-list/task-list.component';
@@ -49,7 +48,7 @@ export class ToolsPanelComponent {
   /** Whether the panel is a sheet over the page, which has a close button of its own. */
   protected readonly narrow = this.panel.narrow;
   protected readonly changesLabel = computed(() => {
-    const count = changedFiles(this.thread.log()).length;
+    const count = this.thread.files().length;
     return count === 0 ? COPY.changes : `${COPY.changes} (${String(count)})`;
   });
 

@@ -2,7 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import { Service, effect, inject, signal } from '@angular/core';
 
 import { toPinned } from '../lib/models';
-import { localStorageOf, readStored, writeStored } from '../lib/storage';
+import { readStored, storageOf, writeStored } from '../lib/storage';
 
 const KEY = 'glave-pinned-models';
 
@@ -12,7 +12,7 @@ const KEY = 'glave-pinned-models';
  */
 @Service()
 export class PinnedModelsService {
-  private readonly storage = localStorageOf(inject(DOCUMENT));
+  private readonly storage = storageOf(inject(DOCUMENT), 'localStorage');
 
   /** The pinned models' ids. */
   readonly pinned = signal<readonly string[]>(toPinned(readStored(this.storage, KEY)));

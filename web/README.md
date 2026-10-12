@@ -2,12 +2,12 @@
 
 Four parts, one npm project:
 
-| Folder    | What it is                                                                                                                                    |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `client/` | The session API's TypeScript client. Its types are generated from `specs/session.schema.json` by `cargo xtask schema`.                        |
-| `glaze/`  | **Glaze** (`@glave/glaze`), glave's Angular component library. See [glaze/README.md](glaze/README.md) and [glaze/AGENTS.md](glaze/AGENTS.md). |
-| `app/`    | The web app `glave serve --http` serves: sign-in, spaces and threads, a live thread, tasks, memory, settings; Glaze's showcase at `/glaze`.   |
-| `e2e/`    | End-to-end smoke tests (Playwright and axe) of the production build, served under glave's Content Security Policy.                            |
+| Folder    | What it is                                                                                                                                                      |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client/` | The session API's TypeScript client. Its types are generated from `specs/session.schema.json` by `cargo xtask schema`.                                          |
+| `glaze/`  | **Glaze** (`@glave/glaze`), glave's Angular component library, and its showcase. See [glaze/README.md](glaze/README.md) and [glaze/AGENTS.md](glaze/AGENTS.md). |
+| `app/`    | The web app `glave serve --http` serves: sign-in, spaces and threads, a live thread, tasks, memory, settings.                                                   |
+| `e2e/`    | End-to-end smoke tests (Playwright and axe) of the production builds of the app and the showcase, served under glave's Content Security Policy.                 |
 
 Angular 22 (standalone, zoneless, signals), TypeScript 6.0, Vitest for unit tests, Playwright for end-to-end tests. Node 22.22.3 or later (Angular's minimum).
 
@@ -17,6 +17,7 @@ Angular 22 (standalone, zoneless, signals), TypeScript 6.0, Vitest for unit test
 cd web
 npm ci                       # once
 npm start                    # the app on http://localhost:4200, rebuilt as you edit
+npm run showcase             # or Glaze's showcase, every component on one page
 ```
 
 The dev server forwards the session API's calls (`POST /`) to a glave on this computer:
@@ -46,6 +47,7 @@ npm run typecheck      # tsc, strict
 npm test               # Vitest: every component, directive, service and lib function, with axe; prints coverage
 npm run build:glaze    # Glaze as a publishable Angular package (ng-packagr)
 npm run build          # the app, production, within its size budget (angular.json)
+npm run build:showcase # Glaze's showcase, for the end-to-end tests
 npm run licenses       # every production dependency's licence is one deny.toml allows (plus OFL fonts, 0BSD)
 npm run audit          # npm audit of production dependencies, high and above
 npm run e2e            # Playwright in Chromium against glave serve --http --web, axe in light and dark
@@ -71,7 +73,7 @@ Playwright's Chromium is installed into `node_modules` (`PLAYWRIGHT_BROWSERS_PAT
 - **The theme** follows the system until the person picks Light or Dark in Settings, the one place to choose it.
 - `services/`: `SessionService` (the token and every call), `SpacesService` (spaces and their threads, read again every ten seconds), `ThreadService` (one open thread: its events, the reply streaming in, decisions, answers, the model it chose, renaming; each thread view has its own), `ModelsService` (`model/list`), `PinnedModelsService` (the models the person pinned in the picker, kept in local storage when the browser allows), `ServerService` (`server/discover`: the server's approval mode and the modes a thread may choose), `TasksService` (read again every few seconds while a list shows), `MemoryService`, `NavService` (the side nav open or collapsed and its width, kept in local storage when the browser allows; its shortcut), `ToolsPanelService` (the tools panel open, its width and tab, kept the same way; its shortcut), `ThemeService` (the person's System, Light or Dark choice, until settings live on the server).
 - `lib/`: pure functions: the thread built from its events (`conversation.ts`), tool calls in a row folded into steps, with each tool's icon (`steps.ts`), the files a thread changed (`files.ts`, from its successful `write` and `edit` calls), the side nav's groups (`nav.ts`), models (each named `Company · Model` from its name or id, never a slug: `models.ts`), when a message's text is long enough to fold, the panels' stored state, storage that may refuse, the shortcuts and how they read on each platform, the token from the link, thread titles and marks.
-- `components/`: one per page or part (workspace, side nav, spaces nav, person, page header, home, thread, thread header, message text (a long message of the person's folds, with Show more), copy button, model picker, approval mode, tools panel, task list, thread files, rename dialog, tasks, memory, settings, sign-in, the showcase).
+- `components/`: one per page or part (workspace, side nav, spaces nav, person, page header, home, thread, thread header, message text (a long message of the person's folds, with Show more), copy button, model picker, approval mode, tools panel, task list, thread files, rename dialog, tasks, memory, settings, sign-in).
 - Messages, as in a text conversation: the person's own are bubbles at the end of the line, a long one folded behind Show more; replies are plain full-width text, with no model's name over them. No avatars. Under each message, a small copy button (plain text) shows on hover and on keyboard focus, always on touch, and says "Copied", announced to screen readers.
 - Tool calls are quiet lines aligned with the reply: the tool's icon, its name (`bash`, `edit`, `write`) and what it acted on (the command, the path). Calls in a row fold under one line ("Ran 4 steps") that opens to each, as Claude's and ChatGPT's apps do; a native `<details>`, so the keyboard and screen readers know it.
 - The composer's bar follows Claude's and ChatGPT's: what shapes the turn at the start (the approval mode: Ask or Auto, among the modes the server lets a thread choose, sent with the next `thread/start` or `turn/start`; read-only when the policy leaves one), the model picker and Send at the end. The picker names models `Company · Model`, searches as you type, scrolls a catalogue of hundreds, and keeps the person's pinned models at the top. Send becomes Stop while a turn runs; attachments stay hidden until the API takes them.

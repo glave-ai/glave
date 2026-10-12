@@ -1,15 +1,9 @@
-import { BreakpointObserver } from '@angular/cdk/layout';
-import { DOCUMENT } from '@angular/common';
-import { Service, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Service, effect } from '@angular/core';
 import { GLZ_NARROW } from '@glave/glaze';
-import { map } from 'rxjs';
 
-import { toSideNavState } from '../lib/panel';
-import { SHORTCUTS, ariaShortcut, onApple, pressed, shortcutLabel } from '../lib/shortcuts';
-import { localStorageOf, readStored, writeStored } from '../lib/storage';
-
-const KEY = 'glave-side-nav';
+import { type PaneState, SIDE_NAV_DEFAULT, toPaneState } from '../lib/panel';
+import { SHORTCUTS } from '../lib/shortcuts';
+import { PaneService } from './pane.service';
 
 /**
  * The side nav as this person left it: beside the page on wide screens, open or collapsed and
@@ -18,45 +12,18 @@ const KEY = 'glave-side-nav';
  * ⌘B or Ctrl+B (`SHORTCUTS.nav`) shows or hides it.
  */
 @Service()
-export class NavService {
-  private readonly document = inject(DOCUMENT);
-  private readonly storage = localStorageOf(this.document);
-  private readonly stored = toSideNavState(readStored(this.storage, KEY));
-  private readonly apple = onApple(this.document);
-
-  readonly open = signal(this.stored.open);
-  /** Its width in pixels, or `null` for the default. */
-  readonly width = signal<number | null>(this.stored.width);
-  /** Whether the screen is narrow, so the side nav is a drawer opened from a button. */
-  readonly narrow = toSignal(
-    inject(BreakpointObserver)
-      .observe(GLZ_NARROW)
-      .pipe(map((state) => state.matches)),
-    { initialValue: false },
-  );
-  /** The shortcut as the person reads it (`⌘B`). */
-  readonly shortcut = shortcutLabel(SHORTCUTS.nav, this.apple);
-  /** The shortcut for `aria-keyshortcuts` (`Meta+B`). */
-  readonly ariaShortcut = ariaShortcut(SHORTCUTS.nav, this.apple);
-
+export class NavService extends PaneService<PaneState> {
   constructor() {
+    super({
+      key: 'glave-side-nav',
+      read: (stored) => toPaneState(stored, SIDE_NAV_DEFAULT),
+      narrowQuery: GLZ_NARROW,
+      keys: SHORTCUTS.nav,
+    });
     effect(() => {
-      const state = { open: this.open(), width: this.width() };
       if (!this.narrow()) {
-        writeStored(this.storage, KEY, state);
+        this.keep({ open: this.open(), width: this.width() });
       }
     });
-  }
-
-  toggle(): void {
-    this.open.update((open) => !open);
-  }
-
-  /** Toggles the side nav if `event` presses its shortcut. */
-  keydown(event: KeyboardEvent): void {
-    if (pressed(event, SHORTCUTS.nav, this.apple)) {
-      event.preventDefault();
-      this.toggle();
-    }
   }
 }

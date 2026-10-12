@@ -3,8 +3,8 @@ import type { Space, SpaceId, ThreadSummary } from '@glave/client';
 import { type ThreadMark, threadMark, threadTitle } from './threads';
 
 /** The id and name of the group that holds the person's loose chats (their personal spaces). */
-export const LOOSE_GROUP = 'chats';
-export const LOOSE_NAME = 'Chats';
+const LOOSE_GROUP = 'chats';
+const LOOSE_NAME = 'Chats';
 
 /** A space with its threads, as the spaces service reads them. */
 export interface SpaceWithThreads {
@@ -13,7 +13,7 @@ export interface SpaceWithThreads {
 }
 
 /** A thread's line in the side nav. */
-export interface NavThread {
+interface NavThread {
   readonly id: string;
   readonly link: readonly string[];
   readonly title: string;
@@ -22,7 +22,7 @@ export interface NavThread {
 }
 
 /** A group of threads in the side nav: one project, or the loose chats. */
-export interface NavGroup {
+interface NavGroup {
   readonly id: string;
   readonly name: string;
   /** The space a new thread from this group starts in. */

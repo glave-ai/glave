@@ -4,7 +4,7 @@ import { ApiError, ErrorCode, type MemoryId, type Remembered } from '@glave/clie
 import { SessionService } from './session.service';
 
 /** What the memory page knows: the memories, or that memory is off for this server. */
-export type MemoryState = 'loading' | 'ready' | 'off';
+type MemoryState = 'loading' | 'ready' | 'off';
 
 /** The person's and this space's memories, and the person's controls over them. */
 @Service()

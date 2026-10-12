@@ -1,4 +1,4 @@
-import { localStorageOf, readStored, writeStored } from './storage';
+import { forget, readStored, storageOf, writeStored } from './storage';
 
 /** A storage that refuses every call, as some private windows do. */
 const REFUSING = {
@@ -8,6 +8,9 @@ const REFUSING = {
   setItem: () => {
     throw new Error('denied');
   },
+  removeItem: () => {
+    throw new Error('denied');
+  },
 } as unknown as Storage;
 
 describe('storage', () => {
@@ -15,28 +18,31 @@ describe('storage', () => {
     localStorage.clear();
   });
 
-  it('finds the page’s local storage, or none', () => {
-    expect(localStorageOf(document)).toBe(localStorage);
+  it('finds the page’s storage, or none', () => {
+    expect(storageOf(document, 'localStorage')).toBe(localStorage);
+    expect(storageOf(document, 'sessionStorage')).toBe(sessionStorage);
     const throwing = {
       get defaultView(): Window {
         throw new Error('denied');
       },
     } as unknown as Document;
-    expect(localStorageOf(throwing)).toBeNull();
+    expect(storageOf(throwing, 'localStorage')).toBeNull();
   });
 
-  it('stores and reads JSON', () => {
+  it('stores, reads and forgets JSON', () => {
     writeStored(localStorage, 'k', { open: true, width: 400 });
     expect(readStored(localStorage, 'k')).toEqual({ open: true, width: 400 });
-    expect(readStored(localStorage, 'missing')).toBeNull();
+    forget(localStorage, 'k');
+    expect(readStored(localStorage, 'k')).toBeNull();
   });
 
-  it('answers null for what does not parse, and does nothing without storage', () => {
-    localStorage.setItem('k', '{not json');
-    expect(readStored(localStorage, 'k')).toBeNull();
+  it('reads what is not JSON as its text, and does nothing without storage', () => {
+    localStorage.setItem('k', 'dark');
+    expect(readStored(localStorage, 'k')).toBe('dark');
     expect(readStored(null, 'k')).toBeNull();
     expect(() => {
       writeStored(null, 'k', 1);
+      forget(null, 'k');
     }).not.toThrow();
   });
 
@@ -44,6 +50,7 @@ describe('storage', () => {
     expect(readStored(REFUSING, 'k')).toBeNull();
     expect(() => {
       writeStored(REFUSING, 'k', 1);
+      forget(REFUSING, 'k');
     }).not.toThrow();
   });
 });

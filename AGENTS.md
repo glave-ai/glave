@@ -60,9 +60,9 @@ crates/session/     glave-session: the session API (specs/session.md) in-process
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary
 web/client/         the session API's TypeScript client: types generated from the schema (`cargo xtask schema`), a small typed client, no framework
-web/glaze/          Glaze (`@glave/glaze`): glave's Angular component library, web platform first, then the Angular CDK, themed only through CSS custom properties (its AGENTS.md says how to use it)
-web/app/            the web app `glave serve --http` serves at `/`: sign-in; three panes (threads by space, a thread streaming live with approvals, questions and a model picker, its tools: tasks and changed files); tasks, memory, settings; Glaze's showcase (`/glaze`)
-web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app, served with glave's Content Security Policy
+web/glaze/          Glaze (`@glave/glaze`): glave's Angular component library, web platform first, then the Angular CDK, themed only through CSS custom properties (its AGENTS.md says how to use it); its showcase, a dev-only app (`glaze/showcase`)
+web/app/            the web app `glave serve --http` serves at `/`: sign-in; three panes (threads by space, a thread streaming live with approvals, questions and a model picker, its tools: tasks and changed files); tasks, memory, settings
+web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app and Glaze's showcase, served with glave's Content Security Policy
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
 specs/              the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
