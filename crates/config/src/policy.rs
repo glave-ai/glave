@@ -24,8 +24,8 @@ pub use choices::{Choices, Chosen, Layer, Level, Source};
 pub use effective::{check_model, check_own_servers, unsandboxed};
 pub use explain::explain;
 pub use files::{
-    Approval, ConfigFile, HooksFile, ModelEntry, PolicyFile, SandboxChoice, ServerFile, StoreFile,
-    TaskRules, TelemetryFile, config, signs_in_safely,
+    Approval, BedrockEndpointChoice, ConfigFile, HooksFile, ModelEntry, PolicyFile, ProviderFile,
+    SandboxChoice, ServerFile, StoreFile, TaskRules, TelemetryFile, config, signs_in_safely,
 };
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use placement::{Placement, PlacementRules};
@@ -161,13 +161,16 @@ pub async fn load(
     if let Some(values) = project {
         // A project never chooses the gateway: the person's sign-in would go where it said.
         // Nor whether the person's memory is on: that is theirs alone. Nor where telemetry
-        // goes, nor where history is kept, nor which server to sign in to. It may take the network away from sandboxed commands, never give it back.
+        // goes, nor where history is kept, nor which server to sign in to, nor which cloud the
+        // organization's credentials go to. It may take the network away from sandboxed
+        // commands, never give it back.
         let values = ConfigFile {
             gateway: None,
             memory: None,
             telemetry: None,
             store: None,
             server: None,
+            provider: None,
             network: values.network.filter(|on| !on),
             ..values
         };

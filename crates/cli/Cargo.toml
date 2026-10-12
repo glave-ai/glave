@@ -26,6 +26,8 @@ otlp = [
 [dependencies]
 anyhow.workspace = true
 getrandom.workspace = true
+glave-aws.workspace = true
+glave-azure.workspace = true
 glave-computer = { workspace = true, features = ["kubernetes"] }
 glave-config.workspace = true
 glave-event.workspace = true

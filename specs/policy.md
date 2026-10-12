@@ -15,6 +15,7 @@ First cut built, in the `glave-config` library (`crates/config/src/policy`), whi
 - Refused at load as not enforced yet, so glave will not run under them: `[budget]` in glave itself (only a gateway serving many keeps a daily budget; glave keeps budgets for one run), and `[workers] network = "allowlist"` (no egress allow-list on workers yet).
 - `[mcp] catalog` names the servers the organization offers; several catalogs narrow one another. A gateway serving many offers exactly those, from its own `mcp.json`, at `/mcp`, and refuses to start when one has no settings there (`gateway.md`, "Remote tools"). glave with `[gateway] url` takes the catalog from that gateway, and every server of the person's `mcp.json` is then their own. Without a gateway, the servers of the person's `mcp.json` the catalog names count as the catalog's, so `[mcp] own = false` leaves them on and refuses only the others; an organization that needs the catalog's settings out of people's hands serves it from a gateway.
 - `[gateway] url` (a choice, `https`, or `http` only to this computer) sends model calls to that gateway and adds its catalog (`gateway.md`, "Client mode"). Only the person's own `config.toml` sets it: a project's is ignored, since the person's sign-in goes there.
+- `[provider]` (a choice: `name = "azure"` with `resource` and optionally `scope`, or `name = "bedrock"` with `region` and optionally `endpoint`) takes a cloud contract's models in place of `GLAVE_BASE_URL`'s server (`gateway.md`, "Cloud contracts"); `[models]` rules then see `azure/<deployment>` or `bedrock/<model>`. Only the person's or the server's own `config.toml` sets it: a project's is ignored, since the organization's credentials go there. Keys still come only from the environment.
 - `glave policy explain` prints every setting with its source, every rule with its file, and why glave would refuse to run; it exits non-zero when it would.
 
 Project trust (issue #83), in `crates/config/src/trust`:
@@ -104,6 +105,15 @@ url = "https://glave.example.com"             # glave runs threads there (glave 
 [store]                                       # the person's or server's file only; also GLAVE_STORE_URL
 url = "postgres://glave:...@db.example.com/glave"  # the one data store; the local SQLite file when absent.
                                               # TLS off this computer unless sslmode=disable; shown without its password
+
+[provider]                                    # the person's or server's file only (gateway.md, "Cloud contracts")
+name = "azure"                                # a cloud contract's models instead of GLAVE_BASE_URL; model = a deployment
+resource = "acme-openai"                      # or its endpoint, https://acme.services.ai.azure.com
+# scope = "https://ai.azure.com/.default"     # the Entra scope, when not this default
+# name = "bedrock"                            # or Amazon Bedrock; model = a Bedrock model id
+# region = "us-east-1"
+# endpoint = "mantle"                         # default "runtime"; "mantle" for models only it serves
+                                              # keys from the environment, else the workload's identity
 
 [telemetry]                                   # the person's or server's file only; off by default
 otlp = "http://localhost:4318"                # spans and metrics (never content) to this OTLP/HTTP collector

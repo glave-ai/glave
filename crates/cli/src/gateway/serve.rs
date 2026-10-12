@@ -154,7 +154,7 @@ async fn run(options: Options) -> anyhow::Result<()> {
             .ok()
             .filter(|value: &String| !value.trim().is_empty())
     };
-    let endpoint = config::endpoint(env("GLAVE_MODEL"))?;
+    let endpoint = config::endpoint(env("GLAVE_MODEL"), config::provider_here().await?.as_ref())?;
     let judge = env("GLAVE_JUDGE_MODEL");
     let allowed = Allowed {
         constraints: &constraints,

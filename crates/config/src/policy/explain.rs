@@ -156,6 +156,9 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
     if let Some(server) = &choices.server {
         rows.push(row("server", server.value.clone(), &server.from));
     }
+    if let Some(provider) = &choices.provider {
+        rows.push(row("provider", provider.value.describe(), &provider.from));
+    }
     if let Some(store) = &choices.store {
         let shown = crate::policy::redacted(&store.value);
         rows.push(row("store", shown, &store.from));

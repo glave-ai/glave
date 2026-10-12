@@ -319,3 +319,43 @@ fn the_store_is_the_person_s_choice_and_its_password_never_shown() {
         "{refused}"
     );
 }
+
+#[test]
+fn a_cloud_provider_is_the_person_s_or_server_s_choice_and_typed() {
+    let dir = scratch("provider");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let azure = "[provider]\nname = \"azure\"\nresource = \"acme-openai\"\n";
+    let project = files::config(azure, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.provider, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), azure).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let chosen = loaded.choices.provider.as_ref().unwrap();
+    assert_eq!(
+        chosen.value,
+        ProviderFile::Azure {
+            resource: "acme-openai".into(),
+            scope: None
+        }
+    );
+    assert_eq!(chosen.value.name(), "azure");
+    let (shown, _) = explain(&loaded, None);
+    assert!(shown.contains("azure (acme-openai)"), "{shown}");
+    let bedrock = "[provider]\nname = \"bedrock\"\nregion = \"us-east-1\"\nendpoint = \"mantle\"\n";
+    let read = files::config(bedrock, &home).unwrap().provider.unwrap();
+    assert_eq!(read.describe(), "bedrock (us-east-1, mantle)");
+    for wrong in [
+        "[provider]\nname = \"vertex\"\n",
+        "[provider]\nname = \"azure\"\n",
+        "[provider]\nname = \"azure\"\nresource = \"a\"\nregion = \"us-east-1\"\n",
+        "[provider]\nname = \"bedrock\"\nregion = \"us-east-1\"\nendpoint = \"edge\"\n",
+    ] {
+        let refused = files::config(wrong, &locations.person)
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("config.toml"), "{wrong}: {refused}");
+    }
+}
