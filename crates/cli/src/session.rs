@@ -13,7 +13,7 @@ use glave_harness::{
     AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings,
     SystemClock, Workspace, agents_md,
 };
-use glave_memory::ModelTidier;
+use glave_memory::Tidier;
 use glave_ports::ToolSource;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, Server, Wiring};
@@ -255,7 +255,10 @@ fn tidy(
 ) -> anyhow::Result<()> {
     if let Some(memory) = memory {
         let (summary, _) = provider(setup, endpoint)?;
-        memory.tidy_with(Arc::new(ModelTidier::new(summary, endpoint.model.clone())));
+        memory.tidy_with(Tidier {
+            provider: summary,
+            model: endpoint.model.clone(),
+        });
     }
     Ok(())
 }

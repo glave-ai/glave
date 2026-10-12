@@ -21,7 +21,7 @@ use crate::shred::Shredder;
 pub use housekeep::Housekept;
 pub(crate) use recall::DEFAULT_HITS;
 pub use recall::{MOST_HITS, Recalled, Source};
-pub use tidy::{ModelTidier, Tidied, Tidier};
+pub use tidy::{Tidied, Tidier};
 pub use write::{Remembering, Writer};
 
 /// Ledger events read per page.

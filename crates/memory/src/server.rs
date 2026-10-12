@@ -6,9 +6,9 @@
 
 use std::sync::Arc;
 
-use glave_event::{MemoryId, MemoryScope, MemorySource, Principal, PrincipalId, Seq, ThreadId};
+use glave_event::{MemoryId, MemoryScope, MemorySource, Principal};
 use glave_harness::{MemoryContext, MemoryError, Remembered, Shown};
-use glave_ports::{EventLog, OrgId, Scope, SpaceId};
+use glave_ports::EventLog;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, JsonObject,
     ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
@@ -17,7 +17,6 @@ use rmcp::model::{
 };
 use rmcp::service::{RequestContext, RoleServer};
 use rmcp::{ErrorData, ServerHandler};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::memories::{DEFAULT_HITS, Memories, Recalled, Remembering, Source, Writer};
@@ -27,74 +26,29 @@ const CONTEXT: &str = "glave/context";
 /// The resource listing the caller's memories.
 pub(crate) const RESOURCE: &str = "glave://memory";
 
-/// Who and where, as glave sends it with every request.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub(crate) struct Context {
-    org: OrgId,
-    space: SpaceId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    person: Option<PrincipalId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    agent: Option<PrincipalId>,
-    thread: ThreadId,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    seq: Option<Seq>,
-    #[serde(default)]
-    untrusted_read: bool,
+/// Who and where `on` is, as `_meta` carries it with every request.
+pub(crate) fn meta(on: &MemoryContext) -> Option<JsonObject> {
+    let mut meta = JsonObject::new();
+    meta.insert(CONTEXT.to_owned(), serde_json::to_value(on).ok()?);
+    Some(meta)
 }
 
-impl Context {
-    pub(crate) fn of(on: &MemoryContext) -> Self {
-        Self {
-            org: on.scope.org,
-            space: on.scope.space,
-            person: on.person,
-            agent: on.agent,
+/// Who a memory the model saves from `on` is by: it saves on the person's behalf, as the
+/// thread's agent.
+fn writer(on: &MemoryContext) -> Writer {
+    Writer {
+        person: on.person,
+        scope: on.scope,
+        by: on
+            .agent
+            .map(Principal::agent)
+            .or_else(|| on.person.map(Principal::person))
+            .unwrap_or_else(Principal::glave),
+        source: on.seq.map(|seq| MemorySource {
             thread: on.thread,
-            seq: on.seq,
-            untrusted_read: on.untrusted_read,
-        }
-    }
-
-    pub(crate) fn meta(&self) -> Option<JsonObject> {
-        let mut meta = JsonObject::new();
-        meta.insert(CONTEXT.to_owned(), serde_json::to_value(self).ok()?);
-        Some(meta)
-    }
-
-    fn on(&self) -> MemoryContext {
-        MemoryContext {
-            person: self.person,
-            agent: self.agent,
-            scope: Scope {
-                org: self.org,
-                space: self.space,
-            },
-            thread: self.thread,
-            seq: self.seq,
-            untrusted_read: self.untrusted_read,
-        }
-    }
-
-    /// The model saves on the person's behalf, as the thread's agent.
-    fn writer(&self) -> Writer {
-        Writer {
-            person: self.person,
-            scope: Scope {
-                org: self.org,
-                space: self.space,
-            },
-            by: self
-                .agent
-                .map(Principal::agent)
-                .or_else(|| self.person.map(Principal::person))
-                .unwrap_or_else(Principal::glave),
-            source: self.seq.map(|seq| MemorySource {
-                thread: self.thread,
-                seq,
-            }),
-            untrusted_read: self.untrusted_read,
-        }
+            seq,
+        }),
+        untrusted_read: on.untrusted_read,
     }
 }
 
@@ -207,7 +161,7 @@ fn tools() -> Vec<Tool> {
 fn caller_context(
     meta: Option<&rmcp::model::RequestMetaObject>,
     fallback: &rmcp::model::RequestMetaObject,
-) -> Result<Context, ErrorData> {
+) -> Result<MemoryContext, ErrorData> {
     let value = meta
         .and_then(|meta| meta.0.0.get(CONTEXT))
         .or_else(|| fallback.0.0.get(CONTEXT))
@@ -306,7 +260,11 @@ fn done(text: String, structured: serde_json::Value) -> CallToolResult {
 }
 
 impl<L: EventLog + 'static> MemoryServer<L> {
-    async fn remember(&self, cx: &Context, request: &CallToolRequestParams) -> CallToolResult {
+    async fn remember(
+        &self,
+        on: &MemoryContext,
+        request: &CallToolRequestParams,
+    ) -> CallToolResult {
         let Some(text) = text_of(request, "text") else {
             return failed("remember needs `text`.");
         };
@@ -322,7 +280,7 @@ impl<L: EventLog + 'static> MemoryServer<L> {
             .unwrap_or(false);
         match self
             .memories
-            .remember(&cx.writer(), &text, scope, replaces, force)
+            .remember(&writer(on), &text, scope, replaces, force)
             .await
         {
             Ok(Remembering::Saved { memory, replaced }) => {
@@ -344,13 +302,13 @@ impl<L: EventLog + 'static> MemoryServer<L> {
         }
     }
 
-    async fn edit(&self, cx: &Context, request: &CallToolRequestParams) -> CallToolResult {
+    async fn edit(&self, on: &MemoryContext, request: &CallToolRequestParams) -> CallToolResult {
         let (memory, text) = match (memory_of(request, "memory"), text_of(request, "text")) {
             (Ok(Some(memory)), Some(text)) => (memory, text),
             (Err(why), _) => return failed(why),
             _ => return failed("edit needs `memory` and `text`."),
         };
-        match self.memories.edit(&cx.writer(), memory, &text).await {
+        match self.memories.edit(&writer(on), memory, &text).await {
             Ok(memory) => done(
                 format!("Edited {}.", line(&memory)),
                 json!({"memory": memory}),
@@ -359,19 +317,19 @@ impl<L: EventLog + 'static> MemoryServer<L> {
         }
     }
 
-    async fn forget(&self, cx: &Context, request: &CallToolRequestParams) -> CallToolResult {
+    async fn forget(&self, on: &MemoryContext, request: &CallToolRequestParams) -> CallToolResult {
         let memory = match memory_of(request, "memory") {
             Ok(Some(memory)) => memory,
             Ok(None) => return failed("forget needs `memory`."),
             Err(why) => return failed(why),
         };
-        match self.memories.forget(&cx.writer(), memory).await {
+        match self.memories.forget(&writer(on), memory).await {
             Ok(()) => done(format!("Forgot [{memory}]."), json!({"forgotten": memory})),
             Err(error) => failed(error.to_string()),
         }
     }
 
-    async fn recall(&self, cx: &Context, request: &CallToolRequestParams) -> CallToolResult {
+    async fn recall(&self, on: &MemoryContext, request: &CallToolRequestParams) -> CallToolResult {
         let Some(query) = text_of(request, "query").filter(|query| !query.trim().is_empty()) else {
             return failed("recall needs `query`: a few keywords.");
         };
@@ -379,7 +337,7 @@ impl<L: EventLog + 'static> MemoryServer<L> {
             .and_then(serde_json::Value::as_u64)
             .and_then(|limit| usize::try_from(limit).ok())
             .unwrap_or(DEFAULT_HITS);
-        match self.memories.recall(&cx.on(), &query, limit).await {
+        match self.memories.recall(on, &query, limit).await {
             Ok(hits) if hits.is_empty() => done(
                 format!("Nothing found for {query:?}."),
                 json!({"recalled": 0, "untrusted": false}),
@@ -396,11 +354,10 @@ impl<L: EventLog + 'static> MemoryServer<L> {
         }
     }
 
-    async fn read(&self, cx: &Context, uri: &str) -> Result<String, MemoryError> {
-        let on = cx.on();
+    async fn read(&self, on: &MemoryContext, uri: &str) -> Result<String, MemoryError> {
         if uri == RESOURCE {
-            let memories = self.memories.list(&on).await?;
-            let questions = self.memories.questions(&on).await?;
+            let memories = self.memories.list(on).await?;
+            let questions = self.memories.questions(on).await?;
             if questions.is_empty() {
                 return Ok(json!({ "memories": memories }).to_string());
             }
@@ -416,7 +373,7 @@ impl<L: EventLog + 'static> MemoryServer<L> {
                 })
             })
             .ok_or_else(|| MemoryError::NotFound(format!("no resource {uri}")))?;
-        let found = self.memories.versions(&on, &[wanted]).await?;
+        let found = self.memories.versions(on, &[wanted]).await?;
         let memory = found
             .into_iter()
             .next()
@@ -481,8 +438,8 @@ impl<L: EventLog + 'static> ServerHandler for MemoryServer<L> {
         request: ReadResourceRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, ErrorData> {
-        let cx = caller_context(request.meta.as_ref(), &context.meta)?;
-        match self.read(&cx, &request.uri).await {
+        let on = caller_context(request.meta.as_ref(), &context.meta)?;
+        match self.read(&on, &request.uri).await {
             Ok(text) => Ok(ReadResourceResult::new(vec![
                 ResourceContents::text(text, request.uri.clone())
                     .with_mime_type("application/json"),
@@ -498,12 +455,12 @@ impl<L: EventLog + 'static> ServerHandler for MemoryServer<L> {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        let cx = caller_context(request.meta.as_ref(), &context.meta)?;
+        let on = caller_context(request.meta.as_ref(), &context.meta)?;
         let result = match request.name.as_ref() {
-            "remember" => self.remember(&cx, &request).await,
-            "edit" => self.edit(&cx, &request).await,
-            "forget" => self.forget(&cx, &request).await,
-            "recall" => self.recall(&cx, &request).await,
+            "remember" => self.remember(&on, &request).await,
+            "edit" => self.edit(&on, &request).await,
+            "forget" => self.forget(&on, &request).await,
+            "recall" => self.recall(&on, &request).await,
             other => return Err(ErrorData::invalid_params(format!("no tool {other}"), None)),
         };
         Ok(CallToolResponse::Complete(result))
