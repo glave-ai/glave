@@ -1613,7 +1613,6 @@ version = "0.0.0"
 dependencies = [
  "glave-event",
  "glave-ports",
- "proptest",
  "reqwest",
  "serde",
  "serde_json",

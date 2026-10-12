@@ -21,7 +21,6 @@ fake-server = []
 
 [dev-dependencies]
 glave-ports = { workspace = true, features = ["conformance"] }
-proptest.workspace = true
 tokio = { workspace = true, features = ["rt"] }
 
 [[test]]

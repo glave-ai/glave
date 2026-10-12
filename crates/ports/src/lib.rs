@@ -22,6 +22,7 @@ mod scope;
 pub mod search;
 pub mod secrets;
 mod spaces;
+mod sse;
 #[cfg(any(test, feature = "conformance"))]
 pub mod testing;
 mod tools;
@@ -46,6 +47,7 @@ pub use model::{
 };
 pub use scope::{OrgId, Scope, SpaceId};
 pub use spaces::{FolderKey, MAX_NAME, MemorySpaces, Space, SpaceError, SpaceKind, Spaces};
+pub use sse::{SseDecoder, SseError};
 pub use tools::{
     Assessment, BoxFuture, Cancellation, Effect, NeverCancelled, ToolError, ToolInfo, ToolOutput,
     ToolSource, describe_call, unless_cancelled,

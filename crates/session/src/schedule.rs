@@ -63,7 +63,7 @@ where
         }
         self.catch_up().await?;
         if let Some(max) = self.inner.limits.max_schedules {
-            let now = self.inner.clock.now();
+            let now = self.inner.harness.clock().now();
             let kept = self
                 .ledger()
                 .schedules
@@ -80,8 +80,8 @@ where
                 ));
             }
         }
-        let now = self.inner.clock.now();
-        let schedule = ScheduleId::new(now, self.inner.entropy.bytes())
+        let now = self.inner.harness.clock().now();
+        let schedule = ScheduleId::new(now, self.inner.harness.entropy().bytes())
             .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
         let created = ScheduleCreated {
             schedule,
@@ -100,14 +100,14 @@ where
             .ledger()
             .schedules
             .get(&schedule)
-            .map(|scheduled| info(scheduled, self.inner.clock.now()))
+            .map(|scheduled| info(scheduled, self.inner.harness.clock().now()))
             .ok_or_else(|| ApiError::new(code::INTERNAL, "the schedule was not kept"))?;
         Ok(Reply::Schedule { schedule: info })
     }
 
     pub(crate) async fn list_schedules(&self) -> Result<Reply, ApiError> {
         self.catch_up().await?;
-        let now = self.inner.clock.now();
+        let now = self.inner.harness.clock().now();
         let schedules = self
             .ledger()
             .schedules
@@ -144,7 +144,7 @@ where
     /// with their threads. A run the task limit holds back starts on a later tick.
     pub async fn tick(&self) -> Result<Vec<ThreadId>, ApiError> {
         self.catch_up().await?;
-        let now = self.inner.clock.now();
+        let now = self.inner.harness.clock().now();
         let due: Vec<(ScheduleCreated, Timestamp)> = self
             .ledger()
             .schedules
@@ -173,7 +173,7 @@ where
         loop {
             // A failing tick is tried again on the next one.
             let _ = self.tick().await;
-            let now = self.inner.clock.now();
+            let now = self.inner.harness.clock().now();
             let wait = self
                 .next_due()
                 .and_then(|next| {
@@ -192,7 +192,7 @@ where
 
     /// When the next schedule is due, if any is.
     pub fn next_due(&self) -> Option<Timestamp> {
-        let now = self.inner.clock.now();
+        let now = self.inner.harness.clock().now();
         self.ledger()
             .schedules
             .values()

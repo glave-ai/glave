@@ -6,127 +6,7 @@
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
-use crate::protocol::{ApiError, Notification, PROTOCOL, Reply, Request, code};
-use crate::rpc::error;
-
-/// The methods that answer with a stream of notifications, the response last, unless they run
-/// as a task (`background`).
-pub const STREAMING: &[&str] = &["turn/start", "goal/start"];
-
-/// Every error a request can be answered with: its code, a name for clients, and its meaning.
-pub const ERRORS: &[(i64, &str, &str)] = &[
-    (error::PARSE, "PARSE", "The message is not JSON-RPC"),
-    (
-        error::INVALID_REQUEST,
-        "INVALID_REQUEST",
-        "The message is not a valid request",
-    ),
-    (error::NO_METHOD, "NO_METHOD", "No such method"),
-    (
-        code::INVALID_PARAMS,
-        "INVALID_PARAMS",
-        "The params are not valid",
-    ),
-    (code::INTERNAL, "INTERNAL", "The server failed"),
-    (code::NO_THREAD, "NO_THREAD", "No such thread"),
-    (
-        code::TURN_RUNNING,
-        "TURN_RUNNING",
-        "A turn is already running in this thread",
-    ),
-    (
-        code::NO_TURN,
-        "NO_TURN",
-        "No turn is running in this thread",
-    ),
-    (
-        code::NO_APPROVAL,
-        "NO_APPROVAL",
-        "No such approval is pending",
-    ),
-    (code::CANCELLED, "CANCELLED", "The operation was cancelled"),
-    (
-        code::NO_QUESTION,
-        "NO_QUESTION",
-        "No such question is waiting",
-    ),
-    (
-        code::NO_GOAL,
-        "NO_GOAL",
-        "The thread has no active goal (or, to resume, no paused one)",
-    ),
-    (
-        code::PROMPT_BLOCKED,
-        "PROMPT_BLOCKED",
-        "A hook stopped the prompt",
-    ),
-    (
-        code::WORKSPACE,
-        "WORKSPACE",
-        "The thread's workspace could not be opened",
-    ),
-    (
-        code::NOT_ALLOWED,
-        "NOT_ALLOWED",
-        "The caller may not do this",
-    ),
-    (
-        code::NO_SIGN_IN,
-        "NO_SIGN_IN",
-        "No valid sign-in (network transports)",
-    ),
-    (
-        code::ARCHIVED,
-        "ARCHIVED",
-        "The thread is archived; unarchive it first",
-    ),
-    (code::LIMIT, "LIMIT", "A policy limit was reached"),
-    (code::NO_SCHEDULE, "NO_SCHEDULE", "No such schedule"),
-    (code::NO_MEMORY, "NO_MEMORY", "No such memory here"),
-    (
-        code::MEMORY_OFF,
-        "MEMORY_OFF",
-        "Memory is off for this server",
-    ),
-    (code::NO_SPACE, "NO_SPACE", "No such space"),
-    (code::PROVIDER, "PROVIDER", "The model provider failed"),
-    (
-        code::NO_MODEL,
-        "NO_MODEL",
-        "No such model here, or not one this server may run",
-    ),
-    (
-        code::NOT_AVAILABLE,
-        "NOT_AVAILABLE",
-        "Not available yet, such as a thread on a computer of the person's own",
-    ),
-];
-
-/// The replies each method answers with, by the titles of their [`Reply`] variants.
-fn result_of(method: &str) -> Option<&'static [&'static str]> {
-    Some(match method {
-        "server/discover" => &["Server"],
-        "model/list" => &["Models"],
-        "thread/start" | "thread/get" | "thread/rename" => &["Thread"],
-        "thread/list" => &["Threads"],
-        "thread/events" => &["Events"],
-        // A turn, or with `background`, the task it runs as.
-        "turn/start" | "goal/start" => &["Turn", "Task"],
-        "thread/compact" => &["Compacted"],
-        "goal/get" => &["Goal"],
-        "tasks/list" => &["Tasks"],
-        "schedule/create" => &["Schedule"],
-        "schedule/list" => &["Schedules"],
-        "space/list" => &["Spaces"],
-        "space/get" | "space/create" | "space/rename" => &["Space"],
-        "memory/list" | "memory/save" | "memory/edit" | "memory/move" | "memory/forget"
-        | "memory/restore" => &["Memories"],
-        "thread/archive" | "thread/unarchive" | "thread/delete" | "turn/cancel"
-        | "approval/decide" | "question/answer" | "goal/stop" | "tasks/stop"
-        | "schedule/delete" => &["Done"],
-        _ => return None,
-    })
-}
+use crate::protocol::{ApiError, Notification, PROTOCOL, RESULTS, Reply, Request, code};
 
 /// The whole document, or what in the protocol types it could not describe.
 pub fn document() -> Result<Value, String> {
@@ -150,7 +30,10 @@ pub fn document() -> Result<Value, String> {
     let replies = by_title(&reply)?;
     let mut methods = Map::new();
     for (method, params) in variants(&request)? {
-        let titles = result_of(&method).ok_or_else(|| format!("{method} has no result"))?;
+        let titles = RESULTS
+            .iter()
+            .find_map(|(name, titles)| (*name == method).then_some(*titles))
+            .ok_or_else(|| format!("{method} has no result"))?;
         let mut results = Vec::new();
         for title in titles {
             let reply = replies
@@ -167,12 +50,13 @@ pub fn document() -> Result<Value, String> {
             json!({
                 "params": params,
                 "result": result,
-                "streams": STREAMING.contains(&method.as_str()),
+                // A method that can answer with a turn streams it, unless run as a task.
+                "streams": titles.contains(&"Turn"),
             }),
         );
     }
     let notifications: Map<String, Value> = variants(&notification)?.into_iter().collect();
-    let errors: Map<String, Value> = ERRORS
+    let errors: Map<String, Value> = code::ALL
         .iter()
         .map(|(code, name, meaning)| {
             (
@@ -265,25 +149,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_method_the_transports_take_is_described_and_no_other() {
-        let document = document().unwrap();
-        let mut described: Vec<&str> = document["methods"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(String::as_str)
-            .collect();
-        let mut taken: Vec<&str> = crate::rpc::METHODS.to_vec();
-        described.sort_unstable();
-        taken.sort_unstable();
-        assert_eq!(described, taken);
-    }
-
-    #[test]
     fn every_error_code_is_listed_once() {
-        let mut codes: Vec<i64> = ERRORS.iter().map(|(code, ..)| *code).collect();
+        let mut codes: Vec<i64> = code::ALL.iter().map(|(code, ..)| *code).collect();
         codes.sort_unstable();
         codes.dedup();
-        assert_eq!(codes.len(), ERRORS.len());
+        assert_eq!(codes.len(), code::ALL.len());
     }
 }

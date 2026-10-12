@@ -5,8 +5,6 @@
 //! task's start and end in the space's ledger. `tasks/list` and `tasks/stop` show and stop
 //! them; `task/finished` tells the thread's watchers when one ends.
 
-pub(crate) mod requests;
-
 use std::collections::HashMap;
 
 use glave_event::{
@@ -113,13 +111,6 @@ where
             Work::Goal(Some(goal)) => (title_from(&goal.objective).unwrap_or_default(), true),
             Work::Goal(None) => ("continuing the thread's goal".to_owned(), true),
         };
-        let model = match &work {
-            Work::Turn(_, choice) => {
-                self.check_approval(thread, choice.approval).await?;
-                self.model_of(thread, choice.model.as_deref()).await?
-            }
-            Work::Goal(_) => self.model_of(thread, None).await?,
-        };
         self.inner.approvals.unattend(thread);
         let stream = match work {
             Work::Turn(prompt, chosen) => {
@@ -138,14 +129,14 @@ where
         let started = TaskStarted {
             thread,
             title,
-            model,
+            model: stream.model.clone(),
             budget,
             schedule,
             by: self.other_than_person(caller.person),
         };
         let running = Running {
             started: started.clone(),
-            at: At::from(self.inner.clock.now()),
+            at: At::from(self.inner.harness.clock().now()),
             goal,
             by: caller.person,
             tokens: TokenCounts::default(),
@@ -188,7 +179,7 @@ where
         let ended = settle(&running, &ended);
         // Recorded on a best effort: the thread's own events hold the work either way.
         let _ = self.record_in_ledger(&ended).await;
-        let now = At::from(self.inner.clock.now());
+        let now = At::from(self.inner.harness.clock().now());
         let recorded = Recorded {
             started: running.started,
             at: running.at,
@@ -406,7 +397,7 @@ where
     }
 
     fn elapsed(&self, from: At, to: Option<At>) -> u64 {
-        let to = to.map_or_else(|| self.inner.clock.now(), At::timestamp);
+        let to = to.map_or_else(|| self.inner.harness.clock().now(), At::timestamp);
         let millis = to
             .as_millisecond()
             .saturating_sub(from.timestamp().as_millisecond());

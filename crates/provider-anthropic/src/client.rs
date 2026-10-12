@@ -10,8 +10,8 @@ use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 use crate::api::Api;
 use crate::assemble::Assembler;
 use crate::error::message_of;
-use crate::sse::SseDecoder;
 use crate::wire::messages_request;
+use glave_ports::SseDecoder;
 
 /// Anthropic's API.
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";

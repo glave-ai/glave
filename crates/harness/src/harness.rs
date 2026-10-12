@@ -376,6 +376,21 @@ where
         &self.log
     }
 
+    /// What the harness was set up with: the default model and approval mode among them.
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    /// The clock events are stamped with.
+    pub fn clock(&self) -> &dyn Clock {
+        self.clock.as_ref()
+    }
+
+    /// Where the random part of new ids comes from.
+    pub fn entropy(&self) -> &dyn Entropy {
+        self.entropy.as_ref()
+    }
+
     /// Who is asked before anything changes.
     pub fn approver(&self) -> &A {
         &self.approver

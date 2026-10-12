@@ -65,10 +65,7 @@ pub async fn stream_turn<L: EventLog + 'static>(
         model: None,
         approval: None,
     };
-    server
-        .start_streaming(&Caller::default(), request)
-        .await
-        .unwrap()
+    server.start_streaming(&Caller::default(), request).await
 }
 
 /// The thread's events, checked to be numbered 1, 2, 3, ... with no gap or repeat.

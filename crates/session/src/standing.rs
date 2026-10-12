@@ -13,7 +13,7 @@ use tokio::sync::watch;
 
 use crate::held::{Slot, Use, finished};
 use crate::modes::Choice;
-use crate::protocol::{ApiError, Reply, Request, Show, ThreadSummary, code};
+use crate::protocol::{ApiError, Reply, Show, ThreadSummary, code};
 use crate::server::{MAX_PAGE, Server, api, no_thread};
 
 fn failed(error: &impl std::fmt::Display) -> ApiError {
@@ -26,73 +26,36 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Answers `thread/start`, `thread/list`, `thread/get` and the changes to a thread.
-    pub(crate) async fn thread_request(
+    /// Answers `thread/start`: a thread for `caller` in `space`, as [`Server::new_thread`]
+    /// places it.
+    pub(crate) async fn start_thread(
         &self,
         caller: &Caller,
-        request: Request,
+        space: Option<SpaceId>,
+        worktree: Option<bool>,
+        background: bool,
+        choice: &Choice,
     ) -> Result<Reply, ApiError> {
-        match request {
-            Request::ThreadStart {
-                space,
-                worktree,
-                background,
-                computer,
-                model,
-                approval,
-            } => {
-                if let Some(computer) = computer {
-                    return Err(ApiError::new(
-                        code::NOT_AVAILABLE,
-                        format!(
-                            "threads on a computer of your own (computer {computer}) are not \
-                             available yet: start the thread without `computer`"
-                        ),
-                    ));
-                }
-                let space = self.space_for(caller, space).await?.id;
-                let thread = self
-                    .new_thread(
-                        caller,
-                        space,
-                        worktree,
-                        background,
-                        &Choice { model, approval },
-                    )
-                    .await?;
-                let scope = Scope {
-                    org: self.inner.home.org,
-                    space,
-                };
-                Ok(Reply::Thread {
-                    thread: self.summary(scope, thread).await?,
-                })
-            }
-            Request::ThreadList {
-                space,
-                limit,
-                show,
-                cursor,
-            } => {
-                let space = self.space_for(caller, space).await?.id;
-                self.list(space, limit, show.unwrap_or_default(), cursor)
-                    .await
-            }
-            Request::ThreadGet { thread } => {
-                self.load(thread).await?;
-                let scope = self.scope_of(thread).await?;
-                Ok(Reply::Thread {
-                    thread: self.summary(scope, thread).await?,
-                })
-            }
-            Request::ThreadRename { thread, title } => self.rename(caller, thread, title).await,
-            Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
-            Request::ThreadUnarchive { thread } => {
-                self.change(caller, thread, Change::Unarchive).await
-            }
-            Request::ThreadDelete { thread } => self.change(caller, thread, Change::Delete).await,
-            _ => Err(ApiError::new(code::INTERNAL, "not a thread request")),
-        }
+        let space = self.space_for(caller, space).await?.id;
+        let thread = self
+            .new_thread(caller, space, worktree, background, choice)
+            .await?;
+        let scope = Scope {
+            org: self.inner.home.org,
+            space,
+        };
+        Ok(Reply::Thread {
+            thread: self.summary(scope, thread).await?,
+        })
+    }
+
+    /// Answers `thread/get`.
+    pub(crate) async fn get_thread(&self, thread: ThreadId) -> Result<Reply, ApiError> {
+        self.load(thread).await?;
+        let scope = self.scope_of(thread).await?;
+        Ok(Reply::Thread {
+            thread: self.summary(scope, thread).await?,
+        })
     }
 
     /// Archives, unarchives or deletes `thread` for `caller`.
@@ -157,15 +120,18 @@ where
         })
     }
 
-    /// A page of the threads of `show` in `space`, most recently updated first, from the
-    /// threads view: its cost is the page's, however many threads the space has.
-    pub(crate) async fn list(
+    /// Answers `thread/list`: a page of the threads of `show` in `space`, as `thread/start`
+    /// picks it, most recently updated first, from the threads view: its cost is the page's,
+    /// however many threads the space has.
+    pub(crate) async fn list_threads(
         &self,
-        space: SpaceId,
+        caller: &Caller,
+        space: Option<SpaceId>,
         limit: Option<usize>,
-        show: Show,
+        show: Option<Show>,
         cursor: Option<String>,
     ) -> Result<Reply, ApiError> {
+        let space = self.space_for(caller, space).await?.id;
         let scope = Scope {
             org: self.inner.home.org,
             space,
@@ -176,7 +142,7 @@ where
             .transpose()
             .map_err(|error| ApiError::new(code::INVALID_PARAMS, error))?;
         let query = ThreadQuery {
-            standing: match show {
+            standing: match show.unwrap_or_default() {
                 Show::Active => Standing::Active,
                 Show::Archived => Standing::Archived,
                 Show::Deleted => Standing::Deleted,

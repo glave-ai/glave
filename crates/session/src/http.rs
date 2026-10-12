@@ -30,8 +30,9 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use self::body::Answer;
+use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Request, code};
-use crate::rpc::{Id, error, parse, respond};
+use crate::rpc::{Id, parse, respond};
 use crate::server::Server;
 use crate::signin::{SignIn, SignInError};
 
@@ -161,7 +162,7 @@ where
         && named != request.method()
     {
         let failed = ApiError::new(
-            error::INVALID_REQUEST,
+            code::INVALID_REQUEST,
             format!(
                 "the Glave-Method header says {named:?}, the request {:?}",
                 request.method()
@@ -184,12 +185,11 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    let answered = match server.start_streaming(caller, request).await {
+    let answered = match server.call(caller, request).await {
         // A notification is never answered; the turn goes on without anyone following.
-        Ok(Ok(_)) if id.is_none() => return accepted(),
-        Ok(Ok(stream)) => return events(Answer::turn(stream, id)),
-        Ok(Err(failed)) => Err(failed),
-        Err(other) => server.request_as(caller, *other).await,
+        Answered::Stream(_) if id.is_none() => return accepted(),
+        Answered::Stream(stream) => return events(Answer::turn(stream, id)),
+        Answered::Reply(reply) => reply,
     };
     match id {
         Some(id) => json(StatusCode::OK, respond(Some(&id), answered.as_ref())),
@@ -212,7 +212,7 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
 
 /// The request body as text, up to `MAX_BODY` bytes.
 async fn read(body: Incoming) -> Result<String, ApiError> {
-    let failed = |message: String| ApiError::new(error::PARSE, message);
+    let failed = |message: String| ApiError::new(code::PARSE, message);
     let mut body = pin!(body);
     let mut bytes = Vec::new();
     while let Some(frame) = poll_fn(|cx| Pin::as_mut(&mut body).poll_frame(cx)).await {

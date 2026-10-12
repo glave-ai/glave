@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use glave_event::ThreadId;
-use glave_harness::{Caller, DEFAULT_BUDGET, Goal, Live};
+use glave_harness::{Caller, Live};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, watch};
@@ -16,7 +16,7 @@ use crate::held::finished;
 use crate::hub::Hub;
 use crate::keyed::Done;
 use crate::modes::Choice;
-use crate::protocol::{ApiError, IdempotencyKey, Notification, Request, TurnResult, Update, code};
+use crate::protocol::{ApiError, IdempotencyKey, Notification, TurnResult, Update, code};
 use crate::server::{Server, api};
 
 /// One thing a running turn sends.
@@ -32,6 +32,8 @@ pub enum TurnItem {
 
 /// A turn's notifications, then its ending.
 pub struct TurnStream {
+    /// The model the turn, or the goal's first turn, goes to.
+    pub(crate) model: String,
     /// `None` when the turn had already ended before anyone followed it.
     notes: Option<broadcast::Receiver<Arc<Notification>>>,
     done: Done,
@@ -39,8 +41,13 @@ pub struct TurnStream {
 }
 
 impl TurnStream {
-    pub(crate) fn new(notes: Option<broadcast::Receiver<Arc<Notification>>>, done: Done) -> Self {
+    pub(crate) fn new(
+        model: String,
+        notes: Option<broadcast::Receiver<Arc<Notification>>>,
+        done: Done,
+    ) -> Self {
         Self {
+            model,
             notes,
             done,
             ended: false,
@@ -120,66 +127,6 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Starts `request` and streams it when its method streams (`turn/start`, `goal/start`);
-    /// hands any other request back, to answer with [`Server::request_as`].
-    pub async fn start_streaming(
-        &self,
-        caller: &Caller,
-        request: Request,
-    ) -> Result<Result<TurnStream, ApiError>, Box<Request>> {
-        if !streams(&request) {
-            return Err(Box::new(request));
-        }
-        let span = crate::trace::span(&request);
-        tracing::Instrument::instrument(self.stream(caller, request), span).await
-    }
-
-    /// Starts `request` when its method streams, in the current span.
-    pub(crate) async fn stream(
-        &self,
-        caller: &Caller,
-        request: Request,
-    ) -> Result<Result<TurnStream, ApiError>, Box<Request>> {
-        let trace = crate::trace::trace_of(&request);
-        let caller = &Caller {
-            trace: trace.or_else(|| caller.trace.clone()),
-            ..caller.clone()
-        };
-        match request {
-            Request::TurnStart {
-                thread,
-                prompt,
-                meta,
-                background: false,
-                budget,
-                model,
-                approval,
-            } => {
-                if budget.is_some() {
-                    return Ok(Err(crate::tasks::requests::unenforced_budget()));
-                }
-                let key = meta.idempotency_key.as_ref();
-                let choice = Choice { model, approval };
-                Ok(self
-                    .start_turn_with(caller, thread, &prompt, key, choice)
-                    .await)
-            }
-            Request::GoalStart {
-                thread,
-                objective,
-                budget,
-                background: false,
-            } => {
-                let goal = objective.map(|objective| Goal {
-                    objective,
-                    token_budget: budget.unwrap_or(DEFAULT_BUDGET),
-                });
-                Ok(self.start_goal_as(caller, thread, goal).await)
-            }
-            other => Err(Box::new(other)),
-        }
-    }
-
     /// Starts a turn for `caller` and streams it, first choosing for the thread the model and
     /// approval mode `choice` names, when it does: this turn and the thread's later ones go to
     /// it and ask that much. With `key`, a turn already started in `thread` with the same key
@@ -194,14 +141,14 @@ where
         choice: Choice,
     ) -> Result<TurnStream, ApiError> {
         self.authorize(caller, thread).await?;
-        self.model_of(thread, choice.model.as_deref()).await?;
+        let model = self.model_of(thread, choice.model.as_deref()).await?;
         self.check_approval(thread, choice.approval).await?;
         let (finish, done) = watch::channel(None);
         if let Some(key) = key
             && let Some(started) = self.inner.keyed.claim(thread, key, &done)
         {
             let notes = started.borrow().is_none().then(|| self.watch(thread));
-            return Ok(TurnStream::new(notes, started));
+            return Ok(TurnStream::new(model, notes, started));
         }
         let notes = self.watch(thread);
         let prompt = prompt.to_owned();
@@ -233,20 +180,6 @@ where
             }
             return Err(failed);
         }
-        Ok(TurnStream::new(Some(notes), done))
+        Ok(TurnStream::new(model, Some(notes), done))
     }
-}
-
-/// Whether `request` streams: a turn or a goal someone follows, not one run as a task.
-fn streams(request: &Request) -> bool {
-    matches!(
-        request,
-        Request::TurnStart {
-            background: false,
-            ..
-        } | Request::GoalStart {
-            background: false,
-            ..
-        }
-    )
 }

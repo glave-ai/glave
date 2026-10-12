@@ -1,21 +1,32 @@
-//! A Server-Sent Events decoder: network bytes in, complete `data` payloads out.
+//! A Server-Sent Events decoder: network bytes in, complete `data` payloads out. Every
+//! client of an event stream uses it: the model providers, and the session API's client.
 
-use glave_ports::ProviderError;
+/// The most one event may hold, across its lines, so a broken or hostile stream cannot grow
+/// memory without bound.
+const MAX_EVENT: usize = 16 * 1024 * 1024;
 
-/// The longest line accepted, so a broken or hostile stream cannot grow memory without bound.
-const MAX_LINE: usize = 8 * 1024 * 1024;
+/// Why an event stream cannot be read.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SseError {
+    #[error("the event stream is not UTF-8")]
+    NotUtf8,
+    #[error("an event in the stream exceeded {MAX_EVENT} bytes")]
+    TooLong,
+}
 
 /// Decodes a Server-Sent Events stream incrementally. Bytes may arrive split anywhere,
-/// including inside a line or a multi-byte character.
+/// including inside a line or a multi-byte character; lines end in LF or CRLF.
 #[derive(Debug, Default)]
-pub(crate) struct SseDecoder {
+pub struct SseDecoder {
     buffer: Vec<u8>,
     data: Vec<String>,
+    /// The bytes of `data`, held against `MAX_EVENT`.
+    held: usize,
 }
 
 impl SseDecoder {
     /// Feeds bytes and returns the data payloads of every event they complete.
-    pub(crate) fn push(&mut self, bytes: &[u8]) -> Result<Vec<String>, ProviderError> {
+    pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<String>, SseError> {
         self.buffer.extend_from_slice(bytes);
         let mut events = Vec::new();
         while let Some(end) = self.buffer.iter().position(|b| *b == b'\n') {
@@ -23,20 +34,17 @@ impl SseDecoder {
             while matches!(line.last(), Some(b'\n' | b'\r')) {
                 line.pop();
             }
-            let line = String::from_utf8(line)
-                .map_err(|_| ProviderError::Protocol("the event stream is not UTF-8".into()))?;
+            let line = String::from_utf8(line).map_err(|_| SseError::NotUtf8)?;
             self.line(&line, &mut events);
         }
-        if self.buffer.len() > MAX_LINE {
-            return Err(ProviderError::Protocol(format!(
-                "an event stream line exceeded {MAX_LINE} bytes"
-            )));
+        if self.buffer.len().saturating_add(self.held) > MAX_EVENT {
+            return Err(SseError::TooLong);
         }
         Ok(events)
     }
 
     /// Ends the stream, returning a last event that was not followed by a blank line.
-    pub(crate) fn finish(&mut self) -> Option<String> {
+    pub fn finish(&mut self) -> Option<String> {
         if !self.buffer.is_empty() {
             let rest = std::mem::take(&mut self.buffer);
             let mut events = Vec::new();
@@ -54,16 +62,18 @@ impl SseDecoder {
                 events.push(self.take_event());
             }
         } else if let Some(value) = line.strip_prefix("data:") {
-            self.data
-                .push(value.strip_prefix(' ').unwrap_or(value).to_owned());
+            let value = value.strip_prefix(' ').unwrap_or(value);
+            self.held = self.held.saturating_add(value.len());
+            self.data.push(value.to_owned());
         }
         // Comments (lines starting with ':') and the other fields (event, id, retry) carry
-        // nothing the Messages API needs: each payload names its own type.
+        // nothing glave's streams use: each payload names its own kind.
     }
 
     fn take_event(&mut self) -> String {
         let event = self.data.join("\n");
         self.data.clear();
+        self.held = 0;
         event
     }
 }
@@ -114,21 +124,28 @@ mod tests {
     }
 
     #[test]
-    fn an_endless_line_is_refused() {
+    fn an_endless_line_or_event_is_refused() {
         let mut decoder = SseDecoder::default();
-        let chunk = vec![b'x'; MAX_LINE + 1];
-        assert!(decoder.push(&chunk).is_err());
+        let chunk = vec![b'x'; MAX_EVENT + 1];
+        assert_eq!(decoder.push(&chunk), Err(SseError::TooLong));
+        let mut decoder = SseDecoder::default();
+        let line = [b"data: ".as_slice(), &vec![b'x'; 1024 * 1024], b"\n"].concat();
+        let pushed: Result<Vec<_>, _> = (0..17).map(|_| decoder.push(&line)).collect();
+        assert_eq!(pushed, Err(SseError::TooLong));
     }
 
     proptest::proptest! {
-        /// However the network splits a stream into chunks, it decodes to the same events,
-        /// including multibyte characters cut in half.
+        /// However the network splits a stream into chunks, and whether its lines end in LF or
+        /// in CRLF (as a proxy may send them), it decodes to the same events, including
+        /// multibyte characters cut in half.
         #[test]
         fn any_chunking_decodes_the_same_events(
             payloads in proptest::collection::vec("[a-zA-Z0-9é漢🙂{}:,\\[\\]][a-zA-Z0-9é漢🙂 {}:,]{0,30}", 0..8),
             cuts in proptest::collection::vec(proptest::prelude::any::<usize>(), 0..12),
+            crlf in proptest::prelude::any::<bool>(),
         ) {
-            let stream: String = payloads.iter().map(|payload| ["data: ", payload, "\n\n"].concat()).collect();
+            let end = if crlf { "\r\n" } else { "\n" };
+            let stream: String = payloads.iter().map(|payload| ["data: ", payload, end, end].concat()).collect();
             let bytes = stream.as_bytes();
             let mut points: Vec<usize> = cuts.iter().map(|cut| cut % (bytes.len() + 1)).collect();
             points.sort_unstable();

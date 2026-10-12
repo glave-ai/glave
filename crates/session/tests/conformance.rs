@@ -7,7 +7,7 @@ use glave_event::{Body, Outcome, ThreadId, decode};
 use glave_session::protocol::{
     Answer, ApiError, Meta, Notification, Reply, Request, TurnResult, Update, code,
 };
-use glave_session::{Answering, TurnItem};
+use glave_session::{Answering, TurnItem, rpc};
 use serde_json::{Value, json};
 use tokio::io::{
     AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader, Lines,
@@ -72,7 +72,7 @@ type Reader = Box<dyn AsyncRead + Unpin + Send>;
 struct OverJsonRpc {
     to_server: Writer,
     from_server: Lines<BufReader<Reader>>,
-    next_id: i64,
+    next_id: u64,
     serving: Option<JoinHandle<std::io::Result<()>>>,
     /// A long-running server, shut down when the test is done with it.
     shared: Option<Tested>,
@@ -121,12 +121,9 @@ impl OverJsonRpc {
         }
     }
 
-    async fn send(&mut self, request: &Request) -> i64 {
+    async fn send(&mut self, request: &Request) -> u64 {
         self.next_id += 1;
-        let mut message = serde_json::to_value(request).unwrap();
-        message["jsonrpc"] = json!("2.0");
-        message["id"] = json!(self.next_id);
-        let line = format!("{message}\n");
+        let line = format!("{}\n", rpc::message(self.next_id, request));
         self.to_server.write_all(line.as_bytes()).await.unwrap();
         self.next_id
     }
@@ -149,13 +146,28 @@ impl OverJsonRpc {
     }
 }
 
+/// What a response says, as the scenarios read it: the result as JSON, or the error. Kept as
+/// JSON: a reply holding events cannot be read back as a `Reply`, whose untagged variants
+/// cannot hold raw JSON.
 fn outcome(message: &Value) -> Result<Value, ApiError> {
     assert_eq!(message["jsonrpc"], "2.0");
     match message.get("error") {
-        Some(error) => {
-            Err(serde_json::from_value(error.clone()).unwrap_or_else(|err| unreadable(&err)))
-        }
+        Some(error) => Err(
+            serde_json::from_value(error.clone()).unwrap_or_else(|err| ApiError {
+                code: 0,
+                message: format!("unreadable error: {err}"),
+                data: None,
+            }),
+        ),
         None => Ok(message["result"].clone()),
+    }
+}
+
+/// How a turn ended, from its response.
+fn ended(message: &Value) -> Result<TurnResult, ApiError> {
+    match rpc::outcome(message)? {
+        Reply::Turn { turn } => Ok(turn),
+        other => panic!("a turn, not {other:?}"),
     }
 }
 
@@ -189,9 +201,7 @@ impl Client for OverJsonRpc {
         loop {
             let message = self.receive().await;
             if message["id"] == id {
-                return outcome(&message).and_then(|result| {
-                    serde_json::from_value(result["turn"].clone()).map_err(|err| unreadable(&err))
-                });
+                return ended(&message);
             }
             if message.get("method").is_some() {
                 let note: Notification = serde_json::from_value(message).unwrap();
@@ -259,9 +269,7 @@ impl Client for OverHttp {
         }
         while let Some(message) = events.next().await {
             if message["id"] == id {
-                return outcome(&message).and_then(|result| {
-                    serde_json::from_value(result["turn"].clone()).map_err(|err| unreadable(&err))
-                });
+                return ended(&message);
             }
             let note: Notification = serde_json::from_value(message).unwrap();
             if let Some(reaction) = react(&note) {
@@ -269,15 +277,6 @@ impl Client for OverHttp {
             }
         }
         panic!("the stream ended without the turn's response")
-    }
-}
-
-/// A message the test could not read, as an error the scenario will show.
-fn unreadable(err: &serde_json::Error) -> ApiError {
-    ApiError {
-        code: 0,
-        message: format!("unreadable message: {err}"),
-        data: None,
     }
 }
 
