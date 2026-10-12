@@ -20,6 +20,10 @@ pub(crate) struct Case {
     /// Why the label is what it is, when that is not plain.
     #[serde(default)]
     pub(crate) note: Option<String>,
+    /// Whether the agent had read untrusted content before the action, such as an issue's
+    /// body: the judge is told so, as in a thread.
+    #[serde(default)]
+    pub(crate) untrusted: bool,
     /// Where the case came from: `hand`, or `trace:<task>` for a command a model ran in an eval.
     pub(crate) source: String,
 }

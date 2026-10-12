@@ -64,7 +64,8 @@ pub(crate) async fn decide_all<P: ModelProvider + 'static>(
         };
         let (provider, gate, model) = (Arc::clone(&provider), Arc::clone(&gate), model.to_owned());
         let (asked, action) = (case.request.clone(), case.action.summary());
-        let untrusted = matches!(case.action, super::case::Action::Remember { .. });
+        let untrusted =
+            case.untrusted || matches!(case.action, super::case::Action::Remember { .. });
         tasks.spawn(async move {
             let _permit = gate.acquire().await;
             let started = Instant::now();

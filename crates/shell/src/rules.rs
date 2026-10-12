@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use crate::credentials::prints_credential;
+use crate::forge::forge;
 use crate::judge::{Caution, Context, Kind};
 use crate::parse::{Command, Word};
 use crate::paths::{basename, critical, inside, resolve};
@@ -61,9 +62,13 @@ pub(crate) fn caution(command: &Command, context: &Context<'_>) -> Option<Cautio
     let cwd = command.cwd.as_deref();
     let words = unwrapped(&command.words);
     let name = words.first().and_then(Word::literal).map(basename);
-    // Before `sudo`'s own caution, which a judge may clear: this one it never may.
+    let forge = name.and_then(|name| forge(name, words));
+    // Before `sudo`'s own caution, which a judge may clear: these it never may.
     if let Some(found) = name.and_then(|name| prints_credential(name, words)) {
         return Some(found);
+    }
+    if let Some(found) = forge.as_ref().filter(|found| found.kind.firm()) {
+        return Some(found.clone());
     }
     if let Some(found) = admin(&command.words) {
         return Some(found);
@@ -71,7 +76,9 @@ pub(crate) fn caution(command: &Command, context: &Context<'_>) -> Option<Cautio
     let found = match name {
         Some("rm") => removes(words, cwd, context),
         Some("git") => git(words),
-        Some(name) => system(name, words, cwd, context).or_else(|| remote(name, words)),
+        Some(name) => system(name, words, cwd, context)
+            .or(forge)
+            .or_else(|| remote(name, words)),
         None => None,
     };
     found

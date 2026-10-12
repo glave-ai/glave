@@ -20,8 +20,8 @@ pub(crate) fn prints_credential(name: &str, words: &[Word]) -> Option<Caution> {
     let what = match name {
         "git" => git(&args)?,
         _ if name.starts_with("git-credential-") => "git's stored credentials",
-        "gh" if first == Some("auth") && second == Some("token") => "a GitHub token",
-        "glab" if first == Some("auth") && second == Some("token") => "a GitLab token",
+        "gh" if first == Some("auth") && shows_token(second, &args) => "a GitHub token",
+        "glab" if first == Some("auth") && shows_token(second, &args) => "a GitLab token",
         "security"
             if matches!(
                 first,
@@ -83,6 +83,15 @@ fn git(args: &[&str]) -> Option<&'static str> {
     (fill || subcommand.starts_with("credential-")).then_some("git's stored credentials")
 }
 
+/// `auth token`, and `auth status --show-token` (or `-t`), of `gh` and `glab`.
+fn shows_token(verb: Option<&str>, args: &[&str]) -> bool {
+    verb == Some("token")
+        || (verb == Some("status")
+            && args
+                .iter()
+                .any(|arg| *arg == "--show-token" || short(arg, 't')))
+}
+
 /// `print-access-token`, `print-identity-token` and the like.
 fn prints_token(word: &str) -> bool {
     word.starts_with("print-") && word.ends_with("-token")
@@ -117,6 +126,8 @@ mod tests {
             "git credential-osxkeychain get",
             "git-credential-store get",
             "gh auth token",
+            "gh auth status --show-token",
+            "glab auth status -t",
             "GH_HOST=github.com gh auth token --hostname github.com",
             "echo $(gh auth token)",
             "security find-generic-password -s github -w",
