@@ -200,39 +200,37 @@ fn add(a: TokenCounts, b: TokenCounts) -> TokenCounts {
     }
 }
 
-/// The title `event` gives a thread: a `thread.renamed`'s, or the first line of what the
-/// person wrote in a message, trimmed and cut to [`TITLE_CHARS`]. What they wrote is the
-/// message's last text part: a thread's first message opens with the project's instructions.
-/// `None` for any other event.
+/// The title `event` gives a thread: a `thread.renamed`'s, or the one [`title_from`] makes of
+/// what the person wrote in a message. What they wrote is the message's last text part: a
+/// thread's first message opens with the project's instructions. `None` for any other event.
 pub fn title_of(event: &RawEvent) -> Option<String> {
     match decode(event.clone()).ok()?.body {
         Body::ThreadRenamed(renamed) => Some(renamed.title),
-        Body::MessageAdded(message) if message.role == Role::User => {
-            let line = message
+        Body::MessageAdded(message) if message.role == Role::User => title_from(
+            message
                 .parts
                 .iter()
                 .filter_map(|part| match part {
                     Part::Text { text } => Some(text.as_str()),
                     _ => None,
                 })
-                .next_back()?
-                .lines()
-                .map(str::trim)
-                .find(|line| !line.is_empty())?;
-            Some(shorten(line))
-        }
+                .next_back()?,
+        ),
         _ => None,
     }
 }
 
-fn shorten(line: &str) -> String {
+/// The title `text` makes: its first line that is not blank, trimmed, and cut to
+/// [`TITLE_CHARS`] with an ellipsis when it is longer. `None` when every line is blank.
+pub fn title_from(text: &str) -> Option<String> {
+    let line = text.lines().map(str::trim).find(|line| !line.is_empty())?;
     if line.chars().count() <= TITLE_CHARS {
-        return line.to_owned();
+        return Some(line.to_owned());
     }
     let mut short: String = line.chars().take(TITLE_CHARS.saturating_sub(1)).collect();
     short.truncate(short.trim_end().len());
     short.push('…');
-    short
+    Some(short)
 }
 
 /// A place in a listing, most recently written first: the views after it were last written

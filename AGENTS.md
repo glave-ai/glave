@@ -37,8 +37,8 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 Cargo.toml          workspace: lints, profiles, shared dependencies
 xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
-crates/ports/       glave-ports: event log, blob store, model provider (and how one is reached: a key, or credentials that change), tool source and computer ports, the clock and entropy, in-memory versions, conformance suites and the test doubles every crate shares
-crates/identity/    glave-identity: who is calling: the verified caller, OIDC and local sign-in, the person an issuer's subject is
+crates/ports/       glave-ports: event log, blob store, model provider (and how one is reached: a key, or credentials that change), tool source and computer ports, the caller, the clock and entropy, in-memory versions, conformance suites and the test doubles every crate shares
+crates/identity/    glave-identity: who is calling: OIDC and local sign-in that verify the caller, the person an issuer's subject is
 crates/config/      glave-config: config and policy (specs/policy.md): choices nearest-wins, constraints that only narrow, project trust, `policy explain`; shared by the CLI and the servers
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
 crates/provider-anthropic/  glave-provider-anthropic: Anthropic's native Messages API provider (thinking sent back signed), also as Vertex AI's rawPredict

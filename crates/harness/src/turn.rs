@@ -1,18 +1,18 @@
 //! One turn: the person's prompt, then model calls and tool calls until the model is done.
 
 use glave_event::{
-    CallId, Currency, MemoryId, MessageAdded, ModelRef, Money, Outcome, Part, Principal, Role,
-    StopReason, ThreadId, TokenCounts, ToolCallRequested, TurnEnded, TurnStarted,
+    ApprovalMode, CallId, Currency, MemoryId, MessageAdded, ModelRef, Money, Outcome, Part,
+    Principal, Role, StopReason, ThreadId, TokenCounts, ToolCallRequested, TurnEnded, TurnStarted,
 };
 use glave_ports::{
-    BlobStore, BoxFuture, Completion, Delta, EventLog, Failure, Message, ModelProvider,
+    BlobStore, BoxFuture, Caller, Completion, Delta, EventLog, Failure, Message, ModelProvider,
     ModelRequest, ProviderError, Purpose, ToolCall, ToolChoice, ToolSpec,
 };
 use std::time::Duration;
 
 use serde::Serialize;
 
-use crate::approval::{ApprovalMode, Approver};
+use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::commands::invoked;
 use crate::compaction::{Measured, chars, responded};
@@ -24,7 +24,6 @@ use crate::repeats::Repeats;
 use crate::sandbox::{Recorded, recorded};
 use crate::telemetry;
 use crate::toolset::ToolSet;
-use glave_identity::Caller;
 use tracing::Instrument as _;
 
 /// What the model is told after a cancelled turn, as Codex tells it.

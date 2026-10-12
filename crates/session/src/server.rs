@@ -150,7 +150,7 @@ where
         let entropy: Arc<dyn Entropy> = Arc::from(wiring.entropy);
         let model = settings.model.clone();
         let person = settings.person;
-        let approval = ApprovalMode::from(settings.approval);
+        let approval = settings.approval;
         let choosable = crate::modes::choosable(approval, &wiring.modes);
         let parts = Parts {
             provider: wiring.provider,

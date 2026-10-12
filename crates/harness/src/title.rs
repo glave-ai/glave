@@ -9,7 +9,7 @@ use glave_event::{
 };
 use glave_ports::{
     BlobStore, Completion, EventLog, LogError, Message, ModelProvider, ModelRequest, Purpose,
-    Scope, TITLE_CHARS, ToolChoice,
+    Scope, ToolChoice, title_from,
 };
 
 use crate::approval::Approver;
@@ -247,9 +247,7 @@ fn clean(answer: &str) -> Option<String> {
         .trim_matches(quotes)
         .trim();
     let words: Vec<&str> = title.split_whitespace().collect();
-    let title = cut(&words.join(" "), TITLE_CHARS);
-    let title = title.trim_end();
-    (!title.is_empty()).then(|| title.to_owned())
+    title_from(&words.join(" "))
 }
 
 #[cfg(test)]
@@ -276,7 +274,7 @@ mod tests {
     fn a_long_title_is_cut_to_what_lists_show() {
         let long = "word ".repeat(40);
         let title = clean(&long).unwrap();
-        assert!(title.chars().count() <= TITLE_CHARS, "{title}");
+        assert!(title.chars().count() <= glave_ports::TITLE_CHARS, "{title}");
         assert!(!title.ends_with(' '));
     }
 
