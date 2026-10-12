@@ -69,6 +69,18 @@ impl Endpoint {
         }
     }
 
+    /// Anthropic's Messages API's base in `region`, under which `/v1/messages` is: Claude,
+    /// which Bedrock does not serve through Chat Completions. The request is Anthropic's own
+    /// (`anthropic-version: 2023-06-01`, the model in the body), answered as server-sent
+    /// events, signed for the same service as the endpoint's other APIs.
+    pub fn anthropic_base_url(self, region: &Region) -> String {
+        let region = region.as_str();
+        match self {
+            Self::Runtime => format!("https://bedrock-runtime.{region}.amazonaws.com/anthropic"),
+            Self::Mantle => format!("https://bedrock-mantle.{region}.api.aws/anthropic"),
+        }
+    }
+
     /// The service name requests here are signed for.
     pub fn signing_name(self) -> &'static str {
         match self {
