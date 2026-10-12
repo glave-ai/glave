@@ -1,6 +1,6 @@
 //! Work moves between computers only through git: a repository is cloned into a workspace,
-//! and a save commits everything to a branch and pushes it back. A plain folder keeps a
-//! hidden history of its own, capped in size, and never becomes a repository itself.
+//! and a save commits everything to a branch and pushes it back. A plain folder lives on one
+//! computer and is worked in place; glave saves nothing in it.
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -8,15 +8,7 @@ use std::process::Stdio;
 
 use glave_ports::{ComputerError, GitCredential, Save, Saved};
 
-use super::files::total_size;
 use super::registry::Opened;
-
-/// Where a plain folder's history lives, inside the folder.
-pub(crate) const HISTORY: &str = ".glave/history.git";
-/// The same history, as a line in `.glave/.gitignore`, which lives inside `.glave`.
-const IGNORED: &str = "history.git";
-/// The largest plain folder whose history glave keeps; past this, make it a repository.
-const MAX_PLAIN_BYTES: u64 = 100 * 1024 * 1024;
 
 /// One git invocation: the environment it runs with, the folder, and any leading options.
 pub(crate) struct Git<'a> {
@@ -196,78 +188,21 @@ pub(crate) async fn save(opened: &Opened, save: &Save) -> Result<Saved, Computer
     })
 }
 
-/// The workspace's repository: its own, or for a plain folder, its hidden history.
+/// The workspace's own repository. A folder that is not one is refused: glave keeps no
+/// history of its own in it.
 async fn repository(opened: &Opened) -> Result<Git<'_>, ComputerError> {
-    let mut git = Git {
+    if !tokio::fs::try_exists(opened.root.join(".git"))
+        .await
+        .unwrap_or(false)
+    {
+        return Err(ComputerError::Refused(
+            "this folder is not a git repository; glave saves work only in repositories".into(),
+        ));
+    }
+    Ok(Git {
         environment: &opened.environment,
         at: &opened.root,
         options: Vec::new(),
         credential: opened.credential.as_ref(),
-    };
-    if tokio::fs::try_exists(opened.root.join(".git"))
-        .await
-        .unwrap_or(false)
-    {
-        return Ok(git);
-    }
-    let size = total_size(&opened.root, MAX_PLAIN_BYTES).await?;
-    if size > MAX_PLAIN_BYTES {
-        return Err(ComputerError::Refused(format!(
-            "this folder holds more than {} MB; glave keeps history for plain folders up to that \
-             size. Make it a git repository to save it",
-            MAX_PLAIN_BYTES / 1024 / 1024
-        )));
-    }
-    let history = opened.root.join(HISTORY);
-    let mut git_dir = OsString::from("--git-dir=");
-    git_dir.push(&history);
-    let mut work_tree = OsString::from("--work-tree=");
-    work_tree.push(&opened.root);
-    git.options = vec![git_dir, work_tree];
-    if !tokio::fs::try_exists(&history).await.unwrap_or(false) {
-        let info = history.join("info");
-        let exclude = info.join("exclude");
-        let failed = |error: std::io::Error| {
-            ComputerError::Failed(format!("could not write {}: {error}", exclude.display()))
-        };
-        tokio::fs::create_dir_all(&info).await.map_err(failed)?;
-        git.must(&["init", "--quiet"]).await?;
-        tokio::fs::write(&exclude, format!("/{HISTORY}/\n"))
-            .await
-            .map_err(failed)?;
-        ignore_history(&opened.root).await?;
-    }
-    Ok(git)
-}
-
-/// Makes sure `<folder>/.glave/.gitignore` lists the hidden history, so a `git init` run in
-/// the folder later never commits it. Creates the file if it is missing, and otherwise adds
-/// the line once, keeping every other line.
-pub(crate) async fn ignore_history(root: &Path) -> Result<(), ComputerError> {
-    let path = root.join(".glave").join(".gitignore");
-    let failed = |error: std::io::Error| {
-        ComputerError::Failed(format!("could not write {}: {error}", path.display()))
-    };
-    let text = match tokio::fs::read_to_string(&path).await {
-        Ok(text) => Some(text),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(failed(error)),
-    };
-    let Some(mut text) = text else {
-        return tokio::fs::write(&path, format!("{IGNORED}\n"))
-            .await
-            .map_err(failed);
-    };
-    if text
-        .lines()
-        .any(|line| matches!(line.trim(), IGNORED | "/history.git"))
-    {
-        return Ok(());
-    }
-    if !text.is_empty() && !text.ends_with('\n') {
-        text.push('\n');
-    }
-    text.push_str(IGNORED);
-    text.push('\n');
-    tokio::fs::write(&path, text).await.map_err(failed)
+    })
 }

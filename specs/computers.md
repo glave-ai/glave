@@ -30,7 +30,7 @@ Worktrees per thread (#29): a thread works in the folder in place by default, ex
 
 1. **The harness never runs where untrusted code runs, and never picks a machine.** It asks the computer port for "a workspace for this thread, in this space, from this environment"; placement happens behind the port, under policy (`policy.md`).
 2. **Tools run on the computer, next to the files.** The same tool code runs in-process on a local computer and inside `glave computer serve` (the same binary) on a remote one, so tools behave identically everywhere. One conformance suite checks every computer adapter.
-3. **Work moves between computers only through the sources' own history:** git for code (a `glave/<thread>` branch pushed and fetched), and for a plain folder, glave keeps a hidden git repository inside it. There is no other transfer mechanism.
+3. **Work moves between computers only through git:** a `glave/<thread>` branch pushed and fetched. A plain folder lives on one computer and is worked in place; glave keeps no history of its own in it. There is no other transfer mechanism.
 4. **Every binding is an event.** `workspace.bound` (thread, workspace, computer, root, sources) when a thread first acts somewhere; `workspace.moved` (from, to) when it moves. The workspace root is recorded once; tool output and glave's own fields use paths relative to it.
 5. **The agent is told where it is, every turn:** the computer, operating system, workspace root, and what came with a move ("dependencies need installing; the dev server is not running"). It never relies on memory for location.
 6. **One writer.** A workspace has one writing thread. Moving a thread ends the old binding before the new one starts.
@@ -67,7 +67,7 @@ Built so far, beside `computer/create`, `computer/status`, `computer/destroy`, `
 | `files/stat` | what is at a path: where it resolves inside the workspace, nothing, a folder, or a file with its size and SHA-256 |
 | `files/glob` | files matching a pattern (`*.rs` by name, `src/**/*.rs` by path), newest first, leaving out what git ignores, up to a limit, with the total |
 | `files/search` | lines matching a regular expression (plain text when it is not one), in path order, up to a limit; ignored, binary and large files are not searched, and files that usually hold secrets are never opened, only named |
-| `workspace/save` | commits everything to a branch and pushes it to `origin`; a plain folder keeps the commit in a hidden history (`.glave/history.git`, up to 100 MB of files, listed in `.glave/.gitignore` so a later `git init` never commits it), never a `.git` |
+| `workspace/save` | commits everything to a branch and pushes it to `origin` (a repository with no `origin` keeps the commit); a folder that is not a repository is refused |
 
 **When the link fails.** A remote computer's link can drop, stall, or deliver damaged messages; none of that may hang the harness, do work twice, or hand a call another's answer (`crates/computer/tests/faults.rs` injects each fault, and a property test random schedules of them, on paused time).
 

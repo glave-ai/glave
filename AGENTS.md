@@ -100,6 +100,13 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - **Specs hold decisions and invariants,** never method tables, field lists or crate descriptions; the generated schema is the reference. A PR that changes a type rereads the spec section that describes it.
 - **Reviewed before merge.** Every feature PR gets an independent review (not its author) before it merges, beyond CI.
 
+**Keeping principle 4.** A person on their own computer runs exactly what an organization runs. What differs is what sits behind the seams, never what the person sees:
+- **The server says what exists.** `server/discover` tells a client whether there is an organization, groups, sign-in or workers, and admin UI renders only when it says so. A local server says none. No client decides which admin features exist from its own config.
+- **One space shows no spaces.** With a single space, the UI shows no space grouping, members or moving between projects.
+- **Plain words.** No user-visible text names a file, flag, command or error code unless the person typed it. Every error a client can show has a message a person can act on.
+- **The consumer journey test** (`web/e2e/consumer.e2e.ts`, planned in #251) runs against a real server with a fresh home: add a model, chat, approve a command, connect GitHub. It fails if an admin word appears (policy, organization, member, group, admin, SSO, `config.toml`).
+- **Startup and size are measured** after every merge to `main` (`budgets.yml`), and per pull request once #251 lands. A cloud or server dependency that breaks a budget moves behind a Cargo feature, never into the consumer's path.
+
 ## Rust
 
 **Safety and errors**

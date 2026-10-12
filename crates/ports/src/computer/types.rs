@@ -264,7 +264,7 @@ pub struct Save {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Saved {
     pub commit: String,
-    /// False for a folder with nowhere to push to: the commit is kept in its own history.
+    /// False for a repository with no `origin`: the commit stays in it.
     pub pushed: bool,
 }
 
