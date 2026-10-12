@@ -64,7 +64,7 @@ describe('HomeComponent', () => {
     navigate.mockRestore();
   });
 
-  it('starts in the space the link names, on the model picked', async () => {
+  it('starts in the space the link names, on the model and in the mode picked', async () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake, 'p2');
@@ -72,9 +72,14 @@ describe('HomeComponent', () => {
     root.querySelector<HTMLButtonElement>('[data-testid="model-picker-trigger"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
     document.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]')[1]?.click();
+    root.querySelector<HTMLButtonElement>('[data-testid="approval-mode-trigger"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    document.querySelectorAll<HTMLElement>('[data-testid="approval-mode-option"]')[0]?.click();
     await send(root, 'Plant tomatoes');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(fake.paramsOf('thread/start')).toEqual([{ space: 'p2', model: 'hope-12b' }]);
+    expect(fake.paramsOf('thread/start')).toEqual([
+      { space: 'p2', model: 'hope-12b', approval: 'ask' },
+    ]);
     navigate.mockRestore();
   });
 

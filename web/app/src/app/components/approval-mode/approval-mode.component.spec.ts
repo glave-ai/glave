@@ -5,7 +5,9 @@ import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { SERVER } from '../../testing/fixtures';
 import { ApprovalModeComponent } from './approval-mode.component';
 
-async function render(answer: object): Promise<HTMLElement> {
+async function render(
+  answer: object,
+): Promise<ReturnType<typeof TestBed.createComponent<ApprovalModeComponent>>> {
   TestBed.configureTestingModule({
     providers: provideFakeSession(new FakeSession().answer('server/discover', answer)),
   });
@@ -13,27 +15,57 @@ async function render(answer: object): Promise<HTMLElement> {
   await fixture.whenStable();
   await new Promise((resolve) => setTimeout(resolve));
   await fixture.whenStable();
-  return fixture.nativeElement as HTMLElement;
+  return fixture;
+}
+
+function trigger(root: HTMLElement): HTMLButtonElement | null {
+  return root.querySelector<HTMLButtonElement>('[data-testid="approval-mode-trigger"]');
 }
 
 describe('ApprovalModeComponent', () => {
-  it('shows the server’s mode, read-only, and why it cannot change here', async () => {
-    const root = await render(SERVER);
+  afterEach(() => {
+    document.body.click();
+  });
+
+  it('offers the modes the server lets a thread choose, showing the server’s at first', async () => {
+    const fixture = await render(SERVER);
+    const root: HTMLElement = fixture.nativeElement;
+    expect(trigger(root)?.textContent).toContain('Approvals:');
+    expect(trigger(root)?.textContent).toContain('Auto');
+    await expectAccessible(root);
+    fixture.componentRef.setInput('current', 'ask');
+    await fixture.whenStable();
+    expect(trigger(root)?.textContent).toContain('Ask');
+  });
+
+  it('takes the person’s pick', async () => {
+    const fixture = await render(SERVER);
+    trigger(fixture.nativeElement as HTMLElement)?.click();
+    await fixture.whenStable();
+    const items = document.querySelectorAll<HTMLElement>('[data-testid="approval-mode-option"]');
+    expect(Array.from(items, (item) => item.textContent)).toEqual([
+      expect.stringContaining('Ask'),
+      expect.stringContaining('Auto'),
+    ]);
+    items[0]?.click();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.value()).toBe('ask');
+  });
+
+  it('shows the one mode the policy allows, read-only', async () => {
+    const fixture = await render({ ...SERVER, approval: 'ask', approvals: ['ask'] });
+    const root: HTMLElement = fixture.nativeElement;
     const mode = root.querySelector('[data-testid="approval-mode"]');
-    expect(mode?.textContent).toContain('Approvals:');
-    expect(mode?.textContent).toContain('Auto');
-    expect(mode?.getAttribute('title')).toContain('choosing it per thread comes later');
+    expect(mode?.textContent).toContain('Ask');
+    expect(mode?.getAttribute('title')).toContain('only mode');
     expect(root.querySelector('button')).toBeNull();
     await expectAccessible(root);
   });
 
-  it('shows ask mode', async () => {
-    const root = await render({ ...SERVER, approval: 'ask' });
-    expect(root.querySelector('[data-testid="approval-mode"]')?.textContent).toContain('Ask');
-  });
-
   it('shows nothing until the server says', async () => {
-    const root = await render({});
-    expect(root.querySelector('[data-testid="approval-mode"]')).toBeNull();
+    const fixture = await render({});
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="approval-mode"]'),
+    ).toBeNull();
   });
 });

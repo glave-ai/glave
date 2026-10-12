@@ -164,6 +164,32 @@ describe('ThreadComponent', () => {
     ]);
   });
 
+  it('sends the approval mode picked with the next turn, and only when it changes', async () => {
+    // The thread's own mode is auto (its summary says so).
+    const fake = session([]);
+    const { root } = await open(fake);
+    const mode = async (index: number): Promise<void> => {
+      root.querySelector<HTMLButtonElement>('[data-testid="approval-mode-trigger"]')?.click();
+      await settle();
+      const options = document.querySelectorAll<HTMLElement>(
+        '[data-testid="approval-mode-option"]',
+      );
+      options.item(index).click();
+      await settle();
+    };
+    expect(root.querySelector('[data-testid="approval-mode-trigger"]')?.textContent).toContain(
+      'Auto',
+    );
+    await mode(0);
+    await type(root, 'Careful now');
+    await mode(1);
+    await type(root, 'Go ahead');
+    expect(fake.paramsOf('turn/start')).toEqual([
+      { thread: 'thread-1', prompt: 'Careful now', approval: 'ask' },
+      { thread: 'thread-1', prompt: 'Go ahead' },
+    ]);
+  });
+
   it('opens and closes the tools panel by its edge and its shortcut on wide screens', async () => {
     const { root, fixture } = await open(session([]));
     const panel = root.querySelector<HTMLElement>('[data-testid="tools-panel"]');

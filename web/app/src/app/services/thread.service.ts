@@ -1,5 +1,5 @@
 import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
-import type { RawEvent, ThreadId } from '@glave/client';
+import type { ApprovalMode, RawEvent, ThreadId, TurnStartParams } from '@glave/client';
 import type { GlzDecision } from '@glave/glaze';
 
 import {
@@ -65,9 +65,13 @@ export class ThreadService {
 
   /**
    * Sends `prompt` and follows the turn as it runs. With `model`, the turn and the thread's
-   * turns after it go to that model.
+   * turns after it go to that model; with `approval`, they run in that approval mode.
    */
-  async send(prompt: string, model: string | null = null): Promise<void> {
+  async send(
+    prompt: string,
+    model: string | null = null,
+    approval: ApprovalMode | null = null,
+  ): Promise<void> {
     const thread = this.id();
     if (thread === null || this.running()) {
       return;
@@ -77,7 +81,12 @@ export class ThreadService {
     this.running.set(true);
     this.failed.set(null);
     try {
-      const params = model === null ? { thread, prompt } : { thread, prompt, model };
+      const params: TurnStartParams = {
+        thread,
+        prompt,
+        ...(model === null ? {} : { model }),
+        ...(approval === null ? {} : { approval }),
+      };
       const turn = this.session.stream('turn/start', params, controller.signal);
       for await (const note of turn) {
         if (note.params.thread !== thread) {
