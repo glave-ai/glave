@@ -1,98 +1,17 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpListener;
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
+use std::sync::Arc;
 
 use glave_ports::auth::{Auth, Outgoing};
-use jiff::Timestamp;
+use glave_ports::block_on;
+use glave_ports::testing::{FakeHttp, ManualClock, Received};
 
 use super::*;
 
-/// A clock the test moves.
-struct Manual(AtomicI64);
-
-impl Clock for Manual {
-    fn now(&self) -> Timestamp {
-        Timestamp::from_second(self.0.load(Ordering::SeqCst)).unwrap()
-    }
-}
-
-/// A request the fake Entra received: its path and its form.
-struct Received {
-    path: String,
-    form: HashMap<String, String>,
-}
-
-/// A fake Entra on 127.0.0.1 that gives each request the next of its answers.
-struct FakeEntra {
-    url: String,
-    received: Arc<Mutex<Vec<Received>>>,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl FakeEntra {
-    fn start(answers: Vec<(u16, &'static str)>) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let received = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&received);
-        let thread = std::thread::spawn(move || {
-            for (status, body) in answers {
-                let (stream, _) = listener.accept().unwrap();
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                let path = line.split_whitespace().nth(1).unwrap().to_owned();
-                let mut length = 0;
-                loop {
-                    let mut header = String::new();
-                    reader.read_line(&mut header).unwrap();
-                    let header = header.trim_end();
-                    if header.is_empty() {
-                        break;
-                    }
-                    if let Some((name, value)) = header.split_once(':')
-                        && name.eq_ignore_ascii_case("content-length")
-                    {
-                        length = value.trim().parse().unwrap();
-                    }
-                }
-                let mut form = vec![0; length];
-                reader.read_exact(&mut form).unwrap();
-                let form = url::form_urlencoded::parse(&form).into_owned().collect();
-                log.lock().unwrap().push(Received { path, form });
-                let mut stream = stream;
-                write!(
-                    stream,
-                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: \
-                     {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                )
-                .unwrap();
-            }
-        });
-        Self {
-            url,
-            received,
-            thread: Some(thread),
-        }
-    }
-
-    /// Every request, once all the answers have been given.
-    fn received(mut self) -> Vec<Received> {
-        self.thread.take().unwrap().join().unwrap();
-        std::mem::take(&mut *self.received.lock().unwrap())
-    }
-}
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
+/// A request's body as a form.
+fn form(received: &Received) -> HashMap<String, String> {
+    url::form_urlencoded::parse(received.body.as_bytes())
+        .into_owned()
+        .collect()
 }
 
 const TOKEN: &str = r#"{"token_type":"Bearer","expires_in":3599,"access_token":"entra-1"}"#;
@@ -107,7 +26,7 @@ const REQUEST: Outgoing<'static> = Outgoing {
 
 struct Pod {
     folder: PathBuf,
-    clock: Arc<Manual>,
+    clock: ManualClock,
 }
 
 impl Pod {
@@ -118,7 +37,7 @@ impl Pod {
         std::fs::write(folder.join("token"), "cluster-jwt-1\n").unwrap();
         Self {
             folder,
-            clock: Arc::new(Manual(AtomicI64::new(1_000_000))),
+            clock: ManualClock::at_second(1_000_000),
         }
     }
 
@@ -131,7 +50,7 @@ impl Pod {
             "AZURE_AUTHORITY_HOST" => Some(format!("{authority}/")),
             _ => None,
         };
-        WorkloadIdentity::from_env(env, DEFAULT_SCOPE, self.clock.clone())
+        WorkloadIdentity::from_env(env, DEFAULT_SCOPE, Arc::new(self.clock.clone()))
             .unwrap()
             .unwrap()
     }
@@ -144,7 +63,7 @@ impl Drop for Pod {
 }
 
 fn bearer(auth: &Auth) -> Result<String, AuthError> {
-    let headers = block_on(auth.headers(&REQUEST))?;
+    let headers = block_on!(auth.headers(&REQUEST))?;
     assert_eq!(headers.len(), 1);
     assert_eq!(headers[0].name, "authorization");
     Ok(headers[0].value.expose().to_owned())
@@ -152,18 +71,18 @@ fn bearer(auth: &Auth) -> Result<String, AuthError> {
 
 #[test]
 fn the_cluster_token_is_exchanged_and_the_entra_token_kept_until_near_expiry() {
-    let entra = FakeEntra::start(vec![(200, TOKEN), (200, TOKEN_2)]);
+    let entra = FakeHttp::start(vec![(200, TOKEN.into()), (200, TOKEN_2.into())]).unwrap();
     let pod = Pod::new("exchange");
     let auth = Auth::Changing(Arc::new(pod.identity(&entra.url)));
     assert_eq!(bearer(&auth).unwrap(), "Bearer entra-1");
-    pod.clock.0.fetch_add(3_000, Ordering::SeqCst);
+    pod.clock.advance_seconds(3_000);
     assert_eq!(
         bearer(&auth).unwrap(),
         "Bearer entra-1",
         "kept, not asked again"
     );
     std::fs::write(pod.folder.join("token"), "cluster-jwt-2").unwrap();
-    pod.clock.0.fetch_add(400, Ordering::SeqCst);
+    pod.clock.advance_seconds(400);
     assert_eq!(
         bearer(&auth).unwrap(),
         "Bearer entra-2",
@@ -172,27 +91,29 @@ fn the_cluster_token_is_exchanged_and_the_entra_token_kept_until_near_expiry() {
     let received = entra.received();
     assert_eq!(received.len(), 2);
     assert_eq!(received[0].path, "/tenant-1/oauth2/v2.0/token");
-    let form = &received[0].form;
-    assert_eq!(form["client_id"], "client-1");
-    assert_eq!(form["scope"], "https://ai.azure.com/.default");
-    assert_eq!(form["grant_type"], "client_credentials");
-    assert_eq!(form["client_assertion_type"], ASSERTION_TYPE);
-    assert_eq!(form["client_assertion"], "cluster-jwt-1");
+    let first = form(&received[0]);
+    assert_eq!(first["client_id"], "client-1");
+    assert_eq!(first["scope"], "https://ai.azure.com/.default");
+    assert_eq!(first["grant_type"], "client_credentials");
+    assert_eq!(first["client_assertion_type"], ASSERTION_TYPE);
+    assert_eq!(first["client_assertion"], "cluster-jwt-1");
     assert_eq!(
-        received[1].form["client_assertion"], "cluster-jwt-2",
+        form(&received[1])["client_assertion"],
+        "cluster-jwt-2",
         "the file is read again, as Kubernetes rewrites it"
     );
 }
 
 #[test]
 fn a_refused_exchange_says_why_without_the_assertion() {
-    let entra = FakeEntra::start(vec![
+    let entra = FakeHttp::start(vec![
         (
             400,
-            r#"{"error":"invalid_client","error_description":"AADSTS700016: Application with identifier 'client-1' was not found.\r\nTrace ID: 1"}"#,
+            r#"{"error":"invalid_client","error_description":"AADSTS700016: Application with identifier 'client-1' was not found.\r\nTrace ID: 1"}"#
+                .into(),
         ),
-        (503, "{}"),
-    ]);
+        (503, "{}".into()),
+    ]).unwrap();
     let pod = Pod::new("refused");
     let auth = Auth::Changing(Arc::new(pod.identity(&entra.url)));
     let refused = bearer(&auth).unwrap_err();
@@ -224,7 +145,7 @@ fn a_missing_token_file_is_named() {
 
 #[test]
 fn the_environment_is_checked_naming_what_is_wrong() {
-    let clock: Arc<dyn Clock> = Arc::new(Manual(AtomicI64::new(0)));
+    let clock: Arc<dyn Clock> = Arc::new(ManualClock::at_second(0));
     let build = |vars: &[(&str, &str)]| {
         let vars: HashMap<String, String> = vars
             .iter()

@@ -15,7 +15,7 @@ use glave_harness::{
     Remembered, Shown,
 };
 use glave_mcp::{Limits, McpServer, tool_output};
-use glave_ports::{BoxFuture, Cancellation, EventLog, Scope, ToolError, ToolInfo, ToolSource};
+use glave_ports::{BoxFuture, EventLog, NeverCancelled, Scope, ToolError, ToolInfo, ToolSource};
 use rmcp::ServiceExt as _;
 use rmcp::model::ResourceContents;
 use serde::Deserialize;
@@ -46,19 +46,6 @@ struct Listed {
     memories: Vec<Remembered>,
     #[serde(default)]
     questions: Vec<[MemoryId; 2]>,
-}
-
-/// A read that is never cancelled: memory reads are short and bounded by the call limit.
-struct Never;
-
-impl Cancellation for Never {
-    fn is_cancelled(&self) -> bool {
-        false
-    }
-
-    fn cancelled(&self) -> BoxFuture<'_, ()> {
-        Box::pin(std::future::pending())
-    }
 }
 
 impl<L: EventLog + 'static> GlaveMemory<L> {
@@ -158,7 +145,7 @@ impl<L: EventLog + 'static> GlaveMemory<L> {
     async fn listing(&self, on: &MemoryContext, uri: &str) -> Result<Listed, MemoryError> {
         let contents = self
             .client
-            .read_with(uri, Context::of(on).meta(), &Never)
+            .read_with(uri, Context::of(on).meta(), &NeverCancelled)
             .await
             .map_err(MemoryError::Storage)?;
         let mut all = Listed {

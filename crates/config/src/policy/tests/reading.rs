@@ -3,15 +3,9 @@
 use std::path::PathBuf;
 
 use glave_harness::ApprovalMode;
+use glave_ports::block_on;
 
 use super::*;
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 pub(super) fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("glave-policy-{name}-{}", std::process::id()));
@@ -26,7 +20,7 @@ pub(super) fn load_all(
     locations: &Locations,
     project: Option<ConfigFile>,
 ) -> crate::Result<Loaded> {
-    block_on(async {
+    block_on!(async {
         let policies = policies(locations).await?;
         load(
             locations,

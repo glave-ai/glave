@@ -226,13 +226,7 @@ impl From<AuthError> for ProviderError {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
+    use crate::block_on;
 
     const REQUEST: Outgoing<'static> = Outgoing {
         method: "POST",
@@ -242,7 +236,7 @@ mod tests {
     };
 
     fn headers(auth: &Auth) -> Vec<(String, String)> {
-        block_on(auth.headers(&REQUEST))
+        block_on!(auth.headers(&REQUEST))
             .unwrap()
             .into_iter()
             .map(|header| (header.name, header.value.expose().to_owned()))
@@ -304,7 +298,7 @@ mod tests {
             "{:?} {:?} {:?}",
             Auth::key(KeyHeader::ApiKey, "hunter2"),
             Secret::new("hunter2"),
-            block_on(Auth::bearer(Some("hunter2".into())).headers(&REQUEST)).unwrap(),
+            block_on!(Auth::bearer(Some("hunter2".into())).headers(&REQUEST)).unwrap(),
         );
         assert!(!shown.contains("hunter2"), "{shown}");
         assert!(shown.contains("[redacted]"), "{shown}");

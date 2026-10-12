@@ -12,17 +12,9 @@ mod remote_tests {
     use glave_computer::{
         Identity, LocalComputers, RemoteComputers, Token, connect_tls, serve, serve_tcp, serve_tls,
     };
-    use glave_ports::{ComputerError, ComputerId, Computers, conformance};
+    use glave_ports::{ComputerError, ComputerId, Computers, block_on, conformance};
     use tokio::io::BufReader;
     use tokio::net::{TcpListener, TcpStream};
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
 
     fn scratch(name: &str) -> (PathBuf, PathBuf) {
         let dir = std::env::temp_dir().join(format!("glave-remote-{name}-{}", std::process::id()));
@@ -42,7 +34,7 @@ mod remote_tests {
     #[test]
     fn a_computer_across_a_pipe_passes_the_suite() {
         let (work, copies) = scratch("pipe");
-        block_on(async {
+        block_on!(async {
             let (client, server) = tokio::io::duplex(64 * 1024);
             let (server_read, server_write) = tokio::io::split(server);
             let serving = tokio::spawn(serve(
@@ -66,7 +58,7 @@ mod remote_tests {
     #[test]
     fn a_server_that_predates_protected_writes_is_refused() {
         use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
-        block_on(async {
+        block_on!(async {
             let (client, server) = tokio::io::duplex(64 * 1024);
             let older = tokio::spawn(async move {
                 let (read, mut write) = tokio::io::split(server);
@@ -99,7 +91,7 @@ mod remote_tests {
     #[test]
     fn a_computer_over_tcp_passes_the_suite_once_signed_in() {
         let (work, copies) = scratch("tcp");
-        block_on(async {
+        block_on!(async {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = listener.local_addr().unwrap();
             let serving = tokio::spawn(serve_tcp(local(&copies), listener, "s3cret".into()));
@@ -189,7 +181,7 @@ mod remote_tests {
     #[test]
     fn a_computer_across_a_pipe_keeps_secret_variables_from_commands() {
         let (work, copies) = scratch("secrets-pipe");
-        block_on(async {
+        block_on!(async {
             let (client, server) = tokio::io::duplex(64 * 1024);
             let (server_read, server_write) = tokio::io::split(server);
             let serving = tokio::spawn(serve(
@@ -209,7 +201,7 @@ mod remote_tests {
     #[test]
     fn a_computer_over_tcp_keeps_secret_variables_from_commands() {
         let (work, copies) = scratch("secrets-tcp");
-        block_on(async {
+        block_on!(async {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = listener.local_addr().unwrap();
             let serving = tokio::spawn(serve_tcp(with_secrets(&copies), listener, "s3cret".into()));
@@ -236,7 +228,7 @@ mod remote_tests {
     #[test]
     fn a_computer_over_tls_passes_the_suite_with_its_certificate_pinned() {
         let (work, copies) = scratch("tls");
-        block_on(async {
+        block_on!(async {
             let token = Token::mint(SystemTime::now(), Duration::from_secs(600)).unwrap();
             let (address, identity, serving) = tls(&copies, token.clone()).await;
             let remote = connect_tls(address, &identity.fingerprint, token.secret())
@@ -261,7 +253,7 @@ mod remote_tests {
     #[test]
     fn an_expired_token_opens_no_connection() {
         let (_, copies) = scratch("tls-expired");
-        block_on(async {
+        block_on!(async {
             // It expired the moment it was made, at the start of Unix time.
             let token = Token::mint(UNIX_EPOCH, Duration::from_secs(1)).unwrap();
             let (address, identity, serving) = tls(&copies, token.clone()).await;

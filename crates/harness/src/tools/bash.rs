@@ -165,15 +165,10 @@ impl Captured {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
+    use glave_ports::block_on;
+
+    use super::*;
 
     #[test]
     fn commands_never_see_secrets() {
@@ -184,7 +179,7 @@ mod tests {
             .collect();
         environment.push(("GLAVE_API_KEY".into(), "sk-not-a-real-key".into()));
         environment.push(("PLAIN_SETTING".into(), "visible".into()));
-        let outcome = block_on(async {
+        let outcome = block_on!(async {
             let workspace = Workspace::open(&dir, environment).await.unwrap();
             let args = BashArgs {
                 command: "env".into(),

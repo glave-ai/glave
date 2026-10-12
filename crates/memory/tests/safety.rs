@@ -77,7 +77,7 @@ mod safety {
 
     #[test]
     fn after_untrusted_content_with_no_one_there_nothing_is_saved_and_the_model_is_told_why() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memory = kit.memory(rules(), 1).await;
             let dir = folder("untrusted-no-one");
@@ -105,7 +105,7 @@ mod safety {
 
     #[test]
     fn after_untrusted_content_the_judge_lets_a_save_through_only_on_the_persons_word() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let canary = "MEMORY-CANARY: Ada likes tea";
             let memories = kit.memories(rules(), 70);
@@ -174,7 +174,7 @@ mod safety {
 
     #[test]
     fn in_ask_mode_a_save_after_untrusted_content_asks_the_person() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memory = kit.memory(rules(), 1).await;
             let dir = folder("untrusted-ask");
@@ -205,7 +205,7 @@ mod safety {
 
     #[test]
     fn a_secret_is_never_saved_and_the_model_is_told_why() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memory = kit.memory(rules(), 1).await;
             let dir = folder("secret");
@@ -245,7 +245,7 @@ mod safety {
 
     #[test]
     fn subagents_get_no_memory_tools_and_see_no_memory() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 70);
             let writer = Writer {

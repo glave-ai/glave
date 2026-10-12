@@ -4,45 +4,20 @@
 use std::collections::VecDeque;
 use std::future::{Future, ready};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_event::{Arguments, ModelRef, Part, PrincipalId, StopReason, TokenCounts, Usage};
-use glave_harness::{
-    ApprovalRequest, Approver, Clock, Decision, Entropy, Harness, Parts, Settings, Workspace,
-};
+use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
 use glave_keys::{KeySettings, MemoryRoot};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory};
+pub use glave_ports::block_on;
+use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
     Completion, Delta, ModelProvider, ModelRequest, OrgId, ProviderError, RequestedCall, Scope,
     SpaceId,
 };
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 use jiff::Timestamp;
-
-pub struct Ticking(pub Arc<AtomicI64>);
-impl Clock for Ticking {
-    fn now(&self) -> Timestamp {
-        let ms = self.0.fetch_add(1, Ordering::SeqCst);
-        Timestamp::from_millisecond(ms).unwrap()
-    }
-}
-
-pub struct Counting(pub AtomicU64);
-impl Entropy for Counting {
-    fn bytes(&self) -> [u8; 10] {
-        let n = self.0.fetch_add(1, Ordering::SeqCst).to_be_bytes();
-        [n[0], n[1], n[2], n[3], n[4], n[5], n[6], n[7], 0, 0]
-    }
-}
-
-pub fn block_on<F: Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 /// 2026-10-03, in milliseconds.
 pub const START: i64 = 1_791_000_000_000;
@@ -98,16 +73,15 @@ pub fn rules() -> Rules {
 /// A sealed store in memory, its clock shared with whatever is wired to it.
 pub struct Kit {
     pub store: Store,
-    pub clock: Arc<AtomicI64>,
+    pub clock: ManualClock,
 }
 
 impl Kit {
     pub fn new() -> Self {
-        let clock = Arc::new(AtomicI64::new(START));
+        let clock = ManualClock::ticking(START);
         let mut keys = KeySettings::new(Arc::new(MemoryRoot::new().unwrap()));
-        let ticking = Arc::clone(&clock);
-        keys.clock =
-            Arc::new(move || Timestamp::from_millisecond(ticking.load(Ordering::SeqCst)).unwrap());
+        let reading = clock.clone();
+        keys.clock = Arc::new(move || Timestamp::from_millisecond(reading.millis()).unwrap());
         Self {
             store: Store::open_in_memory(keys).unwrap(),
             clock,
@@ -119,8 +93,8 @@ impl Kit {
             self.store.log(),
             self.store.keyring(),
             rules,
-            Box::new(Ticking(Arc::clone(&self.clock))),
-            Box::new(Counting(AtomicU64::new(seed << 32))),
+            Box::new(self.clock.clone()),
+            Box::new(CountingEntropy::starting_at(seed << 32)),
         )
     }
 
@@ -153,8 +127,8 @@ impl Kit {
             log: self.store.log(),
             blobs: self.store.blobs(),
             approver,
-            clock: Box::new(Ticking(Arc::clone(&self.clock))),
-            entropy: Box::new(Counting(AtomicU64::new(7 << 40))),
+            clock: Box::new(self.clock.clone()),
+            entropy: Box::new(CountingEntropy::starting_at(7 << 40)),
             workspace: Workspace::new(computers, info),
         };
         let mut harness = Harness::new(parts, settings);

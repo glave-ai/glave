@@ -41,7 +41,7 @@ mod standing {
     #[test]
     fn archiving_hides_a_thread_and_unarchiving_brings_it_back() {
         let dir = folder("archive-list");
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(Some("Hi."), None)];
             let server = server(&dir, answers, Answering::NoOne).await;
             let (a, b) = (start(&server, false).await, start(&server, false).await);
@@ -86,7 +86,7 @@ mod standing {
     #[test]
     fn deleting_hides_a_thread_for_good_and_lists_it_for_erasure() {
         let dir = folder("delete");
-        block_on(async {
+        block_on!(async {
             let database = dir.join("glave.db");
             let root =
                 glave_keys::KeyFileRoot::open_or_create(database.with_extension("key")).unwrap();
@@ -133,7 +133,7 @@ mod standing {
     #[test]
     fn archiving_changes_nothing_the_model_is_sent() {
         let dir = folder("same-requests");
-        block_on(async {
+        block_on!(async {
             let script = || {
                 vec![
                     answer(None, Some(("glob", json!({"pattern": "*"})))),

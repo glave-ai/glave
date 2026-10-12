@@ -74,7 +74,7 @@ mod goals {
     #[test]
     fn the_model_verifies_then_says_the_goal_is_met() {
         let dir = folder("goal-met");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 done("I looked around."),
                 call("write", json!({"path": "done.txt", "content": "yes\n"})),
@@ -130,7 +130,7 @@ mod goals {
     #[test]
     fn the_model_pauses_with_a_reason_and_the_person_resumes_the_goal() {
         let dir = folder("goal-pause");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 call(
                     UPDATE_GOAL,
@@ -196,7 +196,7 @@ mod goals {
     fn a_goal_stops_when_its_budget_runs_out() {
         let dir = folder("goal-budget");
         std::fs::write(dir.join("a.md"), "a\n").unwrap();
-        block_on(async {
+        block_on!(async {
             // Every model call uses 110 tokens; the budget is 250.
             let answers = vec![
                 call("read", json!({"path": "a.md"})),
@@ -234,7 +234,7 @@ mod goals {
     #[test]
     fn cancelling_stops_the_goal_and_stopping_an_idle_goal_ends_it() {
         let dir = folder("goal-stop");
-        block_on(async {
+        block_on!(async {
             let harness = harness(&dir, vec![], AllowAll).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let cancel = Cancel::new();
@@ -251,7 +251,7 @@ mod goals {
             assert!(!harness.stop_goal(&mut thread, &caller).await.unwrap());
         });
         let dir = folder("goal-stop-idle");
-        block_on(async {
+        block_on!(async {
             // The model fails mid-goal: the goal stays active until the person stops it.
             let harness = harness(&dir, vec![done("Started.")], AllowAll).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
@@ -276,7 +276,7 @@ mod goals {
     #[test]
     fn a_goal_survives_a_restart_and_continues_from_the_log() {
         let dir = folder("goal-resume");
-        block_on(async {
+        block_on!(async {
             let first = harness(&dir, vec![done("Started.")], AllowAll).await;
             let mut thread = first.start_thread(scope()).await.unwrap();
             let caller = Caller::default();
@@ -338,7 +338,7 @@ mod goals {
     #[test]
     fn turns_without_a_tool_call_stall_a_goal() {
         let dir = folder("goal-stall");
-        block_on(async {
+        block_on!(async {
             let answers = vec![done("Hmm."), done("Hmm."), done("Hmm.")];
             let harness = harness(&dir, answers, AllowAll).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
@@ -362,7 +362,7 @@ mod goals {
     #[test]
     fn the_goal_tool_is_offered_only_in_a_goals_turns() {
         let dir = folder("goal-absent");
-        block_on(async {
+        block_on!(async {
             let (harness, seen) = harness_seeing(
                 &dir,
                 vec![done("Hi.")],

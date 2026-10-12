@@ -30,7 +30,7 @@ mod tasks {
     #[test]
     fn a_background_turn_runs_with_no_one_attached_and_can_be_read_afterwards() {
         let dir = folder("task-runs");
-        block_on(async {
+        block_on!(async {
             let setup = Setup::new(vec![
                 costing(
                     answer(
@@ -99,7 +99,7 @@ mod tasks {
     #[test]
     fn approvals_in_a_task_are_answered_no_one_there_and_the_model_is_sent_the_same() {
         let dir = folder("task-unattended");
-        block_on(async {
+        block_on!(async {
             let go = || {
                 vec![
                     answer(None, Some(("bash", json!({"command": "touch ran.txt"})))),
@@ -162,7 +162,7 @@ mod tasks {
     #[test]
     fn stopping_a_task_cancels_it_cleanly() {
         let dir = folder("task-stop");
-        block_on(async {
+        block_on!(async {
             let mut setup = Setup::new(vec![
                 answer(Some("never"), None),
                 answer(Some("again"), None),
@@ -186,7 +186,7 @@ mod tasks {
     #[test]
     fn archiving_a_task_s_thread_stops_the_task() {
         let dir = folder("task-archive");
-        block_on(async {
+        block_on!(async {
             let mut setup = Setup::new(vec![answer(Some("never"), None)]);
             setup.gate = Some(Arc::new(Notify::new()));
             let (server, _) = setup.build(&dir).await;
@@ -206,7 +206,7 @@ mod tasks {
     #[test]
     fn a_turn_stops_at_its_budget() {
         let dir = folder("task-budget");
-        block_on(async {
+        block_on!(async {
             let gate = Arc::new(Notify::new());
             let mut setup = Setup::new(vec![
                 costing(
@@ -249,7 +249,7 @@ mod tasks {
     #[test]
     fn policy_limits_how_many_tasks_run_at_once() {
         let dir = folder("task-limit");
-        block_on(async {
+        block_on!(async {
             let mut setup = Setup::new(vec![answer(Some("a"), None), answer(Some("b"), None)]);
             setup.gate = Some(Arc::new(Notify::new()));
             setup.limits.max_running = Some(1);
@@ -282,7 +282,7 @@ mod tasks {
     #[test]
     fn a_background_goal_runs_to_its_end() {
         let dir = folder("task-goal");
-        block_on(async {
+        block_on!(async {
             let setup = Setup::new(vec![
                 answer(None, Some(("update_goal", json!({"status": "complete"})))),
                 answer(Some("Done."), None),

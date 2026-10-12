@@ -12,11 +12,11 @@ mod retrying {
     use std::collections::VecDeque;
     use std::future::{Future, ready};
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicI64, AtomicU64};
     use std::time::Duration;
 
     use glave_event::{Outcome, StopReason};
     use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Live, Parts, Retries};
+    use glave_ports::testing::{CountingEntropy, ManualClock};
     use glave_ports::{
         Completion, Delta, MemoryBlobs, MemoryLog, ModelProvider, ModelRequest, ProviderError,
     };
@@ -77,8 +77,8 @@ mod retrying {
             log: MemoryLog::new(),
             blobs: MemoryBlobs::new(),
             approver: AllowAll,
-            clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
-            entropy: Box::new(Counting(AtomicU64::new(1))),
+            clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
+            entropy: Box::new(CountingEntropy::starting_at(1)),
             workspace: workspace(&folder("retry")).await,
         };
         Harness::new(parts, settings)
@@ -96,7 +96,7 @@ mod retrying {
 
     #[test]
     fn failures_that_may_pass_are_tried_again_and_shown() {
-        block_on(async {
+        block_on!(async {
             let failures = vec![
                 unavailable(),
                 ProviderError::Timeout { seconds: 300 },
@@ -143,7 +143,7 @@ mod retrying {
 
     #[test]
     fn a_response_that_errors_before_any_output_is_tried_again() {
-        block_on(async {
+        block_on!(async {
             let harness = harness(vec![empty_error()], Duration::ZERO).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let mut shown = Vec::new();
@@ -160,7 +160,7 @@ mod retrying {
 
     #[test]
     fn a_response_that_errors_before_any_output_every_time_fails_after_the_limit() {
-        block_on(async {
+        block_on!(async {
             let harness = harness(vec![empty_error(); 5], Duration::ZERO).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let mut shown = Vec::new();
@@ -176,7 +176,7 @@ mod retrying {
 
     #[test]
     fn a_response_that_errors_after_output_is_not_tried_again() {
-        block_on(async {
+        block_on!(async {
             let mut settings = settings();
             settings.retries = Retries {
                 attempts: 4,
@@ -187,8 +187,8 @@ mod retrying {
                 log: MemoryLog::new(),
                 blobs: MemoryBlobs::new(),
                 approver: AllowAll,
-                clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
-                entropy: Box::new(Counting(AtomicU64::new(1))),
+                clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
+                entropy: Box::new(CountingEntropy::starting_at(1)),
                 workspace: workspace(&folder("retry-broken")).await,
             };
             let harness = Harness::new(parts, settings);
@@ -207,7 +207,7 @@ mod retrying {
 
     #[test]
     fn a_failure_that_will_not_pass_ends_the_turn_at_once() {
-        block_on(async {
+        block_on!(async {
             let refused = ProviderError::Http {
                 status: 401,
                 body: "bad key".into(),
@@ -228,7 +228,7 @@ mod retrying {
 
     #[test]
     fn after_four_retries_the_turn_fails() {
-        block_on(async {
+        block_on!(async {
             let harness = harness(vec![unavailable(); 5], Duration::ZERO).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let mut shown = Vec::new();
@@ -246,7 +246,7 @@ mod retrying {
 
     #[test]
     fn a_cancel_during_the_wait_ends_the_turn_cleanly() {
-        block_on(async {
+        block_on!(async {
             let harness = harness(vec![unavailable()], Duration::from_secs(600)).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let cancel = Cancel::new();

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use glave_keys::{KeyFileRoot, KeySettings, MemoryRoot};
-use glave_ports::{EventLog, Spaces as _, conformance};
+use glave_ports::{EventLog, Spaces as _, block_on, conformance};
 use uuid::Uuid;
 
 use super::*;
@@ -20,13 +20,6 @@ fn file_keys(database: &std::path::Path) -> KeySettings {
     KeySettings::new(Arc::new(root))
 }
 
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
-
 fn temp_db(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("glave-sqlite-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -37,19 +30,19 @@ fn temp_db(name: &str) -> PathBuf {
 #[test]
 fn the_log_passes_the_event_log_conformance_suite() {
     let store = Store::open_in_memory(keys()).unwrap();
-    assert_eq!(block_on(conformance::event_log(&store.log())), Ok(()));
+    assert_eq!(block_on!(conformance::event_log(&store.log())), Ok(()));
 }
 
 #[test]
 fn the_log_passes_the_search_conformance_suite() {
     let store = Store::open_in_memory(keys()).unwrap();
-    assert_eq!(block_on(conformance::search(&store.log())), Ok(()));
+    assert_eq!(block_on!(conformance::search(&store.log())), Ok(()));
 }
 
 #[test]
 fn the_search_index_holds_no_word_in_the_clear() {
     let path = temp_db("search");
-    block_on(async {
+    block_on!(async {
         let store = Store::open(&path, file_keys(&path)).await.unwrap();
         assert_eq!(conformance::search(&store.log()).await, Ok(()));
     });
@@ -76,7 +69,7 @@ fn the_search_index_holds_no_word_in_the_clear() {
 #[test]
 fn the_blobs_pass_the_blob_store_conformance_suite() {
     let store = Store::open_in_memory(keys()).unwrap();
-    assert_eq!(block_on(conformance::blob_store(&store.blobs())), Ok(()));
+    assert_eq!(block_on!(conformance::blob_store(&store.blobs())), Ok(()));
 }
 
 /// A project space for `path`'s folder, with ids from `n`.
@@ -105,7 +98,7 @@ fn ada() -> glave_event::Principal {
 #[test]
 fn events_and_spaces_survive_closing_and_reopening() {
     let path = temp_db("reopen");
-    block_on(async {
+    block_on!(async {
         let store = Store::open(&path, file_keys(&path)).await.unwrap();
         assert_eq!(conformance::event_log(&store.log()).await, Ok(()));
         let org = store.org(Uuid::from_u128(1)).await.unwrap();
@@ -130,7 +123,7 @@ fn events_and_spaces_survive_closing_and_reopening() {
 #[test]
 fn the_spaces_pass_the_spaces_conformance_suite() {
     let store = Store::open_in_memory(keys()).unwrap();
-    assert_eq!(block_on(conformance::spaces(&store.spaces())), Ok(()));
+    assert_eq!(block_on!(conformance::spaces(&store.spaces())), Ok(()));
 }
 
 #[test]
@@ -154,7 +147,7 @@ fn spaces_from_before_records_become_records_and_are_claimed() {
             .unwrap();
         transaction.commit().unwrap();
     }
-    block_on(async {
+    block_on!(async {
         let store = Store::open(&path, keys()).await.unwrap();
         let org = store.org(Uuid::max()).await.unwrap();
         let spaces = store.spaces();
@@ -198,7 +191,7 @@ fn a_database_at_schema_4_gains_the_search_index_and_searches_new_events() {
         transaction.pragma_update(None, "user_version", 4).unwrap();
         transaction.commit().unwrap();
     }
-    block_on(async {
+    block_on!(async {
         let store = Store::open(&path, file_keys(&path)).await.unwrap();
         assert_eq!(conformance::search(&store.log()).await, Ok(()));
     });
@@ -217,14 +210,14 @@ fn a_newer_schema_is_refused() {
         let connection = rusqlite::Connection::open(&path).unwrap();
         connection.pragma_update(None, "user_version", 999).unwrap();
     }
-    let result = block_on(Store::open(&path, keys()));
+    let result = block_on!(Store::open(&path, keys()));
     assert!(matches!(result, Err(StoreError::Schema(message)) if message.contains("newer glave")));
 }
 
 #[test]
 fn folders_get_their_own_spaces_in_one_organization() {
     let store = Store::open_in_memory(keys()).unwrap();
-    block_on(async {
+    block_on!(async {
         let org = store.org(Uuid::from_u128(1)).await.unwrap();
         let spaces = store.spaces();
         let path = |p: &str| [glave_ports::FolderKey::Path(p.into())];
@@ -246,7 +239,7 @@ fn folders_get_their_own_spaces_in_one_organization() {
 #[test]
 fn the_log_passes_the_threads_view_conformance_suite() {
     let store = Store::open_in_memory(keys()).unwrap();
-    assert_eq!(block_on(conformance::thread_views(&store.log())), Ok(()));
+    assert_eq!(block_on!(conformance::thread_views(&store.log())), Ok(()));
 }
 
 /// Every row of the threads view, in a stable order.
@@ -267,7 +260,7 @@ fn views(path: &std::path::Path) -> Vec<(String, String, String, String)> {
 #[test]
 fn views_rebuilt_from_the_log_equal_the_kept_ones() {
     let path = temp_db("views");
-    block_on(async {
+    block_on!(async {
         let store = Store::open(&path, file_keys(&path)).await.unwrap();
         assert_eq!(conformance::thread_views(&store.log()).await, Ok(()));
         drop(store);

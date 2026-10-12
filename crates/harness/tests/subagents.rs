@@ -9,12 +9,12 @@ mod support;
 #[cfg(test)]
 mod subagents {
     use std::future::Future;
-    use std::sync::atomic::{AtomicI64, AtomicU64};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use glave_event::{Body, Outcome, Part, StopReason};
     use glave_harness::{AllowAll, Cancel, Harness, Live, Parts};
+    use glave_ports::testing::{CountingEntropy, ManualClock};
     use glave_ports::{
         Completion, Delta, MemoryBlobs, MemoryLog, Message, ModelProvider, ModelRequest,
         ProviderError,
@@ -71,7 +71,7 @@ mod subagents {
     #[test]
     fn a_child_does_the_task_in_its_own_thread_and_reports_back() {
         let dir = folder("subagents-report");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -147,7 +147,7 @@ mod subagents {
     #[test]
     fn a_general_child_has_the_parents_tools_but_no_subagents() {
         let dir = folder("subagents-general");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -182,7 +182,7 @@ mod subagents {
     #[test]
     fn without_the_setting_there_is_no_agent_tool() {
         let dir = folder("subagents-off");
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
@@ -233,7 +233,7 @@ mod subagents {
     #[test]
     fn subagents_in_one_response_run_side_by_side() {
         let dir = folder("subagents-together");
-        block_on(async {
+        block_on!(async {
             let task = |name: &str| {
                 (
                     "agent",
@@ -252,8 +252,8 @@ mod subagents {
                 log: MemoryLog::new(),
                 blobs: MemoryBlobs::new(),
                 approver: AllowAll,
-                clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
-                entropy: Box::new(Counting(AtomicU64::new(1))),
+                clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
+                entropy: Box::new(CountingEntropy::starting_at(1)),
                 workspace: workspace(&dir).await,
             };
             let harness = Harness::new(parts, with_subagents());

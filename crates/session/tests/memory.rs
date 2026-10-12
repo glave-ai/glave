@@ -73,7 +73,7 @@ mod memory {
 
     #[test]
     fn the_person_lists_saves_edits_moves_and_forgets_their_memory() {
-        block_on(async {
+        block_on!(async {
             let (server, _store) = served("memory-controls").await;
             // Over JSON, as any transport carries it.
             let save: Request = serde_json::from_value(serde_json::json!({
@@ -130,7 +130,7 @@ mod memory {
 
     #[test]
     fn another_person_may_not_change_the_persons_own_memory() {
-        block_on(async {
+        block_on!(async {
             let (server, _store) = served("memory-others").await;
             let someone = Caller {
                 person: Some(
@@ -158,7 +158,7 @@ mod memory {
 
     #[test]
     fn a_server_without_memory_says_so() {
-        block_on(async {
+        block_on!(async {
             let dir = folder("memory-off");
             let server = server(&dir, Vec::new(), glave_session::Answering::NoOne).await;
             let off = server

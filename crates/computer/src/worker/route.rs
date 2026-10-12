@@ -4,7 +4,7 @@
 
 use std::sync::Mutex;
 
-use glave_ports::{BoxFuture, Cancellation, ComputerId, ComputerInfo, Output, Size, State};
+use glave_ports::{BoxFuture, ComputerId, ComputerInfo, Output, Size, State};
 
 /// What a computer this adapter does not hold is: gone.
 pub(crate) fn gone(computer: ComputerId) -> ComputerInfo {
@@ -49,19 +49,6 @@ impl Output for Tail {
             }
         }
         Box::pin(std::future::ready(()))
-    }
-}
-
-/// A cancellation that never fires: setup runs to its end or its timeout.
-pub(crate) struct Never;
-
-impl Cancellation for Never {
-    fn is_cancelled(&self) -> bool {
-        false
-    }
-
-    fn cancelled(&self) -> BoxFuture<'_, ()> {
-        Box::pin(std::future::pending())
     }
 }
 

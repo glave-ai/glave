@@ -1,16 +1,10 @@
 use super::*;
 use std::time::UNIX_EPOCH;
 
+use glave_ports::block_on;
+
 fn at(seconds: u64) -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(seconds)
-}
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
 }
 
 #[test]
@@ -74,7 +68,7 @@ fn a_token_file_is_read_again_and_a_renewed_token_starts_fresh() {
     let first = Token::mint(at(0), lifetime).unwrap();
     std::fs::write(&path, first.to_file()).unwrap();
     let tokens = Tokens::file(&path);
-    block_on(async {
+    block_on!(async {
         let read = tokens.current(at(100)).await.unwrap();
         assert_eq!(read.expires(), Some(at(700)));
         let again = tokens.current(at(650)).await.unwrap();

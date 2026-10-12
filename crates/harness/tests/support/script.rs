@@ -4,20 +4,18 @@
 use std::collections::VecDeque;
 use std::future::{Future, ready};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_event::{
     Arguments, Body, Event, ModelRef, Part, RawEvent, StopReason, TokenCounts, Usage, decode,
 };
-use glave_harness::{
-    ApprovalRequest, Approver, Clock, Decision, Entropy, Harness, Parts, Settings, Workspace,
-};
+use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
+pub use glave_ports::block_on;
+use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
     Completion, Delta, EventLog, MemoryBlobs, MemoryLog, ModelProvider, ModelRequest, OrgId,
     ProviderError, RequestedCall, Scope, SpaceId,
 };
-use jiff::Timestamp;
 
 pub struct Script {
     pub answers: Mutex<VecDeque<Completion>>,
@@ -37,22 +35,6 @@ impl ModelProvider for Script {
         }
         // Not a transient error, so a test that runs out never waits through retries.
         ready(next.ok_or_else(|| ProviderError::Protocol("script exhausted".into())))
-    }
-}
-
-pub struct Ticking(pub AtomicI64);
-impl Clock for Ticking {
-    fn now(&self) -> Timestamp {
-        let ms = self.0.fetch_add(1, Ordering::SeqCst);
-        Timestamp::from_millisecond(ms).unwrap()
-    }
-}
-
-pub struct Counting(pub AtomicU64);
-impl Entropy for Counting {
-    fn bytes(&self) -> [u8; 10] {
-        let n = self.0.fetch_add(1, Ordering::SeqCst).to_be_bytes();
-        [n[0], n[1], n[2], n[3], n[4], n[5], n[6], n[7], 0, 0]
     }
 }
 
@@ -117,14 +99,6 @@ pub fn scope() -> Scope {
 
 pub fn uuid_like(n: u8) -> uuid::Uuid {
     uuid::Uuid::from_bytes([n; 16])
-}
-
-pub fn block_on<F: Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
 }
 
 pub async fn harness<A: Approver>(
@@ -203,8 +177,8 @@ pub fn harness_with<L: EventLog, A: Approver>(
         log,
         blobs: MemoryBlobs::new(),
         approver,
-        clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
-        entropy: Box::new(Counting(AtomicU64::new(seed))),
+        clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
+        entropy: Box::new(CountingEntropy::starting_at(seed)),
         workspace,
     };
     (Harness::new(parts, settings), requests)

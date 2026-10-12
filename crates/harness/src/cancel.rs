@@ -73,25 +73,21 @@ impl Cancellation for Cancel {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
-    fn block_on<F: Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
+    use glave_ports::block_on;
+
+    use super::*;
 
     #[test]
     fn work_finishes_unless_cancelled() {
         let cancel = Cancel::new();
-        assert_eq!(block_on(cancel.run(async { 7 })), Some(7));
+        assert_eq!(block_on!(cancel.run(async { 7 })), Some(7));
         assert!(!cancel.is_cancelled());
         let other = cancel.clone();
         other.cancel();
         assert!(cancel.is_cancelled(), "clones share the switch");
         assert_eq!(
-            block_on(cancel.run(async { 7 })),
+            block_on!(cancel.run(async { 7 })),
             None,
             "cancellation wins a tie"
         );
@@ -101,11 +97,11 @@ mod tests {
     fn cancelling_stops_work_that_would_never_finish() {
         let cancel = Cancel::new();
         let canceller = cancel.clone();
-        let result = block_on(cancel.run(async move {
+        let result = block_on!(cancel.run(async move {
             canceller.cancel();
             std::future::pending::<()>().await;
         }));
         assert_eq!(result, None);
-        block_on(cancel.cancelled());
+        block_on!(cancel.cancelled());
     }
 }

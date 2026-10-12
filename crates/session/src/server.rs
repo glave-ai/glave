@@ -14,7 +14,6 @@ use glave_harness::{
 use glave_ports::{
     BlobStore, Environment, EventLog, ModelProvider, Scope, SpaceId, Spaces, ToolSource,
 };
-use jiff::Timestamp;
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
@@ -158,8 +157,8 @@ where
             log: Observed::new(wiring.log, Arc::clone(&hub)),
             blobs: wiring.blobs,
             approver: approvals.clone(),
-            clock: Box::new(SharedClock(Arc::clone(&clock))),
-            entropy: Box::new(SharedEntropy(Arc::clone(&entropy))),
+            clock: Box::new(Arc::clone(&clock)),
+            entropy: Box::new(Arc::clone(&entropy)),
             workspace: wiring.workspace,
         };
         let every_thread = wiring.workers.as_ref().is_some_and(|on| on.every_thread);
@@ -493,24 +492,6 @@ where
             before_tokens: compacted.before_tokens,
             after_tokens: compacted.after_tokens,
         })
-    }
-}
-
-/// The server's clock, shared with its harness.
-struct SharedClock(Arc<dyn Clock>);
-
-impl Clock for SharedClock {
-    fn now(&self) -> Timestamp {
-        self.0.now()
-    }
-}
-
-/// The server's randomness, shared with its harness.
-struct SharedEntropy(Arc<dyn Entropy>);
-
-impl Entropy for SharedEntropy {
-    fn bytes(&self) -> [u8; 10] {
-        self.0.bytes()
     }
 }
 

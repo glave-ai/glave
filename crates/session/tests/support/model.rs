@@ -4,19 +4,19 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_computer::LocalComputers;
 use glave_event::{Arguments, ModelRef, Part, RawEvent, StopReason, ThreadId, TokenCounts, Usage};
-use glave_harness::{Clock, Entropy, Settings, Workspace};
+use glave_harness::{Settings, Workspace};
+pub use glave_ports::block_on;
+use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
     BlobStore, Completion, Delta, EventLog, MemoryBlobs, MemoryLog, MemorySpaces, ModelProvider,
     ModelRequest, OrgId, ProviderError, RequestedCall, Scope, Space, SpaceId, SpaceKind,
 };
 use glave_session::protocol::{ApiError, IdempotencyKey, Meta, Reply, Request};
 use glave_session::{Answering, Caller, Server, TurnStream, Wiring};
-use jiff::Timestamp;
 use tokio::sync::Notify;
 
 /// The approval modes a thread may choose when the policy leaves both.
@@ -54,21 +54,6 @@ impl ModelProvider for Script {
             }
             next.ok_or_else(|| ProviderError::Protocol("script exhausted".into()))
         }
-    }
-}
-
-pub struct Ticking(AtomicI64);
-impl Clock for Ticking {
-    fn now(&self) -> Timestamp {
-        Timestamp::from_millisecond(self.0.fetch_add(1, Ordering::SeqCst)).unwrap()
-    }
-}
-
-pub struct Counting(pub AtomicU64);
-impl Entropy for Counting {
-    fn bytes(&self) -> [u8; 10] {
-        let n = self.0.fetch_add(1, Ordering::SeqCst).to_be_bytes();
-        [n[0], n[1], n[2], n[3], n[4], n[5], n[6], n[7], 0, 0]
     }
 }
 
@@ -115,14 +100,6 @@ pub fn scope() -> Scope {
         org: OrgId::from_uuid(uuid::Uuid::from_u128(1)),
         space: SpaceId::from_uuid(uuid::Uuid::from_u128(2)),
     }
-}
-
-pub fn block_on<F: Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
 }
 
 pub async fn server_on<L: EventLog + 'static>(
@@ -190,10 +167,10 @@ pub async fn build<L: EventLog + 'static>(
         },
         log,
         blobs: MemoryBlobs::new(),
-        clock: Box::new(Ticking(AtomicI64::new(
+        clock: Box::new(ManualClock::ticking(
             1_791_000_000_000 + 1_000_000 * i64::try_from(seed).unwrap(),
-        ))),
-        entropy: Box::new(Counting(AtomicU64::new(seed << 32))),
+        )),
+        entropy: Box::new(CountingEntropy::starting_at(seed << 32)),
         workspace: {
             let (computers, info) = computers.open_here(dir).await.unwrap();
             Workspace::new(computers, info)
@@ -253,8 +230,8 @@ pub async fn with_memory<L: EventLog + 'static>(
         },
         log,
         blobs: MemoryBlobs::new(),
-        clock: Box::new(Ticking(AtomicI64::new(1_791_000_000_000))),
-        entropy: Box::new(Counting(AtomicU64::new(1 << 32))),
+        clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
+        entropy: Box::new(CountingEntropy::starting_at(1 << 32)),
         workspace: Workspace::new(computers, info),
         tools: Vec::new(),
         worktree: false,

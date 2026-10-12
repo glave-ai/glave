@@ -118,7 +118,7 @@ mod golden {
     #[test]
     fn a_remote_computer_gives_the_model_exactly_what_a_local_one_does() {
         let dir = folder("computers-golden");
-        block_on(async {
+        block_on!(async {
             project(&dir);
             let (local_events, local_seen) = turn(workspace(&dir).await).await;
 

@@ -71,7 +71,7 @@ mod goals {
     #[test]
     fn goal_start_streams_every_turn_until_the_model_says_it_is_met_over_json_rpc() {
         let dir = folder("goal-rpc");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(Some("Looking."), None),
                 answer(
@@ -137,7 +137,7 @@ mod goals {
     #[test]
     fn goal_stop_stops_a_running_goal() {
         let dir = folder("goal-stop");
-        block_on(async {
+        block_on!(async {
             let gate = Arc::new(Notify::new());
             let answers = vec![answer(Some("Thinking."), None)];
             let server = auto(&dir, answers, Some(Arc::clone(&gate))).await;
@@ -172,7 +172,7 @@ mod goals {
     #[test]
     fn without_a_goal_stop_and_continue_are_refused() {
         let dir = folder("goal-none");
-        block_on(async {
+        block_on!(async {
             let server = auto(&dir, vec![], None).await;
             let thread = new_thread(&server).await;
             assert_eq!(goal(&server, thread).await, None);

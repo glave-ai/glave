@@ -91,7 +91,7 @@ mod sealing {
 
     #[test]
     fn the_keys_pass_the_key_conformance_suite() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("keys").await else {
                 return;
             };
@@ -105,7 +105,7 @@ mod sealing {
 
     #[test]
     fn payloads_are_sealed_and_a_moved_payload_does_not_open() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("moved").await else {
                 return;
             };
@@ -143,7 +143,7 @@ mod sealing {
 
     #[test]
     fn rows_written_before_sealing_still_read() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("unsealed").await else {
                 return;
             };
@@ -211,7 +211,7 @@ mod sealing {
 
     #[test]
     fn erasure_makes_content_unreadable_and_keeps_the_rest() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("erase").await else {
                 return;
             };

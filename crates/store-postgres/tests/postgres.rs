@@ -46,7 +46,7 @@ mod postgres {
 
     #[test]
     fn the_spaces_pass_the_spaces_conformance_suite() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("spaces").await else {
                 return;
             };
@@ -60,7 +60,7 @@ mod postgres {
 
     #[test]
     fn the_log_passes_the_event_log_conformance_suite() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("log").await else {
                 return;
             };
@@ -90,7 +90,7 @@ mod postgres {
 
     #[test]
     fn the_log_passes_the_threads_view_conformance_suite() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("views").await else {
                 return;
             };
@@ -123,7 +123,7 @@ mod postgres {
 
     #[test]
     fn the_log_passes_the_search_conformance_suite() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("search").await else {
                 return;
             };
@@ -137,7 +137,7 @@ mod postgres {
 
     #[test]
     fn the_blobs_pass_the_blob_store_conformance_suite() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("blobs").await else {
                 return;
             };
@@ -151,7 +151,7 @@ mod postgres {
 
     #[test]
     fn data_survives_reconnecting_and_migrations_run_once() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("reconnect").await else {
                 return;
             };
@@ -183,7 +183,7 @@ mod postgres {
 
     #[test]
     fn openers_racing_on_a_new_database_migrate_it_once() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("race").await else {
                 return;
             };
@@ -203,7 +203,7 @@ mod postgres {
 
     #[test]
     fn writers_racing_for_one_position_leave_exactly_one_winner() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("writers").await else {
                 return;
             };
@@ -232,7 +232,7 @@ mod postgres {
 
     #[test]
     fn a_newer_schema_is_refused() {
-        block_on(async {
+        block_on!(async {
             let Some(scratch) = Scratch::new("newer").await else {
                 return;
             };

@@ -1,14 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use super::*;
+use glave_ports::block_on;
 
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
+use super::*;
 
 fn project(name: &str, files: &[(&str, &[u8])]) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("glave-search-{name}-{}", std::process::id()));
@@ -23,7 +17,7 @@ fn project(name: &str, files: &[(&str, &[u8])]) -> PathBuf {
 
 fn run(dir: &Path, args: serde_json::Value) -> ToolOutcome {
     let args: SearchArgs = serde_json::from_value(args).unwrap();
-    block_on(async {
+    block_on!(async {
         let workspace = Workspace::open(dir, []).await.unwrap();
         search(&workspace, args).await
     })

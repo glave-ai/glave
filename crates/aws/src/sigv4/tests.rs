@@ -1,11 +1,8 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpListener;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::thread::JoinHandle;
 
 use glave_ports::auth::Auth;
+use glave_ports::block_on;
+use glave_ports::testing::{FakeHttp, ManualClock};
 
 use super::*;
 
@@ -101,93 +98,6 @@ fn a_bedrock_request_signs_its_headers_and_body_for_bedrock_in_its_region() {
     assert_ne!(authorization, sign(b"{}"), "the body is signed");
 }
 
-/// A clock the test moves.
-struct Manual(AtomicI64);
-
-impl Clock for Manual {
-    fn now(&self) -> Timestamp {
-        Timestamp::from_second(self.0.load(Ordering::SeqCst)).unwrap()
-    }
-}
-
-/// A request a fake AWS endpoint received.
-struct Received {
-    line: String,
-    headers: HashMap<String, String>,
-    body: String,
-}
-
-/// A fake AWS endpoint on 127.0.0.1 that gives each request the next of its answers.
-struct Fake {
-    url: String,
-    received: Arc<Mutex<Vec<Received>>>,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl Fake {
-    fn start(answers: Vec<(u16, String)>) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let received = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&received);
-        let thread = std::thread::spawn(move || {
-            for (status, answer) in answers {
-                let (stream, _) = listener.accept().unwrap();
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                let mut headers = HashMap::new();
-                loop {
-                    let mut header = String::new();
-                    reader.read_line(&mut header).unwrap();
-                    let header = header.trim_end();
-                    if header.is_empty() {
-                        break;
-                    }
-                    if let Some((name, value)) = header.split_once(':') {
-                        headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_owned());
-                    }
-                }
-                let length = headers
-                    .get("content-length")
-                    .map_or(0, |length| length.parse().unwrap());
-                let mut body = vec![0; length];
-                reader.read_exact(&mut body).unwrap();
-                log.lock().unwrap().push(Received {
-                    line: line.trim_end().to_owned(),
-                    headers,
-                    body: String::from_utf8(body).unwrap(),
-                });
-                let mut stream = stream;
-                write!(
-                    stream,
-                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}",
-                    answer.len()
-                )
-                .unwrap();
-            }
-        });
-        Self {
-            url,
-            received,
-            thread: Some(thread),
-        }
-    }
-
-    fn received(mut self) -> Vec<Received> {
-        self.thread.take().unwrap().join().unwrap();
-        std::mem::take(&mut *self.received.lock().unwrap())
-    }
-}
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
-
 fn sts_answer(key: &str, expires: &str) -> String {
     format!(
         "<AssumeRoleWithWebIdentityResponse xmlns=\"https://sts.amazonaws.com/doc/2011-06-15/\">\
@@ -206,7 +116,7 @@ const BEDROCK: Outgoing<'static> = Outgoing {
 };
 
 fn header(auth: &Auth, name: &str) -> Result<String, AuthError> {
-    let headers = block_on(auth.headers(&BEDROCK))?;
+    let headers = block_on!(auth.headers(&BEDROCK))?;
     Ok(headers
         .into_iter()
         .find(|header| header.name == name)
@@ -237,7 +147,7 @@ impl Drop for Pod {
     }
 }
 
-fn signer(vars: &[(&str, String)], clock: Arc<Manual>) -> Auth {
+fn signer(vars: &[(&str, String)], clock: ManualClock) -> Auth {
     let vars: HashMap<String, String> = vars
         .iter()
         .map(|(name, value)| ((*name).to_owned(), value.clone()))
@@ -247,23 +157,24 @@ fn signer(vars: &[(&str, String)], clock: Arc<Manual>) -> Auth {
         .unwrap()
         .unwrap();
     Auth::Changing(Arc::new(
-        SigV4::new(source, region, Endpoint::Runtime, clock).unwrap(),
+        SigV4::new(source, region, Endpoint::Runtime, Arc::new(clock)).unwrap(),
     ))
 }
 
 #[test]
 fn irsa_assumes_the_role_with_the_cluster_token_and_keeps_the_keys_until_near_expiry() {
-    let sts = Fake::start(vec![
+    let sts = FakeHttp::start(vec![
         (200, sts_answer("ASIA1", "2026-10-12T13:00:00Z")),
         (200, sts_answer("ASIA2", "2026-10-12T14:00:00Z")),
-    ]);
+    ])
+    .unwrap();
     let pod = Pod::new("irsa");
-    let clock = Arc::new(Manual(AtomicI64::new(
+    let clock = ManualClock::at_second(
         "2026-10-12T12:00:00Z"
             .parse::<Timestamp>()
             .unwrap()
             .as_second(),
-    )));
+    );
     let auth = signer(
         &[
             (
@@ -287,13 +198,13 @@ fn irsa_assumes_the_role_with_the_cluster_token_and_keeps_the_keys_until_near_ex
             .unwrap()
             .contains("Credential=ASIA1/20261012/us-east-1/bedrock/aws4_request")
     );
-    clock.0.fetch_add(3_000, Ordering::SeqCst);
+    clock.advance_seconds(3_000);
     assert_eq!(
         header(&auth, "x-amz-security-token").unwrap(),
         "token-ASIA1",
         "ten minutes left: kept"
     );
-    clock.0.fetch_add(400, Ordering::SeqCst);
+    clock.advance_seconds(400);
     pod.file("token", "cluster-jwt-2");
     assert_eq!(
         header(&auth, "x-amz-security-token").unwrap(),
@@ -301,7 +212,10 @@ fn irsa_assumes_the_role_with_the_cluster_token_and_keeps_the_keys_until_near_ex
     );
     let received = sts.received();
     assert_eq!(received.len(), 2, "the keys were kept in between");
-    assert_eq!(received[0].line, "POST / HTTP/1.1");
+    assert_eq!(
+        (received[0].method.as_str(), received[0].path.as_str()),
+        ("POST", "/")
+    );
     let form: HashMap<String, String> = url::form_urlencoded::parse(received[0].body.as_bytes())
         .into_owned()
         .collect();
@@ -315,12 +229,13 @@ fn irsa_assumes_the_role_with_the_cluster_token_and_keeps_the_keys_until_near_ex
 
 #[test]
 fn a_refused_assume_role_says_why_without_the_token() {
-    let sts = Fake::start(vec![(
+    let sts = FakeHttp::start(vec![(
         400,
         "<ErrorResponse><Error><Code>AccessDenied</Code><Message>Not authorized to perform \
          sts:AssumeRoleWithWebIdentity</Message></Error></ErrorResponse>"
             .to_owned(),
-    )]);
+    )])
+    .unwrap();
     let pod = Pod::new("refused");
     let auth = signer(
         &[
@@ -334,7 +249,7 @@ fn a_refused_assume_role_says_why_without_the_token() {
             ),
             ("AWS_ENDPOINT_URL_STS", sts.url.clone()),
         ],
-        Arc::new(Manual(AtomicI64::new(0))),
+        ManualClock::at_second(0),
     );
     let error = header(&auth, "authorization").unwrap_err();
     assert!(!error.is_transient());
@@ -349,11 +264,11 @@ fn a_refused_assume_role_says_why_without_the_token() {
 
 #[test]
 fn pod_identity_fetches_keys_with_the_pod_s_token() {
-    let agent = Fake::start(vec![(
+    let agent = FakeHttp::start(vec![(
         200,
         r#"{"AccessKeyId":"ASIAPOD","SecretAccessKey":"secret","Token":"pod-session","AccountId":"123456789012","Expiration":"2026-10-12T18:00:00Z"}"#
             .to_owned(),
-    )]);
+    )]).unwrap();
     let pod = Pod::new("pod-identity");
     let auth = signer(
         &[
@@ -366,14 +281,17 @@ fn pod_identity_fetches_keys_with_the_pod_s_token() {
                 pod.file("eks-pod-identity-token", "pod-jwt\n"),
             ),
         ],
-        Arc::new(Manual(AtomicI64::new(0))),
+        ManualClock::at_second(0),
     );
     assert_eq!(
         header(&auth, "x-amz-security-token").unwrap(),
         "pod-session"
     );
     let received = agent.received();
-    assert_eq!(received[0].line, "GET /v1/credentials HTTP/1.1");
+    assert_eq!(
+        (received[0].method.as_str(), received[0].path.as_str()),
+        ("GET", "/v1/credentials")
+    );
     assert_eq!(received[0].headers["authorization"], "pod-jwt");
 }
 
@@ -384,7 +302,7 @@ fn keys_in_the_environment_sign_without_asking_anyone() {
             ("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE".into()),
             ("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI".into()),
         ],
-        Arc::new(Manual(AtomicI64::new(0))),
+        ManualClock::at_second(0),
     );
     assert!(
         header(&auth, "authorization")

@@ -10,12 +10,11 @@ use aws_lc_rs::rsa::KeySize;
 use aws_lc_rs::signature::{
     ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair as _, RSA_PKCS1_SHA256, RsaKeyPair,
 };
-use glave_ports::Clock;
+use glave_ports::testing::ManualClock;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
-use jiff::Timestamp;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::task::{JoinHandle, JoinSet};
@@ -27,12 +26,8 @@ pub const AUDIENCE: &str = "glave-test";
 pub const NOW: i64 = 1_791_590_400;
 
 /// A clock stopped at `NOW`.
-pub struct Fixed;
-
-impl Clock for Fixed {
-    fn now(&self) -> Timestamp {
-        Timestamp::from_second(NOW).unwrap()
-    }
+pub fn fixed_clock() -> ManualClock {
+    ManualClock::at_second(NOW)
 }
 
 /// Text as unpadded base64url, as JWTs and JWKs carry it.

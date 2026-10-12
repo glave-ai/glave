@@ -124,7 +124,7 @@ mod modes {
     fn a_chosen_mode_holds_for_the_turns_after_it_and_a_restart() {
         let dir = folder("modes-choose");
         let log = Shared::default();
-        block_on(async {
+        block_on!(async {
             let both = [Mode::Ask, Mode::Auto];
             let (server, _) = setup(writes("one.txt"), &log, Mode::Auto, &both)
                 .build(&dir)
@@ -167,7 +167,7 @@ mod modes {
     #[test]
     fn a_thread_that_chooses_nothing_runs_in_the_servers_mode() {
         let dir = folder("modes-default");
-        block_on(async {
+        block_on!(async {
             let (server, _) = setup(writes("a.txt"), &Shared::default(), Mode::Ask, &[Mode::Ask])
                 .build(&dir)
                 .await;
@@ -182,7 +182,7 @@ mod modes {
     fn a_mode_the_policy_does_not_leave_is_refused() {
         let dir = folder("modes-refused");
         let log = Shared::default();
-        block_on(async {
+        block_on!(async {
             let ask = [Mode::Ask];
             let (server, _) = setup(Vec::new(), &log, Mode::Ask, &ask).build(&dir).await;
             let refused = start_in(&server, Some(ApprovalMode::Auto))
@@ -216,7 +216,7 @@ mod modes {
     fn a_mode_chosen_before_the_policy_narrowed_is_refused_until_chosen_again() {
         let dir = folder("modes-stale");
         let log = Shared::default();
-        block_on(async {
+        block_on!(async {
             let both = [Mode::Ask, Mode::Auto];
             let (server, _) = setup(Vec::new(), &log, Mode::Ask, &both).build(&dir).await;
             let thread = started(&server, Some(ApprovalMode::Auto)).await;

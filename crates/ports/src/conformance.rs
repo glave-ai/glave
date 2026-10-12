@@ -21,6 +21,7 @@ use uuid::{Builder, Uuid};
 use crate::blob::{BlobStore, digest};
 use crate::log::{EventLog, LogError};
 use crate::scope::{OrgId, Scope, SpaceId};
+use crate::tools::NeverCancelled;
 
 type Verdict = Result<(), String>;
 
@@ -279,19 +280,6 @@ pub async fn blob_store<B: BlobStore>(blobs: &B) -> Verdict {
         .await
         .map_err(|e| e.to_string())?;
     ensure(missing.is_none(), "unknown content must read as missing")
-}
-
-/// A cancellation that never fires, for calls the suite lets finish.
-struct NeverCancelled;
-
-impl crate::tools::Cancellation for NeverCancelled {
-    fn is_cancelled(&self) -> bool {
-        false
-    }
-
-    fn cancelled(&self) -> crate::tools::BoxFuture<'_, ()> {
-        Box::pin(std::future::pending())
-    }
 }
 
 /// What every tool source must do: list tools with names a model can call (1 to 128 of

@@ -10,7 +10,7 @@ use super::*;
 
 #[test]
 fn gemini_is_asked_with_the_workload_s_token() {
-    let google = FakeGoogle::start(vec![token("ya29.gke", 3599)]);
+    let google = FakeHttp::start(vec![token("ya29.gke", 3599)]).unwrap();
     let vertex = FakeServer::start(vec![Reply::text("hello from gemini")]).unwrap();
     let pod = Pod::new("gemini");
     let home = pod.folder.display().to_string();
@@ -34,7 +34,7 @@ fn gemini_is_asked_with_the_workload_s_token() {
         purpose: glave_ports::Purpose::Main,
         threads: Vec::new(),
     };
-    let completion = block_on(provider.complete(&request, &mut |_| {})).unwrap();
+    let completion = block_on!(provider.complete(&request, &mut |_| {})).unwrap();
     assert_eq!(
         completion.parts,
         vec![Part::Text {

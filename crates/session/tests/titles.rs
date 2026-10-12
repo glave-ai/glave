@@ -109,7 +109,7 @@ mod titles {
     #[test]
     fn a_title_is_recorded_after_the_first_reply_and_its_call_counts() {
         let dir = folder("titles-first");
-        block_on(async {
+        block_on!(async {
             let (server, seen) = setup(exchange(), &Shared::default(), true)
                 .build(&dir)
                 .await;
@@ -143,7 +143,7 @@ mod titles {
     #[test]
     fn a_title_the_person_gave_is_never_replaced() {
         let dir = folder("titles-renamed");
-        block_on(async {
+        block_on!(async {
             let (server, seen) = setup(exchange(), &Shared::default(), true)
                 .build(&dir)
                 .await;
@@ -169,7 +169,7 @@ mod titles {
     #[test]
     fn with_titles_off_the_first_message_titles_the_thread() {
         let dir = folder("titles-off");
-        block_on(async {
+        block_on!(async {
             let (server, seen) = setup(exchange(), &Shared::default(), false)
                 .build(&dir)
                 .await;
@@ -185,7 +185,7 @@ mod titles {
     #[test]
     fn a_failed_call_records_nothing_and_the_first_message_titles_the_thread() {
         let dir = folder("titles-failed");
-        block_on(async {
+        block_on!(async {
             // The script has no answer for the title: the call fails.
             let reply = vec![answer(Some("Install it with Homebrew."), None)];
             let (server, seen) = setup(reply, &Shared::default(), true).build(&dir).await;
@@ -202,7 +202,7 @@ mod titles {
     fn a_thread_past_its_first_exchange_keeps_its_title() {
         let dir = folder("titles-old");
         let log = Shared::default();
-        block_on(async {
+        block_on!(async {
             let first = vec![answer(Some("Install it with Homebrew."), None)];
             let (before, _) = setup(first, &log, false).build(&dir).await;
             let thread = start(&before, false).await;
@@ -221,7 +221,7 @@ mod titles {
     #[test]
     fn a_turn_started_while_the_title_is_recorded_runs() {
         let dir = folder("titles-meanwhile");
-        block_on(async {
+        block_on!(async {
             let log = Paused::default();
             let mut settings = Settings::new("test-model", "script");
             settings.titles = true;
@@ -270,7 +270,7 @@ mod titles {
     #[test]
     fn a_rename_while_the_title_is_recorded_wins() {
         let dir = folder("titles-renamed-meanwhile");
-        block_on(async {
+        block_on!(async {
             let log = Paused::default();
             let mut settings = Settings::new("test-model", "script");
             settings.titles = true;

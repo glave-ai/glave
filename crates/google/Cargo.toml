@@ -26,6 +26,7 @@ url.workspace = true
 
 [dev-dependencies]
 glave-event.workspace = true
+glave-ports = { workspace = true, features = ["conformance"] }
 # Gemini through Vertex's OpenAI-compatible endpoint, end to end against fakes.
 glave-provider-openai = { workspace = true, features = ["fake-server"] }
 tokio = { workspace = true, features = ["rt"] }

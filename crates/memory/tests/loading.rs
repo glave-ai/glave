@@ -46,7 +46,7 @@ mod loading {
 
     #[test]
     fn the_start_follows_agents_md_and_never_changes_across_turns() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             seed(&kit, "Ada prefers short answers", MemoryScope::Personal).await;
             seed(&kit, "Tests need make db first", MemoryScope::Space).await;
@@ -101,7 +101,7 @@ mod loading {
     #[test]
     #[expect(clippy::too_many_lines, reason = "one scenario, end to end")]
     fn returning_after_changes_gets_a_note_and_resuming_rebuilds_the_same_requests() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let kept = seed(&kit, "Tests need make db first", MemoryScope::Space).await;
             let memory = kit.memory(rules(), 1).await;
@@ -195,7 +195,7 @@ mod loading {
 
     #[test]
     fn compaction_rebuilds_the_start_with_everything_known_and_folds_the_notes() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             seed(&kit, "Tests need make db first", MemoryScope::Space).await;
             let memory = kit.memory(rules(), 1).await;
@@ -248,7 +248,7 @@ mod loading {
 
     #[test]
     fn where_memory_is_off_the_model_is_sent_exactly_what_it_is_sent_without_memory() {
-        block_on(async {
+        block_on!(async {
             let dir = folder("off");
             let script = || vec![said("hi"), said("ok")];
             // Each run on a store of its own, with clocks that read the same.
@@ -288,7 +288,7 @@ mod loading {
 
     #[test]
     fn the_model_cannot_save_personal_memory_from_an_isolated_space() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memory = kit.memory(rules(), 1).await;
             let dir = folder("isolated");
@@ -324,7 +324,7 @@ mod loading {
 
     #[test]
     fn a_save_with_every_argument_filled_in_and_no_memory_to_replace_is_saved() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memory = kit.memory(rules(), 1).await;
             let dir = folder("filled");

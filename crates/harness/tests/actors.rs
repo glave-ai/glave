@@ -20,7 +20,7 @@ mod actors {
     #[test]
     fn a_thread_records_its_person_its_agent_and_that_a_prompt_started_it() {
         let dir = folder("actors-started");
-        block_on(async {
+        block_on!(async {
             let harness = harness(&dir, vec![], NoOneToAsk).await;
             let thread = harness.start_thread(scope()).await.unwrap();
             let first = events(harness.log(), thread.id).await;
@@ -48,7 +48,7 @@ mod actors {
     #[test]
     fn with_no_one_to_answer_the_refusal_is_recorded_as_glaves() {
         let dir = folder("actors-no-one");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -81,7 +81,7 @@ mod actors {
     #[test]
     fn a_thread_is_for_its_caller_and_anyone_else_who_acts_in_it_is_recorded() {
         let dir = folder("actors-caller");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(Some("One."), vec![], StopReason::EndTurn),
                 answer(Some("Two."), vec![], StopReason::EndTurn),

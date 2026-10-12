@@ -132,7 +132,7 @@ mod models {
     #[test]
     fn the_list_names_the_default_first_and_marks_hope() {
         let dir = folder("models-list");
-        block_on(async {
+        block_on!(async {
             let (server, _) = setup(Vec::new(), &Shared::default()).build(&dir).await;
             let Reply::Models { models } = server.request(Request::ModelList {}).await.unwrap()
             else {
@@ -155,7 +155,7 @@ mod models {
     fn a_chosen_model_answers_every_turn_after_it_and_survives_a_restart() {
         let dir = folder("models-choose");
         let log = Shared::default();
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 from("hope-12b", "One."),
                 from("hope-12b", "Two."),
@@ -218,7 +218,7 @@ mod models {
     #[test]
     fn a_thread_that_chose_nothing_uses_the_default_and_its_prompt_as_written() {
         let dir = folder("models-default");
-        block_on(async {
+        block_on!(async {
             let (server, seen) = setup(vec![from("test-model", "Hi.")], &Shared::default())
                 .build(&dir)
                 .await;
@@ -237,7 +237,7 @@ mod models {
     fn a_model_the_server_does_not_run_is_refused() {
         let dir = folder("models-refused");
         let log = Shared::default();
-        block_on(async {
+        block_on!(async {
             let (server, seen) = setup(Vec::new(), &log).build(&dir).await;
             let refused = start_on(&server, Some("elsewhere")).await.unwrap_err();
             assert_eq!(refused.code, code::NO_MODEL);
@@ -263,7 +263,7 @@ mod models {
     #[test]
     fn a_background_turn_runs_on_the_model_it_chose_and_the_task_says_so() {
         let dir = folder("models-task");
-        block_on(async {
+        block_on!(async {
             let (server, _) = setup(vec![from("other", "Done.")], &Shared::default())
                 .build(&dir)
                 .await;

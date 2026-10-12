@@ -79,6 +79,19 @@ pub trait Cancellation: Send + Sync {
     fn cancelled(&self) -> BoxFuture<'_, ()>;
 }
 
+/// A cancellation that never fires, for work that runs to its end or its own limit.
+pub struct NeverCancelled;
+
+impl Cancellation for NeverCancelled {
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+
+    fn cancelled(&self) -> BoxFuture<'_, ()> {
+        Box::pin(std::future::pending())
+    }
+}
+
 /// Runs `work` until it finishes, or until `cancel` fires: `None` then, and `work` is dropped.
 /// Cancellation wins a tie.
 pub async fn unless_cancelled<T>(
@@ -166,38 +179,19 @@ pub fn describe_call(name: &str, arguments: &Arguments) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct Never;
-    impl Cancellation for Never {
-        fn is_cancelled(&self) -> bool {
-            false
-        }
-        fn cancelled(&self) -> BoxFuture<'_, ()> {
-            Box::pin(std::future::pending())
-        }
-    }
-
-    struct Already;
-    impl Cancellation for Already {
-        fn is_cancelled(&self) -> bool {
-            true
-        }
-        fn cancelled(&self) -> BoxFuture<'_, ()> {
-            Box::pin(std::future::ready(()))
-        }
-    }
-
-    fn block_on<F: Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
+    use crate::block_on;
+    use crate::testing::AlreadyCancelled;
 
     #[test]
     fn work_runs_unless_cancelled() {
-        assert_eq!(block_on(unless_cancelled(&Never, async { 3 })), Some(3));
-        assert_eq!(block_on(unless_cancelled(&Already, async { 3 })), None);
+        assert_eq!(
+            block_on!(unless_cancelled(&NeverCancelled, async { 3 })),
+            Some(3)
+        );
+        assert_eq!(
+            block_on!(unless_cancelled(&AlreadyCancelled, async { 3 })),
+            None
+        );
     }
 
     #[test]
