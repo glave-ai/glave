@@ -1,0 +1,33 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.top {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+  padding: var(--glz-space-3) var(--glz-space-3) var(--glz-space-1);
+}
+
+.top a {
+  width: 100%;
+}
+
+.threads {
+  flex: 1;
+  min-height: 0;
+}
+
+.pages {
+  flex: none;
+  border-top: var(--glz-border-width) solid var(--glz-color-border);
+}
+
+.person {
+  flex: none;
+  border-top: var(--glz-border-width) solid var(--glz-color-border);
+}

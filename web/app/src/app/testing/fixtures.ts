@@ -1,4 +1,11 @@
-import type { RawEvent, Space, TaskInfo, ThreadSummary, TokenCounts } from '@glave/client';
+import type {
+  ModelInfo,
+  RawEvent,
+  Space,
+  TaskInfo,
+  ThreadSummary,
+  TokenCounts,
+} from '@glave/client';
 
 /** Test data shaped as the session API sends it. */
 
@@ -74,3 +81,17 @@ export function task(threadId: string, title: string, overrides: Partial<TaskInf
     ...overrides,
   };
 }
+
+/** A server's models: the default, and Hope. */
+export const MODELS: readonly ModelInfo[] = [
+  { id: 'gpt-6-luna', default: true, hope: false },
+  { id: 'hope-12b', name: 'Hope', default: false, hope: true },
+];
+
+/** What `server/discover` says. */
+export const SERVER = {
+  name: 'glave',
+  version: '0.1.0',
+  protocols: ['2026-10'],
+  approval: 'auto',
+} as const;

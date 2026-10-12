@@ -10,13 +10,13 @@ import {
 import {
   GlzApprovalCardComponent,
   GlzButtonComponent,
-  GlzComboboxComponent,
   type GlzComposed,
   GlzComposerComponent,
   type GlzDecision,
   type GlzMoney,
+  GlzMenuSelectComponent,
   GlzMessageComponent,
-  type GlzOption,
+  type GlzMenuOption,
   type GlzQuestion,
   type GlzReceiptStatus,
   GlzQuestionCardComponent,
@@ -44,8 +44,8 @@ const COPY = {
     'Streaming text arrives a few words at a time, and the list keeps to the bottom while you are there.',
 } as const;
 
-const MODELS: readonly GlzOption[] = [
-  { value: 'hope', label: 'Hope' },
+const MODELS: readonly GlzMenuOption[] = [
+  { value: 'hope', label: 'Hope', hint: 'Default', hope: true },
   { value: 'haiku', label: 'Claude Haiku' },
   { value: 'luna', label: 'GPT-6 Luna' },
 ];
@@ -116,8 +116,8 @@ interface DemoMessage {
   imports: [
     GlzApprovalCardComponent,
     GlzButtonComponent,
-    GlzComboboxComponent,
     GlzComposerComponent,
+    GlzMenuSelectComponent,
     GlzMessageComponent,
     GlzQuestionCardComponent,
     GlzReasoningComponent,

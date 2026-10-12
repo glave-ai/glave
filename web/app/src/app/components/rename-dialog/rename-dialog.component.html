@@ -1,0 +1,25 @@
+<glz-dialog testId="rename" [heading]="copy.heading" [(open)]="open">
+  <form (submit)="save($event)">
+    <glz-form-field [label]="copy.label" [hint]="copy.hint">
+      <input
+        glzInput
+        data-testid="rename-input"
+        [maxLength]="limit"
+        [value]="draft()"
+        (input)="typed($event)"
+      />
+    </glz-form-field>
+  </form>
+  <div glzDialogActions>
+    <button glzButton data-testid="rename-cancel" (click)="cancel()">{{ copy.cancel }}</button>
+    <button
+      glzButton
+      variant="primary"
+      data-testid="rename-save"
+      [disabled]="invalid()"
+      (click)="save()"
+    >
+      {{ copy.save }}
+    </button>
+  </div>
+</glz-dialog>

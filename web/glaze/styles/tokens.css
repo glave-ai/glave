@@ -98,6 +98,9 @@
 
   /* Layout. */
   --glz-sidenav-width: 17rem;
+  --glz-sidenav-surface: var(--glz-surface-card);
+  --glz-panel-width: 24rem;
+  --glz-panel-surface: var(--glz-surface-card);
   --glz-rail-width: 4.5rem;
   --glz-top-bar-height: 3.5rem;
   --glz-content-width: 48rem;
