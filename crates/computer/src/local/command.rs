@@ -198,29 +198,43 @@ async fn wait(
     }
 }
 
-/// Stops a command and everything it started: SIGTERM to its process group, then SIGKILL if
-/// it is still running after a grace period.
+/// Stops a command and everything it started: SIGTERM to its process group, then SIGKILL to
+/// whatever of the group is still there after a grace period. Returns once the group is gone,
+/// not just bash: a child that outlives bash, or ignores SIGTERM, is stopped too.
 async fn stop(child: &mut Child) {
     #[cfg(unix)]
-    if let Some(pid) = child.id() {
-        signal_group("-TERM", pid).await;
-        if tokio::time::timeout(GRACE, child.wait()).await.is_err() {
-            signal_group("-KILL", pid).await;
+    if let Some(group) = child
+        .id()
+        .and_then(|pid| i32::try_from(pid).ok())
+        .and_then(rustix::process::Pid::from_raw)
+    {
+        use rustix::process::{Signal, kill_process_group};
+        let _ = kill_process_group(group, Signal::TERM);
+        if tokio::time::timeout(GRACE, gone(child, group))
+            .await
+            .is_err()
+        {
+            let _ = kill_process_group(group, Signal::KILL);
+            // SIGKILL cannot be ignored; this waits only for the kernel to finish the job.
+            let _ = tokio::time::timeout(GRACE, gone(child, group)).await;
         }
     }
     let _ = child.kill().await;
 }
 
+/// How often a stopped command's process group is checked for anything left in it.
 #[cfg(unix)]
-async fn signal_group(signal: &str, pid: u32) {
-    let _ = tokio::process::Command::new("kill")
-        .arg(signal)
-        .arg("--")
-        .arg(format!("-{pid}"))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await;
+const POLL: Duration = Duration::from_millis(10);
+
+/// Resolves once bash has exited and nothing is left in its process group, not even a process
+/// waiting to be reaped. Glave's workers run with an init that reaps orphans (Docker's `Init`,
+/// the Pod's shared process namespace), as does any desktop.
+#[cfg(unix)]
+async fn gone(child: &mut Child, group: rustix::process::Pid) {
+    let _ = child.wait().await;
+    while rustix::process::test_kill_process_group(group).is_ok() {
+        tokio::time::sleep(POLL).await;
+    }
 }
 
 /// Streams the command's output to `output` as text until it ends.
