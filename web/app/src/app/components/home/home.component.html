@@ -1,5 +1,11 @@
+<app-page-header />
 <div class="home">
-  <h1 class="heading">{{ copy.heading }}</h1>
+  <div class="intro">
+    <h1 class="heading">{{ copy.heading }}</h1>
+    @if (where(); as where) {
+      <p class="where" data-testid="home-space">{{ where }}</p>
+    }
+  </div>
   @if (error(); as error) {
     <p class="error" role="alert" data-testid="home-error">{{ copy.failed }} {{ error }}</p>
   }
@@ -10,5 +16,8 @@
     [disabled]="starting()"
     [(value)]="draft"
     (send)="send($event)"
-  />
+  >
+    <app-approval-mode glzComposerStart />
+    <app-model-picker glzComposerEnd [(value)]="picked" />
+  </glz-composer>
 </div>

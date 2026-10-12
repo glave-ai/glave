@@ -3,12 +3,13 @@ import { Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import { NavService } from '../../services/nav.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { space } from '../../testing/fixtures';
 import { WorkspaceComponent } from './workspace.component';
 
 describe('WorkspaceComponent', () => {
-  it('reads the spaces and frames the page with the side nav and top bar', async () => {
+  it('reads the spaces and frames the page with the side nav', async () => {
     const fake = new FakeSession()
       .answer('space/list', { spaces: [space('p1', 'glave')] })
       .answer('thread/list', { threads: [] });
@@ -17,11 +18,13 @@ describe('WorkspaceComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(fake.paramsOf('space/list')).toHaveLength(1);
-    expect(root.querySelector('app-spaces-nav')).not.toBeNull();
-    expect(root.querySelector('[data-testid="workspace-tasks"]')?.getAttribute('aria-label')).toBe(
-      'Tasks',
-    );
+    expect(root.querySelector('[data-testid="workspace-nav"] app-side-nav')).not.toBeNull();
+    expect(root.querySelector('main#content')).not.toBeNull();
+    expect(root.querySelector('[data-testid="nav-tasks"]')?.textContent.trim()).toBe('Tasks');
     await expectAccessible(root);
+    TestBed.inject(NavService).toggle();
+    await fixture.whenStable();
+    expect(root.querySelector<HTMLElement>('[data-testid="workspace-nav"]')?.inert).toBe(true);
   });
 
   it('goes to the sign-in page when the server refuses the sign-in', async () => {

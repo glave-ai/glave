@@ -31,9 +31,9 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 
 ## Layout and overlays
 
-- Page: `glz-sidenav-layout` (`[glzSidenav]` slot; drawer on narrow screens), `glz-top-bar` (`glzTopBarStart`, `glzTopBarEnd`), `glz-rail` with `a[glzRailItem]`, `glz-nav-list` with `a[glzNavItem]` (`current`, `glzNavItemEnd` for a badge), `glz-tabs` with `glz-tab`, `glz-breadcrumbs`.
+- Page: `glz-sidenav-layout` (`[glzSidenav]` slot; drawer on narrow screens; `--glz-sidenav-surface`), `glz-panel-layout` (`[glzPanel]` slot at the end; `[(open)]`, `[(width)]` in pixels, dragged or arrow keys on its edge; a sheet on narrow screens; `--glz-panel-width`, `--glz-panel-surface`), `glz-top-bar` (`glzTopBarStart`, `glzTopBarEnd`), `glz-rail` with `a[glzRailItem]`, `glz-nav-list` with `a[glzNavItem]` (`current`, `glzNavItemEnd` for a badge; `collapsible` with `[(expanded)]` and `glzNavListActions` beside its heading), `glz-tabs` with `glz-tab`, `glz-breadcrumbs`. Remembering a panel's width or a group's state is the app's job.
 - `glz-dialog` (`[(open)]`, `kind="drawer-end"` for a drawer) and `glz-confirm-dialog` (`(decided)`) are native `<dialog>`s. Open them by setting `open`.
-- Menus: `[glzMenuTrigger]="tpl"` on a button, `<ng-template #tpl><glz-menu><button glzMenuItem (triggered)>`. Tooltips: `[glzTooltip]="text"`, hints only. Toasts: `inject(GlzToastService).show(message, { tone, action })`.
+- Menus: `[glzMenuTrigger]="tpl"` on a button, `<ng-template #tpl><glz-menu><button glzMenuItem (triggered)>`. A compact choice among a few options (a model picker): `<glz-menu-select label="Model" [options] [(value)]>`, options with `hint` and, only for Hope, `hope`. Tooltips: `[glzTooltip]="text"`, hints only. Toasts: `inject(GlzToastService).show(message, { tone, action })`.
 - Behaviour directives: `glzCopy`, `glzShortcut="mod+k"`, `glzClickOutside`, `glzAutofocus`, `glzScrollSpy`.
 
 ## Rules

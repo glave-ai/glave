@@ -1,0 +1,33 @@
+<div class="top">
+  <a glzButton variant="primary" routerLink="/" data-testid="nav-new-chat" (click)="followed()">
+    <glz-icon [icon]="addIcon" />
+    {{ copy.newChat }}
+  </a>
+  <input
+    glzInput
+    type="search"
+    data-testid="nav-search"
+    [attr.aria-label]="copy.search"
+    [placeholder]="copy.search"
+    [value]="query()"
+    (input)="search($event)"
+  />
+</div>
+<app-spaces-nav class="threads" [current]="current()" [query]="query()" (navigated)="followed()" />
+<nav class="pages" [attr.aria-label]="copy.pages">
+  <glz-nav-list>
+    @for (page of pages(); track page.path) {
+      <a
+        glzNavItem
+        [routerLink]="page.link"
+        [current]="page.current"
+        [icon]="page.icon"
+        [attr.data-testid]="page.testId"
+        (click)="followed()"
+      >
+        {{ page.label }}
+      </a>
+    }
+  </glz-nav-list>
+</nav>
+<app-person class="person" />

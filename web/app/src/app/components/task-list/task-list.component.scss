@@ -1,0 +1,33 @@
+:host {
+  display: block;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-3);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glz-space-3);
+  min-width: 0;
+}
+
+.title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: var(--glz-weight-bold);
+}
+
+.details {
+  margin: 0;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.error {
+  color: var(--glz-color-danger);
+}

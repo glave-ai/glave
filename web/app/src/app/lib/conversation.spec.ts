@@ -4,7 +4,6 @@ import {
   NO_DRAFT,
   answersFrom,
   applyUpdate,
-  isHope,
   latestModel,
   argumentsSummary,
   mergeEvents,
@@ -151,7 +150,7 @@ describe('conversation', () => {
     expect(items[1]).toMatchObject({ decision: null });
   });
 
-  it('names the model of each reply from its turn, and knows Hope', () => {
+  it('names the model of each reply from its turn', () => {
     const events = [
       event('message.added', { role: 'user', parts: [{ type: 'text', text: 'Hi' }] }),
       event('turn.started', { model: { provider: 'openrouter', name: 'hope-12b' } }),
@@ -164,11 +163,26 @@ describe('conversation', () => {
     );
     expect(latestModel(events)).toBe('claude-haiku');
     expect(latestModel([])).toBeNull();
-    expect(isHope('hope-12b')).toBe(true);
-    expect(isHope('Hope')).toBe(true);
-    expect(isHope('hopeful-model')).toBe(false);
-    expect(isHope('claude-haiku')).toBe(false);
-    expect(isHope(null)).toBe(false);
+  });
+
+  it('names a reply by the model that wrote it, from the answer that follows it', () => {
+    const responded = (name: string): RawEvent =>
+      event('model.responded', { model: { provider: 'gateway', name }, stop: 'end_turn' });
+    const items = threadItems([
+      event('turn.started', { model: { provider: 'gateway', name: 'gpt-6-luna' } }),
+      event('message.added', { role: 'user', parts: [{ type: 'text', text: 'Hi' }] }),
+      event('message.added', { role: 'assistant', parts: [{ type: 'text', text: 'One' }] }),
+      responded('hope-12b'),
+      // A judge's answer, after the message's own, names no message.
+      responded('judge-model'),
+      event('message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Two' }] }),
+      event('model.responded', { stop: 'end_turn' }),
+    ]);
+    expect(items.map((item) => (item.kind === 'message' ? item.model : 'x'))).toEqual([
+      null,
+      'hope-12b',
+      'gpt-6-luna',
+    ]);
   });
 
   it('grows the draft with text and reasoning only', () => {

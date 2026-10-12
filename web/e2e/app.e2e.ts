@@ -19,7 +19,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await fakeApi(page);
     await page.goto('/#token=glave_local_test');
-    await expect(byTestId(page, 'nav-thread')).toContainText('Make the tests pass');
+    await expect(byTestId(page, 'nav-thread').first()).toContainText('Make the tests pass');
     expect(page.url()).not.toContain('token');
     await expectAccessible(page);
     expect(problems()).toEqual([]);
@@ -29,7 +29,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
 test('a thread shows its history and streams a reply to a new message', async ({ page }) => {
   await fakeApi(page);
   await page.goto(`/t/${THREAD}#token=glave_local_test`);
-  await expect(byTestId(page, 'thread-receipt')).toContainText('cargo test');
+  await expect(byTestId(page, 'thread-receipt').first()).toContainText('cargo test');
   await expect(byTestId(page, 'thread-message').last()).toContainText('They pass now.');
   await expectAccessible(page);
   const reply = byTestId(page, 'thread-composer-input');
@@ -49,16 +49,16 @@ test('a new chat starts a thread and sends the first message', async ({ page }) 
   expect(api.calls).toContain('thread/start');
 });
 
-test('tasks, memory and settings open from the top bar', async ({ page }) => {
+test('tasks, memory and settings open from the side nav', async ({ page }) => {
   await fakeApi(page);
   await page.goto('/#token=glave_local_test');
-  await byTestId(page, 'workspace-tasks').click();
+  await byTestId(page, 'nav-tasks').click();
   await expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible();
   await expectAccessible(page);
-  await byTestId(page, 'workspace-memory').click();
+  await byTestId(page, 'nav-memory').click();
   await expect(page.getByRole('heading', { name: 'Memory' })).toBeVisible();
   await expectAccessible(page);
-  await byTestId(page, 'workspace-settings').click();
+  await byTestId(page, 'nav-settings').click();
   await expect(byTestId(page, 'settings-server')).toContainText('glave 0.0.0');
   await expectAccessible(page);
 });

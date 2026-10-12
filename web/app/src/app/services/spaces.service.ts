@@ -86,6 +86,11 @@ export class SpacesService {
     return undefined;
   }
 
+  /** The space that holds `thread`, if a listed space has it. */
+  spaceOf(id: ThreadId): Space | undefined {
+    return this.lists().find(({ threads }) => threads.some((thread) => thread.id === id))?.space;
+  }
+
   /** The space new chats start in: the first project, else the personal space. */
   readonly home = computed<SpaceId | undefined>(() => this.spaces()[0]?.space.id);
 }

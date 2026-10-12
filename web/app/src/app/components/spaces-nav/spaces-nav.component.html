@@ -1,19 +1,30 @@
-<div class="new">
-  <a glzButton variant="primary" routerLink="/" data-testid="nav-new-chat" (click)="followed()">
-    <glz-icon [icon]="icons.add" />
-    {{ copy.newChat }}
-  </a>
-</div>
 <nav class="lists" [attr.aria-label]="copy.threads">
-  @for (list of lists(); track list.id) {
-    <glz-nav-list data-testid="nav-space" [heading]="list.name">
-      @for (thread of list.threads; track thread.id) {
+  @for (group of groups(); track group.id) {
+    <glz-nav-list
+      testId="nav-space"
+      collapsible
+      [heading]="group.name"
+      [expanded]="group.expanded"
+      (expandedChange)="setExpanded(group.id, $event)"
+    >
+      <a
+        glzNavListActions
+        glzIconButton
+        size="sm"
+        data-testid="nav-space-new"
+        [label]="group.newLabel"
+        [routerLink]="newLink"
+        [queryParams]="group.newQuery"
+        (click)="followed()"
+      >
+        <glz-icon [icon]="addIcon" />
+      </a>
+      @for (thread of group.threads; track thread.id) {
         <a
           glzNavItem
           data-testid="nav-thread"
           [routerLink]="thread.link"
           [current]="thread.current"
-          [icon]="icons.thread"
           (click)="followed()"
         >
           {{ thread.title }}
@@ -25,5 +36,9 @@
         <p class="empty">{{ copy.empty }}</p>
       }
     </glz-nav-list>
+  } @empty {
+    @if (searching()) {
+      <p class="empty" data-testid="nav-no-match">{{ copy.noMatch }}</p>
+    }
   }
 </nav>

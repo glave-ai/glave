@@ -2,11 +2,14 @@ import { BreakpointObserver } from '@angular/cdk/layout';
 import {
   ChangeDetectionStrategy,
   Component,
+  type ElementRef,
+  afterRenderEffect,
   computed,
   effect,
   inject,
   input,
   model,
+  viewChild,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { map, switchMap } from 'rxjs';
@@ -21,8 +24,8 @@ export const GLZ_NARROW = '(max-width: 48rem)';
 /**
  * A page with a side nav (`[glzSidenav]`) beside its content. On wide screens the nav sits
  * beside the content and `open` collapses it; on narrow screens it slides over the content
- * as a modal drawer: the content behind is inert, so focus stays in the nav, and Escape or
- * the scrim close it. Toggle it from a button with a template reference.
+ * as a modal drawer: it takes focus as it opens, the content behind is inert, so focus stays
+ * in the nav, and Escape or the scrim close it. Toggle it from a button with a template reference.
  *
  * ```html
  * <glz-sidenav-layout #layout label="Spaces and threads">
@@ -56,6 +59,7 @@ export class GlzSidenavLayoutComponent {
   readonly narrowQuery = input(GLZ_NARROW);
 
   private readonly breakpoints = inject(BreakpointObserver);
+  private readonly sidenav = viewChild.required<ElementRef<HTMLElement>>('sidenav');
   /** Whether the screen is narrow, so the side nav is a drawer. */
   readonly narrow = toSignal(
     toObservable(this.narrowQuery).pipe(
@@ -74,6 +78,12 @@ export class GlzSidenavLayoutComponent {
     // A drawer starts closed whenever the screen becomes narrow; a wide screen shows the nav.
     effect(() => {
       this.open.set(!this.narrow());
+    });
+    // A drawer takes focus as it opens: the button that opened it is now behind it, inert.
+    afterRenderEffect(() => {
+      if (this.modal()) {
+        this.sidenav().nativeElement.focus();
+      }
     });
   }
 
