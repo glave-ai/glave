@@ -8,8 +8,8 @@ use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError}
 use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 
 use crate::assemble::Assembler;
-use crate::sse::SseDecoder;
 use crate::wire::chat_request;
+use glave_ports::SseDecoder;
 
 /// How much of an error message to keep.
 const ERROR_CHARS: usize = 500;

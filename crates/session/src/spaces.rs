@@ -85,7 +85,7 @@ where
         {
             return Ok(space);
         }
-        let now = At::from(self.inner.clock.now());
+        let now = At::from(self.inner.harness.clock().now());
         let space = Space {
             id: home.space,
             kind: SpaceKind::Project,
@@ -138,8 +138,8 @@ where
 
     /// The caller's personal space, made the first time.
     pub(crate) async fn personal_space(&self, caller: &Caller) -> Result<Space, ApiError> {
-        let now = self.inner.clock.now();
-        let id = ThreadId::new(now, self.inner.entropy.bytes())
+        let now = self.inner.harness.clock().now();
+        let id = ThreadId::new(now, self.inner.harness.entropy().bytes())
             .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
         let new = Space {
             id: SpaceId::from_uuid(id.as_uuid()),
@@ -226,69 +226,74 @@ where
         Ok(())
     }
 
-    /// Answers `space/*` for `caller`.
-    pub(crate) async fn space_request(
+    /// Answers `space/list`: the spaces `caller` works in.
+    pub(crate) async fn list_spaces(
         &self,
         caller: &Caller,
-        request: Request,
+        limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
-        let org = self.inner.home.org;
-        match request {
-            Request::SpaceList { limit } => {
-                // The server's own space is listed for those who work in it, record or not.
-                self.home_space().await?;
-                let person = Principal::person(self.person_of(caller)?);
-                let limit = limit.unwrap_or(100).clamp(1, 1_000);
-                let spaces = self
-                    .inner
-                    .spaces
-                    .list(org, &person, limit)
-                    .await
-                    .map_err(|e| failed(&e))?;
-                Ok(Reply::Spaces { spaces })
-            }
-            Request::SpaceGet { space } => Ok(Reply::Space {
-                space: self.member_of(caller, space).await?,
-            }),
-            Request::SpaceCreate { name, members } => {
-                let now = self.inner.clock.now();
-                let id = ThreadId::new(now, self.inner.entropy.bytes())
-                    .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
-                let space = Space {
-                    id: SpaceId::from_uuid(id.as_uuid()),
-                    kind: SpaceKind::Project,
-                    name,
-                    owner: Principal::person(self.person_of(caller)?),
-                    members,
-                    created_at: At::from(now),
-                    updated_at: At::from(now),
-                };
-                self.inner
-                    .spaces
-                    .create(org, &space)
-                    .await
-                    .map_err(|e| failed(&e))?;
-                Ok(Reply::Space { space })
-            }
-            Request::SpaceRename { space, name } => {
-                let mut found = self.member_of(caller, space).await?;
-                if found.owner != Principal::person(self.person_of(caller)?) {
-                    return Err(ApiError::new(
-                        code::NOT_ALLOWED,
-                        format!("only its owner renames space {space}"),
-                    ));
-                }
-                found.name = name;
-                found.updated_at = At::from(self.inner.clock.now());
-                self.inner
-                    .spaces
-                    .update(org, &found)
-                    .await
-                    .map_err(|e| failed(&e))?;
-                Ok(Reply::Space { space: found })
-            }
-            _ => Err(ApiError::new(code::INTERNAL, "not a space request")),
+        // The server's own space is listed for those who work in it, record or not.
+        self.home_space().await?;
+        let person = Principal::person(self.person_of(caller)?);
+        let limit = limit.unwrap_or(100).clamp(1, 1_000);
+        let spaces = self
+            .inner
+            .spaces
+            .list(self.inner.home.org, &person, limit)
+            .await
+            .map_err(|e| failed(&e))?;
+        Ok(Reply::Spaces { spaces })
+    }
+
+    /// Answers `space/create`: a project space owned by `caller`.
+    pub(crate) async fn create_space(
+        &self,
+        caller: &Caller,
+        name: String,
+        members: Vec<Principal>,
+    ) -> Result<Reply, ApiError> {
+        let now = self.inner.harness.clock().now();
+        let id = ThreadId::new(now, self.inner.harness.entropy().bytes())
+            .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
+        let space = Space {
+            id: SpaceId::from_uuid(id.as_uuid()),
+            kind: SpaceKind::Project,
+            name,
+            owner: Principal::person(self.person_of(caller)?),
+            members,
+            created_at: At::from(now),
+            updated_at: At::from(now),
+        };
+        self.inner
+            .spaces
+            .create(self.inner.home.org, &space)
+            .await
+            .map_err(|e| failed(&e))?;
+        Ok(Reply::Space { space })
+    }
+
+    /// Answers `space/rename`: for its owner only.
+    pub(crate) async fn rename_space(
+        &self,
+        caller: &Caller,
+        space: SpaceId,
+        name: String,
+    ) -> Result<Reply, ApiError> {
+        let mut found = self.member_of(caller, space).await?;
+        if found.owner != Principal::person(self.person_of(caller)?) {
+            return Err(ApiError::new(
+                code::NOT_ALLOWED,
+                format!("only its owner renames space {space}"),
+            ));
         }
+        found.name = name;
+        found.updated_at = At::from(self.inner.harness.clock().now());
+        self.inner
+            .spaces
+            .update(self.inner.home.org, &found)
+            .await
+            .map_err(|e| failed(&e))?;
+        Ok(Reply::Space { space: found })
     }
 
     fn places(&self) -> std::sync::MutexGuard<'_, Places> {

@@ -153,10 +153,10 @@ where
         let ledger = ledger_id().ok_or_else(|| internal("the ledger has no id"))?;
         for _ in 0..ATTEMPTS {
             self.catch_up().await?;
-            let now = self.inner.clock.now();
+            let now = self.inner.harness.clock().now();
             let seq = Seq::new(self.ledger().next_seq()).map_err(|e| internal(&e.to_string()))?;
             let header = Header {
-                id: EventId::new(now, self.inner.entropy.bytes())
+                id: EventId::new(now, self.inner.harness.entropy().bytes())
                     .map_err(|e| internal(&e.to_string()))?,
                 thread: ledger,
                 seq,

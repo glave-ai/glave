@@ -2,7 +2,7 @@
 //! chose before, is one of them. A thread's choice is its latest `model.chosen` event, so any
 //! server reading the log knows it.
 
-use glave_event::{Body, ThreadId, decode};
+use glave_event::{Body, ThreadId};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, ModelInfo, Reply, code};
@@ -69,7 +69,7 @@ where
             None => self
                 .chosen(thread)
                 .await?
-                .unwrap_or_else(|| self.inner.model.clone()),
+                .unwrap_or_else(|| self.inner.harness.settings().model.clone()),
         };
         self.known_model(&model)?;
         Ok(model)
@@ -78,20 +78,8 @@ where
     /// The model last chosen for `thread`, from its log.
     async fn chosen(&self, thread: ThreadId) -> Result<Option<String>, ApiError> {
         let scope = self.scope_of(thread).await?;
-        let failed =
-            |error: &dyn std::fmt::Display| ApiError::new(code::INTERNAL, error.to_string());
-        let latest = self
-            .inner
-            .harness
-            .log()
-            .latest_of(&scope, thread, &[CHOSEN])
-            .await
-            .map_err(|error| failed(&error))?;
-        let Some(raw) = latest else {
-            return Ok(None);
-        };
-        Ok(match decode(raw).map_err(|error| failed(&error))?.body {
-            Body::ModelChosen(chosen) => Some(chosen.model),
+        Ok(match self.latest(&scope, thread, CHOSEN).await? {
+            Some(Body::ModelChosen(chosen)) => Some(chosen.model),
             _ => None,
         })
     }

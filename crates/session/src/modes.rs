@@ -3,7 +3,7 @@
 //! its latest `approval.mode.chosen`, else the server's own, and only a mode the policy leaves
 //! may be chosen, so the log tells any server of the deployment which mode a thread runs in.
 
-use glave_event::{Body, ThreadId, decode};
+use glave_event::{Body, ThreadId};
 use glave_harness::{Caller, HarnessError, Thread};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
 
@@ -103,7 +103,7 @@ where
         Ok(self
             .chosen_approval(scope, thread)
             .await?
-            .unwrap_or(self.inner.approval))
+            .unwrap_or(self.inner.harness.settings().approval))
     }
 
     /// The mode last chosen for `thread`, from its log.
@@ -112,20 +112,8 @@ where
         scope: &Scope,
         thread: ThreadId,
     ) -> Result<Option<ApprovalMode>, ApiError> {
-        let failed =
-            |error: &dyn std::fmt::Display| ApiError::new(code::INTERNAL, error.to_string());
-        let latest = self
-            .inner
-            .harness
-            .log()
-            .latest_of(scope, thread, &[CHOSEN])
-            .await
-            .map_err(|error| failed(&error))?;
-        let Some(raw) = latest else {
-            return Ok(None);
-        };
-        Ok(match decode(raw).map_err(|error| failed(&error))?.body {
-            Body::ApprovalModeChosen(chosen) => Some(chosen.mode),
+        Ok(match self.latest(scope, thread, CHOSEN).await? {
+            Some(Body::ApprovalModeChosen(chosen)) => Some(chosen.mode),
             _ => None,
         })
     }

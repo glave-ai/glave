@@ -205,3 +205,10 @@ pub enum ProviderError {
     #[error("the {budget} budget would be exceeded: {detail}")]
     OverBudget { budget: String, detail: String },
 }
+
+/// An event stream that cannot be read is a response that does not follow its protocol.
+impl From<crate::SseError> for ProviderError {
+    fn from(error: crate::SseError) -> Self {
+        Self::Protocol(error.to_string())
+    }
+}

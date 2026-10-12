@@ -47,16 +47,9 @@ impl Session<'_> {
     /// Starts `request`, a turn or a goal, and follows it.
     pub async fn start(&self, request: Request) -> Result<Following, ApiError> {
         match self {
-            Self::Here(server) => {
-                match Box::pin(server.start_streaming(&Caller::default(), request)).await {
-                    Ok(started) => started.map(Following::Here),
-                    Err(other) => Err(ApiError {
-                        code: code::INTERNAL,
-                        message: format!("{} does not stream", other.method()),
-                        data: None,
-                    }),
-                }
-            }
+            Self::Here(server) => Box::pin(server.start_streaming(&Caller::default(), request))
+                .await
+                .map(Following::Here),
             Self::Elsewhere(remote) => Box::pin(remote.start(&request))
                 .await
                 .map(Following::Elsewhere),
