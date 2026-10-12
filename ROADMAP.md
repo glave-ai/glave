@@ -4,7 +4,7 @@ What glave is building toward, what exists, and what comes next. The rules for b
 
 ## What glave is
 
-Your own private AI cloud: an open-source Claude.ai or ChatGPT, where any conversation can have a real computer behind it. It works with any model, and ships Hope, a free open model.
+An open-source Claude.ai or ChatGPT that you run yourself, where any conversation can have a real computer behind it. Install it on your own machine and it just works, privately, with any model, including Hope, a free open model. A company runs the very same software as its own private AI cloud.
 
 Glave is to OpenAI and Anthropic what GitLab is to GitHub. It's the same product for everyone, run wherever you choose:
 
