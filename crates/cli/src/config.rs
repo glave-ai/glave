@@ -60,9 +60,13 @@ pub fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
         .unwrap_or_else(|| "the server".to_owned());
     let model = &endpoint.model;
     Some(match failure {
-        Failure::Refused if endpoint.provider.api_key.is_none() => {
+        Failure::Refused if endpoint.provider.auth.is_none() => {
             format!("{host} wants a key: set GLAVE_API_KEY")
         }
+        Failure::Refused if endpoint.provider.auth.fixed_key().is_none() => format!(
+            "{host} refused, or glave could not get credentials from {}: check its setup",
+            endpoint.provider.auth.describe()
+        ),
         Failure::Refused => format!("{host} did not accept the key: check GLAVE_API_KEY"),
         Failure::NoCredit => {
             format!("the account behind GLAVE_API_KEY has no credit left at {host}")

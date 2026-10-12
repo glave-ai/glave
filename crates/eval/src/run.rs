@@ -132,9 +132,13 @@ pub async fn attempt(
     write(dir.join("events.jsonl"), &events).await?;
     write(dir.join("transcript.txt"), &transcript).await?;
     write(dir.join("memory.jsonl"), &memory.ledger).await?;
-    if let Some(key) = &setup.endpoint.api_key
+    if let Some(key) = setup
+        .endpoint
+        .auth
+        .fixed_key()
+        .map(glave_ports::auth::Secret::expose)
         && key.len() >= 8
-        && events.contains(key.as_str())
+        && events.contains(key)
     {
         failures.push("the endpoint's API key reached the model: rotate it now".to_owned());
     }

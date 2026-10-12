@@ -9,7 +9,7 @@ use crate::model::ProviderError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Failure {
-    /// The key was refused (401, 403).
+    /// The key was refused (401, 403), or credentials could not be had.
     Refused,
     /// The account has no credit left (402).
     NoCredit,
@@ -48,6 +48,7 @@ impl ProviderError {
     pub fn failure(&self) -> Failure {
         match self {
             Self::Http { status, body } => from_status(*status, &body.to_ascii_lowercase()),
+            Self::Credentials(_) => Failure::Refused,
             Self::Transport(_) => Failure::Unreachable,
             Self::Timeout { .. } => Failure::Silent,
             Self::NoOutput(_) => Failure::Unavailable,

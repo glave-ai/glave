@@ -7,6 +7,7 @@
 //! cross scopes. The computer port's in-process implementation runs real processes, so it
 //! lives in `glave-computer` (this machine) rather than here.
 
+pub mod auth;
 mod blob;
 mod computer;
 #[cfg(any(test, feature = "conformance"))]
