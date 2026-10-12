@@ -22,4 +22,3 @@ pub use log::PostgresLog;
 pub use spaces::PostgresSpaces;
 pub use store::{PostgresKeyring, Store, StoreError};
 pub use tokio_postgres::Config;
-pub use views::Rebuilt;

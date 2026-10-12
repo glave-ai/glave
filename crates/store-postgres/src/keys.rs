@@ -7,7 +7,7 @@ use deadpool_postgres::Pool;
 use glave_keys::{KeyError, KeyStorage, StoredSpace};
 use glave_ports::{OrgId, Scope};
 
-use crate::store::{connection, describe};
+use crate::store::{connection, database};
 
 /// The key storage of the database.
 #[derive(Clone)]
@@ -19,14 +19,6 @@ impl PostgresKeys {
     pub(crate) fn new(pool: Pool) -> Self {
         Self { pool }
     }
-}
-
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "taken by value to pass straight to map_err"
-)]
-fn database(error: tokio_postgres::Error) -> KeyError {
-    KeyError::Storage(format!("the database failed: {}", describe(&error)))
 }
 
 fn storage(error: impl std::fmt::Display) -> KeyError {
@@ -47,8 +39,10 @@ impl KeyStorage for PostgresKeys {
                     &[&org.as_uuid()],
                 )
                 .await
-                .map_err(database)?;
-            row.map(|row| row.try_get(0)).transpose().map_err(database)
+                .map_err(database(KeyError::Storage))?;
+            row.map(|row| row.try_get(0))
+                .transpose()
+                .map_err(database(KeyError::Storage))
         }
     }
 
@@ -66,16 +60,16 @@ impl KeyStorage for PostgresKeys {
                     &[&org.as_uuid(), &wrapped],
                 )
                 .await
-                .map_err(database)?;
+                .map_err(database(KeyError::Storage))?;
             client
                 .query_one(
                     "SELECT wrapped FROM org_keys WHERE org = $1",
                     &[&org.as_uuid()],
                 )
                 .await
-                .map_err(database)?
+                .map_err(database(KeyError::Storage))?
                 .try_get(0)
-                .map_err(database)
+                .map_err(database(KeyError::Storage))
         }
     }
 
@@ -93,14 +87,14 @@ impl KeyStorage for PostgresKeys {
                     &[&scope.org.as_uuid(), &scope.space.as_uuid()],
                 )
                 .await
-                .map_err(database)?;
+                .map_err(database(KeyError::Storage))?;
             let Some(row) = row else {
                 return Ok(None);
             };
-            let revision: i64 = row.try_get(0).map_err(database)?;
+            let revision: i64 = row.try_get(0).map_err(database(KeyError::Storage))?;
             Ok(Some(StoredSpace {
                 revision: u64::try_from(revision).map_err(storage)?,
-                record: row.try_get(1).map_err(database)?,
+                record: row.try_get(1).map_err(database(KeyError::Storage))?,
             }))
         }
     }
@@ -124,7 +118,7 @@ impl KeyStorage for PostgresKeys {
                         &[&org, &space, &record],
                     )
                     .await
-                    .map_err(database)?,
+                    .map_err(database(KeyError::Storage))?,
                 Some(revision) => {
                     let revision = i64::try_from(revision).map_err(storage)?;
                     client
@@ -134,7 +128,7 @@ impl KeyStorage for PostgresKeys {
                             &[&org, &space, &revision, &record],
                         )
                         .await
-                        .map_err(database)?
+                        .map_err(database(KeyError::Storage))?
                 }
             };
             Ok(changed == 1)
