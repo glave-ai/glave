@@ -41,12 +41,6 @@ const WORDS: Readonly<Record<string, string>> = {
 /** Words a model's name joins to the number after them with a hyphen: `GPT-6`. */
 const HYPHENATED: ReadonlySet<string> = new Set(['GPT']);
 
-/** A model as the thread names it: what to call it, and whether it is Hope. */
-export interface ModelLabel {
-  readonly name: string;
-  readonly hope: boolean;
-}
-
 function wordName(word: string): string {
   return WORDS[word.toLowerCase()] ?? `${word.charAt(0).toUpperCase()}${word.slice(1)}`;
 }
@@ -123,23 +117,6 @@ export function modelOptions(models: readonly ModelInfo[]): readonly GlzMenuOpti
     hope: model.hope,
     ...(model.default ? { hint: DEFAULT_HINT } : {}),
   }));
-}
-
-/**
- * How the thread names the model `id` (as `model.responded` or `turn.started` names it): its
- * display name and Hope's mark from `model/list`, else a name made from the id, never Hope.
- * `fallback` names a reply whose model is not known.
- */
-export function modelLabel(
-  models: readonly ModelInfo[],
-  id: string | null,
-  fallback: string,
-): ModelLabel {
-  if (id === null) {
-    return { name: fallback, hope: false };
-  }
-  const found = models.find((model) => model.id === id);
-  return { name: displayName(found ?? { id }), hope: found?.hope ?? false };
 }
 
 /** A stored list of pinned models, read back: its model ids, else none. */

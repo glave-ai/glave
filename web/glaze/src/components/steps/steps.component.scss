@@ -1,0 +1,51 @@
+:host {
+  display: block;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-1);
+  width: fit-content;
+  min-height: 1.75rem;
+
+  // Its text lines up with the text around it; the padding is room for the focus ring.
+  margin-inline-start: calc(-1 * var(--glz-space-1));
+  padding: 0 var(--glz-space-1);
+  border-radius: var(--glz-radius-sm);
+  cursor: pointer;
+  list-style: none;
+  transition: color var(--glz-duration-fast) var(--glz-easing);
+}
+
+.line::-webkit-details-marker {
+  display: none;
+}
+
+.line:hover {
+  color: var(--glz-color-text);
+}
+
+.line:focus-visible {
+  outline: 2px solid var(--glz-color-focus);
+  outline-offset: 0;
+}
+
+.chevron {
+  transition: transform var(--glz-duration-fast) var(--glz-easing);
+}
+
+.details[open] > .line .chevron {
+  transform: rotate(90deg);
+}
+
+// The steps hang under the line, behind a rule, each one line of its own.
+.steps {
+  display: flex;
+  flex-direction: column;
+  margin: var(--glz-space-1) 0 0 var(--glz-space-3);
+  padding-inline-start: var(--glz-space-2);
+  border-inline-start: 2px solid var(--glz-color-border);
+}

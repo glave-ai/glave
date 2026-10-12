@@ -2,8 +2,8 @@ import type { Page, Route } from '@playwright/test';
 
 /**
  * What the fake server knows: a project and the person's own space with their threads, one
- * thread's history (a command, an edit and a new file, a reply from Hope), the models, the
- * tasks, and what a turn streams.
+ * thread's history (a command, an edit and a new file, a reply from the default model, which
+ * the picker shows), the models, the tasks, and what a turn streams.
  */
 const OWNER = { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' };
 
@@ -114,7 +114,7 @@ const HISTORY = [
     role: 'user',
     parts: [{ type: 'text', text: 'Make the tests pass' }],
   }),
-  event(3, 'turn.started', { model: { provider: 'e2e', name: 'hope-12b' } }),
+  event(3, 'turn.started', { model: { provider: 'e2e', name: DEFAULT_MODEL } }),
   call(4, 'call_1', 'bash', { command: 'cargo test' }),
   done(5, 'call_1', 'test parse::empty ... FAILED'),
   call(6, 'call_2', 'edit', {
@@ -140,7 +140,10 @@ const HISTORY = [
       },
     ],
   }),
-  event(13, 'model.responded', { model: { provider: 'e2e', name: 'hope-12b' }, stop: 'end_turn' }),
+  event(13, 'model.responded', {
+    model: { provider: 'e2e', name: DEFAULT_MODEL },
+    stop: 'end_turn',
+  }),
 ];
 
 const TASKS = [
@@ -196,12 +199,12 @@ function turn(message: { id: number; params: Record<string, unknown> }): string 
     {
       jsonrpc: '2.0',
       method: 'turn/live',
-      params: { thread: target, update: { kind: 'text', text: 'Hello from ' } },
+      params: { thread: target, update: { kind: 'text', text: 'Glad to ' } },
     },
     {
       jsonrpc: '2.0',
       method: 'turn/live',
-      params: { thread: target, update: { kind: 'text', text: 'Hope.' } },
+      params: { thread: target, update: { kind: 'text', text: 'help.' } },
     },
     {
       jsonrpc: '2.0',
@@ -211,7 +214,7 @@ function turn(message: { id: number; params: Record<string, unknown> }): string 
         event: event(
           after + 2,
           'message.added',
-          { role: 'assistant', parts: [{ type: 'text', text: 'Hello from Hope.' }] },
+          { role: 'assistant', parts: [{ type: 'text', text: 'Glad to help.' }] },
           target,
         ),
       },

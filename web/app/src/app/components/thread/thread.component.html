@@ -26,22 +26,18 @@
         @for (item of shown(); track item.key) {
           @switch (item.kind) {
             @case ('message') {
-              <glz-message
-                data-testid="thread-message"
-                [from]="item.from"
-                [author]="item.author"
-                [hope]="item.hope"
-              >
+              <glz-message data-testid="thread-message" [from]="item.from" [author]="item.author">
                 @if (item.reasoning) {
                   <glz-reasoning>{{ item.reasoning }}</glz-reasoning>
                 }
                 <app-message-text [text]="item.text" [foldable]="item.foldable" />
+                <app-copy-button glzMessageActions [text]="item.text" />
               </glz-message>
             }
             @case ('call') {
               <glz-receipt
-                class="aside"
                 testId="thread-receipt"
+                [icon]="item.icon"
                 [tool]="item.tool"
                 [summary]="item.summary"
                 [status]="item.status"
@@ -49,9 +45,23 @@
                 <pre class="output">{{ item.output }}</pre>
               </glz-receipt>
             }
+            @case ('steps') {
+              <glz-steps testId="thread-steps" [summary]="item.summary">
+                @for (call of item.calls; track call.key) {
+                  <glz-receipt
+                    testId="thread-receipt"
+                    [icon]="call.icon"
+                    [tool]="call.tool"
+                    [summary]="call.summary"
+                    [status]="call.status"
+                  >
+                    <pre class="output">{{ call.output }}</pre>
+                  </glz-receipt>
+                }
+              </glz-steps>
+            }
             @case ('approval') {
               <glz-approval-card
-                class="aside"
                 testId="thread-approval"
                 [tool]="item.tool"
                 [summary]="item.summary"
@@ -62,7 +72,6 @@
             }
             @case ('question') {
               <glz-question-card
-                class="aside"
                 testId="thread-question"
                 [questions]="item.questions"
                 [answered]="item.answers"
@@ -73,13 +82,7 @@
           }
         }
         @if (service.hasReply()) {
-          <glz-message
-            from="model"
-            streaming
-            data-testid="thread-reply"
-            [author]="replyAuthor()"
-            [hope]="replyHope()"
-          >
+          <glz-message from="model" streaming data-testid="thread-reply" [author]="copy.reply">
             @if (service.reply().reasoning) {
               <glz-reasoning streaming>{{ service.reply().reasoning }}</glz-reasoning>
             }

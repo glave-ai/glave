@@ -14,7 +14,7 @@ See every component live at `/glaze` in the app (`npm start` in `web/`). Coding 
 
 **Overlays**: `glz-dialog` (dialog or drawer), `glz-confirm-dialog`, `glz-menu` with `glzMenuItem` and `glzMenuTrigger`, `glz-menu-select` (a compact choice among a few), `glz-picker` (a choice among many, searched as you type, with pins at the top: a model picker), `glzTooltip`, `glz-toast-stack` with `GlzToastService`.
 
-**Conversation**: `glz-composer`, `glz-message`, `glz-reasoning`, `glz-receipt`, `glz-approval-card`, `glz-question-card`.
+**Conversation**: `glz-composer`, `glz-message`, `glz-reasoning`, `glz-receipt`, `glz-steps`, `glz-approval-card`, `glz-question-card`.
 
 **Behaviour**: `glzStickToBottom`, `glzCopy`, `glzShortcut`, `glzClickOutside`, `glzAutofocus`, `glzScrollSpy`.
 

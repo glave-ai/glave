@@ -4,7 +4,7 @@
 //! They need Node 22.22.3 or later: without it the step fails, unless `GLAVE_SKIP_WEB=1` says
 //! to skip it, as CI's Rust jobs do (its `web` job runs these).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 
@@ -36,8 +36,27 @@ pub fn check() -> Result<(), String> {
     npm(&web, &["run", "e2e:install"], None)?;
     // The end-to-end tests run against the real server.
     crate::cmd::run("cargo", &["build", "-p", "glave"])?;
-    let glave = root.join("target/debug/glave");
+    let glave = target_directory()?.join("debug/glave");
     npm(&web, &["run", "check"], Some(&glave))
+}
+
+/// Where cargo builds this workspace: `CARGO_TARGET_DIR` or `build.target-dir` when set, else
+/// the workspace's own `target/`, as `cargo metadata` reports it.
+fn target_directory() -> Result<PathBuf, String> {
+    let metadata =
+        crate::cmd::output("cargo", &["metadata", "--format-version", "1", "--no-deps"])?;
+    target_directory_in(&metadata)
+}
+
+/// The `target_directory` in `cargo metadata`'s JSON.
+fn target_directory_in(metadata: &str) -> Result<PathBuf, String> {
+    let value: serde_json::Value = serde_json::from_str(metadata)
+        .map_err(|err| format!("`cargo metadata` wrote something not JSON: {err}"))?;
+    value
+        .get("target_directory")
+        .and_then(serde_json::Value::as_str)
+        .map(PathBuf::from)
+        .ok_or_else(|| "`cargo metadata` named no target directory".to_owned())
 }
 
 /// Whether `web/node_modules` is missing or older than `package-lock.json`.
@@ -101,6 +120,16 @@ mod tests {
         assert_eq!(parse("nope"), None);
         assert!(parse("v22.22.0") < Some(MINIMUM));
         assert!(parse("v24.1.0") > Some(MINIMUM));
+    }
+
+    #[test]
+    fn the_target_directory_is_cargo_metadatas() {
+        assert_eq!(
+            target_directory_in(r#"{"target_directory":"/cache/glave-target","version":1}"#),
+            Ok(PathBuf::from("/cache/glave-target"))
+        );
+        assert!(target_directory_in(r#"{"version":1}"#).is_err());
+        assert!(target_directory_in("not json").is_err());
     }
 
     #[test]

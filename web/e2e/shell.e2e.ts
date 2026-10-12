@@ -17,6 +17,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await byTestId(page, 'tools-handle').press('Enter');
     await expect(byTestId(page, 'task').first()).toContainText('Nightly dependency audit');
     await expectAccessible(page);
+    await expect(byTestId(page, 'tools-tabs-tab')).toHaveText(['Tasks', 'Changes (2)']);
     await byTestId(page, 'tools-tabs-tab').nth(1).click();
     await byTestId(page, 'file').first().click();
     await expect(byTestId(page, 'file-change').first()).toContainText('fn parse');
@@ -91,12 +92,13 @@ test('the side panels resize by their edge, collapse past it, and are remembered
   await expect(navEdge).toBeVisible();
 });
 
-test('the model picked is sent with the next turn, and each reply names its model', async ({
+test('the model picked is sent with the next turn, and no reply names a model', async ({
   page,
 }) => {
   const api = await fakeApi(page);
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
-  await expect(byTestId(page, 'thread-message').last()).toHaveAttribute('aria-label', 'Hope');
+  await expect(byTestId(page, 'thread-message').last()).toHaveAttribute('aria-label', 'Reply');
+  await expect(byTestId(page, 'thread-items')).not.toContainText('Claude Haiku');
   const picker = byTestId(page, 'model-picker-trigger');
   // The default model by its name, made from its id: never a slug.
   await expect(picker).toContainText('Anthropic · Claude Haiku 5.5');
@@ -107,7 +109,8 @@ test('the model picked is sent with the next turn, and each reply names its mode
   const reply = byTestId(page, 'thread-composer-input');
   await reply.fill('Thanks');
   await reply.press('Enter');
-  await expect(byTestId(page, 'thread-message').last()).toContainText('Hello from Hope.');
+  await expect(byTestId(page, 'thread-message').last()).toContainText('Glad to help.');
+  await expect(byTestId(page, 'thread-items')).not.toContainText('Hope');
   const turns = api.requests.filter((request) => request.method === 'turn/start');
   expect(turns).toEqual([
     {

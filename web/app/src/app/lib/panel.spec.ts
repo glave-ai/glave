@@ -10,10 +10,10 @@ describe('toSideNavState', () => {
 
 describe('toPanelState', () => {
   it('reads back what was stored', () => {
-    expect(toPanelState({ open: true, width: 412.4, tab: 'files' })).toEqual({
+    expect(toPanelState({ open: true, width: 412.4, tab: 'changes' })).toEqual({
       open: true,
       width: 412,
-      tab: 'files',
+      tab: 'changes',
     });
   });
 
