@@ -17,6 +17,7 @@ describe('SettingsComponent', () => {
       name: 'glave',
       version: '0.1.0',
       protocols: ['2026-10'],
+      approval: 'auto',
     });
     TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);

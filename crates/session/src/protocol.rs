@@ -393,6 +393,19 @@ pub struct ServerInfo {
     pub version: String,
     /// The protocol versions spoken.
     pub protocols: Vec<String>,
+    /// How much this server asks before acting, in every thread it runs: `--approval` or
+    /// `approval` in `config.toml` (`specs/approvals.md`). Choosing it per thread comes later.
+    pub approval: ApprovalMode,
+}
+
+/// How much glave asks before acting (`specs/approvals.md`, "Modes").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalMode {
+    /// The cautious mode: ask before every change and every command.
+    Ask,
+    /// Changes and commands go through; risky ones still ask.
+    Auto,
 }
 
 /// A thread, as a list shows it: from the threads view, with what it is doing now.

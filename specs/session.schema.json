@@ -36,6 +36,21 @@
       ],
       "type": "object"
     },
+    "ApprovalMode": {
+      "description": "How much glave asks before acting (`specs/approvals.md`, \"Modes\").",
+      "oneOf": [
+        {
+          "const": "ask",
+          "description": "The cautious mode: ask before every change and every command.",
+          "type": "string"
+        },
+        {
+          "const": "auto",
+          "description": "Changes and commands go through; risky ones still ask.",
+          "type": "string"
+        }
+      ]
+    },
     "At": {
       "description": "When an event was recorded, in UTC at millisecond precision. For people only: events are\nordered by [`Seq`]. Always written with three fractional digits, such as\n`2026-10-07T21:14:01.250Z`, so every instant has exactly one spelling.",
       "type": "string"
@@ -625,6 +640,10 @@
     "ServerInfo": {
       "description": "What the server is.",
       "properties": {
+        "approval": {
+          "$ref": "#/$defs/ApprovalMode",
+          "description": "How much this server asks before acting, in every thread it runs: `--approval` or\n`approval` in `config.toml` (`specs/approvals.md`). Choosing it per thread comes later."
+        },
         "name": {
           "type": "string"
         },
@@ -642,7 +661,8 @@
       "required": [
         "name",
         "version",
-        "protocols"
+        "protocols",
+        "approval"
       ],
       "type": "object"
     },

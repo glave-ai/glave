@@ -14,7 +14,8 @@ mod session {
     use glave_event::{Body, Outcome, Verdict, decode};
     use glave_ports::{EventLog, MemoryLog, ModelProvider};
     use glave_session::protocol::{
-        Answer, ApiError, IdempotencyKey, Meta, Notification, Reply, Request, Status, Update, code,
+        Answer, ApiError, ApprovalMode, IdempotencyKey, Meta, Notification, Reply, Request, Status,
+        Update, code,
     };
     use glave_session::{Answering, Caller, Server, TurnItem};
     use jiff::Timestamp;
@@ -74,6 +75,40 @@ mod session {
             items.push(item);
         }
         items
+    }
+
+    #[test]
+    fn discover_says_how_much_the_server_asks_before_acting() {
+        let dir = folder("discover");
+        block_on(async {
+            let mut auto = glave_harness::Settings::new("test-model", "script");
+            auto.approval = glave_harness::ApprovalMode::Auto;
+            let cases = [
+                (
+                    server(&dir, vec![], Answering::NoOne).await,
+                    ApprovalMode::Ask,
+                ),
+                (
+                    server_with(
+                        &dir,
+                        vec![],
+                        None,
+                        MemoryLog::new(),
+                        Answering::NoOne,
+                        2,
+                        auto,
+                    )
+                    .await,
+                    ApprovalMode::Auto,
+                ),
+            ];
+            for (server, mode) in cases {
+                match server.request(Request::Discover {}).await.unwrap() {
+                    Reply::Server(info) => assert_eq!(info.approval, mode),
+                    other => panic!("{other:?}"),
+                }
+            }
+        });
     }
 
     #[test]

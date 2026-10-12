@@ -107,7 +107,7 @@ export async function fakeApi(page: Page): Promise<{ readonly calls: readonly st
       case 'memory/list':
         return reply({ memories: [] });
       case 'server/discover':
-        return reply({ name: 'glave', version: '0.0.0', protocols: ['2026-10'] });
+        return reply({ name: 'glave', version: '0.0.0', protocols: ['2026-10'], approval: 'auto' });
       case 'turn/start': {
         const target = String(message.params['thread']);
         const after = target === THREAD ? HISTORY.length : 0;
