@@ -78,6 +78,11 @@
       ],
       "type": "object"
     },
+    "ComputerId": {
+      "description": "Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it).",
+      "format": "uuid",
+      "type": "string"
+    },
     "Currency": {
       "description": "An ISO 4217 currency code: three uppercase ASCII letters, such as `USD`.",
       "type": "string"
@@ -293,6 +298,13 @@
             }
           ],
           "description": "For `turn/start`: the same key for the same thread returns the turn already started\ninstead of starting another, so a client may retry safely."
+        },
+        "traceparent": {
+          "description": "For `turn/start`: the W3C trace the turn belongs to (`00-<trace id>-<parent id>-<flags>`),\nrecorded with the turn and joined by glave's spans. One that is not one is ignored.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -1416,6 +1428,10 @@
       "code": -32012,
       "message": "The caller may not do this"
     },
+    "NOT_AVAILABLE": {
+      "code": -32022,
+      "message": "Not available yet, such as a thread on a computer of the person's own"
+    },
     "NO_APPROVAL": {
       "code": -32004,
       "message": "No such approval is pending"
@@ -2383,6 +2399,17 @@
           "background": {
             "description": "For a thread that runs as a task: it works on a worker when the server has them,\neven when other threads work here.",
             "type": "boolean"
+          },
+          "computer": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ComputerId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A running computer to work on, such as the person's own laptop dialled in to this\nserver. Not available yet: refused with `-32022`."
           },
           "model": {
             "description": "The model the thread's turns go to, one `model/list` names; the server's default\nwhen absent.",

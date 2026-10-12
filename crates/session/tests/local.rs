@@ -46,6 +46,7 @@ mod local {
                     space: None,
                     worktree: None,
                     background: false,
+                    computer: None,
                     model: None,
                 })
                 .await;

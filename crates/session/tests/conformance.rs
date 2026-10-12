@@ -319,6 +319,7 @@ mod conformance {
                 space: None,
                 background: false,
                 worktree: None,
+                computer: None,
                 model: None,
             })
             .await
@@ -467,6 +468,7 @@ mod conformance {
                         space: None,
                         background: false,
                         worktree: None,
+                        computer: None,
                         model: Some("elsewhere".into()),
                     })
                     .await;

@@ -20,6 +20,7 @@ mod plan;
 mod price;
 mod routes;
 mod target;
+mod telemetry;
 
 pub use budget::{Budget, Budgets, Caller, Limit, OverBudget};
 pub use gateway::Gateway;

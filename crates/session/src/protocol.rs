@@ -10,7 +10,7 @@ use glave_event::{
     Seq, ThreadId, TokenCounts, When,
 };
 use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
-use glave_ports::{Failure, Space, SpaceId, Standing};
+use glave_ports::{ComputerId, Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
 pub use models::ModelInfo;
@@ -42,6 +42,10 @@ pub enum Request {
         /// even when other threads work here.
         #[serde(default, skip_serializing_if = "is_false")]
         background: bool,
+        /// A running computer to work on, such as the person's own laptop dialled in to this
+        /// server. Not available yet: refused with `-32022`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        computer: Option<ComputerId>,
         /// The model the thread's turns go to, one `model/list` names; the server's default
         /// when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -311,11 +315,15 @@ pub struct Meta {
     /// instead of starting another, so a client may retry safely.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idempotency_key: Option<IdempotencyKey>,
+    /// For `turn/start`: the W3C trace the turn belongs to (`00-<trace id>-<parent id>-<flags>`),
+    /// recorded with the turn and joined by glave's spans. One that is not one is ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traceparent: Option<String>,
 }
 
 impl Meta {
     fn is_empty(&self) -> bool {
-        self.idempotency_key.is_none()
+        self.idempotency_key.is_none() && self.traceparent.is_none()
     }
 }
 
@@ -711,6 +719,8 @@ pub mod code {
     pub const NO_SPACE: i64 = -32019;
     /// The request's parameters do not make sense together.
     pub const INVALID_PARAMS: i64 = -32602;
+    /// What was asked for is not built yet, such as a thread on a computer that dialled in.
+    pub const NOT_AVAILABLE: i64 = -32022;
 }
 
 impl ApiError {

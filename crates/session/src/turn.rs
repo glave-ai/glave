@@ -126,6 +126,24 @@ where
         caller: &Caller,
         request: Request,
     ) -> Result<Result<TurnStream, ApiError>, Box<Request>> {
+        if !streams(&request) {
+            return Err(Box::new(request));
+        }
+        let span = crate::trace::span(&request);
+        tracing::Instrument::instrument(self.stream(caller, request), span).await
+    }
+
+    /// Starts `request` when its method streams, in the current span.
+    pub(crate) async fn stream(
+        &self,
+        caller: &Caller,
+        request: Request,
+    ) -> Result<Result<TurnStream, ApiError>, Box<Request>> {
+        let trace = crate::trace::trace_of(&request);
+        let caller = &Caller {
+            trace: trace.or_else(|| caller.trace.clone()),
+            ..caller.clone()
+        };
         match request {
             Request::TurnStart {
                 thread,
@@ -225,4 +243,18 @@ where
         }
         Ok(TurnStream::new(Some(notes), done))
     }
+}
+
+/// Whether `request` streams: a turn or a goal someone follows, not one run as a task.
+fn streams(request: &Request) -> bool {
+    matches!(
+        request,
+        Request::TurnStart {
+            background: false,
+            ..
+        } | Request::GoalStart {
+            background: false,
+            ..
+        }
+    )
 }

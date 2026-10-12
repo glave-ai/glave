@@ -15,8 +15,16 @@ glave-keys.workspace = true
 glave-ports.workspace = true
 jiff.workspace = true
 serde_json.workspace = true
+# TLS to a database on another computer: rustls on aws-lc-rs, as the rest of glave, and the
+# operating system's certificate verifier (both already in the tree, under reqwest).
+rustls.workspace = true
+rustls-platform-verifier.workspace = true
 thiserror.workspace = true
 tokio-postgres.workspace = true
+# rustls for tokio-postgres: the driver's own TLS hook, maintained beside it.
+tokio-postgres-rustls.workspace = true
+# A content-free span for each append.
+tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

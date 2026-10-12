@@ -11,46 +11,118 @@ use std::time::Duration;
 use glave_event::{Body, CallId, GoalReason, Outcome, PrincipalKind, ThreadId, decode};
 use glave_gateway::Gateway;
 use glave_harness::{Caller, Cancel, Goal, Question};
+use glave_session::client::{Remote, RemoteTurn};
+use glave_session::protocol::Meta;
 use glave_session::protocol::{Answer, ApiError, Notification, Reply, Request, Update, code};
 use glave_session::{Server, TurnItem, TurnStream};
-use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 
 use crate::asking;
 use crate::config::{self, Endpoint};
+use crate::data::{DataBlobs, DataLog};
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::terminal::Printer;
 use crate::waiting::Waiting;
 
-pub type Glave = Server<Gateway, SqliteLog, SqliteBlobs>;
+pub type Glave = Server<Gateway, DataLog, DataBlobs>;
+
+/// The session API the terminal is a client of: the server in this process, or one elsewhere
+/// over HTTP. The terminal uses the same requests and follows turns the same way with either.
+#[derive(Clone, Copy)]
+pub enum Session<'a> {
+    Here(&'a Glave),
+    Elsewhere(&'a Remote),
+}
+
+impl Session<'_> {
+    /// Answers `request`, one that does not stream.
+    pub async fn request(&self, request: Request) -> Result<Reply, ApiError> {
+        // Boxed, as starting a turn below: the server's futures are large, and awaited often.
+        match self {
+            Self::Here(server) => Box::pin(server.request(request)).await,
+            Self::Elsewhere(remote) => Box::pin(remote.request(&request)).await,
+        }
+    }
+
+    /// Starts `request`, a turn or a goal, and follows it.
+    pub async fn start(&self, request: Request) -> Result<Following, ApiError> {
+        match self {
+            Self::Here(server) => {
+                match Box::pin(server.start_streaming(&Caller::default(), request)).await {
+                    Ok(started) => started.map(Following::Here),
+                    Err(other) => Err(ApiError {
+                        code: code::INTERNAL,
+                        message: format!("{} does not stream", other.method()),
+                        data: None,
+                    }),
+                }
+            }
+            Self::Elsewhere(remote) => Box::pin(remote.start(&request))
+                .await
+                .map(Following::Elsewhere),
+        }
+    }
+}
+
+/// A turn or a goal as it runs, here or elsewhere.
+pub enum Following {
+    Here(TurnStream),
+    Elsewhere(RemoteTurn),
+}
+
+impl Following {
+    async fn next(&mut self) -> Option<TurnItem> {
+        match self {
+            Self::Here(stream) => stream.next().await,
+            Self::Elsewhere(turn) => turn.next().await,
+        }
+    }
+}
 
 /// What a turn is followed with.
 pub struct Client<'a> {
-    pub server: &'a Glave,
+    pub server: Session<'a>,
     pub thread: ThreadId,
     pub input: &'a Input,
-    pub endpoint: &'a Endpoint,
+    /// The model endpoint, when the model is called from here: for receipts and fixes.
+    pub endpoint: Option<&'a Endpoint>,
     /// Whether approvals are asked in this terminal; without one, the server answers "no one
     /// there" itself.
     pub asks: bool,
-    pub servers: &'a Servers,
+    /// The MCP servers started here, if any.
+    pub servers: Option<&'a Servers>,
 }
 
 impl Client<'_> {
     /// Runs one turn, which Ctrl-C cancels, printing its progress and receipt.
     pub async fn turn(&self, prompt: &str, printer: &mut Printer) -> ExitCode {
-        self.servers.report(printer).await;
-        let started = self.server.start_turn(self.thread, prompt).await;
+        self.report(printer).await;
+        let started = self
+            .server
+            .start(Request::TurnStart {
+                thread: self.thread,
+                prompt: prompt.to_owned(),
+                background: false,
+                budget: None,
+                model: None,
+                meta: Meta::default(),
+            })
+            .await;
         self.follow(started, printer).await
     }
 
     /// Works toward `goal` across turns until it ends, which Ctrl-C does too, printing every
     /// turn's progress and then the receipt for all of them. Succeeds only when it is met.
     pub async fn goal(&self, goal: Goal, printer: &mut Printer) -> ExitCode {
-        self.servers.report(printer).await;
+        self.report(printer).await;
         let started = self
             .server
-            .start_goal_as(&Caller::default(), self.thread, Some(goal))
+            .start(Request::GoalStart {
+                thread: self.thread,
+                objective: Some(goal.objective),
+                budget: Some(goal.token_budget),
+                background: false,
+            })
             .await;
         let code = self.follow(started, printer).await;
         let get = Request::GoalGet {
@@ -68,7 +140,7 @@ impl Client<'_> {
     /// Follows a started turn, or a goal's turns, to the end.
     async fn follow(
         &self,
-        started: Result<TurnStream, ApiError>,
+        started: Result<Following, ApiError>,
         printer: &mut Printer,
     ) -> ExitCode {
         let mut stream = match started {
@@ -110,7 +182,7 @@ impl Client<'_> {
         .await;
         match ended {
             Some(Ok(turn)) => {
-                printer.receipt(&turn, self.endpoint.local);
+                printer.receipt(&turn, self.endpoint.is_some_and(|endpoint| endpoint.local));
                 match turn.outcome {
                     Outcome::Completed => ExitCode::SUCCESS,
                     // As shells report a program stopped by Ctrl-C.
@@ -169,21 +241,25 @@ impl Client<'_> {
                     }
                     _ => return false,
                 };
-                if !self.asks {
+                let decision = if self.asks {
+                    // A subagent asks under its own thread.
+                    printer.approval(&printer.labeled(*thread, &asked.summary));
+                    let Some(line) = interrupt.run(self.input.line()).await else {
+                        return true;
+                    };
+                    match line
+                        .map(|answer| answer.trim().to_ascii_lowercase())
+                        .as_deref()
+                    {
+                        Some("y" | "yes") => Answer::AllowOnce,
+                        Some("a" | "always") => Answer::AllowForThread,
+                        _ => Answer::Deny,
+                    }
+                } else if matches!(self.server, Session::Elsewhere(_)) {
+                    // A server elsewhere waits for its clients; no one is at this terminal.
+                    Answer::Deny
+                } else {
                     return false;
-                }
-                // A subagent asks under its own thread.
-                printer.approval(&printer.labeled(*thread, &asked.summary));
-                let Some(line) = interrupt.run(self.input.line()).await else {
-                    return true;
-                };
-                let decision = match line
-                    .map(|answer| answer.trim().to_ascii_lowercase())
-                    .as_deref()
-                {
-                    Some("y" | "yes") => Answer::AllowOnce,
-                    Some("a" | "always") => Answer::AllowForThread,
-                    _ => Answer::Deny,
                 };
                 let decide = Request::ApprovalDecide {
                     thread: *thread,
@@ -268,11 +344,19 @@ impl Client<'_> {
         }
     }
 
+    /// Reports the MCP servers started here, if there are any.
+    async fn report(&self, printer: &mut Printer) {
+        if let Some(servers) = self.servers {
+            servers.report(printer).await;
+        }
+    }
+
     /// Shows what failed and, when the person can fix it, what to change.
     fn show_error(&self, printer: &mut Printer, error: &ApiError) {
         printer.error(&error.message);
         if let Some(data) = &error.data
-            && let Some(fix) = config::fix(data.failure, self.endpoint)
+            && let Some(endpoint) = self.endpoint
+            && let Some(fix) = config::fix(data.failure, endpoint)
         {
             printer.fix(&fix);
         }

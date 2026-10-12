@@ -57,6 +57,7 @@ mod models {
             space: None,
             worktree: None,
             background: false,
+            computer: None,
             model: model.map(str::to_owned),
         };
         match server.request(started).await? {

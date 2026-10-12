@@ -161,6 +161,7 @@ impl SignIn {
                     subject: None,
                     session: None,
                 }),
+                trace: None,
             });
         }
         if self.issuers.is_empty() {
@@ -219,6 +220,7 @@ impl SignIn {
                 subject: Some(claims.sub),
                 session: claims.sid,
             }),
+            trace: None,
         })
     }
 }

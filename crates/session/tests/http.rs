@@ -261,6 +261,7 @@ mod http {
                     space: None,
                     background: false,
                     worktree: None,
+                    computer: None,
                     model: None,
                 })
                 .await;
@@ -326,6 +327,7 @@ mod http {
                 space: None,
                 background: false,
                 worktree: None,
+                computer: None,
                 model: None,
             });
             let mismatched = web.open(&message, Some("turn/start")).await;
@@ -360,6 +362,7 @@ mod http {
                     space: None,
                     background: false,
                     worktree: None,
+                    computer: None,
                     model: None,
                 })
                 .await;

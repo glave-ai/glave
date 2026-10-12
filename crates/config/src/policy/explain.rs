@@ -128,20 +128,9 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
                 &Source::Default,
             ),
         },
-        match &choices.models {
-            Some(models) => row(
-                "models",
-                format!(
-                    "{:?}",
-                    models
-                        .value
-                        .iter()
-                        .map(|model| model.id.as_str())
-                        .collect::<Vec<_>>()
-                ),
-                &models.from,
-            ),
-            None => row("models", "none besides model".to_owned(), &Source::Default),
+        {
+            let (offered, from) = models(choices);
+            row("models", offered, from)
         },
         row(
             "worktree",
@@ -164,7 +153,28 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
     if let Some(gateway) = &choices.gateway {
         rows.push(row("gateway", gateway.value.clone(), &gateway.from));
     }
+    if let Some(server) = &choices.server {
+        rows.push(row("server", server.value.clone(), &server.from));
+    }
+    if let Some(store) = &choices.store {
+        let shown = crate::policy::redacted(&store.value);
+        rows.push(row("store", shown, &store.from));
+    }
+    if let Some(telemetry) = &choices.telemetry {
+        rows.push(row("telemetry", telemetry.value.clone(), &telemetry.from));
+    }
     rows
+}
+
+/// The models `[[models]]` offers besides the main one, and where that choice came from.
+fn models(choices: &Choices) -> (String, &Source) {
+    match &choices.models {
+        Some(models) => {
+            let ids: Vec<&str> = models.value.iter().map(|model| model.id.as_str()).collect();
+            (format!("{ids:?}"), &models.from)
+        }
+        None => ("none besides model".to_owned(), &Source::Default),
+    }
 }
 
 /// Why the main and judge models are refused, if they are. Through a gateway elsewhere, the

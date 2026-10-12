@@ -229,3 +229,93 @@ fn only_the_person_s_own_file_chooses_a_gateway_and_only_a_safe_one() {
     let typo = files::config("[gateway]\nurls = \"https://x\"\n", &home);
     assert!(typo.unwrap_err().to_string().contains("urls"));
 }
+
+#[test]
+fn telemetry_goes_only_where_the_person_says_never_where_a_project_does() {
+    let dir = scratch("telemetry");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let project = files::config(
+        "[telemetry]\notlp = \"https://collector.example.com\"\n",
+        &locations.project,
+    )
+    .unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.telemetry, None, "a project's is ignored");
+    std::fs::write(
+        home.join("config.toml"),
+        "[telemetry]\notlp = \"http://localhost:4318\"\n",
+    )
+    .unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let chosen = loaded.choices.telemetry.unwrap();
+    assert_eq!(chosen.value, "http://localhost:4318");
+    assert_eq!(chosen.from, Source::File(home.join("config.toml")));
+    let refused = files::config(
+        "[telemetry]\notlp = \"collector:4318\"\n",
+        &locations.person,
+    );
+    let refused = refused.unwrap_err().to_string();
+    assert!(refused.contains("[telemetry] otlp"), "{refused}");
+}
+
+#[test]
+fn the_server_to_sign_in_to_is_the_person_s_choice_alone() {
+    let dir = scratch("server");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let text = "[server]\nurl = \"https://glave.example.com\"\n";
+    let project = files::config(text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.server, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let chosen = loaded.choices.server.as_ref().unwrap();
+    assert_eq!(chosen.value, "https://glave.example.com");
+    assert!(
+        explain(&loaded, None)
+            .0
+            .contains("https://glave.example.com")
+    );
+    let plain = "[server]\nurl = \"http://glave.example.com\"\n";
+    let refused = files::config(plain, &locations.person)
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("[server] url"), "{refused}");
+    assert!(files::config("[server]\nurl = \"http://127.0.0.1:8080\"\n", &home).is_ok());
+}
+
+#[test]
+fn the_store_is_the_person_s_choice_and_its_password_never_shown() {
+    let dir = scratch("store");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let url = "postgres://glave:hunter2hunter2@db.example.com/glave";
+    let text = format!("[store]\nurl = \"{url}\"\n");
+    let project = files::config(&text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.store, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), &text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    assert_eq!(loaded.choices.store.as_ref().unwrap().value, url);
+    let (shown, _) = explain(&loaded, None);
+    assert!(
+        shown.contains("postgres://glave:***@db.example.com/glave"),
+        "{shown}"
+    );
+    assert!(!shown.contains("hunter2"), "{shown}");
+    let wrong = "[store]\nurl = \"mysql://glave:hunter2hunter2@db\"\n";
+    let refused = files::config(wrong, &locations.person)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        refused.contains("[store] url") && !refused.contains("hunter2"),
+        "{refused}"
+    );
+}

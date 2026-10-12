@@ -8,6 +8,10 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# A request's span joins the caller's W3C trace in OpenTelemetry (the CLI's `otlp` feature).
+otel = ["dep:opentelemetry", "dep:tracing-opentelemetry"]
+
 [dependencies]
 glave-event.workspace = true
 glave-harness.workspace = true
@@ -20,12 +24,18 @@ getrandom.workspace = true
 hyper = { workspace = true, features = ["http1", "server"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 jiff.workspace = true
+opentelemetry = { workspace = true, optional = true }
+# The client of a session server elsewhere (`client`), on the HTTP stack glave already uses.
+reqwest = { workspace = true, features = ["json"] }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 # The scheduler waits for the next due run with a timer.
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+# A content-free span for each request.
+tracing.workspace = true
+tracing-opentelemetry = { workspace = true, optional = true }
 
 [dev-dependencies]
 aws-lc-rs.workspace = true
@@ -33,7 +43,6 @@ glave-computer.workspace = true
 glave-keys.workspace = true
 glave-memory.workspace = true
 glave-store-sqlite.workspace = true
-reqwest.workspace = true
 # Property tests for the cron parser (AGENTS.md: parsers get property tests).
 proptest.workspace = true
 serde_json.workspace = true
