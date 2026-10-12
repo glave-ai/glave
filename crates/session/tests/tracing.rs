@@ -20,6 +20,7 @@ mod tracing {
             background: false,
             budget: None,
             model: None,
+            approval: None,
             thread,
             prompt: "go".into(),
             meta: Meta {

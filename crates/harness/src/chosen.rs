@@ -1,12 +1,13 @@
-//! Which model a thread's turns are sent to: the one last chosen for it, recorded as
-//! `model.chosen`, else the harness's own. A subagent's thread uses its parent's.
+//! Which model a thread's turns are sent to, and how much they ask before acting: the ones
+//! last chosen for it, recorded as `model.chosen` and `approval.mode.chosen`, else the
+//! harness's own. A subagent's thread uses its parent's.
 
 use std::borrow::Cow;
 
-use glave_event::{Body, Event, ModelChosen};
+use glave_event::{ApprovalMode as Recorded, ApprovalModeChosen, Body, Event, ModelChosen};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 
-use crate::approval::Approver;
+use crate::approval::{ApprovalMode, Approver};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::prompt::system_prompt;
 use glave_identity::Caller;
@@ -27,6 +28,12 @@ impl Thread {
     /// of the harness's own model.
     pub fn model(&self) -> Option<&str> {
         self.model.as_deref()
+    }
+
+    /// The approval mode chosen for this thread, when someone chose one: its turns run in it
+    /// instead of the harness's own.
+    pub fn approval(&self) -> Option<ApprovalMode> {
+        self.approval
     }
 }
 
@@ -87,5 +94,59 @@ where
         thread.unnumbered = thread.unnumbered.saturating_add(1);
         thread.model = Some(model.to_owned());
         Ok(())
+    }
+
+    /// How much `thread`'s turns ask before acting: its own choice, else the harness's mode.
+    pub fn approval_for(&self, thread: &Thread) -> ApprovalMode {
+        thread.approval.unwrap_or(self.settings.approval)
+    }
+
+    /// Runs `thread`'s turns in approval mode `mode` from now on, recorded as
+    /// `approval.mode.chosen` for `caller`. Choosing the mode already chosen records nothing.
+    /// Whether the mode is allowed is the caller's to check, against the policy.
+    pub async fn choose_approval(
+        &self,
+        thread: &mut Thread,
+        caller: &Caller,
+        mode: ApprovalMode,
+    ) -> Result<(), HarnessError> {
+        if thread.approval == Some(mode) {
+            return Ok(());
+        }
+        let chosen = ApprovalModeChosen {
+            mode: mode.into(),
+            by: Self::other_than_for(thread, caller.person),
+        };
+        self.record(thread, &chosen).await?;
+        // Glave's own record: call ids do not count it, so the model is sent the same.
+        thread.unnumbered = thread.unnumbered.saturating_add(1);
+        thread.approval = Some(mode);
+        Ok(())
+    }
+}
+
+/// The approval mode the latest `approval.mode.chosen` in `events` names, if any.
+pub(crate) fn approval_in(events: &[Event]) -> Option<ApprovalMode> {
+    events.iter().rev().find_map(|event| match &event.body {
+        Body::ApprovalModeChosen(chosen) => Some(ApprovalMode::from(chosen.mode)),
+        _ => None,
+    })
+}
+
+impl From<Recorded> for ApprovalMode {
+    fn from(mode: Recorded) -> Self {
+        match mode {
+            Recorded::Ask => Self::Ask,
+            Recorded::Auto => Self::Auto,
+        }
+    }
+}
+
+impl From<ApprovalMode> for Recorded {
+    fn from(mode: ApprovalMode) -> Self {
+        match mode {
+            ApprovalMode::Ask => Self::Ask,
+            ApprovalMode::Auto => Self::Auto,
+        }
     }
 }

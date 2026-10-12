@@ -13,6 +13,7 @@ mod keyed;
 mod ledger;
 mod memory;
 mod models;
+mod modes;
 pub mod protocol;
 pub mod rpc;
 mod schedule;

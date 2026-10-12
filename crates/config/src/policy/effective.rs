@@ -57,6 +57,19 @@ fn asks_unconfined(mut choices: Choices, constraints: &Constraints) -> Choices {
     choices
 }
 
+/// The approval modes a thread may choose (`approval` in the session API): those the policy
+/// leaves, cautious first. Auto runs only behind a wall: without the sandbox, a thread may
+/// choose it only when glave already runs in auto (someone chose both, or the policy left only
+/// auto).
+pub fn thread_modes(choices: &Choices, constraints: &Constraints) -> Vec<ApprovalMode> {
+    let (allowed, _) = constraints.approval_modes();
+    let walled = choices.sandbox.value.is_some() || choices.approval.value == ApprovalMode::Auto;
+    allowed
+        .into_iter()
+        .filter(|mode| *mode != ApprovalMode::Auto || walled)
+        .collect()
+}
+
 fn approval(
     chosen: Chosen<ApprovalMode>,
     constraints: &Constraints,

@@ -36,6 +36,7 @@ function thread(
     status,
     standing: 'active',
     title,
+    approval: 'auto',
     origin: { kind: 'web' },
     created_at: '2026-10-11T10:00:00.000Z',
     updated_at: '2026-10-11T10:05:00.000Z',
@@ -246,7 +247,13 @@ function answer(method: string, params: Record<string, unknown>): unknown {
     case 'memory/list':
       return { memories: [] };
     case 'server/discover':
-      return { name: 'glave', version: '0.0.0', protocols: ['2026-10'], approval: 'auto' };
+      return {
+        name: 'glave',
+        version: '0.0.0',
+        protocols: ['2026-10'],
+        approval: 'auto',
+        approvals: ['ask', 'auto'],
+      };
     default:
       return {};
   }

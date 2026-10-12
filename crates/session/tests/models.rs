@@ -59,6 +59,7 @@ mod models {
             background: false,
             computer: None,
             model: model.map(str::to_owned),
+            approval: None,
         };
         match server.request(started).await? {
             Reply::Thread { thread } => Ok(thread.id),
@@ -79,6 +80,7 @@ mod models {
                 budget: None,
                 meta: Meta::default(),
                 model: model.map(str::to_owned),
+                approval: None,
             })
             .await
     }
@@ -274,6 +276,7 @@ mod models {
                     budget: None,
                     meta: Meta::default(),
                     model: Some("other".into()),
+                    approval: None,
                 })
                 .await
                 .unwrap();

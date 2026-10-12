@@ -142,6 +142,7 @@ pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
         background: true,
         computer: None,
         model: None,
+        approval: None,
     };
     let Reply::Thread { thread } = host.request(started).await? else {
         bail!("the task host answered thread/start with something else");
@@ -161,6 +162,7 @@ pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
             budget: args.budget,
             meta: glave_session::protocol::Meta::default(),
             model: None,
+            approval: None,
         },
     };
     let Reply::Task { task } = host.request(request).await? else {
