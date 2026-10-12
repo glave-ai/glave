@@ -27,12 +27,14 @@ const STATUS_WORDS: Readonly<Record<GlzReceiptStatus, string>> = {
 };
 
 /**
- * A compact record of one tool call: what it did, in one line with its status, time and
- * cost; opened, its evidence (the command and its output, the diff, the page read). A native
- * `<details>`, so it opens by click or keyboard and screen readers say its state.
+ * A compact record of one tool call, quiet beside the conversation: one line with the tool's
+ * icon, its name (the verb: `bash`, `edit`, `write`), what it acted on (the command, the
+ * path), its time and cost, and its status at the end; opened, its evidence (the command and
+ * its output, the diff, the page read). A native `<details>`, so it opens by click or keyboard
+ * and screen readers say its state. Several in a row group under `glz-steps`.
  *
  * ```html
- * <glz-receipt tool="bash" summary="cargo test" status="done" [durationMs]="4200" [cost]="cost">
+ * <glz-receipt [icon]="terminal" tool="bash" summary="cargo test" status="done">
  *   <pre>test result: ok. 112 passed</pre>
  * </glz-receipt>
  * ```
@@ -57,13 +59,15 @@ export class GlzReceiptComponent {
   readonly summary = input.required<string>();
   /** The tool's name. */
   readonly tool = input('');
+  /** The tool's icon, before its name: a terminal for a command, a pen for an edit. */
+  readonly icon = input<GlzIconData | null>(null);
   readonly status = input<GlzReceiptStatus>('done');
   readonly durationMs = input<number | null>(null);
   readonly tokens = input<number | null>(null);
   readonly cost = input<GlzMoney | null>(null);
   readonly open = model(false);
 
-  protected readonly icon = computed(() => ICONS[this.status()]);
+  protected readonly statusIcon = computed(() => ICONS[this.status()]);
   protected readonly statusWord = computed(() => STATUS_WORDS[this.status()]);
   protected readonly statusClass = computed(() => `status-${this.status()}`);
   /** Time, tokens and cost, those known, joined: `4.2 s · 1.2K tokens · $0.0042`. */

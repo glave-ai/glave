@@ -17,7 +17,6 @@ describe('ModelsService', () => {
     expect(models.default()).toBe('gpt-6-luna');
     expect(models.choosable()).toBe(true);
     expect(models.options().map((option) => option.label)).toEqual(['GPT-6 Luna', 'Hope']);
-    expect(models.label('hope-12b', 'Model')).toEqual({ name: 'Hope', hope: true });
   });
 
   it('reads again after a failure', async () => {

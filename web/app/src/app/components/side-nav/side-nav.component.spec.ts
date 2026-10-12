@@ -32,6 +32,8 @@ describe('SideNavComponent', () => {
       false,
     );
     expect(root.querySelector('app-person')).not.toBeNull();
+    // The theme is chosen in Settings, and browsers install the app from their own menus.
+    expect(root.querySelector('[data-testid="theme-picker"], app-install')).toBeNull();
     await expectAccessible(root);
 
     const search = root.querySelector<HTMLInputElement>('[data-testid="nav-search"]');

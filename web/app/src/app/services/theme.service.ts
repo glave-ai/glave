@@ -4,7 +4,7 @@ import { Service, effect, inject, signal } from '@angular/core';
 /** The person's theme: the system's, or one they picked. */
 export type ThemeChoice = 'system' | 'light' | 'dark';
 
-/** The choices in the order the picker moves through them. */
+/** The choices, in the order Settings lists them. */
 export const THEME_CHOICES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
 
 const KEY = 'glave-theme';
@@ -12,11 +12,6 @@ const KEY = 'glave-theme';
 /** Whether `value` is one of the theme choices. */
 export function isChoice(value: unknown): value is ThemeChoice {
   return THEME_CHOICES.some((choice) => choice === value);
-}
-
-/** The choice after `choice`: system, light, dark, then system again. */
-export function nextTheme(choice: ThemeChoice): ThemeChoice {
-  return THEME_CHOICES[(THEME_CHOICES.indexOf(choice) + 1) % THEME_CHOICES.length] ?? 'system';
 }
 
 /**
@@ -50,10 +45,6 @@ export class ThemeService {
     } catch {
       // Storage may be off, as in some private windows: the choice lasts for this page.
     }
-  }
-
-  cycle(): void {
-    this.set(nextTheme(this.chosen()));
   }
 
   private read(): ThemeChoice {

@@ -6,7 +6,6 @@ import {
   companyName,
   defaultModel,
   displayName,
-  modelLabel,
   modelOptions,
   slugWords,
   toPinned,
@@ -70,16 +69,6 @@ describe('models', () => {
       { value: 'hope-12b', label: 'Hope', hope: true },
       { value: 'hope-lookalike', label: 'Hope Lookalike', hope: false },
     ]);
-  });
-
-  it('names a reply’s model from the list, never guessing Hope', () => {
-    expect(modelLabel(MODELS, 'hope-12b', 'Model')).toEqual({ name: 'Hope', hope: true });
-    expect(modelLabel(MODELS, 'hope-lookalike', 'Model')).toEqual({
-      name: 'Hope Lookalike',
-      hope: false,
-    });
-    expect(modelLabel(MODELS, 'hope-old', 'Model')).toEqual({ name: 'Hope Old', hope: false });
-    expect(modelLabel(MODELS, null, 'Model')).toEqual({ name: 'Model', hope: false });
   });
 
   it('reads back the pinned models’ ids only', () => {

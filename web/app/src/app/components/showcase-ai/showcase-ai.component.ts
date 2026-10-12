@@ -13,6 +13,7 @@ import {
   type GlzComposed,
   GlzComposerComponent,
   type GlzDecision,
+  type GlzIconData,
   type GlzMoney,
   GlzMenuSelectComponent,
   GlzMessageComponent,
@@ -22,15 +23,18 @@ import {
   GlzQuestionCardComponent,
   GlzReasoningComponent,
   GlzReceiptComponent,
+  GlzStepsComponent,
   GlzStickToBottomDirective,
   GlzSwitchComponent,
 } from '@glave/glaze';
+import { SquareTerminal, TextSearch } from 'lucide';
 
 const COPY = {
   heading: 'Conversation',
   thread: 'A thread',
   you: 'You',
-  hope: 'Hope',
+  replyAuthor: 'Reply',
+  steps: 'Ran 2 steps, 1 failed',
   ask: 'Make the tests pass and tell me what was wrong.',
   reasoning: 'The failure is in the date parser; the test expects UTC.',
   reply: 'The parser read local time. I changed it to UTC and the tests pass now.',
@@ -67,6 +71,7 @@ const QUESTIONS: readonly GlzQuestion[] = [
 
 /** The demo's tool calls. */
 const RECEIPTS: readonly {
+  readonly icon: GlzIconData;
   readonly tool: string;
   readonly summary: string;
   readonly status: GlzReceiptStatus;
@@ -76,6 +81,7 @@ const RECEIPTS: readonly {
   readonly evidence: string;
 }[] = [
   {
+    icon: TextSearch,
     tool: 'search',
     summary: 'parse_date',
     status: 'done',
@@ -85,6 +91,7 @@ const RECEIPTS: readonly {
     evidence: 'src/dates.rs:41',
   },
   {
+    icon: SquareTerminal,
     tool: 'bash',
     summary: 'cargo test',
     status: 'failed',
@@ -122,6 +129,7 @@ interface DemoMessage {
     GlzQuestionCardComponent,
     GlzReasoningComponent,
     GlzReceiptComponent,
+    GlzStepsComponent,
     GlzStickToBottomDirective,
     GlzSwitchComponent,
   ],
@@ -134,6 +142,8 @@ export class ShowcaseAiComponent {
   protected readonly models = MODELS;
   protected readonly questions = QUESTIONS;
   protected readonly receipts = RECEIPTS;
+  /** The demo's steps start open, to show each call. */
+  protected readonly stepsOpen = signal(true);
   protected readonly approval = APPROVAL;
   protected readonly decision = signal<GlzDecision | null>(null);
   protected readonly answers = signal<readonly string[] | null>(null);
@@ -184,7 +194,7 @@ export class ShowcaseAiComponent {
   /** Shows `text` arriving a few words at a time, as a model's reply does. */
   private stream(text: string): void {
     const words = text.split(' ');
-    this.add('model', COPY.hope, '');
+    this.add('model', COPY.replyAuthor, '');
     this.busy.set(true);
     let shown = 0;
     clearInterval(this.timer);

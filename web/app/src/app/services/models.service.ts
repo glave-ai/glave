@@ -1,12 +1,12 @@
 import { Service, computed, inject, signal } from '@angular/core';
 import type { ModelInfo } from '@glave/client';
 
-import { type ModelLabel, defaultModel, modelLabel, modelOptions } from '../lib/models';
+import { defaultModel, modelOptions } from '../lib/models';
 import { SessionService } from './session.service';
 
 /**
  * The models this server runs (`model/list`), the default first: what the composer's picker
- * offers, and how each reply names the model that wrote it. Read once, when first asked.
+ * offers. Read once, when first asked.
  */
 @Service()
 export class ModelsService {
@@ -32,10 +32,5 @@ export class ModelsService {
       },
     );
     return this.pending;
-  }
-
-  /** How a reply names the model `id`; `fallback` when it is not known. */
-  label(id: string | null, fallback: string): ModelLabel {
-    return modelLabel(this.list(), id, fallback);
   }
 }

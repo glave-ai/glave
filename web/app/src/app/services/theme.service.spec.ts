@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 
-import { ThemeService, nextTheme } from './theme.service';
+import { ThemeService } from './theme.service';
 
 describe('ThemeService', () => {
   beforeEach(() => {
@@ -15,7 +15,7 @@ describe('ThemeService', () => {
     TestBed.tick();
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     expect(localStorage.getItem('glave-theme')).toBe('dark');
-    theme.cycle();
+    theme.set('system');
     TestBed.tick();
     expect(theme.choice()).toBe('system');
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
@@ -27,11 +27,5 @@ describe('ThemeService', () => {
     TestBed.resetTestingModule();
     localStorage.setItem('glave-theme', 'neon');
     expect(TestBed.inject(ThemeService).choice()).toBe('system');
-  });
-
-  it('cycles system, light, dark', () => {
-    expect(nextTheme('system')).toBe('light');
-    expect(nextTheme('light')).toBe('dark');
-    expect(nextTheme('dark')).toBe('system');
   });
 });

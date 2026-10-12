@@ -3,7 +3,6 @@ import { GlzAvatarComponent, GlzIconButtonComponent, GlzIconComponent } from '@g
 import { LogOut } from 'lucide';
 
 import { SessionService } from '../../services/session.service';
-import { ThemePickerComponent } from '../theme-picker/theme-picker.component';
 
 const COPY = {
   you: 'You',
@@ -12,12 +11,12 @@ const COPY = {
 } as const;
 
 /**
- * The person signed in, at the foot of the side nav, with the theme choice and sign-out. The
+ * The person signed in, at the foot of the side nav, with sign-out. The
  * session API does not say who someone is yet, so it says "You".
  */
 @Component({
   selector: 'app-person',
-  imports: [GlzAvatarComponent, GlzIconButtonComponent, GlzIconComponent, ThemePickerComponent],
+  imports: [GlzAvatarComponent, GlzIconButtonComponent, GlzIconComponent],
   templateUrl: './person.component.html',
   styleUrl: './person.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

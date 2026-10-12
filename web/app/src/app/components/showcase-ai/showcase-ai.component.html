@@ -4,20 +4,23 @@
     <glz-message from="person" [author]="copy.you">
       <p class="text">{{ copy.ask }}</p>
     </glz-message>
-    <glz-message from="model" hope [author]="copy.hope">
+    <glz-message from="model" [author]="copy.replyAuthor">
       <glz-reasoning>{{ copy.reasoning }}</glz-reasoning>
-      @for (receipt of receipts; track receipt.summary) {
-        <glz-receipt
-          [tool]="receipt.tool"
-          [summary]="receipt.summary"
-          [status]="receipt.status"
-          [durationMs]="receipt.durationMs"
-          [tokens]="receipt.tokens"
-          [cost]="receipt.cost"
-        >
-          <pre>{{ receipt.evidence }}</pre>
-        </glz-receipt>
-      }
+      <glz-steps [summary]="copy.steps" [(open)]="stepsOpen">
+        @for (receipt of receipts; track receipt.summary) {
+          <glz-receipt
+            [icon]="receipt.icon"
+            [tool]="receipt.tool"
+            [summary]="receipt.summary"
+            [status]="receipt.status"
+            [durationMs]="receipt.durationMs"
+            [tokens]="receipt.tokens"
+            [cost]="receipt.cost"
+          >
+            <pre>{{ receipt.evidence }}</pre>
+          </glz-receipt>
+        }
+      </glz-steps>
       <glz-approval-card
         testId="showcase-approval"
         [tool]="approval.tool"

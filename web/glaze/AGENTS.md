@@ -26,7 +26,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 ## The conversation
 
 - `glz-composer`: `[(value)]`, `[(files)]`, `[busy]`, `(send)` with `{ text, files }`, `(stop)`. Enter sends, Shift+Enter is a new line, Escape stops while busy. Slots: `glzComposerStart` (model picker), `glzComposerEnd` (toggles).
-- `glz-message` (`from`, `author`, `hope`, `streaming`; no avatar: the person's own a bubble at the end of the line, `--glz-message-gap` before it and `--glz-message-person-surface` under it; a reply full-width text under its author, with Hope's sun for Hope) holds `glz-reasoning`, `glz-receipt` (a tool call: `tool`, `summary`, `status`, `durationMs`, `tokens`, `cost`, evidence projected), `glz-approval-card` (`(decide)` emits `allow_once`, `allow_for_thread` or `deny`; set `[decision]` to show it in place) and `glz-question-card` (`(answer)` emits one string per question; set `[answered]`).
+- `glz-message` (`from`, `author`, `streaming`; no avatar and no name over it: the person's own a bubble at the end of the line, `--glz-message-gap` before it and `--glz-message-person-surface` under it; a reply plain full-width text; `author` names the article for screen readers; actions such as copy in the `glzMessageActions` slot, under it, shown on hover and focus, always on touch) holds `glz-reasoning`, `glz-receipt` (a tool call, one quiet line: `icon`, `tool`, `summary`, `status`, `durationMs`, `tokens`, `cost`, evidence projected), `glz-steps` (consecutive receipts folded under one disclosure line: `summary` such as "Ran 4 steps", `[(open)]`), `glz-approval-card` (`(decide)` emits `allow_once`, `allow_for_thread` or `deny`; set `[decision]` to show it in place) and `glz-question-card` (`(answer)` emits one string per question; set `[answered]`).
 - Put the message list in a scrolling element with `glzStickToBottom` (`[(atBottom)]`, `scrollToBottom()`).
 
 ## Layout and overlays
@@ -54,7 +54,7 @@ Checked against Baseline (web-features 3.42, October 2026). "Newly" means newly 
 | Toasts, tooltips, combobox list     | The popover API (`popover="manual"`)                                               | Newly (Jan 2025)                                  |
 | Placing popovers                    | CSS anchor positioning where present, else measured (`lib/popover.ts`)             | `anchor-positioning`: no                          |
 | `popover="hint"`, interest invokers | Not used                                                                           | No                                                |
-| Reasoning, receipts                 | `<details>` / `<summary>`                                                          | Widely (2020); `name` for accordions newly (2024) |
+| Reasoning, receipts, steps          | `<details>` / `<summary>`                                                          | Widely (2020); `name` for accordions newly (2024) |
 | Textarea growing                    | CSS `field-sizing: content`; without it the box keeps its rows                     | Newly (Jun 2026)                                  |
 | Light and dark                      | `color-scheme`, `light-dark()`                                                     | Widely; `light-dark()` newly (2024)               |
 | Content behind a drawer             | `inert`                                                                            | Widely (2025)                                     |

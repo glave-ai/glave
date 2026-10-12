@@ -37,6 +37,7 @@ export * from './components/receipt/receipt.component';
 export * from './components/sidenav-layout/sidenav-layout.component';
 export * from './components/skeleton/skeleton.component';
 export * from './components/spinner/spinner.component';
+export * from './components/steps/steps.component';
 export * from './components/switch/switch.component';
 export * from './components/tab/tab.component';
 export * from './components/tabs/tabs.component';

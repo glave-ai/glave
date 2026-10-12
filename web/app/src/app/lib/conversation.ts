@@ -8,11 +8,6 @@ export interface MessageItem {
   readonly from: 'person' | 'model';
   readonly text: string;
   readonly reasoning: string;
-  /**
-   * The model that wrote it: its `model.responded`'s, else its turn's start; `null` for the
-   * person's messages.
-   */
-  readonly model: string | null;
 }
 
 /** A tool call: what it did and what came of it. */
@@ -133,9 +128,6 @@ function isDecision(value: unknown): value is GlzDecision {
  */
 export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] {
   const items: ThreadItem[] = [];
-  let model: string | null = null;
-  /** The assistant message whose `model.responded` comes next. */
-  let answered: string | null = null;
   const index = new Map<string, number>();
   const put = (item: ThreadItem): void => {
     index.set(item.key, items.length);
@@ -151,31 +143,16 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
   for (const event of events) {
     const data = event.data;
     switch (event.type) {
-      case 'turn.started':
-        model = modelOf(data['model']);
-        break;
       case 'message.added': {
         const person = data['role'] === 'user';
         const parts = partsText(data['parts']);
-        const key = `message-${String(event.seq)}`;
         put({
           kind: 'message',
-          key,
+          key: `message-${String(event.seq)}`,
           from: person ? 'person' : 'model',
           text: person ? promptOf(data['parts']) : parts.text,
           reasoning: parts.reasoning,
-          model: person ? null : model,
         });
-        answered = person ? null : key;
-        break;
-      }
-      case 'model.responded': {
-        // The answer an assistant message came from follows it: its model wrote the message.
-        const by = modelOf(data['model']);
-        if (answered !== null && by !== null) {
-          update(answered, (item) => (item.kind === 'message' ? { ...item, model: by } : item));
-        }
-        answered = null;
         break;
       }
       case 'tool.call.requested': {
@@ -247,18 +224,6 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
     }
   }
   return items;
-}
-
-/** The model a `turn.started` names, if it names one. */
-function modelOf(value: unknown): string | null {
-  const name = isRecord(value) ? text(value['name']) : '';
-  return name === '' ? null : name;
-}
-
-/** The model the latest turn started with, for a reply still streaming. */
-export function latestModel(events: readonly RawEvent[]): string | null {
-  const started = events.filter((event) => event.type === 'turn.started').at(-1);
-  return started === undefined ? null : modelOf(started.data['model']);
 }
 
 /** The draft after a live update: text and reasoning grow; anything else leaves it. */
