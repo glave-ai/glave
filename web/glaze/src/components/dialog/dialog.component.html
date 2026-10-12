@@ -2,7 +2,7 @@
 <dialog
   #dialog
   [attr.data-testid]="testId()"
-  [class]="kindClass()"
+  class="dialog"
   [attr.aria-labelledby]="headingId"
   (close)="closed()"
   (click)="clicked($event)"
@@ -10,12 +10,7 @@
   <div class="surface">
     <div class="header">
       <h2 class="heading" [id]="headingId">{{ heading() }}</h2>
-      <button
-        glzIconButton
-        [attr.data-testid]="ids().close"
-        [label]="closeLabel()"
-        (click)="close()"
-      >
+      <button glzIconButton [attr.data-testid]="ids().close" [label]="closeLabel" (click)="close()">
         <glz-icon [icon]="closeIcon" />
       </button>
     </div>

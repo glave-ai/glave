@@ -10,29 +10,10 @@
     </glz-tabs>
   </div>
 
-  <h3>{{ copy.breadcrumbs }}</h3>
-  <glz-breadcrumbs>
-    <glz-breadcrumb
-      ><a [href]="values.link">{{ copy.space }}</a></glz-breadcrumb
-    >
-    <glz-breadcrumb
-      ><a [href]="values.link">{{ copy.threads }}</a></glz-breadcrumb
-    >
-    <glz-breadcrumb current>{{ copy.thread }}</glz-breadcrumb>
-  </glz-breadcrumbs>
-
   <h3>{{ copy.nav }}</h3>
   <div class="frame">
     <glz-sidenav-layout #layout [narrowQuery]="values.narrow" [label]="copy.sideNav">
       <div glzSidenav class="nav">
-        <nav class="rail" [attr.aria-label]="copy.main">
-          <glz-rail>
-            <a glzRailItem [href]="values.link" current [icon]="icons.chat" [label]="copy.chat"></a>
-            <a glzRailItem [href]="values.link" [icon]="icons.tasks" [label]="copy.tasks"></a>
-            <a glzRailItem [href]="values.link" [icon]="icons.memory" [label]="copy.memory"></a>
-            <a glzRailItem [href]="values.link" [icon]="icons.settings" [label]="copy.settings"></a>
-          </glz-rail>
-        </nav>
         <nav class="lists" [attr.aria-label]="copy.threads">
           <glz-nav-list [heading]="copy.today">
             <a glzNavItem [href]="values.link" current [icon]="icons.thread">{{ copy.plan }}</a>

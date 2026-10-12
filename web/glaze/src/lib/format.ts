@@ -57,16 +57,3 @@ export function initials(name: string): string {
   const last = words.length > 1 ? (words[words.length - 1]?.[0] ?? '') : '';
   return `${first}${last}`.toUpperCase();
 }
-
-/** A file size, short: `512 B`, `12 KB`, `3.4 MB`. */
-export function formatBytes(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let size = bytes;
-  let unit = 0;
-  while (size >= 1024 && unit < units.length - 1) {
-    size /= 1024;
-    unit += 1;
-  }
-  const shown = unit === 0 || size >= 10 ? Math.round(size) : Math.round(size * 10) / 10;
-  return `${String(shown)} ${units[unit] ?? 'B'}`;
-}

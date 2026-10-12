@@ -13,9 +13,6 @@
             [tool]="receipt.tool"
             [summary]="receipt.summary"
             [status]="receipt.status"
-            [durationMs]="receipt.durationMs"
-            [tokens]="receipt.tokens"
-            [cost]="receipt.cost"
           >
             <pre>{{ receipt.evidence }}</pre>
           </glz-receipt>
@@ -51,7 +48,6 @@
     (send)="send($event)"
     (stop)="stop()"
   >
-    <glz-switch glzComposerStart [(checked)]="cloud">{{ copy.cloud }}</glz-switch>
     <glz-menu-select
       glzComposerEnd
       testId="showcase-model-select"

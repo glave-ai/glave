@@ -36,20 +36,6 @@ export function matchesShortcut(
   );
 }
 
-/** Whether keys typed at `target` belong to it (text being typed), not to page shortcuts. */
-export function isTyping(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  return (
-    target.isContentEditable ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    (target instanceof HTMLInputElement &&
-      !['button', 'checkbox', 'radio', 'range', 'submit', 'reset'].includes(target.type))
-  );
-}
-
 /** Whether this is an Apple platform, where `mod` means Cmd. */
 export function isApple(navigator: Navigator): boolean {
   return /mac|iphone|ipad/iu.test(navigator.platform || navigator.userAgent);
