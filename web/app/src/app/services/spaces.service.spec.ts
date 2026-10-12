@@ -21,6 +21,8 @@ describe('SpacesService', () => {
     expect(spaces.home()).toBe('p1');
     expect(spaces.thread('t1')?.title).toBe('Plan');
     expect(spaces.thread('nope')).toBeUndefined();
+    expect(spaces.spaceOf('t1')?.name).toBe('glave');
+    expect(spaces.spaceOf('nope')).toBeUndefined();
     expect(spaces.loaded()).toBe(true);
   });
 

@@ -1,0 +1,16 @@
+<div class="header">
+  <h2 class="heading">{{ copy.heading }}</h2>
+  <button glzIconButton data-testid="tools-close" [label]="copy.close" (click)="close()">
+    <glz-icon [icon]="closeIcon" />
+  </button>
+</div>
+<glz-tabs
+  class="tabs"
+  testId="tools-tabs"
+  [label]="copy.tabs"
+  [selected]="tab()"
+  (selectedChange)="select($event)"
+>
+  <glz-tab [label]="copy.tasks"><app-task-list /></glz-tab>
+  <glz-tab [label]="filesLabel()"><app-thread-files /></glz-tab>
+</glz-tabs>

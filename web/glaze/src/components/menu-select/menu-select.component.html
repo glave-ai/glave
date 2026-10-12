@@ -1,0 +1,49 @@
+<button
+  type="button"
+  class="trigger"
+  [class.hope]="hope()"
+  [attr.data-testid]="ids().trigger"
+  [disabled]="disabled()"
+  [cdkMenuTriggerFor]="menu"
+  [cdkMenuPosition]="positions"
+>
+  <span class="glz-visually-hidden">{{ prefix() }}</span>
+  @if (hope()) {
+    <span class="sun" aria-hidden="true"></span>
+  }
+  <span class="text">{{ shownLabel() }}</span>
+  <glz-icon class="chevron" [icon]="icons.open" />
+</button>
+<ng-template #menu>
+  <div class="menu" cdkMenu [attr.aria-label]="label()">
+    <div cdkMenuGroup>
+      @for (option of shown(); track option.value) {
+        <button
+          type="button"
+          class="option"
+          cdkMenuItemRadio
+          [attr.data-testid]="ids().option"
+          [cdkMenuItemChecked]="option.checked"
+          (cdkMenuItemTriggered)="pick(option.value)"
+        >
+          <span class="check">
+            @if (option.checked) {
+              <glz-icon [icon]="icons.check" />
+            }
+          </span>
+          <span class="name">
+            <span class="label">
+              {{ option.label }}
+              @if (option.hope) {
+                <span class="sun" aria-hidden="true"></span>
+              }
+            </span>
+            @if (option.hasHint) {
+              <span class="hint">{{ option.hint }}</span>
+            }
+          </span>
+        </button>
+      }
+    </div>
+  </div>
+</ng-template>

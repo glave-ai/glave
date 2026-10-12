@@ -2,7 +2,9 @@
   <div class="scrim" [attr.data-testid]="ids().scrim" aria-hidden="true" (click)="close()"></div>
 }
 <aside
+  #sidenav
   class="sidenav"
+  tabindex="-1"
   [attr.data-testid]="ids().nav"
   [attr.aria-label]="label()"
   [attr.aria-modal]="ariaModal()"
