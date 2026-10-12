@@ -148,7 +148,7 @@ where
         }
         // A caution asks even when the tool was allowed for the rest of the thread.
         let asks = caution.is_some()
-            || (self.settings.approval.asks_for(effect) && !thread.allowed.contains(name));
+            || (self.approval_for(thread).asks_for(effect) && !thread.allowed.contains(name));
         if asks {
             let request = ApprovalRequest {
                 thread: thread.id,
@@ -253,7 +253,7 @@ where
             summary,
             reason,
         } = *flagged;
-        if !self.settings.judge || self.settings.approval != ApprovalMode::Auto {
+        if !self.settings.judge || self.approval_for(thread) != ApprovalMode::Auto {
             return Ok(Judged::Ask);
         }
         let case = JudgeCase {

@@ -26,6 +26,7 @@ mod questions {
                 worktree: None,
                 computer: None,
                 model: None,
+                approval: None,
             })
             .await
             .unwrap()
@@ -179,6 +180,7 @@ mod questions {
                     prompt: "set up storage".into(),
                     meta: Meta::default(),
                     model: None,
+                    approval: None,
                 })
                 .await
                 .unwrap();

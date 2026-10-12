@@ -8,13 +8,13 @@ use serde_json::value::RawValue;
 use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeName};
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
-    ApprovalDecided, ApprovalRequested, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
-    HookRan, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryTidied,
-    MessageAdded, ModelChosen, ModelResponded, ScheduleCreated, ScheduleDeleted, TaskEnded,
-    TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted,
-    ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound,
-    WorkspaceRemoved, approval, chosen, gateway, goal, hook, memory, message, model, standing,
-    task, thread, tool, turn, workspace,
+    ApprovalDecided, ApprovalModeChosen, ApprovalRequested, GatewayToolCalled, GoalEnded,
+    GoalResumed, GoalSet, HookRan, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved,
+    MemoryTidied, MessageAdded, ModelChosen, ModelResponded, ScheduleCreated, ScheduleDeleted,
+    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
+    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted,
+    WorkspaceBound, WorkspaceRemoved, approval, chosen, gateway, goal, hook, memory, message,
+    model, standing, task, thread, tool, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -46,6 +46,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (model::TYPE, 1),
     (model::TYPE, 2),
     (chosen::TYPE, 1),
+    (chosen::APPROVAL, 1),
     (turn::ENDED, 1),
     (approval::REQUESTED, 1),
     (approval::DECIDED, 1),
@@ -95,6 +96,7 @@ pub enum Body {
     ToolCallCompleted(ToolCallCompleted),
     ModelResponded(ModelResponded),
     ModelChosen(ModelChosen),
+    ApprovalModeChosen(ApprovalModeChosen),
     TurnEnded(TurnEnded),
     ApprovalRequested(ApprovalRequested),
     ApprovalDecided(ApprovalDecided),
@@ -192,7 +194,6 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
             tool::decode_completed(version, data).map(|r| r.map(Body::ToolCallCompleted))
         }
         model::TYPE => model::decode(version, data).map(|r| r.map(Body::ModelResponded)),
-        chosen::TYPE => chosen::decode(version, data).map(|r| r.map(Body::ModelChosen)),
         turn::ENDED => turn::decode_ended(version, data).map(|r| r.map(Body::TurnEnded)),
         approval::REQUESTED => {
             approval::decode_requested(version, data).map(|r| r.map(Body::ApprovalRequested))
@@ -215,7 +216,7 @@ pub fn decode(raw: RawEvent) -> Result<Event, DecodeError> {
         gateway::TOOL_CALLED => {
             gateway::decode(version, data).map(|r| r.map(Body::GatewayToolCalled))
         }
-        other => decode_memory(other, version, data),
+        other => decode_others(other, version, data),
     };
     let body = match known {
         Some(Ok(body)) => body,
@@ -254,6 +255,7 @@ impl Event {
             Body::ToolCallCompleted(payload) => encode(header, payload),
             Body::ModelResponded(payload) => encode(header, payload),
             Body::ModelChosen(payload) => encode(header, payload),
+            Body::ApprovalModeChosen(payload) => encode(header, payload),
             Body::TurnEnded(payload) => encode(header, payload),
             Body::ApprovalRequested(payload) => encode(header, payload),
             Body::ApprovalDecided(payload) => encode(header, payload),
@@ -287,9 +289,14 @@ impl Event {
     }
 }
 
-/// Decodes the memory ledger's types; `None` for any type that is not one of them.
-fn decode_memory(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
+/// Decodes the choices made for a thread and the memory ledger's types; `None` for any type
+/// that is not one of them.
+fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
     match kind {
+        chosen::TYPE => chosen::decode(version, data).map(|r| r.map(Body::ModelChosen)),
+        chosen::APPROVAL => {
+            chosen::decode_approval(version, data).map(|r| r.map(Body::ApprovalModeChosen))
+        }
         memory::SAVED => memory::decode_saved(version, data).map(|r| r.map(Body::MemorySaved)),
         memory::EDITED => memory::decode_edited(version, data).map(|r| r.map(Body::MemoryEdited)),
         memory::FORGOTTEN => {

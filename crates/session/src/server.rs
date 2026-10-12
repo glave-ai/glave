@@ -23,6 +23,7 @@ use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
 use crate::ledger::{Ledger, is_ledger};
+use crate::modes::Choice;
 use crate::protocol::{
     ApiError, ApprovalMode, ErrorData, ModelInfo, Notification, PROTOCOL, Reply, Request,
     ServerInfo, code,
@@ -60,6 +61,9 @@ pub struct Wiring<P, L, B> {
     /// The models threads may choose besides the settings' own, the default (`model/list`).
     /// The provider must serve each by its id: the gateway's choices.
     pub models: Vec<ModelInfo>,
+    /// The approval modes a thread may choose besides the settings' own: those the policy
+    /// leaves, where auto runs behind a wall (`specs/approvals.md`).
+    pub modes: Vec<glave_harness::ApprovalMode>,
 }
 
 /// Threads on workers: where workers come from, and the environment each is made from.
@@ -107,8 +111,10 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) model: String,
     /// The models threads may be sent to, the default first.
     pub(crate) models: Vec<ModelInfo>,
-    /// How much the harness asks before acting, in every thread.
+    /// How much the harness asks before acting, in a thread that chose no mode.
     pub(crate) approval: ApprovalMode,
+    /// The modes a thread may choose, cautious first.
+    pub(crate) modes: Vec<ApprovalMode>,
     /// The space's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
@@ -145,10 +151,8 @@ where
         let entropy: Arc<dyn Entropy> = Arc::from(wiring.entropy);
         let model = settings.model.clone();
         let person = settings.person;
-        let approval = match settings.approval {
-            glave_harness::ApprovalMode::Ask => ApprovalMode::Ask,
-            glave_harness::ApprovalMode::Auto => ApprovalMode::Auto,
-        };
+        let approval = ApprovalMode::from(settings.approval);
+        let choosable = crate::modes::choosable(approval, &wiring.modes);
         let parts = Parts {
             provider: wiring.provider,
             log: Observed::new(wiring.log, Arc::clone(&hub)),
@@ -175,6 +179,7 @@ where
                 models: crate::models::catalog(&model, wiring.models),
                 model,
                 approval,
+                modes: choosable,
                 person,
                 limits: wiring.tasks,
                 memory: wiring.memory,
@@ -225,6 +230,7 @@ where
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 protocols: vec![PROTOCOL.to_owned()],
                 approval: self.inner.approval,
+                approvals: self.inner.modes.clone(),
             })),
             Request::ModelList {} => Ok(self.list_models()),
             threads @ (Request::ThreadStart { .. }
@@ -369,17 +375,21 @@ where
     /// Starts a thread for `caller` in `space`. In the server's own space: where `worktree`
     /// says, else on a worker when the server puts every thread, or a task's (`background`),
     /// on one, else as the server is set. In any other space there is no folder to work in, so
-    /// the thread gets a scratch folder of its own. With `model`, its turns go to that model.
+    /// the thread gets a scratch folder of its own. With a model or an approval mode in
+    /// `choice`, its turns go to that model, or ask that much.
     pub(crate) async fn new_thread(
         &self,
         caller: &Caller,
         space: SpaceId,
         worktree: Option<bool>,
         background: bool,
-        model: Option<&str>,
+        choice: &Choice,
     ) -> Result<ThreadId, ApiError> {
-        if let Some(model) = model {
+        if let Some(model) = &choice.model {
             self.known_model(model)?;
+        }
+        if let Some(mode) = choice.approval {
+            self.allowed_mode(mode)?;
         }
         let home = space == self.inner.home.space;
         let on_worker = self.inner.every_thread || background;
@@ -407,13 +417,9 @@ where
             .start_thread_in(scope, caller, place)
             .await
             .map_err(|error| api(&error))?;
-        if let Some(model) = model {
-            self.inner
-                .harness
-                .choose_model(&mut thread, caller, model)
-                .await
-                .map_err(|error| api(&error))?;
-        }
+        crate::modes::record(&self.inner.harness, &mut thread, caller, choice)
+            .await
+            .map_err(|error| api(&error))?;
         let id = thread.id;
         self.place(id, scope);
         self.keep(id, thread);

@@ -66,6 +66,7 @@ mod commands {
                     worktree: None,
                     computer: None,
                     model: None,
+                    approval: None,
                 })
                 .await
                 .unwrap()
@@ -80,6 +81,7 @@ mod commands {
                     prompt: prompt.into(),
                     meta: Meta::default(),
                     model: None,
+                    approval: None,
                 };
                 server.request(turn).await.unwrap();
             }

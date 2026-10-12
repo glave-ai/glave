@@ -105,6 +105,7 @@ mod spaces {
                 budget: None,
                 meta: Meta::default(),
                 model: None,
+                approval: None,
             },
             Request::ApprovalDecide {
                 thread,
@@ -135,6 +136,7 @@ mod spaces {
             budget: None,
             meta: Meta::default(),
             model: None,
+            approval: None,
         });
         web.post(&message)
             .await
@@ -162,6 +164,7 @@ mod spaces {
                 background: false,
                 computer: None,
                 model: None,
+                approval: None,
             };
             let theirs = ada.call(&start).await["result"]["thread"]["id"].clone();
             let thread = serde_json::from_value(theirs.clone()).unwrap();
@@ -232,6 +235,7 @@ mod spaces {
                     background: false,
                     computer: None,
                     model: None,
+                    approval: None,
                 })
                 .await;
             let id = started["result"]["thread"]["id"].clone();
@@ -317,6 +321,7 @@ mod spaces {
                         background: false,
                         computer: None,
                         model: None,
+                        approval: None,
                     },
                 )
                 .await

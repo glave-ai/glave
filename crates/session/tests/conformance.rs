@@ -204,6 +204,7 @@ mod conformance {
                 prompt: prompt.to_owned(),
                 meta: Meta::default(),
                 model: None,
+                approval: None,
             };
             let id = self.send(&request).await;
             loop {
@@ -268,6 +269,7 @@ mod conformance {
                 prompt: prompt.to_owned(),
                 meta: Meta::default(),
                 model: None,
+                approval: None,
             };
             let (message, id) = self.web.message(&request);
             let response = self.web.open(&message, Some("turn/start")).await;
@@ -321,6 +323,7 @@ mod conformance {
                 worktree: None,
                 computer: None,
                 model: None,
+                approval: None,
             })
             .await
             .unwrap();
@@ -470,9 +473,34 @@ mod conformance {
                         worktree: None,
                         computer: None,
                         model: Some("elsewhere".into()),
+                        approval: None,
                     })
                     .await;
                 assert_eq!(refused.err().map(|e| e.code), Some(code::NO_MODEL));
+                let _ = &dir;
+            });
+        });
+    }
+
+    #[test]
+    fn a_thread_chooses_its_approval_mode_and_its_summary_shows_it() {
+        block_on(async {
+            over_each_transport!("modes", Vec::new(), |client, dir| {
+                let info = client.call(Request::Discover {}).await.unwrap();
+                assert_eq!(info["approval"], json!("ask"));
+                assert_eq!(info["approvals"], json!(["ask", "auto"]));
+                let started = client
+                    .call(Request::ThreadStart {
+                        space: None,
+                        background: false,
+                        worktree: None,
+                        computer: None,
+                        model: None,
+                        approval: Some(glave_session::protocol::ApprovalMode::Auto),
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(started["thread"]["approval"], json!("auto"));
                 let _ = &dir;
             });
         });
@@ -491,6 +519,7 @@ mod conformance {
                         budget: Some(10_000),
                         meta: Meta::default(),
                         model: None,
+                        approval: None,
                     })
                     .await
                     .unwrap();

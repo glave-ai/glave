@@ -9,7 +9,7 @@ How much glave asks the person before acting. Tracks issues #21, #24, #78 and #8
 | `auto` (the default, in the sandbox) | go through | go through | go through, in the sandbox |
 | `ask` (the default without one) | go through | ask | ask |
 
-Set with `--approval <mode>`, or `approval` in `config.toml`; an organization's policy can limit the modes allowed (`policy.md`). A tool's effect decides which column it is in; MCP tools that say they only read are reads.
+Set with `--approval <mode>`, or `approval` in `config.toml`; an organization's policy can limit the modes allowed (`policy.md`). A client of the session API may choose the mode per thread, within the same limits, and `auto` only behind the wall below (`session.md`, "Approval modes"); the choice is recorded as `approval.mode.chosen`, and the thread's turns and subagents run in it. A tool's effect decides which column it is in; MCP tools that say they only read are reads.
 
 **Auto runs only behind a wall, unless the person says otherwise.** The sandbox is on by default wherever this computer can run it (`sandbox.md`), and `auto` is the default there. Where commands would run without a sandbox (it cannot run here, or the person turned it off), the default is `ask`, and an `approval = "auto"` chosen with the sandbox still on by default gives way to `ask` too, saying so once at startup. Commands run unconfined with nothing asked only when the person chose both `sandbox = "off"` and `approval = "auto"`, or an organization's policy allows only `auto`.
 
@@ -107,7 +107,7 @@ So `auto` without a terminal never stops for a question, and `ask` without one n
 
 ## Recording
 
-Each turn's configuration (`turn.started`) records the mode, and the banner and every receipt name it: `done · approval: auto · …`.
+Each turn's configuration (`turn.started`) records the mode it ran in, the thread's own when it chose one, and the banner and every receipt name it: `done · approval: auto · …`.
 
 Every question is recorded with its answer: `approval.requested`, then `approval.decided`, before the call's result (`events.md`). So the log shows who allowed what, and "always in this thread" survives resuming the thread. The question carries the thread and call it is about, so a client of the session API can answer it later (`session.md`).
 

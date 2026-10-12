@@ -43,6 +43,7 @@ mod session {
                 worktree: None,
                 computer: None,
                 model: None,
+                approval: None,
             })
             .await
             .unwrap()
@@ -293,6 +294,7 @@ mod session {
                     prompt: "touch it".into(),
                     meta: Meta::default(),
                     model: None,
+                    approval: None,
                 })
                 .await
                 .unwrap();
@@ -346,6 +348,7 @@ mod session {
                     prompt: "one".into(),
                     meta: Meta::default(),
                     model: None,
+                    approval: None,
                 })
                 .await
                 .unwrap();
@@ -371,6 +374,7 @@ mod session {
                     prompt: "two".into(),
                     meta: Meta::default(),
                     model: None,
+                    approval: None,
                 })
                 .await
                 .unwrap();
@@ -419,6 +423,7 @@ mod session {
             prompt: "hi".into(),
             meta: Meta::default(),
             model: None,
+            approval: None,
         };
         let wire = serde_json::to_value(&request).unwrap();
         assert_eq!(wire["method"], "turn/start");

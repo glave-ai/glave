@@ -148,3 +148,25 @@ fn explain_says_when_the_sandbox_cannot_run_here_and_that_commands_ask() {
         "{text}"
     );
 }
+
+#[test]
+fn a_thread_may_choose_auto_only_behind_a_wall_and_within_the_policy() {
+    let both = [ApprovalMode::Ask, ApprovalMode::Auto];
+    let none = Constraints::default();
+    assert_eq!(thread_modes(&settle(&[], &[]).unwrap(), &none), both);
+    let walled_off = unsandboxed(settle(&[], &[]).unwrap(), "no bubblewrap", &none);
+    assert_eq!(thread_modes(&walled_off, &none), [ApprovalMode::Ask]);
+    let unconfined = layers(
+        flags(Some(SandboxChoice::Off), Some(Approval::Auto)),
+        ConfigFile::default(),
+        vec![],
+    );
+    let unconfined = settle(&unconfined, &[]).unwrap();
+    assert_eq!(thread_modes(&unconfined, &none), both);
+    let ask_only = "version = 1\n[approval]\nmodes = [\"ask\"]\n";
+    let settled = settle(&[], &[policy_at(ORG, ask_only)]).unwrap();
+    assert_eq!(
+        thread_modes(&settled, &constraints(ask_only)),
+        [ApprovalMode::Ask]
+    );
+}

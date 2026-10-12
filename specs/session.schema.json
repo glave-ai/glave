@@ -642,7 +642,14 @@
       "properties": {
         "approval": {
           "$ref": "#/$defs/ApprovalMode",
-          "description": "How much this server asks before acting, in every thread it runs: `--approval` or\n`approval` in `config.toml` (`specs/approvals.md`). Choosing it per thread comes later."
+          "description": "How much this server asks before acting in a thread that chose no mode: `--approval` or\n`approval` in `config.toml` (`specs/approvals.md`)."
+        },
+        "approvals": {
+          "description": "The modes a thread may choose (`approval` on `thread/start` and `turn/start`): those\nthe policy leaves, cautious first.",
+          "items": {
+            "$ref": "#/$defs/ApprovalMode"
+          },
+          "type": "array"
         },
         "name": {
           "type": "string"
@@ -662,7 +669,8 @@
         "name",
         "version",
         "protocols",
-        "approval"
+        "approval",
+        "approvals"
       ],
       "type": "object"
     },
@@ -906,6 +914,10 @@
     "ThreadSummary": {
       "description": "A thread, as a list shows it: from the threads view, with what it is doing now.",
       "properties": {
+        "approval": {
+          "$ref": "#/$defs/ApprovalMode",
+          "description": "How much its turns ask before acting: the mode last chosen for it, else the server's."
+        },
         "cost": {
           "anyOf": [
             {
@@ -993,6 +1005,7 @@
         "space",
         "status",
         "standing",
+        "approval",
         "origin",
         "created_at",
         "updated_at",
@@ -2396,6 +2409,17 @@
     "thread/start": {
       "params": {
         "properties": {
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How much the thread's turns ask before acting, one of the server's `approvals`;\nthe server's own mode when absent."
+          },
           "background": {
             "description": "For a thread that runs as a task: it works on a worker when the server has them,\neven when other threads work here.",
             "type": "boolean"
@@ -2491,6 +2515,17 @@
         "properties": {
           "_meta": {
             "$ref": "#/$defs/Meta"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How much this turn, and the thread's turns after it, ask before acting: one of the\nserver's `approvals`. The thread's latest choice when absent, else the server's."
           },
           "background": {
             "description": "Runs the turn as a task, with no one attached: answered at once with the task.",
