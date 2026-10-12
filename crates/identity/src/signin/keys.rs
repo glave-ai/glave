@@ -5,6 +5,7 @@
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
+use glave_ports::auth::safe_to_send;
 use jiff::{SignedDuration, Timestamp};
 use jsonwebtoken::jwk::{AlgorithmParameters, EllipticCurve, Jwk, KeyAlgorithm, PublicKeyUse};
 use jsonwebtoken::{Algorithm, DecodingKey};
@@ -29,18 +30,6 @@ pub(super) fn client() -> Result<reqwest::Client, SignInError> {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| SignInError::Client(e.to_string()))
-}
-
-/// Whether keys may be fetched from `url`: `https`, or `http` to this computer only.
-pub(super) fn allowed(url: &str) -> bool {
-    let Ok(parsed) = reqwest::Url::parse(url) else {
-        return false;
-    };
-    match parsed.scheme() {
-        "https" => parsed.host_str().is_some(),
-        "http" => matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "[::1]")),
-        _ => false,
-    }
 }
 
 /// An issuer and the keys it signs with.
@@ -158,7 +147,7 @@ impl Keys {
                 discovery.issuer
             )));
         }
-        if !allowed(&discovery.jwks_uri) {
+        if !safe_to_send(&discovery.jwks_uri, &[]) {
             return Err(self.failed(format!(
                 "its keys are at {:?}, which is not https",
                 discovery.jwks_uri
@@ -243,22 +232,4 @@ fn usable(jwk: &Jwk) -> Option<Key> {
         alg,
         checks: DecodingKey::from_jwk(jwk).ok()?,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn keys_come_over_https_or_from_this_computer() {
-        assert!(allowed("https://accounts.example.com"));
-        assert!(allowed("http://127.0.0.1:8080"));
-        assert!(allowed("http://localhost/realms/glave"));
-        assert!(allowed("http://[::1]:9000"));
-        assert!(!allowed("http://accounts.example.com"));
-        assert!(!allowed("http://127.0.0.1.example.com"));
-        assert!(!allowed("http://localhost@example.com"));
-        assert!(!allowed("ftp://127.0.0.1"));
-        assert!(!allowed("not a url"));
-    }
 }

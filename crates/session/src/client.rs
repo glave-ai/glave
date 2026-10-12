@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use glave_ports::SseDecoder;
+use glave_ports::auth::safe_to_send;
 use serde_json::Value;
 
 use crate::protocol::{ApiError, Notification, Reply, Request, code};
@@ -30,7 +31,7 @@ impl Remote {
     /// The server at `url` (https, or http only to this computer), signed in with `token`.
     pub fn new(url: &str, token: String) -> Result<Self, ApiError> {
         let url = url.trim().trim_end_matches('/').to_owned();
-        if !safe(&url) {
+        if !safe_to_send(&url, &[]) {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
                 format!(
@@ -215,29 +216,14 @@ fn reply(text: &str) -> Result<Reply, ApiError> {
     outcome(&response)
 }
 
-/// Whether `url` is one glave sends a sign-in to: https, or http to this computer.
-fn safe(url: &str) -> bool {
-    let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"]
-        .iter()
-        .any(|start| {
-            url.strip_prefix(start)
-                .is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '/']))
-        });
-    url.starts_with("https://") || local
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn only_https_or_this_computer_gets_a_sign_in() {
-        assert!(safe("https://glave.example.com"));
-        assert!(safe("http://127.0.0.1:8080"));
-        assert!(safe("http://localhost"));
-        assert!(!safe("http://glave.example.com"));
-        assert!(!safe("http://localhost.evil.com"));
         assert!(Remote::new("http://glave.example.com", "t".into()).is_err());
+        assert!(Remote::new("http://127.0.0.1:8080", "t".into()).is_ok());
     }
 
     #[test]

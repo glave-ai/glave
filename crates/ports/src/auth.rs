@@ -208,9 +208,57 @@ impl AuthError {
         }
     }
 
+    /// What a source that answered HTTP `status` meant: `what` it refused, then `detail` from
+    /// its answer, cut short. Too many requests, or a failure on the source's side, may pass
+    /// if asked again; anything else is refused.
+    pub fn answered(status: u16, what: &str, detail: &str) -> Self {
+        let detail: String = detail.chars().take(DETAIL_CHARS).collect();
+        let message = format!("{what}: {detail}");
+        if status == 429 || status >= 500 {
+            Self::unreachable(message)
+        } else {
+            Self::refused(message)
+        }
+    }
+
     pub fn is_transient(&self) -> bool {
         self.transient
     }
+}
+
+/// The most of a source's answer an error repeats, in characters.
+const DETAIL_CHARS: usize = 300;
+
+/// Whether credentials may be sent to `url`: over https, or over plain http only to this
+/// computer or one of `plain_hosts`, and never to a URL that names a user or a password.
+pub fn safe_to_send(url: &str, plain_hosts: &[&str]) -> bool {
+    let Some((scheme, rest)) = url.trim().split_once("://") else {
+        return false;
+    };
+    if signs_in(url) {
+        return false;
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = match authority.rsplit_once(':') {
+        Some((host, port)) if port.bytes().all(|b| b.is_ascii_digit()) => host,
+        _ => authority,
+    };
+    match scheme {
+        "https" => !host.is_empty(),
+        "http" => {
+            ["localhost", "127.0.0.1", "[::1]"].contains(&host) || plain_hosts.contains(&host)
+        }
+        _ => false,
+    }
+}
+
+/// Whether `url` carries a user name or password before its host, where a mistake could put
+/// a secret. An `@` later, in a path such as a service account's email, is fine.
+pub fn signs_in(url: &str) -> bool {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    rest.split(['/', '?', '#'])
+        .next()
+        .is_some_and(|authority| authority.contains('@'))
 }
 
 impl From<AuthError> for ProviderError {
@@ -314,5 +362,45 @@ mod tests {
         assert_eq!(refused.failure(), crate::Failure::Refused);
         let transient: ProviderError = AuthError::unreachable("STS is down").into();
         assert!(transient.is_transient());
+    }
+
+    #[test]
+    fn a_refusal_says_what_and_why_and_whether_to_ask_again() {
+        let refused = AuthError::answered(400, "STS refused", "InvalidIdentityToken");
+        assert_eq!(refused.to_string(), "STS refused: InvalidIdentityToken");
+        assert!(!refused.is_transient());
+        assert!(AuthError::answered(429, "x", "").is_transient());
+        assert!(AuthError::answered(503, "x", "").is_transient());
+        let long = AuthError::answered(400, "x", &"y".repeat(900));
+        assert_eq!(long.to_string().len(), "x: ".len() + DETAIL_CHARS);
+    }
+
+    #[test]
+    fn credentials_go_over_https_or_to_this_computer_never_in_the_url() {
+        for url in [
+            "https://sts.amazonaws.com",
+            "http://127.0.0.1:4566",
+            "http://localhost",
+            "http://[::1]:8080/token",
+            "https://iam.googleapis.com/v1/projects/-/serviceAccounts/a@b.iam.gserviceaccount.com",
+        ] {
+            assert!(safe_to_send(url, &[]), "{url}");
+        }
+        for url in [
+            "http://sts.example.com",
+            "http://localhost.evil.com",
+            "http://127.0.0.1.example.com",
+            "http://localhost@example.com",
+            "not a url",
+            "https://user:pass@sts.example.com",
+            "ftp://localhost",
+            "localhost:80",
+        ] {
+            assert!(!safe_to_send(url, &[]), "{url}");
+        }
+        assert!(safe_to_send(
+            "http://169.254.170.2/v2/creds",
+            &["169.254.170.2"]
+        ));
     }
 }

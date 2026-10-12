@@ -44,22 +44,6 @@ pub enum Endpoint {
 }
 
 impl Endpoint {
-    /// `runtime` or `mantle`.
-    pub fn named(name: &str) -> Option<Self> {
-        match name.trim() {
-            "runtime" => Some(Self::Runtime),
-            "mantle" => Some(Self::Mantle),
-            _ => None,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Runtime => "runtime",
-            Self::Mantle => "mantle",
-        }
-    }
-
     /// The OpenAI-compatible API's base in `region`, under which `/chat/completions` is.
     pub fn base_url(self, region: &Region) -> String {
         let region = region.as_str();
@@ -107,8 +91,6 @@ mod tests {
         );
         assert_eq!(Endpoint::Runtime.signing_name(), "bedrock");
         assert_eq!(Endpoint::Mantle.signing_name(), "bedrock-mantle");
-        assert_eq!(Endpoint::named("mantle"), Some(Endpoint::Mantle));
-        assert_eq!(Endpoint::named("bedrock"), None);
     }
 
     #[test]
