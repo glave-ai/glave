@@ -16,7 +16,6 @@ use crate::keys::SqliteKeys;
 use crate::log::SqliteLog;
 use crate::schema;
 use crate::spaces::SqliteSpaces;
-use crate::views::Rebuilt;
 
 /// Why the store could not open or answer.
 #[derive(Debug, Error)]
@@ -63,11 +62,6 @@ impl Store {
         .map_err(|e| StoreError::Open(e.to_string()))??;
         crate::views::refresh(&store.log(), &store.connection).await?;
         Ok(store)
-    }
-
-    /// Rebuilds the view of every thread from the log, as the views are disposable.
-    pub async fn rebuild_views(&self) -> Result<Rebuilt, StoreError> {
-        crate::views::rebuild_all(&self.log(), &self.connection).await
     }
 
     /// A database that lives only in memory, for tests.

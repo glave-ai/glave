@@ -5,7 +5,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName};
-use glave_keys::{EventFields, KeyError, Sealed, erased_payload};
+use glave_keys::{EventFields, Sealed, erased_payload};
 use glave_ports::search::{Found, indexed, query_terms};
 use glave_ports::{
     EventLog, LogError, OrgId, Scope, SpaceId, ThreadQuery, ThreadView, check_append,
@@ -61,7 +61,12 @@ impl EventLog for SqliteLog {
                 let mut sealed = Vec::with_capacity(events.len());
                 let mut words = Vec::with_capacity(events.len());
                 for event in &events {
-                    sealed.push(this.keys.seal_event(&scope, event).await.map_err(sealing)?);
+                    sealed.push(
+                        this.keys
+                            .seal_event(&scope, event)
+                            .await
+                            .map_err(LogError::sealing)?,
+                    );
                     words.push(index_words(&this.keys, &scope, event).await?);
                 }
                 let outcome = run(&this.connection, move |connection| {
@@ -199,7 +204,7 @@ impl EventLog for SqliteLog {
                 .keys
                 .search_terms(&scope, &words)
                 .await
-                .map_err(sealing)?
+                .map_err(LogError::sealing)?
             else {
                 return Ok(Vec::new());
             };
@@ -232,38 +237,12 @@ impl EventLog for SqliteLog {
             rows.into_iter()
                 .map(|(thread, seq)| {
                     Ok(Found {
-                        thread: ThreadId::try_from(parse_uuid(&thread)?).map_err(corrupt)?,
-                        seq: Seq::new(u64::try_from(seq).map_err(corrupt)?).map_err(corrupt)?,
+                        thread: ThreadId::try_from(parse_uuid(&thread)?)
+                            .map_err(LogError::corrupt)?,
+                        seq: Seq::new(u64::try_from(seq).map_err(LogError::corrupt)?)
+                            .map_err(LogError::corrupt)?,
                     })
                 })
-                .collect()
-        }
-    }
-
-    fn threads(
-        &self,
-        scope: &Scope,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send {
-        let scope = *scope;
-        let connection = self.connection.clone();
-        async move {
-            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-            let ids = run(&connection, move |connection| {
-                let mut statement = connection.prepare_cached(
-                    "SELECT thread FROM events WHERE org = ?1 AND space = ?2
-                     GROUP BY thread ORDER BY MAX(rowid) DESC LIMIT ?3",
-                )?;
-                let ids = statement.query_map(
-                    params![scope.org.to_string(), scope.space.to_string(), limit],
-                    |row| row.get::<_, String>(0),
-                )?;
-                ids.collect::<rusqlite::Result<Vec<String>>>()
-            })
-            .await
-            .map_err(|e| LogError::Storage(e.to_string()))?;
-            ids.iter()
-                .map(|id| parse_uuid(id).and_then(|uuid| ThreadId::try_from(uuid).map_err(corrupt)))
                 .collect()
         }
     }
@@ -335,7 +314,10 @@ async fn index_words(
     if words.is_empty() {
         return Ok(None);
     }
-    let hashed = keys.search_terms(scope, &words).await.map_err(sealing)?;
+    let hashed = keys
+        .search_terms(scope, &words)
+        .await
+        .map_err(LogError::sealing)?;
     Ok(hashed.map(|hashed| hashed.join(" ")))
 }
 
@@ -424,11 +406,13 @@ struct Row {
 
 impl Row {
     async fn into_event(self, keys: &SqliteKeyring, scope: &Scope) -> Result<RawEvent, LogError> {
-        let glave = u32::try_from(self.glave).map_err(corrupt)?;
-        let thread = ThreadId::try_from(parse_uuid(&self.thread)?).map_err(corrupt)?;
-        let seq = Seq::new(u64::try_from(self.seq).map_err(corrupt)?).map_err(corrupt)?;
-        let kind = TypeName::new(self.kind).map_err(corrupt)?;
-        let v = PayloadVersion::new(u32::try_from(self.v).map_err(corrupt)?).map_err(corrupt)?;
+        let glave = u32::try_from(self.glave).map_err(LogError::corrupt)?;
+        let thread = ThreadId::try_from(parse_uuid(&self.thread)?).map_err(LogError::corrupt)?;
+        let seq = Seq::new(u64::try_from(self.seq).map_err(LogError::corrupt)?)
+            .map_err(LogError::corrupt)?;
+        let kind = TypeName::new(self.kind).map_err(LogError::corrupt)?;
+        let v = PayloadVersion::new(u32::try_from(self.v).map_err(LogError::corrupt)?)
+            .map_err(LogError::corrupt)?;
         let data = match self.key_id {
             // Written before sealing: stored as written.
             None => self.data,
@@ -442,44 +426,27 @@ impl Row {
                 };
                 match keys.open_event(scope, &fields, &key_id, &self.data).await {
                     Ok(opened) => opened,
-                    Err(error) => {
-                        erased_payload(&key_id, &error).ok_or_else(|| opening(seq, &error))?
-                    }
+                    Err(error) => erased_payload(&key_id, &error)
+                        .ok_or_else(|| LogError::opening(seq, &error))?,
                 }
             }
         };
-        let data = String::from_utf8(data).map_err(corrupt)?;
+        let data = String::from_utf8(data).map_err(LogError::corrupt)?;
         Ok(RawEvent {
             glave,
-            id: EventId::try_from(parse_uuid(&self.id)?).map_err(corrupt)?,
+            id: EventId::try_from(parse_uuid(&self.id)?).map_err(LogError::corrupt)?,
             thread,
             seq,
-            at: At::try_from(self.at).map_err(corrupt)?,
+            at: At::try_from(self.at).map_err(LogError::corrupt)?,
             kind,
             v,
-            data: RawValue::from_string(data).map_err(corrupt)?,
+            data: RawValue::from_string(data).map_err(LogError::corrupt)?,
         })
     }
 }
 
 fn parse_uuid(text: &str) -> Result<Uuid, LogError> {
-    Uuid::parse_str(text).map_err(corrupt)
-}
-
-fn corrupt(error: impl std::fmt::Display) -> LogError {
-    LogError::Storage(format!("a stored event is corrupt: {error}"))
-}
-
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "taken by value to pass straight to map_err"
-)]
-fn sealing(error: KeyError) -> LogError {
-    LogError::Storage(format!("could not seal an event: {error}"))
-}
-
-fn opening(seq: Seq, error: &KeyError) -> LogError {
-    LogError::Storage(format!("event {} could not be opened: {error}", seq.get()))
+    Uuid::parse_str(text).map_err(LogError::corrupt)
 }
 
 /// A uniqueness violation means another writer took the position first.

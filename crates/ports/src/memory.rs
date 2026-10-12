@@ -128,22 +128,6 @@ impl MemoryLog {
     }
 }
 
-impl MemoryLog {
-    fn threads_now(&self, scope: &Scope, limit: usize) -> Result<Vec<ThreadId>, LogError> {
-        let threads = self
-            .threads
-            .lock()
-            .map_err(|_| LogError::Storage("the in-memory log's lock is poisoned".into()))?;
-        let mut found: Vec<(u64, ThreadId)> = threads
-            .iter()
-            .filter(|((owner, _), _)| owner == scope)
-            .map(|((_, id), thread)| (thread.written, *id))
-            .collect();
-        found.sort_by(|a, b| b.cmp(a));
-        Ok(found.into_iter().take(limit).map(|(_, id)| id).collect())
-    }
-}
-
 /// Every thread the in-memory log holds, by scope and id.
 type Threads = HashMap<(Scope, ThreadId), Thread>;
 
@@ -229,14 +213,6 @@ impl EventLog for MemoryLog {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send {
         ready(self.read_now(scope, thread, after, limit))
-    }
-
-    fn threads(
-        &self,
-        scope: &Scope,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send {
-        ready(self.threads_now(scope, limit))
     }
 
     fn search(

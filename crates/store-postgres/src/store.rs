@@ -14,7 +14,6 @@ use crate::keys::PostgresKeys;
 use crate::log::PostgresLog;
 use crate::schema;
 use crate::spaces::PostgresSpaces;
-use crate::views::Rebuilt;
 use uuid::Uuid;
 
 /// Why the store could not open or answer.
@@ -79,11 +78,6 @@ impl Store {
         Ok(store)
     }
 
-    /// Rebuilds the view of every thread from the log, as the views are disposable.
-    pub async fn rebuild_views(&self) -> Result<Rebuilt, StoreError> {
-        crate::views::rebuild_all(&self.log(), &self.pool).await
-    }
-
     pub fn log(&self) -> PostgresLog {
         PostgresLog::new(self.pool.clone(), Arc::clone(&self.keys))
     }
@@ -143,4 +137,9 @@ pub(crate) fn describe(error: &tokio_postgres::Error) -> String {
     error
         .as_db_error()
         .map_or_else(|| error.to_string(), ToString::to_string)
+}
+
+/// A database failure as a port reports it, through that port's `storage` variant.
+pub(crate) fn database<E>(storage: fn(String) -> E) -> impl Fn(tokio_postgres::Error) -> E {
+    move |error| storage(format!("the database failed: {}", describe(&error)))
 }
