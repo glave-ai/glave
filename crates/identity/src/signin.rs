@@ -12,6 +12,7 @@ mod local;
 use std::net::IpAddr;
 
 use glave_event::{Auth, AuthMethod, PrincipalId};
+use glave_ports::auth::safe_to_send;
 use glave_ports::{Caller, Clock};
 use jsonwebtoken::{Algorithm, Validation, decode, decode_header};
 use serde::Deserialize;
@@ -106,7 +107,7 @@ impl SignIn {
             .issuers
             .into_iter()
             .map(|issuer| {
-                if keys::allowed(&issuer) {
+                if safe_to_send(&issuer, &[]) {
                     Ok(Keys::new(issuer, http.clone()))
                 } else {
                     Err(SignInError::Insecure(issuer))

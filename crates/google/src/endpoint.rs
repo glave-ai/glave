@@ -95,14 +95,6 @@ impl Vertex {
         })
     }
 
-    pub fn project(&self) -> &str {
-        &self.project
-    }
-
-    pub fn location(&self) -> &Location {
-        &self.location
-    }
-
     /// `https://<host>/v1/projects/<project>/locations/<location>`, under which the APIs are.
     pub fn base(&self) -> String {
         format!(

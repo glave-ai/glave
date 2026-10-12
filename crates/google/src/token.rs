@@ -6,9 +6,6 @@ use jiff::{SignedDuration, Timestamp};
 use reqwest::header::CONTENT_TYPE;
 use serde::Deserialize;
 
-/// How much of an error description to keep.
-const ERROR_CHARS: usize = 300;
-
 /// A token answer: OAuth 2.0's, or STS's (RFC 8693), which adds fields glave does not need.
 /// Never printed: it holds the token.
 #[derive(Deserialize)]
@@ -96,13 +93,7 @@ pub(crate) fn refusal(from: &str, status: u16, body: &str) -> AuthError {
     let detail = serde_json::from_str::<ErrorBody>(body)
         .ok()
         .map_or_else(|| format!("HTTP {status}"), |error| error.detail(status));
-    let detail: String = detail.chars().take(ERROR_CHARS).collect();
-    let message = format!("{from} refused: {detail}");
-    if status == 429 || status >= 500 {
-        AuthError::unreachable(message)
-    } else {
-        AuthError::refused(message)
-    }
+    AuthError::answered(status, &format!("{from} refused"), &detail)
 }
 
 #[derive(Deserialize)]

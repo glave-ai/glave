@@ -10,7 +10,9 @@ use std::time::Duration;
 
 use glave_ports::BoxFuture;
 use glave_ports::Clock;
-use glave_ports::auth::{AuthError, Credentials, Fresh, Header, Outgoing, Refreshing, Secret};
+use glave_ports::auth::{
+    AuthError, Credentials, Fresh, Header, Outgoing, Refreshing, Secret, safe_to_send,
+};
 use jiff::SignedDuration;
 use reqwest::header::CONTENT_TYPE;
 use serde::Deserialize;
@@ -26,9 +28,6 @@ const ASSERTION_TYPE: &str = "urn:ietf:params:oauth:client-assertion-type:jwt-be
 
 /// How long before a token expires it is replaced, as Azure's own libraries do.
 const EARLY: SignedDuration = SignedDuration::from_secs(300);
-
-/// How much of Entra's error description to keep.
-const ERROR_CHARS: usize = 300;
 
 /// Microsoft Entra tokens from AKS workload identity, refreshed before they expire.
 pub struct WorkloadIdentity {
@@ -172,10 +171,7 @@ impl Credentials for WorkloadIdentity {
 /// Entra's token endpoint for `tenant` at `authority`: https, or http only on this computer.
 fn token_url(authority: &str, tenant: &str) -> Result<String, AuthError> {
     let authority = authority.trim().trim_end_matches('/');
-    let local = ["http://localhost:", "http://127.0.0.1:", "http://[::1]:"]
-        .iter()
-        .any(|start| authority.starts_with(start));
-    if !(authority.starts_with("https://") || local) || authority.contains('@') {
+    if !safe_to_send(authority, &[]) {
         return Err(AuthError::refused(format!(
             "AZURE_AUTHORITY_HOST = {authority:?} is not an https:// address"
         )));
@@ -205,13 +201,11 @@ fn refusal(status: u16, body: &str) -> AuthError {
             format!("{}: {first}", error.error)
         },
     );
-    let detail: String = detail.chars().take(ERROR_CHARS).collect();
-    let message = format!("Microsoft Entra refused the workload identity token exchange: {detail}");
-    if status == 429 || status >= 500 {
-        AuthError::unreachable(message)
-    } else {
-        AuthError::refused(message)
-    }
+    AuthError::answered(
+        status,
+        "Microsoft Entra refused the workload identity token exchange",
+        &detail,
+    )
 }
 
 /// Entra's answer to a token request. Never printed: it holds the token.

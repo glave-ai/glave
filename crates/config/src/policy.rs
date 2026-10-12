@@ -26,7 +26,7 @@ pub use effective::{check_model, check_own_servers, thread_modes, unsandboxed};
 pub use explain::explain;
 pub use files::{
     ConfigFile, HooksFile, ModelEntry, PolicyFile, SandboxChoice, ServerFile, StoreFile, TaskRules,
-    TelemetryFile, config, signs_in_safely,
+    TelemetryFile, config,
 };
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use placement::{Placement, PlacementRules};

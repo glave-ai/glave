@@ -5,6 +5,7 @@ use std::path::Path;
 
 use crate::error::invalid;
 use glave_harness::{ApprovalMode, Hook, HookPoint, Hooks, SandboxLevel};
+use glave_ports::auth::safe_to_send;
 use globset::Glob;
 
 use crate::policy::memory::{MemoryChoice, MemoryRules, SpaceChoice};
@@ -126,20 +127,8 @@ pub struct GatewayFile {
 impl GatewayFile {
     /// Whether `url` is one glave sends a sign-in to: https, or http to this computer.
     fn safe(&self) -> bool {
-        signs_in_safely(&self.url)
+        safe_to_send(&self.url, &[])
     }
-}
-
-/// Whether `url` is one glave sends a sign-in to: https, or http to this computer.
-pub fn signs_in_safely(url: &str) -> bool {
-    let url = url.trim();
-    let local = ["http://localhost", "http://127.0.0.1", "http://[::1]"]
-        .iter()
-        .any(|start| {
-            url.strip_prefix(start)
-                .is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '/']))
-        });
-    url.starts_with("https://") || local
 }
 
 /// `[hooks]`: each point's hooks, under the names Claude Code and Codex give the points.
@@ -378,7 +367,7 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
         }
     }
     if let Some(server) = &file.server
-        && !signs_in_safely(&server.url)
+        && !safe_to_send(&server.url, &[])
     {
         invalid!(
             "{}: [server] url = {:?} is not https (http only to this computer): your sign-in \
