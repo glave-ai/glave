@@ -109,6 +109,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) models: RwLock<Vec<ModelInfo>>,
     /// Where model accounts are kept, when the person here may connect them.
     pub(crate) providers: Option<Arc<dyn Providers>>,
+    /// Held while model accounts change and the models follow.
+    pub(crate) changing_models: tokio::sync::Mutex<()>,
     /// The modes a thread may choose, cautious first.
     pub(crate) modes: Vec<ApprovalMode>,
     /// The space's own person, whom the log leaves implied.
@@ -167,6 +169,7 @@ where
                 every_thread,
                 models: RwLock::new(catalog),
                 providers: wiring.providers,
+                changing_models: tokio::sync::Mutex::new(()),
                 modes: choosable,
                 person,
                 limits: wiring.tasks,

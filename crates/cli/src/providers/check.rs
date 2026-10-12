@@ -70,7 +70,9 @@ pub fn offered(kind: ProviderKind, listing: &Value) -> Vec<String> {
         .iter()
         .filter_map(|model| {
             let id = model.get("id")?.as_str()?.trim();
-            let usable = !id.is_empty() && id.len() <= LONGEST_ID && chats(kind, id, model);
+            let printable = !id.chars().any(|c| c.is_control() || c.is_whitespace());
+            let usable =
+                !id.is_empty() && id.len() <= LONGEST_ID && printable && chats(kind, id, model);
             usable.then(|| (created(model), id))
         })
         .collect();
@@ -166,7 +168,7 @@ mod tests {
         );
         let ollama = json!({"data": [
             {"id": "gemma4:12b"}, {"id": "nomic-embed-text"}, {"id": "qwen3:8b"},
-            {"id": "gemma4:12b"}, {"id": " "},
+            {"id": "gemma4:12b"}, {"id": " "}, {"id": "two\nlines"},
         ]});
         assert_eq!(
             offered(ProviderKind::Compatible, &ollama),

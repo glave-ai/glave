@@ -36,4 +36,4 @@ pub use payload::{
     TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved, sealed_under_memory,
 };
 pub use payload::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_provider};
-pub use secret::Secret;
+pub use secret::{Secret, serialize_exposed};

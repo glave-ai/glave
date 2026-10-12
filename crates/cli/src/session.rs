@@ -287,7 +287,15 @@ async fn line_up(
         Some(ledger) => ledger.accounts().await?,
         None => Vec::new(),
     };
-    let mut built = lineup.build(&accounts)?;
+    // An account that no longer lines up with the settings never stops glave starting.
+    let mut built = match lineup.build(&accounts) {
+        Ok(built) => built,
+        Err(error) if !accounts.is_empty() => {
+            eprintln!("glave: the model accounts you connected are set aside: {error:#}");
+            lineup.build(&[])?
+        }
+        Err(error) => return Err(error),
+    };
     let switch = Switch::new(built.gateway.take());
     let judges = lineup.judges();
     let providers = ledger

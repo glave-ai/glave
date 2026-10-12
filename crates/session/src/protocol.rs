@@ -231,6 +231,7 @@ methods! {
     "provider/connect" => ProviderConnect {
         kind: ProviderKind,
         /// The account's key, sent once and never answered back.
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
         key: Secret,
         /// The server's API, for a `compatible` account: `https`, or `http` on this computer.
         #[serde(default, skip_serializing_if = "Option::is_none")]

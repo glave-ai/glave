@@ -78,7 +78,10 @@ where
         caller: &Caller,
         new: NewProvider,
     ) -> Result<Reply, ApiError> {
-        let (provider, models) = self.providers_for(caller)?.connect(new).await?;
+        let providers = self.providers_for(caller)?;
+        // One change at a time, so the models offered are those of the last.
+        let _changing = self.inner.changing_models.lock().await;
+        let (provider, models) = providers.connect(new).await?;
         self.offer(models);
         Ok(Reply::Provider { provider })
     }
@@ -95,7 +98,9 @@ where
         caller: &Caller,
         provider: ProviderId,
     ) -> Result<Reply, ApiError> {
-        let models = self.providers_for(caller)?.remove(provider).await?;
+        let providers = self.providers_for(caller)?;
+        let _changing = self.inner.changing_models.lock().await;
+        let models = providers.remove(provider).await?;
         self.offer(models);
         Ok(Reply::Done {})
     }

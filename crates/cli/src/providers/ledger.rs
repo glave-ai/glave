@@ -1,7 +1,9 @@
 //! Where model accounts are kept: the provider ledger in the person's personal space, glave's
 //! own stream under a reserved id. Each `provider.connected` is sealed under a key of its own;
 //! removing an account records `provider.removed` and destroys that key, then rotates the
-//! space key, so neither the store nor a backup can read the account again.
+//! space key, so neither the store nor a backup can read the account again. A removed account
+//! whose key still opens, as after a crash between the two, has its key destroyed the next
+//! time the ledger is read.
 
 use anyhow::Context as _;
 use glave_event::{
@@ -28,10 +30,12 @@ pub struct Ledger {
     person: PrincipalId,
 }
 
-/// The accounts the ledger holds, oldest first, and the `seq` its next event takes.
+/// The accounts the ledger holds, oldest first, the `seq` its next event takes, and the
+/// accounts removed whose keys still open.
 struct Read {
     accounts: Vec<ProviderConnected>,
     next: u64,
+    unerased: Vec<ProviderId>,
 }
 
 impl Ledger {
@@ -51,34 +55,34 @@ impl Ledger {
         self.person
     }
 
-    /// The accounts kept, oldest first.
+    /// The accounts kept, oldest first, once the keys of any removed ones are destroyed.
     pub async fn accounts(&self) -> anyhow::Result<Vec<ProviderConnected>> {
-        Ok(self.read().await?.accounts)
+        let read = self.read().await?;
+        for provider in read.unerased {
+            self.store.erase_provider(&self.scope, provider).await?;
+        }
+        Ok(read.accounts)
     }
 
     /// Keeps `account`, replacing any account it stands in for, the same service at the same
-    /// URL, whose key is then destroyed.
+    /// URL, whose key is destroyed when the accounts are next read.
     pub async fn keep(&self, account: &ProviderConnected) -> anyhow::Result<()> {
-        let replaced: Vec<ProviderId> = self
-            .append(|accounts| {
-                let replaced: Vec<ProviderId> = accounts
-                    .iter()
-                    .filter(|kept| kept.kind == account.kind && kept.url == account.url)
-                    .map(|kept| kept.provider)
-                    .collect();
-                let mut events = vec![Event::Connected(account.clone())];
-                events.extend(replaced.iter().map(|id| Event::Removed(*id)));
-                Some((events, replaced))
-            })
-            .await?
-            .unwrap_or_default();
-        for id in replaced {
-            self.store.erase_provider(&self.scope, id).await?;
-        }
+        self.append(|accounts| {
+            let replaced: Vec<ProviderId> = accounts
+                .iter()
+                .filter(|kept| kept.kind == account.kind && kept.url == account.url)
+                .map(|kept| kept.provider)
+                .collect();
+            let mut events = vec![Event::Connected(account.clone())];
+            events.extend(replaced.into_iter().map(Event::Removed));
+            Some((events, ()))
+        })
+        .await?;
         Ok(())
     }
 
-    /// Removes the account `provider`, destroying its key. False when no such account is kept.
+    /// Removes the account `provider`; its key is destroyed when the accounts are next read.
+    /// False when no such account is kept.
     pub async fn remove(&self, provider: ProviderId) -> anyhow::Result<bool> {
         let removed = self
             .append(|accounts| {
@@ -88,9 +92,6 @@ impl Ledger {
                     .then(|| (vec![Event::Removed(provider)], ()))
             })
             .await?;
-        if removed.is_some() {
-            self.store.erase_provider(&self.scope, provider).await?;
-        }
         Ok(removed.is_some())
     }
 
@@ -125,6 +126,7 @@ impl Ledger {
     async fn read(&self) -> anyhow::Result<Read> {
         let ledger = ledger()?;
         let mut accounts: Vec<ProviderConnected> = Vec::new();
+        let mut unerased: Vec<ProviderId> = Vec::new();
         let (mut after, mut next) = (None, 1);
         loop {
             let page = self
@@ -140,13 +142,23 @@ impl Ledger {
                         accounts.push(connected);
                     }
                     Ok(Body::ProviderRemoved(removed)) => {
+                        let opened = accounts
+                            .iter()
+                            .any(|kept| kept.provider == removed.provider);
                         accounts.retain(|kept| kept.provider != removed.provider);
+                        if opened {
+                            unerased.push(removed.provider);
+                        }
                     }
                     _ => {}
                 }
             }
             if page.len() < PAGE {
-                return Ok(Read { accounts, next });
+                return Ok(Read {
+                    accounts,
+                    next,
+                    unerased,
+                });
             }
             after = page.last().map(|event| event.seq);
         }
@@ -163,7 +175,7 @@ impl Event {
     fn raw(self, ledger: ThreadId, seq: u64, by: Principal) -> anyhow::Result<RawEvent> {
         let now = Timestamp::now();
         let header = Header {
-            id: EventId::new(now, random())?,
+            id: EventId::new(now, random()?)?,
             thread: ledger,
             seq: Seq::new(seq)?,
             at: At::from(now),
@@ -180,9 +192,10 @@ fn ledger() -> anyhow::Result<ThreadId> {
     provider_ledger().context("the provider ledger has no id")
 }
 
-/// Random bytes for a new id.
-pub fn random() -> [u8; 10] {
+/// Random bytes for a new id, from the operating system.
+pub fn random() -> anyhow::Result<[u8; 10]> {
     let mut bytes = [0u8; 10];
-    let _ = getrandom::fill(&mut bytes);
-    bytes
+    getrandom::fill(&mut bytes)
+        .map_err(|e| anyhow::anyhow!("could not get random bytes for a new id: {e}"))?;
+    Ok(bytes)
 }

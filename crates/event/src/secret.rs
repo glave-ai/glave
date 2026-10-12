@@ -1,13 +1,12 @@
 //! A key or token: what a model provider proves who is calling with. It never shows in
-//! `Debug`, has no `Display`, and is serialized only where it must travel or be sealed.
+//! `Debug`, has no `Display`, and is not `Serialize`: a field that must carry it, to the server
+//! it is for or into a payload sealed at rest, says so with [`serialize_exposed`].
 
 use std::fmt;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serializer};
 
-/// A key or token. Its `Debug` never shows it, and it has no `Display`. It serializes as the
-/// plain string, so it may go only where it must: sent to the server it is for, or into a
-/// payload that is sealed at rest (`provider.connected`).
+/// A key or token. Its `Debug` never shows it, and it has no `Display` and no `Serialize`.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Secret(String);
 
@@ -28,10 +27,10 @@ impl fmt::Debug for Secret {
     }
 }
 
-impl Serialize for Secret {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0)
-    }
+/// Serializes `secret` as its plain text, for `#[serde(serialize_with)]` on a field that must
+/// carry it: a request to the server it is for, or a payload sealed at rest.
+pub fn serialize_exposed<S: Serializer>(secret: &Secret, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&secret.0)
 }
 
 impl<'de> Deserialize<'de> for Secret {
@@ -61,7 +60,9 @@ mod tests {
     fn a_secret_never_shows_in_debug_and_travels_as_its_string() {
         let secret = Secret::new("hunter2");
         assert_eq!(format!("{secret:?}"), "Secret([redacted])");
-        let json = serde_json::to_string(&secret).unwrap();
+        let json = serialize_exposed(&secret, serde_json::value::Serializer)
+            .unwrap()
+            .to_string();
         assert_eq!(json, "\"hunter2\"");
         let back: Secret = serde_json::from_str(&json).unwrap();
         assert_eq!(back.expose(), "hunter2");

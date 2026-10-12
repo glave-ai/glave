@@ -58,8 +58,9 @@ impl Host {
         let url = checked_url(new.kind, new.url)?;
         let key = checked_key(&new.key)?;
         let mut account = ProviderConnected {
-            provider: ProviderId::new(jiff::Timestamp::now(), ledger::random())
-                .map_err(|e| failed(&e.into()))?,
+            provider: ledger::random()
+                .and_then(|random| Ok(ProviderId::new(jiff::Timestamp::now(), random)?))
+                .map_err(|e| failed(&e))?,
             kind: new.kind,
             url,
             key,
@@ -80,6 +81,15 @@ impl Host {
             ));
         }
         account.models = models;
+        // Every account glave keeps must line up with the rest, so a start never fails on one.
+        let mut accounts = self.ledger.accounts().await.map_err(|e| failed(&e))?;
+        accounts.push(account.clone());
+        self.lineup.build(&accounts).map_err(|e| {
+            ApiError::new(
+                code::NOT_ALLOWED,
+                format!("glave cannot run this account's models here: {e:#}"),
+            )
+        })?;
         self.ledger.keep(&account).await.map_err(|e| failed(&e))?;
         Ok((info(&account), self.rebuilt().await?))
     }
@@ -231,7 +241,7 @@ fn refused(account: &ProviderConnected, error: &ProviderError) -> ApiError {
              still active"
         ),
         Failure::NoCredit => {
-            format!("the {service} account has no credit left: add some there, then try again")
+            format!("your account at {service} has no credit left: add some there, then try again")
         }
         Failure::Unreachable | Failure::Silent => match account.kind {
             ProviderKind::Compatible => format!(
@@ -242,10 +252,11 @@ fn refused(account: &ProviderConnected, error: &ProviderError) -> ApiError {
         Failure::RateLimited | Failure::Unavailable => {
             format!("{service} is busy right now: try again in a minute")
         }
-        _ => format!(
+        _ if account.kind == ProviderKind::Compatible => format!(
             "{service} did not answer as glave expected: check the URL is the server's API \
              address"
         ),
+        _ => format!("{service} did not answer as glave expected: try again shortly"),
     };
     provider_failed(failure, message)
 }

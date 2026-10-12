@@ -37,6 +37,7 @@ pub struct ProviderConnected {
     /// The server's API, for a `compatible` account; the service's own otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(serialize_with = "crate::secret::serialize_exposed")]
     pub key: Secret,
     /// The models the account offered when it was connected, the default first.
     pub models: Vec<String>,
