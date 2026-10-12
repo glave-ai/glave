@@ -267,7 +267,7 @@ fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Endpoint)> {
     let model = choices.model.as_ref().map(|m| m.value.clone());
     let mut endpoint = match &remote {
         Some(remote) => remote.endpoint(model)?,
-        None => config::endpoint(model)?,
+        None => config::endpoint(model, choices.provider.as_ref())?,
     };
     if let Some(idle) = config::idle_timeout()? {
         endpoint.provider.idle_timeout = idle;

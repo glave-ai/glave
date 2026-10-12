@@ -1274,6 +1274,8 @@ dependencies = [
  "anyhow",
  "aws-lc-rs",
  "getrandom 0.4.3",
+ "glave-aws",
+ "glave-azure",
  "glave-computer",
  "glave-config",
  "glave-event",

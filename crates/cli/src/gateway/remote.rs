@@ -61,6 +61,8 @@ impl Remote {
             provider,
             model: model.unwrap_or_else(|| MAIN.to_owned()),
             gateway: Some(self.url.clone()),
+            at: "[gateway] url".to_owned(),
+            key_from: TOKEN,
         })
     }
 
