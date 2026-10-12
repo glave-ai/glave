@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import type { ThreadStartParams } from '@glave/client';
+import type { ApprovalMode, ThreadStartParams } from '@glave/client';
 import { type GlzComposed, GlzComposerComponent } from '@glave/glaze';
 
 import { SessionService } from '../../services/session.service';
@@ -23,7 +23,8 @@ export interface FirstPrompt {
 
 /**
  * A new chat: the composer, with the approval mode and the model picker. Sending starts a
- * thread (in the space the link names, else the first space) on the model picked, and opens it.
+ * thread (in the space the link names, else the first space) on the model and in the approval
+ * mode picked, and opens it.
  */
 @Component({
   selector: 'app-home',
@@ -42,6 +43,8 @@ export class HomeComponent {
   protected readonly error = signal<string | null>(null);
   /** The model the person picked, or `null` for the server's default. */
   protected readonly picked = signal<string | null>(null);
+  /** The approval mode the person picked, or `null` for the server's. */
+  protected readonly pickedMode = signal<ApprovalMode | null>(null);
   private readonly session = inject(SessionService);
   private readonly spaces = inject(SpacesService);
   private readonly router = inject(Router);
@@ -59,9 +62,11 @@ export class HomeComponent {
     try {
       const space = this.target();
       const model = this.picked();
+      const approval = this.pickedMode();
       const params: ThreadStartParams = {
         ...(space === undefined ? {} : { space }),
         ...(model === null ? {} : { model }),
+        ...(approval === null ? {} : { approval }),
       };
       const { thread } = await this.session.call('thread/start', params);
       const state: FirstPrompt = { prompt: composed.text };

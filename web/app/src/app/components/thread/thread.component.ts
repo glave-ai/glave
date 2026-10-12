@@ -10,6 +10,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
+import type { ApprovalMode } from '@glave/client';
 import {
   GlzApprovalCardComponent,
   GlzButtonComponent,
@@ -116,6 +117,8 @@ export class ThreadComponent {
   protected readonly awayFromBottom = computed(() => !this.atBottom());
   /** The model the person picked for the next turn, or `null` for the thread's own. */
   protected readonly picked = signal<string | null>(null);
+  /** The approval mode the person picked for the next turn, or `null` for the thread's own. */
+  protected readonly pickedMode = signal<ApprovalMode | null>(null);
   protected readonly renaming = signal(false);
   protected readonly panelOpen = this.panel.open;
   protected readonly panelWidth = this.panel.width;
@@ -142,6 +145,8 @@ export class ThreadComponent {
     const summary = this.summary();
     return summary === undefined ? '' : threadTitle(summary);
   });
+  /** The thread's own approval mode, from its summary, or `null` until it is read. */
+  protected readonly mode = computed(() => this.summary()?.approval ?? null);
   protected readonly spaceName = computed(() => this.spaces.spaceOf(this.thread())?.name ?? null);
   protected readonly mark = computed(() => {
     const summary = this.summary();
@@ -158,6 +163,7 @@ export class ThreadComponent {
         const prompt = first;
         first = null;
         this.picked.set(null);
+        this.pickedMode.set(null);
         void this.service
           .open(thread)
           .then(() => (prompt === null ? undefined : this.service.send(prompt)));
@@ -166,10 +172,12 @@ export class ThreadComponent {
   }
 
   protected send(composed: GlzComposed): void {
-    // The pick goes with the turn only when it changes the thread's model.
+    // A pick goes with the turn only when it changes the thread's model or mode.
     const picked = this.picked();
     const model = picked !== null && picked !== this.service.chosen() ? picked : null;
-    void this.service.send(composed.text, model);
+    const pickedMode = this.pickedMode();
+    const mode = pickedMode !== null && pickedMode !== this.mode() ? pickedMode : null;
+    void this.service.send(composed.text, model, mode);
   }
 
   protected stop(): void {
