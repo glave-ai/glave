@@ -70,6 +70,7 @@ describe('GlzSidenavLayoutComponent', () => {
     await fixture.whenStable();
     expect(sidenav(root).getAttribute('role')).toBe('dialog');
     expect(sidenav(root).getAttribute('aria-modal')).toBe('true');
+    expect(document.activeElement).toBe(sidenav(root));
     expect(root.querySelector<HTMLElement>('.content')?.inert).toBe(true);
     sidenav(root).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await fixture.whenStable();

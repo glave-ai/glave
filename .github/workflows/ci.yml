@@ -41,7 +41,8 @@ jobs:
           --health-retries 15
     # The runner's own Docker, so the Docker worker backend runs its tests here too (a small
     # alpine image pinned by digest, a stub in glave's place). Everything they make is
-    # labelled glave.test=<run id>, and they check by that label that nothing is left.
+    # labelled glave.test=<run id>, which this job sweeps, and glave.test.case=<id> per test,
+    # which each test checks so it never sees the containers of a test running beside it.
     env:
       GLAVE_TEST_POSTGRES_URL: postgres://postgres:glave@localhost:5432/postgres
       GLAVE_TEST_DOCKER: "1"
@@ -50,6 +51,14 @@ jobs:
       GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
       GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
     steps:
+      # Linking every test binary of the workspace fills the runner's disk (ld dies with a bus
+      # error), so the toolchains the runner ships and glave never uses go first (about 30 GB).
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
+          sudo docker image prune --all --force >/dev/null
+          df -h /
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
@@ -60,6 +69,9 @@ jobs:
         with:
           tool: cargo-nextest,cargo-deny
       - run: cargo xtask ci
+      - name: Disk space after the build
+        if: always()
+        run: df -h /
       - name: Nothing the Docker tests made is left behind
         if: always()
         run: |
@@ -134,6 +146,14 @@ jobs:
       GLAVE_TEST_WORKER_GLAVE: ${{ github.workspace }}/target/debug/glave
       GLAVE_TEST_WORKER_IMAGE: buildpack-deps:noble-scm@sha256:4163ac2c58660c533f3cf3d178551287ddd0ac18269ef84f3a382d0698c89254
     steps:
+      # Linking every test binary of the workspace fills the runner's disk (ld dies with a bus
+      # error), so the toolchains the runner ships and glave never uses go first (about 30 GB).
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
+          sudo docker image prune --all --force >/dev/null
+          df -h /
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
@@ -160,6 +180,9 @@ jobs:
           EOF
       - run: cargo build -p glave
       - run: cargo nextest run -p glave-computer --all-features -E 'test(/^worker::kubernetes::/)'
+      - name: Disk space after the build
+        if: always()
+        run: df -h /
       - name: Nothing the Kubernetes tests made is left behind
         if: always()
         run: |
@@ -175,6 +198,14 @@ jobs:
   sandbox-linux:
     runs-on: ubuntu-latest
     steps:
+      # Linking every test binary of the workspace fills the runner's disk (ld dies with a bus
+      # error), so the toolchains the runner ships and glave never uses go first (about 30 GB).
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium
+          sudo docker image prune --all --force >/dev/null
+          df -h /
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
@@ -208,6 +239,9 @@ jobs:
         env:
           GLAVE_REQUIRE_SANDBOX: "1"
         run: cargo nextest run -p glave-computer -p glave-harness -E 'test(/sandbox/)'
+      - name: Disk space after the build
+        if: always()
+        run: df -h /
 
   # macOS minutes cost 10x on private repos, so this runs on main only (and on demand).
   macos:

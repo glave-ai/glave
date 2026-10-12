@@ -1,0 +1,31 @@
+:host {
+  display: block;
+}
+
+.person {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  padding: var(--glz-space-2) var(--glz-space-2) var(--glz-space-2) var(--glz-space-4);
+}
+
+.avatar {
+  display: inline-flex;
+}
+
+.who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: var(--glz-leading-tight);
+}
+
+.name {
+  font-weight: var(--glz-weight-bold);
+}
+
+.how {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+}

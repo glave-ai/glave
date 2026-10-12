@@ -1,0 +1,31 @@
+<div class="files">
+  @for (file of files(); track file.path) {
+    <details class="file" data-testid="file">
+      <summary class="summary">
+        <span class="path">{{ file.path }}</span>
+        <span class="counts" aria-hidden="true">{{ file.counts }}</span>
+        <span class="glz-visually-hidden">{{ file.countsLabel }}</span>
+      </summary>
+      @for (change of file.changes; track change.key) {
+        <div class="change" data-testid="file-change">
+          <p class="note">{{ change.note }}</p>
+          <div class="diff">
+            @for (line of change.lines; track $index) {
+              <code class="line" [class]="line.kind"
+                ><span class="sign">{{ line.sign }}</span
+                >{{ line.text }}</code
+              >
+            }
+          </div>
+        </div>
+      }
+    </details>
+  } @empty {
+    <glz-empty-state [heading]="copy.emptyHeading" [icon]="icon">{{
+      copy.emptyText
+    }}</glz-empty-state>
+  }
+  @if (hasFiles()) {
+    <p class="note">{{ copy.commands }}</p>
+  }
+</div>

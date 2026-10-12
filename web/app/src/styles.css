@@ -1,1 +1,8 @@
-/* The app's own global styles: only what Glaze's base does not cover (nothing yet). */
+/*
+ * The app's own global styles: only Glaze tokens it sets for its layout. The side nav sits on
+ * the sunken surface, darker than the page, and the conversation reads in a column of 46rem.
+ */
+:root {
+  --glz-sidenav-surface: var(--glz-surface-sunken);
+  --glz-content-width: 46rem;
+}

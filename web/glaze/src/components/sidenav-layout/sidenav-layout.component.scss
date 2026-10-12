@@ -12,7 +12,11 @@
   width: var(--glz-sidenav-width);
   overflow-y: auto;
   border-right: var(--glz-border-width) solid var(--glz-color-border);
-  background: var(--glz-surface-card);
+  background: var(--glz-sidenav-surface);
+}
+
+.sidenav:focus {
+  outline: none;
 }
 
 :host(:not(.open)) .sidenav {
