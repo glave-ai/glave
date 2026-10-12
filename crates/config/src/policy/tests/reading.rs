@@ -346,12 +346,27 @@ fn a_cloud_provider_is_the_person_s_or_server_s_choice_and_typed() {
     assert!(shown.contains("azure (acme-openai)"), "{shown}");
     let bedrock = "[provider]\nname = \"bedrock\"\nregion = \"us-east-1\"\nendpoint = \"mantle\"\n";
     let read = files::config(bedrock, &home).unwrap().provider.unwrap();
-    assert_eq!(read.describe(), "bedrock (us-east-1, mantle)");
+    assert_eq!(
+        read.describe(),
+        "bedrock (us-east-1, mantle, API by model family)"
+    );
+    let vertex = "[provider]\nname = \"vertex\"\nproject = \"acme-ai\"\napi = \"anthropic\"\n";
+    let read = files::config(vertex, &home).unwrap().provider.unwrap();
+    assert_eq!(read.name(), "vertex");
+    assert_eq!(read.describe(), "vertex (acme-ai, global, api = anthropic)");
+    std::fs::write(home.join("config.toml"), vertex).unwrap();
+    let (shown, _) = explain(&load_all(&locations, None).unwrap(), Some("vertex"));
+    assert!(
+        shown.contains("vertex (acme-ai, global, api = anthropic)"),
+        "{shown}"
+    );
     for wrong in [
         "[provider]\nname = \"vertex\"\n",
         "[provider]\nname = \"azure\"\n",
         "[provider]\nname = \"azure\"\nresource = \"a\"\nregion = \"us-east-1\"\n",
         "[provider]\nname = \"bedrock\"\nregion = \"us-east-1\"\nendpoint = \"edge\"\n",
+        "[provider]\nname = \"vertex\"\nproject = \"acme-ai\"\napi = \"gemini\"\n",
+        "[provider]\nname = \"vertex\"\nproject = \"acme-ai\"\nregion = \"us-east5\"\n",
     ] {
         let refused = files::config(wrong, &locations.person)
             .unwrap_err()

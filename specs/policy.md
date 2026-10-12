@@ -15,7 +15,7 @@ First cut built, in the `glave-config` library (`crates/config/src/policy`), whi
 - Refused at load as not enforced yet, so glave will not run under them: `[budget]` in glave itself (only a gateway serving many keeps a daily budget; glave keeps budgets for one run), and `[workers] network = "allowlist"` (no egress allow-list on workers yet).
 - `[mcp] catalog` names the servers the organization offers; several catalogs narrow one another. A gateway serving many offers exactly those, from its own `mcp.json`, at `/mcp`, and refuses to start when one has no settings there (`gateway.md`, "Remote tools"). glave with `[gateway] url` takes the catalog from that gateway, and every server of the person's `mcp.json` is then their own. Without a gateway, the servers of the person's `mcp.json` the catalog names count as the catalog's, so `[mcp] own = false` leaves them on and refuses only the others; an organization that needs the catalog's settings out of people's hands serves it from a gateway.
 - `[gateway] url` (a choice, `https`, or `http` only to this computer) sends model calls to that gateway and adds its catalog (`gateway.md`, "Client mode"). Only the person's own `config.toml` sets it: a project's is ignored, since the person's sign-in goes there.
-- `[provider]` (a choice: `name = "azure"` with `resource` and optionally `scope`, or `name = "bedrock"` with `region` and optionally `endpoint`) takes a cloud contract's models in place of `GLAVE_BASE_URL`'s server (`gateway.md`, "Cloud contracts"); `[models]` rules then see `azure/<deployment>` or `bedrock/<model>`. Only the person's or the server's own `config.toml` sets it: a project's is ignored, since the organization's credentials go there. Keys still come only from the environment.
+- `[provider]` (a choice: `name = "azure"` with `resource` and optionally `scope`; `name = "bedrock"` with `region` and optionally `endpoint` and `api`; or `name = "vertex"` with `project` and optionally `location` and `api`) takes a cloud contract's models in place of `GLAVE_BASE_URL`'s server (`gateway.md`, "Cloud contracts"); `[models]` rules then see `azure/<deployment>`, `bedrock/<model>` or `vertex/<model>`. At Bedrock and Vertex, Claude goes by Anthropic's Messages API and other models by Chat Completions, unless `api = "anthropic"` or `"openai"` sends every model one way. `glave policy explain` shows the provider, where it is and which API. Only the person's or the server's own `config.toml` sets it: a project's is ignored, since the organization's credentials go there. Keys still come only from the environment.
 - `glave policy explain` prints every setting with its source, every rule with its file, and why glave would refuse to run; it exits non-zero when it would.
 
 Project trust (issue #83), in `crates/config/src/trust`:
@@ -113,7 +113,12 @@ resource = "acme-openai"                      # or its endpoint, https://acme.se
 # name = "bedrock"                            # or Amazon Bedrock; model = a Bedrock model id
 # region = "us-east-1"
 # endpoint = "mantle"                         # default "runtime"; "mantle" for models only it serves
+# name = "vertex"                            # or Google Vertex AI; model = google/gemini-3.5-flash, claude-opus-5-5
+# project = "acme-ai"
+# location = "global"                         # the default; or us, eu, or a region such as us-east5
+# api = "anthropic"                           # bedrock and vertex: every model by this API; by model family when absent
                                               # keys from the environment, else the workload's identity
+                                              # (vertex: Google Application Default Credentials)
 
 [telemetry]                                   # the person's or server's file only; off by default
 otlp = "http://localhost:4318"                # spans and metrics (never content) to this OTLP/HTTP collector
