@@ -322,6 +322,7 @@ mod tests {
                 space: None,
                 worktree: None,
                 background: false,
+                computer: None,
                 model: None,
             }
         );
@@ -334,6 +335,7 @@ mod tests {
                 space: None,
                 worktree: Some(true),
                 background: false,
+                computer: None,
                 model: None,
             }
         );

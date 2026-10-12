@@ -41,6 +41,7 @@ mod session {
                 space: None,
                 background: false,
                 worktree: None,
+                computer: None,
                 model: None,
             })
             .await

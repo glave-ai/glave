@@ -140,6 +140,7 @@ mod memory {
                     .unwrap(),
                 ),
                 auth: None,
+                trace: None,
             };
             let refused = server
                 .request_as(

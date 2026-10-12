@@ -32,6 +32,7 @@ mod sandbox;
 mod skills;
 mod standing;
 mod subagent;
+mod telemetry;
 mod todo;
 mod tools;
 mod toolset;

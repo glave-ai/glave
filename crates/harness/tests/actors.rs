@@ -103,6 +103,7 @@ mod actors {
             let signed_in = Caller {
                 person: Some(ada),
                 auth: Some(auth.clone()),
+                trace: None,
             };
             let mut thread = harness.start_thread_as(scope(), &signed_in).await.unwrap();
             for caller in [
@@ -110,6 +111,7 @@ mod actors {
                 &Caller {
                     person: owner,
                     auth: None,
+                    trace: None,
                 },
             ] {
                 harness

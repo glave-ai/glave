@@ -36,8 +36,18 @@ where
                 space,
                 worktree,
                 background,
+                computer,
                 model,
             } => {
+                if let Some(computer) = computer {
+                    return Err(ApiError::new(
+                        code::NOT_AVAILABLE,
+                        format!(
+                            "threads on a computer of your own (computer {computer}) are not \
+                             available yet: start the thread without `computer`"
+                        ),
+                    ));
+                }
                 let space = self.space_for(caller, space).await?.id;
                 let thread = self
                     .new_thread(caller, space, worktree, background, model.as_deref())

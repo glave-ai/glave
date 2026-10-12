@@ -160,6 +160,7 @@ mod spaces {
                 space: None,
                 worktree: None,
                 background: false,
+                computer: None,
                 model: None,
             };
             let theirs = ada.call(&start).await["result"]["thread"]["id"].clone();
@@ -229,6 +230,7 @@ mod spaces {
                     space: None,
                     worktree: None,
                     background: false,
+                    computer: None,
                     model: None,
                 })
                 .await;
@@ -277,10 +279,12 @@ mod spaces {
             let grace = Caller {
                 person: Some(person("https://id.example.com", "grace").unwrap()),
                 auth: None,
+                trace: None,
             };
             let linus = Caller {
                 person: Some(person("https://id.example.com", "linus").unwrap()),
                 auth: None,
+                trace: None,
             };
             let made = server
                 .request_as(
@@ -311,6 +315,7 @@ mod spaces {
                         space: Some(space.id),
                         worktree: None,
                         background: false,
+                        computer: None,
                         model: None,
                     },
                 )

@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 use deadpool_postgres::{Manager, ManagerConfig, Object, Pool, RecyclingMethod};
 use glave_keys::{KeySettings, Keys};
+use glave_ports::OrgId;
 use thiserror::Error;
-use tokio_postgres::{Config, NoTls};
+use tokio_postgres::Config;
 
 use crate::blobs::PostgresBlobs;
 use crate::keys::PostgresKeys;
@@ -14,6 +15,7 @@ use crate::log::PostgresLog;
 use crate::schema;
 use crate::spaces::PostgresSpaces;
 use crate::views::Rebuilt;
+use uuid::Uuid;
 
 /// Why the store could not open or answer.
 #[derive(Debug, Error)]
@@ -39,11 +41,14 @@ pub struct Store {
 
 impl Store {
     /// Connects to the database at `url` (`postgres://user:password@host/database`) and
-    /// brings its schema up to date. Content is sealed under keys that `keys.root` wraps.
+    /// brings its schema up to date. Content is sealed under keys that `keys.root` wraps. A
+    /// database on another computer is reached over TLS unless the URL says `sslmode=disable`.
     pub async fn connect(url: &str, keys: KeySettings) -> Result<Self, StoreError> {
-        let config = url
+        // The URL may hold a password, so the error never repeats it.
+        let mut config = url
             .parse::<Config>()
             .map_err(|e| StoreError::Connect(format!("the database URL is not valid: {e}")))?;
+        crate::tls::require_off_this_computer(&mut config);
         Self::connect_with(config, keys).await
     }
 
@@ -54,7 +59,7 @@ impl Store {
     pub async fn connect_with(config: Config, keys: KeySettings) -> Result<Self, StoreError> {
         let manager = Manager::from_config(
             config,
-            NoTls,
+            crate::tls::connector()?,
             ManagerConfig {
                 recycling_method: RecyclingMethod::Fast,
             },
@@ -95,6 +100,33 @@ impl Store {
     /// The keys content is sealed under, and erased by destroying.
     pub fn keys(&self) -> &PostgresKeyring {
         &self.keys
+    }
+
+    /// The keys, shared, for what destroys them (memory forgets by erasing a key).
+    pub fn keyring(&self) -> Arc<PostgresKeyring> {
+        Arc::clone(&self.keys)
+    }
+
+    /// The organization this database holds, made with the id `new` the first time.
+    pub async fn org(&self, new: Uuid) -> Result<OrgId, StoreError> {
+        let client = connection(&self.pool).await?;
+        let failed = |e: tokio_postgres::Error| StoreError::Storage(describe(&e));
+        client
+            .execute(
+                "INSERT INTO glave_settings (key, value) VALUES ('org', $1) ON CONFLICT DO NOTHING",
+                &[&new.to_string()],
+            )
+            .await
+            .map_err(failed)?;
+        let org: String = client
+            .query_one("SELECT value FROM glave_settings WHERE key = 'org'", &[])
+            .await
+            .map_err(failed)?
+            .try_get(0)
+            .map_err(failed)?;
+        Uuid::parse_str(&org)
+            .map(OrgId::from_uuid)
+            .map_err(|e| StoreError::Storage(format!("bad organization id {org:?}: {e}")))
     }
 }
 

@@ -13,6 +13,7 @@ mod log;
 mod schema;
 mod spaces;
 mod store;
+mod tls;
 mod views;
 
 pub use blobs::PostgresBlobs;

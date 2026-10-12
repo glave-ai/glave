@@ -16,6 +16,8 @@ rusqlite.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt"] }
+# A content-free span for each append.
+tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

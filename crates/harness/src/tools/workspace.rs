@@ -224,9 +224,15 @@ impl Workspace {
             timeout_secs: Some(timeout_secs),
             sandbox: self.sandbox.clone(),
         };
-        self.computers
-            .run(self.info.id, &command, output, cancel)
-            .await
+        let span = crate::telemetry::command();
+        let finished = tracing::Instrument::instrument(
+            self.computers.run(self.info.id, &command, output, cancel),
+            span.clone(),
+        )
+        .await;
+        let ended = finished.as_ref().ok();
+        crate::telemetry::command_ended(&span, ended.map(|done| (&done.ending, done.millis)));
+        finished
     }
 
     /// Records that the model has seen `content` as the current state of `path`.
