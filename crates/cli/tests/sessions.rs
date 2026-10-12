@@ -16,7 +16,8 @@ mod glave_binary {
     #[test]
     fn an_interactive_session_reads_lines_until_exit() {
         let place = place("interactive");
-        let server = FakeServer::start(vec![Reply::text("Hi there.")]).unwrap();
+        let server =
+            FakeServer::start(vec![Reply::text("Hi there."), Reply::text("Greeting")]).unwrap();
         let output = glave(
             &place,
             &server,
@@ -30,7 +31,11 @@ mod glave_binary {
             "the banner names the model and where it is served: {shown}"
         );
         assert!(shown.contains("Hi there."), "{shown}");
-        assert_eq!(server.received().len(), 1);
+        // After the first exchange, the model titles the thread before glave exits.
+        let received = server.received();
+        assert_eq!(received.len(), 2);
+        let titling = said(&received[1].body, "system").join("\n");
+        assert!(titling.contains("You name conversations"), "{titling}");
     }
 
     #[test]
@@ -60,6 +65,9 @@ mod glave_binary {
     #[test]
     fn slash_compact_summarizes_the_session() {
         let place = place("compact");
+        // No title: its call would race `/compact` for the fake model's replies.
+        std::fs::create_dir_all(&place.home).unwrap();
+        std::fs::write(place.home.join("config.toml"), "titles = false\n").unwrap();
         let server = FakeServer::start(vec![
             Reply::text("Hi there."),
             Reply::text("We greeted each other."),

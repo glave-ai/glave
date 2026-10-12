@@ -15,10 +15,12 @@ mod glave_binary {
 
     use super::support::*;
 
-    /// The model every glave here uses, the task host included, from `config.toml`.
+    /// The model every glave here uses, the task host included, from `config.toml`; no
+    /// titles, whose calls would race the next run for the fake model's replies.
     fn with_model(place: &Place) {
         std::fs::create_dir_all(&place.home).unwrap();
-        std::fs::write(place.home.join("config.toml"), "model = \"m\"\n").unwrap();
+        let config = "model = \"m\"\ntitles = false\n";
+        std::fs::write(place.home.join("config.toml"), config).unwrap();
     }
 
     #[test]

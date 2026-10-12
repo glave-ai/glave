@@ -1,0 +1,45 @@
+:host {
+  --app-folded-lines: 8;
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--glz-space-1);
+}
+
+.text {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+// Folded, the text shows its first lines; the rest is a click (or Enter) away.
+.folded {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--app-folded-lines);
+  line-clamp: var(--app-folded-lines);
+}
+
+.toggle {
+  padding: 0;
+  border: 0;
+  border-radius: var(--glz-radius-sm);
+  background: none;
+  color: var(--glz-color-text);
+  font: inherit;
+  font-size: var(--glz-text-sm);
+  font-weight: var(--glz-weight-bold);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  text-decoration-thickness: 2px;
+}
+
+.toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--glz-focus-ring);
+}

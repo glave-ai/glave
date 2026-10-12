@@ -28,6 +28,7 @@ anyhow.workspace = true
 getrandom.workspace = true
 glave-aws.workspace = true
 glave-azure.workspace = true
+glave-google.workspace = true
 glave-computer = { workspace = true, features = ["kubernetes"] }
 glave-config.workspace = true
 glave-event.workspace = true
@@ -64,6 +65,7 @@ uuid.workspace = true
 # The session API's fake identity provider signs the gateway's callers in.
 aws-lc-rs.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }
+glave-provider-anthropic = { workspace = true, features = ["fake-server"] }
 glave-provider-openai = { workspace = true, features = ["fake-server"] }
 hyper = { workspace = true, features = ["http1", "server"] }
 hyper-util = { workspace = true, features = ["tokio"] }

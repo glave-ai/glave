@@ -192,6 +192,9 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     settings.approval = choices.approval.value;
     settings.max_steps = args.max_steps;
     settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
+    // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt ends with its answer.
+    let one_shot = args.action == Action::Run && !args.prompt.is_empty();
+    settings.titles = choices.titles.value && !one_shot;
     settings.judge = judge.is_some();
     let identity = identity::load_or_make(&home::folder()?).await?;
     (settings.person, settings.agent) = (Some(identity.person), Some(identity.agent));
@@ -304,7 +307,7 @@ fn provider(setup: &Setup, endpoint: &Endpoint) -> anyhow::Result<(Gateway, Opti
             .map_or(&Source::Default, |m| &m.from),
     };
     let provider = gateway::gateway(
-        Model::for_endpoint(&endpoint.provider)?,
+        Model::for_endpoint(endpoint)?,
         endpoint,
         judge.as_deref(),
         offered(choices),

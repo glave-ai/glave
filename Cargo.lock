@@ -1281,6 +1281,7 @@ dependencies = [
  "glave-event",
  "glave-gateway",
  "glave-gateway-service",
+ "glave-google",
  "glave-harness",
  "glave-keys",
  "glave-mcp",

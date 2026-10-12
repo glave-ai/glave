@@ -162,7 +162,7 @@ async fn run(options: Options) -> anyhow::Result<()> {
         judge: &Source::Env("GLAVE_JUDGE_MODEL"),
         models: &Source::Default,
     };
-    let provider = Model::for_endpoint(&endpoint.provider)?;
+    let provider = Model::for_endpoint(&endpoint)?;
     let budgets = Budgets {
         person: constraints.person_per_day_micros().map(|micros| {
             Limit::Money(Money {
