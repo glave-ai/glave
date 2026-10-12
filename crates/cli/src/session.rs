@@ -303,7 +303,7 @@ fn provider(setup: &Setup, endpoint: &Endpoint) -> anyhow::Result<(Gateway, Opti
             .map_or(&Source::Default, |m| &m.from),
     };
     let provider = gateway::gateway(
-        Model::for_endpoint(&endpoint.provider)?,
+        Model::for_endpoint(endpoint)?,
         endpoint,
         judge.as_deref(),
         offered(choices),

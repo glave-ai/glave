@@ -11,7 +11,7 @@ use glave_config::policy::{Chosen, ProviderFile};
 use glave_ports::Failure;
 use glave_provider_openai::Config;
 
-use crate::model;
+use crate::model::{self, Claude};
 
 const DEFAULT_BASE_URL: &str = "http://localhost:11434/v1";
 
@@ -21,6 +21,8 @@ const KEY: &str = "GLAVE_API_KEY";
 /// The model endpoint and the model to use.
 pub struct Endpoint {
     pub provider: Config,
+    /// Claude's Messages API at the same cloud, for the models whose family speaks it.
+    pub claude: Option<Claude>,
     pub model: String,
     /// True when the model runs on this computer, so a missing cost means $0.
     pub local: bool,
@@ -53,14 +55,15 @@ pub fn endpoint(
                 chosen.from
             );
         }
-        let (provider, key_from) = contract::provider(chosen, &|name| std::env::var(name).ok())?;
+        let reached = contract::provider(chosen, &|name| std::env::var(name).ok())?;
         return Ok(Endpoint {
             local: false,
-            provider,
+            provider: reached.provider,
+            claude: reached.claude,
             model,
             gateway: None,
             at: format!("[provider] (from {})", chosen.from),
-            key_from: key_from.unwrap_or(KEY),
+            key_from: reached.key_from.unwrap_or(KEY),
         });
     }
     let base_url = std::env::var("GLAVE_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned());
@@ -77,6 +80,7 @@ pub fn endpoint(
     Ok(Endpoint {
         local: provider.is_local(),
         provider,
+        claude: None,
         model,
         gateway: None,
         at: "GLAVE_BASE_URL".to_owned(),
@@ -148,7 +152,9 @@ pub fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
             "{model} sent nothing for {} s: a slow local model may need a larger GLAVE_IDLE_TIMEOUT",
             endpoint.provider.idle_timeout.as_secs()
         ),
-        Failure::Malformed if model::speaks_anthropic(&endpoint.provider) => {
+        Failure::Malformed
+            if endpoint.claude.is_some() || model::speaks_anthropic(&endpoint.provider) =>
+        {
             format!("the server at {host} sent a response glave could not read")
         }
         Failure::Malformed => {
@@ -226,6 +232,7 @@ mod tests {
         Endpoint {
             local: provider.is_local(),
             provider,
+            claude: None,
             model: "anthropic/claude-haiku-5.5".into(),
             gateway: None,
             at: "GLAVE_BASE_URL".into(),

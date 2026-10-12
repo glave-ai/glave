@@ -1,5 +1,6 @@
-//! A cloud contract's models, as `[provider]` names them: Azure OpenAI or Amazon Bedrock, each
-//! through its OpenAI-compatible API, with a key from the environment or, keyless, the
+//! A cloud contract's models, as `[provider]` names them: Azure OpenAI, Amazon Bedrock or
+//! Google Vertex AI, each through its OpenAI-compatible API and, for Claude at Bedrock and
+//! Vertex, Anthropic's Messages API; with a key from the environment or, keyless, the
 //! workload's own identity (`specs/gateway.md`, "Cloud contracts").
 
 use std::sync::Arc;
@@ -7,10 +8,14 @@ use std::sync::Arc;
 use anyhow::{Context as _, bail};
 use glave_aws::{Endpoint as BedrockEndpoint, Region, SigV4, Source as AwsSource};
 use glave_azure::{DEFAULT_SCOPE, WorkloadIdentity};
-use glave_config::policy::{BedrockEndpointChoice, Chosen, ProviderFile, Source};
+use glave_config::policy::{ApiChoice, BedrockEndpointChoice, Chosen, ProviderFile, Source};
+use glave_google::{Adc, Vertex};
 use glave_ports::SystemClock;
 use glave_ports::auth::{Auth, KeyHeader};
+use glave_provider_anthropic::Api;
 use glave_provider_openai::{Config, IDLE_TIMEOUT};
+
+use crate::model::{Claude, Family};
 
 /// Variables that hold an Azure OpenAI key, in the order they are read.
 const AZURE_KEYS: &[&str] = &["GLAVE_API_KEY", "AZURE_OPENAI_API_KEY"];
@@ -18,35 +23,77 @@ const AZURE_KEYS: &[&str] = &["GLAVE_API_KEY", "AZURE_OPENAI_API_KEY"];
 /// Variables that hold a Bedrock API key, in the order they are read.
 const BEDROCK_KEYS: &[&str] = &["GLAVE_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"];
 
-/// Where a provider is, how it is reached, and the variable its key came from, if a key did.
-struct Reached {
-    base_url: String,
-    auth: Auth,
-    key_from: Option<&'static str>,
+/// How a cloud's models are reached.
+pub struct Reached {
+    /// Its OpenAI-compatible Chat Completions.
+    pub provider: Config,
+    /// Anthropic's Messages API there, for the models whose family speaks it.
+    pub claude: Option<Claude>,
+    /// The variable the key came from, if a key did.
+    pub key_from: Option<&'static str>,
 }
 
-/// The provider `[provider]` names, with credentials from `env`, and the variable its key
-/// came from, if a key did.
+/// The provider `[provider]` names, with credentials from `env`.
 pub fn provider(
     chosen: &Chosen<ProviderFile>,
     env: &dyn Fn(&str) -> Option<String>,
-) -> anyhow::Result<(Config, Option<&'static str>)> {
+) -> anyhow::Result<Reached> {
     let set = |name: &str| env(name).filter(|value| !value.trim().is_empty());
-    let reached = match &chosen.value {
-        ProviderFile::Azure { resource, scope } => {
-            azure(resource, scope.as_deref(), &chosen.from, &set)?
+    let name = chosen.value.name();
+    let from = &chosen.from;
+    match &chosen.value {
+        ProviderFile::Azure { resource, scope } => azure(resource, scope.as_deref(), from, &set),
+        ProviderFile::Bedrock {
+            region,
+            endpoint,
+            api,
+        } => bedrock(region, endpoint.unwrap_or_default(), *api, from, &set),
+        ProviderFile::Vertex {
+            project,
+            location,
+            api,
+        } => vertex(project, location.as_deref(), *api, from, &set),
+    }
+    .map(|mut reached| {
+        name.clone_into(&mut reached.provider.provider);
+        if let Some(claude) = &mut reached.claude {
+            name.clone_into(&mut claude.config.provider);
         }
-        ProviderFile::Bedrock { region, endpoint } => {
-            bedrock(region, endpoint.unwrap_or_default(), &chosen.from, &set)?
-        }
-    };
-    let config = Config {
-        base_url: reached.base_url,
-        auth: reached.auth,
-        provider: chosen.value.name().to_owned(),
+        reached
+    })
+}
+
+/// Chat Completions at `base_url`.
+fn chat(base_url: String, auth: Auth) -> Config {
+    Config {
+        base_url,
+        auth,
+        provider: String::new(),
         idle_timeout: IDLE_TIMEOUT,
+    }
+}
+
+/// Claude's Messages API at `base_url`, for the models `family` names, unless `api` sends
+/// every model through Chat Completions.
+fn claude(
+    base_url: String,
+    api: Api,
+    auth: Auth,
+    family: Family,
+    choice: Option<ApiChoice>,
+) -> Option<Claude> {
+    let models = match choice {
+        None => family,
+        Some(ApiChoice::Anthropic) => Family::All,
+        Some(ApiChoice::Openai) => return None,
     };
-    Ok((config, reached.key_from))
+    let config = glave_provider_anthropic::Config {
+        base_url,
+        api,
+        auth,
+        ..glave_provider_anthropic::Config::new(None)
+    };
+    Some(Claude { config, models })
 }
 
 /// The first of `names` that holds a key, and the key.
@@ -70,8 +117,8 @@ fn azure(
         .with_context(|| format!("[provider] resource (from {from})"))?;
     if let Some((name, key)) = key(AZURE_KEYS, set) {
         return Ok(Reached {
-            base_url,
-            auth: Auth::key(KeyHeader::ApiKey, key),
+            provider: chat(base_url, Auth::key(KeyHeader::ApiKey, key)),
+            claude: None,
             key_from: Some(name),
         });
     }
@@ -84,17 +131,18 @@ fn azure(
         );
     };
     Ok(Reached {
-        base_url,
-        auth: Auth::Changing(Arc::new(identity)),
+        provider: chat(base_url, Auth::Changing(Arc::new(identity))),
+        claude: None,
         key_from: None,
     })
 }
 
-/// Bedrock's OpenAI-compatible API in `region`: a Bedrock API key, else SigV4 with keys from
-/// the environment, IRSA or Pod Identity.
+/// Bedrock in `region`: Chat Completions, and Claude at the `/anthropic` route; a Bedrock API
+/// key, else SigV4 with keys from the environment, IRSA or Pod Identity.
 fn bedrock(
     region: &str,
     endpoint: BedrockEndpointChoice,
+    api: Option<ApiChoice>,
     from: &Source,
     set: &dyn Fn(&str) -> Option<String>,
 ) -> anyhow::Result<Reached> {
@@ -103,11 +151,22 @@ fn bedrock(
         BedrockEndpointChoice::Runtime => BedrockEndpoint::Runtime,
         BedrockEndpointChoice::Mantle => BedrockEndpoint::Mantle,
     };
-    let base_url = endpoint.base_url(&region);
+    let (base_url, messages) = (
+        endpoint.base_url(&region),
+        endpoint.anthropic_base_url(&region),
+    );
     if let Some((name, key)) = key(BEDROCK_KEYS, set) {
+        let auth = Auth::bearer(Some(key));
+        let claude_auth = auth.clone().in_header(KeyHeader::XApiKey);
         return Ok(Reached {
-            base_url,
-            auth: Auth::bearer(Some(key)),
+            provider: chat(base_url, auth),
+            claude: claude(
+                messages,
+                Api::Messages,
+                claude_auth,
+                Family::BedrockClaude,
+                api,
+            ),
             key_from: Some(name),
         });
     }
@@ -119,9 +178,30 @@ fn bedrock(
         );
     };
     let signer = SigV4::new(source, region, endpoint, Arc::new(SystemClock))?;
+    let auth = Auth::Changing(Arc::new(signer));
     Ok(Reached {
-        base_url,
-        auth: Auth::Changing(Arc::new(signer)),
+        provider: chat(base_url, auth.clone()),
+        claude: claude(messages, Api::Messages, auth, Family::BedrockClaude, api),
+        key_from: None,
+    })
+}
+
+/// Vertex AI's `project` at `location`: Chat Completions, and Claude through rawPredict, with
+/// Application Default Credentials (on GKE, the pod's workload identity).
+fn vertex(
+    project: &str,
+    location: Option<&str>,
+    api: Option<ApiChoice>,
+    from: &Source,
+    set: &dyn Fn(&str) -> Option<String>,
+) -> anyhow::Result<Reached> {
+    let vertex = Vertex::new(project, location.unwrap_or("global"))
+        .with_context(|| format!("[provider] project or location (from {from})"))?;
+    let adc = Adc::from_env(set, glave_google::SCOPE, Arc::new(SystemClock))?;
+    let auth = Auth::Changing(Arc::new(adc));
+    Ok(Reached {
+        provider: chat(vertex.openai_base_url(), auth.clone()),
+        claude: claude(vertex.base(), Api::Vertex, auth, Family::VertexClaude, api),
         key_from: None,
     })
 }
@@ -143,12 +223,16 @@ mod tests {
         }
     }
 
-    fn reach(text: &str, vars: &[(&str, &str)]) -> anyhow::Result<(Config, Option<&'static str>)> {
+    fn reached(text: &str, vars: &[(&str, &str)]) -> anyhow::Result<Reached> {
         let vars: HashMap<String, String> = vars
             .iter()
             .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
             .collect();
         provider(&chosen(text), &|name| vars.get(name).cloned())
+    }
+
+    fn reach(text: &str, vars: &[(&str, &str)]) -> anyhow::Result<(Config, Option<&'static str>)> {
+        reached(text, vars).map(|reached| (reached.provider, reached.key_from))
     }
 
     const AZURE: &str = "[provider]\nname = \"azure\"\nresource = \"acme-openai\"\n";
@@ -244,5 +328,109 @@ mod tests {
                 .map(glave_ports::auth::Secret::expose),
             Some("g-1")
         );
+    }
+
+    const VERTEX: &str = "[provider]\nname = \"vertex\"\nproject = \"acme-ai\"\n";
+
+    #[test]
+    fn vertex_reaches_gemini_and_claude_with_application_default_credentials() {
+        let gke = [("GCE_METADATA_HOST", "metadata.google.internal")];
+        let both = reached(VERTEX, &gke).unwrap();
+        assert_eq!(
+            both.provider.base_url,
+            "https://aiplatform.googleapis.com/v1/projects/acme-ai/locations/global/endpoints/openapi"
+        );
+        assert_eq!(both.provider.provider, "vertex");
+        assert_eq!(both.key_from, None);
+        assert!(
+            both.provider
+                .auth
+                .describe()
+                .contains("Application Default Credentials"),
+            "{}",
+            both.provider.auth.describe()
+        );
+        let claude = both.claude.unwrap();
+        assert_eq!(
+            claude.config.base_url,
+            "https://aiplatform.googleapis.com/v1/projects/acme-ai/locations/global"
+        );
+        assert_eq!(claude.config.api, Api::Vertex);
+        assert_eq!(claude.config.provider, "vertex");
+        assert_eq!(claude.models, Family::VertexClaude);
+        let regional = format!("{VERTEX}location = \"us-east5\"\napi = \"anthropic\"\n");
+        let claude = reached(&regional, &gke).unwrap().claude.unwrap();
+        assert!(
+            claude
+                .config
+                .base_url
+                .starts_with("https://us-east5-aiplatform.googleapis.com/")
+        );
+        assert_eq!(claude.models, Family::All);
+        let openai = format!("{VERTEX}api = \"openai\"\n");
+        assert!(reached(&openai, &gke).unwrap().claude.is_none());
+        let file = [("GOOGLE_APPLICATION_CREDENTIALS", "/var/run/google/sa.json")];
+        let named = reached(VERTEX, &file).unwrap();
+        assert!(
+            named
+                .provider
+                .auth
+                .describe()
+                .contains("/var/run/google/sa.json")
+        );
+        let wrong = "[provider]\nname = \"vertex\"\nproject = \"Acme AI\"\n";
+        let refused = format!("{:#}", reached(wrong, &gke).err().unwrap());
+        assert!(
+            refused.contains("[provider] project or location"),
+            "{refused}"
+        );
+    }
+
+    #[test]
+    fn claude_on_bedrock_shares_the_signer_or_takes_its_key_in_x_api_key() {
+        let keyed = reached(BEDROCK, &[("AWS_BEARER_TOKEN_BEDROCK", "bedrock-1")]).unwrap();
+        let claude = keyed.claude.unwrap();
+        assert_eq!(
+            claude.config.base_url,
+            "https://bedrock-runtime.eu-west-1.amazonaws.com/anthropic"
+        );
+        assert_eq!(claude.config.api, Api::Messages);
+        assert_eq!(claude.models, Family::BedrockClaude);
+        assert_eq!(claude.config.provider, "bedrock");
+        assert!(matches!(
+            claude.config.auth,
+            Auth::Key {
+                header: KeyHeader::XApiKey,
+                ..
+            }
+        ));
+        let keys = [
+            ("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE"),
+            ("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI"),
+        ];
+        let mantle = format!("{BEDROCK}endpoint = \"mantle\"\napi = \"anthropic\"\n");
+        let claude = reached(&mantle, &keys).unwrap().claude.unwrap();
+        assert_eq!(
+            claude.config.base_url,
+            "https://bedrock-mantle.eu-west-1.api.aws/anthropic"
+        );
+        assert_eq!(claude.models, Family::All);
+        assert!(
+            claude
+                .config
+                .auth
+                .describe()
+                .contains("SigV4 for bedrock-mantle"),
+            "{}",
+            claude.config.auth.describe()
+        );
+        let openai = format!("{BEDROCK}api = \"openai\"\n");
+        assert!(reached(&openai, &keys).unwrap().claude.is_none());
+    }
+
+    #[test]
+    fn azure_has_no_claude() {
+        let azure = reached(AZURE, &[("AZURE_OPENAI_API_KEY", "az-1")]).unwrap();
+        assert!(azure.claude.is_none());
     }
 }

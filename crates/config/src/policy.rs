@@ -8,6 +8,7 @@ mod explain;
 mod files;
 mod memory;
 mod placement;
+mod provider;
 mod redact;
 mod rules;
 #[cfg(test)]
@@ -24,11 +25,12 @@ pub use choices::{Choices, Chosen, Layer, Level, Source};
 pub use effective::{check_model, check_own_servers, unsandboxed};
 pub use explain::explain;
 pub use files::{
-    Approval, BedrockEndpointChoice, ConfigFile, HooksFile, ModelEntry, PolicyFile, ProviderFile,
-    SandboxChoice, ServerFile, StoreFile, TaskRules, TelemetryFile, config, signs_in_safely,
+    Approval, ConfigFile, HooksFile, ModelEntry, PolicyFile, SandboxChoice, ServerFile, StoreFile,
+    TaskRules, TelemetryFile, config, signs_in_safely,
 };
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use placement::{Placement, PlacementRules};
+pub use provider::{ApiChoice, BedrockEndpointChoice, ProviderFile};
 pub use redact::redacted;
 pub use rules::Constraints;
 pub use web::WebFile;
