@@ -406,7 +406,7 @@ where
             system: &offer.system,
             tools: &offer.specs,
             max_output_tokens: self.settings.max_output_tokens,
-            approval: self.settings.approval,
+            approval: self.approval_for(thread),
             sandbox: self.workspace_for(thread).sandbox().map(recorded),
             memory,
         };

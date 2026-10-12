@@ -4,6 +4,7 @@
 use glave_harness::{Caller, DEFAULT_BUDGET, Goal};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 
+use crate::modes::Choice;
 use crate::protocol::{ApiError, Reply, Request, code};
 use crate::schedule::NewSchedule;
 use crate::server::Server;
@@ -28,11 +29,14 @@ where
                 background: true,
                 budget,
                 model,
+                approval,
                 ..
-            } => self
-                .start_task(caller, thread, Work::Turn(prompt, model), budget, None)
-                .await
-                .map(|task| Reply::Task { task }),
+            } => {
+                let work = Work::Turn(prompt, Choice { model, approval });
+                self.start_task(caller, thread, work, budget, None)
+                    .await
+                    .map(|task| Reply::Task { task })
+            }
             Request::GoalStart {
                 thread,
                 objective,

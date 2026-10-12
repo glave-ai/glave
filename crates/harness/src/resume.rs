@@ -56,6 +56,7 @@ where
             memory: crate::memory::MemoryState::default(),
             for_: for_of(&events).or(self.actors.person),
             model: crate::chosen::chosen_in(&events),
+            approval: crate::chosen::approval_in(&events),
         };
         self.rebuild_memory(&mut thread, &events).await;
         self.repair(&mut thread, &events).await?;

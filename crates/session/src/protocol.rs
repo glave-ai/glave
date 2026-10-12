@@ -3,6 +3,7 @@
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
 mod models;
+mod modes;
 mod tasks;
 
 use glave_event::{
@@ -14,6 +15,7 @@ use glave_ports::{ComputerId, Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
 pub use models::ModelInfo;
+pub use modes::ApprovalMode;
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 
 /// The protocol version this server speaks.
@@ -50,6 +52,10 @@ pub enum Request {
         /// when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
+        /// How much the thread's turns ask before acting, one of the server's `approvals`;
+        /// the server's own mode when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        approval: Option<ApprovalMode>,
     },
     #[serde(rename = "thread/list")]
     ThreadList {
@@ -101,6 +107,10 @@ pub enum Request {
         /// names. The thread's latest choice when absent, else the server's default.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
+        /// How much this turn, and the thread's turns after it, ask before acting: one of the
+        /// server's `approvals`. The thread's latest choice when absent, else the server's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        approval: Option<ApprovalMode>,
         #[serde(rename = "_meta", default, skip_serializing_if = "Meta::is_empty")]
         meta: Meta,
     },
@@ -393,19 +403,12 @@ pub struct ServerInfo {
     pub version: String,
     /// The protocol versions spoken.
     pub protocols: Vec<String>,
-    /// How much this server asks before acting, in every thread it runs: `--approval` or
-    /// `approval` in `config.toml` (`specs/approvals.md`). Choosing it per thread comes later.
+    /// How much this server asks before acting in a thread that chose no mode: `--approval` or
+    /// `approval` in `config.toml` (`specs/approvals.md`).
     pub approval: ApprovalMode,
-}
-
-/// How much glave asks before acting (`specs/approvals.md`, "Modes").
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ApprovalMode {
-    /// The cautious mode: ask before every change and every command.
-    Ask,
-    /// Changes and commands go through; risky ones still ask.
-    Auto,
+    /// The modes a thread may choose (`approval` on `thread/start` and `turn/start`): those
+    /// the policy leaves, cautious first.
+    pub approvals: Vec<ApprovalMode>,
 }
 
 /// A thread, as a list shows it: from the threads view, with what it is doing now.
@@ -418,6 +421,8 @@ pub struct ThreadSummary {
     /// The title the person gave it, else the first line of their first message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// How much its turns ask before acting: the mode last chosen for it, else the server's.
+    pub approval: ApprovalMode,
     /// Whose work it is; absent in threads from before it was recorded (the local person).
     #[serde(rename = "for", default, skip_serializing_if = "Option::is_none")]
     pub for_: Option<Principal>,

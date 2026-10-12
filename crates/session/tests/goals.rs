@@ -51,6 +51,7 @@ mod goals {
                 worktree: None,
                 computer: None,
                 model: None,
+                approval: None,
             })
             .await
             .unwrap()

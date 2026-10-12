@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use glave_harness::Hook;
 
 pub use choices::{Choices, Chosen, Layer, Level, Source};
-pub use effective::{check_model, check_own_servers, unsandboxed};
+pub use effective::{check_model, check_own_servers, thread_modes, unsandboxed};
 pub use explain::explain;
 pub use files::{
     Approval, ConfigFile, HooksFile, ModelEntry, PolicyFile, SandboxChoice, ServerFile, StoreFile,
