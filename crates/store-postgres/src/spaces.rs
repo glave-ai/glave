@@ -8,7 +8,7 @@ use jiff::Timestamp;
 use tokio_postgres::Row;
 use uuid::Uuid;
 
-use crate::store::{connection, describe};
+use crate::store::{connection, database};
 
 /// The spaces in the database.
 #[derive(Clone)]
@@ -20,14 +20,6 @@ impl PostgresSpaces {
     pub(crate) fn new(pool: Pool) -> Self {
         Self { pool }
     }
-}
-
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "taken by value to pass straight to map_err"
-)]
-fn database(error: tokio_postgres::Error) -> SpaceError {
-    SpaceError::Storage(format!("the database failed: {}", describe(&error)))
 }
 
 fn corrupt(error: impl std::fmt::Display) -> SpaceError {
@@ -62,7 +54,7 @@ async fn assemble<C: GenericClient>(client: &C, org: Uuid, row: &Row) -> Result<
             &[&org, &id],
         )
         .await
-        .map_err(database)?
+        .map_err(database(SpaceError::Storage))?
         .iter()
         .map(|member| {
             let text: String = member.try_get(0).map_err(corrupt)?;
@@ -88,7 +80,7 @@ async fn get_now<C: GenericClient>(
     let row = client
         .query_opt(&format!("{SELECT} AND id = $2"), &[&org, &id])
         .await
-        .map_err(database)?;
+        .map_err(database(SpaceError::Storage))?;
     match row {
         Some(row) => Ok(Some(assemble(client, org, &row).await?)),
         None => Ok(None),
@@ -107,7 +99,7 @@ async fn write_members<C: GenericClient>(
             &[&org, &id],
         )
         .await
-        .map_err(database)?;
+        .map_err(database(SpaceError::Storage))?;
     for (position, member) in (0_i64..).zip(&space.members) {
         client
             .execute(
@@ -115,7 +107,7 @@ async fn write_members<C: GenericClient>(
                 &[&org, &id, &position, &principal_text(member)?],
             )
             .await
-            .map_err(database)?;
+            .map_err(database(SpaceError::Storage))?;
     }
     Ok(())
 }
@@ -142,7 +134,7 @@ async fn insert<C: GenericClient>(
             ],
         )
         .await
-        .map_err(database)?;
+        .map_err(database(SpaceError::Storage))?;
     if inserted == 0 {
         return Ok(false);
     }
@@ -159,7 +151,10 @@ impl PostgresSpaces {
         }
         let org = org.as_uuid();
         let mut client = connection(&self.pool).await.map_err(unavailable)?;
-        let transaction = client.transaction().await.map_err(database)?;
+        let transaction = client
+            .transaction()
+            .await
+            .map_err(database(SpaceError::Storage))?;
         insert(&transaction, org, new).await?;
         let row = transaction
             .query_one(
@@ -167,9 +162,12 @@ impl PostgresSpaces {
                 &[&org, &principal_text(&new.owner)?],
             )
             .await
-            .map_err(database)?;
+            .map_err(database(SpaceError::Storage))?;
         let space = assemble(&transaction, org, &row).await?;
-        transaction.commit().await.map_err(database)?;
+        transaction
+            .commit()
+            .await
+            .map_err(database(SpaceError::Storage))?;
         Ok(space)
     }
 
@@ -181,7 +179,10 @@ impl PostgresSpaces {
     ) -> Result<Space, SpaceError> {
         let org = org.as_uuid();
         let mut client = connection(&self.pool).await.map_err(unavailable)?;
-        let transaction = client.transaction().await.map_err(database)?;
+        let transaction = client
+            .transaction()
+            .await
+            .map_err(database(SpaceError::Storage))?;
         let mut found = None;
         for key in keys {
             let row = transaction
@@ -190,7 +191,7 @@ impl PostgresSpaces {
                     &[&org, &key.stored()],
                 )
                 .await
-                .map_err(database)?;
+                .map_err(database(SpaceError::Storage))?;
             if let Some(row) = row {
                 found = Some(row.try_get::<_, Uuid>(0).map_err(corrupt)?);
                 break;
@@ -212,7 +213,7 @@ impl PostgresSpaces {
                     &[&org, &key.stored(), &id],
                 )
                 .await
-                .map_err(database)?;
+                .map_err(database(SpaceError::Storage))?;
         }
         // Another writer may have led the first key elsewhere meanwhile: theirs stands.
         if made && let Some(first) = keys.first() {
@@ -222,7 +223,7 @@ impl PostgresSpaces {
                     &[&org, &first.stored()],
                 )
                 .await
-                .map_err(database)?;
+                .map_err(database(SpaceError::Storage))?;
             let led: Uuid = row.try_get(0).map_err(corrupt)?;
             if led != id {
                 transaction
@@ -231,14 +232,17 @@ impl PostgresSpaces {
                         &[&org, &id],
                     )
                     .await
-                    .map_err(database)?;
+                    .map_err(database(SpaceError::Storage))?;
                 id = led;
             }
         }
         let space = get_now(&transaction, org, id)
             .await?
             .ok_or_else(|| corrupt("a folder leads nowhere"))?;
-        transaction.commit().await.map_err(database)?;
+        transaction
+            .commit()
+            .await
+            .map_err(database(SpaceError::Storage))?;
         Ok(space)
     }
 }
@@ -286,7 +290,7 @@ impl Spaces for PostgresSpaces {
                     &[&org, &member, &limit],
                 )
                 .await
-                .map_err(database)?;
+                .map_err(database(SpaceError::Storage))?;
             let mut spaces = Vec::with_capacity(rows.len());
             for row in &rows {
                 spaces.push(assemble(&client, org, row).await?);
@@ -300,7 +304,10 @@ impl Spaces for PostgresSpaces {
             Space::check_name(&space.name)?;
             let org = org.as_uuid();
             let mut client = connection(&self.pool).await.map_err(unavailable)?;
-            let transaction = client.transaction().await.map_err(database)?;
+            let transaction = client
+                .transaction()
+                .await
+                .map_err(database(SpaceError::Storage))?;
             let changed = transaction
                 .execute(
                     "UPDATE space_records SET name = $3, updated_at = $4
@@ -313,12 +320,15 @@ impl Spaces for PostgresSpaces {
                     ],
                 )
                 .await
-                .map_err(database)?;
+                .map_err(database(SpaceError::Storage))?;
             if changed == 0 {
                 return Err(SpaceError::NotFound(space.id));
             }
             write_members(&transaction, org, space).await?;
-            transaction.commit().await.map_err(database)
+            transaction
+                .commit()
+                .await
+                .map_err(database(SpaceError::Storage))
         })
     }
 

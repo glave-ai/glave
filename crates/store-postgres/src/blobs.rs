@@ -8,7 +8,7 @@ use deadpool_postgres::Pool;
 use glave_event::{BlobRef, Sha256, ThreadId};
 use glave_ports::{BlobError, BlobStore, Scope, digest};
 
-use crate::store::{PostgresKeyring, connection, describe};
+use crate::store::{PostgresKeyring, connection, database};
 
 /// The blob store in the database.
 #[derive(Clone)]
@@ -46,7 +46,10 @@ impl BlobStore for PostgresBlobs {
             let mut client = connection(&this.pool)
                 .await
                 .map_err(|e| BlobError::Storage(e.to_string()))?;
-            let transaction = client.transaction().await.map_err(database)?;
+            let transaction = client
+                .transaction()
+                .await
+                .map_err(database(BlobError::Storage))?;
             // Storing it again re-seals it under this month's key.
             transaction
                 .execute(
@@ -65,7 +68,7 @@ impl BlobStore for PostgresBlobs {
                     ],
                 )
                 .await
-                .map_err(database)?;
+                .map_err(database(BlobError::Storage))?;
             transaction
                 .execute(
                     "INSERT INTO blob_threads (org, space, name, thread)
@@ -73,8 +76,11 @@ impl BlobStore for PostgresBlobs {
                     &[&org, &space, &name, &thread.as_uuid()],
                 )
                 .await
-                .map_err(database)?;
-            transaction.commit().await.map_err(database)?;
+                .map_err(database(BlobError::Storage))?;
+            transaction
+                .commit()
+                .await
+                .map_err(database(BlobError::Storage))?;
             Ok(BlobRef {
                 sha256,
                 bytes: size,
@@ -109,10 +115,10 @@ impl BlobStore for PostgresBlobs {
                         &[&org, &space, &name],
                     )
                     .await
-                    .map_err(database)?;
+                    .map_err(database(BlobError::Storage))?;
                 if let Some(row) = row {
-                    let bytes: Vec<u8> = row.try_get(0).map_err(database)?;
-                    let key_id: String = row.try_get(1).map_err(database)?;
+                    let bytes: Vec<u8> = row.try_get(0).map_err(database(BlobError::Storage))?;
+                    let key_id: String = row.try_get(1).map_err(database(BlobError::Storage))?;
                     return this
                         .keys
                         .open_blob(&scope, &name, &key_id, &bytes)
@@ -131,16 +137,10 @@ impl BlobStore for PostgresBlobs {
                     &[&org, &space, &sha256.as_str()],
                 )
                 .await
-                .map_err(database)?;
-            row.map(|row| row.try_get(0)).transpose().map_err(database)
+                .map_err(database(BlobError::Storage))?;
+            row.map(|row| row.try_get(0))
+                .transpose()
+                .map_err(database(BlobError::Storage))
         }
     }
-}
-
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "taken by value to pass straight to map_err"
-)]
-fn database(error: tokio_postgres::Error) -> BlobError {
-    BlobError::Storage(format!("the database failed: {}", describe(&error)))
 }

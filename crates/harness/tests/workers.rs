@@ -20,7 +20,8 @@ mod workers {
     use glave_event::{Body, ComputerKind, Event, Opened, RemovedReason, StopReason};
     use glave_harness::{AllowAll, Caller, Cancel, HarnessError, Place, Workers, wip_branch};
     use glave_ports::{
-        Bytes, Completion, Environment, EventLog as _, FileWrite, MemoryLog, Sources,
+        Bytes, Completion, Environment, EventLog as _, FileWrite, MemoryLog, Sources, Standing,
+        ThreadQuery,
     };
     use serde_json::json;
 
@@ -348,7 +349,13 @@ mod workers {
                 "{:?}",
                 refused.err()
             );
-            assert_eq!(harness.log().threads(&scope(), 10).await.unwrap(), []);
+            let query = ThreadQuery {
+                standing: Standing::Active,
+                limit: 10,
+                after: None,
+            };
+            let listed = harness.log().thread_views(&scope(), &query).await.unwrap();
+            assert_eq!(listed, []);
         });
     }
 }

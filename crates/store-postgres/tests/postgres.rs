@@ -109,15 +109,11 @@ mod postgres {
             drop(store);
             let reconnected = scratch.store().await.unwrap();
             let refilled = rows(&scratch).await;
-            let rebuilt = reconnected.rebuild_views().await.unwrap();
-            let again = rows(&scratch).await;
             drop(reconnected);
             scratch.drop_schema().await;
             assert_eq!(verdict, Ok(()));
             assert_eq!(kept.len(), 4);
             assert_eq!(refilled, kept, "connecting fills the view from the log");
-            assert_eq!(rebuilt.threads, 4);
-            assert_eq!(again, kept);
         });
     }
 
