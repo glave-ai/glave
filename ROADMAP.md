@@ -8,8 +8,8 @@ An open-source Claude.ai or ChatGPT that you run yourself, where any conversatio
 
 Glave is to OpenAI and Anthropic what GitLab is to GitHub. It's the same product for everyone, run wherever you choose:
 
+- **People** run it on a laptop or a small server: your own AI, free, private and yours, with nothing to set up.
 - **Companies** self-host it on their own infrastructure, under their sign-in, models, data and policy.
-- **People** run it on a laptop or a small server, with the same software and simple defaults.
 - **Glave Cloud** (glave.ai, later) is the same software, hosted by us for many organizations.
 
 It's one binary, used in the browser. Everything that differs between a person and a company sits behind a seam: a built-in default that needs no setup, and a protocol for plugging in your own. A person never sees the enterprise side (AGENTS.md, "Keeping principle 4").
@@ -59,7 +59,8 @@ The pilot's pieces, hardened. Then:
 | Glave Cloud | The same software hosted for many organizations: multi-tenancy, sign-up, billing |
 | Hope, trained and hosted | A free model tuned for glave. Training on rented GPUs; private hosted inference on confidential GPUs |
 | The tools panel's terminal and live previews | After the credential proxy keeps secrets out of the computer (#225) |
-| The agent's browser, voice, knowledge pack | #95, #58, #144 |
+| Voice: an assistant that's always ready, with a wake word, listening, speaking | #58 |
+| The agent's browser, the knowledge pack | #95, #144 |
 | SCIM, SAML, SIEM export, chargeback | When an organization asks |
 
 ## How we decide
