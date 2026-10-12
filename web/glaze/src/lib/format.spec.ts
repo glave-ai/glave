@@ -1,4 +1,4 @@
-import { formatBytes, formatDuration, formatMoney, formatTokens, initials } from './format';
+import { formatDuration, formatMoney, formatTokens, initials } from './format';
 
 describe('format', () => {
   it('shows money exactly enough', () => {
@@ -27,11 +27,5 @@ describe('format', () => {
     expect(initials(' hope ')).toBe('H');
     expect(initials('Grace Brewster Hopper')).toBe('GH');
     expect(initials('')).toBe('');
-  });
-
-  it('shortens file sizes', () => {
-    expect(formatBytes(512)).toBe('512 B');
-    expect(formatBytes(12_400)).toBe('12 KB');
-    expect(formatBytes(3_565_158)).toBe('3.4 MB');
   });
 });

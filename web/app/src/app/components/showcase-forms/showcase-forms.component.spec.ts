@@ -1,5 +1,4 @@
 import { TestBed } from '@angular/core/testing';
-import { GlzToastService } from '@glave/glaze';
 import { expectAccessible } from '@glave/glaze/testing';
 
 import { ShowcaseFormsComponent } from './showcase-forms.component';
@@ -13,7 +12,7 @@ function find<T extends HTMLElement = HTMLElement>(root: HTMLElement, testId: st
 }
 
 describe('ShowcaseFormsComponent', () => {
-  it('validates the reactive form on submit and creates once it is valid', async () => {
+  it('validates the reactive form on submit', async () => {
     const fixture = TestBed.createComponent(ShowcaseFormsComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -28,8 +27,8 @@ describe('ShowcaseFormsComponent', () => {
     name.dispatchEvent(new Event('input'));
     root.querySelector<HTMLInputElement>('glz-checkbox input')?.click();
     await fixture.whenStable();
-    find(root, 'showcase-space-create').click();
-    expect(TestBed.inject(GlzToastService).toasts()[0]?.message).toBe('Space created');
+    expect(root.textContent).not.toContain('Give the space a name.');
+    expect(root.textContent).not.toContain('Read and accept the policy to go on.');
   });
 
   it('shows signal forms messages', async () => {

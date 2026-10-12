@@ -1,21 +1,17 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import {
   GlzBadgeComponent,
-  GlzBreadcrumbComponent,
-  GlzBreadcrumbsComponent,
   GlzIconButtonComponent,
   GlzIconComponent,
   GlzNavItemComponent,
   GlzNavListComponent,
   GlzPanelLayoutComponent,
-  GlzRailComponent,
-  GlzRailItemComponent,
   GlzSidenavLayoutComponent,
   GlzTabComponent,
   GlzTabsComponent,
   GlzTopBarComponent,
 } from '@glave/glaze';
-import { Brain, Hash, ListChecks, Menu, MessagesSquare, PanelRight, Plus, Settings } from 'lucide';
+import { Hash, Menu, PanelRight, Plus } from 'lucide';
 
 const COPY = {
   heading: 'Layout and navigation',
@@ -27,16 +23,8 @@ const COPY = {
   conversationText: 'The messages, as the person and the model wrote them.',
   eventsText: 'Every event in the log, in order.',
   costText: 'Tokens and money, call by call.',
-  breadcrumbs: 'Breadcrumbs',
-  space: 'glave',
   threads: 'Threads',
-  thread: 'Plan the launch',
-  nav: 'Rail, side nav, lists and panel',
-  main: 'Main',
-  chat: 'Chat',
-  tasks: 'Tasks',
-  memory: 'Memory',
-  settings: 'Settings',
+  nav: 'Side nav, lists and panel',
   menu: 'Show or hide the side nav',
   sideNav: 'Spaces and threads',
   today: 'Today',
@@ -54,20 +42,16 @@ const COPY = {
   detailsText: 'A panel at the end: drag its edge, or use the arrow keys on it, to resize it.',
 } as const;
 
-/** The showcase's tabs, breadcrumbs, rail, side nav, lists, panel and top bar. */
+/** The showcase's tabs, side nav, lists, panel and top bar. */
 @Component({
   selector: 'app-showcase-layout',
   imports: [
     GlzBadgeComponent,
-    GlzBreadcrumbComponent,
-    GlzBreadcrumbsComponent,
     GlzIconButtonComponent,
     GlzIconComponent,
     GlzNavItemComponent,
     GlzNavListComponent,
     GlzPanelLayoutComponent,
-    GlzRailComponent,
-    GlzRailItemComponent,
     GlzSidenavLayoutComponent,
     GlzTabComponent,
     GlzTabsComponent,
@@ -80,10 +64,6 @@ const COPY = {
 export class ShowcaseLayoutComponent {
   protected readonly copy = COPY;
   protected readonly icons = {
-    chat: MessagesSquare,
-    tasks: ListChecks,
-    memory: Brain,
-    settings: Settings,
     menu: Menu,
     thread: Hash,
     panel: PanelRight,

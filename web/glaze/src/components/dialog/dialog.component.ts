@@ -2,7 +2,6 @@ import {
   ChangeDetectionStrategy,
   Component,
   type ElementRef,
-  booleanAttribute,
   computed,
   effect,
   input,
@@ -19,14 +18,11 @@ import { testIds } from '../../lib/test-ids';
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { close: 'close' } as const;
 
-/** How a dialog shows: centred, or as a drawer along one side. */
-export type GlzDialogKind = 'dialog' | 'drawer-start' | 'drawer-end';
-
 /**
- * A modal dialog or drawer: the native `<dialog>` opened with `showModal()`, so the browser
- * puts it in the top layer, makes the page behind it inert, moves focus in, closes it on
- * Escape and returns focus after. Named by its heading; a close button, the content, and
- * actions at the end (`[glzDialogActions]`). `open` is bound two ways.
+ * A modal dialog: the native `<dialog>` opened with `showModal()`, so the browser puts it in
+ * the top layer, makes the page behind it inert, moves focus in, closes it on Escape and
+ * returns focus after; a click on the backdrop closes it too. Named by its heading; a close
+ * button, the content, and actions at the end (`[glzDialogActions]`). `open` is bound two ways.
  *
  * ```html
  * <glz-dialog heading="Rename the thread" [(open)]="renaming">
@@ -53,15 +49,10 @@ export class GlzDialogComponent {
   readonly heading = input.required<string>();
   /** Whether the dialog is open. */
   readonly open = model(false);
-  readonly kind = input<GlzDialogKind>('dialog');
-  /** Whether a click on the backdrop closes it, as Escape always does. */
-  readonly dismissible = input(true, { transform: booleanAttribute });
-  /** The close button's name. */
-  readonly closeLabel = input('Close');
 
   protected readonly headingId = injectId('glz-dialog-heading');
   protected readonly closeIcon = X;
-  protected readonly kindClass = computed(() => `dialog ${this.kind()}`);
+  protected readonly closeLabel = 'Close';
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   constructor() {
@@ -87,7 +78,7 @@ export class GlzDialogComponent {
 
   /** A click on the dialog element itself, outside its content, is on the backdrop. */
   protected clicked(event: MouseEvent): void {
-    if (this.dismissible() && event.target === this.dialog().nativeElement) {
+    if (event.target === this.dialog().nativeElement) {
       this.close();
     }
   }

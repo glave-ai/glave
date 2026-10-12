@@ -47,6 +47,18 @@ class ModelHostComponent {
   readonly on = signal(false);
 }
 
+@Component({
+  imports: [GlzCheckboxComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `<glz-checkbox testId="checkbox" [(checked)]="on" (touch)="touched.set(true)"
+    >On</glz-checkbox
+  >`,
+})
+class TouchHostComponent {
+  readonly on = signal(false);
+  readonly touched = signal(false);
+}
+
 function box(root: HTMLElement): HTMLInputElement {
   const input = root.querySelector<HTMLInputElement>('[data-testid="checkbox-input"]');
   if (input === null) {
@@ -71,8 +83,10 @@ describe('GlzCheckboxComponent', () => {
     expect(fixture.componentInstance.agree.value).toBe(true);
     expect(root.textContent).not.toContain('Agree to go on.');
     fixture.componentInstance.agree.setValue(false);
+    fixture.componentInstance.agree.disable();
     await fixture.whenStable();
     expect(input.checked).toBe(false);
+    expect(input.disabled).toBe(true);
     await expectAccessible(root);
   });
 
@@ -92,5 +106,16 @@ describe('GlzCheckboxComponent', () => {
     const input = box(fixture.nativeElement);
     expect(input.indeterminate).toBe(true);
     expect(input.disabled).toBe(true);
+  });
+
+  it('binds a model and says when it is touched', async () => {
+    const fixture = TestBed.createComponent(TouchHostComponent);
+    await fixture.whenStable();
+    const input = box(fixture.nativeElement);
+    input.click();
+    input.dispatchEvent(new Event('blur'));
+    await fixture.whenStable();
+    expect(fixture.componentInstance.on()).toBe(true);
+    expect(fixture.componentInstance.touched()).toBe(true);
   });
 });
