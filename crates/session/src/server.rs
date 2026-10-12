@@ -24,7 +24,8 @@ use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
 use crate::ledger::{Ledger, is_ledger};
 use crate::protocol::{
-    ApiError, ErrorData, ModelInfo, Notification, PROTOCOL, Reply, Request, ServerInfo, code,
+    ApiError, ApprovalMode, ErrorData, ModelInfo, Notification, PROTOCOL, Reply, Request,
+    ServerInfo, code,
 };
 use crate::spaces::Places;
 use crate::tasks::{TaskLimits, Tasks};
@@ -106,6 +107,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) model: String,
     /// The models threads may be sent to, the default first.
     pub(crate) models: Vec<ModelInfo>,
+    /// How much the harness asks before acting, in every thread.
+    pub(crate) approval: ApprovalMode,
     /// The space's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
@@ -142,6 +145,10 @@ where
         let entropy: Arc<dyn Entropy> = Arc::from(wiring.entropy);
         let model = settings.model.clone();
         let person = settings.person;
+        let approval = match settings.approval {
+            glave_harness::ApprovalMode::Ask => ApprovalMode::Ask,
+            glave_harness::ApprovalMode::Auto => ApprovalMode::Auto,
+        };
         let parts = Parts {
             provider: wiring.provider,
             log: Observed::new(wiring.log, Arc::clone(&hub)),
@@ -167,6 +174,7 @@ where
                 entropy,
                 models: crate::models::catalog(&model, wiring.models),
                 model,
+                approval,
                 person,
                 limits: wiring.tasks,
                 memory: wiring.memory,
@@ -211,6 +219,7 @@ where
                 name: "glave".to_owned(),
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 protocols: vec![PROTOCOL.to_owned()],
+                approval: self.inner.approval,
             })),
             Request::ModelList {} => Ok(self.list_models()),
             threads @ (Request::ThreadStart { .. }

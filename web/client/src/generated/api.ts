@@ -14,6 +14,9 @@ export type ApiError = {
   readonly message: string;
 };
 
+/** How much glave asks before acting (`specs/approvals.md`, "Modes"). */
+export type ApprovalMode = "ask" | "auto";
+
 /**
  * When an event was recorded, in UTC at millisecond precision. For people only: events are
  * ordered by [`Seq`]. Always written with three fractional digits, such as
@@ -208,6 +211,11 @@ export type Seq = number;
 
 /** What the server is. */
 export type ServerInfo = {
+  /**
+   * How much this server asks before acting, in every thread it runs: `--approval` or
+   * `approval` in `config.toml` (`specs/approvals.md`). Choosing it per thread comes later.
+   */
+  readonly approval: ApprovalMode;
   readonly name: string;
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
