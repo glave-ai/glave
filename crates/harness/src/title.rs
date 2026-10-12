@@ -4,16 +4,19 @@
 //! replaced, and when the call fails nothing is recorded: the thread keeps the title its first
 //! message gives it.
 
-use glave_event::{Part, Principal, ThreadId, ThreadRenamed};
+use glave_event::{
+    At, EventId, Header, Part, Payload, Principal, RawEvent, Seq, ThreadId, ThreadRenamed, encode,
+};
 use glave_ports::{
-    BlobStore, Completion, EventLog, Message, ModelProvider, ModelRequest, Purpose, TITLE_CHARS,
-    ToolChoice,
+    BlobStore, Completion, EventLog, LogError, Message, ModelProvider, ModelRequest, Purpose,
+    Scope, TITLE_CHARS, ToolChoice,
 };
 
 use crate::approval::Approver;
 use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
-use crate::standing::Standing;
+use crate::removed::last_event;
+use crate::standing::{Standing, standing_of};
 use crate::untrusted::defuse;
 
 /// The most of the person's first message the model reads, in characters.
@@ -22,6 +25,8 @@ const MOST_ASKED: usize = 1_200;
 const MOST_REPLY: usize = 800;
 /// The longest answer: a title is a few words, with room for models that reason first.
 const MOST_OUTPUT_TOKENS: u32 = 512;
+/// How many times recording a title starts over when another write lands first.
+const TRIES: usize = 8;
 
 const PROMPT: &str = "\
 You name conversations so a person can find them again later. You are shown the person's \
@@ -123,36 +128,81 @@ where
         })
     }
 
-    /// Records `titled` in `thread`: the call's usage, then its title as `thread.renamed` by
-    /// glave, unless the thread already has a title someone gave it. A deleted thread is no
-    /// longer there to title.
+    /// Records `titled` in `thread`, in `scope`: the call's usage, then its title as
+    /// `thread.renamed` by glave, unless the thread already has a title someone gave it. They
+    /// are written straight after the thread's last event, never through a held thread, so no
+    /// turn waits for them: a harness running a turn takes them in (`outside.rs`). When another
+    /// write lands first, they are read again and written after it, so a rename that landed
+    /// meanwhile wins. A deleted thread is no longer there to title.
     pub async fn record_title(
         &self,
-        thread: &mut Thread,
+        scope: &Scope,
+        thread: ThreadId,
         titled: &Titled,
     ) -> Result<(), HarnessError> {
-        self.take_in(thread).await?;
-        if thread.standing == Standing::Deleted {
-            return Err(HarnessError::NotFound(thread.id));
+        let mut tries = 1;
+        loop {
+            match self.append_title(scope, thread, titled).await {
+                Err(HarnessError::Log(LogError::Conflict { .. })) if tries < TRIES => tries += 1,
+                done => return done,
+            }
         }
-        self.record(thread, &responded(&titled.answer)).await?;
+    }
+
+    /// One try of [`Harness::record_title`].
+    async fn append_title(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        titled: &Titled,
+    ) -> Result<(), HarnessError> {
+        let last = last_event(&self.log, scope, thread)
+            .await?
+            .ok_or(HarnessError::NotFound(thread))?;
+        if standing_of(&self.log, scope, thread).await? == Standing::Deleted {
+            return Err(HarnessError::NotFound(thread));
+        }
         let named = self
             .log
-            .latest_of(&thread.scope, thread.id, &["thread.renamed"])
+            .latest_of(scope, thread, &["thread.renamed"])
             .await?
             .is_some();
-        let Some(title) = titled.title.as_ref().filter(|_| !named) else {
-            return Ok(());
-        };
-        let renamed = ThreadRenamed {
-            title: title.clone(),
-            by: Some(Principal::glave()),
-        };
-        self.record(thread, &renamed).await?;
-        // Glave's own record: call ids do not count it, so the model is sent the same.
-        thread.unnumbered = thread.unnumbered.saturating_add(1);
+        let mut seq = after(thread, last.seq)?;
+        let mut events = vec![self.encoded(thread, seq, &responded(&titled.answer))?];
+        if let Some(title) = titled.title.as_ref().filter(|_| !named) {
+            let renamed = ThreadRenamed {
+                title: title.clone(),
+                by: Some(Principal::glave()),
+            };
+            seq = after(thread, seq)?;
+            events.push(self.encoded(thread, seq, &renamed)?);
+        }
+        self.log.append(scope, &events).await?;
         Ok(())
     }
+
+    /// `payload` as event `seq` of `thread`, made now.
+    fn encoded<T: Payload>(
+        &self,
+        thread: ThreadId,
+        seq: Seq,
+        payload: &T,
+    ) -> Result<RawEvent, HarnessError> {
+        let now = self.clock.now();
+        let header = Header {
+            id: EventId::new(now, self.entropy.bytes())?,
+            thread,
+            seq,
+            at: At::from(now),
+        };
+        Ok(encode(header, payload)?)
+    }
+}
+
+/// The `seq` after `seq` in `thread`.
+fn after(thread: ThreadId, seq: Seq) -> Result<Seq, HarnessError> {
+    seq.next()
+        .ok_or_else(|| HarnessError::Event(format!("thread {thread} is full")))
 }
 
 /// The text parts of `parts`.
