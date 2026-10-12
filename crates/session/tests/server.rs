@@ -81,7 +81,7 @@ mod session {
     #[test]
     fn discover_says_how_much_the_server_asks_before_acting() {
         let dir = folder("discover");
-        block_on(async {
+        block_on!(async {
             let mut auto = glave_harness::Settings::new("test-model", "script");
             auto.approval = glave_harness::ApprovalMode::Auto;
             let cases = [
@@ -115,7 +115,7 @@ mod session {
     #[test]
     fn a_turn_streams_its_events_and_progress_then_its_ending() {
         let dir = folder("stream");
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(Some("Hello there."), None)];
             let server = server(&dir, answers, Answering::NoOne).await;
             let thread = new_thread(&server).await;
@@ -157,7 +157,7 @@ mod session {
     #[test]
     fn one_turn_runs_at_a_time_and_cancel_ends_it() {
         let dir = folder("one-at-a-time");
-        block_on(async {
+        block_on!(async {
             let gate = Arc::new(Notify::new());
             let answers = vec![answer(Some("Slow."), None)];
             let server = server_on(
@@ -192,7 +192,7 @@ mod session {
     #[test]
     fn a_retry_with_the_same_key_follows_the_running_turn_instead_of_starting_one() {
         let dir = folder("retry-running");
-        block_on(async {
+        block_on!(async {
             let gate = Arc::new(Notify::new());
             let answers = vec![answer(Some("Slow."), None)];
             let server = server_on(
@@ -227,7 +227,7 @@ mod session {
     #[test]
     fn a_client_answers_an_approval_and_the_turn_continues() {
         let dir = folder("approve");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, Some(("bash", json!({"command": "touch ran.txt"})))),
                 answer(Some("Done."), None),
@@ -281,7 +281,7 @@ mod session {
     #[test]
     fn with_no_one_to_answer_the_call_is_not_run() {
         let dir = folder("nobody");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, Some(("bash", json!({"command": "touch ran.txt"})))),
                 answer(Some("I could not."), None),
@@ -327,7 +327,7 @@ mod session {
     #[test]
     fn a_fresh_server_continues_a_thread_from_the_log_alone() {
         let dir = folder("stateless");
-        block_on(async {
+        block_on!(async {
             let database = dir.join("glave.db");
             let first_store = glave_store_sqlite::Store::open(&database, keys(&database))
                 .await
@@ -404,7 +404,7 @@ mod session {
     #[test]
     fn an_unknown_thread_is_named_as_such() {
         let dir = folder("unknown");
-        block_on(async {
+        block_on!(async {
             let server = server(&dir, Vec::new(), Answering::NoOne).await;
             let missing = glave_event::ThreadId::new(Timestamp::UNIX_EPOCH, [9; 10]).unwrap();
             let error: Option<ApiError> = server

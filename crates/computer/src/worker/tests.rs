@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::UNIX_EPOCH;
 
-use glave_ports::{Bytes, Glob, Image, Network, Save};
+use glave_ports::{Bytes, Glob, Image, Network, Save, block_on};
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
@@ -18,14 +18,6 @@ mod reconnect;
 
 const IMAGE: &str =
     "alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507";
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("glave-worker-{name}-{}", std::process::id()));
@@ -240,7 +232,7 @@ fn a_worker_is_made_cloned_into_set_up_saved_and_removed() {
         ..Limits::default()
     };
     let workers = WorkerComputers::on(Box::new(backend), limits, Credentials::None);
-    block_on(async {
+    block_on!(async {
         let made = workers.create(&environment()).await.unwrap();
         assert_eq!(made.environment, Some(environment()));
         let sources = Sources::Git {
@@ -296,7 +288,7 @@ fn a_worker_runs_within_its_minutes_and_can_still_be_saved_after() {
     let backend = InProcess::new(&dir.join("copies"));
     let workers =
         WorkerComputers::on(Box::new(backend), limits, Credentials::None).with_clock(clock);
-    block_on(async {
+    block_on!(async {
         let made = workers.create(&environment()).await.unwrap();
         let second = workers.create(&environment()).await;
         assert!(
@@ -330,7 +322,7 @@ fn a_worker_with_no_network_is_reached_by_stream_and_clones_nothing() {
     let mut offline = environment();
     offline.network = Some(Network::Off);
     offline.setup.clear();
-    block_on(async {
+    block_on!(async {
         let made = workers.create(&offline).await.unwrap();
         let sources = Sources::Git {
             url: "https://example.com/r.git".into(),
@@ -366,7 +358,7 @@ fn a_policy_requiring_vm_isolation_refuses_a_backend_without_it() {
         ..Limits::default()
     };
     let workers = WorkerComputers::on(Box::new(backend), limits, Credentials::None);
-    block_on(async {
+    block_on!(async {
         let refused = workers.create(&environment()).await;
         assert!(
             matches!(&refused, Err(ComputerError::Refused(m)) if m.contains("isolation = \"vm\"")),
@@ -387,7 +379,7 @@ fn a_failed_setup_says_why() {
     let workers = WorkerComputers::on(Box::new(backend), limits, Credentials::None);
     let mut broken = environment();
     broken.setup = vec!["echo missing tool >&2; exit 3".into()];
-    block_on(async {
+    block_on!(async {
         let made = workers.create(&broken).await.unwrap();
         let failed = workers.open(made.id, &Sources::Git { url, at: None }).await;
         assert!(

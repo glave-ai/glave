@@ -113,7 +113,7 @@ mod workers {
                 answer(Some("Done."), vec![], StopReason::EndTurn),
             ]
         };
-        block_on(async {
+        block_on!(async {
             let (before, seen_before) = harness_with(
                 workspace(&dir).await,
                 read(),
@@ -158,7 +158,7 @@ mod workers {
         let origin = origin(&dir);
         let here = dir.join("here");
         std::fs::create_dir_all(&here).unwrap();
-        block_on(async {
+        block_on!(async {
             let (harness, seen) = harness_with(
                 workspace(&here).await,
                 script(),
@@ -236,7 +236,7 @@ mod workers {
     fn a_worker_with_nothing_unpushed_pushes_nothing() {
         let dir = folder("workers-clean");
         let origin = origin(&dir);
-        block_on(async {
+        block_on!(async {
             let (harness, _) = harness_with(
                 workspace(&dir).await,
                 Vec::new(),
@@ -269,7 +269,7 @@ mod workers {
         let origin = origin(&dir);
         let here = dir.join("here");
         std::fs::create_dir_all(&here).unwrap();
-        block_on(async {
+        block_on!(async {
             let mut answers = script();
             answers.push(answer(
                 None,
@@ -327,7 +327,7 @@ mod workers {
     #[test]
     fn without_workers_a_worker_thread_is_refused_and_nothing_is_recorded() {
         let dir = folder("workers-none");
-        block_on(async {
+        block_on!(async {
             let (harness, _) = harness_with(
                 workspace(&dir).await,
                 Vec::new(),

@@ -27,7 +27,7 @@ mod site {
     use tokio::sync::oneshot;
     use tokio::task::JoinHandle;
 
-    use super::issuer::Fixed;
+    use super::issuer::fixed_clock;
     use super::support::*;
 
     const INDEX: &str = r#"<!doctype html><app-root ngCspNonce="GLAVE_CSP_NONCE"></app-root><script src="main-ABCD1234.js" nonce="GLAVE_CSP_NONCE"></script>"#;
@@ -58,7 +58,7 @@ mod site {
     async fn serve(dir: &PathBuf) -> Served {
         let site = Site::folder(app(dir)).unwrap();
         let server = server(dir, vec![], Answering::Clients).await;
-        let signin = SignIn::local(LocalToken::new([7; 32]), Box::new(Fixed));
+        let signin = SignIn::local(LocalToken::new([7; 32]), Box::new(fixed_clock()));
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let (stop, stopped) = oneshot::channel::<()>();
@@ -104,7 +104,7 @@ mod site {
 
     #[test]
     fn the_app_is_served_beside_the_api_under_a_strict_policy() {
-        block_on(async {
+        block_on!(async {
             let dir = folder("http-site");
             let served = serve(&dir).await;
             let url = format!("http://{}", served.address);
@@ -175,7 +175,7 @@ mod site {
 
     #[test]
     fn nothing_outside_the_folder_or_but_the_index_page_is_served() {
-        block_on(async {
+        block_on!(async {
             let dir = folder("http-site-escape");
             let served = serve(&dir).await;
             for target in [

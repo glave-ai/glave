@@ -37,7 +37,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 Cargo.toml          workspace: lints, profiles, shared dependencies
 xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
-crates/ports/       glave-ports: event log, blob store, model provider (and how one is reached: a key, or credentials that change), tool source and computer ports, the clock and entropy, in-memory versions, conformance suites
+crates/ports/       glave-ports: event log, blob store, model provider (and how one is reached: a key, or credentials that change), tool source and computer ports, the clock and entropy, in-memory versions, conformance suites and the test doubles every crate shares
 crates/identity/    glave-identity: who is calling: the verified caller, OIDC and local sign-in, the person an issuer's subject is
 crates/config/      glave-config: config and policy (specs/policy.md): choices nearest-wins, constraints that only narrow, project trust, `policy explain`; shared by the CLI and the servers
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
@@ -95,7 +95,7 @@ cargo build --profile debugging   # full debug info, for a debugger
 - `unsafe` is forbidden. Use existing safe crates for anything that needs it (e.g. llama.cpp bindings).
 - No `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, `dbg!`, `process::exit` or unchecked indexing. These lints are **forbidden**: no attribute can switch them off. Tests get their exemptions only through `clippy.toml`. Use `?`, `.get()`, `match`, `ok_or_else`.
 - `#[allow]` is banned. If a style lint is genuinely wrong in one spot, use `#[expect(lint, reason = "...")]`, which fails the build if the lint ever stops firing. Safety lints can't be suppressed at all.
-- Don't use `#[tokio::main]` or `#[tokio::test]`: they emit `#[allow(clippy::expect_used)]`, which the forbidden lint rejects. Build the runtime explicitly in `main`; tests use a small `block_on` helper.
+- Don't use `#[tokio::main]` or `#[tokio::test]`: they emit `#[allow(clippy::expect_used)]`, which the forbidden lint rejects. Build the runtime explicitly in `main`; tests use `glave_ports::block_on!` (the `conformance` feature).
 - Libraries define typed errors with `thiserror`; binaries use `anyhow`. Errors say what failed and with what input.
 
 **Structure**

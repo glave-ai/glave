@@ -17,28 +17,16 @@ mod web;
 
 #[cfg(test)]
 mod http {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicI64, Ordering};
 
-    use glave_harness::Clock;
+    use glave_ports::testing::ManualClock;
     use glave_session::Answering;
     use glave_session::protocol::{Request, code};
     use glave_session::signin::{SignIn, SignInError, Trust, person};
-    use jiff::Timestamp;
     use serde_json::{Value, json};
 
     use super::issuer::{AUDIENCE, Issuer, NOW, Signer};
     use super::support::*;
     use super::web::{Events, Web, serve_http};
-
-    /// A clock the test moves.
-    struct Moving(Arc<AtomicI64>);
-
-    impl Clock for Moving {
-        fn now(&self) -> Timestamp {
-            Timestamp::from_second(self.0.load(Ordering::SeqCst)).unwrap()
-        }
-    }
 
     /// `claims` with `changes` merged in; a null removes a claim.
     fn with(claims: &Value, changes: &Value) -> Value {
@@ -55,7 +43,7 @@ mod http {
 
     #[test]
     fn requests_without_a_valid_sign_in_are_refused() {
-        block_on(async {
+        block_on!(async {
             let issuer = Issuer::start().await;
             let signer = Signer::es256("key-1");
             issuer.publish(&signer);
@@ -138,12 +126,12 @@ mod http {
 
     #[test]
     fn rs256_and_es256_tokens_both_sign_in() {
-        block_on(async {
+        block_on!(async {
             let issuer = Issuer::start().await;
             let (ec, rsa) = (Signer::es256("ec"), Signer::rs256("rsa"));
             issuer.publish(&ec);
             issuer.publish(&rsa);
-            let clock = Box::new(Moving(Arc::new(AtomicI64::new(NOW))));
+            let clock = Box::new(ManualClock::at_second(NOW));
             let trust = Trust {
                 issuers: vec![issuer.url.clone()],
                 audience: AUDIENCE.into(),
@@ -172,16 +160,16 @@ mod http {
 
     #[test]
     fn keys_are_cached_and_fetched_again_for_a_new_key_at_most_every_half_minute() {
-        block_on(async {
+        block_on!(async {
             let issuer = Issuer::start().await;
             let first = Signer::es256("key-1");
             issuer.publish(&first);
-            let now = Arc::new(AtomicI64::new(NOW));
+            let now = ManualClock::at_second(NOW);
             let trust = Trust {
                 issuers: vec![issuer.url.clone()],
                 audience: AUDIENCE.into(),
             };
-            let signin = SignIn::new(trust, Box::new(Moving(Arc::clone(&now)))).unwrap();
+            let signin = SignIn::new(trust, Box::new(now.clone())).unwrap();
             let claims = issuer.claims("ada");
             for _ in 0..3 {
                 signin.verify(&first.sign(&claims)).await.unwrap();
@@ -196,7 +184,7 @@ mod http {
                 "{early:?}"
             );
             assert_eq!(issuer.fetches(), 1, "too soon to fetch again");
-            now.fetch_add(31, Ordering::SeqCst);
+            now.advance_seconds(31);
             signin.verify(&second.sign(&claims)).await.unwrap();
             assert_eq!(issuer.fetches(), 2);
             let made_up = Signer::es256("key-3");
@@ -211,7 +199,7 @@ mod http {
             issuers: issuers.iter().map(|issuer| (*issuer).to_owned()).collect(),
             audience: AUDIENCE.into(),
         };
-        let clock = || Box::new(Moving(Arc::new(AtomicI64::new(NOW))));
+        let clock = || Box::new(ManualClock::at_second(NOW));
         assert!(matches!(
             SignIn::new(trust(&[]), clock()),
             Err(SignInError::NoIssuers)
@@ -244,7 +232,7 @@ mod http {
 
     #[test]
     fn the_signed_in_caller_is_recorded_and_the_token_never_is() {
-        block_on(async {
+        block_on!(async {
             let issuer = Issuer::start().await;
             let signer = Signer::es256("key-1");
             issuer.publish(&signer);
@@ -316,7 +304,7 @@ mod http {
 
     #[test]
     fn the_method_header_must_agree_and_only_post_to_the_root_is_served() {
-        block_on(async {
+        block_on!(async {
             let issuer = Issuer::start().await;
             let signer = Signer::es256("key-1");
             issuer.publish(&signer);
@@ -351,7 +339,7 @@ mod http {
 
     #[test]
     fn a_retried_turn_start_returns_the_turn_already_started() {
-        block_on(async {
+        block_on!(async {
             let issuer = Issuer::start().await;
             let signer = Signer::es256("key-1");
             issuer.publish(&signer);

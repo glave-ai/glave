@@ -33,7 +33,7 @@ fn a_worker_whose_connection_dies_is_reached_again_with_a_fresh_token() {
     let dir = scratch("reconnect");
     let url = origin(&dir);
     let (backend, workers) = shared(&dir);
-    block_on(async {
+    block_on!(async {
         let made = workers.create(&environment()).await.unwrap();
         let sources = Sources::Git { url, at: None };
         let opened = workers.open(made.id, &sources).await.unwrap();
@@ -69,7 +69,7 @@ fn a_worker_that_cannot_be_reached_again_says_so_and_is_not_tried_again() {
     let dir = scratch("unreachable");
     let url = origin(&dir);
     let (backend, workers) = shared(&dir);
-    block_on(async {
+    block_on!(async {
         let made = workers.create(&environment()).await.unwrap();
         let sources = Sources::Git { url, at: None };
         let opened = workers.open(made.id, &sources).await.unwrap();
@@ -95,7 +95,7 @@ fn a_worker_without_a_network_whose_stream_dies_says_it_cannot_be_reached_again(
     let mut offline = environment();
     offline.network = Some(Network::Off);
     offline.setup.clear();
-    block_on(async {
+    block_on!(async {
         let made = workers.create(&offline).await.unwrap();
         let folder = dir.join("here");
         std::fs::create_dir_all(&folder).unwrap();

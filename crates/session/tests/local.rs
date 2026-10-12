@@ -27,17 +27,17 @@ mod local {
     use glave_session::signin::{LocalToken, SignIn, SignInError};
     use serde_json::{Value, json};
 
-    use super::issuer::Fixed;
+    use super::issuer::fixed_clock;
     use super::support::*;
     use super::web::{Web, serve_with};
 
     #[test]
     fn a_browser_here_signs_in_with_the_local_token_as_the_local_person() {
-        block_on(async {
+        block_on!(async {
             let dir = folder("http-local");
             let answers = vec![answer(Some("Hello."), None)];
             let token = LocalToken::new([7; 32]);
-            let signin = SignIn::local(token.clone(), Box::new(Fixed));
+            let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
             let served = serve_with(server(&dir, answers, Answering::Clients).await, signin).await;
 
             let mut web = Web::new(&served, Some(token.reveal().to_owned()));
@@ -110,9 +110,9 @@ mod local {
 
     #[test]
     fn the_local_token_is_refused_from_another_computer() {
-        block_on(async {
+        block_on!(async {
             let token = LocalToken::new([9; 32]);
-            let signin = SignIn::local(token.clone(), Box::new(Fixed));
+            let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
             let here: IpAddr = "127.0.0.1".parse().unwrap();
             let there: IpAddr = "192.168.1.20".parse().unwrap();
             let caller = signin.verify_from(token.reveal(), here).await.unwrap();

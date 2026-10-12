@@ -385,29 +385,22 @@ impl crate::tools::ToolSource for MemoryTools {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conformance;
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .build()
-            .expect("a current-thread runtime always builds")
-            .block_on(future)
-    }
+    use crate::{block_on, conformance};
 
     #[test]
     fn memory_log_passes_the_event_log_conformance_suite() {
-        assert_eq!(block_on(conformance::event_log(&MemoryLog::new())), Ok(()));
+        assert_eq!(block_on!(conformance::event_log(&MemoryLog::new())), Ok(()));
     }
 
     #[test]
     fn memory_log_passes_the_search_conformance_suite() {
-        assert_eq!(block_on(conformance::search(&MemoryLog::new())), Ok(()));
+        assert_eq!(block_on!(conformance::search(&MemoryLog::new())), Ok(()));
     }
 
     #[test]
     fn memory_log_passes_the_threads_view_conformance_suite() {
         assert_eq!(
-            block_on(conformance::thread_views(&MemoryLog::new())),
+            block_on!(conformance::thread_views(&MemoryLog::new())),
             Ok(())
         );
     }
@@ -428,21 +421,21 @@ mod tests {
     #[test]
     fn memory_tools_pass_the_tool_source_conformance_suite() {
         let tools = MemoryTools::new(vec![tool("lookup"), tool("mcp__docs__search")]);
-        assert_eq!(block_on(conformance::tool_source(&tools)), Ok(()));
+        assert_eq!(block_on!(conformance::tool_source(&tools)), Ok(()));
     }
 
     #[test]
     fn the_tool_source_suite_catches_bad_sources() {
         let twice = MemoryTools::new(vec![tool("lookup"), tool("lookup")]);
-        assert!(block_on(conformance::tool_source(&twice)).is_err());
+        assert!(block_on!(conformance::tool_source(&twice)).is_err());
         let spaced = MemoryTools::new(vec![tool("look up")]);
-        assert!(block_on(conformance::tool_source(&spaced)).is_err());
+        assert!(block_on!(conformance::tool_source(&spaced)).is_err());
     }
 
     #[test]
     fn memory_blobs_pass_the_blob_store_conformance_suite() {
         assert_eq!(
-            block_on(conformance::blob_store(&MemoryBlobs::new())),
+            block_on!(conformance::blob_store(&MemoryBlobs::new())),
             Ok(())
         );
     }

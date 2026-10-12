@@ -20,7 +20,7 @@ mod subagents {
     #[test]
     fn a_childs_approval_reaches_the_parents_follower_and_is_answered_there() {
         let dir = folder("session-subagents");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,

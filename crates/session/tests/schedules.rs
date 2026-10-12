@@ -15,10 +15,9 @@ mod helpers;
 
 #[cfg(test)]
 mod schedules {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicI64, Ordering};
 
     use glave_event::{At, ScheduleId, When};
+    use glave_ports::testing::ManualClock;
     use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
     use jiff::Timestamp;
 
@@ -29,8 +28,8 @@ mod schedules {
         text.parse::<Timestamp>().unwrap().as_millisecond()
     }
 
-    fn set(now: &Arc<AtomicI64>, text: &str) {
-        now.store(at(text), Ordering::SeqCst);
+    fn set(now: &ManualClock, text: &str) {
+        now.set_millis(at(text));
     }
 
     /// Plenty of short answers: each run takes one.
@@ -73,9 +72,9 @@ mod schedules {
     #[test]
     fn a_cron_schedule_fires_when_due_once_each_time_and_missed_runs_fire_once() {
         let dir = folder("schedule-cron");
-        block_on(async {
+        block_on!(async {
             let setup = Setup::new(answers());
-            let now = Arc::clone(&setup.now);
+            let now = setup.now.clone();
             let (server, _) = setup.build(&dir).await;
             let made = create(&server, cron("*/10 * * * *"), 10_000).await.unwrap();
             assert_eq!(
@@ -130,9 +129,9 @@ mod schedules {
     #[test]
     fn a_one_off_schedule_fires_once_at_its_time() {
         let dir = folder("schedule-once");
-        block_on(async {
+        block_on!(async {
             let setup = Setup::new(answers());
-            let now = Arc::clone(&setup.now);
+            let now = setup.now.clone();
             let (server, _) = setup.build(&dir).await;
             let when = When::At(At::from(
                 "2026-10-10T11:00:00Z".parse::<Timestamp>().unwrap(),
@@ -153,11 +152,11 @@ mod schedules {
     #[test]
     fn a_fresh_server_runs_what_was_missed_while_none_ran_once() {
         let dir = folder("schedule-restart");
-        block_on(async {
+        block_on!(async {
             let log = Shared::default();
             let mut setup = Setup::new(answers());
             setup.log = log.clone();
-            let now = Arc::clone(&setup.now);
+            let now = setup.now.clone();
             let (server, _) = setup.build(&dir).await;
             create(&server, cron("0 * * * *"), 10_000).await.unwrap();
             server.shutdown().await;
@@ -165,7 +164,7 @@ mod schedules {
             // Down for a day: 24 runs missed.
             let mut later = Setup::new(answers());
             later.log = log;
-            later.now = Arc::clone(&now);
+            later.now = now.clone();
             set(&now, "2026-10-11T10:30:00Z");
             let (restarted, _) = later.build(&dir).await;
             assert_eq!(restarted.recover_tasks().await.unwrap(), 0);
@@ -179,7 +178,7 @@ mod schedules {
     #[test]
     fn schedules_need_a_budget_a_valid_time_and_room_under_policy() {
         let dir = folder("schedule-limits");
-        block_on(async {
+        block_on!(async {
             let mut setup = Setup::new(answers());
             setup.limits.max_schedules = Some(1);
             let (server, _) = setup.build(&dir).await;
@@ -208,7 +207,7 @@ mod schedules {
     #[test]
     fn the_task_ledger_is_never_listed_or_read_as_a_thread() {
         let dir = folder("schedule-ledger");
-        block_on(async {
+        block_on!(async {
             let (server, _) = Setup::new(answers()).build(&dir).await;
             create(&server, cron("0 9 * * *"), 10).await.unwrap();
             let Reply::Threads { threads, .. } = server

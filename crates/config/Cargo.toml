@@ -25,6 +25,7 @@ tokio = { workspace = true, features = ["fs", "rt"] }
 toml.workspace = true
 
 [dev-dependencies]
+glave-ports = { workspace = true, features = ["conformance"] }
 insta.workspace = true
 # Property tests for the URL redaction (AGENTS.md: parsers get property tests).
 proptest.workspace = true

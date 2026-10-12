@@ -4,18 +4,13 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use glave_ports::block_on;
+
 use super::*;
 use crate::policy::tests::constraints;
 use crate::policy::{Approval, ConfigFile};
 use crate::trust::assess::Standing;
 use crate::trust::project::MCP_FILE;
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 /// A terminal no one answers.
 async fn no_one(_question: String) -> std::io::Result<Option<String>> {
@@ -40,7 +35,7 @@ fn repository(dir: &Path, servers: &str, config: Option<&str>) -> Project {
     if let Some(config) = config {
         std::fs::write(dir.join(".glave/config.toml"), config).unwrap();
     }
-    block_on(Project::read(dir, &BTreeMap::new())).unwrap()
+    block_on!(Project::read(dir, &BTreeMap::new())).unwrap()
 }
 
 const DOCS: &str = r#""docs": {"command": "docs-mcp", "args": ["--fast"]}"#;
@@ -141,8 +136,8 @@ fn asked_once_then_remembered_until_the_servers_change() {
     assert_eq!(outcome.servers.keys().collect::<Vec<_>>(), ["docs"]);
     record.remember(&project, outcome.decisions.unwrap());
     // Remembered across runs: written, read back, and not asked again.
-    block_on(record.save(&dir)).unwrap();
-    let record = block_on(Record::load(&dir)).unwrap();
+    block_on!(record.save(&dir)).unwrap();
+    let record = block_on!(Record::load(&dir)).unwrap();
     assert_eq!(undecided(&project, &record, &rules), 0);
     let again = assess(project, &record, &rules).apply(Answer::NoOne);
     assert_eq!(again.servers.len(), 1, "trusted with no one to ask");
@@ -254,11 +249,11 @@ fn resolve_writes_nothing_when_no_one_is_asked() {
     let project = repository(&dir.join("repo"), DOCS, None);
     let rules = Constraints::default();
     for asking in [Asking::NoOne, Asking::Explaining] {
-        let outcome = block_on(resolve(&home, project.clone(), &rules, asking, no_one)).unwrap();
+        let outcome = block_on!(resolve(&home, project.clone(), &rules, asking, no_one)).unwrap();
         assert!(outcome.servers.is_empty());
         assert!(!home.join("trust.toml").exists());
     }
-    let explained = block_on(resolve(&home, project, &rules, Asking::Explaining, no_one)).unwrap();
+    let explained = block_on!(resolve(&home, project, &rules, Asking::Explaining, no_one)).unwrap();
     assert!(explained.rows[0][1].contains("glave will ask once"));
 }
 
@@ -269,14 +264,14 @@ fn the_record_is_plain_toml_a_person_can_read() {
     let mut record = Record::default();
     let outcome = assess(project.clone(), &record, &Constraints::default()).apply(Answer::Yes);
     record.remember(&project, outcome.decisions.unwrap());
-    block_on(record.save(&dir)).unwrap();
+    block_on!(record.save(&dir)).unwrap();
     let text = std::fs::read_to_string(dir.join("trust.toml")).unwrap();
     insta::assert_snapshot!(
         "record",
         text.replace(&project.root.display().to_string(), "/code/app")
     );
     std::fs::write(dir.join("trust.toml"), "version = 2\n").unwrap();
-    let error = block_on(Record::load(&dir)).unwrap_err().to_string();
+    let error = block_on!(Record::load(&dir)).unwrap_err().to_string();
     assert!(error.contains("version = 2"), "{error}");
     let _ = ConfigFile::default();
 }
@@ -285,7 +280,7 @@ fn the_record_is_plain_toml_a_person_can_read() {
 fn a_mistake_in_a_project_file_stops_glave_naming_it() {
     let dir = scratch("mistake");
     std::fs::write(dir.join(MCP_FILE), r#"{"mcpServers": {"a": {}}}"#).unwrap();
-    let error = block_on(Project::read(&dir, &BTreeMap::new())).unwrap_err();
+    let error = block_on!(Project::read(&dir, &BTreeMap::new())).unwrap_err();
     let error = error.chain();
     assert!(
         error.contains(".mcp.json") && error.contains("give a command"),
@@ -294,7 +289,7 @@ fn a_mistake_in_a_project_file_stops_glave_naming_it() {
     std::fs::remove_file(dir.join(MCP_FILE)).unwrap();
     std::fs::create_dir_all(dir.join(".glave")).unwrap();
     std::fs::write(dir.join(".glave/config.toml"), "aproval = \"ask\"\n").unwrap();
-    let error = block_on(Project::read(&dir, &BTreeMap::new())).unwrap_err();
+    let error = block_on!(Project::read(&dir, &BTreeMap::new())).unwrap_err();
     assert!(error.to_string().contains("aproval"), "{error}");
 }
 
@@ -383,7 +378,7 @@ fn a_hook_written_wrong_stops_glave_naming_the_file() {
         ("[[hooks.BeforeTool]]\ncommand = \"x\"\n", "BeforeTool"),
     ] {
         std::fs::write(dir.join(".glave/config.toml"), text).unwrap();
-        let error = block_on(Project::read(&dir, &BTreeMap::new())).unwrap_err();
+        let error = block_on!(Project::read(&dir, &BTreeMap::new())).unwrap_err();
         let error = error.chain();
         assert!(
             error.contains("config.toml") && error.contains(says),

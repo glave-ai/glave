@@ -9,26 +9,12 @@ mod over_http {
     use glave_aws::{Endpoint, Region, SigV4, Source};
     use glave_event::Part;
     use glave_ports::auth::{Auth, KeyHeader};
-    use glave_ports::{Clock, Message, ModelProvider, ModelRequest, ToolChoice};
+    use glave_ports::block_on;
+    use glave_ports::testing::ManualClock;
+    use glave_ports::{Message, ModelProvider, ModelRequest, ToolChoice};
     use glave_provider_anthropic::fake::{FakeServer, Reply};
     use glave_provider_anthropic::{Anthropic, Config};
     use jiff::Timestamp;
-
-    struct Fixed;
-
-    impl Clock for Fixed {
-        fn now(&self) -> Timestamp {
-            "2026-10-12T18:00:00Z".parse().unwrap()
-        }
-    }
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
 
     fn ask(base_url: &str, auth: Auth) -> String {
         let provider = Anthropic::new(Config {
@@ -50,7 +36,7 @@ mod over_http {
             purpose: glave_ports::Purpose::Main,
             threads: Vec::new(),
         };
-        let completion = block_on(provider.complete(&request, &mut |_| {})).unwrap();
+        let completion = block_on!(provider.complete(&request, &mut |_| {})).unwrap();
         match completion.parts.as_slice() {
             [Part::Text { text }] => text.clone(),
             other => panic!("expected one text part, got {other:?}"),
@@ -80,7 +66,9 @@ mod over_http {
             _ => None,
         };
         let source = Source::from_env(&env, &region).unwrap().unwrap();
-        let signer = SigV4::new(source, region, Endpoint::Runtime, Arc::new(Fixed)).unwrap();
+        let at = "2026-10-12T18:00:00Z".parse::<Timestamp>().unwrap();
+        let clock = ManualClock::at_second(at.as_second());
+        let signer = SigV4::new(source, region, Endpoint::Runtime, Arc::new(clock)).unwrap();
         let base = format!("{}/anthropic", server.url());
         assert_eq!(
             ask(&base, Auth::Changing(Arc::new(signer))),

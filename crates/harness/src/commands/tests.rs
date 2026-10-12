@@ -1,3 +1,5 @@
+use glave_ports::block_on;
+
 use super::*;
 
 fn command(body: &str) -> Command {
@@ -8,14 +10,6 @@ fn command(body: &str) -> Command {
         body: body.into(),
         file: PathBuf::from("review.md"),
     }
-}
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
 }
 
 fn folder(name: &str) -> PathBuf {
@@ -70,7 +64,7 @@ fn commands_are_found_nearest_first_with_frontmatter_optional() {
     std::fs::write(personal.join("plain.md"), "Shadowed.").unwrap();
     std::fs::write(personal.join("has space.md"), "Bad name.").unwrap();
     std::fs::write(personal.join("broken.md"), "---\ndescription: x\n").unwrap();
-    let found = block_on(find_commands(&command_folders(&dir, &[personal])));
+    let found = block_on!(find_commands(&command_folders(&dir, &[personal])));
     let names: Vec<&str> = found.commands.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["plain", "review"]);
     let review = found.commands.iter().find(|c| c.name == "review").unwrap();

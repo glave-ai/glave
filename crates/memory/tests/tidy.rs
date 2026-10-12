@@ -10,7 +10,6 @@ mod support;
 
 #[cfg(test)]
 mod tidy {
-    use std::sync::atomic::Ordering;
     use std::sync::{Arc, Mutex};
 
     use glave_event::{Body, MemoryId, MemoryScope, Principal, PrincipalKind, decode};
@@ -91,7 +90,7 @@ mod tidy {
     async fn seed(kit: &Kit, text: &str, untrusted: bool) -> MemoryId {
         let memories = kit.memories(rules(), 90);
         // A minute apart, so recency is plain.
-        kit.clock.fetch_add(60_000, Ordering::SeqCst);
+        kit.clock.advance_millis(60_000);
         match memories
             .remember(&writer(untrusted), text, MemoryScope::Space, None, true)
             .await
@@ -131,7 +130,7 @@ mod tidy {
 
     #[test]
     fn duplicates_merge_the_newer_wins_and_untrusted_memories_are_never_touched() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let tabs = seed(&kit, TABS, false).await;
             let fly = seed(&kit, FLY, false).await;
@@ -180,7 +179,7 @@ mod tidy {
                 Body::MemoryForgotten(gone) => {
                     gone.by.kind == PrincipalKind::Glave
                         && gone.erase_at.timestamp().as_second()
-                            > kit.clock.load(Ordering::SeqCst) / 1000 + 29 * 86_400
+                            > kit.clock.millis() / 1000 + 29 * 86_400
                 }
                 _ => true,
             });
@@ -197,7 +196,7 @@ mod tidy {
 
     #[test]
     fn an_unclear_contradiction_keeps_both_and_asks_until_one_changes() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let tabs = seed(&kit, "Ada likes tabs", false).await;
             let spaces = seed(&kit, "Ada likes spaces in Go", false).await;
@@ -219,7 +218,7 @@ mod tidy {
             );
 
             // A week on, it is due again.
-            kit.clock.fetch_add(8 * 86_400_000, Ordering::SeqCst);
+            kit.clock.advance_millis(8 * 86_400_000);
             assert!(memories.tidy_due(shared()).await.unwrap());
 
             // The person answers: the wrong one is forgotten, and the question is gone.
@@ -233,7 +232,7 @@ mod tidy {
 
     #[test]
     fn proposals_that_invent_lose_or_misname_change_nothing() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             seed(&kit, TABS, false).await;
             seed(&kit, TABS_AGAIN, false).await;
@@ -277,7 +276,7 @@ mod tidy {
 
     #[test]
     fn prose_first_then_json_after_the_reminder_is_carried_out() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             seed(&kit, FLY, false).await;
             let render = seed(&kit, RENDER, false).await;
@@ -300,7 +299,7 @@ mod tidy {
 
     #[test]
     fn near_the_budget_tidy_up_compacts_and_runs_again_sooner() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             for n in 0..15 {
                 let text = format!(
@@ -318,7 +317,7 @@ mod tidy {
                 script.sent()
             );
             assert!(!memories.tidy_due(shared()).await.unwrap());
-            kit.clock.fetch_add(2 * 3_600_000, Ordering::SeqCst);
+            kit.clock.advance_millis(2 * 3_600_000);
             assert!(
                 memories.tidy_due(shared()).await.unwrap(),
                 "over 90%: due within hours"
@@ -328,7 +327,7 @@ mod tidy {
 
     #[test]
     fn a_question_opens_the_next_thread_and_reads_the_same_after_a_resume() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let tabs = seed(&kit, "Ada likes tabs", false).await;
             let spaces = seed(&kit, "Ada likes spaces in Go", false).await;
@@ -376,7 +375,7 @@ mod tidy {
 
     #[test]
     fn a_tidier_in_the_background_tidies_after_a_save_when_due() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             seed(&kit, TABS, false).await;
             let memory = kit.memory(rules(), 2).await;

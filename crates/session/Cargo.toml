@@ -42,6 +42,7 @@ aws-lc-rs.workspace = true
 glave-computer.workspace = true
 glave-keys.workspace = true
 glave-memory.workspace = true
+glave-ports = { workspace = true, features = ["conformance"] }
 glave-store-sqlite.workspace = true
 # Property tests for the cron parser (AGENTS.md: parsers get property tests).
 proptest.workspace = true

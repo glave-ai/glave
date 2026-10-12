@@ -4,19 +4,19 @@
 
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
 use glave_computer::LocalComputers;
 use glave_event::{Cost, Currency, Money, ThreadId, TokenCounts, Usage};
 use glave_event::{RawEvent, Seq};
-use glave_harness::{Clock, Settings, Workspace};
+use glave_harness::{Settings, Workspace};
+use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{Completion, EventLog, LogError, MemoryBlobs, MemoryLog, Scope};
 use glave_session::protocol::{Reply, Request, TaskInfo, TaskStatus};
 use glave_session::{Answering, Server, TaskLimits, Wiring};
 use jiff::Timestamp;
 use tokio::sync::Notify;
 
-use crate::support::{Counting, Script, scope, script};
+use crate::support::{Script, scope, script};
 
 pub type Tested = Server<Script, Shared, MemoryBlobs>;
 
@@ -92,14 +92,6 @@ impl EventLog for Shared {
     }
 }
 
-/// A clock that stands still until a test moves it.
-pub struct Manual(pub Arc<AtomicI64>);
-impl Clock for Manual {
-    fn now(&self) -> Timestamp {
-        Timestamp::from_millisecond(self.0.load(Ordering::SeqCst)).unwrap()
-    }
-}
-
 /// What a test server is built from.
 pub struct Setup {
     pub answers: Vec<Completion>,
@@ -108,7 +100,7 @@ pub struct Setup {
     pub answering: Answering,
     pub settings: Settings,
     pub limits: TaskLimits,
-    pub now: Arc<AtomicI64>,
+    pub now: ManualClock,
     /// Models offered beside the settings' own.
     pub models: Vec<glave_session::protocol::ModelInfo>,
     /// The approval modes a thread may choose.
@@ -124,12 +116,12 @@ impl Setup {
             answering: Answering::Clients,
             settings: Settings::new("test-model", "script"),
             limits: TaskLimits::default(),
-            now: Arc::new(AtomicI64::new(
+            now: ManualClock::at_millis(
                 "2026-10-10T10:03:00Z"
                     .parse::<Timestamp>()
                     .unwrap()
                     .as_millisecond(),
-            )),
+            ),
             models: Vec::new(),
             modes: vec![
                 glave_harness::ApprovalMode::Ask,
@@ -151,8 +143,8 @@ impl Setup {
             provider,
             log: self.log,
             blobs: MemoryBlobs::new(),
-            clock: Box::new(Manual(self.now)),
-            entropy: Box::new(Counting(AtomicU64::new(1 << 32))),
+            clock: Box::new(self.now),
+            entropy: Box::new(CountingEntropy::starting_at(1 << 32)),
             workspace: Workspace::new(computers, info),
             tools: Vec::new(),
             worktree: false,

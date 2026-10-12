@@ -18,7 +18,7 @@ mod placement {
     #[test]
     fn a_thread_on_a_computer_of_one_s_own_is_not_available_yet() {
         let dir = folder("session-placement");
-        block_on(async {
+        block_on!(async {
             let server = server(&dir, Vec::new(), Answering::NoOne).await;
             let laptop = ComputerId::from_uuid(uuid::Uuid::nil());
             let refused = server

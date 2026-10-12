@@ -17,6 +17,7 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+glave-ports = { workspace = true, features = ["conformance"] }
 jiff.workspace = true
 tokio = { workspace = true, features = ["rt", "sync"] }
 

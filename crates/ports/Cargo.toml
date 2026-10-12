@@ -9,8 +9,9 @@ repository.workspace = true
 publish.workspace = true
 
 [features]
-# Exposes the conformance suites so adapter crates can run them in their own tests.
-conformance = []
+# Exposes the conformance suites so adapter crates can run them in their own tests, and the
+# test doubles every crate's tests share (`testing`).
+conformance = ["dep:tokio"]
 
 [dependencies]
 # The operating system's randomness, for the random part of new ids.
@@ -23,6 +24,8 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+# The runtime tests run on (`testing`).
+tokio = { workspace = true, features = ["rt"], optional = true }
 uuid.workspace = true
 
 [dev-dependencies]

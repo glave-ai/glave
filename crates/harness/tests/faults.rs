@@ -184,7 +184,7 @@ mod faults {
     fn a_computer_that_dies_mid_command_fails_the_tool_and_the_turn_ends_cleanly() {
         let dir = folder("faults-dies");
         std::fs::write(dir.join("a.txt"), "a\n").unwrap();
-        block_on(async {
+        block_on!(async {
             let computers = Arc::new(Faulty::new(local(&dir)));
             let hung = Arc::clone(&computers.hung);
             let (client, server) = tokio::io::duplex(64 * 1024);
@@ -340,7 +340,7 @@ mod faults {
     fn a_worker_reached_again_after_its_connection_died_is_still_saved() {
         let dir = folder("faults-release-again");
         let origin = origin(&dir);
-        block_on(async {
+        block_on!(async {
             let faulty = Arc::new(Faulty::new(local(&dir)));
             let (harness, mut thread) = worked(&dir, &origin, &faulty).await;
             // The call that finds the connection dead fails; the next one is reached again.
@@ -362,7 +362,7 @@ mod faults {
     fn a_worker_that_cannot_be_reached_again_records_and_returns_what_was_lost() {
         let dir = folder("faults-release-lost");
         let origin = origin(&dir);
-        block_on(async {
+        block_on!(async {
             let faulty = Arc::new(Faulty::new(local(&dir)));
             let (harness, mut thread) = worked(&dir, &origin, &faulty).await;
             faulty.failing.store(u32::MAX, Ordering::SeqCst);

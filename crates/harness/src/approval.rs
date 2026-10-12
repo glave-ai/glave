@@ -203,15 +203,10 @@ pub(crate) fn summarize(tool: Tool, arguments: &Arguments) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
-    fn block_on<F: Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
+    use glave_ports::block_on;
+
+    use super::*;
 
     fn read(path: &str) -> Arguments {
         Arguments::Json(serde_json::from_value(serde_json::json!({ "path": path })).unwrap())
@@ -226,7 +221,7 @@ mod tests {
         std::fs::write(dir.join("README.md"), "hi\n").unwrap();
         #[cfg(unix)]
         std::os::unix::fs::symlink(dir.join(".env"), dir.join("notes.txt")).unwrap();
-        block_on(async {
+        block_on!(async {
             let workspace = Workspace::open(&dir, []).await.unwrap();
             assert!(reads_secret(&workspace, Tool::Read, &read(".env")).await);
             assert!(!reads_secret(&workspace, Tool::Read, &read("README.md")).await);
@@ -260,9 +255,9 @@ mod tests {
             secret,
             caution: None,
         };
-        assert_eq!(block_on(AllowAll.decide(&request(true))), Decision::Deny);
+        assert_eq!(block_on!(AllowAll.decide(&request(true))), Decision::Deny);
         assert_eq!(
-            block_on(AllowAll.decide(&request(false))),
+            block_on!(AllowAll.decide(&request(false))),
             Decision::AllowOnce
         );
     }

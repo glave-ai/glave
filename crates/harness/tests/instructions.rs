@@ -47,7 +47,7 @@ mod instructions {
     #[test]
     fn a_new_thread_opens_with_the_instructions_once() {
         let dir = folder("rules-once");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(Some("Hi."), vec![], StopReason::EndTurn),
                 answer(Some("Again."), vec![], StopReason::EndTurn),
@@ -95,7 +95,7 @@ mod instructions {
     #[test]
     fn no_instructions_means_the_prompt_alone() {
         let dir = folder("rules-none");
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
@@ -112,7 +112,7 @@ mod instructions {
     fn a_compacted_thread_opens_with_the_instructions_again() {
         let dir = folder("rules-compact");
         std::fs::write(dir.join("big.txt"), "marigold\n".repeat(1_000)).unwrap();
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -162,7 +162,7 @@ mod instructions {
     fn the_workspace_files_reach_the_model() {
         let dir = folder("rules-files");
         std::fs::write(dir.join("AGENTS.md"), "Always answer in French.\n").unwrap();
-        block_on(async {
+        block_on!(async {
             let mut settings = settings();
             let loaded = agents_md(&dir, None).await.unwrap().unwrap();
             settings.instructions = Some(loaded.text);

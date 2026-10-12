@@ -17,7 +17,7 @@ mod worktrees {
     #[test]
     fn a_thread_works_in_the_folder_unless_it_asks_for_a_worktree() {
         let dir = folder("worktree-param");
-        block_on(async {
+        block_on!(async {
             let server = server(&dir, Vec::new(), Answering::NoOne).await;
             let Reply::Thread { thread } = server
                 .request(Request::ThreadStart {

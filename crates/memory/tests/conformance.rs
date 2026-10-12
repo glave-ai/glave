@@ -27,7 +27,7 @@ mod conformance {
 
     #[test]
     fn glaves_memory_server_conforms() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let server = kit.memory(rules(), 1).await;
             let fixture = Fixture {

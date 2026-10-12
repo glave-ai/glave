@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use glave_ports::{Command, Computers, Ending, Environment, Image, Network, Sources};
+use glave_ports::{Command, Computers, Ending, Environment, Image, Network, Sources, block_on};
 use k8s_openapi::api::core::v1::{Pod, Secret};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use kube::Api;
@@ -37,14 +37,6 @@ const ECHOES: &[u8] = b"#!/bin/sh\necho \"args: $*\"\ncat\n";
 /// waits, as a TLS server would.
 const WAITS: &[u8] =
     b"#!/bin/sh\necho \"args: $*\"\nls -l /opt/glave/tls/key.pem\nexec sleep 300\n";
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 /// The run's label value: CI's run id, or this process's.
 fn run_id() -> String {
@@ -163,7 +155,7 @@ async fn printed(cluster: &Kubernetes, name: &str, lines: usize) -> String {
 
 #[test]
 fn the_kubernetes_backend_starts_limits_reaches_and_removes_workers() {
-    block_on(async {
+    block_on!(async {
         let Some(cluster) = cluster(None, "lifecycle").await else {
             return;
         };
@@ -274,7 +266,7 @@ async fn streamed(cluster: &Kubernetes) {
 
 #[test]
 fn a_runtime_class_is_required_of_the_cluster_and_nothing_is_left_when_it_is_missing() {
-    block_on(async {
+    block_on!(async {
         let Some(cluster) = cluster(Some("glave-test-missing"), "missing").await else {
             return;
         };
@@ -352,7 +344,7 @@ fn a_real_worker_runs_a_command_over_tls_and_over_attach() {
         );
         return;
     };
-    block_on(async {
+    block_on!(async {
         let runtime_class = std::env::var("GLAVE_TEST_KUBE_RUNTIME_CLASS").ok();
         let Some(cluster) = cluster(runtime_class.as_deref(), "real").await else {
             return;

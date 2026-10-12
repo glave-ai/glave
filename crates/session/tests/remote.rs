@@ -27,20 +27,20 @@ mod remote {
     use glave_session::{Answering, TurnItem};
     use serde_json::json;
 
-    use super::issuer::Fixed;
+    use super::issuer::fixed_clock;
     use super::support::*;
     use super::web::serve_with;
 
     #[test]
     fn a_turn_elsewhere_streams_and_its_approvals_are_answered_as_here() {
-        block_on(async {
+        block_on!(async {
             let dir = folder("remote-client");
             let answers = vec![
                 answer(None, Some(("bash", json!({"command": "touch ran.txt"})))),
                 answer(Some("Done."), None),
             ];
             let token = LocalToken::new([9; 32]);
-            let signin = SignIn::local(token.clone(), Box::new(Fixed));
+            let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
             let served = serve_with(server(&dir, answers, Answering::Clients).await, signin).await;
             let remote = Remote::new(&served.url, token.reveal().to_owned()).unwrap();
 

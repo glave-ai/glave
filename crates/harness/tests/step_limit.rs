@@ -35,7 +35,7 @@ mod step_limit {
         let dir = folder("step-limit-none");
         std::fs::write(dir.join("a.md"), "a\n").unwrap();
         std::fs::write(dir.join("b.md"), "b\n").unwrap();
-        block_on(async {
+        block_on!(async {
             // 59 reads, taking turns between two files so none is a repeat, then an answer.
             let mut answers: Vec<_> = (0..59)
                 .map(|n| {
@@ -78,7 +78,7 @@ mod step_limit {
     fn the_last_step_reports_in_text_with_tools_off() {
         let dir = folder("step-limit");
         std::fs::write(dir.join("README.md"), "# notes\n").unwrap();
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -140,7 +140,7 @@ mod step_limit {
     #[test]
     fn a_limit_of_one_answers_in_text_at_once() {
         let dir = folder("step-limit-one");
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(
                 Some("I reached the step limit before starting."),
                 vec![],

@@ -1,32 +1,16 @@
 use std::path::PathBuf;
 use std::process::Command as Process;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use glave_computer::LocalComputers;
 use glave_event::{
     Body, ComputerKind, ComputerRef, EventId, Header, Opened, Seq, WorkspaceBound, decode, encode,
 };
+use glave_ports::block_on;
+use glave_ports::testing::CountingEntropy;
 use glave_ports::{Computers, Environment, MemoryLog, OrgId, Sources, SpaceId};
 
 use super::*;
 use crate::worktrees::{FOLDER, SWEPT, check_if_due};
-
-struct Counting(AtomicU64);
-
-impl Entropy for Counting {
-    fn bytes(&self) -> [u8; 10] {
-        let n = self.0.fetch_add(1, Ordering::SeqCst).to_be_bytes();
-        [n[0], n[1], n[2], n[3], n[4], n[5], n[6], n[7], 0, 0]
-    }
-}
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 fn environment() -> Vec<(OsString, OsString)> {
     std::env::vars_os()
@@ -140,7 +124,7 @@ fn idle_threads_lose_their_worktrees_only_when_nothing_is_lost() {
     let (home, repo) = place("idle");
     let log = MemoryLog::new();
     let env = environment();
-    block_on(async {
+    block_on!(async {
         let quiet = thread(&log, 1, day(0)).await;
         let busy = thread(&log, 2, day(0)).await;
         let recent = thread(&log, 3, day(29)).await;
@@ -153,7 +137,7 @@ fn idle_threads_lose_their_worktrees_only_when_nothing_is_lost() {
             environment: &env,
             trash: None,
             now: day(31),
-            entropy: &Counting(AtomicU64::new(100)),
+            entropy: &CountingEntropy::starting_at(100),
         };
         let lines = cleanup.idle(&kept(&home).await).await;
         assert_eq!(lines.len(), 2, "{lines:?}");
@@ -188,10 +172,10 @@ fn the_check_runs_at_most_once_a_day() {
     let (home, repo) = place("daily");
     let log = MemoryLog::new();
     let env = environment();
-    block_on(async {
+    block_on!(async {
         let quiet = thread(&log, 1, day(0)).await;
         worktree(&home, &repo, "glave/quiet", Some(quiet)).await;
-        let entropy = Counting(AtomicU64::new(100));
+        let entropy = CountingEntropy::starting_at(100);
         let at = |now| Cleanup {
             log: &log,
             environment: &env,
@@ -221,11 +205,11 @@ fn a_gone_repositorys_worktree_goes_to_the_trash_and_is_recorded() {
     let (home, repo) = place("gone");
     let log = MemoryLog::new();
     let env = environment();
-    block_on(async {
+    block_on!(async {
         let owner = thread(&log, 1, day(30)).await;
         let root = worktree(&home, &repo, "glave/orphan", Some(owner)).await;
         std::fs::remove_dir_all(&repo).unwrap();
-        let entropy = Counting(AtomicU64::new(100));
+        let entropy = CountingEntropy::starting_at(100);
         let none = Cleanup {
             log: &log,
             environment: &env,
@@ -262,7 +246,7 @@ fn prune_removes_the_safe_explains_the_rest_and_forces_only_by_name() {
     let (home, repo) = place("prune");
     let log = MemoryLog::new();
     let env = environment();
-    block_on(async {
+    block_on!(async {
         let owner = thread(&log, 1, day(30)).await;
         let safe = worktree(&home, &repo, "glave/safe", Some(owner)).await;
         let ahead = worktree(&home, &repo, "glave/ahead", None).await;
@@ -274,7 +258,7 @@ fn prune_removes_the_safe_explains_the_rest_and_forces_only_by_name() {
             environment: &env,
             trash: None,
             now: day(31),
-            entropy: &Counting(AtomicU64::new(100)),
+            entropy: &CountingEntropy::starting_at(100),
         };
         let lines = cleanup.prune(&kept(&home).await, &[]).await;
         assert_eq!(lines.len(), 3, "{lines:?}");
@@ -302,7 +286,7 @@ fn archiving_a_thread_releases_only_its_worktrees() {
     let (home, repo) = place("archive");
     let log = MemoryLog::new();
     let env = environment();
-    block_on(async {
+    block_on!(async {
         let archived = thread(&log, 1, day(30)).await;
         let held = thread(&log, 2, day(30)).await;
         let other = thread(&log, 3, day(30)).await;
@@ -315,7 +299,7 @@ fn archiving_a_thread_releases_only_its_worktrees() {
             environment: &env,
             trash: None,
             now: day(31),
-            entropy: &Counting(AtomicU64::new(100)),
+            entropy: &CountingEntropy::starting_at(100),
         };
         let all = kept(&home).await;
         cleanup.archived(&all, scope(), archived).await;

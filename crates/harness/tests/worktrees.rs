@@ -87,7 +87,7 @@ mod worktrees {
                 answer(Some("Done."), vec![], StopReason::EndTurn),
             ]
         };
-        block_on(async {
+        block_on!(async {
             let (before, seen_before) = harness_with(
                 workspace(&dir).await,
                 script(),
@@ -137,7 +137,7 @@ mod worktrees {
     fn a_worktree_thread_works_on_its_own_branch_and_resumes_there() {
         let (repo, base) = repository("worktrees-own");
         let (elsewhere, _) = repository("worktrees-in-place");
-        block_on(async {
+        block_on!(async {
             // The same turn in another copy of the project, worked on in place.
             let (here, seen_here) = harness_with(
                 workspace_keeping(&elsewhere, &base).await,
@@ -220,7 +220,7 @@ mod worktrees {
     fn a_scratch_thread_works_in_its_own_folder_and_resumes_there_never_in_the_project() {
         let (repo, base) = repository("worktrees-scratch");
         let scratch = base.with_file_name("scratch");
-        block_on(async {
+        block_on!(async {
             let (computers, info) = LocalComputers::for_here(environment())
                 .with_scratch(&scratch)
                 .open_here(&repo)
@@ -270,7 +270,7 @@ mod worktrees {
     #[test]
     fn threads_started_together_get_their_own_worktrees() {
         let (repo, base) = repository("worktrees-together");
-        block_on(async {
+        block_on!(async {
             let (harness, _) = harness_with(
                 workspace_keeping(&repo, &base).await,
                 Vec::new(),
@@ -297,7 +297,7 @@ mod worktrees {
     fn a_worktree_outside_a_repository_fails_the_start_and_records_nothing() {
         let dir = folder("worktrees-plain");
         let base = dir.with_extension("worktrees");
-        block_on(async {
+        block_on!(async {
             let (harness, _) = harness_with(
                 workspace_keeping(&dir, &base).await,
                 Vec::new(),
@@ -324,7 +324,7 @@ mod worktrees {
     #[test]
     fn a_computer_across_the_wire_makes_the_worktree_through_the_port() {
         let (repo, base) = repository("worktrees-remote");
-        block_on(async {
+        block_on!(async {
             let computers = Arc::new(
                 LocalComputers::new(base.with_extension("copies"), environment())
                     .with_worktrees(&base),
@@ -372,7 +372,7 @@ mod worktrees {
     #[test]
     fn a_thread_on_a_computer_that_dialled_in_is_not_available_yet() {
         let dir = folder("dialled-in");
-        block_on(async {
+        block_on!(async {
             let (harness, _) = harness_with(
                 workspace(&dir).await,
                 Vec::new(),

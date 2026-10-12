@@ -44,7 +44,7 @@ mod purposes {
     #[test]
     fn a_turn_and_its_summary_say_what_they_are_for_and_who_served_them() {
         let dir = folder("purposes-turn");
-        block_on(async {
+        block_on!(async {
             let mut said = answer(Some("We said hello."), vec![], StopReason::EndTurn);
             said.served = Some(served("main", "openrouter/big"));
             let mut summary = answer(Some("They said hello."), vec![], StopReason::EndTurn);
@@ -98,7 +98,7 @@ mod purposes {
     #[test]
     fn a_subagent_calls_as_a_subagent_within_its_parents_budget() {
         let dir = folder("purposes-subagent");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -134,7 +134,7 @@ mod purposes {
     #[test]
     fn the_judges_call_is_recorded_and_counted_in_the_thread_it_judged() {
         let dir = folder("purposes-judge");
-        block_on(async {
+        block_on!(async {
             let mut ruling = answer(
                 Some(r#"{"decision":"run","reason":"the person asked to push"}"#),
                 vec![],

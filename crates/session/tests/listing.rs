@@ -47,7 +47,7 @@ mod listing {
     #[test]
     fn lists_come_a_page_at_a_time_with_titles_and_usage() {
         let dir = folder("listing-pages");
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(Some("Hi."), None)];
             let server = server(&dir, answers, Answering::NoOne).await;
             let (a, b, c) = (
@@ -91,7 +91,7 @@ mod listing {
     fn a_thread_opened_with_the_projects_instructions_is_titled_by_the_prompt() {
         let dir = folder("listing-instructions");
         std::fs::write(dir.join("AGENTS.md"), "# Rules\n\nKeep answers short.\n").unwrap();
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(Some("Hi."), None)];
             let mut settings = Settings::new("test-model", "script");
             settings.instructions = glave_harness::agents_md(&dir, None)
@@ -119,7 +119,7 @@ mod listing {
     #[test]
     fn a_rename_titles_the_thread() {
         let dir = folder("listing-rename");
-        block_on(async {
+        block_on!(async {
             let server = server(&dir, vec![answer(Some("Hi."), None)], Answering::NoOne).await;
             let thread = start(&server, false).await;
             turn(&server, thread).await.unwrap();
@@ -151,7 +151,7 @@ mod listing {
     #[test]
     fn renaming_changes_nothing_the_model_is_sent() {
         let dir = folder("listing-same-requests");
-        block_on(async {
+        block_on!(async {
             let script = || {
                 vec![
                     answer(None, Some(("glob", json!({"pattern": "*"})))),

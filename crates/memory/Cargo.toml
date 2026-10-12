@@ -33,6 +33,7 @@ required-features = ["conformance"]
 
 [dev-dependencies]
 glave-computer.workspace = true
+glave-ports = { workspace = true, features = ["conformance"] }
 glave-store-sqlite.workspace = true
 proptest.workspace = true
 uuid.workspace = true

@@ -11,22 +11,15 @@ mod support;
 mod postgres {
     use std::process::Command;
 
+    use glave_ports::block_on;
     use glave_provider_openai::fake::{FakeServer, Reply};
     use tokio_postgres::NoTls;
 
     use super::support::*;
 
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
-
     /// Runs `query` on the test database, returning the first column of the first row.
     fn count(url: &str, query: &str) -> i64 {
-        block_on(async {
+        block_on!(async {
             let (client, connection) = tokio_postgres::connect(url, NoTls).await.unwrap();
             let connection = tokio::spawn(async move {
                 let _ = connection.await;
@@ -39,7 +32,7 @@ mod postgres {
     }
 
     fn execute(url: &str, sql: &str) {
-        block_on(async {
+        block_on!(async {
             let (client, connection) = tokio_postgres::connect(url, NoTls).await.unwrap();
             let connection = tokio::spawn(async move {
                 let _ = connection.await;

@@ -40,7 +40,7 @@ mod spaces {
     fn an_ordinary_local_turn_sends_the_model_exactly_what_it_did_before_spaces() {
         let dir = folder("spaces-local-turn");
         std::fs::write(dir.join("notes.txt"), "a line\n").unwrap();
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, Some(("read", json!({"path": "notes.txt"})))),
                 answer(Some("It says a line."), None),
@@ -149,7 +149,7 @@ mod spaces {
     #[test]
     fn one_person_can_neither_read_nor_answer_anothers_threads() {
         let dir = folder("spaces-strangers");
-        block_on(async {
+        block_on!(async {
             let issuer = Issuer::start().await;
             let signer = Signer::es256("key-1");
             issuer.publish(&signer);
@@ -197,7 +197,7 @@ mod spaces {
     #[test]
     fn a_one_off_chat_lands_in_the_callers_personal_space_with_a_scratch_folder() {
         let dir = folder("spaces-personal");
-        block_on(async {
+        block_on!(async {
             let issuer = Issuer::start().await;
             let signer = Signer::es256("key-1");
             issuer.publish(&signer);
@@ -278,7 +278,7 @@ mod spaces {
     #[test]
     fn spaces_are_made_shared_and_renamed_only_by_their_owner() {
         let dir = folder("spaces-made");
-        block_on(async {
+        block_on!(async {
             let server = server(&dir, Vec::new(), Answering::Clients).await;
             let grace = Caller {
                 person: Some(person("https://id.example.com", "grace").unwrap()),

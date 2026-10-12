@@ -122,25 +122,7 @@ impl ToolSource for Todo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use glave_ports::conformance;
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .build()
-            .expect("a current-thread runtime always builds")
-            .block_on(future)
-    }
-
-    struct Never;
-
-    impl Cancellation for Never {
-        fn is_cancelled(&self) -> bool {
-            false
-        }
-        fn cancelled(&self) -> BoxFuture<'_, ()> {
-            Box::pin(std::future::pending())
-        }
-    }
+    use glave_ports::{NeverCancelled, block_on, conformance};
 
     fn list(value: serde_json::Value) -> Arguments {
         match value {
@@ -151,7 +133,7 @@ mod tests {
 
     #[test]
     fn passes_the_tool_source_conformance_suite() {
-        assert_eq!(block_on(conformance::tool_source(&Todo)), Ok(()));
+        assert_eq!(block_on!(conformance::tool_source(&Todo)), Ok(()));
     }
 
     #[test]
@@ -161,7 +143,7 @@ mod tests {
             {"content": "fix the bug", "status": "in_progress"},
             {"content": "run the tests", "status": "pending"}
         ]}));
-        let output = block_on(Todo.call(TODO, &todos, &Never));
+        let output = block_on!(Todo.call(TODO, &todos, &NeverCancelled));
         assert_eq!(
             output,
             ToolOutput::text(false, "Todo list updated: 1/3 done, now: fix the bug.")
@@ -175,7 +157,7 @@ mod tests {
     #[test]
     fn a_list_it_cannot_read_is_an_error_that_says_why() {
         let odd = list(json!({"todos": [{"content": "x", "status": "maybe"}]}));
-        let output = block_on(Todo.call(TODO, &odd, &Never));
+        let output = block_on!(Todo.call(TODO, &odd, &NeverCancelled));
         assert!(output.is_error);
         assert!(
             format!("{output:?}").contains("unknown variant `maybe`"),

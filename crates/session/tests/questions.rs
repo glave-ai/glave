@@ -70,7 +70,7 @@ mod questions {
     #[test]
     fn a_client_answers_the_models_questions_and_the_turn_goes_on() {
         let dir = folder("questions-answered");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, Some(("question", asks()))),
                 answer(Some("Postgres it is."), None),
@@ -136,7 +136,7 @@ mod questions {
     #[test]
     fn cancelling_a_turn_waiting_for_answers_ends_it() {
         let dir = folder("questions-cancelled");
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(None, Some(("question", asks())))];
             let server = server(&dir, answers, Answering::Clients).await;
             let thread = new_thread(&server).await;
@@ -169,7 +169,7 @@ mod questions {
     #[test]
     fn with_no_one_to_answer_question_is_not_offered() {
         let dir = folder("questions-nobody");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(None, Some(("question", asks()))),
                 answer(Some("I chose Postgres."), None),

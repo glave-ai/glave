@@ -46,7 +46,7 @@ mod store {
 
     #[test]
     fn a_shared_space_reads_personal_and_space_memory_and_an_isolated_one_only_its_own() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 1);
             let mine = writer(shared());
@@ -128,7 +128,7 @@ mod store {
 
     #[test]
     fn credentials_are_refused_and_never_stored() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 1);
             let refused = memories
@@ -156,7 +156,7 @@ mod store {
 
     #[test]
     fn a_near_duplicate_comes_back_instead_of_a_save_unless_forced() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 1);
             let mine = writer(shared());
@@ -221,7 +221,7 @@ mod store {
 
     #[test]
     fn a_save_past_the_budget_is_refused() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 1);
             let mine = writer(shared());
@@ -252,7 +252,7 @@ mod store {
 
     #[test]
     fn forgetting_destroys_the_key_so_no_version_can_be_opened() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 1);
             let mine = writer(shared());
@@ -333,7 +333,7 @@ mod store {
 
     #[test]
     fn retention_forgets_by_glave_which_can_be_restored_until_the_key_goes() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let mut rules = rules();
             rules.retention_days = Some(1);
@@ -345,8 +345,7 @@ mod store {
                     .await
                     .unwrap(),
             );
-            kit.clock
-                .fetch_add(2 * 86_400_000, std::sync::atomic::Ordering::SeqCst);
+            kit.clock.advance_millis(2 * 86_400_000);
             let done = memories.housekeep(&[shared()]).await.unwrap();
             assert_eq!(done.forgotten, 1);
             assert_eq!(memories.list(&on(shared())).await.unwrap().len(), 0);
@@ -363,7 +362,7 @@ mod store {
 
     #[test]
     fn moving_saves_in_the_new_place_and_forgets_the_old() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 1);
             let mine = writer(shared());

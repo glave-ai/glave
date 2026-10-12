@@ -48,7 +48,7 @@ mod skills {
     #[test]
     fn without_skills_the_model_is_sent_exactly_what_it_was_before() {
         let dir = folder("skills-none");
-        block_on(async {
+        block_on!(async {
             let before = serde_json::to_string(&first_request(&dir, false).await).unwrap();
             let after = serde_json::to_string(&first_request(&dir, true).await).unwrap();
             assert_eq!(before, after);
@@ -65,7 +65,7 @@ mod skills {
             "---\nname: house-style\ndescription: How code is written here.\n---\nUse tabs.\n",
         )
         .unwrap();
-        block_on(async {
+        block_on!(async {
             let before = first_request(&dir, false).await;
             let answers = vec![
                 answer(

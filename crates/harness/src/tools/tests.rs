@@ -4,19 +4,12 @@
 use std::path::{Path, PathBuf};
 
 use glave_event::Arguments;
+use glave_ports::block_on;
 use serde_json::json;
 
 use super::workspace::Workspace;
 use super::{Tool, ToolOutcome};
 use crate::cancel::Cancel;
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 fn project(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("glave-tools-{name}-{}", std::process::id()));
@@ -33,13 +26,13 @@ struct Session {
 impl Session {
     fn new(root: &Path) -> Self {
         Self {
-            workspace: block_on(Workspace::open(root, std::env::vars_os())).unwrap(),
+            workspace: block_on!(Workspace::open(root, std::env::vars_os())).unwrap(),
         }
     }
 
     fn call(&self, tool: Tool, arguments: serde_json::Value) -> ToolOutcome {
         let arguments = Arguments::Json(serde_json::from_value(arguments).unwrap());
-        block_on(tool.run(&arguments, &self.workspace, &Cancel::new()))
+        block_on!(tool.run(&arguments, &self.workspace, &Cancel::new()))
     }
 }
 
@@ -245,7 +238,7 @@ fn bad_arguments_are_explained_to_the_model() {
                 .text
                 .contains("The arguments for write are invalid")
     );
-    let malformed = block_on(Tool::Read.run(
+    let malformed = block_on!(Tool::Read.run(
         &Arguments::Malformed("{\"path\": ".into()),
         &s.workspace,
         &Cancel::new(),

@@ -8,27 +8,8 @@ mod resources {
 
     use glave_event::{Arguments, Part};
     use glave_mcp::{Limits, McpServer, Resources, ServerConfig};
-    use glave_ports::{BoxFuture, Cancellation, Effect, ToolOutput, ToolSource as _, conformance};
+    use glave_ports::{Effect, NeverCancelled, ToolOutput, ToolSource as _, block_on, conformance};
     use serde_json::json;
-
-    fn block_on<F: std::future::Future>(future: F) -> F::Output {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(future)
-    }
-
-    struct Never;
-
-    impl Cancellation for Never {
-        fn is_cancelled(&self) -> bool {
-            false
-        }
-        fn cancelled(&self) -> BoxFuture<'_, ()> {
-            Box::pin(std::future::pending())
-        }
-    }
 
     fn served() -> Resources {
         let config = ServerConfig::Stdio {
@@ -45,7 +26,9 @@ mod resources {
         let serde_json::Value::Object(map) = arguments else {
             panic!("not an object");
         };
-        resources.call(tool, &Arguments::Json(map), &Never).await
+        resources
+            .call(tool, &Arguments::Json(map), &NeverCancelled)
+            .await
     }
 
     fn text(output: &ToolOutput) -> &str {
@@ -57,7 +40,7 @@ mod resources {
 
     #[test]
     fn two_read_only_tools_pass_the_conformance_suite() {
-        block_on(async {
+        block_on!(async {
             let resources = served();
             let tools = resources.tools().await.unwrap();
             let named: Vec<(&str, Effect)> = tools
@@ -77,7 +60,7 @@ mod resources {
 
     #[test]
     fn without_servers_that_have_resources_nothing_is_offered() {
-        block_on(async {
+        block_on!(async {
             let none = Resources::new(Vec::new());
             assert_eq!(none.tools().await.unwrap().len(), 0);
         });
@@ -85,7 +68,7 @@ mod resources {
 
     #[test]
     fn resources_are_listed_with_their_server_uri_and_type() {
-        block_on(async {
+        block_on!(async {
             let resources = served();
             let listed = call(&resources, "list_mcp_resources", json!({})).await;
             assert!(!listed.is_error);
@@ -107,7 +90,7 @@ mod resources {
 
     #[test]
     fn text_is_read_and_anything_else_is_named() {
-        block_on(async {
+        block_on!(async {
             let resources = served();
             let read = |uri: &str| json!({"server": "tests", "uri": uri});
             let greeting = call(&resources, "read_mcp_resource", read("test://greeting")).await;
@@ -125,7 +108,7 @@ mod resources {
 
     #[test]
     fn mistakes_are_named() {
-        block_on(async {
+        block_on!(async {
             let resources = served();
             let unknown = json!({"server": "elsewhere", "uri": "test://greeting"});
             let wrong = call(&resources, "read_mcp_resource", unknown).await;

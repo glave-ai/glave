@@ -48,7 +48,7 @@ mod commands {
             answer(Some("Looks fine."), None),
             answer(Some("Yes."), None),
         ];
-        block_on(async {
+        block_on!(async {
             let server = server_with(
                 &dir,
                 answers,

@@ -361,7 +361,7 @@ mod conformance {
 
     #[test]
     fn a_turn_completes_and_its_events_are_in_the_log() {
-        block_on(async {
+        block_on!(async {
             over_each_transport!(
                 "complete",
                 vec![answer(Some("Hello."), None)],
@@ -392,7 +392,7 @@ mod conformance {
 
     #[test]
     fn an_approval_answered_by_the_client_lets_the_call_run() {
-        block_on(async {
+        block_on!(async {
             let touch = || {
                 vec![
                     answer(None, Some(("bash", json!({"command": "touch ran.txt"})))),
@@ -417,7 +417,7 @@ mod conformance {
 
     #[test]
     fn cancelling_a_paused_turn_ends_it_and_the_call_never_runs() {
-        block_on(async {
+        block_on!(async {
             let touch = || {
                 vec![answer(
                     None,
@@ -437,7 +437,7 @@ mod conformance {
 
     #[test]
     fn errors_carry_the_same_codes() {
-        block_on(async {
+        block_on!(async {
             over_each_transport!("errors", Vec::new(), |client, dir| {
                 let missing = ThreadId::new(jiff::Timestamp::UNIX_EPOCH, [7; 10]).unwrap();
                 let failed = client.call(Request::ThreadGet { thread: missing }).await;
@@ -459,7 +459,7 @@ mod conformance {
 
     #[test]
     fn models_are_listed_and_one_the_server_does_not_run_is_refused() {
-        block_on(async {
+        block_on!(async {
             over_each_transport!("models", Vec::new(), |client, dir| {
                 let listed = client.call(Request::ModelList {}).await.unwrap();
                 assert_eq!(
@@ -484,7 +484,7 @@ mod conformance {
 
     #[test]
     fn a_thread_chooses_its_approval_mode_and_its_summary_shows_it() {
-        block_on(async {
+        block_on!(async {
             over_each_transport!("modes", Vec::new(), |client, dir| {
                 let info = client.call(Request::Discover {}).await.unwrap();
                 assert_eq!(info["approval"], json!("ask"));
@@ -508,7 +508,7 @@ mod conformance {
 
     #[test]
     fn a_background_turn_answers_at_once_and_its_task_is_listed_when_done() {
-        block_on(async {
+        block_on!(async {
             over_each_transport!("task", vec![answer(Some("Done."), None)], |client, dir| {
                 let thread = thread_of(&mut client).await;
                 let started = client

@@ -155,7 +155,7 @@ mod recall {
 
     #[test]
     fn a_shared_space_finds_memories_its_threads_and_the_persons_never_another_space() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             world(&kit).await;
             let memories = kit.memories(rules(), 1);
@@ -233,7 +233,7 @@ mod recall {
 
     #[test]
     fn forgetting_a_memory_takes_the_turn_it_came_from_out_of_recall() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             let memory = kit.memory(rules(), 2).await;
             let dir = folder("recall-forget");
@@ -314,7 +314,7 @@ mod recall {
 
     #[test]
     fn the_model_recalls_through_the_server_and_untrusted_hits_mark_the_thread() {
-        block_on(async {
+        block_on!(async {
             let kit = Kit::new();
             world(&kit).await;
             let memory = kit.memory(rules(), 2).await;

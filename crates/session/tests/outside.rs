@@ -74,7 +74,7 @@ mod outside {
     #[test]
     fn glaves_own_records_are_taken_in_and_the_model_is_sent_the_same() {
         let dir = folder("outside-same");
-        block_on(async {
+        block_on!(async {
             let run = |outside: bool| {
                 let dir = dir.clone();
                 async move {
@@ -127,7 +127,7 @@ mod outside {
     #[test]
     fn a_message_from_outside_is_still_a_conflict() {
         let dir = folder("outside-message");
-        block_on(async {
+        block_on!(async {
             let store = store("outside-message-db").await;
             let answers = vec![answer(Some("One."), None), answer(Some("Two."), None)];
             let server = server_with(
@@ -171,7 +171,7 @@ mod outside {
     #[test]
     fn an_archive_from_outside_stops_the_next_turn_until_unarchived() {
         let dir = folder("outside-archive");
-        block_on(async {
+        block_on!(async {
             let store = store("outside-archive-db").await;
             let answers = vec![answer(Some("One."), None), answer(Some("Two."), None)];
             let server = server_with(
@@ -217,7 +217,7 @@ mod outside {
     #[test]
     fn a_delete_from_outside_makes_the_thread_gone() {
         let dir = folder("outside-delete");
-        block_on(async {
+        block_on!(async {
             let store = store("outside-delete-db").await;
             let answers = vec![answer(Some("One."), None)];
             let server = server_with(
@@ -277,7 +277,7 @@ mod outside {
     #[test]
     fn a_worktree_removed_from_outside_is_opened_again_for_the_next_turn() {
         let dir = folder("outside-worktree");
-        block_on(async {
+        block_on!(async {
             sh(
                 &dir,
                 "git init -q --initial-branch=main app && cd app && echo hi > a.txt && \

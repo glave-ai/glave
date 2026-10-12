@@ -1,17 +1,9 @@
 use std::process::Command as Process;
 
-use glave_ports::{Computers, Environment, FileWrite, Sources};
+use glave_ports::{Computers, Environment, FileWrite, Sources, block_on};
 
 use super::*;
 use crate::LocalComputers;
-
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(future)
-}
 
 fn environment() -> Vec<(OsString, OsString)> {
     std::env::vars_os()
@@ -71,7 +63,7 @@ fn branches(repo: &Path) -> String {
 fn worktrees_opened_at_once_do_not_collide() {
     let (repo, base) = repository("parallel");
     let computers = computers(&base);
-    block_on(async {
+    block_on!(async {
         let made = computers.create(&Environment::host()).await.unwrap();
         let (a, b) = (
             worktree(&repo, "glave/aaaa", None),
@@ -103,7 +95,7 @@ fn safe_means_nothing_uncommitted_and_every_commit_on_a_remote() {
     let (repo, base) = repository("safety");
     let computers = computers(&base);
     let env = environment();
-    block_on(async {
+    block_on!(async {
         let made = computers.create(&Environment::host()).await.unwrap();
         let clean = computers
             .open(made.id, &worktree(&repo, "glave/clean", Some("thread-1")))
@@ -160,7 +152,7 @@ fn a_release_removes_what_is_safe_and_holds_the_rest_keeping_every_branch() {
     let (repo, base) = repository("release");
     let computers = computers(&base);
     let env = environment();
-    block_on(async {
+    block_on!(async {
         let made = computers.create(&Environment::host()).await.unwrap();
         let clean = computers
             .open(made.id, &worktree(&repo, "glave/clean", None))
@@ -216,7 +208,7 @@ fn scratch_folders_reopen_as_left_and_go_empty_away_or_full_to_the_trash() {
         name: name.to_owned(),
         owner: Some(format!("org/space/{name}")),
     };
-    block_on(async {
+    block_on!(async {
         let made = computers.create(&Environment::host()).await.unwrap();
         let refused = computers.open(made.id, &scratch("../escape")).await;
         assert!(
@@ -275,7 +267,7 @@ fn a_worktree_whose_repository_is_gone_goes_to_the_trash_never_away() {
     let computers = computers(&base);
     let env = environment();
     let trash = base.with_file_name("Trash");
-    block_on(async {
+    block_on!(async {
         let made = computers.create(&Environment::host()).await.unwrap();
         let first = computers
             .open(made.id, &worktree(&repo, "glave/one", None))
@@ -337,7 +329,7 @@ fn a_folder_outside_a_repository_is_refused_clearly() {
     let plain = repo.with_file_name("plain");
     std::fs::create_dir_all(&plain).unwrap();
     let computers = computers(&base);
-    block_on(async {
+    block_on!(async {
         let made = computers.create(&Environment::host()).await.unwrap();
         let refused = computers
             .open(made.id, &worktree(&plain, "glave/x", None))

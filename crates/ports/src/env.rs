@@ -1,6 +1,8 @@
 //! Time and randomness, injected so every run can be reproduced in tests. Binaries wire in the
 //! real clock and the operating system's randomness; tests wire in their own.
 
+use std::sync::Arc;
+
 use jiff::Timestamp;
 
 /// The current time.
@@ -11,6 +13,18 @@ pub trait Clock: Send + Sync {
 /// Random bytes for the random part of new ids.
 pub trait Entropy: Send + Sync {
     fn bytes(&self) -> [u8; 10];
+}
+
+impl<T: Clock + ?Sized> Clock for Arc<T> {
+    fn now(&self) -> Timestamp {
+        (**self).now()
+    }
+}
+
+impl<T: Entropy + ?Sized> Entropy for Arc<T> {
+    fn bytes(&self) -> [u8; 10] {
+        (**self).bytes()
+    }
 }
 
 /// The computer's clock.

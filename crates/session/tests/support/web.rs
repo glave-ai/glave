@@ -11,7 +11,7 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use super::issuer::{AUDIENCE, Fixed, Issuer};
+use super::issuer::{AUDIENCE, Issuer, fixed_clock};
 
 /// A session server listening over HTTP until it is closed.
 pub struct Served {
@@ -37,7 +37,7 @@ where
         issuers: vec![issuer.url.clone()],
         audience: AUDIENCE.into(),
     };
-    serve_with(server, SignIn::new(trust, Box::new(Fixed)).unwrap()).await
+    serve_with(server, SignIn::new(trust, Box::new(fixed_clock())).unwrap()).await
 }
 
 /// Serves `server` over HTTP on 127.0.0.1, each request signed in through `signin`.

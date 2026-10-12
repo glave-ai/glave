@@ -33,7 +33,7 @@ mod tracing {
     #[test]
     fn the_caller_s_trace_is_recorded_with_the_turn_and_a_bad_one_ignored() {
         let dir = folder("session-tracing");
-        block_on(async {
+        block_on!(async {
             let answers = vec![answer(Some("One."), None), answer(Some("Two."), None)];
             let server = server(&dir, answers, Answering::NoOne).await;
             let thread = start(&server, false).await;

@@ -17,7 +17,7 @@ mod scripted {
     #[test]
     fn a_turn_writes_a_file_and_records_every_step() {
         let dir = folder("write");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -70,7 +70,7 @@ mod scripted {
     #[test]
     fn a_declined_action_is_reported_to_the_model() {
         let dir = folder("deny");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -102,7 +102,7 @@ mod scripted {
             (ApprovalMode::Auto, true, true),
         ] {
             let dir = folder(&format!("mode-{}", mode.name()));
-            block_on(async {
+            block_on!(async {
                 let answers = vec![
                     answer(
                         None,
@@ -137,7 +137,7 @@ mod scripted {
             "fn main() {\n    println!(\"hi\");\n}\n",
         )
         .unwrap();
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -192,7 +192,7 @@ mod scripted {
     #[test]
     fn bash_reports_output_and_exit_code() {
         let dir = folder("bash");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -225,7 +225,7 @@ mod scripted {
     #[test]
     fn a_model_stuck_repeating_itself_is_stopped() {
         let dir = folder("repeat");
-        block_on(async {
+        block_on!(async {
             let same = || {
                 answer(
                     None,
@@ -257,7 +257,7 @@ mod scripted {
     #[test]
     fn a_resumed_thread_continues_where_it_left_off() {
         let dir = folder("resume");
-        block_on(async {
+        block_on!(async {
             let first = vec![answer(Some("Hello."), vec![], StopReason::EndTurn)];
             let harness = harness(&dir, first, AllowAll).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
@@ -298,7 +298,7 @@ mod scripted {
     #[test]
     fn resuming_after_a_crash_closes_what_was_left_open() {
         let dir = folder("crash");
-        block_on(async {
+        block_on!(async {
             let answers = vec![
                 answer(
                     None,
@@ -355,7 +355,7 @@ mod scripted {
     #[test]
     fn resuming_a_thread_that_does_not_exist_is_an_error() {
         let dir = folder("missing");
-        block_on(async {
+        block_on!(async {
             let harness = harness(&dir, vec![], AllowAll).await;
             let thread = harness.start_thread(scope()).await.unwrap();
             let elsewhere = Scope {
