@@ -9,16 +9,15 @@ import {
 } from '@angular/core';
 
 import { type GlzIconData, iconSvg } from '../../lib/icons';
-import { GLZ_ICONS } from '../../tokens/icons';
 
 /**
- * An SVG icon from Lucide (ISC licence): the icon itself, or a name registered with
- * `provideGlazeIcons`. Decorative unless given a `label`, for when the icon alone carries
+ * An SVG icon from Lucide (ISC licence). Only the icons imported are bundled: Lucide ships each
+ * as its own ES module. Decorative unless given a `label`, for when the icon alone carries
  * meaning.
  *
  * ```html
  * <glz-icon [icon]="sendIcon" />
- * <glz-icon name="check" label="Done" />
+ * <glz-icon [icon]="checkIcon" label="Done" />
  * ```
  */
 @Component({
@@ -34,20 +33,12 @@ import { GLZ_ICONS } from '../../tokens/icons';
 })
 export class GlzIconComponent {
   /** The icon to draw, such as `Send` from `lucide`. */
-  readonly icon = input<GlzIconData | undefined>(undefined);
-  /** The name of an icon registered with `provideGlazeIcons`. */
-  readonly name = input<string | undefined>(undefined);
+  readonly icon = input.required<GlzIconData>();
   /** What the icon means, when nothing else says it. */
   readonly label = input<string | undefined>(undefined);
 
-  private readonly registry = inject(GLZ_ICONS);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
 
-  /** The drawing: the icon given, else the one registered under `name`. */
-  protected readonly drawing = computed(() => {
-    const name = this.name();
-    return this.icon() ?? (name === undefined ? undefined : this.registry.get(name));
-  });
   protected readonly labelled = computed(() => (this.label() ?? '') !== '');
   protected readonly role = computed(() => (this.labelled() ? 'img' : null));
   protected readonly ariaLabel = computed(() => (this.labelled() ? (this.label() ?? null) : null));
@@ -55,10 +46,7 @@ export class GlzIconComponent {
 
   constructor() {
     effect(() => {
-      const drawing = this.drawing();
-      this.host.replaceChildren(
-        ...(drawing === undefined ? [] : [iconSvg(this.host.ownerDocument, drawing)]),
-      );
+      this.host.replaceChildren(iconSvg(this.host.ownerDocument, this.icon()));
     });
   }
 }

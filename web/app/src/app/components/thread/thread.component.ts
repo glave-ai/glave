@@ -14,7 +14,6 @@ import type { ApprovalMode } from '@glave/client';
 import {
   GlzApprovalCardComponent,
   GlzButtonComponent,
-  type GlzComposed,
   GlzComposerComponent,
   type GlzDecision,
   type GlzIconData,
@@ -189,13 +188,13 @@ export class ThreadComponent {
     });
   }
 
-  protected send(composed: GlzComposed): void {
+  protected send(text: string): void {
     // A pick goes with the turn only when it changes the thread's model or mode.
     const picked = this.picked();
     const model = picked !== null && picked !== this.service.chosen() ? picked : null;
     const pickedMode = this.pickedMode();
     const mode = pickedMode !== null && pickedMode !== this.mode() ? pickedMode : null;
-    void this.service.send(composed.text, model, mode);
+    void this.service.send(text, model, mode);
   }
 
   protected stop(): void {

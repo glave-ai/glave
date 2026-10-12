@@ -29,10 +29,7 @@
       [glzCopy]="copy.copyText"
       (copied)="copied($event)"
     >
-      <glz-icon [icon]="icons.copy" /> {{ copy.copyLabel }}
-    </button>
-    <button glzButton [glzShortcut]="values.shortcut" (pressed)="shortcut()">
-      {{ copy.shortcut }}
+      <glz-icon [icon]="icons.copy" /> {{ copyLabel() }}
     </button>
   </div>
 
@@ -45,20 +42,6 @@
     <glz-badge tone="danger">{{ copy.dangerBadge }}</glz-badge>
     <glz-avatar [name]="copy.person" />
     <glz-avatar size="lg" hope [name]="copy.hope" />
-  </div>
-
-  <h3>{{ copy.progress }}</h3>
-  <div class="stack">
-    <glz-progress [label]="copy.budget" [value]="budget()" />
-    <glz-progress [label]="copy.uploading" />
-    <div class="row">
-      <glz-spinner [label]="copy.loading" />
-      <glz-skeleton shape="circle" [width]="values.avatar" />
-      <div class="lines">
-        <glz-skeleton [width]="values.lineLong" />
-        <glz-skeleton [width]="values.lineShort" />
-      </div>
-    </div>
   </div>
 
   <h3>{{ copy.cards }}</h3>

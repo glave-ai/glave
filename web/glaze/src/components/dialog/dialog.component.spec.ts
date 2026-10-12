@@ -8,7 +8,7 @@ import { GlzDialogComponent } from './dialog.component';
   imports: [GlzDialogComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <glz-dialog testId="dialog" heading="Settings" [kind]="kind()" [(open)]="open">
+    <glz-dialog testId="dialog" heading="Settings" [(open)]="open">
       <p>Body</p>
       <div glzDialogActions><button type="button">Save</button></div>
     </glz-dialog>
@@ -16,7 +16,6 @@ import { GlzDialogComponent } from './dialog.component';
 })
 class HostComponent {
   readonly open = signal(false);
-  readonly kind = signal<'dialog' | 'drawer-end'>('dialog');
 }
 
 function dialogOf(root: HTMLElement): HTMLDialogElement {
@@ -65,12 +64,5 @@ describe('GlzDialogComponent', () => {
     dialogOf(root).close();
     await fixture.whenStable();
     expect(fixture.componentInstance.open()).toBe(false);
-  });
-
-  it('shows as a drawer', async () => {
-    const fixture = TestBed.createComponent(HostComponent);
-    fixture.componentInstance.kind.set('drawer-end');
-    await fixture.whenStable();
-    expect(dialogOf(fixture.nativeElement).classList).toContain('drawer-end');
   });
 });

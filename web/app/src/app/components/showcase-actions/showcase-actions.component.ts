@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import {
   GlzAvatarComponent,
   GlzBadgeComponent,
@@ -8,11 +8,6 @@ import {
   GlzEmptyStateComponent,
   GlzIconButtonComponent,
   GlzIconComponent,
-  GlzProgressComponent,
-  GlzShortcutDirective,
-  GlzSkeletonComponent,
-  GlzSpinnerComponent,
-  GlzToastService,
   GlzTooltipDirective,
 } from '@glave/glaze';
 import { Copy, MessagesSquare, Pencil, Plus, Trash2 } from 'lucide';
@@ -35,8 +30,6 @@ const COPY = {
   copyLabel: 'Copy',
   copyText: 'cargo xtask ci',
   copied: 'Copied',
-  shortcut: 'Shortcut: press Ctrl+Shift+K (Cmd+Shift+K on a Mac)',
-  shortcutPressed: 'Shortcut pressed',
   badges: 'Badges and avatars',
   neutral: 'idle',
   accent: 'new',
@@ -45,10 +38,6 @@ const COPY = {
   dangerBadge: 'failed',
   person: 'Ada Lovelace',
   hope: 'Hope',
-  progress: 'Progress',
-  budget: 'Budget used',
-  uploading: 'Uploading',
-  loading: 'Loading threads',
   cards: 'Cards and empty states',
   card: 'On the card surface',
   raised: 'Raised',
@@ -60,15 +49,9 @@ const COPY = {
 } as const;
 
 /** The demo's values that are not words. */
-const VALUES = {
-  link: '#actions',
-  shortcut: 'mod+shift+k',
-  avatar: '2rem',
-  lineLong: '80%',
-  lineShort: '55%',
-} as const;
+const VALUES = { link: '#actions' } as const;
 
-/** The showcase's buttons, badges, avatars, progress, cards and empty states. */
+/** The showcase's buttons, badges, avatars, cards and empty states. */
 @Component({
   selector: 'app-showcase-actions',
   imports: [
@@ -80,10 +63,6 @@ const VALUES = {
     GlzEmptyStateComponent,
     GlzIconButtonComponent,
     GlzIconComponent,
-    GlzProgressComponent,
-    GlzShortcutDirective,
-    GlzSkeletonComponent,
-    GlzSpinnerComponent,
     GlzTooltipDirective,
   ],
   templateUrl: './showcase-actions.component.html',
@@ -100,16 +79,11 @@ export class ShowcaseActionsComponent {
     chat: MessagesSquare,
   };
   protected readonly values = VALUES;
-  protected readonly budget = signal(62);
-  private readonly toasts = inject(GlzToastService);
+  protected readonly copyLabel = signal<string>(COPY.copyLabel);
 
   protected copied(ok: boolean): void {
     if (ok) {
-      this.toasts.show(COPY.copied, { tone: 'success' });
+      this.copyLabel.set(COPY.copied);
     }
-  }
-
-  protected shortcut(): void {
-    this.toasts.show(COPY.shortcutPressed);
   }
 }
