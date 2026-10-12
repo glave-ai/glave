@@ -41,7 +41,7 @@ Hooks (issue #46; `approvals.md`, "Hooks"):
 Memory (issue #93; `memory.md`):
 
 - `memory = "on"` or `"off"` in `config.toml` (default `off` for now) is the person's own choice: a project's file cannot set it. `space_memory` (`shared`, the default, `isolated` or `off`) is the space's setting, which a project's file may choose without trust, since it can only narrow.
-- `[memory]` in a policy (`enabled`, `personal`, `spaces`, `retention_days`, `server`) only narrows: `enabled = false` turns memory off (an explicit `memory = "on"` is then an error naming the rule), `personal = false` leaves spaces only `isolated` or `off` (glave's default `shared` gives way to `isolated`), `spaces` lists the settings allowed, and the smallest `retention_days` holds. `server` naming anything but `glave` is refused at load as not enforced yet. `glave policy explain` shows `memory` and `space_memory` with their sources.
+- `[memory]` in a policy (`enabled`, `personal`, `spaces`, `retention_days`) only narrows: `enabled = false` turns memory off (an explicit `memory = "on"` is then an error naming the rule), `personal = false` leaves spaces only `isolated` or `off` (glave's default `shared` gives way to `isolated`), `spaces` lists the settings allowed, and the smallest `retention_days` holds. `glave policy explain` shows `memory` and `space_memory` with their sources.
 
 Not built yet: a command to change a decision (edit `trust.toml`); signed bundles from an organization's server, macOS managed preferences and Group Policy; a space's own policy; recording policy changes as events (the admin console); and recording the policy version in each turn's configuration.
 

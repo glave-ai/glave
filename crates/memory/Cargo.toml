@@ -23,14 +23,6 @@ serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["io-util", "rt", "sync"] }
 
-[features]
-# Exposes the conformance suite for memory servers, so a plugged-in server can run it.
-conformance = []
-
-[[test]]
-name = "conformance"
-required-features = ["conformance"]
-
 [dev-dependencies]
 glave-computer.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }

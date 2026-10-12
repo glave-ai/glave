@@ -49,8 +49,6 @@ pub struct MemoryRules {
     pub spaces: Option<Vec<SpaceChoice>>,
     /// Memories not saved or edited for this many days are forgotten by glave.
     pub retention_days: Option<u32>,
-    /// `glave`, or the name of an MCP server that serves memory instead.
-    pub server: Option<String>,
 }
 
 impl MemoryRules {
@@ -77,17 +75,7 @@ impl MemoryRules {
         if let Some(days) = self.retention_days {
             parts.push(format!("retention_days = {days}"));
         }
-        if let Some(server) = &self.server {
-            parts.push(format!("server = {server:?}"));
-        }
         format!("[memory] {}", parts.join(", "))
-    }
-
-    /// Whether memory is served by another server than glave's own, which is not built yet.
-    pub fn other_server(&self) -> bool {
-        self.server
-            .as_deref()
-            .is_some_and(|server| server != "glave")
     }
 }
 
@@ -208,13 +196,5 @@ mod tests {
             settle(&chosen(""), &only_off).unwrap().space,
             SpaceMemory::Off
         );
-    }
-
-    #[test]
-    fn another_memory_server_is_refused_until_it_is_built() {
-        let other = constraints("version = 1\n[memory]\nserver = \"corp-memory\"");
-        assert_ne!(other.not_enforced().len(), 0);
-        let glave = constraints("version = 1\n[memory]\nserver = \"glave\"");
-        assert_eq!(glave.not_enforced().len(), 0);
     }
 }

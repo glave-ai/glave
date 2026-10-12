@@ -10,7 +10,7 @@ use anyhow::Context as _;
 use glave_event::{MemoryId, MemoryScope, PrincipalId};
 use glave_harness::{Access, Control, Memory, OsEntropy, Remembered, SystemClock};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, Tidier};
-use glave_ports::Scope;
+use glave_ports::{ModelProvider, Scope};
 
 use crate::args::Args;
 use crate::data::{Data, DataLog};
@@ -48,7 +48,7 @@ impl Running {
     /// Tidies this person's and this space's memory in the background with `tidier` (the
     /// gateway's `summary` route): now, when due, and after saves that bring a scope near its
     /// budget.
-    pub fn tidy_with(&self, tidier: Arc<dyn Tidier>) {
+    pub fn tidy_with<P: ModelProvider + 'static>(&self, tidier: Tidier<P>) {
         self.memory.tidy_with(tidier);
         self.memory.tidy_soon(&self.scopes);
     }

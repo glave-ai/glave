@@ -343,10 +343,6 @@ impl Constraints {
                     rule,
                     "an allow-list of hosts is not enforced on workers yet",
                 )),
-                Kind::Memory(ref memory) if memory.other_server() => Some((
-                    rule,
-                    "memory from another MCP server is not built yet: only glave's own serves it",
-                )),
                 _ => None,
             })
             .chain(budget)
