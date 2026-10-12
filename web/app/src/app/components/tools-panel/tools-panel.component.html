@@ -1,8 +1,10 @@
 <div class="header">
   <h2 class="heading">{{ copy.heading }}</h2>
-  <button glzIconButton data-testid="tools-close" [label]="copy.close" (click)="close()">
-    <glz-icon [icon]="closeIcon" />
-  </button>
+  @if (narrow()) {
+    <button glzIconButton data-testid="tools-close" [label]="copy.close" (click)="close()">
+      <glz-icon [icon]="closeIcon" />
+    </button>
+  }
 </div>
 <glz-tabs
   class="tabs"

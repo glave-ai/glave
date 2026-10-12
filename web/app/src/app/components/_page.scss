@@ -1,8 +1,10 @@
-// The layout of the workspace's list pages (tasks, memory, settings).
+// The layout of the workspace's list pages (tasks, memory, settings): they start below the
+// floating top bar and scroll under it.
 .page {
   max-width: var(--glz-content-width);
   margin: 0 auto;
-  padding: var(--glz-space-5) var(--glz-space-4);
+  padding: calc(var(--glz-top-bar-height) + var(--glz-space-5)) var(--glz-space-4)
+    var(--glz-space-5);
 }
 
 .heading,

@@ -31,7 +31,7 @@ for (const colorScheme of ['light', 'dark']) {
     await main.goto(`${url}/t/${THREAD}#token=glave_local_test`);
     await main.getByTestId('thread-message').last().waitFor();
     if (screen.tools) {
-      await main.getByTestId('thread-tools').click();
+      await main.getByTestId('tools-handle').press('Enter');
       await main.getByTestId('tools-tabs-tab').nth(1).click();
       await main.getByTestId('file').first().click();
     }

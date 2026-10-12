@@ -114,6 +114,46 @@ describe('GlzPanelLayoutComponent', () => {
     pointer('pointerup', 450);
     pointer('pointermove', 300);
     expect(fixture.componentInstance.width()).toBe(450);
+    // Dragged toward the end past half the minimum, it collapses and keeps its width.
+    pointer('pointerdown', 500);
+    pointer('pointermove', 900);
+    pointer('pointerup', 900);
+    expect(fixture.componentInstance.open()).toBe(false);
+    expect(fixture.componentInstance.width()).toBe(450);
+    await fixture.whenStable();
+    expect(handle.getAttribute('aria-valuenow')).toBe('0');
+    // A click on the collapsed edge brings it back.
+    pointer('pointerdown', 900);
+    pointer('pointerup', 901);
+    expect(fixture.componentInstance.open()).toBe(true);
+  });
+
+  it('collapses and restores with Enter, and opens from the collapsed edge by its arrow', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.open.set(true);
+    fixture.componentInstance.width.set(400);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const handle = part(root, 'handle');
+    expect(handle.getAttribute('aria-controls')).toBe(part(root, 'panel').id);
+    expect(handle.getAttribute('aria-valuemin')).toBe('0');
+    expect(handle.getAttribute('aria-valuemax')).toBe('720');
+    key(handle, 'Enter');
+    expect(fixture.componentInstance.open()).toBe(false);
+    await fixture.whenStable();
+    // Collapsed, the edge stays, focusable, to bring the panel back.
+    expect(part(root, 'handle')).toBe(handle);
+    expect(part(root, 'panel').inert).toBe(true);
+    key(handle, 'ArrowRight');
+    expect(fixture.componentInstance.open()).toBe(false);
+    key(handle, 'ArrowLeft');
+    expect(fixture.componentInstance.open()).toBe(true);
+    expect(fixture.componentInstance.width()).toBe(400);
+    key(handle, 'Enter');
+    key(handle, 'Enter');
+    expect(fixture.componentInstance.open()).toBe(true);
+    await fixture.whenStable();
+    await expectAccessible(root);
   });
 
   it('becomes a modal sheet on narrow screens, closed by Escape or the scrim', async () => {

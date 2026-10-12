@@ -1,6 +1,8 @@
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
+import { of } from 'rxjs';
 
 import { SpacesService } from '../../services/spaces.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
@@ -43,11 +45,21 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve));
 }
 
-async function open(fake: FakeSession): Promise<{
+async function open(
+  fake: FakeSession,
+  narrow = false,
+): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<ThreadComponent>>;
 }> {
-  TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
+  const breakpoints = { observe: () => of({ matches: narrow, breakpoints: {} }) };
+  TestBed.configureTestingModule({
+    providers: [
+      provideRouter([]),
+      ...provideFakeSession(fake),
+      { provide: BreakpointObserver, useValue: breakpoints },
+    ],
+  });
   await TestBed.inject(SpacesService).refresh();
   const fixture = TestBed.createComponent(ThreadComponent);
   fixture.componentRef.setInput('thread', 'thread-1');
@@ -149,18 +161,38 @@ describe('ThreadComponent', () => {
     ]);
   });
 
-  it('opens and closes the tools panel from the top bar', async () => {
+  it('opens and closes the tools panel by its edge and its shortcut on wide screens', async () => {
     const { root, fixture } = await open(session([]));
-    const toggle = root.querySelector<HTMLButtonElement>('[data-testid="thread-tools"]');
     const panel = root.querySelector<HTMLElement>('[data-testid="tools-panel"]');
-    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
+    const edge = root.querySelector<HTMLElement>('[data-testid="tools-handle"]');
+    expect(root.querySelector('[data-testid="thread-tools"]')).toBeNull();
+    expect(root.querySelector('[data-testid="tools-close"]')).toBeNull();
     expect(panel?.inert).toBe(true);
-    toggle?.click();
+    expect(edge?.getAttribute('aria-keyshortcuts')).toMatch(/^(Meta|Control)\+\.$/u);
+    edge?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await fixture.whenStable();
     expect(TestBed.inject(ToolsPanelService).open()).toBe(true);
-    expect(toggle?.getAttribute('aria-pressed')).toBe('true');
     expect(panel?.inert).toBe(false);
     expect(root.querySelector('app-tools-panel [data-testid="tools-tabs"]')).not.toBeNull();
+    await expectAccessible(root);
+    const apple = /mac|iphone|ipad/iu.test(navigator.platform || navigator.userAgent);
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '.', metaKey: apple, ctrlKey: !apple, bubbles: true }),
+    );
+    await fixture.whenStable();
+    expect(panel?.inert).toBe(true);
+  });
+
+  it('opens and closes the tools sheet from the top bar on narrow screens', async () => {
+    const { root, fixture } = await open(session([]), true);
+    const toggle = root.querySelector<HTMLButtonElement>('[data-testid="thread-tools"]');
+    const panel = root.querySelector<HTMLElement>('[data-testid="tools-panel"]');
+    expect(root.querySelector('[data-testid="tools-handle"]')).toBeNull();
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
+    toggle?.click();
+    await fixture.whenStable();
+    expect(toggle?.getAttribute('aria-pressed')).toBe('true');
+    expect(panel?.getAttribute('aria-modal')).toBe('true');
     await expectAccessible(root);
     root.querySelector<HTMLButtonElement>('[data-testid="tools-close"]')?.click();
     await fixture.whenStable();

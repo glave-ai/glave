@@ -12,13 +12,10 @@ import {
 import { Router } from '@angular/router';
 import {
   GlzApprovalCardComponent,
-  GlzBadgeComponent,
   GlzButtonComponent,
   type GlzComposed,
   GlzComposerComponent,
   type GlzDecision,
-  GlzIconButtonComponent,
-  GlzIconComponent,
   GlzMessageComponent,
   GlzPanelLayoutComponent,
   GlzQuestionCardComponent,
@@ -26,8 +23,6 @@ import {
   GlzReceiptComponent,
   GlzStickToBottomDirective,
 } from '@glave/glaze';
-import { PanelRight, Pencil } from 'lucide';
-
 import { type MessageItem, type ThreadItem } from '../../lib/conversation';
 import { threadMark, threadTitle } from '../../lib/threads';
 import { ModelsService } from '../../services/models.service';
@@ -37,8 +32,8 @@ import { ToolsPanelService } from '../../services/tools-panel.service';
 import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
 import type { FirstPrompt } from '../home/home.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
-import { PageHeaderComponent } from '../page-header/page-header.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
+import { ThreadHeaderComponent } from '../thread-header/thread-header.component';
 import { ToolsPanelComponent } from '../tools-panel/tools-panel.component';
 
 const COPY = {
@@ -48,9 +43,9 @@ const COPY = {
   failed: 'Something went wrong:',
   placeholder: 'Reply',
   conversation: 'Conversation',
-  rename: 'Rename the thread',
   tools: 'Tools',
   resize: 'Resize the tools',
+  hint: 'Drag or use the arrow keys to resize; Enter collapses. Show or hide:',
 } as const;
 
 /** A message as the thread shows it: with who wrote it. */
@@ -71,21 +66,20 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
 }
 
 /**
- * One thread: its top bar (title, space, rename, the tools toggle); its conversation
+ * One thread: its top bar floating over it (title, space, rename; on narrow screens the button
+ * that opens the tools); its conversation
  * (messages named by the model that wrote them, reasoning, receipts, approvals and questions,
  * answered in place) in a reading column, the reply streaming in as a turn runs; the composer
- * docked below it, with the approval mode and the model picker; and the tools panel beside it.
+ * docked below it, with the approval mode and the model picker; and the tools panel beside it,
+ * resized and collapsed by its edge and shown or hidden by ⌘. or Ctrl+. anywhere in the thread.
  */
 @Component({
   selector: 'app-thread',
   imports: [
     ApprovalModeComponent,
     GlzApprovalCardComponent,
-    GlzBadgeComponent,
     GlzButtonComponent,
     GlzComposerComponent,
-    GlzIconButtonComponent,
-    GlzIconComponent,
     GlzMessageComponent,
     GlzPanelLayoutComponent,
     GlzQuestionCardComponent,
@@ -93,21 +87,21 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
     GlzReceiptComponent,
     GlzStickToBottomDirective,
     ModelPickerComponent,
-    PageHeaderComponent,
     RenameDialogComponent,
+    ThreadHeaderComponent,
     ToolsPanelComponent,
   ],
   providers: [ThreadService],
   templateUrl: './thread.component.html',
   styleUrl: './thread.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '(document:keydown)': 'keydown($event)' },
 })
 export class ThreadComponent {
   /** The thread's id, from the route. */
   readonly thread = input.required<string>();
 
   protected readonly copy = COPY;
-  protected readonly icons = { rename: Pencil, tools: PanelRight };
   protected readonly service = inject(ThreadService);
   private readonly spaces = inject(SpacesService);
   private readonly models = inject(ModelsService);
@@ -121,6 +115,8 @@ export class ThreadComponent {
   protected readonly renaming = signal(false);
   protected readonly panelOpen = this.panel.open;
   protected readonly panelWidth = this.panel.width;
+  protected readonly panelShortcut = this.panel.ariaShortcut;
+  protected readonly panelHint = `${COPY.hint} ${this.panel.shortcut}`;
   protected readonly shown = computed<readonly ShownItem[]>(() =>
     this.service.items().map((item) => {
       if (item.kind !== 'message') {
@@ -196,7 +192,7 @@ export class ThreadComponent {
     void this.service.rename(title);
   }
 
-  protected togglePanel(): void {
-    this.panel.toggle();
+  protected keydown(event: KeyboardEvent): void {
+    this.panel.keydown(event);
   }
 }
