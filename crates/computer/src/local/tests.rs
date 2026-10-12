@@ -144,42 +144,6 @@ fn what_the_host_cannot_honour_is_refused() {
 }
 
 #[test]
-fn a_plain_folders_history_comes_with_a_gitignore() {
-    let (work, copies) = scratch("ignore");
-    let computers = LocalComputers::new(&copies, safe_environment());
-    block_on!(async {
-        let made = computers.create(&Environment::host()).await.unwrap();
-        let path = work.to_string_lossy().into_owned();
-        let here = computers
-            .open(made.id, &Sources::Folder { path })
-            .await
-            .unwrap();
-        std::fs::write(work.join("notes.txt"), "hello").unwrap();
-        let save = glave_ports::Save {
-            branch: "glave/test".into(),
-            message: "first".into(),
-        };
-        computers.save(here.id, &save).await.unwrap();
-        assert!(work.join(".glave/history.git").is_dir());
-        let ignored = std::fs::read_to_string(work.join(".glave/.gitignore")).unwrap();
-        assert_eq!(ignored, "history.git\n");
-    });
-}
-
-#[test]
-fn the_history_line_is_added_once_and_other_lines_stay() {
-    let (work, _) = scratch("ignore-existing");
-    std::fs::create_dir_all(work.join(".glave")).unwrap();
-    std::fs::write(work.join(".glave/.gitignore"), "target/").unwrap();
-    block_on!(async {
-        git::ignore_history(&work).await.unwrap();
-        git::ignore_history(&work).await.unwrap();
-    });
-    let text = std::fs::read_to_string(work.join(".glave/.gitignore")).unwrap();
-    assert_eq!(text, "target/\nhistory.git\n");
-}
-
-#[test]
 fn characters_are_never_split_across_chunks() {
     let mut text = Utf8::default();
     let bytes = "héllo ✓".as_bytes();

@@ -290,7 +290,8 @@ async fn moves_through_git<C: Computers>(
     )
 }
 
-/// A folder that is not a repository keeps its saves in a hidden history, never a `.git`.
+/// A folder that is not a repository is worked in place: saving it is refused, and glave
+/// writes no history into it, neither a `.git` nor a hidden one.
 async fn plain_folders<C: Computers>(
     computers: &C,
     computer: ComputerId,
@@ -314,27 +315,31 @@ async fn plain_folders<C: Computers>(
         branch: "glave/notes".into(),
         message: "notes".into(),
     };
-    let first = computers
-        .save(plain.id, &save)
-        .await
-        .map_err(failed("save a plain folder"))?;
-    ensure(!first.pushed, "a plain folder has nowhere to push to")?;
-    computers
-        .write(plain.id, &files(&[("notes.txt", b"two")]))
-        .await
-        .map_err(failed("change a plain folder"))?;
-    let second = computers
-        .save(plain.id, &save)
-        .await
-        .map_err(failed("save again"))?;
-    ensure(second.commit != first.commit, "each save is a new commit")?;
+    ensure(
+        matches!(
+            computers.save(plain.id, &save).await,
+            Err(ComputerError::Refused(_))
+        ),
+        "saving a folder that is not a repository is refused",
+    )?;
     let listed = computers
-        .list(plain.id, &Listing::of("."))
+        .list(
+            plain.id,
+            &Listing {
+                recursive: true,
+                ..Listing::of(".")
+            },
+        )
         .await
         .map_err(failed("list a plain folder"))?;
     ensure(
-        !listed.entries.iter().any(|entry| entry.path == ".git"),
-        "a plain folder must not become a git repository",
+        !listed.entries.iter().any(|entry| {
+            matches!(
+                entry.path.as_str(),
+                ".git" | ".glave" | ".glave/history.git"
+            )
+        }),
+        "glave must write no history into a plain folder",
     )?;
     computers
         .close(plain.id)

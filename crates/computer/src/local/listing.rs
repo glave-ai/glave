@@ -10,7 +10,7 @@ use glave_ports::{ComputerError, Entry, EntryKind, Listed, Listing};
 use rustix::fs::{AtFlags, Dir, FileType, Mode, openat, statat};
 
 use super::anchored::{FOLDER, Found, Root, changed, count, plain, resolve, shown};
-use super::files::{blocking, io, is_history};
+use super::files::{blocking, io};
 use super::paths::relative;
 use super::walk;
 
@@ -26,7 +26,7 @@ pub(crate) async fn list(root: &Path, listing: &Listing) -> Result<Listed, Compu
             return discover(&anchor, &found, &listing);
         }
         let opened = open_folder(&anchor, &found, &listing.path)?;
-        let (mut entries, truncated) = entries_below(&anchor, &opened, &found.names, &listing)?;
+        let (mut entries, truncated) = entries_below(&opened, &found.names, &listing)?;
         entries.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(Listed {
             entries,
@@ -54,7 +54,6 @@ fn open_folder(root: &Root<'_>, found: &Found, path: &str) -> Result<OwnedFd, Co
 /// Every entry in `opened` (and below it, if recursive), read through open folders only, so a
 /// folder swapped for a link mid-listing is never entered. Whether the listing was cut short.
 fn entries_below(
-    root: &Root<'_>,
     opened: &OwnedFd,
     base: &[OsString],
     listing: &Listing,
@@ -89,8 +88,8 @@ fn entries_below(
             let mut deeper = below.clone();
             deeper.push(name.to_owned());
             let names: Vec<OsString> = base.iter().chain(&deeper).cloned().collect();
-            let path = root.path.join(names.iter().collect::<PathBuf>());
-            if listing.recursive && kind == EntryKind::Folder && !is_history(root.path, &path) {
+            // git's own records are listed but not descended into.
+            if listing.recursive && kind == EntryKind::Folder && name != ".git" {
                 pending.push(deeper);
             }
             entries.push(Entry {

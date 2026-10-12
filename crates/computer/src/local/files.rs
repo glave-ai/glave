@@ -11,7 +11,6 @@ use glave_ports::{
 use rustix::fs::FileType;
 
 use super::anchored::{Found, Root, count, open_to_read, resolve, shown};
-use super::git::HISTORY;
 use super::replace::{make_folders, replace};
 
 /// The largest file read or written in one call, so it fits in one message on the wire.
@@ -160,41 +159,4 @@ pub(crate) async fn stat(root: &Path, path: &str) -> Result<Stat, ComputerError>
         })
     })
     .await
-}
-
-/// Folders a recursive listing does not descend into: git's own records.
-pub(crate) fn is_history(root: &Path, path: &Path) -> bool {
-    path.file_name().is_some_and(|name| name == ".git") || path == root.join(HISTORY)
-}
-
-/// Every file under `root` a save would record, and their total size, stopping past `cap`.
-pub(crate) async fn total_size(root: &Path, cap: u64) -> Result<u64, ComputerError> {
-    let mut total = 0u64;
-    let mut folders: Vec<PathBuf> = vec![root.to_owned()];
-    while let Some(folder) = folders.pop() {
-        let mut reading = tokio::fs::read_dir(&folder)
-            .await
-            .map_err(|error| io(&folder.to_string_lossy(), &error))?;
-        while let Some(found) = reading
-            .next_entry()
-            .await
-            .map_err(|error| io(&folder.to_string_lossy(), &error))?
-        {
-            let path = found.path();
-            let Ok(metadata) = tokio::fs::symlink_metadata(&path).await else {
-                continue;
-            };
-            if metadata.is_dir() {
-                if !is_history(root, &path) {
-                    folders.push(path);
-                }
-            } else {
-                total = total.saturating_add(metadata.len());
-                if total > cap {
-                    return Ok(total);
-                }
-            }
-        }
-    }
-    Ok(total)
 }
