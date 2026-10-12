@@ -1,0 +1,34 @@
+[package]
+name = "glave-google"
+description = "glave's way into Google Vertex AI: its endpoints, and Application Default Credentials (GKE workload identity, service account keys, workload identity federation) as refreshing bearer tokens"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# RS256 for service account assertions, on the crypto rustls already builds.
+aws-lc-rs.workspace = true
+# The PEM key and the JWT's segments.
+base64.workspace = true
+glave-ports.workspace = true
+jiff.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# Reads credential and subject token files, which Kubernetes rewrites in place, without blocking.
+tokio = { workspace = true, features = ["fs"] }
+# Token requests' form bodies.
+url.workspace = true
+
+[dev-dependencies]
+glave-event.workspace = true
+# Gemini through Vertex's OpenAI-compatible endpoint, end to end against fakes.
+glave-provider-openai = { workspace = true, features = ["fake-server"] }
+tokio = { workspace = true, features = ["rt"] }
+
+[lints]
+workspace = true
