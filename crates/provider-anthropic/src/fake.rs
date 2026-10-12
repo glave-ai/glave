@@ -75,6 +75,8 @@ fn message_delta(stop: &str) -> Value {
 /// A request the server received.
 #[derive(Debug, Clone)]
 pub struct Received {
+    /// The `Authorization` header, if any.
+    pub authorization: Option<String>,
     /// The `x-api-key` header, if any.
     pub api_key: Option<String>,
     /// The `anthropic-version` header, if any.
@@ -184,7 +186,7 @@ fn serve(
         .unwrap_or_default()
         .to_owned();
     let mut length = 0_usize;
-    let (mut api_key, mut version) = (None, None);
+    let (mut authorization, mut api_key, mut version) = (None, None, None);
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line)? == 0 {
@@ -198,6 +200,7 @@ fn serve(
             let value = Some(value.trim().to_owned());
             match name.trim().to_ascii_lowercase().as_str() {
                 "content-length" => length = value.and_then(|v| v.parse().ok()).unwrap_or(0),
+                "authorization" => authorization = value,
                 "x-api-key" => api_key = value,
                 "anthropic-version" => version = value,
                 _ => {}
@@ -214,6 +217,7 @@ fn serve(
     let (requests, arrived) = &**received;
     if let Ok(mut requests) = requests.lock() {
         requests.push(Received {
+            authorization,
             api_key,
             version,
             path,
