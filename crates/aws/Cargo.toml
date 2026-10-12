@@ -1,0 +1,31 @@
+[package]
+name = "glave-aws"
+description = "glave's way into Amazon Bedrock: its OpenAI-compatible endpoints, and AWS SigV4 with keys from the environment, IRSA or EKS Pod Identity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# The keys aws-sigv4 signs with.
+aws-credential-types.workspace = true
+# AWS's own SigV4 signer, tested against AWS's published suite.
+aws-sigv4.workspace = true
+glave-ports.workspace = true
+jiff.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# Reads the web identity and Pod Identity token files, which Kubernetes rewrites in place.
+tokio = { workspace = true, features = ["fs"] }
+# The STS request's form body.
+url.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt"] }
+
+[lints]
+workspace = true

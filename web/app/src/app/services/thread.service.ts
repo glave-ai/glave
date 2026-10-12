@@ -10,6 +10,7 @@ import {
   threadItems,
   type Draft,
 } from '../lib/conversation';
+import { chosenModel } from '../lib/models';
 import { SessionService } from './session.service';
 import { SpacesService } from './spaces.service';
 
@@ -31,6 +32,8 @@ export class ThreadService {
   private controller: AbortController | null = null;
 
   readonly thread = this.id.asReadonly();
+  /** The thread's events, in `seq` order. */
+  readonly log = this.events.asReadonly();
   readonly items = computed(() => threadItems(this.events()));
   readonly reply = this.draft.asReadonly();
   readonly busy = this.running.asReadonly();
@@ -39,6 +42,8 @@ export class ThreadService {
   /** The model the latest turn runs on, for the reply streaming in. */
   readonly model = computed(() => latestModel(this.events()));
   readonly hasReply = computed(() => this.draft().text !== '' || this.draft().reasoning !== '');
+  /** The model the thread chose for its turns, or `null` for the server's default. */
+  readonly chosen = computed(() => chosenModel(this.events()));
 
   constructor() {
     // Leaving the thread stops following its turn; the turn itself goes on in the server.
@@ -58,8 +63,11 @@ export class ThreadService {
     await this.readAll(thread);
   }
 
-  /** Sends `prompt` and follows the turn as it runs. */
-  async send(prompt: string): Promise<void> {
+  /**
+   * Sends `prompt` and follows the turn as it runs. With `model`, the turn and the thread's
+   * turns after it go to that model.
+   */
+  async send(prompt: string, model: string | null = null): Promise<void> {
     const thread = this.id();
     if (thread === null || this.running()) {
       return;
@@ -69,7 +77,8 @@ export class ThreadService {
     this.running.set(true);
     this.failed.set(null);
     try {
-      const turn = this.session.stream('turn/start', { thread, prompt }, controller.signal);
+      const params = model === null ? { thread, prompt } : { thread, prompt, model };
+      const turn = this.session.stream('turn/start', params, controller.signal);
       for await (const note of turn) {
         if (note.params.thread !== thread) {
           continue;
@@ -96,6 +105,21 @@ export class ThreadService {
     const thread = this.id();
     if (thread !== null) {
       await this.act(() => this.session.call('turn/cancel', { thread }));
+    }
+  }
+
+  /** Gives the thread a new title, then reads the side nav's lists again. */
+  async rename(title: string): Promise<void> {
+    const thread = this.id();
+    if (thread === null) {
+      return;
+    }
+    try {
+      await this.session.call('thread/rename', { thread, title });
+      this.failed.set(null);
+      await this.spaces.refresh();
+    } catch (error: unknown) {
+      this.failed.set(error instanceof Error ? error.message : String(error));
     }
   }
 

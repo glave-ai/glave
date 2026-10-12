@@ -61,6 +61,8 @@ impl Remote {
             provider,
             model: model.unwrap_or_else(|| MAIN.to_owned()),
             gateway: Some(self.url.clone()),
+            at: "[gateway] url".to_owned(),
+            key_from: TOKEN,
         })
     }
 
@@ -91,7 +93,14 @@ mod tests {
         };
         let endpoint = remote.endpoint(None).unwrap();
         assert_eq!(endpoint.provider.base_url, "https://gw.example.com/v1");
-        assert_eq!(endpoint.provider.api_key.as_deref(), Some("t0k"));
+        assert_eq!(
+            endpoint
+                .provider
+                .auth
+                .fixed_key()
+                .map(glave_ports::auth::Secret::expose),
+            Some("t0k")
+        );
         assert_eq!(endpoint.provider.provider, "gateway");
         assert_eq!(endpoint.model, "main", "the gateway's main route");
         assert_eq!(remote.endpoint(Some("big".into())).unwrap().model, "big");

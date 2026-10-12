@@ -7,6 +7,7 @@ import {
   GlzIconComponent,
   GlzNavItemComponent,
   GlzNavListComponent,
+  GlzPanelLayoutComponent,
   GlzRailComponent,
   GlzRailItemComponent,
   GlzSidenavLayoutComponent,
@@ -14,7 +15,7 @@ import {
   GlzTabsComponent,
   GlzTopBarComponent,
 } from '@glave/glaze';
-import { Brain, Hash, ListChecks, Menu, MessagesSquare, Settings } from 'lucide';
+import { Brain, Hash, ListChecks, Menu, MessagesSquare, PanelRight, Plus, Settings } from 'lucide';
 
 const COPY = {
   heading: 'Layout and navigation',
@@ -30,7 +31,7 @@ const COPY = {
   space: 'glave',
   threads: 'Threads',
   thread: 'Plan the launch',
-  nav: 'Rail, side nav and lists',
+  nav: 'Rail, side nav, lists and panel',
   main: 'Main',
   chat: 'Chat',
   tasks: 'Tasks',
@@ -47,9 +48,13 @@ const COPY = {
   notes: 'Release notes',
   content: 'The page goes here. On a narrow screen the side nav slides over it instead.',
   layoutTitle: 'glave',
+  newIn: 'New thread in Earlier',
+  details: 'Details',
+  detailsToggle: 'Show or hide the details',
+  detailsText: 'A panel at the end: drag its edge, or use the arrow keys on it, to resize it.',
 } as const;
 
-/** The showcase's tabs, breadcrumbs, rail, side nav, lists and top bar. */
+/** The showcase's tabs, breadcrumbs, rail, side nav, lists, panel and top bar. */
 @Component({
   selector: 'app-showcase-layout',
   imports: [
@@ -60,6 +65,7 @@ const COPY = {
     GlzIconComponent,
     GlzNavItemComponent,
     GlzNavListComponent,
+    GlzPanelLayoutComponent,
     GlzRailComponent,
     GlzRailItemComponent,
     GlzSidenavLayoutComponent,
@@ -80,7 +86,12 @@ export class ShowcaseLayoutComponent {
     settings: Settings,
     menu: Menu,
     thread: Hash,
+    panel: PanelRight,
+    add: Plus,
   };
   protected readonly tab = signal(0);
+  protected readonly earlier = signal(true);
+  protected readonly details = signal(true);
+  protected readonly detailsWidth = signal<number | null>(null);
   protected readonly values = { link: '#layout', narrow: '(max-width: 40rem)' } as const;
 }

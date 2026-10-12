@@ -7,6 +7,12 @@ export function threadFromUrl(url: string): string | null {
   return match?.[1] ?? null;
 }
 
+/** The workspace page a URL of the app shows (`tasks`, `memory`, `settings`), if any. */
+export function pageFromUrl(url: string): string | null {
+  const match = /^\/(tasks|memory|settings)(?:[/?#]|$)/u.exec(url);
+  return match?.[1] ?? null;
+}
+
 /** What a thread's line in the side nav shows besides its title. */
 export interface ThreadMark {
   readonly text: string;

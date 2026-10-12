@@ -105,9 +105,10 @@ pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
         .model
         .as_ref()
         .map(|model| model.value.clone());
-    let provider = match model {
-        Some(model) => Some(config::endpoint(Some(model))?.provider.provider),
-        None => None,
+    let provider = match (model, &loaded.choices.provider) {
+        (Some(_), Some(cloud)) => Some(cloud.value.name().to_owned()),
+        (Some(model), None) => Some(config::endpoint(Some(model), None)?.provider.provider),
+        (None, _) => None,
     };
     let (text, runs) = policy::explain(&loaded, provider.as_deref());
     print!("{text}");

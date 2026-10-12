@@ -1,15 +1,22 @@
-//! Where the model is, from the environment. Keys come only from the environment, never files.
-//! Which model is chosen in `policy`, nearest wins.
+//! Where the model is: `GLAVE_BASE_URL`'s server, or the cloud contract `[provider]` names.
+//! Keys come only from the environment, never files. Which model is chosen in `policy`,
+//! nearest wins.
+
+mod contract;
 
 use std::time::Duration;
 
 use anyhow::{Context as _, bail};
+use glave_config::policy::{Chosen, ProviderFile};
 use glave_ports::Failure;
 use glave_provider_openai::Config;
 
 use crate::model;
 
 const DEFAULT_BASE_URL: &str = "http://localhost:11434/v1";
+
+/// The variable a key comes from when nothing else says.
+const KEY: &str = "GLAVE_API_KEY";
 
 /// The model endpoint and the model to use.
 pub struct Endpoint {
@@ -19,11 +26,19 @@ pub struct Endpoint {
     pub local: bool,
     /// The gateway elsewhere the endpoint is, when `[gateway] url` sends calls to one.
     pub gateway: Option<String>,
+    /// The setting that says where the endpoint is: `GLAVE_BASE_URL`, or `[provider]` and
+    /// its file.
+    pub at: String,
+    /// The variable the key came from, or would: `GLAVE_API_KEY` unless a cloud's own.
+    pub key_from: &'static str,
 }
 
-/// The endpoint for `model`, the model chosen; an error saying how to choose one when none is.
-pub fn endpoint(model: Option<String>) -> anyhow::Result<Endpoint> {
-    let base_url = std::env::var("GLAVE_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned());
+/// The endpoint for `model`, the model chosen, at the cloud `provider` names, else at
+/// `GLAVE_BASE_URL`'s server; an error saying how to choose a model when none is.
+pub fn endpoint(
+    model: Option<String>,
+    provider: Option<&Chosen<ProviderFile>>,
+) -> anyhow::Result<Endpoint> {
     let Some(model) = model else {
         bail!(
             "no model chosen: set GLAVE_MODEL, pass --model, or set model in config.toml (for \
@@ -31,6 +46,24 @@ pub fn endpoint(model: Option<String>) -> anyhow::Result<Endpoint> {
              GLAVE_BASE_URL=https://openrouter.ai/api/v1)"
         );
     };
+    if let Some(chosen) = provider {
+        if std::env::var_os("GLAVE_BASE_URL").is_some() {
+            bail!(
+                "[provider] (from {}) and GLAVE_BASE_URL both say where the models are: unset one",
+                chosen.from
+            );
+        }
+        let (provider, key_from) = contract::provider(chosen, &|name| std::env::var(name).ok())?;
+        return Ok(Endpoint {
+            local: false,
+            provider,
+            model,
+            gateway: None,
+            at: format!("[provider] (from {})", chosen.from),
+            key_from: key_from.unwrap_or(KEY),
+        });
+    }
+    let base_url = std::env::var("GLAVE_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_owned());
     let api_key = std::env::var("GLAVE_API_KEY")
         .ok()
         .filter(|key| !key.is_empty());
@@ -46,7 +79,27 @@ pub fn endpoint(model: Option<String>) -> anyhow::Result<Endpoint> {
         provider,
         model,
         gateway: None,
+        at: "GLAVE_BASE_URL".to_owned(),
+        key_from: KEY,
     })
+}
+
+/// `[provider]` in the `config.toml` in glave's folder, for a command that reads no project
+/// settings, such as `glave gateway serve`: a project never chooses it.
+pub async fn provider_here() -> anyhow::Result<Option<Chosen<ProviderFile>>> {
+    let path = crate::home::folder()?.join(glave_config::policy::CONFIG);
+    let text = match tokio::fs::read_to_string(&path).await {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(error).with_context(|| format!("could not read {}", path.display()));
+        }
+    };
+    let file = glave_config::policy::config(&text, &path)?;
+    Ok(file.provider.map(|value| Chosen {
+        value,
+        from: glave_config::policy::Source::File(path),
+    }))
 }
 
 /// What to change when a model call fails in a way the person can fix, naming the setting.
@@ -59,17 +112,22 @@ pub fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
         .host()
         .unwrap_or_else(|| "the server".to_owned());
     let model = &endpoint.model;
+    let (at, key) = (&endpoint.at, endpoint.key_from);
     Some(match failure {
-        Failure::Refused if endpoint.provider.api_key.is_none() => {
-            format!("{host} wants a key: set GLAVE_API_KEY")
+        Failure::Refused if endpoint.provider.auth.is_none() => {
+            format!("{host} wants a key: set {key}")
         }
-        Failure::Refused => format!("{host} did not accept the key: check GLAVE_API_KEY"),
+        Failure::Refused if endpoint.provider.auth.fixed_key().is_none() => format!(
+            "{host} refused, or glave could not get credentials from {}: check its setup",
+            endpoint.provider.auth.describe()
+        ),
+        Failure::Refused => format!("{host} did not accept the key: check {key}"),
         Failure::NoCredit => {
-            format!("the account behind GLAVE_API_KEY has no credit left at {host}")
+            format!("the account behind {key} has no credit left at {host}")
         }
         Failure::UnknownModel => format!(
-            "check the model id {model} (--model or GLAVE_MODEL), and that GLAVE_BASE_URL points \
-             at the right server ({host})"
+            "check the model id {model} (--model or GLAVE_MODEL), and that {at} points at the \
+             right server ({host})"
         ),
         Failure::TooLong => "the conversation is longer than the model's context window: run \
              /compact, start a new thread, or set GLAVE_CONTEXT_WINDOW to the model's real window"
@@ -81,12 +139,10 @@ pub fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
             "{host} is failing on its side even after 4 retries: try again shortly, or another model"
         ),
         Failure::Unreachable if endpoint.local => {
-            format!("is the model server running on this computer? GLAVE_BASE_URL points at {host}")
+            format!("is the model server running on this computer? {at} points at {host}")
         }
         Failure::Unreachable => {
-            format!(
-                "check the network, and that GLAVE_BASE_URL points at the right server ({host})"
-            )
+            format!("check the network, and that {at} points at the right server ({host})")
         }
         Failure::Silent => format!(
             "{model} sent nothing for {} s: a slow local model may need a larger GLAVE_IDLE_TIMEOUT",
@@ -95,9 +151,9 @@ pub fn fix(failure: Failure, endpoint: &Endpoint) -> Option<String> {
         Failure::Malformed if model::speaks_anthropic(&endpoint.provider) => {
             format!("the server at {host} sent a response glave could not read")
         }
-        Failure::Malformed => format!(
-            "the server at {host} may not speak OpenAI's chat completions API: check GLAVE_BASE_URL"
-        ),
+        Failure::Malformed => {
+            format!("the server at {host} may not speak OpenAI's chat completions API: check {at}")
+        }
         Failure::Rejected | Failure::OverBudget => return None,
     })
 }
@@ -172,6 +228,8 @@ mod tests {
             provider,
             model: "anthropic/claude-haiku-5.5".into(),
             gateway: None,
+            at: "GLAVE_BASE_URL".into(),
+            key_from: KEY,
         }
     }
 
@@ -205,5 +263,16 @@ mod tests {
                 .unwrap()
                 .contains("running on this computer")
         );
+    }
+
+    #[test]
+    fn a_cloud_s_fixes_name_its_own_settings() {
+        let mut azure = endpoint("https://acme.openai.azure.com/openai/v1", Some("az-1"));
+        azure.at = "[provider] (from /srv/glave/config.toml)".into();
+        azure.key_from = "AZURE_OPENAI_API_KEY";
+        let fix = |failure| fix(failure, &azure).unwrap_or_default();
+        assert!(fix(Failure::Refused).contains("check AZURE_OPENAI_API_KEY"));
+        assert!(fix(Failure::Unreachable).contains("[provider] (from /srv/glave/config.toml)"));
+        assert!(fix(Failure::UnknownModel).contains("acme.openai.azure.com"));
     }
 }

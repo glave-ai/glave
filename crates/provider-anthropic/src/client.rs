@@ -3,8 +3,9 @@
 
 use std::time::Duration;
 
+use glave_ports::auth::{Auth, KeyHeader, Outgoing};
 use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError};
-use reqwest::header::{CONTENT_TYPE, HeaderValue};
+use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 
 use crate::assemble::Assembler;
 use crate::error::message_of;
@@ -25,8 +26,9 @@ pub const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 pub struct Config {
     /// The API base, such as `https://api.anthropic.com`; a trailing `/v1` is accepted too.
     pub base_url: String,
-    /// Sent as `x-api-key` when set. Never logged.
-    pub api_key: Option<String>,
+    /// How each request proves who is calling: a key, in `x-api-key` for Anthropic's own
+    /// API, or credentials that change. Never logged.
+    pub auth: Auth,
     /// A short name recorded with every response and with the thinking it returns, such as
     /// `anthropic`.
     pub provider: String,
@@ -40,7 +42,7 @@ impl Config {
     pub fn new(api_key: Option<String>) -> Self {
         Self {
             base_url: DEFAULT_BASE_URL.to_owned(),
-            api_key,
+            auth: Auth::bearer(api_key).in_header(KeyHeader::XApiKey),
             provider: "anthropic".to_owned(),
             idle_timeout: IDLE_TIMEOUT,
         }
@@ -51,7 +53,7 @@ impl Config {
 pub struct Anthropic {
     http: reqwest::Client,
     endpoint: String,
-    api_key: Option<HeaderValue>,
+    auth: Auth,
     provider: String,
     idle_timeout: Duration,
 }
@@ -64,20 +66,13 @@ impl Anthropic {
             .read_timeout(config.idle_timeout)
             .build()
             .map_err(|e| ProviderError::Transport(e.to_string()))?;
-        let api_key = match config.api_key {
-            Some(key) => {
-                let mut value = HeaderValue::from_str(&key).map_err(|_| {
-                    ProviderError::Transport("the API key is not a valid header value".into())
-                })?;
-                value.set_sensitive(true);
-                Some(value)
-            }
-            None => None,
-        };
+        if let Some(key) = config.auth.fixed_key() {
+            header_pair("x-api-key", key.expose())?;
+        }
         Ok(Self {
             http,
             endpoint: endpoint(&config.base_url),
-            api_key,
+            auth: config.auth,
             provider: config.provider,
             idle_timeout: config.idle_timeout,
         })
@@ -99,16 +94,25 @@ impl ModelProvider for Anthropic {
     ) -> Result<Completion, ProviderError> {
         let body = serde_json::to_vec(&messages_request(request, &self.provider))
             .map_err(|e| ProviderError::Protocol(format!("could not encode the request: {e}")))?;
+        let outgoing = Outgoing {
+            method: "POST",
+            url: &self.endpoint,
+            headers: &[
+                ("content-type", "application/json"),
+                ("anthropic-version", VERSION),
+            ],
+            body: &body,
+        };
         let mut call = self
             .http
             .post(&self.endpoint)
             .header(CONTENT_TYPE, "application/json")
-            .header("anthropic-version", VERSION)
-            .body(body);
-        if let Some(key) = &self.api_key {
-            call = call.header("x-api-key", key.clone());
+            .header("anthropic-version", VERSION);
+        for header in self.auth.headers(&outgoing).await? {
+            let (name, value) = header_pair(&header.name, header.value.expose())?;
+            call = call.header(name, value);
         }
-        let mut response = call.send().await.map_err(|e| self.failed(e))?;
+        let mut response = call.body(body).send().await.map_err(|e| self.failed(e))?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
@@ -145,6 +149,18 @@ impl Anthropic {
             ProviderError::Transport(cause_of(error))
         }
     }
+}
+
+/// A header that proves who is calling, its value marked sensitive so it is never shown. An
+/// invalid one is refused without showing it.
+fn header_pair(name: &str, value: &str) -> Result<(HeaderName, HeaderValue), ProviderError> {
+    let name = HeaderName::from_bytes(name.as_bytes())
+        .map_err(|_| ProviderError::Credentials(format!("{name:?} is not a header name")))?;
+    let mut value = HeaderValue::from_str(value).map_err(|_| {
+        ProviderError::Credentials(format!("the value for {name} is not a valid header value"))
+    })?;
+    value.set_sensitive(true);
+    Ok((name, value))
 }
 
 /// What went wrong underneath a failed request, such as `Connection refused (os error 61)`:

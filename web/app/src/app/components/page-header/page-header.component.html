@@ -1,0 +1,16 @@
+<header>
+  <glz-top-bar>
+    <button
+      glzTopBarStart
+      glzIconButton
+      data-testid="page-menu"
+      [label]="copy.menu"
+      [attr.aria-expanded]="open()"
+      (click)="toggle()"
+    >
+      <glz-icon [icon]="icon" />
+    </button>
+    <ng-content />
+    <div glzTopBarEnd class="end"><ng-content select="[appPageHeaderEnd]" /></div>
+  </glz-top-bar>
+</header>

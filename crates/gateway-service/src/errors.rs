@@ -79,6 +79,10 @@ impl Refusal {
                 Failure::TooLong | Failure::Rejected => Self::invalid(message),
                 _ => Self::new(Kind::Upstream, message),
             },
+            ProviderError::Credentials(_) => Self::new(
+                Kind::Upstream,
+                "the gateway could not get its own credentials for the model provider",
+            ),
             ProviderError::Timeout { .. } => Self::new(Kind::Timeout, message),
             ProviderError::Unserved { failure, .. } => match failure {
                 Failure::UnknownModel => Self::new(Kind::NotFound, message),

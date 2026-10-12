@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use glave_harness::{ApprovalMode, SandboxLevel};
 
-use crate::policy::files::{Approval, ConfigFile, ModelEntry, SandboxChoice};
+use crate::policy::files::{Approval, ConfigFile, ModelEntry, ProviderFile, SandboxChoice};
 use crate::policy::memory::{MemoryChoice, SpaceChoice};
 use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkersFile};
@@ -123,6 +123,8 @@ pub struct Choices {
     pub store: Option<Chosen<String>>,
     /// The session server elsewhere this CLI is a client of, if any: its URL.
     pub server: Option<Chosen<String>>,
+    /// A cloud contract's models, if any, in place of `GLAVE_BASE_URL`'s server.
+    pub provider: Option<Chosen<ProviderFile>>,
 }
 
 /// One level choices come from.
@@ -195,6 +197,7 @@ pub fn resolve(layers: &[Layer]) -> Choices {
                 .as_ref()
                 .map(|server| server.url.trim().to_owned())
         }),
+        provider: nearest(layers, "provider", |file| file.provider.clone()),
         store: nearest(layers, "store", |file| {
             file.store.as_ref().map(|store| store.url.trim().to_owned())
         }),

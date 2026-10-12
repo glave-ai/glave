@@ -41,7 +41,15 @@
               <glz-badge glzNavItemEnd tone="warning">{{ copy.waiting }}</glz-badge>
             </a>
           </glz-nav-list>
-          <glz-nav-list [heading]="copy.earlier">
+          <glz-nav-list
+            testId="showcase-earlier"
+            collapsible
+            [heading]="copy.earlier"
+            [(expanded)]="earlier"
+          >
+            <button glzNavListActions glzIconButton size="sm" [label]="copy.newIn">
+              <glz-icon [icon]="icons.add" />
+            </button>
             <a glzNavItem [href]="values.link" [icon]="icons.thread">
               {{ copy.notes }}
               <glz-badge glzNavItemEnd tone="accent">{{ copy.running }}</glz-badge>
@@ -55,8 +63,31 @@
             <glz-icon [icon]="icons.menu" />
           </button>
           {{ copy.layoutTitle }}
+          <button
+            glzTopBarEnd
+            glzIconButton
+            data-testid="showcase-details-toggle"
+            [label]="copy.detailsToggle"
+            [attr.aria-pressed]="details()"
+            (click)="panel.toggle()"
+          >
+            <glz-icon [icon]="icons.panel" />
+          </button>
         </glz-top-bar>
-        <p class="text">{{ copy.content }}</p>
+        <glz-panel-layout
+          #panel
+          testId="showcase-panel"
+          [narrowQuery]="values.narrow"
+          [label]="copy.details"
+          [(open)]="details"
+          [(width)]="detailsWidth"
+        >
+          <p class="text">{{ copy.content }}</p>
+          <div glzPanel class="details">
+            <h4 class="details-heading">{{ copy.details }}</h4>
+            <p>{{ copy.detailsText }}</p>
+          </div>
+        </glz-panel-layout>
       </div>
     </glz-sidenav-layout>
   </div>

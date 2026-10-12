@@ -15,6 +15,7 @@ import {
 import { Brain } from 'lucide';
 
 import { MemoryService } from '../../services/memory.service';
+import { PageHeaderComponent } from '../page-header/page-header.component';
 
 const COPY = {
   heading: 'Memory',
@@ -43,6 +44,7 @@ const COPY = {
 @Component({
   selector: 'app-memory',
   imports: [
+    PageHeaderComponent,
     ReactiveFormsModule,
     GlzBadgeComponent,
     GlzButtonComponent,

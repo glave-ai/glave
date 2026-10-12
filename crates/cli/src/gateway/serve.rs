@@ -154,7 +154,7 @@ async fn run(options: Options) -> anyhow::Result<()> {
             .ok()
             .filter(|value: &String| !value.trim().is_empty())
     };
-    let endpoint = config::endpoint(env("GLAVE_MODEL"))?;
+    let endpoint = config::endpoint(env("GLAVE_MODEL"), config::provider_here().await?.as_ref())?;
     let judge = env("GLAVE_JUDGE_MODEL");
     let allowed = Allowed {
         constraints: &constraints,
@@ -176,7 +176,13 @@ async fn run(options: Options) -> anyhow::Result<()> {
         gateway(provider, &endpoint, judge.as_deref(), &[], &allowed)?.with_budgets(budgets);
     let home = home::folder()?;
     let (catalog, mut secrets) = catalog(&home, &constraints).await?;
-    secrets.extend(endpoint.provider.api_key.clone());
+    secrets.extend(
+        endpoint
+            .provider
+            .auth
+            .fixed_key()
+            .map(|key| key.expose().to_owned()),
+    );
     let store = crate::data::Data::open(None).await?;
     let scope = crate::spaces::named(&store, SCOPE).await?;
     let trust = Trust {

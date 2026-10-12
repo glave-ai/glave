@@ -37,11 +37,13 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 Cargo.toml          workspace: lints, profiles, shared dependencies
 xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
-crates/ports/       glave-ports: event log, blob store, model provider, tool source and computer ports, the clock and entropy, in-memory versions, conformance suites
+crates/ports/       glave-ports: event log, blob store, model provider (and how one is reached: a key, or credentials that change), tool source and computer ports, the clock and entropy, in-memory versions, conformance suites
 crates/identity/    glave-identity: who is calling: the verified caller, OIDC and local sign-in, the person an issuer's subject is
 crates/config/      glave-config: config and policy (specs/policy.md): choices nearest-wins, constraints that only narrow, project trust, `policy explain`; shared by the CLI and the servers
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
 crates/provider-anthropic/  glave-provider-anthropic: Anthropic's native Messages API provider (thinking sent back signed)
+crates/azure/       glave-azure: Azure OpenAI's v1 endpoint, and Microsoft Entra tokens from AKS workload identity (a hand-rolled exchange)
+crates/aws/         glave-aws: Amazon Bedrock's OpenAI-compatible endpoints, and SigV4 (aws-sigv4) with keys from the environment, IRSA or EKS Pod Identity
 crates/gateway/     glave-gateway: the in-process gateway (specs/gateway.md): routes by purpose, safe fallback, budgets, metering
 crates/gateway-service/  glave-gateway-service: the gateway as a service (`glave gateway serve`): OpenAI and Anthropic surfaces, OIDC sign-in (glave-identity), per-caller policy, budgets and metering, the MCP tool catalog at /mcp
 crates/keys/        glave-keys: the key hierarchy (root, organization, space, data keys), sealing at rest, erasure; roots in the OS keychain (`keychain`) or a key file
@@ -58,7 +60,7 @@ crates/eval/        glave-eval: the eval factory, the harness run in-process on 
 crates/cli/         glave: the command-line binary
 web/client/         the session API's TypeScript client: types generated from the schema (`cargo xtask schema`), a small typed client, no framework
 web/glaze/          Glaze (`@glave/glaze`): glave's Angular component library, web platform first, then the Angular CDK, themed only through CSS custom properties (its AGENTS.md says how to use it)
-web/app/            the web app `glave serve --http` serves at `/`: sign-in, spaces and threads, a thread streaming live with approvals and questions, tasks, memory, settings, and Glaze's showcase (`/glaze`)
+web/app/            the web app `glave serve --http` serves at `/`: sign-in; three panes (threads by space, a thread streaming live with approvals, questions and a model picker, its tools: tasks and changed files); tasks, memory, settings; Glaze's showcase (`/glaze`)
 web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app, served with glave's Content Security Policy
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)

@@ -119,6 +119,8 @@ pub(crate) mod tests {
             provider,
             model: "big".into(),
             gateway: None,
+            at: "GLAVE_BASE_URL".into(),
+            key_from: "GLAVE_API_KEY",
         }
     }
 
