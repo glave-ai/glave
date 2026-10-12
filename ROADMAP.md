@@ -1,57 +1,67 @@
 # Roadmap
 
-What glave is building toward, what exists, and what comes next. The rules for building it are in [AGENTS.md](AGENTS.md); the contracts are in [specs/](specs/).
+What glave is building toward, what exists, and what comes next. The rules for building it are in [AGENTS.md](AGENTS.md); the contracts are in [specs/](specs/). Work is tracked in issues; this page is the map.
 
 ## What glave is
 
-The open-source user agent for AI: one binary that runs anywhere, works with any model, and ships Hope as its free house model.
+Your own private AI cloud: an open-source Claude.ai or ChatGPT, where any conversation can have a real computer behind it. It works with any model, and ships Hope, a free open model.
 
-- **For people:** an affordable, private AI that gets things done (files, documents, errands, code), runs on your own machine, and is yours.
-- **For companies:** own your AI. Your models, your data, your rules, your record: glave runs on your infrastructure, under your sign-in and policy, with every action attributed and auditable.
+Glave is to OpenAI and Anthropic what GitLab is to GitHub. It's the same product for everyone, run wherever you choose:
 
-Both run the same code. People get simple defaults; companies plug in their own identity, storage, models and compute.
+- **Companies** self-host it on their own infrastructure, under their sign-in, models, data and policy.
+- **People** run it on a laptop or a small server, with the same software and simple defaults.
+- **Glave Cloud** (glave.ai, later) is the same software, hosted by us for many organizations.
+
+It's one binary, used in the browser. Everything that differs between a person and a company sits behind a seam: a built-in default that needs no setup, and a protocol for plugging in your own. A person never sees the enterprise side (AGENTS.md, "Keeping principle 4").
 
 ## Where we are
 
-Built, tested and evaluated on three models:
+Built, tested, and evaluated on three models:
 
 | Part | What exists |
 | --- | --- |
-| Harness | the agent loop and its tools (search, glob, read, write, edit, bash, web fetch), approvals and an auto-mode judge, goals, subagents, skills, custom commands, hooks, compaction, retries |
-| Computers | this machine, remote computers, cloud workers on Docker and Kubernetes (VM isolation), an optional worktree per thread, hardened file confinement, a fault-tolerant link |
-| Sandbox | macOS (Seatbelt) and Linux (bubblewrap and seccomp, Landlock as a fallback) |
-| Data store | SQLite and Postgres, encrypted at rest with per-space keys and erasure |
-| Gateway | routes by purpose, fallback, metering and budgets; as a service with OpenAI- and Anthropic-compatible endpoints, sign-in and a remote tools catalog |
-| Session API | in-process, stdio, Unix socket, and HTTP with OIDC sign-in; background tasks and schedules |
-| Policy | config and policy files, project trust, `glave policy explain` |
-| CLI | everything above, from the terminal |
+| Web app | Threads streaming live, approvals and questions, a model picker and approval mode per thread, automatic titles, tool steps, a tools panel (tasks and changes), memory, settings; Glaze, our component library |
+| Harness | The agent loop and its tools, an auto-mode judge, goals, subagents, skills, commands, hooks, compaction, memory |
+| Computers | This machine in a sandbox (macOS, Linux), worktrees per thread, cloud workers on Docker and Kubernetes |
+| Gateway | Routing, fallback, budgets and metering. Any OpenAI-compatible or Anthropic model, plus Azure, Bedrock and Vertex with keyless sign-in |
+| Data | SQLite or Postgres, encrypted at rest with per-space keys |
+| Session API | In-process, stdio, socket, and HTTP with OIDC sign-in; tasks and schedules |
+
+## Next: the pilot
+
+The first pilot is a company self-hosting glave on its own GKE cluster. Work alternates between what a person feels and what a company needs, so neither starves the other.
+
+| | Piece | Issue |
+| --- | --- | --- |
+| Person | First run: `glave` opens the browser, add a model by pasting a key | #248 |
+| Person | Credentials: Connect GitHub, any git host, tokens kept out of the computer | #249 |
+| Person | Trust a project from the browser; guardrails that keep enterprise out of view | #250, #251 |
+| Person | Markdown in replies, a model picker fix, attachments, reasoning effort | #226, #235, #243 |
+| Company | A reference GKE cluster and a Helm chart | #220 |
+| Company | Computers on the `agent-sandbox` operator: lazy, sized per group, sleeping when idle | #221 |
+| Company | Control plane: org config as data, an admin API and an admin MCP | #222 |
+| Company | Seams for a skills library, secrets and audit; a security pack for an enterprise review | #223, #224 |
+| Both | Projects with a source (folder or repository); the project page, search, notifications | #239 |
+| Both | Tool search, so many connected tools don't crowd the context | #247 |
 
 ## 1.0
 
-The first release people and companies can adopt.
+The pilot's pieces, hardened. Then:
 
-| Piece | Status |
-| --- | --- |
-| Web interface: threads, approvals, tasks and schedules, files handed back, run in the cloud, settings over the config files, and a read-only admin view (policy, usage, audit) | next |
-| Memory: what glave remembers, where, and how you see, edit and forget it ([#93](https://github.com/seashell86/glave/issues/93)) | spec in progress |
-| Hope: an adapter for better tool use, served through the gateway | not started |
-| Packaging: one binary, install script and Homebrew, release builds | not started |
-| Website and docs | not started |
-| Open source: public under the `glave-ai` organization, Apache-2.0 | at 1.0 |
+- Open source, public under `glave-ai`, Apache-2.0.
+- Packaging: an install script and Homebrew, plus a container image.
+- Docs in two tracks: using glave, and running it.
 
 ## After 1.0
 
 | Piece | Why |
 | --- | --- |
-| Knowledge pack ([#144](https://github.com/seashell86/glave/issues/144)) | Wikipedia, docs and news offline, and a company's own documents through the same engine |
-| Hope, trained | a full fine-tune for brevity, taste and calibrated reasoning, then a small distilled model, on glave's own inference server |
-| Admin console | editable policy, the tool catalog, budgets and people, every change an event |
-| Identity | SAML and SCIM: teams, groups, and spending caps per team |
-| Plan mode ([#92](https://github.com/seashell86/glave/issues/92)), errands ([#95](https://github.com/seashell86/glave/issues/95)), voice ([#58](https://github.com/seashell86/glave/issues/58)) | the rest of the harness |
-| Cloud homes | a persistent disk per person for loose files, that sleeps cheaply |
-| Cheap code execution on Glave Cloud | a warm pool of small gVisor workers on the Kubernetes backend, snapshots if start time matters, WebAssembly Python only if measurements say most cloud chats are simple data work. Locally and on a company's own server, the sandbox already runs code for free |
-| Desktop app | the web interface, packaged |
+| Glave Cloud | The same software hosted for many organizations: multi-tenancy, sign-up, billing |
+| Hope, trained and hosted | A free model tuned for glave. Training on rented GPUs; private hosted inference on confidential GPUs |
+| The tools panel's terminal and live previews | After the credential proxy keeps secrets out of the computer (#225) |
+| The agent's browser, voice, knowledge pack | #95, #58, #144 |
+| SCIM, SAML, SIEM export, chargeback | When an organization asks |
 
 ## How we decide
 
-Industry defaults first, then the simplest design that works, then evals on real models. Nothing optional is on by default unless it is invisible and harmless, and no enterprise feature adds a click for a person.
+Industry defaults first, then the simplest design that works, then evals on real models. Nothing optional is on by default unless it's invisible and harmless, and no enterprise feature adds a click for a person.
