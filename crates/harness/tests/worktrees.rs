@@ -368,4 +368,29 @@ mod worktrees {
             assert!(!repo.join("remote.txt").exists());
         });
     }
+
+    #[test]
+    fn a_thread_on_a_computer_that_dialled_in_is_not_available_yet() {
+        let dir = folder("dialled-in");
+        block_on(async {
+            let (harness, _) = harness_with(
+                workspace(&dir).await,
+                Vec::new(),
+                AllowAll,
+                MemoryLog::new(),
+                1,
+                settings(),
+            );
+            let laptop = glave_ports::ComputerId::from_uuid(uuid::Uuid::nil());
+            let refused = harness
+                .start_thread_in(scope(), &Caller::default(), Place::Computer(laptop))
+                .await;
+            let Err(HarnessError::Invalid(why)) = refused else {
+                panic!("refused, not {refused:?}")
+            };
+            assert!(why.contains("not available yet"), "{why}");
+            let threads = harness.log().threads(&scope(), 10).await.unwrap();
+            assert!(threads.is_empty(), "nothing is recorded");
+        });
+    }
 }

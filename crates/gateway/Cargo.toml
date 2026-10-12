@@ -13,6 +13,8 @@ glave-event.workspace = true
 glave-ports.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+# A content-free span and metrics for each model call.
+tracing.workspace = true
 
 [dev-dependencies]
 jiff.workspace = true

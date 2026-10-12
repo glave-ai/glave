@@ -65,68 +65,72 @@ impl EventLog for PostgresLog {
         let events = events.to_vec();
         let pool = self.pool.clone();
         let keys = Arc::clone(&self.keys);
-        async move {
-            let Some(first) = events.first() else {
-                return Ok(());
-            };
-            let (org, space, thread) = (
-                scope.org.as_uuid(),
-                scope.space.as_uuid(),
-                first.thread.as_uuid(),
-            );
-            let columns = Columns::of(&keys, &scope, &events).await?;
-            let mut client = connection(&pool).await.map_err(storage)?;
-            let transaction = client.transaction().await.map_err(database)?;
-            let last: Option<i64> = transaction
-                .query_one(
-                    "SELECT MAX(seq) FROM events WHERE org = $1 AND space = $2 AND thread = $3",
-                    &[&org, &space, &thread],
-                )
-                .await
-                .map_err(database)?
-                .try_get(0)
-                .map_err(database)?;
-            let last = last
-                .map(|seq| u64::try_from(seq).map_err(corrupt).and_then(stored_seq))
-                .transpose()?;
-            check_append(last, &events)?;
-            let insert = transaction.prepare_cached(INSERT).await.map_err(database)?;
-            let inserted = transaction
-                .query(
-                    &insert,
-                    &[
-                        &org,
-                        &space,
-                        &thread,
-                        &columns.seq,
-                        &columns.id,
-                        &columns.at,
-                        &columns.kind,
-                        &columns.v,
-                        &columns.glave,
-                        &columns.data,
-                        &columns.key_id,
-                    ],
-                )
-                .await
-                .map_err(database)?;
-            if columns.words.iter().any(Option::is_some) {
-                let index = transaction.prepare_cached(INDEX).await.map_err(database)?;
-                transaction
-                    .execute(
-                        &index,
-                        &[&org, &space, &thread, &columns.seq, &columns.words],
+        let span = tracing::debug_span!("store.append", store = "postgres", events = events.len());
+        tracing::Instrument::instrument(
+            async move {
+                let Some(first) = events.first() else {
+                    return Ok(());
+                };
+                let (org, space, thread) = (
+                    scope.org.as_uuid(),
+                    scope.space.as_uuid(),
+                    first.thread.as_uuid(),
+                );
+                let columns = Columns::of(&keys, &scope, &events).await?;
+                let mut client = connection(&pool).await.map_err(storage)?;
+                let transaction = client.transaction().await.map_err(database)?;
+                let last: Option<i64> = transaction
+                    .query_one(
+                        "SELECT MAX(seq) FROM events WHERE org = $1 AND space = $2 AND thread = $3",
+                        &[&org, &space, &thread],
+                    )
+                    .await
+                    .map_err(database)?
+                    .try_get(0)
+                    .map_err(database)?;
+                let last = last
+                    .map(|seq| u64::try_from(seq).map_err(corrupt).and_then(stored_seq))
+                    .transpose()?;
+                check_append(last, &events)?;
+                let insert = transaction.prepare_cached(INSERT).await.map_err(database)?;
+                let inserted = transaction
+                    .query(
+                        &insert,
+                        &[
+                            &org,
+                            &space,
+                            &thread,
+                            &columns.seq,
+                            &columns.id,
+                            &columns.at,
+                            &columns.kind,
+                            &columns.v,
+                            &columns.glave,
+                            &columns.data,
+                            &columns.key_id,
+                        ],
                     )
                     .await
                     .map_err(database)?;
-            }
-            let mut position = 0_i64;
-            for row in &inserted {
-                position = position.max(row.try_get::<_, i64>(0).map_err(corrupt)?);
-            }
-            crate::views::fold_in(&transaction, &scope, &events, position).await?;
-            transaction.commit().await.map_err(database)
-        }
+                if columns.words.iter().any(Option::is_some) {
+                    let index = transaction.prepare_cached(INDEX).await.map_err(database)?;
+                    transaction
+                        .execute(
+                            &index,
+                            &[&org, &space, &thread, &columns.seq, &columns.words],
+                        )
+                        .await
+                        .map_err(database)?;
+                }
+                let mut position = 0_i64;
+                for row in &inserted {
+                    position = position.max(row.try_get::<_, i64>(0).map_err(corrupt)?);
+                }
+                crate::views::fold_in(&transaction, &scope, &events, position).await?;
+                transaction.commit().await.map_err(database)
+            },
+            span,
+        )
     }
 
     fn search(

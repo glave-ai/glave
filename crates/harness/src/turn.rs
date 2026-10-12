@@ -22,8 +22,10 @@ use crate::memory::{ConfigMemory, MemoryVerb};
 use crate::question::Question;
 use crate::repeats::Repeats;
 use crate::sandbox::{Recorded, recorded};
+use crate::telemetry;
 use crate::toolset::ToolSet;
 use glave_identity::Caller;
+use tracing::Instrument as _;
 
 /// What the model is told after a cancelled turn, as Codex tells it.
 const CANCELLED: &str = "[The person cancelled this turn on purpose. A command that was stopped \
@@ -217,7 +219,18 @@ where
         cancel: &'a Cancel,
         live: &'a mut (dyn FnMut(Live) + Send),
     ) -> BoxFuture<'a, Result<TurnSummary, HarnessError>> {
-        Box::pin(self.turn(thread, prompt, toolset, cancel, live))
+        Box::pin(async move {
+            let span = telemetry::turn(thread.id, prompt.caller.trace.as_ref());
+            let began = std::time::Instant::now();
+            let ran = self
+                .turn(thread, prompt, toolset, cancel, live)
+                .instrument(span.clone())
+                .await;
+            let ended = ran.as_ref().ok();
+            let ended = ended.map(|turn| (turn.outcome, turn.model_calls, turn.tool_calls));
+            telemetry::turn_ended(&span, began, ended);
+            ran
+        })
     }
 
     async fn turn(
@@ -422,7 +435,7 @@ where
             &TurnStarted {
                 model,
                 config,
-                trace: None,
+                trace: caller.trace.clone(),
                 auth: caller.auth.clone(),
             },
         )?;

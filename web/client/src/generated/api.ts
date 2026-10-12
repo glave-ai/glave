@@ -33,6 +33,9 @@ export type Choice = {
   readonly label: string;
 };
 
+/** Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it). */
+export type ComputerId = string;
+
 /** An ISO 4217 currency code: three uppercase ASCII letters, such as `USD`. */
 export type Currency = string;
 
@@ -86,6 +89,11 @@ export type Meta = {
    * instead of starting another, so a client may retry safely.
    */
   readonly idempotency_key?: IdempotencyKey | null;
+  /**
+   * For `turn/start`: the W3C trace the turn belongs to (`00-<trace id>-<parent id>-<flags>`),
+   * recorded with the turn and joined by glave's spans. One that is not one is ignored.
+   */
+  readonly traceparent?: string | null;
 };
 
 /** One model a thread may be sent to. */
@@ -667,6 +675,11 @@ export type ThreadStartParams = {
    */
   readonly background?: boolean;
   /**
+   * A running computer to work on, such as the person's own laptop dialled in to this
+   * server. Not available yet: refused with `-32022`.
+   */
+  readonly computer?: ComputerId | null;
+  /**
    * The model the thread's turns go to, one `model/list` names; the server's default
    * when absent.
    */
@@ -803,6 +816,8 @@ export const ErrorCode = {
   MEMORY_OFF: -32018,
   /** The caller may not do this */
   NOT_ALLOWED: -32012,
+  /** Not available yet, such as a thread on a computer of the person's own */
+  NOT_AVAILABLE: -32022,
   /** No such approval is pending */
   NO_APPROVAL: -32004,
   /** The thread has no active goal (or, to resume, no paused one) */

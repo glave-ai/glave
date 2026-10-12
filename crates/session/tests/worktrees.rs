@@ -24,6 +24,7 @@ mod worktrees {
                     space: None,
                     background: false,
                     worktree: None,
+                    computer: None,
                     model: None,
                 })
                 .await
@@ -55,6 +56,7 @@ mod worktrees {
                     space: None,
                     background: false,
                     worktree: Some(true),
+                    computer: None,
                     model: None,
                 })
                 .await

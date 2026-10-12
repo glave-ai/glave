@@ -280,6 +280,7 @@ where
         space: None,
         background: false,
         worktree: worktree.then_some(true),
+        computer: None,
         model: None,
     };
     match server.request(started).await.unwrap() {

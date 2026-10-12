@@ -11,7 +11,19 @@ use super::environment::{Environment, Size};
 use super::sandbox::Sandbox;
 
 /// Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(transparent)]
 pub struct ComputerId(Uuid);
 

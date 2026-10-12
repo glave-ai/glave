@@ -19,7 +19,7 @@ use glave_session::OnWorkers;
 
 use crate::client::Glave;
 use crate::home;
-use glave_config::policy::{Backend, Choices, Constraints, On, WorkersFile};
+use glave_config::policy::{Backend, Choices, Constraints, On, Placement, WorkersFile};
 
 /// Threads on workers, when `on` is `cloud`, or only tasks' threads when `tasks` and a backend
 /// is set up: what the session server needs, and the workers themselves, to remove any left at
@@ -31,7 +31,9 @@ pub async fn workers(
     tasks: bool,
 ) -> anyhow::Result<(Option<OnWorkers>, Option<Arc<WorkerComputers>>)> {
     if choices.on.value != On::Cloud {
-        if !tasks || choices.workers.is_none() {
+        // Tasks go to workers only where the policy lets threads work on one.
+        let allowed = constraints.allows_placement(Placement::Worker);
+        if !tasks || choices.workers.is_none() || !allowed {
             return Ok((None, None));
         }
         return match every_or_tasks(choices, constraints, folder, false).await {

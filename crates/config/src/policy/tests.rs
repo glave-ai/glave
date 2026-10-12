@@ -390,6 +390,42 @@ fn where_threads_work_is_a_choice_and_the_backend_comes_from_config() {
     assert_eq!(no_choices().on.value, On::Here, "here by default");
 }
 
+#[test]
+fn placement_rules_narrow_where_threads_work() {
+    let only_here = [policy_at(
+        ORG,
+        "version = 1\n[placement]\nallowed = [\"here\", \"laptop\"]\n",
+    )];
+    let cloud = [file(PERSON, "on = \"cloud\"\n")];
+    let refused = settle(&cloud, &only_here).unwrap_err().to_string();
+    assert_eq!(
+        refused,
+        format!(
+            "threads working worker (on = cloud, from {PERSON}) are not allowed: [placement] \
+             allowed = [\"here\", \"laptop\"] in {ORG}"
+        )
+    );
+    assert_eq!(settle(&[], &only_here).unwrap().on.value, On::Here);
+    let only_workers = [policy_at(
+        ORG,
+        "version = 1\n[placement]\nallowed = [\"worker\"]\n",
+    )];
+    let settled = settle(&[], &only_workers).unwrap();
+    assert_eq!(settled.on.value, On::Cloud, "the default gives way");
+    assert_eq!(settled.on.from, Source::Narrowed(PathBuf::from(ORG)));
+    let here = [file(PERSON, "on = \"here\"\n")];
+    assert!(settle(&here, &only_workers).is_err(), "a choice never does");
+    let rules = constraints("version = 1\n[placement]\nallowed = [\"here\"]\n");
+    assert!(rules.allows_placement(Placement::Here));
+    assert!(!rules.allows_placement(Placement::Worker));
+    assert!(constraints("version = 1\n").allows_placement(Placement::Laptop));
+    let unknown = files::policy(
+        "version = 1\n[placement]\nallowed = [\"moon\"]\n",
+        Path::new(ORG),
+    );
+    assert!(unknown.is_err());
+}
+
 fn no_choices() -> Choices {
     choices::resolve(&[])
 }

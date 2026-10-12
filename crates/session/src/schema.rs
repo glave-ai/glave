@@ -105,6 +105,11 @@ pub const ERRORS: &[(i64, &str, &str)] = &[
         "NO_MODEL",
         "No such model here, or not one this server may run",
     ),
+    (
+        code::NOT_AVAILABLE,
+        "NOT_AVAILABLE",
+        "Not available yet, such as a thread on a computer of the person's own",
+    ),
 ];
 
 /// The replies each method answers with, by the titles of their [`Reply`] variants.

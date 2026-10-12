@@ -169,7 +169,8 @@ where
         live(Live::ToolStarted {
             summary: summary.clone(),
         });
-        let output = source.call(name, &call.arguments, cancel).await;
+        let output = source.call(name, &call.arguments, cancel);
+        let output = crate::telemetry::tool_call(name, output).await;
         live(Live::ToolFinished {
             summary,
             is_error: output.is_error,
@@ -322,6 +323,7 @@ where
         } else {
             Self::other_than_for(thread, person)
         };
+        crate::telemetry::approval(&request.tool, verdict);
         let decided = ApprovalDecided {
             call_id: request.call_id.clone(),
             decision: verdict,

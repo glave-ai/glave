@@ -213,6 +213,11 @@ where
     /// thread, or on the server's tasks, schedules or memory, is refused with `-32012` unless
     /// the caller works in that space.
     pub async fn request_as(&self, caller: &Caller, request: Request) -> Result<Reply, ApiError> {
+        let span = crate::trace::span(&request);
+        tracing::Instrument::instrument(self.answer(caller, request), span).await
+    }
+
+    async fn answer(&self, caller: &Caller, request: Request) -> Result<Reply, ApiError> {
         self.allow(caller, &request).await?;
         match request {
             Request::Discover {} => Ok(Reply::Server(ServerInfo {
@@ -235,7 +240,7 @@ where
                 limit,
             } => self.events(thread, after, limit).await,
             streams @ (Request::TurnStart { .. } | Request::GoalStart { .. }) => {
-                match self.start_streaming(caller, streams).await {
+                match self.stream(caller, streams).await {
                     Ok(started) => started?.finish().await.map(|turn| Reply::Turn { turn }),
                     Err(background) => self
                         .tasks_request(caller, *background)
