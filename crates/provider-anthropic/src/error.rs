@@ -8,15 +8,20 @@ use crate::events::WireError;
 /// How much of an error message to keep.
 const ERROR_CHARS: usize = 500;
 
-/// The message in an error body, `error.message` as Anthropic sends it, or the body itself,
-/// on one line and cut short, rather than raw JSON.
+/// The message in an error body, `error.message` as Anthropic and Google send it (Vertex AI
+/// sometimes in a one-element array), or the body itself, on one line and cut short, rather
+/// than raw JSON.
 pub(crate) fn message_of(body: &str) -> String {
     let parsed: Option<serde_json::Value> = serde_json::from_str(body).ok();
     let message = parsed.as_ref().and_then(|value| {
-        [value.pointer("/error/message"), value.get("message")]
-            .into_iter()
-            .flatten()
-            .find_map(serde_json::Value::as_str)
+        [
+            value.pointer("/error/message"),
+            value.pointer("/0/error/message"),
+            value.get("message"),
+        ]
+        .into_iter()
+        .flatten()
+        .find_map(serde_json::Value::as_str)
     });
     one_line(message.unwrap_or(body))
 }
@@ -82,6 +87,13 @@ mod tests {
         assert_eq!(
             message_of("<html>\n  <body>Bad Gateway</body>\n</html>"),
             "<html> <body>Bad Gateway</body> </html>"
+        );
+        assert_eq!(
+            message_of(
+                r#"[{"error":{"code":404,"message":"Publisher Model claude-nope not found.","status":"NOT_FOUND"}}]"#
+            ),
+            "Publisher Model claude-nope not found.",
+            "Vertex AI's error, in an array"
         );
         assert_eq!(message_of(&"x".repeat(900)).len(), ERROR_CHARS);
     }

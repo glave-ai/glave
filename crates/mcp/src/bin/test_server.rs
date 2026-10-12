@@ -133,11 +133,16 @@ impl ServerHandler for TestServer {
         Some(requested.clone())
     }
 
+    /// rmcp acknowledges the subscription before this runs, so a `grow` can land in between:
+    /// one that did is told here. Nothing awaits between the two, so it is told exactly once.
     async fn listen(&self, context: SubscriptionContext) -> Result<(), ErrorData> {
         self.listeners
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(context.sink().clone());
+        if self.grown.load(Ordering::SeqCst) {
+            let _ = context.sink().notify_tool_list_changed().await;
+        }
         context.cancelled().await;
         Ok(())
     }

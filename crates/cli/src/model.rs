@@ -22,6 +22,7 @@ impl Model {
             Ok(Self::Anthropic(Anthropic::new(
                 glave_provider_anthropic::Config {
                     base_url: config.base_url.clone(),
+                    api: glave_provider_anthropic::Api::Messages,
                     auth: config.auth.clone().in_header(KeyHeader::XApiKey),
                     provider: config.provider.clone(),
                     idle_timeout: config.idle_timeout,
