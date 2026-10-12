@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { NEW_THREAD, THREAD, fakeApi } from './fake-api';
-import { byTestId, expectAccessible, shownOpacity, watchForProblems } from './support';
+import { byTestId, expectAccessible, shownOpacity, watchForProblems, SIGNED_IN } from './support';
 
 test('without a sign-in, the app says how to get one', async ({ page }) => {
   await fakeApi(page);
@@ -18,7 +18,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const problems = watchForProblems(page);
     await page.emulateMedia({ colorScheme });
     await fakeApi(page);
-    await page.goto('/#token=glave_local_test');
+    await page.goto(`/${SIGNED_IN}`);
     await expect(byTestId(page, 'nav-thread').first()).toContainText('Make the tests pass');
     expect(page.url()).not.toContain('token');
     await expectAccessible(page);
@@ -28,7 +28,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
 
 test('a thread shows its history and streams a reply to a new message', async ({ page }) => {
   await fakeApi(page);
-  await page.goto(`/t/${THREAD}#token=glave_local_test`);
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
   await expect(byTestId(page, 'thread-steps-summary')).toHaveText('Ran 4 steps');
   await expect(byTestId(page, 'thread-message').last()).toContainText('They pass now.');
   await expectAccessible(page);
@@ -45,7 +45,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await page.setViewportSize({ width: 1440, height: 900 });
     await fakeApi(page);
-    await page.goto(`/t/${THREAD}#token=glave_local_test`);
+    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     const summary = byTestId(page, 'thread-steps-summary');
     const receipts = byTestId(page, 'thread-receipt');
     await expect(summary).toHaveText('Ran 4 steps');
@@ -78,7 +78,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await page.setViewportSize({ width: 1440, height: 900 });
     await fakeApi(page);
-    await page.goto(`/t/${THREAD}#token=glave_local_test`);
+    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     const messages = byTestId(page, 'thread-message');
     await expect(messages.last()).toContainText('They pass now.');
     await expect(byTestId(page, 'message-copy')).toHaveCount(2);
@@ -104,7 +104,7 @@ test.describe('on a touch screen', () => {
 
   test('the copy button always shows, since nothing hovers', async ({ page }) => {
     await fakeApi(page);
-    await page.goto(`/t/${THREAD}#token=glave_local_test`);
+    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     const copy = byTestId(page, 'thread-message').last().getByTestId('message-copy');
     await expect(copy).toBeAttached();
     await expect.poll(() => shownOpacity(copy)).toBe(1);
@@ -113,7 +113,7 @@ test.describe('on a touch screen', () => {
 
 test('a new chat starts a thread and sends the first message', async ({ page }) => {
   const api = await fakeApi(page);
-  await page.goto('/#token=glave_local_test');
+  await page.goto(`/${SIGNED_IN}`);
   const prompt = byTestId(page, 'home-composer-input');
   await prompt.fill('Plan the launch');
   await prompt.press('Enter');
@@ -124,7 +124,7 @@ test('a new chat starts a thread and sends the first message', async ({ page }) 
 
 test('tasks, memory and settings open from the side nav', async ({ page }) => {
   await fakeApi(page);
-  await page.goto('/#token=glave_local_test');
+  await page.goto(`/${SIGNED_IN}`);
   await byTestId(page, 'nav-tasks').click();
   await expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible();
   await expectAccessible(page);

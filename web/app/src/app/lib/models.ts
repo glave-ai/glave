@@ -2,7 +2,7 @@ import type { ModelInfo, RawEvent } from '@glave/client';
 import type { GlzMenuOption } from '@glave/glaze';
 
 /** What marks the server's default model in the picker. */
-export const DEFAULT_HINT = 'Default';
+const DEFAULT_HINT = 'Default';
 
 /** Between a model's company and its own name: `Anthropic · Claude Haiku 5.5`. */
 const SEPARATOR = ' · ';

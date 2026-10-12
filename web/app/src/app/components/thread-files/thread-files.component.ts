@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { GlzEmptyStateComponent } from '@glave/glaze';
 import { FileDiff } from 'lucide';
 
-import { type FileChange, changedFiles } from '../../lib/files';
+import type { FileChange } from '../../lib/files';
 import { ThreadService } from '../../services/thread.service';
 
 const COPY = {
@@ -40,7 +40,7 @@ export class ThreadFilesComponent {
   private readonly thread = inject(ThreadService);
 
   protected readonly files = computed(() =>
-    changedFiles(this.thread.log()).map((file) => ({
+    this.thread.files().map((file) => ({
       path: file.path,
       counts: `+${String(file.added)} −${String(file.removed)}`,
       countsLabel: `${String(file.added)} ${COPY.added}, ${String(file.removed)} ${COPY.removed}`,

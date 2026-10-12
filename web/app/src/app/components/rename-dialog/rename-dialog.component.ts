@@ -17,7 +17,7 @@ import {
 } from '@glave/glaze';
 
 /** The longest title `thread/rename` takes. */
-export const TITLE_LIMIT = 200;
+const TITLE_LIMIT = 200;
 
 const COPY = {
   heading: 'Rename the thread',

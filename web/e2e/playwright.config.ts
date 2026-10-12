@@ -4,17 +4,23 @@ import { join, resolve } from 'node:path';
 
 import { defineConfig, devices } from '@playwright/test';
 
+import { APP_URL, SHOWCASE_URL } from './support';
+
 /** The glave binary that serves the app: GLAVE_BIN, else the workspace's debug build. */
 const glave = process.env['GLAVE_BIN'] ?? resolve(import.meta.dirname, '../../target/debug/glave');
 
-/** A glave home of the run's own, so the tests touch nothing of the person's. */
-const home = mkdtempSync(join(tmpdir(), 'glave-e2e-'));
+/** What glave serves, and where: the app, and Glaze's showcase beside it. */
+const SITES = [
+  { url: APP_URL, web: 'dist/app/browser' },
+  { url: SHOWCASE_URL, web: 'dist/showcase/browser' },
+];
 
 /**
- * End-to-end smoke tests: the production build (`npm run build`) served by the real
- * `glave serve --http --web`, with glave's own Content Security Policy and headers, in
- * Chromium. The session API's calls are answered by each test's fake (fake-api.ts), so no
- * model is needed. Build glave first (`cargo build -p glave`); `cargo xtask ci` does.
+ * End-to-end smoke tests: the production builds (`npm run build`, `npm run build:showcase`)
+ * served by the real `glave serve --http --web`, with glave's own Content Security Policy and
+ * headers, in Chromium. The session API's calls are answered by each test's fake
+ * (fake-api.ts), so no model is needed. Build glave first (`cargo build -p glave`); `cargo
+ * xtask ci` does.
  */
 export default defineConfig({
   testDir: '.',
@@ -24,15 +30,16 @@ export default defineConfig({
   retries: 0,
   reporter: [['list']],
   use: {
-    baseURL: 'http://127.0.0.1:4310',
+    baseURL: APP_URL,
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: `"${glave}" serve --http 4310 --web dist/app/browser`,
-    url: 'http://127.0.0.1:4310/glaze',
+  // Each from a glave home of its own, so the tests touch nothing of the person's.
+  webServer: SITES.map(({ url, web }) => ({
+    command: `"${glave}" serve --http ${new URL(url).port} --web ${web}`,
+    url,
     reuseExistingServer: false,
     cwd: '..',
-    env: { GLAVE_HOME: home, GLAVE_MODEL: 'e2e' },
-  },
+    env: { GLAVE_HOME: mkdtempSync(join(tmpdir(), 'glave-e2e-')), GLAVE_MODEL: 'e2e' },
+  })),
 });

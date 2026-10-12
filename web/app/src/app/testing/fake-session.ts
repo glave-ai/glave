@@ -11,7 +11,7 @@ import { TOKEN_KEY } from '../lib/token';
 import { SESSION_CLIENT_FACTORY, type SessionClient } from '../services/session.service';
 
 /** A call the fake saw. */
-export interface SeenCall {
+interface SeenCall {
   readonly method: string;
   readonly params: unknown;
 }

@@ -1,9 +1,7 @@
 import { type Page, expect, test } from '@playwright/test';
 
 import { THREAD, type Request, fakeApi } from './fake-api';
-import { byTestId, expectAccessible } from './support';
-
-const SIGNED_IN = '#token=glave_local_test';
+import { byTestId, expectAccessible, SIGNED_IN } from './support';
 
 /**
  * Presses Tab (or Shift+Tab, `back`) until the element with `testId` has focus, as someone on

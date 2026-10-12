@@ -23,7 +23,7 @@ describe('token', () => {
     });
     expect(token).toBe('glave_local_abc');
     expect(replaceState).toHaveBeenCalledWith(null, '', '/t/1?x=1');
-    expect(kept.kept.get(TOKEN_KEY)).toBe('glave_local_abc');
+    expect(kept.kept.get(TOKEN_KEY)).toBe('"glave_local_abc"');
   });
 
   it('reads a kept token when the link has none, and forgets it', () => {

@@ -39,8 +39,8 @@
               "budgets": [
                 {
                   "type": "initial",
-                  "maximumWarning": "435kB",
-                  "maximumError": "450kB"
+                  "maximumWarning": "375kB",
+                  "maximumError": "390kB"
                 },
                 {
                   "type": "anyComponentStyle",
@@ -141,7 +141,8 @@
             "tsConfig": "glaze/tsconfig.spec.json",
             "setupFiles": ["glaze/src/testing/platform.ts"],
             "coverage": true,
-            "coverageReporters": ["text-summary"]
+            "coverageReporters": ["text-summary"],
+            "include": ["**/*.spec.ts", "../showcase/**/*.spec.ts"]
           }
         }
       },
@@ -168,6 +169,51 @@
         },
         "@schematics/angular:pipe": {
           "typeSeparator": "."
+        }
+      }
+    },
+    "showcase": {
+      "projectType": "application",
+      "root": "glaze/showcase",
+      "sourceRoot": "glaze/showcase/src",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "glaze/showcase/src/main.ts",
+            "index": "glaze/showcase/src/index.html",
+            "tsConfig": "glaze/showcase/tsconfig.app.json",
+            "outputPath": "dist/showcase",
+            "assets": [
+              {
+                "glob": "favicon.svg",
+                "input": "app/public"
+              }
+            ],
+            "styles": [
+              "@fontsource/atkinson-hyperlegible-next/400.css",
+              "@fontsource/atkinson-hyperlegible-next/700.css",
+              "@fontsource/atkinson-hyperlegible-mono/400.css",
+              "glaze/styles/glaze.css"
+            ],
+            "optimization": {
+              "styles": {
+                "inlineCritical": false
+              }
+            }
+          },
+          "configurations": {
+            "development": {
+              "optimization": false,
+              "sourceMap": true
+            }
+          }
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "options": {
+            "buildTarget": "showcase:build:development"
+          }
         }
       }
     }

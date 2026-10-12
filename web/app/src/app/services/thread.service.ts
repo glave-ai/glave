@@ -3,6 +3,7 @@ import type { ApprovalMode, RawEvent, ThreadId, TurnStartParams } from '@glave/c
 import type { GlzDecision } from '@glave/glaze';
 
 import { NO_DRAFT, applyUpdate, mergeEvents, threadItems, type Draft } from '../lib/conversation';
+import { changedFiles } from '../lib/files';
 import { chosenModel } from '../lib/models';
 import { SessionService } from './session.service';
 import { SpacesService } from './spaces.service';
@@ -25,9 +26,9 @@ export class ThreadService {
   private controller: AbortController | null = null;
 
   readonly thread = this.id.asReadonly();
-  /** The thread's events, in `seq` order. */
-  readonly log = this.events.asReadonly();
   readonly items = computed(() => threadItems(this.events()));
+  /** The files the thread changed with its own `write` and `edit` calls. */
+  readonly files = computed(() => changedFiles(this.events()));
   readonly reply = this.draft.asReadonly();
   readonly busy = this.running.asReadonly();
   readonly error = this.failed.asReadonly();
