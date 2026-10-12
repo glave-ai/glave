@@ -2,7 +2,7 @@
 
 `@glave/glaze`: glave's Angular component library. Accessible (WCAG 2.2 AA, axe in every test), themed only through CSS custom properties, built on the web platform first and the Angular CDK second. Open source with glave; it will be published as 0.x once the app's design settles.
 
-See every component live at `/glaze` in the app (`npm start` in `web/`). Coding agents: [AGENTS.md](AGENTS.md) says how to use it. A Glaze CLI (a schematic) will later add that guidance to a consuming project's own AGENTS.md.
+See every component live in the showcase (`npm run showcase` in `web/`), a dev-only app that ships with neither glave nor Glaze. Coding agents: [AGENTS.md](AGENTS.md) says how to use it. A Glaze CLI (a schematic) will later add that guidance to a consuming project's own AGENTS.md.
 
 ## What is in it
 
@@ -70,4 +70,4 @@ Light and dark follow the system; `data-theme="light"` or `"dark"` on `<html>` f
 
 ## Structure
 
-`src/components/<name>/<name>.component.{ts,html,scss,spec.ts}`, `src/directives/`, `src/lib/` (pure functions), `styles/` (the global CSS). `npm run build:glaze` builds the package with ng-packagr into `dist/glaze`.
+`src/components/<name>/<name>.component.{ts,html,scss,spec.ts}`, `src/directives/`, `src/lib/` (pure functions), `styles/` (the global CSS), `showcase/` (the showcase app). `npm run build:glaze` builds the package with ng-packagr into `dist/glaze`.

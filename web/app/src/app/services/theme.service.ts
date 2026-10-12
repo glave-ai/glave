@@ -1,11 +1,13 @@
 import { DOCUMENT } from '@angular/common';
 import { Service, effect, inject, signal } from '@angular/core';
 
+import { readStored, storageOf, writeStored } from '../lib/storage';
+
 /** The person's theme: the system's, or one they picked. */
-export type ThemeChoice = 'system' | 'light' | 'dark';
+type ThemeChoice = 'system' | 'light' | 'dark';
 
 /** The choices, in the order Settings lists them. */
-export const THEME_CHOICES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
+const THEME_CHOICES: readonly ThemeChoice[] = ['system', 'light', 'dark'];
 
 const KEY = 'glave-theme';
 
@@ -22,6 +24,7 @@ export function isChoice(value: unknown): value is ThemeChoice {
 @Service()
 export class ThemeService {
   private readonly document = inject(DOCUMENT);
+  private readonly storage = storageOf(this.document, 'localStorage');
   private readonly chosen = signal<ThemeChoice>(this.read());
 
   readonly choice = this.chosen.asReadonly();
@@ -40,19 +43,11 @@ export class ThemeService {
 
   set(choice: ThemeChoice): void {
     this.chosen.set(choice);
-    try {
-      this.document.defaultView?.localStorage.setItem(KEY, choice);
-    } catch {
-      // Storage may be off, as in some private windows: the choice lasts for this page.
-    }
+    writeStored(this.storage, KEY, choice);
   }
 
   private read(): ThemeChoice {
-    try {
-      const saved = this.document.defaultView?.localStorage.getItem(KEY);
-      return isChoice(saved) ? saved : 'system';
-    } catch {
-      return 'system';
-    }
+    const saved = readStored(this.storage, KEY);
+    return isChoice(saved) ? saved : 'system';
   }
 }

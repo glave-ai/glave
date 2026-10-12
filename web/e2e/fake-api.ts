@@ -1,3 +1,4 @@
+import type { ModelInfo, RawEvent, Space, TaskInfo, ThreadSummary } from '@glave/client';
 import type { Page, Route } from '@playwright/test';
 
 /**
@@ -5,9 +6,9 @@ import type { Page, Route } from '@playwright/test';
  * thread's history (a command, an edit and a new file, a reply from the default model, which
  * the picker shows), the models, the tasks, and what a turn streams.
  */
-const OWNER = { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' };
+const OWNER = { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' } as const;
 
-function space(id: string, name: string, kind: string): Record<string, unknown> {
+function space(id: string, name: string, kind: Space['kind']): Space {
   return {
     id,
     kind,
@@ -27,12 +28,12 @@ const TOKENS = { input: 1200, output: 300, cache_read: 0, cache_write: 0, reason
 function thread(
   id: string,
   title: string,
-  status = 'idle',
+  status: ThreadSummary['status'] = 'idle',
   inSpace = PROJECT,
-): Record<string, unknown> {
+): ThreadSummary {
   return {
     id,
-    space: inSpace['id'],
+    space: inSpace.id,
     status,
     standing: 'active',
     title,
@@ -48,25 +49,25 @@ function thread(
 export const THREAD = '01900000-0000-7000-8000-000000000101';
 export const NEW_THREAD = '01900000-0000-7000-8000-000000000102';
 
-const THREADS = {
-  [PROJECT['id'] as string]: [
+const THREADS: Readonly<Record<string, readonly ThreadSummary[]>> = {
+  [PROJECT.id]: [
     thread(THREAD, 'Make the tests pass'),
     thread('01900000-0000-7000-8000-000000000103', 'Review the release notes', 'waiting'),
     thread('01900000-0000-7000-8000-000000000104', 'Nightly dependency audit', 'running'),
   ],
-  [PERSONAL['id'] as string]: [
+  [PERSONAL.id]: [
     thread('01900000-0000-7000-8000-000000000105', 'Dinner ideas for Saturday', 'idle', PERSONAL),
   ],
 };
 
 /** The default model: no name configured, so the app names it from its id. */
-export const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5';
+const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5';
 
 /**
  * The models the fake server runs: its default, Hope, two more, and a long catalogue like
  * OpenRouter's, which the picker must search and scroll.
  */
-export const MODELS = [
+export const MODELS: readonly ModelInfo[] = [
   { id: DEFAULT_MODEL, default: true, hope: false },
   { id: 'hope-12b', name: 'Hope', default: false, hope: true },
   { id: 'openai/gpt-6-luna', default: false, hope: false },
@@ -78,12 +79,7 @@ export const MODELS = [
   })),
 ];
 
-function event(
-  seq: number,
-  type: string,
-  data: Record<string, unknown>,
-  id = THREAD,
-): Record<string, unknown> {
+function event(seq: number, type: string, data: RawEvent['data'], id = THREAD): RawEvent {
   return {
     glave: 1,
     id: `01900000-0000-7000-8000-${String(seq).padStart(12, '0')}`,
@@ -96,11 +92,11 @@ function event(
   };
 }
 
-function call(seq: number, callId: string, tool: string, json: Record<string, unknown>): unknown {
+function call(seq: number, callId: string, tool: string, json: Record<string, unknown>): RawEvent {
   return event(seq, 'tool.call.requested', { call_id: callId, tool, arguments: { json } });
 }
 
-function done(seq: number, callId: string, text: string): unknown {
+function done(seq: number, callId: string, text: string): RawEvent {
   return event(seq, 'tool.call.completed', {
     call_id: callId,
     is_error: false,
@@ -146,7 +142,7 @@ const HISTORY = [
   }),
 ];
 
-const TASKS = [
+const TASKS: readonly TaskInfo[] = [
   {
     thread: '01900000-0000-7000-8000-000000000104',
     kind: 'agent',

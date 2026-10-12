@@ -1,6 +1,13 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type Locator, type Page, expect } from '@playwright/test';
 
+/** Where the app is served, and Glaze's showcase (playwright.config.ts). */
+export const APP_URL = 'http://127.0.0.1:4310';
+export const SHOWCASE_URL = 'http://127.0.0.1:4311';
+
+/** The fragment of the link that signs the app in (`glave serve` prints one). */
+export const SIGNED_IN = '#token=glave_local_test';
+
 /** Elements end-to-end tests use, by their `data-testid` (AGENTS.md, "Test hooks"). */
 export function byTestId(page: Page, testId: string): ReturnType<Page['getByTestId']> {
   return page.getByTestId(testId);

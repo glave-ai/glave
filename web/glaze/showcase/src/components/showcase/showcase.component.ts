@@ -23,7 +23,7 @@ const COPY = {
   contents: 'On this page',
 } as const;
 
-/** `/glaze`: every Glaze component on one page, to see and try. */
+/** The showcase: every Glaze component on one page, to see and try. */
 @Component({
   selector: 'app-showcase',
   imports: [

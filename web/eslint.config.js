@@ -61,9 +61,7 @@ export default tseslint.config(
     files: [
       'glaze/src/components/button/button.component.ts',
       'glaze/src/components/icon-button/icon-button.component.ts',
-      'glaze/src/components/menu-item/menu-item.component.ts',
       'glaze/src/components/nav-item/nav-item.component.ts',
-      'glaze/src/components/rail-item/rail-item.component.ts',
     ],
     rules: { '@angular-eslint/component-selector': 'off' },
   },

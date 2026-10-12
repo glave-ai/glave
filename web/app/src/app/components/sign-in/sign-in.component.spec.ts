@@ -13,7 +13,8 @@ describe('SignInComponent', () => {
     const fixture = TestBed.createComponent(SignInComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    expect(root.textContent).toContain('glave serve --http');
+    expect(root.querySelector('header glz-top-bar')?.textContent).toContain('glave');
+    expect(root.querySelector('main')?.textContent).toContain('glave serve --http');
     await expectAccessible(root);
   });
 

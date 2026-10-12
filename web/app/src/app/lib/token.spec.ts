@@ -1,4 +1,5 @@
-import { TOKEN_KEY, forgetToken, takeToken } from './token';
+import { forget } from './storage';
+import { TOKEN_KEY, takeToken } from './token';
 
 function storage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> & {
   readonly kept: Map<string, string>;
@@ -23,7 +24,7 @@ describe('token', () => {
     });
     expect(token).toBe('glave_local_abc');
     expect(replaceState).toHaveBeenCalledWith(null, '', '/t/1?x=1');
-    expect(kept.kept.get(TOKEN_KEY)).toBe('glave_local_abc');
+    expect(kept.kept.get(TOKEN_KEY)).toBe('"glave_local_abc"');
   });
 
   it('reads a kept token when the link has none, and forgets it', () => {
@@ -33,7 +34,7 @@ describe('token', () => {
     const place = { location: { hash: '', pathname: '/', search: '' }, history: { replaceState } };
     expect(takeToken({ ...place, storage: kept })).toBe('kept');
     expect(replaceState).not.toHaveBeenCalled();
-    forgetToken(kept);
+    forget(kept, TOKEN_KEY);
     expect(takeToken({ ...place, storage: kept })).toBeNull();
     expect(takeToken({ ...place, storage: null })).toBeNull();
   });

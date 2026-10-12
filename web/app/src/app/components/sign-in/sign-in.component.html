@@ -1,4 +1,9 @@
-<glz-empty-state data-testid="sign-in" [heading]="copy.heading" [icon]="icon">
-  <p>{{ copy.text }}</p>
-  <pre class="command">{{ copy.command }}</pre>
-</glz-empty-state>
+<header>
+  <glz-top-bar>{{ copy.name }}</glz-top-bar>
+</header>
+<main class="page">
+  <glz-empty-state data-testid="sign-in" [heading]="copy.heading" [icon]="icon">
+    <p>{{ copy.text }}</p>
+    <pre class="command">{{ copy.command }}</pre>
+  </glz-empty-state>
+</main>

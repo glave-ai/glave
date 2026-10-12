@@ -76,7 +76,7 @@ async function type(root: HTMLElement, text: string): Promise<void> {
     input.dispatchEvent(new Event('input'));
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
   }
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await settle();
 }
 
 describe('ThreadComponent', () => {
