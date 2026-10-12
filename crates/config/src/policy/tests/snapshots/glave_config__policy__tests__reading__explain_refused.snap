@@ -11,6 +11,7 @@ Settings (the nearest wins: flags, environment, project, person, default)
   mcp           ["github"]          from /home/ada/.glave/config.toml
   models        none besides model  from default
   worktree      off                 from default
+  titles        on                  from default
   on            here                from default
   web           fetch on            from default
   memory        on                  from default

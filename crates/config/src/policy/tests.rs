@@ -160,6 +160,20 @@ fn with_nothing_set_every_choice_is_the_default() {
         (false, Source::Default),
         "threads work in the folder itself unless asked"
     );
+    assert_eq!(
+        (choices.titles.value, choices.titles.from),
+        (true, Source::Default),
+        "a model titles threads unless turned off"
+    );
+    let off = choices::resolve(&layers(
+        ConfigFile::default(),
+        ConfigFile::default(),
+        vec![file(PERSON, "titles = false\n")],
+    ));
+    assert_eq!(
+        (off.titles.value, off.titles.from),
+        (false, file_source(PERSON))
+    );
     let flags_beat_files = choices::resolve(&layers(
         ConfigFile {
             sandbox: Some(SandboxChoice::Off),

@@ -22,6 +22,7 @@ mod server;
 mod spaces;
 mod standing;
 mod tasks;
+mod titles;
 mod trace;
 mod turn;
 

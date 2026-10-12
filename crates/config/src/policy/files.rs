@@ -34,6 +34,8 @@ pub struct ConfigFile {
     pub models: Option<Vec<ModelEntry>>,
     /// Whether each new thread works in a worktree of its own.
     pub worktree: Option<bool>,
+    /// Whether a model titles each thread after its first exchange.
+    pub titles: Option<bool>,
     /// Where new threads work: here, or on a worker of their own.
     pub on: Option<On>,
     /// The backend workers run on.

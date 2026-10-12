@@ -236,6 +236,12 @@ where
                     .harness
                     .run_turn_as(&mut held, &prompt, &caller, &cancel, &mut publish)
                     .await;
+                // After the first exchange, a model titles the thread without holding it.
+                if ran.is_ok()
+                    && let Some(case) = inner.harness.title_case(&held)
+                {
+                    Server { inner }.title_later(thread, case);
+                }
                 (held, ran)
             })
             .await;

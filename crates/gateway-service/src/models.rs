@@ -1,7 +1,7 @@
 //! Which targets a request's model name means, and which of them the caller may use. A name
-//! is a route (`main`, `judge`, `summary`, `subagent`: its targets, in order); a target the
-//! routes have, by its name or its model; or any other model at the main route's first
-//! provider, as `provider/model` or the model alone. The caller's policy then keeps only the
+//! is a route (`main`, `judge`, `summary`, `subagent`, `title`: its targets, in order); a
+//! target the routes have, by its name or its model; or any other model at the main route's
+//! first provider, as `provider/model` or the model alone. The caller's policy then keeps only the
 //! targets it allows.
 
 use glave_gateway::{Gateway, Target};
@@ -12,11 +12,12 @@ use crate::errors::{Kind, Refusal};
 use crate::service::Policy;
 
 /// Every purpose, in the order routes are searched for a target.
-const PURPOSES: [Purpose; 4] = [
+const PURPOSES: [Purpose; 5] = [
     Purpose::Main,
     Purpose::Judge,
     Purpose::Summary,
     Purpose::Subagent,
+    Purpose::Title,
 ];
 
 /// The purpose and the targets `name` means for `caller`, or why they may use none.
