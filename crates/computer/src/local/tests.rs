@@ -78,6 +78,53 @@ impl Output for Collect {
     }
 }
 
+/// Output that cancels the command once it has said its child is running.
+struct CancelsWhenUp(Collect, crate::Switch);
+
+impl Output for CancelsWhenUp {
+    fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
+        let written = self.0.write(text);
+        if self.0.0.lock().is_ok_and(|all| all.contains("up")) {
+            self.1.cancel();
+        }
+        written
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_cancelled_command_returns_only_once_everything_it_started_has_gone() {
+    let (work, copies) = scratch("cancel-group");
+    let computers = LocalComputers::new(&copies, safe_environment());
+    block_on(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let path = work.to_string_lossy().into_owned();
+        let here = computers
+            .open(made.id, &Sources::Folder { path })
+            .await
+            .unwrap();
+        let cancel = crate::Switch::default();
+        let output = CancelsWhenUp(Collect::default(), cancel.clone());
+        // One child that dies with bash, one that ignores SIGTERM and needs SIGKILL.
+        let script = "sleep 30 & echo $! > plain.pid; (trap '' TERM; exec sleep 30) & \
+            echo $! > stubborn.pid; echo up; wait";
+        let finished = computers
+            .run(here.id, &Command::new(script), &output, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(finished.ending, glave_ports::Ending::Cancelled);
+        for name in ["plain.pid", "stubborn.pid"] {
+            let pid = std::fs::read_to_string(work.join(name)).unwrap();
+            let alive = std::process::Command::new("kill")
+                .args(["-0", pid.trim()])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(!alive.success(), "{name} was stopped before run returned");
+        }
+    });
+}
+
 #[test]
 fn what_the_host_cannot_honour_is_refused() {
     let (_, copies) = scratch("refuse");

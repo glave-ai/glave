@@ -33,7 +33,9 @@ rcgen.workspace = true
 regex.workspace = true
 # Resolving every path one name at a time from an open handle on the workspace root
 # (openat, no-follow), so a link swapped in by a command cannot lead a file tool outside.
-rustix.workspace = true
+# Process calls: stopping a command's process group and seeing it gone; on Linux, the
+# Landlock helper's own session and the user id that names the sandbox's folder.
+rustix = { workspace = true, features = ["process"] }
 # TLS between the harness and a worker (already in the tree via reqwest).
 rustls.workspace = true
 serde.workspace = true
@@ -50,8 +52,6 @@ uuid.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock.workspace = true
 libc.workspace = true
-# The Landlock helper's own session, and the user id that names the sandbox's folder.
-rustix = { workspace = true, features = ["process"] }
 seccompiler.workspace = true
 
 [features]
