@@ -12,6 +12,7 @@ import { GlzMessageComponent } from './message.component';
       <p>Hello</p>
     </glz-message>
     <glz-message from="note" author="glave" data-testid="note">Compacted</glz-message>
+    <glz-message from="person" author="You" data-testid="mine"><p>Hi</p></glz-message>
   `,
 })
 class HostComponent {
@@ -28,8 +29,13 @@ describe('GlzMessageComponent', () => {
     expect(reply?.getAttribute('aria-label')).toBe('Hope');
     expect(reply?.getAttribute('aria-busy')).toBe('true');
     expect(reply?.querySelector('.caret')).not.toBeNull();
-    expect(reply?.querySelector('glz-avatar .presence')).not.toBeNull();
-    expect(root.querySelector('[data-testid="note"] glz-avatar')).toBeNull();
+    expect(root.querySelector('glz-avatar')).toBeNull();
+    expect(reply?.querySelector('.author')?.textContent.trim()).toBe('Hope');
+    expect(reply?.querySelector('.author .sun')).not.toBeNull();
+    const mine = root.querySelector('[data-testid="mine"]');
+    expect(mine?.getAttribute('aria-label')).toBe('You');
+    expect(mine?.classList).toContain('from-person');
+    expect(mine?.querySelector('.author')).toBeNull();
     await expectAccessible(root);
 
     fixture.componentInstance.streaming.set(false);

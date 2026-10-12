@@ -12,7 +12,7 @@ See every component live at `/glaze` in the app (`npm start` in `web/`). Coding 
 
 **Layout and navigation**: `glz-sidenav-layout` and `glz-panel-layout` (a side nav at the start, a panel at the end: each resized and collapsed by its edge, a window splitter, and a drawer or sheet on narrow screens), `glz-top-bar`, `glz-rail` with `glzRailItem`, `glz-nav-list` (collapsible) with `glzNavItem`, `glz-tabs` with `glz-tab`, `glz-breadcrumbs` with `glz-breadcrumb`.
 
-**Overlays**: `glz-dialog` (dialog or drawer), `glz-confirm-dialog`, `glz-menu` with `glzMenuItem` and `glzMenuTrigger`, `glz-menu-select` (a compact choice, such as a model picker), `glzTooltip`, `glz-toast-stack` with `GlzToastService`.
+**Overlays**: `glz-dialog` (dialog or drawer), `glz-confirm-dialog`, `glz-menu` with `glzMenuItem` and `glzMenuTrigger`, `glz-menu-select` (a compact choice among a few), `glz-picker` (a choice among many, searched as you type, with pins at the top: a model picker), `glzTooltip`, `glz-toast-stack` with `GlzToastService`.
 
 **Conversation**: `glz-composer`, `glz-message`, `glz-reasoning`, `glz-receipt`, `glz-approval-card`, `glz-question-card`.
 

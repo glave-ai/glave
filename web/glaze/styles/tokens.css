@@ -108,6 +108,10 @@
   --glz-top-bar-border: var(--glz-border-width) solid var(--glz-color-border);
   --glz-content-width: 48rem;
 
+  /* The room before the person's message bubbles, and their surface. */
+  --glz-message-gap: 15%;
+  --glz-message-person-surface: var(--glz-surface-sunken);
+
   /* Motion: none at all when the person asks for less. */
   --glz-duration-fast: 120ms;
   --glz-duration-normal: 200ms;

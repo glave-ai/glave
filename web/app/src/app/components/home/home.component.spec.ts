@@ -53,7 +53,7 @@ describe('HomeComponent', () => {
     const root = await render(fake);
     expect(root.querySelector('[data-testid="approval-mode"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="model-picker-trigger"]')?.textContent).toContain(
-      'gpt-6-luna',
+      'GPT-6 Luna',
     );
     expect(root.querySelector('[data-testid="home-space"]')).toBeNull();
     await expectAccessible(root);

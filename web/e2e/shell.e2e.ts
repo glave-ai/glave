@@ -21,6 +21,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await byTestId(page, 'file').first().click();
     await expect(byTestId(page, 'file-change').first()).toContainText('fn parse');
     await expectAccessible(page);
+    // The model picker open, with a pinned model highlighted.
+    await byTestId(page, 'model-picker-trigger').click();
+    await byTestId(page, 'model-picker-search').press('ArrowDown');
+    await byTestId(page, 'model-picker-pin').click();
+    await expect(byTestId(page, 'model-picker-listbox').getByRole('group')).toHaveCount(2);
+    await expectAccessible(page);
     expect(problems()).toEqual([]);
   });
 }
@@ -92,7 +98,8 @@ test('the model picked is sent with the next turn, and each reply names its mode
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
   await expect(byTestId(page, 'thread-message').last()).toHaveAttribute('aria-label', 'Hope');
   const picker = byTestId(page, 'model-picker-trigger');
-  await expect(picker).toContainText('Default model');
+  // The default model by its name, made from its id: never a slug.
+  await expect(picker).toContainText('Anthropic · Claude Haiku 5.5');
   await picker.click();
   await byTestId(page, 'model-picker-option').filter({ hasText: 'Hope' }).click();
   await expect(picker).toContainText('Hope');
@@ -108,6 +115,62 @@ test('the model picked is sent with the next turn, and each reply names its mode
       params: expect.objectContaining({ thread: THREAD, prompt: 'Thanks', model: 'hope-12b' }),
     },
   ]);
+});
+
+test('the picker searches a long catalogue, scrolls, and keeps pins after a reload', async ({
+  page,
+}) => {
+  await fakeApi(page);
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  await byTestId(page, 'model-picker-trigger').click();
+  const options = byTestId(page, 'model-picker-option');
+  await expect(options).toHaveCount(204);
+  await expectAccessible(page);
+  // The list scrolls inside the popover, which stays inside the window.
+  await options.last().scrollIntoViewIfNeeded();
+  await expect(options.last()).toBeInViewport();
+  await expect(options.first()).not.toBeInViewport();
+  await byTestId(page, 'model-picker-search').fill('deepseek');
+  await expect(options).toHaveText(['DeepSeek · DeepSeek V4.1 Flash']);
+  await options.first().hover();
+  await options.first().locator('.pin').click();
+  await byTestId(page, 'model-picker-search').fill('');
+  await expect(options.first()).toHaveText('DeepSeek · DeepSeek V4.1 Flash');
+  await page.reload();
+  await byTestId(page, 'model-picker-trigger').click();
+  await expect(byTestId(page, 'model-picker-option').first()).toHaveText(
+    'DeepSeek · DeepSeek V4.1 Flash',
+  );
+});
+
+test('the person’s messages are bubbles at the end of the line; long ones fold', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await fakeApi(page);
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  const mine = byTestId(page, 'thread-message').first();
+  const reply = byTestId(page, 'thread-message').last();
+  await expect(mine).toHaveAttribute('aria-label', 'You');
+  const mineBox = await mine.locator('.body').boundingBox();
+  const replyBox = await reply.boundingBox();
+  // Right-aligned, with room before it; the reply runs the full width.
+  expect(Math.round((mineBox?.x ?? 0) + (mineBox?.width ?? 0))).toBe(
+    Math.round((replyBox?.x ?? 0) + (replyBox?.width ?? 0)),
+  );
+  expect(mineBox?.x ?? 0).toBeGreaterThan((replyBox?.x ?? 0) + 100);
+  await expect(byTestId(page, 'thread-items').locator('glz-avatar')).toHaveCount(0);
+  const long = Array.from({ length: 40 }, (_, line) => `Step ${String(line)}`).join('\n');
+  const input = byTestId(page, 'thread-composer-input');
+  await input.fill(long);
+  await input.press('Enter');
+  const toggle = byTestId(page, 'message-text-toggle');
+  await expect(toggle).toHaveText('Show more');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveText('Show less');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expectAccessible(page);
 });
 
 test('the search keeps the threads whose title matches', async ({ page }) => {

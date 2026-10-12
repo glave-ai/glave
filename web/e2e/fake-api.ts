@@ -59,10 +59,23 @@ const THREADS = {
   ],
 };
 
-/** The models the fake server runs: its default, and Hope. */
+/** The default model: no name configured, so the app names it from its id. */
+export const DEFAULT_MODEL = 'anthropic/claude-haiku-5.5';
+
+/**
+ * The models the fake server runs: its default, Hope, two more, and a long catalogue like
+ * OpenRouter's, which the picker must search and scroll.
+ */
 export const MODELS = [
-  { id: 'e2e', name: 'Default model', default: true, hope: false },
+  { id: DEFAULT_MODEL, default: true, hope: false },
   { id: 'hope-12b', name: 'Hope', default: false, hope: true },
+  { id: 'openai/gpt-6-luna', default: false, hope: false },
+  { id: 'deepseek/deepseek-v4.1-flash', default: false, hope: false },
+  ...Array.from({ length: 200 }, (_, index) => ({
+    id: `lab-${String(index % 20)}/model-${String(index)}`,
+    default: false,
+    hope: false,
+  })),
 ];
 
 function event(
@@ -146,7 +159,7 @@ const TASKS = [
     thread: '01900000-0000-7000-8000-000000000106',
     kind: 'agent',
     title: 'Summarize open issues',
-    model: 'e2e',
+    model: DEFAULT_MODEL,
     tokens: TOKENS,
     cost: { micros: 4200, currency: 'USD' },
     started_at: '2026-10-11T09:00:00.000Z',
