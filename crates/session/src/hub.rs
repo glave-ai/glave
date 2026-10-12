@@ -149,14 +149,6 @@ impl<L: EventLog> EventLog for Observed<L> {
         self.inner.read(scope, thread, after, limit)
     }
 
-    fn threads(
-        &self,
-        scope: &Scope,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send {
-        self.inner.threads(scope, limit)
-    }
-
     fn search(
         &self,
         scope: &Scope,

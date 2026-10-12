@@ -17,7 +17,9 @@ mod worktrees {
     use glave_computer::{LocalComputers, RemoteComputers, serve_tcp};
     use glave_event::{Body, Event, Opened, StopReason, WorkspaceBound};
     use glave_harness::{AllowAll, Caller, Cancel, HarnessError, Place, Workspace, branch_for};
-    use glave_ports::{Completion, Computers, Environment, EventLog, MemoryLog, Sources};
+    use glave_ports::{
+        Completion, Computers, Environment, EventLog, MemoryLog, Sources, Standing, ThreadQuery,
+    };
     use serde_json::json;
 
     fn environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
@@ -316,8 +318,13 @@ mod worktrees {
                 error.message().contains("not in a git repository"),
                 "{error}"
             );
-            let threads = harness.log().threads(&scope(), 10).await.unwrap();
-            assert_eq!(threads, []);
+            let query = ThreadQuery {
+                standing: Standing::Active,
+                limit: 10,
+                after: None,
+            };
+            let listed = harness.log().thread_views(&scope(), &query).await.unwrap();
+            assert_eq!(listed, []);
         });
     }
 
@@ -389,8 +396,13 @@ mod worktrees {
                 panic!("refused, not {refused:?}")
             };
             assert!(why.contains("not available yet"), "{why}");
-            let threads = harness.log().threads(&scope(), 10).await.unwrap();
-            assert!(threads.is_empty(), "nothing is recorded");
+            let query = ThreadQuery {
+                standing: Standing::Active,
+                limit: 10,
+                after: None,
+            };
+            let listed = harness.log().thread_views(&scope(), &query).await.unwrap();
+            assert!(listed.is_empty(), "nothing is recorded");
         });
     }
 }

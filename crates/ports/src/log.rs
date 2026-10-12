@@ -33,13 +33,6 @@ pub trait EventLog: Send + Sync {
         limit: usize,
     ) -> impl Future<Output = Result<Vec<RawEvent>, LogError>> + Send;
 
-    /// The threads in `scope`, most recently written first, at most `limit` of them.
-    fn threads(
-        &self,
-        scope: &Scope,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<ThreadId>, LogError>> + Send;
-
     /// Searches `scope`'s conversations by keyword, with the store's own full-text index: the
     /// events whose words (`search::indexed`, maintained as events are appended) match any of
     /// `query`'s (`search::query_terms`), best match first, then newest first, at most `limit`.
@@ -138,6 +131,24 @@ pub enum LogError {
     /// The storage behind the log failed.
     #[error("event storage failed: {0}")]
     Storage(String),
+}
+
+/// The storage failures every store reports alike.
+impl LogError {
+    /// A stored event that does not read back as one.
+    pub fn corrupt(error: impl std::fmt::Display) -> Self {
+        Self::Storage(format!("a stored event is corrupt: {error}"))
+    }
+
+    /// An event that could not be sealed before it was stored.
+    pub fn sealing(error: impl std::fmt::Display) -> Self {
+        Self::Storage(format!("could not seal an event: {error}"))
+    }
+
+    /// The stored event `seq` that could not be opened.
+    pub fn opening(seq: Seq, error: impl std::fmt::Display) -> Self {
+        Self::Storage(format!("event {} could not be opened: {error}", seq.get()))
+    }
 }
 
 /// Checks that `events` all belong to one thread and continue its numbering after `last`.

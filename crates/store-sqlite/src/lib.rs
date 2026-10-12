@@ -19,7 +19,6 @@ pub use keys::SqliteKeys;
 pub use log::SqliteLog;
 pub use spaces::SqliteSpaces;
 pub use store::{SqliteKeyring, Store, StoreError};
-pub use views::Rebuilt;
 
 #[cfg(test)]
 mod tests;

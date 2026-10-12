@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use glave_keys::{KeyFileRoot, KeySettings, MemoryRoot};
-use glave_ports::{EventLog, Spaces as _, block_on, conformance};
+use glave_ports::{EventLog, Spaces as _, Standing, ThreadQuery, block_on, conformance};
 use uuid::Uuid;
 
 use super::*;
@@ -231,8 +231,13 @@ fn folders_get_their_own_spaces_in_one_organization() {
             .unwrap();
         assert_ne!(a.id, b.id, "each folder is its own space");
         let scope = glave_ports::Scope { org, space: a.id };
-        let threads = store.log().threads(&scope, 10).await.unwrap();
-        assert_eq!(threads.len(), 0, "a new space has no threads");
+        let query = ThreadQuery {
+            standing: Standing::Active,
+            limit: 10,
+            after: None,
+        };
+        let threads = store.log().thread_views(&scope, &query).await.unwrap();
+        assert!(threads.is_empty(), "a new space has no threads");
     });
 }
 
@@ -273,17 +278,7 @@ fn views_rebuilt_from_the_log_equal_the_kept_ones() {
             .execute_batch("DELETE FROM threads; DELETE FROM settings WHERE key = 'threads_view';")
             .unwrap();
         drop(connection);
-        let reopened = Store::open(&path, file_keys(&path)).await.unwrap();
+        let _reopened = Store::open(&path, file_keys(&path)).await.unwrap();
         assert_eq!(views(&path), kept, "opening fills the view from the log");
-
-        let rebuilt = reopened.rebuild_views().await.unwrap();
-        assert_eq!(
-            rebuilt,
-            Rebuilt {
-                threads: 4,
-                failed: 0
-            }
-        );
-        assert_eq!(views(&path), kept);
     });
 }
