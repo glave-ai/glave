@@ -59,6 +59,61 @@ describe('GlzSidenavLayoutComponent', () => {
     expect(sidenav(root).inert).toBe(true);
   });
 
+  it('resizes and collapses by its edge, a window splitter', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const layout = fixture.componentInstance.layout();
+    const handle = root.querySelector<HTMLElement>('[data-testid="sidenav-handle"]');
+    if (handle === null) {
+      throw new Error('no handle');
+    }
+    const press = (key: string): void => {
+      handle.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    };
+    expect(handle.getAttribute('role')).toBe('separator');
+    expect(handle.getAttribute('aria-controls')).toBe(sidenav(root).id);
+    expect(handle.getAttribute('aria-label')).toBe('Resize the navigation');
+    press('Home');
+    expect(layout.width()).toBe(200);
+    press('ArrowRight');
+    expect(layout.width()).toBe(216);
+    press('ArrowLeft');
+    press('ArrowLeft');
+    expect(layout.width()).toBe(200);
+    await fixture.whenStable();
+    expect(root.querySelector('glz-sidenav-layout')?.getAttribute('style')).toContain(
+      '--glz-sidenav-width: 200px',
+    );
+    expect(handle.getAttribute('aria-valuenow')).toBe('200');
+    press('Enter');
+    await fixture.whenStable();
+    expect(layout.open()).toBe(false);
+    expect(sidenav(root).inert).toBe(true);
+    expect(handle.getAttribute('aria-valuenow')).toBe('0');
+    await expectAccessible(root);
+    press('Enter');
+    expect(layout.open()).toBe(true);
+  });
+
+  it('keeps the wide state while the screen is narrow, and brings it back', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const layout = fixture.componentInstance.layout();
+    layout.close();
+    breakpoints.matches.next({ matches: true, breakpoints: {} });
+    await fixture.whenStable();
+    layout.toggle();
+    await fixture.whenStable();
+    expect(layout.open()).toBe(true);
+    breakpoints.matches.next({ matches: false, breakpoints: {} });
+    await fixture.whenStable();
+    expect(layout.open()).toBe(false);
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="sidenav-handle"]'),
+    ).not.toBeNull();
+  });
+
   it('becomes a modal drawer on narrow screens, closed by Escape or the scrim', async () => {
     const fixture = TestBed.createComponent(HostComponent);
     breakpoints.matches.next({ matches: true, breakpoints: {} });

@@ -14,7 +14,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     await expect(byTestId(page, 'thread-title')).toHaveText('Make the tests pass');
     await expect(byTestId(page, 'thread-space')).toHaveText('glave');
-    await byTestId(page, 'thread-tools').click();
+    await byTestId(page, 'tools-handle').press('Enter');
     await expect(byTestId(page, 'task').first()).toContainText('Nightly dependency audit');
     await expectAccessible(page);
     await byTestId(page, 'tools-tabs-tab').nth(1).click();
@@ -25,34 +25,64 @@ for (const colorScheme of ['light', 'dark'] as const) {
   });
 }
 
-test('the tools panel opens and closes from the top bar, resizes, and is remembered', async ({
+test('the side panels resize by their edge, collapse past it, and are remembered', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await fakeApi(page);
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  await expect(byTestId(page, 'thread-message').first()).toBeVisible();
+  // No toggle buttons on a wide screen: the edges and the shortcuts do it.
+  await expect(byTestId(page, 'thread-tools')).toHaveCount(0);
+  await expect(byTestId(page, 'page-menu')).toHaveCount(0);
   const panel = byTestId(page, 'tools-panel');
-  const toggle = byTestId(page, 'thread-tools');
-  await expect(byTestId(page, 'thread-message').first()).toBeVisible();
+  const edge = byTestId(page, 'tools-handle');
   await expect(panel).toBeHidden();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-  await toggle.click();
+  await expect(edge).toBeVisible();
+  await expect(edge).toHaveAttribute('aria-valuenow', '0');
+  // Dragging the collapsed edge toward the start brings the panel out.
+  const box = await edge.boundingBox();
+  const y = (box?.y ?? 0) + 200;
+  const x = (box?.x ?? 0) + 4;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x - 200, y, { steps: 4 });
+  await page.mouse.move(x - 400, y, { steps: 4 });
+  await page.mouse.up();
   await expect(panel).toBeVisible();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-  const before = (await panel.boundingBox())?.width ?? 0;
-  const handle = byTestId(page, 'tools-handle');
-  await handle.focus();
-  await handle.press('ArrowLeft');
-  await handle.press('ArrowLeft');
-  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0).toBe(before + 32);
-  await page.reload();
-  await expect(panel).toBeVisible();
-  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0).toBe(before + 32);
-  await byTestId(page, 'tools-close').click();
+  await expect.poll(async () => Math.round((await panel.boundingBox())?.width ?? 0)).toBe(400);
+  // Dragged back past half its minimum, it collapses to the slim edge.
+  const open = await edge.boundingBox();
+  await page.mouse.move((open?.x ?? 0) + 4, y);
+  await page.mouse.down();
+  await page.mouse.move((open?.x ?? 0) + 300, y, { steps: 6 });
+  await page.mouse.up();
   await expect(panel).toBeHidden();
+  await expect(edge).toBeVisible();
+  // The side nav's edge: the same, and both are remembered after a reload.
+  const nav = byTestId(page, 'workspace-nav');
+  const navEdge = byTestId(page, 'workspace-handle');
+  const navBox = await navEdge.boundingBox();
+  await page.mouse.move((navBox?.x ?? 0) + 4, y);
+  await page.mouse.down();
+  await page.mouse.move((navBox?.x ?? 0) + 60, y, { steps: 4 });
+  await page.mouse.up();
+  const navWidth = Math.round((await nav.boundingBox())?.width ?? 0);
   await page.reload();
   await expect(byTestId(page, 'thread-message').first()).toBeVisible();
+  await expect.poll(async () => Math.round((await nav.boundingBox())?.width ?? 0)).toBe(navWidth);
   await expect(panel).toBeHidden();
+  const navStart = await navEdge.boundingBox();
+  await page.mouse.move((navStart?.x ?? 0) + 4, y);
+  await page.mouse.down();
+  await page.mouse.move(10, y, { steps: 6 });
+  await page.mouse.up();
+  await expect(nav).toBeHidden();
+  await expect(navEdge).toHaveAttribute('aria-valuenow', '0');
+  await page.reload();
+  await expect(byTestId(page, 'thread-message').first()).toBeVisible();
+  await expect(nav).toBeHidden();
+  await expect(navEdge).toBeVisible();
 });
 
 test('the model picked is sent with the next turn, and each reply names its model', async ({
@@ -117,6 +147,7 @@ test('on a phone the side nav is a drawer and the tools a sheet', async ({ page 
   await expect(byTestId(page, 'thread-message').first()).toBeVisible();
   const nav = byTestId(page, 'workspace-nav');
   await expect(nav).toBeHidden();
+  await expect(byTestId(page, 'workspace-handle')).toHaveCount(0);
   await byTestId(page, 'page-menu').click();
   await expect(nav).toBeVisible();
   await expect(nav).toHaveAttribute('aria-modal', 'true');

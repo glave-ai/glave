@@ -43,9 +43,9 @@ npm run check     # everything CI runs, in order:
 npm run format:check   # Prettier
 npm run lint           # eslint (typescript-eslint strict, angular-eslint) and stylelint
 npm run typecheck      # tsc, strict
-npm test               # Vitest: every component, directive, service and lib function, with axe
+npm test               # Vitest: every component, directive, service and lib function, with axe; prints coverage
 npm run build:glaze    # Glaze as a publishable Angular package (ng-packagr)
-npm run build          # the app, production
+npm run build          # the app, production, within its size budget (angular.json)
 npm run licenses       # every production dependency's licence is one deny.toml allows (plus OFL fonts, 0BSD)
 npm run audit          # npm audit of production dependencies, high and above
 npm run e2e            # Playwright in Chromium against glave serve --http --web, axe in light and dark
@@ -57,10 +57,20 @@ Playwright's Chromium is installed into `node_modules` (`PLAYWRIGHT_BROWSERS_PAT
 
 ## How the app is built
 
-- **Three panes**, as in Claude's desktop app: the side nav (New chat, a search of thread titles, each project as a group of its threads that closes, with + to start one there, the loose chats, the Tasks, Memory and Settings pages, and the person signed in); the page, each with its own top bar; and, in a thread, the tools panel (background tasks and the files the thread changed), closed at first, resizable, and a sheet over the page on narrow screens.
-- `services/`: `SessionService` (the token and every call), `SpacesService` (spaces and their threads, read again every ten seconds), `ThreadService` (one open thread: its events, the reply streaming in, decisions, answers, the model it chose, renaming; each thread view has its own), `ModelsService` (`model/list`), `ServerService` (`server/discover`: the approval mode), `TasksService` (read again every few seconds while a list shows), `MemoryService`, `NavService` (the side nav open or not), `ToolsPanelService` (the tools panel open, its width and tab, kept in local storage when the browser allows), `ThemeService` (the person's light or dark choice, until settings live on the server).
-- `lib/`: pure functions: the thread built from its events (`conversation.ts`, each reply named by its `model.responded`), the files a thread changed (`files.ts`, from its successful `write` and `edit` calls), the side nav's groups (`nav.ts`), models, the panel's stored state, storage that may refuse, the token from the link, thread titles and marks.
-- `components/`: one per page or part (workspace, side nav, spaces nav, person, page header, home, thread, model picker, approval mode, tools panel, task list, thread files, rename dialog, tasks, memory, settings, sign-in, the showcase).
+- **Three panes**, as in Claude's desktop app: the side nav (New chat, a search of thread titles, each project as a group of its threads that closes, with + to start one there, the loose chats, the Tasks, Memory and Settings pages, Install app, and the person signed in); the page, under a top bar that floats over it and fades into it; and, in a thread, the tools panel (background tasks and the files the thread changed), closed at first.
+- **The side panels have no toggle buttons on wide screens.** Each one's edge is a window splitter (WAI-ARIA): drag it to resize, past half its minimum to collapse; a collapsed panel leaves a slim grip at the side of the page to drag or click back. From the keyboard, Tab to the edge, then the arrow keys resize, Home and End go to the bounds, and Enter collapses and restores. Each panel's width and state are remembered in this browser (local storage, when it allows). On narrow screens the side nav is a drawer and the tools a sheet, each opened from a button in the top bar.
+- **Keyboard shortcuts**, also in the edges' tooltips:
+
+  | Shortcut              | Does                                  |
+  | --------------------- | ------------------------------------- |
+  | ⌘B (Ctrl+B elsewhere) | Shows or hides the side nav           |
+  | ⌘. (Ctrl+. elsewhere) | Shows or hides a thread's tools panel |
+  | Enter, Shift+Enter    | In the composer: sends, or a new line |
+
+- **Installable.** glave serves a web app manifest (`manifest.webmanifest`, `display: standalone`, its colours Glaze's page surface) and icons, which the Content Security Policy allows (`manifest-src 'self'`). Chromium needs no service worker to install it, so there is none. Install app, at the foot of the side nav, shows Chromium's own prompt (`beforeinstallprompt`) or, in Safari, a popover with its one step (Add to Dock, or Add to Home Screen); it is hidden once glave runs installed (`display-mode: standalone`).
+- `services/`: `SessionService` (the token and every call), `SpacesService` (spaces and their threads, read again every ten seconds), `ThreadService` (one open thread: its events, the reply streaming in, decisions, answers, the model it chose, renaming; each thread view has its own), `ModelsService` (`model/list`), `ServerService` (`server/discover`: the approval mode), `TasksService` (read again every few seconds while a list shows), `MemoryService`, `NavService` (the side nav open or collapsed and its width, kept in local storage when the browser allows; its shortcut), `ToolsPanelService` (the tools panel open, its width and tab, kept the same way; its shortcut), `InstallService` (whether and how the browser installs the app), `ThemeService` (the person's System, Light or Dark choice, until settings live on the server).
+- `lib/`: pure functions: the thread built from its events (`conversation.ts`, each reply named by its `model.responded`), the files a thread changed (`files.ts`, from its successful `write` and `edit` calls), the side nav's groups (`nav.ts`), models, the panels' stored state, storage that may refuse, the shortcuts and how they read on each platform, how the browser installs the app, the token from the link, thread titles and marks.
+- `components/`: one per page or part (workspace, side nav, spaces nav, install, person, page header, home, thread, thread header, model picker, approval mode, tools panel, task list, thread files, rename dialog, tasks, memory, settings, sign-in, the showcase).
 - The composer's bar follows Claude's and ChatGPT's: what shapes the turn at the start (the approval mode, read-only until the API sets it per thread), the model picker and Send at the end. Send becomes Stop while a turn runs; attachments stay hidden until the API takes them.
 - The sign-in token comes from the link's fragment, is taken out of the address bar before the router starts, and is kept only in the tab's session storage. It is never in a URL, a cookie or a log.
 

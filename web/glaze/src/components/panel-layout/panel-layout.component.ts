@@ -1,4 +1,3 @@
-import { Directionality } from '@angular/cdk/bidi';
 import { BreakpointObserver } from '@angular/cdk/layout';
 import {
   ChangeDetectionStrategy,
@@ -11,13 +10,13 @@ import {
   input,
   model,
   numberAttribute,
-  signal,
   viewChild,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { map, switchMap } from 'rxjs';
 
-import { clampWidth, resizedWidth } from '../../lib/resize';
+import { GlzSplitterDirective } from '../../directives/splitter.directive';
+import { GlzTooltipDirective } from '../../directives/tooltip.directive';
 import { testIds } from '../../lib/test-ids';
 import { injectId } from '../../tokens/ids';
 
@@ -27,24 +26,15 @@ const PARTS = { scrim: 'scrim', panel: 'panel', handle: 'handle' } as const;
 /** Below this width the panel slides over the content as a sheet instead of sitting beside it. */
 export const GLZ_PANEL_NARROW = '(max-width: 64rem)';
 
-/** How far one arrow key moves the panel's edge, in pixels. */
-const STEP = 16;
-
-/** A drag under way: where the pointer and the panel's width started. */
-interface Drag {
-  readonly pointer: number;
-  readonly startX: number;
-  readonly startWidth: number;
-}
-
 /**
  * A page with a panel at its end (`[glzPanel]`) beside its content: tools, files, details.
- * On wide screens the panel sits beside the content, and the person resizes it by dragging
- * its edge or with the arrow keys on it (a focusable `separator`, the ARIA window splitter);
- * `width` is in pixels, bound two ways, and `null` keeps `--glz-panel-width`. On narrow
- * screens the panel slides over the content as a modal sheet: the content behind is inert,
- * and Escape or the scrim close it. `open` is bound two ways and starts closed. Glaze keeps
- * neither: remembering them is the app's job.
+ * On wide screens the panel sits beside the content and its edge is a window splitter
+ * (`glzSplitter`): drag it or use the arrow keys on it to resize, drag it past half the
+ * minimum or press Enter on it to collapse, and the collapsed edge stays as a slim grip to bring
+ * the panel back. `width` is in pixels, bound two ways, and `null` keeps `--glz-panel-width`.
+ * On narrow screens the panel slides over the content as a modal sheet: the content behind is
+ * inert, and Escape or the scrim close it. `open` is bound two ways and starts closed. Glaze
+ * keeps neither: remembering them is the app's job.
  *
  * ```html
  * <glz-panel-layout label="Tools" [(open)]="toolsOpen" [(width)]="toolsWidth">
@@ -55,6 +45,7 @@ interface Drag {
  */
 @Component({
   selector: 'glz-panel-layout',
+  imports: [GlzSplitterDirective, GlzTooltipDirective],
   templateUrl: './panel-layout.component.html',
   styleUrl: './panel-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -75,24 +66,26 @@ export class GlzPanelLayoutComponent {
   readonly open = model(false);
   /** The panel's width in pixels; `null` for `--glz-panel-width`. */
   readonly width = model<number | null>(null);
-  /** The narrowest the panel may be dragged, in pixels. */
+  /** The narrowest the panel may be dragged while open, in pixels. */
   readonly minWidth = input(280, { transform: numberAttribute });
   /** The widest the panel may be dragged, in pixels. */
   readonly maxWidth = input(720, { transform: numberAttribute });
-  /** Whether the person can resize the panel. */
+  /** Whether the person can resize and collapse the panel by its edge. */
   readonly resizable = input(true, { transform: booleanAttribute });
   /** Names the panel's region for screen readers. */
   readonly label = input('Panel');
-  /** Names the resize handle. */
+  /** Names the edge. */
   readonly resizeLabel = input('Resize the panel');
+  /** A hint shown beside the edge on hover and focus, such as the keys that work on it. */
+  readonly resizeHint = input('');
+  /** The page's shortcut that shows or hides the panel, in ARIA's form (`Meta+.`), if any. */
+  readonly shortcut = input<string | null>(null);
   /** The media query under which the panel becomes a sheet over the content. */
   readonly narrowQuery = input(GLZ_PANEL_NARROW);
 
   protected readonly panelId = injectId('glz-panel');
   private readonly breakpoints = inject(BreakpointObserver);
-  private readonly direction = inject(Directionality);
   private readonly panel = viewChild.required<ElementRef<HTMLElement>>('panel');
-  private readonly drag = signal<Drag | null>(null);
 
   /** Whether the screen is narrow, so the panel is a sheet. */
   readonly narrow = toSignal(
@@ -108,13 +101,10 @@ export class GlzPanelLayoutComponent {
   protected readonly role = computed(() => (this.modal() ? 'dialog' : 'complementary'));
   protected readonly ariaModal = computed(() => (this.modal() ? 'true' : null));
   protected readonly showHandle = computed(() => this.resizable() && !this.narrow());
-  protected readonly dragging = computed(() => this.drag() !== null);
   protected readonly widthStyle = computed(() => {
     const width = this.width();
     return width === null ? null : `${String(width)}px`;
   });
-  /** What the separator says: the width, as ARIA's value. */
-  protected readonly valueNow = computed(() => this.width() ?? this.minWidth());
 
   constructor() {
     // A sheet takes focus as it opens, so the keyboard is where the person is looking.
@@ -137,58 +127,5 @@ export class GlzPanelLayoutComponent {
     if (this.modal()) {
       this.close();
     }
-  }
-
-  protected grab(event: PointerEvent): void {
-    if (event.button !== 0 || !(event.target instanceof HTMLElement)) {
-      return;
-    }
-    event.preventDefault();
-    event.target.setPointerCapture(event.pointerId);
-    this.drag.set({
-      pointer: event.pointerId,
-      startX: event.clientX,
-      startWidth: this.currentWidth(),
-    });
-  }
-
-  protected moved(event: PointerEvent): void {
-    const drag = this.drag();
-    if (drag?.pointer !== event.pointerId) {
-      return;
-    }
-    const delta = event.clientX - drag.startX;
-    this.width.set(
-      resizedWidth(drag.startWidth, delta, this.direction.value, this.minWidth(), this.maxWidth()),
-    );
-  }
-
-  protected released(event: PointerEvent): void {
-    if (this.drag()?.pointer === event.pointerId) {
-      this.drag.set(null);
-    }
-  }
-
-  protected keydown(event: KeyboardEvent): void {
-    const min = this.minWidth();
-    const max = this.maxWidth();
-    const now = this.currentWidth();
-    // The panel is at the end: moving its edge toward the start makes it wider.
-    const grow = this.direction.value === 'rtl' ? 'ArrowRight' : 'ArrowLeft';
-    const shrink = this.direction.value === 'rtl' ? 'ArrowLeft' : 'ArrowRight';
-    const next = new Map<string, number>([
-      [grow, now + STEP],
-      [shrink, now - STEP],
-      ['Home', min],
-      ['End', max],
-    ]).get(event.key);
-    if (next !== undefined) {
-      event.preventDefault();
-      this.width.set(clampWidth(next, min, max));
-    }
-  }
-
-  private currentWidth(): number {
-    return this.width() ?? this.panel().nativeElement.getBoundingClientRect().width;
   }
 }

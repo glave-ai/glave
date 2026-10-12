@@ -1,3 +1,5 @@
+@use '../../styles/splitter';
+
 :host {
   position: relative;
   display: flex;
@@ -33,36 +35,7 @@
   display: none;
 }
 
-// The edge the person drags: wider than it looks, so it is easy to grab.
-.handle {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: calc(-1 * var(--glz-space-1));
-  z-index: 1;
-  width: var(--glz-space-2);
-  cursor: col-resize;
-  touch-action: none;
-}
-
-.handle::after {
-  content: '';
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: calc(var(--glz-space-1) - 1px);
-  width: 2px;
-  background: transparent;
-  transition: background var(--glz-duration-fast) var(--glz-easing);
-}
-
-.handle:hover::after,
-.handle:focus-visible::after,
-.handle.dragging::after {
-  background: var(--glz-color-focus);
-}
-
-.handle:focus-visible {
-  outline: none;
-}
+@include splitter.splitter;
 
 // Narrow screens: the panel slides over the content as a sheet.
 :host(.narrow) .panel {

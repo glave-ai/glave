@@ -5,37 +5,6 @@
   min-height: 0;
 }
 
-.heading {
-  display: flex;
-  align-items: center;
-  gap: var(--glz-space-2);
-  min-width: 0;
-}
-
-.space {
-  flex: none;
-  max-width: 40%;
-  overflow: hidden;
-  color: var(--glz-color-text-muted);
-  font-weight: var(--glz-weight-regular);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.space::after {
-  content: '/';
-  padding-inline-start: var(--glz-space-2);
-}
-
-.title {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  font-size: var(--glz-text-md);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
 .layout {
   flex: 1;
   min-height: 0;
@@ -64,11 +33,12 @@
   padding-inline: var(--glz-space-4);
 }
 
+// The conversation starts below the floating top bar, and scrolls under it.
 .reading {
   display: flex;
   flex-direction: column;
   gap: var(--glz-space-2);
-  padding-block: var(--glz-space-5);
+  padding-block: calc(var(--glz-top-bar-height) + var(--glz-space-4)) var(--glz-space-5);
 }
 
 .dock {

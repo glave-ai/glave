@@ -39,8 +39,8 @@
               "budgets": [
                 {
                   "type": "initial",
-                  "maximumWarning": "600kB",
-                  "maximumError": "1MB"
+                  "maximumWarning": "475kB",
+                  "maximumError": "500kB"
                 },
                 {
                   "type": "anyComponentStyle",
@@ -85,7 +85,9 @@
           "builder": "@angular/build:unit-test",
           "options": {
             "tsConfig": "app/tsconfig.spec.json",
-            "setupFiles": ["glaze/src/testing/platform.ts"]
+            "setupFiles": ["glaze/src/testing/platform.ts"],
+            "coverage": true,
+            "coverageReporters": ["text-summary"]
           }
         }
       },
@@ -137,7 +139,9 @@
           "builder": "@angular/build:unit-test",
           "options": {
             "tsConfig": "glaze/tsconfig.spec.json",
-            "setupFiles": ["glaze/src/testing/platform.ts"]
+            "setupFiles": ["glaze/src/testing/platform.ts"],
+            "coverage": true,
+            "coverageReporters": ["text-summary"]
           }
         }
       },
