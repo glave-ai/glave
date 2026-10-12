@@ -38,7 +38,7 @@ pub fn owner_of(label: &str) -> Option<(Scope, ThreadId)> {
 }
 
 /// The thread's last event, if it has any.
-async fn last_event<L: EventLog>(
+pub(crate) async fn last_event<L: EventLog>(
     log: &L,
     scope: &Scope,
     thread: ThreadId,
