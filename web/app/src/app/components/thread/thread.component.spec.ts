@@ -114,7 +114,10 @@ describe('ThreadComponent', () => {
     const messages = root.querySelectorAll('[data-testid="thread-message"]');
     expect(messages[0]?.getAttribute('aria-label')).toBe('You');
     expect(messages[1]?.getAttribute('aria-label')).toBe('Hope');
-    expect(messages[1]?.querySelector('glz-avatar')?.getAttribute('aria-label')).toBe('Hope');
+    expect(root.querySelector('glz-avatar')).toBeNull();
+    expect(messages[1]?.querySelector('.author .sun')).not.toBeNull();
+    expect(messages[0]?.querySelector('.author')).toBeNull();
+    expect(messages[0]?.querySelector('app-message-text')?.textContent).toContain('Hi');
   });
 
   it('sends from the composer and shows the reply streaming in', async () => {

@@ -1,18 +1,21 @@
 import { type Page, expect, test } from '@playwright/test';
 
-import { THREAD, fakeApi } from './fake-api';
+import { THREAD, type Request, fakeApi } from './fake-api';
 import { byTestId, expectAccessible } from './support';
 
 const SIGNED_IN = '#token=glave_local_test';
 
-/** Presses Tab until the element with `testId` has focus, as someone on a keyboard would. */
-async function tabTo(page: Page, testId: string, most = 80): Promise<void> {
+/**
+ * Presses Tab (or Shift+Tab, `back`) until the element with `testId` has focus, as someone on
+ * a keyboard would.
+ */
+async function tabTo(page: Page, testId: string, back = false, most = 80): Promise<void> {
   for (let presses = 0; presses < most; presses += 1) {
     const focused = await page.evaluate(() => document.activeElement?.getAttribute('data-testid'));
     if (focused === testId) {
       return;
     }
-    await page.keyboard.press('Tab');
+    await page.keyboard.press(back ? 'Shift+Tab' : 'Tab');
   }
   throw new Error(`Tab never reached ${testId}`);
 }
@@ -21,9 +24,11 @@ async function widthOf(page: Page, testId: string): Promise<number> {
   return Math.round((await byTestId(page, testId).boundingBox())?.width ?? 0);
 }
 
+let requests: readonly Request[] = [];
+
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await fakeApi(page);
+  requests = (await fakeApi(page)).requests;
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
   await expect(byTestId(page, 'thread-message').first()).toBeVisible();
 });
@@ -84,4 +89,32 @@ test('a message is written and sent by keyboard alone', async ({ page }) => {
   await page.keyboard.type('Thanks');
   await page.keyboard.press('Enter');
   await expect(byTestId(page, 'thread-message').last()).toContainText('Hello from Hope.');
+});
+
+test('a model is searched, picked and pinned by keyboard alone', async ({ page }) => {
+  await tabTo(page, 'model-picker-trigger');
+  await page.keyboard.press('Enter');
+  const search = byTestId(page, 'model-picker-search');
+  await expect(search).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('PageDown');
+  await expect(byTestId(page, 'model-picker-option').nth(11)).toBeInViewport();
+  await page.keyboard.type('luna');
+  await page.keyboard.press('Tab');
+  await expect(byTestId(page, 'model-picker-pin')).toBeFocused();
+  await expect(byTestId(page, 'model-picker-pin')).toHaveText('Pin OpenAI · GPT-6 Luna');
+  await page.keyboard.press('Enter');
+  await expect(byTestId(page, 'model-picker-pin')).toHaveText('Unpin OpenAI · GPT-6 Luna');
+  await page.keyboard.press('Shift+Tab');
+  await expect(search).toBeFocused();
+  await page.keyboard.press('Enter');
+  const trigger = byTestId(page, 'model-picker-trigger');
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toContainText('OpenAI · GPT-6 Luna');
+  await tabTo(page, 'thread-composer-input', true);
+  await page.keyboard.type('Go on');
+  await page.keyboard.press('Enter');
+  await expect(byTestId(page, 'thread-message').last()).toContainText('Hello from Hope.');
+  const turn = requests.find((request) => request.method === 'turn/start');
+  expect(turn?.params).toMatchObject({ prompt: 'Go on', model: 'openai/gpt-6-luna' });
 });

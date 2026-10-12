@@ -35,7 +35,7 @@
                 @if (item.reasoning) {
                   <glz-reasoning>{{ item.reasoning }}</glz-reasoning>
                 }
-                <p class="text">{{ item.text }}</p>
+                <app-message-text [text]="item.text" [foldable]="item.foldable" />
               </glz-message>
             }
             @case ('call') {

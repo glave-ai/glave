@@ -1,9 +1,16 @@
 @if (hasModels()) {
-  <glz-menu-select
+  <glz-picker
     testId="model-picker"
     [label]="copy.model"
+    [searchLabel]="copy.search"
+    [emptyText]="copy.empty"
+    [pinnedHeading]="copy.pinned"
+    [allHeading]="copy.all"
+    [pinText]="copy.pin"
+    [unpinText]="copy.unpin"
     [options]="options()"
     [value]="shown()"
+    [(pinned)]="pinned"
     (valueChange)="pick($event)"
   />
 }

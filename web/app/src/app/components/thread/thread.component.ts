@@ -31,6 +31,7 @@ import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
 import type { FirstPrompt } from '../home/home.component';
+import { MessageTextComponent } from '../message-text/message-text.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
 import { ThreadHeaderComponent } from '../thread-header/thread-header.component';
@@ -52,6 +53,8 @@ const COPY = {
 interface ShownMessage extends MessageItem {
   readonly author: string;
   readonly hope: boolean;
+  /** Whether a long text folds: the person's own messages do, replies read in full. */
+  readonly foldable: boolean;
 }
 
 type ShownItem = Exclude<ThreadItem, MessageItem> | ShownMessage;
@@ -86,6 +89,7 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
     GlzReasoningComponent,
     GlzReceiptComponent,
     GlzStickToBottomDirective,
+    MessageTextComponent,
     ModelPickerComponent,
     RenameDialogComponent,
     ThreadHeaderComponent,
@@ -126,7 +130,7 @@ export class ThreadComponent {
         item.from === 'person'
           ? { name: COPY.you, hope: false }
           : this.models.label(item.model, COPY.model);
-      return { ...item, author: label.name, hope: label.hope };
+      return { ...item, author: label.name, hope: label.hope, foldable: item.from === 'person' };
     }),
   );
   /** Who is writing the reply streaming in: the model the running turn was sent to. */

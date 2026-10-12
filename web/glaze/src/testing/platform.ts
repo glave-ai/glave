@@ -64,3 +64,12 @@ if (typeof HTMLElement.prototype.showPopover !== 'function') {
     },
   });
 }
+
+// jsdom does no layout, so it scrolls nothing into view.
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Object.assign(Element.prototype, {
+    scrollIntoView(): void {
+      // Nothing to scroll without layout.
+    },
+  });
+}
