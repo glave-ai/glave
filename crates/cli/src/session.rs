@@ -209,6 +209,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let wiring = Wiring {
         // Before the gateway moves in: the models it offers as choices.
         models: gateway::offered(&provider, offered(&setup.choices)),
+        modes: policy::thread_modes(choices, &setup.loaded.constraints),
         provider,
         log: store.log(),
         blobs: store.blobs(),
@@ -542,6 +543,7 @@ pub async fn pick_thread(
             worktree,
             computer: None,
             model: None,
+            approval: None,
         })
         .await?
     {

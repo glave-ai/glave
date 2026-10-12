@@ -187,6 +187,8 @@ pub struct Thread {
     pub(crate) for_: Option<PrincipalId>,
     /// The model chosen for the thread (`chosen.rs`); the harness's own when `None`.
     pub(crate) model: Option<String>,
+    /// The approval mode chosen for the thread (`chosen.rs`); the harness's own when `None`.
+    pub(crate) approval: Option<ApprovalMode>,
 }
 
 impl Thread {
@@ -428,6 +430,7 @@ where
             memory: MemoryState::default(),
             for_: caller.person.or(self.actors.person),
             model: None,
+            approval: None,
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {

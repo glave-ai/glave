@@ -111,6 +111,8 @@ pub struct Setup {
     pub now: Arc<AtomicI64>,
     /// Models offered beside the settings' own.
     pub models: Vec<glave_session::protocol::ModelInfo>,
+    /// The approval modes a thread may choose.
+    pub modes: Vec<glave_harness::ApprovalMode>,
 }
 
 impl Setup {
@@ -129,6 +131,10 @@ impl Setup {
                     .as_millisecond(),
             )),
             models: Vec::new(),
+            modes: vec![
+                glave_harness::ApprovalMode::Ask,
+                glave_harness::ApprovalMode::Auto,
+            ],
         }
     }
 
@@ -156,6 +162,7 @@ impl Setup {
             memory: None,
             spaces: Arc::new(glave_ports::MemorySpaces::new()),
             models: self.models,
+            modes: self.modes,
         };
         (
             Server::new(wiring, self.settings, scope(), self.answering),
@@ -194,6 +201,7 @@ pub async fn background(server: &Tested, thread: ThreadId, budget: Option<u64>) 
         budget,
         meta: glave_session::protocol::Meta::default(),
         model: None,
+        approval: None,
     };
     match server.request(request).await.unwrap() {
         Reply::Task { task } => task,

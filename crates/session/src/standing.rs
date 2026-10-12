@@ -12,6 +12,7 @@ use glave_ports::{
 use tokio::sync::watch;
 
 use crate::held::{Slot, Use, finished};
+use crate::modes::Choice;
 use crate::protocol::{ApiError, Reply, Request, Show, ThreadSummary, code};
 use crate::server::{MAX_PAGE, Server, api, no_thread};
 
@@ -38,6 +39,7 @@ where
                 background,
                 computer,
                 model,
+                approval,
             } => {
                 if let Some(computer) = computer {
                     return Err(ApiError::new(
@@ -50,7 +52,13 @@ where
                 }
                 let space = self.space_for(caller, space).await?.id;
                 let thread = self
-                    .new_thread(caller, space, worktree, background, model.as_deref())
+                    .new_thread(
+                        caller,
+                        space,
+                        worktree,
+                        background,
+                        &Choice { model, approval },
+                    )
                     .await?;
                 let scope = Scope {
                     org: self.inner.home.org,
@@ -246,6 +254,7 @@ where
             status: self.status(view.thread),
             standing: view.standing,
             title,
+            approval: self.approval_now(&scope, view.thread).await?,
             for_: view.for_,
             origin: view.origin,
             parent: view.parent,

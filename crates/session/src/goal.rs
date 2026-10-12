@@ -32,6 +32,8 @@ where
         self.authorize(caller, thread).await?;
         // A model the thread chose before must still be one this server runs.
         self.model_of(thread, None).await?;
+        // So must the approval mode it chose before be one the policy leaves.
+        self.check_approval(thread, None).await?;
         if goal.is_none() && !self.goal(thread).await?.is_some_and(|g| g.resumable()) {
             return Err(no_goal(thread));
         }
