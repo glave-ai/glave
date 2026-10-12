@@ -1176,6 +1176,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "glave-azure"
+version = "0.0.0"
+dependencies = [
+ "glave-ports",
+ "jiff",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "glave-computer"
 version = "0.0.0"
 dependencies = [
