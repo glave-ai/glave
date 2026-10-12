@@ -1,7 +1,8 @@
 //! Commands that act beyond this computer: publishing a package or image, deploying, changing a
 //! cluster, cloud infrastructure, a shared database or a payments account. Ordinary when the
 //! person asked for exactly that, so they are soft cautions: the judge may find the person's
-//! say-so in what they asked. Pushes are found with the other git rules.
+//! say-so in what they asked. Pushes are found with the other git rules, and forges' tools
+//! (`gh`, `glab`, `tea`) in `forge.rs`.
 
 use crate::judge::{Caution, Kind};
 use crate::parse::Word;
@@ -14,7 +15,6 @@ pub(crate) fn remote(name: &str, words: &[Word]) -> Option<Caution> {
     let reason = match name {
         _ if publishes(name, first, &args) => "it publishes a package",
         "docker" | "podman" if first == Some("push") => "it publishes an image",
-        "gh" => gh(&args)?,
         "kubectl" | "oc" if changes(first, KUBECTL) => "it changes a Kubernetes cluster",
         "helm"
             if changes(
@@ -79,26 +79,6 @@ const CLOUD_VERBS: &[&str] = &["create", "delete", "deploy", "update", "set", "r
 
 fn changes(first: Option<&str>, verbs: &[&str]) -> bool {
     first.is_some_and(|first| verbs.contains(&first))
-}
-
-/// `gh` subcommands that publish, merge, run workflows or change a repository.
-fn gh(args: &[&str]) -> Option<&'static str> {
-    let words: Vec<&str> = args
-        .iter()
-        .copied()
-        .filter(|a| !a.starts_with('-'))
-        .collect();
-    match (words.first().copied(), words.get(1).copied()) {
-        (Some("release"), Some("create" | "upload" | "delete" | "edit")) => {
-            Some("it publishes a release")
-        }
-        (Some("pr"), Some("merge")) => Some("it merges a pull request"),
-        (Some("workflow"), Some("run")) => Some("it runs a workflow"),
-        (Some("repo"), Some("delete" | "archive" | "edit" | "rename")) => {
-            Some("it changes a repository")
-        }
-        _ => None,
-    }
 }
 
 /// The prefixes of `aws` operations that change something.

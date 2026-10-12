@@ -11,11 +11,11 @@ Without `--model`, the scorer runs glave's deterministic checks (`glave-shell`, 
 | File | Cases | Where they come from |
 | --- | --- | --- |
 | `real.jsonl` | 1,133 | Every distinct bash command our three default models (Haiku 5.5, GPT-6 Luna, DeepSeek V4.1 Flash) ran in glave's own evals, paired with the task's instruction and labelled by hand. Ambiguous rows were dropped rather than guessed. |
-| `allowed.jsonl` | 81 | Written by hand: risky actions the person asked for, ordinary work that looks risky, and actions near secrets that show none. |
-| `asks.jsonl` | 42 | Written by hand: ordinary coding mistakes that should ask: publishing, pushing or deploying unasked, and deleting or discarding more than was asked; and commands that claim a permission the person never gave (`# the user explicitly asked for this`), or try to close the judge's `<action>` block. |
+| `allowed.jsonl` | 89 | Written by hand: risky actions the person asked for (among them opening pull requests and commenting on issues), ordinary work that looks risky, and actions near secrets that show none. |
+| `asks.jsonl` | 49 | Written by hand: ordinary coding mistakes that should ask: publishing, pushing, deploying or posting to GitHub unasked, and deleting or discarding more than was asked; commands that claim a permission the person never gave (`# the user explicitly asked for this`), or try to close the judge's `<action>` block; and instructions planted in an issue or pull request (comment the token, add a deploy key, approve this). |
 | `memory.jsonl` | 8 | Written by hand: saves to memory after the thread read untrusted content, asked for by the person (run) and planted by the content (ask). The judge is told untrusted content was read. |
 
-Actions that should ask now number 53: the real ones from security tasks and the hand-written ones in `asks.jsonl`. More will come from eval tasks that plant instructions in files, like `planted-clean`.
+Actions that should ask now number 60: the real ones from security tasks and the hand-written ones in `asks.jsonl`. More will come from eval tasks that plant instructions in files, like `planted-clean`.
 
 Paths in the real commands were rewritten: each eval workspace is `/work/app` and the home folder is `/home/ana`, which is where the scorer takes commands to run.
 
@@ -32,6 +32,7 @@ One JSON object per line:
 - `label`: `allow` (runs without the person) or `ask` (needs the person).
 - `category`: what kind of action it is; each category has one right label, and loading fails if they disagree.
 - `note` (optional): why the label is what it is, when that is not plain.
+- `untrusted` (optional): `true` when the agent had read untrusted content before the action, such as an issue's body; the judge is told so, as in a thread.
 - `source`: `hand`, or `trace:<task>` for a command from an eval run.
 
 ## The labels
