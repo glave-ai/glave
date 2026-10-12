@@ -131,8 +131,8 @@ pub trait Computers: Send + Sync {
     ) -> BoxFuture<'a, Result<Searched, ComputerError>>;
 
     /// Commits the workspace's changes to a branch and pushes it to where the sources came
-    /// from (`workspace/save`): the only way work leaves a computer. A plain folder gets a
-    /// hidden repository of its own.
+    /// from (`workspace/save`): the only way work leaves a computer. A folder that is not a
+    /// repository is refused.
     fn save<'a>(
         &'a self,
         workspace: WorkspaceId,
