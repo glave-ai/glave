@@ -1,18 +1,12 @@
 //! Titling a thread after its first exchange (`specs/session.md`, "Titles"), in a task of its
-//! own: the turn's answer never waits for it. The model call runs while the thread is idle;
-//! its usage and title are then recorded through the thread, after any turn running by then.
+//! own: the turn's answer never waits for it, and it never holds the thread, so a turn started
+//! meanwhile is never refused. Its usage and title are appended straight to the log.
 
 use glave_event::ThreadId;
 use glave_harness::{TitleCase, Titled};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
-use tokio::sync::watch;
 
-use crate::held::{Slot, Use, finished};
-use crate::protocol::code;
 use crate::server::Server;
-
-/// How many times recording a title waits for work on the thread to end before giving up.
-const TRIES: usize = 3;
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -47,41 +41,16 @@ where
         )
     }
 
-    /// Records `titled` in `thread` once nothing else works on it. On a best effort: a thread
-    /// that is gone, or busy every time, keeps the title its first message gives it.
+    /// Records `titled` in `thread`, on a best effort: a thread that is gone keeps the title
+    /// its first message gives it. The thread is never held for it, so a turn started
+    /// meanwhile runs: the log orders the writes, and the turn takes the title in.
     async fn record_title(&self, thread: ThreadId, titled: Titled) {
-        for _ in 0..TRIES {
-            let (finish, mut done) = watch::channel(None);
-            let titled = titled.clone();
-            let occupied = self
-                .occupy_for(
-                    thread,
-                    finish,
-                    Use::Manage,
-                    move |inner, mut held, _| async move {
-                        let recorded = inner.harness.record_title(&mut held, &titled).await;
-                        (held, recorded)
-                    },
-                )
+        if let Ok(scope) = self.scope_of(thread).await {
+            let _ = self
+                .inner
+                .harness
+                .record_title(&scope, thread, &titled)
                 .await;
-            match occupied {
-                Ok(()) => {
-                    let _ = finished(&mut done).await;
-                    return;
-                }
-                Err(error) if error.code == code::TURN_RUNNING => self.until_idle(thread).await,
-                Err(_) => return,
-            }
         }
-    }
-
-    /// Waits until the work holding `thread` busy, if any, has ended.
-    async fn until_idle(&self, thread: ThreadId) {
-        let finished = match self.lock().get(&thread) {
-            Some(Slot::Busy { finished, .. }) => finished.clone(),
-            _ => return,
-        };
-        let mut finished = finished;
-        let _ = finished.wait_for(|done| *done).await;
     }
 }
