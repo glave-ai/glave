@@ -47,7 +47,9 @@ mod subagents {
             )
             .await;
             let parent = start(&server, false).await;
-            let mut stream = server.start_turn(parent, "touch it").await.unwrap();
+            let mut stream = stream_turn(&server, parent, "touch it", None)
+                .await
+                .unwrap();
             let mut subagent = None;
             let mut answered = false;
             let mut child_events = Vec::new();

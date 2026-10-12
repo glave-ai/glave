@@ -180,28 +180,10 @@ where
         }
     }
 
-    /// Starts a turn for the local person and streams it: its notifications, then how it ended.
-    pub async fn start_turn(&self, thread: ThreadId, prompt: &str) -> Result<TurnStream, ApiError> {
-        self.start_turn_as(&Caller::default(), thread, prompt, None)
-            .await
-    }
-
-    /// Starts a turn for `caller` and streams it. With `key`, a turn already started in
-    /// `thread` with the same key is followed instead of starting another.
-    pub async fn start_turn_as(
-        &self,
-        caller: &Caller,
-        thread: ThreadId,
-        prompt: &str,
-        key: Option<&IdempotencyKey>,
-    ) -> Result<TurnStream, ApiError> {
-        self.start_turn_with(caller, thread, prompt, key, Choice::default())
-            .await
-    }
-
-    /// Like [`Server::start_turn_as`], first choosing for the thread the model and approval
-    /// mode `choice` names, when it does: this turn and the thread's later ones go to it and
-    /// ask that much. The model the turn would go to must be one this server runs (`-32021`),
+    /// Starts a turn for `caller` and streams it, first choosing for the thread the model and
+    /// approval mode `choice` names, when it does: this turn and the thread's later ones go to
+    /// it and ask that much. With `key`, a turn already started in `thread` with the same key
+    /// is followed instead of starting another. The model the turn would go to must be one this server runs (`-32021`),
     /// and its mode one the policy leaves (`-32012`).
     pub(crate) async fn start_turn_with(
         &self,

@@ -14,7 +14,7 @@ How every surface talks to the harness: the CLI, a desktop or web app, an editor
 
 Standard JSON-RPC 2.0: requests carry `jsonrpc`, `id`, `method` and `params`; responses carry the same `id` and `result` or `error`; notifications have no `id`. Batches are not used.
 
-Every request may carry `params._meta.protocol`, the protocol version the client speaks (today `2026-10`). Without it, the server assumes the oldest version it supports. There is no handshake, so a stateless server needs no memory of the client. A server that does not speak the version answers with error `-32010` and the versions it does speak.
+Every request may carry `params._meta.protocol`, the protocol version the client speaks (today `2026-10`). Without it, the server assumes the oldest version it supports. There is no handshake, so a stateless server needs no memory of the client. Not yet: refusing a version the server does not speak, with an error that lists the versions it does.
 
 Every request may also carry `params._meta.traceparent`, a W3C trace context. The server continues that trace, or starts one, and records the trace ID on each turn the request starts (`turn.started.trace`). Built: `turn/start` reads it (a value that is not a version-00 traceparent is ignored, as W3C says, never refused); each request runs in a `session.request` span named by its method, which joins the caller's trace when glave exports to OpenTelemetry (the `otlp` feature). Spans and metrics are content-free: ids, names, counts, durations and outcomes, never prompts, answers, arguments, output, file contents or secrets.
 
@@ -198,8 +198,6 @@ Standard codes, `-32700` to `-32603`, for malformed messages. glave's own:
 | `-32007` | The thread has no active goal (or, to resume, no paused one) |
 | `-32008` | A `UserPromptSubmit` hook stopped the prompt; the message gives its reason, and the model never saw the prompt (`approvals.md`, "Hooks") |
 | `-32009` | The thread's workspace could not be opened, such as a worktree outside a repository |
-| `-32010` | Unsupported protocol version; `data.supported` lists the spoken ones |
-| `-32011` | The thread is running in another server of this deployment |
 | `-32012` | The caller may not do this, such as choose an approval mode the policy does not leave |
 | `-32013` | No valid sign-in (network transports) |
 | `-32014` | The thread is archived; unarchive it first |

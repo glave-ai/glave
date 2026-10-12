@@ -21,7 +21,6 @@ jiff.workspace = true
 rmcp = { workspace = true, features = ["server", "client", "transport-async-rw"] }
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "rt", "sync"] }
 
 [features]

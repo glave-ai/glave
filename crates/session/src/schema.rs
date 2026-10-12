@@ -66,16 +66,6 @@ pub const ERRORS: &[(i64, &str, &str)] = &[
         "The thread's workspace could not be opened",
     ),
     (
-        code::UNSUPPORTED_PROTOCOL,
-        "UNSUPPORTED_PROTOCOL",
-        "Unsupported protocol version",
-    ),
-    (
-        code::RUNNING_ELSEWHERE,
-        "RUNNING_ELSEWHERE",
-        "The thread is running in another server of this deployment",
-    ),
-    (
         code::NOT_ALLOWED,
         "NOT_ALLOWED",
         "The caller may not do this",

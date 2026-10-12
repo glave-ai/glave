@@ -26,7 +26,6 @@ jiff.workspace = true
 rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
 
 [dev-dependencies]
@@ -35,7 +34,6 @@ glave-provider-anthropic = { workspace = true, features = ["fake-server"] }
 glave-provider-openai = { workspace = true, features = ["fake-server"] }
 reqwest.workspace = true
 uuid.workspace = true
-tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 
 [lints]
 workspace = true

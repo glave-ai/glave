@@ -20,7 +20,7 @@ mod site {
     use std::path::{Path, PathBuf};
 
     use glave_session::Answering;
-    use glave_session::http::{Site, serve_site};
+    use glave_session::http::{self, Site};
     use glave_session::signin::{LocalToken, SignIn};
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::{TcpListener, TcpStream};
@@ -62,7 +62,7 @@ mod site {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let (stop, stopped) = oneshot::channel::<()>();
-        let serving = tokio::spawn(serve_site(server, signin, Some(site), listener, async {
+        let serving = tokio::spawn(http::serve(server, signin, Some(site), listener, async {
             let _ = stopped.await;
         }));
         Served {

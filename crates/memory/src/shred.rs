@@ -2,8 +2,6 @@
 //! forgotten, and the space key is rotated afterwards so backups lose it too (`specs/storage.md`,
 //! "Erasure").
 
-use std::sync::Arc;
-
 use glave_event::MemoryId;
 use glave_keys::{KeyStorage, Keys};
 use glave_ports::{BoxFuture, Scope};
@@ -32,29 +30,5 @@ impl<S: KeyStorage + 'static> Shredder for Keys<S> {
                 .await
                 .map_err(|error| error.to_string())
         })
-    }
-}
-
-impl<T: Shredder + ?Sized> Shredder for Arc<T> {
-    fn destroy(&self, scope: Scope, memory: MemoryId) -> BoxFuture<'_, Result<(), String>> {
-        (**self).destroy(scope, memory)
-    }
-
-    fn rotate(&self, scope: Scope) -> BoxFuture<'_, Result<bool, String>> {
-        (**self).rotate(scope)
-    }
-}
-
-/// For a log that seals nothing, such as one held in memory for tests: there is no key to
-/// destroy, and forgetting still removes the memory from every view.
-pub struct NoKeys;
-
-impl Shredder for NoKeys {
-    fn destroy(&self, _: Scope, _: MemoryId) -> BoxFuture<'_, Result<(), String>> {
-        Box::pin(std::future::ready(Ok(())))
-    }
-
-    fn rotate(&self, _: Scope) -> BoxFuture<'_, Result<bool, String>> {
-        Box::pin(std::future::ready(Ok(false)))
     }
 }

@@ -67,7 +67,7 @@ mod conformance {
             prompt: &str,
             react: &mut dyn FnMut(&Notification) -> Reaction,
         ) -> Result<TurnResult, ApiError> {
-            let mut stream = self.0.start_turn(thread, prompt).await?;
+            let mut stream = stream_turn(&self.0, thread, prompt, None).await?;
             while let Some(item) = stream.next().await {
                 match item {
                     TurnItem::Note(note) => {

@@ -15,7 +15,7 @@ use super::{Memories, storage};
 use crate::book::Book;
 
 /// Hits one recall returns when the model does not say.
-pub const DEFAULT_HITS: usize = 5;
+pub(crate) const DEFAULT_HITS: usize = 5;
 /// Hits one recall returns at most.
 pub const MOST_HITS: usize = 10;
 /// Characters of a past conversation one hit shows, at most.

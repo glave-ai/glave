@@ -863,12 +863,8 @@ export const ErrorCode = {
   PROMPT_BLOCKED: -32008,
   /** The model provider failed */
   PROVIDER: -32020,
-  /** The thread is running in another server of this deployment */
-  RUNNING_ELSEWHERE: -32011,
   /** A turn is already running in this thread */
   TURN_RUNNING: -32002,
-  /** Unsupported protocol version */
-  UNSUPPORTED_PROTOCOL: -32010,
   /** The thread's workspace could not be opened */
   WORKSPACE: -32009,
 } as const;
