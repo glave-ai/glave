@@ -18,9 +18,11 @@ describe('ServerService', () => {
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const server = TestBed.inject(ServerService);
     expect(server.approval()).toBeNull();
+    expect(server.approvals()).toEqual([]);
     await Promise.all([server.load(), server.load()]);
     expect(server.info()).toEqual(INFO);
     expect(server.approval()).toBe('ask');
+    expect(server.approvals()).toEqual(['ask']);
     expect(fake.paramsOf('server/discover')).toHaveLength(1);
   });
 

@@ -106,7 +106,7 @@
         (send)="send($event)"
         (stop)="stop()"
       >
-        <app-approval-mode glzComposerStart />
+        <app-approval-mode glzComposerStart [current]="mode()" [(value)]="pickedMode" />
         <app-model-picker glzComposerEnd [current]="service.chosen()" [(value)]="picked" />
       </glz-composer>
     </div>
