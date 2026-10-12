@@ -19,6 +19,12 @@ use glave_session::{Answering, Server, Wiring};
 use jiff::Timestamp;
 use tokio::sync::Notify;
 
+/// The approval modes a thread may choose when the policy leaves both.
+pub const BOTH_MODES: [glave_harness::ApprovalMode; 2] = [
+    glave_harness::ApprovalMode::Ask,
+    glave_harness::ApprovalMode::Auto,
+];
+
 /// A model that answers from a script, optionally waiting at a gate before each answer.
 pub struct Script {
     answers: Mutex<VecDeque<Completion>>,
@@ -200,6 +206,7 @@ pub async fn build<L: EventLog + 'static>(
         memory: None,
         spaces: Arc::new(MemorySpaces::new()),
         models: Vec::new(),
+        modes: BOTH_MODES.to_vec(),
     };
     let server = Server::new(wiring, settings, scope(), answering);
     keep_home(&server, Vec::new()).await;
@@ -257,6 +264,7 @@ pub async fn with_memory<L: EventLog + 'static>(
         memory: Some(memory),
         spaces: Arc::new(MemorySpaces::new()),
         models: Vec::new(),
+        modes: BOTH_MODES.to_vec(),
     };
     Server::new(wiring, settings, scope(), Answering::NoOne)
 }
@@ -282,6 +290,7 @@ where
         worktree: worktree.then_some(true),
         computer: None,
         model: None,
+        approval: None,
     };
     match server.request(started).await.unwrap() {
         Reply::Thread { thread } => thread.id,
@@ -304,6 +313,7 @@ where
             prompt: "go".into(),
             meta: Meta::default(),
             model: None,
+            approval: None,
         })
         .await
 }

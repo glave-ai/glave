@@ -5,6 +5,7 @@
   #sidenav
   class="sidenav"
   tabindex="-1"
+  [id]="navId"
   [attr.data-testid]="ids().nav"
   [attr.aria-label]="label()"
   [attr.aria-modal]="ariaModal()"
@@ -13,4 +14,21 @@
 >
   <ng-content select="[glzSidenav]" />
 </aside>
+@if (showHandle()) {
+  <div
+    class="handle"
+    side="start"
+    glzTooltipPosition="end"
+    [glzSplitter]="navId"
+    [glzSplitterPanel]="sidenav"
+    [glzTooltip]="resizeHint()"
+    [minWidth]="minWidth()"
+    [maxWidth]="maxWidth()"
+    [attr.data-testid]="ids().handle"
+    [attr.aria-label]="resizeLabel()"
+    [attr.aria-keyshortcuts]="shortcut()"
+    [(open)]="open"
+    [(width)]="width"
+  ></div>
+}
 <div class="content" [inert]="modal()"><ng-content /></div>

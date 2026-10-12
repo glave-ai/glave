@@ -28,6 +28,7 @@ mod placement {
                     background: false,
                     computer: Some(laptop),
                     model: None,
+                    approval: None,
                 })
                 .await
                 .unwrap_err();

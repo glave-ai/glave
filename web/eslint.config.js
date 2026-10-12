@@ -13,6 +13,7 @@ export default tseslint.config(
       '.angular/',
       'node_modules/',
       'test-results/',
+      'coverage/',
       'playwright-report/',
       // Generated from the session API's schema by `cargo xtask schema`.
       'client/src/generated/',

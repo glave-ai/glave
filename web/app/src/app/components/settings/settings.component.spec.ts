@@ -18,6 +18,7 @@ describe('SettingsComponent', () => {
       version: '0.1.0',
       protocols: ['2026-10'],
       approval: 'auto',
+      approvals: ['ask', 'auto'],
     });
     TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
@@ -29,6 +30,10 @@ describe('SettingsComponent', () => {
       'glave 0.1.0 · protocol 2026-10 · approvals: auto',
     );
     expect(root.textContent).toContain('glave policy explain');
+    const themes = Array.from(root.querySelectorAll('glz-radio'), (radio) =>
+      radio.textContent.trim(),
+    );
+    expect(themes).toEqual(['System', 'Light', 'Dark']);
     await expectAccessible(root);
 
     root.querySelectorAll<HTMLInputElement>('input[type="radio"]')[2]?.click();

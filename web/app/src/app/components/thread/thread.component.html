@@ -1,42 +1,20 @@
-<app-page-header>
-  <div class="heading">
-    @if (spaceName(); as space) {
-      <span class="space" data-testid="thread-space">{{ space }}</span>
-    }
-    <h1 class="title" data-testid="thread-title">{{ title() }}</h1>
-    @if (mark(); as mark) {
-      <glz-badge [tone]="mark.tone">{{ mark.text }}</glz-badge>
-    }
-    <button
-      glzIconButton
-      size="sm"
-      data-testid="thread-rename"
-      [label]="copy.rename"
-      (click)="startRename()"
-    >
-      <glz-icon [icon]="icons.rename" />
-    </button>
-  </div>
-  <button
-    appPageHeaderEnd
-    glzIconButton
-    data-testid="thread-tools"
-    [label]="copy.tools"
-    [attr.aria-pressed]="panelOpen()"
-    (click)="togglePanel()"
-  >
-    <glz-icon [icon]="icons.tools" />
-  </button>
-</app-page-header>
 <glz-panel-layout
   class="layout"
   testId="tools"
   [label]="copy.tools"
   [resizeLabel]="copy.resize"
+  [resizeHint]="panelHint"
+  [shortcut]="panelShortcut"
   [(open)]="panelOpen"
   [(width)]="panelWidth"
 >
   <div class="column">
+    <app-thread-header
+      [title]="title()"
+      [space]="spaceName()"
+      [mark]="mark()"
+      (rename)="startRename()"
+    />
     <section
       class="items"
       data-testid="thread-items"

@@ -50,6 +50,7 @@ mod titles {
                 budget: None,
                 meta: glave_session::protocol::Meta::default(),
                 model: None,
+                approval: None,
             })
             .await
             .unwrap();

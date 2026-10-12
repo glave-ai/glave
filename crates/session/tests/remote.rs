@@ -52,6 +52,7 @@ mod remote {
                 background: false,
                 computer: None,
                 model: None,
+                approval: None,
             };
             let Reply::Thread { thread } = remote.request(&started).await.unwrap() else {
                 panic!("a thread")
@@ -63,6 +64,7 @@ mod remote {
                     background: false,
                     budget: None,
                     model: None,
+                    approval: None,
                     meta: Meta::default(),
                 })
                 .await

@@ -18,6 +18,7 @@ use glave_ports::{BlobStore, EventLog, ModelProvider};
 
 use crate::held::Slot;
 use crate::ledger::Recorded;
+use crate::modes::Choice;
 use crate::protocol::{
     ApiError, Notification, Reply, TaskInfo, TaskKind, TaskStatus, TurnResult, code,
 };
@@ -37,8 +38,8 @@ pub struct TaskLimits {
 
 /// What a task does.
 pub(crate) enum Work {
-    /// One turn with this prompt, on the model chosen with it, if any.
-    Turn(String, Option<String>),
+    /// One turn with this prompt, with the model and approval mode chosen with it, if any.
+    Turn(String, Choice),
     /// A goal's turns: a new goal, or the thread's active or paused one.
     Goal(Option<Goal>),
 }
@@ -116,7 +117,10 @@ where
             Work::Goal(None) => ("continuing the thread's goal".to_owned(), true),
         };
         let model = match &work {
-            Work::Turn(_, model) => self.model_of(thread, model.as_deref()).await?,
+            Work::Turn(_, choice) => {
+                self.check_approval(thread, choice.approval).await?;
+                self.model_of(thread, choice.model.as_deref()).await?
+            }
             Work::Goal(_) => self.model_of(thread, None).await?,
         };
         self.inner.approvals.unattend(thread);

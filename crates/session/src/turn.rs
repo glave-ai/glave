@@ -15,6 +15,7 @@ use tokio::sync::{broadcast, watch};
 use crate::held::finished;
 use crate::hub::Hub;
 use crate::keyed::Done;
+use crate::modes::Choice;
 use crate::protocol::{ApiError, IdempotencyKey, Notification, Request, TurnResult, Update, code};
 use crate::server::{Server, api};
 
@@ -152,13 +153,15 @@ where
                 background: false,
                 budget,
                 model,
+                approval,
             } => {
                 if budget.is_some() {
                     return Ok(Err(crate::tasks::requests::unenforced_budget()));
                 }
                 let key = meta.idempotency_key.as_ref();
+                let choice = Choice { model, approval };
                 Ok(self
-                    .start_turn_with(caller, thread, &prompt, key, model)
+                    .start_turn_with(caller, thread, &prompt, key, choice)
                     .await)
             }
             Request::GoalStart {
@@ -192,23 +195,25 @@ where
         prompt: &str,
         key: Option<&IdempotencyKey>,
     ) -> Result<TurnStream, ApiError> {
-        self.start_turn_with(caller, thread, prompt, key, None)
+        self.start_turn_with(caller, thread, prompt, key, Choice::default())
             .await
     }
 
-    /// Like [`Server::start_turn_as`], first choosing `model` for the thread, when given:
-    /// this turn and the thread's later ones go to it. The model the turn would go to must be
-    /// one this server runs (`-32021`).
+    /// Like [`Server::start_turn_as`], first choosing for the thread the model and approval
+    /// mode `choice` names, when it does: this turn and the thread's later ones go to it and
+    /// ask that much. The model the turn would go to must be one this server runs (`-32021`),
+    /// and its mode one the policy leaves (`-32012`).
     pub(crate) async fn start_turn_with(
         &self,
         caller: &Caller,
         thread: ThreadId,
         prompt: &str,
         key: Option<&IdempotencyKey>,
-        model: Option<String>,
+        choice: Choice,
     ) -> Result<TurnStream, ApiError> {
         self.authorize(caller, thread).await?;
-        self.model_of(thread, model.as_deref()).await?;
+        self.model_of(thread, choice.model.as_deref()).await?;
+        self.check_approval(thread, choice.approval).await?;
         let (finish, done) = watch::channel(None);
         if let Some(key) = key
             && let Some(started) = self.inner.keyed.claim(thread, key, &done)
@@ -223,9 +228,8 @@ where
             .occupy(thread, finish, move |inner, mut held, cancel| async move {
                 let hub = Arc::clone(&inner.hub);
                 let mut publish = |live| publish(&hub, thread, live);
-                if let Some(model) = &model
-                    && let Err(error) = inner.harness.choose_model(&mut held, &caller, model).await
-                {
+                let chose = crate::modes::record(&inner.harness, &mut held, &caller, &choice);
+                if let Err(error) = chose.await {
                     return (held, Err(error));
                 }
                 let ran = inner

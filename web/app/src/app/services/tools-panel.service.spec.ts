@@ -31,6 +31,18 @@ describe('ToolsPanelService', () => {
     expect([again.open(), again.width(), again.tab()]).toEqual([true, 420, 'files']);
   });
 
+  it('toggles on its shortcut', () => {
+    const panel = TestBed.inject(ToolsPanelService);
+    const mod = /mac|iphone|ipad/iu.test(navigator.platform || navigator.userAgent)
+      ? { metaKey: true }
+      : { ctrlKey: true };
+    panel.keydown(new KeyboardEvent('keydown', { key: '.', ...mod }));
+    expect(panel.open()).toBe(true);
+    panel.keydown(new KeyboardEvent('keydown', { key: '.' }));
+    expect(panel.open()).toBe(true);
+    expect(panel.shortcut).toMatch(/^(⌘\.|Ctrl\+\.)$/u);
+  });
+
   it('works without storage', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('denied');

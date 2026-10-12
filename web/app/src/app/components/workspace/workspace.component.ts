@@ -20,11 +20,14 @@ import { SideNavComponent } from '../side-nav/side-nav.component';
 const COPY = {
   sideNav: 'Spaces and threads',
   skip: 'Skip to content',
+  resize: 'Resize the side bar',
+  hint: 'Drag or use the arrow keys to resize; Enter collapses. Show or hide:',
 } as const;
 
 /**
  * The signed-in frame, in three panes: the side nav (threads by space, the pages, the person),
- * the page, and, in a thread, its tools. Each page has its own top bar.
+ * the page, and, in a thread, its tools. Each page has its own top bar. The side nav's edge
+ * resizes and collapses it, and ⌘B or Ctrl+B shows or hides it anywhere.
  */
 @Component({
   selector: 'app-workspace',
@@ -32,11 +35,16 @@ const COPY = {
   templateUrl: './workspace.component.html',
   styleUrl: './workspace.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '(document:keydown)': 'keydown($event)' },
 })
 export class WorkspaceComponent {
   protected readonly copy = COPY;
   protected readonly contentLink = '#content';
-  protected readonly navOpen = inject(NavService).open;
+  private readonly nav = inject(NavService);
+  protected readonly navOpen = this.nav.open;
+  protected readonly navWidth = this.nav.width;
+  protected readonly shortcut = this.nav.ariaShortcut;
+  protected readonly hint = `${COPY.hint} ${this.nav.shortcut}`;
   private readonly router = inject(Router);
   private readonly layout = viewChild.required(GlzSidenavLayoutComponent);
   private readonly url = toSignal(
@@ -58,6 +66,10 @@ export class WorkspaceComponent {
         void this.router.navigateByUrl('/sign-in');
       }
     });
+  }
+
+  protected keydown(event: KeyboardEvent): void {
+    this.nav.keydown(event);
   }
 
   protected navigated(): void {

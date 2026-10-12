@@ -15,6 +15,7 @@ use jiff::Timestamp;
 
 use crate::cron::Cron;
 use crate::ledger::Scheduled;
+use crate::modes::Choice;
 use crate::protocol::{ApiError, Reply, ScheduleInfo, code};
 use crate::server::Server;
 use crate::tasks::Work;
@@ -210,7 +211,7 @@ where
         let caller = Caller::default();
         let home = self.inner.home.space;
         let thread = self
-            .new_thread(&caller, home, schedule.worktree, true, None)
+            .new_thread(&caller, home, schedule.worktree, true, &Choice::default())
             .await?;
         let work = if schedule.goal {
             Work::Goal(Some(Goal {
@@ -218,7 +219,7 @@ where
                 token_budget: schedule.budget,
             }))
         } else {
-            Work::Turn(schedule.prompt.clone(), None)
+            Work::Turn(schedule.prompt.clone(), Choice::default())
         };
         let fired = Fired {
             schedule: schedule.schedule,

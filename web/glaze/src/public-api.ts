@@ -52,6 +52,7 @@ export * from './directives/menu-trigger.directive';
 export * from './directives/scroll-spy.directive';
 export * from './directives/shortcut.directive';
 export * from './directives/slider.directive';
+export * from './directives/splitter.directive';
 export * from './directives/stick-to-bottom.directive';
 export * from './directives/tooltip.directive';
 

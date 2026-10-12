@@ -60,6 +60,7 @@ pub(crate) fn own_records(events: &[Event]) -> u64 {
                     | Body::ThreadDeleted(_)
                     | Body::ThreadRenamed(_)
                     | Body::ModelChosen(_)
+                    | Body::ApprovalModeChosen(_)
             )
         })
         .count();
