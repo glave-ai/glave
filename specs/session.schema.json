@@ -37,7 +37,7 @@
       "type": "object"
     },
     "ApprovalMode": {
-      "description": "How much glave asks before acting (`specs/approvals.md`, \"Modes\").",
+      "description": "How much glave asks the person before acting (`specs/approvals.md`, \"Modes\"). Secret files\nask in every mode.",
       "oneOf": [
         {
           "const": "ask",
@@ -46,7 +46,7 @@
         },
         {
           "const": "auto",
-          "description": "Changes and commands go through; risky ones still ask.",
+          "description": "Changes and commands go through: in the sandbox when it is on, as the person when not;\nrisky ones still ask. glave chooses it by default only where commands run in the\nsandbox.",
           "type": "string"
         }
       ]

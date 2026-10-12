@@ -160,7 +160,7 @@ async fn ask(question: String) -> std::io::Result<Option<String>> {
 fn flags(args: &Args) -> ConfigFile {
     ConfigFile {
         model: args.model.clone(),
-        approval: args.approval.map(Into::into),
+        approval: args.approval,
         sandbox: args.sandbox,
         network: args.network,
         worktree: args.worktree.then_some(true),

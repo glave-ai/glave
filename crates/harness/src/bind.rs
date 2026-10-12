@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use glave_event::{Body, ComputerKind, ComputerRef, Event, Opened, ThreadId, WorkspaceBound};
 use glave_ports::{
-    BlobStore, ComputerError, ComputerId, Environment, EventLog, ModelProvider, Scope, Sources,
-    ToolSource,
+    BlobStore, Caller, ComputerError, ComputerId, Environment, EventLog, ModelProvider, Scope,
+    Sources, ToolSource,
 };
 
 use crate::approval::Approver;
@@ -15,7 +15,6 @@ use crate::builtins::Builtins;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
-use glave_identity::Caller;
 
 /// Where a new thread works.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

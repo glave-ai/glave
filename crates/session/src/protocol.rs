@@ -3,7 +3,6 @@
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
 mod models;
-mod modes;
 mod tasks;
 
 use glave_event::{
@@ -14,8 +13,8 @@ use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
 use glave_ports::{ComputerId, Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
+pub use glave_event::ApprovalMode;
 pub use models::ModelInfo;
-pub use modes::ApprovalMode;
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 
 /// The protocol version this server speaks.

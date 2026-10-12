@@ -6,7 +6,7 @@ use glave_harness::{ApprovalMode, SandboxLevel};
 
 use super::*;
 use crate::policy::choices::Judge;
-use crate::policy::files::{Approval, PolicyFile, SandboxChoice};
+use crate::policy::files::{PolicyFile, SandboxChoice};
 
 const ORG: &str = "/etc/glave/policy.toml";
 const SPACE: &str = "/srv/space/policy.toml";
@@ -62,7 +62,7 @@ fn file_source(path: &str) -> Source {
 #[test]
 fn each_choice_comes_from_the_nearest_level_that_sets_it() {
     let flags = ConfigFile {
-        approval: Some(Approval::Ask),
+        approval: Some(ApprovalMode::Ask),
         ..ConfigFile::default()
     };
     let env = ConfigFile {

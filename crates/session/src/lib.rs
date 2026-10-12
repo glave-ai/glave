@@ -27,7 +27,8 @@ mod trace;
 mod turn;
 
 pub use approvals::Answering;
-pub use glave_identity::{Caller, signin};
+pub use glave_identity::signin;
+pub use glave_ports::Caller;
 pub use ledger::is_ledger;
 pub use server::{OnWorkers, Server, Wiring};
 pub use spaces::PERSONAL_NAME;

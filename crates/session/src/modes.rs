@@ -24,13 +24,10 @@ pub(crate) struct Choice {
 
 /// The modes a thread may choose on a server whose own mode is `own`: `allowed`, cautious
 /// first, and always `own`.
-pub(crate) fn choosable(
-    own: ApprovalMode,
-    allowed: &[glave_harness::ApprovalMode],
-) -> Vec<ApprovalMode> {
+pub(crate) fn choosable(own: ApprovalMode, allowed: &[ApprovalMode]) -> Vec<ApprovalMode> {
     [ApprovalMode::Ask, ApprovalMode::Auto]
         .into_iter()
-        .filter(|mode| *mode == own || allowed.contains(&(*mode).into()))
+        .filter(|mode| *mode == own || allowed.contains(mode))
         .collect()
 }
 
@@ -51,7 +48,7 @@ where
         harness.choose_model(thread, caller, model).await?;
     }
     if let Some(mode) = choice.approval {
-        harness.choose_approval(thread, caller, mode.into()).await?;
+        harness.choose_approval(thread, caller, mode).await?;
     }
     Ok(())
 }
@@ -128,9 +125,7 @@ where
             return Ok(None);
         };
         Ok(match decode(raw).map_err(|error| failed(&error))?.body {
-            Body::ApprovalModeChosen(chosen) => Some(ApprovalMode::from(
-                glave_harness::ApprovalMode::from(chosen.mode),
-            )),
+            Body::ApprovalModeChosen(chosen) => Some(chosen.mode),
             _ => None,
         })
     }

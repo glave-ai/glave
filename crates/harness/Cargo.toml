@@ -10,8 +10,6 @@ publish.workspace = true
 
 [dependencies]
 glave-event.workspace = true
-# Who asked: the verified caller of a thread, a turn or a decision.
-glave-identity.workspace = true
 glave-ports.workspace = true
 glave-shell.workspace = true
 # Content-free spans and metrics: turns, tool calls, commands, approvals.
