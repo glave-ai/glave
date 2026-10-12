@@ -2,8 +2,10 @@
 //! small client for it: JSON-RPC requests posted one at a time, and server-sent events read
 //! as they arrive.
 
-use glave_ports::{BlobStore, EventLog, ModelProvider};
-use glave_session::Server;
+use std::net::SocketAddr;
+
+use glave_ports::EventLog;
+use glave_session::http::Site;
 use glave_session::protocol::Request;
 use glave_session::signin::{SignIn, Trust};
 use serde_json::{Value, json};
@@ -12,69 +14,63 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use super::issuer::{AUDIENCE, Issuer, fixed_clock};
+use super::setup::{Tested, scope};
 
 /// A session server listening over HTTP until it is closed.
 pub struct Served {
+    pub address: SocketAddr,
     pub url: String,
-    stop: Option<oneshot::Sender<()>>,
-    serving: Option<JoinHandle<std::io::Result<()>>>,
+    stop: oneshot::Sender<()>,
+    serving: JoinHandle<std::io::Result<()>>,
 }
 
 /// Serves `server` over HTTP, trusting `issuer` for `AUDIENCE`, with `ada` of that issuer
 /// working in the server's own space beside its person.
-pub async fn serve_http<P, L, B>(server: Server<P, L, B>, issuer: &Issuer) -> Served
-where
-    P: ModelProvider + 'static,
-    L: EventLog + 'static,
-    B: BlobStore + 'static,
-{
+pub async fn serve_http<L: EventLog + 'static>(server: Tested<L>, issuer: &Issuer) -> Served {
     let mut home = server.home_space().await.unwrap();
     let ada = glave_session::signin::person(&issuer.url, "ada").unwrap();
     home.members.push(glave_event::Principal::person(ada));
-    let org = glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1));
-    server.spaces().update(org, &home).await.unwrap();
+    server.spaces().update(scope().org, &home).await.unwrap();
     let trust = Trust {
         issuers: vec![issuer.url.clone()],
         audience: AUDIENCE.into(),
     };
-    serve_with(server, SignIn::new(trust, Box::new(fixed_clock())).unwrap()).await
+    let signin = SignIn::new(trust, Box::new(fixed_clock())).unwrap();
+    serve_with(server, signin, None).await
 }
 
-/// Serves `server` over HTTP on 127.0.0.1, each request signed in through `signin`.
-pub async fn serve_with<P, L, B>(server: Server<P, L, B>, signin: SignIn) -> Served
-where
-    P: ModelProvider + 'static,
-    L: EventLog + 'static,
-    B: BlobStore + 'static,
-{
+/// Serves `server` over HTTP on 127.0.0.1, each request signed in through `signin`, with the
+/// web app in `site` beside it.
+pub async fn serve_with<L: EventLog + 'static>(
+    server: Tested<L>,
+    signin: SignIn,
+    site: Option<Site>,
+) -> Served {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}/", listener.local_addr().unwrap());
+    let address = listener.local_addr().unwrap();
     let (stop, stopped) = oneshot::channel::<()>();
     let serving = tokio::spawn(glave_session::http::serve(
         server,
         signin,
-        None,
+        site,
         listener,
         async move {
             let _ = stopped.await;
         },
     ));
     Served {
-        url,
-        stop: Some(stop),
-        serving: Some(serving),
+        address,
+        url: format!("http://{address}/"),
+        stop,
+        serving,
     }
 }
 
 impl Served {
     /// Stops the server and waits until it has.
-    pub async fn close(mut self) {
-        if let Some(stop) = self.stop.take() {
-            let _ = stop.send(());
-        }
-        if let Some(serving) = self.serving.take() {
-            serving.await.unwrap().unwrap();
-        }
+    pub async fn close(self) {
+        let _ = self.stop.send(());
+        self.serving.await.unwrap().unwrap();
     }
 }
 
