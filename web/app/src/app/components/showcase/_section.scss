@@ -15,20 +15,6 @@ h3 {
   gap: var(--glz-space-3);
 }
 
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glz-space-3);
-  max-width: 32rem;
-}
-
-.lines {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: var(--glz-space-2);
-}
-
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));

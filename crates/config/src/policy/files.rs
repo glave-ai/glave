@@ -24,7 +24,7 @@ pub struct ConfigFile {
     pub model: Option<String>,
     /// A model, or `off`.
     pub judge_model: Option<String>,
-    pub approval: Option<Approval>,
+    pub approval: Option<ApprovalMode>,
     pub sandbox: Option<SandboxChoice>,
     /// Whether sandboxed commands may use the network. A project's file may only turn it off.
     pub network: Option<bool>,
@@ -190,32 +190,6 @@ impl HooksFile {
     }
 }
 
-/// An approval mode as written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Approval {
-    Auto,
-    Ask,
-}
-
-impl From<ApprovalMode> for Approval {
-    fn from(mode: ApprovalMode) -> Self {
-        match mode {
-            ApprovalMode::Auto => Self::Auto,
-            ApprovalMode::Ask => Self::Ask,
-        }
-    }
-}
-
-impl Approval {
-    pub fn mode(self) -> ApprovalMode {
-        match self {
-            Self::Auto => ApprovalMode::Auto,
-            Self::Ask => ApprovalMode::Ask,
-        }
-    }
-}
-
 /// A sandbox level as written, `off` included.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -321,7 +295,7 @@ pub struct ModelRules {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApprovalRules {
-    pub modes: Option<Vec<Approval>>,
+    pub modes: Option<Vec<ApprovalMode>>,
     pub judge: Option<JudgeRule>,
 }
 

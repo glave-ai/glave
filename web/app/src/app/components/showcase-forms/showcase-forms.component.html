@@ -22,24 +22,6 @@
     <glz-form-field [label]="copy.due">
       <input glzInput type="date" formControlName="due" />
     </glz-form-field>
-    <glz-form-field [label]="copy.budget">
-      <input
-        type="range"
-        glzSlider
-        [min]="values.budgetMin"
-        [max]="values.budgetMax"
-        formControlName="budget"
-        [valueText]="budgetText()"
-      />
-    </glz-form-field>
-    <glz-form-field [label]="copy.model">
-      <glz-combobox
-        testId="showcase-model"
-        formControlName="model"
-        [options]="models"
-        [placeholder]="copy.modelPlaceholder"
-      />
-    </glz-form-field>
     <glz-form-field [label]="copy.approval">
       <glz-radio-group formControlName="approval">
         @for (mode of approvals; track mode.value) {
@@ -47,15 +29,12 @@
         }
       </glz-radio-group>
     </glz-form-field>
-    <div class="stack">
-      <glz-switch formControlName="memory">{{ copy.memory }}</glz-switch>
-      <glz-form-field [label]="copy.policy">
-        <glz-checkbox formControlName="terms">{{ copy.terms }}</glz-checkbox>
-        @if (termsMissing()) {
-          <glz-error>{{ copy.termsMissing }}</glz-error>
-        }
-      </glz-form-field>
-    </div>
+    <glz-form-field [label]="copy.policy">
+      <glz-checkbox formControlName="terms">{{ copy.terms }}</glz-checkbox>
+      @if (termsMissing()) {
+        <glz-error>{{ copy.termsMissing }}</glz-error>
+      }
+    </glz-form-field>
     <button glzButton variant="primary" type="submit" data-testid="showcase-space-create">
       {{ copy.create }}
     </button>

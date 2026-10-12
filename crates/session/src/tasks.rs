@@ -14,7 +14,7 @@ use glave_event::{
     ThreadId, TokenCounts, decode,
 };
 use glave_harness::{Caller, Goal};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_ports::{BlobStore, EventLog, ModelProvider, title_from};
 
 use crate::held::Slot;
 use crate::ledger::Recorded;
@@ -24,9 +24,6 @@ use crate::protocol::{
 };
 use crate::server::Server;
 use crate::turn::{TurnItem, TurnStream};
-
-/// Characters of the prompt a task's title keeps.
-const TITLE_CHARS: usize = 80;
 
 /// What a person may run at once and keep scheduled (`[tasks]` in `policy.toml`): no limit
 /// when `None`.
@@ -112,8 +109,8 @@ where
     ) -> Result<TaskInfo, ApiError> {
         self.may_start_task(caller, thread).await?;
         let (title, goal) = match &work {
-            Work::Turn(prompt, _) => (title(prompt), false),
-            Work::Goal(Some(goal)) => (title(&goal.objective), true),
+            Work::Turn(prompt, _) => (title_from(prompt).unwrap_or_default(), false),
+            Work::Goal(Some(goal)) => (title_from(&goal.objective).unwrap_or_default(), true),
             Work::Goal(None) => ("continuing the thread's goal".to_owned(), true),
         };
         let model = match &work {
@@ -450,16 +447,6 @@ fn add(total: &mut TokenCounts, counts: &TokenCounts) {
     total.cache_write = total.cache_write.saturating_add(counts.cache_write);
     total.output = total.output.saturating_add(counts.output);
     total.reasoning = total.reasoning.saturating_add(counts.reasoning);
-}
-
-/// The first line of `prompt`, at most [`TITLE_CHARS`] characters.
-pub(crate) fn title(prompt: &str) -> String {
-    let line = prompt.lines().next().unwrap_or_default().trim();
-    let mut title: String = line.chars().take(TITLE_CHARS).collect();
-    if line.chars().count() > TITLE_CHARS || prompt.trim().lines().count() > 1 {
-        title.push('…');
-    }
-    title
 }
 
 impl<P, L, B> Server<P, L, B> {

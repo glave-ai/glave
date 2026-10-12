@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
 import { expectAccessible } from '../../testing/axe';
-import { type GlzComposed, GlzComposerComponent } from './composer.component';
+import { GlzComposerComponent } from './composer.component';
 
 @Component({
   imports: [GlzComposerComponent],
@@ -11,7 +11,6 @@ import { type GlzComposed, GlzComposerComponent } from './composer.component';
     <glz-composer
       testId="composer"
       [(value)]="draft"
-      [(files)]="files"
       [busy]="busy()"
       (send)="sent.push($event)"
       (stop)="stops.set(stops() + 1)"
@@ -23,10 +22,9 @@ import { type GlzComposed, GlzComposerComponent } from './composer.component';
 })
 class HostComponent {
   readonly draft = signal('');
-  readonly files = signal<readonly File[]>([]);
   readonly busy = signal(false);
   readonly stops = signal(0);
-  readonly sent: GlzComposed[] = [];
+  readonly sent: string[] = [];
 }
 
 function find<T extends HTMLElement = HTMLElement>(root: HTMLElement, testId: string): T {
@@ -66,7 +64,7 @@ describe('GlzComposerComponent', () => {
     expect(enter(input, { shiftKey: true }).defaultPrevented).toBe(false);
     expect(enter(input).defaultPrevented).toBe(true);
     await fixture.whenStable();
-    expect(fixture.componentInstance.sent).toEqual([{ text: 'Plan the launch', files: [] }]);
+    expect(fixture.componentInstance.sent).toEqual(['Plan the launch']);
     expect(fixture.componentInstance.draft()).toBe('');
     expect(input.value).toBe('');
   });
@@ -93,29 +91,5 @@ describe('GlzComposerComponent', () => {
     type(input, 'next');
     enter(input);
     expect(fixture.componentInstance.sent).toEqual([]);
-  });
-
-  it('attaches files from the picker, lists them, removes and sends them', async () => {
-    const fixture = TestBed.createComponent(HostComponent);
-    await fixture.whenStable();
-    const root: HTMLElement = fixture.nativeElement;
-    const picker = find<HTMLInputElement>(root, 'composer-file-input');
-    const click = vi.spyOn(picker, 'click');
-    find<HTMLButtonElement>(root, 'composer-attach').click();
-    expect(click).toHaveBeenCalledOnce();
-    const notes = new File(['hello'], 'notes.txt');
-    const plan = new File(['plan'], 'plan.md');
-    Object.defineProperty(picker, 'files', { configurable: true, value: [notes, plan] });
-    picker.dispatchEvent(new Event('change'));
-    await fixture.whenStable();
-    expect(find(root, 'composer-files').textContent).toContain('notes.txt');
-    const remove = root.querySelectorAll<HTMLButtonElement>('[data-testid="composer-remove-file"]');
-    expect(remove[0]?.getAttribute('aria-label')).toBe('Remove notes.txt');
-    remove[0]?.click();
-    await fixture.whenStable();
-    expect(fixture.componentInstance.files()).toEqual([plan]);
-    find<HTMLButtonElement>(root, 'composer-send').click();
-    expect(fixture.componentInstance.sent).toEqual([{ text: '', files: [plan] }]);
-    expect(fixture.componentInstance.files()).toEqual([]);
   });
 });

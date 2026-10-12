@@ -2,14 +2,13 @@
 //! it is met or paused, the person stops it, its budget runs out, or it stalls.
 
 use glave_event::{GoalEnded, GoalReason, GoalResumed, GoalSet, Outcome, Principal, ThreadId};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
 
 use super::{Goal, GoalProgress, IDLE_TURNS, Pursuit, Verdict, continuation, counted, latest};
 use crate::approval::Approver;
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::turn::{Live, Prompt, TurnSummary, absorb};
-use glave_identity::Caller;
 
 impl<P, L, B, A> Harness<P, L, B, A>
 where

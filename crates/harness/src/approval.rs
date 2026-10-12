@@ -4,9 +4,8 @@
 use std::future::{Future, ready};
 use std::path::Path;
 
-use glave_event::{Arguments, CallId, PrincipalId, ThreadId};
+use glave_event::{ApprovalMode, Arguments, CallId, PrincipalId, ThreadId};
 use glave_ports::Effect;
-use serde::Serialize;
 
 use crate::question::QuestionRequest;
 use crate::tools::Tool;
@@ -32,40 +31,11 @@ pub struct ApprovalRequest {
     pub caution: Option<String>,
 }
 
-/// How much glave asks before acting. Secret files ask in every mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ApprovalMode {
-    /// The cautious mode: ask before every change and every command.
-    Ask,
-    /// Changes and commands go through: in the sandbox when it is on, as the person when not.
-    /// glave chooses it by default only where commands run in the sandbox (`specs/approvals.md`).
-    #[default]
-    Auto,
-}
-
-impl ApprovalMode {
-    pub fn named(name: &str) -> Option<Self> {
-        match name {
-            "ask" => Some(Self::Ask),
-            "auto" => Some(Self::Auto),
-            _ => None,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Ask => "ask",
-            Self::Auto => "auto",
-        }
-    }
-
-    /// Whether a tool with this effect needs the person's approval in this mode.
-    pub(crate) fn asks_for(self, effect: Effect) -> bool {
-        match effect {
-            Effect::Reads => false,
-            Effect::Changes | Effect::Runs => self == Self::Ask,
-        }
+/// Whether a tool with `effect` needs the person's approval in `mode`.
+pub(crate) fn asks_for(mode: ApprovalMode, effect: Effect) -> bool {
+    match effect {
+        Effect::Reads => false,
+        Effect::Changes | Effect::Runs => mode == ApprovalMode::Ask,
     }
 }
 
@@ -234,14 +204,9 @@ mod tests {
     #[test]
     fn each_mode_asks_for_exactly_what_it_should() {
         use ApprovalMode::{Ask, Auto};
-        assert!(!Ask.asks_for(Effect::Reads) && !Auto.asks_for(Effect::Reads));
-        assert!(Ask.asks_for(Effect::Changes) && !Auto.asks_for(Effect::Changes));
-        assert!(Ask.asks_for(Effect::Runs) && !Auto.asks_for(Effect::Runs));
-        assert_eq!(ApprovalMode::default(), Auto);
-        assert_eq!(ApprovalMode::named("edits"), None, "retired");
-        for mode in [Ask, Auto] {
-            assert_eq!(ApprovalMode::named(mode.name()), Some(mode));
-        }
+        assert!(!asks_for(Ask, Effect::Reads) && !asks_for(Auto, Effect::Reads));
+        assert!(asks_for(Ask, Effect::Changes) && !asks_for(Auto, Effect::Changes));
+        assert!(asks_for(Ask, Effect::Runs) && !asks_for(Auto, Effect::Runs));
     }
 
     #[test]

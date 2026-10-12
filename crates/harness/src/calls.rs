@@ -2,13 +2,13 @@
 //! the tool, and recording its result.
 
 use glave_event::{
-    ApprovalDecided, ApprovalRequested, CallId, Principal, ToolCallCompleted, Verdict,
+    ApprovalDecided, ApprovalMode, ApprovalRequested, CallId, Principal, ToolCallCompleted, Verdict,
 };
 use glave_ports::{
     Assessment, BlobStore, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
 };
 
-use crate::approval::{ApprovalMode, ApprovalRequest, Approver, Decision, no_one_there};
+use crate::approval::{ApprovalRequest, Approver, Decision, asks_for, no_one_there};
 use crate::cancel::Cancel;
 use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -148,7 +148,7 @@ where
         }
         // A caution asks even when the tool was allowed for the rest of the thread.
         let asks = caution.is_some()
-            || (self.approval_for(thread).asks_for(effect) && !thread.allowed.contains(name));
+            || (asks_for(self.approval_for(thread), effect) && !thread.allowed.contains(name));
         if asks {
             let request = ApprovalRequest {
                 thread: thread.id,

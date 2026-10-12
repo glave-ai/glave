@@ -1,4 +1,4 @@
-import { isApple, isTyping, matchesShortcut, parseShortcut } from './shortcuts';
+import { isApple, matchesShortcut, parseShortcut } from './shortcuts';
 
 function press(key: string, init: KeyboardEventInit = {}): KeyboardEvent {
   return new KeyboardEvent('keydown', { key, ...init });
@@ -22,16 +22,6 @@ describe('shortcuts', () => {
     expect(matchesShortcut(press('k', { ctrlKey: true }), modK, false)).toBe(true);
     expect(matchesShortcut(press('k', { ctrlKey: true, shiftKey: true }), modK, false)).toBe(false);
     expect(matchesShortcut(press('j', { ctrlKey: true }), modK, false)).toBe(false);
-  });
-
-  it('knows when keys are being typed into a field', () => {
-    expect(isTyping(document.createElement('textarea'))).toBe(true);
-    expect(isTyping(document.createElement('input'))).toBe(true);
-    const box = document.createElement('input');
-    box.type = 'checkbox';
-    expect(isTyping(box)).toBe(false);
-    expect(isTyping(document.createElement('button'))).toBe(false);
-    expect(isTyping(null)).toBe(false);
   });
 
   it('recognises Apple platforms', () => {

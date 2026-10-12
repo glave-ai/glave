@@ -41,13 +41,14 @@ mod turn;
 mod untrusted;
 mod worker;
 
-pub use approval::{AllowAll, ApprovalMode, ApprovalRequest, Approver, Decision, NoOneToAsk};
+pub use approval::{AllowAll, ApprovalRequest, Approver, Decision, NoOneToAsk};
 pub use bind::{Place, branch_for};
 pub use cancel::Cancel;
 pub use commands::{Command, FoundCommands, command_folders, find_commands};
 pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;
-pub use glave_identity::Caller;
+pub use glave_event::ApprovalMode;
+pub use glave_ports::Caller;
 pub use glave_ports::secrets::{is_secret_file, is_secret_variable};
 pub use glave_ports::{Clock, Entropy, OsEntropy, SystemClock};
 pub use glave_ports::{Sandbox, SandboxLevel};

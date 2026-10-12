@@ -4,13 +4,11 @@ import {
   Component,
   type ElementRef,
   afterRenderEffect,
-  booleanAttribute,
   computed,
   effect,
   inject,
   input,
   model,
-  numberAttribute,
   untracked,
   viewChild,
 } from '@angular/core';
@@ -68,12 +66,6 @@ export class GlzSidenavLayoutComponent {
   readonly open = model(true);
   /** The side nav's width in pixels; `null` for `--glz-sidenav-width`. */
   readonly width = model<number | null>(null);
-  /** The narrowest the side nav may be dragged while open, in pixels. */
-  readonly minWidth = input(200, { transform: numberAttribute });
-  /** The widest the side nav may be dragged, in pixels. */
-  readonly maxWidth = input(480, { transform: numberAttribute });
-  /** Whether the person can resize and collapse the side nav by its edge. */
-  readonly resizable = input(true, { transform: booleanAttribute });
   /** Names the side nav's region for screen readers. */
   readonly label = input('Navigation');
   /** Names the edge. */
@@ -101,7 +93,10 @@ export class GlzSidenavLayoutComponent {
   protected readonly closed = computed(() => !this.open());
   protected readonly role = computed(() => (this.modal() ? 'dialog' : null));
   protected readonly ariaModal = computed(() => (this.modal() ? 'true' : null));
-  protected readonly showHandle = computed(() => this.resizable() && !this.narrow());
+  protected readonly showHandle = computed(() => !this.narrow());
+  /** The narrowest the side nav may be dragged while open, and the widest, in pixels. */
+  protected readonly minWidth = 200;
+  protected readonly maxWidth = 480;
   protected readonly widthStyle = computed(() => {
     const width = this.width();
     return width === null ? null : `${String(width)}px`;

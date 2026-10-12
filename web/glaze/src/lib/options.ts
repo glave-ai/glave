@@ -1,4 +1,4 @@
-/** One choice in a combobox or select: what it stands for, and what people read. */
+/** One choice in a menu or picker: what it stands for, and what people read. */
 export interface GlzOption {
   readonly value: string;
   readonly label: string;
@@ -14,11 +14,6 @@ export function filterOptions<T extends GlzOption>(
 ): readonly T[] {
   const wanted = fold(query.trim());
   return wanted === '' ? options : options.filter((option) => fold(option.label).includes(wanted));
-}
-
-/** The label of the option with `value`, or `''`. */
-export function labelOf(options: readonly GlzOption[], value: string | null): string {
-  return options.find((option) => option.value === value)?.label ?? '';
 }
 
 function fold(text: string): string {

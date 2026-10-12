@@ -4,11 +4,12 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use glave_harness::ApprovalMode;
 use glave_ports::block_on;
 
 use super::*;
+use crate::policy::ConfigFile;
 use crate::policy::tests::constraints;
-use crate::policy::{Approval, ConfigFile};
 use crate::trust::assess::Standing;
 use crate::trust::project::MCP_FILE;
 
@@ -58,7 +59,7 @@ fn a_repository_with_nothing_that_runs_commands_never_asks() {
         Some("m"),
         "applied without a question"
     );
-    assert_eq!(config.approval, Some(Approval::Ask));
+    assert_eq!(config.approval, Some(ApprovalMode::Ask));
 }
 
 #[test]
@@ -74,7 +75,7 @@ fn settings_that_loosen_wait_for_trust_and_the_rest_apply_at_once() {
     assert_eq!(outcome.withheld.len(), 1);
     assert!(outcome.withheld[0].contains("approval = \"auto\", sandbox = \"off\""));
     let trusted = assessment.apply(Answer::Yes).config.unwrap();
-    assert_eq!(trusted.approval, Some(Approval::Auto));
+    assert_eq!(trusted.approval, Some(ApprovalMode::Auto));
 }
 
 #[test]
@@ -187,7 +188,7 @@ fn policy_can_trust_a_project_or_forbid_its_servers() {
     assert_eq!(undecided(&project, &record, &trusting), 0);
     let outcome = assess(project.clone(), &record, &trusting).apply(Answer::NoOne);
     assert_eq!(outcome.servers.len(), 1);
-    assert_eq!(outcome.config.unwrap().approval, Some(Approval::Auto));
+    assert_eq!(outcome.config.unwrap().approval, Some(ApprovalMode::Auto));
     assert!(outcome.rows[0][1].contains("trusted by [projects] trusted"));
     // A project outside the globs is asked about as usual.
     let elsewhere = constraints("version = 1\n[projects]\ntrusted = [\"/srv/*\"]\n");
