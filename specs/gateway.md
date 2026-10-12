@@ -51,6 +51,7 @@ A **route** names a purpose and maps it to an ordered list of **targets** (provi
 
 - A key in the environment wins over the workload's identity; with neither, glave refuses to start and says which to set.
 - Claude is not on Bedrock's OpenAI-compatible route (Bedrock serves Claude through Anthropic's Messages API only). Reaching it means `glave-provider-anthropic` pointed at Bedrock's Messages endpoint, with the same credentials: planned, as is Vertex (Claude through the Anthropic adapter, Gemini through its OpenAI-compatible route, GKE workload identity as a refreshing bearer token).
+- `glave-provider-anthropic` speaks Vertex AI's Messages API (`Api::Vertex`): `POST <location base>/publishers/anthropic/models/<model>:streamRawPredict`, the same streamed request with `"anthropic_version": "vertex-2023-10-16"` in the body, no `model` there and no `anthropic-version` header; answered with the same server-sent events. A model id that cannot be part of the URL is refused before anything is sent, as an unknown model.
 - The crates: `glave-azure` (the endpoint, and Entra tokens by a hand-rolled exchange) and `glave-aws` (the endpoints, and SigV4 by AWS's own `aws-sigv4`, with a thin reader of the three key sources instead of the AWS SDK).
 
 ## Budgets

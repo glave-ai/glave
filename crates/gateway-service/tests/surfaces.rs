@@ -51,6 +51,7 @@ mod surfaces {
     fn anthropic(world: &World, token: &str) -> Anthropic {
         Anthropic::new(glave_provider_anthropic::Config {
             base_url: world.url.clone(),
+            api: glave_provider_anthropic::Api::Messages,
             auth: glave_ports::auth::Auth::key(glave_ports::auth::KeyHeader::XApiKey, token),
             provider: "gateway".into(),
             idle_timeout: glave_provider_anthropic::IDLE_TIMEOUT,

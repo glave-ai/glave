@@ -7,6 +7,8 @@ use glave_ports::{Message, ModelRequest, ToolChoice, ToolSpec};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+use crate::api::Api;
+
 /// The output limit sent when a request sets none. The API requires one, and this fits every
 /// current model's own limit.
 pub(crate) const DEFAULT_MAX_TOKENS: u32 = 32_000;
@@ -21,7 +23,12 @@ pub(crate) const REDACTED_THINKING: &str = "redacted_thinking";
 /// choose their own thinking, and several refuse sampling settings.
 #[derive(Debug, Serialize)]
 pub(crate) struct MessagesRequest<'a> {
-    model: &'a str,
+    /// The model, unless the URL names it (Vertex AI).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<&'a str>,
+    /// The API version, where the body carries it (Vertex AI) rather than a header.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    anthropic_version: Option<&'static str>,
     max_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     system: Option<&'a str>,
@@ -90,11 +97,12 @@ struct WireTool<'a> {
     input_schema: &'a Value,
 }
 
-/// Builds the body of a streaming Messages request. `provider` is the name this provider
-/// records with its responses: thinking it produced for the same model is sent back.
+/// Builds the body of a streaming Messages request for `api`. `provider` is the name this
+/// provider records with its responses: thinking it produced for the same model is sent back.
 pub(crate) fn messages_request<'a>(
     request: &'a ModelRequest,
     provider: &str,
+    api: Api,
 ) -> MessagesRequest<'a> {
     let mut messages: Vec<WireMessage<'a>> = Vec::with_capacity(request.messages.len());
     for message in &request.messages {
@@ -111,7 +119,8 @@ pub(crate) fn messages_request<'a>(
         }
     }
     MessagesRequest {
-        model: &request.model,
+        model: api.model_in_body().then_some(request.model.as_str()),
+        anthropic_version: api.version_in_body(),
         max_tokens: request.max_output_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
         system: (!request.system.is_empty()).then_some(request.system.as_str()),
         messages,
