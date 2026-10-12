@@ -177,6 +177,10 @@ pub enum ProviderError {
     /// The provider answered with an error status.
     #[error("the model provider returned HTTP {status}: {body}")]
     Http { status: u16, body: String },
+    /// Credentials for the provider could not be had: a token file missing, or an identity
+    /// provider that refused. Never holds a secret.
+    #[error("could not get credentials for the model provider: {0}")]
+    Credentials(String),
     /// The provider could not be reached, or the connection broke.
     #[error("could not reach the model provider: {0}")]
     Transport(String),

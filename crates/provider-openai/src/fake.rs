@@ -52,6 +52,8 @@ impl Reply {
 pub struct Received {
     /// The `Authorization` header, if any.
     pub authorization: Option<String>,
+    /// Every header, its name in lower case, in the order sent.
+    pub headers: Vec<(String, String)>,
     /// The JSON body.
     pub body: Value,
 }
@@ -147,6 +149,7 @@ fn serve(
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut length = 0_usize;
     let mut authorization = None;
+    let mut headers = Vec::new();
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line)? == 0 {
@@ -157,11 +160,13 @@ fn serve(
             break;
         }
         if let Some((name, value)) = line.split_once(':') {
-            match name.trim().to_ascii_lowercase().as_str() {
+            let name = name.trim().to_ascii_lowercase();
+            match name.as_str() {
                 "content-length" => length = value.trim().parse().unwrap_or(0),
                 "authorization" => authorization = Some(value.trim().to_owned()),
                 _ => {}
             }
+            headers.push((name, value.trim().to_owned()));
         }
     }
     let mut body = vec![0_u8; length];
@@ -175,6 +180,7 @@ fn serve(
     if let Ok(mut requests) = requests.lock() {
         requests.push(Received {
             authorization,
+            headers,
             body: serde_json::from_slice(&body).unwrap_or(Value::Null),
         });
         arrived.notify_all();

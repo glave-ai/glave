@@ -109,7 +109,7 @@
       "oneOf": [
         {
           "const": "refused",
-          "description": "The key was refused (401, 403).",
+          "description": "The key was refused (401, 403), or credentials could not be had.",
           "type": "string"
         },
         {

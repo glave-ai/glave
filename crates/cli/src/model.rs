@@ -1,6 +1,7 @@
 //! The model provider for the endpoint: Anthropic's own Messages API at api.anthropic.com,
 //! the OpenAI-compatible one anywhere else. The harness sees one provider either way.
 
+use glave_ports::auth::KeyHeader;
 use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError};
 use glave_provider_anthropic::Anthropic;
 use glave_provider_openai::{Config, OpenAiCompatible};
@@ -21,7 +22,7 @@ impl Model {
             Ok(Self::Anthropic(Anthropic::new(
                 glave_provider_anthropic::Config {
                     base_url: config.base_url.clone(),
-                    api_key: config.api_key.clone(),
+                    auth: config.auth.clone().in_header(KeyHeader::XApiKey),
                     provider: config.provider.clone(),
                     idle_timeout: config.idle_timeout,
                 },

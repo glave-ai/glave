@@ -1,0 +1,27 @@
+[package]
+name = "glave-azure"
+description = "glave's way into Azure OpenAI: the v1 endpoint of a resource, and Microsoft Entra tokens from workload identity"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+glave-ports.workspace = true
+jiff.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+# Reads the federated token file, which Kubernetes rewrites in place, without blocking.
+tokio = { workspace = true, features = ["fs"] }
+# The token request's form body.
+url.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt"] }
+
+[lints]
+workspace = true

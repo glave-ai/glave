@@ -43,6 +43,7 @@ aws-lc-rs = { version = "1", default-features = false, features = ["aws-lc-sys",
 bytes = "1"
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
+glave-azure = { path = "crates/azure" }
 glave-computer = { path = "crates/computer" }
 glave-config = { path = "crates/config" }
 glave-event = { path = "crates/event" }

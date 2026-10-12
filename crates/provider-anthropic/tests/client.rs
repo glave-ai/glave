@@ -20,7 +20,8 @@ mod over_http {
     fn provider(base_url: &str, key: Option<&str>) -> Anthropic {
         Anthropic::new(Config {
             base_url: base_url.to_owned(),
-            api_key: key.map(str::to_owned),
+            auth: glave_ports::auth::Auth::bearer(key.map(str::to_owned))
+                .in_header(glave_ports::auth::KeyHeader::XApiKey),
             provider: "anthropic".into(),
             idle_timeout: IDLE_TIMEOUT,
         })
@@ -170,7 +171,7 @@ mod over_http {
         let server = FakeServer::start(vec![Reply::Stall]).unwrap();
         let quick = Anthropic::new(Config {
             base_url: server.url().to_owned(),
-            api_key: None,
+            auth: glave_ports::auth::Auth::None,
             provider: "anthropic".into(),
             idle_timeout: std::time::Duration::from_millis(200),
         })
