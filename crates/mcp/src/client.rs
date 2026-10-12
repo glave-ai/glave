@@ -8,7 +8,7 @@ use rmcp::ClientHandler;
 use rmcp::model::{
     ClientCapabilities, ClientConfig, Implementation, ServerNotification, SubscriptionFilter,
 };
-use rmcp::service::{NotificationContext, Peer, RoleClient};
+use rmcp::service::{NotificationContext, Peer, RoleClient, Subscription};
 
 /// Marks the tool listing stale when the server says its tools changed.
 pub(crate) struct Client {
@@ -39,13 +39,16 @@ impl ClientHandler for Client {
     }
 }
 
-/// A server on MCP 2026-07-28 says so only on a subscription, which this keeps open until the
-/// connection closes. Servers that cannot are left alone: their listing is kept as it is.
-pub(crate) async fn watch_tools(peer: Peer<RoleClient>, stale: Arc<AtomicBool>) {
+/// A server on MCP 2026-07-28 says so only on a subscription. This opens one, returning once the
+/// server has acknowledged it, so no change made after the connection opens goes unheard. Servers
+/// that cannot are left alone: their listing is kept as it is.
+pub(crate) async fn subscribe(peer: &Peer<RoleClient>) -> Option<Subscription> {
     let changes = SubscriptionFilter::builder().tools_list_changed().build();
-    let Ok(mut subscription) = peer.listen(changes).await else {
-        return;
-    };
+    peer.listen(changes).await.ok()
+}
+
+/// Marks the listing stale on every change heard on `subscription`, until the connection closes.
+pub(crate) async fn watch_tools(mut subscription: Subscription, stale: Arc<AtomicBool>) {
     while let Ok(Some(notification)) = subscription.next().await {
         if matches!(
             notification,
