@@ -1,10 +1,18 @@
-import { threadFromUrl, threadMark, threadTitle } from './threads';
+import { pageFromUrl, threadFromUrl, threadMark, threadTitle } from './threads';
 
 describe('threads', () => {
   it('reads the thread from a URL', () => {
     expect(threadFromUrl('/t/abc')).toBe('abc');
     expect(threadFromUrl('/t/abc?x=1')).toBe('abc');
     expect(threadFromUrl('/tasks')).toBeNull();
+  });
+
+  it('reads the page from a URL', () => {
+    expect(pageFromUrl('/tasks')).toBe('tasks');
+    expect(pageFromUrl('/memory?x=1')).toBe('memory');
+    expect(pageFromUrl('/settings#a')).toBe('settings');
+    expect(pageFromUrl('/tasksforce')).toBeNull();
+    expect(pageFromUrl('/t/abc')).toBeNull();
   });
 
   it('marks running and waiting threads', () => {

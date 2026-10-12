@@ -26,7 +26,7 @@ describe('SettingsComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="settings-server"]')?.textContent).toContain(
-      'glave 0.1.0 · protocol 2026-10',
+      'glave 0.1.0 · protocol 2026-10 · approvals: auto',
     );
     expect(root.textContent).toContain('glave policy explain');
     await expectAccessible(root);

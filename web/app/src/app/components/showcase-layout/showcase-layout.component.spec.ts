@@ -4,7 +4,7 @@ import { expectAccessible } from '@glave/glaze/testing';
 import { ShowcaseLayoutComponent } from './showcase-layout.component';
 
 describe('ShowcaseLayoutComponent', () => {
-  it('shows tabs, breadcrumbs, the rail, the side nav and lists', async () => {
+  it('shows tabs, breadcrumbs, the rail, the side nav, lists and a panel', async () => {
     const fixture = TestBed.createComponent(ShowcaseLayoutComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -14,6 +14,16 @@ describe('ShowcaseLayoutComponent', () => {
     );
     expect(root.querySelectorAll('glz-rail a')).toHaveLength(4);
     expect(root.querySelector('glz-sidenav-layout')).not.toBeNull();
+    expect(root.querySelector('[data-testid="showcase-panel-handle"]')).not.toBeNull();
     await expectAccessible(root);
+    root.querySelector<HTMLButtonElement>('[data-testid="showcase-earlier-toggle"]')?.click();
+    root.querySelector<HTMLButtonElement>('[data-testid="showcase-details-toggle"]')?.click();
+    await fixture.whenStable();
+    expect(
+      root.querySelector('[data-testid="showcase-earlier-toggle"]')?.getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(root.querySelector<HTMLElement>('[data-testid="showcase-panel-panel"]')?.inert).toBe(
+      true,
+    );
   });
 });

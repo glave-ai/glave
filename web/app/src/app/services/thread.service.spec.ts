@@ -1,5 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 
+import { ApiError, ErrorCode } from '@glave/client';
+
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { event } from '../testing/fixtures';
 import { ThreadService } from './thread.service';
@@ -98,5 +100,47 @@ describe('ThreadService', () => {
     ]);
     expect(fake.paramsOf('turn/cancel')).toEqual([{ thread: 'thread-1' }]);
     expect(fake.paramsOf('thread/events').length).toBeGreaterThan(1);
+  });
+
+  it('sends a turn to the model picked, and reads the thread’s choice', async () => {
+    const fake = new FakeSession()
+      .answer('thread/events', {
+        events: [event(1, 'model.chosen', { model: 'gpt-6-luna' })],
+      })
+      .streams([
+        {
+          jsonrpc: '2.0',
+          method: 'thread/event',
+          params: { thread: 'thread-1', event: event(2, 'model.chosen', { model: 'hope-12b' }) },
+        },
+      ]);
+    const service = make(fake);
+    await service.open('thread-1');
+    expect(service.chosen()).toBe('gpt-6-luna');
+    expect(service.log()).toHaveLength(1);
+    await service.send('hi', 'hope-12b');
+    expect(fake.paramsOf('turn/start')).toEqual([
+      { thread: 'thread-1', prompt: 'hi', model: 'hope-12b' },
+    ]);
+    expect(service.chosen()).toBe('hope-12b');
+  });
+
+  it('renames the thread and reads the lists again, or says why it could not', async () => {
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [] })
+      .answer('space/list', { spaces: [] });
+    const service = make(fake);
+    await service.rename('Nothing open');
+    expect(fake.paramsOf('thread/rename')).toEqual([]);
+    await service.open('thread-1');
+    await service.rename('Launch plan');
+    expect(fake.paramsOf('thread/rename')).toEqual([{ thread: 'thread-1', title: 'Launch plan' }]);
+    expect(fake.paramsOf('space/list')).toHaveLength(1);
+    fake.answer(
+      'thread/rename',
+      new ApiError({ code: ErrorCode.TURN_RUNNING, message: 'a turn is running' }),
+    );
+    await service.rename('Again');
+    expect(service.error()).toBe('a turn is running');
   });
 });

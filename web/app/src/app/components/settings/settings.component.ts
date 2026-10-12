@@ -1,6 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import type { ServerInfo } from '@glave/client';
 import {
   GlzButtonComponent,
   GlzCardComponent,
@@ -9,8 +8,10 @@ import {
   GlzRadioGroupComponent,
 } from '@glave/glaze';
 
+import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
 import { ThemeService, isChoice } from '../../services/theme.service';
+import { PageHeaderComponent } from '../page-header/page-header.component';
 
 const COPY = {
   heading: 'Settings',
@@ -32,6 +33,7 @@ const COPY = {
 @Component({
   selector: 'app-settings',
   imports: [
+    PageHeaderComponent,
     GlzButtonComponent,
     GlzCardComponent,
     GlzFormFieldComponent,
@@ -52,23 +54,18 @@ export class SettingsComponent {
   private readonly theme = inject(ThemeService);
   private readonly session = inject(SessionService);
   private readonly router = inject(Router);
-  private readonly info = signal<ServerInfo | null>(null);
+  private readonly info = inject(ServerService).info;
 
   protected readonly choice = this.theme.choice;
   protected readonly server = computed(() => {
     const info = this.info();
     return info === null
       ? COPY.serverUnknown
-      : `${info.name} ${info.version} · protocol ${info.protocols.join(', ')}`;
+      : `${info.name} ${info.version} · protocol ${info.protocols.join(', ')} · approvals: ${info.approval}`;
   });
 
   constructor() {
-    void this.session.call('server/discover', {}).then(
-      (info) => {
-        this.info.set(info);
-      },
-      () => undefined,
-    );
+    void inject(ServerService).load();
   }
 
   protected pick(choice: string | null): void {

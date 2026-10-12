@@ -1,0 +1,10 @@
+:host {
+  display: block;
+  flex: none;
+}
+
+.end {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-1);
+}
