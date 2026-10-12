@@ -69,7 +69,7 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
     assert_eq!(choices.approval.value, ApprovalMode::Ask, "the person's");
     assert_eq!(choices.sandbox.from, Source::Narrowed(org));
     let theirs = ConfigFile {
-        approval: Some(Approval::Auto),
+        approval: Some(ApprovalMode::Auto),
         ..ConfigFile::default()
     };
     let loaded = load_all(&locations, Some(theirs)).unwrap();
@@ -97,7 +97,7 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
 fn explain_shows_every_setting_and_rule_with_its_source() {
     let chosen = layers(
         ConfigFile {
-            approval: Some(Approval::Ask),
+            approval: Some(ApprovalMode::Ask),
             ..ConfigFile::default()
         },
         ConfigFile {

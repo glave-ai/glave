@@ -1,15 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { Send } from 'lucide';
 
-import { provideGlazeIcons } from '../../tokens/icons';
 import { expectAccessible } from '../../testing/axe';
 import { GlzIconComponent } from './icon.component';
 
 describe('GlzIconComponent', () => {
-  beforeEach(() => {
-    TestBed.configureTestingModule({ providers: [provideGlazeIcons({ send: Send })] });
-  });
-
   it('draws the icon given, hidden from screen readers', async () => {
     const fixture = TestBed.createComponent(GlzIconComponent);
     fixture.componentRef.setInput('icon', Send);
@@ -20,9 +15,9 @@ describe('GlzIconComponent', () => {
     expect(host.getAttribute('role')).toBeNull();
   });
 
-  it('draws a registered icon by name, labelled when it means something', async () => {
+  it('is labelled when it means something', async () => {
     const fixture = TestBed.createComponent(GlzIconComponent);
-    fixture.componentRef.setInput('name', 'send');
+    fixture.componentRef.setInput('icon', Send);
     fixture.componentRef.setInput('label', 'Sent');
     await fixture.whenStable();
     const host: HTMLElement = fixture.nativeElement;
@@ -30,12 +25,5 @@ describe('GlzIconComponent', () => {
     expect(host.getAttribute('role')).toBe('img');
     expect(host.getAttribute('aria-label')).toBe('Sent');
     await expectAccessible(host);
-  });
-
-  it('draws nothing for a name not registered', async () => {
-    const fixture = TestBed.createComponent(GlzIconComponent);
-    fixture.componentRef.setInput('name', 'nothing');
-    await fixture.whenStable();
-    expect((fixture.nativeElement as HTMLElement).querySelector('svg')).toBeNull();
   });
 });

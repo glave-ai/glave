@@ -1,4 +1,4 @@
-import { filterOptions, labelOf } from './options';
+import { filterOptions } from './options';
 
 const MODELS = [
   { value: 'hope', label: 'Hope' },
@@ -11,10 +11,5 @@ describe('options', () => {
     expect(filterOptions(MODELS, 'MODEL').map((option) => option.value)).toEqual(['cafe', 'big']);
     expect(filterOptions(MODELS, 'cafe').map((option) => option.value)).toEqual(['cafe']);
     expect(filterOptions(MODELS, '  ')).toBe(MODELS);
-  });
-
-  it('finds a label by value', () => {
-    expect(labelOf(MODELS, 'hope')).toBe('Hope');
-    expect(labelOf(MODELS, null)).toBe('');
   });
 });

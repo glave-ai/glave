@@ -4,12 +4,10 @@ import {
   Component,
   type ElementRef,
   afterRenderEffect,
-  booleanAttribute,
   computed,
   inject,
   input,
   model,
-  numberAttribute,
   viewChild,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -66,12 +64,6 @@ export class GlzPanelLayoutComponent {
   readonly open = model(false);
   /** The panel's width in pixels; `null` for `--glz-panel-width`. */
   readonly width = model<number | null>(null);
-  /** The narrowest the panel may be dragged while open, in pixels. */
-  readonly minWidth = input(280, { transform: numberAttribute });
-  /** The widest the panel may be dragged, in pixels. */
-  readonly maxWidth = input(720, { transform: numberAttribute });
-  /** Whether the person can resize and collapse the panel by its edge. */
-  readonly resizable = input(true, { transform: booleanAttribute });
   /** Names the panel's region for screen readers. */
   readonly label = input('Panel');
   /** Names the edge. */
@@ -100,7 +92,10 @@ export class GlzPanelLayoutComponent {
   protected readonly closed = computed(() => !this.open());
   protected readonly role = computed(() => (this.modal() ? 'dialog' : 'complementary'));
   protected readonly ariaModal = computed(() => (this.modal() ? 'true' : null));
-  protected readonly showHandle = computed(() => this.resizable() && !this.narrow());
+  protected readonly showHandle = computed(() => !this.narrow());
+  /** The narrowest the panel may be dragged while open, and the widest, in pixels. */
+  protected readonly minWidth = 280;
+  protected readonly maxWidth = 720;
   protected readonly widthStyle = computed(() => {
     const width = this.width();
     return width === null ? null : `${String(width)}px`;

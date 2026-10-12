@@ -5,10 +5,9 @@ use std::sync::Arc;
 
 use glave_event::PrincipalId;
 use glave_gateway::Gateway;
-use glave_identity::Caller;
 use glave_identity::signin::{SignIn, SignInError};
 use glave_mcp::McpServer;
-use glave_ports::{Clock, Entropy};
+use glave_ports::{Caller, Clock, Entropy};
 use glave_ports::{EventLog, Scope};
 
 use crate::meter::Meter;

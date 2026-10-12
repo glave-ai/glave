@@ -4,7 +4,7 @@
 use super::reading::{load_all, scratch};
 use super::*;
 
-fn flags(sandbox: Option<SandboxChoice>, approval: Option<Approval>) -> ConfigFile {
+fn flags(sandbox: Option<SandboxChoice>, approval: Option<ApprovalMode>) -> ConfigFile {
     ConfigFile {
         approval,
         sandbox,
@@ -37,7 +37,7 @@ fn where_the_sandbox_cannot_run_commands_ask_never_run_unconfined() {
     );
     // Auto chosen for a sandboxed world is not a choice to run unconfined.
     let auto = layers(
-        flags(None, Some(Approval::Auto)),
+        flags(None, Some(ApprovalMode::Auto)),
         ConfigFile::default(),
         vec![],
     );
@@ -157,7 +157,7 @@ fn a_thread_may_choose_auto_only_behind_a_wall_and_within_the_policy() {
     let walled_off = unsandboxed(settle(&[], &[]).unwrap(), "no bubblewrap", &none);
     assert_eq!(thread_modes(&walled_off, &none), [ApprovalMode::Ask]);
     let unconfined = layers(
-        flags(Some(SandboxChoice::Off), Some(Approval::Auto)),
+        flags(Some(SandboxChoice::Off), Some(ApprovalMode::Auto)),
         ConfigFile::default(),
         vec![],
     );

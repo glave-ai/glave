@@ -1,4 +1,4 @@
-//! Who asked, as the harness records it: the caller (`glave_identity::Caller`) only where
+//! Who asked, as the harness records it: the caller (`glave_ports::Caller`) only where
 //! `specs/events.md` says to, and only when it is someone other than the thread's `for`.
 
 use glave_event::{Principal, PrincipalId};

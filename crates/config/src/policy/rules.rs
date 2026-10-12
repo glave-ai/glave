@@ -128,9 +128,7 @@ impl Constraints {
                 add(Kind::ModelsDeny(file.models.deny.clone()));
             }
             if let Some(modes) = &file.approval.modes {
-                add(Kind::ApprovalModes(
-                    modes.iter().map(|m| m.mode()).collect(),
-                ));
+                add(Kind::ApprovalModes(modes.clone()));
             }
             if let Some(judge) = file.approval.judge.filter(|j| *j != JudgeRule::Allowed) {
                 add(Kind::Judge(judge));

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use glave_harness::{ApprovalMode, SandboxLevel};
 
-use crate::policy::files::{Approval, ConfigFile, ModelEntry, SandboxChoice};
+use crate::policy::files::{ConfigFile, ModelEntry, SandboxChoice};
 use crate::policy::memory::{MemoryChoice, SpaceChoice};
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
@@ -181,7 +181,7 @@ pub fn resolve(layers: &[Layer]) -> Choices {
             Judge::Main,
         ),
         approval: defaulted(
-            nearest(layers, "approval", |file| file.approval.map(Approval::mode)),
+            nearest(layers, "approval", |file| file.approval),
             ApprovalMode::default(),
         ),
         sandbox: defaulted(

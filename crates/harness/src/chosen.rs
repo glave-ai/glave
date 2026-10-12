@@ -4,13 +4,12 @@
 
 use std::borrow::Cow;
 
-use glave_event::{ApprovalMode as Recorded, ApprovalModeChosen, Body, Event, ModelChosen};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_event::{ApprovalMode, ApprovalModeChosen, Body, Event, ModelChosen};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
-use crate::approval::{ApprovalMode, Approver};
+use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::prompt::system_prompt;
-use glave_identity::Caller;
 
 /// The longest model id, in bytes.
 pub(crate) const MAX_MODEL_ID: usize = 255;
@@ -114,7 +113,7 @@ where
             return Ok(());
         }
         let chosen = ApprovalModeChosen {
-            mode: mode.into(),
+            mode,
             by: Self::other_than_for(thread, caller.person),
         };
         self.record(thread, &chosen).await?;
@@ -128,25 +127,7 @@ where
 /// The approval mode the latest `approval.mode.chosen` in `events` names, if any.
 pub(crate) fn approval_in(events: &[Event]) -> Option<ApprovalMode> {
     events.iter().rev().find_map(|event| match &event.body {
-        Body::ApprovalModeChosen(chosen) => Some(ApprovalMode::from(chosen.mode)),
+        Body::ApprovalModeChosen(chosen) => Some(chosen.mode),
         _ => None,
     })
-}
-
-impl From<Recorded> for ApprovalMode {
-    fn from(mode: Recorded) -> Self {
-        match mode {
-            Recorded::Ask => Self::Ask,
-            Recorded::Auto => Self::Auto,
-        }
-    }
-}
-
-impl From<ApprovalMode> for Recorded {
-    fn from(mode: ApprovalMode) -> Self {
-        match mode {
-            ApprovalMode::Ask => Self::Ask,
-            ApprovalMode::Auto => Self::Auto,
-        }
-    }
 }

@@ -10,11 +10,9 @@ import {
 import {
   GlzApprovalCardComponent,
   GlzButtonComponent,
-  type GlzComposed,
   GlzComposerComponent,
   type GlzDecision,
   type GlzIconData,
-  type GlzMoney,
   GlzMenuSelectComponent,
   GlzMessageComponent,
   type GlzMenuOption,
@@ -25,7 +23,6 @@ import {
   GlzReceiptComponent,
   GlzStepsComponent,
   GlzStickToBottomDirective,
-  GlzSwitchComponent,
 } from '@glave/glaze';
 import { SquareTerminal, TextSearch } from 'lucide';
 
@@ -42,7 +39,6 @@ const COPY = {
   note: 'The conversation was compacted to fit.',
   latest: 'Jump to latest',
   model: 'Model',
-  cloud: 'Run in the cloud',
   answer: 'Done. Anything else?',
   streamed:
     'Streaming text arrives a few words at a time, and the list keeps to the bottom while you are there.',
@@ -75,9 +71,6 @@ const RECEIPTS: readonly {
   readonly tool: string;
   readonly summary: string;
   readonly status: GlzReceiptStatus;
-  readonly durationMs: number;
-  readonly tokens: number | null;
-  readonly cost: GlzMoney | null;
   readonly evidence: string;
 }[] = [
   {
@@ -85,9 +78,6 @@ const RECEIPTS: readonly {
     tool: 'search',
     summary: 'parse_date',
     status: 'done',
-    durationMs: 120,
-    tokens: null,
-    cost: null,
     evidence: 'src/dates.rs:41',
   },
   {
@@ -95,9 +85,6 @@ const RECEIPTS: readonly {
     tool: 'bash',
     summary: 'cargo test',
     status: 'failed',
-    durationMs: 4200,
-    tokens: 1200,
-    cost: { micros: 4200, currency: 'USD' },
     evidence: 'test dates::parses_utc ... FAILED',
   },
 ];
@@ -131,7 +118,6 @@ interface DemoMessage {
     GlzReceiptComponent,
     GlzStepsComponent,
     GlzStickToBottomDirective,
-    GlzSwitchComponent,
   ],
   templateUrl: './showcase-ai.component.html',
   styleUrl: './showcase-ai.component.scss',
@@ -149,7 +135,6 @@ export class ShowcaseAiComponent {
   protected readonly answers = signal<readonly string[] | null>(null);
   protected readonly draft = signal('');
   protected readonly model = signal<string | null>('hope');
-  protected readonly cloud = signal(false);
   protected readonly busy = signal(false);
   protected readonly atBottom = signal(true);
   protected readonly awayFromBottom = computed(() => !this.atBottom());
@@ -172,8 +157,8 @@ export class ShowcaseAiComponent {
     this.answers.set(answers);
   }
 
-  protected send(composed: GlzComposed): void {
-    this.add('person', COPY.you, composed.text);
+  protected send(text: string): void {
+    this.add('person', COPY.you, text);
     this.stream(`${COPY.answer} ${COPY.streamed}`);
   }
 

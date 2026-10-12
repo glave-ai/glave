@@ -31,14 +31,39 @@ pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result
     (version == 1).then(|| parse(data))
 }
 
-/// How much glave asks the person before acting (`specs/approvals.md`, "Modes").
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// How much glave asks the person before acting (`specs/approvals.md`, "Modes"). Secret files
+/// ask in every mode.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalMode {
-    /// Changes and commands ask first.
+    /// The cautious mode: ask before every change and every command.
     Ask,
-    /// Changes and commands go through; risky ones still ask.
+    /// Changes and commands go through: in the sandbox when it is on, as the person when not;
+    /// risky ones still ask. glave chooses it by default only where commands run in the
+    /// sandbox.
+    #[default]
     Auto,
+}
+
+impl ApprovalMode {
+    /// The mode `name` names, as config and the API write it.
+    pub fn named(name: &str) -> Option<Self> {
+        match name {
+            "ask" => Some(Self::Ask),
+            "auto" => Some(Self::Auto),
+            _ => None,
+        }
+    }
+
+    /// The mode's name, as config and the API write it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::Auto => "auto",
+        }
+    }
 }
 
 /// The thread's turns run in approval mode `mode` from now on, until another is chosen.
@@ -61,4 +86,19 @@ pub(crate) fn decode_approval(
     data: &RawValue,
 ) -> Option<serde_json::Result<ApprovalModeChosen>> {
     (version == 1).then(|| parse(data))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ApprovalMode::{self, Ask, Auto};
+
+    #[test]
+    fn modes_are_named_as_config_and_the_api_write_them() {
+        assert_eq!(ApprovalMode::default(), Auto);
+        assert_eq!(ApprovalMode::named("edits"), None, "retired");
+        for mode in [Ask, Auto] {
+            assert_eq!(ApprovalMode::named(mode.name()), Some(mode));
+            assert_eq!(serde_json::to_value(mode).unwrap(), mode.name());
+        }
+    }
 }

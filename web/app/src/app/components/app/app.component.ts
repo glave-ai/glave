@@ -1,11 +1,10 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
-import { GlzToastStackComponent } from '@glave/glaze';
 
-/** The app's root: the page the router shows, and the toasts over it. */
+/** The app's root: the page the router shows. */
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, GlzToastStackComponent],
+  imports: [RouterOutlet],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

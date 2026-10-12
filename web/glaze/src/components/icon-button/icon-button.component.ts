@@ -17,7 +17,7 @@ import {
  * readers and, unless `tooltip` is off, is shown on hover.
  *
  * ```html
- * <button glzIconButton label="Close" (click)="close()"><glz-icon name="x" /></button>
+ * <button glzIconButton label="Close" (click)="close()"><glz-icon [icon]="closeIcon" /></button>
  * ```
  */
 @Component({
