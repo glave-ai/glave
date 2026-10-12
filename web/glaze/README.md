@@ -10,7 +10,7 @@ See every component live at `/glaze` in the app (`npm start` in `web/`). Coding 
 
 **Forms**: `glz-form-field` with `glz-error`; `glzInput` on native inputs, textareas and selects (date and time included); `glzSlider` on range inputs; `glzFieldControl` for any other native control; `glz-checkbox`, `glz-switch`, `glz-radio-group` with `glz-radio`, `glz-combobox`. Reactive forms, `ngModel`, signal forms and `model()` all bind.
 
-**Layout and navigation**: `glz-sidenav-layout`, `glz-panel-layout` (a resizable panel at the end, a sheet on narrow screens), `glz-top-bar`, `glz-rail` with `glzRailItem`, `glz-nav-list` (collapsible) with `glzNavItem`, `glz-tabs` with `glz-tab`, `glz-breadcrumbs` with `glz-breadcrumb`.
+**Layout and navigation**: `glz-sidenav-layout` and `glz-panel-layout` (a side nav at the start, a panel at the end: each resized and collapsed by its edge, a window splitter, and a drawer or sheet on narrow screens), `glz-top-bar`, `glz-rail` with `glzRailItem`, `glz-nav-list` (collapsible) with `glzNavItem`, `glz-tabs` with `glz-tab`, `glz-breadcrumbs` with `glz-breadcrumb`.
 
 **Overlays**: `glz-dialog` (dialog or drawer), `glz-confirm-dialog`, `glz-menu` with `glzMenuItem` and `glzMenuTrigger`, `glz-menu-select` (a compact choice, such as a model picker), `glzTooltip`, `glz-toast-stack` with `GlzToastService`.
 

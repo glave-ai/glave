@@ -2,6 +2,23 @@
 @if (modal()) {
   <div class="scrim" [attr.data-testid]="ids().scrim" aria-hidden="true" (click)="close()"></div>
 }
+@if (showHandle()) {
+  <div
+    class="handle"
+    side="end"
+    glzTooltipPosition="start"
+    [glzSplitter]="panelId"
+    [glzSplitterPanel]="panel"
+    [glzTooltip]="resizeHint()"
+    [minWidth]="minWidth()"
+    [maxWidth]="maxWidth()"
+    [attr.data-testid]="ids().handle"
+    [attr.aria-label]="resizeLabel()"
+    [attr.aria-keyshortcuts]="shortcut()"
+    [(open)]="open"
+    [(width)]="width"
+  ></div>
+}
 <aside
   #panel
   class="panel"
@@ -13,25 +30,5 @@
   [attr.aria-modal]="ariaModal()"
   [inert]="closed()"
 >
-  @if (showHandle()) {
-    <div
-      class="handle"
-      role="separator"
-      tabindex="0"
-      aria-orientation="vertical"
-      [class.dragging]="dragging()"
-      [attr.data-testid]="ids().handle"
-      [attr.aria-label]="resizeLabel()"
-      [attr.aria-controls]="panelId"
-      [attr.aria-valuenow]="valueNow()"
-      [attr.aria-valuemin]="minWidth()"
-      [attr.aria-valuemax]="maxWidth()"
-      (pointerdown)="grab($event)"
-      (pointermove)="moved($event)"
-      (pointerup)="released($event)"
-      (pointercancel)="released($event)"
-      (keydown)="keydown($event)"
-    ></div>
-  }
   <ng-content select="[glzPanel]" />
 </aside>

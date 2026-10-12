@@ -1,6 +1,8 @@
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
+import { of } from 'rxjs';
 
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
@@ -22,12 +24,18 @@ describe('ToolsPanelComponent', () => {
     localStorage.clear();
   });
 
-  it('shows the tasks and the files in tabs, remembers the tab, and closes', async () => {
+  it('shows the tasks and the files in tabs, remembers the tab, and closes as a sheet', async () => {
     const fake = new FakeSession()
       .answer('thread/events', { events: EDITED })
       .answer('tasks/list', { tasks: [task('t9', 'Nightly build')] });
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), ...provideFakeSession(fake), ThreadService],
+      providers: [
+        provideRouter([]),
+        ...provideFakeSession(fake),
+        ThreadService,
+        // A narrow screen: the panel is a sheet, with its own close button.
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: true }) } },
+      ],
     });
     await TestBed.inject(ThreadService).open('thread-1');
     const panel = TestBed.inject(ToolsPanelService);

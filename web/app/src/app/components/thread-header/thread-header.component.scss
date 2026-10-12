@@ -1,0 +1,35 @@
+:host {
+  display: contents;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-width: 0;
+  pointer-events: auto;
+}
+
+.space {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--glz-color-text-muted);
+  font-weight: var(--glz-weight-regular);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.space::after {
+  content: '/';
+  padding-inline-start: var(--glz-space-2);
+}
+
+.title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--glz-text-md);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

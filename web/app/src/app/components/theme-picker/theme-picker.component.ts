@@ -11,12 +11,12 @@ const ICONS: Readonly<Record<ThemeChoice, GlzIconData>> = {
 };
 
 const LABELS: Readonly<Record<ThemeChoice, string>> = {
-  system: 'Theme: as the system. Switch to light',
-  light: 'Theme: light. Switch to Evening',
-  dark: 'Theme: Evening. Switch to the system theme',
+  system: 'Theme: System. Switch to Light',
+  light: 'Theme: Light. Switch to Dark',
+  dark: 'Theme: Dark. Switch to System',
 };
 
-/** A button that moves between the system theme, light and Evening (dark). */
+/** A button that moves between the themes: System, Light and Dark. */
 @Component({
   selector: 'app-theme-picker',
   imports: [GlzIconButtonComponent, GlzIconComponent],

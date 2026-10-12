@@ -10,6 +10,7 @@ import {
 } from '@glave/glaze';
 import { Brain, ListChecks, Plus, Settings } from 'lucide';
 
+import { InstallComponent } from '../install/install.component';
 import { PersonComponent } from '../person/person.component';
 import { SpacesNavComponent } from '../spaces-nav/spaces-nav.component';
 
@@ -35,7 +36,8 @@ const PAGES: readonly Page[] = [
 
 /**
  * The side nav: New chat and the search at the top; the spaces with their threads; the Tasks,
- * Memory and Settings pages; and the person signed in, at the foot.
+ * Memory and Settings pages; and, at the foot, Install app (where the browser can) and the
+ * person signed in.
  */
 @Component({
   selector: 'app-side-nav',
@@ -46,6 +48,7 @@ const PAGES: readonly Page[] = [
     GlzInputDirective,
     GlzNavItemComponent,
     GlzNavListComponent,
+    InstallComponent,
     PersonComponent,
     SpacesNavComponent,
   ],

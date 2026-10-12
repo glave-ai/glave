@@ -4,8 +4,8 @@
   gap: var(--glz-space-2);
   height: var(--glz-top-bar-height);
   padding: 0 var(--glz-space-3);
-  border-bottom: var(--glz-border-width) solid var(--glz-color-border);
-  background: var(--glz-surface-card);
+  border-bottom: var(--glz-top-bar-border);
+  background: var(--glz-top-bar-surface);
 }
 
 .start,
