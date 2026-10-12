@@ -33,6 +33,7 @@ mod skills;
 mod standing;
 mod subagent;
 mod telemetry;
+mod title;
 mod todo;
 mod tools;
 mod toolset;
@@ -72,6 +73,7 @@ pub use skills::{
 };
 pub use standing::{Change, MAX_TITLE, Standing, change_standing, standing_of};
 pub use subagent::{AGENT, SubagentType};
+pub use title::{TitleCase, Titled};
 pub use todo::{TODO, Todo};
 pub use tools::workspace::Workspace;
 pub use tools::{Tool, ToolOutcome};

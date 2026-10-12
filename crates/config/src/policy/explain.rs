@@ -4,7 +4,7 @@
 use std::fmt::Write as _;
 
 use crate::policy::Loaded;
-use crate::policy::choices::{Choices, Source};
+use crate::policy::choices::{Choices, Chosen, Source};
 use crate::policy::effective::check_model;
 
 /// The explanation of `loaded`, with models named `provider/model` when `provider` is known.
@@ -91,6 +91,10 @@ pub fn explain(loaded: &Loaded, provider: Option<&str>) -> (String, bool) {
 /// Each setting as `[name, value, source]`.
 fn settings(choices: &Choices) -> Vec<[String; 3]> {
     let row = |name: &str, value: String, from: &Source| [name.to_owned(), value, from.to_string()];
+    let switch = |name: &str, chosen: &Chosen<bool>| {
+        let value = if chosen.value { "on" } else { "off" };
+        row(name, value.to_owned(), &chosen.from)
+    };
     let sandbox = choices
         .sandbox
         .value
@@ -115,11 +119,7 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
             &choices.approval.from,
         ),
         row("sandbox", sandbox.to_owned(), &choices.sandbox.from),
-        row(
-            "network",
-            if choices.network.value { "on" } else { "off" }.to_owned(),
-            &choices.network.from,
-        ),
+        switch("network", &choices.network),
         match &choices.mcp {
             Some(mcp) => row("mcp", format!("{:?}", mcp.value), &mcp.from),
             None => row(
@@ -132,18 +132,11 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
             let (offered, from) = models(choices);
             row("models", offered, from)
         },
-        row(
-            "worktree",
-            if choices.worktree.value { "on" } else { "off" }.to_owned(),
-            &choices.worktree.from,
-        ),
+        switch("worktree", &choices.worktree),
+        switch("titles", &choices.titles),
         row("on", choices.on.value.name().to_owned(), &choices.on.from),
         row("web", choices.web.value.describe(), &choices.web.from),
-        row(
-            "memory",
-            if choices.memory.value { "on" } else { "off" }.to_owned(),
-            &choices.memory.from,
-        ),
+        switch("memory", &choices.memory),
         row(
             "space_memory",
             choices.space_memory.value.as_str().to_owned(),

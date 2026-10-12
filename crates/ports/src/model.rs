@@ -56,16 +56,19 @@ pub enum Purpose {
     Summary,
     /// A subagent's turn.
     Subagent,
+    /// A thread's short title, after its first exchange.
+    Title,
 }
 
 impl Purpose {
-    /// The purpose's stable id: `main`, `judge`, `summary` or `subagent`.
+    /// The purpose's stable id: `main`, `judge`, `summary`, `subagent` or `title`.
     pub fn id(self) -> &'static str {
         match self {
             Self::Main => "main",
             Self::Judge => "judge",
             Self::Summary => "summary",
             Self::Subagent => "subagent",
+            Self::Title => "title",
         }
     }
 

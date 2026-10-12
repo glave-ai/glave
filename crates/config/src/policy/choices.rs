@@ -104,6 +104,9 @@ pub struct Choices {
     pub models: Option<Chosen<Vec<ModelEntry>>>,
     /// Whether each new thread works in a worktree of its own; off, in the folder itself.
     pub worktree: Chosen<bool>,
+    /// Whether a model titles each thread after its first exchange: on by default; off, a
+    /// thread's title is the first line of its first message.
+    pub titles: Chosen<bool>,
     /// Where new threads work: here by default.
     pub on: Chosen<On>,
     /// The backend workers run on, if one is set up.
@@ -190,6 +193,7 @@ pub fn resolve(layers: &[Layer]) -> Choices {
         mcp: nearest(layers, "mcp", |file| file.mcp.clone()),
         models: nearest(layers, "models", |file| file.models.clone()),
         worktree: defaulted(nearest(layers, "worktree", |file| file.worktree), false),
+        titles: defaulted(nearest(layers, "titles", |file| file.titles), true),
         on: defaulted(nearest(layers, "on", |file| file.on), On::Here),
         workers: nearest(layers, "workers", |file| file.workers.clone()),
         server: nearest(layers, "server", |file| {

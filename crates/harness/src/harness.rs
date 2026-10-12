@@ -67,6 +67,9 @@ pub struct Settings {
     /// The agent profile that runs every thread: recorded as the thread's `agent`. When
     /// `None`, made once like `person`.
     pub agent: Option<PrincipalId>,
+    /// Whether a model titles each thread after its first exchange (`title.rs`); off, a
+    /// thread's title is the first line of its first message. Off by default.
+    pub titles: bool,
 }
 
 impl Settings {
@@ -89,6 +92,7 @@ impl Settings {
             person: None,
             agent: None,
             commands: Vec::new(),
+            titles: false,
         }
     }
 }
