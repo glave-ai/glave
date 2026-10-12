@@ -15,7 +15,7 @@ use glave_ports::{
     SpaceId, SpaceKind,
 };
 use glave_session::protocol::ModelInfo;
-use glave_session::{Answering, Server, TaskLimits, Wiring};
+use glave_session::{Answering, Providers, Server, TaskLimits, Wiring};
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
 
@@ -69,6 +69,8 @@ pub struct Setup {
     pub memory: Option<Arc<dyn Memory>>,
     /// Where worktrees are kept; with none, a thread asking for one is refused.
     pub worktrees: Option<PathBuf>,
+    /// Where model accounts are kept; with none, connecting one is refused.
+    pub providers: Option<Arc<dyn Providers>>,
 }
 
 impl Setup {
@@ -86,6 +88,7 @@ impl Setup {
             modes: vec![ApprovalMode::Ask, ApprovalMode::Auto],
             memory: None,
             worktrees: None,
+            providers: None,
         }
     }
 
@@ -129,6 +132,7 @@ impl Setup {
             spaces: Arc::new(MemorySpaces::new()),
             models: self.models,
             modes: self.modes,
+            providers: self.providers,
         };
         let server = Server::new(wiring, self.settings, scope(), self.answering);
         // The server's own space, kept as its person's project at a fixed time without reading

@@ -79,6 +79,8 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::MemoryForgotten(_)
         | Body::MemoryRestored(_)
         | Body::MemoryTidied(_)
+        | Body::ProviderConnected(_)
+        | Body::ProviderRemoved(_)
         | Body::Unknown(_) => {}
     }
 }

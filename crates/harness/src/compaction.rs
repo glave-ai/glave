@@ -236,7 +236,7 @@ where
         // The tools stay listed: some providers refuse a conversation with tool calls but no
         // tools. The instruction asks for text only, and any call is ignored.
         let request = ModelRequest {
-            model: self.model_for(thread).to_owned(),
+            model: self.model_for(thread),
             system: offer.system.clone(),
             messages,
             tools: offer.specs.clone(),

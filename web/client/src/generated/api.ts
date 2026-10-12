@@ -156,6 +156,27 @@ export type PrincipalId = string;
 /** What kind of principal acts. */
 export type PrincipalKind = string;
 
+/** Identifies one model account a person connected (`provider.connected`). */
+export type ProviderId = string;
+
+/** A model account the person connected. */
+export type ProviderInfo = {
+  /**
+   * The key's last four characters, to tell keys apart; absent for a key too short to show
+   * any of.
+   */
+  readonly hint?: string | null;
+  readonly id: ProviderId;
+  readonly kind: ProviderKind;
+  /** The models it offers, the one glave uses by default first. */
+  readonly models: readonly (string)[];
+  /** The server's API, for a `compatible` account. */
+  readonly url?: string | null;
+};
+
+/** Which service a model account is with. */
+export type ProviderKind = "openai" | "anthropic" | "openrouter" | "compatible";
+
 /** One question. */
 export type Question = {
   /** Whether more than one choice may be picked. */
@@ -213,6 +234,9 @@ export type ScheduleInfo = {
   readonly when: When;
   readonly worktree?: boolean | null;
 };
+
+/** A key or token: sent once, never shown again. */
+export type Secret = string;
 
 /**
  * An event's position in its thread, starting at 1 and assigned gap-free by the thread's
@@ -525,6 +549,31 @@ export type ModelListResult = {
   readonly models: readonly (ModelInfo)[];
 };
 
+export type ProviderConnectParams = {
+  /** The account's key, sent once and never answered back. */
+  readonly key: Secret;
+  readonly kind: ProviderKind;
+  /** The server's API, for a `compatible` account: `https`, or `http` on this computer. */
+  readonly url?: string | null;
+};
+
+/** A model account, as it was connected. */
+export type ProviderConnectResult = {
+  readonly provider: ProviderInfo;
+};
+
+export type ProviderListParams = Readonly<Record<string, never>>;
+
+export type ProviderListResult = {
+  readonly providers: readonly (ProviderInfo)[];
+};
+
+export type ProviderRemoveParams = {
+  readonly provider: ProviderId;
+};
+
+export type ProviderRemoveResult = Readonly<Record<string, never>>;
+
 export type QuestionAnswerParams = {
   readonly answers: readonly (string)[];
   readonly question: CallId;
@@ -766,6 +815,9 @@ export interface Methods {
   readonly "memory/restore": { readonly params: MemoryRestoreParams; readonly result: MemoryRestoreResult };
   readonly "memory/save": { readonly params: MemorySaveParams; readonly result: MemorySaveResult };
   readonly "model/list": { readonly params: ModelListParams; readonly result: ModelListResult };
+  readonly "provider/connect": { readonly params: ProviderConnectParams; readonly result: ProviderConnectResult };
+  readonly "provider/list": { readonly params: ProviderListParams; readonly result: ProviderListResult };
+  readonly "provider/remove": { readonly params: ProviderRemoveParams; readonly result: ProviderRemoveResult };
   readonly "question/answer": { readonly params: QuestionAnswerParams; readonly result: QuestionAnswerResult };
   readonly "schedule/create": { readonly params: ScheduleCreateParams; readonly result: ScheduleCreateResult };
   readonly "schedule/delete": { readonly params: ScheduleDeleteParams; readonly result: ScheduleDeleteResult };
@@ -848,6 +900,8 @@ export const ErrorCode = {
   NO_METHOD: -32601,
   /** No such model here, or not one this server may run */
   NO_MODEL: -32021,
+  /** No such model account here */
+  NO_PROVIDER: -32023,
   /** No such question is waiting */
   NO_QUESTION: -32006,
   /** No such schedule */

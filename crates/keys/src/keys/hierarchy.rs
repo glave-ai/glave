@@ -278,13 +278,16 @@ impl<S: KeyStorage> Keys<S> {
                     n: record.next_n(period),
                 };
                 let key = Secret::random()?;
-                let (month, memory) = match period {
-                    Period::Month(month) => (month, None),
-                    Period::Memory(memory) => (Month::of((self.clock)()), Some(memory)),
+                let made = Month::of((self.clock)());
+                let (month, memory, provider) = match period {
+                    Period::Month(month) => (month, None, None),
+                    Period::Memory(memory) => (made, Some(memory), None),
+                    Period::Provider(provider) => (made, None, Some(provider)),
                 };
                 record.data.push(DataKey {
                     month,
                     memory,
+                    provider,
                     n: id.n,
                     space_version: version,
                     wrapped: Some(wrap_data(&space, scope, &id, version, &key)?),

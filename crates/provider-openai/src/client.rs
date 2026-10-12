@@ -14,6 +14,9 @@ use glave_ports::SseDecoder;
 /// How much of an error message to keep.
 const ERROR_CHARS: usize = 500;
 
+/// The largest answer [`OpenAiCompatible::get`] reads.
+const MOST_LISTED: usize = 8 << 20;
+
 /// Where and how to reach an OpenAI-compatible endpoint.
 #[derive(Clone)]
 pub struct Config {
@@ -85,6 +88,8 @@ fn host_of(url: &str) -> Option<String> {
 /// A model provider for any API that speaks OpenAI's chat completions protocol.
 pub struct OpenAiCompatible {
     http: reqwest::Client,
+    /// The API base, without a trailing slash.
+    base: String,
     endpoint: String,
     auth: Auth,
     provider: String,
@@ -99,9 +104,11 @@ impl OpenAiCompatible {
             .read_timeout(config.idle_timeout)
             .build()
             .map_err(|e| ProviderError::Transport(e.to_string()))?;
+        let base = config.base_url.trim_end_matches('/').to_owned();
         Ok(Self {
             http,
-            endpoint: format!("{}/chat/completions", config.base_url.trim_end_matches('/')),
+            endpoint: format!("{base}/chat/completions"),
+            base,
             auth: config.auth,
             provider: config.provider,
             idle_timeout: config.idle_timeout,
@@ -158,6 +165,43 @@ impl ModelProvider for OpenAiCompatible {
 }
 
 impl OpenAiCompatible {
+    /// A `GET` of `path` under the API, asked with the endpoint's credentials, its JSON
+    /// answer: what the API lists beside chat completions, such as its models (`models`), so
+    /// a key can be checked when a person adds it. An answer over 8 MiB is refused.
+    pub async fn get(&self, path: &str) -> Result<serde_json::Value, ProviderError> {
+        let url = format!("{}/{}", self.base, path.trim_start_matches('/'));
+        let outgoing = Outgoing {
+            method: "GET",
+            url: &url,
+            headers: &[],
+            body: &[],
+        };
+        let mut call = self.http.get(&url);
+        for header in self.auth.headers(&outgoing).await? {
+            let (name, value) = header_pair(&header.name, header.value.expose())?;
+            call = call.header(name, value);
+        }
+        let mut response = call.send().await.map_err(|e| self.failed(e))?;
+        let status = response.status();
+        let mut body = Vec::new();
+        while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
+            if body.len().saturating_add(bytes.len()) > MOST_LISTED {
+                return Err(ProviderError::Protocol(format!(
+                    "{url} answered with more than {MOST_LISTED} bytes"
+                )));
+            }
+            body.extend_from_slice(&bytes);
+        }
+        if !status.is_success() {
+            return Err(ProviderError::Http {
+                status: status.as_u16(),
+                body: message_of(&String::from_utf8_lossy(&body)),
+            });
+        }
+        serde_json::from_slice(&body)
+            .map_err(|e| ProviderError::Protocol(format!("{url} did not answer with JSON: {e}")))
+    }
+
     /// What a failed request means: a silence past the idle timeout, or a broken connection.
     fn failed(&self, error: reqwest::Error) -> ProviderError {
         if error.is_timeout() {

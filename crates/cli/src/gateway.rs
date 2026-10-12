@@ -5,15 +5,19 @@
 //! here: a target they do not allow is refused before the gateway exists. With `[gateway]
 //! url`, the endpoint is the organization's gateway, which keeps them itself, for each caller.
 //! The judge model and each of `[[models]]` are choices a thread may make instead of the main
-//! model (`model/list`), checked against the policy as the main model is.
+//! model (`model/list`), checked against the policy as the main model is, and so are the
+//! models of the accounts the person connected (`providers`), leaving out those it refuses.
+//! The gateway in use is replaced whole when those accounts change ([`Switch`]).
 
 pub mod remote;
 pub mod serve;
 
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_gateway::{Gateway, Routes, Target};
-use glave_ports::Purpose;
+use glave_ports::{
+    Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Purpose,
+};
 
 use crate::config::Endpoint;
 use crate::model::Model;
@@ -32,12 +36,14 @@ pub struct Allowed<'a> {
 
 /// The gateway over `provider` at `endpoint`, with a judge route when `judge` names a model
 /// other than the main one, and the judge's model and each of `offered` as choices. Fails
-/// when `allowed` refuses any of them.
+/// when `allowed` refuses any of them. Then each of `accounts` the policy allows is a choice
+/// too, unless a model of the same id already is.
 pub fn gateway(
     provider: Model,
     endpoint: &Endpoint,
     judge: Option<&str>,
     offered: &[ModelEntry],
+    accounts: Vec<Target>,
     allowed: &Allowed<'_>,
 ) -> anyhow::Result<Gateway> {
     let handle: Arc<dyn glave_gateway::Model> = Arc::new(provider);
@@ -70,7 +76,54 @@ pub fn gateway(
         }
         choices.push(target);
     }
+    for target in accounts {
+        let taken =
+            target.model == endpoint.model || choices.iter().any(|c| c.model == target.model);
+        if !taken && check_model(&target.name, &Source::Default, allowed.constraints).is_ok() {
+            choices.push(target);
+        }
+    }
     Ok(Gateway::new(routes.with_choices(choices)))
+}
+
+/// The gateway in use, or none while no model is set up: replaced whole when the person
+/// connects or removes a model account, so each call goes to the models set up when it
+/// starts. Clones share it.
+#[derive(Clone, Default)]
+pub struct Switch(Arc<RwLock<Option<Arc<Gateway>>>>);
+
+impl Switch {
+    pub fn new(gateway: Option<Gateway>) -> Self {
+        Self(Arc::new(RwLock::new(gateway.map(Arc::new))))
+    }
+
+    /// Sends calls to `gateway` from now on; calls already sent finish where they are.
+    pub fn set(&self, gateway: Option<Gateway>) {
+        *self.0.write().unwrap_or_else(PoisonError::into_inner) = gateway.map(Arc::new);
+    }
+
+    fn current(&self) -> Option<Arc<Gateway>> {
+        self.0
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl ModelProvider for Switch {
+    async fn complete(
+        &self,
+        request: &ModelRequest,
+        on_delta: &mut (dyn FnMut(Delta) + Send),
+    ) -> Result<Completion, ProviderError> {
+        match self.current() {
+            Some(gateway) => gateway.complete(request, on_delta).await,
+            None => Err(ProviderError::Unserved {
+                failure: Failure::UnknownModel,
+                reason: "no model is set up yet: connect a model account first".to_owned(),
+            }),
+        }
+    }
 }
 
 /// What `model/list` offers besides the main model, which the server adds itself: the
@@ -143,7 +196,7 @@ pub(crate) mod tests {
             judge: &Source::Env("GLAVE_JUDGE_MODEL"),
             models: &file,
         };
-        gateway(provider, &endpoint, judge, offered, &allowed)
+        gateway(provider, &endpoint, judge, offered, Vec::new(), &allowed)
     }
 
     fn entry(id: &str, name: Option<&str>, hope: bool) -> ModelEntry {

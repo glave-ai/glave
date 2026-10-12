@@ -10,11 +10,12 @@ use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
     ApprovalDecided, ApprovalModeChosen, ApprovalRequested, GatewayToolCalled, GoalEnded,
     GoalResumed, GoalSet, HookRan, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved,
-    MemoryTidied, MessageAdded, ModelChosen, ModelResponded, ScheduleCreated, ScheduleDeleted,
-    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
-    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted,
-    WorkspaceBound, WorkspaceRemoved, approval, chosen, gateway, goal, hook, memory, message,
-    model, standing, task, thread, tool, turn, workspace,
+    MemoryTidied, MessageAdded, ModelChosen, ModelResponded, ProviderConnected, ProviderRemoved,
+    ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
+    ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
+    ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, chosen,
+    gateway, goal, hook, memory, message, model, provider, standing, task, thread, tool, turn,
+    workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -72,6 +73,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (memory::FORGOTTEN, 2),
     (memory::RESTORED, 1),
     (memory::TIDIED, 1),
+    (provider::CONNECTED, 1),
+    (provider::REMOVED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -116,6 +119,8 @@ pub enum Body {
     MemoryForgotten(MemoryForgotten),
     MemoryRestored(MemoryRestored),
     MemoryTidied(MemoryTidied),
+    ProviderConnected(ProviderConnected),
+    ProviderRemoved(ProviderRemoved),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -275,6 +280,8 @@ impl Event {
             Body::MemoryForgotten(payload) => encode(header, payload),
             Body::MemoryRestored(payload) => encode(header, payload),
             Body::MemoryTidied(payload) => encode(header, payload),
+            Body::ProviderConnected(payload) => encode(header, payload),
+            Body::ProviderRemoved(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,
@@ -289,7 +296,7 @@ impl Event {
     }
 }
 
-/// Decodes the choices made for a thread and the memory ledger's types; `None` for any type
+/// Decodes the choices made for a thread, and the memory and provider ledgers' types; `None` for any type
 /// that is not one of them.
 fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
     match kind {
@@ -306,6 +313,12 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
             memory::decode_restored(version, data).map(|r| r.map(Body::MemoryRestored))
         }
         memory::TIDIED => memory::decode_tidied(version, data).map(|r| r.map(Body::MemoryTidied)),
+        provider::CONNECTED => {
+            provider::decode_connected(version, data).map(|r| r.map(Body::ProviderConnected))
+        }
+        provider::REMOVED => {
+            provider::decode_removed(version, data).map(|r| r.map(Body::ProviderRemoved))
+        }
         _ => None,
     }
 }

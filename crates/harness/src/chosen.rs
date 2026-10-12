@@ -3,6 +3,7 @@
 //! harness's own. A subagent's thread uses its parent's.
 
 use std::borrow::Cow;
+use std::sync::PoisonError;
 
 use glave_event::{ApprovalMode, ApprovalModeChosen, Body, Event, ModelChosen};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
@@ -20,6 +21,13 @@ pub(crate) fn chosen_in(events: &[Event]) -> Option<String> {
         Body::ModelChosen(chosen) => Some(chosen.model.clone()),
         _ => None,
     })
+}
+
+/// The model threads that chose none are sent to, and its provider's short name.
+#[derive(Debug, Clone)]
+pub(crate) struct DefaultModel {
+    pub(crate) model: String,
+    pub(crate) provider: String,
 }
 
 impl Thread {
@@ -43,9 +51,33 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// The model `thread`'s turns are sent to.
-    pub fn model_for<'a>(&'a self, thread: &'a Thread) -> &'a str {
-        thread.model.as_deref().unwrap_or(&self.settings.model)
+    /// The model `thread`'s turns are sent to: its own choice, else the default now.
+    pub fn model_for(&self, thread: &Thread) -> String {
+        thread.model.clone().unwrap_or_else(|| self.default_model())
+    }
+
+    /// The model threads that chose none are sent to now: the settings' until the host
+    /// changes it; empty while there is none.
+    pub fn default_model(&self) -> String {
+        self.current_default().model
+    }
+
+    /// Sends the turns of threads that chose no model to `model`, at the provider named
+    /// `provider`, from their next turn on, as when the person connects a model account.
+    pub fn set_default_model(&self, model: impl Into<String>, provider: impl Into<String>) {
+        let mut default = self.default.write().unwrap_or_else(PoisonError::into_inner);
+        *default = DefaultModel {
+            model: model.into(),
+            provider: provider.into(),
+        };
+    }
+
+    /// The default model now, and its provider's name.
+    pub(crate) fn current_default(&self) -> DefaultModel {
+        self.default
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     /// The system prompt `thread`'s turns are sent: glave's default prompt names the model
@@ -53,15 +85,13 @@ where
     /// prompt someone wrote is sent as written.
     pub(crate) fn system_for(&self, thread: &Thread) -> Cow<'_, str> {
         let settings = &self.settings;
-        match thread.model.as_deref() {
-            Some(model)
-                if model != settings.model
-                    && settings.system_prompt
-                        == system_prompt(&settings.model, &settings.provider) =>
-            {
-                Cow::Owned(system_prompt(model, &settings.provider))
-            }
-            _ => Cow::Borrowed(&settings.system_prompt),
+        let model = self.model_for(thread);
+        if model != settings.model
+            && settings.system_prompt == system_prompt(&settings.model, &settings.provider)
+        {
+            Cow::Owned(system_prompt(&model, &self.current_default().provider))
+        } else {
+            Cow::Borrowed(&settings.system_prompt)
         }
     }
 

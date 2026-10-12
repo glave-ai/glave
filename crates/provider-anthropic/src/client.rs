@@ -16,6 +16,9 @@ use glave_ports::SseDecoder;
 /// Anthropic's API.
 pub const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 
+/// The largest answer [`Anthropic::get`] reads.
+const MOST_LISTED: usize = 8 << 20;
+
 /// The default idle timeout, the same as the OpenAI-compatible provider's.
 pub const IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -139,6 +142,52 @@ impl ModelProvider for Anthropic {
 }
 
 impl Anthropic {
+    /// A `GET` of `path` under Anthropic's own API (`<base>/v1/<path>`), asked with the
+    /// endpoint's credentials, its JSON answer: what the API lists, such as its models
+    /// (`models`), so a key can be checked when a person adds it. Vertex AI lists nothing
+    /// here. An answer over 8 MiB is refused.
+    pub async fn get(&self, path: &str) -> Result<serde_json::Value, ProviderError> {
+        let Some(version) = self.api.version_header() else {
+            return Err(ProviderError::Protocol(
+                "Vertex AI's Messages API lists nothing here".into(),
+            ));
+        };
+        let base = self.base_url.trim_end_matches('/');
+        let base = base.strip_suffix("/v1").unwrap_or(base);
+        let url = format!("{base}/v1/{}", path.trim_start_matches('/'));
+        let sent = [("anthropic-version", version)];
+        let outgoing = Outgoing {
+            method: "GET",
+            url: &url,
+            headers: &sent,
+            body: &[],
+        };
+        let mut call = self.http.get(&url).header("anthropic-version", version);
+        for header in self.auth.headers(&outgoing).await? {
+            let (name, value) = header_pair(&header.name, header.value.expose())?;
+            call = call.header(name, value);
+        }
+        let mut response = call.send().await.map_err(|e| self.failed(e))?;
+        let status = response.status();
+        let mut body = Vec::new();
+        while let Some(bytes) = response.chunk().await.map_err(|e| self.failed(e))? {
+            if body.len().saturating_add(bytes.len()) > MOST_LISTED {
+                return Err(ProviderError::Protocol(format!(
+                    "{url} answered with more than {MOST_LISTED} bytes"
+                )));
+            }
+            body.extend_from_slice(&bytes);
+        }
+        if !status.is_success() {
+            return Err(ProviderError::Http {
+                status: status.as_u16(),
+                body: message_of(&String::from_utf8_lossy(&body)),
+            });
+        }
+        serde_json::from_slice(&body)
+            .map_err(|e| ProviderError::Protocol(format!("{url} did not answer with JSON: {e}")))
+    }
+
     /// What a failed request means: a silence past the idle timeout, or a broken connection.
     fn failed(&self, error: reqwest::Error) -> ProviderError {
         if error.is_timeout() {

@@ -8,7 +8,7 @@ mod hierarchy;
 use std::fmt;
 use std::sync::Arc;
 
-use glave_event::{RawEvent, Seq, Sha256, ThreadId, sealed_under_memory};
+use glave_event::{RawEvent, Seq, Sha256, ThreadId, sealed_under_memory, sealed_under_provider};
 use glave_ports::Scope;
 use jiff::Timestamp;
 
@@ -100,12 +100,13 @@ impl<S: KeyStorage> Keys<S> {
     }
 
     /// Seals `event`'s payload under its space's data key for the month it happened in, or,
-    /// for an event holding a memory's text, under that memory's own key.
+    /// for an event holding a memory's text or a model account, under that item's own key.
     pub async fn seal_event(&self, scope: &Scope, event: &RawEvent) -> Result<Sealed, KeyError> {
-        let period = sealed_under_memory(event).map_or_else(
-            || Period::Month(Month::of(event.at.timestamp())),
-            |memory| Period::Memory(memory.as_uuid()),
-        );
+        let period = match (sealed_under_memory(event), sealed_under_provider(event)) {
+            (Some(memory), _) => Period::Memory(memory.as_uuid()),
+            (None, Some(provider)) => Period::Provider(provider.as_uuid()),
+            (None, None) => Period::Month(Month::of(event.at.timestamp())),
+        };
         let (id, key) = self.sealing_key(scope, period).await?;
         let key_id = id.to_string();
         let aad = event_aad(scope, &EventFields::from(event), &key_id);
@@ -199,16 +200,17 @@ impl<S: KeyStorage> Keys<S> {
     }
 }
 
-/// What a payload reads as once the memory key that sealed it was destroyed: an empty object.
-/// Its envelope outlives it, so a memory ledger still reads in full after a forget, and its
-/// text is gone (`specs/memory.md`, "Forgetting really forgets"). `None` for any other
-/// failure, and for a destroyed month's key, which fails the read as before.
+/// What a payload reads as once the item key that sealed it, a memory's or a model account's,
+/// was destroyed: an empty object. Its envelope outlives it, so a ledger still reads in full
+/// after a forget or a removal, and its content is gone (`specs/memory.md`, "Forgetting really
+/// forgets"). `None` for any other failure, and for a destroyed month's key, which fails the
+/// read as before.
 pub fn erased_payload(key_id: &str, error: &KeyError) -> Option<Vec<u8>> {
     let destroyed = matches!(error, KeyError::Destroyed(_));
-    let memory = key_id
+    let item = key_id
         .parse::<KeyId>()
-        .is_ok_and(|id| matches!(id.period, Period::Memory(_)));
-    (destroyed && memory).then(|| b"{}".to_vec())
+        .is_ok_and(|id| matches!(id.period, Period::Memory(_) | Period::Provider(_)));
+    (destroyed && item).then(|| b"{}".to_vec())
 }
 
 /// What binds a sealed payload to its row: the envelope version, organization, space,

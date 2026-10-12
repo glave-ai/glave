@@ -90,6 +90,20 @@ impl Model {
     }
 }
 
+impl Model {
+    /// A `GET` of `path` under the endpoint's API, with its credentials, such as `models`:
+    /// what it lists beside its answers.
+    pub async fn get(&self, path: &str) -> Result<serde_json::Value, ProviderError> {
+        match self {
+            Self::OpenAi(provider)
+            | Self::Both {
+                openai: provider, ..
+            } => provider.get(path).await,
+            Self::Anthropic(provider) => provider.get(path).await,
+        }
+    }
+}
+
 /// Whether the endpoint is Anthropic's own API.
 pub fn speaks_anthropic(config: &Config) -> bool {
     config.host().as_deref() == Some(ANTHROPIC_HOST)

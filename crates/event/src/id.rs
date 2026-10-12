@@ -272,6 +272,63 @@ impl std::str::FromStr for MemoryId {
     }
 }
 
+/// Identifies one model account a person connected (`provider.connected`).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(try_from = "Uuid", into = "Uuid")]
+pub struct ProviderId(Uuid);
+
+impl ProviderId {
+    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
+        build_v7("provider id", at, random).map(Self)
+    }
+
+    pub fn as_uuid(self) -> Uuid {
+        self.0
+    }
+}
+
+impl TryFrom<Uuid> for ProviderId {
+    type Error = InvalidValue;
+
+    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
+        require_v7("provider id", uuid).map(Self)
+    }
+}
+
+impl From<ProviderId> for Uuid {
+    fn from(id: ProviderId) -> Self {
+        id.0
+    }
+}
+
+impl fmt::Display for ProviderId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::str::FromStr for ProviderId {
+    type Err = InvalidValue;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let uuid = Uuid::parse_str(text.trim())
+            .map_err(|e| InvalidValue::new("provider id", format!("{text:?}: {e}")))?;
+        Self::try_from(uuid)
+    }
+}
+
 /// Links a tool call to its result: 1 to 128 printable ASCII characters.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema,

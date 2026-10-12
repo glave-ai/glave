@@ -4,7 +4,7 @@
 //! to the callers who work in that space.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
 use glave_harness::{
@@ -24,6 +24,7 @@ use crate::keyed::Keyed;
 use crate::ledger::{Ledger, is_ledger};
 use crate::modes::Choice;
 use crate::protocol::{ApiError, ApprovalMode, ErrorData, ModelInfo, Notification, Reply, code};
+use crate::providers::Providers;
 use crate::spaces::Places;
 use crate::tasks::{TaskLimits, Tasks};
 
@@ -60,6 +61,9 @@ pub struct Wiring<P, L, B> {
     /// The approval modes a thread may choose besides the settings' own: those the policy
     /// leaves, where auto runs behind a wall (`specs/approvals.md`).
     pub modes: Vec<glave_harness::ApprovalMode>,
+    /// The model accounts the person on this computer connects, which the models follow;
+    /// none where whoever runs the server sets up its models.
+    pub providers: Option<Arc<dyn Providers>>,
 }
 
 /// Threads on workers: where workers come from, and the environment each is made from.
@@ -101,8 +105,10 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) worker: Option<Environment>,
     /// Whether every new thread works on a worker, or only tasks' threads.
     pub(crate) every_thread: bool,
-    /// The models threads may be sent to, the default first.
-    pub(crate) models: Vec<ModelInfo>,
+    /// The models threads may be sent to, the default first; none until one is set up.
+    pub(crate) models: RwLock<Vec<ModelInfo>>,
+    /// Where model accounts are kept, when the person here may connect them.
+    pub(crate) providers: Option<Arc<dyn Providers>>,
     /// The modes a thread may choose, cautious first.
     pub(crate) modes: Vec<ApprovalMode>,
     /// The space's own person, whom the log leaves implied.
@@ -159,7 +165,8 @@ where
                 .with_memory_if(wiring.memory),
                 worker: wiring.workers.map(|on| on.environment),
                 every_thread,
-                models: catalog,
+                models: RwLock::new(catalog),
+                providers: wiring.providers,
                 modes: choosable,
                 person,
                 limits: wiring.tasks,

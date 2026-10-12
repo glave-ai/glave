@@ -69,11 +69,13 @@ impl From<Month> for String {
 }
 
 /// What one data key seals: a month of the space's content, or one item with a key of its own
-/// (`specs/memory.md`: each memory, so forgetting it erases every version at once).
+/// (`specs/memory.md`: each memory, so forgetting it erases every version at once; and each
+/// model account a person connects, so removing it erases its key).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Period {
     Month(Month),
     Memory(Uuid),
+    Provider(Uuid),
 }
 
 impl fmt::Display for Period {
@@ -81,6 +83,7 @@ impl fmt::Display for Period {
         match self {
             Self::Month(month) => month.fmt(f),
             Self::Memory(memory) => write!(f, "memory/{memory}"),
+            Self::Provider(provider) => write!(f, "provider/{provider}"),
         }
     }
 }
@@ -107,7 +110,8 @@ impl fmt::Display for KeyId {
 impl FromStr for KeyId {
     type Err = KeyError;
 
-    /// `v1/<space>/<YYYY-MM>/<n>` or `v1/<space>/memory/<memory>/<n>`.
+    /// `v1/<space>/<YYYY-MM>/<n>`, `v1/<space>/memory/<memory>/<n>` or
+    /// `v1/<space>/provider/<provider>/<n>`.
     fn from_str(text: &str) -> Result<Self, KeyError> {
         let invalid = || KeyError::InvalidKeyId(text.to_owned());
         let parts: Vec<&str> = text.split('/').collect();
@@ -116,6 +120,11 @@ impl FromStr for KeyId {
             [VERSION, space, "memory", memory, n] => (
                 *space,
                 Period::Memory(Uuid::parse_str(memory).map_err(|_| invalid())?),
+                *n,
+            ),
+            [VERSION, space, "provider", provider, n] => (
+                *space,
+                Period::Provider(Uuid::parse_str(provider).map_err(|_| invalid())?),
                 *n,
             ),
             _ => return Err(invalid()),
@@ -158,6 +167,13 @@ mod tests {
             "v1/00000000-0000-0000-0000-000000000005/memory/00000000-0000-0000-0000-000000000009/1"
         );
         assert_eq!(text.parse::<KeyId>().unwrap(), memory);
+        let provider = KeyId {
+            period: Period::Provider(Uuid::from_u128(9)),
+            ..memory
+        };
+        let text = provider.to_string();
+        assert!(text.ends_with("/provider/00000000-0000-0000-0000-000000000009/1"));
+        assert_eq!(text.parse::<KeyId>().unwrap(), provider);
     }
 
     #[test]

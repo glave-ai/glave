@@ -13,27 +13,7 @@ use crate::model::ProviderError;
 use crate::tools::BoxFuture;
 
 pub use cache::{Fresh, Refreshing};
-
-/// A key or token. Its `Debug` never shows it, and it has no `Display`.
-#[derive(Clone, PartialEq, Eq)]
-pub struct Secret(String);
-
-impl Secret {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    /// The secret itself, to send. Never to log or show.
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for Secret {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Secret([redacted])")
-    }
-}
+pub use glave_event::Secret;
 
 /// The header a fixed key goes in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +39,7 @@ impl KeyHeader {
     /// The header's value for `key`.
     fn value(self, key: &Secret) -> Secret {
         match self {
-            Self::Bearer => Secret(format!("Bearer {}", key.expose())),
+            Self::Bearer => Secret::new(format!("Bearer {}", key.expose())),
             Self::ApiKey | Self::XApiKey => key.clone(),
         }
     }
@@ -112,7 +92,7 @@ impl Auth {
     pub fn bearer(key: Option<String>) -> Self {
         key.map_or(Self::None, |key| Self::Key {
             header: KeyHeader::Bearer,
-            key: Secret(key),
+            key: Secret::new(key),
         })
     }
 
@@ -120,7 +100,7 @@ impl Auth {
     pub fn key(header: KeyHeader, key: impl Into<String>) -> Self {
         Self::Key {
             header,
-            key: Secret(key.into()),
+            key: Secret::new(key),
         }
     }
 

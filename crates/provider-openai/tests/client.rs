@@ -310,4 +310,26 @@ mod over_http {
             "{result:?}"
         );
     }
+
+    #[test]
+    fn a_listing_is_asked_with_the_key_and_read_as_json() {
+        let listed = r#"{"object":"list","data":[{"id":"gpt-test","created":1}]}"#;
+        let server = FakeServer::start(vec![
+            Reply::Status(200, listed.into()),
+            Reply::Status(401, r#"{"error":{"message":"Incorrect API key"}}"#.into()),
+        ])
+        .unwrap();
+        let provider = provider(server.url(), Some("sk-listing"));
+        let models = block_on!(provider.get("models")).unwrap();
+        assert_eq!(models["data"][0]["id"], "gpt-test");
+        let refused = block_on!(provider.get("/models")).unwrap_err();
+        assert_eq!(refused.failure(), glave_ports::Failure::Refused);
+        let received = server.received();
+        assert_eq!(received[0].line, "GET /v1/models");
+        assert_eq!(
+            received[0].authorization.as_deref(),
+            Some("Bearer sk-listing")
+        );
+        assert!(!format!("{refused:?}").contains("sk-listing"));
+    }
 }

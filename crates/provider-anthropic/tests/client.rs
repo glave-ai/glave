@@ -218,4 +218,23 @@ mod over_http {
         assert_eq!(completion.stop, StopReason::Interrupted);
         assert!(completion.usage.estimated());
     }
+
+    #[test]
+    fn a_listing_is_asked_with_the_key_and_the_version() {
+        let listed = r#"{"data":[{"id":"claude-test","created_at":"2026-10-01T00:00:00Z"}],"has_more":false}"#;
+        let server = FakeServer::start(vec![
+            Reply::Status(200, listed.into()),
+            Reply::Status(401, r#"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#.into()),
+        ])
+        .unwrap();
+        let provider = provider(server.url(), Some("sk-ant-listing"));
+        let models = block_on!(provider.get("models?limit=1000")).unwrap();
+        assert_eq!(models["data"][0]["id"], "claude-test");
+        let refused = block_on!(provider.get("models")).unwrap_err();
+        assert_eq!(refused.failure(), Failure::Refused);
+        let received = server.received();
+        assert_eq!(received[0].path, "/v1/models?limit=1000");
+        assert_eq!(received[0].api_key.as_deref(), Some("sk-ant-listing"));
+        assert_eq!(received[0].version.as_deref(), Some("2023-06-01"));
+    }
 }
