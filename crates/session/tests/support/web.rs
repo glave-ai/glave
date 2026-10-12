@@ -53,6 +53,7 @@ where
     let serving = tokio::spawn(glave_session::http::serve(
         server,
         signin,
+        None,
         listener,
         async move {
             let _ = stopped.await;

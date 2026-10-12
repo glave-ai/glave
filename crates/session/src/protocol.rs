@@ -664,7 +664,7 @@ impl From<Live> for Update {
                 memory,
                 text,
             },
-            // Published under the child's thread; see `Server::start_turn`.
+            // Published under the child's thread; see `turn::publish`.
             Live::Child { update, .. } => Self::from(*update),
         }
     }
@@ -696,10 +696,6 @@ pub mod code {
     pub const NO_GOAL: i64 = -32007;
     /// The thread's workspace could not be opened, such as a worktree outside a repository.
     pub const WORKSPACE: i64 = -32009;
-    /// The client speaks no protocol version this server does.
-    pub const UNSUPPORTED_PROTOCOL: i64 = -32010;
-    /// The thread is running in another server of this deployment.
-    pub const RUNNING_ELSEWHERE: i64 = -32011;
     /// The thread is archived: unarchive it before running a turn in it.
     pub const ARCHIVED: i64 = -32014;
     /// A hook stopped the prompt before the model saw it.

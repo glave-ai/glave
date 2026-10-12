@@ -8,9 +8,9 @@ use std::collections::BTreeSet;
 use glave_event::{Body, Part, RawEvent, Seq, ThreadId, decode};
 
 /// Distinct words one event is indexed under, at most: a long output is found by its first.
-pub const MOST_TERMS: usize = 2_048;
+const MOST_TERMS: usize = 2_048;
 /// Words of one query searched for, at most.
-pub const MOST_QUERY_TERMS: usize = 16;
+const MOST_QUERY_TERMS: usize = 16;
 /// Characters of the text one event is indexed by, at most.
 const MOST_CHARS: usize = 200_000;
 /// The longest word indexed, in characters: longer runs are ids and hashes, not words.

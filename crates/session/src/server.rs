@@ -199,7 +199,7 @@ where
     }
 
     /// Answers one request from the local person. `turn/start` answers when the turn has
-    /// ended; to follow it as it runs, use [`Server::start_turn`].
+    /// ended; to follow it as it runs, use [`Server::start_streaming`].
     pub async fn request(&self, request: Request) -> Result<Reply, ApiError> {
         self.request_as(&Caller::default(), request).await
     }

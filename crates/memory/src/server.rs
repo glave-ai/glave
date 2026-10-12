@@ -23,9 +23,9 @@ use serde_json::json;
 use crate::memories::{DEFAULT_HITS, Memories, Recalled, Remembering, Source, Writer};
 
 /// The `_meta` key that carries who and where a request is for.
-pub const CONTEXT: &str = "glave/context";
+const CONTEXT: &str = "glave/context";
 /// The resource listing the caller's memories.
-pub const RESOURCE: &str = "glave://memory";
+pub(crate) const RESOURCE: &str = "glave://memory";
 
 /// Who and where, as glave sends it with every request.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -99,7 +99,7 @@ impl Context {
 }
 
 /// The server over one store's memories.
-pub struct MemoryServer<L> {
+pub(crate) struct MemoryServer<L> {
     memories: Memories<L>,
 }
 

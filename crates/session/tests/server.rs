@@ -17,7 +17,7 @@ mod session {
         Answer, ApiError, ApprovalMode, IdempotencyKey, Meta, Notification, Reply, Request, Status,
         Update, code,
     };
-    use glave_session::{Answering, Caller, Server, TurnItem};
+    use glave_session::{Answering, Server, TurnItem};
     use jiff::Timestamp;
     use serde_json::json;
     use tokio::sync::Notify;
@@ -119,7 +119,7 @@ mod session {
             let answers = vec![answer(Some("Hello there."), None)];
             let server = server(&dir, answers, Answering::NoOne).await;
             let thread = new_thread(&server).await;
-            let mut stream = server.start_turn(thread, "hi").await.unwrap();
+            let mut stream = stream_turn(&server, thread, "hi", None).await.unwrap();
             let items = follow(&mut stream).await;
             assert_eq!(
                 event_types(&items),
@@ -170,8 +170,8 @@ mod session {
             )
             .await;
             let thread = new_thread(&server).await;
-            let mut first = server.start_turn(thread, "slow").await.unwrap();
-            let second = server.start_turn(thread, "again").await;
+            let mut first = stream_turn(&server, thread, "slow", None).await.unwrap();
+            let second = stream_turn(&server, thread, "again", None).await;
             assert_eq!(second.err().map(|e| e.code), Some(code::TURN_RUNNING));
             match server.request(Request::ThreadGet { thread }).await.unwrap() {
                 Reply::Thread { thread } => assert_eq!(thread.status, Status::Running),
@@ -206,18 +206,18 @@ mod session {
             .await;
             let thread = new_thread(&server).await;
             let key = IdempotencyKey::new("attempt-1").unwrap();
-            let local = Caller::default();
-            let start = |key| server.start_turn_as(&local, thread, "slow", key);
-            let mut first = start(Some(&key)).await.unwrap();
-            let mut retried = start(Some(&key)).await.unwrap();
+            let start =
+                |key: &IdempotencyKey| stream_turn(&server, thread, "slow", Some(key.clone()));
+            let mut first = start(&key).await.unwrap();
+            let mut retried = start(&key).await.unwrap();
             let other = IdempotencyKey::new("attempt-2").unwrap();
-            let refused = start(Some(&other)).await;
+            let refused = start(&other).await;
             assert_eq!(refused.err().map(|e| e.code), Some(code::TURN_RUNNING));
             gate.notify_one();
             let (first, retried) = (first.finish().await, retried.finish().await);
             assert_eq!(first.unwrap(), retried.unwrap());
             // Once ended, the key still names that turn.
-            let mut late = start(Some(&key)).await.unwrap();
+            let mut late = start(&key).await.unwrap();
             assert_eq!(late.finish().await.unwrap().outcome, Outcome::Completed);
             assert!(IdempotencyKey::new("").is_err());
             assert!(IdempotencyKey::new("k".repeat(256)).is_err());
@@ -234,7 +234,9 @@ mod session {
             ];
             let server = server(&dir, answers, Answering::Clients).await;
             let thread = new_thread(&server).await;
-            let mut stream = server.start_turn(thread, "touch it").await.unwrap();
+            let mut stream = stream_turn(&server, thread, "touch it", None)
+                .await
+                .unwrap();
             let mut seen = Vec::new();
             while let Some(item) = stream.next().await {
                 if let TurnItem::Note(note) = &item

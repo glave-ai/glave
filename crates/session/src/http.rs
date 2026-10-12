@@ -48,24 +48,9 @@ const HEADER_TIMEOUT: Duration = Duration::from_secs(30);
 const METHOD_HEADER: &str = "glave-method";
 
 /// Serves `server` over HTTP on `listener`, each request signed in through `signin`, until
-/// `stop` completes. Then it cancels running turns and closes every connection.
+/// `stop` completes. Then it cancels running turns and closes every connection. With `site`,
+/// the web app too: every `GET` is one of its files.
 pub async fn serve<P, L, B, S>(
-    server: Server<P, L, B>,
-    signin: SignIn,
-    listener: TcpListener,
-    stop: S,
-) -> std::io::Result<()>
-where
-    P: ModelProvider + 'static,
-    L: EventLog + 'static,
-    B: BlobStore + 'static,
-    S: Future<Output = ()>,
-{
-    serve_site(server, signin, None, listener, stop).await
-}
-
-/// As [`serve`], and with `site`, the web app too: every `GET` is one of its files.
-pub async fn serve_site<P, L, B, S>(
     server: Server<P, L, B>,
     signin: SignIn,
     site: Option<Site>,

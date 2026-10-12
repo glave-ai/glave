@@ -68,7 +68,7 @@ pub async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyh
             std::future::pending::<()>().await;
         }
     };
-    let ended = glave_session::http::serve_site(server, signin, site, listener, stop).await;
+    let ended = glave_session::http::serve(server, signin, site, listener, stop).await;
     // The token is good only while this server runs; the next start makes another.
     let _ = std::fs::remove_file(&path);
     ended?;

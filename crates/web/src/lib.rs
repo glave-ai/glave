@@ -13,7 +13,6 @@ mod resolve;
 mod source;
 mod text;
 
-pub use address::is_public;
 pub use fetch::{FetchError, Fetcher, Limits, Page};
 pub use policy::{BadDomain, Domain, HostRule, WebPolicy};
 pub use source::{WEB_FETCH, Web, WebSettings};

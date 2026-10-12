@@ -14,8 +14,8 @@ use glave_ports::{
     BlobStore, Completion, Delta, EventLog, MemoryBlobs, MemoryLog, MemorySpaces, ModelProvider,
     ModelRequest, OrgId, ProviderError, RequestedCall, Scope, Space, SpaceId, SpaceKind,
 };
-use glave_session::protocol::{ApiError, Meta, Reply, Request};
-use glave_session::{Answering, Server, Wiring};
+use glave_session::protocol::{ApiError, IdempotencyKey, Meta, Reply, Request};
+use glave_session::{Answering, Caller, Server, TurnStream, Wiring};
 use jiff::Timestamp;
 use tokio::sync::Notify;
 
@@ -316,6 +316,37 @@ where
             approval: None,
         })
         .await
+}
+
+/// Starts a turn saying `prompt` and streams it, through the entry every transport uses. With
+/// `key`, a turn already started under it is followed instead.
+pub async fn stream_turn<P, L, B>(
+    server: &Server<P, L, B>,
+    thread: ThreadId,
+    prompt: &str,
+    key: Option<IdempotencyKey>,
+) -> Result<TurnStream, ApiError>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    let request = Request::TurnStart {
+        background: false,
+        budget: None,
+        thread,
+        prompt: prompt.into(),
+        meta: Meta {
+            idempotency_key: key,
+            ..Meta::default()
+        },
+        model: None,
+        approval: None,
+    };
+    server
+        .start_streaming(&Caller::default(), request)
+        .await
+        .unwrap()
 }
 
 /// The thread's events, checked to be numbered 1, 2, 3, ... with no gap or repeat.
