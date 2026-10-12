@@ -8,7 +8,10 @@ export interface GlzOption {
  * The options whose label contains `query`, ignoring case and accents, in their order. An
  * empty query keeps them all.
  */
-export function filterOptions(options: readonly GlzOption[], query: string): readonly GlzOption[] {
+export function filterOptions<T extends GlzOption>(
+  options: readonly T[],
+  query: string,
+): readonly T[] {
   const wanted = fold(query.trim());
   return wanted === '' ? options : options.filter((option) => fold(option.label).includes(wanted));
 }
