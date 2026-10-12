@@ -117,6 +117,7 @@ pub(crate) mod tests {
         Endpoint {
             local: false,
             provider,
+            claude: None,
             model: "big".into(),
             gateway: None,
             at: "GLAVE_BASE_URL".into(),
@@ -134,7 +135,7 @@ pub(crate) mod tests {
         constraints: &Constraints,
     ) -> anyhow::Result<Gateway> {
         let endpoint = endpoint();
-        let provider = Model::for_endpoint(&endpoint.provider)?;
+        let provider = Model::for_endpoint(&endpoint)?;
         let file = Source::File("/home/ada/.glave/config.toml".into());
         let allowed = Allowed {
             constraints,

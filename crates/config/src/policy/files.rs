@@ -9,6 +9,7 @@ use globset::Glob;
 
 use crate::policy::memory::{MemoryChoice, MemoryRules, SpaceChoice};
 use crate::policy::placement::PlacementRules;
+use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkerRules, WorkersFile};
 use serde::Deserialize;
@@ -61,68 +62,6 @@ pub struct ConfigFile {
     /// A cloud contract's models, in place of `GLAVE_BASE_URL`'s server. Only the person's or
     /// the server's own file sets it: the organization's credentials go there.
     pub provider: Option<ProviderFile>,
-}
-
-/// `[provider]`: a cloud contract's models (`specs/gateway.md`, "Cloud contracts"), each
-/// through its OpenAI-compatible API. The key, when there is one, comes from the
-/// environment; without one, the workload's own identity.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(tag = "name", rename_all = "lowercase", deny_unknown_fields)]
-pub enum ProviderFile {
-    /// Azure OpenAI's v1 API; `model` is a deployment's name.
-    Azure {
-        /// The resource's name, such as `acme-openai`, or its `https://` endpoint.
-        resource: String,
-        /// The Microsoft Entra scope tokens are asked for, when not Microsoft's default.
-        scope: Option<String>,
-    },
-    /// Amazon Bedrock's OpenAI-compatible Chat Completions; `model` is a Bedrock model id.
-    Bedrock {
-        /// The AWS region, such as `us-east-1`.
-        region: String,
-        /// `runtime` (the default, which AWS recommends) or `mantle`.
-        endpoint: Option<BedrockEndpointChoice>,
-    },
-}
-
-impl ProviderFile {
-    /// The provider's name, as `[models]` rules see it: `azure` or `bedrock`.
-    pub fn name(&self) -> &'static str {
-        match self {
-            Self::Azure { .. } => "azure",
-            Self::Bedrock { .. } => "bedrock",
-        }
-    }
-
-    /// The provider and where it is, to show: `azure (acme-openai)`.
-    pub fn describe(&self) -> String {
-        match self {
-            Self::Azure { resource, .. } => format!("azure ({})", resource.trim()),
-            Self::Bedrock { region, endpoint } => format!(
-                "bedrock ({}, {})",
-                region.trim(),
-                endpoint.unwrap_or_default().name()
-            ),
-        }
-    }
-}
-
-/// Which of Bedrock's endpoints.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BedrockEndpointChoice {
-    #[default]
-    Runtime,
-    Mantle,
-}
-
-impl BedrockEndpointChoice {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Runtime => "runtime",
-            Self::Mantle => "mantle",
-        }
-    }
 }
 
 /// `[server]`: a session server elsewhere (`glave --server`), such as an organization's.

@@ -59,6 +59,7 @@ impl Remote {
         Ok(Endpoint {
             local: false,
             provider,
+            claude: None,
             model: model.unwrap_or_else(|| MAIN.to_owned()),
             gateway: Some(self.url.clone()),
             at: "[gateway] url".to_owned(),
