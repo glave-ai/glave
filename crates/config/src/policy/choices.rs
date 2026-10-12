@@ -6,8 +6,9 @@ use std::path::PathBuf;
 
 use glave_harness::{ApprovalMode, SandboxLevel};
 
-use crate::policy::files::{Approval, ConfigFile, ModelEntry, ProviderFile, SandboxChoice};
+use crate::policy::files::{Approval, ConfigFile, ModelEntry, SandboxChoice};
 use crate::policy::memory::{MemoryChoice, SpaceChoice};
+use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkersFile};
 use glave_memory::SpaceMemory;
