@@ -89,6 +89,17 @@ cargo build --profile debugging   # full debug info, for a debugger
 
 `cargo xtask ci` passes: format, clippy with `-D warnings`, all tests, `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
 
+## Quality
+
+The bar is code a careful reader admires: every line earns its place, and each idea lives in one spot. Lints catch unsafe code. These rules are about what lints can't catch:
+
+- **One PR, one change.** A second feature, or a new workspace dependency, goes in its own PR. A PR over 40 files or 1,500 lines is split, or says in its description why it can't be.
+- **One concept, one definition.** A type that crosses crates is defined once, in the lowest crate that needs it (`glave-event` or `glave-ports`). Two enums with the same variants and a `From` between them is a defect.
+- **Search before writing.** Before adding a helper, parser, URL check, error mapper or storage wrapper, `git grep` for one. Where a second copy would go, share the first instead.
+- **Nothing before its second user.** A trait needs two real implementations, and a config key two values that both work today. Anything `pub` needs a caller outside its crate. Code whose last caller goes is deleted with it.
+- **Specs hold decisions and invariants,** never method tables, field lists or crate descriptions; the generated schema is the reference. A PR that changes a type rereads the spec section that describes it.
+- **Reviewed before merge.** Every feature PR gets an independent review (not its author) before it merges, beyond CI.
+
 ## Rust
 
 **Safety and errors**
@@ -135,6 +146,8 @@ cargo build --profile debugging   # full debug info, for a debugger
 - Property tests (`proptest`) for parsers and state machines. Snapshot tests (`insta`) for stable formats such as receipts and events.
 - Tests are deterministic: no sleeps, no real clocks (inject a clock), no network in unit tests.
 - Run tests with `cargo nextest`. Measure coverage; don't chase a percentage.
+- Fakes live in one place: `glave-ports` ships the test doubles for its ports (clock, entropy, cancellation, `block_on`) behind the `conformance` feature. Never write a second copy in a crate.
+- A scenario is tested once: in the conformance suite when there is one, otherwise beside the code it tests.
 
 ## Performance
 
@@ -177,6 +190,7 @@ cargo build --profile debugging   # full debug info, for a debugger
 - Linted and formatted: angular-eslint (recommended, template and accessibility), typescript-eslint strict and stylistic type-checked, stylelint for SCSS and CSS, Prettier across `web/`. CI checks all of it.
 - Tested: unit tests (Vitest) for every component, directive, service and `lib/` function, with axe on what they render; end-to-end smoke tests with axe in light and dark.
 - Accessibility: WCAG 2.2 AA, passes axe.
+- A Glaze component, directive or input ships in the same PR as the app screen that uses it. The showcase demonstrates Glaze; it never justifies a piece.
 - The app is served under a strict Content Security Policy: no inline script; inline styles only with each load's nonce.
 
 ## Git

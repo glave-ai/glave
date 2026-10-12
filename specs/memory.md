@@ -20,8 +20,9 @@ Accepted. **On by default** since 2026-10-11, decided by Chris after the evals: 
 - **Forgetting:** each memory's text is sealed under `v1/<space>/memory/<memory>/<n>`; a forget by the person (or the model for them) destroys it at once, and its events then read with empty `data` (`{}`), envelopes kept. The space key is rotated by housekeeping, which batches the forgets since it last ran: when glave starts, when `glave memory` runs, and when a session ends. Retention (`retention_days`) forgets by glave, erased 30 days on unless restored.
 - **Tidy-up** (`Memories::tidy`, `memories/tidy.rs`): the cheap model on the `summary` route proposes merges and contradictions over a numbered list; every proposal is checked before anything changes (below). It runs in the background on a task the memory server owns (`GlaveMemory::tidy_with`), asked when a session starts and after each save or edit, over each ledger that is due.
 - **Recall** (`Memories::recall`, `memories/recall.rs`): the fourth tool. Memories are matched in the memory view; conversations through the store's full-text index (`storage.md`, "Search index"), which both stores keep (schema 5), with the event log port's `search` and its conformance suite.
+- **The web memory page** (`/memory` in the app `glave serve --http` serves): the person's and the space's memories, each marked with its scope, edited and forgotten in place.
 
-**Not yet:** the memory page on web and desktop, rotation on a schedule of its own in `glave serve --http` (it rotates when the server's session ends), and plugged-in memory servers.
+**Not yet:** on the memory page, moving a memory between scopes, each memory linked to the thread it came from, and glave's changes marked with an undo; the page on desktop; rotation on a schedule of its own in `glave serve --http` (it rotates when the server's session ends); and plugged-in memory servers.
 
 ## What others learned
 
