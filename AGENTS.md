@@ -41,9 +41,10 @@ crates/ports/       glave-ports: event log, blob store, model provider (and how 
 crates/identity/    glave-identity: who is calling: the verified caller, OIDC and local sign-in, the person an issuer's subject is
 crates/config/      glave-config: config and policy (specs/policy.md): choices nearest-wins, constraints that only narrow, project trust, `policy explain`; shared by the CLI and the servers
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
-crates/provider-anthropic/  glave-provider-anthropic: Anthropic's native Messages API provider (thinking sent back signed)
+crates/provider-anthropic/  glave-provider-anthropic: Anthropic's native Messages API provider (thinking sent back signed), also as Vertex AI's rawPredict
 crates/azure/       glave-azure: Azure OpenAI's v1 endpoint, and Microsoft Entra tokens from AKS workload identity (a hand-rolled exchange)
 crates/aws/         glave-aws: Amazon Bedrock's OpenAI-compatible endpoints, and SigV4 (aws-sigv4) with keys from the environment, IRSA or EKS Pod Identity
+crates/google/      glave-google: Google Vertex AI's endpoints, and Application Default Credentials as a refreshing bearer token (the GKE metadata server, service account keys, gcloud's user credentials, workload identity federation), hand-rolled
 crates/gateway/     glave-gateway: the in-process gateway (specs/gateway.md): routes by purpose, safe fallback, budgets, metering
 crates/gateway-service/  glave-gateway-service: the gateway as a service (`glave gateway serve`): OpenAI and Anthropic surfaces, OIDC sign-in (glave-identity), per-caller policy, budgets and metering, the MCP tool catalog at /mcp
 crates/keys/        glave-keys: the key hierarchy (root, organization, space, data keys), sealing at rest, erasure; roots in the OS keychain (`keychain`) or a key file

@@ -49,7 +49,7 @@ fn request(messages: Vec<Message>) -> ModelRequest {
 }
 
 fn body(request: &ModelRequest) -> Value {
-    serde_json::to_value(messages_request(request, "anthropic")).unwrap()
+    serde_json::to_value(messages_request(request, "anthropic", Api::Messages)).unwrap()
 }
 
 fn thinking(provider: &str, model: &str, kind: &str, text: Option<&str>) -> Part {
@@ -245,4 +245,19 @@ fn text_only_requests_keep_their_tools_and_say_none() {
         body(&request).get("tool_choice").is_none(),
         "the default stays unsaid"
     );
+}
+
+#[test]
+fn vertex_takes_its_version_in_the_body_and_the_model_in_the_url() {
+    let request = request(vec![user("hi")]);
+    let vertex = serde_json::to_value(messages_request(&request, "vertex", Api::Vertex)).unwrap();
+    assert_eq!(vertex["anthropic_version"], "vertex-2023-10-16");
+    assert!(vertex.get("model").is_none(), "{vertex}");
+    let mut messages = vertex.clone();
+    if let Some(fields) = messages.as_object_mut() {
+        fields.remove("anthropic_version");
+        fields.insert("model".into(), json!("claude-haiku-5-5"));
+    }
+    assert_eq!(messages, body(&request), "otherwise the same request");
+    assert!(body(&request).get("anthropic_version").is_none());
 }
