@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use glave_event::{At, Body, MemoryId, MemoryScope, MemorySource, Role, Seq, ThreadId, decode};
 use glave_harness::{MemoryContext, MemoryError, memory_ledger};
-use glave_ports::search::{Found, query_terms, searchable, terms};
+use glave_ports::search::{Found, query_terms, searchable_body, terms};
 use glave_ports::{EventLog, Scope};
 
 use super::{Memories, storage};
@@ -72,23 +72,19 @@ impl<L: EventLog + 'static> Memories<L> {
         }
         let readable = self.inner.rules.readable(on.person, on.scope);
         let mut memories = Vec::new();
-        for (kind, ledger) in &readable {
-            let found = self
-                .with_book(*ledger, |book| matching(book, *kind, &wanted))
-                .await?;
-            memories.extend(found);
-        }
-        memories.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.at.cmp(&a.1.at)));
         // Where forgotten memories were saved: those turns are never returned.
         let mut hidden = Vec::new();
-        for (_, ledger) in &readable {
-            let sources = self
+        for (kind, ledger) in &readable {
+            let (found, sources) = self
                 .with_book(*ledger, |book| {
-                    book.hidden.values().copied().collect::<Vec<_>>()
+                    let sources: Vec<MemorySource> = book.hidden.values().copied().collect();
+                    (matching(book, *kind, &wanted), sources)
                 })
                 .await?;
+            memories.extend(found);
             hidden.extend(sources);
         }
+        memories.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.at.cmp(&a.1.at)));
         let mut hidden = Hidden::new(hidden);
         let mut hits: Vec<Recalled> = memories.into_iter().map(|(_, hit)| hit).collect();
         hits.truncate(limit);
@@ -141,15 +137,19 @@ impl<L: EventLog + 'static> Memories<L> {
             let Some(raw) = events.into_iter().next().filter(|raw| raw.seq == found.seq) else {
                 continue;
             };
-            let (Some(text), at) = (searchable(&raw), raw.at) else {
+            let at = raw.at;
+            let Ok(event) = decode(raw) else {
                 continue;
             };
-            let (said_by, untrusted) = match decode(raw).map(|event| event.body) {
-                Ok(Body::MessageAdded(message)) => match message.role {
+            let Some(text) = searchable_body(&event.body) else {
+                continue;
+            };
+            let (said_by, untrusted) = match &event.body {
+                Body::MessageAdded(message) => match message.role {
                     Role::User => ("person", false),
                     Role::Assistant => ("assistant", false),
                 },
-                Ok(Body::ToolCallCompleted(done)) => ("tool output", done.untrusted),
+                Body::ToolCallCompleted(done) => ("tool output", done.untrusted),
                 _ => continue,
             };
             hits.push(Recalled {

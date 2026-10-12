@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 
 use glave_event::{At, Part};
 use glave_harness::MemoryError;
-use glave_ports::{Message, ModelRequest, Purpose, ToolChoice};
+use glave_ports::{Message, ModelProvider, ModelRequest, Purpose, ToolChoice};
 use serde::Deserialize;
 
 use super::Tidier;
@@ -132,12 +132,12 @@ const REMINDER: &str = "Answer with the JSON object only, in the shape given: {\
 
 /// Asks the model what to tidy, once more with a terse reminder when the first answer cannot
 /// be read. The proposals, or why there are none.
-pub(super) async fn ask(
-    tidier: &dyn Tidier,
+pub(super) async fn ask<P: ModelProvider>(
+    tidier: &Tidier<P>,
     candidates: &[Entry],
     compact: bool,
 ) -> Result<Result<Vec<Proposal>, String>, MemoryError> {
-    let mut request = request(tidier.model(), candidates, compact);
+    let mut request = request(&tidier.model, candidates, compact);
     let first = answer(tidier, &request).await?;
     let why = match parse(&first, candidates.len()) {
         Ok(proposals) => return Ok(Ok(proposals)),
@@ -157,9 +157,13 @@ pub(super) async fn ask(
 }
 
 /// The answer's text; its readable reasoning when it gave no text, as some reasoning models do.
-async fn answer(tidier: &dyn Tidier, request: &ModelRequest) -> Result<String, MemoryError> {
+async fn answer<P: ModelProvider>(
+    tidier: &Tidier<P>,
+    request: &ModelRequest,
+) -> Result<String, MemoryError> {
     let completion = tidier
-        .complete(request.clone())
+        .provider
+        .complete(request, &mut |_| {})
         .await
         .map_err(|error| MemoryError::Storage(format!("tidy-up's model failed: {error}")))?;
     let text: String = completion

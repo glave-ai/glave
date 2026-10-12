@@ -16,7 +16,8 @@ mod tidy {
     use glave_harness::{AllowAll, Cancel, MemoryContext, memory_ledger};
     use glave_memory::{Remembering, Tidied, Tidier, Writer};
     use glave_ports::{
-        BoxFuture, Completion, EventLog, ModelRequest, ProviderError, Purpose, Scope, ToolChoice,
+        Completion, Delta, EventLog, ModelProvider, ModelRequest, ProviderError, Purpose, Scope,
+        ToolChoice,
     };
 
     use super::support::*;
@@ -29,14 +30,17 @@ mod tidy {
     }
 
     impl Scripted {
-        fn new(answer: &str) -> Self {
+        fn new(answer: &str) -> Tidier<Self> {
             Self::answering(&[answer])
         }
 
-        fn answering(answers: &[&str]) -> Self {
-            Self {
-                answers: Mutex::new(answers.iter().rev().map(|a| (*a).to_owned()).collect()),
-                seen: Mutex::new(Vec::new()),
+        fn answering(answers: &[&str]) -> Tidier<Self> {
+            Tidier {
+                provider: Self {
+                    answers: Mutex::new(answers.iter().rev().map(|a| (*a).to_owned()).collect()),
+                    seen: Mutex::new(Vec::new()),
+                },
+                model: "small".to_owned(),
             }
         }
 
@@ -46,23 +50,20 @@ mod tidy {
         }
     }
 
-    impl Tidier for Scripted {
-        fn model(&self) -> &'static str {
-            "small"
-        }
-
+    impl ModelProvider for Scripted {
         fn complete(
             &self,
-            request: ModelRequest,
-        ) -> BoxFuture<'_, Result<Completion, ProviderError>> {
-            self.seen.lock().unwrap().push(request);
+            request: &ModelRequest,
+            _: &mut (dyn FnMut(Delta) + Send),
+        ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
+            self.seen.lock().unwrap().push(request.clone());
             let mut answers = self.answers.lock().unwrap();
             let answer = if answers.len() > 1 {
                 answers.pop().unwrap()
             } else {
                 answers.last().cloned().unwrap()
             };
-            Box::pin(std::future::ready(Ok(said(&answer))))
+            std::future::ready(Ok(said(&answer)))
         }
     }
 
@@ -151,11 +152,11 @@ mod tidy {
             );
             assert_eq!(tidied.refused.len(), 1, "{tidied:?}");
 
-            let request = script.seen.lock().unwrap()[0].clone();
+            let request = script.provider.seen.lock().unwrap()[0].clone();
             assert_eq!(request.purpose, Purpose::Summary);
             assert_eq!(request.tool_choice, ToolChoice::None);
             assert_eq!(request.tools.len(), 0);
-            let sent = script.sent();
+            let sent = script.provider.sent();
             assert!(!sent.contains("make setup"), "never shown: {sent}");
             assert!(sent.contains("Merge only duplicates"), "{sent}");
 
@@ -213,7 +214,7 @@ mod tidy {
             let again = Scripted::new("{}");
             memories.tidy(shared(), &again).await.unwrap();
             assert!(
-                again.seen.lock().unwrap().is_empty(),
+                again.provider.seen.lock().unwrap().is_empty(),
                 "nothing else to tidy"
             );
 
@@ -260,11 +261,15 @@ mod tidy {
             // An answer that cannot be read is asked for once more, then changes nothing.
             let unreadable = Scripted::new("no idea");
             let tidied = memories.tidy(shared(), &unreadable).await.unwrap();
-            assert_eq!(unreadable.seen.lock().unwrap().len(), 2, "asked again once");
+            assert_eq!(
+                unreadable.provider.seen.lock().unwrap().len(),
+                2,
+                "asked again once"
+            );
             assert!(
-                unreadable.sent().contains("JSON object only"),
+                unreadable.provider.sent().contains("JSON object only"),
                 "{}",
-                unreadable.sent()
+                unreadable.provider.sent()
             );
             assert!(
                 tidied.refused.iter().any(|why| why.contains("no JSON")),
@@ -289,7 +294,7 @@ mod tidy {
             assert_eq!(tidied.forgotten, 1, "{tidied:?}");
             let now: Vec<_> = live(&kit).await.into_iter().map(|(id, _, _)| id).collect();
             assert_eq!(now, [render], "the more recent stays");
-            let first = format!("{:?}", script.seen.lock().unwrap()[0].messages);
+            let first = format!("{:?}", script.provider.seen.lock().unwrap()[0].messages);
             assert!(
                 first.contains("saved 2026-10-03 "),
                 "times to the minute: {first}"
@@ -312,9 +317,9 @@ mod tidy {
             let script = Scripted::new("{}");
             memories.tidy(shared(), &script).await.unwrap();
             assert!(
-                script.sent().contains("near their size limit"),
+                script.provider.sent().contains("near their size limit"),
                 "{}",
-                script.sent()
+                script.provider.sent()
             );
             assert!(!memories.tidy_due(shared()).await.unwrap());
             kit.clock.advance_millis(2 * 3_600_000);
@@ -379,10 +384,9 @@ mod tidy {
             let kit = Kit::new();
             seed(&kit, TABS, false).await;
             let memory = kit.memory(rules(), 2).await;
-            let script = Arc::new(Scripted::new(
+            memory.tidy_with(Scripted::new(
                 r#"{"merge": [{"memories": [1, 2], "text": "Use tabs, not spaces, for indentation in this project's Python code"}]}"#,
             ));
-            memory.tidy_with(Arc::clone(&script) as Arc<dyn Tidier>);
             let dir = folder("tidy-background");
             let save = serde_json::json!({"text": TABS_AGAIN, "scope": "space", "force": true});
             let answers = vec![

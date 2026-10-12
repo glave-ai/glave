@@ -14,7 +14,10 @@ export type ApiError = {
   readonly message: string;
 };
 
-/** How much glave asks before acting (`specs/approvals.md`, "Modes"). */
+/**
+ * How much glave asks the person before acting (`specs/approvals.md`, "Modes"). Secret files
+ * ask in every mode.
+ */
 export type ApprovalMode = "ask" | "auto";
 
 /**

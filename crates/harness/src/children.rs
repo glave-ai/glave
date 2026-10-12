@@ -4,7 +4,7 @@
 use std::sync::{Mutex, PoisonError};
 
 use glave_event::{Outcome, ParentCall};
-use glave_ports::{BlobStore, EventLog, ModelProvider, ToolCall, ToolOutput};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ToolCall, ToolOutput};
 
 use crate::approval::Approver;
 use crate::calls::NOT_RUN;
@@ -14,7 +14,6 @@ use crate::join::{Running, all};
 use crate::subagent::{self, AT_ONCE};
 use crate::toolset::ToolSet;
 use crate::turn::{Live, Prompt, TurnSummary};
-use glave_identity::Caller;
 
 /// What the person sees, shared by children running side by side.
 type Shared<'a, 'b> = &'a Mutex<&'b mut (dyn FnMut(Live) + Send)>;
