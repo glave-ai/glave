@@ -151,12 +151,15 @@ where
                 meta,
                 background: false,
                 budget,
+                model,
             } => {
                 if budget.is_some() {
                     return Ok(Err(crate::tasks::requests::unenforced_budget()));
                 }
                 let key = meta.idempotency_key.as_ref();
-                Ok(self.start_turn_as(caller, thread, &prompt, key).await)
+                Ok(self
+                    .start_turn_with(caller, thread, &prompt, key, model)
+                    .await)
             }
             Request::GoalStart {
                 thread,
@@ -189,7 +192,23 @@ where
         prompt: &str,
         key: Option<&IdempotencyKey>,
     ) -> Result<TurnStream, ApiError> {
+        self.start_turn_with(caller, thread, prompt, key, None)
+            .await
+    }
+
+    /// Like [`Server::start_turn_as`], first choosing `model` for the thread, when given:
+    /// this turn and the thread's later ones go to it. The model the turn would go to must be
+    /// one this server runs (`-32021`).
+    pub(crate) async fn start_turn_with(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+        prompt: &str,
+        key: Option<&IdempotencyKey>,
+        model: Option<String>,
+    ) -> Result<TurnStream, ApiError> {
         self.authorize(caller, thread).await?;
+        self.model_of(thread, model.as_deref()).await?;
         let (finish, done) = watch::channel(None);
         if let Some(key) = key
             && let Some(started) = self.inner.keyed.claim(thread, key, &done)
@@ -204,6 +223,11 @@ where
             .occupy(thread, finish, move |inner, mut held, cancel| async move {
                 let hub = Arc::clone(&inner.hub);
                 let mut publish = |live| publish(&hub, thread, live);
+                if let Some(model) = &model
+                    && let Err(error) = inner.harness.choose_model(&mut held, &caller, model).await
+                {
+                    return (held, Err(error));
+                }
                 let ran = inner
                     .harness
                     .run_turn_as(&mut held, &prompt, &caller, &cancel, &mut publish)

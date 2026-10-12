@@ -262,6 +262,7 @@ mod http {
                     background: false,
                     worktree: None,
                     computer: None,
+                    model: None,
                 })
                 .await;
             let thread = started["result"]["thread"]["id"].clone();
@@ -327,6 +328,7 @@ mod http {
                 background: false,
                 worktree: None,
                 computer: None,
+                model: None,
             });
             let mismatched = web.open(&message, Some("turn/start")).await;
             let answer: Value =
@@ -361,6 +363,7 @@ mod http {
                     background: false,
                     worktree: None,
                     computer: None,
+                    model: None,
                 })
                 .await;
             let thread = started["result"]["thread"]["id"].clone();

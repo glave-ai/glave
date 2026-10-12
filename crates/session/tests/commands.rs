@@ -65,6 +65,7 @@ mod commands {
                     background: false,
                     worktree: None,
                     computer: None,
+                    model: None,
                 })
                 .await
                 .unwrap()
@@ -78,6 +79,7 @@ mod commands {
                     thread: thread.id,
                     prompt: prompt.into(),
                     meta: Meta::default(),
+                    model: None,
                 };
                 server.request(turn).await.unwrap();
             }

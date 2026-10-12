@@ -104,6 +104,7 @@ impl Client<'_> {
                 prompt: prompt.to_owned(),
                 background: false,
                 budget: None,
+                model: None,
                 meta: Meta::default(),
             })
             .await;

@@ -6,7 +6,8 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
-  ci            the full local gate: format, lint, tests, dependency audit, file sizes
+  ci            the full local gate: format, lint, tests, dependency audit, file sizes, and
+                the web checks, which need Node 22.22.3+ (GLAVE_SKIP_WEB=1 skips them)
   file-sizes    enforce the source-file line limits
   schema        write specs/session.schema.json from the session API's Rust types, and the web
                 client's TypeScript types from it (`--check`: fail if either is out of date)

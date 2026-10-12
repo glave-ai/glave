@@ -160,6 +160,7 @@ async fn run(options: Options) -> anyhow::Result<()> {
         constraints: &constraints,
         main: Some(&Source::Env("GLAVE_MODEL")),
         judge: &Source::Env("GLAVE_JUDGE_MODEL"),
+        models: &Source::Default,
     };
     let provider = Model::for_endpoint(&endpoint.provider)?;
     let budgets = Budgets {
@@ -171,7 +172,8 @@ async fn run(options: Options) -> anyhow::Result<()> {
         }),
         ..Budgets::default()
     };
-    let gateway = gateway(provider, &endpoint, judge.as_deref(), &allowed)?.with_budgets(budgets);
+    let gateway =
+        gateway(provider, &endpoint, judge.as_deref(), &[], &allowed)?.with_budgets(budgets);
     let home = home::folder()?;
     let (catalog, mut secrets) = catalog(&home, &constraints).await?;
     secrets.extend(endpoint.provider.api_key.clone());

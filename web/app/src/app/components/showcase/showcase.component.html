@@ -1,0 +1,25 @@
+<div class="page">
+  <nav class="contents" [attr.aria-label]="copy.contents">
+    <glz-nav-list [heading]="copy.contents">
+      @for (section of sections(); track section.id) {
+        <a
+          glzNavItem
+          data-testid="showcase-contents-link"
+          [href]="section.href"
+          [current]="section.current"
+        >
+          {{ section.title }}
+        </a>
+      }
+    </glz-nav-list>
+  </nav>
+  <div class="sections" glzScrollSpy [targets]="sectionSelector" [(active)]="active">
+    <h1 data-testid="showcase-heading">{{ copy.heading }}</h1>
+    <p class="intro">{{ copy.intro }}</p>
+    <app-showcase-actions />
+    <app-showcase-forms />
+    <app-showcase-layout />
+    <app-showcase-overlays />
+    <app-showcase-ai />
+  </div>
+</div>

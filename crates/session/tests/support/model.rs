@@ -199,6 +199,7 @@ pub async fn build<L: EventLog + 'static>(
         tasks: glave_session::TaskLimits::default(),
         memory: None,
         spaces: Arc::new(MemorySpaces::new()),
+        models: Vec::new(),
     };
     let server = Server::new(wiring, settings, scope(), answering);
     keep_home(&server, Vec::new()).await;
@@ -255,6 +256,7 @@ pub async fn with_memory<L: EventLog + 'static>(
         tasks: glave_session::TaskLimits::default(),
         memory: Some(memory),
         spaces: Arc::new(MemorySpaces::new()),
+        models: Vec::new(),
     };
     Server::new(wiring, settings, scope(), Answering::NoOne)
 }
@@ -279,6 +281,7 @@ where
         background: false,
         worktree: worktree.then_some(true),
         computer: None,
+        model: None,
     };
     match server.request(started).await.unwrap() {
         Reply::Thread { thread } => thread.id,
@@ -300,6 +303,7 @@ where
             thread,
             prompt: "go".into(),
             meta: Meta::default(),
+            model: None,
         })
         .await
 }

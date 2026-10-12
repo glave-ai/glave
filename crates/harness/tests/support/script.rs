@@ -238,6 +238,7 @@ pub fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::ToolCallRequested(_) => "tool.call.requested",
             Body::ToolCallCompleted(_) => "tool.call.completed",
             Body::ModelResponded(_) => "model.responded",
+            Body::ModelChosen(_) => "model.chosen",
             Body::TurnEnded(_) => "turn.ended",
             Body::ApprovalRequested(_) => "approval.requested",
             Body::ApprovalDecided(_) => "approval.decided",

@@ -1,0 +1,10 @@
+@use '../page';
+
+.text {
+  margin: 0;
+}
+
+.details {
+  display: flex;
+  gap: var(--glz-space-2);
+}

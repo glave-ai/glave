@@ -1,0 +1,71 @@
+// The native <dialog>, styled. The surface fills it, so a click on the dialog element itself
+// can only be on the backdrop around the surface.
+.dialog {
+  width: min(var(--glz-dialog-width, 32rem), calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  padding: 0;
+  border: 0;
+  border-radius: var(--glz-radius-lg);
+  background: var(--glz-surface-overlay);
+  color: var(--glz-color-text);
+  box-shadow: var(--glz-elevation-3);
+}
+
+.dialog::backdrop {
+  background: var(--glz-color-scrim);
+}
+
+.drawer-start,
+.drawer-end {
+  width: min(var(--glz-drawer-width, 24rem), 90vw);
+  height: 100vh;
+  max-height: 100vh;
+  margin: 0;
+  border-radius: 0;
+}
+
+.drawer-start {
+  inset: 0 auto 0 0;
+}
+
+.drawer-end {
+  inset: 0 0 0 auto;
+}
+
+.surface {
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  padding: var(--glz-space-4) var(--glz-space-4) var(--glz-space-2) var(--glz-space-5);
+}
+
+.heading {
+  flex: 1;
+  margin: 0;
+  font-size: var(--glz-text-lg);
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--glz-space-2) var(--glz-space-5);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--glz-space-2);
+  padding: var(--glz-space-3) var(--glz-space-5) var(--glz-space-4);
+}
+
+.actions:empty {
+  display: none;
+}

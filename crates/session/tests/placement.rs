@@ -1,5 +1,5 @@
 //! Where a thread works, as the session API offers it: `thread/start` with a `computer` (a
-//! person's own laptop dialled in, later) is refused with `-32021` until computers can dial
+//! person's own laptop dialled in, later) is refused with `-32022` until computers can dial
 //! in, and no thread starts. A summary says nothing that assumes a worker.
 
 #[cfg(test)]
@@ -27,6 +27,7 @@ mod placement {
                     worktree: None,
                     background: false,
                     computer: Some(laptop),
+                    model: None,
                 })
                 .await
                 .unwrap_err();

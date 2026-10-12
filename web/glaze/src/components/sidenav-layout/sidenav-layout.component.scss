@@ -1,0 +1,44 @@
+:host {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  height: 100%;
+}
+
+.sidenav {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: var(--glz-sidenav-width);
+  overflow-y: auto;
+  border-right: var(--glz-border-width) solid var(--glz-color-border);
+  background: var(--glz-surface-card);
+}
+
+:host(:not(.open)) .sidenav {
+  display: none;
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+// Narrow screens: the nav slides over the content as a drawer.
+:host(.narrow) .sidenav {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  max-width: 85vw;
+  box-shadow: var(--glz-elevation-3);
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: var(--glz-color-scrim);
+}

@@ -51,6 +51,7 @@ mod remote {
                 worktree: None,
                 background: false,
                 computer: None,
+                model: None,
             };
             let Reply::Thread { thread } = remote.request(&started).await.unwrap() else {
                 panic!("a thread")
@@ -61,6 +62,7 @@ mod remote {
                     prompt: "touch it".into(),
                     background: false,
                     budget: None,
+                    model: None,
                     meta: Meta::default(),
                 })
                 .await

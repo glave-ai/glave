@@ -57,6 +57,9 @@ crates/session/     glave-session: the session API (specs/session.md) in-process
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary
 web/client/         the session API's TypeScript client: types generated from the schema (`cargo xtask schema`), a small typed client, no framework
+web/glaze/          Glaze (`@glave/glaze`): glave's Angular component library, web platform first, then the Angular CDK, themed only through CSS custom properties (its AGENTS.md says how to use it)
+web/app/            the web app `glave serve --http` serves at `/`: sign-in, spaces and threads, a thread streaming live with approvals and questions, tasks, memory, settings, and Glaze's showcase (`/glaze`)
+web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app, served with glave's Content Security Policy
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
 specs/              the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
@@ -76,6 +79,7 @@ cargo xtask eval        # the harness on evals/tasks against three real models, 
 cargo xtask eval judge  # the action judge scored on evals/judge (the deterministic checks today)
 cargo fmt --all         # format
 cargo build --profile debugging   # full debug info, for a debugger
+(cd web && npm run check)         # the web checks alone; cargo xtask ci runs them (Node 22.22.3+, or GLAVE_SKIP_WEB=1)
 ```
 
 ## Definition of done
@@ -162,9 +166,15 @@ cargo build --profile debugging   # full debug info, for a debugger
 ## Web client (TypeScript)
 
 - Strict TypeScript. No `any`; use `unknown`. `const` and immutability everywhere; `readonly` arrays, maps and fields.
-- Angular (current choice): standalone components, signals as `readonly` fields, native control flow, `inject()`, `input()`/`output()`.
-- Angular Material, styled only through design tokens. Form fields use `appearance="outline"`.
-- Accessibility: WCAG AA, passes AXE.
+- Angular, current stable, fully modern: standalone, zoneless, OnPush, signals as `readonly` fields, `input()`/`output()`/`model()` (two-way binding with `model()` wherever a component owns a value its parent can change), `computed()`, `inject()`, native control flow. No `@Input`/`@Output` decorators, no NgModules.
+- Glaze (`web/glaze`) for every component, not Angular Material. Web platform first (native `<dialog>`, popover, `<details>`, native inputs, CSS `field-sizing`), checked against Baseline; then the Angular CDK where the platform has nothing (keyboard models, LiveAnnouncer, menus, clipboard, layout); our own code last. Styled only through design tokens: CSS custom properties, light and dark from `light-dark()` and `color-scheme`. Glaze keeps no app state: its only services are the toast queue.
+- Every component is four files, made with `ng generate`: `x.component.ts`, `.html`, `.scss`, `.spec.ts`. Folders by kind: `components/`, `directives/`, `services/` (stateful, signal state), `guards/`, `interceptors/`, `pipes/`, and `lib/` for pure functions.
+- No logic in templates beyond native control flow: no computation, no expressions beyond reading a signal or field, no user-visible strings or hard-coded values. Derive in the controller (`computed()`, readonly constants). angular-eslint enforces what it can (`conditional-complexity` 1, `prefer-control-flow`, `no-inline-styles`, `no-call-expression` is not used since signals are calls).
+- Test hooks: every element an end-to-end test needs has a `data-testid` (`showcase-open-dialog`); end-to-end tests select only by these. Glaze never names hooks itself: its components take a `testId` input and give their parts `<testId>-<part>` (`testId="thread-composer"` gives `thread-composer-send`).
+- Linted and formatted: angular-eslint (recommended, template and accessibility), typescript-eslint strict and stylistic type-checked, stylelint for SCSS and CSS, Prettier across `web/`. CI checks all of it.
+- Tested: unit tests (Vitest) for every component, directive, service and `lib/` function, with axe on what they render; end-to-end smoke tests with axe in light and dark.
+- Accessibility: WCAG 2.2 AA, passes axe.
+- The app is served under a strict Content Security Policy: no inline script; inline styles only with each load's nonce.
 
 ## Git
 

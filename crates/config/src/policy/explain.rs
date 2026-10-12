@@ -128,6 +128,10 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
                 &Source::Default,
             ),
         },
+        {
+            let (offered, from) = models(choices);
+            row("models", offered, from)
+        },
         row(
             "worktree",
             if choices.worktree.value { "on" } else { "off" }.to_owned(),
@@ -160,6 +164,17 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
         rows.push(row("telemetry", telemetry.value.clone(), &telemetry.from));
     }
     rows
+}
+
+/// The models `[[models]]` offers besides the main one, and where that choice came from.
+fn models(choices: &Choices) -> (String, &Source) {
+    match &choices.models {
+        Some(models) => {
+            let ids: Vec<&str> = models.value.iter().map(|model| model.id.as_str()).collect();
+            (format!("{ids:?}"), &models.from)
+        }
+        None => ("none besides model".to_owned(), &Source::Default),
+    }
 }
 
 /// Why the main and judge models are refused, if they are. Through a gateway elsewhere, the

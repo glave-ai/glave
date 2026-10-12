@@ -41,7 +41,12 @@ Usage:
                                 The address is host:port, or a port on 127.0.0.1; without
                                 --issuer it must be this computer's. The listener has no
                                 TLS, so put it behind a proxy that has.
-                                --issuer may be given more than once
+                                --issuer may be given more than once. The web app is
+                                served at / too, from --web <folder> (the app's build), or
+                                else from the web folder beside the glave binary, if any.
+                                Anyone who reaches the listener gets that folder's files
+                                without signing in, so it must hold only the build and must
+                                not be writable by an agent
   glave gateway serve --http <address> --issuer <url> --audience <name>
                                 serve the gateway to an organization: model calls and the
                                 tool catalog, every call signed in (glave gateway --help)
@@ -203,6 +208,8 @@ pub struct Args {
     pub issuers: Vec<String>,
     /// The audience those tokens must name.
     pub audience: Option<String>,
+    /// The built web app to serve over HTTP, rather than the one beside the binary.
+    pub web: Option<PathBuf>,
     /// Run the turn or goal as a task in the folder's task host, with no one attached.
     pub background: bool,
     /// With `background`, tokens the turn may use.
@@ -262,15 +269,15 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--budget" => args.budget = Some(tokens("--budget", rest.next())?),
             "--socket" if serving => args.socket = true,
             "--stdio" if serving => stdio = true,
-            "--http" if serving => {
-                args.http = Some(address(rest.next())?);
-            }
-            "--issuer" if serving => {
-                args.issuers
-                    .push(rest.next().ok_or("--issuer needs a URL")?);
-            }
+            "--http" if serving => args.http = Some(address(rest.next())?),
+            "--issuer" if serving => args
+                .issuers
+                .push(rest.next().ok_or("--issuer needs a URL")?),
             "--audience" if serving => {
                 args.audience = Some(rest.next().ok_or("--audience needs a name")?);
+            }
+            "--web" if serving => {
+                args.web = Some(rest.next().ok_or("--web needs a folder")?.into());
             }
             "--continue" | "-c" => args.resume = true,
             "--help" | "-h" => args.action = Action::Help,
@@ -379,6 +386,9 @@ fn transport(args: &Args, stdio: bool) -> Result<(), String> {
     }
     if !args.prompt.is_empty() || args.resume || args.events.is_some() {
         return Err("glave serve takes no prompt, --continue or --events: clients choose".into());
+    }
+    if args.web.is_some() && args.http.is_none() {
+        return Err("--web is for --http: the web app is served over HTTP".into());
     }
     let signs_in = !args.issuers.is_empty() || args.audience.is_some();
     if (stdio || args.socket) && signs_in {
@@ -531,6 +541,10 @@ mod tests {
         ]);
         assert_eq!(anywhere.unwrap().http, Some("0.0.0.0:9".parse().unwrap()));
         // Without OIDC, only a browser on this computer signs in, with the local token.
+        let web = parse_words(&["serve", "--http", "8080", "--web", "dist/app"]).unwrap();
+        assert_eq!(web.web, Some(PathBuf::from("dist/app")));
+        assert!(parse_words(&["serve", "--stdio", "--web", "dist/app"]).is_err());
+        assert!(parse_words(&["serve", "--http", "8080", "--web"]).is_err());
         let local = parse_words(&["serve", "--http", "8080"]).unwrap();
         assert_eq!(local.http, Some("127.0.0.1:8080".parse().unwrap()));
         assert!(parse_words(&["serve", "--http", "[::1]:8080"]).is_ok());

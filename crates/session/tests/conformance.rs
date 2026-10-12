@@ -203,6 +203,7 @@ mod conformance {
                 thread,
                 prompt: prompt.to_owned(),
                 meta: Meta::default(),
+                model: None,
             };
             let id = self.send(&request).await;
             loop {
@@ -266,6 +267,7 @@ mod conformance {
                 thread,
                 prompt: prompt.to_owned(),
                 meta: Meta::default(),
+                model: None,
             };
             let (message, id) = self.web.message(&request);
             let response = self.web.open(&message, Some("turn/start")).await;
@@ -318,6 +320,7 @@ mod conformance {
                 background: false,
                 worktree: None,
                 computer: None,
+                model: None,
             })
             .await
             .unwrap();
@@ -452,6 +455,30 @@ mod conformance {
     }
 
     #[test]
+    fn models_are_listed_and_one_the_server_does_not_run_is_refused() {
+        block_on(async {
+            over_each_transport!("models", Vec::new(), |client, dir| {
+                let listed = client.call(Request::ModelList {}).await.unwrap();
+                assert_eq!(
+                    listed,
+                    json!({"models": [{"id": "test-model", "default": true, "hope": false}]})
+                );
+                let refused = client
+                    .call(Request::ThreadStart {
+                        space: None,
+                        background: false,
+                        worktree: None,
+                        computer: None,
+                        model: Some("elsewhere".into()),
+                    })
+                    .await;
+                assert_eq!(refused.err().map(|e| e.code), Some(code::NO_MODEL));
+                let _ = &dir;
+            });
+        });
+    }
+
+    #[test]
     fn a_background_turn_answers_at_once_and_its_task_is_listed_when_done() {
         block_on(async {
             over_each_transport!("task", vec![answer(Some("Done."), None)], |client, dir| {
@@ -463,6 +490,7 @@ mod conformance {
                         background: true,
                         budget: Some(10_000),
                         meta: Meta::default(),
+                        model: None,
                     })
                     .await
                     .unwrap();

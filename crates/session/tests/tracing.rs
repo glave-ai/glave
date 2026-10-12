@@ -19,6 +19,7 @@ mod tracing {
         Request::TurnStart {
             background: false,
             budget: None,
+            model: None,
             thread,
             prompt: "go".into(),
             meta: Meta {

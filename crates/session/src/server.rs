@@ -24,7 +24,7 @@ use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
 use crate::ledger::{Ledger, is_ledger};
 use crate::protocol::{
-    ApiError, ErrorData, Notification, PROTOCOL, Reply, Request, ServerInfo, code,
+    ApiError, ErrorData, ModelInfo, Notification, PROTOCOL, Reply, Request, ServerInfo, code,
 };
 use crate::spaces::Places;
 use crate::tasks::{TaskLimits, Tasks};
@@ -56,6 +56,9 @@ pub struct Wiring<P, L, B> {
     pub memory: Option<Arc<dyn Memory>>,
     /// The spaces of the server's organization: who owns each and who works in it.
     pub spaces: Arc<dyn Spaces>,
+    /// The models threads may choose besides the settings' own, the default (`model/list`).
+    /// The provider must serve each by its id: the gateway's choices.
+    pub models: Vec<ModelInfo>,
 }
 
 /// Threads on workers: where workers come from, and the environment each is made from.
@@ -99,8 +102,10 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) every_thread: bool,
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) entropy: Arc<dyn Entropy>,
-    /// The model turns are sent to, as tasks record it.
+    /// The model turns are sent to when a thread chose none.
     pub(crate) model: String,
+    /// The models threads may be sent to, the default first.
+    pub(crate) models: Vec<ModelInfo>,
     /// The space's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
@@ -160,6 +165,7 @@ where
                 every_thread,
                 clock,
                 entropy,
+                models: crate::models::catalog(&model, wiring.models),
                 model,
                 person,
                 limits: wiring.tasks,
@@ -211,6 +217,7 @@ where
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 protocols: vec![PROTOCOL.to_owned()],
             })),
+            Request::ModelList {} => Ok(self.list_models()),
             threads @ (Request::ThreadStart { .. }
             | Request::ThreadList { .. }
             | Request::ThreadRename { .. }
@@ -353,14 +360,18 @@ where
     /// Starts a thread for `caller` in `space`. In the server's own space: where `worktree`
     /// says, else on a worker when the server puts every thread, or a task's (`background`),
     /// on one, else as the server is set. In any other space there is no folder to work in, so
-    /// the thread gets a scratch folder of its own.
+    /// the thread gets a scratch folder of its own. With `model`, its turns go to that model.
     pub(crate) async fn new_thread(
         &self,
         caller: &Caller,
         space: SpaceId,
         worktree: Option<bool>,
         background: bool,
+        model: Option<&str>,
     ) -> Result<ThreadId, ApiError> {
+        if let Some(model) = model {
+            self.known_model(model)?;
+        }
         let home = space == self.inner.home.space;
         let on_worker = self.inner.every_thread || background;
         let place = match (worktree, &self.inner.worker) {
@@ -381,12 +392,19 @@ where
             org: self.inner.home.org,
             space,
         };
-        let thread = self
+        let mut thread = self
             .inner
             .harness
             .start_thread_in(scope, caller, place)
             .await
             .map_err(|error| api(&error))?;
+        if let Some(model) = model {
+            self.inner
+                .harness
+                .choose_model(&mut thread, caller, model)
+                .await
+                .map_err(|error| api(&error))?;
+        }
         let id = thread.id;
         self.place(id, scope);
         self.keep(id, thread);

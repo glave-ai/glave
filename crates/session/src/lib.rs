@@ -12,6 +12,7 @@ mod hub;
 mod keyed;
 mod ledger;
 mod memory;
+mod models;
 pub mod protocol;
 pub mod rpc;
 mod schedule;

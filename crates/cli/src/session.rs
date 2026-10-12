@@ -207,6 +207,8 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     tidy(memory.as_ref(), &setup, &endpoint)?;
     let wiring = Wiring {
+        // Before the gateway moves in: the models it offers as choices.
+        models: gateway::offered(&provider, offered(&setup.choices)),
         provider,
         log: store.log(),
         blobs: store.blobs(),
@@ -295,14 +297,24 @@ fn provider(setup: &Setup, endpoint: &Endpoint) -> anyhow::Result<(Gateway, Opti
         constraints: &setup.loaded.constraints,
         main: choices.model.as_ref().map(|m| &m.from),
         judge: &choices.judge.from,
+        models: choices
+            .models
+            .as_ref()
+            .map_or(&Source::Default, |m| &m.from),
     };
     let provider = gateway::gateway(
         Model::for_endpoint(&endpoint.provider)?,
         endpoint,
         judge.as_deref(),
+        offered(choices),
         &allowed,
     )?;
     Ok((provider, judge))
+}
+
+/// The models `[[models]]` offers besides the main one.
+fn offered(choices: &Choices) -> &[policy::ModelEntry] {
+    choices.models.as_ref().map_or(&[], |models| &models.value)
 }
 
 /// The data store the setup's choices name, once this machine's worktrees have had their
@@ -529,6 +541,7 @@ pub async fn pick_thread(
             background: false,
             worktree,
             computer: None,
+            model: None,
         })
         .await?
     {

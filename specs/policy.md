@@ -84,6 +84,11 @@ mcp = ["github", "jira"]                      # servers to turn on, from the cat
 worktree = true                               # each thread in a worktree of its own; default false
 on = "cloud"                                  # each thread on a worker of its own; default "here"
 
+[[models]]                                    # models a person may choose for a thread besides
+id = "hope-12b"                               # `model` (session.md, "Models"), nearest list wins;
+name = "Hope"                                 # each is checked against [models] like `model`
+hope = true                                   # optional: it is Hope, glave's own model
+
 [web]                                         # what web_fetch may reach (approvals.md), nearest wins
 fetch = true                                  # default true; false turns web_fetch off
 allow = ["docs.rs", "*.example.com"]          # hosts it may fetch; every host when absent

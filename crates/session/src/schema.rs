@@ -100,12 +100,23 @@ pub const ERRORS: &[(i64, &str, &str)] = &[
     ),
     (code::NO_SPACE, "NO_SPACE", "No such space"),
     (code::PROVIDER, "PROVIDER", "The model provider failed"),
+    (
+        code::NO_MODEL,
+        "NO_MODEL",
+        "No such model here, or not one this server may run",
+    ),
+    (
+        code::NOT_AVAILABLE,
+        "NOT_AVAILABLE",
+        "Not available yet, such as a thread on a computer of the person's own",
+    ),
 ];
 
 /// The replies each method answers with, by the titles of their [`Reply`] variants.
 fn result_of(method: &str) -> Option<&'static [&'static str]> {
     Some(match method {
         "server/discover" => &["Server"],
+        "model/list" => &["Models"],
         "thread/start" | "thread/get" | "thread/rename" => &["Thread"],
         "thread/list" => &["Threads"],
         "thread/events" => &["Events"],

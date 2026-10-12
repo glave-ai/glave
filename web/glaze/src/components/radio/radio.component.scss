@@ -1,0 +1,16 @@
+@use '../../styles/choice';
+
+:host {
+  display: block;
+}
+
+@include choice.choice;
+
+.mark {
+  border-radius: var(--glz-radius-full);
+}
+
+.native:checked + .mark {
+  border-color: var(--glz-color-accent);
+  background: radial-gradient(var(--glz-color-accent) 0 40%, var(--glz-surface-card) 45%);
+}

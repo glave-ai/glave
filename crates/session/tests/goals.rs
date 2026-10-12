@@ -50,6 +50,7 @@ mod goals {
                 background: false,
                 worktree: None,
                 computer: None,
+                model: None,
             })
             .await
             .unwrap()

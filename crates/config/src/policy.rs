@@ -24,8 +24,8 @@ pub use choices::{Choices, Chosen, Layer, Level, Source};
 pub use effective::{check_model, check_own_servers, unsandboxed};
 pub use explain::explain;
 pub use files::{
-    Approval, ConfigFile, HooksFile, PolicyFile, SandboxChoice, ServerFile, StoreFile, TaskRules,
-    TelemetryFile, config, signs_in_safely,
+    Approval, ConfigFile, HooksFile, ModelEntry, PolicyFile, SandboxChoice, ServerFile, StoreFile,
+    TaskRules, TelemetryFile, config, signs_in_safely,
 };
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use placement::{Placement, PlacementRules};

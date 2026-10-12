@@ -1,0 +1,4 @@
+// A tab renders nothing itself: <glz-tabs> shows its content in the panel.
+:host {
+  display: none;
+}

@@ -1,0 +1,74 @@
+<section id="overlays" aria-labelledby="overlays-heading">
+  <h2 id="overlays-heading">{{ copy.heading }}</h2>
+
+  <h3>{{ copy.dialogs }}</h3>
+  <div class="row">
+    <button glzButton data-testid="showcase-open-dialog" (click)="openRename()">
+      {{ copy.openDialog }}
+    </button>
+    <button glzButton data-testid="showcase-open-drawer" (click)="openDrawer()">
+      {{ copy.openDrawer }}
+    </button>
+    <button glzButton variant="danger" data-testid="showcase-open-confirm" (click)="openConfirm()">
+      {{ copy.openConfirm }}
+    </button>
+  </div>
+  <glz-dialog [heading]="copy.dialogHeading" [(open)]="renaming">
+    <glz-form-field [label]="copy.title">
+      <input glzInput data-testid="showcase-dialog-title" />
+    </glz-form-field>
+    <div glzDialogActions>
+      <button glzButton (click)="closeRename()">{{ copy.cancel }}</button>
+      <button glzButton variant="primary" data-testid="showcase-dialog-save" (click)="saveRename()">
+        {{ copy.save }}
+      </button>
+    </div>
+  </glz-dialog>
+  <glz-dialog kind="drawer-end" [heading]="copy.drawerHeading" [(open)]="drawer">
+    <p>{{ copy.drawerText }}</p>
+  </glz-dialog>
+  <glz-confirm-dialog
+    testId="showcase-confirm"
+    danger
+    [heading]="copy.confirmHeading"
+    [message]="copy.confirmMessage"
+    [confirmLabel]="copy.delete"
+    [(open)]="confirming"
+    (decided)="decided($event)"
+  />
+
+  <h3>{{ copy.menus }}</h3>
+  <button
+    glzIconButton
+    data-testid="showcase-menu"
+    [label]="copy.actions"
+    [glzMenuTrigger]="actions"
+  >
+    <glz-icon [icon]="icons.more" />
+  </button>
+  <ng-template #actions>
+    <glz-menu>
+      <button glzMenuItem [icon]="icons.rename" (triggered)="openRename()">
+        {{ copy.rename }}
+      </button>
+      <button
+        glzMenuItem
+        data-testid="showcase-menu-archive"
+        [icon]="icons.archive"
+        (triggered)="archive()"
+      >
+        {{ copy.archive }}
+      </button>
+      <button glzMenuItem tone="danger" [icon]="icons.remove" (triggered)="openConfirm()">
+        {{ copy.delete }}
+      </button>
+    </glz-menu>
+  </ng-template>
+
+  <h3>{{ copy.toasts }}</h3>
+  <div class="row">
+    <button glzButton data-testid="showcase-toast" (click)="info()">{{ copy.info }}</button>
+    <button glzButton (click)="success()">{{ copy.success }}</button>
+    <button glzButton (click)="failure()">{{ copy.danger }}</button>
+  </div>
+</section>

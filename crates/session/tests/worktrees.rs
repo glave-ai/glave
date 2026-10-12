@@ -25,6 +25,7 @@ mod worktrees {
                     background: false,
                     worktree: None,
                     computer: None,
+                    model: None,
                 })
                 .await
                 .unwrap()
@@ -56,6 +57,7 @@ mod worktrees {
                     background: false,
                     worktree: Some(true),
                     computer: None,
+                    model: None,
                 })
                 .await
                 .unwrap_err();

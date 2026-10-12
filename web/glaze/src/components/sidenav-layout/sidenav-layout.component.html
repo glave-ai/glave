@@ -1,0 +1,14 @@
+@if (modal()) {
+  <div class="scrim" [attr.data-testid]="ids().scrim" aria-hidden="true" (click)="close()"></div>
+}
+<aside
+  class="sidenav"
+  [attr.data-testid]="ids().nav"
+  [attr.aria-label]="label()"
+  [attr.aria-modal]="ariaModal()"
+  [attr.role]="role()"
+  [inert]="closed()"
+>
+  <ng-content select="[glzSidenav]" />
+</aside>
+<div class="content" [inert]="modal()"><ng-content /></div>

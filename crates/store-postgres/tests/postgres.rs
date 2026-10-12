@@ -114,9 +114,9 @@ mod postgres {
             drop(reconnected);
             scratch.drop_schema().await;
             assert_eq!(verdict, Ok(()));
-            assert_eq!(kept.len(), 3);
+            assert_eq!(kept.len(), 4);
             assert_eq!(refilled, kept, "connecting fills the view from the log");
-            assert_eq!(rebuilt.threads, 3);
+            assert_eq!(rebuilt.threads, 4);
             assert_eq!(again, kept);
         });
     }

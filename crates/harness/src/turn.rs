@@ -401,7 +401,7 @@ where
         let memory = self.look_at_memory(thread).await;
         let config = TurnConfig {
             v: CONFIG_VERSION,
-            model: &self.settings.model,
+            model: self.model_for(thread),
             provider: &self.settings.provider,
             system: &offer.system,
             tools: &offer.specs,
@@ -417,7 +417,7 @@ where
             .await?;
         let model = ModelRef {
             provider: self.settings.provider.clone(),
-            name: self.settings.model.clone(),
+            name: self.model_for(thread).to_owned(),
         };
         // A new thread opens with the project's instructions.
         let opening = thread.messages.is_empty();
@@ -470,7 +470,7 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Completion, HarnessError> {
         let request = ModelRequest {
-            model: self.settings.model.clone(),
+            model: self.model_for(thread).to_owned(),
             system: offer.system.clone(),
             messages: self.sent(thread),
             tools: offer.specs.clone(),
