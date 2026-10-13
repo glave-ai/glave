@@ -9,7 +9,6 @@ use std::task::Poll;
 use std::time::Duration;
 
 use glave_event::{Body, CallId, GoalReason, Outcome, PrincipalKind, ThreadId, decode};
-use glave_gateway::Gateway;
 use glave_harness::{ApprovalMode, Caller, Cancel, Goal, Question};
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
@@ -19,12 +18,13 @@ use glave_session::{Server, TurnItem, TurnStream};
 use crate::asking;
 use crate::config::{self, Endpoint};
 use crate::data::{DataBlobs, DataLog};
+use crate::gateway::Switch;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::terminal::Printer;
 use crate::waiting::Waiting;
 
-pub type Glave = Server<Gateway, DataLog, DataBlobs>;
+pub type Glave = Server<Switch, DataLog, DataBlobs>;
 
 /// The session API the terminal is a client of: the server in this process, or one elsewhere
 /// over HTTP. The terminal uses the same requests and follows turns the same way with either.

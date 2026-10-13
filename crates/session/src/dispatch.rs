@@ -7,6 +7,7 @@ use glave_ports::{BlobStore, EventLog, ModelProvider};
 
 use crate::modes::Choice;
 use crate::protocol::{ApiError, Reply, Request, ServerInfo, code};
+use crate::providers::NewProvider;
 use crate::schedule::NewSchedule;
 use crate::server::Server;
 use crate::tasks::Work;
@@ -261,6 +262,12 @@ where
             Request::MemoryRestore { memory } => {
                 self.remember(caller, Control::Restore { memory }).await
             }
+            Request::ProviderConnect { kind, key, url } => {
+                let new = NewProvider { kind, key, url };
+                self.connect_provider(caller, new).await
+            }
+            Request::ProviderList {} => self.list_providers(caller).await,
+            Request::ProviderRemove { provider } => self.remove_provider(caller, provider).await,
         })
     }
 }

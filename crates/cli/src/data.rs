@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use glave_event::{BlobRef, Principal, RawEvent, Seq, Sha256, ThreadId};
+use glave_event::{BlobRef, Principal, ProviderId, RawEvent, Seq, Sha256, ThreadId};
 use glave_memory::Shredder;
 use glave_ports::search::Found;
 use glave_ports::{
@@ -96,6 +96,25 @@ impl Data {
             Self::Sqlite(store) => store.keyring(),
             Self::Postgres(store) => store.keyring(),
         }
+    }
+
+    /// Erases the model account `provider` kept in `scope`: destroys the key it was sealed
+    /// under, then rotates the space key, so no backup can unwrap it either.
+    pub async fn erase_provider(&self, scope: &Scope, provider: ProviderId) -> anyhow::Result<()> {
+        let id = provider.as_uuid();
+        match self {
+            Self::Sqlite(store) => {
+                let keys = store.keyring();
+                keys.destroy_provider_key(scope, id).await?;
+                keys.rotate_space_key(scope).await?;
+            }
+            Self::Postgres(store) => {
+                let keys = store.keyring();
+                keys.destroy_provider_key(scope, id).await?;
+                keys.rotate_space_key(scope).await?;
+            }
+        }
+        Ok(())
     }
 
     /// The one organization this store holds, made the first time.

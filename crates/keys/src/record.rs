@@ -26,12 +26,15 @@ pub(crate) struct SpaceVersion {
 }
 
 /// One data key, wrapped by version `space_version` of the space key. `None` once destroyed.
-/// A memory's own key has `memory` set; its `month` is only when it was made.
+/// A memory's own key has `memory` set, a model account's `provider`; its `month` is only
+/// when it was made.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct DataKey {
     pub(crate) month: Month,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) memory: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) provider: Option<Uuid>,
     pub(crate) n: u32,
     pub(crate) space_version: u32,
     pub(crate) wrapped: Option<Vec<u8>>,
@@ -40,8 +43,11 @@ pub(crate) struct DataKey {
 impl DataKey {
     /// What the key seals.
     pub(crate) fn period(&self) -> Period {
-        self.memory
-            .map_or(Period::Month(self.month), Period::Memory)
+        match (self.memory, self.provider) {
+            (Some(memory), _) => Period::Memory(memory),
+            (None, Some(provider)) => Period::Provider(provider),
+            (None, None) => Period::Month(self.month),
+        }
     }
 }
 
@@ -147,6 +153,7 @@ mod tests {
         record.data.push(DataKey {
             month: month("2026-10"),
             memory: None,
+            provider: None,
             n: 1,
             space_version: 1,
             wrapped: None,
@@ -172,6 +179,7 @@ mod tests {
         record.data.push(DataKey {
             month: month("2026-10"),
             memory: Some(memory),
+            provider: None,
             n: 1,
             space_version: 1,
             wrapped: Some(vec![2]),

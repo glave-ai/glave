@@ -263,7 +263,7 @@ where
             flagged: reason,
             untrusted: thread.untrusted,
         };
-        let model = &self.settings.model;
+        let model = &self.default_model();
         let asking = judge(&self.provider, model, &case, thread.lineage());
         let Some((ruling, answer)) = cancel.run(asking).await else {
             return Ok(Judged::Cancelled);

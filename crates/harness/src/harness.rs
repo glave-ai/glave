@@ -1,8 +1,8 @@
 //! The harness: its parts, its settings, and how it records events.
 
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, RwLock};
 
 use glave_event::{
     ApprovalMode, At, EncodeError, EventId, Header, InvalidValue, Origin, OriginKind, ParentCall,
@@ -18,6 +18,7 @@ use thiserror::Error;
 use crate::approval::Approver;
 use crate::bind::Place;
 use crate::builtins::Builtins;
+use crate::chosen::DefaultModel;
 use crate::commands::Command;
 use crate::compaction::{Compaction, Measured};
 use crate::goal::{GoalProgress, Pursuit};
@@ -131,6 +132,8 @@ pub struct Harness<P, L, B, A> {
     /// Commands run at points of a turn; none by default.
     pub(crate) hooks: Hooks,
     pub(crate) settings: Settings,
+    /// The model threads that chose none go to: the settings' at first, then the host's.
+    pub(crate) default: RwLock<DefaultModel>,
     /// Who every thread works for, and the agent that runs it: from the settings, or made once.
     pub(crate) actors: Actors,
     /// The model's real context window, once a refusal has stated it; 0 until then.
@@ -295,6 +298,10 @@ where
             })],
             workspace,
             hooks: Hooks::default(),
+            default: RwLock::new(DefaultModel {
+                model: settings.model.clone(),
+                provider: settings.provider.clone(),
+            }),
             settings,
             learned_window: AtomicU64::new(0),
             workers: None,
@@ -376,7 +383,8 @@ where
         &self.log
     }
 
-    /// What the harness was set up with: the default model and approval mode among them.
+    /// What the harness was set up with: the default model at the start and the approval
+    /// mode among them. The default model now is [`Harness::default_model`].
     pub fn settings(&self) -> &Settings {
         &self.settings
     }

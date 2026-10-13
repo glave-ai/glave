@@ -54,6 +54,8 @@ pub struct Received {
     pub authorization: Option<String>,
     /// Every header, its name in lower case, in the order sent.
     pub headers: Vec<(String, String)>,
+    /// The request's method and path, such as `POST /chat/completions`.
+    pub line: String,
     /// The JSON body.
     pub body: Value,
 }
@@ -150,6 +152,15 @@ fn serve(
     let mut length = 0_usize;
     let mut authorization = None;
     let mut headers = Vec::new();
+    let mut first = String::new();
+    if reader.read_line(&mut first)? == 0 {
+        return Ok(());
+    }
+    let line = first
+        .split_whitespace()
+        .take(2)
+        .collect::<Vec<_>>()
+        .join(" ");
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line)? == 0 {
@@ -181,6 +192,7 @@ fn serve(
         requests.push(Received {
             authorization,
             headers,
+            line,
             body: serde_json::from_slice(&body).unwrap_or(Value::Null),
         });
         arrived.notify_all();

@@ -16,24 +16,23 @@ use glave_harness::{
 use glave_memory::Tidier;
 use glave_ports::ToolSource;
 use glave_session::protocol::{Reply, Request};
-use glave_session::{Answering, Server, Wiring};
+use glave_session::{Answering, Providers, Server, Wiring};
 use glave_web::{Web, WebSettings};
 
 use crate::args::{self, Action, Args, USAGE};
 use crate::client::{Client, Glave, Session};
 use crate::config::{self, Endpoint};
 use crate::data::Data;
-use crate::gateway::Allowed;
+use crate::gateway::Switch;
 use crate::gateway::remote::Remote;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
-use crate::model::Model;
+use crate::providers::{Built, Host, Ledger, Lineup};
 use crate::setup::{self, Setup};
 use crate::terminal::Printer;
-use crate::{gateway, home, identity};
+use crate::{home, identity};
 use glave_config::policy::{self, Choices, On, Source};
 use glave_config::trust::{self, Asking};
-use glave_gateway::Gateway;
 
 pub fn main() -> ExitCode {
     let words: Vec<String> = std::env::args().skip(1).collect();
@@ -122,7 +121,8 @@ pub fn main() -> ExitCode {
 struct Wired {
     server: Glave,
     servers: Servers,
-    endpoint: Endpoint,
+    /// The default model's endpoint; none while no model is set up.
+    endpoint: Option<Endpoint>,
     root: PathBuf,
     /// The instruction files the model is given, for the banner.
     files: Vec<PathBuf>,
@@ -176,10 +176,13 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let database = home::database().await?;
     let workspace = workspace(&folder, &mut setup, &database).await?;
     let choices = &setup.choices;
-    let (remote, endpoint) = endpoint(choices)?;
-    let (provider, judge) = provider(&setup, &endpoint)?;
+    let (remote, configured) = endpoint(choices)?;
     let store = store(&setup).await?;
-    let mut settings = Settings::new(endpoint.model.clone(), endpoint.provider.provider.clone());
+    let identity = identity::load_or_make(&home::folder()?).await?;
+    let lineup = Lineup::new(&setup, configured);
+    let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
+    let (model, named) = lined.built.models.default.clone().unwrap_or_default();
+    let mut settings = Settings::new(model.clone(), named);
     let personal = home::folder()?.join(AGENTS_MD);
     let instructions = agents_md(workspace.root(), Some(&personal)).await?;
     settings.instructions = [
@@ -195,8 +198,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt ends with its answer.
     let one_shot = args.action == Action::Run && !args.prompt.is_empty();
     settings.titles = choices.titles.value && !one_shot;
-    settings.judge = judge.is_some();
-    let identity = identity::load_or_make(&home::folder()?).await?;
+    settings.judge = lined.judges;
     (settings.person, settings.agent) = (Some(identity.person), Some(identity.agent));
     let window = config::context_window()?.unwrap_or(settings.compaction.window_tokens);
     settings.compaction.window_tokens = window;
@@ -208,12 +210,12 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder, args.socket).await?;
     let scope = crate::spaces::here(&store, &root, identity.person).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
-    tidy(memory.as_ref(), &setup, &endpoint)?;
+    tidy(memory.as_ref(), &lined.switch, model);
     let wiring = Wiring {
-        // Before the gateway moves in: the models it offers as choices.
-        models: gateway::offered(&provider, offered(&setup.choices)),
+        models: lined.built.models.offered,
         modes: policy::thread_modes(choices, &setup.loaded.constraints),
-        provider,
+        provider: lined.switch,
+        providers: lined.providers,
         log: store.log(),
         blobs: store.blobs(),
         clock: Box::new(SystemClock),
@@ -236,7 +238,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     Ok(Wired {
         server: Server::new(wiring, settings, scope, answering),
         servers,
-        endpoint,
+        endpoint: lined.built.endpoint,
         root,
         files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
         choices: setup.choices,
@@ -246,40 +248,90 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     })
 }
 
-/// Tidies memory in the background, when it is on: tidy-up asks a gateway of its own, which
-/// sends it on the `summary` route.
-fn tidy(
-    memory: Option<&crate::memory::Running>,
-    setup: &Setup,
-    endpoint: &Endpoint,
-) -> anyhow::Result<()> {
+/// Tidies memory in the background, when it is on: tidy-up asks the gateway too, which sends
+/// it on the `summary` route.
+fn tidy(memory: Option<&crate::memory::Running>, switch: &Switch, model: String) {
     if let Some(memory) = memory {
-        let (summary, _) = provider(setup, endpoint)?;
         memory.tidy_with(Tidier {
-            provider: summary,
-            model: endpoint.model.clone(),
+            provider: switch.clone(),
+            model,
         });
     }
-    Ok(())
+}
+
+/// The models a run offers and the gateway to them, and whether a judge decides.
+struct Lined {
+    built: Built,
+    switch: Switch,
+    /// The person's model accounts, when they may connect them here.
+    providers: Option<Arc<dyn Providers>>,
+    judges: bool,
+}
+
+/// Lines up the models of `lineup` and of the model accounts `person` connected, which they
+/// may connect here unless an organization sets up the models: through its gateway
+/// (`through_gateway`), or on a server people sign in to with OIDC.
+async fn line_up(
+    args: &Args,
+    lineup: Lineup,
+    store: &Data,
+    person: glave_event::PrincipalId,
+    through_gateway: bool,
+) -> anyhow::Result<Lined> {
+    let ledger = if through_gateway || !args.issuers.is_empty() {
+        None
+    } else {
+        Some(Ledger::open(store, person).await?)
+    };
+    let accounts = match &ledger {
+        Some(ledger) => ledger.accounts().await?,
+        None => Vec::new(),
+    };
+    // An account that no longer lines up with the settings never stops glave starting.
+    let mut built = match lineup.build(&accounts) {
+        Ok(built) => built,
+        Err(error) if !accounts.is_empty() => {
+            eprintln!("glave: the model accounts you connected are set aside: {error:#}");
+            lineup.build(&[])?
+        }
+        Err(error) => return Err(error),
+    };
+    let switch = Switch::new(built.gateway.take());
+    let judges = lineup.judges();
+    let providers = ledger
+        .map(|ledger| Arc::new(Host::new(ledger, lineup, switch.clone())) as Arc<dyn Providers>);
+    Ok(Lined {
+        built,
+        switch,
+        providers,
+        judges,
+    })
 }
 
 /// The gateway elsewhere, when `[gateway] url` names one, and the endpoint model calls go to:
-/// that gateway, or the model chosen.
-fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Endpoint)> {
+/// that gateway, or the model chosen, if any is.
+fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Option<Endpoint>)> {
     let remote = choices
         .gateway
         .as_ref()
         .map(Remote::from_choice)
         .transpose()?;
     let model = choices.model.as_ref().map(|m| m.value.clone());
-    let mut endpoint = match &remote {
-        Some(remote) => remote.endpoint(model)?,
-        None => config::endpoint(model, choices.provider.as_ref())?,
+    let endpoint = match (&remote, model) {
+        (Some(remote), model) => Some(remote.endpoint(model)?),
+        (None, Some(model)) => Some(config::endpoint(Some(model), choices.provider.as_ref())?),
+        (None, None) => None,
     };
-    if let Some(idle) = config::idle_timeout()? {
-        endpoint.provider.idle_timeout = idle;
-    }
-    Ok((remote, endpoint))
+    let idle = config::idle_timeout()?;
+    Ok((
+        remote,
+        endpoint.map(|mut endpoint| {
+            if let Some(idle) = idle {
+                endpoint.provider.idle_timeout = idle;
+            }
+            endpoint
+        }),
+    ))
 }
 
 /// `web_fetch`, as `[web]` sets it up; nothing when it is off.
@@ -294,34 +346,6 @@ fn web(choices: &Choices) -> anyhow::Result<Vec<Arc<dyn ToolSource>>> {
     } else {
         Vec::new()
     })
-}
-
-/// The gateway to the chosen model, and the judge model, if any.
-fn provider(setup: &Setup, endpoint: &Endpoint) -> anyhow::Result<(Gateway, Option<String>)> {
-    let choices = &setup.choices;
-    let judge = choices.judge.value.model(&endpoint.model);
-    let allowed = Allowed {
-        constraints: &setup.loaded.constraints,
-        main: choices.model.as_ref().map(|m| &m.from),
-        judge: &choices.judge.from,
-        models: choices
-            .models
-            .as_ref()
-            .map_or(&Source::Default, |m| &m.from),
-    };
-    let provider = gateway::gateway(
-        Model::for_endpoint(endpoint)?,
-        endpoint,
-        judge.as_deref(),
-        offered(choices),
-        &allowed,
-    )?;
-    Ok((provider, judge))
-}
-
-/// The models `[[models]]` offers besides the main one.
-fn offered(choices: &Choices) -> &[policy::ModelEntry] {
-    choices.models.as_ref().map_or(&[], |models| &models.value)
 }
 
 /// The data store the setup's choices name, once this machine's worktrees have had their
@@ -468,6 +492,9 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         memory: _,
         _telemetry: _,
     } = wired;
+    let Some(endpoint) = endpoint else {
+        anyhow::bail!(config::NO_MODEL);
+    };
     crate::tasks::at_start(server, args).await;
     let here = Session::Here(server);
     let (thread, note) = pick_thread(here, args.resume, None, None, None).await?;

@@ -13,12 +13,13 @@ mod error;
 mod id;
 mod money;
 mod payload;
+mod secret;
 
 pub use blob::{BlobRef, Sha256};
 pub use codec::{Body, Event, KNOWN_VERSIONS, Payload, Unknown, decode, encode};
 pub use envelope::{At, Header, PayloadVersion, RawEvent, Seq, TypeName};
 pub use error::{DecodeError, EncodeError, InvalidValue};
-pub use id::{CallId, EventId, MemoryId, PrincipalId, ScheduleId, ThreadId};
+pub use id::{CallId, EventId, MemoryId, PrincipalId, ProviderId, ScheduleId, ThreadId};
 pub use money::{Currency, Money};
 pub use payload::{
     ApprovalDecided, ApprovalMode, ApprovalModeChosen, ApprovalRequested, Arguments, Auth,
@@ -34,3 +35,5 @@ pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,
     TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved, sealed_under_memory,
 };
+pub use payload::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_provider};
+pub use secret::{Secret, serialize_exposed};

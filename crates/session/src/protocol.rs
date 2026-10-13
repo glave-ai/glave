@@ -3,18 +3,21 @@
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
 mod models;
+mod providers;
 mod tasks;
 
 use glave_event::{
-    At, CallId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal, RawEvent, ScheduleId,
-    Seq, ThreadId, TokenCounts, When,
+    At, CallId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal, ProviderId, RawEvent,
+    ScheduleId, Secret, Seq, ThreadId, TokenCounts, When,
 };
 use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
 use glave_ports::{ComputerId, Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
 pub use glave_event::ApprovalMode;
+pub use glave_event::ProviderKind;
 pub use models::ModelInfo;
+pub use providers::{ProviderInfo, hint};
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 
 /// The protocol version this server speaks.
@@ -222,6 +225,22 @@ methods! {
     } -> [Memories],
     /// Undoes glave's latest change to a memory, within 30 days.
     "memory/restore" => MemoryRestore { memory: MemoryId } -> [Memories],
+    /// Connects a model account: the key is checked with the service, then kept sealed, and
+    /// the account's models join `model/list`. Connecting the same service (and URL) again
+    /// replaces its account. Only the person on this computer.
+    "provider/connect" => ProviderConnect {
+        kind: ProviderKind,
+        /// The account's key, sent once and never answered back.
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        key: Secret,
+        /// The server's API, for a `compatible` account: `https`, or `http` on this computer.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+    } -> [Provider],
+    /// The model accounts connected here.
+    "provider/list" => ProviderList {} -> [Providers],
+    /// Removes a model account, destroying the key it was kept with.
+    "provider/remove" => ProviderRemove { provider: ProviderId } -> [Done],
 }
 
 #[expect(
@@ -484,6 +503,11 @@ pub enum Reply {
     /// The models a thread may be sent to, the default first.
     #[schemars(title = "Models")]
     Models { models: Vec<ModelInfo> },
+    /// A model account, as it was connected.
+    #[schemars(title = "Provider")]
+    Provider { provider: ProviderInfo },
+    #[schemars(title = "Providers")]
+    Providers { providers: Vec<ProviderInfo> },
     // After every reply with a field of its own, since a missing `goal` reads as `null`;
     // before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.
@@ -683,11 +707,12 @@ pub mod code {
         PROVIDER = -32020, "The model provider failed";
         NO_MODEL = -32021, "No such model here, or not one this server may run";
         NOT_AVAILABLE = -32022, "Not available yet, such as a thread on a computer of the person's own";
+        NO_PROVIDER = -32023, "No such model account here";
     }
 }
 
 impl ApiError {
-    pub(crate) fn new(code: i64, message: impl Into<String>) -> Self {
+    pub fn new(code: i64, message: impl Into<String>) -> Self {
         Self {
             code,
             message: message.into(),

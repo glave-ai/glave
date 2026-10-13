@@ -1,6 +1,9 @@
 //! The models a server can run: `model/list`, and the check that a model a thread asks for, or
-//! chose before, is one of them. A thread's choice is its latest `model.chosen` event, so any
+//! chose before, is one of them. They change when the person connects or removes a model
+//! account (`providers.rs`). A thread's choice is its latest `model.chosen` event, so any
 //! server reading the log knows it.
+
+use std::sync::PoisonError;
 
 use glave_event::{Body, ThreadId};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
@@ -12,8 +15,12 @@ use crate::server::Server;
 const CHOSEN: &str = "model.chosen";
 
 /// The models a server built on `default` runs: the default first, then each of `offered`
-/// once, in order. An offered entry for the default lends it its name and its Hope mark.
+/// once, in order. An offered entry for the default lends it its name and its Hope mark. With
+/// no default, none: nothing is set up yet.
 pub(crate) fn catalog(default: &str, offered: Vec<ModelInfo>) -> Vec<ModelInfo> {
+    if default.trim().is_empty() {
+        return Vec::new();
+    }
     let mut first = ModelInfo::new(default);
     first.default = true;
     let mut models = vec![first];
@@ -41,14 +48,39 @@ where
     /// Answers `model/list`.
     pub(crate) fn list_models(&self) -> Reply {
         Reply::Models {
-            models: self.inner.models.clone(),
+            models: self
+                .inner
+                .models
+                .read()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
         }
+    }
+
+    /// Replaces the models threads may be sent to.
+    pub(crate) fn set_catalog(&self, models: Vec<ModelInfo>) {
+        *self
+            .inner
+            .models
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = models;
     }
 
     /// Refuses `model` with `-32021` unless this server runs it.
     pub(crate) fn known_model(&self, model: &str) -> Result<(), ApiError> {
-        if self.inner.models.iter().any(|known| known.id == model) {
+        let models = self
+            .inner
+            .models
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
+        if models.iter().any(|known| known.id == model) {
             return Ok(());
+        }
+        if models.is_empty() {
+            return Err(ApiError::new(
+                code::NO_MODEL,
+                "no model is set up here yet: connect a model account first",
+            ));
         }
         Err(ApiError::new(
             code::NO_MODEL,
@@ -69,7 +101,7 @@ where
             None => self
                 .chosen(thread)
                 .await?
-                .unwrap_or_else(|| self.inner.harness.settings().model.clone()),
+                .unwrap_or_else(|| self.inner.harness.default_model()),
         };
         self.known_model(&model)?;
         Ok(model)
@@ -110,6 +142,10 @@ mod tests {
         );
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(ids, ["big", "hope-12b"]);
+        assert!(
+            catalog("", vec![ModelInfo::new("big")]).is_empty(),
+            "nothing set up"
+        );
         assert_eq!(
             models[0],
             ModelInfo {

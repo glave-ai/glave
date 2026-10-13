@@ -143,6 +143,19 @@ impl Policy for Organization {
     }
 }
 
+/// The budgets the policy keeps for each person.
+fn budgets(constraints: &Constraints) -> Budgets {
+    Budgets {
+        person: constraints.person_per_day_micros().map(|micros| {
+            Limit::Money(Money {
+                micros: i64::try_from(micros).unwrap_or(i64::MAX),
+                currency: Currency::USD,
+            })
+        }),
+        ..Budgets::default()
+    }
+}
+
 async fn run(options: Options) -> anyhow::Result<()> {
     let policies = policy::policy_files(std::slice::from_ref(&options.policy)).await?;
     let constraints = Constraints::of(&policies);
@@ -163,17 +176,16 @@ async fn run(options: Options) -> anyhow::Result<()> {
         models: &Source::Default,
     };
     let provider = Model::for_endpoint(&endpoint)?;
-    let budgets = Budgets {
-        person: constraints.person_per_day_micros().map(|micros| {
-            Limit::Money(Money {
-                micros: i64::try_from(micros).unwrap_or(i64::MAX),
-                currency: Currency::USD,
-            })
-        }),
-        ..Budgets::default()
-    };
-    let gateway =
-        gateway(provider, &endpoint, judge.as_deref(), &[], &allowed)?.with_budgets(budgets);
+    let budgets = budgets(&constraints);
+    let gateway = gateway(
+        provider,
+        &endpoint,
+        judge.as_deref(),
+        &[],
+        Vec::new(),
+        &allowed,
+    )?
+    .with_budgets(budgets);
     let home = home::folder()?;
     let (catalog, mut secrets) = catalog(&home, &constraints).await?;
     secrets.extend(

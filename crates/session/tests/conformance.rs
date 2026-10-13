@@ -22,7 +22,7 @@ use crate::support::*;
 type Reaction = Option<Request>;
 
 /// A client of one transport.
-trait Client {
+pub(crate) trait Client {
     async fn call(&mut self, request: Request) -> Result<Value, ApiError>;
     /// Runs a turn, letting `react` answer notifications with requests of its own.
     async fn turn(
@@ -33,7 +33,7 @@ trait Client {
     ) -> Result<TurnResult, ApiError>;
 }
 
-struct InProcess(Tested);
+pub(crate) struct InProcess(pub(crate) Tested);
 
 impl Client for InProcess {
     async fn call(&mut self, request: Request) -> Result<Value, ApiError> {
@@ -69,7 +69,7 @@ type Reader = Box<dyn AsyncRead + Unpin + Send>;
 
 /// JSON-RPC 2.0, one message per line, over an in-memory pipe to `rpc::serve`, or over a
 /// Unix socket to `rpc::serve_connection`.
-struct OverJsonRpc {
+pub(crate) struct OverJsonRpc {
     to_server: Writer,
     from_server: Lines<BufReader<Reader>>,
     next_id: u64,
@@ -79,7 +79,7 @@ struct OverJsonRpc {
 }
 
 impl OverJsonRpc {
-    fn new(server: Tested) -> Self {
+    pub(crate) fn new(server: Tested) -> Self {
         let (client_out, server_in) = tokio::io::duplex(1 << 16);
         let (server_out, client_in) = tokio::io::duplex(1 << 16);
         let serving = tokio::spawn(glave_session::rpc::serve(
@@ -97,7 +97,7 @@ impl OverJsonRpc {
     }
 
     /// A client of `server` serving on a Unix socket, as `glave serve --socket` does.
-    async fn on_socket(server: Tested, name: &str) -> Self {
+    pub(crate) async fn on_socket(server: Tested, name: &str) -> Self {
         // Short, as socket paths must be.
         let path =
             std::path::PathBuf::from(format!("/tmp/glave-{name}-{}.sock", std::process::id()));
@@ -134,7 +134,7 @@ impl OverJsonRpc {
     }
 
     /// Ends the client's input and waits for the server to finish serving it.
-    async fn close(mut self) {
+    pub(crate) async fn close(mut self) {
         self.to_server.shutdown().await.unwrap();
         drop(self.to_server);
         if let Some(serving) = self.serving.take() {
@@ -214,14 +214,14 @@ impl Client for OverJsonRpc {
 }
 
 /// JSON-RPC 2.0 over HTTP, signed in through a fake identity provider.
-struct OverHttp {
+pub(crate) struct OverHttp {
     web: Web,
     served: Served,
     _issuer: Issuer,
 }
 
 impl OverHttp {
-    async fn new(tested: Tested) -> Self {
+    pub(crate) async fn new(tested: Tested) -> Self {
         let issuer = Issuer::start().await;
         let signer = Signer::es256("key-1");
         issuer.publish(&signer);
@@ -234,7 +234,7 @@ impl OverHttp {
         }
     }
 
-    async fn close(self) {
+    pub(crate) async fn close(self) {
         self.served.close().await;
     }
 }

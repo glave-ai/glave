@@ -398,10 +398,12 @@ where
             by_glave,
         } = prompt;
         let memory = self.look_at_memory(thread).await;
+        let sent_to = self.model_for(thread);
+        let provider = self.current_default().provider;
         let config = TurnConfig {
             v: CONFIG_VERSION,
-            model: self.model_for(thread),
-            provider: &self.settings.provider,
+            model: &sent_to,
+            provider: &provider,
             system: &offer.system,
             tools: &offer.specs,
             max_output_tokens: self.settings.max_output_tokens,
@@ -415,8 +417,8 @@ where
             .put(&thread.scope, thread.id, bytes, "application/json")
             .await?;
         let model = ModelRef {
-            provider: self.settings.provider.clone(),
-            name: self.model_for(thread).to_owned(),
+            provider,
+            name: sent_to,
         };
         // A new thread opens with the project's instructions.
         let opening = thread.messages.is_empty();
@@ -469,7 +471,7 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Completion, HarnessError> {
         let request = ModelRequest {
-            model: self.model_for(thread).to_owned(),
+            model: self.model_for(thread),
             system: offer.system.clone(),
             messages: self.sent(thread),
             tools: offer.specs.clone(),

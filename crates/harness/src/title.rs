@@ -101,7 +101,7 @@ where
         Some(TitleCase {
             asked: cut(wrote, MOST_ASKED),
             reply: cut(reply.trim(), MOST_REPLY),
-            model: self.model_for(thread).to_owned(),
+            model: self.model_for(thread),
             threads: thread.lineage(),
         })
     }

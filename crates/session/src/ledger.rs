@@ -30,9 +30,26 @@ pub(crate) fn ledger_id() -> Option<ThreadId> {
     ThreadId::new(Timestamp::UNIX_EPOCH, [0; 10]).ok()
 }
 
-/// Whether `thread` is one of the space's ledgers (tasks, or memory) rather than a thread.
+/// The provider ledger's reserved id, `00000000-0000-7000-8000-000000000002`: the model
+/// accounts a person connected (`provider.connected`, `provider.removed`), in their personal
+/// space.
+pub fn provider_ledger() -> Option<ThreadId> {
+    let mut random = [0u8; 10];
+    if let Some(last) = random.last_mut() {
+        *last = 2;
+    }
+    ThreadId::new(Timestamp::UNIX_EPOCH, random).ok()
+}
+
+/// Whether `thread` is one of the space's ledgers (tasks, memory, or model accounts) rather
+/// than a thread.
 pub fn is_ledger(thread: ThreadId) -> bool {
-    ledger_id() == Some(thread) || glave_harness::memory_ledger() == Some(thread)
+    [
+        ledger_id(),
+        glave_harness::memory_ledger(),
+        provider_ledger(),
+    ]
+    .contains(&Some(thread))
 }
 
 /// A schedule that has not been deleted.

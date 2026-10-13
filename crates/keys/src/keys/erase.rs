@@ -79,11 +79,27 @@ impl<S: KeyStorage> Keys<S> {
     /// [`Keys::rotate_space_key`] runs (`specs/memory.md`: within a day, batching the day's
     /// forgets). A memory that never had a key has nothing to destroy.
     pub async fn destroy_memory_key(&self, scope: &Scope, memory: Uuid) -> Result<(), KeyError> {
+        self.destroy_own_key(scope, Period::Memory(memory)).await
+    }
+
+    /// Destroys the key a model account was kept under, so the account and its key are
+    /// unreadable in the store from now on; [`Keys::rotate_space_key`] then reaches backups.
+    pub async fn destroy_provider_key(
+        &self,
+        scope: &Scope,
+        provider: Uuid,
+    ) -> Result<(), KeyError> {
+        self.destroy_own_key(scope, Period::Provider(provider))
+            .await
+    }
+
+    /// Destroys every key of the item `period` names.
+    async fn destroy_own_key(&self, scope: &Scope, period: Period) -> Result<(), KeyError> {
         for _ in 0..ATTEMPTS {
             let (revision, mut record) = self.load(scope).await?;
             let mut changed = false;
             for entry in &mut record.data {
-                if entry.period() == Period::Memory(memory) && entry.wrapped.is_some() {
+                if entry.period() == period && entry.wrapped.is_some() {
                     entry.wrapped = None;
                     changed = true;
                 }

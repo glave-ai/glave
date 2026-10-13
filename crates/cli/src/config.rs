@@ -15,10 +15,17 @@ use crate::model::{self, Claude};
 
 const DEFAULT_BASE_URL: &str = "http://localhost:11434/v1";
 
+/// What to do when no model is chosen.
+pub const NO_MODEL: &str = "no model chosen: connect a model account in glave's web app (glave \
+     serve --http), set GLAVE_MODEL, pass --model, or set model in config.toml (for example \
+     gemma4:12b with Ollama, or an OpenRouter model id with \
+     GLAVE_BASE_URL=https://openrouter.ai/api/v1)";
+
 /// The variable a key comes from when nothing else says.
 const KEY: &str = "GLAVE_API_KEY";
 
 /// The model endpoint and the model to use.
+#[derive(Clone)]
 pub struct Endpoint {
     pub provider: Config,
     /// Claude's Messages API at the same cloud, for the models whose family speaks it.
@@ -42,11 +49,7 @@ pub fn endpoint(
     provider: Option<&Chosen<ProviderFile>>,
 ) -> anyhow::Result<Endpoint> {
     let Some(model) = model else {
-        bail!(
-            "no model chosen: set GLAVE_MODEL, pass --model, or set model in config.toml (for \
-             example gemma4:12b with Ollama, or an OpenRouter model id with \
-             GLAVE_BASE_URL=https://openrouter.ai/api/v1)"
-        );
+        bail!(NO_MODEL);
     };
     if let Some(chosen) = provider {
         if std::env::var_os("GLAVE_BASE_URL").is_some() {
