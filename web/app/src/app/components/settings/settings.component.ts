@@ -1,12 +1,17 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
-import { Router } from '@angular/router';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
 import {
   GlzButtonComponent,
   GlzCardComponent,
+  GlzConfirmDialogComponent,
   GlzFormFieldComponent,
   GlzRadioComponent,
   GlzRadioGroupComponent,
 } from '@glave/glaze';
+
+import { REMOVE_FAILED, accountName, changeQuery, keyHint } from '../../lib/providers';
+import { ModelsService } from '../../services/models.service';
+import { ProvidersService } from '../../services/providers.service';
 
 import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
@@ -20,25 +25,30 @@ const COPY = {
   system: 'System',
   light: 'Light',
   dark: 'Dark',
-  policy: 'Settings and policy',
-  policyText:
-    'Settings come from config.toml files and flags, nearest first; policy only narrows them. Changing them here comes later. To see every setting and where it came from, run this in your project:',
-  policyCommand: 'glave policy explain',
+  models: 'Models',
+  noAccounts: 'No model accounts yet.',
+  add: 'Add a model account',
+  change: 'Change key',
+  remove: 'Remove',
+  removeHeading: 'Remove this model account?',
+  removeText: 'glave forgets its key, and its models are no longer offered.',
   server: 'This server',
   serverUnknown: 'Reading…',
   signOut: 'Sign out of this tab',
 } as const;
 
-/** Settings, read-only for now: the theme, where settings come from, the server, sign out. */
+/** Settings: the theme, the model accounts (add, change, remove), the server, sign out. */
 @Component({
   selector: 'app-settings',
   imports: [
     PageHeaderComponent,
     GlzButtonComponent,
     GlzCardComponent,
+    GlzConfirmDialogComponent,
     GlzFormFieldComponent,
     GlzRadioComponent,
     GlzRadioGroupComponent,
+    RouterLink,
   ],
   templateUrl: './settings.component.html',
   styleUrl: './settings.component.scss',
@@ -55,6 +65,21 @@ export class SettingsComponent {
   private readonly session = inject(SessionService);
   private readonly router = inject(Router);
   private readonly info = inject(ServerService).info;
+  private readonly providers = inject(ProvidersService);
+  private readonly models = inject(ModelsService);
+  protected readonly connectLink = '/connect';
+  /** The accounts as the list shows them, each with the link that changes its key. */
+  protected readonly accounts = computed(() =>
+    this.providers.accounts().map((account) => ({
+      id: account.id,
+      name: accountName(account),
+      hint: keyHint(account),
+      query: changeQuery(account),
+    })),
+  );
+  protected readonly confirming = signal(false);
+  protected readonly problem = signal<string | null>(null);
+  private removing: string | null = null;
 
   protected readonly choice = this.theme.choice;
   protected readonly server = computed(() => {
@@ -66,6 +91,31 @@ export class SettingsComponent {
 
   constructor() {
     void inject(ServerService).load();
+    void this.providers.load();
+  }
+
+  protected ask(id: string): void {
+    this.removing = id;
+    this.confirming.set(true);
+  }
+
+  protected async decided(yes: boolean): Promise<void> {
+    const id = this.removing;
+    this.removing = null;
+    if (!yes || id === null) {
+      return;
+    }
+    this.problem.set(null);
+    try {
+      await this.providers.remove(id);
+    } catch {
+      this.problem.set(REMOVE_FAILED);
+      return;
+    }
+    // With no model left, the person adds one before anything else.
+    if (await this.models.none()) {
+      await this.router.navigateByUrl(this.connectLink);
+    }
   }
 
   protected pick(choice: string | null): void {

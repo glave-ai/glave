@@ -4,6 +4,10 @@ import { type Locator, type Page, expect } from '@playwright/test';
 /** Where the app is served, and Glaze's showcase (playwright.config.ts). */
 export const APP_URL = 'http://127.0.0.1:4310';
 export const SHOWCASE_URL = 'http://127.0.0.1:4311';
+/** Where a glave with nothing set up serves the app, for the first run (first-run.e2e.ts). */
+export const FIRST_RUN_URL = 'http://127.0.0.1:4312';
+/** The variable that names that glave's home, so the test can read its sign-in token. */
+export const FIRST_RUN_HOME = 'GLAVE_E2E_FIRST_RUN_HOME';
 
 /** The fragment of the link that signs the app in (`glave serve` prints one). */
 export const SIGNED_IN = '#token=glave_local_test';

@@ -1,0 +1,26 @@
+.page {
+  max-width: var(--glz-content-width);
+  margin: var(--glz-space-6) auto;
+  padding: 0 var(--glz-space-4);
+}
+
+.lead {
+  color: var(--glz-color-text-muted);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-4);
+}
+
+.problem {
+  margin: 0;
+  color: var(--glz-color-danger);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--glz-space-2);
+}

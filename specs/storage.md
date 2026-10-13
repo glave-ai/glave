@@ -23,7 +23,7 @@ A space is a record, not a folder: an id (UUID v7), a kind, a name, an owner, me
 | Kind | Is | Owner |
 | --- | --- | --- |
 | `project` | the work of a team, a person or an agent: a repository, a folder, or none | whoever made it; later a team or an agent |
-| `personal` | a person's own space (the Inbox; the UI may call it something else): their one-off chats and their personal memory. Each person has exactly one in each organization, made the first time it is needed | that person |
+| `personal` | a person's own space, named Chats: their one-off chats and their personal memory. Each person has exactly one in each organization, made the first time it is needed | that person |
 
 - **Who works in a space:** its owner and its members (principals, in order). Who may do what is decided from that on every request (`session.md`, "Spaces and who may do what"). Only the owner renames it.
 - **A folder leads to a space; it is not one.** The data store keeps folder keys: the folder's canonical path (`path:<path>`), and for a git repository its `origin` remote as `.git/config` names it (`remote:<url>`), as `trust.toml` recognises a project. A folder is looked up by path first, then by remote, so a moved or re-cloned project, or a second checkout of it, finds its space and keeps its history and `--continue`. A folder no key leads to gets a new project space, owned by the person who opened it, named after the folder. Every key of the folder then leads to that space, unless it already led elsewhere.
@@ -33,8 +33,8 @@ A space is a record, not a folder: an id (UUID v7), a kind, a name, an owner, me
 
 - **Every table and every key carries the organization and the space.** Every storage call takes a scope, and no call can cross scopes. This is already true of the ports.
 - **A thread's space never changes.** Nothing stored is ever moved or rewritten in place.
-- **Promoting a one-off chat into a project copies, then archives.** The chat's history is written as a new thread in the project's space, sealed under the project's keys, by the same path that writes any new thread. Its first event records where it came from. The original in the Inbox is then archived as "moved to the project" and deleted (its keys destroyed) 30 days later, so a mistaken promotion can still be undone. Archived originals never appear in search, thread lists or memory; only the project's copy does.
-- **One-off chats live in each person's personal space** (the Inbox), made the first time they need it. Every thread has a space from birth.
+- **Promoting a one-off chat into a project copies, then archives.** The chat's history is written as a new thread in the project's space, sealed under the project's keys, by the same path that writes any new thread. Its first event records where it came from. The original in the personal space is then archived as "moved to the project" and deleted (its keys destroyed) 30 days later, so a mistaken promotion can still be undone. Archived originals never appear in search, thread lists or memory; only the project's copy does.
+- **One-off chats live in each person's personal space** (Chats, as clients call it), made the first time they need it. Every thread has a space from birth.
 - **A thread id is resolved to its scope by one small index:** `(thread) → (organization, space)`, kept by the data store and written when a thread starts. It is the only lookup that takes a bare thread id. It answers only "which scope", and every read that follows is scoped as usual and checked against the caller.
 - **Exports carry their scope** in a header line, and an import names the scope it goes into. An import never takes the scope from the file.
 

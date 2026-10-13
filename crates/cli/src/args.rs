@@ -12,7 +12,11 @@ glave: run hope, or any model, on the project in this folder
 
 Usage:
   glave [options] [prompt...]   run one turn with this prompt
-  glave [options]               start a session; each line you type is a turn
+  glave [options]               start a session; each line you type is a turn. With no
+                                model set up yet, glave opens in your browser instead
+  glave app                     open glave in your browser, signed in on this computer: the
+                                server glave's folder runs, or a new one in this folder, on
+                                127.0.0.1:4180 when it is free; Ctrl-C stops it
   glave --goal <objective> [--goal-budget <tokens>] [options]
                                 keep working across turns until the model has checked the
                                 goal is met, or pauses it because it needs you. Say how to
@@ -164,6 +168,8 @@ pub enum Action {
     Skills,
     /// List the custom commands.
     Commands,
+    /// Open glave in the browser, signed in.
+    App,
     Help,
     Version,
 }
@@ -216,6 +222,8 @@ pub struct Args {
     pub budget: Option<u64>,
     /// Serve as the folder's task host, on its Unix socket.
     pub socket: bool,
+    /// With `http`, open the browser at the server, signed in (`glave app`).
+    pub open: bool,
 }
 
 pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String> {
@@ -224,15 +232,8 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
     let mut rest = arguments.into_iter().peekable();
     // `serve` is a subcommand only as the first word; a prompt starting with it goes after `--`.
     let serving = rest.next_if(|first| first == "serve").is_some();
-    if !serving && rest.next_if(|first| first == "policy").is_some() {
-        if rest.next_if(|second| second == "explain").is_none() {
-            return Err("glave policy takes one command: explain".into());
-        }
-        args.action = Action::Explain;
-    } else if !serving && rest.next_if(|first| first == "skills").is_some() {
-        args.action = Action::Skills;
-    } else if !serving && rest.next_if(|first| first == "commands").is_some() {
-        args.action = Action::Commands;
+    if !serving {
+        args.action = command(&mut rest)?;
     }
     let mut stdio = false;
     while let Some(argument) = rest.next() {
@@ -276,7 +277,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--audience" if serving => {
                 args.audience = Some(rest.next().ok_or("--audience needs a name")?);
             }
-            "--web" if serving => {
+            "--web" if serving || args.action == Action::App => {
                 args.web = Some(rest.next().ok_or("--web needs a folder")?.into());
             }
             "--continue" | "-c" => args.resume = true,
@@ -301,12 +302,30 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
     Ok(args)
 }
 
+/// The command the first words name, taking them: `policy explain`, `skills`, `commands` or
+/// `app`; otherwise a run, taking nothing.
+fn command(rest: &mut std::iter::Peekable<impl Iterator<Item = String>>) -> Result<Action, String> {
+    let action = match rest.peek().map(String::as_str) {
+        Some("policy") => Action::Explain,
+        Some("skills") => Action::Skills,
+        Some("commands") => Action::Commands,
+        Some("app") => Action::App,
+        _ => return Ok(Action::Run),
+    };
+    rest.next();
+    if action == Action::Explain && rest.next_if(|second| second == "explain").is_none() {
+        return Err("glave policy takes one command: explain".into());
+    }
+    Ok(action)
+}
+
 /// Checks that the commands that take no prompt got none.
 fn alone(args: &Args) -> Result<(), String> {
     let name = match args.action {
         Action::Explain => "policy explain",
         Action::Skills => "skills",
         Action::Commands => "commands",
+        Action::App => "app",
         _ => return Ok(()),
     };
     if !args.prompt.is_empty() || args.resume {
@@ -594,6 +613,12 @@ mod tests {
         assert_eq!(parse_words(&["skills"]).unwrap().action, Action::Skills);
         assert!(parse_words(&["skills", "now"]).is_err());
         assert_eq!(parse_words(&["commands"]).unwrap().action, Action::Commands);
+        assert_eq!(parse_words(&["app"]).unwrap().action, Action::App);
+        assert!(parse_words(&["app", "now"]).is_err());
+        assert_eq!(
+            parse_words(&["open", "the", "app"]).unwrap().action,
+            Action::Run
+        );
         assert!(parse_words(&["commands", "now"]).is_err());
         let prompt = parse_words(&["list", "skills"]).unwrap();
         assert_eq!(prompt.action, Action::Run);

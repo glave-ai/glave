@@ -19,10 +19,48 @@
       </glz-form-field>
     </glz-card>
     <glz-card>
-      <h2 glzCardHeader class="section">{{ copy.policy }}</h2>
-      <p>{{ copy.policyText }}</p>
-      <pre>{{ copy.policyCommand }}</pre>
+      <h2 glzCardHeader class="section">{{ copy.models }}</h2>
+      @for (account of accounts(); track account.id) {
+        <div class="account" data-testid="settings-account">
+          <div>
+            <p class="title">{{ account.name }}</p>
+            <p class="details">{{ account.hint }}</p>
+          </div>
+          <div class="account-actions">
+            <a
+              glzButton
+              data-testid="settings-account-change"
+              [routerLink]="connectLink"
+              [queryParams]="account.query"
+            >
+              {{ copy.change }}
+            </a>
+            <button glzButton data-testid="settings-account-remove" (click)="ask(account.id)">
+              {{ copy.remove }}
+            </button>
+          </div>
+        </div>
+      } @empty {
+        <p class="details" data-testid="settings-no-accounts">{{ copy.noAccounts }}</p>
+      }
+      @if (problem(); as problem) {
+        <p class="error" role="alert" data-testid="settings-account-problem">{{ problem }}</p>
+      }
+      <div glzCardFooter>
+        <a glzButton data-testid="settings-add-account" [routerLink]="connectLink">{{
+          copy.add
+        }}</a>
+      </div>
     </glz-card>
+    <glz-confirm-dialog
+      testId="settings-remove"
+      danger
+      [heading]="copy.removeHeading"
+      [message]="copy.removeText"
+      [confirmLabel]="copy.remove"
+      [(open)]="confirming"
+      (decided)="decided($event)"
+    />
     <glz-card>
       <h2 glzCardHeader class="section">{{ copy.server }}</h2>
       <p class="details" data-testid="settings-server">{{ server() }}</p>

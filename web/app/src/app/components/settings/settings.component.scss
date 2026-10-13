@@ -3,3 +3,20 @@
 .section {
   font-size: var(--glz-text-lg);
 }
+
+.account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--glz-space-3);
+  padding-block: var(--glz-space-2);
+}
+
+.account p {
+  margin: 0;
+}
+
+.account-actions {
+  display: flex;
+  gap: var(--glz-space-2);
+}

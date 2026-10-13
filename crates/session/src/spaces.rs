@@ -21,7 +21,7 @@ use crate::server::{Server, no_thread};
 const PLACES: usize = 4_096;
 
 /// What a personal space is called until its person renames it.
-pub const PERSONAL_NAME: &str = "Inbox";
+pub const PERSONAL_NAME: &str = "Chats";
 
 /// The scopes of threads a server has looked up. A thread's space never changes.
 #[derive(Debug, Default)]

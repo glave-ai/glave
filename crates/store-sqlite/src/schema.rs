@@ -118,7 +118,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
         (SELECT value FROM settings WHERE key = 'org'),
         id,
         CASE WHEN path LIKE 'glave:personal/%' THEN 'personal' ELSE 'project' END,
-        CASE WHEN path LIKE 'glave:personal/%' THEN 'Inbox'
+        CASE WHEN path LIKE 'glave:personal/%' THEN 'Chats'
              ELSE COALESCE(NULLIF(replace(path, rtrim(path, replace(path, '/', '')), ''), ''), path)
         END,
         CASE WHEN path LIKE 'glave:personal/%'

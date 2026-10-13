@@ -1,17 +1,18 @@
 import type { Routes } from '@angular/router';
 
 import { WorkspaceComponent } from './components/workspace/workspace.component';
+import { hasModelGuard } from './guards/has-model.guard';
 import { signedInGuard } from './guards/signed-in.guard';
 
 /**
  * The app's pages: the workspace (chat, a thread, tasks, memory, settings) for a signed-in
- * person, and the sign-in page.
+ * person with a model set up, the page that adds one, and the sign-in page.
  */
 export const routes: Routes = [
   {
     path: '',
     component: WorkspaceComponent,
-    canActivate: [signedInGuard],
+    canActivate: [signedInGuard, hasModelGuard],
     children: [
       {
         path: '',
@@ -45,6 +46,13 @@ export const routes: Routes = [
           import('./components/settings/settings.component').then((m) => m.SettingsComponent),
       },
     ],
+  },
+  {
+    path: 'connect',
+    title: 'Add a model · glave',
+    canActivate: [signedInGuard],
+    loadComponent: () =>
+      import('./components/connect/connect.component').then((m) => m.ConnectComponent),
   },
   {
     path: 'sign-in',

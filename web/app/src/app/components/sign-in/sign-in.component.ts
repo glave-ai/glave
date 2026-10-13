@@ -7,12 +7,11 @@ import { SessionService } from '../../services/session.service';
 
 const COPY = {
   name: 'glave',
-  heading: 'Sign in from your terminal',
-  text: 'Run glave serve --http in your project, then open the link it prints. The link signs this browser in; the sign-in lasts while this tab is open.',
-  command: 'glave serve --http 8080',
+  heading: 'Open glave again to sign in',
+  text: 'For your safety, glave signs in only the browser it opens itself, and only while this tab stays open. Open glave on this computer again and it will bring you back here, signed in.',
 } as const;
 
-/** The page for someone not signed in: how to sign in, with the link `glave serve --http` prints. */
+/** The page for someone not signed in: glave opens the browser signed in, so open it again. */
 @Component({
   selector: 'app-sign-in',
   imports: [GlzEmptyStateComponent, GlzTopBarComponent],

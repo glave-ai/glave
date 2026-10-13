@@ -6,7 +6,7 @@ import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { SignInComponent } from './sign-in.component';
 
 describe('SignInComponent', () => {
-  it('says how to sign in', async () => {
+  it('says how to sign in, in plain words', async () => {
     TestBed.configureTestingModule({
       providers: [provideRouter([]), ...provideFakeSession(new FakeSession(), false)],
     });
@@ -14,7 +14,9 @@ describe('SignInComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('header glz-top-bar')?.textContent).toContain('glave');
-    expect(root.querySelector('main')?.textContent).toContain('glave serve --http');
+    const said = root.querySelector('main')?.textContent ?? '';
+    expect(said).toContain('Open glave on this computer again');
+    expect(said).not.toMatch(/serve|--|config|terminal/u);
     await expectAccessible(root);
   });
 

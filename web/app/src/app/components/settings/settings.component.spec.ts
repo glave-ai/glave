@@ -5,6 +5,15 @@ import { expectAccessible } from '@glave/glaze/testing';
 import { SessionService } from '../../services/session.service';
 import { ThemeService } from '../../services/theme.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { MODELS } from '../../testing/fixtures';
+
+const SERVER = {
+  name: 'glave',
+  version: '0.1.0',
+  protocols: ['2026-10'],
+  approval: 'auto',
+  approvals: ['ask', 'auto'],
+} as const;
 import { SettingsComponent } from './settings.component';
 
 describe('SettingsComponent', () => {
@@ -13,13 +22,9 @@ describe('SettingsComponent', () => {
   });
 
   it('shows the server, picks a theme and signs out', async () => {
-    const fake = new FakeSession().answer('server/discover', {
-      name: 'glave',
-      version: '0.1.0',
-      protocols: ['2026-10'],
-      approval: 'auto',
-      approvals: ['ask', 'auto'],
-    });
+    const fake = new FakeSession()
+      .answer('server/discover', SERVER)
+      .answer('provider/list', { providers: [] });
     TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
     const fixture = TestBed.createComponent(SettingsComponent);
@@ -29,7 +34,8 @@ describe('SettingsComponent', () => {
     expect(root.querySelector('[data-testid="settings-server"]')?.textContent).toContain(
       'glave 0.1.0 · protocol 2026-10 · approvals: auto',
     );
-    expect(root.textContent).toContain('glave policy explain');
+    expect(root.textContent).not.toMatch(/config|policy|toml|--/u);
+    expect(root.querySelector('[data-testid="settings-no-accounts"]')).not.toBeNull();
     const themes = Array.from(root.querySelectorAll('glz-radio'), (radio) =>
       radio.textContent.trim(),
     );
@@ -43,5 +49,47 @@ describe('SettingsComponent', () => {
     await fixture.whenStable();
     expect(TestBed.inject(SessionService).signedIn()).toBe(false);
     expect(navigate).toHaveBeenCalledWith('/sign-in');
+  });
+
+  it('lists the model accounts by service and key ending, and removes one once confirmed', async () => {
+    const account = {
+      id: '01900000-0000-7000-8000-000000000301',
+      kind: 'openai',
+      hint: 'a1b2',
+      models: ['gpt-6-luna'],
+    } as const;
+    let kept = true;
+    const fake = new FakeSession()
+      .answer('server/discover', SERVER)
+      .answer('provider/list', () => ({ providers: kept ? [account] : [] }))
+      .answer('provider/remove', () => {
+        kept = false;
+        return {};
+      })
+      .answer('model/list', () => ({ models: kept ? MODELS : [] }));
+    TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    const fixture = TestBed.createComponent(SettingsComponent);
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const row = root.querySelector('[data-testid="settings-account"]');
+    expect(row?.textContent).toContain('OpenAI');
+    expect(row?.textContent).toContain('Key ending a1b2');
+    expect(
+      root.querySelector('[data-testid="settings-account-change"]')?.getAttribute('href'),
+    ).toBe('/connect?kind=openai');
+    await expectAccessible(root);
+
+    root.querySelector<HTMLButtonElement>('[data-testid="settings-account-remove"]')?.click();
+    await fixture.whenStable();
+    document.querySelector<HTMLButtonElement>('[data-testid="settings-remove-ok"]')?.click();
+    for (let turn = 0; turn < 5; turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve));
+    }
+    await fixture.whenStable();
+    expect(fake.paramsOf('provider/remove')).toEqual([{ provider: account.id }]);
+    expect(root.querySelector('[data-testid="settings-account"]')).toBeNull();
+    expect(navigate).toHaveBeenCalledWith('/connect');
   });
 });

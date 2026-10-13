@@ -41,7 +41,7 @@ pub fn agent() -> PrincipalId {
     PrincipalId::try_from(uuid(51)).unwrap()
 }
 
-/// The person's Inbox, where their personal memory lives.
+/// The person's personal space, where their personal memory lives.
 pub fn inbox() -> Scope {
     scope(1, 100)
 }

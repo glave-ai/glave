@@ -71,7 +71,7 @@ No kinds, tags, priorities or expiry.
 
 Every memory belongs to exactly one place:
 
-- **Personal:** about the person, read in every thread whose `for` is that person, in spaces that allow it, and by no one else. Today it is stored in the person's Inbox space, sealed under its keys and erased with it; the Inbox is being discussed again, so where personal memory is stored may change. Its meaning does not.
+- **Personal:** about the person, read in every thread whose `for` is that person, in spaces that allow it, and by no one else. Today it is stored in the person's personal space, sealed under its keys and erased with it; where personal memory is stored may change. Its meaning does not.
 - **A space:** about that space's work. Every member and every agent working in the space reads it; it lives, and is erased, with the space.
 
 Each space sets `memory`, within policy:

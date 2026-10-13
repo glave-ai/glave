@@ -175,7 +175,7 @@ fn spaces_from_before_records_become_records_and_are_claimed() {
             glave_ports::SpaceId::from_uuid(Uuid::from_u128(3)),
             "the stand-in personal space is the person's personal space, memories and all"
         );
-        assert_eq!(personal.name, "Inbox");
+        assert_eq!(personal.name, "Chats");
     });
 }
 
