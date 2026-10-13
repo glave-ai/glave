@@ -89,7 +89,7 @@ pub fn main() -> ExitCode {
             println!("glave {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
-        Action::Run | Action::Serve | Action::Explain | Action::Skills | Action::Commands => {}
+        _ => {}
     }
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -106,6 +106,7 @@ pub fn main() -> ExitCode {
         Action::Explain => runtime.block_on(setup::explain(&args)),
         Action::Skills => runtime.block_on(crate::skills::list()),
         Action::Commands => runtime.block_on(crate::commands::list()),
+        Action::App => runtime.block_on(Box::pin(crate::app::main(args))),
         _ => runtime.block_on(run(args)),
     };
     match ran {
@@ -441,19 +442,30 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         if asks { Asking::Person } else { Asking::NoOne },
     )
     .await?;
-    let ran = Box::pin(session(&args, &wired, asks)).await;
+    // A first run has no model yet: the browser is where one is added.
+    let screen = crate::app::screen_here();
+    let opens_app = crate::app::first_run(&args, asks, screen, wired.endpoint.is_some());
+    let ran = if opens_app {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Box::pin(session(&args, &wired, asks)).await
+    };
     wired.server.shutdown().await;
     if let Some(workers) = &wired.workers {
         crate::cloud::release(&wired.server, workers).await;
     }
     wired.servers.close().await;
     close_memory(&wired).await;
+    if opens_app {
+        eprintln!("glave: no model is set up yet, so glave opens in your browser to add one");
+        return Box::pin(crate::app::main(args)).await;
+    }
     ran
 }
 
 /// Serves the session API: to the program that started glave until its input ends, or over
 /// HTTP until Ctrl-C.
-async fn serve(args: Args) -> anyhow::Result<ExitCode> {
+pub async fn serve(args: Args) -> anyhow::Result<ExitCode> {
     // The session API owns standard input, so there is no one to ask about a project.
     let wired = wire(&args, Answering::Clients, Asking::NoOne).await?;
     let served = if args.socket {

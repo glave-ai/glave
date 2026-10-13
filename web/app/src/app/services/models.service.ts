@@ -6,7 +6,7 @@ import { SessionService } from './session.service';
 
 /**
  * The models this server runs (`model/list`), the default first: what the composer's picker
- * offers. Read once, when first asked.
+ * offers. Read once, when first asked, and again when the model accounts change.
  */
 @Service()
 export class ModelsService {
@@ -32,5 +32,17 @@ export class ModelsService {
       },
     );
     return this.pending;
+  }
+
+  /** Reads the list again, as after a model account was connected or removed. */
+  reload(): Promise<void> {
+    this.pending = null;
+    return this.load();
+  }
+
+  /** Whether the server runs no model yet, once the list is read; `false` when it cannot be. */
+  async none(): Promise<boolean> {
+    await this.load();
+    return this.pending !== null && this.list().length === 0;
   }
 }

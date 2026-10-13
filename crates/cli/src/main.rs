@@ -1,6 +1,7 @@
 //! The `glave` command: run hope, or any model behind an OpenAI-compatible API or Anthropic's
 //! own, on the project in the current folder, from the terminal.
 
+mod app;
 mod args;
 mod asking;
 mod client;

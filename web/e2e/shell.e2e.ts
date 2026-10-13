@@ -200,8 +200,11 @@ test('a space group closes and opens, and + starts a thread in it', async ({ pag
   await expect(shown).toHaveText(['Dinner ideas for Saturday']);
   await toggle.click();
   await expect(shown).toHaveCount(4);
+  await byTestId(page, 'nav-space-new').first().click();
+  await expect(byTestId(page, 'home-space')).toHaveText('In glave');
+  // A plain chat names no space.
   await byTestId(page, 'nav-space-new').last().click();
-  await expect(byTestId(page, 'home-space')).toHaveText('In Personal');
+  await expect(byTestId(page, 'home-space')).toHaveCount(0);
 });
 
 test('on a phone the side nav is a drawer and the tools a sheet', async ({ page }) => {

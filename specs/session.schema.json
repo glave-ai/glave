@@ -815,7 +815,7 @@
         },
         {
           "const": "personal",
-          "description": "A person's own space (the Inbox): their one-off chats and their personal memory. Each\nperson has exactly one in each organization.",
+          "description": "A person's own space: their one-off chats and their personal memory. Each\nperson has exactly one in each organization.",
           "type": "string"
         }
       ]

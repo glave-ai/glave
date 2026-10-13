@@ -25,7 +25,7 @@ pub const MAX_NAME: usize = 200;
 pub enum SpaceKind {
     /// A project: the work of its owner and members, usually tied to folders.
     Project,
-    /// A person's own space (the Inbox): their one-off chats and their personal memory. Each
+    /// A person's own space: their one-off chats and their personal memory. Each
     /// person has exactly one in each organization.
     Personal,
 }

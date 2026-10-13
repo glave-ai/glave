@@ -3,11 +3,12 @@ import { expect, test } from '@playwright/test';
 import { NEW_THREAD, THREAD, fakeApi } from './fake-api';
 import { SIGNED_IN, byTestId, expectAccessible, shownOpacity, watchForProblems } from './support';
 
-test('without a sign-in, the app says how to get one', async ({ page }) => {
+test('without a sign-in, the app says how to get one, in plain words', async ({ page }) => {
   await fakeApi(page);
   await page.goto('/');
   await expect(page).toHaveURL(/\/sign-in$/u);
-  await expect(byTestId(page, 'sign-in')).toContainText('glave serve --http');
+  await expect(byTestId(page, 'sign-in')).toContainText('Open glave on this computer again');
+  await expect(byTestId(page, 'sign-in')).not.toContainText('serve');
   await expectAccessible(page);
 });
 
@@ -133,5 +134,6 @@ test('tasks, memory and settings open from the side nav', async ({ page }) => {
   await expectAccessible(page);
   await byTestId(page, 'nav-settings').click();
   await expect(byTestId(page, 'settings-server')).toContainText('glave 0.0.0');
+  await expect(byTestId(page, 'settings-account')).toContainText('OpenRouter');
   await expectAccessible(page);
 });

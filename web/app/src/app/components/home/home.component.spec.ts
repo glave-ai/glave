@@ -83,6 +83,11 @@ describe('HomeComponent', () => {
     navigate.mockRestore();
   });
 
+  it('names no space for a plain chat, in the personal space', async () => {
+    const root = await render(session(), 'me');
+    expect(root.querySelector('[data-testid="home-space"]')).toBeNull();
+  });
+
   it('keeps the draft and says why when the thread cannot start', async () => {
     const fake = session().answer(
       'thread/start',

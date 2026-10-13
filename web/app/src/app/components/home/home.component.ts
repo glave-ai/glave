@@ -49,11 +49,11 @@ export class HomeComponent {
   private readonly spaces = inject(SpacesService);
   private readonly router = inject(Router);
   private readonly target = computed(() => this.space() ?? this.spaces.home());
-  /** The space's name, when the person chose where to start. */
+  /** The project's name, when the person chose to start in one; a plain chat has none. */
   protected readonly where = computed(() => {
     const id = this.space();
     const found = this.spaces.spaces().find(({ space }) => space.id === id)?.space;
-    return found === undefined ? null : `${COPY.in} ${found.name}`;
+    return found?.kind === 'project' ? `${COPY.in} ${found.name}` : null;
   });
 
   protected async send(prompt: string): Promise<void> {

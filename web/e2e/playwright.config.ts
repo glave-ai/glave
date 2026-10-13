@@ -4,22 +4,43 @@ import { join, resolve } from 'node:path';
 
 import { defineConfig, devices } from '@playwright/test';
 
-import { APP_URL, SHOWCASE_URL } from './support';
+import { APP_URL, FIRST_RUN_HOME, FIRST_RUN_URL, SHOWCASE_URL } from './support';
 
 /** The glave binary that serves the app: GLAVE_BIN, else the workspace's debug build. */
 const glave = process.env['GLAVE_BIN'] ?? resolve(import.meta.dirname, '../../target/debug/glave');
 
-/** What glave serves, and where: the app, and Glaze's showcase beside it. */
+/** A home of its own for each glave, so the tests touch nothing of the person's. */
+function home(): string {
+  return mkdtempSync(join(tmpdir(), 'glave-e2e-'));
+}
+
+/**
+ * The first run's home, which its test reads the sign-in token from: made once, in the run
+ * that starts the servers, whose workers read this file again with the variable set.
+ */
+const firstRun = process.env[FIRST_RUN_HOME] ?? home();
+process.env[FIRST_RUN_HOME] = firstRun;
+
+/**
+ * What glave serves, and where: the app on a model the fake API names, Glaze's showcase, and
+ * the app on a glave with nothing set up, for the first run against the real server.
+ */
 const SITES = [
-  { url: APP_URL, web: 'dist/app/browser' },
-  { url: SHOWCASE_URL, web: 'dist/showcase/browser' },
+  { url: APP_URL, web: 'dist/app/browser', env: { GLAVE_HOME: home(), GLAVE_MODEL: 'e2e' } },
+  {
+    url: SHOWCASE_URL,
+    web: 'dist/showcase/browser',
+    env: { GLAVE_HOME: home(), GLAVE_MODEL: 'e2e' },
+  },
+  { url: FIRST_RUN_URL, web: 'dist/app/browser', env: { GLAVE_HOME: firstRun, GLAVE_MODEL: '' } },
 ];
 
 /**
  * End-to-end smoke tests: the production builds (`npm run build`, `npm run build:showcase`)
  * served by the real `glave serve --http --web`, with glave's own Content Security Policy and
  * headers, in Chromium. The session API's calls are answered by each test's fake
- * (fake-api.ts), so no model is needed. Build glave first (`cargo build -p glave`); `cargo
+ * (fake-api.ts), so no model is needed; the first run's are the real server's, with a fake
+ * model service (first-run.e2e.ts). Build glave first (`cargo build -p glave`); `cargo
  * xtask ci` does.
  */
 export default defineConfig({
@@ -34,12 +55,11 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  // Each from a glave home of its own, so the tests touch nothing of the person's.
-  webServer: SITES.map(({ url, web }) => ({
+  webServer: SITES.map(({ url, web, env }) => ({
     command: `"${glave}" serve --http ${new URL(url).port} --web ${web}`,
     url,
     reuseExistingServer: false,
     cwd: '..',
-    env: { GLAVE_HOME: mkdtempSync(join(tmpdir(), 'glave-e2e-')), GLAVE_MODEL: 'e2e' },
+    env,
   })),
 });

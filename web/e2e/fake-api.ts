@@ -245,6 +245,17 @@ function answer(method: string, params: Record<string, unknown>): unknown {
       return { tasks: TASKS };
     case 'memory/list':
       return { memories: [] };
+    case 'provider/list':
+      return {
+        providers: [
+          {
+            id: '01900000-0000-7000-8000-000000000301',
+            kind: 'openrouter',
+            hint: 'a1b2',
+            models: [],
+          },
+        ],
+      };
     case 'server/discover':
       return {
         name: 'glave',
