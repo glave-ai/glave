@@ -64,6 +64,9 @@ pub enum Kind {
     Secrets,
     /// Acts beyond this computer: publishes, pushes, deploys, or changes shared systems.
     Remote,
+    /// Changes credentials or what holds them, or acts with them where no one can see what it
+    /// does: a forge's sign-in and keys, its CI secrets and variables, writes through its API.
+    Credentials,
     /// Too tangled to read.
     Unreadable,
 }
@@ -71,9 +74,10 @@ pub enum Kind {
 impl Kind {
     /// Whether a caution of this kind always needs the person. The others may be cleared by a
     /// judge that finds the person's say-so in what they asked: secrets must never reach the
-    /// model without the person, and an unreadable command cannot be judged.
+    /// model without the person, credentials never change without them, and an unreadable
+    /// command cannot be judged.
     pub fn firm(self) -> bool {
-        matches!(self, Self::Secrets | Self::Unreadable)
+        matches!(self, Self::Secrets | Self::Credentials | Self::Unreadable)
     }
 }
 

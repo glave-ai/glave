@@ -145,6 +145,7 @@ mod tests {
             label: category.label(),
             category,
             note: None,
+            untrusted: false,
             source: "hand".to_owned(),
         }
     }

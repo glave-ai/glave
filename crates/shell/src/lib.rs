@@ -7,6 +7,7 @@
 //! determined program can always say the same thing another way; the sandbox is the boundary.
 
 mod credentials;
+mod forge;
 mod judge;
 mod parse;
 mod paths;
@@ -14,4 +15,5 @@ mod reads;
 mod remote;
 mod rules;
 
+pub use forge::untrusted_output;
 pub use judge::{Caution, Context, Kind, Verdict, judge};
