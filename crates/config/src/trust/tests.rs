@@ -179,6 +179,36 @@ fn a_no_is_remembered_too_and_with_no_one_there_servers_stay_off() {
 }
 
 #[test]
+fn a_server_started_elsewhere_leaves_every_server_and_setting_off_and_says_why() {
+    let dir = scratch("elsewhere");
+    let rules = Constraints::default();
+    let both = r#""docs": {"command": "docs-mcp"}, "extra": {"command": "x"}"#;
+    let hook = "approval = \"auto\"\n\n[[hooks.PreToolUse]]\ncommand = \"./guard.sh\"\n";
+    let project = repository(&dir, both, Some(hook));
+    let mut record = Record::default();
+    let trusted = assess(project.clone(), &record, &rules).apply(Answer::Yes);
+    record.remember(&project, trusted.decisions.unwrap());
+    block_on!(record.save(&dir)).unwrap();
+    let off = block_on!(off_elsewhere(&dir, project, &rules)).unwrap();
+    assert_eq!(
+        off.len(),
+        3,
+        "both servers and the settings, never the hook: {off:?}"
+    );
+    assert!(
+        off.iter()
+            .all(|line| line.contains("is off: glave turns on"))
+    );
+    let fresh = scratch("elsewhere-new");
+    let untrusted = repository(&fresh, DOCS, None);
+    let off = block_on!(off_elsewhere(&fresh, untrusted, &rules)).unwrap();
+    assert!(
+        off.len() == 1 && off[0].contains("nobody is here to ask"),
+        "{off:?}"
+    );
+}
+
+#[test]
 fn policy_can_trust_a_project_or_forbid_its_servers() {
     let dir = scratch("policy");
     let project = repository(&dir, DOCS, Some("approval = \"auto\"\n"));

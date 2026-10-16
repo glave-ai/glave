@@ -112,13 +112,65 @@ async fn write_members<C: GenericClient>(
     Ok(())
 }
 
-/// Inserts `space` unless its id, or its owner's personal space, is taken: whether it did.
+/// Holds `owner`'s projects in `org` until the transaction `client` is in ends, so a name read
+/// free in it is still free when it is written.
+async fn hold_names<C: GenericClient>(
+    client: &C,
+    org: Uuid,
+    owner: &str,
+) -> Result<(), SpaceError> {
+    client
+        .execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            &[&format!("glave/space-names/{org}/{owner}")],
+        )
+        .await
+        .map_err(database(SpaceError::Storage))?;
+    Ok(())
+}
+
+/// The ids and names of the projects `owner` (as stored) has in `org`.
+async fn projects_of<C: GenericClient>(
+    client: &C,
+    org: Uuid,
+    owner: &str,
+) -> Result<Vec<(SpaceId, String)>, SpaceError> {
+    client
+        .query(
+            "SELECT id, name FROM space_records
+             WHERE org = $1 AND owner = $2 AND kind = 'project'",
+            &[&org, &owner],
+        )
+        .await
+        .map_err(database(SpaceError::Storage))?
+        .iter()
+        .map(|row| {
+            let id: Uuid = row.try_get(0).map_err(corrupt)?;
+            Ok((SpaceId::from_uuid(id), row.try_get(1).map_err(corrupt)?))
+        })
+        .collect()
+}
+
+/// Inserts `space`, a project under the next free name among its owner's, unless its id, or
+/// its owner's personal space, is taken: the space as kept, if it was. Runs in a transaction.
 async fn insert<C: GenericClient>(
     client: &C,
     org: Uuid,
     space: &Space,
-) -> Result<bool, SpaceError> {
+) -> Result<Option<Space>, SpaceError> {
     Space::check_name(&space.name)?;
+    let owner = principal_text(&space.owner)?;
+    let mut space = space.clone();
+    if space.kind == SpaceKind::Project {
+        hold_names(client, org, &owner).await?;
+        let taken: Vec<String> = projects_of(client, org, &owner)
+            .await?
+            .into_iter()
+            .map(|(_, name)| name)
+            .collect();
+        space.name = Space::free_name(&space.name, &taken);
+    }
+    let space = &space;
     let inserted = client
         .execute(
             "INSERT INTO space_records (org, id, kind, name, owner, created_at, updated_at)
@@ -128,7 +180,7 @@ async fn insert<C: GenericClient>(
                 &space.id.as_uuid(),
                 &space.kind.as_str(),
                 &space.name,
-                &principal_text(&space.owner)?,
+                &owner,
                 &space.created_at.timestamp(),
                 &space.updated_at.timestamp(),
             ],
@@ -136,10 +188,10 @@ async fn insert<C: GenericClient>(
         .await
         .map_err(database(SpaceError::Storage))?;
     if inserted == 0 {
-        return Ok(false);
+        return Ok(None);
     }
     write_members(client, org, space).await?;
-    Ok(true)
+    Ok(Some(space.clone()))
 }
 
 impl PostgresSpaces {
@@ -198,7 +250,7 @@ impl PostgresSpaces {
             }
         }
         let made = found.is_none();
-        if made && !insert(&transaction, org, new).await? {
+        if made && insert(&transaction, org, new).await?.is_none() {
             return Err(SpaceError::Conflict(format!(
                 "space {} exists already",
                 new.id
@@ -248,16 +300,27 @@ impl PostgresSpaces {
 }
 
 impl Spaces for PostgresSpaces {
-    fn create<'a>(&'a self, org: OrgId, space: &'a Space) -> BoxFuture<'a, Result<(), SpaceError>> {
+    fn create<'a>(
+        &'a self,
+        org: OrgId,
+        space: &'a Space,
+    ) -> BoxFuture<'a, Result<Space, SpaceError>> {
         Box::pin(async move {
-            let client = connection(&self.pool).await.map_err(unavailable)?;
-            if insert(&client, org.as_uuid(), space).await? {
-                Ok(())
-            } else {
-                Err(SpaceError::Conflict(
+            let mut client = connection(&self.pool).await.map_err(unavailable)?;
+            let transaction = client
+                .transaction()
+                .await
+                .map_err(database(SpaceError::Storage))?;
+            let Some(kept) = insert(&transaction, org.as_uuid(), space).await? else {
+                return Err(SpaceError::Conflict(
                     "the space's id is taken, or its owner has a personal space already".into(),
-                ))
-            }
+                ));
+            };
+            transaction
+                .commit()
+                .await
+                .map_err(database(SpaceError::Storage))?;
+            Ok(kept)
         })
     }
 
@@ -308,6 +371,21 @@ impl Spaces for PostgresSpaces {
                 .transaction()
                 .await
                 .map_err(database(SpaceError::Storage))?;
+            let stored = transaction
+                .query_opt(
+                    "SELECT kind, owner FROM space_records WHERE org = $1 AND id = $2",
+                    &[&org, &space.id.as_uuid()],
+                )
+                .await
+                .map_err(database(SpaceError::Storage))?
+                .ok_or(SpaceError::NotFound(space.id))?;
+            let kind: String = stored.try_get(0).map_err(corrupt)?;
+            let owner: String = stored.try_get(1).map_err(corrupt)?;
+            if kind == SpaceKind::Project.as_str() {
+                hold_names(&transaction, org, &owner).await?;
+                let taken = projects_of(&transaction, org, &owner).await?;
+                Space::check_free(space.id, &space.name, &taken)?;
+            }
             let changed = transaction
                 .execute(
                     "UPDATE space_records SET name = $3, updated_at = $4

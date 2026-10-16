@@ -121,6 +121,27 @@ impl Assessment {
             .collect()
     }
 
+    /// What a server started in another folder leaves off of this project, one sentence each,
+    /// for the model: every server and setting it brings, the trusted ones too, since such a
+    /// server starts only its own folder's. Hooks are left out: the model never calls one.
+    pub fn off_elsewhere(&self) -> Vec<String> {
+        self.items
+            .iter()
+            .filter(|(item, _)| !item.is_hook())
+            .map(|(item, standing)| {
+                let (on, _, reason) = verdict(item, standing, Answer::NoOne);
+                let reason = if on {
+                    "glave turns on a project's own tools and settings only when it runs in the \
+                     project's folder, for now; running glave in a terminal there does"
+                        .to_owned()
+                } else {
+                    reason
+                };
+                format!("{} ({}) is off: {reason}", item.label(), item.shows)
+            })
+            .collect()
+    }
+
     /// What the run does, given `answer` to the question if there was one.
     pub fn apply(self, answer: Answer) -> Outcome {
         let mut servers = BTreeMap::new();

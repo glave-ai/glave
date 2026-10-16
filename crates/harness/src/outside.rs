@@ -113,13 +113,13 @@ where
         if !thread.removed || thread.standing != Standing::Active {
             return Ok(());
         }
-        if let Some(Sources::Worktree { branch, .. }) = thread
+        if let Some(Sources::Worktree { path, branch, .. }) = thread
             .workspace
             .as_ref()
             .map(|workspace| &workspace.info().sources)
         {
             let owner = owner_label(thread.scope, thread.id);
-            let worktree = self.workspace.worktree(branch, Some(&owner)).await?;
+            let worktree = self.workspace.worktree(path, branch, Some(&owner)).await?;
             thread.workspace = Some(Arc::new(worktree));
         } else if let Some(Sources::Scratch { name, owner }) = thread
             .workspace

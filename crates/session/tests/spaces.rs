@@ -237,32 +237,33 @@ fn a_one_off_chat_lands_in_the_callers_personal_space_with_a_scratch_folder() {
     });
 }
 
+/// A person other than the local one, calling on this computer.
+fn someone(name: &str) -> Caller {
+    Caller {
+        person: Some(person("https://id.example.com", name).unwrap()),
+        auth: None,
+        trace: None,
+    }
+}
+
 #[test]
 fn spaces_are_made_shared_and_renamed_only_by_their_owner() {
     let dir = folder("spaces-made");
     block_on!(async {
         let server = server(&dir, Vec::new(), Answering::Clients).await;
-        let grace = Caller {
-            person: Some(person("https://id.example.com", "grace").unwrap()),
-            auth: None,
-            trace: None,
-        };
-        let linus = Caller {
-            person: Some(person("https://id.example.com", "linus").unwrap()),
-            auth: None,
-            trace: None,
-        };
+        let (grace, linus) = (someone("grace"), someone("linus"));
         let made = server
             .request_as(
                 &grace,
                 Request::SpaceCreate {
                     name: "Garden".into(),
                     members: vec![Principal::person(linus.person.unwrap())],
+                    folder: None,
                 },
             )
             .await
             .unwrap();
-        let Reply::Space { space } = made else {
+        let Reply::Space { space, .. } = made else {
             panic!("a space, not {made:?}");
         };
         let Reply::Spaces { spaces } = server
@@ -309,7 +310,7 @@ fn spaces_are_made_shared_and_renamed_only_by_their_owner() {
             )
             .await
             .unwrap();
-        let Reply::Space { space: renamed } = renamed else {
+        let Reply::Space { space: renamed, .. } = renamed else {
             panic!("a space");
         };
         assert_eq!(renamed.name, "Allotment");

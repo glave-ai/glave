@@ -23,6 +23,7 @@ use crate::commands::Command;
 use crate::compaction::{Compaction, Measured};
 use crate::goal::{GoalProgress, Pursuit};
 use crate::hooks::Hooks;
+use crate::instructions::FolderInstructions;
 use crate::memory::{Memory, MemoryState};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
@@ -143,6 +144,9 @@ pub struct Harness<P, L, B, A> {
     /// What threads remember from one to the next; none by default, so the model is sent
     /// exactly what it is sent without memory.
     pub(crate) memory: Option<Arc<dyn Memory>>,
+    /// Where threads in a folder of their own read their opening instructions; none by
+    /// default, so every thread opens with the settings' own.
+    pub(crate) instructions: Option<Arc<dyn FolderInstructions>>,
 }
 
 /// One thread: where it is stored, where it continues, and the conversation so far.
@@ -196,6 +200,9 @@ pub struct Thread {
     pub(crate) model: Option<String>,
     /// The approval mode chosen for the thread (`chosen.rs`); the harness's own when `None`.
     pub(crate) approval: Option<ApprovalMode>,
+    /// The instructions the thread opens with, and the judge reads as the project's rules:
+    /// its folder's, or the settings' own (`bind.rs`). A subagent's thread has its parent's.
+    pub(crate) instructions: Option<String>,
 }
 
 impl Thread {
@@ -212,6 +219,17 @@ impl Thread {
     /// The person whose work this thread is: its recorded `for`.
     pub fn for_person(&self) -> Option<PrincipalId> {
         self.for_
+    }
+
+    /// What opens the conversation: the thread's instructions, and where it works when that
+    /// is a worker, if there is either.
+    pub(crate) fn opening_parts(&self) -> Option<Vec<Part>> {
+        let parts: Vec<Part> = [self.instructions.as_ref(), self.note.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|text| Part::Text { text: text.clone() })
+            .collect();
+        (!parts.is_empty()).then_some(parts)
     }
 
     /// Whether an agent, not the person, writes this thread's prompts: a subagent's thread.
@@ -306,7 +324,19 @@ where
             learned_window: AtomicU64::new(0),
             workers: None,
             memory: None,
+            instructions: None,
         }
+    }
+
+    /// Opens each thread that works in a folder of its own with what `instructions` reads for
+    /// that folder, rather than the settings' instructions.
+    #[must_use]
+    pub fn with_folder_instructions(
+        mut self,
+        instructions: Option<Arc<dyn FolderInstructions>>,
+    ) -> Self {
+        self.instructions = instructions;
+        self
     }
 
     /// Gives threads `memory`: loaded at their start, its tools offered, the person's controls
@@ -441,6 +471,9 @@ where
         };
         let (workspace, bound) =
             placed.map_or((None, None), |(workspace, bound)| (workspace, Some(bound)));
+        let instructions = self
+            .instructions_for(workspace.as_deref(), bound.as_ref())
+            .await;
         let mut thread = Thread {
             scope,
             id,
@@ -463,6 +496,7 @@ where
             for_: caller.person.or(self.actors.person),
             model: None,
             approval: None,
+            instructions,
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {
@@ -492,17 +526,6 @@ where
         }
         self.commit(&mut thread, events).await?;
         Ok(thread)
-    }
-
-    /// What opens a conversation: the project's instructions, and where the thread works when
-    /// that is a worker, if there is either.
-    pub(crate) fn opening_parts(&self, thread: &Thread) -> Option<Vec<Part>> {
-        let parts: Vec<Part> = [self.settings.instructions.as_ref(), thread.note.as_ref()]
-            .into_iter()
-            .flatten()
-            .map(|text| Part::Text { text: text.clone() })
-            .collect();
-        (!parts.is_empty()).then_some(parts)
     }
 
     /// Records one event on its own.

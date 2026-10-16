@@ -242,18 +242,7 @@ pub async fn remote(root: &Path) -> Option<String> {
     let text = tokio::fs::read_to_string(root.join(".git").join("config"))
         .await
         .ok()?;
-    let mut in_origin = false;
-    for line in text.lines().map(str::trim) {
-        if line.starts_with('[') {
-            in_origin = line == "[remote \"origin\"]";
-        } else if in_origin && let Some(url) = line.strip_prefix("url") {
-            return url
-                .trim_start()
-                .strip_prefix('=')
-                .map(|url| url.trim().to_owned());
-        }
-    }
-    None
+    glave_ports::origin_remote(&text)
 }
 
 async fn read(path: &Path) -> crate::Result<Option<String>> {

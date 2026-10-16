@@ -1,6 +1,6 @@
 //! What every [`Spaces`] must do: keep whole records apart by organization, refuse a taken id
-//! or a second personal space, list a person's spaces in id order, change only what may
-//! change, and lead every folder key to one space.
+//! or a second personal space, keep each owner's project names apart, list a person's spaces
+//! in id order, change only what may change, and lead every folder key to one space.
 
 use glave_event::{At, Principal, PrincipalId};
 
@@ -51,7 +51,10 @@ pub async fn spaces(store: &dyn Spaces) -> Verdict {
         store.get(org, project.id).await.map_err(failed)?.is_none(),
         "a space never kept must read as none",
     )?;
-    store.create(org, &project).await.map_err(failed)?;
+    ensure(
+        store.create(org, &project).await.map_err(failed)? == project,
+        "a space with a name of its own is kept as it is",
+    )?;
     ensure(
         store.get(org, project.id).await.map_err(failed)? == Some(project.clone()),
         "a space must read back exactly as kept",
@@ -83,7 +86,70 @@ pub async fn spaces(store: &dyn Spaces) -> Verdict {
     listing(store, org, other_org, &project, [&ada, &grace, &linus]).await?;
     updating(store, org, &project, &linus).await?;
     personal(store, org, other_org, &ada).await?;
-    folders(store, org, other_org, &ada).await
+    folders(store, org, other_org, &ada).await?;
+    names(store, org, [&ada, &grace]).await
+}
+
+/// One owner's projects never share a name, ignoring case: a new one takes the next free
+/// name, a rename to a taken one is refused. Another owner's may share it.
+async fn names(store: &dyn Spaces, org: OrgId, [ada, grace]: [&Principal; 2]) -> Verdict {
+    let named = |n: u64, name: &str, owner: &Principal| {
+        space(n, SpaceKind::Project, owner).map(|mut made| {
+            made.name = name.into();
+            made
+        })
+    };
+    let web = store
+        .create(org, &named(30, "web", ada)?)
+        .await
+        .map_err(failed)?;
+    let again = store
+        .create(org, &named(31, "Web", ada)?)
+        .await
+        .map_err(failed)?;
+    let third = store
+        .folder(
+            org,
+            &[FolderKey::Path("/code/web".into())],
+            &named(32, "WEB", ada)?,
+        )
+        .await
+        .map_err(failed)?;
+    ensure(
+        web.name == "web" && again.name == "Web 2" && third.name == "WEB 3",
+        &format!(
+            "a project named as another of its owner's takes the next free name: {}, {}, {}",
+            web.name, again.name, third.name
+        ),
+    )?;
+    ensure(
+        store.get(org, again.id).await.map_err(failed)? == Some(again.clone()),
+        "the free name is the one kept",
+    )?;
+    let theirs = store
+        .create(org, &named(33, "web", grace)?)
+        .await
+        .map_err(failed)?;
+    ensure(
+        theirs.name == "web",
+        "another owner's project may have the same name",
+    )?;
+    let mut taken = again.clone();
+    taken.name = "WEB".into();
+    ensure(
+        matches!(
+            store.update(org, &taken).await,
+            Err(SpaceError::Conflict(_))
+        ),
+        "renaming a project to a name its owner has taken must be refused",
+    )?;
+    let mut own = again.clone();
+    own.name = "web 2".into();
+    store.update(org, &own).await.map_err(failed)?;
+    ensure(
+        store.get(org, again.id).await.map_err(failed)? == Some(own),
+        "a project may take its own name in another case",
+    )
 }
 
 async fn listing(

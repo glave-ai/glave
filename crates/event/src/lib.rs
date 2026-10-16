@@ -33,12 +33,13 @@ pub use payload::{
     ThreadUnarchived, TokenCounts, ToolCallCompleted, ToolCallRequested, TraceId, TurnEnded,
     TurnStarted, Usage, Verdict,
 };
+pub use payload::{Checkout, FolderSource};
 pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,
     TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved, sealed_under_memory,
 };
 pub use payload::{
     CredentialConnected, CredentialRemoved, Forge, ProviderConnected, ProviderKind,
-    ProviderRemoved, Renewal, sealed_under_account,
+    ProviderRemoved, Renewal, SpaceFolderSet, sealed_under_account,
 };
 pub use secret::{Secret, serialize_exposed};

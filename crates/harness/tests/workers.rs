@@ -138,7 +138,11 @@ mod workers {
             );
             let now = now.with_workers(workers(&dir, &origin));
             let mut thread = now
-                .start_thread_in(scope(), &Caller::default(), Place::Here)
+                .start_thread_in(
+                    scope(),
+                    &Caller::default(),
+                    Place::Folder(dir.to_string_lossy().into_owned()),
+                )
                 .await
                 .unwrap();
             now.run_turn(&mut thread, "read it", &Cancel::new(), &mut |_| {})

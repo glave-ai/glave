@@ -6,6 +6,23 @@
 
 use std::path::{Path, PathBuf};
 
+use glave_ports::BoxFuture;
+
+/// What a thread working in a folder of its own opens with, as the host reads it: the
+/// person's own instructions, the folder's AGENTS.md, and what its project brings that stays
+/// off and why. Each thread reads its own, so a thread in one project never opens with
+/// another's. Without one, every thread opens with the settings' instructions.
+pub trait FolderInstructions: Send + Sync {
+    /// The instructions for a thread working at `root`, in the project whose folder is
+    /// `project`; `None` for `project` when the folder is a scratch folder of the thread's
+    /// own.
+    fn for_folder<'a>(
+        &'a self,
+        root: &'a Path,
+        project: Option<&'a Path>,
+    ) -> BoxFuture<'a, Option<String>>;
+}
+
 /// The file agents look for.
 pub const AGENTS_MD: &str = "AGENTS.md";
 

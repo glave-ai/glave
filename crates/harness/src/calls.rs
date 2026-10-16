@@ -258,7 +258,7 @@ where
         }
         let case = JudgeCase {
             asked: &thread.asked,
-            rules: self.settings.instructions.as_deref(),
+            rules: thread.instructions.as_deref(),
             action: summary,
             flagged: reason,
             untrusted: thread.untrusted,

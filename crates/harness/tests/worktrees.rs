@@ -54,6 +54,11 @@ mod worktrees {
         Workspace::new(computers, info)
     }
 
+    /// The folder `dir` as a place names it.
+    fn at(dir: &Path) -> String {
+        dir.to_string_lossy().into_owned()
+    }
+
     fn writes(path: &str, content: &str) -> Vec<Completion> {
         vec![
             answer(
@@ -113,7 +118,7 @@ mod worktrees {
                 settings(),
             );
             let mut thread = now
-                .start_thread_in(scope(), &Caller::default(), Place::Here)
+                .start_thread_in(scope(), &Caller::default(), Place::Folder(at(&dir)))
                 .await
                 .unwrap();
             now.run_turn(&mut thread, "read it", &Cancel::new(), &mut |_| {})
@@ -150,7 +155,7 @@ mod worktrees {
                 settings(),
             );
             let mut thread = here
-                .start_thread_in(scope(), &Caller::default(), Place::Here)
+                .start_thread_in(scope(), &Caller::default(), Place::Folder(at(&elsewhere)))
                 .await
                 .unwrap();
             here.run_turn(&mut thread, "add notes", &Cancel::new(), &mut |_| {})
@@ -167,7 +172,7 @@ mod worktrees {
                 settings(),
             );
             let mut thread = harness
-                .start_thread_in(scope(), &Caller::default(), Place::Worktree)
+                .start_thread_in(scope(), &Caller::default(), Place::Worktree(at(&repo)))
                 .await
                 .unwrap();
             harness
@@ -283,8 +288,8 @@ mod worktrees {
             );
             let caller = Caller::default();
             let (a, b) = tokio::join!(
-                harness.start_thread_in(scope(), &caller, Place::Worktree),
-                harness.start_thread_in(scope(), &caller, Place::Worktree),
+                harness.start_thread_in(scope(), &caller, Place::Worktree(at(&repo))),
+                harness.start_thread_in(scope(), &caller, Place::Worktree(at(&repo))),
             );
             let (a, b) = (a.unwrap(), b.unwrap());
             let root = |events: Vec<Event>| bound(&events).first().map(|bound| bound.root.clone());
@@ -309,7 +314,7 @@ mod worktrees {
                 settings(),
             );
             let failed = harness
-                .start_thread_in(scope(), &Caller::default(), Place::Worktree)
+                .start_thread_in(scope(), &Caller::default(), Place::Worktree(at(&dir)))
                 .await;
             let Err(HarnessError::Workspace(error)) = failed else {
                 panic!("refused: {failed:?}")
@@ -357,7 +362,7 @@ mod worktrees {
                 settings(),
             );
             let mut thread = harness
-                .start_thread_in(scope(), &Caller::default(), Place::Worktree)
+                .start_thread_in(scope(), &Caller::default(), Place::Worktree(at(&repo)))
                 .await
                 .unwrap();
             harness

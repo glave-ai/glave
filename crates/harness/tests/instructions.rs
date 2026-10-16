@@ -9,9 +9,14 @@ mod support;
 
 #[cfg(test)]
 mod instructions {
+    use std::path::Path;
+    use std::sync::Arc;
+
     use glave_event::{Part, StopReason};
-    use glave_harness::{AllowAll, Cancel, Compaction, Settings, agents_md};
-    use glave_ports::{MemoryLog, Message, ModelRequest};
+    use glave_harness::{
+        AllowAll, Caller, Cancel, Compaction, FolderInstructions, Place, Settings, agents_md,
+    };
+    use glave_ports::{BoxFuture, MemoryLog, Message, ModelRequest};
     use serde_json::json;
 
     use super::support::*;
@@ -176,6 +181,60 @@ mod instructions {
                 .unwrap();
             let first = texts(&requests(&seen)[0].messages[0]);
             assert!(first[0].contains("Always answer in French."), "{first:?}");
+        });
+    }
+
+    /// Instructions that name the folder a thread reads them for.
+    struct Told;
+
+    impl FolderInstructions for Told {
+        fn for_folder<'a>(
+            &'a self,
+            root: &'a Path,
+            project: Option<&'a Path>,
+        ) -> BoxFuture<'a, Option<String>> {
+            let text = format!("Rules of {project:?} at {}", root.display());
+            Box::pin(std::future::ready(Some(text)))
+        }
+    }
+
+    #[test]
+    fn a_thread_in_a_folder_opens_with_that_folder_s_instructions_and_keeps_them() {
+        let dir = folder("rules-folder");
+        let other = folder("rules-folder-other");
+        let other = std::fs::canonicalize(other).unwrap();
+        block_on!(async {
+            let answers = vec![
+                answer(Some("Hi."), vec![], StopReason::EndTurn),
+                answer(Some("We said hello."), vec![], StopReason::EndTurn),
+            ];
+            let (harness, seen) =
+                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, with_rules()).await;
+            let harness = harness.with_folder_instructions(Some(Arc::new(Told)));
+            let place = Place::Folder(other.to_string_lossy().into_owned());
+            let mut thread = harness
+                .start_thread_in(scope(), &Caller::default(), place)
+                .await
+                .unwrap();
+            harness
+                .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            let told = format!("Rules of Some({other:?}) at {}", other.display());
+            let first = texts(&requests(&seen)[0].messages[0]);
+            assert_eq!(
+                first,
+                [told.as_str(), "hello"],
+                "the folder's, not the settings'"
+            );
+            // Resumed from the log, a compaction opens the conversation with them again.
+            let mut resumed = harness.resume_thread(scope(), thread.id).await.unwrap();
+            harness
+                .compact(&mut resumed, &Cancel::new(), &mut |_| {})
+                .await
+                .unwrap();
+            let opening = texts(&resumed.messages()[0]);
+            assert_eq!(opening.first(), Some(&told), "{opening:?}");
         });
     }
 }

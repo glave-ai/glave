@@ -77,19 +77,25 @@ impl Setup {
 
     /// What to tell the model, so it does not look for tools that are not there.
     pub fn model_note(&self) -> Option<String> {
-        (!self.withheld.is_empty()).then(|| {
-            format!(
-                "# Project tools that are off\n\nThis project brings tools or settings that glave \
-                 did not turn on:\n{}\nDo not look for them or try to run them yourself. If the \
-                 task needs them, say so to the person.",
-                self.withheld
-                    .iter()
-                    .map(|line| format!("- {line}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            )
-        })
+        off_note(&self.withheld)
     }
+}
+
+/// What the model is told of `withheld`, a project's tools and settings that stay off with
+/// why, so it does not look for them; nothing when nothing is off.
+pub fn off_note(withheld: &[String]) -> Option<String> {
+    (!withheld.is_empty()).then(|| {
+        format!(
+            "# Project tools that are off\n\nThis project brings tools or settings that glave \
+             did not turn on:\n{}\nDo not look for them or try to run them yourself. If the \
+             task needs them, say so to the person.",
+            withheld
+                .iter()
+                .map(|line| format!("- {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    })
 }
 
 /// `glave policy explain`: prints every setting and constraint, and fails when glave would

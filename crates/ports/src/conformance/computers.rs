@@ -6,6 +6,7 @@ mod confinement;
 mod credentials;
 mod finding;
 mod helpers;
+mod projects;
 mod worktrees;
 
 pub use confinement::{
@@ -21,7 +22,8 @@ use crate::computer::{
 };
 
 /// Runs the suite. `scratch` is an empty folder on the computers' machine, as that machine
-/// names it; the suite works only inside it and inside the workspaces it opens.
+/// names it; the suite works only inside it, inside the workspaces it opens, and in the
+/// places the computers keep worktrees and new projects' folders.
 pub async fn computers<C: Computers>(computers: &C, scratch: &str) -> Verdict {
     let made = computers
         .create(&Environment::host())
@@ -54,6 +56,7 @@ pub async fn computers<C: Computers>(computers: &C, scratch: &str) -> Verdict {
     moves_through_git(computers, made.id, here.id, &here.root).await?;
     plain_folders(computers, made.id, here.id, scratch).await?;
     worktrees::worktrees(computers, made.id, &here.root).await?;
+    projects::projects(computers, made.id).await?;
     confinement::confinement(computers, made.id, here.id, scratch).await?;
     computers
         .close(here.id)

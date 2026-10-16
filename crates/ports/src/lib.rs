@@ -46,7 +46,9 @@ pub use model::{
     Served, ToolCall, ToolChoice, ToolSpec,
 };
 pub use scope::{OrgId, Scope, SpaceId};
-pub use spaces::{FolderKey, MAX_NAME, MemorySpaces, Space, SpaceError, SpaceKind, Spaces};
+pub use spaces::{
+    FolderKey, MAX_NAME, MemorySpaces, Space, SpaceError, SpaceKind, Spaces, origin_remote,
+};
 pub use sse::{SseDecoder, SseError};
 pub use tools::{
     Assessment, BoxFuture, Cancellation, Effect, NeverCancelled, ToolError, ToolInfo, ToolOutput,

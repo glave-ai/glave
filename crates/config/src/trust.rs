@@ -76,3 +76,15 @@ pub fn mcp_json(servers: &BTreeMap<String, String>) -> String {
         .collect();
     serde_json::json!({ "mcpServers": servers }).to_string()
 }
+
+/// What `project` brings that a server started in another folder leaves off, under the record
+/// in `home`, one sentence each, for the model: every server and setting, trusted or not, with
+/// why. Nothing is asked or saved.
+pub async fn off_elsewhere(
+    home: &Path,
+    project: Project,
+    constraints: &Constraints,
+) -> crate::Result<Vec<String>> {
+    let record = Record::load(home).await?;
+    Ok(assess(project, &record, constraints).off_elsewhere())
+}

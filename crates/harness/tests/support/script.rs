@@ -237,6 +237,7 @@ pub fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::ProviderRemoved(_) => "provider.removed",
             Body::CredentialConnected(_) => "credential.connected",
             Body::CredentialRemoved(_) => "credential.removed",
+            Body::SpaceFolderSet(_) => "space.folder.set",
             Body::Unknown(_) => "unknown",
         })
         .collect()

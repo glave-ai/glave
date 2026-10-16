@@ -34,20 +34,32 @@ pub(crate) fn ledger_id() -> Option<ThreadId> {
 /// accounts (`provider.connected`, `provider.removed`) and git hosts (`credential.connected`,
 /// `credential.removed`) a person connected, in their personal space.
 pub fn accounts_ledger() -> Option<ThreadId> {
+    reserved(2)
+}
+
+/// The space ledger's reserved id, `00000000-0000-7000-8000-000000000003`: a space's own
+/// settings, today a project's folder (`space.folder.set`).
+pub fn space_ledger() -> Option<ThreadId> {
+    reserved(3)
+}
+
+/// The reserved id ending in `last`: a UUID v7 at time zero, nothing random but its last byte.
+fn reserved(last: u8) -> Option<ThreadId> {
     let mut random = [0u8; 10];
-    if let Some(last) = random.last_mut() {
-        *last = 2;
+    if let Some(end) = random.last_mut() {
+        *end = last;
     }
     ThreadId::new(Timestamp::UNIX_EPOCH, random).ok()
 }
 
-/// Whether `thread` is one of the space's ledgers (tasks, memory, or accounts) rather than a
-/// thread.
+/// Whether `thread` is one of the space's ledgers (tasks, memory, accounts, or the space's
+/// own) rather than a thread.
 pub fn is_ledger(thread: ThreadId) -> bool {
     [
         ledger_id(),
         glave_harness::memory_ledger(),
         accounts_ledger(),
+        space_ledger(),
     ]
     .contains(&Some(thread))
 }
