@@ -28,9 +28,15 @@ impl Credentials for Hosts {
             let url = format!("{}://{}", ask.protocol, ask.host.to_ascii_lowercase());
             let mut credential = self.kept_for(&url).await?;
             if left(&credential).is_some_and(|left| left < RENEW_BEFORE) {
-                let renewing = || self.renewing(&credential);
-                self.renewals.wait(credential.credential, renewing).await;
-                credential = still_working(self.kept_for(&url).await?)?;
+                let renewing = |fresh| self.renewing(&credential, fresh);
+                let unkept = self.renewals.wait(credential.credential, renewing).await;
+                let kept = self.kept_for(&url).await?;
+                // A renewal glave could not keep serves while the ledger holds what it renewed.
+                credential = match unkept {
+                    Some(fresh) if kept.credential == credential.credential => fresh,
+                    _ => kept,
+                };
+                credential = still_working(credential)?;
             }
             GitCredential::new(credential.username, credential.token.expose()).ok()
         })
@@ -52,8 +58,13 @@ impl Hosts {
         }
     }
 
-    /// The renewal of `current`, when glave's GitHub App can renew it.
-    fn renewing(&self, current: &CredentialConnected) -> Option<Renewing> {
+    /// The renewal of `current`, when glave's GitHub App can renew it, keeping `fresh` when
+    /// it was renewed already.
+    fn renewing(
+        &self,
+        current: &CredentialConnected,
+        fresh: Option<CredentialConnected>,
+    ) -> Option<Renewing> {
         let github = self
             .github
             .as_ref()
@@ -70,6 +81,7 @@ impl Hosts {
             http: self.http.clone(),
             github: github.clone(),
             current: current.clone(),
+            fresh,
         })
     }
 }

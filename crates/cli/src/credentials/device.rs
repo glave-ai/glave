@@ -27,6 +27,10 @@ const LONGEST_WAIT: Duration = Duration::from_secs(10);
 /// polls, in seconds: GitHub's own are 900 and 5, and a server saying more is not believed.
 const LONGEST_CODE: u64 = 3600;
 const LONGEST_INTERVAL: u64 = 60;
+/// The shortest wait between polls, in seconds, whatever a server says.
+const SHORTEST_INTERVAL: u64 = 1;
+/// The most of GitHub's own words passed on, in characters.
+const LONGEST_SAID: usize = 300;
 /// The longest a token is taken to last, in seconds: a year.
 const LONGEST_TOKEN: i64 = 366 * 24 * 3600;
 
@@ -114,7 +118,9 @@ impl Github {
             ));
         }
         let expires_in = expires_in.min(LONGEST_CODE);
-        let interval = number("interval").unwrap_or(5).min(LONGEST_INTERVAL);
+        let interval = number("interval")
+            .unwrap_or(5)
+            .clamp(SHORTEST_INTERVAL, LONGEST_INTERVAL);
         let now = Instant::now();
         let waiting = Flow {
             device_code: Secret::new(device_code),
@@ -155,11 +161,14 @@ impl Github {
         }
         let error = answer.get("error").and_then(Value::as_str).unwrap_or("");
         match error {
-            "authorization_pending" => return Ok(Polled::Waiting),
+            "authorization_pending" => {
+                flows.answered(flow, None);
+                return Ok(Polled::Waiting);
+            }
             "slow_down" => {
                 let asked = answer.get("interval").and_then(Value::as_u64);
                 let secs = asked.map_or(5, |secs| secs.clamp(5, LONGEST_INTERVAL));
-                flows.slow_down(flow, Duration::from_secs(secs));
+                flows.answered(flow, Some(Duration::from_secs(secs)));
                 return Ok(Polled::Waiting);
             }
             _ => flows.end(flow),
@@ -256,12 +265,14 @@ impl Flows {
         Ok(Some((flow.device_code.clone(), slot)))
     }
 
-    /// Polls `flow` at least `interval` apart from now on, as GitHub asked.
-    fn slow_down(&self, id: &str, interval: Duration) {
+    /// Polls `flow` no sooner than its interval after now, when GitHub answered a poll, so
+    /// delays on the way never bring polls closer than GitHub allows; `slower` apart from now
+    /// on when GitHub asked for that.
+    fn answered(&self, id: &str, slower: Option<Duration>) {
         if let Ok(mut flows) = self.0.lock()
             && let Some(flow) = flows.get_mut(id)
         {
-            flow.interval = flow.interval.max(interval);
+            flow.interval = flow.interval.max(slower.unwrap_or_default());
             let now = Instant::now();
             let after = now.checked_add(flow.interval).unwrap_or(now);
             flow.next = flow.next.max(after);
@@ -304,10 +315,17 @@ async fn post(http: &Http, url: &str, form: String) -> Result<Value, ApiError> {
 
 /// GitHub's refusal, with its own description when it gave one.
 fn refused(answer: &Value, what: &str) -> ApiError {
+    // Plain words only, and not too many: a server's text goes on to clients and logs.
     let said = answer
         .get("error_description")
         .or_else(|| answer.get("error"))
-        .and_then(Value::as_str);
+        .and_then(Value::as_str)
+        .map(|said| -> String {
+            said.chars()
+                .filter(|c| !c.is_control())
+                .take(LONGEST_SAID)
+                .collect()
+        });
     ApiError::new(
         code::HOST,
         match said {
@@ -391,7 +409,7 @@ mod tests {
         let third = flows.waiting("a").unwrap().unwrap().1;
         assert_eq!(third.duration_since(first), Duration::from_secs(8));
         assert!(flows.waiting("a").unwrap().is_none(), "12 s off: only wait");
-        flows.slow_down("a", Duration::from_secs(30));
+        flows.answered("a", Some(Duration::from_secs(30)));
         assert!(flows.waiting("a").unwrap().is_none());
         assert!(flows.waiting("b").is_err());
     }
