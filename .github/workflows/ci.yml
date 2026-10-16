@@ -115,7 +115,7 @@ jobs:
       - name: Build glave, which serves the app in the end-to-end tests
         run: cargo build -p glave
         working-directory: .
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
