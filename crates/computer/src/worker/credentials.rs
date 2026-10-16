@@ -122,7 +122,7 @@ mod tests {
     fn git_answers_are_read_and_only_https_gets_a_credential() {
         let credential = parse("protocol=https\nhost=h\nusername=me\npassword=s3cret\n").unwrap();
         assert_eq!(
-            (credential.username.as_str(), credential.password.as_str()),
+            (credential.username.as_str(), credential.password.expose()),
             ("me", "s3cret")
         );
         assert!(parse("protocol=https\nhost=h\n").is_none());

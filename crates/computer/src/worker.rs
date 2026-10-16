@@ -356,12 +356,15 @@ impl WorkerComputers {
         self.backend.remove(&worker.name).await
     }
 
+    /// Runs `command` on its workspace's worker, within the worker's time, asking `credentials`
+    /// for each credential its git or forge tools need, when given.
     async fn run_now(
         &self,
         workspace: WorkspaceId,
         command: &Command,
         output: &dyn Output,
         cancel: &dyn Cancellation,
+        credentials: Option<&dyn glave_ports::Credentials>,
     ) -> Result<glave_ports::Finished, ComputerError> {
         let worker = self.worker_of(workspace)?;
         let left = self.check_time(&worker)?;
@@ -371,10 +374,15 @@ impl WorkerComputers {
             let most = left.as_secs().max(1);
             command.timeout_secs = Some(command.timeout_secs.map_or(most, |asked| asked.min(most)));
         }
-        self.remote(&worker)
-            .await?
-            .run(workspace, &command, output, cancel)
-            .await
+        let remote = self.remote(&worker).await?;
+        match credentials {
+            Some(credentials) => {
+                remote
+                    .run_with_credentials(workspace, &command, output, cancel, credentials)
+                    .await
+            }
+            None => remote.run(workspace, &command, output, cancel).await,
+        }
     }
 }
 
@@ -423,7 +431,18 @@ impl Computers for WorkerComputers {
         output: &'a dyn Output,
         cancel: &'a dyn Cancellation,
     ) -> BoxFuture<'a, Result<glave_ports::Finished, ComputerError>> {
-        Box::pin(self.run_now(workspace, command, output, cancel))
+        Box::pin(self.run_now(workspace, command, output, cancel, None))
+    }
+
+    fn run_with_credentials<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        command: &'a Command,
+        output: &'a dyn Output,
+        cancel: &'a dyn Cancellation,
+        credentials: &'a dyn glave_ports::Credentials,
+    ) -> BoxFuture<'a, Result<glave_ports::Finished, ComputerError>> {
+        Box::pin(self.run_now(workspace, command, output, cancel, Some(credentials)))
     }
 
     route::forward!();

@@ -122,7 +122,11 @@ where
         };
         match opened.await {
             Ok(info) => {
-                let workspace = Workspace::new(Arc::clone(computers), info);
+                let mut workspace = Workspace::new(Arc::clone(computers), info);
+                // A worker's commands ask for credentials as the harness's own do.
+                if let Some(credentials) = self.workspace.credentials() {
+                    workspace = workspace.with_credentials(Arc::clone(credentials));
+                }
                 let recorded = bound(&workspace, ComputerKind::Worker);
                 Ok((Some(Arc::new(workspace)), recorded))
             }

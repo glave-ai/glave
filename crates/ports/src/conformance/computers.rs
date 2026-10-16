@@ -3,6 +3,7 @@
 //! work leaving a computer only through git.
 
 mod confinement;
+mod credentials;
 mod finding;
 mod helpers;
 mod worktrees;
@@ -48,6 +49,7 @@ pub async fn computers<C: Computers>(computers: &C, scratch: &str) -> Verdict {
     file_operations(computers, here.id).await?;
     finding::finding(computers, here.id).await?;
     commands(computers, here.id, &here.root).await?;
+    credentials::credentials(computers, here.id).await?;
     finding::sandboxed(computers, here.id).await?;
     moves_through_git(computers, made.id, here.id, &here.root).await?;
     plain_folders(computers, made.id, here.id, scratch).await?;

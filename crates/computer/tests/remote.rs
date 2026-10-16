@@ -80,7 +80,7 @@ mod remote_tests {
             let remote = RemoteComputers::connect(read, write);
             let refused = remote.check_protocol().await;
             assert!(
-                matches!(&refused, Err(ComputerError::Unsupported(m)) if m.contains("2026-10-11")),
+                matches!(&refused, Err(ComputerError::Unsupported(m)) if m.contains("2026-10-15")),
                 "{refused:?}"
             );
             drop(remote);

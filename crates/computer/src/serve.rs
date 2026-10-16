@@ -1,12 +1,17 @@
 //! Serving computers over one connection (`glave computer serve`): requests run
-//! concurrently, a command's output streams as notifications, and when the connection ends
-//! every command it started is stopped.
+//! concurrently, a command's output streams as notifications, a command offered credentials
+//! asks the client for each one, and when the connection ends every command it started is
+//! stopped.
+
+mod asking;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use glave_ports::{BoxFuture, ComputerError, Computers, Output};
+use glave_ports::{
+    BoxFuture, Command, ComputerError, Computers, CredentialHost, Output, WorkspaceId,
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::io::{
@@ -21,6 +26,7 @@ use tokio_rustls::TlsAcceptor;
 use crate::cancel::Switch;
 use crate::token::{Token, Tokens};
 use crate::wire::{self, Chunk, MAX_LINE, OUTPUT, Request, code};
+use asking::{Asking, Asks};
 
 /// Lines written ahead of a slow client.
 const WRITE_AHEAD: usize = 256;
@@ -40,6 +46,8 @@ struct Connection<C> {
     runs: Mutex<HashMap<String, Switch>>,
     seen: Mutex<Seen>,
     lines: mpsc::Sender<String>,
+    /// The computer's own credential requests, waiting for the client's answers.
+    asks: Asks,
 }
 
 /// Serves `computers` to one client until its input ends. With a `token`, the first message
@@ -73,6 +81,7 @@ where
         runs: Mutex::new(HashMap::new()),
         seen: Mutex::new(Seen::default()),
         lines,
+        asks: Asks::default(),
     });
     let mut input = input;
     let read = match token {
@@ -100,6 +109,12 @@ where
             Err(error) => break Err(error),
         };
         if line.trim().is_empty() {
+            continue;
+        }
+        // The client's answer to a credential request of the computer's own, taken here so a
+        // full set of running requests, each waiting for one, never holds its answer back.
+        if let Some((id, answer)) = wire::response(&line) {
+            connection.asks.answered(id, answer);
             continue;
         }
         while running.len() >= MAX_IN_FLIGHT {
@@ -243,18 +258,8 @@ impl<C: Computers + 'static> Connection<C> {
                 workspace,
                 command,
                 run,
-            } => {
-                let switch = self.start(&run)?;
-                let output = Forward {
-                    run: run.clone(),
-                    lines: &self.lines,
-                };
-                let finished = computers.run(workspace, &command, &output, &switch).await;
-                if let Ok(mut runs) = self.runs.lock() {
-                    runs.remove(&run);
-                }
-                reply(finished)
-            }
+                credentials,
+            } => self.run(workspace, &command, run, credentials).await,
             Request::Cancel { run } => {
                 if let Some(switch) = self
                     .runs
@@ -283,6 +288,40 @@ impl<C: Computers + 'static> Connection<C> {
             }
             Request::Save { workspace, save } => reply(computers.save(workspace, &save).await),
         }
+    }
+
+    /// Runs `command` as `run`, streaming its output, asking the client for any credential its
+    /// helper needs for the hosts `credentials` names.
+    async fn run(
+        &self,
+        workspace: WorkspaceId,
+        command: &Command,
+        run: String,
+        credentials: Vec<CredentialHost>,
+    ) -> Result<Value, Value> {
+        let computers = &*self.computers;
+        let switch = self.start(&run)?;
+        let output = Forward {
+            run: run.clone(),
+            lines: &self.lines,
+        };
+        let finished = if credentials.is_empty() {
+            computers.run(workspace, command, &output, &switch).await
+        } else {
+            let asking = Asking {
+                asks: &self.asks,
+                lines: &self.lines,
+                run: run.clone(),
+                hosts: credentials,
+            };
+            computers
+                .run_with_credentials(workspace, command, &output, &switch, &asking)
+                .await
+        };
+        if let Ok(mut runs) = self.runs.lock() {
+            runs.remove(&run);
+        }
+        reply(finished)
     }
 
     /// Registers a run under its name, refusing a name already running.

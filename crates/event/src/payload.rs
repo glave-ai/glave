@@ -3,6 +3,7 @@
 
 pub(crate) mod approval;
 pub(crate) mod chosen;
+pub(crate) mod credential;
 pub(crate) mod gateway;
 pub(crate) mod goal;
 pub(crate) mod hook;
@@ -21,6 +22,7 @@ pub(crate) mod workspace;
 
 pub use approval::{ApprovalDecided, ApprovalRequested, Verdict};
 pub use chosen::{ApprovalMode, ApprovalModeChosen, ModelChosen};
+pub use credential::Forge;
 pub use gateway::GatewayToolCalled;
 pub use goal::{GoalEnded, GoalReason, GoalResumed, GoalSet};
 pub use hook::{HookPoint, HookRan, HookResult};

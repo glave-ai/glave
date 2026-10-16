@@ -8,8 +8,9 @@ use std::time::Duration;
 
 use glave_ports::{
     BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, GitCredential, Glob, Globbed, Listed, Listing, Output, Save,
-    Saved, Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
+    CredentialAsk, CredentialHost, Credentials, Environment, FileWrite, Finished, GitCredential,
+    Glob, Globbed, Listed, Listing, Output, Save, Saved, Search, Searched, Sources, Stat,
+    WorkspaceId, WorkspaceInfo,
 };
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -18,8 +19,8 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
-use crate::wire::{self, Request};
-use reader::{Answer, Shared};
+use crate::wire::{self, Given, Request};
+use reader::{Answer, Ask, Shared};
 
 mod reader;
 
@@ -27,6 +28,10 @@ mod reader;
 const QUEUE: usize = 256;
 /// Output chunks held for a command whose caller is slow to take them.
 const CHUNKS: usize = 64;
+/// Credential requests held for a command while it answers one; more are refused.
+const ASKS: usize = 8;
+/// How long the caller's credentials have to answer one request.
+const ASK: Duration = Duration::from_secs(30);
 /// How long a quick call (files, listings, status) waits for its answer.
 const QUICK: Duration = Duration::from_mins(5);
 /// How long a slow call waits: making or removing a computer, opening or saving a workspace
@@ -82,8 +87,9 @@ impl RemoteComputers {
         let (outgoing, queued) = mpsc::channel::<String>(QUEUE);
         let writer = tokio::spawn(write(output, queued, Arc::clone(&shared)));
         let reading = Arc::clone(&shared);
+        let answering = outgoing.clone();
         let reader = tokio::spawn(async move {
-            reader::read(BufReader::new(input), &reading).await;
+            reader::read(BufReader::new(input), &reading, &answering).await;
         });
         Self {
             shared,
@@ -179,27 +185,40 @@ impl RemoteComputers {
         command: &Command,
         output: &dyn Output,
         cancel: &dyn Cancellation,
+        credentials: Option<&dyn Credentials>,
     ) -> Result<Finished, ComputerError> {
         let run = format!("run-{}", self.next.fetch_add(1, Ordering::Relaxed));
+        // Forgets the run however this call ends, dropped included.
+        let _registered = Registered {
+            shared: &self.shared,
+            run: run.clone(),
+        };
         let (chunks_in, mut chunks) = mpsc::channel(CHUNKS);
         self.shared
             .streams
             .lock()
             .map_err(|_| unreachable("the stream table's lock is poisoned"))?
             .insert(run.clone(), chunks_in);
+        let hosts = match credentials {
+            Some(credentials) => credentials.hosts().await,
+            None => Vec::new(),
+        };
+        let (asks_in, mut asks) = mpsc::channel::<Ask>(ASKS);
+        if !hosts.is_empty() {
+            self.shared
+                .asking
+                .lock()
+                .map_err(|_| unreachable("the asking table's lock is poisoned"))?
+                .insert(run.clone(), asks_in);
+        }
         let request = Request::Run {
             workspace,
             command: command.clone(),
             run: run.clone(),
+            credentials: hosts.clone(),
         };
         let limit = deadline(&request);
-        let mut waiting = match self.send(&request).await {
-            Ok(waiting) => waiting,
-            Err(error) => {
-                self.forget(&run);
-                return Err(error);
-            }
-        };
+        let mut waiting = self.send(&request).await?;
         let stop = || wire::notify("command/cancel", &json!({"run": run}));
         let timer = tokio::time::sleep(limit);
         tokio::pin!(timer);
@@ -210,6 +229,7 @@ impl RemoteComputers {
                 biased;
                 answer = &mut waiting.answered => break Some(answer),
                 Some(text) = chunks.recv() => output.write(&text).await,
+                Some((id, ask)) = asks.recv() => self.give(id, &ask, &hosts, credentials).await,
                 () = &mut cancelled, if !asked_to_cancel => {
                     asked_to_cancel = true;
                     let _ = self.outgoing.send(stop()).await;
@@ -224,7 +244,6 @@ impl RemoteComputers {
         while let Ok(text) = chunks.try_recv() {
             output.write(&text).await;
         }
-        self.forget(&run);
         let Some(answer) = answer else {
             return Err(late(request.method(), limit));
         };
@@ -233,10 +252,30 @@ impl RemoteComputers {
             .map_err(|error| unreachable(&format!("the computer's answer made no sense: {error}")))
     }
 
-    fn forget(&self, run: &str) {
-        if let Ok(mut streams) = self.shared.streams.lock() {
-            streams.remove(run);
-        }
+    /// Answers the computer's credential request `id` for `ask`: from `credentials`, for a host
+    /// this run offered and within [`ASK`], else with none. The computer is not trusted to ask
+    /// only for what was offered.
+    async fn give(
+        &self,
+        id: u64,
+        ask: &CredentialAsk,
+        hosts: &[CredentialHost],
+        credentials: Option<&dyn Credentials>,
+    ) {
+        let credential = match credentials {
+            Some(credentials) if hosts.iter().any(|host| host.is_for(ask)) => {
+                tokio::time::timeout(ASK, credentials.request(ask))
+                    .await
+                    .ok()
+                    .flatten()
+            }
+            _ => None,
+        };
+        let given = serde_json::to_value(Given { credential }).unwrap_or(Value::Null);
+        let _ = self
+            .outgoing
+            .send(wire::respond(Some(&json!(id)), Ok(given)))
+            .await;
     }
 
     /// A response as the computer meant it: its result, or its error as it was raised.
@@ -267,6 +306,24 @@ impl RemoteComputers {
                     "the computer refused the request: {message}"
                 )))
             }
+        }
+    }
+}
+
+/// A run's place in the tables the reader hands its output and credential requests through,
+/// removed when its call ends.
+struct Registered<'a> {
+    shared: &'a Shared,
+    run: String,
+}
+
+impl Drop for Registered<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut streams) = self.shared.streams.lock() {
+            streams.remove(&self.run);
+        }
+        if let Ok(mut asking) = self.shared.asking.lock() {
+            asking.remove(&self.run);
         }
     }
 }
@@ -382,7 +439,18 @@ impl Computers for RemoteComputers {
         output: &'a dyn Output,
         cancel: &'a dyn Cancellation,
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
-        Box::pin(self.run_now(workspace, command, output, cancel))
+        Box::pin(self.run_now(workspace, command, output, cancel, None))
+    }
+
+    fn run_with_credentials<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        command: &'a Command,
+        output: &'a dyn Output,
+        cancel: &'a dyn Cancellation,
+        credentials: &'a dyn Credentials,
+    ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
+        Box::pin(self.run_now(workspace, command, output, cancel, Some(credentials)))
     }
 
     fn read<'a>(

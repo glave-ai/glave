@@ -6,10 +6,11 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use glave_ports::{Cancellation, Command, ComputerError, Ending, Finished, Output};
+use glave_ports::{Cancellation, Command, ComputerError, Credentials, Ending, Finished, Output};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::process::{Child, ChildStdout};
 
+use super::credentials::{Offered, offer};
 use super::registry::Opened;
 use super::sandbox::Launch;
 
@@ -68,12 +69,14 @@ fn maven_opts(environment: &[(OsString, OsString)], caches: &Path) -> Option<OsS
 }
 
 /// Runs `command` in `opened`. `helper` runs the Linux sandbox's helper, if this machine has one.
+/// Git and the forge tools ask `credentials`, if given, for the hosts it names, at each use.
 pub(crate) async fn run(
     opened: &Opened,
     command: &Command,
     output: &dyn Output,
     cancel: &dyn Cancellation,
     helper: Option<&Path>,
+    credentials: Option<&dyn Credentials>,
 ) -> Result<Finished, ComputerError> {
     if command.script.trim().is_empty() {
         return Err(ComputerError::Refused("the command is empty".into()));
@@ -91,8 +94,13 @@ pub(crate) async fn run(
         Some(sandbox) => Some((sandbox.launch().await?, sandbox.temp(), sandbox.caches())),
         None => None,
     };
+    // Held until the command ends: its helper's folder and listener go with it.
+    let offered = match credentials {
+        Some(credentials) => offer(credentials, &opened.environment).await?,
+        None => None,
+    };
     let started = Instant::now();
-    let mut child = bash(opened, &command.script, launch.as_ref())
+    let mut child = bash(opened, &command.script, launch.as_ref(), offered.as_ref())
         .spawn()
         .map_err(|error| ComputerError::Failed(format!("could not start bash: {error}")))?;
     let input = launch
@@ -105,7 +113,10 @@ pub(crate) async fn run(
     }
     let stdout = child.stdout.take();
     let pump = pump(stdout, output);
-    let waiting = wait(&mut child, limit, cancel);
+    let waiting = answering(
+        wait(&mut child, limit, cancel),
+        offered.as_ref().zip(credentials),
+    );
     tokio::pin!(pump, waiting);
     let (ending, pumped) = tokio::select! {
         ending = &mut waiting => (ending, false),
@@ -121,12 +132,33 @@ pub(crate) async fn run(
     })
 }
 
+/// `work`, with the command's credential helper answered meanwhile, when it has one.
+async fn answering<T>(
+    work: impl Future<Output = T>,
+    helper: Option<(&Offered, &dyn Credentials)>,
+) -> T {
+    let Some((offered, credentials)) = helper else {
+        return work.await;
+    };
+    let serving = offered.serve(credentials);
+    tokio::pin!(work, serving);
+    let mut listening = true;
+    loop {
+        tokio::select! {
+            done = &mut work => return done,
+            () = &mut serving, if listening => listening = false,
+        }
+    }
+}
+
 /// `script` run by bash at the workspace root, in the sandbox if there is one, with the
-/// workspace's environment and output that reads well as text.
+/// workspace's environment, the credential helper's settings if it has one, and output that
+/// reads well as text.
 fn bash(
     opened: &Opened,
     script: &str,
     sandbox: Option<&(Launch, &Path, &Path)>,
+    offered: Option<&Offered>,
 ) -> tokio::process::Command {
     let mut command = match sandbox {
         Some((launch, _, _)) => {
@@ -154,6 +186,12 @@ fn bash(
                 .and_then(|(_, _, caches)| maven_opts(&opened.environment, caches))
                 .map(|opts| ("MAVEN_OPTS", opts)),
         )
+        .envs(offered.into_iter().flat_map(|offered| {
+            offered
+                .environment
+                .iter()
+                .map(|(name, value)| (name, value))
+        }))
         .env("NO_COLOR", "1")
         .env("TERM", "dumb")
         .env("PAGER", "cat")
