@@ -4,13 +4,14 @@
 //! nothing. Only hosts offered to the command are asked about; a connection that does not
 //! present the password at once, or takes too long, gets nothing, and holds no one else up.
 
+use std::collections::VecDeque;
 use std::time::Duration;
 
 use glave_ports::{CredentialAsk, CredentialHost, Credentials};
 use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::task::JoinSet;
+use tokio::task::{AbortHandle, JoinSet};
 
 use crate::token::same;
 
@@ -22,13 +23,15 @@ const REQUEST: Duration = Duration::from_secs(10);
 const ANSWER: Duration = Duration::from_secs(30);
 /// How long to wait after a connection could not be accepted, before trying again.
 const AGAIN: Duration = Duration::from_millis(50);
-/// Connections read at once, so a few that stall hold no one up.
+/// Connections read at once; past this, the oldest is ended.
 const READING: usize = 8;
 /// The most a request may hold, in bytes: git's description of a URL is a few lines.
 const LONGEST: u64 = 16 * 1024;
 
 /// Answers connections until the command ends and this is dropped, which stops every read
-/// still going. Requests are read side by side and answered one at a time.
+/// still going. Requests are read side by side and answered one at a time; with
+/// [`READING`] reads going, a new connection ends the oldest, so stalled ones never shut the
+/// helper out.
 pub(super) async fn serve(
     listener: &TcpListener,
     password: &str,
@@ -36,11 +39,15 @@ pub(super) async fn serve(
     credentials: &dyn Credentials,
 ) {
     let mut reading = JoinSet::new();
+    let mut oldest: VecDeque<AbortHandle> = VecDeque::new();
     loop {
         tokio::select! {
-            accepted = listener.accept(), if reading.len() < READING => match accepted {
+            accepted = listener.accept() => match accepted {
                 Ok((stream, peer)) if peer.ip().is_loopback() => {
-                    reading.spawn(read(stream, password.to_owned(), hosts.to_vec()));
+                    oldest.push_back(reading.spawn(read(stream, password.to_owned(), hosts.to_vec())));
+                    if oldest.len() > READING && let Some(ended) = oldest.pop_front() {
+                        ended.abort();
+                    }
                 }
                 Ok(_) => {}
                 // Such as too many open files: the helper waits, and this tries again.

@@ -37,7 +37,18 @@ pub(crate) struct Offered {
 impl Drop for Offered {
     fn drop(&mut self) {
         // Holds nothing secret but the password, which dies with the listener. Small, so
-        // removing it does not hold the runtime up.
+        // removing it does not hold the runtime up. The tools' read-only folders, or any a
+        // command made unwritable, are made writable first, so nothing is left behind.
+        #[cfg(unix)]
+        if let Ok(entries) = std::fs::read_dir(&self.folder) {
+            use std::os::unix::fs::PermissionsExt as _;
+            for entry in entries.flatten() {
+                if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                    let writable = std::fs::Permissions::from_mode(0o700);
+                    let _ = std::fs::set_permissions(entry.path(), writable);
+                }
+            }
+        }
         let _ = std::fs::remove_dir_all(&self.folder);
     }
 }

@@ -85,21 +85,17 @@ pub(super) fn wrapper(
     script
 }
 
-/// Sets `elsewhere` when the tool is pointed at a host other than its own, where it runs
-/// without the token: `gh --hostname`, or `-R`/`--repo` with a host in front.
+/// Sets `elsewhere` when the tool may be pointed at a host other than its own, where it runs
+/// without the token. gh sends `GH_TOKEN` to github.com, `github.localhost` and GitHub's
+/// `*.ghe.com` hosts alone (go-gh's `tokenForHost`), so any argument naming the last two, in a
+/// flag, a URL or `HOST/OWNER/REPO`, does; one with a space in it is text, such as a title.
 fn elsewhere(tool: ForgeTool) -> &'static str {
     match tool {
         ForgeTool::Gh => {
-            "repo_host() { rest=${1#*://}; case $rest in */*/*) printf %s \"${rest%%/*}\";; \
-             *) printf github.com;; esac; }\n\
-             elsewhere=\nprev=\n\
+            "elsewhere=\n\
              for arg in \"$@\"; do\n\
-             \x20 host=\n\
-             \x20 case $prev in --hostname) host=$arg;; -R|--repo) host=$(repo_host \"$arg\");; esac\n\
-             \x20 case $arg in --hostname=*) host=${arg#*=};; --repo=*) host=$(repo_host \"${arg#*=}\");; \
-             -R?*) host=$(repo_host \"${arg#-R}\");; esac\n\
-             \x20 case $host in ''|[Gg][Ii][Tt][Hh][Uu][Bb].[Cc][Oo][Mm]) ;; *) elsewhere=1;; esac\n\
-             \x20 prev=$arg\n\
+             \x20 case $arg in *[[:space:]]*) ;; \
+             *[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]*|*[Gg][Hh][Ee].[Cc][Oo][Mm]*) elsewhere=1;; esac\n\
              done\n"
         }
         // tea talks only to the instance it is given below.

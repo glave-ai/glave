@@ -96,9 +96,13 @@ fn git(args: &[&str]) -> Option<&'static str> {
     (fill || subcommand.starts_with("credential-")).then_some("git's stored credentials")
 }
 
-/// What names glave's own credential helper, or the folder it is in, for one command
-/// (`specs/computers.md`, "Credentials").
-const GLAVE_HELPER: &[&str] = &["git-credential-glave", "glave-credentials-"];
+/// What names glave's own credential helper, the folder it is in, or git's setting that
+/// holds its path, for one command (`specs/computers.md`, "Credentials").
+const GLAVE_HELPER: &[&str] = &[
+    "git-credential-glave",
+    "glave-credentials-",
+    "GIT_CONFIG_VALUE_",
+];
 
 /// `git -c credential.…` or `--config-env=credential.…`, among git's own options: a helper of
 /// the command's own (`store`, `cache`) would keep, and could print, what glave's hands git.
@@ -221,6 +225,7 @@ mod tests {
             "git --config-env credential.helper=HELPER push",
             "printf 'host=github.com\\n' | /tmp/glave-credentials-1/git-credential-glave get",
             "cat /tmp/glave-credentials-*/git-credential-glave",
+            "echo \"${GIT_CONFIG_VALUE_1#!}\"",
             "git -C . -c credential.helper=cache push",
         ] {
             match verdict(script) {

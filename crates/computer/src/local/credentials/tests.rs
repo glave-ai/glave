@@ -143,15 +143,17 @@ fn gh_pointed_at_another_host_runs_without_the_token() {
     assert_eq!(run(&["pr", "list"]), "token=ghp_wrapped");
     assert_eq!(run(&["pr", "list", "-R", "acme/app"]), "token=ghp_wrapped");
     assert_eq!(
-        run(&["api", "--hostname", "GitHub.com", "user"]),
-        "token=ghp_wrapped"
+        run(&["pr", "create", "--title", "Fix the localhost redirect"]),
+        "token=ghp_wrapped",
+        "a title is text"
     );
     for elsewhere in [
         &["api", "--hostname", "github.localhost", "user"][..],
-        &["api", "--hostname=evil.example", "user"],
-        &["pr", "list", "-R", "evil.example/acme/app"],
-        &["pr", "list", "--repo=https://evil.example/acme/app"],
-        &["pr", "list", "-Revil.example/acme/app"],
+        &["api", "http://api.GitHub.LocalHost/user"],
+        &["pr", "view", "1", "-cRgithub.localhost/o/r"],
+        &["repo", "view", "github.localhost/o/r"],
+        &["repo", "clone", "https://acme.ghe.com/o/r"],
+        &["pr", "list", "-R", "git@github.localhost:o/r"],
     ] {
         assert_eq!(run(elsewhere), "token=none", "{elsewhere:?}");
     }
