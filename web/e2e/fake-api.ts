@@ -5,8 +5,8 @@ import type { Page, Route } from '@playwright/test';
  * What the fake server knows: a project and the person's own space with their threads, one
  * thread's history (a turn on this computer that ran a command, edited a file and wrote a new
  * one, and replied from the default model, which the picker shows; how long it took and what
- * it cost), another waiting for the person to allow a push, the models, the tasks, and what a
- * turn streams.
+ * it cost), another waiting for the person to allow a push, the models, the tasks, what a
+ * turn streams, the folders on the person's computer, and the projects made while it runs.
  */
 const OWNER = { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' } as const;
 
@@ -239,6 +239,76 @@ const TASKS: readonly TaskInfo[] = [
   },
 ];
 
+/** The folders on the person's computer, by path; the home folder is /Users/ana. */
+const HOME = '/Users/ana';
+const FOLDERS: Readonly<Record<string, readonly string[]>> = {
+  '/': ['Users'],
+  '/Users': ['ana'],
+  [HOME]: ['code', 'Documents'],
+  [`${HOME}/code`]: ['glave', 'notes'],
+  [`${HOME}/code/glave`]: [],
+  [`${HOME}/code/notes`]: [],
+  [`${HOME}/Documents`]: [],
+};
+
+/** The repository the fake host does not have, which a clone fails on. */
+export const MISSING_REPOSITORY = 'https://github.com/acme/missing';
+
+/** How long a clone takes, so the page shows it under way. */
+const CLONE_MS = 400;
+
+/** What a server refuses a call with. */
+class Refusal {
+  constructor(
+    readonly code: number,
+    readonly message: string,
+  ) {}
+}
+
+/** The folders inside `path`, as `folder/list` answers. */
+function listFolders(path: string): unknown {
+  const folders = FOLDERS[path];
+  if (folders === undefined) {
+    return new Refusal(-32602, `there is no folder at ${path}`);
+  }
+  const parent = path === '/' ? null : path.slice(0, path.lastIndexOf('/')) || '/';
+  return { path, parent, folders };
+}
+
+/**
+ * Makes a project as `space/create` does: a name taken among the person's projects gets the
+ * next free one, and a repository the host does not have is refused with what git said.
+ */
+function makeProject(params: Record<string, unknown>, made: Space[]): unknown {
+  const folder = params['folder'] as { kind: string; url?: string } | null | undefined;
+  const url = folder?.url ?? '';
+  if (folder?.kind === 'repository' && !/^https:\/\/[^/@]+\/./u.test(url)) {
+    return new Refusal(
+      -32602,
+      `"${url}" is not a repository's address: give its https:// address, such as https://github.com/acme/app, with no user name or token in it`,
+    );
+  }
+  if (folder?.kind === 'repository' && url === MISSING_REPOSITORY) {
+    return new Refusal(
+      -32025,
+      `could not clone ${MISSING_REPOSITORY}: remote: Repository not found. If the repository is private, connect its git host first`,
+    );
+  }
+  const asked = String(params['name']);
+  const taken = new Set([PROJECT, ...made].map((each) => each.name.toLowerCase()));
+  let name = asked;
+  for (let next = 2; taken.has(name.toLowerCase()); next += 1) {
+    name = `${asked} ${String(next)}`;
+  }
+  const project = space(
+    `01900000-0000-7000-8000-${String(900 + made.length).padStart(12, '0')}`,
+    name,
+    'project',
+  );
+  made.push(project);
+  return { space: project };
+}
+
 /** A request the fake answered: its method and params. */
 export interface Request {
   readonly method: string;
@@ -363,15 +433,23 @@ export async function streamReply(page: Page, reply = MARKDOWN_REPLY, delay = 15
   );
 }
 
-/** The answer to a call that is not a turn; `started` holds the threads started so far. */
+/**
+ * The answer to a call that is not a turn; `started` holds the threads started so far, and
+ * `made` the projects made.
+ */
 function answer(
   method: string,
   params: Record<string, unknown>,
   started: ThreadSummary[],
+  made: Space[],
 ): unknown {
   switch (method) {
     case 'space/list':
-      return { spaces: [PROJECT, PERSONAL] };
+      return { spaces: [...made, PROJECT, PERSONAL] };
+    case 'space/create':
+      return makeProject(params, made);
+    case 'folder/list':
+      return listFolders(typeof params['path'] === 'string' ? params['path'] : HOME);
     case 'thread/list': {
       const space = String(params['space']);
       const fresh = started.filter((each) => each.space === space);
@@ -428,6 +506,7 @@ export async function fakeApi(
   const calls: string[] = [];
   const requests: Request[] = [];
   const started: ThreadSummary[] = [];
+  const made: Space[] = [];
   await page.route('**/*', async (route: Route) => {
     const request = route.request();
     if (request.method() !== 'POST') {
@@ -445,13 +524,18 @@ export async function fakeApi(
       await route.fulfill({ contentType: 'text/event-stream', body: turn(message) });
       return;
     }
+    const folder = message.params['folder'] as { kind: string } | null | undefined;
+    if (message.method === 'space/create' && folder?.kind === 'repository') {
+      await new Promise((resolve) => setTimeout(resolve, CLONE_MS));
+    }
+    const answered = answer(message.method, message.params, started, made);
+    const reply =
+      answered instanceof Refusal
+        ? { error: { code: answered.code, message: answered.message } }
+        : { result: answered };
     await route.fulfill({
       contentType: 'application/json',
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: message.id,
-        result: answer(message.method, message.params, started),
-      }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: message.id, ...reply }),
     });
   });
   return { calls, requests };

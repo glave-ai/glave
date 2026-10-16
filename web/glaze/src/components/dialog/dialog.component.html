@@ -1,4 +1,4 @@
-<!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -- a click on the dialog itself is on its backdrop; Escape closes it natively -->
+<!-- eslint-disable-next-line @angular-eslint/template/interactive-supports-focus -- a click on the dialog itself is on its backdrop; Escape closes it natively -->
 <dialog
   #dialog
   [attr.data-testid]="testId()"
@@ -6,6 +6,7 @@
   [attr.aria-labelledby]="headingId"
   (close)="closed()"
   (click)="clicked($event)"
+  (keydown.escape)="escaped($event)"
 >
   <div class="surface">
     <div class="header">

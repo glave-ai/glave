@@ -44,8 +44,20 @@ export function watchForProblems(page: Page): () => readonly string[] {
   return () => problems;
 }
 
-/** Fails on any WCAG 2.2 A or AA violation axe finds, colour contrast included. */
+/**
+ * Fails on any WCAG 2.2 A or AA violation axe finds, colour contrast included. Colours are
+ * measured once they stop changing: a button fades to its new background after a switch to
+ * dark, and halfway through the fade its text would fail.
+ */
 export async function expectAccessible(page: Page): Promise<void> {
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation instanceof CSSTransition)
+        .map((transition) => transition.finished.catch(() => undefined)),
+    ),
+  );
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();

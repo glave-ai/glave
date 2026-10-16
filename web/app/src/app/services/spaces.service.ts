@@ -1,6 +1,6 @@
 import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
-import type { Space, SpaceId, ThreadId, ThreadSummary } from '@glave/client';
+import type { Space, SpaceCreateParams, SpaceId, ThreadId, ThreadSummary } from '@glave/client';
 
 import type { SpaceWithThreads } from '../lib/nav';
 import { SessionService } from './session.service';
@@ -47,6 +47,20 @@ export class SpacesService {
       this.pending = null;
     });
     return this.pending;
+  }
+
+  /**
+   * Makes a project (`space/create`) and reads the lists again so it shows: after the read under
+   * way, if there is one, since that one began before the project was made. Answers the project
+   * as the server made it, whose name may differ from the one asked for.
+   */
+  async create(params: SpaceCreateParams): Promise<Space> {
+    const { space } = await this.session.call('space/create', params);
+    if (this.pending !== null) {
+      await this.pending;
+    }
+    await this.refresh();
+    return space;
   }
 
   private async readAll(): Promise<void> {

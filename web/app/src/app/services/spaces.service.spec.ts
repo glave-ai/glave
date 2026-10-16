@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { ApiError, ErrorCode } from '@glave/client';
+import { ApiError, ErrorCode, type Space } from '@glave/client';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
 import { space, thread } from '../testing/fixtures';
@@ -72,6 +72,46 @@ describe('SpacesService', () => {
     expect(fake.paramsOf('space/list')).toHaveLength(1);
     await spaces.refresh();
     expect(fake.paramsOf('space/list')).toHaveLength(2);
+  });
+
+  it('makes a project, then lists it, after a read that began before it was made', async () => {
+    const listed: Space[] = [space('me', 'Personal', 'personal'), space('p1', 'glave')];
+    const fake = new FakeSession()
+      .answer('space/list', () => ({ spaces: [...listed] }))
+      .answer('thread/list', { threads: [] })
+      .answer('space/create', (params) => {
+        const made = space('p2', `${(params as { name: string }).name} 2`);
+        listed.push(made);
+        return { space: made };
+      });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const spaces = TestBed.inject(SpacesService);
+    const before = spaces.refresh();
+    const made = await spaces.create({ name: 'glave', folder: { kind: 'empty' } });
+    await before;
+    expect(made.name).toBe('glave 2');
+    expect(fake.paramsOf('space/create')).toEqual([{ name: 'glave', folder: { kind: 'empty' } }]);
+    expect(fake.paramsOf('space/list')).toHaveLength(2);
+    expect(spaces.spaces().map((entry) => entry.space.name)).toEqual([
+      'glave',
+      'glave 2',
+      'Personal',
+    ]);
+  });
+
+  it('throws what the server refused, and lists nothing new', async () => {
+    const fake = new FakeSession()
+      .answer('space/list', { spaces: [] })
+      .answer(
+        'space/create',
+        new ApiError({ code: ErrorCode.HOST, message: 'could not clone it' }),
+      );
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const spaces = TestBed.inject(SpacesService);
+    await expect(
+      spaces.create({ name: 'x', folder: { kind: 'repository', url: 'https://x/y' } }),
+    ).rejects.toThrow('could not clone it');
+    expect(fake.paramsOf('space/list')).toHaveLength(0);
   });
 
   it('polls only while the tab is shown', () => {

@@ -1,0 +1,49 @@
+:host {
+  display: contents;
+}
+
+// As a form field's label: the folder's group has no single control for a label to name.
+.label {
+  font-size: var(--glz-text-sm);
+  font-weight: var(--glz-weight-bold);
+}
+
+// The folder picked, in a line round it as the picker's list, with Change at its end.
+.chosen {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  padding: var(--glz-inset-strip);
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-strip);
+}
+
+.icon {
+  color: var(--glz-color-text-muted);
+}
+
+.path {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.note {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.cloning {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-1);
+}
+
+.progress {
+  width: 100%;
+  accent-color: var(--glz-accent);
+}
+
+.problem {
+  color: var(--glz-color-danger);
+}

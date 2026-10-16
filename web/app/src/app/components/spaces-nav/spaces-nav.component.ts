@@ -16,15 +16,18 @@ import {
   GlzNavItemComponent,
   GlzNavListComponent,
 } from '@glave/glaze';
-import { Folder, Plus } from 'lucide';
+import { Folder, FolderPlus, Plus } from 'lucide';
 
 import { navSections } from '../../lib/nav';
 import { SpacesService } from '../../services/spaces.service';
+import { NewProjectComponent } from '../new-project/new-project.component';
 
 const COPY = {
   threads: 'Chats and projects',
   chats: 'Chats',
   projects: 'Projects',
+  newProject: 'New project',
+  startProject: 'Start a project',
   noMatch: 'No threads match',
   newIn: 'New thread in',
 } as const;
@@ -33,7 +36,8 @@ const COPY = {
  * The person's threads in the side nav: their chats, then each project with its threads under
  * it. A project opens and closes from its row, and its + (shown on the row) starts a thread in
  * it; each thread is marked, quietly, while it runs or needs the person. A search keeps the
- * threads whose title matches. A list with nothing in it does not show.
+ * threads whose title matches. A list with nothing in it does not show: with no projects yet,
+ * one quiet row offers to start one, as the + beside Projects does once there are some.
  */
 @Component({
   selector: 'app-spaces-nav',
@@ -45,6 +49,7 @@ const COPY = {
     GlzIconComponent,
     GlzNavItemComponent,
     GlzNavListComponent,
+    NewProjectComponent,
   ],
   templateUrl: './spaces-nav.component.html',
   styleUrl: './spaces-nav.component.scss',
@@ -59,7 +64,7 @@ export class SpacesNavComponent {
   readonly navigated = output();
 
   protected readonly copy = COPY;
-  protected readonly icons = { add: Plus, project: Folder };
+  protected readonly icons = { add: Plus, project: Folder, start: FolderPlus };
   protected readonly newLink = '/';
   private readonly spaces = inject(SpacesService);
   /** The projects the person closed. */
@@ -82,6 +87,16 @@ export class SpacesNavComponent {
     })),
   );
   protected readonly hasProjects = computed(() => this.projects().length > 0);
+  /** Whether New project is open. */
+  protected readonly newProject = signal(false);
+  /** Once the lists are read, with no project in them and no search, a row offers one. */
+  protected readonly offerProject = computed(
+    () =>
+      this.spaces.loaded() &&
+      this.spaces.error() === null &&
+      this.query().trim() === '' &&
+      !this.spaces.spaces().some(({ space }) => space.kind === 'project'),
+  );
   protected readonly noMatch = computed(
     () => this.query().trim() !== '' && !this.hasChats() && !this.hasProjects(),
   );
@@ -96,6 +111,10 @@ export class SpacesNavComponent {
       }
       return next;
     });
+  }
+
+  protected startProject(): void {
+    this.newProject.set(true);
   }
 
   protected followed(): void {
