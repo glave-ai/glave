@@ -48,7 +48,7 @@ aws-sigv4 = { version = "1.6", default-features = false, features = ["sign-http"
 aws-lc-rs = { version = "1", default-features = false, features = ["aws-lc-sys", "ring-io"] }
 # PEM keys and JWT segments for Google service accounts (already in the tree, under
 # jsonwebtoken and kube).
-base64 = "0.22"
+base64 = "0.23"
 bytes = "1"
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"] }
