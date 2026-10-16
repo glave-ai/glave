@@ -9,6 +9,13 @@ use crate::parse::Word;
 /// Why `words` (a command after any wrapper, named `name`) prints a credential, if it does.
 pub(crate) fn prints_credential(name: &str, words: &[Word]) -> Option<Caution> {
     let args: Vec<&str> = words.iter().skip(1).map(Word::text).collect();
+    let helper = |word: &Word| GLAVE_HELPER.iter().any(|part| word.text().contains(part));
+    if words.iter().any(helper) {
+        return Some(Caution {
+            kind: Kind::Credentials,
+            reason: "it reaches glave's credential helper, which hands out tokens".to_owned(),
+        });
+    }
     if name == "git" && configures_credentials(&args) {
         return Some(Caution {
             kind: Kind::Credentials,
@@ -89,6 +96,10 @@ fn git(args: &[&str]) -> Option<&'static str> {
     (fill || subcommand.starts_with("credential-")).then_some("git's stored credentials")
 }
 
+/// What names glave's own credential helper, or the folder it is in, for one command
+/// (`specs/computers.md`, "Credentials").
+const GLAVE_HELPER: &[&str] = &["git-credential-glave", "glave-credentials-"];
+
 /// `git -c credential.…` or `--config-env=credential.…`, among git's own options: a helper of
 /// the command's own (`store`, `cache`) would keep, and could print, what glave's hands git.
 fn configures_credentials(args: &[&str]) -> bool {
@@ -96,6 +107,14 @@ fn configures_credentials(args: &[&str]) -> bool {
     let mut at = 0;
     while let Some(arg) = args.get(at) {
         if *arg == "-c" {
+            if args
+                .get(at.saturating_add(1))
+                .is_some_and(|value| credential(value))
+            {
+                return true;
+            }
+            at = at.saturating_add(2);
+        } else if *arg == "--config-env" {
             if args
                 .get(at.saturating_add(1))
                 .is_some_and(|value| credential(value))
@@ -199,6 +218,9 @@ mod tests {
             "git -c credential.helper=store push",
             "git -c Credential.https://github.com.helper='store --file=x' fetch",
             "git --config-env=credential.helper=HELPER push",
+            "git --config-env credential.helper=HELPER push",
+            "printf 'host=github.com\\n' | /tmp/glave-credentials-1/git-credential-glave get",
+            "cat /tmp/glave-credentials-*/git-credential-glave",
             "git -C . -c credential.helper=cache push",
         ] {
             match verdict(script) {

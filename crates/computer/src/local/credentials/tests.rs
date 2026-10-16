@@ -43,11 +43,17 @@ fn git_settings_clear_other_helpers_per_host_after_the_commands_own() {
 
 #[test]
 fn a_wrapper_sets_its_token_alone_and_puts_back_what_could_run_a_program() {
-    let gh = wrapper(
+    let places = Places {
+        bin: Path::new("/tmp/w/bin"),
+        helper: Path::new("/tmp/w/git-credential-glave"),
+        empty: Path::new("/tmp/w/gh-home"),
+    };
+    let glaves = [("SSL_CERT_FILE".into(), "/etc/corp.pem".into())];
+    let gh = wrapper::wrapper(
         ForgeTool::Gh,
         &host("https://github.com", Forge::Github),
-        Path::new("/tmp/w/bin"),
-        Path::new("/tmp/w/git-credential-glave"),
+        &places,
+        &glaves,
     );
     assert!(
         gh.contains("printf 'protocol=%s\\nhost=%s\\n' 'https' 'github.com'"),
@@ -60,24 +66,96 @@ fn a_wrapper_sets_its_token_alone_and_puts_back_what_could_run_a_program() {
     for cleared in [
         "GH_ENTERPRISE_TOKEN",
         "GH_HOST",
-        "GH_CONFIG_DIR",
+        "GH_REPO",
         "BROWSER",
         "EDITOR",
     ] {
         assert!(gh.contains(&format!(" {cleared}")), "{cleared}: {gh}");
     }
-    assert!(gh.contains("GH_PAGER='cat'; export GH_PAGER"), "{gh}");
-    let tea = wrapper(
+    for fixed in [
+        "GH_CONFIG_DIR='/tmp/w/gh-home'",
+        "XDG_DATA_HOME='/tmp/w/gh-home'",
+        "GH_PAGER='cat'",
+        "SSL_CERT_FILE='/etc/corp.pem'",
+    ] {
+        assert!(gh.contains(fixed), "{fixed}: {gh}");
+    }
+    assert!(gh.contains("unset SSL_CERT_DIR"), "{gh}");
+    let tea = wrapper::wrapper(
         ForgeTool::Tea,
         &host("https://code.example.com", Forge::Gitea),
-        Path::new("/tmp/w/bin"),
-        Path::new("/tmp/w/git-credential-glave"),
+        &places,
+        &[],
     );
     assert!(
         tea.contains("GITEA_INSTANCE_URL='https://code.example.com'; export GITEA_INSTANCE_URL"),
         "{tea}"
     );
+    assert!(tea.contains(" GITEA_INSTANCE_INSECURE"), "{tea}");
     assert!(tea.contains("then GITEA_TOKEN=$token"), "{tea}");
+}
+
+/// The gh wrapper asks for the token only when gh is not pointed at another host.
+#[test]
+fn gh_pointed_at_another_host_runs_without_the_token() {
+    let dir = std::env::temp_dir().join(format!("glave-wrapper-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("bin")).unwrap();
+    std::fs::create_dir_all(dir.join("real")).unwrap();
+    let helper = dir.join("git-credential-glave");
+    std::fs::write(&helper, "#!/bin/sh\necho password=ghp_wrapped\n").unwrap();
+    let gh = dir.join("real/gh");
+    std::fs::write(&gh, "#!/bin/sh\necho \"token=${GH_TOKEN:-none}\"\n").unwrap();
+    let places = Places {
+        bin: &dir.join("bin"),
+        helper: &helper,
+        empty: &dir,
+    };
+    let script = wrapper::wrapper(
+        ForgeTool::Gh,
+        &host("https://github.com", Forge::Github),
+        &places,
+        &[],
+    );
+    std::fs::write(dir.join("bin/gh"), script).unwrap();
+    for file in [&helper, &gh, &dir.join("bin/gh")] {
+        std::process::Command::new("chmod")
+            .arg("+x")
+            .arg(file)
+            .status()
+            .unwrap();
+    }
+    let run = |args: &[&str]| {
+        let output = std::process::Command::new(dir.join("bin/gh"))
+            .args(args)
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}:/usr/bin:/bin",
+                    dir.join("bin").display(),
+                    dir.join("real").display()
+                ),
+            )
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    };
+    assert_eq!(run(&["pr", "list"]), "token=ghp_wrapped");
+    assert_eq!(run(&["pr", "list", "-R", "acme/app"]), "token=ghp_wrapped");
+    assert_eq!(
+        run(&["api", "--hostname", "GitHub.com", "user"]),
+        "token=ghp_wrapped"
+    );
+    for elsewhere in [
+        &["api", "--hostname", "github.localhost", "user"][..],
+        &["api", "--hostname=evil.example", "user"],
+        &["pr", "list", "-R", "evil.example/acme/app"],
+        &["pr", "list", "--repo=https://evil.example/acme/app"],
+        &["pr", "list", "-Revil.example/acme/app"],
+    ] {
+        assert_eq!(run(elsewhere), "token=none", "{elsewhere:?}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

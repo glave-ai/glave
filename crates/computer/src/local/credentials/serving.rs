@@ -2,79 +2,95 @@
 //! then git's request (`protocol=`, `host=`, `path=` lines, as git's credential protocol writes
 //! them, ending with an empty line), and gets back `username=` and `password=` lines, or
 //! nothing. Only hosts offered to the command are asked about; a connection that does not
-//! present the password at once, or takes too long, gets nothing.
+//! present the password at once, or takes too long, gets nothing, and holds no one else up.
 
 use std::time::Duration;
 
 use glave_ports::{CredentialAsk, CredentialHost, Credentials};
 use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
+use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 
 use crate::token::same;
 
 /// How long a connection has to present the password.
 const PASSWORD: Duration = Duration::from_secs(2);
-/// How long one request may take once the password is presented.
+/// How long the rest of a request may take to arrive.
+const REQUEST: Duration = Duration::from_secs(10);
+/// How long the caller has to answer one request.
 const ANSWER: Duration = Duration::from_secs(30);
 /// How long to wait after a connection could not be accepted, before trying again.
 const AGAIN: Duration = Duration::from_millis(50);
+/// Connections read at once, so a few that stall hold no one up.
+const READING: usize = 8;
 /// The most a request may hold, in bytes: git's description of a URL is a few lines.
 const LONGEST: u64 = 16 * 1024;
 
-/// Answers connections until the command ends and this is dropped, one at a time: git asks
-/// rarely, and a connection that stalls gives up after [`PASSWORD`] unless it knows it.
+/// Answers connections until the command ends and this is dropped, which stops every read
+/// still going. Requests are read side by side and answered one at a time.
 pub(super) async fn serve(
     listener: &TcpListener,
     password: &str,
     hosts: &[CredentialHost],
     credentials: &dyn Credentials,
 ) {
+    let mut reading = JoinSet::new();
     loop {
-        let Ok((stream, peer)) = listener.accept().await else {
-            // Such as too many open files: the helper waits, and this tries again.
-            tokio::time::sleep(AGAIN).await;
-            continue;
-        };
-        if !peer.ip().is_loopback() {
-            continue;
+        tokio::select! {
+            accepted = listener.accept(), if reading.len() < READING => match accepted {
+                Ok((stream, peer)) if peer.ip().is_loopback() => {
+                    reading.spawn(read(stream, password.to_owned(), hosts.to_vec()));
+                }
+                Ok(_) => {}
+                // Such as too many open files: the helper waits, and this tries again.
+                Err(_) => tokio::time::sleep(AGAIN).await,
+            },
+            Some(read) = reading.join_next(), if !reading.is_empty() => {
+                if let Ok(Some((write, ask))) = read {
+                    let _ = tokio::time::timeout(ANSWER, answer(write, &ask, credentials)).await;
+                }
+            }
         }
-        let _ = answer(stream, password, hosts, credentials).await;
     }
 }
 
-/// Reads one request and answers it, if it carries the password and names an offered host.
-async fn answer(
+/// Reads one request: what it asks, when it carries the password and names an offered host.
+async fn read(
     stream: TcpStream,
-    password: &str,
-    hosts: &[CredentialHost],
-    credentials: &dyn Credentials,
-) -> std::io::Result<()> {
-    let (read, mut write) = stream.into_split();
+    password: String,
+    hosts: Vec<CredentialHost>,
+) -> Option<(OwnedWriteHalf, CredentialAsk)> {
+    let (read, write) = stream.into_split();
     let mut lines = BufReader::new(read.take(LONGEST)).lines();
     let given = tokio::time::timeout(PASSWORD, lines.next_line()).await;
-    if !matches!(given, Ok(Ok(Some(given))) if same(&given, password)) {
-        return Ok(());
+    if !matches!(given, Ok(Ok(Some(given))) if same(&given, &password)) {
+        return None;
     }
-    let asked = async {
+    let fields = async {
         let mut fields = Fields::default();
-        while let Some(line) = lines.next_line().await? {
+        while let Ok(Some(line)) = lines.next_line().await {
             if line.is_empty() {
                 break;
             }
             fields.read(&line);
         }
-        let Some(ask) = fields.ask() else {
-            return Ok(None);
-        };
-        if !hosts.iter().any(|host| host.is_for(&ask)) {
-            return Ok(None);
-        }
-        Ok::<_, std::io::Error>(credentials.request(&ask).await)
+        fields
     };
-    let Ok(answered) = tokio::time::timeout(ANSWER, asked).await else {
-        return Ok(());
-    };
-    if let Some(credential) = answered?
+    let ask = tokio::time::timeout(REQUEST, fields).await.ok()?.ask()?;
+    hosts
+        .iter()
+        .any(|host| host.is_for(&ask))
+        .then_some((write, ask))
+}
+
+/// Answers `ask` from `credentials`, or with nothing.
+async fn answer(
+    mut write: OwnedWriteHalf,
+    ask: &CredentialAsk,
+    credentials: &dyn Credentials,
+) -> std::io::Result<()> {
+    if let Some(credential) = credentials.request(ask).await
         && credential.check().is_ok()
     {
         let answer = format!(

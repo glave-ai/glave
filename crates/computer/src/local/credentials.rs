@@ -8,6 +8,7 @@
 //! process that asked.
 
 mod serving;
+mod wrapper;
 
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -15,6 +16,7 @@ use std::path::{Path, PathBuf};
 
 use glave_ports::{ComputerError, CredentialHost, Credentials, ForgeTool};
 use tokio::net::TcpListener;
+use wrapper::{Places, quoted};
 
 /// The helper's name: off `PATH`, and named as git's helpers are, so a command that runs it
 /// itself is read as printing a credential (`glave-shell`).
@@ -89,7 +91,15 @@ pub(crate) async fn offer(
             .await
             .map_err(|error| failed("make the wrappers' folder", &error))?;
         for (tool, host) in tools {
-            write_script(&bin.join(tool.name()), &wrapper(tool, host, &bin, &helper)).await?;
+            let empty = offered.folder.join(format!("{}-home", tool.name()));
+            read_only_folder(&empty).await?;
+            let places = Places {
+                bin: &bin,
+                helper: &helper,
+                empty: &empty,
+            };
+            let script = wrapper::wrapper(tool, host, &places, environment);
+            write_script(&bin.join(tool.name()), &script).await?;
         }
         let path = environment
             .iter()
@@ -147,95 +157,6 @@ fn helper_script(port: u16, password: &str) -> String {
     )
 }
 
-/// A forge tool's wrapper: asks the helper for `host`'s token now, sets it in the tool's own
-/// environment only, with the settings that would let a command run a program of its own
-/// through the tool (a pager, an editor, a browser, its configuration) put back, and runs the
-/// real tool, found on `PATH` without the wrappers' folder.
-fn wrapper(tool: ForgeTool, host: &CredentialHost, bin: &Path, helper: &Path) -> String {
-    let name = tool.name();
-    let (protocol, address) = host.origin().unwrap_or(("https", "invalid"));
-    let mut script = format!(
-        "#!/bin/sh\n\
-         # {name}, signed in by glave for this one process: its token is asked for now and set\n\
-         # only in {name}'s own environment.\n\
-         wrappers={bin}\n\
-         path=\nIFS=:\nset -f\n\
-         for dir in $PATH; do [ \"$dir\" = \"$wrappers\" ] || path=\"${{path:+$path:}}$dir\"; done\n\
-         set +f\nunset IFS\nPATH=$path\n\
-         command -v {name} >/dev/null 2>&1 || {{ echo \"{name}: command not found\" >&2; exit 127; }}\n\
-         token=$(printf 'protocol=%s\\nhost=%s\\n' {protocol} {address} | {helper} get | \
-         sed -n 's/^password=//p')\n\
-         unset {cleared}\n",
-        bin = quoted(&bin.to_string_lossy()),
-        protocol = quoted(protocol),
-        address = quoted(address),
-        helper = quoted(&helper.to_string_lossy()),
-        cleared = cleared(tool).join(" "),
-    );
-    for (variable, value) in fixed(tool, &host.url) {
-        let _ = writeln!(script, "{variable}={}; export {variable}", quoted(&value));
-    }
-    let token = token_variable(tool);
-    let _ = write!(
-        script,
-        "if [ -n \"$token\" ]; then {token}=$token; export {token}; fi\n\
-         unset token\nexec {name} \"$@\"\n"
-    );
-    script
-}
-
-/// Where each tool reads its token (its documentation's names).
-fn token_variable(tool: ForgeTool) -> &'static str {
-    match tool {
-        ForgeTool::Gh => "GH_TOKEN",
-        ForgeTool::Tea => "GITEA_TOKEN",
-    }
-}
-
-/// What each tool is given besides its token, after the command's own: the host it signs in
-/// to, and a pager that only shows.
-fn fixed(tool: ForgeTool, url: &str) -> Vec<(&'static str, String)> {
-    match tool {
-        ForgeTool::Gh => vec![
-            ("GH_PAGER", "cat".into()),
-            ("PAGER", "cat".into()),
-            ("GH_PROMPT_DISABLED", "1".into()),
-        ],
-        ForgeTool::Tea => vec![("GITEA_INSTANCE_URL", url.to_owned())],
-    }
-}
-
-/// What a command could set to have the tool run a program of its own, or send its token
-/// elsewhere: cleared for the tool's process.
-fn cleared(tool: ForgeTool) -> &'static [&'static str] {
-    match tool {
-        ForgeTool::Gh => &[
-            "GH_ENTERPRISE_TOKEN",
-            "GITHUB_ENTERPRISE_TOKEN",
-            "GITHUB_TOKEN",
-            "GH_HOST",
-            "GH_REPO",
-            "GH_CONFIG_DIR",
-            "XDG_CONFIG_HOME",
-            "XDG_DATA_HOME",
-            "GH_FORCE_TTY",
-            "GH_BROWSER",
-            "BROWSER",
-            "GH_EDITOR",
-            "EDITOR",
-            "VISUAL",
-            "GH_DEBUG",
-            "DEBUG",
-        ],
-        ForgeTool::Tea => &["XDG_CONFIG_HOME", "BROWSER", "EDITOR", "VISUAL"],
-    }
-}
-
-/// `text` in single quotes, for a shell.
-fn quoted(text: &str) -> String {
-    format!("'{}'", text.replace('\'', r"'\''"))
-}
-
 /// A folder only this user may enter, in the system's temp folder.
 async fn private_folder() -> Result<PathBuf, ComputerError> {
     let folder = std::env::temp_dir().join(format!("glave-credentials-{}", random_hex()?));
@@ -247,6 +168,17 @@ async fn private_folder() -> Result<PathBuf, ComputerError> {
         .await
         .map_err(|error| failed("make the credential helper's folder", &error))?;
     Ok(folder)
+}
+
+/// An empty folder a tool may read and never write, for its configuration and extensions.
+async fn read_only_folder(path: &Path) -> Result<(), ComputerError> {
+    let mut builder = tokio::fs::DirBuilder::new();
+    #[cfg(unix)]
+    builder.mode(0o500);
+    builder
+        .create(path)
+        .await
+        .map_err(|error| failed("make a forge tool's folder", &error))
 }
 
 /// Writes a script only this user may read or run.
