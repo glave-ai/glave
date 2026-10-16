@@ -5,6 +5,7 @@ name: title
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  merge_group:
 
 permissions: {}
 
@@ -16,7 +17,9 @@ jobs:
   title:
     runs-on: ubuntu-latest
     steps:
+      # In the merge queue the title was already checked on the pull request.
       - name: The title is a conventional commit message
+        if: github.event_name == 'pull_request'
         env:
           # Passed as data, never pasted into the script, so a title cannot run commands.
           TITLE: ${{ github.event.pull_request.title }}

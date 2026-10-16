@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -244,7 +245,8 @@ jobs:
         if: always()
         run: df -h /
 
-  # macOS minutes cost 10x on private repos, so this runs on main only (and on demand).
+  # macOS runs once per change, in the merge queue, then on main (and on demand). Pull
+  # requests skip it, and a skipped job counts as passing.
   macos:
     if: github.event_name != 'pull_request'
     runs-on: macos-latest
