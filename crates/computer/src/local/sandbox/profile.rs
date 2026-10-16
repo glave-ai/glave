@@ -123,12 +123,27 @@ fn reads(profile: &mut Profile, places: &Places) {
         "; reads: everywhere except secret locations\n(allow file-read*\n  (require-all\n    {}))",
         conditions.join("\n    ")
     );
-    if places.glave_home.is_some() {
-        // That glave's folder is a folder, not what it holds: `mkdir -p` checks each folder
-        // on the way to the cache or a worktree inside it.
-        profile
-            .text
-            .push_str("(allow file-read-metadata (literal (param \"GLAVE_HOME\")))\n");
+    if let Some(glave_home) = &places.glave_home {
+        // That glave's folder is a folder, not what it holds, and so is each folder between it
+        // and the workspace when the workspace lives there (a thread's worktree, under
+        // `worktrees/<repository>`): `mkdir -p` checks each folder on the way to the cache or
+        // a worktree, and git resolves a worktree's real path one folder at a time. Metadata
+        // only: what these folders hold stays unreadable.
+        let between =
+            places.root.ancestors().skip(1).take_while(|folder| {
+                *folder != glave_home.as_path() && folder.starts_with(glave_home)
+            });
+        let mut folders = vec![r#"(literal (param "GLAVE_HOME"))"#.to_owned()];
+        for (index, folder) in between.enumerate() {
+            let name = format!("ROOT_UP_{index}");
+            folders.push(format!(r#"(literal (param "{name}"))"#));
+            profile.params.push((name, folder.to_path_buf()));
+        }
+        let _ = writeln!(
+            profile.text,
+            "(allow file-read-metadata {})",
+            folders.join(" ")
+        );
     }
 }
 
@@ -391,6 +406,40 @@ mod tests {
                 .contains(r#"(require-not (literal (param "OWN")))"#)
         );
         assert!(profile.text.contains("[eE][nN][vV]"), "env files, any case");
+    }
+
+    #[test]
+    fn a_worktree_in_glave_s_folder_may_see_the_folders_above_it_but_not_into_them() {
+        let mut worktree = places();
+        worktree.root = PathBuf::from("/Users/me/.glave/worktrees/app-0a1b/glave-0123");
+        let profile = profile(&worktree, SandboxLevel::Project, false);
+        assert_eq!(
+            param(&profile, "ROOT_UP_0"),
+            Some(Path::new("/Users/me/.glave/worktrees/app-0a1b"))
+        );
+        assert_eq!(
+            param(&profile, "ROOT_UP_1"),
+            Some(Path::new("/Users/me/.glave/worktrees"))
+        );
+        assert_eq!(
+            param(&profile, "ROOT_UP_2"),
+            None,
+            "glave's folder is named already"
+        );
+        assert!(profile.text.contains(
+            r#"(allow file-read-metadata (literal (param "GLAVE_HOME")) (literal (param "ROOT_UP_0")) (literal (param "ROOT_UP_1")))"#
+        ));
+        let elsewhere = super::profile(&places(), SandboxLevel::Project, false);
+        assert_eq!(
+            param(&elsewhere, "ROOT_UP_0"),
+            None,
+            "a project outside glave's folder"
+        );
+        assert!(
+            elsewhere
+                .text
+                .contains(r#"(allow file-read-metadata (literal (param "GLAVE_HOME")))"#)
+        );
     }
 
     #[test]
