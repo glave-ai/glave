@@ -22,10 +22,13 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 
 | Term | Meaning |
 | --- | --- |
-| Space | The scope boundary: memory, history, files, members, policy, budget, default environment |
+| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud. Holds providers, catalogs, policy, the theme, the budget (`specs/model.md`) |
+| Team | A flat group of people, granted models, connections and budgets |
+| Person | Someone who signs in: their Chats, their computer, their own sign-ins and choices |
+| Space | The scope boundary in code: a project (folders, instructions, members) or a person's Chats. Holds memory, history, files, members, policy, budget, default environment |
 | Thread | A conversation or task in a space. Workers fork from a parent with permissions and budget ⊆ the parent's |
 | Environment | A reusable template for where work runs: computer type, image, setup, network, credentials, limits |
-| Computer | A running instance of an environment: created, snapshotted, slept, woken, destroyed |
+| Computer | A running instance of an environment, one per person and persistent: its disk kept, its compute slept and woken, reset on request |
 | Harness | The agent loop: context, tool calls, approvals, receipts, threads, scheduling |
 | Gateway | The single door out for models and remote tools: routing, keys, policy, budgets, metering |
 | Data store | Everything durable: the event log (history), memory, files, config. Enforces scope on every query |
@@ -65,7 +68,7 @@ web/app/            the web app `glave serve --http` (and `glave app`) serves at
 web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app and Glaze's showcase, served with glave's Content Security Policy
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
-specs/              the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
+specs/              the model (`model.md`: organization to thread, server and computer), and the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main); workers on a `kind` cluster (Linux)
 ```
 
