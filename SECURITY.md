@@ -4,7 +4,7 @@ glave runs AI agents that read files, run commands and hold credentials, so we t
 
 ## Reporting a vulnerability
 
-**Please don't open a public issue.** Report it privately through GitHub's [private vulnerability reporting](https://github.com/seashell86/glave/security/advisories/new) for this repository.
+**Please don't open a public issue.** Report it privately through GitHub's [private vulnerability reporting](https://github.com/glave-ai/glave/security/advisories/new) for this repository.
 
 Include what you found, how to reproduce it, and what an attacker could do with it. We'll acknowledge your report within a few days, keep you updated, and credit you in the fix unless you'd rather we didn't.
 

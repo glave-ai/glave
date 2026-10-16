@@ -19,7 +19,7 @@ Run it on your own machine and it just works: privately, with any model, includi
 You need Rust (see `rust-toolchain.toml`) and Node 22.22.3 or later.
 
 ```sh
-git clone https://github.com/seashell86/glave
+git clone https://github.com/glave-ai/glave
 cd glave
 (cd web && npm ci && npm run build)
 cargo build --release -p glave
