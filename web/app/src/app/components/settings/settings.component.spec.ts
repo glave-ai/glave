@@ -24,7 +24,8 @@ describe('SettingsComponent', () => {
   it('shows the server, picks a theme and signs out', async () => {
     const fake = new FakeSession()
       .answer('server/discover', SERVER)
-      .answer('provider/list', { providers: [] });
+      .answer('provider/list', { providers: [] })
+      .answer('credential/list', { credentials: [], device: false });
     TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
     const fixture = TestBed.createComponent(SettingsComponent);
@@ -62,6 +63,7 @@ describe('SettingsComponent', () => {
     const fake = new FakeSession()
       .answer('server/discover', SERVER)
       .answer('provider/list', () => ({ providers: kept ? [account] : [] }))
+      .answer('credential/list', { credentials: [], device: false })
       .answer('provider/remove', () => {
         kept = false;
         return {};
