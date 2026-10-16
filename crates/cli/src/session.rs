@@ -29,6 +29,7 @@ use crate::gateway::Switch;
 use crate::gateway::remote::Remote;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
+use crate::opening::Opening;
 use crate::providers::{Built, Host, Lineup};
 use crate::setup::{self, Setup};
 use crate::terminal::Printer;
@@ -170,27 +171,14 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let lineup = Lineup::new(&setup, configured);
     let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
     let (workspace, hosts) = with_hosts(args, &store, identity.person, choices, workspace).await?;
-    let (model, named) = lined.built.models.default.clone().unwrap_or_default();
-    let mut settings = Settings::new(model.clone(), named);
     let personal = home::folder()?.join(AGENTS_MD);
     let instructions = agents_md(workspace.root(), Some(&personal)).await?;
-    settings.instructions = [
+    let opening = [
         instructions.as_ref().map(|loaded| loaded.text.clone()),
         setup.model_note(),
-    ]
-    .into_iter()
-    .flatten()
-    .reduce(|all, part| format!("{all}\n\n{part}"));
-    settings.approval = choices.approval.value;
-    settings.max_steps = args.max_steps;
-    settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
-    // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt ends with its answer.
-    let one_shot = args.action == Action::Run && !args.prompt.is_empty();
-    settings.titles = choices.titles.value && !one_shot;
-    settings.judge = lined.judges;
-    (settings.person, settings.agent) = (Some(identity.person), Some(identity.agent));
-    let window = config::context_window()?.unwrap_or(settings.compaction.window_tokens);
-    settings.compaction.window_tokens = window;
+    ];
+    let mut settings = settings_for(args, choices, &lined, identity, opening)?;
+    let model = settings.model.clone();
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
     let servers = mcp_servers(&setup, &root, remote.as_ref()).await?;
@@ -199,6 +187,12 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder, args.socket).await?;
     let scope = crate::spaces::here(&store, &root, identity.person).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
+    let opening = Opening::new(
+        home::folder()?,
+        setup.loaded.constraints.clone(),
+        &root,
+        setup.model_note(),
+    );
     tidy(memory.as_ref(), &lined.switch, model);
     let wiring = Wiring {
         models: lined.built.models.offered,
@@ -224,9 +218,16 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         tasks: task_limits(&setup.loaded.constraints),
         memory: memory.as_ref().map(crate::memory::Running::handle),
         spaces: store.spaces(),
+        instructions: Some(Arc::new(opening)),
     };
+    let server = Server::new(wiring, settings, scope, answering);
+    // The folder glave runs in is its project's folder: where its threads work.
+    server
+        .keep_folder(scope.space, &root.to_string_lossy())
+        .await
+        .with_context(|| format!("could not keep {} as its project's folder", root.display()))?;
     Ok(Wired {
-        server: Server::new(wiring, settings, scope, answering),
+        server,
         servers,
         endpoint: lined.built.endpoint,
         root,
@@ -236,6 +237,34 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         memory,
         _telemetry: telemetry,
     })
+}
+
+/// How the harness runs: the default model, the instructions a thread opens with when it has
+/// no folder of its own here (a worker's), from `opening`'s parts, and the choices.
+fn settings_for(
+    args: &Args,
+    choices: &Choices,
+    lined: &Lined,
+    identity: identity::Identity,
+    opening: [Option<String>; 2],
+) -> anyhow::Result<Settings> {
+    let (model, named) = lined.built.models.default.clone().unwrap_or_default();
+    let mut settings = Settings::new(model, named);
+    settings.instructions = opening
+        .into_iter()
+        .flatten()
+        .reduce(|all, part| format!("{all}\n\n{part}"));
+    settings.approval = choices.approval.value;
+    settings.max_steps = args.max_steps;
+    settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
+    // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt ends with its answer.
+    let one_shot = args.action == Action::Run && !args.prompt.is_empty();
+    settings.titles = choices.titles.value && !one_shot;
+    settings.judge = lined.judges;
+    (settings.person, settings.agent) = (Some(identity.person), Some(identity.agent));
+    let window = config::context_window()?.unwrap_or(settings.compaction.window_tokens);
+    settings.compaction.window_tokens = window;
+    Ok(settings)
 }
 
 /// The git hosts `person` connected, when they may connect them here, and `workspace` with
@@ -409,9 +438,12 @@ async fn workspace(folder: &Path, setup: &mut Setup, database: &Path) -> anyhow:
 
 /// The workspace in `folder` on this computer, without a sandbox yet.
 async fn open_here(folder: &Path) -> anyhow::Result<Workspace> {
+    let computer = identity::computer(&home::folder()?).await?;
     let computers = LocalComputers::for_here(std::env::vars_os())
+        .known_as(computer)
         .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER))
-        .with_scratch(home::folder()?.join(crate::worktrees::SCRATCH));
+        .with_scratch(home::folder()?.join(crate::worktrees::SCRATCH))
+        .with_projects(home::projects()?);
     let (computers, here) = crate::computer::with_sandbox_helper(computers)
         .open_here(folder)
         .await?;

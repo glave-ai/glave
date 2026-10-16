@@ -422,8 +422,8 @@ where
         };
         // A new thread opens with the project's instructions.
         let opening = thread.messages.is_empty();
-        let mut parts = self
-            .opening_parts(thread)
+        let mut parts = thread
+            .opening_parts()
             .filter(|_| opening)
             .unwrap_or_default();
         parts.push(Part::Text {

@@ -84,6 +84,26 @@
       "description": "Links a tool call to its result: 1 to 128 printable ASCII characters.",
       "type": "string"
     },
+    "Checkout": {
+      "additionalProperties": false,
+      "description": "Where a folder is checked out: a computer, and the path on it.",
+      "properties": {
+        "computer": {
+          "description": "The computer, by the id it keeps across runs.",
+          "format": "uuid",
+          "type": "string"
+        },
+        "path": {
+          "description": "The folder's absolute path there, links resolved.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "computer",
+        "path"
+      ],
+      "type": "object"
+    },
     "Choice": {
       "additionalProperties": false,
       "description": "One choice.",
@@ -266,6 +286,43 @@
           "const": "over_budget",
           "description": "The call could exceed a budget, so it was not sent.",
           "type": "string"
+        }
+      ]
+    },
+    "FolderSource": {
+      "description": "Where a folder's files come from.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "A git repository, by the address it is cloned from: where the folder comes back from.",
+          "properties": {
+            "kind": {
+              "const": "repository",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A folder on a computer, with no repository it comes from: only its checkout has it.",
+          "properties": {
+            "kind": {
+              "const": "local",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -492,6 +549,58 @@
       ],
       "type": "object"
     },
+    "NewFolder": {
+      "description": "A new project's folder, on the computer glave runs on.",
+      "oneOf": [
+        {
+          "description": "A folder already on this computer, by its full path: worked in where it is.",
+          "properties": {
+            "kind": {
+              "const": "path",
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A repository cloned onto this computer, from its `https://` address, signing in with\nthe git host connected for it.",
+          "properties": {
+            "kind": {
+              "const": "repository",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A new, empty folder, made a git repository.",
+          "properties": {
+            "kind": {
+              "const": "empty",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "Origin": {
       "additionalProperties": false,
       "description": "What started a thread, and who.",
@@ -575,6 +684,22 @@
     "PrincipalKind": {
       "description": "What kind of principal acts.",
       "type": "string"
+    },
+    "ProjectFolder": {
+      "description": "A project's folder: where its files come from, and where they are checked out.",
+      "properties": {
+        "checkout": {
+          "$ref": "#/$defs/Checkout"
+        },
+        "source": {
+          "$ref": "#/$defs/FolderSource"
+        }
+      },
+      "required": [
+        "source",
+        "checkout"
+      ],
+      "type": "object"
     },
     "ProviderId": {
       "description": "Identifies one model account a person connected (`provider.connected`).",
@@ -1895,6 +2020,48 @@
       },
       "streams": false
     },
+    "folder/list": {
+      "params": {
+        "properties": {
+          "path": {
+            "description": "A folder's full path.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "description": "The folders inside the folder at `path`, by name; hidden ones left out.",
+        "properties": {
+          "folders": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "parent": {
+            "description": "The folder it is in, to go up to; absent at the top.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "The folder listed, as this computer names it, links followed.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "folders"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "goal/get": {
       "params": {
         "properties": {
@@ -2427,6 +2594,16 @@
     "space/create": {
       "params": {
         "properties": {
+          "folder": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/NewFolder"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "members": {
             "items": {
               "$ref": "#/$defs/Principal"
@@ -2443,8 +2620,19 @@
         "type": "object"
       },
       "result": {
-        "description": "A space: one asked for, made or renamed.",
+        "description": "A space: one asked for, made or renamed, with its folder when it has one.",
         "properties": {
+          "folder": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectFolder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where its threads work."
+          },
           "space": {
             "$ref": "#/$defs/Space"
           }
@@ -2469,8 +2657,19 @@
         "type": "object"
       },
       "result": {
-        "description": "A space: one asked for, made or renamed.",
+        "description": "A space: one asked for, made or renamed, with its folder when it has one.",
         "properties": {
+          "folder": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectFolder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where its threads work."
+          },
           "space": {
             "$ref": "#/$defs/Space"
           }
@@ -2529,8 +2728,19 @@
         "type": "object"
       },
       "result": {
-        "description": "A space: one asked for, made or renamed.",
+        "description": "A space: one asked for, made or renamed, with its folder when it has one.",
         "properties": {
+          "folder": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectFolder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where its threads work."
+          },
           "space": {
             "$ref": "#/$defs/Space"
           }

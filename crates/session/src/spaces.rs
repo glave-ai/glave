@@ -1,6 +1,6 @@
 //! Spaces over the session API, and who may do what in them (`specs/session.md`, "Spaces and
-//! who may do what"). A server serves many spaces of one organization: its own (the folder it
-//! was started in) and any other its callers work in. Every request that acts on a thread, or
+//! who may do what"). A server serves many spaces of one organization: its own (where requests
+//! that name none act) and any other its callers work in. Every request that acts on a thread, or
 //! on the server's own space as a whole, is checked against the caller: they must own the
 //! thread's space or be one of its members, or it is refused with `-32012` before anything is
 //! read or recorded.
@@ -14,7 +14,7 @@ use glave_ports::{
 };
 
 use crate::held::Slot;
-use crate::protocol::{ApiError, Reply, Request, code};
+use crate::protocol::{ApiError, NewFolder, Reply, Request, code};
 use crate::server::{Server, no_thread};
 
 /// Threads whose space a server remembers; past this, it forgets them all and asks again.
@@ -40,7 +40,7 @@ impl Places {
     }
 }
 
-fn failed(error: &SpaceError) -> ApiError {
+pub(crate) fn failed(error: &SpaceError) -> ApiError {
     match error {
         SpaceError::NotFound(space) => no_space(*space),
         SpaceError::Conflict(_) | SpaceError::Invalid(_) => {
@@ -96,7 +96,7 @@ where
             updated_at: now,
         };
         match self.inner.spaces.create(home.org, &space).await {
-            Ok(()) => Ok(space),
+            Ok(kept) => Ok(kept),
             // Another process kept it first.
             Err(SpaceError::Conflict(_)) => self
                 .inner
@@ -245,13 +245,16 @@ where
         Ok(Reply::Spaces { spaces })
     }
 
-    /// Answers `space/create`: a project space owned by `caller`.
+    /// Answers `space/create`: a project space owned by `caller`, with its folder when it is
+    /// given one.
     pub(crate) async fn create_space(
         &self,
         caller: &Caller,
         name: String,
         members: Vec<Principal>,
+        folder: Option<NewFolder>,
     ) -> Result<Reply, ApiError> {
+        Space::check_name(&name).map_err(|e| failed(&e))?;
         let now = self.inner.harness.clock().now();
         let id = ThreadId::new(now, self.inner.harness.entropy().bytes())
             .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
@@ -264,12 +267,30 @@ where
             created_at: At::from(now),
             updated_at: At::from(now),
         };
-        self.inner
+        if let Some(folder) = folder {
+            return self.create_project(caller, space, folder).await;
+        }
+        let space = self
+            .inner
             .spaces
             .create(self.inner.home.org, &space)
             .await
             .map_err(|e| failed(&e))?;
-        Ok(Reply::Space { space })
+        Ok(Reply::Space {
+            space,
+            folder: None,
+        })
+    }
+
+    /// Answers `space/get`: the space, and its folder when it has one.
+    pub(crate) async fn get_space(
+        &self,
+        caller: &Caller,
+        space: SpaceId,
+    ) -> Result<Reply, ApiError> {
+        let space = self.member_of(caller, space).await?;
+        let folder = self.folder_of(space.id).await?;
+        Ok(Reply::Space { space, folder })
     }
 
     /// Answers `space/rename`: for its owner only.
@@ -293,7 +314,11 @@ where
             .update(self.inner.home.org, &found)
             .await
             .map_err(|e| failed(&e))?;
-        Ok(Reply::Space { space: found })
+        let folder = self.folder_of(space).await?;
+        Ok(Reply::Space {
+            space: found,
+            folder,
+        })
     }
 
     fn places(&self) -> std::sync::MutexGuard<'_, Places> {

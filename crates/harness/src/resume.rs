@@ -35,6 +35,10 @@ where
             .seq
             .next()
             .ok_or_else(|| HarnessError::Event(format!("thread {id} is full")))?;
+        let (workspace, bound) = self.reopen(scope, id, &events).await?;
+        let instructions = self
+            .instructions_for(workspace.as_deref(), bound.as_ref())
+            .await;
         let mut thread = Thread {
             scope,
             id,
@@ -46,7 +50,7 @@ where
             asked: asked(&events),
             above: above(&events),
             goal: crate::goal::latest(&events).map(crate::goal::Pursuit::of),
-            workspace: self.reopen(scope, id, &events).await?,
+            workspace,
             unnumbered: crate::bind::own_records(&events),
             note: None,
             standing: crate::standing::standing_after(crate::Standing::Active, &events),
@@ -57,6 +61,7 @@ where
             for_: for_of(&events).or(self.actors.person),
             model: crate::chosen::chosen_in(&events),
             approval: crate::chosen::approval_in(&events),
+            instructions,
         };
         self.rebuild_memory(&mut thread, &events).await;
         self.repair(&mut thread, &events).await?;

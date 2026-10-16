@@ -2,9 +2,11 @@
 //! notifications a turn sends, and errors. Every transport carries these same types; in-process
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
+pub mod code;
 mod credentials;
 mod models;
 mod providers;
+mod spaces;
 mod tasks;
 
 use glave_event::{
@@ -20,6 +22,7 @@ pub use glave_event::ApprovalMode;
 pub use glave_event::{Forge, ProviderKind};
 pub use models::ModelInfo;
 pub use providers::{ProviderInfo, hint};
+pub use spaces::{NewFolder, ProjectFolder};
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 
 /// The protocol version this server speaks.
@@ -196,14 +199,26 @@ methods! {
         limit: Option<usize>,
     } -> [Spaces],
     "space/get" => SpaceGet { space: SpaceId } -> [Space],
-    /// A new project space, owned by the caller, with `members` working in it too.
+    /// A new project space, owned by the caller, with `members` working in it too, and its
+    /// folder, if it has one: its threads work there. A folder that already leads to a
+    /// project answers that project, its name and members as they were. Only the person on
+    /// this computer gives a folder.
     "space/create" => SpaceCreate {
         name: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         members: Vec<glave_event::Principal>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        folder: Option<NewFolder>,
     } -> [Space],
     /// Renames a space: its owner only.
     "space/rename" => SpaceRename { space: SpaceId, name: String } -> [Space],
+    /// The folders inside a folder on this computer, by name, to choose a project's folder
+    /// from: the home folder when `path` is absent. Only the person on this computer.
+    "folder/list" => FolderList {
+        /// A folder's full path.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+    } -> [Folders],
     /// The memories here: the person's and the space's, or one `scope`.
     "memory/list" => MemoryList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -517,11 +532,26 @@ pub enum Reply {
     Schedule { schedule: ScheduleInfo },
     #[schemars(title = "Schedules")]
     Schedules { schedules: Vec<ScheduleInfo> },
-    /// A space: one asked for, made or renamed.
+    /// A space: one asked for, made or renamed, with its folder when it has one.
     #[schemars(title = "Space")]
-    Space { space: Space },
+    Space {
+        space: Space,
+        /// Where its threads work.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        folder: Option<ProjectFolder>,
+    },
     #[schemars(title = "Spaces")]
     Spaces { spaces: Vec<Space> },
+    /// The folders inside the folder at `path`, by name; hidden ones left out.
+    #[schemars(title = "Folders")]
+    Folders {
+        /// The folder listed, as this computer names it, links followed.
+        path: String,
+        /// The folder it is in, to go up to; absent at the top.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<String>,
+        folders: Vec<String>,
+    },
     /// Memories listed, or the ones a change touched.
     #[schemars(title = "Memories")]
     Memories { memories: Vec<Remembered> },
@@ -708,53 +738,6 @@ pub struct ApiError {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ErrorData {
     pub failure: Failure,
-}
-
-/// Every error a request can be answered with (`specs/session.md`): JSON-RPC's own, then
-/// glave's. Each is a constant and a row of [`code::ALL`], from one table.
-pub mod code {
-    macro_rules! codes {
-        ($($name:ident = $code:literal, $meaning:literal;)*) => {
-            $(
-                #[doc = $meaning]
-                pub const $name: i64 = $code;
-            )*
-
-            /// Every code: its number, a name for clients, and its meaning.
-            pub const ALL: &[(i64, &str, &str)] = &[$(($code, stringify!($name), $meaning)),*];
-        };
-    }
-
-    codes! {
-        PARSE = -32700, "The message is not JSON-RPC";
-        INVALID_REQUEST = -32600, "The message is not a valid request";
-        NO_METHOD = -32601, "No such method";
-        INVALID_PARAMS = -32602, "The params are not valid";
-        INTERNAL = -32603, "The server failed";
-        NO_THREAD = -32001, "No such thread";
-        TURN_RUNNING = -32002, "A turn is already running in this thread";
-        NO_TURN = -32003, "No turn is running in this thread";
-        NO_APPROVAL = -32004, "No such approval is pending";
-        CANCELLED = -32005, "The operation was cancelled";
-        NO_QUESTION = -32006, "No such question is waiting";
-        NO_GOAL = -32007, "The thread has no active goal (or, to resume, no paused one)";
-        PROMPT_BLOCKED = -32008, "A hook stopped the prompt";
-        WORKSPACE = -32009, "The thread's workspace could not be opened";
-        NOT_ALLOWED = -32012, "The caller may not do this";
-        NO_SIGN_IN = -32013, "No valid sign-in (network transports)";
-        ARCHIVED = -32014, "The thread is archived; unarchive it first";
-        LIMIT = -32015, "A policy limit was reached";
-        NO_SCHEDULE = -32016, "No such schedule";
-        NO_MEMORY = -32017, "No such memory here";
-        MEMORY_OFF = -32018, "Memory is off for this server";
-        NO_SPACE = -32019, "No such space";
-        PROVIDER = -32020, "The model provider failed";
-        NO_MODEL = -32021, "No such model here, or not one this server may run";
-        NOT_AVAILABLE = -32022, "Not available yet, such as a thread on a computer of the person's own";
-        NO_PROVIDER = -32023, "No such model account here";
-        NO_CREDENTIAL = -32024, "No such git host, or sign-in, here";
-        HOST = -32025, "The git host refused, or could not be reached";
-    }
 }
 
 impl ApiError {

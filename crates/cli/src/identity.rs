@@ -1,6 +1,8 @@
 //! Who you are to glave on this computer: a person id and your default agent's id, made on
 //! first run and kept in glave's folder, so every thread here records the same `for` and
-//! `agent` (see "Who acted" in `specs/events.md`).
+//! `agent` (see "Who acted" in `specs/events.md`). And which computer this is: an id made the
+//! same way, so a project's checkout and a thread's binding name this computer the same way
+//! every run.
 
 use std::io::ErrorKind;
 use std::path::Path;
@@ -8,10 +10,14 @@ use std::path::Path;
 use anyhow::{Context as _, bail};
 use glave_event::PrincipalId;
 use glave_harness::{Clock as _, Entropy as _, OsEntropy, SystemClock};
+use glave_ports::ComputerId;
 use uuid::Uuid;
 
 /// The file, in glave's folder.
 const FILE: &str = "identity";
+
+/// The file holding this computer's id, in glave's folder.
+const COMPUTER: &str = "computer";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Identity {
@@ -38,6 +44,29 @@ pub async fn load_or_make(home: &Path) -> anyhow::Result<Identity> {
                 .await
                 .with_context(|| format!("could not write {}", path.display()))?;
             Ok(identity)
+        }
+        Err(err) => Err(err).with_context(|| format!("could not read {}", path.display())),
+    }
+}
+
+/// This computer's id from glave's folder, made and saved there the first time.
+pub async fn computer(home: &Path) -> anyhow::Result<ComputerId> {
+    let path = home.join(COMPUTER);
+    match tokio::fs::read_to_string(&path).await {
+        Ok(text) => Uuid::parse_str(text.trim())
+            .map(ComputerId::from_uuid)
+            .with_context(|| {
+                format!(
+                    "{} is damaged; move it aside to start this computer anew",
+                    path.display()
+                )
+            }),
+        Err(err) if err.kind() == ErrorKind::NotFound => {
+            let id = make()?.as_uuid();
+            tokio::fs::write(&path, format!("{id}\n"))
+                .await
+                .with_context(|| format!("could not write {}", path.display()))?;
+            Ok(ComputerId::from_uuid(id))
         }
         Err(err) => Err(err).with_context(|| format!("could not read {}", path.display())),
     }

@@ -18,6 +18,7 @@ mod models;
 mod modes;
 mod outside;
 mod placement;
+mod projects;
 mod providers;
 mod questions;
 mod remote;

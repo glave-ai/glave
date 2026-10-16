@@ -55,7 +55,7 @@ pub use glave_ports::{Sandbox, SandboxLevel};
 pub use goal::{DEFAULT_BUDGET, Goal, GoalProgress, UPDATE_GOAL};
 pub use harness::{Harness, HarnessError, Parts, Settings, Thread};
 pub use hooks::{Hook, HookError, HookPoint, Hooks, point_name};
-pub use instructions::{AGENTS_MD, Instructions, agents_md};
+pub use instructions::{AGENTS_MD, FolderInstructions, Instructions, agents_md};
 pub use judge::{JudgeCase, Ruling, judge};
 pub use memory::{
     Access, Control, EDIT_MEMORY, FORGET, MEMORY_SERVER, Memory, MemoryChange, MemoryContext,
@@ -71,7 +71,7 @@ pub use standing::{Change, MAX_TITLE, Standing, change_standing, standing_of};
 pub use subagent::SubagentType;
 pub use title::{TitleCase, Titled};
 pub use todo::{TODO, Todo};
-pub use tools::workspace::Workspace;
+pub use tools::workspace::{Inside, Looked, Workspace};
 pub use tools::{Tool, ToolOutcome};
 pub use turn::{Live, TurnSummary};
 pub use worker::{ReleasedWorker, Workers, wip_branch};

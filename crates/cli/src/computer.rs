@@ -140,7 +140,8 @@ async fn run(transport: Transport) -> anyhow::Result<()> {
     let computers = Arc::new(with_sandbox_helper(
         LocalComputers::new(home.join("workspaces"), std::env::vars_os())
             .with_worktrees(home.join(crate::worktrees::FOLDER))
-            .with_scratch(home.join(crate::worktrees::SCRATCH)),
+            .with_scratch(home.join(crate::worktrees::SCRATCH))
+            .with_projects(crate::home::projects()?),
     ));
     match transport {
         Transport::Stdio => {

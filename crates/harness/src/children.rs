@@ -84,6 +84,7 @@ where
         // A subagent works where its parent does.
         child.workspace.clone_from(&parent.workspace);
         child.note.clone_from(&parent.note);
+        child.instructions.clone_from(&parent.instructions);
         child.untrusted = parent.untrusted;
         child.read_secret = parent.read_secret;
         child.model.clone_from(&parent.model);

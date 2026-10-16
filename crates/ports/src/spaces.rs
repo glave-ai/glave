@@ -82,6 +82,50 @@ impl Space {
         }
         Ok(())
     }
+
+    /// Whether two names are the same to a person: equal but for case and the spaces around.
+    pub fn same_name(a: &str, b: &str) -> bool {
+        a.trim().to_lowercase() == b.trim().to_lowercase()
+    }
+
+    /// `wanted`, or, when one of `taken` is the same name, the first of `wanted 2`, `wanted 3`
+    /// and on that none is, cut to fit [`MAX_NAME`]: the name a new project of an owner whose
+    /// projects are called `taken` gets.
+    pub fn free_name(wanted: &str, taken: &[String]) -> String {
+        let free = |name: &str| !taken.iter().any(|other| Self::same_name(name, other));
+        let wanted = wanted.trim();
+        if free(wanted) {
+            return wanted.to_owned();
+        }
+        // Of `taken.len() + 1` names, one is free.
+        (2..=taken.len().saturating_add(2))
+            .map(|n| {
+                let suffix = format!(" {n}");
+                let room = MAX_NAME.saturating_sub(suffix.chars().count());
+                let base: String = wanted.chars().take(room).collect();
+                format!("{}{suffix}", base.trim_end())
+            })
+            .find(|name| free(name))
+            .unwrap_or_else(|| wanted.to_owned())
+    }
+
+    /// Refuses `name` for the project `space` when another of its owner's projects, called
+    /// `taken`, has it already.
+    pub fn check_free(
+        space: SpaceId,
+        name: &str,
+        taken: &[(SpaceId, String)],
+    ) -> Result<(), SpaceError> {
+        match taken
+            .iter()
+            .find(|(other, called)| *other != space && Self::same_name(name, called))
+        {
+            Some((_, called)) => Err(SpaceError::Conflict(format!(
+                "there is a project called {called:?} already; choose another name"
+            ))),
+            None => Ok(()),
+        }
+    }
 }
 
 /// What leads from a folder to its space: its canonical path, or, for a git repository, its
@@ -100,6 +144,23 @@ impl FolderKey {
             Self::Remote(url) => format!("remote:{url}"),
         }
     }
+}
+
+/// The `origin` remote's url in a repository's `.git/config`, whose text is `config`: read
+/// without running git, which a repository's own config can make run programs.
+pub fn origin_remote(config: &str) -> Option<String> {
+    let mut in_origin = false;
+    for line in config.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_origin = line == "[remote \"origin\"]";
+        } else if in_origin && let Some(url) = line.strip_prefix("url") {
+            return url
+                .trim_start()
+                .strip_prefix('=')
+                .map(|url| url.trim().to_owned());
+        }
+    }
+    None
 }
 
 impl fmt::Display for FolderKey {
@@ -124,10 +185,19 @@ pub enum SpaceError {
 
 /// Where spaces are kept: the data store, which scopes every call by organization. Shaped as
 /// if across a network: whole records in and out.
+///
+/// A project's name is unique among its owner's projects, ignoring case: a new one whose name
+/// is taken gets the next free one ([`Space::free_name`]), and renaming one to a taken name is
+/// refused. Different owners' projects may share a name.
 pub trait Spaces: Send + Sync {
-    /// Keeps a new space. Refused when its id is taken, when its name is not readable, or
-    /// when it is a personal space and its owner has one.
-    fn create<'a>(&'a self, org: OrgId, space: &'a Space) -> BoxFuture<'a, Result<(), SpaceError>>;
+    /// Keeps a new space, and answers it as kept: a project under the next free name when its
+    /// owner has one called the same. Refused when its id is taken, when its name is not
+    /// readable, or when it is a personal space and its owner has one.
+    fn create<'a>(
+        &'a self,
+        org: OrgId,
+        space: &'a Space,
+    ) -> BoxFuture<'a, Result<Space, SpaceError>>;
 
     /// The space `space`, if the organization has it.
     fn get(&self, org: OrgId, space: SpaceId) -> BoxFuture<'_, Result<Option<Space>, SpaceError>>;
@@ -142,7 +212,8 @@ pub trait Spaces: Send + Sync {
     ) -> BoxFuture<'a, Result<Vec<Space>, SpaceError>>;
 
     /// Replaces the space's name, members and `updated_at` with `space`'s. Its kind, owner and
-    /// creation never change.
+    /// creation never change. A project's name another of its owner's projects has is refused
+    /// with [`SpaceError::Conflict`].
     fn update<'a>(&'a self, org: OrgId, space: &'a Space) -> BoxFuture<'a, Result<(), SpaceError>>;
 
     /// The personal space of `new.owner`: the one they have, or `new`, kept now. Two callers at
@@ -154,7 +225,8 @@ pub trait Spaces: Send + Sync {
     ) -> BoxFuture<'a, Result<Space, SpaceError>>;
 
     /// The space a folder leads to: the one the first of `keys` that is known leads to, or
-    /// `new`, kept now. Every key in `keys` then leads to it, unless it already led elsewhere.
+    /// `new`, kept now as `create` keeps it. Every key in `keys` then leads to it, unless it
+    /// already led elsewhere.
     fn folder<'a>(
         &'a self,
         org: OrgId,

@@ -1,11 +1,13 @@
 //! A fake git host for tests of credentials: one repository served over git's dumb HTTP
 //! protocol, only to a client that signs in with the right user name and token (Basic, as git
 //! sends a credential helper's answer), and the account behind the token at `/api/v1/user`, as
-//! Gitea and Forgejo answer it. It counts the requests it refused. And credentials that answer
-//! every host they name with one credential.
+//! Gitea and Forgejo answer it. The repository is a made-up one that git can list but not
+//! fetch, or a real bare repository whose files it serves, which git can clone. It counts the
+//! requests it refused. And credentials that answer every host they name with one credential.
 
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -28,14 +30,25 @@ pub struct FakeGitHost {
 }
 
 impl FakeGitHost {
-    /// Serves the repository to a client signed in as `username` with `token`.
+    /// Serves the made-up repository to a client signed in as `username` with `token`.
     pub fn start(username: &str, token: &str) -> io::Result<Self> {
+        Self::serve(username, token, None)
+    }
+
+    /// Serves the bare repository at `bare` (with `git update-server-info` run in it, as dumb
+    /// HTTP needs), so git can clone it, to a client signed in as `username` with `token`.
+    pub fn serving(bare: &Path, username: &str, token: &str) -> io::Result<Self> {
+        Self::serve(username, token, Some(bare.to_owned()))
+    }
+
+    fn serve(username: &str, token: &str, bare: Option<PathBuf>) -> io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let url = format!("http://{}", listener.local_addr()?);
         let account = Account {
             username: username.to_owned(),
             git: format!("Basic {}", encode(format!("{username}:{token}").as_bytes())),
             api: format!("token {token}"),
+            bare,
         };
         let (stop, refused) = (Arc::new(AtomicBool::new(false)), Arc::default());
         let (stopping, counting) = (Arc::clone(&stop), Arc::clone(&refused));
@@ -74,11 +87,13 @@ impl Drop for FakeGitHost {
     }
 }
 
-/// The account the host serves, and the sign-ins it takes: git's, and its API's.
+/// The account the host serves, the sign-ins it takes (git's, and its API's), and the bare
+/// repository it serves, if a real one.
 struct Account {
     username: String,
     git: String,
     api: String,
+    bare: Option<PathBuf>,
 }
 
 /// Answers one request: the account to its API's sign-in, the refs or `HEAD` to git's, 401
@@ -109,11 +124,16 @@ fn answer(stream: TcpStream, account: &Account, refused: &AtomicUsize) -> io::Re
     let mut stream = stream;
     let (wanted, body) = if path == "/api/v1/user" {
         let user = format!("{{\"login\":\"{}\"}}", account.username);
-        (&account.api, user)
-    } else if path.starts_with("/repo.git/info/refs") {
-        (&account.git, format!("{FAKE_COMMIT}\trefs/heads/main\n"))
-    } else if path == "/repo.git/HEAD" {
-        (&account.git, "ref: refs/heads/main\n".to_owned())
+        (&account.api, user.into_bytes())
+    } else if let Some(bare) = &account.bare
+        && let Some(file) = served(bare, &path)
+    {
+        (&account.git, file)
+    } else if account.bare.is_none() && path.starts_with("/repo.git/info/refs") {
+        let refs = format!("{FAKE_COMMIT}\trefs/heads/main\n");
+        (&account.git, refs.into_bytes())
+    } else if account.bare.is_none() && path == "/repo.git/HEAD" {
+        (&account.git, b"ref: refs/heads/main\n".to_vec())
     } else {
         return write!(
             stream,
@@ -130,10 +150,25 @@ fn answer(stream: TcpStream, account: &Account, refused: &AtomicUsize) -> io::Re
     }
     write!(
         stream,
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\
-         Connection: close\r\n\r\n{body}",
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\
+         Connection: close\r\n\r\n",
         body.len()
-    )
+    )?;
+    stream.write_all(&body)
+}
+
+/// The file of the bare repository at `bare` that `path` (`/repo.git/...`, without a query)
+/// names, if it is one: nothing outside the repository.
+fn served(bare: &Path, path: &str) -> Option<Vec<u8>> {
+    let inside = path.strip_prefix("/repo.git/")?.split('?').next()?;
+    let relative = Path::new(inside);
+    if !relative
+        .components()
+        .all(|part| matches!(part, Component::Normal(_)))
+    {
+        return None;
+    }
+    std::fs::read(bare.join(relative)).ok()
 }
 
 /// Credentials for tests: one credential for every host they name, and what they were asked.

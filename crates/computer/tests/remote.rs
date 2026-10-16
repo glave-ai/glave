@@ -27,7 +27,8 @@ mod remote_tests {
         let environment = std::env::vars_os().filter(|(name, _)| name == "PATH" || name == "HOME");
         Arc::new(
             LocalComputers::new(copies, environment)
-                .with_worktrees(copies.with_file_name("worktrees")),
+                .with_worktrees(copies.with_file_name("worktrees"))
+                .with_projects(copies.with_file_name("projects")),
         )
     }
 
@@ -80,7 +81,7 @@ mod remote_tests {
             let remote = RemoteComputers::connect(read, write);
             let refused = remote.check_protocol().await;
             assert!(
-                matches!(&refused, Err(ComputerError::Unsupported(m)) if m.contains("2026-10-15")),
+                matches!(&refused, Err(ComputerError::Unsupported(m)) if m.contains("2026-10-16")),
                 "{refused:?}"
             );
             drop(remote);

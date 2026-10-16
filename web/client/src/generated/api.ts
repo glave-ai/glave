@@ -36,6 +36,14 @@ export type At = string;
 /** Links a tool call to its result: 1 to 128 printable ASCII characters. */
 export type CallId = string;
 
+/** Where a folder is checked out: a computer, and the path on it. */
+export type Checkout = {
+  /** The computer, by the id it keeps across runs. */
+  readonly computer: string;
+  /** The folder's absolute path there, links resolved. */
+  readonly path: string;
+};
+
 /** One choice. */
 export type Choice = {
   readonly description?: string | null;
@@ -96,6 +104,14 @@ export type EventId = string;
 
 /** The kind of a failed model request. */
 export type Failure = "refused" | "no_credit" | "unknown_model" | "too_long" | "rate_limited" | "unavailable" | "unreachable" | "silent" | "malformed" | "rejected" | "over_budget";
+
+/** Where a folder's files come from. */
+export type FolderSource = {
+  readonly kind: "repository";
+  readonly url: string;
+} | {
+  readonly kind: "local";
+};
 
 /**
  * Which forge a git host runs, as far as glave could tell: what its API and its
@@ -170,6 +186,17 @@ export type Money = {
   readonly micros: number;
 };
 
+/** A new project's folder, on the computer glave runs on. */
+export type NewFolder = {
+  readonly kind: "path";
+  readonly path: string;
+} | {
+  readonly kind: "repository";
+  readonly url: string;
+} | {
+  readonly kind: "empty";
+};
+
 /** What started a thread, and who. */
 export type Origin = {
   /** Who started it, when that differs from the thread's `for`. */
@@ -205,6 +232,12 @@ export type PrincipalId = string;
 
 /** What kind of principal acts. */
 export type PrincipalKind = string;
+
+/** A project's folder: where its files come from, and where they are checked out. */
+export type ProjectFolder = {
+  readonly checkout: Checkout;
+  readonly source: FolderSource;
+};
 
 /** Identifies one model account a person connected (`provider.connected`). */
 export type ProviderId = string;
@@ -557,6 +590,20 @@ export type CredentialRemoveParams = {
 
 export type CredentialRemoveResult = Readonly<Record<string, never>>;
 
+export type FolderListParams = {
+  /** A folder's full path. */
+  readonly path?: string | null;
+};
+
+/** The folders inside the folder at `path`, by name; hidden ones left out. */
+export type FolderListResult = {
+  readonly folders: readonly (string)[];
+  /** The folder it is in, to go up to; absent at the top. */
+  readonly parent?: string | null;
+  /** The folder listed, as this computer names it, links followed. */
+  readonly path: string;
+};
+
 export type GoalGetParams = {
   readonly thread: ThreadId;
 };
@@ -717,12 +764,15 @@ export type ServerDiscoverParams = Readonly<Record<string, never>>;
 export type ServerDiscoverResult = ServerInfo;
 
 export type SpaceCreateParams = {
+  readonly folder?: NewFolder | null;
   readonly members?: readonly (Principal)[];
   readonly name: string;
 };
 
-/** A space: one asked for, made or renamed. */
+/** A space: one asked for, made or renamed, with its folder when it has one. */
 export type SpaceCreateResult = {
+  /** Where its threads work. */
+  readonly folder?: ProjectFolder | null;
   readonly space: Space;
 };
 
@@ -730,8 +780,10 @@ export type SpaceGetParams = {
   readonly space: SpaceId;
 };
 
-/** A space: one asked for, made or renamed. */
+/** A space: one asked for, made or renamed, with its folder when it has one. */
 export type SpaceGetResult = {
+  /** Where its threads work. */
+  readonly folder?: ProjectFolder | null;
   readonly space: Space;
 };
 
@@ -748,8 +800,10 @@ export type SpaceRenameParams = {
   readonly space: SpaceId;
 };
 
-/** A space: one asked for, made or renamed. */
+/** A space: one asked for, made or renamed, with its folder when it has one. */
 export type SpaceRenameResult = {
+  /** Where its threads work. */
+  readonly folder?: ProjectFolder | null;
   readonly space: Space;
 };
 
@@ -915,6 +969,7 @@ export interface Methods {
   readonly "credential/device/start": { readonly params: CredentialDeviceStartParams; readonly result: CredentialDeviceStartResult };
   readonly "credential/list": { readonly params: CredentialListParams; readonly result: CredentialListResult };
   readonly "credential/remove": { readonly params: CredentialRemoveParams; readonly result: CredentialRemoveResult };
+  readonly "folder/list": { readonly params: FolderListParams; readonly result: FolderListResult };
   readonly "goal/get": { readonly params: GoalGetParams; readonly result: GoalGetResult };
   readonly "goal/start": { readonly params: GoalStartParams; readonly result: GoalStartResult };
   readonly "goal/stop": { readonly params: GoalStopParams; readonly result: GoalStopResult };

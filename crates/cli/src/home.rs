@@ -15,6 +15,25 @@ pub fn folder() -> anyhow::Result<PathBuf> {
     }
 }
 
+/// Where new projects' folders are made (`specs/storage.md`, "Spaces"): `~/glave`, where the
+/// person finds and opens them; beside a folder `GLAVE_HOME` names instead, as
+/// `<that folder>-projects`, so a separate home keeps its own. Never inside glave's folder.
+pub fn projects() -> anyhow::Result<PathBuf> {
+    if let Some(home) = std::env::var_os("GLAVE_HOME") {
+        let home = PathBuf::from(home);
+        let Some(name) = home.file_name() else {
+            bail!("GLAVE_HOME ({}) names no folder", home.display());
+        };
+        let mut beside = name.to_os_string();
+        beside.push("-projects");
+        return Ok(home.with_file_name(beside));
+    }
+    match std::env::var_os("HOME") {
+        Some(home) => Ok(PathBuf::from(home).join("glave")),
+        None => bail!("cannot find your home folder; set GLAVE_HOME"),
+    }
+}
+
 /// Whether `GLAVE_HOME` moved glave's folder from `~/.glave`.
 pub fn relocated() -> bool {
     std::env::var_os("GLAVE_HOME").is_some()
