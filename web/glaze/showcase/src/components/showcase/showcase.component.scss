@@ -7,8 +7,8 @@
   grid-template-columns: 14rem minmax(0, 1fr);
   gap: var(--glz-space-5);
   max-width: 72rem;
-  margin: 0 auto;
-  padding: var(--glz-space-5) var(--glz-space-4);
+  margin-inline: auto;
+  padding: var(--glz-inset-page-block) var(--glz-inset-page-inline);
 }
 
 .contents {

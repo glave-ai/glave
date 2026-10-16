@@ -5,7 +5,7 @@
   max-height: calc(100vh - 2rem);
   padding: 0;
   border: 0;
-  border-radius: var(--glz-radius-lg);
+  border-radius: var(--glz-radius-card);
   background: var(--glz-surface-overlay);
   color: var(--glz-color-text);
   box-shadow: var(--glz-elevation-3);
@@ -18,27 +18,29 @@
 .surface {
   display: flex;
   flex-direction: column;
+  gap: var(--glz-space-4);
   max-height: inherit;
   height: 100%;
+  padding: var(--glz-inset-dialog);
 }
 
 .header {
   display: flex;
   align-items: center;
   gap: var(--glz-space-2);
-  padding: var(--glz-space-4) var(--glz-space-4) var(--glz-space-2) var(--glz-space-5);
 }
 
 .heading {
   flex: 1;
-  margin: 0;
-  font-size: var(--glz-text-lg);
+  font-size: var(--glz-text-xl);
 }
 
 .content {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: var(--glz-space-4);
   overflow-y: auto;
-  padding: var(--glz-space-2) var(--glz-space-5);
 }
 
 .actions {
@@ -46,7 +48,6 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--glz-space-2);
-  padding: var(--glz-space-3) var(--glz-space-5) var(--glz-space-4);
 }
 
 .actions:empty {

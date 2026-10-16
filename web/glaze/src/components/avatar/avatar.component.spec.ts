@@ -13,21 +13,18 @@ describe('GlzAvatarComponent', () => {
     expect(host.getAttribute('role')).toBe('img');
     expect(host.getAttribute('aria-label')).toBe('Ada Lovelace');
     expect(host.textContent.trim()).toBe('AL');
-    expect(host.querySelector('[data-testid="avatar-hope"]')).toBeNull();
     await expectAccessible(host);
   });
 
-  it('shows a picture, and Hope presence when asked', async () => {
+  it('shows a picture when it has one', async () => {
     const fixture = TestBed.createComponent(GlzAvatarComponent);
     fixture.componentRef.setInput('testId', 'avatar');
-    fixture.componentRef.setInput('name', 'Hope');
-    fixture.componentRef.setInput('src', '/hope.png');
-    fixture.componentRef.setInput('hope', true);
+    fixture.componentRef.setInput('name', 'Ada Lovelace');
+    fixture.componentRef.setInput('src', '/ada.png');
     fixture.componentRef.setInput('size', 'lg');
     await fixture.whenStable();
     const host: HTMLElement = fixture.nativeElement;
-    expect(host.querySelector('img')?.getAttribute('src')).toBe('/hope.png');
-    expect(host.querySelector('[data-testid="avatar-hope"]')).not.toBeNull();
+    expect(host.querySelector('img')?.getAttribute('src')).toBe('/ada.png');
     expect(host.classList).toContain('glz-avatar-lg');
   });
 });

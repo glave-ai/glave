@@ -18,8 +18,8 @@
 }
 
 :host(.glz-tone-accent) {
-  --glz-badge-bg: var(--glz-color-accent-soft);
-  --glz-badge-fg: var(--glz-color-text);
+  --glz-badge-bg: var(--glz-accent);
+  --glz-badge-fg: var(--glz-on-accent);
 }
 
 :host(.glz-tone-success) {

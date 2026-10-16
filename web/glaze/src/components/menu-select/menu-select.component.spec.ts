@@ -6,7 +6,7 @@ import { type GlzMenuOption, GlzMenuSelectComponent } from './menu-select.compon
 
 const MODELS: readonly GlzMenuOption[] = [
   { value: 'gpt-6-luna', label: 'GPT-6 Luna', hint: 'Default' },
-  { value: 'hope-12b', label: 'Hope', hope: true },
+  { value: 'hope-12b', label: 'Hope' },
 ];
 
 @Component({
@@ -43,7 +43,6 @@ describe('GlzMenuSelectComponent', () => {
     const root: HTMLElement = fixture.nativeElement;
     expect(trigger(root).textContent.replace(/\s+/gu, ' ').trim()).toBe('Model: GPT-6 Luna');
     expect(trigger(root).getAttribute('aria-haspopup')).toBe('menu');
-    expect(root.querySelector('.sun')).toBeNull();
     await expectAccessible(root);
   });
 
@@ -57,7 +56,6 @@ describe('GlzMenuSelectComponent', () => {
     const items = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
     expect(items.map((item) => item.getAttribute('aria-checked'))).toEqual(['true', 'false']);
     expect(items[0]?.textContent).toContain('Default');
-    expect(items[1]?.querySelector('.sun')).not.toBeNull();
     if (menu !== null) {
       await expectAccessible(menu);
     }
@@ -65,7 +63,7 @@ describe('GlzMenuSelectComponent', () => {
     await fixture.whenStable();
     expect(fixture.componentInstance.value()).toBe('hope-12b');
     expect(document.querySelector('[role="menu"]')).toBeNull();
-    expect(trigger(fixture.nativeElement as HTMLElement).classList).toContain('hope');
+    expect(trigger(fixture.nativeElement as HTMLElement).textContent).toContain('Hope');
   });
 
   it('shows the placeholder while nothing is chosen', async () => {

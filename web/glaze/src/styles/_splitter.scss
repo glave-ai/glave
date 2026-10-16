@@ -7,7 +7,9 @@
     position: relative;
     z-index: 1;
     flex: none;
-    width: var(--glz-space-2);
+    width: calc(2 * var(--glz-space-1));
+
+    /* stylelint-disable-next-line declaration-property-value-allowed-list -- the edge sits across the border and takes no room, which no gap can do */
     margin-inline: calc(-1 * var(--glz-space-1));
     cursor: col-resize;
     touch-action: none;

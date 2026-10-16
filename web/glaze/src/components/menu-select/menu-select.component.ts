@@ -17,12 +17,10 @@ import { GlzIconComponent } from '../icon/icon.component';
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { trigger: 'trigger', option: 'option' } as const;
 
-/** One choice in a menu select: a plain option, with a line about it and Hope's mark. */
+/** One choice in a menu select: a plain option, with a line about it. */
 export interface GlzMenuOption extends GlzOption {
   /** A short line under the label, such as "Default". */
   readonly hint?: string;
-  /** Marks the choice as Hope, glave's own model, with Hope's sun. */
-  readonly hope?: boolean;
 }
 
 /** An option as the menu shows it. */
@@ -31,7 +29,6 @@ interface ShownOption {
   readonly label: string;
   readonly hint: string;
   readonly hasHint: boolean;
-  readonly hope: boolean;
   readonly checked: boolean;
 }
 
@@ -47,8 +44,7 @@ const POSITIONS: readonly ConnectedPosition[] = [
  * A compact choice among a few options: a quiet button that shows the current one and opens
  * a menu of the others, as a composer's model picker does. The CDK's menu with radio items
  * (`menuitemradio`), so arrow keys, typeahead, Escape and focus return work. The button is
- * named by `label` and the choice ("Model: Hope"). An option with `hope` wears Hope's sun:
- * set it only for Hope. `value` is bound two ways.
+ * named by `label` and the choice ("Model: Hope"). `value` is bound two ways.
  *
  * ```html
  * <glz-menu-select label="Model" [options]="models" [(value)]="model" />
@@ -84,14 +80,12 @@ export class GlzMenuSelectComponent {
     this.options().find((option) => option.value === this.value()),
   );
   protected readonly shownLabel = computed(() => this.current()?.label ?? this.placeholder());
-  protected readonly hope = computed(() => this.current()?.hope === true);
   protected readonly shown = computed<readonly ShownOption[]>(() =>
     this.options().map((option) => ({
       value: option.value,
       label: option.label,
       hint: option.hint ?? '',
       hasHint: (option.hint ?? '') !== '',
-      hope: option.hope === true,
       checked: option.value === this.value(),
     })),
   );

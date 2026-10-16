@@ -1,9 +1,9 @@
 <glz-card data-testid="accounts">
-  <h2 glzCardHeader class="section">{{ copy.heading }}</h2>
+  <h2 glzCardHeader>{{ copy.heading }}</h2>
   <p class="details">{{ copy.lead }}</p>
   @for (account of accounts(); track account.id) {
     <div class="account" data-testid="accounts-account">
-      <div>
+      <div class="glz-stack glz-gap-1">
         <p class="title">{{ account.name }}</p>
         <p class="details">{{ account.detail }}</p>
         @if (account.note; as note) {
@@ -28,122 +28,130 @@
     <p class="error" role="alert" data-testid="accounts-problem">{{ problem }}</p>
   }
 
-  <h3 class="part">{{ copy.github }}</h3>
-  @if (device()) {
-    @if (code(); as code) {
-      <div class="device" data-testid="accounts-device">
-        <p>{{ copy.enter }}</p>
-        <p class="code" data-testid="accounts-device-code">{{ code.code }}</p>
-        <div class="actions">
-          <a
+  <section class="glz-stack glz-gap-2">
+    <h3 class="part">{{ copy.github }}</h3>
+    @if (device()) {
+      @if (code(); as code) {
+        <div class="glz-stack glz-gap-3" data-testid="accounts-device">
+          <p>{{ copy.enter }}</p>
+          <p class="code" data-testid="accounts-device-code">{{ code.code }}</p>
+          <div class="glz-row glz-gap-2">
+            <a
+              glzButton
+              variant="primary"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="accounts-device-open"
+              [href]="code.url"
+            >
+              {{ copy.open }}
+            </a>
+            <button glzButton data-testid="accounts-device-cancel" (click)="cancel()">
+              {{ copy.cancel }}
+            </button>
+          </div>
+          <p class="details" role="status">{{ copy.waiting }}</p>
+        </div>
+      } @else {
+        <div class="glz-row glz-gap-2">
+          <button
             glzButton
             variant="primary"
-            target="_blank"
-            rel="noopener noreferrer"
-            data-testid="accounts-device-open"
-            [href]="code.url"
+            data-testid="accounts-github-sign-in"
+            [disabled]="working()"
+            (click)="signIn()"
           >
-            {{ copy.open }}
-          </a>
-          <button glzButton data-testid="accounts-device-cancel" (click)="cancel()">
-            {{ copy.cancel }}
+            {{ signInLabel() }}
+          </button>
+          @if (install(); as install) {
+            <a
+              glzButton
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="accounts-github-repositories"
+              [href]="install"
+            >
+              {{ copy.repositories }}
+            </a>
+          }
+        </div>
+      }
+    } @else {
+      <form
+        class="glz-stack glz-gap-3"
+        data-testid="accounts-github"
+        (submit)="connectGithub($event)"
+      >
+        <glz-form-field [label]="copy.githubToken" [hint]="copy.githubTokenHint">
+          <input
+            glzInput
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            data-testid="accounts-github-token"
+            [value]="githubToken()"
+            (input)="typedGithubToken($event)"
+          />
+        </glz-form-field>
+        <div class="glz-row glz-gap-2">
+          <button
+            glzButton
+            variant="primary"
+            type="submit"
+            data-testid="accounts-github-submit"
+            [disabled]="working()"
+          >
+            {{ githubLabel() }}
           </button>
         </div>
-        <p class="details" role="status">{{ copy.waiting }}</p>
-      </div>
-    } @else {
-      <div class="actions">
-        <button
-          glzButton
-          variant="primary"
-          data-testid="accounts-github-sign-in"
-          [disabled]="working()"
-          (click)="signIn()"
-        >
-          {{ signInLabel() }}
-        </button>
-        @if (install(); as install) {
-          <a
-            glzButton
-            target="_blank"
-            rel="noopener noreferrer"
-            data-testid="accounts-github-repositories"
-            [href]="install"
-          >
-            {{ copy.repositories }}
-          </a>
-        }
-      </div>
+      </form>
     }
-  } @else {
-    <form class="form" data-testid="accounts-github" (submit)="connectGithub($event)">
-      <glz-form-field [label]="copy.githubToken" [hint]="copy.githubTokenHint">
+    @if (githubProblem(); as problem) {
+      <p class="error" role="alert" data-testid="accounts-github-problem">{{ problem }}</p>
+    }
+  </section>
+
+  <section class="glz-stack glz-gap-2">
+    <h3 class="part">{{ copy.other }}</h3>
+    <form class="glz-stack glz-gap-3" data-testid="accounts-host" (submit)="connectHost($event)">
+      <glz-form-field [label]="copy.address" [hint]="copy.addressHint">
+        <input
+          glzInput
+          type="url"
+          autocomplete="off"
+          spellcheck="false"
+          data-testid="accounts-host-address"
+          [value]="address()"
+          (input)="typedAddress($event)"
+        />
+      </glz-form-field>
+      <glz-form-field [label]="copy.token" [hint]="copy.tokenHint">
         <input
           glzInput
           type="password"
           autocomplete="off"
           spellcheck="false"
-          data-testid="accounts-github-token"
-          [value]="githubToken()"
-          (input)="typedGithubToken($event)"
+          data-testid="accounts-host-token"
+          [value]="token()"
+          (input)="typedToken($event)"
         />
       </glz-form-field>
-      <div class="actions">
+      @if (hostProblem(); as problem) {
+        <p class="error" role="alert" data-testid="accounts-host-problem">{{ problem }}</p>
+      }
+      <div class="glz-row glz-gap-2">
         <button
           glzButton
           variant="primary"
           type="submit"
-          data-testid="accounts-github-submit"
+          data-testid="accounts-host-submit"
           [disabled]="working()"
         >
-          {{ githubLabel() }}
+          {{ hostLabel() }}
         </button>
       </div>
     </form>
-  }
-  @if (githubProblem(); as problem) {
-    <p class="error" role="alert" data-testid="accounts-github-problem">{{ problem }}</p>
-  }
-
-  <h3 class="part">{{ copy.other }}</h3>
-  <form class="form" data-testid="accounts-host" (submit)="connectHost($event)">
-    <glz-form-field [label]="copy.address" [hint]="copy.addressHint">
-      <input
-        glzInput
-        type="url"
-        autocomplete="off"
-        spellcheck="false"
-        data-testid="accounts-host-address"
-        [value]="address()"
-        (input)="typedAddress($event)"
-      />
-    </glz-form-field>
-    <glz-form-field [label]="copy.token" [hint]="copy.tokenHint">
-      <input
-        glzInput
-        type="password"
-        autocomplete="off"
-        spellcheck="false"
-        data-testid="accounts-host-token"
-        [value]="token()"
-        (input)="typedToken($event)"
-      />
-    </glz-form-field>
-    @if (hostProblem(); as problem) {
-      <p class="error" role="alert" data-testid="accounts-host-problem">{{ problem }}</p>
-    }
-    <div class="actions">
-      <button
-        glzButton
-        variant="primary"
-        type="submit"
-        data-testid="accounts-host-submit"
-        [disabled]="working()"
-      >
-        {{ hostLabel() }}
-      </button>
-    </div>
-  </form>
+  </section>
 </glz-card>
 <glz-confirm-dialog
   testId="accounts-remove-confirm"

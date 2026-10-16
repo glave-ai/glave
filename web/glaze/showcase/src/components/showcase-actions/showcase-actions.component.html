@@ -2,7 +2,7 @@
   <h2 id="actions-heading">{{ copy.heading }}</h2>
 
   <h3>{{ copy.buttons }}</h3>
-  <div class="row">
+  <div class="glz-row">
     <button glzButton variant="primary" data-testid="showcase-primary">{{ copy.primary }}</button>
     <button glzButton>{{ copy.secondary }}</button>
     <button glzButton variant="ghost">{{ copy.ghost }}</button>
@@ -13,7 +13,7 @@
   </div>
 
   <h3>{{ copy.iconButtons }}</h3>
-  <div class="row">
+  <div class="glz-row">
     <button glzIconButton variant="primary" [label]="copy.add">
       <glz-icon [icon]="icons.add" />
     </button>
@@ -34,18 +34,18 @@
   </div>
 
   <h3>{{ copy.badges }}</h3>
-  <div class="row">
+  <div class="glz-row">
     <glz-badge>{{ copy.neutral }}</glz-badge>
     <glz-badge tone="accent">{{ copy.accent }}</glz-badge>
     <glz-badge tone="success">{{ copy.success }}</glz-badge>
     <glz-badge tone="warning">{{ copy.warning }}</glz-badge>
     <glz-badge tone="danger">{{ copy.dangerBadge }}</glz-badge>
     <glz-avatar [name]="copy.person" />
-    <glz-avatar size="lg" hope [name]="copy.hope" />
+    <glz-avatar size="lg" [name]="copy.hope" />
   </div>
 
   <h3>{{ copy.cards }}</h3>
-  <div class="cards">
+  <div class="glz-grid">
     <glz-card>
       <h4 glzCardHeader>{{ copy.card }}</h4>
       {{ copy.cardBody }}
@@ -53,7 +53,7 @@
     <glz-card surface="raised">
       <h4 glzCardHeader>{{ copy.raised }}</h4>
       {{ copy.cardBody }}
-      <div glzCardFooter>
+      <div glzCardFooter class="glz-row glz-gap-2">
         <button glzButton size="sm">{{ copy.ghost }}</button>
       </div>
     </glz-card>

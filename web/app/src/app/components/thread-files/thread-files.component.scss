@@ -9,22 +9,23 @@
 }
 
 .file {
+  overflow: hidden;
   border: var(--glz-border-width) solid var(--glz-color-border);
-  border-radius: var(--glz-radius-md);
+  border-radius: var(--glz-radius-card);
   background: var(--glz-surface-card);
 }
 
 .summary {
   display: flex;
   align-items: center;
-  gap: var(--glz-space-2);
-  padding: var(--glz-space-2) var(--glz-space-3);
+  gap: var(--glz-space-3);
+  padding: var(--glz-inset-row);
   cursor: pointer;
 }
 
 .summary:focus-visible {
   outline: none;
-  border-radius: var(--glz-radius-md);
+  border-radius: var(--glz-radius-card);
   box-shadow: inset 0 0 0 2px var(--glz-color-focus);
 }
 
@@ -32,23 +33,33 @@
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+  color: var(--glz-color-text-secondary);
   font-family: var(--glz-font-mono);
   font-size: var(--glz-text-sm);
 }
 
+// Lines added and removed, each in its colour; the words beside them say it for screen readers.
 .counts {
+  display: inline-flex;
   flex: none;
-  color: var(--glz-color-text-muted);
+  gap: var(--glz-space-2);
   font-family: var(--glz-font-mono);
   font-size: var(--glz-text-xs);
 }
 
+.plus {
+  color: var(--glz-color-added);
+}
+
+.minus {
+  color: var(--glz-color-removed);
+}
+
 .change {
-  border-top: var(--glz-border-width) solid var(--glz-color-border);
+  border-top: var(--glz-border-width) solid var(--glz-color-divider);
 }
 
 .note {
-  margin: 0;
   padding: var(--glz-space-1) var(--glz-space-3);
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-xs);

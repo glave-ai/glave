@@ -11,6 +11,8 @@
   z-index: 2;
   display: block;
   flex: none;
+
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- the bar floats over the page and takes no room, which no gap can do */
   margin-bottom: calc(-1 * (var(--glz-top-bar-height) + var(--glz-space-4)));
   padding-bottom: var(--glz-space-4);
   background: linear-gradient(to bottom, var(--glz-surface-page) 60%, transparent);

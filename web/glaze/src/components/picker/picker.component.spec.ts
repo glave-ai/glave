@@ -9,7 +9,7 @@ const MODELS: readonly GlzMenuOption[] = [
   { value: 'anthropic/claude-haiku-5.5', label: 'Anthropic · Claude Haiku 5.5', hint: 'Default' },
   { value: 'openai/gpt-6-luna', label: 'OpenAI · GPT-6 Luna' },
   { value: 'deepseek/deepseek-v4.1-flash', label: 'DeepSeek · DeepSeek V4.1 Flash' },
-  { value: 'hope-12b', label: 'Hope', hope: true },
+  { value: 'hope-12b', label: 'Hope' },
 ];
 
 @Component({

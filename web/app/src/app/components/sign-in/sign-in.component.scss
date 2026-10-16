@@ -1,4 +1,5 @@
 .page {
-  max-width: var(--glz-content-width);
-  margin: var(--glz-space-6) auto;
+  max-width: calc(var(--glz-content-width) + 2 * var(--glz-inset-page-inline));
+  margin-inline: auto;
+  padding: var(--glz-inset-page-block) var(--glz-inset-page-inline);
 }

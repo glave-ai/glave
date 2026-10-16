@@ -1,95 +1,163 @@
 /*
  * Glaze design tokens. Every colour, size and shadow a Glaze component uses comes from one of
- * these custom properties, so an app re-skins Glaze by overriding them (on :root, or on any
- * element for a part of the page). Nothing else is needed: no SCSS, no build step.
+ * these custom properties, so an app re-skins Glaze by overriding them. Nothing else is needed:
+ * no SCSS, no build step.
  *
- * Two themes share one set of names: light and dark. Each colour is a
- * light-dark() pair, chosen by `color-scheme`: the system's preference unless the page sets
- * data-theme="light" or data-theme="dark" on <html>. Glaze itself keeps no theme state.
+ * Two themes share one set of names: light and dark. Each colour is a light-dark() pair, chosen
+ * by `color-scheme`: the system's preference unless the page sets data-theme="light" or
+ * data-theme="dark" on <html>. Glaze itself keeps no theme state.
  *
- * The defaults are deliberately plain, a starting point for a visual design still to come.
+ * The look is monochrome: warm greys, ink on paper in light and paper on ink in dark. One accent
+ * colour, ink by default, is the only colour a theme sets; everything on or around it follows.
+ *
+ * Space and type are fluid: each step grows smoothly from a phone (360px wide) to a wide screen
+ * (1440px), with clamp(), never jumping at a breakpoint.
  */
 
 :root {
   color-scheme: light dark;
 
-  /* Colour: accents and tones. Leaf green is the accent; sun gold is only for Hope's presence. */
-  --glz-color-accent: light-dark(#1d7f48, #5cc98a);
-  --glz-color-accent-hover: light-dark(#176a3b, #7dd6a2);
-  --glz-color-accent-soft: light-dark(#e3f2e9, #1c3326);
-  --glz-color-on-accent: light-dark(#fff, #0b1a11);
-  --glz-color-hope: light-dark(#d99a0b, #f2b938);
-  --glz-color-success: light-dark(#0f766e, #4fd1c5);
-  --glz-color-success-soft: light-dark(#e0f2f1, #12302e);
-  --glz-color-warning: light-dark(#a15c07, #f0b45a);
-  --glz-color-warning-soft: light-dark(#fdf3e2, #362814);
-  --glz-color-danger: light-dark(#b42318, #ff8a80);
-  --glz-color-danger-hover: light-dark(#912018, #ffaba3);
-  --glz-color-danger-soft: light-dark(#fdecea, #3a1d1b);
-  --glz-color-on-danger: light-dark(#fff, #2a0b08);
+  /*
+   * The accent: what needs the person, the primary action and what is chosen. A theme sets
+   * --glz-accent alone, on :root; the rest follow from it in CSS.
+   */
+  --glz-accent: light-dark(#1b1c1d, #ececec);
 
-  /* Colour: text and lines. Muted text keeps 4.5:1 or more on every surface. */
-  --glz-color-text: light-dark(#18201b, #e6ebe8);
-  --glz-color-text-muted: light-dark(#4f5b54, #a8b3ad);
-  --glz-color-text-disabled: light-dark(#8a948e, #6b756f);
-  --glz-color-border: light-dark(#d5dcd8, #333d37);
-  --glz-color-border-strong: light-dark(#8d9892, #66726b);
-  --glz-color-focus: var(--glz-color-accent);
-  --glz-color-scrim: light-dark(rgb(16 22 18 / 40%), rgb(0 0 0 / 60%));
+  /* White on a dark accent, black on a light one. */
+  --glz-on-accent: oklch(from var(--glz-accent) clamp(0, (0.65 - l) * 999, 1) 0 0deg);
+  --glz-accent-hover: color-mix(in oklch, var(--glz-accent), var(--glz-on-accent) 14%);
+  --glz-accent-soft: color-mix(in oklch, var(--glz-accent) 12%, transparent);
 
-  /* Surfaces, from the page up: each level sits on the one before it. */
-  --glz-surface-page: light-dark(#f7f9f8, #111513);
-  --glz-surface-sunken: light-dark(#eef2f0, #0c0f0d);
-  --glz-surface-card: light-dark(#fff, #181d1a);
-  --glz-surface-raised: light-dark(#fff, #1f2622);
-  --glz-surface-overlay: light-dark(#fff, #27302b);
-  --glz-surface-hover: light-dark(rgb(24 32 27 / 6%), rgb(230 235 232 / 8%));
-  --glz-surface-selected: var(--glz-color-accent-soft);
+  /* The accent as text on the page: never lighter than it can be read in light, nor darker in dark. */
+  --glz-accent-text: light-dark(
+    oklch(from var(--glz-accent) min(l, 0.5) c h),
+    oklch(from var(--glz-accent) max(l, 0.78) c h)
+  );
 
-  /* Hover washes over filled surfaces: accent and danger buttons, and the inverse surface. */
-  --glz-color-hover-on-accent: light-dark(rgb(0 0 0 / 12%), rgb(0 0 0 / 16%));
-  --glz-color-hover-on-inverse: light-dark(rgb(255 255 255 / 14%), rgb(0 0 0 / 10%));
-  --glz-surface-inverse: light-dark(#18201b, #e6ebe8);
-  --glz-color-on-inverse: light-dark(#f7f9f8, #111513);
+  /* Text. Muted text keeps 4.5:1 or more on every surface but the selected one. */
+  --glz-color-text: light-dark(#1b1c1d, #ececec);
+  --glz-color-text-secondary: light-dark(#2a2b2d, #d6d7d9);
+  --glz-color-text-muted: light-dark(#63666b, #9a9da3);
+  --glz-color-text-disabled: light-dark(#a3a5a9, #5d6066);
+
+  /* Lines: a box's border, a stronger one for what needs the person, and rules inside a box. */
+  --glz-color-border: light-dark(#e2e0da, #2a2c2f);
+  --glz-color-border-strong: light-dark(#cfccc4, #3a3c40);
+  --glz-color-divider: light-dark(#efede8, #232528);
+
+  /* Focus: its own quiet blue, never the accent, shown on :focus-visible only. */
+  --glz-color-focus: light-dark(#2f6fdb, #8fb3ff);
+  --glz-color-scrim: light-dark(rgb(27 28 29 / 32%), rgb(0 0 0 / 60%));
+
+  /* Tones: status, each 4.5:1 or more as text on the page, a card and the sunken surface. */
+  --glz-color-success: light-dark(#167532, #56c26f);
+  --glz-color-warning: light-dark(#965405, #f0b45a);
+  --glz-color-danger: light-dark(#c4302b, #f0776b);
+  --glz-color-on-danger: light-dark(#fff, #121314);
+  --glz-color-success-soft: color-mix(in oklch, var(--glz-color-success) 12%, transparent);
+  --glz-color-warning-soft: color-mix(in oklch, var(--glz-color-warning) 14%, transparent);
+  --glz-color-danger-soft: color-mix(in oklch, var(--glz-color-danger) 12%, transparent);
+
+  /* Lines added and removed by a change, counted on a card. */
+  --glz-color-added: light-dark(#1a7f37, #56c26f);
+  --glz-color-removed: light-dark(#c4302b, #f0776b);
+
+  /* A danger button under the pointer, as the accent's hover. */
+  --glz-color-danger-hover: color-mix(
+    in oklch,
+    var(--glz-color-danger),
+    var(--glz-color-on-danger) 14%
+  );
+
+  /* Surfaces: the page, the side panes on it, and the boxes that sit on either. */
+  --glz-surface-page: light-dark(#f6f5f2, #121314);
+  --glz-surface-sidebar: light-dark(#efeee9, #161718);
+  --glz-surface-sunken: light-dark(#efede8, #151618);
+  --glz-surface-card: light-dark(#fff, #1a1b1d);
+  --glz-surface-raised: light-dark(#fff, #1f2123);
+  --glz-surface-overlay: light-dark(#fff, #222427);
+  --glz-surface-bubble: light-dark(#ebe9e3, #222427);
+  --glz-surface-selected: light-dark(#e4e2dc, #222427);
+  --glz-surface-hover: light-dark(rgb(27 28 29 / 5%), rgb(236 236 236 / 6%));
+  --glz-surface-inverse: light-dark(#1b1c1d, #ececec);
+  --glz-color-on-inverse: light-dark(#f6f5f2, #121314);
 
   /* Type: Atkinson Hyperlegible Next for text, its Mono for code. */
   --glz-font-sans: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --glz-font-mono: 'Atkinson Hyperlegible Mono', ui-monospace, 'SF Mono', menlo, monospace;
-  --glz-text-xs: 0.75rem;
-  --glz-text-sm: 0.875rem;
-  --glz-text-md: 1rem;
-  --glz-text-lg: 1.125rem;
-  --glz-text-xl: 1.375rem;
-  --glz-text-2xl: 1.75rem;
+
+  /* Type sizes, phone to wide: labels, meta, the interface, reading, headings, page titles. */
+  --glz-text-xs: clamp(0.75rem, 0.7396rem + 0.0463vw, 0.7813rem); /* 12 → 12.5 */
+  --glz-text-sm: clamp(0.8125rem, 0.8021rem + 0.0463vw, 0.8438rem); /* 13 → 13.5 */
+  --glz-text-md: clamp(0.875rem, 0.8646rem + 0.0463vw, 0.9063rem); /* 14 → 14.5 */
+  --glz-text-lg: clamp(0.9375rem, 0.9063rem + 0.1389vw, 1.0313rem); /* 15 → 16.5 */
+  --glz-text-xl: clamp(1rem, 0.9792rem + 0.0926vw, 1.0625rem); /* 16 → 17 */
+  --glz-text-2xl: clamp(1.25rem, 1.1667rem + 0.3704vw, 1.5rem); /* 20 → 24 */
+  --glz-text-3xl: clamp(1.5rem, 1.375rem + 0.5556vw, 1.875rem); /* 24 → 30 */
+  --glz-text-4xl: clamp(1.625rem, 1.375rem + 1.1111vw, 2.375rem); /* 26 → 38 */
+
+  /* What people type in: 16px or more, so a phone never zooms in on it. */
+  --glz-text-input: max(1rem, var(--glz-text-md));
   --glz-leading-tight: 1.25;
   --glz-leading-normal: 1.5;
+  --glz-leading-prose: 1.65;
   --glz-weight-regular: 400;
   --glz-weight-bold: 700;
 
-  /* Space: a 4px scale. */
-  --glz-space-1: 0.25rem;
-  --glz-space-2: 0.5rem;
-  --glz-space-3: 0.75rem;
-  --glz-space-4: 1rem;
-  --glz-space-5: 1.5rem;
-  --glz-space-6: 2rem;
-  --glz-space-7: 3rem;
-  --glz-space-8: 4rem;
+  /* Space, phone to wide: the gaps parents put between their children. */
+  --glz-space-half: 0.125rem; /* 2 */
+  --glz-space-1: 0.25rem; /* 4 */
+  --glz-space-2: clamp(0.375rem, 0.3333rem + 0.1852vw, 0.5rem); /* 6 → 8 */
+  --glz-space-3: clamp(0.625rem, 0.5833rem + 0.1852vw, 0.75rem); /* 10 → 12 */
+  --glz-space-4: clamp(0.75rem, 0.6667rem + 0.3704vw, 1rem); /* 12 → 16 */
+  --glz-space-5: clamp(1rem, 0.8333rem + 0.7407vw, 1.5rem); /* 16 → 24 */
+  --glz-space-6: clamp(1.25rem, 1rem + 1.1111vw, 2rem); /* 20 → 32 */
+  --glz-space-7: clamp(2rem, 1.6667rem + 1.4815vw, 3rem); /* 32 → 48 */
+  --glz-space-8: clamp(3rem, 2.6667rem + 1.4815vw, 4rem); /* 48 → 64 */
 
-  /* Shape: soft and friendly. Small for marks and tags, medium for buttons, fields and menus,
-     large for cards, bubbles and the composer. */
-  --glz-radius-sm: 6px;
-  --glz-radius-md: 12px;
-  --glz-radius-lg: 20px;
+  /*
+   * Insets: the padding inside each kind of box, so the same kind is padded the same way
+   * everywhere. Block, then inline.
+   */
+  --glz-inset-row: var(--glz-space-2) var(--glz-space-3); /* nav items, options, list rows */
+  --glz-inset-control: var(--glz-space-2) var(--glz-space-3); /* inputs, search boxes */
+  --glz-inset-button: 0 clamp(1rem, 0.9583rem + 0.1852vw, 1.125rem); /* 16 → 18 */
+  --glz-inset-button-sm: 0 var(--glz-space-3);
+  --glz-inset-strip: clamp(0.5625rem, 0.5417rem + 0.0926vw, 0.625rem) var(--glz-space-4);
+  --glz-inset-bubble: var(--glz-space-3) clamp(0.875rem, 0.8333rem + 0.1852vw, 1rem);
+  --glz-inset-dialog: var(--glz-space-5);
+  --glz-inset-pane-block: clamp(1rem, 0.9167rem + 0.3704vw, 1.25rem); /* side panes: 16 → 20 */
+  --glz-inset-pane-inline: var(--glz-space-4);
+  --glz-inset-page-block: var(--glz-space-6);
+  --glz-inset-page-inline: clamp(1rem, 0.6667rem + 1.4815vw, 2rem); /* 16 → 32 */
+
+  /* Cards: 16 → 18 above and below, 16 → 20 at the sides. */
+  --glz-inset-card: clamp(1rem, 0.9583rem + 0.1852vw, 1.125rem)
+    clamp(1rem, 0.9167rem + 0.3704vw, 1.25rem);
+
+  /* The composer: 6 → 10 round, and 16 → 18 before the text. */
+  --glz-inset-composer: clamp(0.375rem, 0.2917rem + 0.3704vw, 0.625rem)
+    clamp(0.375rem, 0.2917rem + 0.3704vw, 0.625rem) clamp(0.375rem, 0.2917rem + 0.3704vw, 0.625rem)
+    clamp(1rem, 0.9583rem + 0.1852vw, 1.125rem);
+
+  /* Shape, fixed: one radius per kind of box. */
+  --glz-radius-mark: 6px; /* inline code, ticks, tooltips */
+  --glz-radius-row: 8px; /* nav items, options */
+  --glz-radius-control: 10px; /* buttons, inputs, menu triggers */
+  --glz-radius-strip: 12px; /* strips, menus, code blocks */
+  --glz-radius-card: 14px; /* cards and dialogs */
+  --glz-radius-composer: 16px; /* the composer and message bubbles */
+  --glz-radius-tail: 4px; /* a bubble's corner nearest the edge it sits at */
   --glz-radius-full: 999px;
   --glz-border-width: 1px;
 
-  /* Elevation: shadows for raised and overlay surfaces. */
-  --glz-shadow-color: light-dark(rgb(16 22 18 / 12%), rgb(0 0 0 / 50%));
+  /* Elevation: a lift for what needs the person, and the shadow of what floats over the page. */
   --glz-elevation-0: none;
-  --glz-elevation-1: 0 1px 2px var(--glz-shadow-color);
-  --glz-elevation-2: 0 2px 8px var(--glz-shadow-color);
-  --glz-elevation-3: 0 8px 24px var(--glz-shadow-color);
+  --glz-elevation-1: 0 1px 2px light-dark(rgb(40 30 10 / 6%), rgb(0 0 0 / 40%));
+  --glz-elevation-2: 0 10px 30px -22px light-dark(rgb(40 30 10 / 35%), transparent);
+  --glz-elevation-3:
+    0 1px 2px light-dark(rgb(40 30 10 / 6%), rgb(0 0 0 / 40%)),
+    0 16px 40px -12px light-dark(rgb(40 30 10 / 22%), rgb(0 0 0 / 60%));
 
   /* Controls. */
   --glz-control-height-sm: 2rem;
@@ -98,18 +166,18 @@
   --glz-focus-ring: 0 0 0 2px var(--glz-surface-page), 0 0 0 4px var(--glz-color-focus);
 
   /* Layout. */
-  --glz-sidenav-width: 17rem;
-  --glz-sidenav-surface: var(--glz-surface-card);
+  --glz-sidenav-width: 15.5rem;
+  --glz-sidenav-surface: var(--glz-surface-sidebar);
   --glz-panel-width: 24rem;
-  --glz-panel-surface: var(--glz-surface-card);
+  --glz-panel-surface: var(--glz-surface-sidebar);
   --glz-top-bar-height: 3.5rem;
-  --glz-top-bar-surface: var(--glz-surface-card);
+  --glz-top-bar-surface: var(--glz-surface-page);
   --glz-top-bar-border: var(--glz-border-width) solid var(--glz-color-border);
-  --glz-content-width: 48rem;
+  --glz-content-width: 47.5rem;
 
   /* The room before the person's message bubbles, and their surface. */
-  --glz-message-gap: 15%;
-  --glz-message-person-surface: var(--glz-surface-sunken);
+  --glz-message-gap: 20%;
+  --glz-message-person-surface: var(--glz-surface-bubble);
 
   /* Motion: none at all when the person asks for less. */
   --glz-duration-fast: 120ms;

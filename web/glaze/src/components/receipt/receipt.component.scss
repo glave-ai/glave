@@ -23,9 +23,10 @@
   min-height: 1.75rem;
 
   // Its icon lines up with the text around it; the padding is room for the hover and focus.
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- a pull no gap can make */
   margin-inline: calc(-1 * var(--glz-space-1));
   padding: 0 var(--glz-space-1);
-  border-radius: var(--glz-radius-sm);
+  border-radius: var(--glz-radius-mark);
   cursor: pointer;
   list-style: none;
   transition: background-color var(--glz-duration-fast) var(--glz-easing);
@@ -74,6 +75,7 @@
 
 // The evidence hangs under the line, behind a rule, as reasoning does.
 .evidence {
+  /* stylelint-disable-next-line declaration-property-value-allowed-list -- the content of a <details> takes no gap (::details-content is not Baseline) */
   margin: var(--glz-space-1) 0 var(--glz-space-2) var(--glz-space-3);
   padding-inline-start: var(--glz-space-3);
   overflow-x: auto;

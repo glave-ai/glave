@@ -12,11 +12,10 @@
   justify-content: space-between;
   gap: var(--glz-space-2);
   height: var(--glz-top-bar-height);
-  padding: 0 var(--glz-space-2) 0 var(--glz-space-4);
+  padding: 0 var(--glz-space-2) 0 var(--glz-inset-pane-inline);
 }
 
 .heading {
-  margin: 0;
   font-size: var(--glz-text-md);
 }
 
@@ -24,5 +23,5 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 var(--glz-space-4) var(--glz-space-4);
+  padding: 0 var(--glz-inset-pane-inline) var(--glz-inset-pane-block);
 }

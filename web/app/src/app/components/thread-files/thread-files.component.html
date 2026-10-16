@@ -3,7 +3,10 @@
     <details class="file" data-testid="file">
       <summary class="summary">
         <span class="path">{{ file.path }}</span>
-        <span class="counts" aria-hidden="true">{{ file.counts }}</span>
+        <span class="counts" aria-hidden="true"
+          ><span class="plus">{{ file.added }}</span
+          ><span class="minus">{{ file.removed }}</span></span
+        >
         <span class="glz-visually-hidden">{{ file.countsLabel }}</span>
       </summary>
       @for (change of file.changes; track change.key) {

@@ -109,12 +109,11 @@ export function defaultModel(models: readonly ModelInfo[]): string | null {
   return (models.find((model) => model.default) ?? models.at(0))?.id ?? null;
 }
 
-/** The picker's options: each model by its display name, the default marked, Hope by its flag. */
+/** The picker's options: each model by its display name, the default marked. Hope is one of them. */
 export function modelOptions(models: readonly ModelInfo[]): readonly GlzMenuOption[] {
   return models.map((model) => ({
     value: model.id,
     label: displayName(model),
-    hope: model.hope,
     ...(model.default ? { hint: DEFAULT_HINT } : {}),
   }));
 }

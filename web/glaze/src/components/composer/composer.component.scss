@@ -2,14 +2,13 @@
   display: flex;
   flex-direction: column;
   gap: var(--glz-space-2);
-  padding: var(--glz-space-2) var(--glz-space-3);
-  border: var(--glz-border-width) solid var(--glz-color-border-strong);
-  border-radius: var(--glz-radius-lg);
+  padding: var(--glz-inset-composer);
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-composer);
   background: var(--glz-surface-card);
-  box-shadow: var(--glz-elevation-1);
 }
 
-:host(:focus-within) {
+:host(:has(.input:focus-visible)) {
   border-color: var(--glz-color-focus);
   box-shadow: var(--glz-focus-ring);
 }
@@ -26,6 +25,7 @@
   background: none;
   color: var(--glz-color-text);
   font: inherit;
+  font-size: var(--glz-text-input);
   line-height: var(--glz-leading-normal);
   resize: none;
 }

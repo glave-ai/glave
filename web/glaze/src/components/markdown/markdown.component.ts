@@ -34,8 +34,8 @@ const PARTS = { copy: 'copy' } as const;
  * Angular on the way in, through its Trusted Types policy. Each top-level block is its own
  * element, rendered once: while `streaming`, only the growing last block is redone, and
  * half-written markdown shows as it will when finished. Code blocks get a copy button, and
- * highlighting loaded the first time their language appears. The class it adds trims the
- * first block's top and the last block's bottom margin and padding, so it sits flush.
+ * highlighting loaded the first time their language appears. It flows as prose (`glz-flow`):
+ * its blocks spaced, and flush with what holds it, no space above the first or below the last.
  *
  * ```html
  * <div [glzMarkdown]="reply.text" [streaming]="reply.streaming"></div>
@@ -48,7 +48,7 @@ const PARTS = { copy: 'copy' } as const;
   // The blocks' HTML carries no view attributes, so its styles are scoped by this class.
   encapsulation: ViewEncapsulation.None,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'glz-markdown', '[attr.data-testid]': 'testId()' },
+  host: { class: 'glz-markdown glz-flow', '[attr.data-testid]': 'testId()' },
 })
 export class GlzMarkdownComponent {
   /** The markdown. */

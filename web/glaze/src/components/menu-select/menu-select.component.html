@@ -1,16 +1,12 @@
 <button
   type="button"
   class="trigger"
-  [class.hope]="hope()"
   [attr.data-testid]="ids().trigger"
   [disabled]="disabled()"
   [cdkMenuTriggerFor]="menu"
   [cdkMenuPosition]="positions"
 >
   <span class="glz-visually-hidden">{{ prefix() }}</span>
-  @if (hope()) {
-    <span class="sun" aria-hidden="true"></span>
-  }
   <span class="text">{{ shownLabel() }}</span>
   <glz-icon class="chevron" [icon]="icons.open" />
 </button>
@@ -32,12 +28,7 @@
             }
           </span>
           <span class="name">
-            <span class="label">
-              {{ option.label }}
-              @if (option.hope) {
-                <span class="sun" aria-hidden="true"></span>
-              }
-            </span>
+            <span class="label">{{ option.label }}</span>
             @if (option.hasHint) {
               <span class="hint">{{ option.hint }}</span>
             }

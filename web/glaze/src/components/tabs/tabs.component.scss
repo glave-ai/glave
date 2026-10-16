@@ -27,7 +27,7 @@
 
 .tab:focus-visible {
   outline: none;
-  border-radius: var(--glz-radius-sm);
+  border-radius: var(--glz-radius-mark);
   box-shadow: inset 0 0 0 2px var(--glz-color-focus);
 }
 
@@ -41,7 +41,7 @@
   inset: auto var(--glz-space-2) -1px;
   height: 3px;
   border-radius: 3px 3px 0 0;
-  background: var(--glz-color-accent);
+  background: var(--glz-accent);
 }
 
 .panel {

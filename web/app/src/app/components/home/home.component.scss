@@ -10,23 +10,27 @@
   flex: 1;
   flex-direction: column;
   justify-content: center;
-  gap: var(--glz-space-4);
+  gap: var(--glz-space-5);
   width: 100%;
-  max-width: var(--glz-content-width);
-  margin: 0 auto;
-  padding: var(--glz-space-5) var(--glz-space-4) 15vh;
+  max-width: calc(var(--glz-content-width) + 2 * var(--glz-inset-page-inline));
+  margin-inline: auto;
+  padding: var(--glz-inset-page-block) var(--glz-inset-page-inline) 15vh;
 }
 
 .intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
   text-align: center;
 }
 
 .heading {
-  margin: 0;
+  font-size: var(--glz-text-4xl);
+  font-weight: var(--glz-weight-regular);
+  letter-spacing: -0.015em;
 }
 
 .where {
-  margin: var(--glz-space-2) 0 0;
   color: var(--glz-color-text-muted);
 }
 

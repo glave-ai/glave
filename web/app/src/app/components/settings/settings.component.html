@@ -5,7 +5,7 @@
   </div>
   <div class="list">
     <glz-card>
-      <h2 glzCardHeader class="section">{{ copy.appearance }}</h2>
+      <h2 glzCardHeader>{{ copy.appearance }}</h2>
       <glz-form-field [label]="copy.theme">
         <glz-radio-group
           data-testid="settings-theme"
@@ -19,14 +19,14 @@
       </glz-form-field>
     </glz-card>
     <glz-card>
-      <h2 glzCardHeader class="section">{{ copy.models }}</h2>
+      <h2 glzCardHeader>{{ copy.models }}</h2>
       @for (account of accounts(); track account.id) {
         <div class="account" data-testid="settings-account">
           <div>
             <p class="title">{{ account.name }}</p>
             <p class="details">{{ account.hint }}</p>
           </div>
-          <div class="account-actions">
+          <div class="glz-row glz-gap-2">
             <a
               glzButton
               data-testid="settings-account-change"
@@ -46,7 +46,7 @@
       @if (problem(); as problem) {
         <p class="error" role="alert" data-testid="settings-account-problem">{{ problem }}</p>
       }
-      <div glzCardFooter>
+      <div glzCardFooter class="glz-row glz-gap-2">
         <a glzButton data-testid="settings-add-account" [routerLink]="connectLink">{{
           copy.add
         }}</a>
@@ -63,9 +63,9 @@
       (decided)="decided($event)"
     />
     <glz-card>
-      <h2 glzCardHeader class="section">{{ copy.server }}</h2>
+      <h2 glzCardHeader>{{ copy.server }}</h2>
       <p class="details" data-testid="settings-server">{{ server() }}</p>
-      <div glzCardFooter>
+      <div glzCardFooter class="glz-row glz-gap-2">
         <button glzButton data-testid="settings-sign-out" (click)="signOut()">
           {{ copy.signOut }}
         </button>

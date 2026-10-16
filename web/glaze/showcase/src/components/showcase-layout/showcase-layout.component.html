@@ -19,7 +19,7 @@
             <a glzNavItem [href]="values.link" current [icon]="icons.thread">{{ copy.plan }}</a>
             <a glzNavItem [href]="values.link" [icon]="icons.thread">
               {{ copy.build }}
-              <glz-badge glzNavItemEnd tone="warning">{{ copy.waiting }}</glz-badge>
+              <glz-badge glzNavItemEnd tone="accent">{{ copy.waiting }}</glz-badge>
             </a>
           </glz-nav-list>
           <glz-nav-list
@@ -33,7 +33,7 @@
             </button>
             <a glzNavItem [href]="values.link" [icon]="icons.thread">
               {{ copy.notes }}
-              <glz-badge glzNavItemEnd tone="accent">{{ copy.running }}</glz-badge>
+              <glz-badge glzNavItemEnd>{{ copy.running }}</glz-badge>
             </a>
           </glz-nav-list>
         </nav>
@@ -65,7 +65,7 @@
         >
           <p class="text">{{ copy.content }}</p>
           <div glzPanel class="details">
-            <h4 class="details-heading">{{ copy.details }}</h4>
+            <h4>{{ copy.details }}</h4>
             <p>{{ copy.detailsText }}</p>
           </div>
         </glz-panel-layout>
