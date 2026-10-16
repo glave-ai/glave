@@ -15,7 +15,7 @@ use glave_ports::{
     SpaceId, SpaceKind,
 };
 use glave_session::protocol::ModelInfo;
-use glave_session::{Answering, Providers, Server, TaskLimits, Wiring};
+use glave_session::{Answering, GitHosts, Providers, Server, TaskLimits, Wiring};
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
 
@@ -71,6 +71,8 @@ pub struct Setup {
     pub worktrees: Option<PathBuf>,
     /// Where model accounts are kept; with none, connecting one is refused.
     pub providers: Option<Arc<dyn Providers>>,
+    /// Where accounts with hosts are kept; with none, connecting one is refused.
+    pub hosts: Option<Arc<dyn GitHosts>>,
 }
 
 impl Setup {
@@ -89,6 +91,7 @@ impl Setup {
             memory: None,
             worktrees: None,
             providers: None,
+            hosts: None,
         }
     }
 
@@ -133,6 +136,7 @@ impl Setup {
             models: self.models,
             modes: self.modes,
             providers: self.providers,
+            git_hosts: self.hosts,
         };
         let server = Server::new(wiring, self.settings, scope(), self.answering);
         // The server's own space, kept as its person's project at a fixed time without reading

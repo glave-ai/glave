@@ -26,8 +26,8 @@ pub(crate) struct SpaceVersion {
 }
 
 /// One data key, wrapped by version `space_version` of the space key. `None` once destroyed.
-/// A memory's own key has `memory` set, a model account's `provider`; its `month` is only
-/// when it was made.
+/// A memory's own key has `memory` set, an account's (a model account's or a git host's)
+/// `provider`; its `month` is only when it was made.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct DataKey {
     pub(crate) month: Month,
@@ -45,7 +45,7 @@ impl DataKey {
     pub(crate) fn period(&self) -> Period {
         match (self.memory, self.provider) {
             (Some(memory), _) => Period::Memory(memory),
-            (None, Some(provider)) => Period::Provider(provider),
+            (None, Some(account)) => Period::Account(account),
             (None, None) => Period::Month(self.month),
         }
     }

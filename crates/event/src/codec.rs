@@ -8,14 +8,14 @@ use serde_json::value::RawValue;
 use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeName};
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
-    ApprovalDecided, ApprovalModeChosen, ApprovalRequested, GatewayToolCalled, GoalEnded,
-    GoalResumed, GoalSet, HookRan, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved,
-    MemoryTidied, MessageAdded, ModelChosen, ModelResponded, ProviderConnected, ProviderRemoved,
-    ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
-    ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
-    ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, chosen,
-    gateway, goal, hook, memory, message, model, provider, standing, task, thread, tool, turn,
-    workspace,
+    ApprovalDecided, ApprovalModeChosen, ApprovalRequested, CredentialConnected, CredentialRemoved,
+    GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, HookRan, MemoryEdited, MemoryForgotten,
+    MemoryRestored, MemorySaved, MemoryTidied, MessageAdded, ModelChosen, ModelResponded,
+    ProviderConnected, ProviderRemoved, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted,
+    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
+    ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
+    approval, chosen, credential, gateway, goal, hook, memory, message, model, provider, standing,
+    task, thread, tool, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -75,6 +75,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (memory::TIDIED, 1),
     (provider::CONNECTED, 1),
     (provider::REMOVED, 1),
+    (credential::CONNECTED, 1),
+    (credential::REMOVED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -121,6 +123,8 @@ pub enum Body {
     MemoryTidied(MemoryTidied),
     ProviderConnected(ProviderConnected),
     ProviderRemoved(ProviderRemoved),
+    CredentialConnected(CredentialConnected),
+    CredentialRemoved(CredentialRemoved),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -282,6 +286,8 @@ impl Event {
             Body::MemoryTidied(payload) => encode(header, payload),
             Body::ProviderConnected(payload) => encode(header, payload),
             Body::ProviderRemoved(payload) => encode(header, payload),
+            Body::CredentialConnected(payload) => encode(header, payload),
+            Body::CredentialRemoved(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,
@@ -296,8 +302,8 @@ impl Event {
     }
 }
 
-/// Decodes the choices made for a thread, and the memory and provider ledgers' types; `None` for any type
-/// that is not one of them.
+/// Decodes the choices made for a thread, and the memory and accounts ledgers' types; `None`
+/// for any type that is not one of them.
 fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
     match kind {
         chosen::TYPE => chosen::decode(version, data).map(|r| r.map(Body::ModelChosen)),
@@ -318,6 +324,12 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         }
         provider::REMOVED => {
             provider::decode_removed(version, data).map(|r| r.map(Body::ProviderRemoved))
+        }
+        credential::CONNECTED => {
+            credential::decode_connected(version, data).map(|r| r.map(Body::CredentialConnected))
+        }
+        credential::REMOVED => {
+            credential::decode_removed(version, data).map(|r| r.map(Body::CredentialRemoved))
         }
         _ => None,
     }

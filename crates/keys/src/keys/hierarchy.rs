@@ -282,7 +282,7 @@ impl<S: KeyStorage> Keys<S> {
                 let (month, memory, provider) = match period {
                     Period::Month(month) => (month, None, None),
                     Period::Memory(memory) => (made, Some(memory), None),
-                    Period::Provider(provider) => (made, None, Some(provider)),
+                    Period::Account(account) => (made, None, Some(account)),
                 };
                 record.data.push(DataKey {
                     month,

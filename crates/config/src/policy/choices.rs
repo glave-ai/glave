@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use glave_harness::{ApprovalMode, SandboxLevel};
 
-use crate::policy::files::{ConfigFile, ModelEntry, SandboxChoice};
+use crate::policy::files::{ConfigFile, GithubFile, ModelEntry, SandboxChoice};
 use crate::policy::memory::{MemoryChoice, SpaceChoice};
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
@@ -129,6 +129,8 @@ pub struct Choices {
     pub server: Option<Chosen<String>>,
     /// A cloud contract's models, if any, in place of `GLAVE_BASE_URL`'s server.
     pub provider: Option<Chosen<ProviderFile>>,
+    /// The GitHub app people sign in to GitHub through in the browser, if one is set up.
+    pub github: Option<Chosen<GithubFile>>,
 }
 
 /// One level choices come from.
@@ -203,6 +205,7 @@ pub fn resolve(layers: &[Layer]) -> Choices {
                 .map(|server| server.url.trim().to_owned())
         }),
         provider: nearest(layers, "provider", |file| file.provider.clone()),
+        github: nearest(layers, "github", |file| file.github.clone()),
         store: nearest(layers, "store", |file| {
             file.store.as_ref().map(|store| store.url.trim().to_owned())
         }),

@@ -8,6 +8,7 @@ mod support;
 
 mod commands;
 mod conformance;
+mod credentials;
 mod goals;
 mod http;
 mod listing;

@@ -3,8 +3,9 @@
 //! violation it finds as an error message.
 
 use glave_event::{
-    At, EventId, Header, MemoryId, MemorySaved, MemoryScope, Outcome, Principal, ProviderConnected,
-    ProviderId, ProviderKind, RawEvent, Secret, Seq, ThreadId, TurnEnded, encode,
+    At, CredentialConnected, CredentialId, EventId, Forge, Header, MemoryId, MemorySaved,
+    MemoryScope, Outcome, Principal, ProviderConnected, ProviderId, ProviderKind, RawEvent, Secret,
+    Seq, ThreadId, TurnEnded, encode,
 };
 use glave_ports::{OrgId, Scope, SpaceId};
 use uuid::{Builder, Uuid};
@@ -130,17 +131,20 @@ async fn memory_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     )
 }
 
-/// A model account is sealed under a key of its own; removing it destroys that key, so the
-/// account no longer opens, and what else the space holds still does.
-async fn provider_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
+/// Each account, a model account or a git host, is sealed under a key of its own; removing it
+/// destroys that key, so the account no longer opens, and what else the space holds still
+/// does.
+async fn account_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     let here = scope(9);
-    let header = Header {
-        id: EventId::try_from(uuid_v7(8_100)).map_err(text)?,
-        thread: ThreadId::try_from(uuid_v7(9_498)).map_err(text)?,
-        seq: Seq::new(1).map_err(text)?,
-        at: At::try_from("2026-10-12T09:00:00.000Z".to_owned()).map_err(text)?,
+    let header = |n: u64| -> Result<Header, String> {
+        Ok(Header {
+            id: EventId::try_from(uuid_v7(n)).map_err(text)?,
+            thread: ThreadId::try_from(uuid_v7(9_498)).map_err(text)?,
+            seq: Seq::new(n.saturating_sub(8_099)).map_err(text)?,
+            at: At::try_from("2026-10-12T09:00:00.000Z".to_owned()).map_err(text)?,
+        })
     };
-    let connected = ProviderConnected {
+    let model = ProviderConnected {
         provider: ProviderId::try_from(uuid_v7(7_101)).map_err(text)?,
         kind: ProviderKind::Openai,
         url: None,
@@ -148,27 +152,53 @@ async fn provider_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         models: vec!["model".into()],
         by: Principal::glave(),
     };
-    let account = encode(header, &connected).map_err(text)?;
+    let host = CredentialConnected {
+        credential: CredentialId::try_from(uuid_v7(7_102)).map_err(text)?,
+        forge: Forge::Github,
+        url: "https://github.com".into(),
+        username: "octocat".into(),
+        token: Secret::new("ghp_conformance"),
+        login: None,
+        renewal: None,
+        by: Principal::glave(),
+    };
+    let accounts = [
+        (
+            encode(header(8_100)?, &model).map_err(text)?,
+            7_101,
+            "sk-conformance",
+        ),
+        (
+            encode(header(8_101)?, &host).map_err(text)?,
+            7_102,
+            "ghp_conformance",
+        ),
+    ];
     let month = event(4, 1, "2026-10")?;
-    let sealed = keys.seal_event(&here, &account).await.map_err(text)?;
     let plain = keys.seal_event(&here, &month).await.map_err(text)?;
-    let id: KeyId = sealed.key_id.parse().map_err(text)?;
-    ensure(
-        matches!(id.period, Period::Provider(provider) if provider == uuid_v7(7_101)),
-        "a model account is sealed under v1/<space>/provider/<provider>/<n>",
-    )?;
-    ensure(
-        !sealed.bytes.windows(14).any(|w| w == b"sk-conformance"),
-        "the key is sealed, not stored as written",
-    )?;
-    keys.destroy_provider_key(&here, uuid_v7(7_101))
-        .await
-        .map_err(text)?;
-    let opened = open(keys, &here, &account, &sealed).await;
-    ensure(
-        matches!(&opened, Err(error) if crate::erased_payload(&sealed.key_id, error).is_some()),
-        "a removed account no longer opens, and reads as erased",
-    )?;
+    for (account, n, secret) in accounts {
+        let sealed = keys.seal_event(&here, &account).await.map_err(text)?;
+        let id: KeyId = sealed.key_id.parse().map_err(text)?;
+        ensure(
+            matches!(id.period, Period::Account(own) if own == uuid_v7(n)),
+            "an account is sealed under v1/<space>/provider/<account>/<n>",
+        )?;
+        ensure(
+            !sealed
+                .bytes
+                .windows(secret.len())
+                .any(|w| w == secret.as_bytes()),
+            "the key or token is sealed, not stored as written",
+        )?;
+        keys.destroy_account_key(&here, uuid_v7(n))
+            .await
+            .map_err(text)?;
+        let opened = open(keys, &here, &account, &sealed).await;
+        ensure(
+            matches!(&opened, Err(error) if crate::erased_payload(&sealed.key_id, error).is_some()),
+            "a removed account no longer opens, and reads as erased",
+        )?;
+    }
     ensure(
         open(keys, &here, &month, &plain).await.is_ok(),
         "the month's content still opens",
@@ -198,7 +228,7 @@ pub async fn keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     destroying_a_data_key(keys).await?;
     blobs(keys).await?;
     memory_keys(keys).await?;
-    provider_keys(keys).await?;
+    account_keys(keys).await?;
     compare_and_swap(keys.storage()).await
 }
 

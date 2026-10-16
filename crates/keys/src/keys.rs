@@ -8,7 +8,7 @@ mod hierarchy;
 use std::fmt;
 use std::sync::Arc;
 
-use glave_event::{RawEvent, Seq, Sha256, ThreadId, sealed_under_memory, sealed_under_provider};
+use glave_event::{RawEvent, Seq, Sha256, ThreadId, sealed_under_account, sealed_under_memory};
 use glave_ports::Scope;
 use jiff::Timestamp;
 
@@ -100,11 +100,12 @@ impl<S: KeyStorage> Keys<S> {
     }
 
     /// Seals `event`'s payload under its space's data key for the month it happened in, or,
-    /// for an event holding a memory's text or a model account, under that item's own key.
+    /// for an event holding a memory's text or an account (a model account or a git host),
+    /// under that item's own key.
     pub async fn seal_event(&self, scope: &Scope, event: &RawEvent) -> Result<Sealed, KeyError> {
-        let period = match (sealed_under_memory(event), sealed_under_provider(event)) {
+        let period = match (sealed_under_memory(event), sealed_under_account(event)) {
             (Some(memory), _) => Period::Memory(memory.as_uuid()),
-            (None, Some(provider)) => Period::Provider(provider.as_uuid()),
+            (None, Some(account)) => Period::Account(account),
             (None, None) => Period::Month(Month::of(event.at.timestamp())),
         };
         let (id, key) = self.sealing_key(scope, period).await?;
@@ -209,7 +210,7 @@ pub fn erased_payload(key_id: &str, error: &KeyError) -> Option<Vec<u8>> {
     let destroyed = matches!(error, KeyError::Destroyed(_));
     let item = key_id
         .parse::<KeyId>()
-        .is_ok_and(|id| matches!(id.period, Period::Memory(_) | Period::Provider(_)));
+        .is_ok_and(|id| matches!(id.period, Period::Memory(_) | Period::Account(_)));
     (destroyed && item).then(|| b"{}".to_vec())
 }
 
