@@ -1,14 +1,10 @@
 //! The accounts ledger, on a store in memory: renewals kept only while what they renew is.
 
-use std::sync::Arc;
-
-use glave_event::{CredentialConnected, CredentialId, Forge, Principal, PrincipalId, Secret};
-use glave_keys::{KeySettings, MemoryRoot};
+use glave_event::{CredentialConnected, CredentialId, Forge, Principal, Secret};
 use glave_ports::EventLog as _;
 use jiff::Timestamp;
 
 use super::{Ledger, random};
-use crate::data::Data;
 
 fn id() -> CredentialId {
     CredentialId::new(Timestamp::now(), random().unwrap()).unwrap()
@@ -37,10 +33,7 @@ fn renewal(old: &CredentialConnected, token: &str) -> CredentialConnected {
 }
 
 async fn ledger() -> Ledger {
-    let keys = KeySettings::new(Arc::new(MemoryRoot::new().unwrap()));
-    let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap());
-    let person = PrincipalId::new(Timestamp::now(), random().unwrap()).unwrap();
-    Ledger::open(&store, person).await.unwrap()
+    Ledger::in_memory().await.unwrap()
 }
 
 async fn kept(ledger: &Ledger) -> Vec<CredentialId> {
