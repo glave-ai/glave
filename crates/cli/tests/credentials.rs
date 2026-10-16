@@ -15,9 +15,10 @@ mod served;
 
 #[cfg(test)]
 mod hosts {
+    use glave_ports::Bytes;
     use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FakeHttp};
     use glave_provider_openai::fake::{FakeServer, Reply};
-    use serde_json::{Value, json};
+    use serde_json::json;
 
     use super::served::*;
     use super::support::*;
@@ -100,16 +101,11 @@ mod hosts {
         assert!(!results.contains(TOKEN), "{results}");
     }
 
-    /// A command that runs `gh`, a stand-in found after glave's wrapper that shows the token
-    /// it got for GitHub Enterprise in capitals, so the token itself never shows.
-    const STAND_IN_GH: &str = "mkdir -p tools\ncat > tools/gh <<'FAKE'\n#!/bin/sh\n\
-        printf 'gh sees: %s\\n' \"$(printf '%s' \"${GH_ENTERPRISE_TOKEN:-unset}\" | tr a-z A-Z)\"\n\
-        FAKE\nchmod +x tools/gh\nPATH=\"${PATH%%:*}:$PWD/tools:${PATH#*:}\"\ngh pr list";
-
-    #[test]
-    fn signing_in_to_github_in_the_browser_connects_it_and_renews_its_token() {
-        let place = place("hosts-device");
-        let github = FakeHttp::start(vec![
+    /// GitHub's side of a sign-in in the browser at a fake, then `then`: the code, one poll
+    /// still waiting, a GitHub App's user token about to expire with the refresh token that
+    /// renews it, and whom it is for.
+    fn github(then: Vec<(u16, String)>) -> FakeHttp {
+        let signed_in = vec![
             (
                 200,
                 json!({"device_code": "dc-e2e", "user_code": "WDJB-MJHT",
@@ -118,7 +114,6 @@ mod hosts {
                 .to_string(),
             ),
             (200, json!({"error": "authorization_pending"}).to_string()),
-            // A GitHub App's user token: about to expire, with the refresh token that renews it.
             (
                 200,
                 json!({"access_token": SIGNED_IN, "token_type": "bearer", "expires_in": 60,
@@ -126,31 +121,12 @@ mod hosts {
                 .to_string(),
             ),
             (200, json!({"login": "octocat"}).to_string()),
-            (
-                200,
-                json!({"access_token": RENEWED, "token_type": "bearer", "expires_in": 28800,
-                       "refresh_token": "ghr_e2e0second0refresh"})
-                .to_string(),
-            ),
-        ])
-        .unwrap();
-        std::fs::create_dir_all(&place.home).unwrap();
-        std::fs::write(
-            place.home.join("config.toml"),
-            format!(
-                "[github]\nclient_id = \"Iv23li0e2e\"\napp = \"glave-e2e\"\nurl = \"{}\"\n",
-                github.url
-            ),
-        )
-        .unwrap();
-        let model = FakeServer::start(vec![
-            Reply::tool_call("call_1", "bash", &json!({"command": STAND_IN_GH})),
-            Reply::text("Listed."),
-        ])
-        .unwrap();
-        let args = ["--model", "m", "--sandbox", "off", "--approval", "auto"];
-        let mut served = Served::start(&place, &model, &args);
+        ];
+        FakeHttp::start([signed_in, then].concat()).unwrap()
+    }
 
+    /// Signs in through `github`'s app in the browser, as a client does.
+    fn signs_in(served: &mut Served, github: &FakeHttp) {
         let listed = served.call("credential/list", &json!({}));
         assert_eq!(listed["result"]["device"], true, "{listed}");
         assert_eq!(
@@ -170,13 +146,47 @@ mod hosts {
         assert_eq!(credential["login"], "octocat");
         let again = served.call("credential/device/poll", &json!({"flow": flow}));
         assert_eq!(again["error"]["code"], -32024, "a finished sign-in is gone");
+    }
 
+    #[test]
+    fn signing_in_to_github_in_the_browser_connects_it_and_renews_its_token() {
+        let place = place("hosts-device");
+        let github = github(vec![
+            (
+                200,
+                json!({"access_token": RENEWED, "token_type": "bearer", "expires_in": 28800,
+                       "refresh_token": "ghr_e2e0second0refresh"})
+                .to_string(),
+            ),
+            (404, "{}".to_owned()),
+        ]);
+        std::fs::create_dir_all(&place.home).unwrap();
+        let app = format!(
+            "[github]\nclient_id = \"Iv23li0e2e\"\napp = \"glave-e2e\"\nurl = \"{}\"\n",
+            github.url
+        );
+        std::fs::write(place.home.join("config.toml"), app).unwrap();
+        // git sends its credential with its first request, so the fake sees which it got.
+        let fetch = format!(
+            "GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 \
+             git -c http.proactiveAuth=basic ls-remote {}/repo.git; true",
+            github.url
+        );
+        let model = FakeServer::start(vec![
+            Reply::tool_call("call_1", "bash", &json!({"command": fetch})),
+            Reply::text("Listed."),
+        ])
+        .unwrap();
+        let args = ["--model", "m", "--sandbox", "off", "--approval", "auto"];
+        let mut served = Served::start(&place, &model, &args);
+        signs_in(&mut served, &github);
         let thread = served.call("thread/start", &json!({}))["result"]["thread"]["id"].clone();
-        let turn = served.call("turn/start", &json!({"thread": thread, "prompt": "prs?"}));
+        let turn = served.call(
+            "turn/start",
+            &json!({"thread": thread, "prompt": "branches?"}),
+        );
         assert_eq!(turn["result"]["turn"]["outcome"], "completed", "{turn}");
         let results = said(&model.received()[1].body, "tool").concat();
-        let seen = format!("gh sees: {}", RENEWED.to_ascii_uppercase());
-        assert!(results.contains(&seen), "renewed before use: {results}");
 
         let said = served.end();
         for secret in [SIGNED_IN, RENEWED, "dc-e2e", "ghr_e2e0"] {
@@ -184,33 +194,31 @@ mod hosts {
             assert!(!results.contains(secret), "{results}");
         }
         assert!(!holds(&place.home, SIGNED_IN) && !holds(&place.home, RENEWED));
-        let asked: Vec<(String, String, Value, String)> = github
-            .received()
-            .into_iter()
-            .map(|r| {
-                let auth = json!(r.headers.get("authorization"));
-                (r.method, r.path, auth, r.body)
-            })
-            .collect();
-        assert_eq!(asked[0].1, "/login/device/code");
-        assert_eq!(asked[2].1, "/login/oauth/access_token");
-        assert_eq!(
-            (&asked[3].0, &asked[3].1, &asked[3].2),
-            (
-                &"GET".to_owned(),
-                &"/api/v3/user".to_owned(),
-                &json!(format!("Bearer {SIGNED_IN}"))
-            )
-        );
-        assert_eq!(asked[4].1, "/login/oauth/access_token");
+        let asked = github.received();
+        assert_eq!(asked[0].path, "/login/device/code");
+        assert_eq!(asked[2].path, "/login/oauth/access_token");
+        assert_eq!(asked[3].path, "/api/v3/user");
+        let bearer = format!("Bearer {SIGNED_IN}");
+        assert_eq!(asked[3].headers.get("authorization"), Some(&bearer));
+        let refresh = &asked[4];
         assert!(
-            asked[4].3.contains("grant_type=refresh_token")
-                && asked[4]
-                    .3
+            refresh.path == "/login/oauth/access_token"
+                && refresh.body.contains("grant_type=refresh_token")
+                && refresh
+                    .body
                     .contains("refresh_token=ghr_e2e0refresh0never0shown")
-                && !asked[4].3.contains("client_secret"),
+                && !refresh.body.contains("client_secret"),
             "renewed with the refresh token alone: {}",
-            asked[4].3
+            refresh.body
+        );
+        let basic = asked[5].headers.get("authorization").unwrap();
+        let encoded = basic.strip_prefix("Basic ").unwrap();
+        let sent: Bytes = serde_json::from_value(json!(encoded)).unwrap();
+        let sent = String::from_utf8(sent.as_slice().to_vec()).unwrap();
+        assert_eq!(
+            sent,
+            format!("octocat:{RENEWED}"),
+            "git got the renewed token"
         );
     }
 }
