@@ -159,6 +159,7 @@ async fn account_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         username: "octocat".into(),
         token: Secret::new("ghp_conformance"),
         login: None,
+        scopes: None,
         renewal: None,
         by: Principal::glave(),
     };

@@ -3,6 +3,7 @@
 //! token with the host, keeps it sealed in the store under a key of its own, and hands it to a
 //! command's git or forge tool each time one asks (`asked.rs`).
 
+mod abilities;
 mod asked;
 mod check;
 mod device;
@@ -19,7 +20,7 @@ use glave_session::{GitHosts, NewCredential};
 
 use crate::accounts::{Ledger, random};
 use crate::data::Data;
-use check::Http;
+use check::{Checked, Http};
 use device::{Flows, Github, Grant, Polled};
 use renewing::Renewals;
 
@@ -90,28 +91,42 @@ impl Hosts {
             .await
             .map_err(|e| failed(&e))?;
         self.kept().await.map_err(|e| failed(&e))?;
-        Ok(info(&credential))
+        Ok(self.described(&credential).await)
     }
 
-    /// A new credential for `url` from what its host granted, made by the person here.
+    /// A new credential for `url` from what its host granted and said of it, made by the person
+    /// here.
     fn made(
         &self,
-        forge: Forge,
         url: String,
         username: String,
-        login: Option<String>,
+        checked: Checked,
         grant: Grant,
     ) -> Result<CredentialConnected, ApiError> {
         Ok(CredentialConnected {
             credential: new_id().map_err(|e| failed(&e))?,
-            forge,
+            forge: checked.forge,
             url,
             username,
             token: grant.token,
-            login,
+            login: checked.login,
+            scopes: checked.scopes,
             renewal: grant.renewal,
             by: Principal::person(self.ledger.person()),
         })
+    }
+
+    /// The host as a client may see it, never its token, with what glave can do with it now.
+    async fn described(&self, credential: &CredentialConnected) -> CredentialInfo {
+        let can = abilities::now(&self.http, credential).await;
+        CredentialInfo {
+            id: credential.credential,
+            forge: credential.forge,
+            url: credential.url.clone(),
+            login: credential.login.clone(),
+            hint: hint(credential.token.expose()),
+            can,
+        }
     }
 
     async fn connect(&self, new: NewCredential) -> Result<CredentialInfo, ApiError> {
@@ -140,7 +155,7 @@ impl Hosts {
             token,
             renewal: None,
         };
-        let credential = self.made(checked.forge, url, username, checked.login, grant)?;
+        let credential = self.made(url, username, checked, grant)?;
         self.keep(credential).await
     }
 
@@ -153,7 +168,12 @@ impl Hosts {
         let username = login
             .clone()
             .unwrap_or_else(|| default_username(Forge::Github).to_owned());
-        let credential = self.made(Forge::Github, github.url.clone(), username, login, grant)?;
+        let checked = Checked {
+            forge: Forge::Github,
+            login,
+            scopes: None,
+        };
+        let credential = self.made(github.url.clone(), username, checked, grant)?;
         self.keep(credential).await.map(Some)
     }
 }
@@ -166,7 +186,11 @@ impl GitHosts for Hosts {
     fn list(&self) -> BoxFuture<'_, Result<Vec<CredentialInfo>, ApiError>> {
         Box::pin(async move {
             let kept = self.kept().await.map_err(|e| failed(&e))?;
-            Ok(kept.iter().map(info).collect())
+            let mut described = Vec::with_capacity(kept.len());
+            for credential in &kept {
+                described.push(self.described(credential).await);
+            }
+            Ok(described)
         })
     }
 
@@ -213,22 +237,11 @@ impl GitHosts for Hosts {
     }
 }
 
-/// The host as a client may see it: never its token.
-fn info(credential: &CredentialConnected) -> CredentialInfo {
-    CredentialInfo {
-        id: credential.credential,
-        forge: credential.forge,
-        url: credential.url.clone(),
-        login: credential.login.clone(),
-        hint: hint(credential.token.expose()),
-    }
-}
-
 /// `url`'s origin, as git names the host and glave offers it to commands
 /// ([`CredentialHost::named`]): `https://` and the host with any port, `http://` only to this
 /// computer, in lower case. None for anything else, or a URL with a user name, a query or a
 /// fragment before its path.
-fn origin(url: &str) -> Option<String> {
+pub(crate) fn origin(url: &str) -> Option<String> {
     let url = url.trim();
     if url.contains(char::is_whitespace) {
         return None;

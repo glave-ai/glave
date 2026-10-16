@@ -1300,6 +1300,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "reqwest",
+ "rustix",
  "serde_json",
  "tokio",
  "tokio-postgres",

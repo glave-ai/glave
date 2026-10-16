@@ -10,6 +10,7 @@ mod cloud;
 mod commands;
 mod computer;
 mod config;
+mod connections;
 mod credentials;
 mod daemon;
 mod data;

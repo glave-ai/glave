@@ -49,6 +49,11 @@ pub struct CredentialConnected {
     /// Whom the host said the token is for, when it said.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login: Option<String>,
+    /// What the host said the token may do, when it said: a classic GitHub token's scopes
+    /// (`repo`), or a GitLab token's (`write_repository`). A GitHub App's are asked of GitHub
+    /// each time, since the person may install it on more repositories after signing in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scopes: Option<Vec<String>>,
     /// How the token is renewed, for one that expires (a GitHub App's lasts eight hours).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub renewal: Option<Renewal>,

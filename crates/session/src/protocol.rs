@@ -15,7 +15,7 @@ use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
 use glave_ports::{ComputerId, Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
-pub use credentials::{CredentialInfo, DeviceCode};
+pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use glave_event::ApprovalMode;
 pub use glave_event::{Forge, ProviderKind};
 pub use models::ModelInfo;
