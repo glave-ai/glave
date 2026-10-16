@@ -9,7 +9,7 @@ import {
   output,
   viewChild,
 } from '@angular/core';
-import { ArrowUp, Square } from 'lucide';
+import { ArrowUp, SlidersHorizontal, Square } from 'lucide';
 
 import { injectId } from '../../tokens/ids';
 import { isApple } from '../../lib/shortcuts';
@@ -18,23 +18,36 @@ import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
 import { testIds } from '../../lib/test-ids';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
-const PARTS = { input: 'input', stop: 'stop', send: 'send' } as const;
+const PARTS = {
+  input: 'input',
+  stop: 'stop',
+  send: 'send',
+  options: 'options',
+  status: 'status',
+} as const;
 
 /** A composer's size: a reply's (`md`), or the larger one that starts a thread (`lg`). */
 export type GlzComposerSize = 'md' | 'lg';
 
 /**
- * Where the person writes to the model. The text area grows with what they write (CSS
- * `field-sizing`, up to a limit); Enter sends and Shift+Enter starts a new line (Cmd or Ctrl
- * with Enter sends too), and `send` emits the draft, trimmed. While the model is answering
- * (`busy`), Send becomes Stop, and Escape stops it; the person can go on writing their next
- * message. Slots on the toolbar hold what shapes the turn (`[glzComposerStart]`) and a model
- * picker (`[glzComposerEnd]`). A `lg` composer starts a thread: two lines to write in, in
- * larger type, more room round them, rounder corners, and a shadow under it.
+ * Where the person writes to the model. The box holds only what they write: the text area,
+ * which grows with what they write (CSS `field-sizing`, up to a limit), what sets where it
+ * goes (`[glzComposerStart]`, such as a project chip), and send. Under the box, a quiet status
+ * line (`[glzComposerStatus]`) holds what shapes the turn: the approval mode and the model,
+ * small and muted, with no box of their own. On a phone (`GLZ_NARROW`) the composer is one row
+ * (an options button, the text, send), and the options button opens the status line as a
+ * sheet; what sits in the box's start slot is hidden there, so an app moves it to the status
+ * line at that width.
+ *
+ * Enter sends and Shift+Enter starts a new line (Cmd or Ctrl with Enter sends too), and `send`
+ * emits the draft, trimmed. While the model is answering (`busy`), Send becomes Stop, and
+ * Escape stops it; the person can go on writing their next message. A `lg` composer starts a
+ * thread: two lines to write in, in larger type, more room round them, rounder corners, and a
+ * shadow under it.
  *
  * ```html
  * <glz-composer [(value)]="draft" [busy]="running()" (send)="start($event)" (stop)="cancel()">
- *   <glz-menu-select glzComposerEnd label="Model" [options]="models" [(value)]="model" />
+ *   <glz-menu-select glzComposerStatus label="Model" quiet [options]="models" [(value)]="model" />
  * </glz-composer>
  * ```
  */
@@ -64,14 +77,16 @@ export class GlzComposerComponent {
   readonly label = input('Message');
   readonly sendLabel = input('Send');
   readonly stopLabel = input('Stop');
+  /** Names the button that opens the status line on a phone, and the line itself. */
+  readonly optionsLabel = input('Options');
   readonly hint = input('Enter to send, Shift+Enter for a new line');
   readonly send = output<string>();
   readonly stop = output();
 
   protected readonly hintId = injectId('glz-composer-hint');
+  protected readonly statusId = injectId('glz-composer-status');
   protected readonly large = computed(() => this.size() === 'lg');
-  protected readonly sendIcon = ArrowUp;
-  protected readonly stopIcon = Square;
+  protected readonly icons = { send: ArrowUp, stop: Square, options: SlidersHorizontal };
   private readonly textarea = viewChild.required<ElementRef<HTMLTextAreaElement>>('textarea');
 
   protected readonly canSend = computed(

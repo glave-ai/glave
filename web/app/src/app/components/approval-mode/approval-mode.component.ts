@@ -36,11 +36,12 @@ const MODES: Readonly<
 };
 
 /**
- * The approval mode of the composer's next turn: the person's pick, else the thread's own
- * (`current`, from its summary), else the server's. A choice among the modes the server lets a
- * thread choose (`server/discover`'s `approvals`); read-only when it lets only one. `value` is
- * the person's pick, `null` until they make one; it goes with the next `thread/start` or
- * `turn/start`.
+ * The approval mode of the composer's next turn, quiet in its status line: its icon and its
+ * word, the shape and the word saying it, never a colour. The person's pick, else the thread's
+ * own (`current`, from its summary), else the server's. A choice among the modes the server
+ * lets a thread choose (`server/discover`'s `approvals`); read-only when it lets only one.
+ * `value` is the person's pick, `null` until they make one; it goes with the next
+ * `thread/start` or `turn/start`.
  */
 @Component({
   selector: 'app-approval-mode',
@@ -68,6 +69,7 @@ export class ApprovalModeComponent {
       value: mode,
       label: MODES[mode].text,
       hint: MODES[mode].about,
+      icon: MODES[mode].icon,
     })),
   );
   /** The mode shown read-only, when there is no choice to make. */

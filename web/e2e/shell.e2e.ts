@@ -11,7 +11,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await fakeApi(page);
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     await expect(byTestId(page, 'thread-title')).toHaveText('Make the tests pass');
-    await expect(byTestId(page, 'thread-space')).toHaveText('glave');
+    await expect(byTestId(page, 'thread-meta')).toContainText(/^glave · on /u);
     await byTestId(page, 'tools-handle').press('Enter');
     await expect(byTestId(page, 'task').first()).toContainText('Nightly dependency audit');
     await expectAccessible(page);
@@ -98,7 +98,9 @@ test('the model picked is sent with the next turn, and no reply names a model', 
   await expect(byTestId(page, 'thread-items')).not.toContainText('Claude Haiku');
   const picker = byTestId(page, 'model-picker-trigger');
   // The default model by its name, made from its id: never a slug.
-  await expect(picker).toContainText('Anthropic · Claude Haiku 5.5');
+  // Its quiet line names the model alone; the list names its company too.
+  await expect(picker).toContainText('Claude Haiku 5.5');
+  await expect(picker).not.toContainText('Anthropic');
   await picker.click();
   await byTestId(page, 'model-picker-option').filter({ hasText: 'Hope' }).click();
   await expect(picker).toContainText('Hope');
@@ -140,7 +142,7 @@ test('the picker searches a long catalogue by name and scrolls; picks come after
   await expect(options).toHaveText(['OpenAI · GPT-6 Luna']);
   await expect(options.first()).toBeInViewport();
   await options.first().click();
-  await expect(trigger).toContainText('OpenAI · GPT-6 Luna');
+  await expect(trigger).toContainText('GPT-6 Luna');
   // After a reload: the default, then the model picked lately, then the rest.
   await page.reload();
   await trigger.click();
@@ -274,5 +276,5 @@ test('in a short window the picker lists models beside its button, never over it
   await expect(option).toBeInViewport();
   await option.click();
   await expect(list).toBeHidden();
-  await expect(trigger).toContainText('Anthropic · Claude Haiku 5.5');
+  await expect(trigger).toContainText('Claude Haiku 5.5');
 });

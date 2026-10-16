@@ -6,7 +6,7 @@
     </glz-message>
     <glz-message from="model" [author]="copy.replyAuthor">
       <glz-reasoning>{{ copy.reasoning }}</glz-reasoning>
-      <glz-steps [summary]="copy.steps" [(open)]="stepsOpen">
+      <glz-steps status="failed" [facts]="facts" [steps]="copy.steps" [(open)]="stepsOpen">
         @for (receipt of receipts; track receipt.summary) {
           <glz-receipt
             [icon]="receipt.icon"
@@ -20,13 +20,11 @@
       </glz-steps>
       <glz-approval-card
         testId="showcase-approval"
-        [tool]="approval.tool"
         [summary]="approval.summary"
+        [detail]="approval.command"
         [decision]="decision()"
         (decide)="decide($event)"
-      >
-        <pre>{{ approval.command }}</pre>
-      </glz-approval-card>
+      />
       <glz-question-card [questions]="questions" [answered]="answers()" (answer)="answer($event)" />
       <div testId="showcase-markdown" [glzMarkdown]="copy.reply"></div>
     </glz-message>
@@ -49,7 +47,8 @@
     (stop)="stop()"
   >
     <glz-menu-select
-      glzComposerEnd
+      glzComposerStatus
+      quiet
       testId="showcase-model-select"
       [label]="copy.model"
       [options]="models"

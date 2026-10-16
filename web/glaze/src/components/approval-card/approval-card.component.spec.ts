@@ -10,14 +10,12 @@ import { type GlzDecision, GlzApprovalCardComponent } from './approval-card.comp
   template: `
     <glz-approval-card
       testId="approval"
-      tool="bash"
-      summary="Delete the build folder"
+      summary="Run this command?"
+      detail="rm -rf build/"
       [decision]="decision()"
       [busy]="busy()"
       (decide)="decisions.push($event)"
-    >
-      <pre>rm -rf build/</pre>
-    </glz-approval-card>
+    />
   `,
 })
 class HostComponent {
@@ -31,16 +29,24 @@ function button(root: HTMLElement, testId: string): HTMLButtonElement | null {
 }
 
 describe('GlzApprovalCardComponent', () => {
-  it('offers the three answers and emits the one chosen', async () => {
+  it('needs the person: says what it asks, and offers the three answers, the primary first', async () => {
     const fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const card = root.querySelector('glz-approval-card');
     expect(card?.getAttribute('role')).toBe('group');
-    expect(document.getElementById(card?.getAttribute('aria-labelledby') ?? '')?.textContent).toBe(
-      'Approval needed',
-    );
-    expect(root.textContent).toContain('rm -rf build/');
+    const names = (card?.getAttribute('aria-labelledby') ?? '').split(' ');
+    const text = (id: string): string =>
+      document.getElementById(id)?.textContent.replace(/\s+/gu, ' ').trim() ?? '';
+    expect(names.map(text)).toEqual(['Needs you', 'Run this command? rm -rf build/']);
+    expect(root.querySelector('.detail')?.textContent).toBe('rm -rf build/');
+    const buttons = Array.from(root.querySelectorAll('.actions button'));
+    expect(buttons.map((each) => each.textContent.trim())).toEqual([
+      'Allow once',
+      'Allow for this thread',
+      'Deny',
+    ]);
+    expect(buttons[0]?.classList).toContain('glz-button--primary');
     await expectAccessible(root);
     button(root, 'approval-allow-once')?.click();
     button(root, 'approval-allow-thread')?.click();
@@ -60,5 +66,12 @@ describe('GlzApprovalCardComponent', () => {
     expect(root.querySelector('[data-testid="approval-decided"]')?.textContent).toBe(
       'Allowed for this thread',
     );
+    // Answered, it no longer needs the person: no label, and it rests.
+    const card = root.querySelector('glz-approval-card');
+    expect(root.querySelector('.label')).toBeNull();
+    expect(card?.classList).toContain('glz-approval-card--decided');
+    expect(
+      document.getElementById(card?.getAttribute('aria-labelledby') ?? '')?.textContent.trim(),
+    ).toMatch(/^Run this command\?/u);
   });
 });

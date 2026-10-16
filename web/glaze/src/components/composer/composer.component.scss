@@ -1,26 +1,48 @@
+// The box, and the quiet status line under it, its first word under the box's text.
 :host {
+  --glz-composer-text-start: var(--glz-inset-composer-start);
+
   display: flex;
   flex-direction: column;
   gap: var(--glz-space-2);
+}
+
+// A reply's box is one row: the text, what sets where it goes, and send at the end, which
+// stays by the last line as the text grows.
+.box {
+  display: grid;
+  grid-template-areas: 'input start act';
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: var(--glz-space-3);
   padding: var(--glz-inset-composer);
   border: var(--glz-border-width) solid var(--glz-color-border);
   border-radius: var(--glz-radius-composer);
   background: var(--glz-surface-card);
 }
 
-:host(:has(.input:focus-visible)) {
+:host(:has(.input:focus-visible)) .box {
   border-color: var(--glz-color-focus);
   box-shadow: var(--glz-focus-ring);
 }
 
+.options {
+  display: none;
+  grid-area: options;
+}
+
 // Grows with its text (CSS field-sizing, Baseline 2026), up to --glz-composer-max-height,
-// then scrolls. A browser without field-sizing keeps it at its rows, which still works.
+// then scrolls; one line of it is as tall as send, its text in the middle. A browser without
+// field-sizing keeps it at its rows, which still works.
 .input {
+  --glz-composer-line: var(--glz-composer-send-size);
+
+  grid-area: input;
   field-sizing: content;
   width: 100%;
-  min-height: 1.5lh;
+  min-height: var(--glz-composer-line);
   max-height: var(--glz-composer-max-height, 14lh);
-  padding: var(--glz-space-1) 0;
+  padding: calc((var(--glz-composer-line) - 1lh) / 2) 0;
   border: 0;
   background: none;
   color: var(--glz-color-text);
@@ -38,25 +60,57 @@
   color: var(--glz-color-text-muted);
 }
 
-.bar {
+.start {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--glz-space-2);
-}
-
-.start,
-.end {
-  display: flex;
+  grid-area: start;
   align-items: center;
   gap: var(--glz-space-2);
   min-width: 0;
 }
 
+.start:empty {
+  display: none;
+}
+
+.act {
+  grid-area: act;
+  width: var(--glz-composer-send-size);
+  min-height: var(--glz-composer-send-size);
+}
+
+// The status line: small, muted, with no box, its first word under the text above it. Closed,
+// it is a popover the browser would hide; beside a wide page it is a plain line instead.
+.status {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-1);
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0 calc(var(--glz-composer-text-start) - var(--glz-space-2));
+  overflow: visible;
+  border: 0;
+  background: none;
+  color: var(--glz-color-text-muted);
+}
+
+.status:empty {
+  display: none;
+}
+
 // The composer that starts a thread: two lines to write in, larger type, more room, rounder
-// corners, and a shadow under it.
+// corners, and a shadow under it; where it goes and send on a row of their own under the text.
 :host(.glz-composer--lg) {
-  gap: var(--glz-space-3);
+  --glz-composer-text-start: var(--glz-inset-composer-lg-start);
+}
+
+:host(.glz-composer--lg) .box {
+  grid-template-areas:
+    'input input'
+    'start act';
+  grid-template-columns: minmax(0, 1fr) auto;
   padding: var(--glz-inset-composer-lg);
   border-radius: var(--glz-radius-composer-lg);
   box-shadow: var(--glz-elevation-composer);
@@ -64,19 +118,71 @@
 
 :host(.glz-composer--lg) .input {
   min-height: calc(2lh + 2 * var(--glz-space-1));
+  padding: var(--glz-space-1) 0;
   font-size: var(--glz-text-xl);
 }
 
-:host(.glz-composer--lg) .send {
+:host(.glz-composer--lg) .act {
+  width: var(--glz-control-height-md);
+  min-height: var(--glz-control-height-md);
   border-radius: var(--glz-radius-strip);
 }
 
-// With more in its toolbar, a narrow one takes two lines rather than crowding: what shapes the
-// thread on the first, the model and Send at the end of the second.
-:host(.glz-composer--lg) .bar {
-  flex-wrap: wrap;
-}
+// A phone: one row (options, the text, send), each button a finger's size, and the status
+// line a sheet from the foot of the screen that the options button opens.
+@media (width <= 48rem) {
+  .box,
+  :host(.glz-composer--lg) .box {
+    grid-template-areas: 'options input act';
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: var(--glz-inset-composer-round);
+    border-radius: var(--glz-radius-composer);
+  }
 
-:host(.glz-composer--lg) .end {
-  margin-inline-start: auto;
+  .options {
+    display: inline-flex;
+  }
+
+  :host(:has(.status:empty)) .options,
+  .start {
+    display: none;
+  }
+
+  .options,
+  .act,
+  :host(.glz-composer--lg) .act {
+    width: var(--glz-control-height-touch);
+    min-height: var(--glz-control-height-touch);
+    border-radius: var(--glz-radius-strip);
+  }
+
+  .input,
+  :host(.glz-composer--lg) .input {
+    --glz-composer-line: var(--glz-control-height-touch);
+
+    min-height: var(--glz-composer-line);
+    padding: calc((var(--glz-composer-line) - 1lh) / 2) 0;
+    font-size: var(--glz-text-input);
+  }
+
+  .status:not(:popover-open) {
+    display: none;
+  }
+
+  .status:popover-open {
+    position: fixed;
+    inset: auto 0 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--glz-space-2);
+    padding: var(--glz-inset-dialog);
+    border-radius: var(--glz-radius-card) var(--glz-radius-card) 0 0;
+    background: var(--glz-surface-overlay);
+    color: var(--glz-color-text);
+    box-shadow: var(--glz-elevation-3);
+  }
+
+  .status::backdrop {
+    background: var(--glz-color-scrim);
+  }
 }

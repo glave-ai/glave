@@ -37,6 +37,14 @@
   border: var(--glz-border-width) solid var(--glz-color-border);
 }
 
+// Quiet: small, muted, in a status line.
+:host(.glz-menu-select--quiet) .trigger {
+  gap: var(--glz-space-1);
+  padding: 0 var(--glz-space-2);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+}
+
 .trigger:focus-visible {
   outline: none;
   box-shadow: var(--glz-focus-ring);

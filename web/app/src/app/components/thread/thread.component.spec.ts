@@ -92,8 +92,10 @@ describe('ThreadComponent', () => {
   it('shows the top bar, and the conversation with its receipts, approvals and questions', async () => {
     const fake = session(HISTORY);
     const { root } = await open(fake);
-    expect(root.querySelector('[data-testid="thread-title"]')?.textContent).toBe('Tidy the repo');
-    expect(root.querySelector('[data-testid="thread-space"]')?.textContent).toBe('glave');
+    expect(root.querySelector('[data-testid="thread-title"]')?.textContent.trim()).toBe(
+      'Tidy the repo',
+    );
+    expect(root.querySelector('[data-testid="thread-meta"]')?.textContent.trim()).toBe('glave');
     expect(root.querySelector('[data-testid="thread-message"]')?.textContent).toContain('Clean up');
     expect(root.querySelector('[data-testid="thread-receipt"]')?.textContent).toContain(
       'rm -rf build',
@@ -101,7 +103,20 @@ describe('ThreadComponent', () => {
     expect(root.querySelector('[data-testid="thread-question"]')?.textContent).toContain(
       'Keep logs?',
     );
-    expect(root.querySelector('[data-testid="approval-mode"]')?.textContent).toContain('Auto');
+    // The approval mode and the model in the composer's quiet line.
+    const status = root.querySelector('[data-testid="thread-composer-status"]');
+    expect(status?.querySelector('[data-testid="approval-mode"]')?.textContent).toContain('Auto');
+    expect(status?.querySelector('[data-testid="model-picker"]')).not.toBeNull();
+    // What waits for the person comes last, after the receipt.
+    const order = Array.from(
+      root.querySelectorAll(
+        '[data-testid="thread-steps"], [data-testid="thread-approval"], [data-testid="thread-question"]',
+      ),
+    ).map((each) => each.getAttribute('data-testid'));
+    expect(order).toEqual(['thread-steps', 'thread-approval', 'thread-question']);
+    expect(
+      root.querySelector('[data-testid="thread-steps-summary"]')?.textContent.replace(/\s+/gu, ' '),
+    ).toContain('waiting');
     await expectAccessible(root);
     root.querySelector<HTMLButtonElement>('[data-testid="thread-approval-allow-once"]')?.click();
     await settle();
@@ -125,7 +140,7 @@ describe('ThreadComponent', () => {
     await expectAccessible(root);
   });
 
-  it('folds tool calls in a row under one line that opens to each, its tool and target', async () => {
+  it('shows a turn that worked results first: the reply, what changed, then its steps', async () => {
     const call = (seq: number, id: string, tool: string, json: Record<string, unknown>): unknown =>
       event(seq, 'tool.call.requested', { call_id: id, tool, arguments: { json } });
     const done = (seq: number, id: string): unknown =>
@@ -142,9 +157,19 @@ describe('ThreadComponent', () => {
         event(8, 'message.added', { role: 'assistant', parts: [{ type: 'text', text: 'Done' }] }),
       ]),
     );
+    const order = Array.from(
+      root.querySelectorAll(
+        '[data-testid="thread-message"], [data-testid="turn-changes"], [data-testid="thread-steps"]',
+      ),
+    ).map((each) => each.getAttribute('data-testid'));
+    expect(order).toEqual(['thread-message', 'thread-message', 'turn-changes', 'thread-steps']);
+    expect(root.querySelector('[data-testid="turn-changes-count"]')?.textContent).toBe('2 files');
+    // Changes in the bar too, for the whole thread.
+    expect(root.querySelector('[data-testid="thread-changes"]')?.textContent).toContain('2');
     const steps = root.querySelector('[data-testid="thread-steps"]');
     const summary = root.querySelector<HTMLElement>('[data-testid="thread-steps-summary"]');
-    expect(summary?.textContent.trim()).toBe('Ran 3 steps');
+    expect(summary?.querySelector('.state')?.textContent).toBe('Done');
+    expect(summary?.querySelector('.count')?.textContent).toBe('3 steps');
     expect(steps?.querySelector('details')?.open).toBe(false);
     const receipts = Array.from(steps?.querySelectorAll('[data-testid="thread-receipt"]') ?? []);
     expect(receipts.map((receipt) => receipt.querySelector('.tool')?.textContent)).toEqual([

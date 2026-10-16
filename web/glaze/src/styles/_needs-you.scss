@@ -1,0 +1,68 @@
+// A card that needs the person (an approval, a question): lifted off the page behind a
+// stronger line, a small label with a dot in the accent over what it asks, and its answers,
+// the primary first. On a narrow card the answers go full width, one above another, each a
+// finger's height. Once answered it rests: the plain line, no lift, no label.
+@mixin card {
+  :host {
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: var(--glz-space-4);
+    padding: var(--glz-inset-card);
+    border: var(--glz-border-width) solid var(--glz-color-border-strong);
+    border-radius: var(--glz-radius-card);
+    background: var(--glz-surface-card);
+    box-shadow: var(--glz-elevation-2);
+  }
+
+  :host(.glz-approval-card--decided),
+  :host(.glz-question-card--answered) {
+    border-color: var(--glz-color-border);
+    box-shadow: var(--glz-elevation-0);
+  }
+
+  .label {
+    display: flex;
+    align-items: center;
+    gap: var(--glz-space-2);
+    color: var(--glz-accent-text);
+    font-size: var(--glz-text-xs);
+    font-weight: var(--glz-weight-bold);
+    line-height: var(--glz-leading-tight);
+  }
+
+  .dot {
+    flex: none;
+    width: var(--glz-dot-size);
+    height: var(--glz-dot-size);
+    border-radius: var(--glz-radius-full);
+    background: var(--glz-accent);
+  }
+
+  .summary {
+    font-size: var(--glz-text-lg);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--glz-space-2);
+  }
+
+  .decided {
+    color: var(--glz-color-text-muted);
+    font-weight: var(--glz-weight-bold);
+  }
+
+  @container (width <= 30rem) {
+    .actions {
+      flex-direction: column;
+      gap: var(--glz-space-4);
+    }
+
+    .actions > * {
+      width: 100%;
+      min-height: var(--glz-control-height-touch);
+    }
+  }
+}

@@ -12,38 +12,27 @@ import {
 import { Router } from '@angular/router';
 import type { ApprovalMode } from '@glave/client';
 import {
-  GlzApprovalCardComponent,
   GlzButtonComponent,
   GlzComposerComponent,
-  GlzCopyButtonComponent,
-  type GlzDecision,
-  type GlzIconData,
-  GlzMarkdownComponent,
-  GlzMessageComponent,
   GlzPanelLayoutComponent,
-  GlzQuestionCardComponent,
-  GlzReasoningComponent,
-  GlzReceiptComponent,
-  GlzStepsComponent,
   GlzStickToBottomDirective,
 } from '@glave/glaze';
-import type { ApprovalItem, CallItem, MessageItem, QuestionItem } from '../../lib/conversation';
-import { type StepsItem, foldSteps, toolIcon } from '../../lib/steps';
-import { threadMark, threadTitle } from '../../lib/threads';
+
+import { type TurnResults, turnResults } from '../../lib/results';
+import { threadTitle } from '../../lib/threads';
+import type { Turn } from '../../lib/turns';
 import { SpacesService } from '../../services/spaces.service';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
 import type { FirstPrompt } from '../home/home.component';
-import { MessageTextComponent } from '../message-text/message-text.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
 import { ThreadHeaderComponent } from '../thread-header/thread-header.component';
 import { ToolsPanelComponent } from '../tools-panel/tools-panel.component';
+import { TurnComponent } from '../turn/turn.component';
 
 const COPY = {
-  you: 'You',
-  reply: 'Reply',
   latest: 'Jump to latest',
   failed: 'Something went wrong:',
   placeholder: 'Reply',
@@ -53,28 +42,15 @@ const COPY = {
   hint: 'Drag or use the arrow keys to resize; Enter collapses. Show or hide:',
 } as const;
 
-/** A message as the thread shows it: named for screen readers, "You" or "Reply". */
-interface ShownMessage extends MessageItem {
-  readonly author: string;
-  /** Whether it is a reply, shown as markdown; the person's own text shows as typed. */
-  readonly markdown: boolean;
-}
-
-/** A tool call as the thread shows it: with its tool's icon. */
-interface ShownCall extends CallItem {
-  readonly icon: GlzIconData;
-}
-
-/** Tool calls in a row, folded under one line. */
-interface ShownSteps extends Omit<StepsItem, 'calls'> {
-  readonly calls: readonly ShownCall[];
-}
-
-type ShownItem = ApprovalItem | QuestionItem | ShownMessage | ShownCall | ShownSteps;
-
-function shownCall(call: CallItem): ShownCall {
-  return { ...call, icon: toolIcon(call.tool) };
-}
+/** A turn with nothing in it yet, for a reply that streams in before anything is recorded. */
+const STARTING: Turn = {
+  key: 'turn-starting',
+  items: [],
+  files: [],
+  took: null,
+  outcome: null,
+  cost: null,
+};
 
 function isFirstPrompt(state: unknown): state is FirstPrompt {
   return (
@@ -86,36 +62,26 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
 }
 
 /**
- * One thread: its top bar floating over it (title, space, rename; on narrow screens the button
- * that opens the tools); its conversation (the person's messages as bubbles of the text they
- * typed, replies as markdown with no name over them, each with a copy button; reasoning; tool
- * calls as quiet lines, those in a row folded under "Ran N steps"; approvals and questions,
- * answered in place) in a reading column, the reply streaming in as markdown as a turn runs;
- * the composer docked below it, with the approval mode and the model picker; and the tools
- * panel beside it,
- * resized and collapsed by its edge and shown or hidden by ⌘. or Ctrl+. anywhere in the thread.
+ * One thread: its bar across the top (title, project and where it runs, its changes); its
+ * conversation in a reading column, turn by turn, results first (the reply, what changed, the
+ * receipt that opens to the steps, then what waits for the person), the reply streaming in as
+ * markdown as a turn runs; the composer pinned below it, with the approval mode and the model
+ * in its quiet line; and the tools panel beside it, resized and collapsed by its edge and shown
+ * or hidden by ⌘. or Ctrl+. anywhere in the thread.
  */
 @Component({
   selector: 'app-thread',
   imports: [
     ApprovalModeComponent,
-    GlzApprovalCardComponent,
     GlzButtonComponent,
     GlzComposerComponent,
-    GlzCopyButtonComponent,
-    GlzMarkdownComponent,
-    GlzMessageComponent,
     GlzPanelLayoutComponent,
-    GlzQuestionCardComponent,
-    GlzReasoningComponent,
-    GlzReceiptComponent,
-    GlzStepsComponent,
     GlzStickToBottomDirective,
-    MessageTextComponent,
     ModelPickerComponent,
     RenameDialogComponent,
     ThreadHeaderComponent,
     ToolsPanelComponent,
+    TurnComponent,
   ],
   providers: [ThreadService],
   templateUrl: './thread.component.html',
@@ -144,26 +110,16 @@ export class ThreadComponent {
   protected readonly panelWidth = this.panel.width;
   protected readonly panelShortcut = this.panel.ariaShortcut;
   protected readonly panelHint = `${COPY.hint} ${this.panel.shortcut}`;
-  protected readonly shown = computed<readonly ShownItem[]>(() =>
-    foldSteps(this.service.items()).map((item): ShownItem => {
-      switch (item.kind) {
-        case 'message': {
-          const person = item.from === 'person';
-          return {
-            ...item,
-            author: person ? COPY.you : COPY.reply,
-            markdown: !person,
-          };
-        }
-        case 'call':
-          return shownCall(item);
-        case 'steps':
-          return { ...item, calls: item.calls.map(shownCall) };
-        default:
-          return item;
-      }
-    }),
-  );
+  /** The turns, results first; the reply being written goes to the last, which runs. */
+  protected readonly turns = computed<readonly TurnResults[]>(() => {
+    const live = this.service.hasReply() ? this.service.reply() : null;
+    const recorded = this.service.turns();
+    const turns = recorded.length === 0 && live !== null ? [STARTING] : recorded;
+    const last = turns.length - 1;
+    return turns.map((turn, index) =>
+      turnResults(turn, index === last ? live : null, index === last && this.service.busy()),
+    );
+  });
   protected readonly summary = computed(() => this.spaces.thread(this.thread()));
   protected readonly title = computed(() => {
     const summary = this.summary();
@@ -171,11 +127,12 @@ export class ThreadComponent {
   });
   /** The thread's own approval mode, from its summary, or `null` until it is read. */
   protected readonly mode = computed(() => this.summary()?.approval ?? null);
-  protected readonly spaceName = computed(() => this.spaces.spaceOf(this.thread())?.name ?? null);
-  protected readonly mark = computed(() => {
-    const summary = this.summary();
-    return summary === undefined ? null : threadMark(summary);
+  /** The project the thread is in, by name; `null` for a chat. */
+  protected readonly project = computed(() => {
+    const space = this.spaces.spaceOf(this.thread());
+    return space?.kind === 'project' ? space.name : null;
   });
+  protected readonly changes = computed(() => this.service.files().length);
 
   constructor() {
     const navigation = inject(Router).currentNavigation();
@@ -206,14 +163,6 @@ export class ThreadComponent {
 
   protected stop(): void {
     void this.service.stop();
-  }
-
-  protected decide(approval: string, decision: GlzDecision): void {
-    void this.service.decide(approval, decision);
-  }
-
-  protected answer(question: string, answers: readonly string[]): void {
-    void this.service.answer(question, answers);
   }
 
   protected jumpToLatest(): void {

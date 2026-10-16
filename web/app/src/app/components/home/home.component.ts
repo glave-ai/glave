@@ -17,6 +17,7 @@ import {
 } from '@glave/glaze';
 import { Folder, Lock, MessageCircle } from 'lucide';
 
+import { NavService } from '../../services/nav.service';
 import { SessionService } from '../../services/session.service';
 import { SpacesService } from '../../services/spaces.service';
 import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
@@ -39,7 +40,8 @@ export interface FirstPrompt {
 
 /**
  * A new chat: the question, then the composer that starts a thread, with where it goes (a
- * chat, or a project), the approval mode and the model picker. Sending starts the thread there,
+ * chat, or a project) in its box, and the approval mode and the model in the quiet line under
+ * it. Sending starts the thread there,
  * on the model and in the approval mode picked, and opens it. When glave runs on this
  * computer, a line under it says what stays private.
  */
@@ -89,7 +91,13 @@ export class HomeComponent {
       .map(({ space }) => ({ value: space.id, label: space.name, icon: Folder }));
     return [...chat, ...projects];
   });
-  protected readonly hasPlaces = computed(() => this.places().length > 0);
+  private readonly narrow = inject(NavService).narrow;
+  /**
+   * Where it goes sits in the composer's box beside a wide page, and on a phone, where the box
+   * is one row, behind its options button with the rest.
+   */
+  protected readonly whereInBox = computed(() => this.places().length > 0 && !this.narrow());
+  protected readonly whereInStatus = computed(() => this.places().length > 0 && this.narrow());
 
   protected async send(prompt: string): Promise<void> {
     this.starting.set(true);

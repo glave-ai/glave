@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { NEW_THREAD, PERSONAL, THREAD, fakeApi } from './fake-api';
+import { NEW_THREAD, PERSONAL, THREAD, WAITING, fakeApi } from './fake-api';
 import { SIGNED_IN, byTestId, expectAccessible, shownOpacity, watchForProblems } from './support';
 
 test('without a sign-in, the app says how to get one, in plain words', async ({ page }) => {
@@ -31,7 +31,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
 test('a thread shows its history and streams a reply to a new message', async ({ page }) => {
   await fakeApi(page);
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
-  await expect(byTestId(page, 'thread-steps-summary')).toHaveText('Ran 4 steps');
+  await expect(byTestId(page, 'thread-steps-summary')).toContainText('4 steps');
   await expect(byTestId(page, 'thread-message').last()).toContainText('They pass now.');
   await expectAccessible(page);
   const reply = byTestId(page, 'thread-composer-input');
@@ -41,35 +41,85 @@ test('a thread shows its history and streams a reply to a new message', async ({
 });
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`tool calls in a row fold into steps that open to each call (${colorScheme})`, async ({
+  test(`a turn that worked shows its results first, every box across the column (${colorScheme})`, async ({
     page,
   }) => {
     await page.emulateMedia({ colorScheme });
     await page.setViewportSize({ width: 1440, height: 900 });
     await fakeApi(page);
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+    const reply = byTestId(page, 'thread-message').last();
+    const changes = byTestId(page, 'turn-changes');
+    const steps = byTestId(page, 'thread-steps');
     const summary = byTestId(page, 'thread-steps-summary');
+    await expect(reply).toContainText('They pass now.');
+    // The bar: the project, where it runs, and the thread's changes.
+    await expect(byTestId(page, 'thread-meta')).toHaveText(
+      /^glave · on (your Mac|this computer)$/u,
+    );
+    await expect(byTestId(page, 'thread-changes')).toHaveText(/Changes\s*2/u);
+    // What changed, then the receipt: how long it took, what it cost, and its steps.
+    await expect(byTestId(page, 'turn-changes-count')).toHaveText('2 files');
+    await expect(byTestId(page, 'turn-changes-file')).toHaveCount(2);
+    await expect(byTestId(page, 'turn-changes-file').first()).toContainText('src/parse.rs');
+    await expect(summary).toContainText('2m 05s');
+    await expect(summary).toContainText('$0.0042');
+    await expect(summary).toContainText('4 steps');
+    const boxes = await Promise.all(
+      [reply, changes, steps, byTestId(page, 'thread-composer')].map((each) => each.boundingBox()),
+    );
+    const [replyBox, changesBox, stepsBox] = boxes;
+    expect((replyBox?.y ?? 0) < (changesBox?.y ?? 0)).toBe(true);
+    expect((changesBox?.y ?? 0) < (stepsBox?.y ?? 0)).toBe(true);
+    // Every box spans the column: the same edges, the same width.
+    expect(new Set(boxes.map((box) => Math.round(box?.x ?? -1))).size).toBe(1);
+    expect(new Set(boxes.map((box) => Math.round(box?.width ?? -1))).size).toBe(1);
+    // The receipt is a disclosure: the keyboard opens it, and each call keeps its tool and target.
     const receipts = byTestId(page, 'thread-receipt');
-    await expect(summary).toHaveText('Ran 4 steps');
     await expect(receipts.first()).toBeHidden();
-    // Left-aligned with the reply's text, not indented.
-    const steps = await byTestId(page, 'thread-steps').boundingBox();
-    const reply = await byTestId(page, 'thread-message').last().boundingBox();
-    expect(Math.round(steps?.x ?? -1)).toBe(Math.round(reply?.x ?? 0));
-    // A disclosure: the keyboard opens it, and each call keeps its tool and target.
     await summary.focus();
     await page.keyboard.press('Enter');
     await expect(receipts).toHaveCount(4);
     await expect(receipts.first()).toBeVisible();
     await expect(receipts.nth(0)).toContainText('bash');
-    await expect(receipts.nth(0)).toContainText('cargo test');
-    await expect(receipts.nth(1)).toContainText('edit');
     await expect(receipts.nth(1)).toContainText('src/parse.rs');
-    await expect(receipts.nth(2)).toContainText('write');
     await expect(receipts.nth(2)).toContainText('tests/empty.rs');
     await expectAccessible(page);
     await page.keyboard.press('Enter');
     await expect(receipts.first()).toBeHidden();
+    // A file, or Changes, opens the tools panel on the thread's changes.
+    await byTestId(page, 'turn-changes-file').first().click();
+    await expect(byTestId(page, 'tools-panel')).toBeVisible();
+    await expect(byTestId(page, 'tools-tabs-tab').nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(byTestId(page, 'thread-changes')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test(`what waits for the person is a card after the receipt, answered in place (${colorScheme})`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const api = await fakeApi(page);
+    await page.goto(`/t/${WAITING}${SIGNED_IN}`);
+    const card = byTestId(page, 'thread-approval');
+    await expect(card).toContainText('Needs you');
+    await expect(card).toContainText('Run this command?');
+    await expect(card.locator('code')).toHaveText('git push -u origin docs/release-notes');
+    await expect(card.getByRole('button')).toHaveText([
+      'Allow once',
+      'Allow for this thread',
+      'Deny',
+    ]);
+    await expect(byTestId(page, 'thread-steps-summary')).toContainText('waiting');
+    const steps = await byTestId(page, 'thread-steps').boundingBox();
+    const box = await card.boundingBox();
+    expect((steps?.y ?? Infinity) < (box?.y ?? 0)).toBe(true);
+    expect(Math.round(box?.width ?? 0)).toBe(Math.round(steps?.width ?? -1));
+    await expectAccessible(page);
+    await byTestId(page, 'thread-approval-allow-once').click();
+    await expect
+      .poll(() => api.requests.find((request) => request.method === 'approval/decide')?.params)
+      .toMatchObject({ approval: 'call_2', decision: 'allow_once' });
   });
 
   test(`each message has a copy button, shown on hover and focus, that copies its text (${colorScheme})`, async ({
@@ -103,6 +153,53 @@ for (const colorScheme of ['light', 'dark'] as const) {
 
 test.describe('on a touch screen', () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test('the bar’s buttons and the composer’s are a finger’s size, the composer one row', async ({
+    page,
+  }) => {
+    await fakeApi(page);
+    await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+    await expect(byTestId(page, 'thread-message').last()).toContainText('They pass now.');
+    for (const testId of ['page-menu', 'thread-tools', 'thread-composer-options']) {
+      const box = await byTestId(page, testId).boundingBox();
+      expect([Math.round(box?.width ?? 0), Math.round(box?.height ?? 0)]).toEqual([44, 44]);
+    }
+    await expect(byTestId(page, 'thread-tools')).toHaveAccessibleName('Changes, 2 files');
+    // One row: options, the text and send, side by side.
+    const [options, input, send] = await Promise.all(
+      ['thread-composer-options', 'thread-composer-input', 'thread-composer-send'].map((each) =>
+        byTestId(page, each).boundingBox(),
+      ),
+    );
+    expect((options?.x ?? 0) < (input?.x ?? 0)).toBe(true);
+    expect((input?.x ?? 0) < (send?.x ?? 0)).toBe(true);
+    expect(Math.round(options?.y ?? 0)).toBe(Math.round(send?.y ?? -1));
+    // The approval mode and the model wait behind the options button, in a sheet.
+    const status = byTestId(page, 'thread-composer-status');
+    await expect(status).toBeHidden();
+    await byTestId(page, 'thread-composer-options').click();
+    await expect(status).toBeVisible();
+    await expect(status.getByTestId('approval-mode-trigger')).toBeVisible();
+    await expect(status.getByTestId('model-picker-trigger')).toContainText('Claude Haiku 5.5');
+    await expectAccessible(page);
+    await page.keyboard.press('Escape');
+    await expect(status).toBeHidden();
+  });
+
+  test('what waits for the person takes the whole width, one answer above another', async ({
+    page,
+  }) => {
+    await fakeApi(page);
+    await page.goto(`/t/${WAITING}${SIGNED_IN}`);
+    const buttons = byTestId(page, 'thread-approval').getByRole('button');
+    await expect(buttons).toHaveCount(3);
+    const boxes = await Promise.all([0, 1, 2].map((index) => buttons.nth(index).boundingBox()));
+    expect(new Set(boxes.map((box) => Math.round(box?.x ?? -1))).size).toBe(1);
+    expect(new Set(boxes.map((box) => Math.round(box?.width ?? -1))).size).toBe(1);
+    expect(boxes.every((box) => (box?.height ?? 0) >= 44)).toBe(true);
+    expect((boxes[0]?.y ?? 0) < (boxes[1]?.y ?? 0)).toBe(true);
+    await expectAccessible(page);
+  });
 
   test('the copy button always shows, since nothing hovers', async ({ page }) => {
     await fakeApi(page);

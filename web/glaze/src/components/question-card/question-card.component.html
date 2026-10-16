@@ -1,7 +1,9 @@
-<p class="heading" [id]="headingId">{{ heading() }}</p>
+@if (!isAnswered()) {
+  <p class="label" [id]="labelId"><span class="dot" aria-hidden="true"></span>{{ label() }}</p>
+}
 @for (question of shown(); track question.index) {
   <div class="question" role="group" [attr.aria-labelledby]="question.id">
-    <p class="text" [id]="question.id">{{ question.text }}</p>
+    <p class="summary" [id]="question.id">{{ question.text }}</p>
     @if (isAnswered()) {
       <p class="answer" [attr.data-testid]="ids().answer">{{ question.answer }}</p>
     } @else {

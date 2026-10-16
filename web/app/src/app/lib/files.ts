@@ -19,7 +19,7 @@ export interface FileChange {
 }
 
 /** A file the thread changed, with its changes in order and what they added and removed. */
-interface ChangedFile {
+export interface ChangedFile {
   readonly path: string;
   readonly changes: readonly FileChange[];
   readonly added: number;

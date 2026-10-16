@@ -1,30 +1,44 @@
+// A status other than done keeps its colour, and its icon and word say it too, so colour never
+// says it alone.
 :host {
+  --glz-steps-status: var(--glz-color-text);
+
   display: block;
-  color: var(--glz-color-text-muted);
-  font-size: var(--glz-text-sm);
+  container-type: inline-size;
 }
 
-// The steps fold into one strip, its chevron at the end.
+:host(.status-failed) {
+  --glz-steps-status: var(--glz-color-danger);
+}
+
+:host(.status-stopped) {
+  --glz-steps-status: var(--glz-color-text-muted);
+}
+
+:host(.status-waiting) {
+  --glz-steps-status: var(--glz-accent-text);
+}
+
+// One sunken line across the column, in monospace: the status, the facts between dots, and
+// the steps at the end, the strip's own inset round them.
 .line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: var(--glz-space-4);
   padding: var(--glz-inset-strip);
   border-radius: var(--glz-radius-strip);
   background: var(--glz-surface-sunken);
   color: var(--glz-color-text-secondary);
+  font-family: var(--glz-font-mono);
+  font-size: var(--glz-text-sm);
+  line-height: var(--glz-leading-tight);
   cursor: pointer;
   list-style: none;
-  transition: color var(--glz-duration-fast) var(--glz-easing);
 }
 
 .line::-webkit-details-marker {
   display: none;
-}
-
-.line:hover {
-  color: var(--glz-color-text);
 }
 
 .line:focus-visible {
@@ -32,8 +46,51 @@
   outline-offset: 2px;
 }
 
-.chevron {
+.icon {
+  flex: none;
+  color: var(--glz-steps-status);
+}
+
+:host(.status-running) .icon {
+  animation: glz-steps-spin 1s linear infinite;
+}
+
+.state {
+  color: var(--glz-steps-status);
+}
+
+// A dot before each fact but the first shown, in the gap's rhythm.
+.fact {
+  display: inline-flex;
+  gap: var(--glz-space-4);
+}
+
+.fact::before {
+  content: '·' / '';
   color: var(--glz-color-text-muted);
+}
+
+.state::before,
+.state.glz-visually-hidden + .fact::before {
+  content: none;
+}
+
+// The steps at the end, with room round them as a button has.
+.count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  margin-inline-start: auto;
+  padding-block: var(--glz-space-1);
+  color: var(--glz-color-text-muted);
+  transition: color var(--glz-duration-fast) var(--glz-easing);
+}
+
+.line:hover .count {
+  color: var(--glz-color-text);
+}
+
+.chevron {
   transition: transform var(--glz-duration-fast) var(--glz-easing);
 }
 
@@ -41,13 +98,39 @@
   transform: rotate(90deg);
 }
 
-// The steps hang under the strip, behind a rule, each one line of its own.
+// The steps hang under the line, behind a rule at the line's inset, each one line of its own.
 .steps {
   display: flex;
   flex-direction: column;
+  gap: var(--glz-space-1);
 
   /* stylelint-disable-next-line declaration-property-value-allowed-list -- the content of a <details> takes no gap (::details-content is not Baseline) */
-  margin: var(--glz-space-2) 0 0 var(--glz-space-4);
-  padding-inline-start: var(--glz-space-2);
+  margin: var(--glz-space-3) 0 0 var(--glz-space-4);
+  padding-inline-start: var(--glz-space-3);
   border-inline-start: 2px solid var(--glz-color-border);
+  color: var(--glz-color-text-muted);
+}
+
+// A phone's line: smaller type, closer together, so it keeps to one line.
+@container (width <= 30rem) {
+  .line,
+  .fact {
+    gap: var(--glz-space-3);
+  }
+
+  .line {
+    font-size: var(--glz-text-xs);
+  }
+}
+
+@keyframes glz-steps-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host(.status-running) .icon {
+    animation: none;
+  }
 }

@@ -1,33 +1,73 @@
-<app-page-header>
-  <div class="heading">
-    @if (space(); as space) {
-      <span class="space" data-testid="thread-space">{{ space }}</span>
-    }
-    <h1 class="title" data-testid="thread-title">{{ title() }}</h1>
-    @if (mark(); as mark) {
-      <glz-badge [tone]="mark.tone">{{ mark.text }}</glz-badge>
-    }
+<header class="bar" [class.phone]="phone()">
+  @if (phone()) {
     <button
       glzIconButton
-      size="sm"
-      data-testid="thread-rename"
-      [label]="copy.rename"
-      (click)="startRename()"
+      class="touch"
+      data-testid="page-menu"
+      [label]="copy.menu"
+      [attr.aria-expanded]="navOpen()"
+      [attr.aria-keyshortcuts]="navShortcut"
+      (click)="toggleNav()"
     >
-      <glz-icon [icon]="icons.rename" />
+      <glz-icon [icon]="icons.menu" />
     </button>
+  }
+  <div class="heading">
+    <h1 class="title" data-testid="thread-title">
+      <button
+        type="button"
+        class="rename"
+        data-testid="thread-rename"
+        [glzTooltip]="copy.rename"
+        (click)="startRename()"
+      >
+        {{ title() }}
+      </button>
+    </h1>
+    @if (meta()) {
+      <p class="meta" data-testid="thread-meta">
+        @if (project()) {
+          <glz-icon class="folder" [icon]="icons.folder" />
+        }
+        <span class="where">{{ meta() }}</span>
+      </p>
+    }
   </div>
-  @if (narrow()) {
+  @if (phone()) {
     <button
-      appPageHeaderEnd
+      glzIconButton
+      class="touch"
+      data-testid="thread-tools"
+      [label]="phoneButton().label"
+      [attr.aria-pressed]="panelOpen()"
+      [attr.aria-keyshortcuts]="panelShortcut"
+      (click)="phoneTools()"
+    >
+      <glz-icon [icon]="phoneButton().icon" />
+    </button>
+  } @else if (changed()) {
+    <button
+      glzButton
+      size="sm"
+      pill
+      class="changes"
+      data-testid="thread-changes"
+      [attr.aria-pressed]="changesShown()"
+      (click)="toggleChanges()"
+    >
+      {{ copy.changes }}
+      <span class="count">{{ count() }}</span>
+    </button>
+  } @else if (toolsButton()) {
+    <button
       glzIconButton
       data-testid="thread-tools"
       [label]="copy.tools"
       [attr.aria-pressed]="panelOpen()"
-      [attr.aria-keyshortcuts]="shortcut"
+      [attr.aria-keyshortcuts]="panelShortcut"
       (click)="togglePanel()"
     >
       <glz-icon [icon]="icons.tools" />
     </button>
   }
-</app-page-header>
+</header>

@@ -1,34 +1,109 @@
 :host {
-  display: contents;
+  display: block;
+  flex: none;
 }
 
-.heading {
+// One row across the top, ruled off from the conversation: the title and the line about it,
+// then whatever opens the tools at the end.
+.bar {
   display: flex;
   align-items: center;
-  gap: var(--glz-space-2);
+  gap: var(--glz-space-3);
+  padding: var(--glz-inset-bar);
+  border-bottom: var(--glz-border-width) solid var(--glz-color-border);
+}
+
+// As tall as the button at the end, so every thread's bar is the same height.
+.heading {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-3);
   min-width: 0;
-  pointer-events: auto;
-}
-
-.space {
-  flex: none;
-  max-width: 40%;
-  overflow: hidden;
-  color: var(--glz-color-text-muted);
-  font-weight: var(--glz-weight-regular);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.space::after {
-  content: '/';
-  padding-inline-start: var(--glz-space-2);
+  min-height: var(--glz-control-height-sm);
 }
 
 .title {
   min-width: 0;
-  overflow: hidden;
+  max-width: 100%;
   font-size: var(--glz-text-lg);
+}
+
+// The title renames the thread: a plain button, its hover a quiet wash.
+.rename {
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--glz-radius-mark);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
   white-space: nowrap;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.rename:hover {
+  background: var(--glz-surface-hover);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.folder {
+  flex: none;
+}
+
+.where {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.changes {
+  --glz-button-bg: var(--glz-surface-card);
+  --glz-button-fg: var(--glz-color-text-secondary);
+
+  flex: none;
+}
+
+.count {
+  color: var(--glz-color-text-muted);
+  font-family: var(--glz-font-mono);
+  font-size: var(--glz-text-xs);
+}
+
+// A phone: the title and its line in the middle, one above the other, between the side bar's
+// button and the tools', each a finger's size.
+.phone .heading {
+  flex-flow: column nowrap;
+  gap: 0;
+  text-align: center;
+}
+
+.phone .meta {
+  justify-content: center;
+  font-size: var(--glz-text-xs);
+}
+
+.phone .folder {
+  display: none;
+}
+
+.touch {
+  flex: none;
+  width: var(--glz-control-height-touch);
+  min-height: var(--glz-control-height-touch);
+  border-radius: var(--glz-radius-strip);
 }

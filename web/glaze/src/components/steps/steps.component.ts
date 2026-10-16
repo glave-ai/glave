@@ -1,20 +1,45 @@
 import { ChangeDetectionStrategy, Component, computed, input, model } from '@angular/core';
-import { ChevronRight } from 'lucide';
+import { Ban, Check, ChevronRight, Hand, LoaderCircle, TriangleAlert } from 'lucide';
 
+import type { GlzIconData } from '../../lib/icons';
 import { testIds } from '../../lib/test-ids';
 import { GlzIconComponent } from '../icon/icon.component';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { summary: 'summary', steps: 'steps' } as const;
 
+/** Where a run of steps stands: done, failed, stopped, still going, or waiting for the person. */
+export type GlzRunStatus = 'done' | 'failed' | 'stopped' | 'running' | 'waiting';
+
+/** The words for each status, read beside its icon. */
+export type GlzRunStatusLabels = Readonly<Record<GlzRunStatus, string>>;
+
+const LABELS: GlzRunStatusLabels = {
+  done: 'Done',
+  failed: 'failed',
+  stopped: 'stopped',
+  running: 'working',
+  waiting: 'waiting',
+};
+
+const ICONS: Readonly<Record<GlzRunStatus, GlzIconData>> = {
+  done: Check,
+  failed: TriangleAlert,
+  stopped: Ban,
+  running: LoaderCircle,
+  waiting: Hand,
+};
+
 /**
- * Tool calls in a row, folded under one line that says what they came to ("Ran 4 steps"), as
- * Claude's and ChatGPT's apps fold them: opened, each call is its own `glz-receipt` line, with
- * its tool and what it acted on. A native `<details>`, so it is a disclosure: it opens by
- * click, Enter or Space, and screen readers say whether it is open.
+ * What a run of steps came to, as a receipt: one sunken line in monospace with its status (a
+ * check when done, which only screen readers read in words; the icon and the word otherwise),
+ * a few `facts` such as the time it took and its cost, and at the end how many `steps`
+ * ("4 steps ›"). The line folds the steps themselves (each a `glz-receipt`, or anything else
+ * they did): a native `<details>`, so it opens by click, Enter or Space, and screen readers say
+ * whether it is open.
  *
  * ```html
- * <glz-steps [summary]="'Ran 2 steps'">
+ * <glz-steps status="done" [facts]="['4m 02s', '$0.04']" steps="2 steps">
  *   <glz-receipt tool="bash" summary="cargo test" />
  *   <glz-receipt tool="edit" summary="src/parse.rs" />
  * </glz-steps>
@@ -26,18 +51,30 @@ const PARTS = { summary: 'summary', steps: 'steps' } as const;
   templateUrl: './steps.component.html',
   styleUrl: './steps.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[attr.data-testid]': 'testId()' },
+  host: {
+    '[attr.data-testid]': 'testId()',
+    '[class]': 'statusClass()',
+  },
 })
 export class GlzStepsComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
 
-  /** What the steps came to, in a few words: "Ran 4 steps", "Running 2 steps". */
-  readonly summary = input.required<string>();
+  readonly status = input<GlzRunStatus>('done');
+  /** What else to say about the run, in a few words each: the time it took, its cost. */
+  readonly facts = input<readonly string[]>([]);
+  /** How many steps, in words: "4 steps". */
+  readonly steps = input.required<string>();
+  readonly statusLabels = input<GlzRunStatusLabels>(LABELS);
   readonly open = model(false);
 
   protected readonly chevron = ChevronRight;
+  protected readonly icon = computed(() => ICONS[this.status()]);
+  protected readonly label = computed(() => this.statusLabels()[this.status()]);
+  /** A check says done on its own; any other status says itself in words too. */
+  protected readonly quiet = computed(() => this.status() === 'done');
+  protected readonly statusClass = computed(() => `status-${this.status()}`);
 
   protected toggled(event: Event): void {
     if (event.target instanceof HTMLDetailsElement) {

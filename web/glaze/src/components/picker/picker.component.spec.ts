@@ -30,6 +30,24 @@ class HostComponent {
   readonly value = signal<string | null>('anthropic/claude-haiku-5.5');
 }
 
+@Component({
+  imports: [GlzPickerComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `<glz-picker
+    testId="model"
+    label="Model"
+    quiet
+    [options]="options"
+    [(value)]="value"
+  />`,
+})
+class QuietComponent {
+  readonly options: readonly GlzMenuOption[] = [
+    { value: 'haiku', label: 'Anthropic · Claude Haiku 5.5', short: 'Claude Haiku 5.5' },
+  ];
+  readonly value = signal<string | null>('haiku');
+}
+
 function part(root: HTMLElement, name: string): HTMLElement {
   const found = root.querySelector<HTMLElement>(`[data-testid="model-${name}"]`);
   if (found === null) {
@@ -85,6 +103,19 @@ describe('GlzPickerComponent', () => {
     expect(root.querySelector(`[id="${active ?? ''}"]`)?.getAttribute('aria-selected')).toBe(
       'true',
     );
+    await expectAccessible(root);
+  });
+
+  it('as a quiet one, shows the short name on its button and the full one in the list', async () => {
+    const fixture = TestBed.createComponent(QuietComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('glz-picker')?.classList).toContain('glz-picker--quiet');
+    const button = part(root, 'trigger');
+    expect(button.textContent.replace(/\s+/gu, ' ').trim()).toBe('Model: Claude Haiku 5.5');
+    button.click();
+    await fixture.whenStable();
+    expect(labels(root)[0]).toBe('Anthropic · Claude Haiku 5.5');
     await expectAccessible(root);
   });
 

@@ -12,9 +12,9 @@ const COPY = {
 } as const;
 
 /**
- * The composer's model picker: the models this server runs, named `Company · Model`, showing
- * the one the next turn goes to (the person's pick, else the thread's choice, else the
- * default). Searched by name as the person types, so it holds a catalogue of hundreds: the
+ * The composer's model picker, quiet in its status line: the models this server runs, named
+ * `Company · Model` in its list, its button showing the one the next turn goes to by its own
+ * name (the person's pick, else the thread's choice, else the default). Searched by name as the person types, so it holds a catalogue of hundreds: the
  * default first, then the models they picked lately, then the rest. `value` is the person's
  * pick, `null` until they make one; the thread sends it with the next turn.
  */

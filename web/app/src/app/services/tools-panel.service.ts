@@ -16,6 +16,8 @@ export class ToolsPanelService extends PaneService<PanelState> {
   readonly tab = signal<ToolTab>(this.stored.tab);
   /** The tab's place among the tabs, for the tab list. */
   readonly tabIndex = computed(() => TOOL_TABS.indexOf(this.tab()));
+  /** Whether it is open on the thread's changes. */
+  readonly changesShown = computed(() => this.open() && this.tab() === 'changes');
 
   constructor() {
     super({
@@ -27,6 +29,22 @@ export class ToolsPanelService extends PaneService<PanelState> {
     effect(() => {
       this.keep({ open: this.open(), width: this.width(), tab: this.tab() });
     });
+  }
+
+  /** Opens it on the thread's changes, or closes it when it already shows them. */
+  toggleChanges(): void {
+    if (this.changesShown()) {
+      this.open.set(false);
+      return;
+    }
+    this.tab.set('changes');
+    this.open.set(true);
+  }
+
+  /** Opens it on the thread's changes. */
+  showChanges(): void {
+    this.tab.set('changes');
+    this.open.set(true);
   }
 
   /** Shows the tab at `index` of the tab list. */

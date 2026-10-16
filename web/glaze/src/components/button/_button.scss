@@ -72,4 +72,8 @@
   :host(.glz-button--lg) {
     min-height: var(--glz-control-height-lg);
   }
+
+  :host(.glz-button--pill) {
+    border-radius: var(--glz-radius-full);
+  }
 }

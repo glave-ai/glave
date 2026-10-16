@@ -1,10 +1,13 @@
-import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
+import { DOCUMENT, DestroyRef, Service, computed, inject, signal } from '@angular/core';
 import type { ApprovalMode, RawEvent, ThreadId, TurnStartParams } from '@glave/client';
 import type { GlzDecision } from '@glave/glaze';
 
-import { NO_DRAFT, applyUpdate, mergeEvents, threadItems, type Draft } from '../lib/conversation';
+import { NO_DRAFT, applyUpdate, mergeEvents, type Draft } from '../lib/conversation';
 import { changedFiles } from '../lib/files';
 import { chosenModel } from '../lib/models';
+import { placeOf } from '../lib/place';
+import { onApple } from '../lib/shortcuts';
+import { threadTurns } from '../lib/turns';
 import { SessionService } from './session.service';
 import { SpacesService } from './spaces.service';
 
@@ -25,8 +28,11 @@ export class ThreadService {
   private readonly deciding = signal(false);
   private controller: AbortController | null = null;
 
+  private readonly mac = onApple(inject(DOCUMENT));
+
   readonly thread = this.id.asReadonly();
-  readonly items = computed(() => threadItems(this.events()));
+  /** The thread's turns, each with its items, the files it changed, its time and cost. */
+  readonly turns = computed(() => threadTurns(this.events()));
   /** The files the thread changed with its own `write` and `edit` calls. */
   readonly files = computed(() => changedFiles(this.events()));
   readonly reply = this.draft.asReadonly();
@@ -36,6 +42,10 @@ export class ThreadService {
   readonly hasReply = computed(() => this.draft().text !== '' || this.draft().reasoning !== '');
   /** The model the thread chose for its turns, or `null` for the server's default. */
   readonly chosen = computed(() => chosenModel(this.events()));
+  /** Where the thread's tools act, in plain words, once it has a workspace. */
+  readonly place = computed(() =>
+    placeOf(this.events(), { local: this.session.local(), mac: this.mac }),
+  );
 
   constructor() {
     // Leaving the thread stops following its turn; the turn itself goes on in the server.

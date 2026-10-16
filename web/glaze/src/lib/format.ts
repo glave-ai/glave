@@ -28,23 +28,24 @@ export function formatTokens(tokens: number, locale?: string): string {
   }).format(tokens);
 }
 
-/** A duration in milliseconds, short: `850 ms`, `12 s`, `3 min 20 s`, `2 h 5 min`. */
+/**
+ * A duration in milliseconds, short, as a clock reads in a line of facts: `850ms`, `12s`,
+ * `4m 02s`, `2h 05m`.
+ */
 export function formatDuration(ms: number): string {
   if (ms < 1000) {
-    return `${String(Math.round(ms))} ms`;
+    return `${String(Math.round(ms))}ms`;
   }
   const seconds = Math.round(ms / 1000);
   if (seconds < 60) {
-    return `${String(seconds)} s`;
+    return `${String(seconds)}s`;
   }
+  const two = (n: number): string => String(n).padStart(2, '0');
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) {
-    const rest = seconds % 60;
-    return rest === 0 ? `${String(minutes)} min` : `${String(minutes)} min ${String(rest)} s`;
+    return `${String(minutes)}m ${two(seconds % 60)}s`;
   }
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest === 0 ? `${String(hours)} h` : `${String(hours)} h ${String(rest)} min`;
+  return `${String(Math.floor(minutes / 60))}h ${two(minutes % 60)}m`;
 }
 
 /** The initials of a name, at most two: `Ada Lovelace` is `AL`, `hope` is `H`. */

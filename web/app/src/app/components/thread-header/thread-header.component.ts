@@ -1,23 +1,33 @@
-import { ChangeDetectionStrategy, Component, inject, input, output } from '@angular/core';
-import { GlzBadgeComponent, GlzIconButtonComponent, GlzIconComponent } from '@glave/glaze';
-import { PanelRight, Pencil } from 'lucide';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
+import {
+  GlzButtonComponent,
+  GlzIconButtonComponent,
+  GlzIconComponent,
+  GlzTooltipDirective,
+} from '@glave/glaze';
+import { FileDiff, Folder, Menu, PanelRight } from 'lucide';
 
-import type { ThreadMark } from '../../lib/threads';
+import { NavService } from '../../services/nav.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
-import { PageHeaderComponent } from '../page-header/page-header.component';
 
 const COPY = {
+  menu: 'Show or hide the side bar',
   rename: 'Rename the thread',
+  changes: 'Changes',
   tools: 'Tools',
+  between: ' · ',
 } as const;
 
 /**
- * A thread's top bar, floating over its conversation: the space, the title, its mark and
- * rename; and, on narrow screens, where the tools panel is a sheet, the button that opens it.
+ * A thread's bar across its top, ruled off from the conversation: its title, which renames it
+ * when pressed; a quiet line with its project and where it runs, as far as the app knows; and
+ * at the end "Changes" with how many files the thread changed, which opens the tools panel on
+ * them. On a phone the title and that line sit in the middle, between the button that opens the
+ * side bar and one that opens the tools panel, each a finger's size.
  */
 @Component({
   selector: 'app-thread-header',
-  imports: [GlzBadgeComponent, GlzIconButtonComponent, GlzIconComponent, PageHeaderComponent],
+  imports: [GlzButtonComponent, GlzIconButtonComponent, GlzIconComponent, GlzTooltipDirective],
   templateUrl: './thread-header.component.html',
   styleUrl: './thread-header.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -25,25 +35,67 @@ const COPY = {
 export class ThreadHeaderComponent {
   /** The thread's title. */
   readonly title = input.required<string>();
-  /** The name of the space it is in, if known. */
-  readonly space = input<string | null>(null);
-  /** What the thread waits on or how it ended, if anything. */
-  readonly mark = input<ThreadMark | null>(null);
+  /** The name of the project it is in; `null` for a chat. */
+  readonly project = input<string | null>(null);
+  /** Where it runs, in plain words, if known. */
+  readonly place = input<string | null>(null);
+  /** How many files the thread changed. */
+  readonly changes = input(0);
   /** Emitted when the person asks to rename the thread. */
   readonly rename = output();
 
   protected readonly copy = COPY;
-  protected readonly icons = { rename: Pencil, tools: PanelRight };
+  protected readonly icons = { menu: Menu, folder: Folder, tools: PanelRight };
+  private readonly nav = inject(NavService);
   private readonly panel = inject(ToolsPanelService);
+  /** A phone: the side bar is a drawer, opened from this bar. */
+  protected readonly phone = this.nav.narrow;
+  protected readonly navOpen = this.nav.open;
+  protected readonly navShortcut = this.nav.ariaShortcut;
   protected readonly panelOpen = this.panel.open;
-  protected readonly narrow = this.panel.narrow;
-  protected readonly shortcut = this.panel.ariaShortcut;
+  protected readonly changesShown = this.panel.changesShown;
+  protected readonly panelShortcut = this.panel.ariaShortcut;
+  protected readonly changed = computed(() => this.changes() > 0);
+  protected readonly count = computed(() => String(this.changes()));
+  /** Beside a wide page with nothing changed, a button opens the tools only where no edge can. */
+  protected readonly toolsButton = computed(
+    () => !this.phone() && !this.changed() && this.panel.narrow(),
+  );
+  /** The line under the title: the project and where it runs, as far as they are known. */
+  protected readonly meta = computed(() =>
+    [this.project(), this.place()].filter((part) => part !== null).join(COPY.between),
+  );
+  private readonly files = computed(
+    () => `${String(this.changes())} ${this.changes() === 1 ? 'file' : 'files'}`,
+  );
+  /** On a phone, the button at the end: the changes when there are some, else the tools. */
+  protected readonly phoneButton = computed(() =>
+    this.changed()
+      ? { icon: FileDiff, label: `${COPY.changes}, ${this.files()}` }
+      : { icon: PanelRight, label: COPY.tools },
+  );
 
   protected startRename(): void {
     this.rename.emit();
   }
 
+  protected toggleNav(): void {
+    this.nav.toggle();
+  }
+
+  protected toggleChanges(): void {
+    this.panel.toggleChanges();
+  }
+
   protected togglePanel(): void {
     this.panel.toggle();
+  }
+
+  protected phoneTools(): void {
+    if (this.changed()) {
+      this.panel.toggleChanges();
+    } else {
+      this.panel.toggle();
+    }
   }
 }

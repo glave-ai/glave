@@ -41,9 +41,11 @@ interface ShownQuestion {
 }
 
 /**
- * Questions the model asks the person, answered in place: each with its choices (one, or
- * several when `multiple`) and room for their own words. `answer` carries one string per
- * question, in order. Once `answered` is set, the card shows the answers instead.
+ * Questions the model asks the person, as a card that needs them: a small label with a dot
+ * ("Needs you"), then each question in a plain sentence with its choices (one, or several when
+ * `multiple`) and room for their own words, then the answer button. `answer` carries one
+ * string per question, in order. Once `answered` is set, the card is quiet and shows the
+ * answers instead.
  *
  * ```html
  * <glz-question-card [questions]="asked()" [answered]="answers()" (answer)="reply($event)" />
@@ -57,8 +59,9 @@ interface ShownQuestion {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.data-testid]': 'testId()',
+    '[class.glz-question-card--answered]': 'isAnswered()',
     role: 'group',
-    '[attr.aria-labelledby]': 'headingId',
+    '[attr.aria-labelledby]': 'labelledBy()',
   },
 })
 export class GlzQuestionCardComponent {
@@ -71,13 +74,14 @@ export class GlzQuestionCardComponent {
   readonly answered = input<readonly string[] | null>(null);
   /** Whether the answers are being sent, so the button waits. */
   readonly busy = input(false, { transform: booleanAttribute });
-  readonly heading = input('A question for you');
+  /** The label over a card that waits. */
+  readonly label = input('Needs you');
   readonly ownWordsLabel = input('In your own words');
   readonly submitLabel = input('Answer');
   /** One answer for each question, in order. */
   readonly answer = output<readonly string[]>();
 
-  protected readonly headingId = injectId('glz-question');
+  protected readonly labelId = injectId('glz-question');
   private readonly idBase = injectId('glz-question-item');
   private readonly picks = signal<readonly (readonly string[])[]>([]);
   private readonly ownWords = signal<readonly string[]>([]);
@@ -110,6 +114,10 @@ export class GlzQuestionCardComponent {
     ),
   );
   protected readonly isAnswered = computed(() => this.answered() !== null);
+  /** Named by its label while it waits, by its first question once answered. */
+  protected readonly labelledBy = computed(() =>
+    this.isAnswered() ? (this.shown()[0]?.id ?? null) : this.labelId,
+  );
   protected readonly cannotSubmit = computed(
     () => this.busy() || this.answers().some((answer) => answer === ''),
   );

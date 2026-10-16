@@ -32,7 +32,7 @@ const COPY = {
   thread: 'A thread',
   you: 'You',
   replyAuthor: 'Reply',
-  steps: 'Ran 2 steps, 1 failed',
+  steps: '2 steps',
   ask: 'Make the tests pass and tell me what was wrong.',
   reasoning: 'The failure is in the date parser; the test expects UTC.',
   reply:
@@ -92,10 +92,12 @@ const RECEIPTS: readonly {
   },
 ];
 
+/** What the demo's steps came to besides their status: the time they took and their cost. */
+const FACTS: readonly string[] = ['12s', '$0.0042'];
+
 /** The demo's approval. */
 const APPROVAL = {
-  tool: 'bash',
-  summary: 'Run the whole test suite again',
+  summary: 'Run this command?',
   command: 'cargo test --workspace',
 } as const;
 
@@ -132,6 +134,7 @@ export class ShowcaseAiComponent {
   protected readonly models = MODELS;
   protected readonly questions = QUESTIONS;
   protected readonly receipts = RECEIPTS;
+  protected readonly facts = FACTS;
   /** The demo's steps start open, to show each call. */
   protected readonly stepsOpen = signal(true);
   protected readonly approval = APPROVAL;

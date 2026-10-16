@@ -102,7 +102,9 @@ test('a model is searched and picked by name, by keyboard alone', async ({ page 
   await page.keyboard.press('Enter');
   const trigger = byTestId(page, 'model-picker-trigger');
   await expect(trigger).toBeFocused();
-  await expect(trigger).toContainText('OpenAI · GPT-6 Luna');
+  // The quiet line names the model alone; the list names its company too.
+  await expect(trigger).toContainText('GPT-6 Luna');
+  await expect(trigger).not.toContainText('OpenAI');
   await tabTo(page, 'thread-composer-input', true);
   await page.keyboard.type('Go on');
   await page.keyboard.press('Enter');

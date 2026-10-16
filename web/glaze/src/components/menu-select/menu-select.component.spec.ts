@@ -44,6 +44,23 @@ class PlacesComponent {
   readonly value = signal<string | null>('me');
 }
 
+@Component({
+  imports: [GlzMenuSelectComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `<glz-menu-select
+    testId="mode"
+    label="Approvals"
+    quiet
+    [options]="options"
+    value="auto"
+  />`,
+})
+class QuietComponent {
+  readonly options: readonly GlzMenuOption[] = [
+    { value: 'auto', label: 'Auto', short: 'Auto', hint: 'Acts for you', icon: MessageCircle },
+  ];
+}
+
 function trigger(root: HTMLElement): HTMLButtonElement {
   const found = root.querySelector<HTMLButtonElement>('[data-testid="model-trigger"]');
   if (found === null) {
@@ -102,6 +119,17 @@ describe('GlzMenuSelectComponent', () => {
     items[1]?.click();
     await fixture.whenStable();
     expect(fixture.componentInstance.value()).toBe('p1');
+  });
+
+  it('as a quiet one, shows its icon and short word, small and muted', async () => {
+    const fixture = TestBed.createComponent(QuietComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('glz-menu-select')?.classList).toContain('glz-menu-select--quiet');
+    const button = root.querySelector<HTMLButtonElement>('[data-testid="mode-trigger"]');
+    expect(button?.textContent.replace(/\s+/gu, ' ').trim()).toBe('Approvals: Auto');
+    expect(button?.querySelectorAll('glz-icon')).toHaveLength(2);
+    await expectAccessible(root);
   });
 
   it('shows the placeholder while nothing is chosen', async () => {

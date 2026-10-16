@@ -1,45 +1,61 @@
-<textarea
-  #textarea
-  class="input"
-  rows="1"
-  [attr.data-testid]="ids().input"
-  [attr.aria-label]="label()"
-  [attr.aria-describedby]="hintId"
-  [placeholder]="placeholder()"
-  [disabled]="disabled()"
-  [value]="value()"
-  (input)="typed($event)"
-  (keydown)="keydown($event)"
-></textarea>
+<div class="box">
+  <button
+    glzIconButton
+    type="button"
+    class="options"
+    [attr.data-testid]="ids().options"
+    [attr.popovertarget]="statusId"
+    [label]="optionsLabel()"
+  >
+    <glz-icon [icon]="icons.options" />
+  </button>
+  <textarea
+    #textarea
+    class="input"
+    rows="1"
+    [attr.data-testid]="ids().input"
+    [attr.aria-label]="label()"
+    [attr.aria-describedby]="hintId"
+    [placeholder]="placeholder()"
+    [disabled]="disabled()"
+    [value]="value()"
+    (input)="typed($event)"
+    (keydown)="keydown($event)"
+  ></textarea>
+  <div class="start"><ng-content select="[glzComposerStart]" /></div>
+  @if (busy()) {
+    <button
+      glzIconButton
+      class="act"
+      variant="secondary"
+      [attr.data-testid]="ids().stop"
+      [label]="stopLabel()"
+      (click)="stopped()"
+    >
+      <glz-icon [icon]="icons.stop" />
+    </button>
+  } @else {
+    <button
+      glzIconButton
+      class="act"
+      variant="primary"
+      [attr.data-testid]="ids().send"
+      [label]="sendLabel()"
+      [disabled]="sendDisabled()"
+      (click)="submit()"
+    >
+      <glz-icon [icon]="icons.send" />
+    </button>
+  }
+</div>
 <p class="glz-visually-hidden" [id]="hintId">{{ hint() }}</p>
-<div class="bar">
-  <div class="start">
-    <ng-content select="[glzComposerStart]" />
-  </div>
-  <div class="end">
-    <ng-content select="[glzComposerEnd]" />
-    @if (busy()) {
-      <button
-        glzIconButton
-        variant="secondary"
-        [attr.data-testid]="ids().stop"
-        [label]="stopLabel()"
-        (click)="stopped()"
-      >
-        <glz-icon [icon]="stopIcon" />
-      </button>
-    } @else {
-      <button
-        glzIconButton
-        class="send"
-        variant="primary"
-        [attr.data-testid]="ids().send"
-        [label]="sendLabel()"
-        [disabled]="sendDisabled()"
-        (click)="submit()"
-      >
-        <glz-icon [icon]="sendIcon" />
-      </button>
-    }
-  </div>
+<div
+  class="status"
+  popover
+  role="group"
+  [id]="statusId"
+  [attr.data-testid]="ids().status"
+  [attr.aria-label]="optionsLabel()"
+>
+  <ng-content select="[glzComposerStatus]" />
 </div>

@@ -1,7 +1,11 @@
 <details class="details" [open]="open()" (toggle)="toggled($event)">
   <summary class="line" [attr.data-testid]="ids().summary">
-    <span class="what">{{ summary() }}</span>
-    <glz-icon class="chevron" [icon]="chevron" />
+    <glz-icon class="icon" [icon]="icon()" />
+    <span class="fact state" [class.glz-visually-hidden]="quiet()">{{ label() }}</span>
+    @for (fact of facts(); track $index) {
+      <span class="fact">{{ fact }}</span>
+    }
+    <span class="count">{{ steps() }}<glz-icon class="chevron" [icon]="chevron" /></span>
   </summary>
   <div class="steps" [attr.data-testid]="ids().steps"><ng-content /></div>
 </details>

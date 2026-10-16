@@ -10,6 +10,7 @@ import { GlzButtonComponent, buttonClasses } from './button.component';
   template: `
     <button glzButton variant="primary" data-testid="save" (click)="save()">Save</button>
     <a glzButton href="/help" size="sm" data-testid="help">Help</a>
+    <button glzButton size="sm" pill data-testid="changes">Changes</button>
   `,
 })
 class HostComponent {
@@ -29,6 +30,8 @@ describe('GlzButtonComponent', () => {
     save?.click();
     expect(fixture.componentInstance.saved()).toBe(1);
     expect(root.querySelector('[data-testid="help"]')?.classList).toContain('glz-button--sm');
+    expect(root.querySelector('[data-testid="help"]')?.classList).not.toContain('glz-button--pill');
+    expect(root.querySelector('[data-testid="changes"]')?.classList).toContain('glz-button--pill');
     await expectAccessible(root);
   });
 

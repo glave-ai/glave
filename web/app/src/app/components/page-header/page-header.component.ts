@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { GlzIconButtonComponent, GlzIconComponent, GlzTopBarComponent } from '@glave/glaze';
-import { PanelLeft } from 'lucide';
+import { Menu } from 'lucide';
 
 import { NavService } from '../../services/nav.service';
 
@@ -23,7 +23,7 @@ const COPY = {
 })
 export class PageHeaderComponent {
   protected readonly copy = COPY;
-  protected readonly icon = PanelLeft;
+  protected readonly icon = Menu;
   private readonly nav = inject(NavService);
   protected readonly open = this.nav.open;
   protected readonly narrow = this.nav.narrow;

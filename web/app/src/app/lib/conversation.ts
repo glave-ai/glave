@@ -1,19 +1,23 @@
 import type { RawEvent, Update } from '@glave/client';
 import type { GlzDecision, GlzQuestion, GlzReceiptStatus } from '@glave/glaze';
 
-/** A message in a thread, as the thread view shows it. */
-export interface MessageItem {
-  readonly kind: 'message';
+/** What every item of a thread has: its key, and the `seq` of the event that put it there. */
+interface Placed {
   readonly key: string;
+  readonly seq: number;
+}
+
+/** A message in a thread, as the thread view shows it. */
+export interface MessageItem extends Placed {
+  readonly kind: 'message';
   readonly from: 'person' | 'model';
   readonly text: string;
   readonly reasoning: string;
 }
 
 /** A tool call: what it did and what came of it. */
-export interface CallItem {
+export interface CallItem extends Placed {
   readonly kind: 'call';
-  readonly key: string;
   readonly tool: string;
   readonly summary: string;
   readonly status: GlzReceiptStatus;
@@ -21,9 +25,8 @@ export interface CallItem {
 }
 
 /** An action waiting for, or answered by, the person. */
-export interface ApprovalItem {
+export interface ApprovalItem extends Placed {
   readonly kind: 'approval';
-  readonly key: string;
   readonly approval: string;
   readonly tool: string;
   readonly summary: string;
@@ -31,9 +34,8 @@ export interface ApprovalItem {
 }
 
 /** Questions the model asked the person. */
-export interface QuestionItem {
+export interface QuestionItem extends Placed {
   readonly kind: 'question';
-  readonly key: string;
   readonly call: string;
   readonly questions: readonly GlzQuestion[];
   readonly answers: readonly string[] | null;
@@ -149,6 +151,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
         put({
           kind: 'message',
           key: `message-${String(event.seq)}`,
+          seq: event.seq,
           from: person ? 'person' : 'model',
           text: person ? promptOf(data['parts']) : parts.text,
           reasoning: parts.reasoning,
@@ -162,6 +165,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           put({
             kind: 'question',
             key: `call-${call}`,
+            seq: event.seq,
             call,
             questions: questionsOf(data['arguments']),
             answers: null,
@@ -170,6 +174,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           put({
             kind: 'call',
             key: `call-${call}`,
+            seq: event.seq,
             tool,
             summary: argumentsSummary(data['arguments']),
             status: 'running',
@@ -197,6 +202,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
         put({
           kind: 'approval',
           key: `approval-${approval}`,
+          seq: event.seq,
           approval,
           tool: text(data['tool']),
           summary: text(data['summary']),
