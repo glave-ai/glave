@@ -11,6 +11,7 @@ import { GlzNavItemComponent } from './nav-item.component';
     <a glzNavItem href="/t/1" current [icon]="icon"
       >Plan the launch <span glzNavItemEnd>running</span></a
     >
+    <button glzNavItem type="button"><span glzNavItemStart>A</span> Ada</button>
   `,
 })
 class HostComponent {
@@ -26,5 +27,13 @@ describe('GlzNavItemComponent', () => {
     expect(link?.querySelector('.text')?.textContent.trim()).toBe('Plan the launch');
     expect(link?.querySelector('.end')?.textContent).toBe('running');
     expect(link?.querySelector('svg')).not.toBeNull();
+  });
+
+  it('puts what leads it before its text', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const button = (fixture.nativeElement as HTMLElement).querySelector('button');
+    expect(button?.firstElementChild?.textContent).toBe('A');
+    expect(button?.querySelector('.text')?.textContent.trim()).toBe('Ada');
   });
 });

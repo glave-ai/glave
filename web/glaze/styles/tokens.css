@@ -101,8 +101,16 @@
   --glz-leading-tight: 1.25;
   --glz-leading-normal: 1.5;
   --glz-leading-prose: 1.65;
+  --glz-weight-light: 300;
   --glz-weight-regular: 400;
   --glz-weight-bold: 700;
+
+  /* glave's name, set in type at the top of the side nav. */
+  --glz-text-wordmark: 1.25rem; /* 20 */
+
+  /* Letters drawn a little closer: headings and the name, then the largest type. */
+  --glz-tracking-tight: -0.01em;
+  --glz-tracking-display: -0.015em;
 
   /* Space, phone to wide: the gaps parents put between their children. */
   --glz-space-half: 0.125rem; /* 2 */
@@ -140,6 +148,13 @@
     clamp(0.375rem, 0.2917rem + 0.3704vw, 0.625rem) clamp(0.375rem, 0.2917rem + 0.3704vw, 0.625rem)
     clamp(1rem, 0.9583rem + 0.1852vw, 1.125rem);
 
+  /*
+   * The composer that starts a thread, larger than a reply's: 16 → 18 above, 12 → 16 at the
+   * end, 12 → 14 below, and 18 → 22 before the text.
+   */
+  --glz-inset-composer-lg: clamp(1rem, 0.9583rem + 0.1852vw, 1.125rem) var(--glz-space-4)
+    clamp(0.75rem, 0.7083rem + 0.1852vw, 0.875rem) clamp(1.125rem, 1.0417rem + 0.3704vw, 1.375rem);
+
   /* Shape, fixed: one radius per kind of box. */
   --glz-radius-mark: 6px; /* inline code, ticks, tooltips */
   --glz-radius-row: 8px; /* nav items, options */
@@ -147,14 +162,22 @@
   --glz-radius-strip: 12px; /* strips, menus, code blocks */
   --glz-radius-card: 14px; /* cards and dialogs */
   --glz-radius-composer: 16px; /* the composer and message bubbles */
+  --glz-radius-composer-lg: 20px; /* the composer that starts a thread */
   --glz-radius-tail: 4px; /* a bubble's corner nearest the edge it sits at */
   --glz-radius-full: 999px;
+  --glz-dot-size: 0.4375rem; /* 7: a status dot */
   --glz-border-width: 1px;
 
   /* Elevation: a lift for what needs the person, and the shadow of what floats over the page. */
   --glz-elevation-0: none;
   --glz-elevation-1: 0 1px 2px light-dark(rgb(40 30 10 / 6%), rgb(0 0 0 / 40%));
   --glz-elevation-2: 0 10px 30px -22px light-dark(rgb(40 30 10 / 35%), transparent);
+
+  /* The composer that starts a thread, resting on the page. */
+  --glz-elevation-composer:
+    0 1px 2px light-dark(rgb(40 30 10 / 4%), transparent),
+    0 18px 40px -24px light-dark(rgb(40 30 10 / 18%), transparent),
+    0 24px 48px -28px light-dark(transparent, rgb(0 0 0 / 70%));
   --glz-elevation-3:
     0 1px 2px light-dark(rgb(40 30 10 / 6%), rgb(0 0 0 / 40%)),
     0 16px 40px -12px light-dark(rgb(40 30 10 / 22%), rgb(0 0 0 / 60%));
@@ -174,6 +197,7 @@
   --glz-top-bar-surface: var(--glz-surface-page);
   --glz-top-bar-border: var(--glz-border-width) solid var(--glz-color-border);
   --glz-content-width: 47.5rem;
+  --glz-composer-lg-width: 45rem;
 
   /* The room before the person's message bubbles, and their surface. */
   --glz-message-gap: 20%;

@@ -27,6 +27,7 @@ describe('ToolsPanelComponent', () => {
   it('shows the tasks and the changes in tabs, remembers the tab, and closes as a sheet', async () => {
     const fake = new FakeSession()
       .answer('thread/events', { events: EDITED })
+      .answer('schedule/list', { schedules: [] })
       .answer('tasks/list', { tasks: [task('t9', 'Nightly build')] });
     TestBed.configureTestingModule({
       providers: [

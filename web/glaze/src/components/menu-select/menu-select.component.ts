@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { Check, ChevronDown } from 'lucide';
 
+import type { GlzIconData } from '../../lib/icons';
 import type { GlzOption } from '../../lib/options';
 import { testIds } from '../../lib/test-ids';
 import { GlzIconComponent } from '../icon/icon.component';
@@ -17,10 +18,12 @@ import { GlzIconComponent } from '../icon/icon.component';
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { trigger: 'trigger', option: 'option' } as const;
 
-/** One choice in a menu select: a plain option, with a line about it. */
+/** One choice in a menu select: a plain option, with a line about it and an icon. */
 export interface GlzMenuOption extends GlzOption {
   /** A short line under the label, such as "Default". */
   readonly hint?: string;
+  /** An icon before the label, on the button as in the menu, such as a folder for a project. */
+  readonly icon?: GlzIconData;
 }
 
 /** An option as the menu shows it. */
@@ -29,6 +32,7 @@ interface ShownOption {
   readonly label: string;
   readonly hint: string;
   readonly hasHint: boolean;
+  readonly icon: GlzIconData | null;
   readonly checked: boolean;
 }
 
@@ -44,10 +48,13 @@ const POSITIONS: readonly ConnectedPosition[] = [
  * A compact choice among a few options: a quiet button that shows the current one and opens
  * a menu of the others, as a composer's model picker does. The CDK's menu with radio items
  * (`menuitemradio`), so arrow keys, typeahead, Escape and focus return work. The button is
- * named by `label` and the choice ("Model: Hope"). `value` is bound two ways.
+ * named by `label` and the choice ("Model: Hope"). `value` is bound two ways. An `outlined`
+ * one is a chip with a line round it, for a choice that sets where something goes rather than
+ * how.
  *
  * ```html
  * <glz-menu-select label="Model" [options]="models" [(value)]="model" />
+ * <glz-menu-select label="Where" outlined [options]="places" [(value)]="place" />
  * ```
  */
 @Component({
@@ -56,7 +63,10 @@ const POSITIONS: readonly ConnectedPosition[] = [
   templateUrl: './menu-select.component.html',
   styleUrl: './menu-select.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[attr.data-testid]': 'testId()' },
+  host: {
+    '[attr.data-testid]': 'testId()',
+    '[class.glz-menu-select--outlined]': 'outlined()',
+  },
 })
 export class GlzMenuSelectComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
@@ -71,6 +81,8 @@ export class GlzMenuSelectComponent {
   /** Shown on the button while nothing is chosen. */
   readonly placeholder = input('Choose');
   readonly disabled = input(false, { transform: booleanAttribute });
+  /** Whether the button is a chip with a line round it. */
+  readonly outlined = input(false, { transform: booleanAttribute });
 
   protected readonly positions = POSITIONS;
   /** What the button is for, before the choice, for screen readers: "Model: ". */
@@ -80,12 +92,14 @@ export class GlzMenuSelectComponent {
     this.options().find((option) => option.value === this.value()),
   );
   protected readonly shownLabel = computed(() => this.current()?.label ?? this.placeholder());
+  protected readonly shownIcon = computed(() => this.current()?.icon ?? null);
   protected readonly shown = computed<readonly ShownOption[]>(() =>
     this.options().map((option) => ({
       value: option.value,
       label: option.label,
       hint: option.hint ?? '',
       hasHint: (option.hint ?? '') !== '',
+      icon: option.icon ?? null,
       checked: option.value === this.value(),
     })),
   );

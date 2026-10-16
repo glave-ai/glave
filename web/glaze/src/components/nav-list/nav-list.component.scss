@@ -49,7 +49,7 @@
   text-overflow: ellipsis;
 }
 
-.chevron {
+.lead {
   flex: none;
 }
 
@@ -71,4 +71,47 @@
 
 .items[hidden] {
   display: none;
+}
+
+// A group inside a list, such as a project: its heading a row like the items (an icon, then its
+// name), its items' text indented to line up with that name (past glz-icon's 1.25em and the gap
+// after it), its actions shown while the pointer or focus is on the row, and always on touch.
+:host(.glz-nav-list--row) .header {
+  border-radius: var(--glz-radius-row);
+}
+
+:host(.glz-nav-list--row) .header:hover {
+  background: var(--glz-surface-hover);
+}
+
+:host(.glz-nav-list--row) .toggle {
+  gap: var(--glz-space-2);
+  padding: var(--glz-inset-row);
+  color: var(--glz-color-text-secondary);
+  font-size: inherit;
+  line-height: var(--glz-leading-tight);
+}
+
+:host(.glz-nav-list--row) .lead {
+  color: var(--glz-color-text-muted);
+}
+
+:host(.glz-nav-list--row) .actions {
+  padding-inline-end: var(--glz-space-1);
+  opacity: 0;
+}
+
+:host(.glz-nav-list--row) .header:hover .actions,
+:host(.glz-nav-list--row) .header:focus-within .actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  :host(.glz-nav-list--row) .actions {
+    opacity: 1;
+  }
+}
+
+:host(.glz-nav-list--row) .items {
+  --glz-nav-indent: calc(1.25em + var(--glz-space-2));
 }

@@ -36,6 +36,7 @@ function session(events: readonly unknown[]): FakeSession {
     .answer('thread/events', { events })
     .answer('model/list', { models: MODELS })
     .answer('server/discover', SERVER)
+    .answer('schedule/list', { schedules: [] })
     .answer('tasks/list', { tasks: [] })
     .answer('space/list', { spaces: [space('p1', 'glave')] })
     .answer('thread/list', { threads: [thread('thread-1', 'Tidy the repo')] });

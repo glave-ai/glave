@@ -1,0 +1,13 @@
+:host {
+  display: block;
+}
+
+.place,
+.empty {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+.empty {
+  padding: var(--glz-inset-row);
+}

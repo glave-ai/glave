@@ -1,6 +1,7 @@
 import type {
   ModelInfo,
   RawEvent,
+  ScheduleInfo,
   Space,
   TaskInfo,
   ThreadSummary,
@@ -80,6 +81,18 @@ export function task(threadId: string, title: string, overrides: Partial<TaskInf
     elapsed_ms: 125_000,
     status: 'running',
     ...overrides,
+  };
+}
+
+/** A schedule, with its next run or none (a one-off that has run). */
+export function schedule(id: string, next: string | null): ScheduleInfo {
+  return {
+    schedule: id,
+    prompt: 'Audit the dependencies',
+    when: { cron: '0 2 * * *' },
+    budget: 100_000,
+    created_at: '2026-10-11T10:00:00.000Z',
+    next,
   };
 }
 

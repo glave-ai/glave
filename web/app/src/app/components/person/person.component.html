@@ -1,10 +1,18 @@
-<div class="person" data-testid="person">
-  <span class="avatar" aria-hidden="true"><glz-avatar size="sm" [name]="copy.you" /></span>
-  <span class="who">
-    <span class="name">{{ copy.you }}</span>
-    <span class="how">{{ copy.signedIn }}</span>
-  </span>
-  <button glzIconButton data-testid="person-sign-out" [label]="copy.signOut" (click)="signOut()">
-    <glz-icon [icon]="signOutIcon" />
+<button glzNavItem data-testid="person" [glzPopoverTrigger]="mine">
+  <span glzNavItemStart class="avatar" aria-hidden="true"><glz-avatar [name]="copy.you" /></span>
+  {{ copy.you }}
+</button>
+<glz-popover #mine testId="person-menu">
+  <a
+    glzNavItem
+    data-testid="nav-settings"
+    [routerLink]="settingsLink"
+    [icon]="icons.settings"
+    (click)="followed()"
+  >
+    {{ copy.settings }}
+  </a>
+  <button glzNavItem data-testid="person-sign-out" [icon]="icons.signOut" (click)="signOut()">
+    {{ copy.signOut }}
   </button>
-</div>
+</glz-popover>

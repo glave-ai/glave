@@ -9,7 +9,7 @@
       [attr.aria-controls]="itemsId"
       (click)="toggle()"
     >
-      <glz-icon class="chevron" [icon]="chevron()" />
+      <glz-icon class="lead" [icon]="lead()" />
       <span class="text">{{ heading() }}</span>
     </button>
     <span class="actions"><ng-content select="[glzNavListActions]" /></span>

@@ -3,6 +3,7 @@ import { Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
+import { TOKEN_KEY } from '../../lib/token';
 import { SpacesService } from '../../services/spaces.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { MODELS, SERVER, space, thread } from '../../testing/fixtures';
@@ -29,6 +30,11 @@ function session(): FakeSession {
     .answer('server/discover', SERVER);
 }
 
+function where(root: HTMLElement): string {
+  const trigger = root.querySelector('[data-testid="home-where-trigger"]');
+  return trigger?.textContent.replace(/\s+/gu, ' ').trim() ?? '';
+}
+
 async function render(fake: FakeSession, spaceId?: string): Promise<HTMLElement> {
   TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
   await TestBed.inject(SpacesService).refresh();
@@ -51,11 +57,17 @@ describe('HomeComponent', () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake);
+    expect(root.querySelector('h1')?.textContent).toBe('What should we work on?');
+    expect(root.querySelector('[data-testid="home-composer"]')?.classList).toContain(
+      'glz-composer--lg',
+    );
     expect(root.querySelector('[data-testid="approval-mode"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="model-picker-trigger"]')?.textContent).toContain(
       'GPT-6 Luna',
     );
-    expect(root.querySelector('[data-testid="home-space"]')).toBeNull();
+    expect(where(root)).toBe('Where: A chat');
+    // Nothing to attach yet.
+    expect(root.querySelector('[aria-label="Attach files"]')).toBeNull();
     await expectAccessible(root);
     await send(root, 'Plan the launch');
     await new Promise((resolve) => setTimeout(resolve));
@@ -68,7 +80,7 @@ describe('HomeComponent', () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake, 'p2');
-    expect(root.querySelector('[data-testid="home-space"]')?.textContent).toBe('In Garden');
+    expect(where(root)).toBe('Where: Garden');
     root.querySelector<HTMLButtonElement>('[data-testid="model-picker-trigger"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
     document.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]')[1]?.click();
@@ -83,9 +95,42 @@ describe('HomeComponent', () => {
     navigate.mockRestore();
   });
 
-  it('names no space for a plain chat, in the personal space', async () => {
-    const root = await render(session(), 'me');
-    expect(root.querySelector('[data-testid="home-space"]')).toBeNull();
+  it('starts where the person picks: a chat, or a project', async () => {
+    const fake = session();
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    const root = await render(fake, 'me');
+    expect(where(root)).toBe('Where: A chat');
+    root.querySelector<HTMLButtonElement>('[data-testid="home-where-trigger"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    const places = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid="home-where-option"]'),
+    );
+    expect(places.map((place) => place.textContent.trim())).toEqual(['A chat', 'glave', 'Garden']);
+    places[1]?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(where(root)).toBe('Where: glave');
+    await send(root, 'Fix the flaky test');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(fake.paramsOf('thread/start')).toEqual([{ space: 'p1' }]);
+    navigate.mockRestore();
+  });
+
+  it('says what stays private only when glave runs on this computer', async () => {
+    const root = await render(session());
+    expect(root.querySelector('[data-testid="home-private"]')?.textContent.trim()).toBe(
+      'Private on this computer. Only the model you pick sees what you send.',
+    );
+    TestBed.resetTestingModule();
+    const fake = session();
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), ...provideFakeSession(fake)],
+    });
+    sessionStorage.setItem(TOKEN_KEY, '"an-access-token"');
+    const fixture = TestBed.createComponent(HomeComponent);
+    await fixture.whenStable();
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="home-private"]'),
+    ).toBeNull();
   });
 
   it('keeps the draft and says why when the thread cannot start', async () => {

@@ -5,8 +5,10 @@
   display: inline-flex;
   align-items: center;
   gap: var(--glz-space-1);
-  min-width: 1.5rem;
-  padding: 0.0625rem var(--glz-space-2);
+
+  // At least as wide as it is tall, so a single digit sits in a circle.
+  min-width: calc(1lh + 2 * var(--glz-space-half));
+  padding: var(--glz-space-half) var(--glz-space-2);
   border-radius: var(--glz-radius-full);
   background: var(--glz-badge-bg);
   color: var(--glz-badge-fg);
@@ -35,4 +37,21 @@
 :host(.glz-tone-danger) {
   --glz-badge-bg: var(--glz-color-danger-soft);
   --glz-badge-fg: var(--glz-color-text);
+}
+
+// A dot in the tone's colour; its text is read, not shown.
+:host(.glz-badge--dot) {
+  width: var(--glz-dot-size);
+  min-width: 0;
+  height: var(--glz-dot-size);
+  padding: 0;
+}
+
+// The text alone, muted: a status that should not draw the eye.
+:host(.glz-badge--plain) {
+  min-width: 0;
+  padding: 0;
+  background: none;
+  color: var(--glz-color-text-muted);
+  font-weight: var(--glz-weight-regular);
 }

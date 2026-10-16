@@ -20,13 +20,17 @@ import { testIds } from '../../lib/test-ids';
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = { input: 'input', stop: 'stop', send: 'send' } as const;
 
+/** A composer's size: a reply's (`md`), or the larger one that starts a thread (`lg`). */
+export type GlzComposerSize = 'md' | 'lg';
+
 /**
  * Where the person writes to the model. The text area grows with what they write (CSS
  * `field-sizing`, up to a limit); Enter sends and Shift+Enter starts a new line (Cmd or Ctrl
  * with Enter sends too), and `send` emits the draft, trimmed. While the model is answering
  * (`busy`), Send becomes Stop, and Escape stops it; the person can go on writing their next
  * message. Slots on the toolbar hold what shapes the turn (`[glzComposerStart]`) and a model
- * picker (`[glzComposerEnd]`).
+ * picker (`[glzComposerEnd]`). A `lg` composer starts a thread: two lines to write in, in
+ * larger type, more room round them, rounder corners, and a shadow under it.
  *
  * ```html
  * <glz-composer [(value)]="draft" [busy]="running()" (send)="start($event)" (stop)="cancel()">
@@ -40,7 +44,10 @@ const PARTS = { input: 'input', stop: 'stop', send: 'send' } as const;
   templateUrl: './composer.component.html',
   styleUrl: './composer.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[attr.data-testid]': 'testId()' },
+  host: {
+    '[attr.data-testid]': 'testId()',
+    '[class.glz-composer--lg]': 'large()',
+  },
 })
 export class GlzComposerComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
@@ -52,6 +59,7 @@ export class GlzComposerComponent {
   /** Whether the model is answering, so Stop shows instead of Send. */
   readonly busy = input(false, { transform: booleanAttribute });
   readonly disabled = input(false, { transform: booleanAttribute });
+  readonly size = input<GlzComposerSize>('md');
   readonly placeholder = input('Write a message');
   readonly label = input('Message');
   readonly sendLabel = input('Send');
@@ -61,6 +69,7 @@ export class GlzComposerComponent {
   readonly stop = output();
 
   protected readonly hintId = injectId('glz-composer-hint');
+  protected readonly large = computed(() => this.size() === 'lg');
   protected readonly sendIcon = ArrowUp;
   protected readonly stopIcon = Square;
   private readonly textarea = viewChild.required<ElementRef<HTMLTextAreaElement>>('textarea');

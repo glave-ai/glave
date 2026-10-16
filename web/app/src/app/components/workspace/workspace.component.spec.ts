@@ -12,7 +12,9 @@ describe('WorkspaceComponent', () => {
   it('reads the spaces and frames the page with the side nav', async () => {
     const fake = new FakeSession()
       .answer('space/list', { spaces: [space('p1', 'glave')] })
-      .answer('thread/list', { threads: [] });
+      .answer('thread/list', { threads: [] })
+      .answer('tasks/list', { tasks: [] })
+      .answer('schedule/list', { schedules: [] });
     TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
     const fixture = TestBed.createComponent(WorkspaceComponent);
     await fixture.whenStable();
@@ -20,7 +22,7 @@ describe('WorkspaceComponent', () => {
     expect(fake.paramsOf('space/list')).toHaveLength(1);
     expect(root.querySelector('[data-testid="workspace-nav"] app-side-nav')).not.toBeNull();
     expect(root.querySelector('main#content')).not.toBeNull();
-    expect(root.querySelector('[data-testid="nav-tasks"]')?.textContent.trim()).toBe('Tasks');
+    expect(root.querySelector('[data-testid="needs-you"]')).not.toBeNull();
     await expectAccessible(root);
     TestBed.inject(NavService).toggle();
     await fixture.whenStable();
@@ -28,10 +30,10 @@ describe('WorkspaceComponent', () => {
   });
 
   it('goes to the sign-in page when the server refuses the sign-in', async () => {
-    const fake = new FakeSession().answer(
-      'space/list',
-      new ApiError({ code: ErrorCode.NO_SIGN_IN, message: 'expired' }),
-    );
+    const fake = new FakeSession()
+      .answer('space/list', new ApiError({ code: ErrorCode.NO_SIGN_IN, message: 'expired' }))
+      .answer('tasks/list', { tasks: [] })
+      .answer('schedule/list', { schedules: [] });
     TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
     const fixture = TestBed.createComponent(WorkspaceComponent);

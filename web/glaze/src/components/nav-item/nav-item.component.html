@@ -1,5 +1,6 @@
 @if (icon(); as drawing) {
   <glz-icon class="icon" [icon]="drawing" />
 }
+<ng-content select="[glzNavItemStart]" />
 <span class="text"><ng-content /></span>
 <span class="end"><ng-content select="[glzNavItemEnd]" /></span>

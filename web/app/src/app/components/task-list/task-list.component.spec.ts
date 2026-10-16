@@ -19,7 +19,7 @@ function make(fake: FakeSession): ReturnType<typeof TestBed.createComponent<Task
 
 describe('TaskListComponent', () => {
   it('lists tasks with their cost and time, and stops a running one', async () => {
-    const fake = new FakeSession().answer('tasks/list', {
+    const fake = new FakeSession().answer('schedule/list', { schedules: [] }).answer('tasks/list', {
       tasks: [
         task('t1', 'Nightly build'),
         task('t2', 'Docs', { status: 'finished', outcome: 'completed', cost: null }),
@@ -45,7 +45,9 @@ describe('TaskListComponent', () => {
   });
 
   it('says when there are none, and what went wrong', async () => {
-    const fake = new FakeSession().answer('tasks/list', { tasks: [] });
+    const fake = new FakeSession()
+      .answer('schedule/list', { schedules: [] })
+      .answer('tasks/list', { tasks: [] });
     const fixture = make(fake);
     await settle();
     await fixture.whenStable();
@@ -60,7 +62,9 @@ describe('TaskListComponent', () => {
   it('reads the list again while it shows, and stops when it goes', async () => {
     vi.useFakeTimers();
     try {
-      const fake = new FakeSession().answer('tasks/list', { tasks: [] });
+      const fake = new FakeSession()
+        .answer('schedule/list', { schedules: [] })
+        .answer('tasks/list', { tasks: [] });
       const fixture = make(fake);
       await vi.advanceTimersByTimeAsync(TASKS_REFRESH_MS);
       expect(fake.paramsOf('tasks/list')).toHaveLength(2);

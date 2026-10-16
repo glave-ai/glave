@@ -5,6 +5,17 @@ import { type Store, readStored, writeStored } from './storage';
 /** Where the sign-in token is kept for this tab: never in a URL, a cookie or a log. */
 export const TOKEN_KEY = 'glave-token';
 
+/**
+ * How a server's local token starts (`specs/session.md`, "Signing in"). The server takes it
+ * only from this computer, so a session signed in with one is with a glave on this computer.
+ */
+const LOCAL_PREFIX = 'glave_local_';
+
+/** Whether `token` is a server's local token, so the server runs on this computer. */
+export function isLocalToken(token: string): boolean {
+  return token.startsWith(LOCAL_PREFIX);
+}
+
 /** What reading the token needs from the browser. */
 interface TokenPlace {
   readonly location: Pick<Location, 'hash' | 'pathname' | 'search'>;

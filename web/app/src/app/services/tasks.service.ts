@@ -8,9 +8,10 @@ import { SessionService } from './session.service';
 export const TASKS_REFRESH_MS = 5_000;
 
 /**
- * The tasks of the server's own space: running here first, then elsewhere, then finished.
- * The one source for the Tasks page and the thread's tools panel; while either shows them,
- * they are read again every few seconds, so cost and time stay current.
+ * The tasks of the server's own space: running here first, then elsewhere, then finished; and
+ * whether a schedule will start more. The one source for the Tasks page, the thread's tools
+ * panel and the side nav's Tasks row; while any of them shows, they are read again every few
+ * seconds, so cost and time stay current.
  */
 @Service()
 export class TasksService {
@@ -21,11 +22,17 @@ export class TasksService {
   private readonly list = signal<readonly TaskInfo[]>([]);
   private readonly failed = signal<string | null>(null);
   private readonly read = signal(false);
+  /** How many schedules have a run still to come. */
+  private readonly upcoming = signal(0);
 
   readonly tasks = this.list.asReadonly();
   readonly error = this.failed.asReadonly();
   readonly loaded = this.read.asReadonly();
   readonly running = computed(() => this.list().filter((task) => task.status === 'running').length);
+  /** How many tasks are still going, here or on another server. */
+  readonly going = computed(() => this.list().filter((task) => task.status !== 'finished').length);
+  /** Whether tasks mean something now: one is going, or a schedule will start one. */
+  readonly live = computed(() => this.going() > 0 || this.upcoming() > 0);
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
@@ -61,8 +68,12 @@ export class TasksService {
 
   async refresh(): Promise<void> {
     try {
-      const { tasks } = await this.session.call('tasks/list', { limit: 50 });
+      const [{ tasks }, { schedules }] = await Promise.all([
+        this.session.call('tasks/list', { limit: 50 }),
+        this.session.call('schedule/list', {}),
+      ]);
       this.list.set(tasks);
+      this.upcoming.set(schedules.filter((schedule) => (schedule.next ?? null) !== null).length);
       this.failed.set(null);
     } catch (error: unknown) {
       this.failed.set(error instanceof Error ? error.message : String(error));

@@ -6,6 +6,9 @@
   [cdkMenuTriggerFor]="menu"
   [cdkMenuPosition]="positions"
 >
+  @if (shownIcon(); as icon) {
+    <glz-icon [icon]="icon" />
+  }
   <span class="glz-visually-hidden">{{ prefix() }}</span>
   <span class="text">{{ shownLabel() }}</span>
   <glz-icon class="chevron" [icon]="icons.open" />
@@ -27,6 +30,9 @@
               <glz-icon [icon]="icons.check" />
             }
           </span>
+          @if (option.icon; as icon) {
+            <glz-icon class="icon" [icon]="icon" />
+          }
           <span class="name">
             <span class="label">{{ option.label }}</span>
             @if (option.hasHint) {

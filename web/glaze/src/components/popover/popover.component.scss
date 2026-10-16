@@ -1,0 +1,12 @@
+@use '../../styles/menu';
+
+// Closed, the browser hides it; open, it lays its items out in a column.
+:host {
+  @include menu.panel;
+}
+
+:host(:popover-open) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-half);
+}

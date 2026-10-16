@@ -1,44 +1,58 @@
 <nav class="lists" [attr.aria-label]="copy.threads">
-  @for (group of groups(); track group.id) {
-    <glz-nav-list
-      testId="nav-space"
-      collapsible
-      [heading]="group.name"
-      [expanded]="group.expanded"
-      (expandedChange)="setExpanded(group.id, $event)"
-    >
-      <a
-        glzNavListActions
-        glzIconButton
-        size="sm"
-        data-testid="nav-space-new"
-        [label]="group.newLabel"
-        [routerLink]="newLink"
-        [queryParams]="group.newQuery"
-        (click)="followed()"
-      >
-        <glz-icon [icon]="addIcon" />
-      </a>
-      @for (thread of group.threads; track thread.id) {
-        <a
-          glzNavItem
-          data-testid="nav-thread"
-          [routerLink]="thread.link"
-          [current]="thread.current"
-          (click)="followed()"
-        >
-          {{ thread.title }}
-          @if (thread.mark; as mark) {
-            <glz-badge glzNavItemEnd [tone]="mark.tone">{{ mark.text }}</glz-badge>
-          }
-        </a>
-      } @empty {
-        <p class="empty">{{ copy.empty }}</p>
+  @if (hasChats()) {
+    <glz-nav-list testId="nav-chats" [heading]="copy.chats">
+      @for (thread of chats(); track thread.id) {
+        <ng-container *ngTemplateOutlet="line; context: { $implicit: thread }" />
       }
     </glz-nav-list>
-  } @empty {
-    @if (searching()) {
-      <p class="empty" data-testid="nav-no-match">{{ copy.noMatch }}</p>
-    }
+  }
+  @if (hasProjects()) {
+    <glz-nav-list testId="nav-projects" [heading]="copy.projects">
+      @for (project of projects(); track project.id) {
+        <glz-nav-list
+          testId="nav-space"
+          collapsible
+          [icon]="icons.project"
+          [heading]="project.name"
+          [expanded]="project.expanded"
+          (expandedChange)="setExpanded(project.id, $event)"
+        >
+          <a
+            glzNavListActions
+            glzIconButton
+            size="sm"
+            data-testid="nav-space-new"
+            [label]="project.newLabel"
+            [routerLink]="newLink"
+            [queryParams]="project.newQuery"
+            (click)="followed()"
+          >
+            <glz-icon [icon]="icons.add" />
+          </a>
+          @for (thread of project.threads; track thread.id) {
+            <ng-container *ngTemplateOutlet="line; context: { $implicit: thread }" />
+          }
+        </glz-nav-list>
+      }
+    </glz-nav-list>
+  }
+  @if (noMatch()) {
+    <p class="empty" data-testid="nav-no-match">{{ copy.noMatch }}</p>
   }
 </nav>
+<ng-template #line let-thread>
+  <a
+    glzNavItem
+    data-testid="nav-thread"
+    [routerLink]="thread.link"
+    [current]="thread.current"
+    (click)="followed()"
+  >
+    {{ thread.title }}
+    @if (thread.mark; as mark) {
+      <glz-badge glzNavItemEnd [tone]="mark.tone" [variant]="mark.variant">{{
+        mark.text
+      }}</glz-badge>
+    }
+  </a>
+</ng-template>
