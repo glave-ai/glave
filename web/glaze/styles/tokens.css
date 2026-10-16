@@ -7,7 +7,7 @@
  * by `color-scheme`: the system's preference unless the page sets data-theme="light" or
  * data-theme="dark" on <html>. Glaze itself keeps no theme state.
  *
- * The look is monochrome: warm greys, ink on paper in light and paper on ink in dark. One accent
+ * The look is monochrome: neutral greys, ink on paper in light and paper on ink in dark. One accent
  * colour, ink by default, is the only colour a theme sets; everything on or around it follows.
  *
  * Space and type are fluid: each step grows smoothly from a phone (360px wide) to a wide screen
@@ -41,9 +41,9 @@
   --glz-color-text-disabled: light-dark(#a3a5a9, #5d6066);
 
   /* Lines: a box's border, a stronger one for what needs the person, and rules inside a box. */
-  --glz-color-border: light-dark(#e2e0da, #2a2c2f);
-  --glz-color-border-strong: light-dark(#cfccc4, #3a3c40);
-  --glz-color-divider: light-dark(#efede8, #232528);
+  --glz-color-border: light-dark(#e4e4e4, #2a2c2f);
+  --glz-color-border-strong: light-dark(#d3d3d3, #3a3c40);
+  --glz-color-divider: light-dark(#f0f0f0, #232528);
 
   /* Focus: its own quiet blue, never the accent, shown on :focus-visible only. */
   --glz-color-focus: light-dark(#2f6fdb, #8fb3ff);
@@ -70,17 +70,19 @@
   );
 
   /* Surfaces: the page, the side panes on it, and the boxes that sit on either. */
-  --glz-surface-page: light-dark(#f6f5f2, #121314);
-  --glz-surface-sidebar: light-dark(#efeee9, #161718);
-  --glz-surface-sunken: light-dark(#efede8, #151618);
+  --glz-surface-page: light-dark(#fafafa, #121314);
+  --glz-surface-sidebar: light-dark(#f3f3f3, #161718);
+
+  /* Sunken boxes (a turn's receipt, code) lift off the dark page enough to read as boxes. */
+  --glz-surface-sunken: light-dark(#f2f2f2, #1e1f22);
   --glz-surface-card: light-dark(#fff, #1a1b1d);
   --glz-surface-raised: light-dark(#fff, #1f2123);
   --glz-surface-overlay: light-dark(#fff, #222427);
-  --glz-surface-bubble: light-dark(#ebe9e3, #222427);
-  --glz-surface-selected: light-dark(#e4e2dc, #222427);
+  --glz-surface-bubble: light-dark(#efefef, #222427);
+  --glz-surface-selected: light-dark(#e9e9e9, #222427);
   --glz-surface-hover: light-dark(rgb(27 28 29 / 5%), rgb(236 236 236 / 6%));
   --glz-surface-inverse: light-dark(#1b1c1d, #ececec);
-  --glz-color-on-inverse: light-dark(#f6f5f2, #121314);
+  --glz-color-on-inverse: light-dark(#fafafa, #121314);
 
   /* Type: Atkinson Hyperlegible Next for text, its Mono for code. */
   --glz-font-sans: 'Atkinson Hyperlegible Next', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -136,24 +138,38 @@
   --glz-inset-dialog: var(--glz-space-5);
   --glz-inset-pane-block: clamp(1rem, 0.9167rem + 0.3704vw, 1.25rem); /* side panes: 16 → 20 */
   --glz-inset-pane-inline: var(--glz-space-4);
+
+  /* A page's own bar, across its top: 10 → 14 above and below, 8 → 32 at the sides. */
+  --glz-inset-bar: clamp(0.625rem, 0.5417rem + 0.3704vw, 0.875rem)
+    clamp(0.5rem, 0rem + 2.2222vw, 2rem);
   --glz-inset-page-block: var(--glz-space-6);
   --glz-inset-page-inline: clamp(1rem, 0.6667rem + 1.4815vw, 2rem); /* 16 → 32 */
 
   /* Cards: 16 → 18 above and below, 16 → 20 at the sides. */
-  --glz-inset-card: clamp(1rem, 0.9583rem + 0.1852vw, 1.125rem)
-    clamp(1rem, 0.9167rem + 0.3704vw, 1.25rem);
+  --glz-inset-card-inline: clamp(1rem, 0.9167rem + 0.3704vw, 1.25rem);
+  --glz-inset-card: clamp(1rem, 0.9583rem + 0.1852vw, 1.125rem) var(--glz-inset-card-inline);
 
-  /* The composer: 6 → 10 round, and 16 → 18 before the text. */
-  --glz-inset-composer: clamp(0.375rem, 0.2917rem + 0.3704vw, 0.625rem)
-    clamp(0.375rem, 0.2917rem + 0.3704vw, 0.625rem) clamp(0.375rem, 0.2917rem + 0.3704vw, 0.625rem)
-    clamp(1rem, 0.9583rem + 0.1852vw, 1.125rem);
+  /* A card that lists rows: its head (12 → 14 above and below) and each row (9 → 10). */
+  --glz-inset-card-head: clamp(0.75rem, 0.7083rem + 0.1852vw, 0.875rem) var(--glz-inset-card-inline);
+  --glz-inset-card-row: clamp(0.5625rem, 0.5417rem + 0.0926vw, 0.625rem)
+    var(--glz-inset-card-inline);
+
+  /*
+   * The composer: 6 → 10 round, and 16 → 18 before the text. On a phone, where a button comes
+   * before the text, the same all round.
+   */
+  --glz-inset-composer-round: clamp(0.375rem, 0.2917rem + 0.3704vw, 0.625rem);
+  --glz-inset-composer-start: clamp(1rem, 0.9583rem + 0.1852vw, 1.125rem);
+  --glz-inset-composer: var(--glz-inset-composer-round) var(--glz-inset-composer-round)
+    var(--glz-inset-composer-round) var(--glz-inset-composer-start);
 
   /*
    * The composer that starts a thread, larger than a reply's: 16 → 18 above, 12 → 16 at the
    * end, 12 → 14 below, and 18 → 22 before the text.
    */
+  --glz-inset-composer-lg-start: clamp(1.125rem, 1.0417rem + 0.3704vw, 1.375rem);
   --glz-inset-composer-lg: clamp(1rem, 0.9583rem + 0.1852vw, 1.125rem) var(--glz-space-4)
-    clamp(0.75rem, 0.7083rem + 0.1852vw, 0.875rem) clamp(1.125rem, 1.0417rem + 0.3704vw, 1.375rem);
+    clamp(0.75rem, 0.7083rem + 0.1852vw, 0.875rem) var(--glz-inset-composer-lg-start);
 
   /* Shape, fixed: one radius per kind of box. */
   --glz-radius-mark: 6px; /* inline code, ticks, tooltips */
@@ -163,29 +179,30 @@
   --glz-radius-card: 14px; /* cards and dialogs */
   --glz-radius-composer: 16px; /* the composer and message bubbles */
   --glz-radius-composer-lg: 20px; /* the composer that starts a thread */
-  --glz-radius-tail: 4px; /* a bubble's corner nearest the edge it sits at */
   --glz-radius-full: 999px;
   --glz-dot-size: 0.4375rem; /* 7: a status dot */
   --glz-border-width: 1px;
 
   /* Elevation: a lift for what needs the person, and the shadow of what floats over the page. */
   --glz-elevation-0: none;
-  --glz-elevation-1: 0 1px 2px light-dark(rgb(40 30 10 / 6%), rgb(0 0 0 / 40%));
-  --glz-elevation-2: 0 10px 30px -22px light-dark(rgb(40 30 10 / 35%), transparent);
+  --glz-elevation-1: 0 1px 2px light-dark(rgb(27 28 29 / 6%), rgb(0 0 0 / 40%));
+  --glz-elevation-2: 0 10px 30px -22px light-dark(rgb(27 28 29 / 35%), transparent);
 
   /* The composer that starts a thread, resting on the page. */
   --glz-elevation-composer:
-    0 1px 2px light-dark(rgb(40 30 10 / 4%), transparent),
-    0 18px 40px -24px light-dark(rgb(40 30 10 / 18%), transparent),
+    0 1px 2px light-dark(rgb(27 28 29 / 4%), transparent),
+    0 18px 40px -24px light-dark(rgb(27 28 29 / 18%), transparent),
     0 24px 48px -28px light-dark(transparent, rgb(0 0 0 / 70%));
   --glz-elevation-3:
-    0 1px 2px light-dark(rgb(40 30 10 / 6%), rgb(0 0 0 / 40%)),
-    0 16px 40px -12px light-dark(rgb(40 30 10 / 22%), rgb(0 0 0 / 60%));
+    0 1px 2px light-dark(rgb(27 28 29 / 6%), rgb(0 0 0 / 40%)),
+    0 16px 40px -12px light-dark(rgb(27 28 29 / 22%), rgb(0 0 0 / 60%));
 
   /* Controls. */
   --glz-control-height-sm: 2rem;
   --glz-control-height-md: 2.5rem;
   --glz-control-height-lg: 3rem;
+  --glz-control-height-touch: 2.75rem; /* 44: the least a finger needs, on a phone */
+  --glz-composer-send-size: 2.25rem; /* 36: a reply composer's send, beside one line */
   --glz-focus-ring: 0 0 0 2px var(--glz-surface-page), 0 0 0 4px var(--glz-color-focus);
 
   /* Layout. */

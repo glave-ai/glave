@@ -1,7 +1,9 @@
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
+import { of } from 'rxjs';
 
 import { TOKEN_KEY } from '../../lib/token';
 import { SpacesService } from '../../services/spaces.service';
@@ -35,8 +37,15 @@ function where(root: HTMLElement): string {
   return trigger?.textContent.replace(/\s+/gu, ' ').trim() ?? '';
 }
 
-async function render(fake: FakeSession, spaceId?: string): Promise<HTMLElement> {
-  TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
+async function render(fake: FakeSession, spaceId?: string, narrow = false): Promise<HTMLElement> {
+  const breakpoints = { observe: () => of({ matches: narrow, breakpoints: {} }) };
+  TestBed.configureTestingModule({
+    providers: [
+      provideRouter([]),
+      ...provideFakeSession(fake),
+      { provide: BreakpointObserver, useValue: breakpoints },
+    ],
+  });
   await TestBed.inject(SpacesService).refresh();
   const fixture = TestBed.createComponent(HomeComponent);
   if (spaceId !== undefined) {
@@ -66,6 +75,12 @@ describe('HomeComponent', () => {
       'GPT-6 Luna',
     );
     expect(where(root)).toBe('Where: A chat');
+    // Where it goes in the box; the approval mode and the model in the quiet line under it.
+    const box = root.querySelector('[data-testid="home-composer"] .box');
+    const status = root.querySelector('[data-testid="home-composer-status"]');
+    expect(box?.querySelector('[data-testid="home-where"]')).not.toBeNull();
+    expect(status?.querySelector('[data-testid="approval-mode"]')).not.toBeNull();
+    expect(status?.querySelector('[data-testid="model-picker"]')).not.toBeNull();
     // Nothing to attach yet.
     expect(root.querySelector('[aria-label="Attach files"]')).toBeNull();
     await expectAccessible(root);
@@ -113,6 +128,17 @@ describe('HomeComponent', () => {
     await new Promise((resolve) => setTimeout(resolve));
     expect(fake.paramsOf('thread/start')).toEqual([{ space: 'p1' }]);
     navigate.mockRestore();
+  });
+
+  it('on a phone, puts where it goes behind the options button with the rest', async () => {
+    const root = await render(session(), undefined, true);
+    const status = root.querySelector('[data-testid="home-composer-status"]');
+    expect(
+      root.querySelector('[data-testid="home-composer"] .box [data-testid="home-where"]'),
+    ).toBe(null);
+    expect(status?.querySelector('[data-testid="home-where"]')).not.toBeNull();
+    expect(where(root)).toBe('Where: A chat');
+    await expectAccessible(root);
   });
 
   it('says what stays private only when glave runs on this computer', async () => {

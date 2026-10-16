@@ -3,8 +3,10 @@ import type { Page, Route } from '@playwright/test';
 
 /**
  * What the fake server knows: a project and the person's own space with their threads, one
- * thread's history (a command, an edit and a new file, a reply from the default model, which
- * the picker shows), the models, the tasks, and what a turn streams.
+ * thread's history (a turn on this computer that ran a command, edited a file and wrote a new
+ * one, and replied from the default model, which the picker shows; how long it took and what
+ * it cost), another waiting for the person to allow a push, the models, the tasks, and what a
+ * turn streams.
  */
 const OWNER = { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' } as const;
 
@@ -48,11 +50,13 @@ function thread(
 
 export const THREAD = '01900000-0000-7000-8000-000000000101';
 export const NEW_THREAD = '01900000-0000-7000-8000-000000000102';
+/** The thread that waits for the person. */
+export const WAITING = '01900000-0000-7000-8000-000000000103';
 
 const THREADS: Readonly<Record<string, readonly ThreadSummary[]>> = {
   [PROJECT.id]: [
     thread(THREAD, 'Make the tests pass'),
-    thread('01900000-0000-7000-8000-000000000103', 'Review the release notes', 'waiting'),
+    thread(WAITING, 'Review the release notes', 'waiting'),
     thread('01900000-0000-7000-8000-000000000104', 'Nightly dependency audit', 'running'),
   ],
   [PERSONAL.id]: [
@@ -79,55 +83,75 @@ export const MODELS: readonly ModelInfo[] = [
   })),
 ];
 
-function event(seq: number, type: string, data: RawEvent['data'], id = THREAD): RawEvent {
+function event(
+  seq: number,
+  type: string,
+  data: RawEvent['data'],
+  id = THREAD,
+  at = '2026-10-11T10:00:00.000Z',
+): RawEvent {
   return {
     glave: 1,
     id: `01900000-0000-7000-8000-${String(seq).padStart(12, '0')}`,
     thread: id,
     seq,
-    at: '2026-10-11T10:00:00.000Z',
+    at,
     type,
     v: 1,
     data,
   };
 }
 
-function call(seq: number, callId: string, tool: string, json: Record<string, unknown>): RawEvent {
-  return event(seq, 'tool.call.requested', { call_id: callId, tool, arguments: { json } });
+function call(
+  seq: number,
+  callId: string,
+  tool: string,
+  json: Record<string, unknown>,
+  id = THREAD,
+): RawEvent {
+  return event(seq, 'tool.call.requested', { call_id: callId, tool, arguments: { json } }, id);
 }
 
-function done(seq: number, callId: string, text: string): RawEvent {
-  return event(seq, 'tool.call.completed', {
-    call_id: callId,
-    is_error: false,
-    output: [{ type: 'text', text }],
-  });
+function done(seq: number, callId: string, text: string, id = THREAD): RawEvent {
+  return event(
+    seq,
+    'tool.call.completed',
+    { call_id: callId, is_error: false, output: [{ type: 'text', text }] },
+    id,
+  );
+}
+
+/** The thread's workspace: a folder on the computer glave runs on. */
+function bound(seq: number, id = THREAD): RawEvent {
+  const computer = { id: '01900000-0000-7000-8000-0000000000c1', kind: 'local' };
+  return event(seq, 'workspace.bound', { computer, root: '/work/glave' }, id);
 }
 
 const HISTORY = [
   event(1, 'thread.started', {}),
-  event(2, 'message.added', {
+  bound(2),
+  event(3, 'turn.started', { model: { provider: 'e2e', name: DEFAULT_MODEL } }),
+  event(4, 'message.added', {
     role: 'user',
     parts: [{ type: 'text', text: 'Make the tests pass' }],
   }),
-  event(3, 'turn.started', { model: { provider: 'e2e', name: DEFAULT_MODEL } }),
-  call(4, 'call_1', 'bash', { command: 'cargo test' }),
-  done(5, 'call_1', 'test parse::empty ... FAILED'),
-  call(6, 'call_2', 'edit', {
+  call(5, 'call_1', 'bash', { command: 'cargo test' }),
+  done(6, 'call_1', 'test parse::empty ... FAILED'),
+  call(7, 'call_2', 'edit', {
     path: 'src/parse.rs',
     old_string: 'fn parse(input: &str) -> Value {\n    input.parse().unwrap()\n}',
     new_string:
       'fn parse(input: &str) -> Option<Value> {\n    if input.is_empty() {\n        return None;\n    }\n    input.parse().ok()\n}',
   }),
-  done(7, 'call_2', 'Edited src/parse.rs'),
-  call(8, 'call_3', 'write', {
+  done(8, 'call_2', 'Edited src/parse.rs'),
+  call(9, 'call_3', 'write', {
     path: 'tests/empty.rs',
     content: '#[test]\nfn empty_input_is_none() {\n    assert_eq!(parse(""), None);\n}\n',
   }),
-  done(9, 'call_3', 'Wrote tests/empty.rs'),
-  call(10, 'call_4', 'bash', { command: 'cargo test' }),
-  done(11, 'call_4', 'test result: ok. 12 passed'),
-  event(12, 'message.added', {
+  done(10, 'call_3', 'Wrote tests/empty.rs'),
+  call(11, 'call_4', 'bash', { command: 'cargo test' }),
+  done(12, 'call_4', 'test result: ok. 12 passed'),
+  event(13, 'message.added', {
     role: 'assistant',
     parts: [
       {
@@ -136,11 +160,58 @@ const HISTORY = [
       },
     ],
   }),
-  event(13, 'model.responded', {
+  event(14, 'model.responded', {
     model: { provider: 'e2e', name: DEFAULT_MODEL },
     stop: 'end_turn',
+    cost: { amount: { micros: 4200, currency: 'USD' }, price_list: 'e2e' },
   }),
+  event(15, 'turn.ended', { outcome: 'completed' }, THREAD, '2026-10-11T10:02:05.000Z'),
 ];
+
+/** The waiting thread's history: it tidied a file and waits to push it. */
+const WAITING_HISTORY = [
+  event(1, 'thread.started', {}, WAITING),
+  bound(2, WAITING),
+  event(3, 'turn.started', { model: { provider: 'e2e', name: DEFAULT_MODEL } }, WAITING),
+  event(
+    4,
+    'message.added',
+    { role: 'user', parts: [{ type: 'text', text: 'Tidy the release notes and push them' }] },
+    WAITING,
+  ),
+  call(
+    5,
+    'call_1',
+    'edit',
+    { path: 'docs/RELEASE.md', old_string: '- fixed stuff', new_string: '- Fixed the parser' },
+    WAITING,
+  ),
+  done(6, 'call_1', 'Edited docs/RELEASE.md', WAITING),
+  event(
+    7,
+    'message.added',
+    { role: 'assistant', parts: [{ type: 'text', text: 'The notes are tidy. Ready to push.' }] },
+    WAITING,
+  ),
+  call(8, 'call_2', 'bash', { command: 'git push -u origin docs/release-notes' }, WAITING),
+  event(
+    9,
+    'approval.requested',
+    {
+      call_id: 'call_2',
+      tool: 'bash',
+      summary: 'bash: git push -u origin docs/release-notes',
+      secret: false,
+    },
+    WAITING,
+  ),
+];
+
+/** Each thread's history, by id. */
+const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
+  [THREAD]: HISTORY,
+  [WAITING]: WAITING_HISTORY,
+};
 
 const TASKS: readonly TaskInfo[] = [
   {
@@ -309,7 +380,7 @@ function answer(
     case 'thread/get':
       return { thread: thread(String(params['thread']), 'Make the tests pass') };
     case 'thread/events':
-      return { events: params['thread'] === THREAD ? HISTORY : [] };
+      return { events: HISTORIES[String(params['thread'])] ?? [] };
     case 'thread/start': {
       const inSpace = params['space'] === PERSONAL.id ? PERSONAL : PROJECT;
       const fresh = thread(NEW_THREAD, '', 'idle', inSpace);

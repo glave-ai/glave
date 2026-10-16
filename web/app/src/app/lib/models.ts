@@ -88,13 +88,26 @@ function fromName(name: string): { readonly company: string; readonly own: strin
  * prefix (`anthropic/claude-haiku-5.5`). A model with no company in either is its name alone.
  */
 export function displayName(model: Pick<ModelInfo, 'id' | 'name'>): string {
+  const { company, own } = names(model);
+  return company === '' ? own : `${company}${SEPARATOR}${own}`;
+}
+
+/** A model's own name alone, with no company: `Claude Haiku 5.5`. */
+export function shortName(model: Pick<ModelInfo, 'id' | 'name'>): string {
+  return names(model).own;
+}
+
+function names(model: Pick<ModelInfo, 'id' | 'name'>): {
+  readonly company: string;
+  readonly own: string;
+} {
   const parts = model.id.split('/').filter((part) => part !== '');
   const slug = parts.at(-1) ?? model.id;
   const prefix = parts.length > 1 ? (parts.at(-2) ?? '') : '';
   const named = fromName(model.name?.trim() ?? '');
   const own = named.own === '' ? slugWords(slug) : named.own;
   const company = named.company !== '' ? named.company : prefix === '' ? '' : companyName(prefix);
-  return company === '' ? own : `${company}${SEPARATOR}${own}`;
+  return { company, own };
 }
 
 /** The thread's own choice of model: the latest `model.chosen`'s, or `null` for the default. */
@@ -109,11 +122,15 @@ export function defaultModel(models: readonly ModelInfo[]): string | null {
   return (models.find((model) => model.default) ?? models.at(0))?.id ?? null;
 }
 
-/** The picker's options: each model by its display name, the default marked. Hope is one of them. */
+/**
+ * The picker's options: each model by its display name, the default marked, and its own name
+ * alone for the button once chosen. Hope is one of them.
+ */
 export function modelOptions(models: readonly ModelInfo[]): readonly GlzMenuOption[] {
   return models.map((model) => ({
     value: model.id,
     label: displayName(model),
+    short: shortName(model),
     ...(model.default ? { hint: DEFAULT_HINT } : {}),
   }));
 }

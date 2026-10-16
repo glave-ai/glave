@@ -11,8 +11,9 @@
   <div class="column">
     <app-thread-header
       [title]="title()"
-      [space]="spaceName()"
-      [mark]="mark()"
+      [project]="project()"
+      [place]="service.place()"
+      [changes]="changes()"
       (rename)="startRename()"
     />
     <section
@@ -23,71 +24,8 @@
       [(atBottom)]="atBottom"
     >
       <div class="reading">
-        @for (item of shown(); track item.key) {
-          @switch (item.kind) {
-            @case ('message') {
-              <glz-message data-testid="thread-message" [from]="item.from" [author]="item.author">
-                @if (item.reasoning) {
-                  <glz-reasoning>{{ item.reasoning }}</glz-reasoning>
-                }
-                <app-message-text [text]="item.text" [markdown]="item.markdown" />
-                <glz-copy-button glzMessageActions testId="message-copy" [text]="item.text" />
-              </glz-message>
-            }
-            @case ('call') {
-              <glz-receipt
-                testId="thread-receipt"
-                [icon]="item.icon"
-                [tool]="item.tool"
-                [summary]="item.summary"
-                [status]="item.status"
-              >
-                <pre class="output">{{ item.output }}</pre>
-              </glz-receipt>
-            }
-            @case ('steps') {
-              <glz-steps testId="thread-steps" [summary]="item.summary">
-                @for (call of item.calls; track call.key) {
-                  <glz-receipt
-                    testId="thread-receipt"
-                    [icon]="call.icon"
-                    [tool]="call.tool"
-                    [summary]="call.summary"
-                    [status]="call.status"
-                  >
-                    <pre class="output">{{ call.output }}</pre>
-                  </glz-receipt>
-                }
-              </glz-steps>
-            }
-            @case ('approval') {
-              <glz-approval-card
-                testId="thread-approval"
-                [tool]="item.tool"
-                [summary]="item.summary"
-                [decision]="item.decision"
-                [busy]="service.sending()"
-                (decide)="decide(item.approval, $event)"
-              />
-            }
-            @case ('question') {
-              <glz-question-card
-                testId="thread-question"
-                [questions]="item.questions"
-                [answered]="item.answers"
-                [busy]="service.sending()"
-                (answer)="answer(item.call, $event)"
-              />
-            }
-          }
-        }
-        @if (service.hasReply()) {
-          <glz-message from="model" streaming data-testid="thread-reply" [author]="copy.reply">
-            @if (service.reply().reasoning) {
-              <glz-reasoning streaming>{{ service.reply().reasoning }}</glz-reasoning>
-            }
-            <div testId="thread-markdown" streaming [glzMarkdown]="service.reply().text"></div>
-          </glz-message>
+        @for (turn of turns(); track turn.key) {
+          <app-turn [turn]="turn" />
         }
       </div>
     </section>
@@ -108,8 +46,8 @@
         (send)="send($event)"
         (stop)="stop()"
       >
-        <app-approval-mode glzComposerStart [current]="mode()" [(value)]="pickedMode" />
-        <app-model-picker glzComposerEnd [current]="service.chosen()" [(value)]="picked" />
+        <app-approval-mode glzComposerStatus [current]="mode()" [(value)]="pickedMode" />
+        <app-model-picker glzComposerStatus [current]="service.chosen()" [(value)]="picked" />
       </glz-composer>
     </div>
   </div>

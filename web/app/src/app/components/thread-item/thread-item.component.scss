@@ -1,0 +1,10 @@
+// Each item is a block of its own in what holds it, which spaces them.
+:host {
+  display: contents;
+}
+
+.output {
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}

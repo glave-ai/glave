@@ -1,19 +1,5 @@
-// What needs the person: a card lifted off the page, behind a stronger line, as an approval.
-:host {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glz-space-3);
-  padding: var(--glz-inset-card);
-  border: var(--glz-border-width) solid var(--glz-color-border-strong);
-  border-radius: var(--glz-radius-card);
-  background: var(--glz-surface-card);
-  box-shadow: var(--glz-elevation-2);
-}
-
-.heading {
-  font-size: var(--glz-text-sm);
-  font-weight: var(--glz-weight-bold);
-}
+@use '../../styles/needs-you';
+@include needs-you.card;
 
 .question {
   display: flex;
@@ -30,9 +16,4 @@
 .answer {
   padding-inline-start: var(--glz-space-3);
   border-inline-start: 2px solid var(--glz-accent);
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-end;
 }

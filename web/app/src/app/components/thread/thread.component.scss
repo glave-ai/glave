@@ -18,7 +18,7 @@
 }
 
 // The conversation scrolls the whole width, so the scroll bar sits at the edge; its
-// content reads in a centred column.
+// content reads in a centred column, which every box in it spans.
 .items {
   flex: 1;
   min-height: 0;
@@ -33,26 +33,20 @@
   padding-inline: var(--glz-inset-page-inline);
 }
 
-// The conversation starts below the floating top bar, and scrolls under it.
 .reading {
   display: flex;
   flex-direction: column;
   gap: var(--glz-space-5);
-  padding-block: calc(var(--glz-top-bar-height) + var(--glz-inset-page-block)) var(--glz-space-5);
+  padding-block: var(--glz-inset-page-block) var(--glz-space-5);
 }
 
+// The composer, pinned at the foot of the column.
 .dock {
   display: flex;
   flex: none;
   flex-direction: column;
   gap: var(--glz-space-2);
   padding-bottom: var(--glz-space-5);
-}
-
-.output {
-  max-height: 16rem;
-  overflow: auto;
-  white-space: pre-wrap;
 }
 
 .error {

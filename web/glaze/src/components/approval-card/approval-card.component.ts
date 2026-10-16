@@ -6,11 +6,9 @@ import {
   input,
   output,
 } from '@angular/core';
-import { ShieldQuestion } from 'lucide';
 
 import { injectId } from '../../tokens/ids';
 import { GlzButtonComponent } from '../button/button.component';
-import { GlzIconComponent } from '../icon/icon.component';
 import { testIds } from '../../lib/test-ids';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
@@ -38,25 +36,28 @@ const DECIDED: GlzDecisionLabels = {
 };
 
 /**
- * An action waiting for the person's yes: what wants to run, the detail to judge it by
- * (projected: the command, the file, the address), and the three answers. Once `decision` is
- * set, the card says what was decided in place of the buttons.
+ * An action waiting for the person's yes, as a card that needs them: a small label with a dot
+ * ("Needs you"), one plain sentence (`summary`) with what would run after it in monospace
+ * (`detail`: the command, the file, the address), and the answers, the primary first. On a narrow card the
+ * answers go full width, one above another. Once `decision` is set, the card is quiet and
+ * says what was decided in place of the buttons.
  *
  * ```html
- * <glz-approval-card tool="bash" summary="Run rm -rf build/" [decision]="decided()"
- *   (decide)="answer($event)"><pre>rm -rf build/</pre></glz-approval-card>
+ * <glz-approval-card summary="Run this command?" detail="rm -rf build/"
+ *   [decision]="decided()" (decide)="answer($event)" />
  * ```
  */
 @Component({
   selector: 'glz-approval-card',
-  imports: [GlzButtonComponent, GlzIconComponent],
+  imports: [GlzButtonComponent],
   templateUrl: './approval-card.component.html',
   styleUrl: './approval-card.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.data-testid]': 'testId()',
+    '[class.glz-approval-card--decided]': 'decided()',
     role: 'group',
-    '[attr.aria-labelledby]': 'headingId',
+    '[attr.aria-labelledby]': 'labelledBy()',
     '[attr.aria-busy]': 'ariaBusy()',
   },
 })
@@ -65,14 +66,16 @@ export class GlzApprovalCardComponent {
   readonly testId = input<string | null>(null);
   protected readonly ids = computed(() => testIds(this.testId(), PARTS));
 
-  /** What wants to run, in a line. */
+  /** What it asks, in one plain sentence. */
   readonly summary = input.required<string>();
-  readonly tool = input('');
+  /** What would run, shown in monospace: the command, the file, the address. */
+  readonly detail = input('');
   /** The answer given, once there is one. */
   readonly decision = input<GlzDecision | null>(null);
   /** Whether the answer is being sent, so the buttons wait. */
   readonly busy = input(false, { transform: booleanAttribute });
-  readonly heading = input('Approval needed');
+  /** The label over a card that waits. */
+  readonly label = input('Needs you');
   readonly allowOnceLabel = input('Allow once');
   readonly allowForThreadLabel = input('Allow for this thread');
   readonly denyLabel = input('Deny');
@@ -80,13 +83,19 @@ export class GlzApprovalCardComponent {
   /** The person's answer. */
   readonly decide = output<GlzDecision>();
 
-  protected readonly headingId = injectId('glz-approval');
-  protected readonly icon = ShieldQuestion;
+  protected readonly labelId = injectId('glz-approval-label');
+  protected readonly summaryId = injectId('glz-approval-summary');
   protected readonly ariaBusy = computed(() => (this.busy() ? 'true' : null));
   protected readonly decidedText = computed(() => {
     const decision = this.decision();
     return decision === null ? null : this.decidedLabels()[decision];
   });
+  protected readonly decided = computed(() => this.decision() !== null);
+  protected readonly hasDetail = computed(() => this.detail() !== '');
+  /** Named by its label and sentence while it waits, by its sentence once decided. */
+  protected readonly labelledBy = computed(() =>
+    this.decided() ? this.summaryId : `${this.labelId} ${this.summaryId}`,
+  );
 
   protected allowOnce(): void {
     this.decide.emit('allow_once');

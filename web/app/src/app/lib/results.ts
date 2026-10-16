@@ -1,0 +1,114 @@
+import { type GlzRunStatus, formatDuration, formatMoney } from '@glave/glaze';
+
+import type { ApprovalItem, Draft, MessageItem, QuestionItem, ThreadItem } from './conversation';
+import type { ChangedFile } from './files';
+import type { Turn, TurnOutcome } from './turns';
+
+/** What waits for the person in a turn: an approval not yet decided, a question not answered. */
+export type Waiting = ApprovalItem | QuestionItem;
+
+/** What a turn's work came to, in a line: its status, the facts, and how many steps. */
+export interface Receipt {
+  readonly status: GlzRunStatus;
+  /** The time it took (so far, while it has not ended) and what it cost, as far as known. */
+  readonly facts: readonly string[];
+  /** How many steps, in words: "4 steps". */
+  readonly steps: string;
+}
+
+/**
+ * A turn as the thread shows it, results first: the person's message; then, for a turn that
+ * did work, its reply, the files it changed and its receipt, with the work itself (the calls,
+ * what it said along the way, the questions and approvals already answered) folded behind the
+ * receipt; and last what waits for the person. A turn that did no work shows what it said in
+ * order instead, and no receipt.
+ */
+export interface TurnResults {
+  readonly key: string;
+  readonly prompt: MessageItem | null;
+  /** In a turn that did no work, what it said before its reply. */
+  readonly before: readonly ThreadItem[];
+  /** The last thing it said, unless a reply is being written. */
+  readonly reply: MessageItem | null;
+  /** The reply being written, in the turn that runs. */
+  readonly live: Draft | null;
+  readonly files: readonly ChangedFile[];
+  /** The work folded behind the receipt, in order. */
+  readonly steps: readonly ThreadItem[];
+  /** The receipt, for a turn that did work. */
+  readonly receipt: Receipt | null;
+  readonly waiting: readonly Waiting[];
+}
+
+const STOPPED: readonly TurnOutcome[] = ['cancelled', 'interrupted', 'limit_reached'];
+
+function waits(item: ThreadItem): item is Waiting {
+  return (
+    (item.kind === 'approval' && item.decision === null) ||
+    (item.kind === 'question' && item.answers === null)
+  );
+}
+
+function isCall(item: ThreadItem): boolean {
+  return item.kind === 'call' || item.kind === 'question';
+}
+
+function said(item: ThreadItem): item is MessageItem {
+  return item.kind === 'message' && item.from === 'model' && item.text.trim() !== '';
+}
+
+function statusOf(turn: Turn, waiting: readonly Waiting[], running: boolean): GlzRunStatus {
+  if (turn.outcome === 'completed') {
+    return 'done';
+  }
+  if (turn.outcome === 'failed') {
+    return 'failed';
+  }
+  if (turn.outcome !== null && STOPPED.includes(turn.outcome)) {
+    return 'stopped';
+  }
+  if (waiting.length > 0) {
+    return 'waiting';
+  }
+  const going = turn.items.some((item) => item.kind === 'call' && item.status === 'running');
+  return running || going ? 'running' : 'done';
+}
+
+function count(n: number): string {
+  return `${String(n)} ${n === 1 ? 'step' : 'steps'}`;
+}
+
+/**
+ * `turn` results first. `live` is the reply being written, for the turn that runs now
+ * (`running`); it takes the reply's place, and what was the reply goes back among what was
+ * said along the way.
+ */
+export function turnResults(turn: Turn, live: Draft | null, running: boolean): TurnResults {
+  const [first, ...after] = turn.items;
+  const asked = first?.kind === 'message' && first.from === 'person';
+  const prompt = asked ? first : null;
+  const rest = asked ? after : turn.items;
+  const waiting = rest.filter(waits);
+  const others = rest.filter((item) => !waits(item));
+  const reply = live === null ? (others.filter(said).at(-1) ?? null) : null;
+  const along = others.filter((item) => item !== reply);
+  const calls = rest.filter(isCall).length;
+  const worked = calls > 0;
+  const facts = [
+    ...(turn.took === null || turn.took === 0 ? [] : [formatDuration(turn.took)]),
+    ...(turn.cost === null ? [] : [formatMoney(turn.cost)]),
+  ];
+  return {
+    key: turn.key,
+    prompt,
+    before: worked ? [] : along,
+    reply,
+    live,
+    files: turn.files,
+    steps: worked ? along : [],
+    receipt: worked
+      ? { status: statusOf(turn, waiting, running), facts, steps: count(calls) }
+      : null,
+    waiting,
+  };
+}

@@ -16,8 +16,8 @@ import { GlzComposerComponent, type GlzComposerSize } from './composer.component
       (send)="sent.push($event)"
       (stop)="stops.set(stops() + 1)"
     >
-      <span glzComposerStart data-testid="model">Hope</span>
-      <span glzComposerEnd data-testid="cloud">Cloud</span>
+      <span glzComposerStart data-testid="where">A chat</span>
+      <span glzComposerStatus data-testid="model">Hope</span>
     </glz-composer>
   `,
 })
@@ -56,8 +56,11 @@ describe('GlzComposerComponent', () => {
     const input = find<HTMLTextAreaElement>(root, 'composer-input');
     expect(find<HTMLButtonElement>(root, 'composer-send').disabled).toBe(true);
     expect(input.getAttribute('aria-label')).toBe('Message');
-    expect(find(root, 'model').closest('.start')).not.toBeNull();
-    expect(find(root, 'cloud').closest('.end')).not.toBeNull();
+    // In the box: where it goes and send; under it, the status line.
+    expect(find(root, 'where').closest('.box .start')).not.toBeNull();
+    expect(find(root, 'composer-send').closest('.box')).not.toBeNull();
+    expect(find(root, 'model').closest('.box')).toBeNull();
+    expect(find(root, 'model').closest('[data-testid="composer-status"]')).not.toBeNull();
     await expectAccessible(root);
 
     type(input, '  Plan the launch ');
@@ -93,6 +96,19 @@ describe('GlzComposerComponent', () => {
     type(input, 'next');
     enter(input);
     expect(fixture.componentInstance.sent).toEqual([]);
+  });
+
+  it('opens its status line from the options button, as a phone shows it', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const options = find<HTMLButtonElement>(root, 'composer-options');
+    const status = find(root, 'composer-status');
+    expect(options.getAttribute('aria-label')).toBe('Options');
+    expect(options.getAttribute('popovertarget')).toBe(status.id);
+    expect(status.hasAttribute('popover')).toBe(true);
+    expect(status.getAttribute('role')).toBe('group');
+    expect(status.getAttribute('aria-label')).toBe('Options');
   });
 
   it('is a reply’s size unless it starts a thread', async () => {

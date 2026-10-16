@@ -13,7 +13,7 @@
     [(value)]="draft"
     (send)="send($event)"
   >
-    @if (hasPlaces()) {
+    @if (whereInBox()) {
       <glz-menu-select
         glzComposerStart
         testId="home-where"
@@ -23,8 +23,18 @@
         [(value)]="where"
       />
     }
-    <app-approval-mode glzComposerStart [(value)]="pickedMode" />
-    <app-model-picker glzComposerEnd [(value)]="picked" />
+    @if (whereInStatus()) {
+      <glz-menu-select
+        glzComposerStatus
+        testId="home-where"
+        outlined
+        [label]="copy.where"
+        [options]="places()"
+        [(value)]="where"
+      />
+    }
+    <app-approval-mode glzComposerStatus [(value)]="pickedMode" />
+    <app-model-picker glzComposerStatus [(value)]="picked" />
   </glz-composer>
   @if (local()) {
     <p class="private" data-testid="home-private">

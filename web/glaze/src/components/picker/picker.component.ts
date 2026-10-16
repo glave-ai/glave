@@ -52,6 +52,9 @@ interface ShownOption {
  * is likeliest to want. The search box is left alone by autocorrect, capitals and spelling, so
  * a model's name is searched as typed.
  *
+ * The button shows the chosen option's `short` name when it has one (the list keeps the
+ * full `label`); a `quiet` one is small, muted text, for a composer's status line.
+ *
  * ```html
  * <glz-picker label="Model" [options]="models" [(value)]="model" />
  * ```
@@ -62,7 +65,7 @@ interface ShownOption {
   templateUrl: './picker.component.html',
   styleUrl: './picker.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '[attr.data-testid]': 'testId()' },
+  host: { '[attr.data-testid]': 'testId()', '[class.glz-picker--quiet]': 'quiet()' },
 })
 export class GlzPickerComponent {
   /** The test hook for this component; its parts get `<testId>-<part>`. */
@@ -81,6 +84,8 @@ export class GlzPickerComponent {
   /** Shown in the list when nothing matches. */
   readonly emptyText = input('No matches');
   readonly disabled = input(false, { transform: booleanAttribute });
+  /** Whether the button is small, muted text, as in a status line. */
+  readonly quiet = input(false, { transform: booleanAttribute });
 
   protected readonly popoverId = injectId('glz-picker');
   protected readonly listboxId = `${this.popoverId}-list`;
@@ -96,7 +101,10 @@ export class GlzPickerComponent {
   private readonly current = computed(() =>
     this.options().find((option) => option.value === this.value()),
   );
-  protected readonly shownLabel = computed(() => this.current()?.label ?? this.placeholder());
+  protected readonly shownLabel = computed(() => {
+    const current = this.current();
+    return current === undefined ? this.placeholder() : (current.short ?? current.label);
+  });
   /** The options that match the search, in their order. */
   private readonly flat = computed(() => filterOptions(this.options(), this.query()));
   protected readonly shown = computed<readonly ShownOption[]>(() =>

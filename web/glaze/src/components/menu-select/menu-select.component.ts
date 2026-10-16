@@ -24,6 +24,8 @@ export interface GlzMenuOption extends GlzOption {
   readonly hint?: string;
   /** An icon before the label, on the button as in the menu, such as a folder for a project. */
   readonly icon?: GlzIconData;
+  /** What the button shows once it is chosen, when that is shorter than its label. */
+  readonly short?: string;
 }
 
 /** An option as the menu shows it. */
@@ -50,11 +52,12 @@ const POSITIONS: readonly ConnectedPosition[] = [
  * (`menuitemradio`), so arrow keys, typeahead, Escape and focus return work. The button is
  * named by `label` and the choice ("Model: Hope"). `value` is bound two ways. An `outlined`
  * one is a chip with a line round it, for a choice that sets where something goes rather than
- * how.
+ * how; a `quiet` one is small, muted text, for a composer's status line.
  *
  * ```html
  * <glz-menu-select label="Model" [options]="models" [(value)]="model" />
  * <glz-menu-select label="Where" outlined [options]="places" [(value)]="place" />
+ * <glz-menu-select label="Approvals" quiet [options]="modes" [(value)]="mode" />
  * ```
  */
 @Component({
@@ -66,6 +69,7 @@ const POSITIONS: readonly ConnectedPosition[] = [
   host: {
     '[attr.data-testid]': 'testId()',
     '[class.glz-menu-select--outlined]': 'outlined()',
+    '[class.glz-menu-select--quiet]': 'quiet()',
   },
 })
 export class GlzMenuSelectComponent {
@@ -83,6 +87,8 @@ export class GlzMenuSelectComponent {
   readonly disabled = input(false, { transform: booleanAttribute });
   /** Whether the button is a chip with a line round it. */
   readonly outlined = input(false, { transform: booleanAttribute });
+  /** Whether the button is small, muted text, as in a status line. */
+  readonly quiet = input(false, { transform: booleanAttribute });
 
   protected readonly positions = POSITIONS;
   /** What the button is for, before the choice, for screen readers: "Model: ". */
@@ -91,7 +97,10 @@ export class GlzMenuSelectComponent {
   private readonly current = computed(() =>
     this.options().find((option) => option.value === this.value()),
   );
-  protected readonly shownLabel = computed(() => this.current()?.label ?? this.placeholder());
+  protected readonly shownLabel = computed(() => {
+    const current = this.current();
+    return current === undefined ? this.placeholder() : (current.short ?? current.label);
+  });
   protected readonly shownIcon = computed(() => this.current()?.icon ?? null);
   protected readonly shown = computed<readonly ShownOption[]>(() =>
     this.options().map((option) => ({

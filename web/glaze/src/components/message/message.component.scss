@@ -39,12 +39,16 @@
   line-height: var(--glz-leading-normal);
 }
 
-// The bubble's corner nearest the edge it sits at is tucked in.
+// The bubble: one radius on every corner.
 :host(.from-person) .body {
   padding: var(--glz-inset-bubble);
   border-radius: var(--glz-radius-composer);
-  border-end-end-radius: var(--glz-radius-tail);
   background: var(--glz-message-person-surface);
+}
+
+// A reply reads a shade softer than the page's own text.
+:host(.from-model) {
+  color: var(--glz-color-text-secondary);
 }
 
 :host(.from-note) {

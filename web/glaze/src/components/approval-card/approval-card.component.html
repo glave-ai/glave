@@ -1,20 +1,24 @@
-<div class="header">
-  <glz-icon class="icon" [icon]="icon" />
-  <p class="heading" [id]="headingId">{{ heading() }}</p>
-</div>
-<p class="summary">
-  @if (tool()) {
-    <span class="tool">{{ tool() }}</span>
-  }
+@if (!decided()) {
+  <p class="label" [id]="labelId"><span class="dot" aria-hidden="true"></span>{{ label() }}</p>
+}
+<p class="summary" [id]="summaryId">
   {{ summary() }}
+  @if (hasDetail()) {
+    <code class="detail">{{ detail() }}</code>
+  }
 </p>
-<div class="detail"><ng-content /></div>
 @if (decidedText(); as decided) {
   <p class="decided" [attr.data-testid]="ids().decided">{{ decided }}</p>
 } @else {
   <div class="actions">
-    <button glzButton [attr.data-testid]="ids().deny" [disabled]="busy()" (click)="deny()">
-      {{ denyLabel() }}
+    <button
+      glzButton
+      variant="primary"
+      [attr.data-testid]="ids().allowOnce"
+      [disabled]="busy()"
+      (click)="allowOnce()"
+    >
+      {{ allowOnceLabel() }}
     </button>
     <button
       glzButton
@@ -24,14 +28,8 @@
     >
       {{ allowForThreadLabel() }}
     </button>
-    <button
-      glzButton
-      variant="primary"
-      [attr.data-testid]="ids().allowOnce"
-      [disabled]="busy()"
-      (click)="allowOnce()"
-    >
-      {{ allowOnceLabel() }}
+    <button glzButton [attr.data-testid]="ids().deny" [disabled]="busy()" (click)="deny()">
+      {{ denyLabel() }}
     </button>
   </div>
 }

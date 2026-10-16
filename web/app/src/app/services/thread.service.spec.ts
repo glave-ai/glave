@@ -32,7 +32,10 @@ describe('ThreadService', () => {
     );
     const service = make(fake);
     await service.open('thread-1');
-    expect(service.items().map((item) => item.kind)).toEqual(['message', 'message']);
+    expect(service.turns().flatMap((turn) => turn.items.map((item) => item.kind))).toEqual([
+      'message',
+      'message',
+    ]);
     expect(fake.paramsOf('thread/events')).toEqual([
       { thread: 'thread-1' },
       { thread: 'thread-1', after: 1 },
@@ -78,9 +81,11 @@ describe('ThreadService', () => {
     await sending;
     expect(service.busy()).toBe(false);
     expect(service.hasReply()).toBe(false);
-    expect(service.items()).toMatchObject([
-      { from: 'person', text: 'hi' },
-      { from: 'model', text: 'Hello' },
+    expect(service.turns().map((turn) => turn.items)).toMatchObject([
+      [
+        { from: 'person', text: 'hi' },
+        { from: 'model', text: 'Hello' },
+      ],
     ]);
     expect(fake.paramsOf('turn/start')).toEqual([{ thread: 'thread-1', prompt: 'hi' }]);
   });

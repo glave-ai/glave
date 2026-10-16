@@ -37,6 +37,10 @@ describe('GlzQuestionCardComponent', () => {
     const fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
+    const card = root.querySelector('glz-question-card');
+    expect(document.getElementById(card?.getAttribute('aria-labelledby') ?? '')?.textContent).toBe(
+      'Needs you',
+    );
     const submit = root.querySelector<HTMLButtonElement>('[data-testid="question-submit"]');
     expect(submit?.disabled).toBe(true);
     await expectAccessible(root);
@@ -71,5 +75,12 @@ describe('GlzQuestionCardComponent', () => {
     );
     expect(answers).toEqual(['SQLite', 'Tests', 'No']);
     expect(root.querySelector('[data-testid="question-submit"]')).toBeNull();
+    // Answered, it no longer needs the person: no label, and it rests.
+    const card = root.querySelector('glz-question-card');
+    expect(root.querySelector('.label')).toBeNull();
+    expect(card?.classList).toContain('glz-question-card--answered');
+    expect(document.getElementById(card?.getAttribute('aria-labelledby') ?? '')?.textContent).toBe(
+      'Which database?',
+    );
   });
 });

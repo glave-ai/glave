@@ -1,0 +1,44 @@
+@let item = shown();
+@switch (item.kind) {
+  @case ('message') {
+    <glz-message data-testid="thread-message" [from]="item.from" [author]="item.author">
+      @if (item.reasoning) {
+        <glz-reasoning>{{ item.reasoning }}</glz-reasoning>
+      }
+      <app-message-text [text]="item.text" [markdown]="item.markdown" />
+      @if (item.copyable) {
+        <glz-copy-button glzMessageActions testId="message-copy" [text]="item.text" />
+      }
+    </glz-message>
+  }
+  @case ('call') {
+    <glz-receipt
+      testId="thread-receipt"
+      [icon]="item.icon"
+      [tool]="item.tool"
+      [summary]="item.summary"
+      [status]="item.status"
+    >
+      <pre class="output">{{ item.output }}</pre>
+    </glz-receipt>
+  }
+  @case ('approval') {
+    <glz-approval-card
+      testId="thread-approval"
+      [summary]="item.ask.sentence"
+      [detail]="item.ask.detail"
+      [decision]="item.decision"
+      [busy]="sending()"
+      (decide)="decide(item.approval, $event)"
+    />
+  }
+  @case ('question') {
+    <glz-question-card
+      testId="thread-question"
+      [questions]="item.questions"
+      [answered]="item.answers"
+      [busy]="sending()"
+      (answer)="answer(item.call, $event)"
+    />
+  }
+}

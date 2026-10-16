@@ -8,6 +8,7 @@ import {
   displayName,
   modelOptions,
   orderedOptions,
+  shortName,
   slugWords,
   toRecent,
   withRecent,
@@ -65,11 +66,17 @@ describe('models', () => {
     expect(companyName('some-lab')).toBe('Some Lab');
   });
 
+  it('names a model alone, with no company, for a button', () => {
+    expect(shortName({ id: 'anthropic/claude-haiku-5.5' })).toBe('Claude Haiku 5.5');
+    expect(shortName({ id: 'x', name: 'Anthropic: Claude Haiku 5.5' })).toBe('Claude Haiku 5.5');
+    expect(shortName({ id: 'hope-12b', name: 'Hope' })).toBe('Hope');
+  });
+
   it('offers each model by its display name, marking the default, Hope as any other', () => {
     expect(modelOptions(MODELS)).toEqual([
-      { value: 'gpt-6-luna', label: 'GPT-6 Luna', hint: 'Default' },
-      { value: 'hope-12b', label: 'Hope' },
-      { value: 'hope-lookalike', label: 'Hope Lookalike' },
+      { value: 'gpt-6-luna', label: 'GPT-6 Luna', short: 'GPT-6 Luna', hint: 'Default' },
+      { value: 'hope-12b', label: 'Hope', short: 'Hope' },
+      { value: 'hope-lookalike', label: 'Hope Lookalike', short: 'Hope Lookalike' },
     ]);
   });
 

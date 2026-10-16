@@ -1,0 +1,35 @@
+@if (turn().prompt; as prompt) {
+  <app-thread-item [item]="prompt" />
+}
+@for (item of turn().before; track item.key) {
+  <app-thread-item [item]="item" />
+}
+@if (turn().reply; as reply) {
+  <app-thread-item [item]="reply" />
+}
+@if (turn().live; as live) {
+  <glz-message from="model" streaming data-testid="thread-reply" [author]="copy.reply">
+    @if (live.reasoning) {
+      <glz-reasoning streaming>{{ live.reasoning }}</glz-reasoning>
+    }
+    <div testId="thread-markdown" streaming [glzMarkdown]="live.text"></div>
+  </glz-message>
+}
+@if (changed()) {
+  <app-turn-changes [files]="turn().files" />
+}
+@if (turn().receipt; as receipt) {
+  <glz-steps
+    testId="thread-steps"
+    [status]="receipt.status"
+    [facts]="receipt.facts"
+    [steps]="receipt.steps"
+  >
+    @for (item of turn().steps; track item.key) {
+      <app-thread-item [item]="item" />
+    }
+  </glz-steps>
+}
+@for (item of turn().waiting; track item.key) {
+  <app-thread-item [item]="item" />
+}
