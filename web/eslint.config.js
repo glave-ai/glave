@@ -57,10 +57,12 @@ export default tseslint.config(
   },
   {
     // Components on native elements (`button[glzButton]`) keep the element's own semantics; the
-    // selector rule cannot read element-and-attribute selectors.
+    // selector rule cannot read element-and-attribute selectors. Markdown renders into any
+    // element (`[glzMarkdown]`), the way a directive is used.
     files: [
       'glaze/src/components/button/button.component.ts',
       'glaze/src/components/icon-button/icon-button.component.ts',
+      'glaze/src/components/markdown/markdown.component.ts',
       'glaze/src/components/nav-item/nav-item.component.ts',
     ],
     rules: { '@angular-eslint/component-selector': 'off' },

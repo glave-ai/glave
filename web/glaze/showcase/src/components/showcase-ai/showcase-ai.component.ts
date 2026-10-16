@@ -12,6 +12,7 @@ import {
   GlzButtonComponent,
   GlzComposerComponent,
   type GlzDecision,
+  GlzMarkdownComponent,
   type GlzIconData,
   GlzMenuSelectComponent,
   GlzMessageComponent,
@@ -34,7 +35,9 @@ const COPY = {
   steps: 'Ran 2 steps, 1 failed',
   ask: 'Make the tests pass and tell me what was wrong.',
   reasoning: 'The failure is in the date parser; the test expects UTC.',
-  reply: 'The parser read local time. I changed it to UTC and the tests pass now.',
+  reply:
+    'The parser read local time. I changed `parse_date` to **UTC**, and the tests pass now:\n\n' +
+    '```sh\ncargo test dates\n```',
   noteAuthor: 'glave',
   note: 'The conversation was compacted to fit.',
   latest: 'Jump to latest',
@@ -111,6 +114,7 @@ interface DemoMessage {
     GlzApprovalCardComponent,
     GlzButtonComponent,
     GlzComposerComponent,
+    GlzMarkdownComponent,
     GlzMenuSelectComponent,
     GlzMessageComponent,
     GlzQuestionCardComponent,

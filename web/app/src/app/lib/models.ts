@@ -119,9 +119,41 @@ export function modelOptions(models: readonly ModelInfo[]): readonly GlzMenuOpti
   }));
 }
 
-/** A stored list of pinned models, read back: its model ids, else none. */
-export function toPinned(value: unknown): readonly string[] {
+/** How many recent models the picker remembers. */
+export const RECENT_MODELS = 5;
+
+/** A stored list of recent models, read back: its model ids, at most `RECENT_MODELS`. */
+export function toRecent(value: unknown): readonly string[] {
   return Array.isArray(value)
-    ? value.filter((each): each is string => typeof each === 'string' && each !== '')
+    ? value
+        .filter((each): each is string => typeof each === 'string' && each !== '')
+        .slice(0, RECENT_MODELS)
     : [];
+}
+
+/** `recent` with `model` picked just now: first, once, and at most `RECENT_MODELS` in all. */
+export function withRecent(recent: readonly string[], model: string): readonly string[] {
+  return [model, ...recent.filter((each) => each !== model)].slice(0, RECENT_MODELS);
+}
+
+/**
+ * The picker's options in the order people reach for them: the default, then the models picked
+ * lately (latest first), then everything else in the server's order.
+ */
+export function orderedOptions(
+  options: readonly GlzMenuOption[],
+  first: string | null,
+  recent: readonly string[],
+): readonly GlzMenuOption[] {
+  const rank = (value: string): number => {
+    if (value === first) {
+      return -1;
+    }
+    const at = recent.indexOf(value);
+    return at === -1 ? recent.length : at;
+  };
+  return options
+    .map((option, index) => ({ option, index, rank: rank(option.value) }))
+    .sort((one, other) => one.rank - other.rank || one.index - other.index)
+    .map(({ option }) => option);
 }

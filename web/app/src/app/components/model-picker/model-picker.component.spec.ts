@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import { PinnedModelsService } from '../../services/pinned-models.service';
+import { RecentModelsService } from '../../services/recent-models.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { MODELS } from '../../testing/fixtures';
 import { ModelPickerComponent } from './model-picker.component';
@@ -40,23 +40,28 @@ describe('ModelPickerComponent', () => {
     expect(trigger(root)?.classList).toContain('hope');
   });
 
-  it('takes the person’s pick from the list, and keeps their pins', async () => {
-    const fixture = await render();
+  it('takes the person’s pick from the list by name, and lists it after the default since', async () => {
+    const models = [...MODELS, { id: 'openai/gpt-6-sol', default: false, hope: false }];
+    const fixture = await render(models);
     const root: HTMLElement = fixture.nativeElement;
+    const names = (): readonly string[] =>
+      Array.from(root.querySelectorAll('[data-testid="model-picker-option"] .label'), (label) =>
+        label.textContent.trim(),
+      );
     trigger(root)?.click();
     await fixture.whenStable();
-    const items = root.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]');
-    expect(items).toHaveLength(2);
+    expect(names()).toEqual(['GPT-6 Luna', 'Hope', 'OpenAI · GPT-6 Sol']);
     expect(
       root.querySelector('[data-testid="model-picker-search"]')?.getAttribute('placeholder'),
     ).toBe('Search models');
     await expectAccessible(root);
-    items[1]?.querySelector<HTMLElement>('.pin')?.click();
+    root.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]')[2]?.click();
     await fixture.whenStable();
-    expect(TestBed.inject(PinnedModelsService).pinned()).toEqual(['hope-12b']);
-    root.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]')[0]?.click();
+    expect(fixture.componentInstance.value()).toBe('openai/gpt-6-sol');
+    expect(TestBed.inject(RecentModelsService).recent()).toEqual(['openai/gpt-6-sol']);
+    trigger(root)?.click();
     await fixture.whenStable();
-    expect(fixture.componentInstance.value()).toBe('hope-12b');
+    expect(names()).toEqual(['GPT-6 Luna', 'OpenAI · GPT-6 Sol', 'Hope']);
   });
 
   it('shows nothing while the server names no models', async () => {

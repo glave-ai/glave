@@ -15,8 +15,10 @@ import {
   GlzApprovalCardComponent,
   GlzButtonComponent,
   GlzComposerComponent,
+  GlzCopyButtonComponent,
   type GlzDecision,
   type GlzIconData,
+  GlzMarkdownComponent,
   GlzMessageComponent,
   GlzPanelLayoutComponent,
   GlzQuestionCardComponent,
@@ -32,7 +34,6 @@ import { SpacesService } from '../../services/spaces.service';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
-import { CopyButtonComponent } from '../copy-button/copy-button.component';
 import type { FirstPrompt } from '../home/home.component';
 import { MessageTextComponent } from '../message-text/message-text.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
@@ -55,8 +56,8 @@ const COPY = {
 /** A message as the thread shows it: named for screen readers, "You" or "Reply". */
 interface ShownMessage extends MessageItem {
   readonly author: string;
-  /** Whether a long text folds: the person's own messages do, replies read in full. */
-  readonly foldable: boolean;
+  /** Whether it is a reply, shown as markdown; the person's own text shows as typed. */
+  readonly markdown: boolean;
 }
 
 /** A tool call as the thread shows it: with its tool's icon. */
@@ -86,21 +87,23 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
 
 /**
  * One thread: its top bar floating over it (title, space, rename; on narrow screens the button
- * that opens the tools); its conversation (the person's messages as bubbles, replies as plain
- * text with no name over them, each with a copy button; reasoning; tool calls as quiet lines,
- * those in a row folded under "Ran N steps"; approvals and questions, answered in place) in a
- * reading column, the reply streaming in as a turn runs; the composer
- * docked below it, with the approval mode and the model picker; and the tools panel beside it,
+ * that opens the tools); its conversation (the person's messages as bubbles of the text they
+ * typed, replies as markdown with no name over them, each with a copy button; reasoning; tool
+ * calls as quiet lines, those in a row folded under "Ran N steps"; approvals and questions,
+ * answered in place) in a reading column, the reply streaming in as markdown as a turn runs;
+ * the composer docked below it, with the approval mode and the model picker; and the tools
+ * panel beside it,
  * resized and collapsed by its edge and shown or hidden by ⌘. or Ctrl+. anywhere in the thread.
  */
 @Component({
   selector: 'app-thread',
   imports: [
     ApprovalModeComponent,
-    CopyButtonComponent,
     GlzApprovalCardComponent,
     GlzButtonComponent,
     GlzComposerComponent,
+    GlzCopyButtonComponent,
+    GlzMarkdownComponent,
     GlzMessageComponent,
     GlzPanelLayoutComponent,
     GlzQuestionCardComponent,
@@ -146,7 +149,11 @@ export class ThreadComponent {
       switch (item.kind) {
         case 'message': {
           const person = item.from === 'person';
-          return { ...item, author: person ? COPY.you : COPY.reply, foldable: person };
+          return {
+            ...item,
+            author: person ? COPY.you : COPY.reply,
+            markdown: !person,
+          };
         }
         case 'call':
           return shownCall(item);

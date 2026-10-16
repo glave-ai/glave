@@ -32,6 +32,9 @@
     type="text"
     role="combobox"
     autocomplete="off"
+    autocorrect="off"
+    autocapitalize="off"
+    spellcheck="false"
     aria-autocomplete="list"
     [attr.data-testid]="ids().search"
     [attr.aria-label]="searchLabel()"
@@ -50,64 +53,39 @@
     [attr.data-testid]="ids().listbox"
     [attr.aria-label]="label()"
   >
-    @for (group of shownGroups(); track group.key) {
-      <div class="group" role="group" [attr.aria-labelledby]="group.headingId">
-        <div class="heading" role="presentation" [id]="group.headingId">{{ group.heading }}</div>
-        @for (option of group.options; track option.value) {
-          <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -- the search box owns the keyboard through aria-activedescendant; options only take pointer clicks -->
-          <div
-            class="option"
-            role="option"
-            [id]="option.id"
-            [class.active]="option.active"
-            [attr.aria-selected]="option.selected"
-            [attr.data-testid]="ids().option"
-            (click)="choose(option.value)"
-            (mousedown)="keepFocus($event)"
-          >
-            <span class="check">
-              @if (option.selected) {
-                <glz-icon [icon]="icons.check" />
-              }
-            </span>
-            <span class="name">
-              <span class="label">
-                {{ option.label }}
-                @if (option.hope) {
-                  <span class="sun" aria-hidden="true"></span>
-                }
-              </span>
-              @if (option.hasHint) {
-                <span class="hint">{{ option.hint }}</span>
-              }
-            </span>
-            <span
-              class="pin"
-              aria-hidden="true"
-              [class.pinned]="option.pinned"
-              (click)="togglePin($event, option.value)"
-            >
-              <glz-icon [icon]="icons.pin" />
-            </span>
-          </div>
-        }
+    @for (option of shown(); track option.value) {
+      <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -- the search box owns the keyboard through aria-activedescendant; options only take pointer clicks -->
+      <div
+        class="option"
+        role="option"
+        [id]="option.id"
+        [class.active]="option.active"
+        [attr.aria-selected]="option.selected"
+        [attr.data-testid]="ids().option"
+        (click)="choose(option.value)"
+        (mousedown)="keepFocus($event)"
+      >
+        <span class="check">
+          @if (option.selected) {
+            <glz-icon [icon]="icons.check" />
+          }
+        </span>
+        <span class="name">
+          <span class="label">
+            {{ option.label }}
+            @if (option.hope) {
+              <span class="sun" aria-hidden="true"></span>
+            }
+          </span>
+          @if (option.hasHint) {
+            <span class="hint">{{ option.hint }}</span>
+          }
+        </span>
       </div>
-    }
-    @if (empty()) {
+    } @empty {
       <div class="empty" role="presentation" [attr.data-testid]="ids().empty">
         {{ emptyText() }}
       </div>
     }
-  </div>
-  <div class="foot">
-    <button
-      type="button"
-      class="pin-active"
-      [attr.data-testid]="ids().pin"
-      [disabled]="cannotPin()"
-      (click)="togglePin($event)"
-    >
-      {{ pinButton() }}
-    </button>
   </div>
 </div>

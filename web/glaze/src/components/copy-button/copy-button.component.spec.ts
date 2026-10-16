@@ -1,9 +1,9 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { Clipboard } from '@angular/cdk/clipboard';
 import { TestBed } from '@angular/core/testing';
-import { expectAccessible } from '@glave/glaze/testing';
 
-import { CopyButtonComponent } from './copy-button.component';
+import { expectAccessible } from '../../testing/axe';
+import { GlzCopyButtonComponent } from './copy-button.component';
 
 async function render(copies: boolean): Promise<{
   readonly root: HTMLElement;
@@ -19,8 +19,9 @@ async function render(copies: boolean): Promise<{
       { provide: LiveAnnouncer, useValue: { announce } },
     ],
   });
-  const fixture = TestBed.createComponent(CopyButtonComponent);
+  const fixture = TestBed.createComponent(GlzCopyButtonComponent);
   fixture.componentRef.setInput('text', 'They pass now.');
+  fixture.componentRef.setInput('testId', 'message-copy');
   await fixture.whenStable();
   return {
     root: fixture.nativeElement as HTMLElement,
@@ -30,7 +31,7 @@ async function render(copies: boolean): Promise<{
   };
 }
 
-describe('CopyButtonComponent', () => {
+describe('GlzCopyButtonComponent', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
