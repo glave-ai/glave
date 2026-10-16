@@ -1,21 +1,23 @@
 //! `glave connect` and `glave connections`: the person's git hosts from the terminal, through
-//! the session API of this folder's task host (`specs/session.md`, "Git hosts"), as the web
-//! app's settings reach them. A token is read from standard input, hidden on a terminal, never
-//! from an argument, so it lands in neither the shell's history nor the list of processes.
+//! the session API of this folder's own task host (`specs/session.md`, "Git hosts"), as the
+//! web app's settings reach them. A token is read from standard input, hidden on a terminal,
+//! never from an argument, so it lands in neither the shell's history nor the list of
+//! processes (`token.rs`).
+
+mod token;
 
 use std::fmt::Write as _;
-use std::io::IsTerminal as _;
 use std::path::Path;
-use std::process::{Command, ExitCode, Stdio};
+use std::process::ExitCode;
 
 use anyhow::{Context as _, bail};
-use glave_event::{CredentialId, Forge, Secret};
+use glave_event::{CredentialId, Forge};
 use glave_session::protocol::{Ability, CredentialInfo, Reply, Request};
+use tokio::signal::unix::{SignalKind, signal};
 use uuid::Uuid;
 
 use crate::args::Args;
 use crate::daemon::Host;
-use crate::input::Input;
 use crate::tasks::run_with;
 
 pub const CONNECT_USAGE: &str = "\
@@ -50,8 +52,10 @@ pub fn connect_main(words: &[String]) -> ExitCode {
     run_with(words, CONNECT_USAGE, |words| async move {
         let folder = std::env::current_dir()?;
         let words: Vec<&str> = words.iter().map(String::as_str).collect();
+        let token = |word: &&str| *word == "--token" || token::looks_like(word);
         match words.as_slice() {
             ["github"] => sign_in(&folder).await,
+            words if words.iter().any(token) => bail!("{}", token::NOT_AN_ARGUMENT),
             [url] if !url.starts_with('-') => with_token(&folder, url, None).await,
             [url, "--username", name] => with_token(&folder, url, Some(name)).await,
             _ => bail!("give a host's address, or github\n\n{CONNECT_USAGE}"),
@@ -101,9 +105,25 @@ async fn sign_in(folder: &Path) -> anyhow::Result<()> {
     }
 }
 
-/// Connects the host at `url` with a token read from standard input.
-async fn with_token(folder: &Path, url: &str, username: Option<&str>) -> anyhow::Result<()> {
-    let token = read_token(url).await?;
+/// Connects the host at `address` with a token read from standard input; Ctrl-C stops it, the
+/// terminal as it was.
+async fn with_token(folder: &Path, address: &str, username: Option<&str>) -> anyhow::Result<()> {
+    let Some(url) = crate::credentials::origin(address) else {
+        bail!(
+            "that is not a git host's address glave can use: give it as https:// and its host, \
+             such as https://gitlab.com"
+        );
+    };
+    // Listening before the terminal's echo goes off, so no Ctrl-C leaves it off.
+    let mut interrupts = signal(SignalKind::interrupt()).context("could not listen for Ctrl-C")?;
+    tokio::select! {
+        connected = connect(folder, &url, username) => connected,
+        _ = interrupts.recv() => bail!("stopped"),
+    }
+}
+
+async fn connect(folder: &Path, url: &str, username: Option<&str>) -> anyhow::Result<()> {
+    let token = token::read(url).await?;
     let mut host = Host::connect_or_start(folder, &Args::default()).await?;
     let request = Request::CredentialConnect {
         url: url.to_owned(),
@@ -154,7 +174,7 @@ async fn list(folder: &Path) -> anyhow::Result<()> {
     if let Some(install) = install
         && credentials
             .iter()
-            .any(|credential| credential.url == GITHUB)
+            .any(|credential| install.starts_with(&format!("{}/", credential.url)))
     {
         println!("Choose the repositories GitHub's app may use at {install}");
     }
@@ -192,7 +212,7 @@ fn shown(credential: &CredentialInfo) -> String {
 /// What glave can do with a connection, in plain words; nothing claimed the host did not say.
 fn can(credential: &CredentialInfo) -> String {
     let Some(can) = &credential.can else {
-        return "Can do what the token allows: the host does not say.".to_owned();
+        return "What it can do depends on the access you gave its token.".to_owned();
     };
     if can.is_empty() {
         return "Can do nothing with your repositories yet.".to_owned();
@@ -221,64 +241,17 @@ fn forge_name(forge: Forge) -> &'static str {
     }
 }
 
-/// The token for `url`, from standard input: asked for, and hidden as it is typed or pasted,
-/// on a terminal. Ctrl-C stops, the terminal's echo restored.
-async fn read_token(url: &str) -> anyhow::Result<Secret> {
-    let terminal = std::io::stdin().is_terminal();
-    let input = Input::start();
-    let hidden = terminal.then(|| {
-        eprint!("Paste the token for {url} (it does not show), then press Enter: ");
-        Hidden::on()
-    });
-    let line = tokio::select! {
-        line = input.line() => line,
-        _ = tokio::signal::ctrl_c() => None,
-    };
-    if hidden.is_some() {
-        eprintln!();
-    }
-    drop(hidden);
-    let token = line.unwrap_or_default();
-    let token = token.trim();
-    if token.is_empty() {
-        bail!("no token given: paste it when asked, or pipe it in: ... | glave connect {url}");
-    }
-    Ok(Secret::new(token))
-}
-
-/// The terminal's echo, off while this lives, as `stty` sets it.
-struct Hidden;
-
-impl Hidden {
-    fn on() -> Self {
-        stty("-echo");
-        Self
-    }
-}
-
-impl Drop for Hidden {
-    fn drop(&mut self) {
-        stty("echo");
-    }
-}
-
-fn stty(setting: &str) {
-    // A terminal glave cannot change still reads the token; it shows as it is pasted.
-    let _ = Command::new("stty")
-        .arg(setting)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn connection(url: &str, forge: Forge, can: Option<Vec<Ability>>) -> CredentialInfo {
         CredentialInfo {
-            id: CredentialId::new(jiff::Timestamp::now(), [7; 10]).unwrap(),
+            id: CredentialId::new(
+                jiff::Timestamp::from_second(1_760_000_000).unwrap(),
+                [7; 10],
+            )
+            .unwrap(),
             forge,
             url: url.to_owned(),
             login: Some("ana".to_owned()),
@@ -312,7 +285,7 @@ mod tests {
         assert!(shown(&unsaid).starts_with("http://127.0.0.1:3000 (Gitea)"));
         assert_eq!(
             can(&unsaid),
-            "Can do what the token allows: the host does not say."
+            "What it can do depends on the access you gave its token."
         );
         let nothing = connection(GITHUB, Forge::Github, Some(Vec::new()));
         assert_eq!(can(&nothing), "Can do nothing with your repositories yet.");

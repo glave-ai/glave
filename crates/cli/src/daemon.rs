@@ -103,16 +103,34 @@ pub struct Host {
 }
 
 impl Host {
-    /// The host for `folder`, if one is running.
+    /// The host for `folder`, if one is running. Only the person's own: a socket in a folder
+    /// others may open, or one another user listens on, is refused before anything is sent,
+    /// since requests may carry a token.
     pub async fn connect(folder: &Path) -> anyhow::Result<Option<Self>> {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
         let path = socket(folder)?;
-        Ok(UnixStream::connect(&path).await.ok().map(|stream| {
-            let (read, writer) = stream.into_split();
-            Self {
-                lines: BufReader::new(read).lines(),
-                writer,
-                next_id: 1,
-            }
+        let Ok(stream) = UnixStream::connect(&path).await else {
+            return Ok(None);
+        };
+        let mine = tokio::fs::metadata(home::folder()?).await?.uid();
+        let around = tokio::fs::metadata(path.parent().context("the socket has no folder")?);
+        let around = around.await?;
+        let open = around.uid() != mine || around.permissions().mode() & 0o077 != 0;
+        let theirs = stream
+            .peer_cred()
+            .context("could not tell who listens at the task host's socket")?
+            .uid();
+        if open || theirs != mine {
+            bail!(
+                "{} is not your own task host's, so glave did not use it",
+                path.display()
+            );
+        }
+        let (read, writer) = stream.into_split();
+        Ok(Some(Self {
+            lines: BufReader::new(read).lines(),
+            writer,
+            next_id: 1,
         }))
     }
 

@@ -35,7 +35,13 @@ mod terminal {
         };
 
         let (ok, said) = run(&["connect", &host.url, "--token", TOKEN], "");
-        assert!(!ok && said.contains("give a host's address"), "{said}");
+        assert!(!ok && said.contains("looks like a token"), "{said}");
+        assert!(!said.contains(TOKEN), "never repeated: {said}");
+        let (ok, said) = run(&["connect", "ghp_e2e0given0as0argument"], "");
+        assert!(!ok && said.contains("revoke it"), "{said}");
+        assert!(!said.contains("ghp_e2e0given0as0argument"), "{said}");
+        let (ok, said) = run(&["connect", "notanaddress"], "");
+        assert!(!ok && said.contains("not a git host's address"), "{said}");
         let (ok, said) = run(&["connect", &host.url], "");
         assert!(!ok && said.contains("no token given"), "{said}");
         let (ok, said) = run(&["connect", &host.url], "gta_wrong0token\n");
@@ -50,7 +56,10 @@ mod terminal {
             )) && said.contains("token ending wxyz"),
             "{said}"
         );
-        assert!(said.contains("the host does not say"), "{said}");
+        assert!(
+            said.contains("depends on the access you gave its token"),
+            "{said}"
+        );
 
         let (ok, listed) = run(&["connections"], "");
         assert!(

@@ -116,16 +116,9 @@ impl Hosts {
         })
     }
 
-    /// The host as a client may see it, never its token, with what glave can do with it: for
-    /// a GitHub App's token, as GitHub says of the app's installations now.
+    /// The host as a client may see it, never its token, with what glave can do with it now.
     async fn described(&self, credential: &CredentialConnected) -> CredentialInfo {
-        let app =
-            credential.forge == Forge::Github && credential.token.expose().starts_with("ghu_");
-        let can = if app {
-            abilities::installations(&self.http, &credential.url, &credential.token).await
-        } else {
-            abilities::abilities(credential.forge, credential.scopes.as_deref())
-        };
+        let can = abilities::now(&self.http, credential).await;
         CredentialInfo {
             id: credential.credential,
             forge: credential.forge,
@@ -248,7 +241,7 @@ impl GitHosts for Hosts {
 /// ([`CredentialHost::named`]): `https://` and the host with any port, `http://` only to this
 /// computer, in lower case. None for anything else, or a URL with a user name, a query or a
 /// fragment before its path.
-fn origin(url: &str) -> Option<String> {
+pub(crate) fn origin(url: &str) -> Option<String> {
     let url = url.trim();
     if url.contains(char::is_whitespace) {
         return None;

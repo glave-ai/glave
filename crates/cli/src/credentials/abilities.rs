@@ -1,21 +1,31 @@
-//! What glave can do with a connected host, from what the host said its token may do
+//! What glave can do with a connected host, from what the host says its token may do
 //! (`specs/session.md`, "Git hosts"): a classic GitHub token's scopes, from the header GitHub
-//! answers with; a GitLab token's, asked of GitLab when it is connected; a GitHub App's
-//! permissions on its installations, asked of GitHub each time, since the person may install
-//! the app on more repositories after signing in. Where the host does not say, as for a
-//! fine-grained GitHub token, Gitea's or Bitbucket's, nothing is claimed.
+//! answers with, asked again each time since they can be changed; a GitLab token's, asked of
+//! GitLab when it is connected, since they cannot; a GitHub App's permissions on its
+//! installations, asked of GitHub each time, since the person may install the app on more
+//! repositories after signing in. Where the host does not say, as for a fine-grained GitHub
+//! token, Gitea's or Bitbucket's, nothing is claimed.
 
 use std::time::Duration;
 
-use glave_event::{Forge, Secret};
+use glave_event::{CredentialConnected, Forge, Secret};
 use glave_session::protocol::Ability;
 use reqwest::header::HeaderMap;
 use serde_json::Value;
 
 use super::check::{Http, api, read};
 
-/// How long asking GitHub about its app's installations may take, so listing stays quick.
-const INSTALLATIONS: Duration = Duration::from_secs(5);
+/// How long asking GitHub about a token may take while listing, so listing stays quick.
+const LISTING: Duration = Duration::from_secs(5);
+/// The scopes glave reads, the only ones it keeps: GitHub's, then GitLab's.
+const KNOWN: [&str; 6] = [
+    "repo",
+    "public_repo",
+    "api",
+    "write_repository",
+    "read_repository",
+    "read_api",
+];
 /// Everything glave does with a host, in the order clients show it.
 const ALL: [Ability; 4] = [
     Ability::Read,
@@ -24,21 +34,67 @@ const ALL: [Ability; 4] = [
     Ability::Issues,
 ];
 
-/// A classic GitHub token's scopes, from the headers of GitHub's answer to it. Only for a
-/// classic token or an OAuth app's (`ghp_`, `gho_`): for others the header says nothing.
-pub fn github_scopes(headers: &HeaderMap, token: &Secret) -> Option<Vec<String>> {
-    let classic = ["ghp_", "gho_"]
+/// What glave can do with `credential` now: a GitHub App's token as GitHub says of the app's
+/// installations, a classic GitHub token as GitHub says of its scopes (else as it said when it
+/// was connected), any other as its host said when it was connected.
+pub async fn now(http: &Http, credential: &CredentialConnected) -> Option<Vec<Ability>> {
+    let token = &credential.token;
+    if credential.forge == Forge::Github && token.expose().starts_with("ghu_") {
+        let expired = credential
+            .renewal
+            .as_ref()
+            .is_some_and(|renewal| renewal.expires.timestamp() <= jiff::Timestamp::now());
+        if expired {
+            return None;
+        }
+        return installations(http, &credential.url, token).await;
+    }
+    if credential.forge == Forge::Github && classic(token) {
+        let asked = format!("{}/user", api(&credential.url));
+        let scopes = match asking(http, &asked, token).await {
+            Some(response) => github_scopes(response.headers(), token),
+            None => credential.scopes.clone(),
+        };
+        return abilities(Forge::Github, scopes.as_deref());
+    }
+    abilities(credential.forge, credential.scopes.as_deref())
+}
+
+/// Whether `token` is a classic GitHub token or an OAuth app's (`ghp_`, `gho_`), whose scopes
+/// GitHub says in a header.
+fn classic(token: &Secret) -> bool {
+    ["ghp_", "gho_"]
         .iter()
-        .any(|prefix| token.expose().starts_with(prefix));
+        .any(|prefix| token.expose().starts_with(prefix))
+}
+
+/// GitHub's answer at `url` to `token`, within [`LISTING`], when it accepted the token.
+async fn asking(http: &Http, url: &str, token: &Secret) -> Option<reqwest::Response> {
+    let response = http
+        .to(url)
+        .get(url)
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .bearer_auth(token.expose())
+        .timeout(LISTING)
+        .send()
+        .await
+        .ok()?;
+    response.status().is_success().then_some(response)
+}
+
+/// A classic GitHub token's scopes that glave reads, from the headers of GitHub's answer to
+/// it. None for any other token: for others the header says nothing.
+pub fn github_scopes(headers: &HeaderMap, token: &Secret) -> Option<Vec<String>> {
     let header = headers.get("x-oauth-scopes")?.to_str().ok()?;
-    classic.then(|| {
-        header
-            .split(',')
-            .map(str::trim)
-            .filter(|scope| !scope.is_empty())
-            .map(str::to_owned)
-            .collect()
-    })
+    classic(token).then(|| known(header.split(',').map(str::trim)))
+}
+
+/// The scopes among `scopes` that glave reads.
+fn known<'a>(scopes: impl Iterator<Item = &'a str>) -> Vec<String> {
+    scopes
+        .filter(|scope| KNOWN.contains(scope))
+        .map(str::to_owned)
+        .collect()
 }
 
 /// A GitLab token's scopes, as GitLab says of the token it is asked with.
@@ -55,32 +111,14 @@ pub async fn gitlab_scopes(http: &Http, url: &str, token: &Secret) -> Option<Vec
         return None;
     }
     let scopes = read(response).await?.get("scopes")?.as_array()?.clone();
-    Some(
-        scopes
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect(),
-    )
+    Some(known(scopes.iter().filter_map(Value::as_str)))
 }
 
 /// What a GitHub App's user `token` lets glave do at GitHub at `url`: what the app may do on
 /// the installations the person reaches, all of them together; nothing before it is installed.
 pub async fn installations(http: &Http, url: &str, token: &Secret) -> Option<Vec<Ability>> {
     let asked = format!("{}/user/installations", api(url));
-    let response = http
-        .to(&asked)
-        .get(&asked)
-        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
-        .bearer_auth(token.expose())
-        .timeout(INSTALLATIONS)
-        .send()
-        .await
-        .ok()?;
-    if !response.status().is_success() {
-        return None;
-    }
-    let answer = read(response).await?;
+    let answer = read(asking(http, &asked, token).await?).await?;
     let mut can = Vec::new();
     for installation in answer.get("installations")?.as_array()? {
         let permission = |name: &str| {
@@ -118,6 +156,8 @@ pub fn abilities(forge: Forge, scopes: Option<&[String]>) -> Option<Vec<Ability>
         Forge::Gitlab if has("api") => &ALL,
         Forge::Gitlab if has("write_repository") => &[Ability::Read, Ability::Push],
         Forge::Gitlab if has("read_repository") => &[Ability::Read],
+        // What it allows of repositories GitLab's documentation does not say plainly.
+        Forge::Gitlab if has("read_api") => return None,
         Forge::Github | Forge::Gitlab => &[],
         Forge::Gitea | Forge::Bitbucket | Forge::Other => return None,
     };
@@ -152,6 +192,7 @@ mod tests {
             Some(vec![Ability::Read, Ability::Push])
         );
         assert_eq!(gitlab(&["read_repository"]), Some(vec![Ability::Read]));
+        assert_eq!(gitlab(&["read_api"]), None);
         assert_eq!(abilities(Forge::Gitea, Some(&scopes(&["all"]))), None);
         assert_eq!(abilities(Forge::Github, None), None, "a fine-grained token");
     }
@@ -161,7 +202,11 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("x-oauth-scopes", "repo, workflow".parse().unwrap());
         let read = |token: &str| github_scopes(&headers, &Secret::new(token));
-        assert_eq!(read("ghp_classic"), Some(scopes(&["repo", "workflow"])));
+        assert_eq!(
+            read("ghp_classic"),
+            Some(scopes(&["repo"])),
+            "only what glave reads"
+        );
         assert_eq!(read("github_pat_fine"), None);
         assert_eq!(read("ghu_app"), None);
         assert_eq!(
