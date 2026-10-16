@@ -2,7 +2,12 @@
   <h2 id="forms-heading">{{ copy.heading }}</h2>
 
   <h3>{{ copy.reactive }}</h3>
-  <form class="demo" data-testid="showcase-space-form" [formGroup]="space" (ngSubmit)="create()">
+  <form
+    class="demo glz-stack"
+    data-testid="showcase-space-form"
+    [formGroup]="space"
+    (ngSubmit)="create()"
+  >
     <glz-form-field [label]="copy.name" [hint]="copy.nameHint">
       <input glzInput data-testid="showcase-space-name" formControlName="name" />
       @if (nameMissing()) {
@@ -35,16 +40,20 @@
         <glz-error>{{ copy.termsMissing }}</glz-error>
       }
     </glz-form-field>
-    <button glzButton variant="primary" type="submit" data-testid="showcase-space-create">
-      {{ copy.create }}
-    </button>
+    <div class="glz-row">
+      <button glzButton variant="primary" type="submit" data-testid="showcase-space-create">
+        {{ copy.create }}
+      </button>
+    </div>
   </form>
 
   <h3>{{ copy.signal }}</h3>
-  <div class="demo">
+  <div class="demo glz-stack">
     <glz-form-field [label]="copy.email" [hint]="copy.emailHint">
       <input glzInput type="email" data-testid="showcase-email" [formField]="contactForm.email" />
     </glz-form-field>
-    <button glzButton data-testid="showcase-email-save" (click)="save()">{{ copy.save }}</button>
+    <div class="glz-row">
+      <button glzButton data-testid="showcase-email-save" (click)="save()">{{ copy.save }}</button>
+    </div>
   </div>
 </section>

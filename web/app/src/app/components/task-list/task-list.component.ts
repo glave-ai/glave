@@ -26,7 +26,7 @@ const COPY = {
 const STATUS: Readonly<
   Record<TaskInfo['status'], { readonly text: string; readonly tone: GlzTone }>
 > = {
-  running: { text: 'running', tone: 'accent' },
+  running: { text: 'running', tone: 'neutral' },
   elsewhere: { text: 'running elsewhere', tone: 'neutral' },
   finished: { text: 'finished', tone: 'success' },
 };

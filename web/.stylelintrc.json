@@ -5,11 +5,45 @@
     "selector-class-pattern": null,
     "custom-property-pattern": null,
     "keyframes-name-pattern": "^glz-[a-z-]+$",
-    "selector-pseudo-element-no-unknown": [true, { "ignorePseudoElements": ["ng-deep"] }],
+    "selector-pseudo-element-no-unknown": [
+      true,
+      {
+        "ignorePseudoElements": ["ng-deep"]
+      }
+    ],
     "color-function-notation": "modern",
     "declaration-property-value-no-unknown": null,
-    "property-no-unknown": [true, { "ignoreProperties": ["field-sizing"] }],
+    "property-no-unknown": [
+      true,
+      {
+        "ignoreProperties": ["field-sizing"]
+      }
+    ],
     "scss/at-mixin-pattern": null,
     "no-descending-specificity": null
-  }
+  },
+  "reportDescriptionlessDisables": true,
+  "reportNeedlessDisables": true,
+  "reportInvalidScopeDisables": true,
+  "overrides": [
+    {
+      "files": ["**/*.scss"],
+      "rules": {
+        "declaration-property-value-allowed-list": [
+          {
+            "/^margin/": ["/^(0|auto)(\\s+(0|auto)){0,3}$/"]
+          },
+          {
+            "message": "Parents own spacing: put a gap on the parent (or a glz-stack, glz-row or glz-grid), not a margin on the child (AGENTS.md)"
+          }
+        ]
+      }
+    },
+    {
+      "files": ["**/markdown/markdown.component.scss"],
+      "rules": {
+        "declaration-property-value-allowed-list": null
+      }
+    }
+  ]
 }

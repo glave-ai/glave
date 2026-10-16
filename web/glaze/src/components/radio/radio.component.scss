@@ -11,6 +11,6 @@
 }
 
 .native:checked + .mark {
-  border-color: var(--glz-color-accent);
-  background: radial-gradient(var(--glz-color-accent) 0 40%, var(--glz-surface-card) 45%);
+  border-color: var(--glz-accent);
+  background: radial-gradient(var(--glz-accent) 0 40%, var(--glz-surface-card) 45%);
 }

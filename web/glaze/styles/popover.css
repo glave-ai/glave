@@ -8,7 +8,7 @@
   margin: 0;
   padding: var(--glz-space-1) var(--glz-space-2);
   border: 0;
-  border-radius: var(--glz-radius-sm);
+  border-radius: var(--glz-radius-mark);
   background: var(--glz-surface-inverse);
   color: var(--glz-color-on-inverse);
   font-family: var(--glz-font-sans);

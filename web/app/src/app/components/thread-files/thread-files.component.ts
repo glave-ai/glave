@@ -42,7 +42,8 @@ export class ThreadFilesComponent {
   protected readonly files = computed(() =>
     this.thread.files().map((file) => ({
       path: file.path,
-      counts: `+${String(file.added)} −${String(file.removed)}`,
+      added: `+${String(file.added)}`,
+      removed: `−${String(file.removed)}`,
       countsLabel: `${String(file.added)} ${COPY.added}, ${String(file.removed)} ${COPY.removed}`,
       changes: file.changes.map((change) => ({
         key: change.key,

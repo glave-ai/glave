@@ -1,11 +1,12 @@
 /*
- * Everything an app includes once, globally: the tokens, the page base, and the Angular CDK's
- * structural styles for overlays and screen-reader-only text. Component styles travel with the
- * components themselves.
+ * Everything an app includes once, globally: the tokens, the page base, the layout primitives
+ * and prose flow, and the Angular CDK's structural styles for overlays and screen-reader-only
+ * text. Component styles travel with the components themselves.
  */
 @import '@angular/cdk/overlay-prebuilt.css';
 @import '@angular/cdk/a11y-prebuilt.css';
 @import './tokens.css';
 @import './base.css';
+@import './layout.css';
 @import './input.css';
 @import './popover.css';

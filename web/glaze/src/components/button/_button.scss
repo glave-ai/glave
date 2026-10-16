@@ -2,9 +2,9 @@
 // app re-skins every button by overriding them, or one button by setting them on it.
 @mixin button {
   :host {
-    --glz-button-bg: var(--glz-surface-card);
+    --glz-button-bg: transparent;
     --glz-button-fg: var(--glz-color-text);
-    --glz-button-border: var(--glz-color-border-strong);
+    --glz-button-border: var(--glz-color-border);
     --glz-button-hover: var(--glz-surface-hover);
 
     display: inline-flex;
@@ -12,13 +12,13 @@
     justify-content: center;
     gap: var(--glz-space-2);
     min-height: var(--glz-control-height-md);
-    padding: 0 var(--glz-space-4);
+    padding: var(--glz-inset-button);
     border: var(--glz-border-width) solid var(--glz-button-border);
-    border-radius: var(--glz-radius-md);
+    border-radius: var(--glz-radius-control);
     background: var(--glz-button-bg);
     color: var(--glz-button-fg);
     font: inherit;
-    font-weight: var(--glz-weight-bold);
+    font-size: var(--glz-text-md);
     line-height: 1;
     text-decoration: none;
     cursor: pointer;
@@ -42,14 +42,15 @@
   }
 
   :host(.glz-button--primary) {
-    --glz-button-bg: var(--glz-color-accent);
-    --glz-button-fg: var(--glz-color-on-accent);
-    --glz-button-border: var(--glz-color-accent);
-    --glz-button-hover: var(--glz-color-hover-on-accent);
+    --glz-button-bg: var(--glz-accent);
+    --glz-button-fg: var(--glz-on-accent);
+    --glz-button-border: var(--glz-accent);
+    --glz-button-hover: var(--glz-accent-hover);
+
+    font-weight: var(--glz-weight-bold);
   }
 
   :host(.glz-button--ghost) {
-    --glz-button-bg: transparent;
     --glz-button-border: transparent;
   }
 
@@ -57,17 +58,18 @@
     --glz-button-bg: var(--glz-color-danger);
     --glz-button-fg: var(--glz-color-on-danger);
     --glz-button-border: var(--glz-color-danger);
-    --glz-button-hover: var(--glz-color-hover-on-accent);
+    --glz-button-hover: var(--glz-color-danger-hover);
+
+    font-weight: var(--glz-weight-bold);
   }
 
   :host(.glz-button--sm) {
     min-height: var(--glz-control-height-sm);
-    padding: 0 var(--glz-space-3);
+    padding: var(--glz-inset-button-sm);
     font-size: var(--glz-text-sm);
   }
 
   :host(.glz-button--lg) {
     min-height: var(--glz-control-height-lg);
-    padding: 0 var(--glz-space-5);
   }
 }

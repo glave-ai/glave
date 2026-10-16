@@ -48,7 +48,7 @@ const COPY = {
 } as const;
 
 const MODELS: readonly GlzMenuOption[] = [
-  { value: 'hope', label: 'Hope', hint: 'Default', hope: true },
+  { value: 'hope', label: 'Hope', hint: 'Default' },
   { value: 'haiku', label: 'Claude Haiku' },
   { value: 'luna', label: 'GPT-6 Luna' },
 ];

@@ -29,8 +29,7 @@
               "@fontsource/atkinson-hyperlegible-next/400.css",
               "@fontsource/atkinson-hyperlegible-next/700.css",
               "@fontsource/atkinson-hyperlegible-mono/400.css",
-              "glaze/styles/glaze.css",
-              "app/src/styles.css"
+              "glaze/styles/glaze.css"
             ],
             "inlineStyleLanguage": "scss"
           },

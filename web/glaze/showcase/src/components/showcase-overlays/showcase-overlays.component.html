@@ -1,7 +1,7 @@
 <section id="overlays" aria-labelledby="overlays-heading">
   <h2 id="overlays-heading">{{ copy.heading }}</h2>
 
-  <div class="row">
+  <div class="glz-row">
     <button glzButton data-testid="showcase-open-dialog" (click)="openRename()">
       {{ copy.openDialog }}
     </button>
@@ -13,7 +13,7 @@
     <glz-form-field [label]="copy.title">
       <input glzInput data-testid="showcase-dialog-title" />
     </glz-form-field>
-    <div glzDialogActions>
+    <div glzDialogActions class="glz-row glz-gap-2">
       <button glzButton (click)="closeRename()">{{ copy.cancel }}</button>
       <button
         glzButton

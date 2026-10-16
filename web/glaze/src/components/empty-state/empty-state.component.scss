@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--glz-space-2);
+  gap: var(--glz-space-3);
   padding: var(--glz-space-7) var(--glz-space-4);
   text-align: center;
   color: var(--glz-color-text-muted);
@@ -15,7 +15,6 @@
 }
 
 .heading {
-  margin: 0;
   color: var(--glz-color-text);
   font-size: var(--glz-text-lg);
   font-weight: var(--glz-weight-bold);
@@ -23,10 +22,6 @@
 
 .text {
   max-width: 28rem;
-}
-
-.actions {
-  margin-top: var(--glz-space-3);
 }
 
 .actions:empty {

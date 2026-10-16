@@ -8,6 +8,7 @@ See every component live in the showcase (`npm run showcase` in `web/`), a dev-o
 
 Only what glave's app uses: a piece the app stops using leaves Glaze.
 
+- **Styles** (`styles/glaze.css`): the tokens, the layout primitives (`glz-stack`, `glz-row`, `glz-grid`, `glz-gap-*`) and the prose flow (`glz-flow`).
 - **Actions and display**: `glzButton`, `glzIconButton`, `glz-icon`, `glz-badge`, `glz-avatar`, `glz-card`, `glz-empty-state`.
 - **Forms**: `glz-form-field`, `glz-error`, `glzInput`, `glz-checkbox`, `glz-radio-group`, `glz-radio`.
 - **Layout**: `glz-sidenav-layout`, `glz-panel-layout`, `glz-top-bar`, `glz-nav-list`, `glzNavItem`, `glz-tabs`, `glz-tab`.
@@ -56,12 +57,11 @@ export class RenameComponent {
 
 ## Theming
 
-Override tokens, nothing else:
+Override tokens, nothing else. The accent is one colour; the text on it, its hover and its tints follow from it:
 
 ```css
 :root {
-  --glz-color-accent: light-dark(#0b5cad, #7ab8ff);
-  --glz-radius-md: 4px;
+  --glz-accent: #0b5cad;
   --glz-font-sans: 'Inter', system-ui, sans-serif;
 }
 ```

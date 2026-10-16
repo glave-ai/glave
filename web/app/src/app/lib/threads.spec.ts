@@ -16,8 +16,8 @@ describe('threads', () => {
   });
 
   it('marks running and waiting threads', () => {
-    expect(threadMark({ status: 'running' })).toEqual({ text: 'running', tone: 'accent' });
-    expect(threadMark({ status: 'waiting' })).toEqual({ text: 'needs you', tone: 'warning' });
+    expect(threadMark({ status: 'running' })).toEqual({ text: 'running', tone: 'neutral' });
+    expect(threadMark({ status: 'waiting' })).toEqual({ text: 'needs you', tone: 'accent' });
     expect(threadMark({ status: 'idle' })).toBeNull();
   });
 

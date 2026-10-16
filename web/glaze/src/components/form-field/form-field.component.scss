@@ -2,7 +2,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--glz-space-1);
-  margin-bottom: var(--glz-field-gap, var(--glz-space-4));
 }
 
 .label {
@@ -11,12 +10,11 @@
 }
 
 .required {
-  margin-left: 0.15em;
+  padding-inline-start: 0.15em;
   color: var(--glz-color-danger);
 }
 
 .hint {
-  margin: 0;
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-sm);
 }

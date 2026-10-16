@@ -3,7 +3,6 @@
   type="button"
   class="trigger"
   aria-haspopup="dialog"
-  [class.hope]="hope()"
   [attr.data-testid]="ids().trigger"
   [attr.aria-expanded]="expanded()"
   [attr.aria-controls]="popoverId"
@@ -11,9 +10,6 @@
   (click)="show()"
 >
   <span class="glz-visually-hidden">{{ prefix() }}</span>
-  @if (hope()) {
-    <span class="sun" aria-hidden="true"></span>
-  }
   <span class="text">{{ shownLabel() }}</span>
   <glz-icon class="chevron" [icon]="icons.open" />
 </button>
@@ -71,12 +67,7 @@
           }
         </span>
         <span class="name">
-          <span class="label">
-            {{ option.label }}
-            @if (option.hope) {
-              <span class="sun" aria-hidden="true"></span>
-            }
-          </span>
+          <span class="label">{{ option.label }}</span>
           @if (option.hasHint) {
             <span class="hint">{{ option.hint }}</span>
           }

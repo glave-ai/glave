@@ -38,7 +38,6 @@ interface ShownOption {
   readonly label: string;
   readonly hint: string;
   readonly hasHint: boolean;
-  readonly hope: boolean;
   readonly id: string;
   readonly selected: boolean;
   readonly active: boolean;
@@ -51,8 +50,7 @@ interface ShownOption {
  * Page Up and Page Down move through the matches, Enter picks, Escape closes, focus goes back
  * to the button. The options show in their own order, so the app puts first what the person
  * is likeliest to want. The search box is left alone by autocorrect, capitals and spelling, so
- * a model's name is searched as typed. An option with `hope` wears Hope's sun: set it only for
- * Hope.
+ * a model's name is searched as typed.
  *
  * ```html
  * <glz-picker label="Model" [options]="models" [(value)]="model" />
@@ -99,7 +97,6 @@ export class GlzPickerComponent {
     this.options().find((option) => option.value === this.value()),
   );
   protected readonly shownLabel = computed(() => this.current()?.label ?? this.placeholder());
-  protected readonly hope = computed(() => this.current()?.hope === true);
   /** The options that match the search, in their order. */
   private readonly flat = computed(() => filterOptions(this.options(), this.query()));
   protected readonly shown = computed<readonly ShownOption[]>(() =>
@@ -108,7 +105,6 @@ export class GlzPickerComponent {
       label: option.label,
       hint: option.hint ?? '',
       hasHint: (option.hint ?? '') !== '',
-      hope: option.hope === true,
       id: `${this.popoverId}-${String(at)}`,
       selected: option.value === this.value(),
       active: at === this.activeIndex(),

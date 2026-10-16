@@ -1,14 +1,5 @@
 @use '../page';
 
-.section {
-  font-size: var(--glz-text-lg);
-}
-
-.part {
-  margin: var(--glz-space-4) 0 var(--glz-space-2);
-  font-size: var(--glz-text-md);
-}
-
 .account {
   display: flex;
   align-items: center;
@@ -17,23 +8,14 @@
   padding-block: var(--glz-space-2);
 }
 
-.account p,
-.device p {
-  margin: 0;
-}
-
 .abilities {
-  margin: var(--glz-space-1) 0 0;
   padding-inline-start: var(--glz-space-5);
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-sm);
 }
 
-.form,
-.device {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glz-space-3);
+.part {
+  font-size: var(--glz-text-md);
 }
 
 .code {
@@ -41,10 +23,4 @@
   font-size: var(--glz-text-xl);
   font-weight: var(--glz-weight-bold);
   letter-spacing: 0.1em;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--glz-space-2);
 }

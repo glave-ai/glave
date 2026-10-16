@@ -4,7 +4,7 @@
 <main class="page">
   <h1>{{ copy.heading }}</h1>
   <p class="lead">{{ copy.lead }}</p>
-  <form class="form" data-testid="connect" (submit)="connect($event)">
+  <form class="glz-stack" data-testid="connect" (submit)="connect($event)">
     <glz-form-field [label]="copy.service">
       <glz-radio-group
         data-testid="connect-service"
@@ -43,7 +43,7 @@
     @if (problem(); as problem) {
       <p class="problem" role="alert" data-testid="connect-problem">{{ problem }}</p>
     }
-    <div class="actions">
+    <div class="actions glz-row glz-gap-2">
       @if (adding()) {
         <button glzButton type="button" data-testid="connect-back" (click)="back()">
           {{ copy.back }}

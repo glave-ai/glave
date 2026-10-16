@@ -1,27 +1,20 @@
+// What needs the person: a card lifted off the page, behind a stronger line.
 :host {
   display: flex;
   flex-direction: column;
-  gap: var(--glz-space-2);
-  padding: var(--glz-space-3) var(--glz-space-4);
-  border: var(--glz-border-width) solid var(--glz-color-warning);
-  border-radius: var(--glz-radius-lg);
-  background: var(--glz-color-warning-soft);
+  gap: var(--glz-space-3);
+  padding: var(--glz-inset-card);
+  border: var(--glz-border-width) solid var(--glz-color-border-strong);
+  border-radius: var(--glz-radius-card);
+  background: var(--glz-surface-card);
+  box-shadow: var(--glz-elevation-2);
 }
 
 .header {
   display: flex;
   align-items: center;
   gap: var(--glz-space-2);
-}
-
-.icon {
-  color: var(--glz-color-warning);
-}
-
-.heading,
-.summary,
-.decided {
-  margin: 0;
+  font-size: var(--glz-text-sm);
 }
 
 .heading {
@@ -29,7 +22,7 @@
 }
 
 .tool {
-  margin-inline-end: var(--glz-space-1);
+  padding-inline-end: var(--glz-space-1);
   font-family: var(--glz-font-mono);
   color: var(--glz-color-text-muted);
 }

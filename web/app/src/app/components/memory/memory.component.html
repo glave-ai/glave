@@ -13,14 +13,14 @@
   <div class="list">
     @for (row of rows(); track row.id) {
       <glz-card data-testid="memory">
-        <p class="text">{{ row.text }}</p>
+        <p>{{ row.text }}</p>
         <p class="details">
           <glz-badge>{{ row.scope }}</glz-badge>
           @if (row.untrusted) {
             <glz-badge tone="warning">{{ copy.untrusted }}</glz-badge>
           }
         </p>
-        <div glzCardFooter>
+        <div glzCardFooter class="glz-row glz-gap-2">
           <button
             glzButton
             size="sm"
@@ -58,7 +58,7 @@
       <glz-error>{{ copy.textMissing }}</glz-error>
     }
   </glz-form-field>
-  <div glzDialogActions>
+  <div glzDialogActions class="glz-row glz-gap-2">
     <button glzButton (click)="cancelEdit()">{{ copy.cancel }}</button>
     <button glzButton variant="primary" data-testid="memory-save" (click)="save()">
       {{ copy.save }}

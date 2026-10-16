@@ -4,7 +4,7 @@
   height: 22rem;
   overflow: hidden;
   border: var(--glz-border-width) solid var(--glz-color-border);
-  border-radius: var(--glz-radius-lg);
+  border-radius: var(--glz-radius-card);
 }
 
 .nav {
@@ -13,8 +13,12 @@
 }
 
 .lists {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: var(--glz-space-5);
   min-width: 0;
+  padding: var(--glz-inset-pane-block) var(--glz-inset-pane-inline);
 }
 
 .content {
@@ -29,9 +33,8 @@
 }
 
 .details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
   padding: var(--glz-space-4);
-}
-
-.details-heading {
-  margin: 0 0 var(--glz-space-2);
 }

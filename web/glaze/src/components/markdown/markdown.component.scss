@@ -1,45 +1,31 @@
 // Not encapsulated: the blocks' HTML carries no view attributes. Every rule starts at
-// .glz-markdown, the class the component puts on its element.
+// .glz-markdown, the class the component puts on its element beside .glz-flow, the prose flow
+// (styles/layout.css) that spaces its blocks and keeps it flush with what holds it.
 
 .glz-markdown {
   display: block;
   min-width: 0;
   overflow-wrap: anywhere;
 
-  // Flush with what holds it: no space above the first block or below the last.
-  > :first-child > :first-child {
-    margin-block-start: 0;
-    padding-block-start: 0;
-  }
-
-  > :last-child > :last-child {
-    margin-block-end: 0;
-    padding-block-end: 0;
-  }
-
-  :is(p, ul, ol, blockquote, hr, .glz-markdown-code, .glz-markdown-table) {
-    margin-block: 0 var(--glz-space-3);
+  // Its own blocks, a code block and a table, flow as the rest do.
+  :is(.glz-markdown-code, .glz-markdown-table) {
+    margin-block: 0 var(--glz-flow-space);
   }
 
   :is(h1, h2, h3, h4, h5, h6) {
-    margin-block: var(--glz-space-5) var(--glz-space-2);
-    font-size: var(--glz-text-md);
+    font-size: var(--glz-text-lg);
   }
 
   h1 {
-    font-size: var(--glz-text-xl);
+    font-size: var(--glz-text-2xl);
   }
 
   h2 {
-    font-size: var(--glz-text-lg);
+    font-size: var(--glz-text-xl);
   }
 
   :is(ul, ol) {
     padding-inline-start: var(--glz-space-5);
-  }
-
-  li > :is(p, ul, ol) {
-    margin-block: var(--glz-space-1);
   }
 
   // A task list's items show their box where the bullet was.
@@ -48,7 +34,6 @@
   }
 
   blockquote {
-    margin-inline: 0;
     padding-inline-start: var(--glz-space-3);
     border-inline-start: 3px solid var(--glz-color-border-strong);
     color: var(--glz-color-text-muted);
@@ -67,9 +52,9 @@
   }
 
   :not(pre) > code {
-    padding: 0.1em 0.35em;
-    border-radius: var(--glz-radius-sm);
-    background: var(--glz-surface-sunken);
+    padding: 0.05em 0.35em;
+    border-radius: var(--glz-radius-mark);
+    background: var(--glz-surface-bubble);
   }
 
   .glz-markdown-raw {
@@ -78,7 +63,7 @@
 }
 
 .glz-markdown-code {
-  border-radius: var(--glz-radius-md);
+  border-radius: var(--glz-radius-strip);
   background: var(--glz-surface-sunken);
 
   pre {
@@ -107,6 +92,7 @@
   overflow-x: auto;
 
   table {
+    margin: 0;
     border-collapse: collapse;
   }
 
@@ -141,8 +127,8 @@
 
 // Checked: filled, with a tick drawn from two borders, so it never relies on colour alone.
 .glz-markdown-task-done {
-  border-color: var(--glz-color-accent);
-  background: var(--glz-color-accent);
+  border-color: var(--glz-accent);
+  background: var(--glz-accent);
 
   &::after {
     content: '';
@@ -150,7 +136,7 @@
     width: 0.3em;
     height: 0.55em;
     margin: 0 auto;
-    border: solid var(--glz-color-on-accent);
+    border: solid var(--glz-on-accent);
     border-width: 0 2px 2px 0;
     transform: rotate(45deg);
   }

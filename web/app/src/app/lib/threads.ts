@@ -23,9 +23,9 @@ export interface ThreadMark {
 export function threadMark(thread: Pick<ThreadSummary, 'status'>): ThreadMark | null {
   switch (thread.status) {
     case 'running':
-      return { text: 'running', tone: 'accent' };
+      return { text: 'running', tone: 'neutral' };
     case 'waiting':
-      return { text: 'needs you', tone: 'warning' };
+      return { text: 'needs you', tone: 'accent' };
     case 'idle':
       return null;
   }

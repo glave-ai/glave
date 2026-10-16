@@ -37,7 +37,7 @@ describe('ModelPickerComponent', () => {
     fixture.componentRef.setInput('current', 'hope-12b');
     await fixture.whenStable();
     expect(trigger(root)?.textContent).toContain('Hope');
-    expect(trigger(root)?.classList).toContain('hope');
+    expect(trigger(root)?.classList).not.toContain('hope');
   });
 
   it('takes the person’s pick from the list by name, and lists it after the default since', async () => {

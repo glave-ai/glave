@@ -19,7 +19,7 @@ const SECTIONS = [
 const COPY = {
   heading: 'Glaze',
   intro:
-    'Every Glaze component and directive, live. The look is placeholder: everything comes from design tokens, so a new design is a new set of CSS custom properties.',
+    'Every Glaze component and directive, live. Everything comes from design tokens, so a theme is a new set of CSS custom properties.',
   contents: 'On this page',
 } as const;
 

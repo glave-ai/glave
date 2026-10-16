@@ -10,7 +10,7 @@
   flex: none;
   flex-direction: column;
   gap: var(--glz-space-2);
-  padding: var(--glz-space-3) var(--glz-space-3) var(--glz-space-1);
+  padding: var(--glz-inset-pane-block) var(--glz-inset-pane-inline) var(--glz-space-3);
 }
 
 .top a {
@@ -22,12 +22,9 @@
   min-height: 0;
 }
 
-.pages {
-  flex: none;
-  border-top: var(--glz-border-width) solid var(--glz-color-border);
-}
-
+.pages,
 .person {
   flex: none;
+  padding: var(--glz-space-2) var(--glz-inset-pane-inline);
   border-top: var(--glz-border-width) solid var(--glz-color-border);
 }

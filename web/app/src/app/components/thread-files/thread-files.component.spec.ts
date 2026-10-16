@@ -34,7 +34,8 @@ describe('ThreadFilesComponent', () => {
     const files = root.querySelectorAll('[data-testid="file"]');
     expect(files).toHaveLength(1);
     expect(files[0]?.querySelector('.path')?.textContent).toBe('notes.md');
-    expect(files[0]?.querySelector('.counts')?.textContent).toBe('+2 −1');
+    expect(files[0]?.querySelector('.plus')?.textContent).toBe('+2');
+    expect(files[0]?.querySelector('.minus')?.textContent).toBe('−1');
     expect(files[0]?.textContent).toContain('2 added, 1 removed');
     const changes = files[0]?.querySelectorAll('[data-testid="file-change"]');
     expect(changes?.[0]?.querySelector('.note')?.textContent).toBe('Wrote the whole file');

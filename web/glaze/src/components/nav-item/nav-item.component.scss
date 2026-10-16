@@ -3,12 +3,11 @@
   align-items: center;
   gap: var(--glz-space-2);
   width: 100%;
-  min-height: 2.25rem;
-  padding: var(--glz-space-1) var(--glz-space-3);
+  padding: var(--glz-inset-row);
   border: 0;
-  border-radius: var(--glz-radius-md);
+  border-radius: var(--glz-radius-row);
   background: none;
-  color: var(--glz-color-text);
+  color: var(--glz-color-text-secondary);
   font: inherit;
   text-align: left;
   text-decoration: none;
@@ -26,6 +25,7 @@
 
 :host([aria-current='page']) {
   background: var(--glz-surface-selected);
+  color: var(--glz-color-text);
   font-weight: var(--glz-weight-bold);
 }
 

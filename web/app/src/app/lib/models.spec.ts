@@ -65,11 +65,11 @@ describe('models', () => {
     expect(companyName('some-lab')).toBe('Some Lab');
   });
 
-  it('offers each model by its display name, marking the default and Hope only by its flag', () => {
+  it('offers each model by its display name, marking the default, Hope as any other', () => {
     expect(modelOptions(MODELS)).toEqual([
-      { value: 'gpt-6-luna', label: 'GPT-6 Luna', hope: false, hint: 'Default' },
-      { value: 'hope-12b', label: 'Hope', hope: true },
-      { value: 'hope-lookalike', label: 'Hope Lookalike', hope: false },
+      { value: 'gpt-6-luna', label: 'GPT-6 Luna', hint: 'Default' },
+      { value: 'hope-12b', label: 'Hope' },
+      { value: 'hope-lookalike', label: 'Hope Lookalike' },
     ]);
   });
 

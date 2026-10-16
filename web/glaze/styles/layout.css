@@ -1,0 +1,100 @@
+/*
+ * Layout primitives: plain classes, since layout is pure CSS and a component would add markup
+ * for nothing. Parents own spacing: a stack, a row or a grid spaces its children with a gap from
+ * the space scale (a glz-gap-* class, or `gap` in a component's own styles), and the children
+ * never set outer margins of their own.
+ *
+ * <div class="glz-stack glz-gap-5">…</div>   one above another
+ * <div class="glz-row glz-gap-2">…</div>     side by side, wrapping
+ * <div class="glz-grid">…</div>              as many columns as fit, --glz-grid-min wide or more
+ */
+
+.glz-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-4);
+}
+
+.glz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-3);
+}
+
+.glz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--glz-grid-min, 14rem), 100%), 1fr));
+  gap: var(--glz-space-4);
+}
+
+.glz-gap-0 {
+  gap: 0;
+}
+
+.glz-gap-half {
+  gap: var(--glz-space-half);
+}
+
+.glz-gap-1 {
+  gap: var(--glz-space-1);
+}
+
+.glz-gap-2 {
+  gap: var(--glz-space-2);
+}
+
+.glz-gap-3 {
+  gap: var(--glz-space-3);
+}
+
+.glz-gap-4 {
+  gap: var(--glz-space-4);
+}
+
+.glz-gap-5 {
+  gap: var(--glz-space-5);
+}
+
+.glz-gap-6 {
+  gap: var(--glz-space-6);
+}
+
+.glz-gap-7 {
+  gap: var(--glz-space-7);
+}
+
+.glz-gap-8 {
+  gap: var(--glz-space-8);
+}
+
+/*
+ * Prose flow: running text (a reply's markdown, or any other block of it) spaces its own blocks
+ * and sits flush in what holds it, with no space above its first block or below its last. A
+ * block may sit one element deep (markdown renders each in its own).
+ */
+.glz-flow {
+  --glz-flow-space: var(--glz-space-4);
+}
+
+.glz-flow :where(p, ul, ol, dl, blockquote, pre, table, figure, hr) {
+  margin-block: 0 var(--glz-flow-space);
+}
+
+.glz-flow :where(h1, h2, h3, h4, h5, h6) {
+  margin-block: var(--glz-space-5) var(--glz-space-2);
+}
+
+.glz-flow :where(li) > :where(p, ul, ol) {
+  margin-block: var(--glz-space-1);
+}
+
+.glz-flow > :first-child,
+.glz-flow > :first-child > :first-child {
+  margin-block-start: 0;
+}
+
+.glz-flow > :last-child,
+.glz-flow > :last-child > :last-child {
+  margin-block-end: 0;
+}

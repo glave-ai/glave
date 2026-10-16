@@ -4,16 +4,24 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 
 ## Set up
 
-- Global styles, once: `@glave/glaze/styles/glaze.css` (tokens, page base, native-control styles, CDK overlay styles), plus the fonts (`@fontsource/atkinson-hyperlegible-next`, `-mono`).
+- Global styles, once: `@glave/glaze/styles/glaze.css` (tokens, page base, layout primitives and prose flow, native-control styles, CDK overlay styles), plus the fonts (`@fontsource/atkinson-hyperlegible-next`, `-mono`).
 - Import each component or directive where it is used: `imports: [GlzButtonComponent, GlzFormFieldComponent, GlzInputDirective]`. There are no modules.
 - Icons are Lucide (ISC): `import { Send } from 'lucide'` and `<glz-icon [icon]="send" />`. Only imported icons are bundled.
 
 ## Theming
 
-- Only CSS custom properties. Override them on `:root`, or on any element for part of the page: `--glz-color-accent`, `--glz-surface-card`, `--glz-radius-md`, `--glz-space-4`, `--glz-font-sans`, `--glz-elevation-2`, and so on (`styles/tokens.css` lists them all). Never style Glaze's internals by class.
-- Surfaces, page up: `--glz-surface-page`, `-sunken`, `-card`, `-raised`, `-overlay`. `<glz-card surface="raised">` picks one.
+- Only CSS custom properties (`styles/tokens.css` lists them all). Never style Glaze's internals by class.
+- The look is monochrome: warm greys, and one accent, ink by default. A theme sets `--glz-accent` alone, on `:root`; the colour on it (`--glz-on-accent`), its hover, its soft tint and the accent as text follow in CSS. Focus has its own quiet ring (`--glz-color-focus`), never the accent.
+- Surfaces, page up: `--glz-surface-page`, `-sidebar`, `-sunken`, `-card`, `-raised`, `-overlay`; `-bubble` under the person's messages. `<glz-card surface="raised">` picks one.
 - Light and dark come from CSS alone (`color-scheme` and `light-dark()`), following the system. To force one, set `data-theme="light"` or `"dark"` on `<html>`; storing the person's choice is the app's job.
-- Sun gold (`--glz-color-hope`) is only for Hope's presence (`<glz-avatar hope>`).
+
+## Space and layout
+
+- Parents own spacing: no component sets its own outer margin; the space between things is the parent's `gap`. Lay a page out with the primitives, plain classes: `glz-stack` (one above another), `glz-row` (side by side, wrapping), `glz-grid` (as many columns as fit, `--glz-grid-min` wide), each spaced by a `glz-gap-*` class (`half`, `0` to `8`) or a `gap` in your own styles.
+- Gaps come from the space scale, `--glz-space-half` and `--glz-space-1` to `-8`; text sizes from `--glz-text-xs` to `-4xl`. Both are fluid: they grow with `clamp()` from a phone (360px) to a wide screen (1440px).
+- The padding inside a box is its kind's inset: `--glz-inset-row` (nav items, options), `-control` (inputs), `-button`, `-strip`, `-bubble`, `-card`, `-composer`, `-dialog`, `-pane-block` and `-pane-inline` (side panes), `-page-block` and `-page-inline`. Its corners are its kind's radius: `--glz-radius-mark`, `-row`, `-control`, `-strip`, `-card`, `-composer`.
+- Running text flows: give its element `glz-flow` and it spaces its own blocks (paragraphs, lists, headings, code) and sits flush in what holds it. Markdown does this already.
+- A row of buttons projected into a slot (`glzCardFooter`, `glzDialogActions`) is a `glz-row glz-gap-2`.
 
 ## Forms
 
@@ -25,7 +33,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 ## The conversation
 
 - `glz-composer`: `[(value)]`, `[busy]`, `(send)` with the trimmed text, `(stop)`. Enter sends, Shift+Enter is a new line, Escape stops while busy. Slots: `glzComposerStart` and `glzComposerEnd`, either side of the toolbar.
-- `glz-message` (`from`, `author`, `streaming`; no avatar and no name over it: the person's own a bubble at the end of the line, `--glz-message-gap` before it and `--glz-message-person-surface` under it; a reply plain full-width text; `author` names the article for screen readers; actions such as copy in the `glzMessageActions` slot, under it, shown on hover and focus, always on touch) holds `glz-reasoning`, `glz-receipt` (a tool call, one quiet line: `icon`, `tool`, `summary`, `status`, evidence projected), `glz-steps` (consecutive receipts folded under one disclosure line: `summary` such as "Ran 4 steps", `[(open)]`), `glz-approval-card` (`(decide)` emits `allow_once`, `allow_for_thread` or `deny`; set `[decision]` to show it in place) and `glz-question-card` (`(answer)` emits one string per question; set `[answered]`).
+- `glz-message` (`from`, `author`, `streaming`; no avatar and no name over it: the person's own a bubble at the end of the line, `--glz-message-gap` before it and `--glz-message-person-surface` under it; a reply plain full-width text; `author` names the article for screen readers; actions such as copy in the `glzMessageActions` slot, hung just under it in the gap before what follows, shown on hover and focus, always on touch) holds `glz-reasoning`, `glz-receipt` (a tool call, one quiet line: `icon`, `tool`, `summary`, `status`, evidence projected), `glz-steps` (consecutive receipts folded under one disclosure strip: `summary` such as "Ran 4 steps", `[(open)]`), `glz-approval-card` (a card that needs the person, as `glz-question-card` is; `(decide)` emits `allow_once`, `allow_for_thread` or `deny`; set `[decision]` to show it in place) and `glz-question-card` (`(answer)` emits one string per question; set `[answered]`).
 - A reply's text: `<div [glzMarkdown]="text" [streaming]="writing">` renders GitHub-flavoured markdown (tables, task lists) into that element, flush at its top and bottom. It is safe whatever the text says: raw HTML shows as text, an image shows as a link to it and is never fetched, links open in a new tab and say so, and Angular sanitizes the HTML again on its Trusted Types policy. Each block renders once; while `streaming`, only the growing last one is redone, and half-written markdown shows as it will end. Code blocks get a copy button (`<testId>-copy`) and highlighting, loaded the first time a language appears. The person's own text stays plain.
 - `<glz-copy-button [text]="text" testId="…">` copies text and says so (a check, "Copied", announced); in a message's `glzMessageActions`, and on markdown's code blocks.
 - Put the message list in a scrolling element with `glzStickToBottom` (`[(atBottom)]`, `scrollToBottom()`).
@@ -34,7 +42,7 @@ Glaze (`@glave/glaze`) is an Angular 22 component library: standalone, zoneless,
 
 - Page: `glz-sidenav-layout` (`[glzSidenav]` slot; a drawer on narrow screens; `--glz-sidenav-width`, `--glz-sidenav-surface`) and `glz-panel-layout` (`[glzPanel]` slot at the end; a sheet on narrow screens; `--glz-panel-width`, `--glz-panel-surface`). Both bind `[(open)]` and `[(width)]` (pixels) and, on wide screens, make their edge a window splitter (`glzSplitter`, a focusable `separator`): drag it or use the arrow keys, Home and End to resize; drag it past half the minimum or press Enter to collapse; the collapsed edge stays as a slim grip to drag, click or Enter back. Give the edge a `resizeLabel`, a `resizeHint` (its tooltip) and the page's toggle `shortcut` (`aria-keyshortcuts`). `glz-top-bar` (`glzTopBarStart`, `glzTopBarEnd`; `--glz-top-bar-surface` and `--glz-top-bar-border`, so it can float over a page), `glz-nav-list` with `a[glzNavItem]` (`current`, `glzNavItemEnd` for a badge; `collapsible` with `[(expanded)]` and `glzNavListActions` beside its heading), `glz-tabs` with `glz-tab`. Remembering a panel's width or a group's state is the app's job.
 - `glz-dialog` (`[(open)]`) and `glz-confirm-dialog` (`(decided)`) are native `<dialog>`s. Open them by setting `open`.
-- A compact choice among a few options: `<glz-menu-select label="Model" [options] [(value)]>`, options with `hint` and, only for Hope, `hope`. A choice among many (a model catalogue): `<glz-picker label="Model" searchLabel="Search models" [options] [(value)]>`, a search box over a scrolling listbox (the combobox pattern, the CDK's `ActiveDescendantKeyManager`), in the options' own order (putting the likeliest first is the app's job); the search box is free of autocorrect, capitals and spellcheck. Tooltips: `[glzTooltip]="text"`, hints only.
+- A compact choice among a few options: `<glz-menu-select label="Model" [options] [(value)]>`, options with `hint`. A choice among many (a model catalogue): `<glz-picker label="Model" searchLabel="Search models" [options] [(value)]>`, a search box over a scrolling listbox (the combobox pattern, the CDK's `ActiveDescendantKeyManager`), in the options' own order (putting the likeliest first is the app's job); the search box is free of autocorrect, capitals and spellcheck. Tooltips: `[glzTooltip]="text"`, hints only.
 - `[glzCopy]="text"` copies on click; `(copied)` says whether it worked.
 
 ## Rules
