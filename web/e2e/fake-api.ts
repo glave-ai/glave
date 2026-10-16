@@ -256,6 +256,8 @@ function answer(method: string, params: Record<string, unknown>): unknown {
           },
         ],
       };
+    case 'credential/list':
+      return { credentials: [], device: true };
     case 'server/discover':
       return {
         name: 'glave',

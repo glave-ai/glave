@@ -16,6 +16,7 @@ import { ProvidersService } from '../../services/providers.service';
 import { ServerService } from '../../services/server.service';
 import { SessionService } from '../../services/session.service';
 import { ThemeService, isChoice } from '../../services/theme.service';
+import { AccountsComponent } from '../accounts/accounts.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
 
 const COPY = {
@@ -37,10 +38,14 @@ const COPY = {
   signOut: 'Sign out of this tab',
 } as const;
 
-/** Settings: the theme, the model accounts (add, change, remove), the server, sign out. */
+/**
+ * Settings: the theme, the model accounts (add, change, remove), the connected accounts git
+ * signs in with, the server, sign out.
+ */
 @Component({
   selector: 'app-settings',
   imports: [
+    AccountsComponent,
     PageHeaderComponent,
     GlzButtonComponent,
     GlzCardComponent,
