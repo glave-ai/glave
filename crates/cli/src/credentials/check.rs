@@ -10,6 +10,8 @@ use glave_event::{Forge, Secret};
 use glave_session::protocol::{ApiError, code};
 use serde_json::Value;
 
+use super::abilities;
+
 /// How long one call may take.
 const CALL: Duration = Duration::from_secs(15);
 /// The most of an answer read, in bytes.
@@ -21,6 +23,8 @@ pub struct Checked {
     pub forge: Forge,
     /// Whom the token is for, when the host said.
     pub login: Option<String>,
+    /// What the token may do, when the host said.
+    pub scopes: Option<Vec<String>>,
 }
 
 /// The clients every call to a git host is made with: no redirects, so a token never follows
@@ -77,8 +81,9 @@ struct Probe {
 
 /// What one probe found.
 enum Found {
-    /// The forge answered: a token it knows, perhaps without leave to say whose.
-    Yes(Option<String>),
+    /// The forge answered: a token it knows, perhaps without leave to say whose, and what it
+    /// may do when the answer said.
+    Yes(Option<String>, Option<Vec<String>>),
     /// It refused the token.
     Refused,
     /// Not this forge.
@@ -94,10 +99,15 @@ pub async fn check(http: &Http, url: &str, token: &Secret) -> Result<Checked, Ap
     let mut reached = false;
     for probe in probes(url) {
         match ask(http, &probe, token).await {
-            Found::Yes(login) => {
+            Found::Yes(login, scopes) => {
+                let scopes = match probe.forge {
+                    Forge::Gitlab => abilities::gitlab_scopes(http, url, token).await,
+                    _ => scopes,
+                };
                 return Ok(Checked {
                     forge: probe.forge,
                     login,
+                    scopes,
                 });
             }
             Found::Refused => {
@@ -125,6 +135,7 @@ pub async fn check(http: &Http, url: &str, token: &Secret) -> Result<Checked, Ap
     Ok(Checked {
         forge: Forge::Other,
         login: None,
+        scopes: None,
     })
 }
 
@@ -176,16 +187,20 @@ fn probes(url: &str) -> Vec<Probe> {
 /// GitHub's API at `url`: `api.github.com` for GitHub itself, `<url>/api/v3` for GitHub
 /// Enterprise Server.
 fn github_api(url: &str) -> Probe {
-    let api = if url == "https://github.com" {
+    Probe {
+        forge: Forge::Github,
+        url: format!("{}/user", api(url)),
+        header: Header::Bearer,
+        login: "login",
+    }
+}
+
+/// Where GitHub at `url` has its API.
+pub fn api(url: &str) -> String {
+    if url == "https://github.com" {
         "https://api.github.com".to_owned()
     } else {
         format!("{url}/api/v3")
-    };
-    Probe {
-        forge: Forge::Github,
-        url: format!("{api}/user"),
-        header: Header::Bearer,
-        login: "login",
     }
 }
 
@@ -196,7 +211,7 @@ pub async fn github_login(
     token: &Secret,
 ) -> Result<Option<String>, ApiError> {
     match ask(http, &github_api(url), token).await {
-        Found::Yes(login) => Ok(login),
+        Found::Yes(login, _) => Ok(login),
         _ => Err(ApiError::new(
             code::HOST,
             "GitHub did not accept the sign-in: start again",
@@ -221,6 +236,10 @@ async fn ask(http: &Http, probe: &Probe, token: &Secret) -> Found {
     let Ok(response) = request.send().await else {
         return Found::Unreachable;
     };
+    let scopes = match probe.forge {
+        Forge::Github => abilities::github_scopes(response.headers(), token),
+        _ => None,
+    };
     match response.status().as_u16() {
         // A name the host gives is kept only as one line, as a name the person gives is.
         200 => match read(response).await {
@@ -229,12 +248,13 @@ async fn ask(http: &Http, probe: &Probe, token: &Secret) -> Found {
                     .get(probe.login)
                     .and_then(Value::as_str)
                     .and_then(super::one_line),
+                scopes,
             ),
             _ => Found::No,
         },
         401 => Found::Refused,
         // A token the forge knows, without leave to say whose (a GitLab token for git only).
-        403 if read(response).await.is_some() => Found::Yes(None),
+        403 if read(response).await.is_some() => Found::Yes(None, None),
         _ => Found::No,
     }
 }

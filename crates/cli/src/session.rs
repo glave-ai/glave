@@ -36,44 +36,29 @@ use crate::{home, identity};
 use glave_config::policy::{self, Choices, On, Source};
 use glave_config::trust::{self, Asking};
 
+/// A command's own entry: it reads the words after its name.
+type Subcommand = fn(&[String]) -> ExitCode;
+
+/// The commands that are their first word, each reading the words after it. Only as the
+/// first word: a prompt starting with one goes after `--`.
+const SUBCOMMANDS: [(&str, Subcommand); 9] = [
+    ("computer", crate::computer::main),
+    ("worktrees", crate::worktrees::main),
+    ("threads", crate::threads::main),
+    ("memory", crate::memory::main),
+    ("connect", crate::connections::connect_main),
+    ("connections", crate::connections::connections_main),
+    ("tasks", crate::tasks::tasks_main),
+    ("schedule", crate::tasks::schedule_main),
+    ("gateway", crate::gateway::serve::main),
+];
+
 pub fn main() -> ExitCode {
     let words: Vec<String> = std::env::args().skip(1).collect();
-    // `computer` is a subcommand only as the first word; a prompt starting with it goes
-    // after `--`.
     if let Some((first, rest)) = words.split_first()
-        && first == "computer"
+        && let Some((_, subcommand)) = SUBCOMMANDS.iter().find(|(name, _)| name == first)
     {
-        return crate::computer::main(rest);
-    }
-    if let Some((first, rest)) = words.split_first()
-        && first == "worktrees"
-    {
-        return crate::worktrees::main(rest);
-    }
-    if let Some((first, rest)) = words.split_first()
-        && first == "threads"
-    {
-        return crate::threads::main(rest);
-    }
-    if let Some((first, rest)) = words.split_first()
-        && first == "memory"
-    {
-        return crate::memory::main(rest);
-    }
-    if let Some((first, rest)) = words.split_first()
-        && first == "tasks"
-    {
-        return crate::tasks::tasks_main(rest);
-    }
-    if let Some((first, rest)) = words.split_first()
-        && first == "schedule"
-    {
-        return crate::tasks::schedule_main(rest);
-    }
-    if let Some((first, rest)) = words.split_first()
-        && first == "gateway"
-    {
-        return crate::gateway::serve::main(rest);
+        return subcommand(rest);
     }
     let args = match args::parse(words) {
         Ok(args) => args,

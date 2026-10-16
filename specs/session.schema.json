@@ -1,5 +1,30 @@
 {
   "$defs": {
+    "Ability": {
+      "description": "One thing glave can do with a connected host. Whether an action runs without asking is\nstill for approvals to say (`approvals.md`).",
+      "oneOf": [
+        {
+          "const": "read",
+          "description": "Read and clone the repositories it reaches.",
+          "type": "string"
+        },
+        {
+          "const": "push",
+          "description": "Push branches to them.",
+          "type": "string"
+        },
+        {
+          "const": "pull_requests",
+          "description": "Open and comment on pull requests (merge requests on GitLab).",
+          "type": "string"
+        },
+        {
+          "const": "issues",
+          "description": "Open and comment on issues.",
+          "type": "string"
+        }
+      ]
+    },
     "Answer": {
       "description": "The person's answer to an approval.",
       "enum": [
@@ -91,6 +116,16 @@
     "CredentialInfo": {
       "description": "A git host the person connected.",
       "properties": {
+        "can": {
+          "description": "What glave can do with it, from what the host said the token may do; absent when the\nhost did not say, so a client claims nothing.",
+          "items": {
+            "$ref": "#/$defs/Ability"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
         "forge": {
           "$ref": "#/$defs/Forge"
         },

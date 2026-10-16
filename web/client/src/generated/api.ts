@@ -4,6 +4,12 @@
 /** The protocol version these types describe. */
 export const PROTOCOL = "2026-10";
 
+/**
+ * One thing glave can do with a connected host. Whether an action runs without asking is
+ * still for approvals to say (`approvals.md`).
+ */
+export type Ability = "read" | "push" | "pull_requests" | "issues";
+
 /** The person's answer to an approval. */
 export type Answer = "allow_once" | "allow_for_thread" | "deny";
 
@@ -44,6 +50,11 @@ export type CredentialId = string;
 
 /** A git host the person connected. */
 export type CredentialInfo = {
+  /**
+   * What glave can do with it, from what the host said the token may do; absent when the
+   * host did not say, so a client claims nothing.
+   */
+  readonly can?: readonly (Ability)[] | null;
   readonly forge: Forge;
   /**
    * The token's last four characters, to tell tokens apart; absent for a token too short

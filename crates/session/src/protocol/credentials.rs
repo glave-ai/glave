@@ -19,6 +19,25 @@ pub struct CredentialInfo {
     /// to show any of.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    /// What glave can do with it, from what the host said the token may do; absent when the
+    /// host did not say, so a client claims nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can: Option<Vec<Ability>>,
+}
+
+/// One thing glave can do with a connected host. Whether an action runs without asking is
+/// still for approvals to say (`approvals.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Ability {
+    /// Read and clone the repositories it reaches.
+    Read,
+    /// Push branches to them.
+    Push,
+    /// Open and comment on pull requests (merge requests on GitLab).
+    PullRequests,
+    /// Open and comment on issues.
+    Issues,
 }
 
 /// Signing in to GitHub in the browser (its device flow): the person opens `url` and enters

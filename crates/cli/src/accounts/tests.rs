@@ -18,6 +18,7 @@ fn host(token: &str) -> CredentialConnected {
         username: "octocat".into(),
         token: Secret::new(token),
         login: Some("octocat".into()),
+        scopes: None,
         renewal: None,
         by: Principal::glave(),
     }

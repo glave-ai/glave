@@ -20,6 +20,7 @@ fn signed_in(url: &str) -> CredentialConnected {
         username: "octocat".into(),
         token: Secret::new("ghu_first"),
         login: Some("octocat".into()),
+        scopes: None,
         renewal: Some(Renewal {
             expires: At::from(soon),
             refresh: Secret::new("ghr_first"),

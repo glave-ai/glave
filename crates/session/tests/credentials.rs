@@ -41,6 +41,7 @@ impl Hosts {
             url,
             login,
             hint: hint(token),
+            can: None,
         };
         kept.push(info.clone());
         info

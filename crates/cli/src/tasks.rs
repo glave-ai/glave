@@ -81,7 +81,7 @@ pub fn schedule_main(words: &[String]) -> ExitCode {
     })
 }
 
-fn run_with<F, R>(words: &[String], usage: &str, run: F) -> ExitCode
+pub(crate) fn run_with<F, R>(words: &[String], usage: &str, run: F) -> ExitCode
 where
     F: FnOnce(Vec<String>) -> R,
     R: Future<Output = anyhow::Result<()>>,

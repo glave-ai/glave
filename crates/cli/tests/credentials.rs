@@ -101,9 +101,19 @@ mod hosts {
         assert!(!results.contains(TOKEN), "{results}");
     }
 
+    /// What GitHub says its app may do where the person installed it.
+    fn installed() -> (u16, String) {
+        let installation = json!({"id": 1, "repository_selection": "selected",
+            "permissions": {"contents": "write", "pull_requests": "write", "metadata": "read"}});
+        (
+            200,
+            json!({"total_count": 1, "installations": [installation]}).to_string(),
+        )
+    }
+
     /// GitHub's side of a sign-in in the browser at a fake, then `then`: the code, one poll
     /// still waiting, a GitHub App's user token about to expire with the refresh token that
-    /// renews it, and whom it is for.
+    /// renews it, whom it is for, and what the app may do.
     fn github(then: Vec<(u16, String)>) -> FakeHttp {
         let signed_in = vec![
             (
@@ -121,6 +131,7 @@ mod hosts {
                 .to_string(),
             ),
             (200, json!({"login": "octocat"}).to_string()),
+            installed(),
         ];
         FakeHttp::start([signed_in, then].concat()).unwrap()
     }
@@ -144,6 +155,7 @@ mod hosts {
         let credential = &connected["result"]["credential"];
         assert_eq!(credential["forge"], "github", "{connected}");
         assert_eq!(credential["login"], "octocat");
+        assert_eq!(credential["can"], json!(["read", "push", "pull_requests"]));
         let again = served.call("credential/device/poll", &json!({"flow": flow}));
         assert_eq!(again["error"]["code"], -32024, "a finished sign-in is gone");
         credential["id"].clone()
@@ -175,6 +187,7 @@ mod hosts {
                 .to_string(),
             ),
             (404, "{}".to_owned()),
+            installed(),
         ]);
         std::fs::create_dir_all(&place.home).unwrap();
         let app = format!(
@@ -221,7 +234,9 @@ mod hosts {
         assert_eq!(asked[3].path, "/api/v3/user");
         let bearer = format!("Bearer {SIGNED_IN}");
         assert_eq!(asked[3].headers.get("authorization"), Some(&bearer));
-        let refresh = &asked[4];
+        assert_eq!(asked[4].path, "/api/v3/user/installations");
+        assert_eq!(asked[4].headers.get("authorization"), Some(&bearer));
+        let refresh = &asked[5];
         assert!(
             refresh.path == "/login/oauth/access_token"
                 && refresh.body.contains("grant_type=refresh_token")
@@ -232,7 +247,7 @@ mod hosts {
             "renewed with the refresh token alone: {}",
             refresh.body
         );
-        let basic = asked[5].headers.get("authorization").unwrap();
+        let basic = asked[6].headers.get("authorization").unwrap();
         let encoded = basic.strip_prefix("Basic ").unwrap();
         let sent: Bytes = serde_json::from_value(json!(encoded)).unwrap();
         let sent = String::from_utf8(sent.as_slice().to_vec()).unwrap();
@@ -241,5 +256,7 @@ mod hosts {
             format!("octocat:{RENEWED}"),
             "git got the renewed token"
         );
+        let renewed = format!("Bearer {RENEWED}");
+        assert_eq!(asked[7].headers.get("authorization"), Some(&renewed));
     }
 }
