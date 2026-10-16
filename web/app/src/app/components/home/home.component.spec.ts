@@ -47,7 +47,7 @@ describe('HomeComponent', () => {
     document.body.click();
   });
 
-  it('starts a thread in the first space and opens it with the prompt in navigation state', async () => {
+  it('starts a thread in the personal space and opens it with the prompt in navigation state', async () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake);
@@ -59,7 +59,7 @@ describe('HomeComponent', () => {
     await expectAccessible(root);
     await send(root, 'Plan the launch');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(fake.paramsOf('thread/start')).toEqual([{ space: 'p1' }]);
+    expect(fake.paramsOf('thread/start')).toEqual([{ space: 'me' }]);
     expect(navigate).toHaveBeenCalledWith(['/t', 't9'], { state: { prompt: 'Plan the launch' } });
     navigate.mockRestore();
   });

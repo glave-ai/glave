@@ -18,12 +18,39 @@ describe('SpacesService', () => {
     const spaces = TestBed.inject(SpacesService);
     await spaces.refresh();
     expect(spaces.spaces().map((entry) => entry.space.name)).toEqual(['glave', 'Personal']);
-    expect(spaces.home()).toBe('p1');
+    expect(spaces.home()).toBe('me');
     expect(spaces.thread('t1')?.title).toBe('Plan');
     expect(spaces.thread('nope')).toBeUndefined();
     expect(spaces.spaceOf('t1')?.name).toBe('glave');
     expect(spaces.spaceOf('nope')).toBeUndefined();
     expect(spaces.loaded()).toBe(true);
+  });
+
+  it('starts new chats in the personal space (Chats), not the first project', async () => {
+    const fake = new FakeSession()
+      .answer('space/list', {
+        spaces: [
+          space('p1', 'Playground'),
+          space('p2', 'glave'),
+          space('me', 'Personal', 'personal'),
+        ],
+      })
+      .answer('thread/list', { threads: [] });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const spaces = TestBed.inject(SpacesService);
+    await spaces.refresh();
+    expect(spaces.spaces()[0]?.space.name).toBe('Playground');
+    expect(spaces.home()).toBe('me');
+  });
+
+  it('has no home of its own with only projects, so the server picks', async () => {
+    const fake = new FakeSession()
+      .answer('space/list', { spaces: [space('p1', 'Playground')] })
+      .answer('thread/list', { threads: [] });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const spaces = TestBed.inject(SpacesService);
+    await spaces.refresh();
+    expect(spaces.home()).toBeUndefined();
   });
 
   it('says what went wrong', async () => {

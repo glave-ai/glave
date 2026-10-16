@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { NEW_THREAD, THREAD, fakeApi } from './fake-api';
+import { NEW_THREAD, PERSONAL, THREAD, fakeApi } from './fake-api';
 import { SIGNED_IN, byTestId, expectAccessible, shownOpacity, watchForProblems } from './support';
 
 test('without a sign-in, the app says how to get one, in plain words', async ({ page }) => {
@@ -121,6 +121,22 @@ test('a new chat starts a thread and sends the first message', async ({ page }) 
   await expect(page).toHaveURL(new RegExp(`/t/${NEW_THREAD}$`, 'u'));
   await expect(byTestId(page, 'thread-message').first()).toContainText('Plan the launch');
   expect(api.calls).toContain('thread/start');
+});
+
+test('New chat starts its thread in Chats, not in the project listed first', async ({ page }) => {
+  const api = await fakeApi(page);
+  await page.goto(`/t/${THREAD}${SIGNED_IN}`);
+  await byTestId(page, 'nav-new-chat').click();
+  const prompt = byTestId(page, 'home-composer-input');
+  await prompt.fill('Plan the launch');
+  await prompt.press('Enter');
+  await expect(page).toHaveURL(new RegExp(`/t/${NEW_THREAD}$`, 'u'));
+  const start = api.requests.find((request) => request.method === 'thread/start');
+  expect(start?.params['space']).toBe(PERSONAL.id);
+  const chats = byTestId(page, 'nav-space').filter({ hasText: 'Chats' });
+  await expect(chats.getByTestId('nav-thread').first()).toHaveText('New chat');
+  const project = byTestId(page, 'nav-space').filter({ hasText: 'glave' });
+  await expect(project.getByTestId('nav-thread')).toHaveCount(3);
 });
 
 test('tasks, memory and settings open from the side nav', async ({ page }) => {
