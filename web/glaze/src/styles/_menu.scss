@@ -1,0 +1,11 @@
+// The look of a short list that floats over the page: a menu select's menu, a popover's links.
+@mixin panel {
+  min-width: 14rem;
+  max-width: 22rem;
+  padding: var(--glz-space-1);
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-strip);
+  background: var(--glz-surface-overlay);
+  color: var(--glz-color-text);
+  box-shadow: var(--glz-elevation-3);
+}

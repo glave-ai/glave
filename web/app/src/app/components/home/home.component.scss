@@ -5,33 +5,35 @@
   min-height: 0;
 }
 
+// The question, the composer and the line under it, one above another in the middle of the page.
 .home {
   display: flex;
   flex: 1;
   flex-direction: column;
+  align-items: center;
   justify-content: center;
   gap: var(--glz-space-5);
-  width: 100%;
-  max-width: calc(var(--glz-content-width) + 2 * var(--glz-inset-page-inline));
-  margin-inline: auto;
-  padding: var(--glz-inset-page-block) var(--glz-inset-page-inline) 15vh;
-}
-
-.intro {
-  display: flex;
-  flex-direction: column;
-  gap: var(--glz-space-2);
-  text-align: center;
+  padding: var(--glz-inset-page-block) var(--glz-inset-page-inline);
 }
 
 .heading {
   font-size: var(--glz-text-4xl);
-  font-weight: var(--glz-weight-regular);
-  letter-spacing: -0.015em;
+  font-weight: var(--glz-weight-light);
+  letter-spacing: var(--glz-tracking-display);
+  text-align: center;
 }
 
-.where {
+.composer {
+  width: 100%;
+  max-width: var(--glz-composer-lg-width);
+}
+
+.private {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-2);
   color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
 }
 
 .error {

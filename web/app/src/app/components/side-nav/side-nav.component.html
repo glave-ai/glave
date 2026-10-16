@@ -1,36 +1,49 @@
 <div class="top">
-  <a glzButton variant="primary" routerLink="/" data-testid="nav-new-chat" (click)="followed()">
-    <glz-icon [icon]="addIcon" />
-    {{ copy.newChat }}
+  <span class="name">{{ copy.name }}</span>
+  <a
+    glzIconButton
+    class="new"
+    routerLink="/"
+    data-testid="nav-new-chat"
+    [label]="copy.newChat"
+    (click)="followed()"
+  >
+    <glz-icon [icon]="icons.newChat" />
   </a>
+</div>
+<label class="search">
+  <glz-icon [icon]="icons.search" />
   <input
-    glzInput
     type="search"
     autocorrect="off"
     autocapitalize="off"
     spellcheck="false"
     data-testid="nav-search"
     [attr.aria-label]="copy.search"
-    [placeholder]="copy.search"
+    [placeholder]="copy.searchPlaceholder"
     [value]="query()"
     (input)="search($event)"
   />
-</div>
+</label>
 <app-spaces-nav class="threads" [current]="current()" [query]="query()" (navigated)="followed()" />
-<nav class="pages" [attr.aria-label]="copy.pages">
-  <glz-nav-list>
-    @for (page of pages(); track page.path) {
-      <a
-        glzNavItem
-        [routerLink]="page.link"
-        [current]="page.current"
-        [icon]="page.icon"
-        [attr.data-testid]="page.testId"
-        (click)="followed()"
-      >
-        {{ page.label }}
-      </a>
-    }
-  </glz-nav-list>
-</nav>
-<app-person class="person" />
+<div class="foot">
+  @if (tasksLive()) {
+    <a
+      glzNavItem
+      data-testid="nav-tasks"
+      [routerLink]="tasksLink"
+      [current]="tasksCurrent()"
+      [icon]="icons.tasks"
+      (click)="followed()"
+    >
+      {{ copy.tasks }}
+      @if (tasksGoing(); as going) {
+        <glz-badge glzNavItemEnd variant="plain"
+          >{{ going }} <span class="glz-visually-hidden">{{ copy.going }}</span></glz-badge
+        >
+      }
+    </a>
+  }
+  <app-needs-you (navigated)="followed()" />
+  <app-person (navigated)="followed()" />
+</div>

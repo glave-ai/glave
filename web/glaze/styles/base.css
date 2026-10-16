@@ -39,7 +39,7 @@ h4 {
 
 h1 {
   font-size: var(--glz-text-3xl);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--glz-tracking-tight);
 }
 
 h2 {

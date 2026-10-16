@@ -19,7 +19,7 @@ async function render(narrow: boolean): Promise<{
   const fixture = TestBed.createComponent(ThreadHeaderComponent);
   fixture.componentRef.setInput('title', 'Tidy the repo');
   fixture.componentRef.setInput('space', 'glave');
-  fixture.componentRef.setInput('mark', { text: 'needs you', tone: 'accent' });
+  fixture.componentRef.setInput('mark', { text: 'needs you', tone: 'accent', variant: 'dot' });
   let renames = 0;
   fixture.componentInstance.rename.subscribe(() => (renames += 1));
   await fixture.whenStable();

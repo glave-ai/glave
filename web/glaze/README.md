@@ -12,7 +12,7 @@ Only what glave's app uses: a piece the app stops using leaves Glaze.
 - **Actions and display**: `glzButton`, `glzIconButton`, `glz-icon`, `glz-badge`, `glz-avatar`, `glz-card`, `glz-empty-state`.
 - **Forms**: `glz-form-field`, `glz-error`, `glzInput`, `glz-checkbox`, `glz-radio-group`, `glz-radio`.
 - **Layout**: `glz-sidenav-layout`, `glz-panel-layout`, `glz-top-bar`, `glz-nav-list`, `glzNavItem`, `glz-tabs`, `glz-tab`.
-- **Overlays**: `glz-dialog`, `glz-confirm-dialog`, `glz-menu-select`, `glz-picker`, `glzTooltip`.
+- **Overlays**: `glz-dialog`, `glz-confirm-dialog`, `glz-menu-select`, `glz-picker`, `glz-popover` with `glzPopoverTrigger`, `glzTooltip`.
 - **Conversation**: `glz-composer`, `glz-message`, `glz-reasoning`, `glz-receipt`, `glz-steps`, `glz-approval-card`, `glz-question-card`, `glzStickToBottom`, `glzCopy`.
 
 `src/public-api.ts` lists every export; each one's doc comment has a short usage example.

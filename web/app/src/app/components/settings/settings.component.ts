@@ -33,6 +33,9 @@ const COPY = {
   remove: 'Remove',
   removeHeading: 'Remove this model account?',
   removeText: 'glave forgets its key, and its models are no longer offered.',
+  memory: 'Memory',
+  memoryText: 'What glave keeps between threads, about you and about each project.',
+  memoryOpen: 'Open memory',
   server: 'This server',
   serverUnknown: 'Reading…',
   signOut: 'Sign out of this tab',
@@ -40,7 +43,7 @@ const COPY = {
 
 /**
  * Settings: the theme, the model accounts (add, change, remove), the connected accounts git
- * signs in with, the server, sign out.
+ * signs in with, memory (its own page), the server, sign out.
  */
 @Component({
   selector: 'app-settings',
@@ -73,6 +76,7 @@ export class SettingsComponent {
   private readonly providers = inject(ProvidersService);
   private readonly models = inject(ModelsService);
   protected readonly connectLink = '/connect';
+  protected readonly memoryLink = '/memory';
   /** The accounts as the list shows them, each with the link that changes its key. */
   protected readonly accounts = computed(() =>
     this.providers.accounts().map((account) => ({

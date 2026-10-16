@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -15,26 +16,29 @@ import {
   GlzNavItemComponent,
   GlzNavListComponent,
 } from '@glave/glaze';
-import { Plus } from 'lucide';
+import { Folder, Plus } from 'lucide';
 
-import { navGroups } from '../../lib/nav';
+import { navSections } from '../../lib/nav';
 import { SpacesService } from '../../services/spaces.service';
 
 const COPY = {
-  threads: 'Spaces and threads',
-  empty: 'No threads yet',
+  threads: 'Chats and projects',
+  chats: 'Chats',
+  projects: 'Projects',
   noMatch: 'No threads match',
   newIn: 'New thread in',
 } as const;
 
 /**
- * The spaces and their threads in the side nav: each project as a group the person can close,
- * with + to start a thread in it, then the loose chats; each thread marked running or
- * waiting. A search keeps the threads whose title matches.
+ * The person's threads in the side nav: their chats, then each project with its threads under
+ * it. A project opens and closes from its row, and its + (shown on the row) starts a thread in
+ * it; each thread is marked, quietly, while it runs or needs the person. A search keeps the
+ * threads whose title matches. A list with nothing in it does not show.
  */
 @Component({
   selector: 'app-spaces-nav',
   imports: [
+    NgTemplateOutlet,
     RouterLink,
     GlzBadgeComponent,
     GlzIconButtonComponent,
@@ -55,32 +59,40 @@ export class SpacesNavComponent {
   readonly navigated = output();
 
   protected readonly copy = COPY;
-  protected readonly addIcon = Plus;
+  protected readonly icons = { add: Plus, project: Folder };
   protected readonly newLink = '/';
   private readonly spaces = inject(SpacesService);
-  /** The groups the person closed. */
+  /** The projects the person closed. */
   private readonly collapsed = signal<ReadonlySet<string>>(new Set());
 
-  protected readonly searching = computed(() => this.query().trim() !== '');
-  protected readonly groups = computed(() =>
-    navGroups(this.spaces.spaces(), {
+  private readonly sections = computed(() =>
+    navSections(this.spaces.spaces(), {
       query: this.query(),
       current: this.current(),
       collapsed: this.collapsed(),
-    }).map((group) => ({
-      ...group,
-      newLabel: `${COPY.newIn} ${group.name}`,
-      newQuery: { space: group.space },
+    }),
+  );
+  protected readonly chats = computed(() => this.sections().chats);
+  protected readonly hasChats = computed(() => this.chats().length > 0);
+  protected readonly projects = computed(() =>
+    this.sections().projects.map((project) => ({
+      ...project,
+      newLabel: `${COPY.newIn} ${project.name}`,
+      newQuery: { space: project.id },
     })),
   );
+  protected readonly hasProjects = computed(() => this.projects().length > 0);
+  protected readonly noMatch = computed(
+    () => this.query().trim() !== '' && !this.hasChats() && !this.hasProjects(),
+  );
 
-  protected setExpanded(group: string, expanded: boolean): void {
+  protected setExpanded(project: string, expanded: boolean): void {
     this.collapsed.update((collapsed) => {
       const next = new Set(collapsed);
       if (expanded) {
-        next.delete(group);
+        next.delete(project);
       } else {
-        next.add(group);
+        next.add(project);
       }
       return next;
     });

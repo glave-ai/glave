@@ -1,12 +1,19 @@
+@use '../../styles/menu';
+
 :host {
   display: inline-flex;
   min-width: 0;
 }
 
+// A chip keeps its label whole; what sits beside it gives way first.
+:host(.glz-menu-select--outlined) {
+  flex: none;
+}
+
 .trigger {
   display: inline-flex;
   align-items: center;
-  gap: var(--glz-space-1);
+  gap: var(--glz-space-2);
   min-width: 0;
   max-width: 100%;
   height: var(--glz-control-height-sm);
@@ -24,6 +31,10 @@
 .trigger[aria-expanded='true'] {
   background: var(--glz-surface-hover);
   color: var(--glz-color-text);
+}
+
+:host(.glz-menu-select--outlined) .trigger {
+  border: var(--glz-border-width) solid var(--glz-color-border);
 }
 
 .trigger:focus-visible {
@@ -47,15 +58,10 @@
 }
 
 .menu {
+  @include menu.panel;
+
   display: flex;
   flex-direction: column;
-  min-width: 14rem;
-  max-width: 22rem;
-  padding: var(--glz-space-1);
-  border: var(--glz-border-width) solid var(--glz-color-border);
-  border-radius: var(--glz-radius-strip);
-  background: var(--glz-surface-overlay);
-  box-shadow: var(--glz-elevation-3);
 }
 
 .menu:focus-visible {
@@ -93,6 +99,10 @@
   flex: none;
   width: 1.25rem;
   color: var(--glz-accent-text);
+}
+
+.icon {
+  color: var(--glz-color-text-muted);
 }
 
 .name {

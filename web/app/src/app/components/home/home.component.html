@@ -1,22 +1,35 @@
 <app-page-header />
 <div class="home">
-  <div class="intro">
-    <h1 class="heading">{{ copy.heading }}</h1>
-    @if (where(); as where) {
-      <p class="where" data-testid="home-space">{{ where }}</p>
-    }
-  </div>
+  <h1 class="heading">{{ copy.heading }}</h1>
   @if (error(); as error) {
     <p class="error" role="alert" data-testid="home-error">{{ copy.failed }} {{ error }}</p>
   }
   <glz-composer
+    class="composer"
     testId="home-composer"
+    size="lg"
     [placeholder]="copy.placeholder"
     [disabled]="starting()"
     [(value)]="draft"
     (send)="send($event)"
   >
+    @if (hasPlaces()) {
+      <glz-menu-select
+        glzComposerStart
+        testId="home-where"
+        outlined
+        [label]="copy.where"
+        [options]="places()"
+        [(value)]="where"
+      />
+    }
     <app-approval-mode glzComposerStart [(value)]="pickedMode" />
     <app-model-picker glzComposerEnd [(value)]="picked" />
   </glz-composer>
+  @if (local()) {
+    <p class="private" data-testid="home-private">
+      <glz-icon [icon]="lock" />
+      {{ copy.private }}
+    </p>
+  }
 </div>

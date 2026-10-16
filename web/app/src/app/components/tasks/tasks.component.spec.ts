@@ -12,7 +12,9 @@ async function settle(): Promise<void> {
 
 describe('TasksComponent', () => {
   it('shows the tasks under the page’s heading, and reads them again on Refresh', async () => {
-    const fake = new FakeSession().answer('tasks/list', { tasks: [task('t1', 'Nightly build')] });
+    const fake = new FakeSession()
+      .answer('schedule/list', { schedules: [] })
+      .answer('tasks/list', { tasks: [task('t1', 'Nightly build')] });
     TestBed.configureTestingModule({ providers: [provideRouter([]), ...provideFakeSession(fake)] });
     const fixture = TestBed.createComponent(TasksComponent);
     await settle();

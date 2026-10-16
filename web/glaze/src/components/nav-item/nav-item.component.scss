@@ -4,11 +4,16 @@
   gap: var(--glz-space-2);
   width: 100%;
   padding: var(--glz-inset-row);
+
+  // Indented under a group's row (a project's), its text past the row's icon: the whole width
+  // still takes the pointer and shows it chosen.
+  padding-inline-start: calc(var(--glz-space-3) + var(--glz-nav-indent, 0px));
   border: 0;
   border-radius: var(--glz-radius-row);
   background: none;
   color: var(--glz-color-text-secondary);
   font: inherit;
+  line-height: var(--glz-leading-tight);
   text-align: left;
   text-decoration: none;
   cursor: pointer;

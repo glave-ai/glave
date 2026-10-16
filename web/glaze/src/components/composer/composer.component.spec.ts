@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 
 import { expectAccessible } from '../../testing/axe';
-import { GlzComposerComponent } from './composer.component';
+import { GlzComposerComponent, type GlzComposerSize } from './composer.component';
 
 @Component({
   imports: [GlzComposerComponent],
@@ -12,6 +12,7 @@ import { GlzComposerComponent } from './composer.component';
       testId="composer"
       [(value)]="draft"
       [busy]="busy()"
+      [size]="size()"
       (send)="sent.push($event)"
       (stop)="stops.set(stops() + 1)"
     >
@@ -23,6 +24,7 @@ import { GlzComposerComponent } from './composer.component';
 class HostComponent {
   readonly draft = signal('');
   readonly busy = signal(false);
+  readonly size = signal<GlzComposerSize>('md');
   readonly stops = signal(0);
   readonly sent: string[] = [];
 }
@@ -91,5 +93,16 @@ describe('GlzComposerComponent', () => {
     type(input, 'next');
     enter(input);
     expect(fixture.componentInstance.sent).toEqual([]);
+  });
+
+  it('is a reply’s size unless it starts a thread', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(find(root, 'composer').classList).not.toContain('glz-composer--lg');
+    fixture.componentInstance.size.set('lg');
+    await fixture.whenStable();
+    expect(find(root, 'composer').classList).toContain('glz-composer--lg');
+    await expectAccessible(root);
   });
 });

@@ -1,30 +1,81 @@
+// One column, the room between its parts the pane's own gap: the name and New chat, the search,
+// the threads (which scroll), and the foot.
 :host {
   display: flex;
   flex-direction: column;
+  gap: var(--glz-space-5);
   height: 100%;
   min-height: 0;
+  padding: var(--glz-inset-pane-block) var(--glz-inset-pane-inline);
 }
 
 .top {
   display: flex;
   flex: none;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--glz-space-2);
-  padding: var(--glz-inset-pane-block) var(--glz-inset-pane-inline) var(--glz-space-3);
+  padding-inline: var(--glz-space-2);
 }
 
-.top a {
-  width: 100%;
+.name {
+  font-size: var(--glz-text-wordmark);
+  font-weight: var(--glz-weight-bold);
+  letter-spacing: var(--glz-tracking-tight);
+  line-height: var(--glz-leading-tight);
+}
+
+.new {
+  --glz-button-bg: var(--glz-surface-selected);
+}
+
+// A quiet search: a filled field with no line round it, until it has focus.
+.search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--glz-space-2);
+  min-height: var(--glz-control-height-md);
+  padding: 0 var(--glz-space-3);
+  border-radius: var(--glz-radius-control);
+  background: var(--glz-surface-hover);
+  color: var(--glz-color-text-muted);
+  cursor: text;
+}
+
+.search:focus-within {
+  box-shadow: var(--glz-focus-ring);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--glz-color-text);
+  font: inherit;
+  font-size: var(--glz-text-input);
+}
+
+.search input:focus {
+  outline: none;
+}
+
+.search input::placeholder {
+  color: var(--glz-color-text-muted);
+  opacity: 1;
 }
 
 .threads {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
 }
 
-.pages,
-.person {
+.foot {
+  display: flex;
   flex: none;
-  padding: var(--glz-space-2) var(--glz-inset-pane-inline);
-  border-top: var(--glz-border-width) solid var(--glz-color-border);
+  flex-direction: column;
+  gap: var(--glz-space-1);
 }

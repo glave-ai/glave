@@ -1,51 +1,50 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import {
-  GlzButtonComponent,
+  GlzBadgeComponent,
+  GlzIconButtonComponent,
   GlzIconComponent,
-  type GlzIconData,
-  GlzInputDirective,
   GlzNavItemComponent,
-  GlzNavListComponent,
 } from '@glave/glaze';
-import { Brain, ListChecks, Plus, Settings } from 'lucide';
+import { ListChecks, PenLine, Search } from 'lucide';
 
+import { TasksService } from '../../services/tasks.service';
+import { NeedsYouComponent } from '../needs-you/needs-you.component';
 import { PersonComponent } from '../person/person.component';
 import { SpacesNavComponent } from '../spaces-nav/spaces-nav.component';
 
 const COPY = {
+  name: 'glave',
   newChat: 'New chat',
   search: 'Search threads',
-  pages: 'Pages',
+  searchPlaceholder: 'Search',
+  tasks: 'Tasks',
+  going: 'going',
 } as const;
 
-/** A page the side nav links to below the threads. */
-interface Page {
-  readonly path: string;
-  readonly label: string;
-  readonly icon: GlzIconData;
-  readonly testId: string;
-}
-
-const PAGES: readonly Page[] = [
-  { path: 'tasks', label: 'Tasks', icon: ListChecks, testId: 'nav-tasks' },
-  { path: 'memory', label: 'Memory', icon: Brain, testId: 'nav-memory' },
-  { path: 'settings', label: 'Settings', icon: Settings, testId: 'nav-settings' },
-];
-
 /**
- * The side nav: New chat and the search at the top; the spaces with their threads; the Tasks,
- * Memory and Settings pages; and, at the foot, the person signed in.
+ * The side nav: glave's name with New chat beside it, and the search; the person's chats and
+ * projects with their threads; and at its foot Tasks (only while tasks are going or a schedule
+ * will start one), what needs the person, and the person signed in, with their pages.
  */
 @Component({
   selector: 'app-side-nav',
   imports: [
     RouterLink,
-    GlzButtonComponent,
+    GlzBadgeComponent,
+    GlzIconButtonComponent,
     GlzIconComponent,
-    GlzInputDirective,
     GlzNavItemComponent,
-    GlzNavListComponent,
+    NeedsYouComponent,
     PersonComponent,
     SpacesNavComponent,
   ],
@@ -56,18 +55,25 @@ const PAGES: readonly Page[] = [
 export class SideNavComponent {
   /** The thread shown now, to mark it current. */
   readonly current = input<string | null>(null);
-  /** The page shown now (`tasks`, `memory`, `settings`), to mark it current. */
+  /** The page shown now (`tasks`, `memory`, `settings`), to mark Tasks current on its own. */
   readonly page = input<string | null>(null);
   /** Emitted when the person follows a link, so a drawer can close. */
   readonly navigated = output();
 
   protected readonly copy = COPY;
-  protected readonly addIcon = Plus;
+  protected readonly icons = { newChat: PenLine, search: Search, tasks: ListChecks };
+  protected readonly tasksLink = '/tasks';
   /** What the person searches the thread titles for. */
   protected readonly query = signal('');
-  protected readonly pages = computed(() =>
-    PAGES.map((page) => ({ ...page, link: `/${page.path}`, current: page.path === this.page() })),
-  );
+  private readonly tasks = inject(TasksService);
+  protected readonly tasksLive = this.tasks.live;
+  protected readonly tasksGoing = this.tasks.going;
+  protected readonly tasksCurrent = computed(() => this.page() === 'tasks');
+
+  constructor() {
+    const unwatch = this.tasks.watch();
+    inject(DestroyRef).onDestroy(unwatch);
+  }
 
   protected search(event: Event): void {
     if (event.target instanceof HTMLInputElement) {

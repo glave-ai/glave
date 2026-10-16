@@ -10,7 +10,7 @@ import {
 } from '@glave/client';
 
 import { forget, storageOf } from '../lib/storage';
-import { TOKEN_KEY, takeToken } from '../lib/token';
+import { TOKEN_KEY, isLocalToken, takeToken } from '../lib/token';
 
 /** The calls the app makes of the session API: `GlaveClient`'s, or a test's stand-in. */
 export interface SessionClient {
@@ -51,6 +51,11 @@ export class SessionService {
   private readonly token = signal<string | null>(this.read());
 
   readonly signedIn = computed(() => this.token() !== null);
+  /** Whether the session is with a glave on this computer: signed in with its local token. */
+  readonly local = computed(() => {
+    const token = this.token();
+    return token !== null && isLocalToken(token);
+  });
   private readonly client = inject(SESSION_CLIENT_FACTORY)(() => this.token() ?? '');
 
   /** Calls `method`; a refused sign-in signs the app out before the error is thrown on. */

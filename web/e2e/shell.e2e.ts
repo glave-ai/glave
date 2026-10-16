@@ -192,7 +192,7 @@ test('the search keeps the threads whose title matches', async ({ page }) => {
   await expect(byTestId(page, 'nav-thread')).toHaveCount(4);
 });
 
-test('a space group closes and opens, and + starts a thread in it', async ({ page }) => {
+test('a project closes and opens from its row, and + starts a thread in it', async ({ page }) => {
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
   const toggle = byTestId(page, 'nav-space-toggle').first();
@@ -205,11 +205,13 @@ test('a space group closes and opens, and + starts a thread in it', async ({ pag
   await expect(shown).toHaveText(['Dinner ideas for Saturday']);
   await toggle.click();
   await expect(shown).toHaveCount(4);
+  // The + shows on the row while the pointer is on it.
+  await byTestId(page, 'nav-space').first().hover();
   await byTestId(page, 'nav-space-new').first().click();
-  await expect(byTestId(page, 'home-space')).toHaveText('In glave');
-  // A plain chat names no space.
-  await byTestId(page, 'nav-space-new').last().click();
-  await expect(byTestId(page, 'home-space')).toHaveCount(0);
+  await expect(byTestId(page, 'home-where-trigger')).toContainText('glave');
+  // New chat starts a chat.
+  await byTestId(page, 'nav-new-chat').click();
+  await expect(byTestId(page, 'home-where-trigger')).toContainText('A chat');
 });
 
 test('on a phone the side nav is a drawer and the tools a sheet', async ({ page }) => {

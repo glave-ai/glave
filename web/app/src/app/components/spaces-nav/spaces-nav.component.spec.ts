@@ -12,13 +12,16 @@ async function render(query = ''): Promise<{
   readonly fixture: ReturnType<typeof TestBed.createComponent<SpacesNavComponent>>;
 }> {
   const fake = new FakeSession()
-    .answer('space/list', { spaces: [space('p1', 'glave'), space('me', 'Personal', 'personal')] })
-    .answer('thread/list', (params) => ({
-      threads:
-        (params as { space: string }).space === 'p1'
-          ? [thread('t1', 'Plan the launch'), thread('t2', null, { status: 'waiting' })]
-          : [],
-    }));
+    .answer('space/list', {
+      spaces: [space('p1', 'glave'), space('p2', 'Garden'), space('me', 'Personal', 'personal')],
+    })
+    .answer('thread/list', (params) => {
+      const threads: Readonly<Record<string, unknown>> = {
+        p1: [thread('t1', 'Plan the launch'), thread('t2', null, { status: 'waiting' })],
+        me: [thread('t3', 'Trip to Lisbon', { status: 'running' })],
+      };
+      return { threads: threads[(params as { space: string }).space] ?? [] };
+    });
   TestBed.configureTestingModule({
     providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeSession(fake)],
   });
@@ -30,37 +33,46 @@ async function render(query = ''): Promise<{
   return { root: fixture.nativeElement as HTMLElement, fixture };
 }
 
-function titles(root: HTMLElement): readonly string[] {
-  return Array.from(root.querySelectorAll('[data-testid="nav-thread"]')).map((link) =>
-    link.textContent.trim(),
+function texts(root: Element, testId: string): readonly string[] {
+  return Array.from(root.querySelectorAll(`[data-testid="${testId}"]`)).map((each) =>
+    each.textContent.replace(/\s+/gu, ' ').trim(),
   );
 }
 
 describe('SpacesNavComponent', () => {
-  it('lists each project with its threads, then the loose chats, marking current and waiting', async () => {
+  it('lists the chats, then each project with its threads under it, marked quietly', async () => {
     const { root, fixture } = await render();
     let navigated = 0;
     fixture.componentInstance.navigated.subscribe(() => (navigated += 1));
+    const chats = root.querySelector('[data-testid="nav-chats"]');
+    const projects = root.querySelector('[data-testid="nav-projects"]');
+    expect(chats?.querySelector('.heading')?.textContent).toBe('Chats');
+    expect(projects?.querySelector('.heading')?.textContent).toBe('Projects');
+    expect(chats ? texts(chats, 'nav-thread') : []).toEqual(['Trip to Lisbon running']);
+    expect(texts(root, 'nav-space-toggle')).toEqual(['glave', 'Garden']);
+    expect(texts(root, 'nav-thread')).toEqual([
+      'Trip to Lisbon running',
+      'Plan the launch',
+      'New chat needs you',
+    ]);
     const threads = Array.from(root.querySelectorAll<HTMLElement>('[data-testid="nav-thread"]'));
-    expect(titles(root)).toEqual(['Plan the launch', 'New chat needs you']);
-    expect(threads[0]?.getAttribute('aria-current')).toBe('page');
-    expect(
-      Array.from(root.querySelectorAll('[data-testid="nav-space-toggle"]')).map((each) =>
-        each.textContent.trim(),
-      ),
-    ).toEqual(['glave', 'Chats']);
-    expect(root.textContent).toContain('No threads yet');
+    expect(threads[1]?.getAttribute('aria-current')).toBe('page');
+    // Quiet marks: the word alone for running, a dot for what needs the person.
+    expect(threads[0]?.querySelector('glz-badge')?.classList).toContain('glz-badge--plain');
+    expect(threads[2]?.querySelector('glz-badge')?.classList).toContain('glz-badge--dot');
+    // An empty project shows no filler.
+    expect(root.textContent).not.toContain('No threads');
     const add = root.querySelectorAll<HTMLAnchorElement>('[data-testid="nav-space-new"]');
     expect(add[0]?.getAttribute('aria-label')).toBe('New thread in glave');
     expect(add[0]?.getAttribute('href')).toBe('/?space=p1');
-    expect(add[1]?.getAttribute('href')).toBe('/?space=me');
+    expect(add[1]?.getAttribute('href')).toBe('/?space=p2');
     await expectAccessible(root);
-    threads[0]?.click();
+    threads[1]?.click();
     await fixture.whenStable();
     expect(navigated).toBe(1);
   });
 
-  it('closes and opens a group from its heading', async () => {
+  it('closes and opens a project from its row', async () => {
     const { root, fixture } = await render();
     const toggle = root.querySelector<HTMLButtonElement>('[data-testid="nav-space-toggle"]');
     toggle?.click();
@@ -74,11 +86,12 @@ describe('SpacesNavComponent', () => {
 
   it('keeps the threads whose title matches the search, and says when none do', async () => {
     const { root, fixture } = await render('launch');
-    expect(titles(root)).toEqual(['Plan the launch']);
+    expect(texts(root, 'nav-thread')).toEqual(['Plan the launch']);
+    expect(root.querySelector('[data-testid="nav-chats"]')).toBeNull();
     expect(root.querySelectorAll('[data-testid="nav-space"]')).toHaveLength(1);
     fixture.componentRef.setInput('query', 'zebra');
     await fixture.whenStable();
-    expect(titles(root)).toEqual([]);
+    expect(texts(root, 'nav-thread')).toEqual([]);
     expect(root.querySelector('[data-testid="nav-no-match"]')?.textContent).toBe(
       'No threads match',
     );

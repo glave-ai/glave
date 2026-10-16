@@ -11,6 +11,7 @@ describe('SessionService', () => {
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const session = TestBed.inject(SessionService);
     expect(session.signedIn()).toBe(true);
+    expect(session.local()).toBe(true);
     expect(await session.call('server/discover', {})).toEqual({ name: 'glave' });
   });
 
@@ -44,5 +45,14 @@ describe('SessionService', () => {
     const factory = TestBed.inject(SESSION_CLIENT_FACTORY);
     expect(typeof factory).toBe('function');
     expect(TestBed.inject(SessionService).signedIn()).toBe(true);
+  });
+
+  it('is with a glave elsewhere when signed in with another token', () => {
+    sessionStorage.setItem(TOKEN_KEY, '"an-access-token"');
+    const session = TestBed.inject(SessionService);
+    expect(session.signedIn()).toBe(true);
+    expect(session.local()).toBe(false);
+    session.signOut();
+    expect(session.local()).toBe(false);
   });
 });

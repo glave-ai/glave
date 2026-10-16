@@ -52,3 +52,31 @@
   gap: var(--glz-space-2);
   min-width: 0;
 }
+
+// The composer that starts a thread: two lines to write in, larger type, more room, rounder
+// corners, and a shadow under it.
+:host(.glz-composer--lg) {
+  gap: var(--glz-space-3);
+  padding: var(--glz-inset-composer-lg);
+  border-radius: var(--glz-radius-composer-lg);
+  box-shadow: var(--glz-elevation-composer);
+}
+
+:host(.glz-composer--lg) .input {
+  min-height: calc(2lh + 2 * var(--glz-space-1));
+  font-size: var(--glz-text-xl);
+}
+
+:host(.glz-composer--lg) .send {
+  border-radius: var(--glz-radius-strip);
+}
+
+// With more in its toolbar, a narrow one takes two lines rather than crowding: what shapes the
+// thread on the first, the model and Send at the end of the second.
+:host(.glz-composer--lg) .bar {
+  flex-wrap: wrap;
+}
+
+:host(.glz-composer--lg) .end {
+  margin-inline-start: auto;
+}

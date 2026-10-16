@@ -1,5 +1,5 @@
 import { forget } from './storage';
-import { TOKEN_KEY, takeToken } from './token';
+import { TOKEN_KEY, isLocalToken, takeToken } from './token';
 
 function storage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> & {
   readonly kept: Map<string, string>;
@@ -37,5 +37,11 @@ describe('token', () => {
     forget(kept, TOKEN_KEY);
     expect(takeToken({ ...place, storage: kept })).toBeNull();
     expect(takeToken({ ...place, storage: null })).toBeNull();
+  });
+
+  it('knows a local token, which only a glave on this computer takes', () => {
+    expect(isLocalToken('glave_local_abc')).toBe(true);
+    expect(isLocalToken('eyJhbGciOi.an-access-token')).toBe(false);
+    expect(isLocalToken('')).toBe(false);
   });
 });

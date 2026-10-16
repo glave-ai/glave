@@ -26,6 +26,7 @@ export * from './components/nav-item/nav-item.component';
 export * from './components/nav-list/nav-list.component';
 export * from './components/panel-layout/panel-layout.component';
 export * from './components/picker/picker.component';
+export * from './components/popover/popover.component';
 export * from './components/question-card/question-card.component';
 export * from './components/radio-group/radio-group.component';
 export * from './components/radio/radio.component';
@@ -39,6 +40,7 @@ export * from './components/top-bar/top-bar.component';
 
 export * from './directives/copy.directive';
 export * from './directives/input.directive';
+export * from './directives/popover-trigger.directive';
 export * from './directives/stick-to-bottom.directive';
 export * from './directives/tooltip.directive';
 

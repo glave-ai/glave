@@ -1,16 +1,11 @@
 :host {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+  display: block;
 }
 
 .lists {
   display: flex;
-  flex: 1;
   flex-direction: column;
   gap: var(--glz-space-5);
-  overflow-y: auto;
-  padding: var(--glz-space-3) var(--glz-inset-pane-inline) var(--glz-inset-pane-block);
 }
 
 .empty {
