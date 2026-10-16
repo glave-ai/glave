@@ -60,7 +60,10 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await new Promise((resolve) => service.close(resolve));
+  // glave keeps its connections to the service open for reuse, and closing would wait for them.
+  const closed = new Promise((resolve) => service.close(resolve));
+  service.closeAllConnections();
+  await closed;
 });
 
 test('a first run adds a model in the browser, then chats with it', async ({ page }) => {
