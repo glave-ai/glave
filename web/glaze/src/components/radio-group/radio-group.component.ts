@@ -19,7 +19,8 @@ import { injectId } from '../../tokens/ids';
  * A group of radio buttons, one of which may be picked. Each `<glz-radio>` is a native radio
  * input, so arrow keys move between them and screen readers announce the group. Works with
  * reactive forms, `ngModel`, signal forms (`[formField]`) or `[(value)]`. Name it with a
- * `<glz-form-field>` around it, or with `label`.
+ * `<glz-form-field>` around it, or with `label`. With `cards`, each choice is a card, for a
+ * few choices that each need a line of `hint` to tell them apart.
  *
  * ```html
  * <glz-radio-group label="Approval" [(value)]="mode">
@@ -51,6 +52,8 @@ export class GlzRadioGroupComponent
   readonly disabled = input(false, { transform: booleanAttribute });
   /** The group's name, when no form field names it. */
   readonly label = input<string>('');
+  /** Whether each choice is drawn as a card. */
+  readonly cards = input(false, { transform: booleanAttribute });
   /** Emitted when focus leaves a radio: the group has been touched. */
   readonly touch = output();
 

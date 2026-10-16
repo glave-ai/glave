@@ -1,0 +1,64 @@
+// Where it is, the folders in it (a short list that scrolls, drawn as a menu's), and the button
+// that picks it, one above another.
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--glz-space-half);
+  padding: 0;
+  list-style: none;
+}
+
+.crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--glz-space-half);
+  min-width: 0;
+}
+
+.between {
+  color: var(--glz-color-text-muted);
+}
+
+// The folders above are quiet; the one shown is not.
+.step {
+  --glz-button-fg: var(--glz-color-text-muted);
+}
+
+.step[aria-current] {
+  --glz-button-fg: var(--glz-color-text);
+
+  font-weight: var(--glz-weight-bold);
+}
+
+.folders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-half);
+  max-height: 15rem;
+  padding: var(--glz-space-1);
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-strip);
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.go {
+  color: var(--glz-color-text-muted);
+}
+
+.empty {
+  padding: var(--glz-inset-row);
+  color: var(--glz-color-text-muted);
+}
+
+.problem {
+  color: var(--glz-color-danger);
+}

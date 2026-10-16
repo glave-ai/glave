@@ -19,13 +19,13 @@ const PARTS = { toggle: 'toggle', items: 'items' } as const;
 /**
  * A list of links in a side nav, under an optional heading that names the group for screen
  * readers. Its items are `glzNavItem` links or buttons. A `collapsible` list's heading is a
- * disclosure button that shows or hides its items (`expanded`, bound two ways); actions for
- * the group, such as "New thread here", go at the heading's end (`[glzNavListActions]`).
+ * disclosure button that shows or hides its items (`expanded`, bound two ways). Actions for
+ * the group, such as "New thread here", go at the heading's end (`[glzNavListActions]`), and
+ * show while the pointer or focus is on the heading (always on a touch screen).
  *
  * A collapsible list with an `icon` is a group inside a list, such as a project: its heading is
- * a row like its items, with the icon before its name in place of the chevron, its items are
- * indented to line up with that name, and its actions show while the pointer or focus is on
- * the row (always on a touch screen).
+ * a row like its items, with the icon before its name in place of the chevron, and its items
+ * are indented to line up with that name.
  *
  * ```html
  * <glz-nav-list heading="Threads">
@@ -33,6 +33,7 @@ const PARTS = { toggle: 'toggle', items: 'items' } as const;
  *   <a glzNavItem routerLink="/t/2">Fix the build <glz-badge glzNavItemEnd tone="warning">1</glz-badge></a>
  * </glz-nav-list>
  * <glz-nav-list heading="Projects">
+ *   <button glzNavListActions glzIconButton size="sm" label="New project">…</button>
  *   <glz-nav-list heading="glave" collapsible [icon]="folder" [(expanded)]="open">
  *     <button glzNavListActions glzIconButton size="sm" label="New thread in glave">…</button>
  *     …
@@ -69,6 +70,8 @@ export class GlzNavListComponent {
   protected readonly headingId = injectId('glz-nav-list');
   protected readonly itemsId = injectId('glz-nav-list-items');
   protected readonly hasHeading = computed(() => this.heading() !== '');
+  /** Whether it has a header: a heading, or a collapsible list's toggle. */
+  protected readonly hasHeader = computed(() => this.collapsible() || this.hasHeading());
   protected readonly labelledBy = computed(() => (this.hasHeading() ? this.headingId : null));
   protected readonly collapsed = computed(() => this.collapsible() && !this.expanded());
   protected readonly hasIcon = computed(() => this.collapsible() && this.icon() !== null);

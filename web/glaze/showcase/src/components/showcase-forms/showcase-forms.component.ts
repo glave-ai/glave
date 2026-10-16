@@ -27,8 +27,11 @@ const COPY = {
   due: 'Due',
   approval: 'Approval',
   ask: 'Ask every time',
-  auto: 'Auto: the judge decides',
+  askHint: 'Every command waits for you',
+  auto: 'Auto',
+  autoHint: 'The judge decides what needs you',
   never: 'Never ask',
+  neverHint: 'Commands run without asking',
   policy: 'Policy',
   terms: 'I have read the policy',
   termsMissing: 'Read and accept the policy to go on.',
@@ -44,10 +47,11 @@ const REGIONS: readonly GlzOption[] = [
   { value: 'us', label: 'United States' },
 ];
 
-const APPROVALS: readonly GlzOption[] = [
-  { value: 'ask', label: COPY.ask },
-  { value: 'auto', label: COPY.auto },
-  { value: 'never', label: COPY.never },
+/** The approval modes, drawn as cards, each with a line that says what it does. */
+const APPROVALS: readonly (GlzOption & { readonly hint: string })[] = [
+  { value: 'ask', label: COPY.ask, hint: COPY.askHint },
+  { value: 'auto', label: COPY.auto, hint: COPY.autoHint },
+  { value: 'never', label: COPY.never, hint: COPY.neverHint },
 ];
 
 /** The showcase's form controls, under reactive forms and under signal forms. */

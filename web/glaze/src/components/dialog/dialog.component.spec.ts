@@ -65,4 +65,20 @@ describe('GlzDialogComponent', () => {
     await fixture.whenStable();
     expect(fixture.componentInstance.open()).toBe(false);
   });
+
+  it('keeps Escape to itself, so a drawer it was opened from stays open', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.open.set(true);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const heard: string[] = [];
+    root.addEventListener('keydown', (event) => heard.push(event.key));
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+    root.querySelector('p')?.dispatchEvent(escape);
+    root
+      .querySelector('p')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    expect(heard).toEqual(['a']);
+    expect(escape.defaultPrevented).toBe(false);
+  });
 });

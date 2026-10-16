@@ -21,7 +21,8 @@ const PARTS = { close: 'close' } as const;
 /**
  * A modal dialog: the native `<dialog>` opened with `showModal()`, so the browser puts it in
  * the top layer, makes the page behind it inert, moves focus in, closes it on Escape and
- * returns focus after; a click on the backdrop closes it too. Named by its heading; a close
+ * returns focus after; a click on the backdrop closes it too. Escape closes it alone, even
+ * when it was opened from a drawer. Named by its heading; a close
  * button, the content, and actions at the end (`[glzDialogActions]`). `open` is bound two ways.
  *
  * ```html
@@ -74,6 +75,14 @@ export class GlzDialogComponent {
   /** The browser closed it (Escape, or `close()`): keep `open` in step. */
   protected closed(): void {
     this.open.set(false);
+  }
+
+  /**
+   * Escape is this dialog's alone: the browser closes it, and nothing around it (a drawer it
+   * was opened from) hears the key and closes too.
+   */
+  protected escaped(event: Event): void {
+    event.stopPropagation();
   }
 
   /** A click on the dialog element itself, outside its content, is on the backdrop. */

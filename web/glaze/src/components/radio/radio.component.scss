@@ -14,3 +14,51 @@
   border-color: var(--glz-accent);
   background: radial-gradient(var(--glz-accent) 0 40%, var(--glz-surface-card) 45%);
 }
+
+.text {
+  display: flex;
+  flex-direction: column;
+}
+
+.hint {
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-sm);
+}
+
+// A choice as a card: a line round it, the whole card takes the pointer, and the one picked is
+// drawn in the accent. Focus rings the card, not its mark.
+.card {
+  display: flex;
+  padding: var(--glz-inset-strip);
+  border: var(--glz-border-width) solid var(--glz-color-border-strong);
+  border-radius: var(--glz-radius-strip);
+  background: var(--glz-surface-card);
+  transition: border-color var(--glz-duration-fast) var(--glz-easing);
+}
+
+.card:hover:not(:has(.native:disabled)) {
+  border-color: var(--glz-color-text-muted);
+}
+
+.card:has(.native:checked) {
+  border-color: var(--glz-accent);
+  box-shadow: inset 0 0 0 var(--glz-border-width) var(--glz-accent);
+}
+
+.card .native:focus-visible + .mark {
+  box-shadow: none;
+}
+
+.card:has(.native:focus-visible) {
+  box-shadow: var(--glz-focus-ring);
+}
+
+.card:has(.native:checked:focus-visible) {
+  box-shadow:
+    inset 0 0 0 var(--glz-border-width) var(--glz-accent),
+    var(--glz-focus-ring);
+}
+
+.card:has(.native:disabled) {
+  cursor: not-allowed;
+}

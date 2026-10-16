@@ -1,0 +1,75 @@
+<ol class="crumbs" data-testid="folder-picker-path" [attr.aria-label]="copy.path">
+  @for (crumb of crumbs(); track crumb.path) {
+    <li class="crumb">
+      @if (crumb.after) {
+        <glz-icon class="between" [icon]="icons.go" />
+      }
+      @if (crumb.top) {
+        <button
+          glzIconButton
+          size="sm"
+          type="button"
+          class="step"
+          data-testid="folder-picker-top"
+          [label]="copy.top"
+          [attr.aria-current]="crumb.current"
+          (click)="up(crumb.path)"
+        >
+          <glz-icon [icon]="icons.top" />
+        </button>
+      } @else {
+        <button
+          glzButton
+          size="sm"
+          variant="ghost"
+          type="button"
+          class="step"
+          data-testid="folder-picker-crumb"
+          [attr.aria-current]="crumb.current"
+          (click)="up(crumb.path)"
+        >
+          {{ crumb.name }}
+        </button>
+      }
+    </li>
+  }
+</ol>
+<ul
+  class="folders"
+  data-testid="folder-picker-folders"
+  [attr.aria-label]="listLabel()"
+  [attr.aria-busy]="busy()"
+>
+  @for (folder of folders(); track folder.path) {
+    <li>
+      <button
+        #folderButton
+        glzNavItem
+        type="button"
+        data-testid="folder-picker-folder"
+        [icon]="icons.folder"
+        (click)="into(folder.path)"
+      >
+        {{ folder.name }}
+        <glz-icon glzNavItemEnd class="go" [icon]="icons.go" />
+      </button>
+    </li>
+  } @empty {
+    <li class="empty" data-testid="folder-picker-empty">{{ copy.none }}</li>
+  }
+</ul>
+@if (problem(); as problem) {
+  <p class="problem" role="alert" data-testid="folder-picker-problem">{{ problem }}</p>
+}
+<div class="glz-row glz-gap-2">
+  <button
+    #useButton
+    glzButton
+    type="button"
+    data-testid="folder-picker-use"
+    [disabled]="cannotUse()"
+    (click)="use()"
+  >
+    {{ copy.use }}
+  </button>
+</div>

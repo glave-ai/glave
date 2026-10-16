@@ -53,14 +53,29 @@
   flex: none;
 }
 
+// A heading's actions show while the pointer or focus is on its header, and always on touch;
+// every list's line up at the same end.
 .actions {
   display: inline-flex;
   flex: none;
   align-items: center;
+  padding-inline-end: var(--glz-space-1);
+  opacity: 0;
 }
 
 .actions:empty {
   display: none;
+}
+
+.header:hover .actions,
+.header:focus-within .actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .actions {
+    opacity: 1;
+  }
 }
 
 .items {
@@ -74,8 +89,8 @@
 }
 
 // A group inside a list, such as a project: its heading a row like the items (an icon, then its
-// name), its items' text indented to line up with that name (past glz-icon's 1.25em and the gap
-// after it), its actions shown while the pointer or focus is on the row, and always on touch.
+// name), and its items' text indented to line up with that name (past glz-icon's 1.25em and the
+// gap after it).
 :host(.glz-nav-list--row) .header {
   border-radius: var(--glz-radius-row);
 }
@@ -94,22 +109,6 @@
 
 :host(.glz-nav-list--row) .lead {
   color: var(--glz-color-text-muted);
-}
-
-:host(.glz-nav-list--row) .actions {
-  padding-inline-end: var(--glz-space-1);
-  opacity: 0;
-}
-
-:host(.glz-nav-list--row) .header:hover .actions,
-:host(.glz-nav-list--row) .header:focus-within .actions {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  :host(.glz-nav-list--row) .actions {
-    opacity: 1;
-  }
 }
 
 :host(.glz-nav-list--row) .items {
