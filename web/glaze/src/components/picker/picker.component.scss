@@ -56,11 +56,15 @@
   background: var(--glz-color-hope);
 }
 
-// The popover: a search box over a list that scrolls, so it holds hundreds of options.
+// The popover: a search box over a list that scrolls, so it holds hundreds of options. It
+// fills the room on its side of the button (its anchored area, or the room measured), but never
+// shrinks below the search box and a few rows: with less room it overflows, so it takes the
+// side with the most room instead.
 .popover {
   flex-direction: column;
   width: min(24rem, calc(100vw - var(--glz-space-6)));
-  max-height: min(28rem, calc(100vh - var(--glz-space-8)));
+  min-height: 16rem;
+  max-height: min(28rem, calc(100vh - var(--glz-space-8)), var(--glz-popover-room, 100%));
   padding: var(--glz-space-2);
   border: var(--glz-border-width) solid var(--glz-color-border);
   border-radius: var(--glz-radius-md);

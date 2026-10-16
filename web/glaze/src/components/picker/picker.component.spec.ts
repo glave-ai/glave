@@ -148,4 +148,16 @@ describe('GlzPickerComponent', () => {
     expect(host.value()).toBe('anthropic/claude-haiku-5.5');
     expect(document.activeElement).toBe(part(root, 'trigger'));
   });
+
+  it('opens on the side with the most room when there is too little above', async () => {
+    const supports = vi.spyOn(CSS, 'supports').mockReturnValue(true);
+    try {
+      const { root } = await opened();
+      const popover = root.querySelector<HTMLElement>('[popover]');
+      expect(popover?.style.getPropertyValue('position-area')).toBe('block-start');
+      expect(popover?.style.getPropertyValue('position-try-order')).toBe('most-height');
+    } finally {
+      supports.mockRestore();
+    }
+  });
 });
