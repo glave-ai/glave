@@ -360,6 +360,11 @@ where
     /// The tools on offer now in `thread`, from every source.
     pub(crate) async fn tools(&self, thread: &Thread) -> ToolSet {
         let mut set = ToolSet::gather(&self.sources, &self.system_for(thread)).await;
+        if let Some(credentials) = self.workspace_for(thread).credentials()
+            && let Some(note) = crate::prompt::signed_in(&credentials.hosts().await)
+        {
+            set.system = format!("{}\n\n{note}", set.system);
+        }
         if let Some((memory, _)) = self.memory_for(thread)
             && let Ok(tools) = memory.tools().await
         {

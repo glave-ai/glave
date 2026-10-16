@@ -1,8 +1,9 @@
 //! The workspace the tools act on: a binding to one workspace on a computer, reached through
 //! the computer port, so the same tools work on this machine or across the wire. The
 //! computer confines every path and runs the commands; the binding adds what the harness
-//! decides: the sandbox each command runs in, the paths the file tools may not change in it,
-//! and what the model has read, so writes and edits never act on a stale view.
+//! decides: the sandbox each command runs in, where its git asks for credentials, the paths
+//! the file tools may not change in it, and what the model has read, so writes and edits
+//! never act on a stale view.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -11,9 +12,9 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::Sha256;
 use glave_ports::{
-    Bytes, Cancellation, Command, ComputerError, Computers, FileWrite, Finished, Glob, Globbed,
-    Listed, Listing, Output, Sandbox, Search, Searched, Sources, Stat, WorkspaceInfo, digest,
-    is_protected, is_protected_refusal, refuse_protected,
+    Bytes, Cancellation, Command, ComputerError, Computers, Credentials, FileWrite, Finished, Glob,
+    Globbed, Listed, Listing, Output, Sandbox, Search, Searched, Sources, Stat, WorkspaceInfo,
+    digest, is_protected, is_protected_refusal, refuse_protected,
 };
 
 use crate::cancel::Cancel;
@@ -25,6 +26,8 @@ pub struct Workspace {
     info: WorkspaceInfo,
     root: PathBuf,
     sandbox: Option<Sandbox>,
+    /// Where commands' git and forge tools ask for credentials, at each use; none by default.
+    credentials: Option<Arc<dyn Credentials>>,
     temp: Option<PathBuf>,
     /// What the model last read of each file, by its path in the workspace.
     reads: Mutex<HashMap<String, Sha256>>,
@@ -48,7 +51,30 @@ impl Workspace {
             computers,
             info: workspace,
             sandbox: None,
+            credentials: None,
             reads: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Lets every command's git and forge tools ask `credentials` for a credential each time
+    /// they need one (`specs/computers.md`, rule 8), as do the worktrees and scratch folders
+    /// made from this workspace.
+    #[must_use]
+    pub fn with_credentials(mut self, credentials: Arc<dyn Credentials>) -> Self {
+        self.credentials = Some(credentials);
+        self
+    }
+
+    /// Where commands ask for credentials, if anywhere.
+    pub(crate) fn credentials(&self) -> Option<&Arc<dyn Credentials>> {
+        self.credentials.as_ref()
+    }
+
+    /// The same binding's credentials, given to `other`, made from it.
+    fn sharing(&self, other: Self) -> Self {
+        match &self.credentials {
+            Some(credentials) => other.with_credentials(Arc::clone(credentials)),
+            None => other,
         }
     }
 
@@ -84,7 +110,7 @@ impl Workspace {
             owner: owner.map(str::to_owned),
         };
         let info = self.computers.open(self.info.computer, &sources).await?;
-        let worktree = Self::new(Arc::clone(&self.computers), info);
+        let worktree = self.sharing(Self::new(Arc::clone(&self.computers), info));
         match &self.sandbox {
             Some(sandbox) => worktree.with_sandbox(sandbox).await,
             None => Ok(worktree),
@@ -99,7 +125,7 @@ impl Workspace {
             owner: owner.map(str::to_owned),
         };
         let info = self.computers.open(self.info.computer, &sources).await?;
-        let scratch = Self::new(Arc::clone(&self.computers), info);
+        let scratch = self.sharing(Self::new(Arc::clone(&self.computers), info));
         match &self.sandbox {
             Some(sandbox) => scratch.with_sandbox(sandbox).await,
             None => Ok(scratch),
@@ -211,7 +237,8 @@ impl Workspace {
             .map_err(|error| explain(&error))
     }
 
-    /// Runs `command` in this workspace, in its sandbox if it has one.
+    /// Runs `command` in this workspace, in its sandbox if it has one, with its credentials if
+    /// it has them.
     pub(crate) async fn run(
         &self,
         script: String,
@@ -225,11 +252,17 @@ impl Workspace {
             sandbox: self.sandbox.clone(),
         };
         let span = crate::telemetry::command();
-        let finished = tracing::Instrument::instrument(
-            self.computers.run(self.info.id, &command, output, cancel),
-            span.clone(),
-        )
-        .await;
+        let running = match &self.credentials {
+            Some(credentials) => self.computers.run_with_credentials(
+                self.info.id,
+                &command,
+                output,
+                cancel,
+                credentials.as_ref(),
+            ),
+            None => self.computers.run(self.info.id, &command, output, cancel),
+        };
+        let finished = tracing::Instrument::instrument(running, span.clone()).await;
         let ended = finished.as_ref().ok();
         crate::telemetry::command_ended(&span, ended.map(|done| (&done.ending, done.millis)));
         finished

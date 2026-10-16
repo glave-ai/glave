@@ -166,7 +166,7 @@ impl Tokens {
 }
 
 /// Compares secrets in time that does not depend on where they differ.
-fn same(given: &str, expected: &str) -> bool {
+pub(crate) fn same(given: &str, expected: &str) -> bool {
     given.len() == expected.len()
         && given
             .bytes()

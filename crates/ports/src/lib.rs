@@ -31,11 +31,11 @@ mod view;
 pub use blob::{BlobError, BlobStore, digest};
 pub use caller::Caller;
 pub use computer::{
-    Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Entry, EntryKind,
-    Environment, FileWrite, Finished, GitCredential, Glob, Globbed, Image, Listed, Listing, Match,
-    Network, Output, PROTECTED, Sandbox, SandboxLevel, Save, Saved, Search, Searched, Size,
-    Sources, Stat, State, WorkspaceId, WorkspaceInfo, is_protected, is_protected_refusal,
-    looks_binary, refuse_protected,
+    Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, CredentialAsk,
+    CredentialHost, Credentials, Ending, Entry, EntryKind, Environment, FileWrite, Finished, Forge,
+    ForgeTool, GitCredential, Glob, Globbed, Image, Listed, Listing, Match, Network, Output,
+    PROTECTED, Sandbox, SandboxLevel, Save, Saved, Search, Searched, Size, Sources, Stat, State,
+    WorkspaceId, WorkspaceInfo, is_protected, is_protected_refusal, looks_binary, refuse_protected,
 };
 pub use env::{Clock, Entropy, OsEntropy, SystemClock};
 pub use failure::Failure;

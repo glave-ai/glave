@@ -1,10 +1,12 @@
 //! The computer protocol on the wire: JSON-RPC 2.0, one message per line, as the session API
 //! frames it on stdio. Requests run concurrently; a command's output arrives as
-//! `command/output` notifications before its response, and `command/cancel` stops it.
+//! `command/output` notifications before its response, and `command/cancel` stops it. While a
+//! command offered credentials runs, the computer asks the caller for one with a request of
+//! its own, `credentials/request`, which the caller answers on the same connection.
 
 use glave_ports::{
-    Command, ComputerError, ComputerId, Environment, FileWrite, GitCredential, Glob, Listing, Save,
-    Search, Sources, WorkspaceId,
+    Command, ComputerError, ComputerId, CredentialAsk, CredentialHost, Environment, FileWrite,
+    GitCredential, Glob, Listing, Save, Search, Sources, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -19,11 +21,15 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// each file of `files/write`: the computer refuses a protected path on the path it opens. A
 /// server that predates it would ignore the field and write, so the client refuses such a
 /// server before sending it anything. The protected list is the one in `glave-ports`, the same
-/// on both sides; changing it changes the protocol.
-pub const PROTOCOL: &str = "2026-10-11";
+/// on both sides; changing it changes the protocol. `2026-10-15` added `credentials` on
+/// `command/run` and the computer's own `credentials/request`.
+pub const PROTOCOL: &str = "2026-10-15";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";
+
+/// The request a computer sends its caller for a credential, while a command runs.
+pub(crate) const ASK: &str = "credentials/request";
 
 /// Every request, by method.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,12 +57,15 @@ pub(crate) enum Request {
     },
     #[serde(rename = "workspace/close")]
     Close { workspace: WorkspaceId },
-    /// `run` names this run in its output notifications and in `command/cancel`.
+    /// `run` names this run in its output notifications, in `command/cancel` and in the
+    /// computer's `credentials/request`, which it sends only for the hosts `credentials` names.
     #[serde(rename = "command/run")]
     Run {
         workspace: WorkspaceId,
         command: Command,
         run: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        credentials: Vec<CredentialHost>,
     },
     #[serde(rename = "command/cancel")]
     Cancel { run: String },
@@ -142,6 +151,20 @@ pub(crate) struct Chunk {
     pub(crate) text: String,
 }
 
+/// What `credentials/request` asks: a credential for the run's command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Asked {
+    pub(crate) run: String,
+    pub(crate) ask: CredentialAsk,
+}
+
+/// What the caller answers it: a credential, or none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Given {
+    #[serde(default)]
+    pub(crate) credential: Option<GitCredential>,
+}
+
 /// JSON-RPC's error codes, and one for a computer's own refusals and failures, whose
 /// [`ComputerError`] travels in `data`.
 pub(crate) mod code {
@@ -210,6 +233,26 @@ pub(crate) fn notify(method: &str, params: &impl Serialize) -> String {
     json!({"jsonrpc": "2.0", "method": method, "params": params}).to_string()
 }
 
+/// A response the other side sent to a request of this side's: its id and its result or
+/// error. `None` for any other message.
+pub(crate) fn response(line: &str) -> Option<(u64, Result<Value, Value>)> {
+    let message: Value = serde_json::from_str(line).ok()?;
+    if message.get("method").is_some() || message.get("jsonrpc")? != "2.0" {
+        return None;
+    }
+    let id = message.get("id")?.as_u64()?;
+    match (message.get("result"), message.get("error")) {
+        (Some(result), None) => Some((id, Ok(result.clone()))),
+        (None, Some(error)) => Some((id, Err(error.clone()))),
+        _ => None,
+    }
+}
+
+/// The computer's own `credentials/request`, with id `id`.
+pub(crate) fn ask(id: u64, asked: &Asked) -> String {
+    json!({"jsonrpc": "2.0", "id": id, "method": ASK, "params": asked}).to_string()
+}
+
 /// A request message.
 pub(crate) fn request(id: u64, request: &Request) -> String {
     let mut message = serde_json::to_value(request).unwrap_or(Value::Null);
@@ -230,6 +273,7 @@ mod tests {
             workspace: WorkspaceId::from_uuid(uuid::Uuid::nil()),
             command: Command::new("ls"),
             run: "r1".into(),
+            credentials: Vec::new(),
         };
         let line = request(7, &run);
         assert!(line.contains(r#""method":"command/run""#), "{line}");

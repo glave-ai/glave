@@ -4,6 +4,7 @@
 
 mod anchored;
 mod command;
+mod credentials;
 mod files;
 mod finding;
 pub(crate) mod git;
@@ -23,9 +24,9 @@ use std::sync::{Arc, Mutex};
 use glave_ports::secrets::without_secrets;
 use glave_ports::{
     BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers,
-    Environment, FileWrite, Finished, GitCredential, Glob, Globbed, Image, Listed, Listing,
-    Network, Output, Save, Saved, Search, Searched, Size, Sources, Stat, State, WorkspaceId,
-    WorkspaceInfo,
+    Credentials, Environment, FileWrite, Finished, GitCredential, Glob, Globbed, Image, Listed,
+    Listing, Network, Output, Save, Saved, Search, Searched, Size, Sources, Stat, State,
+    WorkspaceId, WorkspaceInfo,
 };
 
 pub(crate) use registry::new_id;
@@ -349,7 +350,22 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             let opened = self.registry.workspace(workspace)?;
             let helper = self.sandbox_helper.as_deref();
-            command::run(&opened, command, output, cancel, helper).await
+            command::run(&opened, command, output, cancel, helper, None).await
+        })
+    }
+
+    fn run_with_credentials<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        command: &'a Command,
+        output: &'a dyn Output,
+        cancel: &'a dyn Cancellation,
+        credentials: &'a dyn Credentials,
+    ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
+        Box::pin(async move {
+            let opened = self.registry.workspace(workspace)?;
+            let helper = self.sandbox_helper.as_deref();
+            command::run(&opened, command, output, cancel, helper, Some(credentials)).await
         })
     }
 

@@ -35,7 +35,7 @@ Worktrees per thread (#29): a thread works in the folder in place by default, ex
 5. **The agent is told where it is, every turn:** the computer, operating system, workspace root, and what came with a move ("dependencies need installing; the dev server is not running"). It never relies on memory for location.
 6. **One writer.** A workspace has one writing thread. Moving a thread ends the old binding before the new one starts.
 7. **Processes and memory are never promised.** A computer that sleeps or moves keeps files, not running programs.
-8. **Secrets never enter a remote computer.** Git and cloud credentials reach it through a credential helper that asks the harness for each use; values are never written to its disk. (Built so far: a git credential travels in `workspace/open` and is kept in the worker's memory, below; asking for each use comes with `credentials/request`.)
+8. **Secrets never enter a remote computer.** Git and cloud credentials reach it through a credential helper that asks the harness for each use; values are never written to its disk. Git credentials are built this way (`credentials/request`, "Credentials" below); a worker's own clone and save still take theirs in `workspace/open`, kept in its memory (below).
 
 ## The protocol
 
@@ -55,7 +55,7 @@ A computer adapter answers, over the same JSON-RPC as the session API (in-proces
 
 Coarse calls only: a search runs inside the computer and returns results, never a remote filesystem.
 
-Built so far, beside `computer/create`, `computer/status`, `computer/destroy`, `workspace/open` (which may carry a `credential`, below) and `workspace/close` (wire version `2026-10-11`; a client refuses a server that does not speak it, before sending anything):
+Built so far, beside `computer/create`, `computer/status`, `computer/destroy`, `workspace/open` (which may carry a `credential`, below) and `workspace/close` (wire version `2026-10-15`; a client refuses a server that does not speak it, before sending anything):
 
 | Method | Does |
 | --- | --- |
@@ -68,6 +68,7 @@ Built so far, beside `computer/create`, `computer/status`, `computer/destroy`, `
 | `files/glob` | files matching a pattern (`*.rs` by name, `src/**/*.rs` by path), newest first, leaving out what git ignores, up to a limit, with the total |
 | `files/search` | lines matching a regular expression (plain text when it is not one), in path order, up to a limit; ignored, binary and large files are not searched, and files that usually hold secrets are never opened, only named |
 | `workspace/save` | commits everything to a branch and pushes it to `origin` (a repository with no `origin` keeps the commit); a folder that is not a repository is refused |
+| `credentials/request` | sent by the computer, while a `command/run` that named `credentials` (the hosts, and the forge each runs) is running: the run, and what its helper asked for (protocol, host, path). The caller answers with a credential or none (wire version `2026-10-15`) |
 
 **When the link fails.** A remote computer's link can drop, stall, or deliver damaged messages; none of that may hang the harness, do work twice, or hand a call another's answer (`crates/computer/tests/faults.rs` injects each fault, and a property test random schedules of them, on paused time).
 
@@ -133,7 +134,19 @@ A worker is a disposable computer, one per thread: a container started from the 
 
 **Limits** come from `[workers]` in `policy.toml` (`policy.md`): `cpu` and `memory_gb` cap the size and are the size when the environment names none; `max_minutes` stops new work (commands, writes) after that long, and a command never outlives the time left, while reading and saving still work so the worker can be released with its work; `per_person` caps the workers one glave holds at once; `network` is `on` or `off`. Refused rather than ignored, because they are not enforced yet: a network allow-list (policy or environment), `disk_gb`, `secrets`, `idle_minutes` in the environment, and an environment without an image.
 
-Not built yet: an egress allow-list; asking the harness for each credential use; workers per organization; sleep and idle timeout; removing workers a crashed glave left (they carry the `glave.worker` label); running the model's commands as a user other than the one holding the credential in memory; first-class attachments from the blob store; `--attach` in the CLI; on Kubernetes, gVisor tested in CI, a non-root user chosen by configuration, and a disk limit (`ephemeral-storage`).
+Not built yet: an egress allow-list; workers per organization; sleep and idle timeout; removing workers a crashed glave left (they carry the `glave.worker` label); running the model's commands as a user other than the one holding the credential in memory; first-class attachments from the blob store; `--attach` in the CLI; on Kubernetes, gVisor tested in CI, a non-root user chosen by configuration, and a disk limit (`ephemeral-storage`).
+
+## Credentials
+
+How rule 8 is kept for git and the forges' own tools (`gh`, `glab`, `tea`): a command run with credentials (`Computers::run_with_credentials`; `credentials` on `command/run`) gets, for that command only, a folder of its own (private to the user, removed when the command ends) holding glave's credential helper and a wrapper for each forge tool a connected host runs, and a listener on this machine's loopback address that answers the helper until the command ends.
+
+- **git** is pointed at the helper through `GIT_CONFIG_*` in the command's environment, after any the environment already has: for each connected host, `credential.<host>.helper` cleared (so helpers configured elsewhere, which the sandbox hides anyway, are not asked) and then glave's. git runs the helper for each `get`; the helper presents a random password only its own file holds and git's request, and prints the answer. `store` and `erase` are ignored, so git keeps the credential nowhere.
+- **The forge tools** are wrapped: the folder comes first on `PATH`, and its `gh` (or `glab`, `tea`) asks the helper for its host's token, sets it in its own environment only (`GH_TOKEN`, or `GH_ENTERPRISE_TOKEN` and `GH_HOST` for GitHub Enterprise; `GITLAB_TOKEN`, with `GITLAB_HOST` for a host other than gitlab.com; `GITEA_TOKEN` and `GITEA_INSTANCE_URL`), and runs the real tool from the rest of `PATH`. Each tool signs in to one host: its own default (github.com, gitlab.com) when connected, else the first of its forge.
+- **The answer** comes from the caller at that moment: in-process, from the [`Credentials`](../crates/ports/src/computer/credential.rs) the harness binds to the workspace; across the wire, as `credentials/request` on the connection the command runs on, which a worker sends back to the harness over its TLS link. Only hosts offered to the command are asked about. The token reaches only the process that asked: never the command's environment, a file, the image or the model. `is_secret_variable` still keeps glave's own secret variables from every command.
+- **The sandbox** keeps working: the helper reaches the listener over TCP on the loopback address, which the sandbox allows whenever the network is (Seatbelt's `remote ip`; bubblewrap shares the host's network then, and the seccomp filter allows internet sockets, never Unix ones). With the network off nothing needs a credential, and none is reachable.
+- **What it does not stop:** any process of the command can ask the helper, as it can run `git credential fill`; glave's reading of commands asks first for the ways it knows to print one (`approvals.md`), and the model is never shown a token. The end state is a proxy that adds tokens on the way out, so no process in a computer ever holds one; the helper then goes.
+
+**Where credentials come from is a seam.** The first source of `Credentials`, the git hosts a person connects from a client, sealed in the store, comes next (#249); the harness asks the one its workspace was given, and its worktrees, scratch folders and workers ask the same. An organization's source, granting from its control plane (a GitHub App installation token per thread, scoped to the thread's repositories and lasting an hour), plugs in at the same place, per thread, with nothing on the computer changing.
 
 ## Environments
 

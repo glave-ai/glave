@@ -2,6 +2,7 @@
 //! on, a clock they move, randomness that counts, a cancellation already fired, and a fake
 //! HTTP server. Behind the `conformance` feature, so no production build carries them.
 
+mod git;
 mod http;
 
 use std::sync::Arc;
@@ -12,6 +13,7 @@ use jiff::Timestamp;
 use crate::env::{Clock, Entropy};
 use crate::tools::{BoxFuture, Cancellation};
 
+pub use git::{FAKE_COMMIT, FakeGitHost, FixedCredentials};
 pub use http::{FakeHttp, Received};
 
 /// Runs a future to its end on a fresh current-thread runtime with every driver enabled.

@@ -3,7 +3,7 @@
 //! the files. The calls are coarse and every type is serializable, so a computer on this
 //! machine and one across the network answer the same calls in the same way.
 
-mod bytes;
+pub(crate) mod bytes;
 mod credential;
 mod environment;
 mod finding;
@@ -13,9 +13,10 @@ mod types;
 use crate::tools::{BoxFuture, Cancellation};
 
 pub use bytes::Bytes;
-pub use credential::GitCredential;
+pub use credential::{CredentialAsk, CredentialHost, Credentials, ForgeTool, GitCredential};
 pub use environment::{Environment, Image, Network, Size};
 pub use finding::{Glob, Globbed, Match, Search, Searched, Stat, looks_binary};
+pub use glave_event::Forge;
 pub use sandbox::{
     PROTECTED, Sandbox, SandboxLevel, is_protected, is_protected_refusal, refuse_protected,
 };
@@ -85,6 +86,23 @@ pub trait Computers: Send + Sync {
         output: &'a dyn Output,
         cancel: &'a dyn Cancellation,
     ) -> BoxFuture<'a, Result<Finished, ComputerError>>;
+
+    /// Runs one command as [`Computers::run`] does, where git and the forge's own tools may
+    /// ask `credentials` for a credential each time they need one, for the hosts it names
+    /// (`credentials/request`). The value reaches only the process that asked: never the
+    /// command's environment, a file, or the model. A computer that cannot ask runs the
+    /// command without them.
+    fn run_with_credentials<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        command: &'a Command,
+        output: &'a dyn Output,
+        cancel: &'a dyn Cancellation,
+        credentials: &'a dyn Credentials,
+    ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
+        let _ = credentials;
+        self.run(workspace, command, output, cancel)
+    }
 
     /// Reads one file in the workspace (`files/read`).
     fn read<'a>(

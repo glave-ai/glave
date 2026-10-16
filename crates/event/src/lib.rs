@@ -35,5 +35,5 @@ pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,
     TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved, sealed_under_memory,
 };
-pub use payload::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_provider};
+pub use payload::{Forge, ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_provider};
 pub use secret::{Secret, serialize_exposed};
