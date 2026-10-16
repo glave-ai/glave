@@ -22,6 +22,8 @@ use crate::data::{Data, DataLog};
 const PAGE: usize = 500;
 /// Appends tried before giving up on a ledger another process keeps moving.
 const ATTEMPTS: usize = 8;
+/// The renewals remembered, so a client naming a credential since renewed still names it.
+const RENAMED: usize = 64;
 
 /// The person's accounts, in the store.
 #[derive(Clone)]
@@ -37,6 +39,39 @@ pub struct Ledger {
 pub struct Accounts {
     pub providers: Vec<ProviderConnected>,
     pub credentials: Vec<CredentialConnected>,
+    /// Credentials renewed, each with the kept one it became, the latest last.
+    renamed: Vec<(CredentialId, CredentialId)>,
+}
+
+impl Accounts {
+    /// The git host kept as `credential`, or as the one it was renewed into.
+    pub fn credential(&self, credential: CredentialId) -> Option<&CredentialConnected> {
+        let current = self
+            .renamed
+            .iter()
+            .find(|(old, _)| *old == credential)
+            .map_or(credential, |(_, new)| *new);
+        self.credentials
+            .iter()
+            .find(|kept| kept.credential == current)
+    }
+
+    /// Takes the removal of `old`: names that named it name what `renewed` it, and `old` names
+    /// it too; with nothing renewing it, they name nothing.
+    fn renamed(&mut self, old: CredentialId, renewed: Option<CredentialId>) {
+        let Some(new) = renewed else {
+            self.renamed.retain(|(_, named)| *named != old);
+            return;
+        };
+        for (_, named) in &mut self.renamed {
+            if *named == old {
+                *named = new;
+            }
+        }
+        self.renamed.push((old, new));
+        let over = self.renamed.len().saturating_sub(RENAMED);
+        self.renamed.drain(..over);
+    }
 }
 
 /// The accounts the ledger holds, the `seq` its next event takes, and the accounts removed
@@ -101,7 +136,7 @@ impl Ledger {
                     .credentials
                     .iter()
                     .filter(|kept| kept.url == credential.url)
-                    .map(|kept| Event::CredentialRemoved(kept.credential)),
+                    .map(|kept| Event::CredentialRemoved(kept.credential, None)),
             );
             Some((events, ()))
         })
@@ -124,16 +159,39 @@ impl Ledger {
         Ok(removed.is_some())
     }
 
-    /// Removes the git host `credential`; its token is destroyed when the accounts are next
-    /// read. False when no such host is kept.
+    /// Keeps `fresh`, the renewal of the git host `old`, in its place, only while `old` is
+    /// still kept: false, keeping nothing, when it was removed or replaced meanwhile.
+    pub async fn renew_credential(
+        &self,
+        old: CredentialId,
+        fresh: &CredentialConnected,
+    ) -> anyhow::Result<bool> {
+        let renewed = self
+            .append(|accounts| {
+                let kept = accounts
+                    .credentials
+                    .iter()
+                    .any(|kept| kept.credential == old);
+                kept.then(|| {
+                    let events = vec![
+                        Event::CredentialConnected(fresh.clone()),
+                        Event::CredentialRemoved(old, Some(fresh.credential)),
+                    ];
+                    (events, ())
+                })
+            })
+            .await?;
+        Ok(renewed.is_some())
+    }
+
+    /// Removes the git host `credential`, or the one it was renewed into; its token is
+    /// destroyed when the accounts are next read. False when no such host is kept.
     pub async fn remove_credential(&self, credential: CredentialId) -> anyhow::Result<bool> {
         let removed = self
             .append(|accounts| {
                 accounts
-                    .credentials
-                    .iter()
-                    .any(|kept| kept.credential == credential)
-                    .then(|| (vec![Event::CredentialRemoved(credential)], ()))
+                    .credential(credential)
+                    .map(|kept| (vec![Event::CredentialRemoved(kept.credential, None)], ()))
             })
             .await?;
         Ok(removed.is_some())
@@ -226,6 +284,7 @@ impl Read {
                 accounts
                     .credentials
                     .retain(|kept| kept.credential != removed.credential);
+                accounts.renamed(removed.credential, removed.renewed);
                 if accounts.credentials.len() < before {
                     self.unerased.push(removed.credential.as_uuid());
                 }
@@ -240,7 +299,8 @@ enum Event {
     ProviderConnected(ProviderConnected),
     ProviderRemoved(ProviderId),
     CredentialConnected(CredentialConnected),
-    CredentialRemoved(CredentialId),
+    /// A git host removed, and the one that renewed it in its place.
+    CredentialRemoved(CredentialId, Option<CredentialId>),
 }
 
 impl Event {
@@ -256,8 +316,13 @@ impl Event {
             Self::ProviderConnected(connected) => encode(header, &connected)?,
             Self::ProviderRemoved(provider) => encode(header, &ProviderRemoved { provider, by })?,
             Self::CredentialConnected(connected) => encode(header, &connected)?,
-            Self::CredentialRemoved(credential) => {
-                encode(header, &CredentialRemoved { credential, by })?
+            Self::CredentialRemoved(credential, renewed) => {
+                let removed = CredentialRemoved {
+                    credential,
+                    renewed,
+                    by,
+                };
+                encode(header, &removed)?
             }
         })
     }
@@ -275,3 +340,6 @@ pub fn random() -> anyhow::Result<[u8; 10]> {
         .map_err(|e| anyhow::anyhow!("could not get random bytes for a new id: {e}"))?;
     Ok(bytes)
 }
+
+#[cfg(test)]
+mod tests;

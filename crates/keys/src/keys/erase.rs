@@ -101,6 +101,8 @@ impl<S: KeyStorage> Keys<S> {
                 }
             }
             if !changed {
+                // Destroyed already, perhaps by another process: forget any copy held here.
+                self.cache.forget(*scope);
                 return Ok(());
             }
             let saved = self

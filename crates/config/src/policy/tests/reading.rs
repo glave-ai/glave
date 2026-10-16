@@ -333,6 +333,7 @@ fn the_github_app_is_the_person_s_or_server_s_choice() {
     for refused in [
         "[github]\nclient_id = \"a b\"\n",
         "[github]\nclient_id = \"Iv1.x\"\nurl = \"http://github.example.com\"\n",
+        "[github]\nclient_id = \"Iv1.x\"\nurl = \"https://github.example.com/api/v3\"\n",
         "[github]\nclient_id = \"Iv1.x\"\nsecret = \"no\"\n",
         "[github]\nclient_id = \"Iv1.x\"\napp = \"https://github.com/apps/x\"\n",
     ] {

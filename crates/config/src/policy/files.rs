@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::error::invalid;
 use glave_harness::{ApprovalMode, Hook, HookPoint, Hooks, SandboxLevel};
 use glave_ports::auth::safe_to_send;
+use glave_ports::{CredentialHost, Forge};
 use globset::Glob;
 
 use crate::policy::memory::{MemoryChoice, MemoryRules, SpaceChoice};
@@ -101,10 +102,10 @@ impl GithubFile {
             ));
         }
         let url = self.url.as_ref()?;
-        (!safe_to_send(url, &[])).then(|| {
+        CredentialHost::named(url, Forge::Github).is_none().then(|| {
             format!(
-                "url = {url:?} is not https (http only to this computer): GitHub sign-ins go \
-                 there"
+                "url = {url:?} is not a GitHub server's address: https:// and its host, such as \
+                 https://github.example.com (http only to this computer)"
             )
         })
     }

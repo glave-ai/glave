@@ -22,6 +22,14 @@ pub struct CredentialHost {
 }
 
 impl CredentialHost {
+    /// The host at `url`, given as its origin in any case, with or without a final `/`, kept
+    /// as glave offers it: in lower case. None when it is not an [`origin`](Self::origin).
+    pub fn named(url: &str, forge: Forge) -> Option<Self> {
+        let url = url.trim().trim_end_matches('/').to_ascii_lowercase();
+        let host = Self { url, forge };
+        host.origin().is_some().then_some(host)
+    }
+
     /// Its scheme and its host with any port, when `url` is an origin glave hands a credential
     /// for: `https://` and a host of letters, digits, `.` and `-` with any port, or `http://` to
     /// this computer, and nothing more: no path, user name, query or space.
@@ -197,7 +205,16 @@ mod tests {
             "ftp://github.com",
         ] {
             assert_eq!(host(refused, Forge::Other).origin(), None, "{refused}");
+            assert_eq!(
+                CredentialHost::named(refused, Forge::Other),
+                None,
+                "{refused}"
+            );
         }
+        assert_eq!(
+            CredentialHost::named(" HTTPS://GHE.Example.com:8443/ ", Forge::Github),
+            Some(host("https://ghe.example.com:8443", Forge::Github))
+        );
     }
 
     #[test]

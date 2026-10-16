@@ -6,20 +6,22 @@
 mod asked;
 mod check;
 mod device;
+mod renewing;
 
 use std::fmt::Write as _;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_config::policy::GithubFile;
 use glave_event::{CredentialConnected, CredentialId, Forge, Principal, PrincipalId, Secret};
-use glave_ports::auth::safe_to_send;
 use glave_ports::{BoxFuture, CredentialHost};
 use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, code, hint};
 use glave_session::{GitHosts, NewCredential};
 
 use crate::accounts::{Ledger, random};
 use crate::data::Data;
+use check::Http;
 use device::{Flows, Github, Grant, Polled};
+use renewing::Renewals;
 
 /// The longest token or user name taken, in bytes.
 const LONGEST: usize = 4096;
@@ -28,13 +30,12 @@ const LONGEST: usize = 4096;
 /// a token or by signing in to GitHub in the browser.
 pub struct Hosts {
     ledger: Ledger,
-    http: reqwest::Client,
+    http: Http,
     github: Option<Github>,
     flows: Flows,
     /// The hosts commands may ask about, as the ledger last held them.
     offered: RwLock<Vec<CredentialHost>>,
-    /// Held while a token is renewed, so a refresh token is spent once.
-    renewing: tokio::sync::Mutex<()>,
+    renewals: Renewals,
 }
 
 impl Hosts {
@@ -58,11 +59,11 @@ impl Hosts {
     async fn open(ledger: Ledger, github: Option<&GithubFile>) -> anyhow::Result<Arc<Self>> {
         let hosts = Self {
             ledger,
-            http: check::client()?,
-            github: github.map(Github::new),
+            http: Http::new()?,
+            github: github.and_then(Github::new),
             flows: Flows::default(),
             offered: RwLock::new(Vec::new()),
-            renewing: tokio::sync::Mutex::new(()),
+            renewals: Renewals::default(),
         };
         hosts.kept().await?;
         Ok(Arc::new(hosts))
@@ -101,11 +102,8 @@ impl Hosts {
         login: Option<String>,
         grant: Grant,
     ) -> Result<CredentialConnected, ApiError> {
-        let id = random()
-            .and_then(|random| Ok(CredentialId::new(jiff::Timestamp::now(), random)?))
-            .map_err(|e| failed(&e))?;
         Ok(CredentialConnected {
-            credential: id,
+            credential: new_id().map_err(|e| failed(&e))?,
             forge,
             url,
             username,
@@ -226,17 +224,23 @@ fn info(credential: &CredentialConnected) -> CredentialInfo {
     }
 }
 
-/// `url`'s origin, as git names the host, in lower case: `https://` and the host with any
-/// port; `http://` only to this computer. None for anything else, or a URL with a user name,
-/// a query or a fragment in it.
+/// `url`'s origin, as git names the host and glave offers it to commands
+/// ([`CredentialHost::named`]): `https://` and the host with any port, `http://` only to this
+/// computer, in lower case. None for anything else, or a URL with a user name, a query or a
+/// fragment before its path.
 fn origin(url: &str) -> Option<String> {
     let url = url.trim();
+    if url.contains(char::is_whitespace) {
+        return None;
+    }
     let (scheme, rest) = url.split_once("://")?;
-    let host = rest.split('/').next()?.to_ascii_lowercase();
-    let bad =
-        host.is_empty() || host.contains(['@', '?', '#']) || url.contains(char::is_whitespace);
-    let origin = format!("{}://{host}", scheme.to_ascii_lowercase());
-    (!bad && safe_to_send(&origin, &[])).then_some(origin)
+    let host = rest.split('/').next()?;
+    CredentialHost::named(&format!("{scheme}://{host}"), Forge::Other).map(|named| named.url)
+}
+
+/// A new credential's id.
+fn new_id() -> anyhow::Result<CredentialId> {
+    Ok(CredentialId::new(jiff::Timestamp::now(), random()?)?)
 }
 
 /// `text` without the spaces around it, when it is one line of visible characters.
@@ -295,6 +299,10 @@ mod tests {
             "https://",
             "ftp://github.com",
             "https://git hub.com",
+            "https://git_hub.com",
+            "https://github.com?x=1",
+            "https://gïthub.com",
+            "https://github.com%2fevil",
         ] {
             assert_eq!(origin(refused), None, "{refused}");
         }

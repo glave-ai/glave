@@ -72,6 +72,11 @@ pub struct Renewal {
 #[serde(deny_unknown_fields)]
 pub struct CredentialRemoved {
     pub credential: CredentialId,
+    /// The credential that renewed it, in its place: the same sign-in, so a client naming
+    /// this one still names it. Kept here, since this event stays readable once the token's
+    /// key is destroyed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renewed: Option<CredentialId>,
     /// Who removed it.
     pub by: Principal,
 }

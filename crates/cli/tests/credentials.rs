@@ -125,8 +125,8 @@ mod hosts {
         FakeHttp::start([signed_in, then].concat()).unwrap()
     }
 
-    /// Signs in through `github`'s app in the browser, as a client does.
-    fn signs_in(served: &mut Served, github: &FakeHttp) {
+    /// Signs in through `github`'s app in the browser, as a client does: the id connected.
+    fn signs_in(served: &mut Served, github: &FakeHttp) -> serde_json::Value {
         let listed = served.call("credential/list", &json!({}));
         assert_eq!(listed["result"]["device"], true, "{listed}");
         assert_eq!(
@@ -146,6 +146,22 @@ mod hosts {
         assert_eq!(credential["login"], "octocat");
         let again = served.call("credential/device/poll", &json!({"flow": flow}));
         assert_eq!(again["error"]["code"], -32024, "a finished sign-in is gone");
+        credential["id"].clone()
+    }
+
+    /// A renewed sign-in, kept under an id of its own, is still removed by the id it had.
+    fn removes_by_its_first_id(served: &mut Served, signed_in: &serde_json::Value) {
+        let listed = served.call("credential/list", &json!({}));
+        let kept = &listed["result"]["credentials"];
+        assert_eq!(kept.as_array().map(Vec::len), Some(1), "{listed}");
+        assert_ne!(&kept[0]["id"], signed_in, "renewed under an id of its own");
+        let removed = served.call("credential/remove", &json!({"credential": signed_in}));
+        assert!(
+            removed.get("error").is_none(),
+            "the id it had names it: {removed}"
+        );
+        let listed = served.call("credential/list", &json!({}));
+        assert_eq!(listed["result"]["credentials"], json!([]), "{listed}");
     }
 
     #[test]
@@ -179,7 +195,7 @@ mod hosts {
         .unwrap();
         let args = ["--model", "m", "--sandbox", "off", "--approval", "auto"];
         let mut served = Served::start(&place, &model, &args);
-        signs_in(&mut served, &github);
+        let signed_in = signs_in(&mut served, &github);
         let thread = served.call("thread/start", &json!({}))["result"]["thread"]["id"].clone();
         let turn = served.call(
             "turn/start",
@@ -187,13 +203,18 @@ mod hosts {
         );
         assert_eq!(turn["result"]["turn"]["outcome"], "completed", "{turn}");
         let results = said(&model.received()[1].body, "tool").concat();
+        removes_by_its_first_id(&mut served, &signed_in);
 
         let said = served.end();
-        for secret in [SIGNED_IN, RENEWED, "dc-e2e", "ghr_e2e0"] {
+        let refreshes = ["ghr_e2e0refresh0never0shown", "ghr_e2e0second0refresh"];
+        for secret in [SIGNED_IN, RENEWED, "dc-e2e"].into_iter().chain(refreshes) {
             assert!(!said.contains(secret), "{secret} never shows: {said}");
             assert!(!results.contains(secret), "{results}");
+            assert!(
+                !holds(&place.home, secret),
+                "{secret} sealed at rest, and in no log"
+            );
         }
-        assert!(!holds(&place.home, SIGNED_IN) && !holds(&place.home, RENEWED));
         let asked = github.received();
         assert_eq!(asked[0].path, "/login/device/code");
         assert_eq!(asked[2].path, "/login/oauth/access_token");

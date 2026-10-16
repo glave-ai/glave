@@ -11,17 +11,24 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use glave_config::policy::GithubFile;
-use glave_event::{At, Renewal, Secret};
+use glave_event::{At, Forge, Renewal, Secret};
+use glave_ports::CredentialHost;
 use glave_ports::auth::safe_to_send;
 use glave_session::protocol::{ApiError, DeviceCode, code};
 use serde_json::Value;
 
-use super::check::read;
+use super::check::{Http, read};
 
 /// Sign-ins waiting at once; a new one past this ends the oldest.
 const FLOWS: usize = 4;
 /// The longest one poll waits before asking GitHub.
 const LONGEST_WAIT: Duration = Duration::from_secs(10);
+/// The longest a code is taken to last, and the longest GitHub may ask glave to wait between
+/// polls, in seconds: GitHub's own are 900 and 5, and a server saying more is not believed.
+const LONGEST_CODE: u64 = 3600;
+const LONGEST_INTERVAL: u64 = 60;
+/// The longest a token is taken to last, in seconds: a year.
+const LONGEST_TOKEN: i64 = 366 * 24 * 3600;
 
 /// The GitHub App sign-ins go through.
 #[derive(Debug, Clone)]
@@ -58,16 +65,15 @@ pub enum Polled {
 }
 
 impl Github {
-    /// The app `[github]` names.
-    pub fn new(file: &GithubFile) -> Self {
-        Self {
+    /// The app `[github]` names; none when its `url` is not a host's origin, which reading
+    /// the configuration refuses first.
+    pub fn new(file: &GithubFile) -> Option<Self> {
+        let url = file.url.as_deref().unwrap_or("https://github.com");
+        Some(Self {
             client_id: file.client_id.trim().to_owned(),
-            url: file.url.as_deref().map_or_else(
-                || "https://github.com".to_owned(),
-                |url| url.trim().trim_end_matches('/').to_owned(),
-            ),
+            url: CredentialHost::named(url, Forge::Github)?.url,
             app: file.app.as_deref().map(str::trim).map(str::to_owned),
-        }
+        })
     }
 
     /// The page where the person installs the app on their account or organizations and
@@ -85,7 +91,7 @@ impl Github {
     /// Asks GitHub for a code for the person to enter, and keeps the sign-in as `flow`.
     pub async fn start(
         &self,
-        http: &reqwest::Client,
+        http: &Http,
         flows: &Flows,
         flow: String,
     ) -> Result<DeviceCode, ApiError> {
@@ -107,12 +113,16 @@ impl Github {
                 "GitHub gave a sign-in page that is not https",
             ));
         }
+        let expires_in = expires_in.min(LONGEST_CODE);
+        let interval = number("interval").unwrap_or(5).min(LONGEST_INTERVAL);
         let now = Instant::now();
         let waiting = Flow {
             device_code: Secret::new(device_code),
-            interval: Duration::from_secs(number("interval").unwrap_or(5)),
+            interval: Duration::from_secs(interval),
             next: now,
-            expires: now + Duration::from_secs(expires_in),
+            expires: now
+                .checked_add(Duration::from_secs(expires_in))
+                .unwrap_or(now),
         };
         flows.keep(flow.clone(), waiting);
         Ok(DeviceCode {
@@ -124,16 +134,14 @@ impl Github {
     }
 
     /// Waits until GitHub allows the next poll of `flow`, then asks once: the grant once the
-    /// person approved the app.
-    pub async fn poll(
-        &self,
-        http: &reqwest::Client,
-        flows: &Flows,
-        flow: &str,
-    ) -> Result<Polled, ApiError> {
-        let (device_code, next) = flows.waiting(flow)?;
-        let wait = next.saturating_duration_since(Instant::now());
-        tokio::time::sleep(wait.min(LONGEST_WAIT)).await;
+    /// person approved the app. Only waits, saying so, when that is further off than one poll
+    /// waits.
+    pub async fn poll(&self, http: &Http, flows: &Flows, flow: &str) -> Result<Polled, ApiError> {
+        let Some((device_code, slot)) = flows.waiting(flow)? else {
+            tokio::time::sleep(LONGEST_WAIT).await;
+            return Ok(Polled::Waiting);
+        };
+        tokio::time::sleep(slot.saturating_duration_since(Instant::now())).await;
         let form = format!(
             "client_id={}&device_code={}&grant_type={}",
             encoded(&self.client_id),
@@ -147,13 +155,11 @@ impl Github {
         }
         let error = answer.get("error").and_then(Value::as_str).unwrap_or("");
         match error {
-            "authorization_pending" => {
-                flows.after(flow, None);
-                return Ok(Polled::Waiting);
-            }
+            "authorization_pending" => return Ok(Polled::Waiting),
             "slow_down" => {
                 let asked = answer.get("interval").and_then(Value::as_u64);
-                flows.after(flow, Some(asked.map_or(5, |secs| secs.max(5))));
+                let secs = asked.map_or(5, |secs| secs.clamp(5, LONGEST_INTERVAL));
+                flows.slow_down(flow, Duration::from_secs(secs));
                 return Ok(Polled::Waiting);
             }
             _ => flows.end(flow),
@@ -169,11 +175,7 @@ impl Github {
     }
 
     /// A new token for the one `refresh` renews, and a new refresh token with it.
-    pub async fn refresh(
-        &self,
-        http: &reqwest::Client,
-        refresh: &Secret,
-    ) -> Result<Grant, ApiError> {
+    pub async fn refresh(&self, http: &Http, refresh: &Secret) -> Result<Grant, ApiError> {
         let form = format!(
             "client_id={}&grant_type=refresh_token&refresh_token={}",
             encoded(&self.client_id),
@@ -196,6 +198,7 @@ fn granted(answer: &Value) -> Option<Grant> {
     let refresh = answer.get("refresh_token").and_then(Value::as_str);
     let renewal = match (expires_in, refresh) {
         (Some(seconds), Some(refresh)) => {
+            let seconds = seconds.clamp(0, LONGEST_TOKEN);
             let expires = jiff::Timestamp::now()
                 .checked_add(jiff::SignedDuration::from_secs(seconds))
                 .ok()?;
@@ -231,30 +234,37 @@ impl Flows {
         flows.insert(id, flow);
     }
 
-    /// The device code of `flow` and when it may next be polled; refused when it is not
-    /// waiting, or has expired.
-    fn waiting(&self, id: &str) -> Result<(Secret, Instant), ApiError> {
+    /// The device code of `flow` and the time this poll may ask GitHub, taken from it so a
+    /// poll beside this one waits its own turn an interval later; none when that time is
+    /// further off than one poll waits. Refused when it is not waiting, or has expired.
+    fn waiting(&self, id: &str) -> Result<Option<(Secret, Instant)>, ApiError> {
         let mut flows = self.0.lock().map_err(|_| no_flow())?;
-        let flow = flows.get(id).ok_or_else(no_flow)?;
-        if flow.expires <= Instant::now() {
+        let now = Instant::now();
+        let flow = flows.get_mut(id).ok_or_else(no_flow)?;
+        if flow.expires <= now {
             flows.remove(id);
             return Err(ApiError::new(
                 code::HOST,
                 "the code expired before it was entered: start again",
             ));
         }
-        Ok((flow.device_code.clone(), flow.next))
+        let slot = flow.next.max(now);
+        if slot.saturating_duration_since(now) > LONGEST_WAIT {
+            return Ok(None);
+        }
+        flow.next = slot.checked_add(flow.interval).unwrap_or(slot);
+        Ok(Some((flow.device_code.clone(), slot)))
     }
 
-    /// Sets when `flow` may be polled next: after its interval, or `slower` seconds.
-    fn after(&self, id: &str, slower: Option<u64>) {
+    /// Polls `flow` at least `interval` apart from now on, as GitHub asked.
+    fn slow_down(&self, id: &str, interval: Duration) {
         if let Ok(mut flows) = self.0.lock()
             && let Some(flow) = flows.get_mut(id)
         {
-            if let Some(secs) = slower {
-                flow.interval = flow.interval.max(Duration::from_secs(secs));
-            }
-            flow.next = Instant::now() + flow.interval;
+            flow.interval = flow.interval.max(interval);
+            let now = Instant::now();
+            let after = now.checked_add(flow.interval).unwrap_or(now);
+            flow.next = flow.next.max(after);
         }
     }
 
@@ -266,8 +276,9 @@ impl Flows {
 }
 
 /// Posts `form` to GitHub at `url`, answered as JSON.
-async fn post(http: &reqwest::Client, url: &str, form: String) -> Result<Value, ApiError> {
+async fn post(http: &Http, url: &str, form: String) -> Result<Value, ApiError> {
     let sent = http
+        .to(url)
         .post(url)
         .header(reqwest::header::ACCEPT, "application/json")
         .header(
@@ -355,6 +366,34 @@ mod tests {
             .duration_since(jiff::Timestamp::now());
         assert!(left.as_secs() > 28_000, "{left:?}");
         assert!(granted(&json!({"error": "authorization_pending"})).is_none());
+        for absurd in [-1, i64::MAX] {
+            let grant = granted(&json!({
+                "access_token": "ghu_x", "expires_in": absurd, "refresh_token": "ghr_x"
+            }));
+            assert!(grant.and_then(|grant| grant.renewal).is_some(), "{absurd}");
+        }
+    }
+
+    #[test]
+    fn polls_beside_each_other_take_turns_an_interval_apart() {
+        let flows = Flows::default();
+        let now = Instant::now();
+        let flow = |interval: u64| Flow {
+            device_code: Secret::new("dc"),
+            interval: Duration::from_secs(interval),
+            next: now,
+            expires: now + Duration::from_mins(15),
+        };
+        flows.keep("a".into(), flow(4));
+        let first = flows.waiting("a").unwrap().unwrap().1;
+        let second = flows.waiting("a").unwrap().unwrap().1;
+        assert_eq!(second.duration_since(first), Duration::from_secs(4));
+        let third = flows.waiting("a").unwrap().unwrap().1;
+        assert_eq!(third.duration_since(first), Duration::from_secs(8));
+        assert!(flows.waiting("a").unwrap().is_none(), "12 s off: only wait");
+        flows.slow_down("a", Duration::from_secs(30));
+        assert!(flows.waiting("a").unwrap().is_none());
+        assert!(flows.waiting("b").is_err());
     }
 
     #[test]
@@ -364,16 +403,16 @@ mod tests {
             url: url.map(str::to_owned),
             app: app.map(str::to_owned),
         };
+        let install = |url, app| Github::new(&file(url, app)).unwrap().install();
         assert_eq!(
-            Github::new(&file(None, Some("glave"))).install().as_deref(),
+            install(None, Some("glave")).as_deref(),
             Some("https://github.com/apps/glave/installations/new")
         );
         assert_eq!(
-            Github::new(&file(Some("https://git.example.com/"), Some("glave")))
-                .install()
-                .as_deref(),
+            install(Some("https://Git.Example.com/"), Some("glave")).as_deref(),
             Some("https://git.example.com/github-apps/glave/installations/new")
         );
-        assert_eq!(Github::new(&file(None, None)).install(), None);
+        assert_eq!(install(None, None), None);
+        assert!(Github::new(&file(Some("https://git.example.com/api"), None)).is_none());
     }
 }

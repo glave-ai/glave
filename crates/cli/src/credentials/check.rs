@@ -23,14 +23,37 @@ pub struct Checked {
     pub login: Option<String>,
 }
 
-/// The client every call to a git host is made with: no redirects, so a token never follows
-/// one to another host.
-pub fn client() -> anyhow::Result<reqwest::Client> {
-    Ok(reqwest::Client::builder()
-        .timeout(CALL)
-        .redirect(reqwest::redirect::Policy::none())
-        .user_agent(concat!("glave/", env!("CARGO_PKG_VERSION")))
-        .build()?)
+/// The clients every call to a git host is made with: no redirects, so a token never follows
+/// one to another host, and no proxy for plain http, which reaches only this computer, so a
+/// token never crosses a proxy in the clear.
+#[derive(Clone)]
+pub struct Http {
+    through_proxy: reqwest::Client,
+    direct: reqwest::Client,
+}
+
+impl Http {
+    pub fn new() -> anyhow::Result<Self> {
+        let builder = || {
+            reqwest::Client::builder()
+                .timeout(CALL)
+                .redirect(reqwest::redirect::Policy::none())
+                .user_agent(concat!("glave/", env!("CARGO_PKG_VERSION")))
+        };
+        Ok(Self {
+            through_proxy: builder().build()?,
+            direct: builder().no_proxy().build()?,
+        })
+    }
+
+    /// The client for a call to `url`.
+    pub fn to(&self, url: &str) -> &reqwest::Client {
+        if url.starts_with("http://") {
+            &self.direct
+        } else {
+            &self.through_proxy
+        }
+    }
 }
 
 /// How a host's API takes a token.
@@ -65,7 +88,7 @@ enum Found {
 }
 
 /// Checks `token` with the host at `url` (its origin, as connecting keeps it).
-pub async fn check(http: &reqwest::Client, url: &str, token: &Secret) -> Result<Checked, ApiError> {
+pub async fn check(http: &Http, url: &str, token: &Secret) -> Result<Checked, ApiError> {
     let name = url.split_once("://").map_or(url, |(_, host)| host);
     let mut refused = false;
     let mut reached = false;
@@ -168,7 +191,7 @@ fn github_api(url: &str) -> Probe {
 
 /// Whom GitHub at `url` says `token` is for: the account a sign-in in the browser connected.
 pub async fn github_login(
-    http: &reqwest::Client,
+    http: &Http,
     url: &str,
     token: &Secret,
 ) -> Result<Option<String>, ApiError> {
@@ -182,8 +205,9 @@ pub async fn github_login(
 }
 
 /// Asks one probe about `token`.
-async fn ask(http: &reqwest::Client, probe: &Probe, token: &Secret) -> Found {
+async fn ask(http: &Http, probe: &Probe, token: &Secret) -> Found {
     let request = http
+        .to(&probe.url)
         .get(&probe.url)
         .header(reqwest::header::ACCEPT, "application/json");
     let request = match probe.header {
@@ -198,12 +222,13 @@ async fn ask(http: &reqwest::Client, probe: &Probe, token: &Secret) -> Found {
         return Found::Unreachable;
     };
     match response.status().as_u16() {
+        // A name the host gives is kept only as one line, as a name the person gives is.
         200 => match read(response).await {
             Some(Value::Object(fields)) => Found::Yes(
                 fields
                     .get(probe.login)
                     .and_then(Value::as_str)
-                    .map(str::to_owned),
+                    .and_then(super::one_line),
             ),
             _ => Found::No,
         },

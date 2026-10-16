@@ -1,6 +1,6 @@
 //! Handing a connected host's credential to a command that asks (`specs/computers.md`, rule 8):
 //! read from the store for that one use. A GitHub App's token that is about to expire is
-//! renewed first, once at a time, and the renewed one is kept sealed in its place.
+//! renewed first (`renewing.rs`), and the command gets whichever token is kept once that ends.
 
 use std::sync::PoisonError;
 
@@ -8,6 +8,7 @@ use glave_event::CredentialConnected;
 use glave_ports::{BoxFuture, CredentialAsk, CredentialHost, Credentials, GitCredential};
 
 use super::Hosts;
+use super::renewing::Renewing;
 
 /// How long before it expires a token is renewed, in seconds.
 const RENEW_BEFORE: i64 = 5 * 60;
@@ -27,7 +28,9 @@ impl Credentials for Hosts {
             let url = format!("{}://{}", ask.protocol, ask.host.to_ascii_lowercase());
             let mut credential = self.kept_for(&url).await?;
             if left(&credential).is_some_and(|left| left < RENEW_BEFORE) {
-                credential = self.renewed(&url).await?;
+                let renewing = || self.renewing(&credential);
+                self.renewals.wait(credential.credential, renewing).await;
+                credential = still_working(self.kept_for(&url).await?)?;
             }
             GitCredential::new(credential.username, credential.token.expose()).ok()
         })
@@ -49,48 +52,25 @@ impl Hosts {
         }
     }
 
-    /// The credential for `url` renewed through GitHub's app, one renewal at a time; the token
-    /// as it is while it still works when renewing fails, and none once it has expired.
-    async fn renewed(&self, url: &str) -> Option<CredentialConnected> {
-        let _one = self.renewing.lock().await;
-        // Another request may have renewed it while this one waited.
-        let current = self.kept_for(url).await?;
-        if left(&current).is_none_or(|left| left >= RENEW_BEFORE) {
-            return Some(current);
-        }
-        let renewed = match (&self.github, &current.renewal) {
-            (Some(github), Some(renewal)) if github.url == current.url => {
-                github.refresh(&self.http, &renewal.refresh).await
-            }
-            _ => {
-                tracing::warn!("the sign-in to {url} expires, and glave cannot renew it");
-                return still_working(current);
-            }
-        };
-        let grant = match renewed {
-            Ok(grant) => grant,
-            Err(error) => {
-                tracing::warn!("could not renew the sign-in to {url}: {}", error.message);
-                return still_working(current);
-            }
-        };
-        let fresh = self
-            .made(
-                current.forge,
-                current.url.clone(),
-                current.username.clone(),
-                current.login.clone(),
-                grant,
-            )
-            .ok()?;
-        if let Err(error) = self.keep(fresh.clone()).await {
-            // The old refresh token is spent: the renewed token still serves this use.
+    /// The renewal of `current`, when glave's GitHub App can renew it.
+    fn renewing(&self, current: &CredentialConnected) -> Option<Renewing> {
+        let github = self
+            .github
+            .as_ref()
+            .filter(|github| github.url == current.url && current.renewal.is_some());
+        let Some(github) = github else {
             tracing::warn!(
-                "could not keep the renewed sign-in to {url}: {}",
-                error.message
+                "the sign-in to {} expires, and glave cannot renew it",
+                current.url
             );
-        }
-        Some(fresh)
+            return None;
+        };
+        Some(Renewing {
+            ledger: self.ledger.clone(),
+            http: self.http.clone(),
+            github: github.clone(),
+            current: current.clone(),
+        })
     }
 }
 
