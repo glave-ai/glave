@@ -21,7 +21,7 @@ function space(id: string, name: string, kind: Space['kind']): Space {
 }
 
 const PROJECT = space('01900000-0000-7000-8000-000000000001', 'glave', 'project');
-const PERSONAL = space('01900000-0000-7000-8000-000000000002', 'Personal', 'personal');
+export const PERSONAL = space('01900000-0000-7000-8000-000000000002', 'Personal', 'personal');
 
 const TOKENS = { input: 1200, output: 300, cache_read: 0, cache_write: 0, reasoning: 0 };
 
@@ -233,7 +233,7 @@ export const MARKDOWN_REPLY = [
   '## The parser is fixed',
   '',
   '`parse()` returned a value for **empty input** and unwrapped a failed parse; it now returns ' +
-    '`None` for both. See [the issue](https://github.com/seashell86/glave/issues/226).',
+    '`None` for both. See [the issue](https://github.com/glave-ai/glave/issues/226).',
   '',
   '| Input | Before | After |',
   '| :---- | :----: | ----: |',
@@ -292,19 +292,30 @@ export async function streamReply(page: Page, reply = MARKDOWN_REPLY, delay = 15
   );
 }
 
-/** The answer to a call that is not a turn. */
-function answer(method: string, params: Record<string, unknown>): unknown {
+/** The answer to a call that is not a turn; `started` holds the threads started so far. */
+function answer(
+  method: string,
+  params: Record<string, unknown>,
+  started: ThreadSummary[],
+): unknown {
   switch (method) {
     case 'space/list':
       return { spaces: [PROJECT, PERSONAL] };
-    case 'thread/list':
-      return { threads: THREADS[String(params['space'])] ?? [] };
+    case 'thread/list': {
+      const space = String(params['space']);
+      const fresh = started.filter((each) => each.space === space);
+      return { threads: [...fresh, ...(THREADS[space] ?? [])] };
+    }
     case 'thread/get':
       return { thread: thread(String(params['thread']), 'Make the tests pass') };
     case 'thread/events':
       return { events: params['thread'] === THREAD ? HISTORY : [] };
-    case 'thread/start':
-      return { thread: thread(NEW_THREAD, '') };
+    case 'thread/start': {
+      const inSpace = params['space'] === PERSONAL.id ? PERSONAL : PROJECT;
+      const fresh = thread(NEW_THREAD, '', 'idle', inSpace);
+      started.push(fresh);
+      return { thread: fresh };
+    }
     case 'thread/rename':
       return { thread: thread(String(params['thread']), String(params['title'])) };
     case 'model/list':
@@ -324,6 +335,8 @@ function answer(method: string, params: Record<string, unknown>): unknown {
           },
         ],
       };
+    case 'credential/list':
+      return { credentials: [], device: true };
     case 'server/discover':
       return {
         name: 'glave',
@@ -343,6 +356,7 @@ export async function fakeApi(
 ): Promise<{ readonly calls: readonly string[]; readonly requests: readonly Request[] }> {
   const calls: string[] = [];
   const requests: Request[] = [];
+  const started: ThreadSummary[] = [];
   await page.route('**/*', async (route: Route) => {
     const request = route.request();
     if (request.method() !== 'POST') {
@@ -365,7 +379,7 @@ export async function fakeApi(
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: message.id,
-        result: answer(message.method, message.params),
+        result: answer(message.method, message.params, started),
       }),
     });
   });

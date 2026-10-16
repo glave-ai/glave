@@ -86,8 +86,10 @@ export class SpacesService {
     return this.lists().find(({ threads }) => threads.some((thread) => thread.id === id))?.space;
   }
 
-  /** The space new chats start in: the first project, else the personal space. */
-  readonly home = computed<SpaceId | undefined>(() => this.spaces()[0]?.space.id);
+  /** The space new chats start in: the person's own (Chats), never a project. */
+  readonly home = computed<SpaceId | undefined>(
+    () => this.spaces().find(({ space }) => space.kind !== 'project')?.space.id,
+  );
 }
 
 function kindOrder(space: Space): number {

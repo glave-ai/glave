@@ -4,7 +4,14 @@ import { join, resolve } from 'node:path';
 
 import { defineConfig, devices } from '@playwright/test';
 
-import { APP_URL, FIRST_RUN_HOME, FIRST_RUN_URL, SHOWCASE_URL } from './support';
+import {
+  ACCOUNTS_HOME,
+  ACCOUNTS_URL,
+  APP_URL,
+  FIRST_RUN_HOME,
+  FIRST_RUN_URL,
+  SHOWCASE_URL,
+} from './support';
 
 /** The glave binary that serves the app: GLAVE_BIN, else the workspace's debug build. */
 const glave = process.env['GLAVE_BIN'] ?? resolve(import.meta.dirname, '../../target/debug/glave');
@@ -20,10 +27,14 @@ function home(): string {
  */
 const firstRun = process.env[FIRST_RUN_HOME] ?? home();
 process.env[FIRST_RUN_HOME] = firstRun;
+/** The home of the glave that accounts are connected to, kept the same way. */
+const accounts = process.env[ACCOUNTS_HOME] ?? home();
+process.env[ACCOUNTS_HOME] = accounts;
 
 /**
- * What glave serves, and where: the app on a model the fake API names, Glaze's showcase, and
- * the app on a glave with nothing set up, for the first run against the real server.
+ * What glave serves, and where: the app on a model the fake API names, Glaze's showcase, the
+ * app on a glave with nothing set up, for the first run against the real server, and the app
+ * on a real glave with a model, to connect accounts to.
  */
 const SITES = [
   { url: APP_URL, web: 'dist/app/browser', env: { GLAVE_HOME: home(), GLAVE_MODEL: 'e2e' } },
@@ -33,6 +44,7 @@ const SITES = [
     env: { GLAVE_HOME: home(), GLAVE_MODEL: 'e2e' },
   },
   { url: FIRST_RUN_URL, web: 'dist/app/browser', env: { GLAVE_HOME: firstRun, GLAVE_MODEL: '' } },
+  { url: ACCOUNTS_URL, web: 'dist/app/browser', env: { GLAVE_HOME: accounts, GLAVE_MODEL: 'e2e' } },
 ];
 
 /**

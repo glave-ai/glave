@@ -23,7 +23,7 @@ export interface FirstPrompt {
 
 /**
  * A new chat: the composer, with the approval mode and the model picker. Sending starts a
- * thread (in the space the link names, else the first space) on the model and in the approval
+ * thread (in the space the link names, else the person's own) on the model and in the approval
  * mode picked, and opens it.
  */
 @Component({

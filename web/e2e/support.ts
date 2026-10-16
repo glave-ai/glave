@@ -8,6 +8,10 @@ export const SHOWCASE_URL = 'http://127.0.0.1:4311';
 export const FIRST_RUN_URL = 'http://127.0.0.1:4312';
 /** The variable that names that glave's home, so the test can read its sign-in token. */
 export const FIRST_RUN_HOME = 'GLAVE_E2E_FIRST_RUN_HOME';
+/** Where a glave with a model serves the app, for connecting accounts (accounts.e2e.ts). */
+export const ACCOUNTS_URL = 'http://127.0.0.1:4313';
+/** The variable that names that glave's home. */
+export const ACCOUNTS_HOME = 'GLAVE_E2E_ACCOUNTS_HOME';
 
 /** The fragment of the link that signs the app in (`glave serve` prints one). */
 export const SIGNED_IN = '#token=glave_local_test';

@@ -1,5 +1,7 @@
 import { ApiError, ErrorCode, type ProviderInfo, type ProviderKind } from '@glave/client';
 
+import { SOMETHING_WRONG, sentence } from './text';
+
 /** A service a person can connect a model account with, by its plain name. */
 export interface Service {
   readonly kind: ProviderKind;
@@ -13,9 +15,6 @@ export const SERVICES: readonly Service[] = [
   { kind: 'openrouter', name: 'OpenRouter' },
   { kind: 'compatible', name: 'Another server' },
 ];
-
-/** What a failure the server did not explain is told as. */
-const SOMETHING_WRONG = 'Something went wrong. Try again in a moment.';
 
 /** The service of `kind`. */
 export function serviceOf(kind: ProviderKind): Service {
@@ -63,14 +62,4 @@ export function connectProblem(error: unknown): string {
     default:
       return SOMETHING_WRONG;
   }
-}
-
-/** `text` as a sentence: a capital first, a full stop last. */
-function sentence(text: string): string {
-  const trimmed = text.trim();
-  if (trimmed === '') {
-    return SOMETHING_WRONG;
-  }
-  const capital = `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
-  return /[.!?]$/u.test(capital) ? capital : `${capital}.`;
 }
