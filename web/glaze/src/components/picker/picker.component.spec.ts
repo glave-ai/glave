@@ -20,17 +20,14 @@ const MODELS: readonly GlzMenuOption[] = [
       testId="model"
       label="Model"
       searchLabel="Search models"
-      allHeading="All models"
       [options]="options()"
       [(value)]="value"
-      [(pinned)]="pinned"
     />
   `,
 })
 class HostComponent {
   readonly options = signal(MODELS);
   readonly value = signal<string | null>('anthropic/claude-haiku-5.5');
-  readonly pinned = signal<readonly string[]>([]);
 }
 
 function part(root: HTMLElement, name: string): HTMLElement {
@@ -94,10 +91,18 @@ describe('GlzPickerComponent', () => {
   it('filters as the person types, and picks with the keys', async () => {
     const { root, host, stable } = await opened();
     const search = part(root, 'search') as HTMLInputElement;
+    // Typed as it is: no autocorrect, capitals or spelling turn "gpt" into another word.
+    expect(search.getAttribute('autocorrect')).toBe('off');
+    expect(search.getAttribute('autocapitalize')).toBe('off');
+    expect(search.getAttribute('spellcheck')).toBe('false');
     search.value = 'gpt';
     search.dispatchEvent(new Event('input'));
     await stable();
     expect(labels(root)).toEqual(['OpenAI · GPT-6 Luna']);
+    const match = root.querySelector<HTMLElement>('[data-testid="model-option"]');
+    expect(match?.getAttribute('role')).toBe('option');
+    expect(search.getAttribute('aria-activedescendant')).toBe(match?.id);
+    await expectAccessible(root);
     search.value = 'zebra';
     search.dispatchEvent(new Event('input'));
     await stable();
@@ -119,25 +124,6 @@ describe('GlzPickerComponent', () => {
     const { root, host } = await opened();
     root.querySelectorAll<HTMLElement>('[data-testid="model-option"]')[3]?.click();
     expect(host.value()).toBe('hope-12b');
-  });
-
-  it('pins the highlighted option to the top, and unpins it', async () => {
-    const { root, host, stable } = await opened();
-    const search = part(root, 'search');
-    press(search, 'ArrowDown');
-    await stable();
-    expect(part(root, 'pin').textContent.trim()).toBe('Pin OpenAI · GPT-6 Luna');
-    part(root, 'pin').click();
-    await stable();
-    expect(host.pinned()).toEqual(['openai/gpt-6-luna']);
-    expect(labels(root)[0]).toBe('OpenAI · GPT-6 Luna');
-    expect(root.querySelector('[role="group"] [role="presentation"]')?.textContent).toBe('Pinned');
-    expect(part(root, 'pin').textContent.trim()).toBe('Unpin OpenAI · GPT-6 Luna');
-    await expectAccessible(root);
-    root.querySelector<HTMLElement>('[data-testid="model-option"] .pin')?.click();
-    await stable();
-    expect(host.pinned()).toEqual([]);
-    expect(host.value()).toBe('anthropic/claude-haiku-5.5');
   });
 
   it('closes on Escape without picking', async () => {

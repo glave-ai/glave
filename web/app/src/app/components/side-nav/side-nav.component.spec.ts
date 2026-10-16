@@ -38,6 +38,10 @@ describe('SideNavComponent', () => {
 
     const search = root.querySelector<HTMLInputElement>('[data-testid="nav-search"]');
     expect(search?.getAttribute('aria-label')).toBe('Search threads');
+    // Searched as typed: no autocorrect, capitals or spelling.
+    expect(search?.getAttribute('autocorrect')).toBe('off');
+    expect(search?.getAttribute('autocapitalize')).toBe('off');
+    expect(search?.getAttribute('spellcheck')).toBe('false');
     if (search !== null) {
       search.value = 'ci';
       search.dispatchEvent(new Event('input'));

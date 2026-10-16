@@ -8,39 +8,47 @@ import {
   input,
   signal,
 } from '@angular/core';
-import { GlzCopyDirective, GlzIconButtonComponent, GlzIconComponent } from '@glave/glaze';
 import { Check, Copy } from 'lucide';
 
-const COPY = {
-  copy: 'Copy',
-  copied: 'Copied',
-  failed: 'Could not copy',
-} as const;
+import { GlzCopyDirective } from '../../directives/copy.directive';
+import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
+import { GlzIconComponent } from '../icon/icon.component';
 
 /** How long the button says it copied, in milliseconds. */
 const CONFIRM_MS = 2000;
 
 /**
- * A small button that copies a message's text, as plain text: it says "Copied" for a moment,
- * with a check, and announces it to screen readers.
+ * A small icon button that copies `text` as plain text: it says `copiedLabel` for a moment,
+ * with a check, and announces it to screen readers (or `failedLabel` when the clipboard
+ * refuses). A message's actions use it, and so do markdown's code blocks.
+ *
+ * ```html
+ * <glz-copy-button glzMessageActions testId="message-copy" [text]="message.text" />
+ * ```
  */
 @Component({
-  selector: 'app-copy-button',
+  selector: 'glz-copy-button',
   imports: [GlzCopyDirective, GlzIconButtonComponent, GlzIconComponent],
   templateUrl: './copy-button.component.html',
   styleUrl: './copy-button.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class CopyButtonComponent {
+export class GlzCopyButtonComponent {
   /** The text it copies. */
   readonly text = input.required<string>();
+  /** What it does, in words: names the button. */
+  readonly label = input('Copy');
+  readonly copiedLabel = input('Copied');
+  readonly failedLabel = input('Could not copy');
+  /** The test hook for the button. */
+  readonly testId = input<string | null>(null);
 
   private readonly announcer = inject(LiveAnnouncer);
   private readonly done = signal(false);
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   protected readonly icon = computed(() => (this.done() ? Check : Copy));
-  protected readonly label = computed(() => (this.done() ? COPY.copied : COPY.copy));
+  protected readonly shownLabel = computed(() => (this.done() ? this.copiedLabel() : this.label()));
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
@@ -49,7 +57,7 @@ export class CopyButtonComponent {
   }
 
   protected copied(ok: boolean): void {
-    void this.announcer.announce(ok ? COPY.copied : COPY.failed);
+    void this.announcer.announce(ok ? this.copiedLabel() : this.failedLabel());
     if (!ok) {
       return;
     }

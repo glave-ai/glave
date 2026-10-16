@@ -20,11 +20,10 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await byTestId(page, 'file').first().click();
     await expect(byTestId(page, 'file-change').first()).toContainText('fn parse');
     await expectAccessible(page);
-    // The model picker open, with a pinned model highlighted.
+    // The model picker open, searched by name.
     await byTestId(page, 'model-picker-trigger').click();
-    await byTestId(page, 'model-picker-search').press('ArrowDown');
-    await byTestId(page, 'model-picker-pin').click();
-    await expect(byTestId(page, 'model-picker-listbox').getByRole('group')).toHaveCount(2);
+    await byTestId(page, 'model-picker-search').pressSequentially('gpt');
+    await expect(byTestId(page, 'model-picker-option')).toHaveText(['OpenAI · GPT-6 Luna']);
     await expectAccessible(page);
     expect(problems()).toEqual([]);
   });
@@ -118,12 +117,13 @@ test('the model picked is sent with the next turn, and no reply names a model', 
   ]);
 });
 
-test('the picker searches a long catalogue, scrolls, and keeps pins after a reload', async ({
+test('the picker searches a long catalogue by name and scrolls; picks come after the default', async ({
   page,
 }) => {
   await fakeApi(page);
   await page.goto(`/t/${THREAD}${SIGNED_IN}`);
-  await byTestId(page, 'model-picker-trigger').click();
+  const trigger = byTestId(page, 'model-picker-trigger');
+  await trigger.click();
   const options = byTestId(page, 'model-picker-option');
   await expect(options).toHaveCount(204);
   await expectAccessible(page);
@@ -131,17 +131,22 @@ test('the picker searches a long catalogue, scrolls, and keeps pins after a relo
   await options.last().scrollIntoViewIfNeeded();
   await expect(options.last()).toBeInViewport();
   await expect(options.first()).not.toBeInViewport();
-  await byTestId(page, 'model-picker-search').fill('deepseek');
-  await expect(options).toHaveText(['DeepSeek · DeepSeek V4.1 Flash']);
-  await options.first().hover();
-  await options.first().locator('.pin').click();
-  await byTestId(page, 'model-picker-search').fill('');
-  await expect(options.first()).toHaveText('DeepSeek · DeepSeek V4.1 Flash');
+  // Searched as typed: no autocorrect turns "gpt" into another word.
+  const search = byTestId(page, 'model-picker-search');
+  await expect(search).toHaveAttribute('autocorrect', 'off');
+  await expect(search).toHaveAttribute('autocapitalize', 'off');
+  await expect(search).toHaveAttribute('spellcheck', 'false');
+  await search.pressSequentially('gpt');
+  await expect(options).toHaveText(['OpenAI · GPT-6 Luna']);
+  await expect(options.first()).toBeInViewport();
+  await options.first().click();
+  await expect(trigger).toContainText('OpenAI · GPT-6 Luna');
+  // After a reload: the default, then the model picked lately, then the rest.
   await page.reload();
-  await byTestId(page, 'model-picker-trigger').click();
-  await expect(byTestId(page, 'model-picker-option').first()).toHaveText(
-    'DeepSeek · DeepSeek V4.1 Flash',
-  );
+  await trigger.click();
+  await expect(options.nth(0)).toContainText('Anthropic · Claude Haiku 5.5');
+  await expect(options.nth(1)).toHaveText('OpenAI · GPT-6 Luna');
+  await expect(options.nth(2)).toContainText('Hope');
 });
 
 test('the person’s messages are bubbles at the end of the line; long ones fold', async ({

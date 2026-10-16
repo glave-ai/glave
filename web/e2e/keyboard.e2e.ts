@@ -89,7 +89,7 @@ test('a message is written and sent by keyboard alone', async ({ page }) => {
   await expect(byTestId(page, 'thread-message').last()).toContainText('Glad to help.');
 });
 
-test('a model is searched, picked and pinned by keyboard alone', async ({ page }) => {
+test('a model is searched and picked by name, by keyboard alone', async ({ page }) => {
   await tabTo(page, 'model-picker-trigger');
   await page.keyboard.press('Enter');
   const search = byTestId(page, 'model-picker-search');
@@ -98,13 +98,7 @@ test('a model is searched, picked and pinned by keyboard alone', async ({ page }
   await page.keyboard.press('PageDown');
   await expect(byTestId(page, 'model-picker-option').nth(11)).toBeInViewport();
   await page.keyboard.type('luna');
-  await page.keyboard.press('Tab');
-  await expect(byTestId(page, 'model-picker-pin')).toBeFocused();
-  await expect(byTestId(page, 'model-picker-pin')).toHaveText('Pin OpenAI · GPT-6 Luna');
-  await page.keyboard.press('Enter');
-  await expect(byTestId(page, 'model-picker-pin')).toHaveText('Unpin OpenAI · GPT-6 Luna');
-  await page.keyboard.press('Shift+Tab');
-  await expect(search).toBeFocused();
+  await expect(byTestId(page, 'model-picker-option')).toHaveText(['OpenAI · GPT-6 Luna']);
   await page.keyboard.press('Enter');
   const trigger = byTestId(page, 'model-picker-trigger');
   await expect(trigger).toBeFocused();

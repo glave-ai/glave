@@ -1,0 +1,198 @@
+// Not encapsulated: the blocks' HTML carries no view attributes. Every rule starts at
+// .glz-markdown, the class the component puts on its element.
+
+.glz-markdown {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+
+  // Flush with what holds it: no space above the first block or below the last.
+  > :first-child > :first-child {
+    margin-block-start: 0;
+    padding-block-start: 0;
+  }
+
+  > :last-child > :last-child {
+    margin-block-end: 0;
+    padding-block-end: 0;
+  }
+
+  :is(p, ul, ol, blockquote, hr, .glz-markdown-code, .glz-markdown-table) {
+    margin-block: 0 var(--glz-space-3);
+  }
+
+  :is(h1, h2, h3, h4, h5, h6) {
+    margin-block: var(--glz-space-5) var(--glz-space-2);
+    font-size: var(--glz-text-md);
+  }
+
+  h1 {
+    font-size: var(--glz-text-xl);
+  }
+
+  h2 {
+    font-size: var(--glz-text-lg);
+  }
+
+  :is(ul, ol) {
+    padding-inline-start: var(--glz-space-5);
+  }
+
+  li > :is(p, ul, ol) {
+    margin-block: var(--glz-space-1);
+  }
+
+  // A task list's items show their box where the bullet was.
+  li:has(> .glz-markdown-task, > p > .glz-markdown-task) {
+    list-style: none;
+  }
+
+  blockquote {
+    margin-inline: 0;
+    padding-inline-start: var(--glz-space-3);
+    border-inline-start: 3px solid var(--glz-color-border-strong);
+    color: var(--glz-color-text-muted);
+  }
+
+  hr {
+    border: 0;
+    border-block-start: var(--glz-border-width) solid var(--glz-color-border);
+  }
+
+  // Links say they open in a new tab: in words for screen readers, and with an arrow.
+  a[target='_blank']::after {
+    content: '\2197' / '';
+    margin-inline-start: 0.1em;
+    font-size: 0.85em;
+  }
+
+  :not(pre) > code {
+    padding: 0.1em 0.35em;
+    border-radius: var(--glz-radius-sm);
+    background: var(--glz-surface-sunken);
+  }
+
+  .glz-markdown-raw {
+    white-space: pre-wrap;
+  }
+}
+
+.glz-markdown-code {
+  border-radius: var(--glz-radius-md);
+  background: var(--glz-surface-sunken);
+
+  pre {
+    margin: 0;
+    padding: 0 var(--glz-space-3) var(--glz-space-3);
+    background: none;
+  }
+}
+
+.glz-markdown-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--glz-control-height-sm);
+  padding: var(--glz-space-1) var(--glz-space-1) 0 var(--glz-space-3);
+  color: var(--glz-color-text-muted);
+  font-size: var(--glz-text-xs);
+
+  glz-copy-button {
+    margin-inline-start: auto;
+  }
+}
+
+.glz-markdown-table {
+  max-width: 100%;
+  overflow-x: auto;
+
+  table {
+    border-collapse: collapse;
+  }
+
+  :is(th, td) {
+    padding: var(--glz-space-1) var(--glz-space-3);
+    border: var(--glz-border-width) solid var(--glz-color-border);
+    text-align: start;
+  }
+
+  th {
+    background: var(--glz-surface-sunken);
+  }
+
+  [align='center'] {
+    text-align: center;
+  }
+
+  [align='right'] {
+    text-align: end;
+  }
+}
+
+.glz-markdown-task {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-inline: -1.3em 0.4em;
+  border: 2px solid var(--glz-color-border-strong);
+  border-radius: 3px;
+  vertical-align: -0.1em;
+}
+
+// Checked: filled, with a tick drawn from two borders, so it never relies on colour alone.
+.glz-markdown-task-done {
+  border-color: var(--glz-color-accent);
+  background: var(--glz-color-accent);
+
+  &::after {
+    content: '';
+    display: block;
+    width: 0.3em;
+    height: 0.55em;
+    margin: 0 auto;
+    border: solid var(--glz-color-on-accent);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+}
+
+// Highlighted code: highlight.js's classes in the tone tokens, each 4.5:1 or more on the
+// sunken surface in both themes (the accent is not, so names keep the text colour).
+.glz-markdown-code {
+  .hljs-comment,
+  .hljs-quote {
+    color: var(--glz-color-text-muted);
+    font-style: italic;
+  }
+
+  .hljs-keyword,
+  .hljs-selector-tag,
+  .hljs-deletion,
+  .hljs-meta .hljs-keyword {
+    color: var(--glz-color-danger);
+  }
+
+  .hljs-string,
+  .hljs-regexp,
+  .hljs-addition,
+  .hljs-meta .hljs-string {
+    color: var(--glz-color-success);
+  }
+
+  .hljs-number,
+  .hljs-literal,
+  .hljs-symbol,
+  .hljs-variable.constant_,
+  .hljs-built_in {
+    color: var(--glz-color-warning);
+  }
+
+  .hljs-section,
+  .hljs-strong {
+    font-weight: var(--glz-weight-bold);
+  }
+
+  .hljs-emphasis {
+    font-style: italic;
+  }
+}

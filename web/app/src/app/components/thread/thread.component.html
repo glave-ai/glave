@@ -30,8 +30,8 @@
                 @if (item.reasoning) {
                   <glz-reasoning>{{ item.reasoning }}</glz-reasoning>
                 }
-                <app-message-text [text]="item.text" [foldable]="item.foldable" />
-                <app-copy-button glzMessageActions [text]="item.text" />
+                <app-message-text [text]="item.text" [markdown]="item.markdown" />
+                <glz-copy-button glzMessageActions testId="message-copy" [text]="item.text" />
               </glz-message>
             }
             @case ('call') {
@@ -86,7 +86,7 @@
             @if (service.reply().reasoning) {
               <glz-reasoning streaming>{{ service.reply().reasoning }}</glz-reasoning>
             }
-            <p class="text">{{ service.reply().text }}</p>
+            <div testId="thread-markdown" streaming [glzMarkdown]="service.reply().text"></div>
           </glz-message>
         }
       </div>

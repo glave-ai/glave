@@ -20,14 +20,17 @@ describe('MessageTextComponent', () => {
     expect(root.querySelector('[data-testid="message-text-toggle"]')).toBeNull();
   });
 
-  it('never folds text that is not foldable', async () => {
+  it('shows a reply as markdown, read in full', async () => {
     const fixture = TestBed.createComponent(MessageTextComponent);
-    fixture.componentRef.setInput('text', 'x'.repeat(2000));
-    fixture.componentRef.setInput('foldable', false);
+    fixture.componentRef.setInput('text', `**They pass now.**\n\n${'x'.repeat(2000)}`);
+    fixture.componentRef.setInput('markdown', true);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
+    const markdown = root.querySelector('[data-testid="thread-markdown"]');
+    expect(markdown?.querySelector('strong')?.textContent).toBe('They pass now.');
     expect(root.querySelector('.folded')).toBeNull();
     expect(root.querySelector('[data-testid="message-text-toggle"]')).toBeNull();
+    await expectAccessible(root);
   });
 
   it('folds long text behind a disclosure: Show more, then Show less', async () => {

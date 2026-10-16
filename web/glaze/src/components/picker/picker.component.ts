@@ -14,9 +14,9 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { Check, ChevronDown, Pin, PinOff } from 'lucide';
+import { Check, ChevronDown } from 'lucide';
 
-import { type GlzPickerGroup, pickerGroups } from '../../lib/picker';
+import { filterOptions } from '../../lib/options';
 import { positionPopover } from '../../lib/popover';
 import { testIds } from '../../lib/test-ids';
 import { injectId } from '../../tokens/ids';
@@ -29,7 +29,6 @@ const PARTS = {
   search: 'search',
   listbox: 'listbox',
   option: 'option',
-  pin: 'pin',
   empty: 'empty',
 } as const;
 
@@ -43,14 +42,6 @@ interface ShownOption {
   readonly id: string;
   readonly selected: boolean;
   readonly active: boolean;
-  readonly pinned: boolean;
-}
-
-interface ShownGroup {
-  readonly key: string;
-  readonly heading: string;
-  readonly headingId: string;
-  readonly options: readonly ShownOption[];
 }
 
 /**
@@ -58,12 +49,13 @@ interface ShownGroup {
  * and opens a popover with a search box over a scrolling list, the ARIA combobox pattern with a
  * listbox popup. The keyboard model is the CDK's (ActiveDescendantKeyManager): arrow keys,
  * Page Up and Page Down move through the matches, Enter picks, Escape closes, focus goes back
- * to the button. Options can be pinned to the top (`pinned`, bound two ways; keeping them is
- * the app's job): by the pin on each option, or by the Pin button under the list, which pins
- * the highlighted one. An option with `hope` wears Hope's sun: set it only for Hope.
+ * to the button. The options show in their own order, so the app puts first what the person
+ * is likeliest to want. The search box is left alone by autocorrect, capitals and spelling, so
+ * a model's name is searched as typed. An option with `hope` wears Hope's sun: set it only for
+ * Hope.
  *
  * ```html
- * <glz-picker label="Model" [options]="models" [(value)]="model" [(pinned)]="pinned" />
+ * <glz-picker label="Model" [options]="models" [(value)]="model" />
  * ```
  */
 @Component({
@@ -81,8 +73,6 @@ export class GlzPickerComponent {
 
   /** The chosen option's value, or `null` for none. */
   readonly value = model<string | null>(null);
-  /** The values pinned to the top, in the order they were pinned. */
-  readonly pinned = model<readonly string[]>([]);
   readonly options = input<readonly GlzMenuOption[]>([]);
   /** What is being chosen, such as "Model": names the button, the popover and the list. */
   readonly label = input.required<string>();
@@ -92,18 +82,11 @@ export class GlzPickerComponent {
   readonly searchLabel = input('Search');
   /** Shown in the list when nothing matches. */
   readonly emptyText = input('No matches');
-  /** The heading over the pinned options. */
-  readonly pinnedHeading = input('Pinned');
-  /** The heading over the rest. */
-  readonly allHeading = input('All');
-  /** The Pin button's words, before the highlighted option's name. */
-  readonly pinText = input('Pin');
-  readonly unpinText = input('Unpin');
   readonly disabled = input(false, { transform: booleanAttribute });
 
   protected readonly popoverId = injectId('glz-picker');
   protected readonly listboxId = `${this.popoverId}-list`;
-  protected readonly icons = { open: ChevronDown, check: Check, pin: Pin, unpin: PinOff };
+  protected readonly icons = { open: ChevronDown, check: Check };
   protected readonly query = signal('');
   protected readonly open = signal(false);
   private readonly activeIndex = signal(-1);
@@ -117,49 +100,25 @@ export class GlzPickerComponent {
   );
   protected readonly shownLabel = computed(() => this.current()?.label ?? this.placeholder());
   protected readonly hope = computed(() => this.current()?.hope === true);
-  private readonly groups = computed<readonly GlzPickerGroup[]>(() =>
-    pickerGroups(this.options(), this.pinned(), this.query()),
+  /** The options that match the search, in their order. */
+  private readonly flat = computed(() => filterOptions(this.options(), this.query()));
+  protected readonly shown = computed<readonly ShownOption[]>(() =>
+    this.flat().map((option, at) => ({
+      value: option.value,
+      label: option.label,
+      hint: option.hint ?? '',
+      hasHint: (option.hint ?? '') !== '',
+      hope: option.hope === true,
+      id: `${this.popoverId}-${String(at)}`,
+      selected: option.value === this.value(),
+      active: at === this.activeIndex(),
+    })),
   );
-  /** The matches in the order the list shows them, pinned first. */
-  private readonly flat = computed(() => this.groups().flatMap((group) => group.options));
-  protected readonly shownGroups = computed<readonly ShownGroup[]>(() => {
-    let index = 0;
-    return this.groups().map((group) => ({
-      key: group.kind,
-      heading: group.kind === 'pinned' ? this.pinnedHeading() : this.allHeading(),
-      headingId: `${this.popoverId}-${group.kind}`,
-      options: group.options.map((option) => {
-        const at = index;
-        index += 1;
-        return {
-          value: option.value,
-          label: option.label,
-          hint: option.hint ?? '',
-          hasHint: (option.hint ?? '') !== '',
-          hope: option.hope === true,
-          id: `${this.popoverId}-${String(at)}`,
-          selected: option.value === this.value(),
-          active: at === this.activeIndex(),
-          pinned: group.kind === 'pinned',
-        };
-      }),
-    }));
-  });
-  protected readonly empty = computed(() => this.flat().length === 0);
   protected readonly expanded = computed(() => (this.open() ? 'true' : 'false'));
   private readonly active = computed(() => this.flat()[this.activeIndex()] ?? null);
   protected readonly activeId = computed(() => {
     const active = this.active();
     return active === null ? null : `${this.popoverId}-${String(this.activeIndex())}`;
-  });
-  protected readonly cannotPin = computed(() => this.active() === null);
-  protected readonly pinButton = computed(() => {
-    const active = this.active();
-    if (active === null) {
-      return this.pinText();
-    }
-    const verb = this.pinned().includes(active.value) ? this.unpinText() : this.pinText();
-    return `${verb} ${active.label}`;
   });
 
   private readonly highlightables = computed<readonly Highlightable[]>(() =>
@@ -234,7 +193,7 @@ export class GlzPickerComponent {
     this.keys.onKeydown(event);
   }
 
-  /** Keeps focus in the search box as the pointer picks or pins. */
+  /** Keeps focus in the search box as the pointer picks. */
   protected keepFocus(event: Event): void {
     event.preventDefault();
   }
@@ -242,20 +201,6 @@ export class GlzPickerComponent {
   protected choose(value: string): void {
     this.value.set(value);
     this.close();
-  }
-
-  /** Pins or unpins `value`; without one, the highlighted option. */
-  protected togglePin(event: Event, value?: string): void {
-    event.stopPropagation();
-    const target = value ?? this.active()?.value;
-    if (target === undefined) {
-      return;
-    }
-    this.pinned.update((pinned) =>
-      pinned.includes(target) ? pinned.filter((each) => each !== target) : [...pinned, target],
-    );
-    const at = this.flat().findIndex((option) => option.value === target);
-    this.activate(at);
   }
 
   private close(): void {

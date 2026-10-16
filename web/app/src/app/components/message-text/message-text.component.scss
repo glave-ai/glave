@@ -12,6 +12,11 @@
   white-space: pre-wrap;
 }
 
+// A reply's markdown takes the full width: its tables and code blocks reach the edge.
+.markdown {
+  align-self: stretch;
+}
+
 // Folded, the text shows its first lines; the rest is a click (or Enter) away.
 .folded {
   display: -webkit-box;

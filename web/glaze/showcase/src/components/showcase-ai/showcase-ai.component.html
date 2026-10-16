@@ -28,7 +28,7 @@
         <pre>{{ approval.command }}</pre>
       </glz-approval-card>
       <glz-question-card [questions]="questions" [answered]="answers()" (answer)="answer($event)" />
-      <p class="text">{{ copy.reply }}</p>
+      <div testId="showcase-markdown" [glzMarkdown]="copy.reply"></div>
     </glz-message>
     <glz-message from="note" [author]="copy.noteAuthor">{{ copy.note }}</glz-message>
     @for (message of messages(); track message.id) {

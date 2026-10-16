@@ -7,8 +7,10 @@ import {
   defaultModel,
   displayName,
   modelOptions,
+  orderedOptions,
   slugWords,
-  toPinned,
+  toRecent,
+  withRecent,
 } from './models';
 
 const MODELS: readonly ModelInfo[] = [
@@ -71,9 +73,25 @@ describe('models', () => {
     ]);
   });
 
-  it('reads back the pinned models’ ids only', () => {
-    expect(toPinned(['a', 3, '', 'b'])).toEqual(['a', 'b']);
-    expect(toPinned('a')).toEqual([]);
-    expect(toPinned(null)).toEqual([]);
+  it('reads back the recent models’ ids only, at most five', () => {
+    expect(toRecent(['a', 3, '', 'b'])).toEqual(['a', 'b']);
+    expect(toRecent(['a', 'b', 'c', 'd', 'e', 'f'])).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(toRecent('a')).toEqual([]);
+    expect(toRecent(null)).toEqual([]);
+  });
+
+  it('puts a model picked just now first, once, and forgets the oldest past five', () => {
+    expect(withRecent([], 'a')).toEqual(['a']);
+    expect(withRecent(['a', 'b'], 'b')).toEqual(['b', 'a']);
+    expect(withRecent(['a', 'b', 'c', 'd', 'e'], 'f')).toEqual(['f', 'a', 'b', 'c', 'd']);
+  });
+
+  it('orders the picker: the default, the recent models latest first, then the rest', () => {
+    const options = ['a', 'b', 'c', 'd', 'e'].map((value) => ({ value, label: value }));
+    const order = (first: string | null, recent: readonly string[]): readonly string[] =>
+      orderedOptions(options, first, recent).map((option) => option.value);
+    expect(order(null, [])).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(order('c', [])).toEqual(['c', 'a', 'b', 'd', 'e']);
+    expect(order('c', ['e', 'c', 'gone', 'b'])).toEqual(['c', 'e', 'b', 'a', 'd']);
   });
 });
