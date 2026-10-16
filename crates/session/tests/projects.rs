@@ -22,8 +22,10 @@ use serde_json::json;
 
 use crate::support::*;
 
-/// The token the fake git host signs in with; it must never show.
-const TOKEN: &str = "ghp_projects0token0never0shown";
+/// A token for the fake git host to sign in with, made for this run; it must never show.
+fn token() -> String {
+    format!("ghp_projects{}never0shown", std::process::id())
+}
 
 /// Runs `script` in `dir` with git as no one in particular, and checks it worked.
 fn sh(dir: &Path, script: &str) {
@@ -224,10 +226,11 @@ fn an_empty_project_is_a_new_repository_named_after_it_and_names_stay_apart() {
             second.name, "my app 2",
             "the next free name, never an error"
         );
-        assert_eq!(
-            folder.unwrap().checkout.path,
-            canonical(&projects.join("my-app-2"))
-        );
+        // A folder of its own, `my-app` or `my-app-2` as the file system tells names apart.
+        let path = PathBuf::from(folder.unwrap().checkout.path);
+        assert_ne!(path, PathBuf::from(canonical(&projects.join("My-App"))));
+        assert!(path.join(".git").is_dir(), "a new repository of its own");
+        assert_eq!(path.parent().unwrap(), Path::new(&canonical(&projects)));
         let renamed = server
             .request(Request::SpaceRename {
                 space: second.id,
@@ -261,7 +264,8 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
     );
     let projects = dir.with_extension("projects");
     let _ = std::fs::remove_dir_all(&projects);
-    let host = FakeGitHost::serving(&bare, "x-access-token", TOKEN).unwrap();
+    let token = token();
+    let host = FakeGitHost::serving(&bare, "x-access-token", &token).unwrap();
     let url = format!("{}/repo.git", host.url);
     block_on!(async {
         // Without the host connected, the host refuses and nothing is left behind.
@@ -276,11 +280,11 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::HOST, "{refused}");
-        assert!(!refused.message.contains(TOKEN));
+        assert!(!refused.message.contains(&token));
         let left = std::fs::read_dir(&projects).map_or(0, Iterator::count);
         assert_eq!(left, 0, "the failed clone's folder is removed");
 
-        let credential = GitCredential::new("x-access-token", TOKEN).unwrap();
+        let credential = GitCredential::new("x-access-token", token.as_str()).unwrap();
         let hosts = vec![CredentialHost {
             url: host.url.clone(),
             forge: Forge::Other,
@@ -306,7 +310,7 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
         );
         let config = std::fs::read_to_string(clone.join(".git/config")).unwrap();
         assert!(
-            !config.contains(TOKEN),
+            !config.contains(&token),
             "the token is never kept in the clone"
         );
         let thread = start_in(&server, space.id, None).await;
