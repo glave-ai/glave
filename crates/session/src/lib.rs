@@ -4,6 +4,7 @@
 
 mod approvals;
 pub mod client;
+mod credentials;
 mod cron;
 mod dispatch;
 mod goal;
@@ -29,10 +30,11 @@ mod trace;
 mod turn;
 
 pub use approvals::Answering;
+pub use credentials::{GitHosts, NewCredential};
 pub use dispatch::Answered;
 pub use glave_identity::signin;
 pub use glave_ports::Caller;
-pub use ledger::{is_ledger, provider_ledger};
+pub use ledger::{accounts_ledger, is_ledger};
 pub use providers::{Models, NewProvider, Providers};
 pub use server::{OnWorkers, Server, Wiring};
 pub use spaces::PERSONAL_NAME;

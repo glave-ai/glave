@@ -14,20 +14,22 @@ use glave_harness::{
     SystemClock, Workspace, agents_md,
 };
 use glave_memory::Tidier;
-use glave_ports::ToolSource;
+use glave_ports::{Credentials, ToolSource};
 use glave_session::protocol::{Reply, Request};
-use glave_session::{Answering, Providers, Server, Wiring};
+use glave_session::{Answering, GitHosts, Providers, Server, Wiring};
 use glave_web::{Web, WebSettings};
 
+use crate::accounts::Ledger;
 use crate::args::{self, Action, Args, USAGE};
 use crate::client::{Client, Glave, Session};
 use crate::config::{self, Endpoint};
+use crate::credentials::Hosts;
 use crate::data::Data;
 use crate::gateway::Switch;
 use crate::gateway::remote::Remote;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
-use crate::providers::{Built, Host, Ledger, Lineup};
+use crate::providers::{Built, Host, Lineup};
 use crate::setup::{self, Setup};
 use crate::terminal::Printer;
 use crate::{home, identity};
@@ -182,6 +184,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let identity = identity::load_or_make(&home::folder()?).await?;
     let lineup = Lineup::new(&setup, configured);
     let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
+    let (workspace, hosts) = with_hosts(args, &store, identity.person, choices, workspace).await?;
     let (model, named) = lined.built.models.default.clone().unwrap_or_default();
     let mut settings = Settings::new(model.clone(), named);
     let personal = home::folder()?.join(AGENTS_MD);
@@ -217,6 +220,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         modes: policy::thread_modes(choices, &setup.loaded.constraints),
         provider: lined.switch,
         providers: lined.providers,
+        git_hosts: hosts.map(|hosts| hosts as Arc<dyn GitHosts>),
         log: store.log(),
         blobs: store.blobs(),
         clock: Box::new(SystemClock),
@@ -246,6 +250,27 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         workers,
         memory,
         _telemetry: telemetry,
+    })
+}
+
+/// The git hosts `person` connected, when they may connect them here, and `workspace` with
+/// every thread's commands asking them for credentials at each use.
+async fn with_hosts(
+    args: &Args,
+    store: &Data,
+    person: glave_event::PrincipalId,
+    choices: &Choices,
+    workspace: Workspace,
+) -> anyhow::Result<(Workspace, Option<Arc<Hosts>>)> {
+    let others_sign_in = !args.issuers.is_empty();
+    let github = choices.github.as_ref().map(|github| &github.value);
+    let hosts = Hosts::for_person(store, person, github, others_sign_in).await?;
+    Ok(match hosts {
+        Some(hosts) => {
+            let asked = Arc::clone(&hosts) as Arc<dyn Credentials>;
+            (workspace.with_credentials(asked), Some(hosts))
+        }
+        None => (workspace, None),
     })
 }
 
@@ -285,7 +310,7 @@ async fn line_up(
         Some(Ledger::open(store, person).await?)
     };
     let accounts = match &ledger {
-        Some(ledger) => ledger.accounts().await?,
+        Some(ledger) => ledger.accounts().await?.providers,
         None => Vec::new(),
     };
     // An account that no longer lines up with the settings never stops glave starting.

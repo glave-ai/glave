@@ -63,6 +63,51 @@ pub struct ConfigFile {
     /// A cloud contract's models, in place of `GLAVE_BASE_URL`'s server. Only the person's or
     /// the server's own file sets it: the organization's credentials go there.
     pub provider: Option<ProviderFile>,
+    /// The GitHub App people sign in to GitHub through, in the browser. Only the person's or
+    /// the server's own file sets it: their GitHub sign-in goes there.
+    pub github: Option<GithubFile>,
+}
+
+/// `[github]`: the GitHub App whose device flow signs people in to GitHub from the browser
+/// (`session.md`, "Git hosts").
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GithubFile {
+    /// The app's client id: public, not a secret. The app must have device flow turned on.
+    pub client_id: String,
+    /// The app's name in its URL (`https://github.com/apps/<app>`), for the page where people
+    /// choose which repositories it may use.
+    pub app: Option<String>,
+    /// Where GitHub is: `https://github.com` unless set, such as a GitHub Enterprise Server.
+    pub url: Option<String>,
+}
+
+impl GithubFile {
+    /// What is wrong with it, if anything.
+    fn problem(&self) -> Option<String> {
+        let id = self.client_id.trim();
+        if id.is_empty() || id.chars().any(|c| !c.is_ascii_alphanumeric() && c != '.') {
+            return Some(format!(
+                "client_id = {:?} is not an app's client id",
+                self.client_id
+            ));
+        }
+        if let Some(app) = &self.app
+            && (app.trim().is_empty()
+                || app.chars().any(|c| !c.is_ascii_alphanumeric() && c != '-'))
+        {
+            return Some(format!(
+                "app = {app:?} is not an app's name as its URL gives it"
+            ));
+        }
+        let url = self.url.as_ref()?;
+        (!safe_to_send(url, &[])).then(|| {
+            format!(
+                "url = {url:?} is not https (http only to this computer): GitHub sign-ins go \
+                 there"
+            )
+        })
+    }
 }
 
 /// `[server]`: a session server elsewhere (`glave --server`), such as an organization's.
@@ -365,6 +410,9 @@ pub fn config(text: &str, path: &Path) -> crate::Result<ConfigFile> {
                 telemetry.otlp
             );
         }
+    }
+    if let Some(problem) = file.github.as_ref().and_then(GithubFile::problem) {
+        invalid!("{}: [github] {problem}", path.display());
     }
     if let Some(server) = &file.server
         && !safe_to_send(&server.url, &[])

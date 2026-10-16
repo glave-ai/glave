@@ -83,9 +83,79 @@
       "format": "uuid",
       "type": "string"
     },
+    "CredentialId": {
+      "description": "Identifies one git host a person connected (`credential.connected`).",
+      "format": "uuid",
+      "type": "string"
+    },
+    "CredentialInfo": {
+      "description": "A git host the person connected.",
+      "properties": {
+        "forge": {
+          "$ref": "#/$defs/Forge"
+        },
+        "hint": {
+          "description": "The token's last four characters, to tell tokens apart; absent for a token too short\nto show any of.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/CredentialId"
+        },
+        "login": {
+          "description": "Whom the host said the token is for, when it said.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "Where the host is: `https://github.com`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "forge",
+        "url"
+      ],
+      "type": "object"
+    },
     "Currency": {
       "description": "An ISO 4217 currency code: three uppercase ASCII letters, such as `USD`.",
       "type": "string"
+    },
+    "DeviceCode": {
+      "description": "Signing in to GitHub in the browser (its device flow): the person opens `url` and enters\n`code`, then the client waits on `flow` with `credential/device/poll`.",
+      "properties": {
+        "code": {
+          "description": "What the person enters on GitHub's page, such as `WDJB-MJHT`.",
+          "type": "string"
+        },
+        "expires_in": {
+          "description": "Seconds until the code expires.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "flow": {
+          "description": "Names this sign-in to `credential/device/poll`.",
+          "type": "string"
+        },
+        "url": {
+          "description": "GitHub's page where the code is entered.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "flow",
+        "code",
+        "url",
+        "expires_in"
+      ],
+      "type": "object"
     },
     "ErrorData": {
       "description": "Why a model call failed, for a client to say what to fix.",
@@ -160,6 +230,36 @@
         {
           "const": "over_budget",
           "description": "The call could exceed a budget, so it was not sent.",
+          "type": "string"
+        }
+      ]
+    },
+    "Forge": {
+      "description": "Which forge a git host runs, as far as glave could tell: what its API and its\ncommand-line tool are.",
+      "oneOf": [
+        {
+          "const": "github",
+          "description": "GitHub, or GitHub Enterprise Server: `gh`.",
+          "type": "string"
+        },
+        {
+          "const": "gitlab",
+          "description": "GitLab, its own or self-managed: `glab`.",
+          "type": "string"
+        },
+        {
+          "const": "gitea",
+          "description": "Gitea or Forgejo: `tea`.",
+          "type": "string"
+        },
+        {
+          "const": "bitbucket",
+          "description": "Bitbucket Cloud.",
+          "type": "string"
+        },
+        {
+          "const": "other",
+          "description": "Any other host git reaches over HTTPS.",
           "type": "string"
         }
       ]
@@ -1482,6 +1582,10 @@
       "code": -32005,
       "message": "The operation was cancelled"
     },
+    "HOST": {
+      "code": -32025,
+      "message": "The git host refused, or could not be reached"
+    },
     "INTERNAL": {
       "code": -32603,
       "message": "The server failed"
@@ -1513,6 +1617,10 @@
     "NO_APPROVAL": {
       "code": -32004,
       "message": "No such approval is pending"
+    },
+    "NO_CREDENTIAL": {
+      "code": -32024,
+      "message": "No such git host, or sign-in, here"
     },
     "NO_GOAL": {
       "code": -32007,
@@ -1597,6 +1705,153 @@
           "thread",
           "approval",
           "decision"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "credential/connect": {
+      "params": {
+        "properties": {
+          "token": {
+            "$ref": "#/$defs/Secret",
+            "description": "The token, sent once and never answered back."
+          },
+          "url": {
+            "description": "Where the host is, such as `https://github.com`: `https`, or `http` on this computer.",
+            "type": "string"
+          },
+          "username": {
+            "description": "The user name git sends with the token, for a host that needs one; else whom the\nhost says the token is for.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "url",
+          "token"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A git host, as it was connected.",
+        "properties": {
+          "credential": {
+            "$ref": "#/$defs/CredentialInfo"
+          }
+        },
+        "required": [
+          "credential"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "credential/device/poll": {
+      "params": {
+        "properties": {
+          "flow": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "description": "A git host, as it was connected.",
+            "properties": {
+              "credential": {
+                "$ref": "#/$defs/CredentialInfo"
+              }
+            },
+            "required": [
+              "credential"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A sign-in in the browser still waiting for the person.",
+            "properties": {
+              "flow": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "flow"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "streams": false
+    },
+    "credential/device/start": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "device": {
+            "$ref": "#/$defs/DeviceCode"
+          }
+        },
+        "required": [
+          "device"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "credential/list": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "credentials": {
+            "items": {
+              "$ref": "#/$defs/CredentialInfo"
+            },
+            "type": "array"
+          },
+          "device": {
+            "description": "Whether GitHub's sign-in in the browser (`credential/device/*`) is set up here;\nwithout it, a GitHub token is pasted.",
+            "type": "boolean"
+          },
+          "install": {
+            "description": "Where the person chooses which repositories GitHub's app may use, when it has\nsuch a page.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "credentials",
+          "device"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "credential/remove": {
+      "params": {
+        "properties": {
+          "credential": {
+            "$ref": "#/$defs/CredentialId"
+          }
+        },
+        "required": [
+          "credential"
         ],
         "type": "object"
       },

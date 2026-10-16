@@ -41,7 +41,7 @@ pub trait Providers: Send + Sync {
 
 /// Whether `caller` is the person on this computer: over a local transport, or signed in with
 /// the local token from a browser here.
-fn local(caller: &Caller) -> bool {
+pub(crate) fn local(caller: &Caller) -> bool {
     caller
         .auth
         .as_ref()

@@ -22,7 +22,7 @@ pub(crate) mod workspace;
 
 pub use approval::{ApprovalDecided, ApprovalRequested, Verdict};
 pub use chosen::{ApprovalMode, ApprovalModeChosen, ModelChosen};
-pub use credential::Forge;
+pub use credential::{CredentialConnected, CredentialRemoved, Forge, Renewal};
 pub use gateway::GatewayToolCalled;
 pub use goal::{GoalEnded, GoalReason, GoalResumed, GoalSet};
 pub use hook::{HookPoint, HookRan, HookResult};
@@ -34,7 +34,7 @@ pub use message::{MessageAdded, Role};
 pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};
 pub use principal::{Principal, PrincipalKind};
-pub use provider::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_provider};
+pub use provider::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_account};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
 pub use task::{Fired, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, When};
 pub use thread::{

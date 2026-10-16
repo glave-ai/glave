@@ -5,7 +5,6 @@
 //! the settings choose, which stay first.
 
 mod check;
-mod ledger;
 mod lineup;
 
 use glave_event::{Principal, ProviderConnected, ProviderId, ProviderKind, Secret};
@@ -14,11 +13,11 @@ use glave_provider_openai::Config;
 use glave_session::protocol::{ApiError, ErrorData, ProviderInfo, code, hint};
 use glave_session::{Models, NewProvider, Providers};
 
+use crate::accounts::{Ledger, random};
 use crate::config::Endpoint;
 use crate::gateway::Switch;
 use crate::model;
 
-pub use ledger::Ledger;
 pub use lineup::{Built, Lineup};
 
 /// The longest key taken, in bytes.
@@ -49,7 +48,10 @@ impl Host {
     /// Builds the models of the accounts kept now, and sends calls to them.
     async fn rebuilt(&self) -> Result<Models, ApiError> {
         let accounts = self.ledger.accounts().await.map_err(|e| failed(&e))?;
-        let built = self.lineup.build(&accounts).map_err(|e| failed(&e))?;
+        let built = self
+            .lineup
+            .build(&accounts.providers)
+            .map_err(|e| failed(&e))?;
         self.switch.set(built.gateway);
         Ok(built.models)
     }
@@ -58,7 +60,7 @@ impl Host {
         let url = checked_url(new.kind, new.url)?;
         let key = checked_key(&new.key)?;
         let mut account = ProviderConnected {
-            provider: ledger::random()
+            provider: random()
                 .and_then(|random| Ok(ProviderId::new(jiff::Timestamp::now(), random)?))
                 .map_err(|e| failed(&e))?,
             kind: new.kind,
@@ -82,7 +84,12 @@ impl Host {
         }
         account.models = models;
         // Every account glave keeps must line up with the rest, so a start never fails on one.
-        let mut accounts = self.ledger.accounts().await.map_err(|e| failed(&e))?;
+        let mut accounts = self
+            .ledger
+            .accounts()
+            .await
+            .map_err(|e| failed(&e))?
+            .providers;
         accounts.push(account.clone());
         self.lineup.build(&accounts).map_err(|e| {
             ApiError::new(
@@ -90,7 +97,10 @@ impl Host {
                 format!("glave cannot run this account's models here: {e:#}"),
             )
         })?;
-        self.ledger.keep(&account).await.map_err(|e| failed(&e))?;
+        self.ledger
+            .keep_provider(&account)
+            .await
+            .map_err(|e| failed(&e))?;
         Ok((info(&account), self.rebuilt().await?))
     }
 }
@@ -103,13 +113,14 @@ impl Providers for Host {
     fn list(&self) -> BoxFuture<'_, Result<Vec<ProviderInfo>, ApiError>> {
         Box::pin(async move {
             let accounts = self.ledger.accounts().await.map_err(|e| failed(&e))?;
-            Ok(accounts.iter().map(info).collect())
+            Ok(accounts.providers.iter().map(info).collect())
         })
     }
 
     fn remove(&self, provider: ProviderId) -> BoxFuture<'_, Result<Models, ApiError>> {
         Box::pin(async move {
-            if !self.ledger.remove(provider).await.map_err(|e| failed(&e))? {
+            let removed = self.ledger.remove_provider(provider).await;
+            if !removed.map_err(|e| failed(&e))? {
                 return Err(ApiError::new(
                     code::NO_PROVIDER,
                     format!("no model account {provider} here"),

@@ -1,7 +1,8 @@
 //! A fake git host for tests of credentials: one repository served over git's dumb HTTP
 //! protocol, only to a client that signs in with the right user name and token (Basic, as git
-//! sends a credential helper's answer). It counts the requests it refused. And credentials that
-//! answer every host they name with one credential.
+//! sends a credential helper's answer), and the account behind the token at `/api/v1/user`, as
+//! Gitea and Forgejo answer it. It counts the requests it refused. And credentials that answer
+//! every host they name with one credential.
 
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -31,7 +32,11 @@ impl FakeGitHost {
     pub fn start(username: &str, token: &str) -> io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let url = format!("http://{}", listener.local_addr()?);
-        let expected = format!("Basic {}", encode(format!("{username}:{token}").as_bytes()));
+        let account = Account {
+            username: username.to_owned(),
+            git: format!("Basic {}", encode(format!("{username}:{token}").as_bytes())),
+            api: format!("token {token}"),
+        };
         let (stop, refused) = (Arc::new(AtomicBool::new(false)), Arc::default());
         let (stopping, counting) = (Arc::clone(&stop), Arc::clone(&refused));
         let thread = std::thread::spawn(move || {
@@ -40,7 +45,7 @@ impl FakeGitHost {
                     return;
                 }
                 if let Ok(stream) = stream {
-                    let _ = answer(stream, &expected, &counting);
+                    let _ = answer(stream, &account, &counting);
                 }
             }
         });
@@ -69,9 +74,16 @@ impl Drop for FakeGitHost {
     }
 }
 
-/// Answers one request: the refs or `HEAD` to a client signed in as `expected`, 401 to anyone
-/// else, and 404 for anything it does not serve.
-fn answer(stream: TcpStream, expected: &str, refused: &AtomicUsize) -> io::Result<()> {
+/// The account the host serves, and the sign-ins it takes: git's, and its API's.
+struct Account {
+    username: String,
+    git: String,
+    api: String,
+}
+
+/// Answers one request: the account to its API's sign-in, the refs or `HEAD` to git's, 401
+/// to anyone else, and 404 for anything it does not serve.
+fn answer(stream: TcpStream, account: &Account, refused: &AtomicUsize) -> io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
     reader.read_line(&mut line)?;
@@ -95,17 +107,20 @@ fn answer(stream: TcpStream, expected: &str, refused: &AtomicUsize) -> io::Resul
         }
     }
     let mut stream = stream;
-    let body = if path.starts_with("/repo.git/info/refs") {
-        format!("{FAKE_COMMIT}\trefs/heads/main\n")
+    let (wanted, body) = if path == "/api/v1/user" {
+        let user = format!("{{\"login\":\"{}\"}}", account.username);
+        (&account.api, user)
+    } else if path.starts_with("/repo.git/info/refs") {
+        (&account.git, format!("{FAKE_COMMIT}\trefs/heads/main\n"))
     } else if path == "/repo.git/HEAD" {
-        "ref: refs/heads/main\n".to_owned()
+        (&account.git, "ref: refs/heads/main\n".to_owned())
     } else {
         return write!(
             stream,
             "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
         );
     };
-    if signed_in.as_deref() != Some(expected) {
+    if signed_in.as_ref() != Some(wanted) {
         refused.fetch_add(1, Ordering::SeqCst);
         return write!(
             stream,

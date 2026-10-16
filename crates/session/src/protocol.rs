@@ -2,20 +2,22 @@
 //! notifications a turn sends, and errors. Every transport carries these same types; in-process
 //! they are passed as they are, elsewhere as JSON-RPC 2.0.
 
+mod credentials;
 mod models;
 mod providers;
 mod tasks;
 
 use glave_event::{
-    At, CallId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal, ProviderId, RawEvent,
-    ScheduleId, Secret, Seq, ThreadId, TokenCounts, When,
+    At, CallId, CredentialId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal, ProviderId,
+    RawEvent, ScheduleId, Secret, Seq, ThreadId, TokenCounts, When,
 };
 use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
 use glave_ports::{ComputerId, Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
+pub use credentials::{CredentialInfo, DeviceCode};
 pub use glave_event::ApprovalMode;
-pub use glave_event::ProviderKind;
+pub use glave_event::{Forge, ProviderKind};
 pub use models::ModelInfo;
 pub use providers::{ProviderInfo, hint};
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
@@ -241,6 +243,29 @@ methods! {
     "provider/list" => ProviderList {} -> [Providers],
     /// Removes a model account, destroying the key it was kept with.
     "provider/remove" => ProviderRemove { provider: ProviderId } -> [Done],
+    /// Connects a git host: the token is checked with the host where it has a way to, then
+    /// kept sealed, and git and the host's own tool sign in with it, asking at each use.
+    /// Connecting the same host again replaces it. Only the person on this computer.
+    "credential/connect" => CredentialConnect {
+        /// Where the host is, such as `https://github.com`: `https`, or `http` on this computer.
+        url: String,
+        /// The token, sent once and never answered back.
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        token: Secret,
+        /// The user name git sends with the token, for a host that needs one; else whom the
+        /// host says the token is for.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        username: Option<String>,
+    } -> [Credential],
+    /// The git hosts connected here, and what signing in to GitHub in the browser offers.
+    "credential/list" => CredentialList {} -> [Credentials],
+    /// Removes a git host, destroying its token.
+    "credential/remove" => CredentialRemove { credential: CredentialId } -> [Done],
+    /// Starts signing in to GitHub in the browser: the code to enter, and where.
+    "credential/device/start" => CredentialDeviceStart {} -> [Device],
+    /// Waits a little for the sign-in `flow`: the host, connected, once the person approved
+    /// it on GitHub; else the flow again, to ask again.
+    "credential/device/poll" => CredentialDevicePoll { flow: String } -> [Credential, Waiting],
 }
 
 #[expect(
@@ -508,6 +533,25 @@ pub enum Reply {
     Provider { provider: ProviderInfo },
     #[schemars(title = "Providers")]
     Providers { providers: Vec<ProviderInfo> },
+    /// A git host, as it was connected.
+    #[schemars(title = "Credential")]
+    Credential { credential: CredentialInfo },
+    #[schemars(title = "Credentials")]
+    Credentials {
+        credentials: Vec<CredentialInfo>,
+        /// Whether GitHub's sign-in in the browser (`credential/device/*`) is set up here;
+        /// without it, a GitHub token is pasted.
+        device: bool,
+        /// Where the person chooses which repositories GitHub's app may use, when it has
+        /// such a page.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        install: Option<String>,
+    },
+    #[schemars(title = "Device")]
+    Device { device: DeviceCode },
+    /// A sign-in in the browser still waiting for the person.
+    #[schemars(title = "Waiting")]
+    Waiting { flow: String },
     // After every reply with a field of its own, since a missing `goal` reads as `null`;
     // before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.
@@ -708,6 +752,8 @@ pub mod code {
         NO_MODEL = -32021, "No such model here, or not one this server may run";
         NOT_AVAILABLE = -32022, "Not available yet, such as a thread on a computer of the person's own";
         NO_PROVIDER = -32023, "No such model account here";
+        NO_CREDENTIAL = -32024, "No such git host, or sign-in, here";
+        HOST = -32025, "The git host refused, or could not be reached";
     }
 }
 

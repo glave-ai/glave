@@ -6,10 +6,12 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use uuid::Uuid;
 
 use crate::codec::{Payload, parse};
 use crate::envelope::RawEvent;
-use crate::id::ProviderId;
+use crate::id::{CredentialId, ProviderId};
+use crate::payload::credential;
 use crate::payload::principal::Principal;
 use crate::secret::Secret;
 
@@ -78,17 +80,26 @@ pub(crate) fn decode_removed(
     (version == 1).then(|| parse(data))
 }
 
-/// The account whose own data key seals `event`, when it is a `provider.connected`; every
-/// other event is sealed under its month's key.
-pub fn sealed_under_provider(event: &RawEvent) -> Option<ProviderId> {
+/// The account whose own data key seals `event`, when it is a `provider.connected` (a model
+/// account) or a `credential.connected` (a git host); every other event is sealed under its
+/// month's key.
+pub fn sealed_under_account(event: &RawEvent) -> Option<Uuid> {
     #[derive(Deserialize)]
-    struct Named {
+    struct Provider {
         provider: ProviderId,
     }
-    if event.kind.as_str() != CONNECTED {
-        return None;
+    #[derive(Deserialize)]
+    struct Credential {
+        credential: CredentialId,
     }
-    serde_json::from_str::<Named>(event.data.get())
-        .ok()
-        .map(|named| named.provider)
+    let data = event.data.get();
+    match event.kind.as_str() {
+        CONNECTED => serde_json::from_str::<Provider>(data)
+            .ok()
+            .map(|named| named.provider.as_uuid()),
+        credential::CONNECTED => serde_json::from_str::<Credential>(data)
+            .ok()
+            .map(|named| named.credential.as_uuid()),
+        _ => None,
+    }
 }

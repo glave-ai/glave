@@ -25,8 +25,8 @@ pub use choices::{Choices, Chosen, Judge, Layer, Level, Source};
 pub use effective::{check_model, check_own_servers, thread_modes, unsandboxed};
 pub use explain::explain;
 pub use files::{
-    ConfigFile, HooksFile, ModelEntry, PolicyFile, SandboxChoice, ServerFile, StoreFile, TaskRules,
-    TelemetryFile, config,
+    ConfigFile, GithubFile, HooksFile, ModelEntry, PolicyFile, SandboxChoice, ServerFile,
+    StoreFile, TaskRules, TelemetryFile, config,
 };
 pub use memory::{MemorySettings, settle as memory_settings};
 pub use placement::{Placement, PlacementRules};
@@ -164,8 +164,8 @@ pub async fn load(
         // A project never chooses the gateway: the person's sign-in would go where it said.
         // Nor whether the person's memory is on: that is theirs alone. Nor where telemetry
         // goes, nor where history is kept, nor which server to sign in to, nor which cloud the
-        // organization's credentials go to. It may take the network away from sandboxed
-        // commands, never give it back.
+        // organization's credentials go to, nor which app their GitHub sign-in goes to. It may
+        // take the network away from sandboxed commands, never give it back.
         let values = ConfigFile {
             gateway: None,
             memory: None,
@@ -173,6 +173,7 @@ pub async fn load(
             store: None,
             server: None,
             provider: None,
+            github: None,
             network: values.network.filter(|on| !on),
             ..values
         };

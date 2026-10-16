@@ -39,8 +39,41 @@ export type Choice = {
 /** Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it). */
 export type ComputerId = string;
 
+/** Identifies one git host a person connected (`credential.connected`). */
+export type CredentialId = string;
+
+/** A git host the person connected. */
+export type CredentialInfo = {
+  readonly forge: Forge;
+  /**
+   * The token's last four characters, to tell tokens apart; absent for a token too short
+   * to show any of.
+   */
+  readonly hint?: string | null;
+  readonly id: CredentialId;
+  /** Whom the host said the token is for, when it said. */
+  readonly login?: string | null;
+  /** Where the host is: `https://github.com`. */
+  readonly url: string;
+};
+
 /** An ISO 4217 currency code: three uppercase ASCII letters, such as `USD`. */
 export type Currency = string;
+
+/**
+ * Signing in to GitHub in the browser (its device flow): the person opens `url` and enters
+ * `code`, then the client waits on `flow` with `credential/device/poll`.
+ */
+export type DeviceCode = {
+  /** What the person enters on GitHub's page, such as `WDJB-MJHT`. */
+  readonly code: string;
+  /** Seconds until the code expires. */
+  readonly expires_in: number;
+  /** Names this sign-in to `credential/device/poll`. */
+  readonly flow: string;
+  /** GitHub's page where the code is entered. */
+  readonly url: string;
+};
 
 /** Why a model call failed, for a client to say what to fix. */
 export type ErrorData = {
@@ -52,6 +85,12 @@ export type EventId = string;
 
 /** The kind of a failed model request. */
 export type Failure = "refused" | "no_credit" | "unknown_model" | "too_long" | "rate_limited" | "unavailable" | "unreachable" | "silent" | "malformed" | "rejected" | "over_budget";
+
+/**
+ * Which forge a git host runs, as far as glave could tell: what its API and its
+ * command-line tool are.
+ */
+export type Forge = "github" | "gitlab" | "gitea" | "bitbucket" | "other";
 
 /** A thread's latest goal and how far it has come. */
 export type GoalProgress = {
@@ -452,6 +491,61 @@ export type ApprovalDecideParams = {
 
 export type ApprovalDecideResult = Readonly<Record<string, never>>;
 
+export type CredentialConnectParams = {
+  /** The token, sent once and never answered back. */
+  readonly token: Secret;
+  /** Where the host is, such as `https://github.com`: `https`, or `http` on this computer. */
+  readonly url: string;
+  /**
+   * The user name git sends with the token, for a host that needs one; else whom the
+   * host says the token is for.
+   */
+  readonly username?: string | null;
+};
+
+/** A git host, as it was connected. */
+export type CredentialConnectResult = {
+  readonly credential: CredentialInfo;
+};
+
+export type CredentialDevicePollParams = {
+  readonly flow: string;
+};
+
+export type CredentialDevicePollResult = {
+  readonly credential: CredentialInfo;
+} | {
+  readonly flow: string;
+};
+
+export type CredentialDeviceStartParams = Readonly<Record<string, never>>;
+
+export type CredentialDeviceStartResult = {
+  readonly device: DeviceCode;
+};
+
+export type CredentialListParams = Readonly<Record<string, never>>;
+
+export type CredentialListResult = {
+  readonly credentials: readonly (CredentialInfo)[];
+  /**
+   * Whether GitHub's sign-in in the browser (`credential/device/*`) is set up here;
+   * without it, a GitHub token is pasted.
+   */
+  readonly device: boolean;
+  /**
+   * Where the person chooses which repositories GitHub's app may use, when it has
+   * such a page.
+   */
+  readonly install?: string | null;
+};
+
+export type CredentialRemoveParams = {
+  readonly credential: CredentialId;
+};
+
+export type CredentialRemoveResult = Readonly<Record<string, never>>;
+
 export type GoalGetParams = {
   readonly thread: ThreadId;
 };
@@ -805,6 +899,11 @@ export type TurnStartResult = {
 /** Every method, with its params and result. */
 export interface Methods {
   readonly "approval/decide": { readonly params: ApprovalDecideParams; readonly result: ApprovalDecideResult };
+  readonly "credential/connect": { readonly params: CredentialConnectParams; readonly result: CredentialConnectResult };
+  readonly "credential/device/poll": { readonly params: CredentialDevicePollParams; readonly result: CredentialDevicePollResult };
+  readonly "credential/device/start": { readonly params: CredentialDeviceStartParams; readonly result: CredentialDeviceStartResult };
+  readonly "credential/list": { readonly params: CredentialListParams; readonly result: CredentialListResult };
+  readonly "credential/remove": { readonly params: CredentialRemoveParams; readonly result: CredentialRemoveResult };
   readonly "goal/get": { readonly params: GoalGetParams; readonly result: GoalGetResult };
   readonly "goal/start": { readonly params: GoalStartParams; readonly result: GoalStartResult };
   readonly "goal/stop": { readonly params: GoalStopParams; readonly result: GoalStopResult };
@@ -876,6 +975,8 @@ export const ErrorCode = {
   ARCHIVED: -32014,
   /** The operation was cancelled */
   CANCELLED: -32005,
+  /** The git host refused, or could not be reached */
+  HOST: -32025,
   /** The server failed */
   INTERNAL: -32603,
   /** The params are not valid */
@@ -892,6 +993,8 @@ export const ErrorCode = {
   NOT_AVAILABLE: -32022,
   /** No such approval is pending */
   NO_APPROVAL: -32004,
+  /** No such git host, or sign-in, here */
+  NO_CREDENTIAL: -32024,
   /** The thread has no active goal (or, to resume, no paused one) */
   NO_GOAL: -32007,
   /** No such memory here */

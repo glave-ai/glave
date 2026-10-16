@@ -82,15 +82,11 @@ impl<S: KeyStorage> Keys<S> {
         self.destroy_own_key(scope, Period::Memory(memory)).await
     }
 
-    /// Destroys the key a model account was kept under, so the account and its key are
-    /// unreadable in the store from now on; [`Keys::rotate_space_key`] then reaches backups.
-    pub async fn destroy_provider_key(
-        &self,
-        scope: &Scope,
-        provider: Uuid,
-    ) -> Result<(), KeyError> {
-        self.destroy_own_key(scope, Period::Provider(provider))
-            .await
+    /// Destroys the key an account (a model account or a git host) was kept under, so the
+    /// account and its key or token are unreadable in the store from now on;
+    /// [`Keys::rotate_space_key`] then reaches backups.
+    pub async fn destroy_account_key(&self, scope: &Scope, account: Uuid) -> Result<(), KeyError> {
+        self.destroy_own_key(scope, Period::Account(account)).await
     }
 
     /// Destroys every key of the item `period` names.

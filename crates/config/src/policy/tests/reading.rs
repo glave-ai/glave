@@ -315,6 +315,35 @@ fn the_store_is_the_person_s_choice_and_its_password_never_shown() {
 }
 
 #[test]
+fn the_github_app_is_the_person_s_or_server_s_choice() {
+    let dir = scratch("github");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let text = "[github]\nclient_id = \"Iv23li0123abcd\"\napp = \"glave-dev\"\n";
+    let project = files::config(text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.github, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let chosen = loaded.choices.github.as_ref().unwrap();
+    assert_eq!(chosen.value.client_id, "Iv23li0123abcd");
+    assert_eq!(chosen.value.app.as_deref(), Some("glave-dev"));
+    for refused in [
+        "[github]\nclient_id = \"a b\"\n",
+        "[github]\nclient_id = \"Iv1.x\"\nurl = \"http://github.example.com\"\n",
+        "[github]\nclient_id = \"Iv1.x\"\nsecret = \"no\"\n",
+        "[github]\nclient_id = \"Iv1.x\"\napp = \"https://github.com/apps/x\"\n",
+    ] {
+        let error = files::config(refused, &locations.person).unwrap_err();
+        assert!(error.to_string().contains("github"), "{error}");
+    }
+    let local = "[github]\nclient_id = \"Iv1.x\"\nurl = \"http://127.0.0.1:9000\"\n";
+    assert!(files::config(local, &home).is_ok());
+}
+
+#[test]
 fn a_cloud_provider_is_the_person_s_or_server_s_choice_and_typed() {
     let dir = scratch("provider");
     let home = dir.join("home");

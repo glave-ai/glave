@@ -18,6 +18,7 @@ use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 
 use crate::approvals::{Answering, Approvals};
+use crate::credentials::GitHosts;
 use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
@@ -64,6 +65,9 @@ pub struct Wiring<P, L, B> {
     /// The model accounts the person on this computer connects, which the models follow;
     /// none where whoever runs the server sets up its models.
     pub providers: Option<Arc<dyn Providers>>,
+    /// The git hosts the person on this computer connects; none where whoever runs the
+    /// server sets up what its threads sign in to.
+    pub git_hosts: Option<Arc<dyn GitHosts>>,
 }
 
 /// Threads on workers: where workers come from, and the environment each is made from.
@@ -111,6 +115,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) providers: Option<Arc<dyn Providers>>,
     /// Held while model accounts change and the models follow.
     pub(crate) changing_models: tokio::sync::Mutex<()>,
+    /// Where git hosts are kept, when the person here may connect them.
+    pub(crate) git_hosts: Option<Arc<dyn GitHosts>>,
     /// The modes a thread may choose, cautious first.
     pub(crate) modes: Vec<ApprovalMode>,
     /// The space's own person, whom the log leaves implied.
@@ -170,6 +176,7 @@ where
                 models: RwLock::new(catalog),
                 providers: wiring.providers,
                 changing_models: tokio::sync::Mutex::new(()),
+                git_hosts: wiring.git_hosts,
                 modes: choosable,
                 person,
                 limits: wiring.tasks,

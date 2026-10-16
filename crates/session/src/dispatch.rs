@@ -5,6 +5,7 @@
 use glave_harness::{Caller, Change, Control, DEFAULT_BUDGET, Goal};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 
+use crate::credentials::NewCredential;
 use crate::modes::Choice;
 use crate::protocol::{ApiError, Reply, Request, ServerInfo, code};
 use crate::providers::NewProvider;
@@ -268,6 +269,24 @@ where
             }
             Request::ProviderList {} => self.list_providers(caller).await,
             Request::ProviderRemove { provider } => self.remove_provider(caller, provider).await,
+            Request::CredentialConnect {
+                url,
+                token,
+                username,
+            } => {
+                let new = NewCredential {
+                    url,
+                    token,
+                    username,
+                };
+                self.connect_credential(caller, new).await
+            }
+            Request::CredentialList {} => self.list_credentials(caller).await,
+            Request::CredentialRemove { credential } => {
+                self.remove_credential(caller, credential).await
+            }
+            Request::CredentialDeviceStart {} => self.start_device(caller).await,
+            Request::CredentialDevicePoll { flow } => self.poll_device(caller, flow).await,
         })
     }
 }

@@ -329,6 +329,53 @@ impl std::str::FromStr for ProviderId {
     }
 }
 
+/// Identifies one git host a person connected (`credential.connected`).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(try_from = "Uuid", into = "Uuid")]
+pub struct CredentialId(Uuid);
+
+impl CredentialId {
+    pub fn new(at: Timestamp, random: [u8; 10]) -> Result<Self, InvalidValue> {
+        build_v7("credential id", at, random).map(Self)
+    }
+
+    pub fn as_uuid(self) -> Uuid {
+        self.0
+    }
+}
+
+impl TryFrom<Uuid> for CredentialId {
+    type Error = InvalidValue;
+
+    fn try_from(uuid: Uuid) -> Result<Self, Self::Error> {
+        require_v7("credential id", uuid).map(Self)
+    }
+}
+
+impl From<CredentialId> for Uuid {
+    fn from(id: CredentialId) -> Self {
+        id.0
+    }
+}
+
+impl fmt::Display for CredentialId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Links a tool call to its result: 1 to 128 printable ASCII characters.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema,
