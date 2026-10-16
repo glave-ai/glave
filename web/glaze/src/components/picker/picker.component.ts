@@ -197,7 +197,13 @@ export class GlzPickerComponent {
     this.query.set('');
     this.open.set(true);
     popover.showPopover();
-    positionPopover(this.trigger().nativeElement, popover, 'above', `--${this.popoverId}`);
+    positionPopover(
+      this.trigger().nativeElement,
+      popover,
+      'above',
+      `--${this.popoverId}`,
+      'most-room',
+    );
     const at = this.flat().findIndex((option) => option.value === this.value());
     this.activate(at === -1 ? 0 : at);
     this.search().nativeElement.focus();

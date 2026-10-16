@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { type Locator, expect, test } from '@playwright/test';
 
 import { THREAD, fakeApi } from './fake-api';
 import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
@@ -229,4 +229,43 @@ test('on a phone the side nav is a drawer and the tools a sheet', async ({ page 
   await expectAccessible(page);
   await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
+});
+
+/** A box on the page, as Playwright measures it. */
+type Box = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>;
+
+/** Whether two boxes on the page overlap; a missing box counts as overlapping. */
+function overlaps(a: Box | null, b: Box | null): boolean {
+  if (a === null || b === null) {
+    return true;
+  }
+  return a.y < b.y + b.height && b.y < a.y + a.height && a.x < b.x + b.width && b.x < a.x + a.width;
+}
+
+test('in a short window the picker lists models beside its button, never over it', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await fakeApi(page);
+  await page.goto(`/${SIGNED_IN}`);
+  const trigger = byTestId(page, 'model-picker-trigger');
+  // Less room above the button than the popover's full height (28rem).
+  expect((await trigger.boundingBox())?.y ?? Infinity).toBeLessThan(448);
+  await trigger.click();
+  const search = byTestId(page, 'model-picker-search');
+  const list = byTestId(page, 'model-picker-listbox');
+  await expect(search).toBeFocused();
+  const button = await trigger.boundingBox();
+  // The list shows a few rows, and neither it nor the search box covers the button.
+  expect((await list.boundingBox())?.height ?? 0).toBeGreaterThan(100);
+  expect(overlaps(await list.boundingBox(), button)).toBe(false);
+  expect(overlaps(await search.boundingBox(), button)).toBe(false);
+  await search.fill('haiku');
+  const option = byTestId(page, 'model-picker-option');
+  await expect(option).toHaveCount(1);
+  await expect(option).toContainText('Claude Haiku 5.5');
+  await expect(option).toBeInViewport();
+  await option.click();
+  await expect(list).toBeHidden();
+  await expect(trigger).toContainText('Anthropic · Claude Haiku 5.5');
 });
