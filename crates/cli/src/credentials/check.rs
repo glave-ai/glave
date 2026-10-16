@@ -88,8 +88,8 @@ pub async fn check(http: &reqwest::Client, url: &str, token: &Secret) -> Result<
         return Err(ApiError::new(
             code::HOST,
             format!(
-                "{name} did not accept that token: check that you copied all of it and that it \
-                 is still active"
+                "the git host at {name} did not accept that token: check that you copied all of \
+                 it and that it is still active"
             ),
         ));
     }
