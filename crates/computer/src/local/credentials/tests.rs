@@ -28,7 +28,7 @@ fn value<'a>(settings: &'a [(OsString, OsString)], name: &str) -> Option<&'a str
 fn git_settings_clear_other_helpers_per_host_after_the_commands_own() {
     let hosts = [host("https://github.com", Forge::Github)];
     let own = [("GIT_CONFIG_COUNT".into(), "1".into())];
-    let settings = settings(&hosts, Path::new("/tmp/glave x/ask"), &own);
+    let settings = settings(&hosts, Path::new("/tmp/glave x/git-credential-glave"), &own);
     assert_eq!(value(&settings, "GIT_CONFIG_COUNT"), Some("3"));
     assert_eq!(
         value(&settings, "GIT_CONFIG_KEY_1"),
@@ -37,76 +37,69 @@ fn git_settings_clear_other_helpers_per_host_after_the_commands_own() {
     assert_eq!(value(&settings, "GIT_CONFIG_VALUE_1"), Some(""));
     assert_eq!(
         value(&settings, "GIT_CONFIG_VALUE_2"),
-        Some("!'/tmp/glave x/ask'")
+        Some("!'/tmp/glave x/git-credential-glave'")
     );
 }
 
 #[test]
-fn each_tool_runs_signed_in_to_its_own_host_first() {
-    let hosts = [
-        host("https://git.example.com", Forge::Github),
-        host("https://github.com", Forge::Github),
-        host("https://gitlab.example.com", Forge::Gitlab),
-        host("https://code.example.com", Forge::Gitea),
-        host("https://bitbucket.org", Forge::Bitbucket),
-    ];
-    let chosen: Vec<(&str, &str)> = ForgeTool::signed_in(&hosts)
-        .into_iter()
-        .map(|(tool, host)| (tool.name(), host.url.as_str()))
-        .collect();
-    assert_eq!(
-        chosen,
-        [
-            ("gh", "https://github.com"),
-            ("glab", "https://gitlab.example.com"),
-            ("tea", "https://code.example.com"),
-        ]
+fn a_wrapper_sets_its_token_alone_and_puts_back_what_could_run_a_program() {
+    let gh = wrapper(
+        ForgeTool::Gh,
+        &host("https://github.com", Forge::Github),
+        Path::new("/tmp/w/bin"),
+        Path::new("/tmp/w/git-credential-glave"),
     );
-    let enterprise = variables(ForgeTool::Gh, &hosts[0]);
-    assert_eq!(
-        enterprise,
-        [
-            ("GH_ENTERPRISE_TOKEN", None),
-            ("GH_HOST", Some("git.example.com".to_owned()))
-        ]
+    assert!(
+        gh.contains("printf 'protocol=%s\\nhost=%s\\n' 'https' 'github.com'"),
+        "{gh}"
     );
-    assert_eq!(variables(ForgeTool::Gh, &hosts[1]), [("GH_TOKEN", None)]);
-    assert_eq!(
-        variables(ForgeTool::Glab, &hosts[2]),
-        [
-            ("GITLAB_TOKEN", None),
-            ("GITLAB_HOST", Some("https://gitlab.example.com".to_owned()))
-        ]
+    assert!(
+        gh.contains("then GH_TOKEN=$token; export GH_TOKEN; fi"),
+        "{gh}"
     );
-    assert_eq!(
-        variables(ForgeTool::Tea, &hosts[3]),
-        [
-            ("GITEA_TOKEN", None),
-            (
-                "GITEA_INSTANCE_URL",
-                Some("https://code.example.com".to_owned())
-            )
-        ]
+    for cleared in [
+        "GH_ENTERPRISE_TOKEN",
+        "GH_HOST",
+        "GH_CONFIG_DIR",
+        "BROWSER",
+        "EDITOR",
+    ] {
+        assert!(gh.contains(&format!(" {cleared}")), "{cleared}: {gh}");
+    }
+    assert!(gh.contains("GH_PAGER='cat'; export GH_PAGER"), "{gh}");
+    let tea = wrapper(
+        ForgeTool::Tea,
+        &host("https://code.example.com", Forge::Gitea),
+        Path::new("/tmp/w/bin"),
+        Path::new("/tmp/w/git-credential-glave"),
     );
+    assert!(
+        tea.contains("GITEA_INSTANCE_URL='https://code.example.com'; export GITEA_INSTANCE_URL"),
+        "{tea}"
+    );
+    assert!(tea.contains("then GITEA_TOKEN=$token"), "{tea}");
 }
 
 #[test]
 fn the_helper_files_hold_no_token_and_go_with_the_command() {
     let credentials = FixedCredentials::new(
-        vec![host("https://github.com", Forge::Github)],
+        vec![
+            host("https://github.com", Forge::Github),
+            host("https://x\ntouch pwned", Forge::Other),
+        ],
         GitCredential::new("x-access-token", "ghp_never_in_a_file").unwrap(),
     );
     let folder = block_on!(async {
         let offered = offer(&credentials, &[]).await.unwrap().unwrap();
+        assert_eq!(offered.hosts.len(), 1, "only a plain origin is offered");
         let folder = offered.folder.clone();
-        for name in ["ask", "gh"] {
+        for name in [HELPER, "bin/gh"] {
             let text = std::fs::read_to_string(folder.join(name)).unwrap();
             assert!(!text.contains("ghp_never_in_a_file"), "{text}");
         }
-        assert!(
-            value(&offered.environment, "PATH").is_some(),
-            "gh's wrapper"
-        );
+        let path = value(&offered.environment, "PATH").unwrap();
+        assert!(path.ends_with("/bin"), "the wrappers alone: {path}");
+        assert!(!folder.join("bin").join(HELPER).exists());
         folder
     });
     assert!(!folder.exists(), "removed when the command ends");

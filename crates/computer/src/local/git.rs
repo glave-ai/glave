@@ -53,7 +53,7 @@ impl<'a> Git<'a> {
             .envs(self.credential.iter().flat_map(|credential| {
                 [
                     ("GLAVE_GIT_USERNAME", credential.username.as_str()),
-                    ("GLAVE_GIT_PASSWORD", credential.password.as_str()),
+                    ("GLAVE_GIT_PASSWORD", credential.password.expose()),
                 ]
             }))
             .env("GIT_TERMINAL_PROMPT", "0")

@@ -9,6 +9,12 @@ use crate::parse::Word;
 /// Why `words` (a command after any wrapper, named `name`) prints a credential, if it does.
 pub(crate) fn prints_credential(name: &str, words: &[Word]) -> Option<Caution> {
     let args: Vec<&str> = words.iter().skip(1).map(Word::text).collect();
+    if name == "git" && configures_credentials(&args) {
+        return Some(Caution {
+            kind: Kind::Credentials,
+            reason: "it changes how git keeps credentials, which could show one".to_owned(),
+        });
+    }
     let plain: Vec<&str> = args
         .iter()
         .copied()
@@ -83,6 +89,36 @@ fn git(args: &[&str]) -> Option<&'static str> {
     (fill || subcommand.starts_with("credential-")).then_some("git's stored credentials")
 }
 
+/// `git -c credential.…` or `--config-env=credential.…`, among git's own options: a helper of
+/// the command's own (`store`, `cache`) would keep, and could print, what glave's hands git.
+fn configures_credentials(args: &[&str]) -> bool {
+    let credential = |setting: &str| setting.to_ascii_lowercase().starts_with("credential.");
+    let mut at = 0;
+    while let Some(arg) = args.get(at) {
+        if *arg == "-c" {
+            if args
+                .get(at.saturating_add(1))
+                .is_some_and(|value| credential(value))
+            {
+                return true;
+            }
+            at = at.saturating_add(2);
+        } else if let Some(value) = arg.strip_prefix("--config-env=") {
+            if credential(value) {
+                return true;
+            }
+            at = at.saturating_add(1);
+        } else if matches!(*arg, "-C" | "--git-dir" | "--work-tree" | "--namespace") {
+            at = at.saturating_add(2);
+        } else if arg.starts_with('-') {
+            at = at.saturating_add(1);
+        } else {
+            return false;
+        }
+    }
+    false
+}
+
 /// `auth token`, and `auth status --show-token` (or `-t`), of `gh` and `glab`.
 fn shows_token(verb: Option<&str>, args: &[&str]) -> bool {
     verb == Some("token")
@@ -154,6 +190,29 @@ mod tests {
                 }
                 other => panic!("{script}: {other:?}"),
             }
+        }
+    }
+
+    #[test]
+    fn git_given_a_credential_helper_of_the_command_s_own_always_asks() {
+        for script in [
+            "git -c credential.helper=store push",
+            "git -c Credential.https://github.com.helper='store --file=x' fetch",
+            "git --config-env=credential.helper=HELPER push",
+            "git -C . -c credential.helper=cache push",
+        ] {
+            match verdict(script) {
+                Verdict::Caution(caution) if caution.kind == Kind::Credentials => {
+                    assert!(caution.kind.firm(), "{script}");
+                }
+                other => panic!("{script}: {other:?}"),
+            }
+        }
+        for script in ["git -c user.name=me commit -m x", "git push origin main"] {
+            assert!(
+                !matches!(verdict(script), Verdict::Caution(ref c) if c.kind == Kind::Credentials),
+                "{script}"
+            );
         }
     }
 

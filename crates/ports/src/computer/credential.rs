@@ -4,29 +4,61 @@
 //! [`Credentials`] for one each time they need it (`credentials/request`), so the value
 //! reaches only the process that asked, never a disk or the command's environment.
 
-use std::fmt;
-
-use glave_event::Forge;
+use glave_event::{Forge, Secret};
 use serde::{Deserialize, Serialize};
 
 use super::types::ComputerError;
 use crate::tools::BoxFuture;
 
-/// A host a command's git may ask a credential for, and which forge it runs, so that
-/// forge's own command-line tool (`gh`, `glab`, `tea`) runs signed in to it.
+/// A host a command's git may ask a credential for, and which forge it runs, so that forge's
+/// own command-line tool may run signed in to it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CredentialHost {
     /// Where the host is, as git's `credential.<url>` settings name it: `https://github.com`.
+    /// Only an [`origin`](Self::origin) is ever offered to a command.
     pub url: String,
     pub forge: Forge,
 }
 
-/// A forge's own command-line tool, which runs signed in to one connected host of its forge.
+impl CredentialHost {
+    /// Its scheme and its host with any port, when `url` is an origin glave hands a credential
+    /// for: `https://` and a host of letters, digits, `.` and `-` with any port, or `http://` to
+    /// this computer, and nothing more: no path, user name, query or space.
+    pub fn origin(&self) -> Option<(&str, &str)> {
+        let (scheme, host) = self.url.split_once("://")?;
+        let (name, port) = match host.rsplit_once(':') {
+            Some((name, port)) if !name.ends_with(':') => (name, Some(port)),
+            _ => (host, None),
+        };
+        let named = name == "[::1]"
+            || (!name.is_empty()
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-'));
+        let ported = port.is_none_or(|port| {
+            !port.is_empty() && port.len() <= 5 && port.chars().all(|c| c.is_ascii_digit())
+        });
+        let local = matches!(name, "localhost" | "127.0.0.1" | "[::1]");
+        let allowed = scheme == "https" || (scheme == "http" && local);
+        (named && ported && allowed).then_some((scheme, host))
+    }
+
+    /// Whether `ask` is for this host: its scheme exactly, its host and port in any case.
+    pub fn is_for(&self, ask: &CredentialAsk) -> bool {
+        self.origin().is_some_and(|(scheme, host)| {
+            ask.protocol == scheme && ask.host.eq_ignore_ascii_case(host)
+        })
+    }
+}
+
+/// A forge's own command-line tool, run signed in to one connected host. Only tools that send
+/// their token to that host alone: `gh` keeps `GH_TOKEN` for github.com, and `tea` for the
+/// instance it is given. `glab` sends `GITLAB_TOKEN` to any host it is pointed at, and `gh`
+/// sends GitHub Enterprise's token to any host but github.com, so neither runs signed in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForgeTool {
     Gh,
-    Glab,
     Tea,
 }
 
@@ -35,45 +67,21 @@ impl ForgeTool {
     pub fn name(self) -> &'static str {
         match self {
             Self::Gh => "gh",
-            Self::Glab => "glab",
             Self::Tea => "tea",
         }
     }
 
-    fn of(forge: Forge) -> Option<Self> {
-        match forge {
-            Forge::Github => Some(Self::Gh),
-            Forge::Gitlab => Some(Self::Glab),
-            Forge::Gitea => Some(Self::Tea),
-            Forge::Bitbucket | Forge::Other => None,
-        }
-    }
-
-    /// The host the tool talks to by default, when it has one.
-    pub fn home(self) -> Option<&'static str> {
-        match self {
-            Self::Gh => Some("https://github.com"),
-            Self::Glab => Some("https://gitlab.com"),
-            Self::Tea => None,
-        }
-    }
-
-    /// Each tool with the host it runs signed in to among `hosts`: its default host when that
-    /// is there, else the first of its forge. A tool takes one token, so one host each.
+    /// Each tool with the host it runs signed in to among `hosts`: `gh` for github.com, `tea`
+    /// for the first Gitea or Forgejo host. A tool takes one token, so one host each.
     pub fn signed_in(hosts: &[CredentialHost]) -> Vec<(Self, &CredentialHost)> {
-        let mut chosen = Vec::new();
-        for tool in [Self::Gh, Self::Glab, Self::Tea] {
-            let mine = || {
-                hosts
-                    .iter()
-                    .filter(|host| Self::of(host.forge) == Some(tool))
-            };
-            let home = mine().find(|host| Some(host.url.as_str()) == tool.home());
-            if let Some(host) = home.or_else(|| mine().next()) {
-                chosen.push((tool, host));
-            }
-        }
-        chosen
+        let usable = || hosts.iter().filter(|host| host.origin().is_some());
+        let github = usable()
+            .find(|host| host.forge == Forge::Github && host.url == "https://github.com")
+            .map(|host| (Self::Gh, host));
+        let gitea = usable()
+            .find(|host| host.forge == Forge::Gitea)
+            .map(|host| (Self::Tea, host));
+        github.into_iter().chain(gitea).collect()
     }
 }
 
@@ -100,13 +108,14 @@ pub trait Credentials: Send + Sync {
     fn request<'a>(&'a self, ask: &'a CredentialAsk) -> BoxFuture<'a, Option<GitCredential>>;
 }
 
-/// A user name and password (or token) for a repository over HTTPS. Its debug output hides
-/// the password, so it never reaches a log by accident.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A user name and password (or token) for a repository over HTTPS. The password never shows
+/// in `Debug`, so it never reaches a log by accident.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GitCredential {
     pub username: String,
-    pub password: String,
+    #[serde(serialize_with = "glave_event::serialize_exposed")]
+    pub password: Secret,
 }
 
 impl GitCredential {
@@ -117,7 +126,7 @@ impl GitCredential {
     ) -> Result<Self, ComputerError> {
         let credential = Self {
             username: username.into(),
-            password: password.into(),
+            password: Secret::new(password),
         };
         credential.check()?;
         Ok(credential)
@@ -127,21 +136,12 @@ impl GitCredential {
     /// break or a NUL in it.
     pub fn check(&self) -> Result<(), ComputerError> {
         let bad = |text: &str| text.is_empty() || text.contains(['\n', '\r', '\0']);
-        if bad(&self.username) || bad(&self.password) {
+        if bad(&self.username) || bad(self.password.expose()) {
             return Err(ComputerError::Refused(
                 "a git credential needs a user name and a password, each one line".into(),
             ));
         }
         Ok(())
-    }
-}
-
-impl fmt::Debug for GitCredential {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("GitCredential")
-            .field("username", &self.username)
-            .field("password", &"<hidden>")
-            .finish()
     }
 }
 
@@ -155,5 +155,69 @@ mod tests {
         assert!(!format!("{credential:?}").contains("ghp_secret"));
         assert!(GitCredential::new("a", "b\nc").is_err());
         assert!(GitCredential::new("", "b").is_err());
+    }
+
+    fn host(url: &str, forge: Forge) -> CredentialHost {
+        CredentialHost {
+            url: url.into(),
+            forge,
+        }
+    }
+
+    #[test]
+    fn only_a_plain_origin_is_offered() {
+        let ask = |protocol: &str, host: &str| CredentialAsk {
+            protocol: protocol.into(),
+            host: host.into(),
+            path: None,
+        };
+        let github = host("https://github.com", Forge::Github);
+        assert!(github.is_for(&ask("https", "GitHub.com")));
+        assert!(!github.is_for(&ask("http", "github.com")));
+        assert!(!github.is_for(&ask("https", "github.com.evil.example")));
+        for offered in [
+            "https://git.example.com:8443",
+            "http://127.0.0.1:3000",
+            "http://[::1]:3000",
+            "http://localhost",
+        ] {
+            assert!(host(offered, Forge::Other).origin().is_some(), "{offered}");
+        }
+        for refused in [
+            "http://github.com",
+            "http://localhost.evil.example",
+            "https://",
+            "github.com",
+            "https://me@github.com",
+            "https://github.com/acme",
+            "https://x\ntouch pwned",
+            "https://git hub.com",
+            "https://github.com:99999x",
+            "https://github.com?x",
+            "ftp://github.com",
+        ] {
+            assert_eq!(host(refused, Forge::Other).origin(), None, "{refused}");
+        }
+    }
+
+    #[test]
+    fn only_tools_that_keep_their_token_to_one_host_run_signed_in() {
+        let hosts = [
+            host("https://git.example.com", Forge::Github),
+            host("https://gitlab.com", Forge::Gitlab),
+            host("https://code.example.com", Forge::Gitea),
+            host("https://github.com", Forge::Github),
+        ];
+        let chosen: Vec<(&str, &str)> = ForgeTool::signed_in(&hosts)
+            .into_iter()
+            .map(|(tool, host)| (tool.name(), host.url.as_str()))
+            .collect();
+        assert_eq!(
+            chosen,
+            [
+                ("gh", "https://github.com"),
+                ("tea", "https://code.example.com")
+            ]
+        );
     }
 }

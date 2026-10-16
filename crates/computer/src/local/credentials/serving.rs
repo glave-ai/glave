@@ -2,36 +2,43 @@
 //! then git's request (`protocol=`, `host=`, `path=` lines, as git's credential protocol writes
 //! them, ending with an empty line), and gets back `username=` and `password=` lines, or
 //! nothing. Only hosts offered to the command are asked about; a connection that does not
-//! present the password, or takes too long, gets nothing.
+//! present the password at once, or takes too long, gets nothing.
 
 use std::time::Duration;
 
-use glave_ports::auth::safe_to_send;
 use glave_ports::{CredentialAsk, CredentialHost, Credentials};
 use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::token::same;
 
-/// How long one request may take, from connecting to the answer.
+/// How long a connection has to present the password.
+const PASSWORD: Duration = Duration::from_secs(2);
+/// How long one request may take once the password is presented.
 const ANSWER: Duration = Duration::from_secs(30);
+/// How long to wait after a connection could not be accepted, before trying again.
+const AGAIN: Duration = Duration::from_millis(50);
 /// The most a request may hold, in bytes: git's description of a URL is a few lines.
 const LONGEST: u64 = 16 * 1024;
 
-/// Answers connections until the command ends and this is dropped. One at a time: git asks
-/// rarely, and a connection that stalls gives up after [`ANSWER`].
+/// Answers connections until the command ends and this is dropped, one at a time: git asks
+/// rarely, and a connection that stalls gives up after [`PASSWORD`] unless it knows it.
 pub(super) async fn serve(
     listener: &TcpListener,
     password: &str,
     hosts: &[CredentialHost],
     credentials: &dyn Credentials,
 ) {
-    while let Ok((stream, peer)) = listener.accept().await {
+    loop {
+        let Ok((stream, peer)) = listener.accept().await else {
+            // Such as too many open files: the helper waits, and this tries again.
+            tokio::time::sleep(AGAIN).await;
+            continue;
+        };
         if !peer.ip().is_loopback() {
             continue;
         }
-        let answered = answer(stream, password, hosts, credentials);
-        let _ = tokio::time::timeout(ANSWER, answered).await;
+        let _ = answer(stream, password, hosts, credentials).await;
     }
 }
 
@@ -44,32 +51,36 @@ async fn answer(
 ) -> std::io::Result<()> {
     let (read, mut write) = stream.into_split();
     let mut lines = BufReader::new(read.take(LONGEST)).lines();
-    let given = lines.next_line().await?.unwrap_or_default();
-    if !same(&given, password) {
+    let given = tokio::time::timeout(PASSWORD, lines.next_line()).await;
+    if !matches!(given, Ok(Ok(Some(given))) if same(&given, password)) {
         return Ok(());
     }
-    let mut fields = Fields::default();
-    while let Some(line) = lines.next_line().await? {
-        if line.is_empty() {
-            break;
+    let asked = async {
+        let mut fields = Fields::default();
+        while let Some(line) = lines.next_line().await? {
+            if line.is_empty() {
+                break;
+            }
+            fields.read(&line);
         }
-        fields.read(&line);
-    }
-    let Some(ask) = fields.ask() else {
+        let Some(ask) = fields.ask() else {
+            return Ok(None);
+        };
+        if !hosts.iter().any(|host| host.is_for(&ask)) {
+            return Ok(None);
+        }
+        Ok::<_, std::io::Error>(credentials.request(&ask).await)
+    };
+    let Ok(answered) = tokio::time::timeout(ANSWER, asked).await else {
         return Ok(());
     };
-    if !hosts
-        .iter()
-        .any(|host| Place::of(&host.url).is_some_and(|place| place.is(&ask)))
-    {
-        return Ok(());
-    }
-    if let Some(credential) = credentials.request(&ask).await
+    if let Some(credential) = answered?
         && credential.check().is_ok()
     {
         let answer = format!(
             "username={}\npassword={}\n",
-            credential.username, credential.password
+            credential.username,
+            credential.password.expose()
         );
         write.write_all(answer.as_bytes()).await?;
     }
@@ -104,49 +115,5 @@ impl Fields {
             host: self.host?,
             path: self.path,
         })
-    }
-}
-
-/// Where an offered host is: its scheme and its host with any port.
-#[derive(Debug, PartialEq, Eq)]
-pub(super) struct Place<'a> {
-    scheme: &'a str,
-    host: &'a str,
-}
-
-impl<'a> Place<'a> {
-    /// `url`'s place, when it is `https://`, or `http://` to this computer.
-    pub(super) fn of(url: &'a str) -> Option<Self> {
-        let (scheme, rest) = url.split_once("://")?;
-        let host = rest.split('/').next().filter(|host| !host.is_empty())?;
-        safe_to_send(url, &[]).then_some(Self { scheme, host })
-    }
-
-    /// Whether `ask` is for this place.
-    fn is(&self, ask: &CredentialAsk) -> bool {
-        ask.protocol == self.scheme && ask.host.eq_ignore_ascii_case(self.host)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_https_or_this_computer_is_offered() {
-        let place = Place::of("https://github.com").unwrap();
-        let ask = |protocol: &str, host: &str| CredentialAsk {
-            protocol: protocol.into(),
-            host: host.into(),
-            path: None,
-        };
-        assert!(place.is(&ask("https", "GitHub.com")));
-        assert!(!place.is(&ask("http", "github.com")));
-        assert!(!place.is(&ask("https", "github.com.evil.example")));
-        assert!(Place::of("http://127.0.0.1:8080/git").is_some());
-        assert!(Place::of("http://github.com").is_none());
-        assert!(Place::of("http://localhost.evil.example").is_none());
-        assert!(Place::of("https://").is_none());
-        assert!(Place::of("github.com").is_none());
     }
 }
