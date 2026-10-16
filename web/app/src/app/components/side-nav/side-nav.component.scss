@@ -1,5 +1,6 @@
 // One column, the room between its parts the pane's own gap: the name and New chat, the search,
-// the threads (which scroll), and the foot.
+// the threads (which scroll), and the foot. Every part spans the same width, so the name, New
+// chat and the search share the pane's edges.
 :host {
   display: flex;
   flex-direction: column;
@@ -15,7 +16,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--glz-space-2);
-  padding-inline: var(--glz-space-2);
 }
 
 .name {
