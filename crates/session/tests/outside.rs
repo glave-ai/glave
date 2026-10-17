@@ -4,7 +4,6 @@
 //! next turn; anything else stays a conflict.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use glave_event::{
     At, Body, EventId, Header, MessageAdded, Opened, Part, RemovedReason, Role, Seq, ThreadId,
@@ -202,15 +201,6 @@ fn a_delete_from_outside_makes_the_thread_gone() {
         let got = server.request(Request::ThreadGet { thread }).await;
         assert_eq!(got.unwrap_err().code, code::NO_THREAD);
     });
-}
-
-fn sh(at: &Path, script: &str) {
-    let out = Command::new("bash")
-        .args(["-c", script])
-        .current_dir(at)
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "{script}: {out:?}");
 }
 
 /// Where the thread works, from its `workspace.bound`.

@@ -1,16 +1,17 @@
 //! Schedules: a prompt or a goal that runs as a task at set times, once (`at`) or whenever a
-//! cron expression matches (in UTC). Schedules live in the space's ledger. The server that runs
-//! the space's tasks calls [`Server::tick`] (or [`Server::run_scheduler`], which calls it when
-//! the next run is due): each due schedule starts one task in a new thread. A schedule that
-//! missed runs while no server ran it runs once, as soon as one does, never once per missed
-//! time (systemd's `Persistent=true`). Every run has a token budget.
+//! cron expression matches (in UTC). Schedules live in their space's ledger. The server that
+//! runs tasks calls [`Server::tick`] (or [`Server::run_scheduler`], which calls it when the
+//! next run is due): each due schedule, in every space whose tasks it runs, starts one task in
+//! a new thread, on a copy of its own. A schedule that missed runs while no server ran it runs
+//! once, as soon as one does, never once per missed time (systemd's `Persistent=true`); a run
+//! that cannot start is skipped until the schedule's next time. Every run has a token budget.
 
 use std::future::Future;
 use std::time::Duration;
 
 use glave_event::{At, Fired, ScheduleCreated, ScheduleDeleted, ScheduleId, ThreadId, When};
 use glave_harness::{Caller, Goal};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_ports::{BlobStore, EventLog, ModelProvider, SpaceId};
 use jiff::Timestamp;
 
 use crate::cron::Cron;
@@ -28,11 +29,11 @@ const MOST_MISSED: usize = 100_000;
 
 /// What `schedule/create` asks for.
 pub(crate) struct NewSchedule {
+    pub(crate) space: Option<SpaceId>,
     pub(crate) when: When,
     pub(crate) prompt: String,
     pub(crate) goal: bool,
     pub(crate) budget: u64,
-    pub(crate) worktree: Option<bool>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -61,13 +62,15 @@ where
                 "a schedule needs a prompt",
             ));
         }
-        self.catch_up().await?;
+        let space = self.space_for(caller, new.space).await?.id;
         if let Some(max) = self.inner.limits.max_schedules {
+            let spaces = self.read_ledgers_of(caller).await?;
             let now = self.inner.harness.clock().now();
             let kept = self
-                .ledger()
-                .schedules
-                .values()
+                .ledgers()
+                .iter()
+                .filter(|(id, _)| spaces.contains(id))
+                .flat_map(|(_, ledger)| ledger.schedules.values())
                 .filter(|scheduled| next_run(scheduled, now).is_some())
                 .count();
             if kept >= max {
@@ -89,31 +92,33 @@ where
             prompt: new.prompt,
             goal: new.goal,
             budget: new.budget,
-            worktree: new.worktree,
             by: caller
                 .person
                 .filter(|person| Some(*person) != self.inner.person)
                 .map(glave_event::Principal::person),
         };
-        self.record_in_ledger(&created).await?;
+        self.record_in_ledger(space, &created).await?;
         let info = self
-            .ledger()
-            .schedules
-            .get(&schedule)
+            .ledgers()
+            .get(&space)
+            .and_then(|ledger| ledger.schedules.get(&schedule))
             .map(|scheduled| info(scheduled, self.inner.harness.clock().now()))
             .ok_or_else(|| ApiError::new(code::INTERNAL, "the schedule was not kept"))?;
         Ok(Reply::Schedule { schedule: info })
     }
 
-    pub(crate) async fn list_schedules(&self) -> Result<Reply, ApiError> {
-        self.catch_up().await?;
+    /// The schedules of every space `caller` works in, oldest first.
+    pub(crate) async fn list_schedules(&self, caller: &Caller) -> Result<Reply, ApiError> {
+        let spaces = self.read_ledgers_of(caller).await?;
         let now = self.inner.harness.clock().now();
-        let schedules = self
-            .ledger()
-            .schedules
-            .values()
+        let mut schedules: Vec<ScheduleInfo> = self
+            .ledgers()
+            .iter()
+            .filter(|(space, _)| spaces.contains(space))
+            .flat_map(|(_, ledger)| ledger.schedules.values())
             .map(|scheduled| info(scheduled, now))
             .collect();
+        schedules.sort_by_key(|schedule| schedule.schedule);
         Ok(Reply::Schedules { schedules })
     }
 
@@ -122,13 +127,20 @@ where
         caller: &Caller,
         schedule: ScheduleId,
     ) -> Result<Reply, ApiError> {
-        self.catch_up().await?;
-        if !self.ledger().schedules.contains_key(&schedule) {
+        let spaces = self.read_ledgers_of(caller).await?;
+        let space = self
+            .ledgers()
+            .iter()
+            .find(|(space, ledger)| {
+                spaces.contains(space) && ledger.schedules.contains_key(&schedule)
+            })
+            .map(|(space, _)| *space);
+        let Some(space) = space else {
             return Err(ApiError::new(
                 code::NO_SCHEDULE,
-                format!("no schedule {schedule} in this space"),
+                format!("no schedule {schedule} here"),
             ));
-        }
+        };
         let deleted = ScheduleDeleted {
             schedule,
             by: caller
@@ -136,23 +148,43 @@ where
                 .filter(|person| Some(*person) != self.inner.person)
                 .map(glave_event::Principal::person),
         };
-        self.record_in_ledger(&deleted).await?;
+        self.record_in_ledger(space, &deleted).await?;
         Ok(Reply::Done {})
     }
 
-    /// Starts a task for every schedule due by the clock's now, at most one each, and answers
-    /// with their threads. A run the task limit holds back starts on a later tick.
+    /// The spaces `caller` works in, each one's ledger read up to now.
+    async fn read_ledgers_of(&self, caller: &Caller) -> Result<Vec<SpaceId>, ApiError> {
+        let spaces = self.spaces_of(caller).await?;
+        for space in &spaces {
+            self.catch_up(*space).await?;
+        }
+        Ok(spaces)
+    }
+
+    /// Starts a task for every schedule due by the clock's now, in every space whose tasks
+    /// this server runs, at most one each, and answers with their threads. A run the task
+    /// limit holds back starts on a later tick; one that cannot start is skipped until the
+    /// schedule's next time.
     pub async fn tick(&self) -> Result<Vec<ThreadId>, ApiError> {
-        self.catch_up().await?;
+        for space in self.task_spaces().await? {
+            // A ledger that cannot be read now is read again on the next tick.
+            if let Err(error) = self.catch_up(space).await {
+                tracing::warn!(%error, %space, "could not read the space's schedules");
+            }
+        }
         let now = self.inner.harness.clock().now();
-        let due: Vec<(ScheduleCreated, Timestamp)> = self
-            .ledger()
-            .schedules
-            .values()
-            .filter_map(|scheduled| due(scheduled, now).map(|at| (scheduled.created.clone(), at)))
+        let mut due: Vec<(SpaceId, ScheduleCreated, Timestamp)> = self
+            .ledgers()
+            .iter()
+            .flat_map(|(space, ledger)| {
+                ledger.schedules.values().filter_map(move |scheduled| {
+                    due(scheduled, now).map(|at| (*space, scheduled.created.clone(), at))
+                })
+            })
             .collect();
+        due.sort_by_key(|(_, schedule, at)| (*at, schedule.schedule));
         let mut started = Vec::new();
-        for (schedule, at) in due {
+        for (space, schedule, at) in due {
             if self
                 .inner
                 .limits
@@ -161,9 +193,27 @@ where
             {
                 break;
             }
-            started.push(self.fire(&schedule, at).await?);
+            match self.fire(space, &schedule, at).await {
+                Ok(thread) => started.push(thread),
+                Err(error) => {
+                    tracing::warn!(%error, schedule = %schedule.schedule, "a run could not start");
+                    self.skip(space, schedule.schedule, at);
+                }
+            }
         }
         Ok(started)
+    }
+
+    /// Holds back `schedule`'s run that was due at `at` and could not start, until the
+    /// schedule's next time: in memory only, so a server started later tries it once more.
+    fn skip(&self, space: SpaceId, schedule: ScheduleId, at: Timestamp) {
+        if let Some(scheduled) = self
+            .ledgers()
+            .get_mut(&space)
+            .and_then(|ledger| ledger.schedules.get_mut(&schedule))
+        {
+            scheduled.last = scheduled.last.max(Some(At::from(at)));
+        }
     }
 
     /// Runs the schedules until `stop` finishes: a tick whenever the next run is due, and at
@@ -190,28 +240,35 @@ where
         }
     }
 
-    /// When the next schedule is due, if any is.
+    /// When the next schedule is due, if any is, of those this server has read.
     pub fn next_due(&self) -> Option<Timestamp> {
         let now = self.inner.harness.clock().now();
-        self.ledger()
-            .schedules
+        self.ledgers()
             .values()
+            .flat_map(|ledger| ledger.schedules.values())
             .filter_map(|scheduled| next_run(scheduled, now))
             .min()
     }
 
-    /// Whether the space has a schedule that will run again.
+    /// Whether any space whose tasks this server runs has a schedule that will run again.
     pub async fn has_schedules(&self) -> Result<bool, ApiError> {
-        self.catch_up().await?;
+        for space in self.task_spaces().await? {
+            self.catch_up(space).await?;
+        }
         Ok(self.next_due().is_some())
     }
 
-    /// Starts `schedule`'s run that was due at `at`, in a thread of its own.
-    async fn fire(&self, schedule: &ScheduleCreated, at: Timestamp) -> Result<ThreadId, ApiError> {
+    /// Starts `schedule`'s run that was due at `at`, in a thread of its own in `space`, which
+    /// works on a copy of the project's folder.
+    async fn fire(
+        &self,
+        space: SpaceId,
+        schedule: &ScheduleCreated,
+        at: Timestamp,
+    ) -> Result<ThreadId, ApiError> {
         let caller = Caller::default();
-        let home = self.inner.home.space;
         let thread = self
-            .new_thread(&caller, home, schedule.worktree, true, &Choice::default())
+            .new_thread(&caller, space, None, true, &Choice::default())
             .await?;
         let work = if schedule.goal {
             Work::Goal(Some(Goal {
@@ -278,7 +335,6 @@ fn info(scheduled: &Scheduled, now: Timestamp) -> ScheduleInfo {
         prompt: created.prompt.clone(),
         goal: created.goal,
         budget: created.budget,
-        worktree: created.worktree,
         created_at: scheduled.at,
         last: scheduled.last,
         next: next_run(scheduled, now).map(At::from),

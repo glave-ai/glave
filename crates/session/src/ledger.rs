@@ -1,4 +1,4 @@
-//! The space's task ledger: glave's own stream in the event log, under a reserved thread id,
+//! Each space's task ledger: glave's own stream in the event log, under a reserved thread id,
 //! holding the space's tasks (`task.started`, `task.ended`) and schedules (`schedule.created`,
 //! `schedule.deleted`). It is never a conversation: lists and reads of threads leave it out.
 //! Any glave process of the deployment may append to it; an append that meets another's
@@ -10,14 +10,17 @@ use glave_event::{
     At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, TaskEnded,
     TaskStarted, ThreadId, decode, encode,
 };
-use glave_ports::{BlobStore, EventLog, LogError, ModelProvider};
+use glave_harness::Caller;
+use glave_ports::{BlobStore, EventLog, LogError, ModelProvider, SpaceId};
 use jiff::Timestamp;
 
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
 
-/// Finished tasks kept in memory for `tasks/list`, newest last.
+/// Finished tasks kept in memory for `tasks/list`, newest last, in each space.
 const FINISHED: usize = 100;
+/// Spaces whose ledgers a server keeps in memory at once.
+const LEDGERS: usize = 1_024;
 /// Ledger events read per page.
 const PAGE: usize = 500;
 /// Appends tried before giving up on a ledger other writers keep moving.
@@ -147,29 +150,43 @@ impl Ledger {
     }
 }
 
+/// What each space's ledger says, as far as this server has read it.
+pub(crate) type Ledgers = HashMap<SpaceId, Ledger>;
+
+/// `space`'s ledger in `ledgers`, empty until it is read. Past [`LEDGERS`] spaces, the others
+/// are forgotten and read again when next asked for.
+fn kept(ledgers: &mut Ledgers, space: SpaceId) -> &mut Ledger {
+    if ledgers.len() >= LEDGERS && !ledgers.contains_key(&space) {
+        ledgers.clear();
+    }
+    ledgers.entry(space).or_default()
+}
+
 impl<P, L, B> Server<P, L, B>
 where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Reads whatever was added to the ledger since this server last looked.
-    pub(crate) async fn catch_up(&self) -> Result<(), ApiError> {
+    /// Reads whatever was added to `space`'s ledger since this server last looked.
+    pub(crate) async fn catch_up(&self, space: SpaceId) -> Result<(), ApiError> {
         let ledger = ledger_id().ok_or_else(|| internal("the ledger has no id"))?;
+        let scope = self.scope_in(space);
         loop {
-            let next = self.ledger().next_seq();
+            let next = self.ledgers().get(&space).map_or(1, Ledger::next_seq);
             let after = Seq::new(next.saturating_sub(1)).ok();
             let page = self
                 .inner
                 .harness
                 .log()
-                .read(&self.inner.home, ledger, after, PAGE)
+                .read(&scope, ledger, after, PAGE)
                 .await
                 .map_err(|error| internal(&error.to_string()))?;
             let full = page.len() == PAGE;
-            let mut held = self.ledger();
+            let mut held = self.ledgers();
+            let read = kept(&mut held, space);
             for raw in page {
-                held.apply(raw);
+                read.apply(raw);
             }
             if !full {
                 return Ok(());
@@ -177,13 +194,19 @@ where
         }
     }
 
-    /// Appends `payload` to the ledger, after anything others wrote meanwhile.
-    pub(crate) async fn record_in_ledger<T: Payload>(&self, payload: &T) -> Result<(), ApiError> {
+    /// Appends `payload` to `space`'s ledger, after anything others wrote meanwhile.
+    pub(crate) async fn record_in_ledger<T: Payload>(
+        &self,
+        space: SpaceId,
+        payload: &T,
+    ) -> Result<(), ApiError> {
         let ledger = ledger_id().ok_or_else(|| internal("the ledger has no id"))?;
+        let scope = self.scope_in(space);
         for _ in 0..ATTEMPTS {
-            self.catch_up().await?;
+            self.catch_up(space).await?;
             let now = self.inner.harness.clock().now();
-            let seq = Seq::new(self.ledger().next_seq()).map_err(|e| internal(&e.to_string()))?;
+            let next = self.ledgers().get(&space).map_or(1, Ledger::next_seq);
+            let seq = Seq::new(next).map_err(|e| internal(&e.to_string()))?;
             let header = Header {
                 id: EventId::new(now, self.inner.harness.entropy().bytes())
                     .map_err(|e| internal(&e.to_string()))?,
@@ -196,11 +219,11 @@ where
                 .inner
                 .harness
                 .log()
-                .append(&self.inner.home, std::slice::from_ref(&raw))
+                .append(&scope, std::slice::from_ref(&raw))
                 .await
             {
                 Ok(()) => {
-                    self.ledger().apply(raw);
+                    kept(&mut self.ledgers(), space).apply(raw);
                     return Ok(());
                 }
                 Err(LogError::Conflict { .. } | LogError::Gap { .. }) => {}
@@ -210,9 +233,25 @@ where
         Err(internal("the task ledger kept changing; try again"))
     }
 
-    pub(crate) fn ledger(&self) -> std::sync::MutexGuard<'_, Ledger> {
+    /// The spaces whose tasks and schedules this server runs: its own, every space its person
+    /// works in, and any other whose ledger it has read for a caller.
+    pub(crate) async fn task_spaces(&self) -> Result<Vec<SpaceId>, ApiError> {
+        let mut spaces = match self.inner.harness.person() {
+            Some(_) => self.spaces_of(&Caller::default()).await?,
+            None => Vec::new(),
+        };
+        let known: Vec<SpaceId> = self.ledgers().keys().copied().collect();
+        for space in std::iter::once(self.inner.home.space).chain(known) {
+            if !spaces.contains(&space) {
+                spaces.push(space);
+            }
+        }
+        Ok(spaces)
+    }
+
+    pub(crate) fn ledgers(&self) -> std::sync::MutexGuard<'_, Ledgers> {
         self.inner
-            .ledger
+            .ledgers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }

@@ -1,18 +1,20 @@
-//! Tasks: a turn, or a goal's turns, run in a thread with no one attached. The server starts
-//! the work as it would for a client, answers its approvals "no one there" (in auto mode the
-//! judge still clears what the person asked for), keeps a running tally of its tokens and cost
-//! from the `model.responded` events it records, stops a turn at its budget, and records the
-//! task's start and end in the space's ledger. `tasks/list` and `tasks/stop` show and stop
-//! them; `task/finished` tells the thread's watchers when one ends.
+//! Tasks: a turn, or a goal's turns, run in a thread with no one attached, in any space its
+//! caller works in, always on a copy of the project's folder (a worktree, a worker or a scratch
+//! folder), never in the folder itself. The server starts the work as it would for a client,
+//! answers its approvals "no one there" (in auto mode the judge still clears what the person
+//! asked for), keeps a running tally of its tokens and cost from the `model.responded` events
+//! it records, stops a turn at its budget, and records the task's start and end in its space's
+//! ledger. `tasks/list` and `tasks/stop` show and stop them; `task/finished` tells the thread's
+//! watchers when one ends.
 
 use std::collections::HashMap;
 
 use glave_event::{
-    At, Body, Currency, Fired, Money, Outcome, Principal, PrincipalId, TaskEnded, TaskStarted,
-    ThreadId, TokenCounts, decode,
+    At, Body, Currency, Fired, Money, Opened, Outcome, Payload, Principal, PrincipalId, TaskEnded,
+    TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
 use glave_harness::{Caller, Goal};
-use glave_ports::{BlobStore, EventLog, ModelProvider, title_from};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, SpaceId, title_from};
 
 use crate::held::Slot;
 use crate::ledger::Recorded;
@@ -42,6 +44,8 @@ pub(crate) enum Work {
 /// A task running in this server.
 #[derive(Debug, Clone)]
 pub(crate) struct Running {
+    /// The space whose ledger records it.
+    space: SpaceId,
     started: TaskStarted,
     at: At,
     goal: bool,
@@ -56,20 +60,40 @@ pub(crate) struct Running {
 
 pub(crate) type Tasks = HashMap<ThreadId, Running>;
 
+/// Refused: a task asked for in the folder itself.
+pub(crate) fn in_place() -> ApiError {
+    ApiError::new(
+        code::INVALID_PARAMS,
+        "a task always works on a copy of its project's folder, never in the folder itself: \
+         leave the worktree choice out, or turn it on",
+    )
+}
+
+/// Refused: no copy of the project's folder could be made for a task to work on.
+pub(crate) fn no_copy() -> ApiError {
+    ApiError::new(
+        code::WORKSPACE,
+        "a task works on a copy of its project's folder made with git, and this project's \
+         folder is not a git repository with a commit yet: make it one, with a first commit, \
+         to run tasks and schedules in it",
+    )
+}
+
 impl<P, L, B> Server<P, L, B>
 where
     P: ModelProvider + 'static,
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Refuses a task in `thread` for `caller` outside this server's own space, beyond the
-    /// policy's limit, or while a turn runs there.
-    async fn may_start_task(&self, caller: &Caller, thread: ThreadId) -> Result<(), ApiError> {
-        // A space's tasks are kept in its own ledger; this server keeps only its own space's.
-        if self.authorize(caller, thread).await?.space != self.inner.home.space {
+    /// The scope of `thread`, refused for a task for `caller` where the thread works in its
+    /// project's folder itself, beyond the policy's limit, or while a turn runs there.
+    async fn may_start_task(&self, caller: &Caller, thread: ThreadId) -> Result<Scope, ApiError> {
+        let scope = self.authorize(caller, thread).await?;
+        if self.in_its_folder(&scope, thread).await? {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
-                "tasks run only in threads of this server's own space",
+                "this thread works in its project's folder itself, and a task always works on \
+                 a copy: start the task in a new thread, which gets a copy of its own",
             ));
         }
         if let Some(max) = self.inner.limits.max_running {
@@ -93,7 +117,17 @@ where
                 format!("a turn is already running in thread {thread}"),
             ));
         }
-        Ok(())
+        Ok(scope)
+    }
+
+    /// Whether `thread` works in a folder itself, as its latest binding says; one with no
+    /// binding works in the server's own.
+    async fn in_its_folder(&self, scope: &Scope, thread: ThreadId) -> Result<bool, ApiError> {
+        let latest = self.latest(scope, thread, WorkspaceBound::TYPE).await?;
+        Ok(match latest {
+            Some(Body::WorkspaceBound(bound)) => matches!(bound.opened, Opened::Folder { .. }),
+            _ => true,
+        })
     }
 
     /// Starts `work` in `thread` as a task for `caller`, and answers with it at once.
@@ -105,7 +139,7 @@ where
         budget: Option<u64>,
         schedule: Option<Fired>,
     ) -> Result<TaskInfo, ApiError> {
-        self.may_start_task(caller, thread).await?;
+        let space = self.may_start_task(caller, thread).await?.space;
         let (title, goal) = match &work {
             Work::Turn(prompt, _) => (title_from(prompt).unwrap_or_default(), false),
             Work::Goal(Some(goal)) => (title_from(&goal.objective).unwrap_or_default(), true),
@@ -135,6 +169,7 @@ where
             by: self.other_than_person(caller.person),
         };
         let running = Running {
+            space,
             started: started.clone(),
             at: At::from(self.inner.harness.clock().now()),
             goal,
@@ -150,7 +185,7 @@ where
         };
         let info = self.running_info(&running);
         self.tasks().insert(thread, running);
-        if let Err(error) = self.record_in_ledger(&started).await {
+        if let Err(error) = self.record_in_ledger(space, &started).await {
             self.cancel_busy(thread);
             self.follow_task(thread, stream).await;
             return Err(error);
@@ -178,14 +213,14 @@ where
         };
         let ended = settle(&running, &ended);
         // Recorded on a best effort: the thread's own events hold the work either way.
-        let _ = self.record_in_ledger(&ended).await;
+        let _ = self.record_in_ledger(running.space, &ended).await;
         let now = At::from(self.inner.harness.clock().now());
         let recorded = Recorded {
             started: running.started,
             at: running.at,
             ended: Some((ended, now)),
         };
-        let task = self.recorded_info(&recorded, TaskStatus::Finished);
+        let task = self.recorded_info(running.space, &recorded, TaskStatus::Finished);
         self.inner
             .hub
             .publish(thread, Notification::TaskFinished { thread, task });
@@ -264,64 +299,86 @@ where
         }
     }
 
-    /// Tasks running here and recently finished, running first, then newest first.
-    pub(crate) async fn list_tasks(&self, limit: Option<usize>) -> Result<Reply, ApiError> {
-        self.catch_up().await?;
+    /// The tasks of every space `caller` works in: running here, then running elsewhere, then
+    /// recently finished, each newest first.
+    pub(crate) async fn list_tasks(
+        &self,
+        caller: &Caller,
+        limit: Option<usize>,
+    ) -> Result<Reply, ApiError> {
+        let spaces = self.spaces_of(caller).await?;
+        for space in &spaces {
+            self.catch_up(*space).await?;
+        }
         let limit = limit.unwrap_or(20).clamp(1, 500);
-        let mut running: Vec<TaskInfo> = self
-            .tasks()
-            .values()
-            .map(|task| self.running_info(task))
-            .collect();
-        running.sort_by_key(|task| std::cmp::Reverse(task.started_at));
-        let (mut elsewhere, finished) = {
-            let ledger = self.ledger();
+        let (mut running, mut elsewhere, mut finished) = {
+            let ledgers = self.ledgers();
             let here = self.tasks();
-            let elsewhere: Vec<TaskInfo> = ledger
-                .open
+            let running: Vec<TaskInfo> = here
                 .values()
-                .filter(|task| !here.contains_key(&task.started.thread))
-                .map(|task| self.recorded_info(task, TaskStatus::Elsewhere))
+                .filter(|task| spaces.contains(&task.space))
+                .map(|task| self.running_info(task))
                 .collect();
-            let finished: Vec<TaskInfo> = ledger
-                .finished
+            let theirs: Vec<_> = spaces
                 .iter()
-                .rev()
-                .map(|task| self.recorded_info(task, TaskStatus::Finished))
+                .filter_map(|space| ledgers.get(space).map(|ledger| (*space, ledger)))
                 .collect();
-            (elsewhere, finished)
+            let elsewhere: Vec<TaskInfo> = theirs
+                .iter()
+                .flat_map(|(space, ledger)| ledger.open.values().map(|task| (*space, task)))
+                .filter(|(_, task)| !here.contains_key(&task.started.thread))
+                .map(|(space, task)| self.recorded_info(space, task, TaskStatus::Elsewhere))
+                .collect();
+            let finished: Vec<(Option<At>, TaskInfo)> = theirs
+                .iter()
+                .flat_map(|(space, ledger)| ledger.finished.iter().map(|task| (*space, task)))
+                .map(|(space, task)| {
+                    let ended = task.ended.as_ref().map(|(_, at)| *at);
+                    (ended, self.recorded_info(space, task, TaskStatus::Finished))
+                })
+                .collect();
+            (running, elsewhere, finished)
         };
+        running.sort_by_key(|task| std::cmp::Reverse(task.started_at));
         elsewhere.sort_by_key(|task| std::cmp::Reverse(task.started_at));
+        finished.sort_by_key(|(ended, _)| std::cmp::Reverse(*ended));
         running.extend(elsewhere);
-        running.extend(finished);
+        running.extend(finished.into_iter().map(|(_, task)| task));
         running.truncate(limit);
         Ok(Reply::Tasks { tasks: running })
     }
 
-    /// Records every task the ledger has open and this server does not run as interrupted:
-    /// for the one server that runs a space's tasks, when it starts.
+    /// Records as interrupted every task a ledger has open that this server does not run, in
+    /// every space whose tasks it runs: for the one server that runs them, when it starts.
     pub async fn recover_tasks(&self) -> Result<usize, ApiError> {
-        self.catch_up().await?;
-        let stale: Vec<ThreadId> = {
-            let here = self.tasks();
-            self.ledger()
-                .open
-                .keys()
-                .filter(|thread| !here.contains_key(thread))
-                .copied()
-                .collect()
-        };
-        for thread in &stale {
-            let ended = TaskEnded {
-                thread: *thread,
-                outcome: Outcome::Interrupted,
-                tokens: TokenCounts::default(),
-                cost: None,
-                by: None,
+        let mut recovered = 0;
+        for space in self.task_spaces().await? {
+            self.catch_up(space).await?;
+            let stale: Vec<ThreadId> = {
+                let ledgers = self.ledgers();
+                let here = self.tasks();
+                ledgers.get(&space).map_or_else(Vec::new, |ledger| {
+                    ledger
+                        .open
+                        .keys()
+                        .filter(|thread| !here.contains_key(thread))
+                        .copied()
+                        .collect()
+                })
             };
-            self.record_in_ledger(&ended).await?;
+            for thread in stale {
+                let ended = TaskEnded {
+                    thread,
+                    outcome: Outcome::Interrupted,
+                    tokens: TokenCounts::default(),
+                    cost: None,
+                    by: None,
+                };
+                self.record_in_ledger(space, &ended).await?;
+                recovered += 1;
+            }
         }
-        Ok(stale.len())
+        Ok(recovered)
     }
 
     /// How many tasks run in this server now.
@@ -364,6 +421,7 @@ where
     fn running_info(&self, task: &Running) -> TaskInfo {
         TaskInfo {
             thread: task.started.thread,
+            space: task.space,
             kind: TaskKind::Agent,
             title: task.started.title.clone(),
             model: task.started.model.clone(),
@@ -378,10 +436,12 @@ where
         }
     }
 
-    pub(crate) fn recorded_info(&self, task: &Recorded, status: TaskStatus) -> TaskInfo {
+    /// `task` of `space`'s ledger, as lists show it.
+    fn recorded_info(&self, space: SpaceId, task: &Recorded, status: TaskStatus) -> TaskInfo {
         let ended = task.ended.as_ref();
         TaskInfo {
             thread: task.started.thread,
+            space,
             kind: TaskKind::Agent,
             title: task.started.title.clone(),
             model: task.started.model.clone(),

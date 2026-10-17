@@ -56,7 +56,7 @@ pub struct PlacementRules {
 
 impl Constraints {
     /// Whether every `[placement]` rule allows `place`.
-    pub fn allows_placement(&self, place: Placement) -> bool {
+    pub(crate) fn allows_placement(&self, place: Placement) -> bool {
         self.rules().iter().all(|rule| match &rule.kind {
             Kind::Placement(allowed) => allowed.contains(&place),
             _ => true,

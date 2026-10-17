@@ -84,5 +84,5 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 6. **There are no teams,** policy can't tell callers apart, and budgets live in one process's memory. Teams and grants fix all three.
 7. **There is no admin API and no admin screens.** They come as described under "Admin".
 8. **`ModelInfo.hope` exists and there is no theme.** The flag is removed (#289) and theming arrives (#283).
-9. **`computers.md`'s "Placement defaults" puts each cloud task on a worker by default.** The default becomes the person's one machine, with workers as the upgrade. A person on a server or cloud machine reaching it from a phone needs a sign-in that isn't a company identity provider.
+9. **A person on a server or cloud machine reaching it from a phone needs a sign-in that isn't a company identity provider.** Tasks already work on the person's one machine, with workers as the upgrade (`computers.md`, "Placement defaults").
 10. **The web app works out a thread's items itself,** and finds an approval's sentence by parsing the summary the harness wrote, with the reason it asks folded into the same string, so that reason shows as if it were part of the command. The CLI words approvals its own way. Thread items come from the server as typed fields (#311).

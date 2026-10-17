@@ -2,6 +2,7 @@
 //! as the tasks panel shows it, and a schedule.
 
 use glave_event::{At, Money, Outcome, ScheduleId, ThreadId, TokenCounts, When};
+use glave_ports::SpaceId;
 use serde::{Deserialize, Serialize};
 
 /// What kind of work a task is. Background commands the model starts arrive later.
@@ -26,6 +27,8 @@ pub enum TaskStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TaskInfo {
     pub thread: ThreadId,
+    /// The space its thread is in.
+    pub space: SpaceId,
     pub kind: TaskKind,
     /// The prompt or objective, shortened.
     pub title: String,
@@ -59,8 +62,6 @@ pub struct ScheduleInfo {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub goal: bool,
     pub budget: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub worktree: Option<bool>,
     pub created_at: At,
     /// When it last ran: the time that run was due.
     #[serde(default, skip_serializing_if = "Option::is_none")]

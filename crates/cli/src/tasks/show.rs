@@ -55,11 +55,14 @@ pub fn schedule_line(schedule: &ScheduleInfo) -> String {
     )
 }
 
-/// The tasks here that finished since the person was last told, as lines to show, and
-/// remembers them as told.
+/// The tasks of this folder's project that finished since the person was last told, as lines
+/// to show, and remembers them as told.
 pub async fn finished_since(server: &Glave, folder: &Path) -> Vec<String> {
     let Ok(Reply::Tasks { tasks }) = server.request(Request::TasksList { limit: Some(50) }).await
     else {
+        return Vec::new();
+    };
+    let Ok(here) = server.home_space().await else {
         return Vec::new();
     };
     let Ok(mark) = daemon::seen_file(folder) else {
@@ -73,7 +76,7 @@ pub async fn finished_since(server: &Glave, folder: &Path) -> Vec<String> {
     let mut lines = Vec::new();
     for task in tasks
         .iter()
-        .filter(|task| task.status == TaskStatus::Finished)
+        .filter(|task| task.status == TaskStatus::Finished && task.space == here.id)
     {
         let ended = ended_at(task);
         if seen.is_some_and(|seen| ended <= seen) {

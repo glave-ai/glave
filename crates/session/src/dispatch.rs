@@ -34,8 +34,8 @@ where
     B: BlobStore + 'static,
 {
     /// Answers `request` from `caller`, the person the transport verified. A request on a
-    /// thread, or on the server's tasks, schedules or memory, is refused with `-32012` unless
-    /// the caller works in that space.
+    /// thread, or on the server's memory, is refused with `-32012` unless the caller works in
+    /// that space; tasks and schedules are those of the spaces they work in.
     pub async fn call(&self, caller: &Caller, request: Request) -> Answered {
         let span = crate::trace::span(&request);
         tracing::Instrument::instrument(self.answer(caller, request), span).await
@@ -220,25 +220,25 @@ where
             }
             Request::GoalStop { thread } => self.stop_goal(caller, thread).await,
             Request::GoalGet { thread } => self.goal(thread).await.map(|goal| Reply::Goal { goal }),
-            Request::TasksList { limit } => self.list_tasks(limit).await,
+            Request::TasksList { limit } => self.list_tasks(caller, limit).await,
             Request::TasksStop { thread } => self.stop_task(caller, thread).await,
             Request::ScheduleCreate {
+                space,
                 when,
                 prompt,
                 goal,
                 budget,
-                worktree,
             } => {
                 let new = NewSchedule {
+                    space,
                     when,
                     prompt,
                     goal,
                     budget,
-                    worktree,
                 };
                 self.create_schedule(caller, new).await
             }
-            Request::ScheduleList {} => self.list_schedules().await,
+            Request::ScheduleList {} => self.list_schedules(caller).await,
             Request::ScheduleDelete { schedule } => self.delete_schedule(caller, schedule).await,
             Request::SpaceList { limit } => self.list_spaces(caller, limit).await,
             Request::SpaceGet { space } => self.get_space(caller, space).await,
