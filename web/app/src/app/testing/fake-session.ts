@@ -22,7 +22,8 @@ type Answer = object | ((params: unknown) => unknown);
 /**
  * A session API in memory for tests: answers by method, notifications for a turn, and every
  * call recorded. An answer that is an `ApiError` is thrown. Unanswered, `thread/get` answers
- * the thread as the fixtures make one, idle and asking nothing; any other method, `{}`.
+ * the thread as the fixtures make one, idle and asking nothing; `command/list`, nothing
+ * running; any other method, `{}`.
  */
 export class FakeSession implements SessionClient {
   readonly calls: SeenCall[] = [];
@@ -83,6 +84,9 @@ function unanswered(method: Method, params: unknown): Answer {
   if (method === 'thread/get') {
     const { thread: id } = params as { readonly thread: string };
     return { thread: thread(id, null) };
+  }
+  if (method === 'command/list') {
+    return { commands: [] };
   }
   return {};
 }

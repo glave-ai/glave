@@ -18,6 +18,8 @@ export class ToolsPanelService extends PaneService<PanelState> {
   readonly tabIndex = computed(() => TOOL_TABS.indexOf(this.tab()));
   /** Whether it is open on the thread's changes. */
   readonly changesShown = computed(() => this.open() && this.tab() === 'changes');
+  /** Whether it is open on the thread's commands in the background. */
+  readonly commandsShown = computed(() => this.open() && this.tab() === 'commands');
 
   constructor() {
     super({

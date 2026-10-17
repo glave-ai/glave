@@ -1,4 +1,12 @@
-import type { ModelInfo, RawEvent, Space, TaskInfo, ThreadSummary, TrustAsk } from '@glave/client';
+import type {
+  ModelInfo,
+  RawEvent,
+  RunningCommand,
+  Space,
+  TaskInfo,
+  ThreadSummary,
+  TrustAsk,
+} from '@glave/client';
 import type { Page, Route } from '@playwright/test';
 
 /**
@@ -6,7 +14,9 @@ import type { Page, Route } from '@playwright/test';
  * thread's history (a turn on this computer that ran a command, edited a file and wrote a new
  * one, and replied from the default model, which the picker shows; how long it took and what
  * it cost), another waiting for the person to allow a push, the models, the tasks, what a
- * turn streams, the folders on the person's computer, and the projects made while it runs.
+ * turn streams, the folders on the person's computer, and the projects made while it runs; and
+ * when a test asks, a project that asks to be trusted, and a thread that keeps the docs site
+ * running in the background.
  */
 const OWNER = { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' } as const;
 
@@ -265,11 +275,95 @@ function trusting(trust: Trust): ThreadSummary {
   return trust.asking ? { ...summary, status: 'waiting', trust: TRUST_ASK } : summary;
 }
 
+/**
+ * A thread that keeps the docs site running in the background, and what it runs (`fakeApi`'s
+ * `commands`).
+ */
+export const SERVING = '01900000-0000-7000-8000-000000000108';
+export const DOCS_SERVER = 'npm run docs -- --port 4321 --host 127.0.0.1 --open --watch';
+export const DOCS_COMMAND = '01900000-0000-7000-8000-0000000000d1';
+
+/** The serving thread's history: it started the docs site, which still runs. */
+const SERVING_HISTORY = [
+  event(1, 'thread.started', {}, SERVING),
+  bound(2, SERVING),
+  event(3, 'turn.started', { model: { provider: 'e2e', name: DEFAULT_MODEL } }, SERVING),
+  event(
+    4,
+    'message.added',
+    { role: 'user', parts: [{ type: 'text', text: 'Start the docs site so I can look at it' }] },
+    SERVING,
+  ),
+  call(5, 'call_1', 'bash', { command: DOCS_SERVER, background: true }, SERVING),
+  done(6, 'call_1', 'Running in the background as command 1.', SERVING),
+  event(
+    7,
+    'command.started',
+    { command: DOCS_COMMAND, call_id: 'call_1', script: DOCS_SERVER },
+    SERVING,
+  ),
+  event(
+    8,
+    'message.added',
+    {
+      role: 'assistant',
+      parts: [{ type: 'text', text: 'The docs site is running at http://127.0.0.1:4321.' }],
+    },
+    SERVING,
+  ),
+  event(9, 'turn.ended', { outcome: 'completed' }, SERVING, '2026-10-11T10:00:06.000Z'),
+];
+
+/** How long stopping a command takes, so the page shows it stopping. */
+const STOP_MS = 400;
+
+/** Whether the docs site still runs, while the fake runs: until the person stops it. */
+interface Commands {
+  running: boolean;
+  /** When it started: two minutes and five seconds before the fake began. */
+  readonly startedAt: string;
+}
+
+/**
+ * The answer to a call about a thread's commands in the background, else `undefined`: only the
+ * serving thread has one, while it runs.
+ */
+function background(
+  method: string,
+  params: Record<string, unknown>,
+  commands: Commands | null,
+): unknown {
+  const running = params['thread'] === SERVING && commands?.running === true ? commands : null;
+  switch (method) {
+    case 'command/list':
+      return { commands: running === null ? [] : [docsServer(running.startedAt)] };
+    case 'command/stop':
+      if (running === null || params['command'] !== DOCS_COMMAND) {
+        return new Refusal(-32027, 'that command is not running in this thread');
+      }
+      running.running = false;
+      return {};
+    default:
+      return undefined;
+  }
+}
+
+/** The docs site, as `command/list` lists it. */
+function docsServer(startedAt: string): RunningCommand {
+  return {
+    id: DOCS_COMMAND,
+    command: DOCS_SERVER,
+    started_at: startedAt,
+    summary: 'Still running: the agent started it, and it runs until it ends or someone stops it.',
+  };
+}
+
 /** Each thread's history, by id. */
 const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
   [THREAD]: HISTORY,
   [WAITING]: WAITING_HISTORY,
   [TRUSTING]: TRUSTING_HISTORY,
+  [SERVING]: SERVING_HISTORY,
 };
 
 const TASKS: readonly TaskInfo[] = [
@@ -492,22 +586,30 @@ export async function streamReply(page: Page, reply = MARKDOWN_REPLY, delay = 15
   );
 }
 
-/**
- * The answer to a call that is not a turn; `started` holds the threads started so far, `made`
- * the projects made, and `trust` acme's ask, when the test has acme.
- */
-function answer(
-  method: string,
-  params: Record<string, unknown>,
-  started: ThreadSummary[],
-  made: Space[],
-  trust: Trust | null,
-): unknown {
+/** What one fake server knows while it runs, beyond what never changes. */
+interface Known {
+  /** The threads started so far. */
+  readonly started: ThreadSummary[];
+  /** The projects made so far. */
+  readonly made: Space[];
+  /** Acme's ask, when the test has acme. */
+  readonly trust: Trust | null;
+  /** The serving thread's commands, when the test has it. */
+  readonly commands: Commands | null;
+}
+
+/** The answer to a call that is not a turn. */
+function answer(method: string, params: Record<string, unknown>, known: Known): unknown {
+  const { started, made, trust, commands } = known;
   if (trust !== null) {
     const asked = trusted(method, params, trust);
     if (asked !== undefined) {
       return asked;
     }
+  }
+  const ran = background(method, params, commands);
+  if (ran !== undefined) {
+    return ran;
   }
   switch (method) {
     case 'space/list':
@@ -519,7 +621,9 @@ function answer(
     case 'thread/list': {
       const space = String(params['space']);
       const fresh = started.filter((each) => each.space === space);
-      return { threads: [...fresh, ...(THREADS[space] ?? [])] };
+      const serving =
+        commands !== null && space === PROJECT.id ? [thread(SERVING, 'Preview the docs')] : [];
+      return { threads: [...fresh, ...serving, ...(THREADS[space] ?? [])] };
     }
     case 'thread/get':
       return { thread: thread(String(params['thread']), 'Make the tests pass') };
@@ -587,17 +691,26 @@ function trusted(method: string, params: Record<string, unknown>, trust: Trust):
 
 /**
  * Answers the session API's calls the app makes, as JSON-RPC over POST /. With `trust`, the
- * person also has acme, a project that asks to be trusted.
+ * person also has acme, a project that asks to be trusted; with `commands`, a thread in the
+ * project that keeps the docs site running in the background.
  */
 export async function fakeApi(
   page: Page,
-  { trust = false }: { readonly trust?: boolean } = {},
+  {
+    trust = false,
+    commands = false,
+  }: { readonly trust?: boolean; readonly commands?: boolean } = {},
 ): Promise<{ readonly calls: readonly string[]; readonly requests: readonly Request[] }> {
   const calls: string[] = [];
   const requests: Request[] = [];
-  const started: ThreadSummary[] = [];
-  const made: Space[] = [];
-  const asking: Trust | null = trust ? { asking: true } : null;
+  const known: Known = {
+    started: [],
+    made: [],
+    trust: trust ? { asking: true } : null,
+    commands: commands
+      ? { running: true, startedAt: new Date(Date.now() - 125_000).toISOString() }
+      : null,
+  };
   await page.route('**/*', async (route: Route) => {
     const request = route.request();
     if (request.method() !== 'POST') {
@@ -619,7 +732,10 @@ export async function fakeApi(
     if (message.method === 'space/create' && folder?.kind === 'repository') {
       await new Promise((resolve) => setTimeout(resolve, CLONE_MS));
     }
-    const answered = answer(message.method, message.params, started, made, asking);
+    if (message.method === 'command/stop') {
+      await new Promise((resolve) => setTimeout(resolve, STOP_MS));
+    }
+    const answered = answer(message.method, message.params, known);
     const reply =
       answered instanceof Refusal
         ? { error: { code: answered.code, message: answered.message } }

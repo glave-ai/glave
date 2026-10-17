@@ -15,7 +15,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await byTestId(page, 'tools-handle').press('Enter');
     await expect(byTestId(page, 'task').first()).toContainText('Nightly dependency audit');
     await expectAccessible(page);
-    await expect(byTestId(page, 'tools-tabs-tab')).toHaveText(['Tasks', 'Changes (2)']);
+    await expect(byTestId(page, 'tools-tabs-tab')).toHaveText(['Tasks', 'Changes (2)', 'Commands']);
     await byTestId(page, 'tools-tabs-tab').nth(1).click();
     await byTestId(page, 'file').first().click();
     await expect(byTestId(page, 'file-change').first()).toContainText('fn parse');

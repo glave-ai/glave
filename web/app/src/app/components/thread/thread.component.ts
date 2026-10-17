@@ -23,6 +23,7 @@ import {
 import { type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
 import type { Turn } from '../../lib/turns';
+import { CommandsService } from '../../services/commands.service';
 import { SpacesService } from '../../services/spaces.service';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
@@ -88,7 +89,7 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
     ToolsPanelComponent,
     TurnComponent,
   ],
-  providers: [ThreadService],
+  providers: [ThreadService, CommandsService],
   templateUrl: './thread.component.html',
   styleUrl: './thread.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
