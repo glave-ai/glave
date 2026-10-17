@@ -34,7 +34,7 @@ publish-jobs = ["homebrew"]
 github-attestations = true
 github-attestations-phase = "host"
 github-release = "host"
-# Pull requests build every target, to check that a release would, without build caches: copies
-# per pull request would push out main's (ci.yml).
-pr-run-mode = "upload"
-cache-builds = false
+# Pull requests check the plan, not the builds: building every target takes about 25 minutes,
+# two of them on macOS, which ci.yml keeps off pull requests. Set "upload" in a pull request to
+# have it build and keep every target, as a release would.
+pr-run-mode = "plan"
