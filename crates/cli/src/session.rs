@@ -16,7 +16,7 @@ use glave_harness::{
 use glave_memory::Tidier;
 use glave_ports::{Credentials, ToolSource};
 use glave_session::protocol::{Reply, Request};
-use glave_session::{Answering, GitHosts, Providers, Server, Wiring};
+use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Server, Wiring};
 use glave_web::{Web, WebSettings};
 
 use crate::accounts::Ledger;
@@ -29,7 +29,7 @@ use crate::gateway::Switch;
 use crate::gateway::remote::Remote;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
-use crate::opening::Opening;
+use crate::projects::Projects;
 use crate::providers::{Built, Host, Lineup};
 use crate::setup::{self, Setup};
 use crate::terminal::Printer;
@@ -121,6 +121,8 @@ struct Wired {
     workers: Option<Arc<WorkerComputers>>,
     /// Memory, when it is on.
     memory: Option<crate::memory::Running>,
+    /// Each project's own servers, hooks and settings, and what it asks to be trusted.
+    projects: Arc<Projects>,
     /// Logs and telemetry, stopped last.
     _telemetry: crate::telemetry::Telemetry,
 }
@@ -187,12 +189,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder, args.socket).await?;
     let scope = crate::spaces::here(&store, &root, identity.person).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
-    let opening = Opening::new(
-        home::folder()?,
-        setup.loaded.constraints.clone(),
-        &root,
-        setup.model_note(),
-    );
+    let projects = projects_for(&setup, &servers, asking)?;
     tidy(memory.as_ref(), &lined.switch, model);
     let wiring = Wiring {
         models: lined.built.models.offered,
@@ -218,7 +215,8 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         tasks: task_limits(&setup.loaded.constraints),
         memory: memory.as_ref().map(crate::memory::Running::handle),
         spaces: store.spaces(),
-        instructions: Some(Arc::new(opening)),
+        projects: Some(Arc::clone(&projects) as Arc<dyn glave_harness::Projects>),
+        trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
     };
     let server = Server::new(wiring, settings, scope, answering);
     // The folder glave runs in is its project's folder: where its threads work.
@@ -235,8 +233,22 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         choices: setup.choices,
         workers,
         memory,
+        projects,
         _telemetry: telemetry,
     })
+}
+
+/// Each project as this glave reads it, beside the `servers` it runs for every thread; asked
+/// about from an app when `asking` says the person answers later.
+fn projects_for(setup: &Setup, servers: &Servers, asking: Asking) -> anyhow::Result<Arc<Projects>> {
+    Ok(Arc::new(Projects::new(
+        home::folder()?,
+        setup.loaded.constraints.clone(),
+        setup.choices.clone(),
+        setup.started.clone(),
+        servers.names().into_iter().map(str::to_owned).collect(),
+        asking == Asking::Later,
+    )))
 }
 
 /// How the harness runs: the default model, the instructions a thread opens with when it has
@@ -497,6 +509,7 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         crate::cloud::release(&wired.server, workers).await;
     }
     wired.servers.close().await;
+    wired.projects.close().await;
     close_memory(&wired).await;
     if opens_app {
         eprintln!("glave: no model is set up yet, so glave opens in your browser to add one");
@@ -508,8 +521,8 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
 /// Serves the session API: to the program that started glave until its input ends, or over
 /// HTTP until Ctrl-C.
 pub async fn serve(args: Args) -> anyhow::Result<ExitCode> {
-    // The session API owns standard input, so there is no one to ask about a project.
-    let wired = wire(&args, Answering::Clients, Asking::NoOne).await?;
+    // The session API owns standard input: a project is asked about through it, in an app.
+    let wired = wire(&args, Answering::Clients, Asking::Later).await?;
     let served = if args.socket {
         let folder = std::env::current_dir()?;
         crate::daemon::host(&wired.server, &crate::daemon::socket(&folder)?).await
@@ -528,6 +541,7 @@ pub async fn serve(args: Args) -> anyhow::Result<ExitCode> {
         crate::cloud::release(&wired.server, workers).await;
     }
     wired.servers.close().await;
+    wired.projects.close().await;
     close_memory(&wired).await;
     served?;
     Ok(ExitCode::SUCCESS)
@@ -544,6 +558,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         choices,
         workers: _,
         memory: _,
+        projects: _,
         _telemetry: _,
     } = wired;
     let Some(endpoint) = endpoint else {

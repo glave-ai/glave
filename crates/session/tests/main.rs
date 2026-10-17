@@ -31,4 +31,5 @@ mod subagents;
 mod tasks;
 mod titles;
 mod tracing;
+mod trust;
 mod worktrees;

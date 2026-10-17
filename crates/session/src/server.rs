@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
 use glave_harness::{
-    Caller, Clock, Entropy, FolderInstructions, Harness, HarnessError, Hooks, Memory, Parts, Place,
+    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Memory, Parts, Place, Projects,
     ReleasedWorker, Settings, TurnSummary, Workers, Workspace,
 };
 use glave_ports::{
@@ -28,6 +28,7 @@ use crate::protocol::{ApiError, ApprovalMode, ErrorData, ModelInfo, Notification
 use crate::providers::Providers;
 use crate::spaces::Places;
 use crate::tasks::{TaskLimits, Tasks};
+use crate::trust::{Asks, ProjectTrust};
 
 /// The most events or threads one page returns.
 pub(crate) const MAX_PAGE: usize = 5_000;
@@ -68,10 +69,14 @@ pub struct Wiring<P, L, B> {
     /// The git hosts the person on this computer connects; none where whoever runs the
     /// server sets up what its threads sign in to.
     pub git_hosts: Option<Arc<dyn GitHosts>>,
-    /// Where a thread in a folder of its own reads the instructions it opens with: its
-    /// project's AGENTS.md and what its folder brings that stays off. None: every thread opens
-    /// with the settings' instructions.
-    pub instructions: Option<Arc<dyn FolderInstructions>>,
+    /// Where a thread in a folder of its own reads the instructions it opens with (its
+    /// project's AGENTS.md and what its folder brings that stays off), and what its project
+    /// turns on at each turn. None: every thread opens with the settings' instructions, with
+    /// the server's tools and hooks alone.
+    pub projects: Option<Arc<dyn Projects>>,
+    /// Where what a project asks to be trusted is read, and the person's yes kept; none where
+    /// no one may trust a project from a client.
+    pub trust: Option<Arc<dyn ProjectTrust>>,
 }
 
 /// Threads on workers: where workers come from, and the environment each is made from.
@@ -137,6 +142,10 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) tasks: Mutex<Vec<JoinHandle<()>>>,
     /// Turns started with an idempotency key, for retries.
     pub(crate) keyed: Keyed,
+    /// Where what a project asks to be trusted is read, and the person's yes kept.
+    pub(crate) trust: Option<Arc<dyn ProjectTrust>>,
+    /// What the threads opened or started here did with their projects' asks.
+    pub(crate) asks: Mutex<Asks>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -177,7 +186,7 @@ where
                 .with_tools(wiring.tools)
                 .with_hooks(wiring.hooks)
                 .with_memory_if(wiring.memory)
-                .with_folder_instructions(wiring.instructions),
+                .with_projects(wiring.projects),
                 worker: wiring.workers.map(|on| on.environment),
                 every_thread,
                 models: RwLock::new(catalog),
@@ -198,6 +207,8 @@ where
                 threads: Mutex::new(HashMap::new()),
                 tasks: Mutex::new(Vec::new()),
                 keyed: Keyed::default(),
+                trust: wiring.trust,
+                asks: Mutex::new(Asks::default()),
             }),
         }
     }

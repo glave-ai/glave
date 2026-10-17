@@ -125,9 +125,14 @@ where
         Ok(())
     }
 
-    /// How much `thread`'s turns ask before acting: its own choice, else the harness's mode.
+    /// How much `thread`'s turns ask before acting: its own choice, else its project's, else
+    /// the harness's mode; never auto where its project runs commands unconfined without auto
+    /// chosen ([`crate::Loosened::mode`]).
     pub fn approval_for(&self, thread: &Thread) -> ApprovalMode {
-        thread.approval.unwrap_or(self.settings.approval)
+        thread
+            .brought
+            .loosened
+            .mode(thread.approval, self.settings.approval)
     }
 
     /// Runs `thread`'s turns in approval mode `mode` from now on, recorded as

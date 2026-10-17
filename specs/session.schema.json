@@ -1112,7 +1112,7 @@
         },
         {
           "const": "waiting",
-          "description": "A turn is paused until someone answers an approval.",
+          "description": "A turn is paused until someone answers an approval or a question, or the thread's\nproject asks the person to trust it.",
           "type": "string"
         }
       ]
@@ -1241,7 +1241,7 @@
       "properties": {
         "approval": {
           "$ref": "#/$defs/ApprovalMode",
-          "description": "How much its turns ask before acting: the mode last chosen for it, else the server's."
+          "description": "How much its turns ask before acting: the mode last chosen for it, else its project's,\nelse the server's; never auto where its project runs commands without the sandbox and\nauto was chosen nowhere."
         },
         "cost": {
           "anyOf": [
@@ -1316,6 +1316,17 @@
           "$ref": "#/$defs/TokenCounts",
           "description": "Tokens its own model calls used."
         },
+        "trust": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrustAsk"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What its project asks the person on this computer to trust, once the thread was opened\nor started: shown to them alone, until they answer it."
+        },
         "turns": {
           "format": "uint64",
           "minimum": 0,
@@ -1374,6 +1385,62 @@
         "cache_write",
         "output",
         "reasoning"
+      ],
+      "type": "object"
+    },
+    "TrustAsk": {
+      "description": "What a thread's project brings that runs only once the person on this computer trusts it:\nits tool servers, its hooks and settings that loosen how its commands run\n(`specs/policy.md`, \"Project trust\").",
+      "properties": {
+        "ask": {
+          "description": "Names exactly what is asked: `trust/answer` names it back, so only what the person was\nshown is trusted.",
+          "type": "string"
+        },
+        "items": {
+          "description": "Each thing in plain words, in the order the project lists them.",
+          "items": {
+            "$ref": "#/$defs/TrustItem"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ask",
+        "items"
+      ],
+      "type": "object"
+    },
+    "TrustChoice": {
+      "description": "The person's answer to a project's ask.",
+      "oneOf": [
+        {
+          "const": "trust",
+          "description": "Everything the ask listed is on from the thread's next turn, and the answer is kept.",
+          "type": "string"
+        },
+        {
+          "const": "not_now",
+          "description": "It stays off, nothing is kept, and this thread stops asking.",
+          "type": "string"
+        }
+      ]
+    },
+    "TrustItem": {
+      "description": "One thing a project brings, in plain words.",
+      "properties": {
+        "detail": {
+          "description": "The thing itself, when there is one to show: the command it runs, the address, the\nmodel.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "description": "What it does, in a sentence: `Runs a tool server`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
       ],
       "type": "object"
     },
@@ -1821,6 +1888,10 @@
     "NO_THREAD": {
       "code": -32001,
       "message": "No such thread"
+    },
+    "NO_TRUST": {
+      "code": -32026,
+      "message": "No such ask waits: the project changed since, or asks nothing now"
     },
     "NO_TURN": {
       "code": -32003,
@@ -3125,6 +3196,40 @@
         "type": "object"
       },
       "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "trust/answer": {
+      "params": {
+        "properties": {
+          "answer": {
+            "$ref": "#/$defs/TrustChoice"
+          },
+          "ask": {
+            "description": "The ask answered: its `ask`.",
+            "type": "string"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "ask",
+          "answer"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadSummary"
+          }
+        },
+        "required": [
+          "thread"
+        ],
         "type": "object"
       },
       "streams": false

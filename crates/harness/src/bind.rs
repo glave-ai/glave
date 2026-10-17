@@ -200,15 +200,16 @@ where
         Ok((workspace.map(Arc::new), latest.cloned()))
     }
 
-    /// What a thread working where `bound` says opens with: what the host reads for its
-    /// folder (its project's, or none for a scratch folder), when the harness has a reader
-    /// and the thread a folder of its own here; else the settings' own instructions.
+    /// What a thread for `person` working where `bound` says opens with: what the host reads
+    /// for its folder (its project's, or none for a scratch folder), when the harness has a
+    /// reader and the thread a folder of its own here; else the settings' own instructions.
     pub(crate) async fn instructions_for(
         &self,
         workspace: Option<&Workspace>,
         bound: Option<&WorkspaceBound>,
+        person: Option<glave_event::PrincipalId>,
     ) -> Option<String> {
-        let (Some(reader), Some(workspace), Some(bound)) = (&self.instructions, workspace, bound)
+        let (Some(reader), Some(workspace), Some(bound)) = (&self.projects, workspace, bound)
         else {
             return self.settings.instructions.clone();
         };
@@ -218,7 +219,8 @@ where
             Opened::Scratch { .. } => None,
             Opened::Clone { .. } => return self.settings.instructions.clone(),
         };
-        reader.for_folder(workspace.root(), project).await
+        let trusting = self.trusting(person);
+        reader.for_folder(workspace.root(), project, trusting).await
     }
 
     /// The workspace `thread`'s tools act on.
@@ -226,14 +228,18 @@ where
         thread.workspace.as_ref().unwrap_or(&self.workspace)
     }
 
-    /// The tool source at `index` for `thread`: the built-in tools on its own workspace when
-    /// it has one, or the source as the harness holds it.
+    /// The tool source at `index` for `thread`, as [`Harness::tools`] numbers them: the
+    /// built-in tools on its own workspace when it has one, the source as the harness holds
+    /// it, then its project's.
     pub(crate) fn source_for(&self, thread: &Thread, index: usize) -> Option<Arc<dyn ToolSource>> {
         match (&thread.workspace, index) {
             (Some(workspace), 0) => Some(Arc::new(Builtins {
                 workspace: Arc::clone(workspace),
             })),
-            _ => self.sources.get(index).cloned(),
+            _ => match index.checked_sub(self.sources.len()) {
+                Some(brought) => thread.brought.tools.get(brought).cloned(),
+                None => self.sources.get(index).cloned(),
+            },
         }
     }
 }

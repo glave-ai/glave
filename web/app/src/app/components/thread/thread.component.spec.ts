@@ -125,6 +125,42 @@ describe('ThreadComponent', () => {
     ]);
   });
 
+  it('shows what the project asks to be trusted last, sends the answer, then rests it', async () => {
+    const ask = {
+      ask: 'ask-1',
+      items: [
+        { text: 'Runs a tool server', detail: 'npx @acme/mcp' },
+        { text: 'Lets glave approve actions without asking' },
+      ],
+    };
+    const fake = session(ANSWERED)
+      .answer('thread/get', { thread: thread('thread-1', 'Tidy the repo', { trust: ask }) })
+      .answer('trust/answer', { thread: thread('thread-1', 'Tidy the repo') });
+    const { root, fixture } = await open(fake);
+    const card = root.querySelector('[data-testid="thread-trust"]');
+    expect(card?.textContent).toContain('This project brings its own tools and settings');
+    expect(card?.textContent).not.toMatch(/\.mcp\.json|config\.toml|trust\.toml/u);
+    const items = Array.from(root.querySelectorAll('[data-testid="thread-trust-item"]'));
+    expect(items.map((item) => item.textContent.replace(/\s+/gu, ' ').trim())).toEqual([
+      'Runs a tool server npx @acme/mcp',
+      'Lets glave approve actions without asking',
+    ]);
+    const last = root.querySelector('[data-testid="thread-items"] .reading')?.lastElementChild;
+    expect(last?.getAttribute('data-testid')).toBe('thread-trust');
+    await expectAccessible(root);
+    root.querySelector<HTMLButtonElement>('[data-testid="thread-trust-trust"]')?.click();
+    await settle();
+    await fixture.whenStable();
+    expect(fake.paramsOf('trust/answer')).toEqual([
+      { thread: 'thread-1', ask: 'ask-1', answer: 'trust' },
+    ]);
+    expect(root.querySelector('[data-testid="thread-trust-answered"]')?.textContent).toBe(
+      'Trusted',
+    );
+    expect(root.querySelector('[data-testid="thread-trust-trust"]')).toBeNull();
+    await expectAccessible(root);
+  });
+
   it('names no model over a reply, and gives only the reply a copy button', async () => {
     const { root } = await open(session(ANSWERED));
     const messages = root.querySelectorAll('[data-testid="thread-message"]');

@@ -8,6 +8,7 @@ mod models;
 mod providers;
 mod spaces;
 mod tasks;
+mod trust;
 
 use glave_event::{
     At, CallId, CredentialId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal, ProviderId,
@@ -24,6 +25,7 @@ pub use models::ModelInfo;
 pub use providers::{ProviderInfo, hint};
 pub use spaces::{NewFolder, ProjectFolder};
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
+pub use trust::{TrustAsk, TrustChoice, TrustItem};
 
 /// The protocol version this server speaks.
 pub const PROTOCOL: &str = "2026-10";
@@ -155,6 +157,15 @@ methods! {
         question: CallId,
         answers: Vec<String>,
     } -> [Done],
+    /// Answers what a thread's project asks to be trusted (its summary's `trust`): `trust`
+    /// turns on what it listed from the thread's next turn and keeps the answer; `not_now`
+    /// keeps it off and stops asking in this thread. Only the person on this computer.
+    "trust/answer" => TrustAnswer {
+        thread: ThreadId,
+        /// The ask answered: its `ask`.
+        ask: String,
+        answer: TrustChoice,
+    } -> [Thread],
     /// Sets a goal and works toward it across turns; without `objective`, continues the
     /// thread's active goal, as after a restart, or resumes the one the model paused.
     "goal/start" => GoalStart {
@@ -307,6 +318,7 @@ impl Request {
             | Self::ThreadCompact { thread }
             | Self::ApprovalDecide { thread, .. }
             | Self::QuestionAnswer { thread, .. }
+            | Self::TrustAnswer { thread, .. }
             | Self::GoalStart { thread, .. }
             | Self::GoalStop { thread }
             | Self::GoalGet { thread }
@@ -437,8 +449,14 @@ pub struct ThreadSummary {
     /// The title the person gave it, else the first line of their first message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// How much its turns ask before acting: the mode last chosen for it, else the server's.
+    /// How much its turns ask before acting: the mode last chosen for it, else its project's,
+    /// else the server's; never auto where its project runs commands without the sandbox and
+    /// auto was chosen nowhere.
     pub approval: ApprovalMode,
+    /// What its project asks the person on this computer to trust, once the thread was opened
+    /// or started: shown to them alone, until they answer it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust: Option<TrustAsk>,
     /// Whose work it is; absent in threads from before it was recorded (the local person).
     #[serde(rename = "for", default, skip_serializing_if = "Option::is_none")]
     pub for_: Option<Principal>,
@@ -465,7 +483,8 @@ pub struct ThreadSummary {
 pub enum Status {
     Idle,
     Running,
-    /// A turn is paused until someone answers an approval.
+    /// A turn is paused until someone answers an approval or a question, or the thread's
+    /// project asks the person to trust it.
     Waiting,
 }
 

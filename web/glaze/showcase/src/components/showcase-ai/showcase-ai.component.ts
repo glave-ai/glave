@@ -24,6 +24,9 @@ import {
   GlzReceiptComponent,
   GlzStepsComponent,
   GlzStickToBottomDirective,
+  type GlzTrustAnswer,
+  GlzTrustCardComponent,
+  type GlzTrustItem,
 } from '@glave/glaze';
 import { SquareTerminal, TextSearch } from 'lucide';
 
@@ -43,6 +46,7 @@ const COPY = {
   latest: 'Jump to latest',
   model: 'Model',
   answer: 'Done. Anything else?',
+  trust: 'This project brings its own tools and settings',
   streamed:
     'Streaming text arrives a few words at a time, and the list keeps to the bottom while you are there.',
 } as const;
@@ -101,6 +105,13 @@ const APPROVAL = {
   command: 'cargo test --workspace',
 } as const;
 
+/** What the demo's project brings, waiting for the person's trust. */
+const TRUST: readonly GlzTrustItem[] = [
+  { text: 'Runs a tool server', detail: 'npx @acme/mcp' },
+  { text: 'Runs a hook before each command', detail: './scripts/check.sh' },
+  { text: 'Lets glave approve actions without asking' },
+];
+
 /** A message in the demo thread. */
 interface DemoMessage {
   readonly id: number;
@@ -109,7 +120,10 @@ interface DemoMessage {
   readonly text: string;
 }
 
-/** The showcase's conversation: messages, reasoning, receipts, approvals, questions, composer. */
+/**
+ * The showcase's conversation: messages, reasoning, receipts, approvals, questions, a project
+ * to trust, composer.
+ */
 @Component({
   selector: 'app-showcase-ai',
   imports: [
@@ -124,6 +138,7 @@ interface DemoMessage {
     GlzReceiptComponent,
     GlzStepsComponent,
     GlzStickToBottomDirective,
+    GlzTrustCardComponent,
   ],
   templateUrl: './showcase-ai.component.html',
   styleUrl: './showcase-ai.component.scss',
@@ -140,6 +155,8 @@ export class ShowcaseAiComponent {
   protected readonly approval = APPROVAL;
   protected readonly decision = signal<GlzDecision | null>(null);
   protected readonly answers = signal<readonly string[] | null>(null);
+  protected readonly trustItems = TRUST;
+  protected readonly trusted = signal<GlzTrustAnswer | null>(null);
   protected readonly draft = signal('');
   protected readonly model = signal<string | null>('hope');
   protected readonly busy = signal(false);
@@ -162,6 +179,10 @@ export class ShowcaseAiComponent {
 
   protected answer(answers: readonly string[]): void {
     this.answers.set(answers);
+  }
+
+  protected trust(answer: GlzTrustAnswer): void {
+    this.trusted.set(answer);
   }
 
   protected send(text: string): void {

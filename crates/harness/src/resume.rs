@@ -36,9 +36,14 @@ where
             .next()
             .ok_or_else(|| HarnessError::Event(format!("thread {id} is full")))?;
         let (workspace, bound) = self.reopen(scope, id, &events).await?;
+        let for_ = for_of(&events).or(self.actors.person);
         let instructions = self
-            .instructions_for(workspace.as_deref(), bound.as_ref())
+            .instructions_for(workspace.as_deref(), bound.as_ref(), for_)
             .await;
+        let project = bound
+            .as_ref()
+            .filter(|_| workspace.is_some())
+            .and_then(|bound| crate::projects::project_of(&bound.opened));
         let mut thread = Thread {
             scope,
             id,
@@ -58,10 +63,12 @@ where
             untrusted: read_untrusted(&events),
             read_secret: read_secret(&events),
             memory: crate::memory::MemoryState::default(),
-            for_: for_of(&events).or(self.actors.person),
+            for_,
             model: crate::chosen::chosen_in(&events),
             approval: crate::chosen::approval_in(&events),
             instructions,
+            project,
+            brought: std::sync::Arc::default(),
         };
         self.rebuild_memory(&mut thread, &events).await;
         self.repair(&mut thread, &events).await?;

@@ -4,7 +4,7 @@
 //! server that holds the thread, so it never conflicts with a thread open in that server.
 
 use glave_event::{Seq, ThreadId};
-use glave_harness::{Caller, Change, Standing, standing_of};
+use glave_harness::{Caller, Change, Loosened, Standing, standing_of};
 use glave_ports::{
     BlobStore, EventLog, ModelProvider, Scope, SpaceId, ThreadCursor, ThreadQuery, ThreadView,
     title_of,
@@ -44,17 +44,32 @@ where
             org: self.inner.home.org,
             space,
         };
-        Ok(Reply::Thread {
-            thread: self.summary(scope, thread).await?,
-        })
+        self.opened(caller, scope, thread).await
     }
 
     /// Answers `thread/get`.
-    pub(crate) async fn get_thread(&self, thread: ThreadId) -> Result<Reply, ApiError> {
+    pub(crate) async fn get_thread(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+    ) -> Result<Reply, ApiError> {
         self.load(thread).await?;
         let scope = self.scope_of(thread).await?;
+        self.opened(caller, scope, thread).await
+    }
+
+    /// The summary of `thread`, opened or started by `caller`: it raises what its project asks
+    /// them to trust, when it asks anything (`trust.rs`).
+    async fn opened(
+        &self,
+        caller: &Caller,
+        scope: Scope,
+        thread: ThreadId,
+    ) -> Result<Reply, ApiError> {
+        let summary = self.summary(scope, thread).await?;
+        let ask = self.trust_in(caller, scope.space).await;
         Ok(Reply::Thread {
-            thread: self.summary(scope, thread).await?,
+            thread: self.asking(summary, ask.as_ref(), true),
         })
     }
 
@@ -115,8 +130,12 @@ where
             .ok_or_else(|| ApiError::new(code::INTERNAL, "the rename stopped"))?;
         ended.as_ref().as_ref().map_err(api)?;
         let scope = self.scope_of(thread).await?;
+        let summary = self.summary(scope, thread).await?;
+        let ask = self
+            .trust_on_page(caller, scope.space, std::iter::once(thread))
+            .await;
         Ok(Reply::Thread {
-            thread: self.summary(scope, thread).await?,
+            thread: self.asking(summary, ask.as_ref(), false),
         })
     }
 
@@ -164,13 +183,18 @@ where
                 views.last().map(|view| view.cursor().to_string())
             })
             .flatten();
+        let project = self.project_loosened(space).await;
+        let ask = self
+            .trust_on_page(caller, space, views.iter().map(|view| view.thread))
+            .await;
         let mut threads = Vec::with_capacity(views.len());
         for view in views {
             if crate::ledger::is_ledger(view.thread) {
                 continue;
             }
             self.place(view.thread, scope);
-            threads.push(self.summarize(scope, view).await?);
+            let summary = self.summarize(scope, view, project).await?;
+            threads.push(self.asking(summary, ask.as_ref(), false));
         }
         Ok(Reply::Threads { threads, next })
     }
@@ -194,12 +218,25 @@ where
                 .map_err(|e| failed(&e))?
                 .ok_or_else(|| no_thread(thread))?,
         };
-        self.summarize(scope, view).await
+        let project = self.project_loosened(scope.space).await;
+        self.summarize(scope, view, project).await
     }
 
-    /// A view as the API shows it: what the thread is doing now, and its title, read from the
-    /// one event that gives it.
-    async fn summarize(&self, scope: Scope, view: ThreadView) -> Result<ThreadSummary, ApiError> {
+    /// A view as the API shows it: what the thread is doing now, its title, read from the one
+    /// event that gives it, and the mode it runs in, as its project loosens it (`project`)
+    /// when it is the person on this computer's.
+    async fn summarize(
+        &self,
+        scope: Scope,
+        view: ThreadView,
+        project: Loosened,
+    ) -> Result<ThreadSummary, ApiError> {
+        let theirs = view.for_.as_ref().and_then(|whose| whose.id);
+        let project = if theirs.is_none_or(|person| Some(person) == self.person()) {
+            project
+        } else {
+            Loosened::default()
+        };
         let title = match view.title_seq {
             Some(seq) => {
                 let before = Seq::new(seq.get().saturating_sub(1)).ok();
@@ -220,7 +257,8 @@ where
             status: self.status(view.thread),
             standing: view.standing,
             title,
-            approval: self.approval_now(&scope, view.thread).await?,
+            approval: self.approval_now(&scope, view.thread, project).await?,
+            trust: None,
             for_: view.for_,
             origin: view.origin,
             parent: view.parent,

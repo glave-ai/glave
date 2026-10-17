@@ -1,4 +1,4 @@
-import type { ModelInfo, RawEvent, Space, TaskInfo, ThreadSummary } from '@glave/client';
+import type { ModelInfo, RawEvent, Space, TaskInfo, ThreadSummary, TrustAsk } from '@glave/client';
 import type { Page, Route } from '@playwright/test';
 
 /**
@@ -207,10 +207,68 @@ const WAITING_HISTORY = [
   ),
 ];
 
+/**
+ * A project whose folder brings its own tools and settings, not trusted yet, and its thread,
+ * which asks the person to trust them (`fakeApi`'s `trust`).
+ */
+const ACME = space('01900000-0000-7000-8000-000000000003', 'acme', 'project');
+export const TRUSTING = '01900000-0000-7000-8000-000000000107';
+
+/** What acme asks to be trusted, in the plain words the server sends. */
+export const TRUST_ASK: TrustAsk = {
+  ask: '5f2c9d0a1b7e4c3d8e6f0a9b2c1d4e7f5a8b3c6d9e0f1a2b4c7d8e9f0a1b2c3d',
+  items: [
+    { text: 'Runs a tool server', detail: 'npx @acme/mcp' },
+    { text: 'Runs a hook before each command', detail: './scripts/check.sh' },
+    { text: 'Lets glave approve actions without asking' },
+    { text: 'Turns off the sandbox' },
+  ],
+};
+
+/** The trusting thread's history: one exchange, before the project's tools are on. */
+const TRUSTING_HISTORY = [
+  event(1, 'thread.started', {}, TRUSTING),
+  bound(2, TRUSTING),
+  event(3, 'turn.started', { model: { provider: 'e2e', name: DEFAULT_MODEL } }, TRUSTING),
+  event(
+    4,
+    'message.added',
+    { role: 'user', parts: [{ type: 'text', text: 'Search the Acme docs for the release steps' }] },
+    TRUSTING,
+  ),
+  event(
+    5,
+    'message.added',
+    {
+      role: 'assistant',
+      parts: [
+        {
+          type: 'text',
+          text: 'The Acme docs search is one of this project’s own tools, which are off until you trust the project.',
+        },
+      ],
+    },
+    TRUSTING,
+  ),
+  event(6, 'turn.ended', { outcome: 'completed' }, TRUSTING, '2026-10-11T10:00:04.000Z'),
+];
+
+/** Whether acme asks to be trusted, while the fake runs: until the person answers. */
+interface Trust {
+  asking: boolean;
+}
+
+/** The trusting thread as acme's lists and `thread/get` show it. */
+function trusting(trust: Trust): ThreadSummary {
+  const summary = thread(TRUSTING, 'Search the Acme docs', 'idle', ACME);
+  return trust.asking ? { ...summary, status: 'waiting', trust: TRUST_ASK } : summary;
+}
+
 /** Each thread's history, by id. */
 const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
   [THREAD]: HISTORY,
   [WAITING]: WAITING_HISTORY,
+  [TRUSTING]: TRUSTING_HISTORY,
 };
 
 const TASKS: readonly TaskInfo[] = [
@@ -434,15 +492,22 @@ export async function streamReply(page: Page, reply = MARKDOWN_REPLY, delay = 15
 }
 
 /**
- * The answer to a call that is not a turn; `started` holds the threads started so far, and
- * `made` the projects made.
+ * The answer to a call that is not a turn; `started` holds the threads started so far, `made`
+ * the projects made, and `trust` acme's ask, when the test has acme.
  */
 function answer(
   method: string,
   params: Record<string, unknown>,
   started: ThreadSummary[],
   made: Space[],
+  trust: Trust | null,
 ): unknown {
+  if (trust !== null) {
+    const asked = trusted(method, params, trust);
+    if (asked !== undefined) {
+      return asked;
+    }
+  }
   switch (method) {
     case 'space/list':
       return { spaces: [...made, PROJECT, PERSONAL] };
@@ -499,14 +564,39 @@ function answer(
   }
 }
 
-/** Answers the session API's calls the app makes, as JSON-RPC over POST /. */
+/** The answer to a call about acme, the project that asks to be trusted; else `undefined`. */
+function trusted(method: string, params: Record<string, unknown>, trust: Trust): unknown {
+  switch (method) {
+    case 'space/list':
+      return { spaces: [ACME, PROJECT, PERSONAL] };
+    case 'thread/list':
+      return params['space'] === ACME.id ? { threads: [trusting(trust)] } : undefined;
+    case 'thread/get':
+      return params['thread'] === TRUSTING ? { thread: trusting(trust) } : undefined;
+    case 'trust/answer':
+      if (params['ask'] !== TRUST_ASK.ask || !trust.asking) {
+        return new Refusal(-32026, 'this project changed since you were asked');
+      }
+      trust.asking = false;
+      return { thread: trusting(trust) };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Answers the session API's calls the app makes, as JSON-RPC over POST /. With `trust`, the
+ * person also has acme, a project that asks to be trusted.
+ */
 export async function fakeApi(
   page: Page,
+  { trust = false }: { readonly trust?: boolean } = {},
 ): Promise<{ readonly calls: readonly string[]; readonly requests: readonly Request[] }> {
   const calls: string[] = [];
   const requests: Request[] = [];
   const started: ThreadSummary[] = [];
   const made: Space[] = [];
+  const asking: Trust | null = trust ? { asking: true } : null;
   await page.route('**/*', async (route: Route) => {
     const request = route.request();
     if (request.method() !== 'POST') {
@@ -528,7 +618,7 @@ export async function fakeApi(
     if (message.method === 'space/create' && folder?.kind === 'repository') {
       await new Promise((resolve) => setTimeout(resolve, CLONE_MS));
     }
-    const answered = answer(message.method, message.params, started, made);
+    const answered = answer(message.method, message.params, started, made, asking);
     const reply =
       answered instanceof Refusal
         ? { error: { code: answered.code, message: answered.message } }

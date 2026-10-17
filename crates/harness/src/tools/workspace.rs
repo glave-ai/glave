@@ -152,6 +152,25 @@ impl Workspace {
         }
     }
 
+    /// The same binding, with what the model has read there, its commands in `sandbox`, or in
+    /// none: a project's trusted settings can turn the sandbox off for its threads.
+    pub(crate) async fn within(&self, sandbox: Option<&Sandbox>) -> Result<Self, ComputerError> {
+        let same = self.sharing(Self::new(Arc::clone(&self.computers), self.info.clone()));
+        let reads = self
+            .reads
+            .lock()
+            .map(|reads| reads.clone())
+            .unwrap_or_default();
+        let same = Self {
+            reads: Mutex::new(reads),
+            ..same
+        };
+        match sandbox {
+            Some(sandbox) => same.with_sandbox(sandbox).await,
+            None => Ok(same),
+        }
+    }
+
     /// The computers this workspace is on.
     pub(crate) fn computers(&self) -> &Arc<dyn Computers> {
         &self.computers

@@ -12,7 +12,7 @@ use glave_event::{
     At, Auth, AuthMethod, Body, Checkout, EventId, FolderSource, Header, Opened, Seq,
     SpaceFolderSet, ThreadId, decode, encode,
 };
-use glave_harness::FolderInstructions;
+use glave_harness::Projects;
 use glave_ports::testing::{FakeGitHost, FixedCredentials};
 use glave_ports::{BoxFuture, CredentialHost, EventLog, Forge, GitCredential, SpaceId};
 use glave_session::protocol::{Meta, NewFolder, ProjectFolder, Reply, Request, code};
@@ -321,11 +321,12 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
 /// Instructions that say which folder a thread reads them for.
 struct Told;
 
-impl FolderInstructions for Told {
+impl Projects for Told {
     fn for_folder<'a>(
         &'a self,
         root: &'a Path,
         project: Option<&'a Path>,
+        _trusting: bool,
     ) -> BoxFuture<'a, Option<String>> {
         let text = match project {
             Some(folder) => format!("Rules of {} at {}", folder.display(), root.display()),
@@ -343,7 +344,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
     block_on!(async {
         let answers = vec![answer(Some("Yes."), None), answer(Some("Hi."), None)];
         let mut setup = Setup::new(answers);
-        setup.instructions = Some(Arc::new(Told));
+        setup.project_host = Some(Arc::new(Told));
         let (server, seen) = setup.build(&dir).await;
         let path = other.to_string_lossy().into_owned();
         let (space, _) = made(

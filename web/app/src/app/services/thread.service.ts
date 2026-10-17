@@ -1,5 +1,12 @@
 import { DOCUMENT, DestroyRef, Service, computed, inject, signal } from '@angular/core';
-import type { ApprovalMode, RawEvent, ThreadId, TurnStartParams } from '@glave/client';
+import type {
+  ApprovalMode,
+  RawEvent,
+  ThreadId,
+  TrustAsk,
+  TrustChoice,
+  TurnStartParams,
+} from '@glave/client';
 import type { GlzDecision } from '@glave/glaze';
 
 import { NO_DRAFT, applyUpdate, mergeEvents, type Draft } from '../lib/conversation';
@@ -13,8 +20,9 @@ import { SpacesService } from './spaces.service';
 
 /**
  * One open thread: its events, read from the log and followed live while a turn runs; the
- * reply being written; and the person's actions in it (send, stop, decide, answer). Each
- * thread view provides its own.
+ * reply being written; what its project asks the person to trust, raised by opening it; and
+ * the person's actions in it (send, stop, decide, answer, trust). Each thread view provides
+ * its own.
  */
 @Service({ autoProvided: false })
 export class ThreadService {
@@ -26,6 +34,8 @@ export class ThreadService {
   private readonly running = signal(false);
   private readonly failed = signal<string | null>(null);
   private readonly deciding = signal(false);
+  private readonly asked = signal<TrustAsk | null>(null);
+  private readonly trustAnswered = signal<TrustChoice | null>(null);
   private controller: AbortController | null = null;
 
   private readonly mac = onApple(inject(DOCUMENT));
@@ -39,6 +49,10 @@ export class ThreadService {
   readonly busy = this.running.asReadonly();
   readonly error = this.failed.asReadonly();
   readonly sending = this.deciding.asReadonly();
+  /** What the thread's project asks the person to trust, while it asks or once answered here. */
+  readonly trust = this.asked.asReadonly();
+  /** The person's answer to `trust`, once they gave it here. */
+  readonly trustAnswer = this.trustAnswered.asReadonly();
   readonly hasReply = computed(() => this.draft().text !== '' || this.draft().reasoning !== '');
   /** The model the thread chose for its turns, or `null` for the server's default. */
   readonly chosen = computed(() => chosenModel(this.events()));
@@ -54,7 +68,10 @@ export class ThreadService {
     });
   }
 
-  /** Opens `thread`: reads all its events. */
+  /**
+   * Opens `thread`: reads all its events, and what its project asks the person to trust, which
+   * opening it raises.
+   */
   async open(thread: ThreadId): Promise<void> {
     this.controller?.abort();
     this.id.set(thread);
@@ -62,7 +79,34 @@ export class ThreadService {
     this.draft.set(NO_DRAFT);
     this.running.set(false);
     this.failed.set(null);
-    await this.readAll(thread);
+    this.asked.set(null);
+    this.trustAnswered.set(null);
+    await Promise.all([this.readAsk(thread), this.readAll(thread)]);
+  }
+
+  /**
+   * Answers what the thread's project asks: trusting turns it on from the next turn; not now
+   * keeps it off. Either way the card rests, and the side nav's lists are read again.
+   */
+  async answerTrust(answer: TrustChoice): Promise<void> {
+    const thread = this.id();
+    const ask = this.asked();
+    if (thread === null || ask === null || this.trustAnswered() !== null) {
+      return;
+    }
+    this.deciding.set(true);
+    try {
+      await this.session.call('trust/answer', { thread, ask: ask.ask, answer });
+      this.trustAnswered.set(answer);
+      this.failed.set(null);
+    } catch (error: unknown) {
+      this.failed.set(error instanceof Error ? error.message : String(error));
+      // The project may have changed since it asked: show what it asks now.
+      await this.readAsk(thread);
+    } finally {
+      this.deciding.set(false);
+      void this.spaces.refresh();
+    }
   }
 
   /**
@@ -170,6 +214,23 @@ export class ThreadService {
       this.failed.set(error instanceof Error ? error.message : String(error));
     } finally {
       this.deciding.set(false);
+    }
+  }
+
+  /** Reads the thread's summary, which raises its project's ask, and shows the ask. */
+  private async readAsk(thread: ThreadId): Promise<void> {
+    try {
+      const { thread: summary } = await this.session.call('thread/get', { thread });
+      if (this.id() !== thread) {
+        return;
+      }
+      const ask = summary.trust ?? null;
+      this.asked.set(ask);
+      if (ask !== null) {
+        void this.spaces.refresh();
+      }
+    } catch (error: unknown) {
+      this.failed.set(error instanceof Error ? error.message : String(error));
     }
   }
 

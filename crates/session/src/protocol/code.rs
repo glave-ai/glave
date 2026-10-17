@@ -42,4 +42,5 @@ codes! {
     NO_PROVIDER = -32023, "No such model account here";
     NO_CREDENTIAL = -32024, "No such git host, or sign-in, here";
     HOST = -32025, "The git host refused, or could not be reached";
+    NO_TRUST = -32026, "No such ask waits: the project changed since, or asks nothing now";
 }

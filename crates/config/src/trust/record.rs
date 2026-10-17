@@ -97,7 +97,8 @@ impl Record {
             .await
             .map_err(crate::Error::io("create", home))?;
         let path = home.join(FILE);
-        let temporary = home.join(format!("{FILE}.new"));
+        // A name of this process's own, so two glaves saving at once never write one file.
+        let temporary = home.join(format!("{FILE}.{}.new", std::process::id()));
         tokio::fs::write(&temporary, text)
             .await
             .map_err(crate::Error::io("write", &temporary))?;

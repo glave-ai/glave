@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use glave_harness::{ApprovalMode, Hook, point_name};
+use glave_harness::{ApprovalMode, Hook, HookPoint, point_name};
 use serde_json::Value;
 
 use crate::policy::{self, ConfigFile, HooksFile, SandboxChoice, WebFile};
@@ -23,12 +23,29 @@ const HOOK: &str = "hook:";
 /// One thing the person is asked to trust.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
-    /// `mcp:<server>` or `settings`.
+    /// `mcp:<server>`, `hook:<point>:<n>` or `settings`.
     pub id: String,
     /// Exactly what is trusted, so a changed definition is a new question.
     pub definition: String,
     /// What it does, in a few words, for the question and for `glave policy explain`.
     pub shows: String,
+    /// What it does in plain words, for a person deciding in an app: one line for a server or
+    /// a hook, one for each setting.
+    pub plain: Vec<Plain>,
+}
+
+/// One line of what an item does, in plain words: a sentence, and the thing itself when there
+/// is one to show (the command a server or hook runs, an address, a model).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Plain {
+    pub text: &'static str,
+    pub detail: Option<String>,
+}
+
+impl Plain {
+    fn new(text: &'static str, detail: Option<String>) -> Self {
+        Self { text, detail }
+    }
 }
 
 impl Item {
@@ -136,10 +153,12 @@ impl Project {
                     Some(matcher) => format!("{} (for tools matching {matcher})", hook.command),
                     None => hook.command.clone(),
                 };
+                let plain = Plain::new(hook_text(&hook), Some(hook.command.clone()));
                 let item = Item {
                     id: format!("{HOOK}{point}:{count}"),
                     definition: definition.to_string(),
                     shows,
+                    plain: vec![plain],
                 };
                 (item, hook)
             })
@@ -166,18 +185,27 @@ impl Project {
 /// else only tightens, or picks a model.
 fn loosening(config: &ConfigFile) -> Option<Item> {
     let mut parts = Vec::new();
+    let mut plain = Vec::new();
     if config.approval == Some(ApprovalMode::Auto) {
         parts.push("approval = \"auto\"");
+        plain.push(Plain::new(APPROVES, None));
     }
     if config.sandbox == Some(SandboxChoice::Off) {
         parts.push("sandbox = \"off\"");
+        plain.push(Plain::new(UNSANDBOXED, None));
     }
     let judge = config
         .judge_model
         .as_deref()
         .filter(|judge| judge.trim() != "off");
     let judge_part = judge.map(|judge| format!("judge_model = {judge:?}"));
+    if let Some(judge) = judge {
+        plain.push(Plain::new(JUDGES, Some(judge.to_owned())));
+    }
     let web_part = config.web.as_ref().and_then(WebFile::loosening);
+    if let Some(web) = &config.web {
+        plain.extend(web_plain(web));
+    }
     (!parts.is_empty() || judge_part.is_some() || web_part.is_some()).then(|| {
         let text = parts
             .iter()
@@ -190,8 +218,52 @@ fn loosening(config: &ConfigFile) -> Option<Item> {
             id: SETTINGS.to_owned(),
             definition: text.clone(),
             shows: text,
+            plain,
         }
     })
+}
+
+/// What `approval = "auto"` does, in plain words.
+const APPROVES: &str = "Lets glave approve actions without asking";
+/// What `sandbox = "off"` does.
+const UNSANDBOXED: &str = "Turns off the sandbox";
+/// What a `judge_model` other than `off` does.
+const JUDGES: &str = "Chooses which model judges risky actions";
+
+/// What a `[web]` that reaches further than glave's default does, in plain words.
+fn web_plain(web: &WebFile) -> Vec<Plain> {
+    let mut plain = Vec::new();
+    if web.private_addresses == Some(true) {
+        plain.push(Plain::new(
+            "Lets glave fetch pages on private networks",
+            None,
+        ));
+    }
+    if !web.allow.is_empty() {
+        plain.push(Plain::new(
+            "Lets glave fetch these sites, even on a private network",
+            Some(web.allow.join(", ")),
+        ));
+    }
+    plain
+}
+
+/// What a hook does, in plain words: when it runs. A matcher of `bash` alone runs it around
+/// each command; any other matcher, around some actions.
+fn hook_text(hook: &Hook) -> &'static str {
+    let matcher = hook.matcher.as_deref().map(str::trim);
+    let every = matcher.is_none_or(|matcher| matcher.is_empty() || matcher == "*");
+    let commands = matcher == Some("bash");
+    match (hook.point, every, commands) {
+        (HookPoint::PreToolUse, _, true) => "Runs a hook before each command",
+        (HookPoint::PreToolUse, true, _) => "Runs a hook before each action",
+        (HookPoint::PreToolUse, ..) => "Runs a hook before some actions",
+        (HookPoint::PostToolUse, _, true) => "Runs a hook after each command",
+        (HookPoint::PostToolUse, true, _) => "Runs a hook after each action",
+        (HookPoint::PostToolUse, ..) => "Runs a hook after some actions",
+        (HookPoint::UserPromptSubmit, ..) => "Runs a hook when you send a message",
+        (HookPoint::Stop, ..) => "Runs a hook when glave finishes a reply",
+    }
 }
 
 /// The servers in `.mcp.json`'s `text`, checked as glave would read them.
@@ -210,14 +282,40 @@ fn servers(
         .into_iter()
         .flatten()
         .map(|(name, definition)| {
+            let remote = definition.get("url").is_some_and(Value::is_string);
+            let text = if remote {
+                "Connects to a tool server"
+            } else {
+                "Runs a tool server"
+            };
             let item = Item {
                 id: format!("mcp:{name}"),
                 definition: definition.to_string(),
                 shows: shows(definition),
+                plain: vec![Plain::new(text, Some(passes(definition)))],
             };
             (name.clone(), item)
         })
         .collect())
+}
+
+/// What a server runs or where it connects, and the names of the variables or headers it is
+/// given (never their values), for the person deciding: what is trusted includes them.
+fn passes(definition: &Value) -> String {
+    let names = |key: &str| -> Vec<String> {
+        definition
+            .get(key)
+            .and_then(Value::as_object)
+            .map(|named| named.keys().cloned().collect())
+            .unwrap_or_default()
+    };
+    let (env, headers) = (names("env"), names("headers"));
+    let given = match (env.is_empty(), headers.is_empty()) {
+        (false, _) => format!(" (with {})", env.join(", ")),
+        (true, false) => format!(" (sending {})", headers.join(", ")),
+        (true, true) => String::new(),
+    };
+    format!("{}{given}", shows(definition))
 }
 
 /// What a server runs or where it connects, as written (variables unfilled).

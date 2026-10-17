@@ -1,11 +1,13 @@
 //! Project trust (`specs/policy.md`, issue #83). A repository can bring things that run
 //! commands: MCP servers in its `.mcp.json`, and settings that loosen approvals or the sandbox.
-//! glave asks once per project, only when there is something to ask about, remembers the answer
-//! in `trust.toml` in its folder, and asks again only about what changes. Policy can trust
-//! projects without a question or forbid their servers. With no one to ask, they stay off.
+//! glave asks once per project, only when there is something to ask about, in the terminal or
+//! in an app (issue #250), remembers the answer in `trust.toml` in its folder, and asks again
+//! only about what changes. Policy can trust projects without a question or forbid their
+//! servers. Until someone answers, they stay off.
 
 mod ask;
 mod assess;
+mod loosen;
 mod project;
 mod record;
 #[cfg(test)]
@@ -14,8 +16,9 @@ mod tests;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-pub use assess::{Answer, Outcome, assess};
-pub use project::{Project, remote};
+pub use assess::{Answer, Assessment, Outcome, assess};
+pub use loosen::loosened;
+pub use project::{Plain, Project, remote};
 pub use record::Record;
 
 use crate::policy::Constraints;
@@ -25,8 +28,10 @@ use crate::policy::Constraints;
 pub enum Asking {
     /// The person at the terminal.
     Person,
-    /// No one: a script, a pipe, the session server.
+    /// No one: a script, a pipe.
     NoOne,
+    /// No one here, but the person can answer later from an app: the session server.
+    Later,
     /// No one is asked and nothing is saved; `glave policy explain` only shows.
     Explaining,
 }
@@ -46,6 +51,7 @@ pub async fn resolve(
     let answer = match asking {
         Asking::Explaining => Answer::Explaining,
         Asking::NoOne => Answer::NoOne,
+        Asking::Later => Answer::Later,
         Asking::Person if assessment.undecided().is_empty() => Answer::NoOne,
         Asking::Person => match ask(ask::question(&assessment))
             .await
@@ -77,14 +83,36 @@ pub fn mcp_json(servers: &BTreeMap<String, String>) -> String {
     serde_json::json!({ "mcpServers": servers }).to_string()
 }
 
-/// What `project` brings that a server started in another folder leaves off, under the record
-/// in `home`, one sentence each, for the model: every server and setting, trusted or not, with
-/// why. Nothing is asked or saved.
-pub async fn off_elsewhere(
+/// Where each item of `project` stands under the record in `home`. Nothing is asked or saved.
+pub async fn assessed(
     home: &Path,
     project: Project,
     constraints: &Constraints,
-) -> crate::Result<Vec<String>> {
+) -> crate::Result<Assessment> {
     let record = Record::load(home).await?;
-    Ok(assess(project, &record, constraints).off_elsewhere())
+    Ok(assess(project, &record, constraints))
+}
+
+/// Trusts what `project` asks to be trusted, as the person's answer to the ask named `asked`
+/// ([`Assessment::ask_id`]), and keeps the answer in the record in `home` exactly as the
+/// terminal keeps a yes. Nothing is trusted, and `false` comes back, when the project no
+/// longer asks exactly that: it changed since the person was shown it, or was answered already.
+pub async fn trust_asked(
+    home: &Path,
+    project: Project,
+    constraints: &Constraints,
+    asked: &str,
+) -> crate::Result<bool> {
+    let mut record = Record::load(home).await?;
+    let assessment = assess(project, &record, constraints);
+    if assessment.undecided().is_empty() || assessment.ask_id() != asked {
+        return Ok(false);
+    }
+    let project = assessment.project.clone();
+    let Some(decisions) = assessment.apply(Answer::Yes).decisions else {
+        return Ok(false);
+    };
+    record.remember(&project, decisions);
+    record.save(home).await?;
+    Ok(true)
 }

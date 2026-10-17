@@ -27,6 +27,16 @@
         @for (turn of turns(); track turn.key) {
           <app-turn [turn]="turn" />
         }
+        @if (service.trust(); as ask) {
+          <glz-trust-card
+            testId="thread-trust"
+            [summary]="copy.trust"
+            [items]="ask.items"
+            [answered]="service.trustAnswer()"
+            [busy]="service.sending()"
+            (answer)="trust($event)"
+          />
+        }
       </div>
     </section>
     <div class="dock">
