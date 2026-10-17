@@ -6,6 +6,7 @@ mod bench;
 mod ci;
 mod cli;
 mod cmd;
+mod env_file;
 mod eval;
 mod file_sizes;
 mod lock;

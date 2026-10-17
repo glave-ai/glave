@@ -83,7 +83,7 @@ cargo xtask secrets     # no secret-shaped literal in a tracked file
 cargo xtask schema      # regenerate specs/session.schema.json and the web client's types after changing the session API
 cargo xtask release-workflow   # regenerate .github/workflows/release.yml after changing dist-workspace.toml or .github/build-setup.yml (needs dist, the version dist-workspace.toml names)
 cargo xtask bench       # benchmarks, alone on the machine (see Performance)
-cargo xtask eval        # the harness on evals/tasks against three real models, graded (costs cents)
+cargo xtask eval        # the harness on evals/tasks against three real models, graded (costs cents); the endpoint from .env (or `--env-file <path>`)
 cargo xtask eval judge  # the action judge scored on evals/judge (the deterministic checks today)
 cargo fmt --all         # format
 cargo build --profile debugging   # full debug info, for a debugger
@@ -235,5 +235,5 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Make the smallest change that does the job. Don't add crates, ports, dependencies or files the task doesn't need.
 - No TODO comments; note follow-ups in the pull request.
 - Run `cargo xtask ci` before saying something is done, and report failures as they are.
-- After changes the model will feel (prompt, tools, approvals, the loop), run `cargo xtask eval --repeat 3` (add `--tier all` for the hard tasks) and report pass rates per model. Load the endpoint from the environment first (`set -a; source .env; set +a`).
+- After changes the model will feel (prompt, tools, approvals, the loop), run `cargo xtask eval --repeat 3` (add `--tier all` for the hard tasks) and report pass rates per model. It reads the endpoint from `.env` itself (the nearest at or above the workspace, else the main checkout's from a worktree), so no shell step comes first.
 - Ask before anything destructive or hard to undo.
