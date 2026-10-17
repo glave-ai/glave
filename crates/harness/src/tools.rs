@@ -9,6 +9,8 @@ mod search;
 pub(crate) mod workspace;
 mod write;
 
+pub(crate) use bash::outside_sandbox;
+
 use glave_event::Arguments;
 use glave_ports::ToolSpec;
 use serde::de::DeserializeOwned;
@@ -138,10 +140,14 @@ impl Tool {
             Self::Bash => (
                 "Run a bash command at the project root and see its output and exit code. Each \
                  call starts fresh: cd does not carry over, so use `cd dir && command`. Default \
-                 timeout 120 seconds, at most 600.",
+                 timeout 120 seconds, at most 600. Commands run in a sandbox. If it blocked a \
+                 command the task needs, run that same command again with outside_sandbox and \
+                 a reason: the person is asked to allow it.",
                 json!({"type": "object", "properties": {
                     "command": {"type": "string"},
-                    "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 600}
+                    "timeout_secs": {"type": "integer", "minimum": 1, "maximum": 600},
+                    "outside_sandbox": {"type": "boolean", "description": "Run outside the sandbox. Only after the sandbox blocked this same command; the person is asked every time"},
+                    "reason": {"type": "string", "description": "With outside_sandbox: why the command needs it, in one sentence for the person"}
                 }, "required": ["command"]}),
             ),
         };

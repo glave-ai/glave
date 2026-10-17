@@ -113,7 +113,7 @@ A client that only shows the conversation needs `thread/event` alone. Rebuilding
 
 ## Approvals
 
-A tool call that needs the person records `approval.requested` (`approval`, `call_id`, `tool`, `summary`, `secret`, and `caution` when a caution asks, apart from the summary: `approvals.md`, "Recording") and the turn pauses; the thread's status becomes `waiting`. Any client may answer with `approval/decide`, now or much later, from any transport. The answer is recorded as `approval.decided` (`approval`, `decision`), and the turn continues: today in the server that runs it, later in whichever server receives the answer ("Turns that outlive a server").
+A tool call that needs the person records `approval.requested` (`approval`, `call_id`, `tool`, `summary`, `secret`, `caution` when a caution asks, apart from the summary, and `outside_sandbox` with the model's reason when the command would run outside the sandbox: `approvals.md`, "Recording") and the turn pauses; the thread's status becomes `waiting`. Any client may answer with `approval/decide`, now or much later, from any transport. The answer is recorded as `approval.decided` (`approval`, `decision`), and the turn continues: today in the server that runs it, later in whichever server receives the answer ("Turns that outlive a server").
 
 - A decision for an approval that is not pending is refused with `-32004`.
 - `allow_for_thread` is recorded, so it survives resuming the thread.
@@ -175,7 +175,7 @@ A schedule starts a task at set times: once (`at`), or whenever a five-field cro
 ## Turns
 
 - One turn runs per thread at a time. A second `turn/start` is refused with `-32002`. Queueing and steering a running turn come later.
-- **A turn's result** says how it ended and what it cost, as `events.md` counts it; `estimated` is true when a usage count was estimated because a stream ended before the provider reported it.
+- **A turn's result** says how it ended and what it cost, as `events.md` counts it, and how many commands it ran outside the sandbox (`outside_sandbox`); `estimated` is true when a usage count was estimated because a stream ended before the provider reported it.
 - **Custom commands.** A `prompt` that starts with `/name` where `name` is one of the server's commands (Markdown files in `.glave/commands` or `.claude/commands` in the project, then the person's own) is sent as that command's text, with `$ARGUMENTS` replaced by the rest of the prompt and `$1` to `$9` by each word of it; the stored `message.added` holds the text sent. Any other prompt, `/usr/bin is slow` included, is sent as written. Listing the commands over the API comes later; `glave commands` lists them.
 - A turn's notifications go to the client that started it and to every client watching the thread.
 - If the server stops mid-turn, the log ends without `turn.ended`. Resuming records the turn as `interrupted` and gives every unanswered tool call a result, so the thread continues.

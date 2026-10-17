@@ -10,7 +10,10 @@ export type Waiting = ApprovalItem | QuestionItem;
 /** What a turn's work came to, in a line: its status, the facts, and how many steps. */
 export interface Receipt {
   readonly status: GlzRunStatus;
-  /** The time it took (so far, while it has not ended) and what it cost, as far as known. */
+  /**
+   * The time it took (so far, while it has not ended) and what it cost, as far as known, and
+   * how many commands ran outside the sandbox, when any did.
+   */
   readonly facts: readonly string[];
   /** How many steps, in words: "4 steps". */
   readonly steps: string;
@@ -78,6 +81,19 @@ function count(n: number): string {
   return `${String(n)} ${n === 1 ? 'step' : 'steps'}`;
 }
 
+/** How many commands the person let run outside the sandbox, in words, when any were. */
+function outsideSandbox(items: readonly ThreadItem[]): readonly string[] {
+  const ran = items.filter(
+    (item) =>
+      item.kind === 'approval' &&
+      item.outsideSandbox &&
+      (item.decision === 'allow_once' || item.decision === 'allow_for_thread'),
+  ).length;
+  return ran === 0
+    ? []
+    : [`${String(ran)} ${ran === 1 ? 'command' : 'commands'} outside the sandbox`];
+}
+
 /**
  * `turn` results first. `live` is the reply being written, for the turn that runs now
  * (`running`); it takes the reply's place, and what was the reply goes back among what was
@@ -97,6 +113,7 @@ export function turnResults(turn: Turn, live: Draft | null, running: boolean): T
   const facts = [
     ...(turn.took === null || turn.took === 0 ? [] : [formatDuration(turn.took)]),
     ...(turn.cost === null ? [] : [formatMoney(turn.cost)]),
+    ...outsideSandbox(rest),
   ];
   return {
     key: turn.key,

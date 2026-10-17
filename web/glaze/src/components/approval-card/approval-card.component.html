@@ -10,6 +10,11 @@
 @if (hasCaution()) {
   <p class="caution" [id]="cautionId" [attr.data-testid]="ids().caution">{{ caution() }}</p>
 }
+@if (hasReason()) {
+  <p class="reason" [id]="reasonId" [attr.data-testid]="ids().reason">
+    {{ reasonLabel() }} <q>{{ reason() }}</q>
+  </p>
+}
 @if (decidedText(); as decided) {
   <p class="decided" [attr.data-testid]="ids().decided">{{ decided }}</p>
 } @else {
@@ -23,14 +28,16 @@
     >
       {{ allowOnceLabel() }}
     </button>
-    <button
-      glzButton
-      [attr.data-testid]="ids().allowThread"
-      [disabled]="busy()"
-      (click)="allowForThread()"
-    >
-      {{ allowForThreadLabel() }}
-    </button>
+    @if (offersThread()) {
+      <button
+        glzButton
+        [attr.data-testid]="ids().allowThread"
+        [disabled]="busy()"
+        (click)="allowForThread()"
+      >
+        {{ allowForThreadLabel() }}
+      </button>
+    }
     <button glzButton [attr.data-testid]="ids().deny" [disabled]="busy()" (click)="deny()">
       {{ denyLabel() }}
     </button>

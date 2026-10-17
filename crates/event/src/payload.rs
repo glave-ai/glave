@@ -21,7 +21,7 @@ pub(crate) mod tool;
 pub(crate) mod turn;
 pub(crate) mod workspace;
 
-pub use approval::{ApprovalDecided, ApprovalRequested, Verdict};
+pub use approval::{ApprovalDecided, ApprovalRequested, OutsideSandbox, Verdict};
 pub use chosen::{ApprovalMode, ApprovalModeChosen, ModelChosen};
 pub use credential::{CredentialConnected, CredentialRemoved, Forge, Renewal};
 pub use gateway::GatewayToolCalled;
