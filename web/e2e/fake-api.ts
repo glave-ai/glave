@@ -275,6 +275,7 @@ const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
 const TASKS: readonly TaskInfo[] = [
   {
     thread: '01900000-0000-7000-8000-000000000104',
+    space: PROJECT.id,
     kind: 'agent',
     title: 'Nightly dependency audit',
     model: 'hope-12b',
@@ -286,6 +287,7 @@ const TASKS: readonly TaskInfo[] = [
   },
   {
     thread: '01900000-0000-7000-8000-000000000106',
+    space: PROJECT.id,
     kind: 'agent',
     title: 'Summarize open issues',
     model: DEFAULT_MODEL,

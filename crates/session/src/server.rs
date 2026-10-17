@@ -12,7 +12,8 @@ use glave_harness::{
     ReleasedWorker, Settings, TurnSummary, Workers, Workspace,
 };
 use glave_ports::{
-    BlobStore, Environment, EventLog, ModelProvider, Scope, SpaceId, Spaces, ToolSource,
+    BlobStore, ComputerError, Environment, EventLog, ModelProvider, Scope, SpaceId, Spaces,
+    ToolSource,
 };
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
@@ -22,7 +23,7 @@ use crate::credentials::GitHosts;
 use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
-use crate::ledger::{Ledger, is_ledger};
+use crate::ledger::{Ledgers, is_ledger};
 use crate::modes::Choice;
 use crate::protocol::{ApiError, ApprovalMode, ErrorData, ModelInfo, Notification, Reply, code};
 use crate::providers::Providers;
@@ -48,8 +49,8 @@ pub struct Wiring<P, L, B> {
     pub worktree: bool,
     /// Commands run at points of every turn.
     pub hooks: Hooks,
-    /// When set, threads work on workers: every new thread (`--on cloud`) unless
-    /// `thread/start` asks for a worktree, or only those that run as tasks; none by default.
+    /// When set, every new thread in the server's own space works on a worker of its own
+    /// (`--on cloud`) unless `thread/start` asks for a worktree; none by default.
     pub workers: Option<OnWorkers>,
     /// What one person may run at once and keep scheduled.
     pub tasks: TaskLimits,
@@ -84,8 +85,6 @@ pub struct Wiring<P, L, B> {
 pub struct OnWorkers {
     pub workers: Workers,
     pub environment: Environment,
-    /// Whether every new thread works on one, or only threads that run as tasks.
-    pub every_thread: bool,
 }
 
 /// A session server for the spaces of one organization, its own first, whose threads work in
@@ -106,8 +105,8 @@ pub(crate) type Glave<P, L, B> = Harness<P, Observed<L>, B, Approvals>;
 
 pub(crate) struct Inner<P, L, B> {
     pub(crate) harness: Glave<P, L, B>,
-    /// The server's own space: where a request that names none acts, and whose tasks,
-    /// schedules and memory these are.
+    /// The server's own space: where a request that names none acts, and whose memory this
+    /// is.
     pub(crate) home: Scope,
     pub(crate) spaces: Arc<dyn Spaces>,
     /// The spaces of threads looked up.
@@ -117,8 +116,6 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) worktree: bool,
     /// The environment new threads' workers are made from, when they work on workers.
     pub(crate) worker: Option<Environment>,
-    /// Whether every new thread works on a worker, or only tasks' threads.
-    pub(crate) every_thread: bool,
     /// The models threads may be sent to, the default first; none until one is set up.
     pub(crate) models: RwLock<Vec<ModelInfo>>,
     /// Where model accounts are kept, when the person here may connect them.
@@ -132,8 +129,8 @@ pub(crate) struct Inner<P, L, B> {
     /// The space's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
-    /// What the space's task ledger says, as far as this server has read it.
-    pub(crate) ledger: Mutex<Ledger>,
+    /// What each space's task ledger says, as far as this server has read it.
+    pub(crate) ledgers: Mutex<Ledgers>,
     /// Tasks running in this server.
     pub(crate) running: Mutex<Tasks>,
     pub(crate) hub: Arc<Hub>,
@@ -176,7 +173,6 @@ where
             entropy: wiring.entropy,
             workspace: wiring.workspace,
         };
-        let every_thread = wiring.workers.as_ref().is_some_and(|on| on.every_thread);
         Self {
             inner: Arc::new(Inner {
                 harness: match wiring.workers.clone() {
@@ -188,7 +184,6 @@ where
                 .with_memory_if(wiring.memory)
                 .with_projects(wiring.projects),
                 worker: wiring.workers.map(|on| on.environment),
-                every_thread,
                 models: RwLock::new(catalog),
                 providers: wiring.providers,
                 changing_models: tokio::sync::Mutex::new(()),
@@ -196,7 +191,7 @@ where
                 modes: choosable,
                 person,
                 limits: wiring.tasks,
-                ledger: Mutex::new(Ledger::default()),
+                ledgers: Mutex::new(Ledgers::new()),
                 running: Mutex::new(Tasks::new()),
                 home,
                 spaces: wiring.spaces,
@@ -296,11 +291,12 @@ where
 
     /// Starts a thread for `caller` in `space`. In a project with a folder, the thread works
     /// in a worktree of it where `worktree` says (the server's choice when it does not), else
-    /// in the folder itself; in the server's own space, a task's thread (`background`), or
-    /// every thread when the server puts them there, works on a worker instead, which clones
-    /// the repository the server's workers are set up with. With no folder (a person's Chats,
-    /// or a project without one), the thread gets a scratch folder of its own. With a model or
-    /// an approval mode in `choice`, its turns go to that model, or ask that much.
+    /// in the folder itself; a task's thread (`background`) always works on a copy, never in
+    /// the folder. In the server's own space, every thread works on a worker instead when the
+    /// server puts them there, which clones the repository the server's workers are set up
+    /// with. With no folder (a person's Chats, or a project without one), the thread gets a
+    /// scratch folder of its own. With a model or an approval mode in `choice`, its turns go
+    /// to that model, or ask that much.
     pub(crate) async fn new_thread(
         &self,
         caller: &Caller,
@@ -316,7 +312,6 @@ where
             self.allowed_mode(mode)?;
         }
         let home = space == self.inner.home.space;
-        let on_worker = home && (self.inner.every_thread || background);
         let folder = self.folder_here(space).await?;
         let place = match (folder, worktree, &self.inner.worker) {
             (None, Some(true), _) => {
@@ -327,18 +322,25 @@ where
                 ));
             }
             (None, _, _) => Place::Scratch,
+            (Some(_), Some(false), _) if background => return Err(crate::tasks::in_place()),
             (Some(folder), Some(true), _) => Place::Worktree(folder),
-            (Some(_), None, Some(environment)) if on_worker => Place::Worker(environment.clone()),
-            (Some(folder), None, _) if self.inner.worktree => Place::Worktree(folder),
+            (Some(_), None, Some(environment)) if home => Place::Worker(environment.clone()),
+            (Some(folder), None, _) if background || self.inner.worktree => Place::Worktree(folder),
             (Some(folder), _, _) => Place::Folder(folder),
         };
+        let copy = background && matches!(place, Place::Worktree(_));
         let scope = self.scope_in(space);
         let mut thread = self
             .inner
             .harness
             .start_thread_in(scope, caller, place)
             .await
-            .map_err(|error| api(&error))?;
+            .map_err(|error| match error {
+                HarnessError::Workspace(ComputerError::Refused(_)) if copy => {
+                    crate::tasks::no_copy()
+                }
+                error => api(&error),
+            })?;
         crate::modes::record(&self.inner.harness, &mut thread, caller, choice)
             .await
             .map_err(|error| api(&error))?;

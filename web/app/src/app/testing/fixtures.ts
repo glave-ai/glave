@@ -72,6 +72,7 @@ export function event(
 export function task(threadId: string, title: string, overrides: Partial<TaskInfo> = {}): TaskInfo {
   return {
     thread: threadId,
+    space: 'space-1',
     kind: 'agent',
     title,
     model: 'hope',

@@ -5,7 +5,6 @@
 //! and only the person on this computer gives a folder or sees the folders on it.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 
 use glave_event::{
@@ -21,30 +20,6 @@ use glave_session::{Answering, Caller};
 use serde_json::json;
 
 use crate::support::*;
-
-/// Runs `script` in `dir` with git as no one in particular, and checks it worked.
-fn sh(dir: &Path, script: &str) {
-    let ran = Command::new("bash")
-        .args(["-c", script])
-        .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .status()
-        .unwrap();
-    assert!(ran.success(), "{script}");
-}
-
-/// A repository at `dir/name` with one commit holding `AGENTS.md`.
-fn repository(dir: &Path, name: &str) -> PathBuf {
-    let repo = dir.join(name);
-    std::fs::create_dir_all(&repo).unwrap();
-    sh(
-        &repo,
-        "git init -q --initial-branch=main && echo 'Use tabs.' > AGENTS.md && git add . && \
-         git -c user.name=t -c user.email=t@example.com commit -q -m one",
-    );
-    repo
-}
 
 fn canonical(path: &Path) -> String {
     std::fs::canonicalize(path)
@@ -83,18 +58,6 @@ async fn start_in(server: &Tested, space: SpaceId, worktree: Option<bool>) -> Th
         Reply::Thread { thread } => thread.id,
         other => panic!("a thread, not {other:?}"),
     }
-}
-
-/// Where `thread` was bound to work.
-async fn opened(server: &Tested, thread: ThreadId) -> (Opened, String) {
-    events(server, thread)
-        .await
-        .into_iter()
-        .find_map(|raw| match decode(raw).unwrap().body {
-            Body::WorkspaceBound(bound) => Some((bound.opened, bound.root)),
-            _ => None,
-        })
-        .unwrap()
 }
 
 #[test]

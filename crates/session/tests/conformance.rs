@@ -589,10 +589,30 @@ fn a_thread_chooses_its_approval_mode_and_its_summary_shows_it() {
 }
 
 #[test]
-fn a_background_turn_answers_at_once_and_its_task_is_listed_when_done() {
+fn a_background_turn_in_another_space_answers_at_once_and_its_task_is_listed_when_done() {
     block_on!(async {
         over_each_transport!("task", vec![answer(Some("Done."), None)], |client, dir| {
-            let thread = thread_of(&mut client).await;
+            // A project with no folder, whose threads work in scratch folders of their own.
+            let made = client
+                .call(Request::SpaceCreate {
+                    name: "Notes".into(),
+                    members: Vec::new(),
+                    folder: None,
+                })
+                .await
+                .unwrap();
+            let reply = client
+                .call(Request::ThreadStart {
+                    space: serde_json::from_value(made["space"]["id"].clone()).unwrap(),
+                    background: true,
+                    worktree: None,
+                    computer: None,
+                    model: None,
+                    approval: None,
+                })
+                .await
+                .unwrap();
+            let thread: ThreadId = serde_json::from_value(reply["thread"]["id"].clone()).unwrap();
             let started = client
                 .call(Request::TurnStart {
                     thread,

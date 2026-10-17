@@ -1,14 +1,70 @@
 //! The requests most tests make of a test server: starting threads and turns, reading a
-//! thread's events, and starting and waiting for tasks.
+//! thread's events and where it works, and starting and waiting for tasks.
 
-use glave_event::{RawEvent, ThreadId};
-use glave_ports::EventLog;
+use std::path::Path;
+
+use glave_event::{Body, Opened, RawEvent, ThreadId, decode};
+use glave_ports::{EventLog, SpaceId};
 use glave_session::protocol::{
-    ApiError, IdempotencyKey, Meta, Reply, Request, TaskInfo, TaskStatus,
+    ApiError, IdempotencyKey, Meta, NewFolder, Reply, Request, TaskInfo, TaskStatus,
 };
 use glave_session::{Caller, TurnStream};
 
 use super::setup::Tested;
+
+/// A project called `name` whose folder is `path`, on this computer.
+pub async fn project<L: EventLog + 'static>(
+    server: &Tested<L>,
+    name: &str,
+    path: &Path,
+) -> SpaceId {
+    let made = Request::SpaceCreate {
+        name: name.into(),
+        members: Vec::new(),
+        folder: Some(NewFolder::Path {
+            path: path.to_string_lossy().into_owned(),
+        }),
+    };
+    match server.request(made).await.unwrap() {
+        Reply::Space { space, .. } => space.id,
+        other => panic!("a space, not {other:?}"),
+    }
+}
+
+/// Starts a thread to run tasks in, in `space` (by default the server's own): on a copy of
+/// its own.
+pub async fn start_for_tasks<L: EventLog + 'static>(
+    server: &Tested<L>,
+    space: Option<SpaceId>,
+) -> Result<ThreadId, ApiError> {
+    let started = Request::ThreadStart {
+        space,
+        background: true,
+        worktree: None,
+        computer: None,
+        model: None,
+        approval: None,
+    };
+    match server.request(started).await? {
+        Reply::Thread { thread } => Ok(thread.id),
+        other => panic!("a thread, not {other:?}"),
+    }
+}
+
+/// Where `thread` was bound to work, and its root there.
+pub async fn opened<L: EventLog + 'static>(
+    server: &Tested<L>,
+    thread: ThreadId,
+) -> (Opened, String) {
+    events(server, thread)
+        .await
+        .into_iter()
+        .find_map(|raw| match decode(raw).unwrap().body {
+            Body::WorkspaceBound(bound) => Some((bound.opened, bound.root)),
+            _ => None,
+        })
+        .unwrap()
+}
 
 /// Starts a thread, in a worktree of its own when `worktree`.
 pub async fn start<L: EventLog + 'static>(server: &Tested<L>, worktree: bool) -> ThreadId {

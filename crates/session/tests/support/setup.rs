@@ -15,7 +15,7 @@ use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
     Completion, ComputerId, Credentials, EventLog, LogError, MemoryBlobs, MemoryLog, MemorySpaces,
-    OrgId, Scope, Space, SpaceId, SpaceKind, WorkspaceInfo,
+    OrgId, Scope, Space, SpaceId, SpaceKind, Spaces, WorkspaceInfo,
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::{
@@ -87,6 +87,8 @@ pub struct Setup {
     pub trust: Option<Arc<dyn ProjectTrust>>,
     /// Where commands' git, and a new project's clone, ask for credentials.
     pub credentials: Option<Arc<dyn Credentials>>,
+    /// The spaces another server keeps, to share its store; spaces of its own when none.
+    pub spaces: Option<Arc<dyn Spaces>>,
 }
 
 impl Setup {
@@ -110,6 +112,7 @@ impl Setup {
             project_host: None,
             trust: None,
             credentials: None,
+            spaces: None,
         }
     }
 
@@ -124,6 +127,21 @@ impl Setup {
     /// The server on a log of its own; see `build_on`.
     pub async fn build(self, dir: &Path) -> (Tested, Seen) {
         self.build_on(dir, MemoryLog::new()).await
+    }
+
+    /// The server on `log`, its own space a project whose folder is a repository made in the
+    /// fresh folder `name`, with worktrees kept beside it, so its tasks work on copies of it;
+    /// and that repository.
+    pub async fn build_in_repository<L: EventLog + 'static>(
+        mut self,
+        name: &str,
+        log: L,
+    ) -> (Tested<L>, Seen, PathBuf) {
+        let dir = folder(name);
+        let repo = super::git::repository(&dir, "app");
+        self.worktrees = Some(dir.join("worktrees"));
+        let (server, seen) = self.build_on(&repo, log).await;
+        (server, seen, repo)
     }
 
     /// The server on `log`, its own space a project whose folder is `dir`, and every request
@@ -162,7 +180,9 @@ impl Setup {
             workers: None,
             tasks: self.limits,
             memory: self.memory,
-            spaces: Arc::new(MemorySpaces::new()),
+            spaces: self
+                .spaces
+                .unwrap_or_else(|| Arc::new(MemorySpaces::new()) as Arc<dyn Spaces>),
             models: self.models,
             modes: self.modes,
             providers: self.providers,
@@ -183,7 +203,16 @@ impl Setup {
             created_at: at,
             updated_at: at,
         };
-        server.spaces().create(scope().org, &home).await.unwrap();
+        // A second server on another's spaces finds it there already.
+        if server
+            .spaces()
+            .get(scope().org, home.id)
+            .await
+            .unwrap()
+            .is_none()
+        {
+            server.spaces().create(scope().org, &home).await.unwrap();
+        }
         (server, seen)
     }
 }

@@ -1,10 +1,12 @@
-//! The task host: the long-running glave for one folder that runs its tasks and schedules, so
-//! they go on after the command that started them exits. It is `glave serve --socket`, serving
-//! the session API on a Unix socket in GLAVE_HOME that only the person can open. Commands that
-//! need it (`--background`, `glave tasks`, `glave schedule`) start it when it is not running,
-//! and it exits on its own once nothing runs, no schedule waits and no one is connected.
+//! The task host: the long-running glave for one folder that runs the tasks started from it,
+//! so they go on after the command that started them exits, and, one host at a time, every
+//! project's schedules. It is `glave serve --socket`, serving the session API on a Unix socket
+//! in GLAVE_HOME that only the person can open. Commands that need it (`--background`,
+//! `glave tasks`, `glave schedule`) start it when it is not running, and it exits on its own
+//! once nothing runs, no schedule waits for it and no one is connected.
 
 mod host;
+mod locks;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -22,6 +24,11 @@ use crate::args::Args;
 use crate::home;
 
 pub use host::host;
+
+/// Whether a task host fires every project's schedules now.
+pub fn schedules_fired() -> bool {
+    locks::folder().is_ok_and(|run| locks::schedules_fired(&run))
+}
 
 /// How long a new host has to start listening.
 const START_WAIT: Duration = Duration::from_secs(20);

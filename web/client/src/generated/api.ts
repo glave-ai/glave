@@ -345,7 +345,6 @@ export type ScheduleInfo = {
   readonly prompt: string;
   readonly schedule: ScheduleId;
   readonly when: When;
-  readonly worktree?: boolean | null;
 };
 
 /** A key or token: sent once, never shown again. */
@@ -420,6 +419,8 @@ export type TaskInfo = {
   readonly outcome?: Outcome | null;
   /** The schedule that started it, if one did. */
   readonly schedule?: ScheduleId | null;
+  /** The space its thread is in. */
+  readonly space: SpaceId;
   readonly started_at: At;
   readonly status: TaskStatus;
   readonly thread: ThreadId;
@@ -829,8 +830,9 @@ export type ScheduleCreateParams = {
   readonly budget: number;
   readonly goal?: boolean;
   readonly prompt: string;
+  /** The space its runs are in, by default as `thread/start` picks one. */
+  readonly space?: SpaceId | null;
   readonly when: When;
-  readonly worktree?: boolean | null;
 };
 
 export type ScheduleCreateResult = {
@@ -983,8 +985,9 @@ export type ThreadStartParams = {
    */
   readonly approval?: ApprovalMode | null;
   /**
-   * For a thread that runs as a task: it works on a worker when the server has them,
-   * even when other threads work here.
+   * For a thread that runs as a task: in a project with a folder it works on a copy
+   * of its own, a worktree (or a worker, where every thread works on one), never in
+   * the folder itself, so `worktree: false` is refused.
    */
   readonly background?: boolean;
   /**

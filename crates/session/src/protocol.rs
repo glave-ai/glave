@@ -80,8 +80,9 @@ methods! {
         /// the server's default (`worktree` in `config.toml`) when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worktree: Option<bool>,
-        /// For a thread that runs as a task: it works on a worker when the server has them,
-        /// even when other threads work here.
+        /// For a thread that runs as a task: in a project with a folder it works on a copy
+        /// of its own, a worktree (or a worker, where every thread works on one), never in
+        /// the folder itself, so `worktree: false` is refused.
         #[serde(default, skip_serializing_if = "is_false")]
         background: bool,
         /// A running computer to work on, such as the person's own laptop dialled in to this
@@ -190,7 +191,8 @@ methods! {
     "goal/stop" => GoalStop { thread: ThreadId } -> [Done],
     /// The thread's latest goal and how far it has come.
     "goal/get" => GoalGet { thread: ThreadId } -> [Goal],
-    /// Tasks running and recently finished, running first, then newest first.
+    /// Tasks running and recently finished in every space the caller works in, running first,
+    /// then newest first.
     "tasks/list" => TasksList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
@@ -201,17 +203,20 @@ methods! {
     "command/list" => CommandList { thread: ThreadId } -> [Commands],
     /// Stops one of a thread's commands in the background, and everything it started.
     "command/stop" => CommandStop { thread: ThreadId, command: CommandId } -> [Done],
-    /// Runs a prompt, or works toward a goal, as a task at set times.
+    /// Runs a prompt, or works toward a goal, as a task at set times, each run in a new thread
+    /// working on a copy of its own.
     "schedule/create" => ScheduleCreate {
+        /// The space its runs are in, by default as `thread/start` picks one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<SpaceId>,
         when: When,
         prompt: String,
         #[serde(default, skip_serializing_if = "is_false")]
         goal: bool,
         /// Tokens each run may use. Required: no schedule runs unbounded.
         budget: u64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        worktree: Option<bool>,
     } -> [Schedule],
+    /// The schedules of every space the caller works in.
     "schedule/list" => ScheduleList {} -> [Schedules],
     "schedule/delete" => ScheduleDelete { schedule: ScheduleId } -> [Done],
     /// The spaces the caller works in: owns, or is a member of.
@@ -339,16 +344,11 @@ impl Request {
         }
     }
 
-    /// Whether the request acts in the server's own space as a whole: its tasks, schedules
-    /// and memory.
+    /// Whether the request acts in the server's own space as a whole: its memory.
     pub(crate) fn in_home(&self) -> bool {
         matches!(
             self,
-            Self::TasksList { .. }
-                | Self::ScheduleCreate { .. }
-                | Self::ScheduleList {}
-                | Self::ScheduleDelete { .. }
-                | Self::MemoryList { .. }
+            Self::MemoryList { .. }
                 | Self::MemorySave { .. }
                 | Self::MemoryEdit { .. }
                 | Self::MemoryMove { .. }
