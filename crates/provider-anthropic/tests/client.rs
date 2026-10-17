@@ -4,6 +4,7 @@
 #[cfg(test)]
 mod over_http {
     use glave_event::{Arguments, Part, StopReason};
+    use glave_ports::testing::fake_secret;
     use glave_ports::{
         Failure, Message, ModelProvider, ModelRequest, ProviderError, ToolChoice, block_on,
     };
@@ -80,7 +81,8 @@ mod over_http {
     #[test]
     fn a_streamed_answer_arrives_live_and_whole() {
         let server = FakeServer::start(vec![Reply::text("hi there")]).unwrap();
-        let (result, live) = ask(&provider(server.url(), Some("sk-ant-test")));
+        let key = fake_secret("sk-ant-");
+        let (result, live) = ask(&provider(server.url(), Some(&key)));
         let completion = result.unwrap();
         assert_eq!(live, "hi there");
         assert_eq!(
@@ -96,7 +98,7 @@ mod over_http {
         let received = server.received();
         assert_eq!(received.len(), 1);
         assert_eq!(received[0].path, "/v1/messages");
-        assert_eq!(received[0].api_key.as_deref(), Some("sk-ant-test"));
+        assert_eq!(received[0].api_key.as_deref(), Some(key.as_str()));
         assert_eq!(received[0].version.as_deref(), Some("2023-06-01"));
         assert_eq!(received[0].body["model"], "fake-model");
         assert_eq!(received[0].body["system"], "Be brief.");
@@ -143,7 +145,7 @@ mod over_http {
             ),
         ])
         .unwrap();
-        let provider = provider(server.url(), Some("sk-ant-wrong"));
+        let provider = provider(server.url(), Some(&fake_secret("sk-ant-")));
         let refused = ask(&provider).0.unwrap_err();
         assert_eq!(
             refused,
@@ -227,14 +229,15 @@ mod over_http {
             Reply::Status(401, r#"{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}"#.into()),
         ])
         .unwrap();
-        let provider = provider(server.url(), Some("sk-ant-listing"));
+        let key = fake_secret("sk-ant-");
+        let provider = provider(server.url(), Some(&key));
         let models = block_on!(provider.get("models?limit=1000")).unwrap();
         assert_eq!(models["data"][0]["id"], "claude-test");
         let refused = block_on!(provider.get("models")).unwrap_err();
         assert_eq!(refused.failure(), Failure::Refused);
         let received = server.received();
         assert_eq!(received[0].path, "/v1/models?limit=1000");
-        assert_eq!(received[0].api_key.as_deref(), Some("sk-ant-listing"));
+        assert_eq!(received[0].api_key.as_deref(), Some(key.as_str()));
         assert_eq!(received[0].version.as_deref(), Some("2023-06-01"));
     }
 }

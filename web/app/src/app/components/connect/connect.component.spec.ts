@@ -76,11 +76,11 @@ describe('ConnectComponent', () => {
     const root = fixture.nativeElement as HTMLElement;
     await fixture.whenStable();
     type(root, 'connect-address', ' http://localhost:11434/v1 ');
-    type(root, 'connect-key', ' sk-local ');
+    type(root, 'connect-key', ' local-key ');
     await fixture.whenStable();
     await submit(fixture);
     expect(fake.paramsOf('provider/connect')).toEqual([
-      { kind: 'compatible', key: 'sk-local', url: 'http://localhost:11434/v1' },
+      { kind: 'compatible', key: 'local-key', url: 'http://localhost:11434/v1' },
     ]);
     expect(TestBed.inject(Router).navigateByUrl).toHaveBeenCalledWith('/');
   });
@@ -113,7 +113,7 @@ describe('ConnectComponent', () => {
     const root = fixture.nativeElement as HTMLElement;
     await submit(fixture);
     expect(find(root, 'connect-problem').textContent).toBe('Paste your key first.');
-    type(root, 'connect-key', 'sk-wrong');
+    type(root, 'connect-key', 'wrong-key');
     await submit(fixture);
     expect(find(root, 'connect-problem').textContent).toContain('did not accept that key');
     await expectAccessible(root);

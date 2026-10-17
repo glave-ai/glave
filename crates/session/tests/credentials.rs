@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::{CredentialId, Forge, Secret};
 use glave_ports::BoxFuture;
+use glave_ports::testing::FAKE_SECRET;
 use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, Request, code, hint};
 use glave_session::signin::{LocalToken, SignIn};
 use glave_session::{Answering, GitHosts, NewCredential};
@@ -19,9 +20,9 @@ use crate::support::web::{Web, serve_with};
 use crate::support::*;
 
 /// The token the fake host refuses.
-const BAD: &str = "ghp_refused0123456789abcdef";
+const BAD: &str = "a-token-it-refuses";
 /// A token it takes.
-const GOOD: &str = "ghp_test0123456789abcdefc3d4";
+const GOOD: &str = FAKE_SECRET;
 
 /// A host that keeps accounts in memory; its sign-in in the browser is approved on the
 /// second poll.
@@ -106,7 +107,7 @@ impl GitHosts for Hosts {
             Ok((*polls >= 2).then(|| {
                 self.keep(
                     "https://github.com".into(),
-                    "gho_device0123456789abcdef",
+                    FAKE_SECRET,
                     Some("octocat".into()),
                 )
             }))
@@ -155,7 +156,7 @@ async fn connect_and_remove(client: &mut impl Client) {
         .await
         .unwrap();
     assert!(!connected.to_string().contains(GOOD), "{connected}");
-    assert_eq!(connected["credential"]["hint"], "c3d4");
+    assert_eq!(connected["credential"]["hint"], hint(GOOD).unwrap());
     assert_eq!(connected["credential"]["forge"], "github");
 
     let device = client

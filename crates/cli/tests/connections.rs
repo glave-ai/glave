@@ -14,7 +14,7 @@ mod served;
 
 #[cfg(test)]
 mod terminal {
-    use glave_ports::testing::{FakeGitHost, FakeHttp};
+    use glave_ports::testing::{FAKE_SECRET, FakeGitHost, FakeHttp, fake_secret};
     use glave_provider_openai::fake::FakeServer;
     use serde_json::json;
 
@@ -37,9 +37,10 @@ mod terminal {
         let (ok, said) = run(&["connect", &host.url, "--token", TOKEN], "");
         assert!(!ok && said.contains("looks like a token"), "{said}");
         assert!(!said.contains(TOKEN), "never repeated: {said}");
-        let (ok, said) = run(&["connect", "ghp_e2e0given0as0argument"], "");
+        let given = fake_secret("ghp_");
+        let (ok, said) = run(&["connect", &given], "");
         assert!(!ok && said.contains("revoke it"), "{said}");
-        assert!(!said.contains("ghp_e2e0given0as0argument"), "{said}");
+        assert!(!said.contains(&given), "never repeated: {said}");
         let (ok, said) = run(&["connect", "notanaddress"], "");
         assert!(!ok && said.contains("not a git host's address"), "{said}");
         let (ok, said) = run(&["connect", &host.url], "");
@@ -106,7 +107,7 @@ mod terminal {
             &place,
             &model,
             &["connect", &gitlab.url],
-            "glpat-e2e0token\n",
+            &format!("{FAKE_SECRET}\n"),
         );
         let said = text(&output);
         assert!(output.status.success(), "{said}");
@@ -118,13 +119,15 @@ mod terminal {
         let asked = gitlab.received();
         assert_eq!(asked[0].path, "/api/v4/user");
         assert_eq!(asked[1].path, "/api/v4/personal_access_tokens/self");
-        let token = Some("glpat-e2e0token".to_owned());
+        let token = Some(FAKE_SECRET.to_owned());
         assert_eq!(asked[1].headers.get("private-token"), token.as_ref());
     }
 
     #[test]
     fn github_is_signed_in_to_in_the_browser_from_the_terminal() {
         let place = place("connect-github");
+        // A GitHub App's token, whose abilities come from the app's installations.
+        let signed_in = fake_secret("ghu_");
         let installed = json!({"total_count": 1, "installations": [{"id": 1,
             "permissions": {"contents": "read", "issues": "write"}}]});
         let github = FakeHttp::start(vec![
@@ -138,8 +141,7 @@ mod terminal {
             (200, json!({"error": "authorization_pending"}).to_string()),
             (
                 200,
-                json!({"access_token": "ghu_e2e0cli0signed0in", "token_type": "bearer"})
-                    .to_string(),
+                json!({"access_token": signed_in, "token_type": "bearer"}).to_string(),
             ),
             (200, json!({"login": "octocat"}).to_string()),
             (200, installed.to_string()),
@@ -168,7 +170,7 @@ mod terminal {
         );
         let install = format!("{}/github-apps/glave-e2e/installations/new", github.url);
         assert!(said.contains(&install), "{said}");
-        assert!(!said.contains("ghu_e2e0cli0signed0in") && !said.contains("dc-cli"));
+        assert!(!said.contains(&signed_in) && !said.contains("dc-cli"));
         assert_eq!(github.received().len(), 6);
     }
 }

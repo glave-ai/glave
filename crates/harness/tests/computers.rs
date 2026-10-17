@@ -164,18 +164,17 @@ mod credentials {
     use super::support::*;
     use glave_event::{Body, StopReason};
     use glave_harness::{AllowAll, Cancel};
-    use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedCredentials};
+    use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedCredentials, fake_secret};
     use glave_ports::{CredentialHost, Forge, GitCredential, MemoryLog};
     use serde_json::json;
-
-    const TOKEN: &str = "ghp_harness0token0never0shown";
 
     /// With hosts connected, the model is told what is signed in, never a token, and the
     /// commands it runs sign in through the harness's credentials.
     #[test]
     fn the_model_is_told_what_is_signed_in_and_its_commands_sign_in() {
         let dir = folder("signed-in");
-        let fake = FakeGitHost::start("x-access-token", TOKEN).unwrap();
+        let token = fake_secret("ghp_");
+        let fake = FakeGitHost::start("x-access-token", &token).unwrap();
         let hosts = vec![
             CredentialHost {
                 url: "https://github.com".into(),
@@ -186,7 +185,7 @@ mod credentials {
                 forge: Forge::Other,
             },
         ];
-        let credential = GitCredential::new("x-access-token", TOKEN).unwrap();
+        let credential = GitCredential::new("x-access-token", &token).unwrap();
         let credentials = Arc::new(FixedCredentials::new(hosts, credential));
         let fetch = format!(
             "GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 \
@@ -223,7 +222,7 @@ mod credentials {
                 .unwrap();
             let system = seen.lock().unwrap()[0].system.clone();
             assert!(
-                system.contains("`gh` is signed in for github.com") && !system.contains(TOKEN),
+                system.contains("`gh` is signed in for github.com") && !system.contains(&token),
                 "{system}"
             );
             let result = events(harness.log(), thread.id)
@@ -235,7 +234,7 @@ mod credentials {
                 })
                 .unwrap();
             assert!(result.contains(FAKE_COMMIT), "{result}");
-            assert!(!result.contains(TOKEN), "{result}");
+            assert!(!result.contains(&token), "{result}");
         });
     }
 }

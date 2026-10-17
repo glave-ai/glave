@@ -135,10 +135,12 @@ impl ModelProvider for Model {
 
 #[cfg(test)]
 mod tests {
+    use glave_ports::testing::FAKE_SECRET;
+
     use super::*;
 
     fn model(url: &str) -> Model {
-        let provider = Config::for_url(url, Some("sk-test".into())).unwrap();
+        let provider = Config::for_url(url, Some(FAKE_SECRET.into())).unwrap();
         let endpoint = Endpoint {
             local: false,
             provider,

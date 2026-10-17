@@ -3,7 +3,7 @@
 
 use glave_config::policy::GithubFile;
 use glave_event::{At, Forge, Principal, Renewal, Secret};
-use glave_ports::testing::FakeHttp;
+use glave_ports::testing::{FakeHttp, fake_secret};
 use serde_json::json;
 
 use super::*;
@@ -18,12 +18,12 @@ fn signed_in(url: &str) -> CredentialConnected {
         forge: Forge::Github,
         url: url.to_owned(),
         username: "octocat".into(),
-        token: Secret::new("ghu_first"),
+        token: Secret::new(fake_secret("ghu_")),
         login: Some("octocat".into()),
         scopes: None,
         renewal: Some(Renewal {
             expires: At::from(soon),
-            refresh: Secret::new("ghr_first"),
+            refresh: Secret::new(fake_secret("ghr_")),
         }),
         by: Principal::glave(),
     }
@@ -36,6 +36,14 @@ fn github(url: &str) -> Github {
         url: Some(url.to_owned()),
     };
     Github::new(&file).unwrap()
+}
+
+/// What GitHub answers a renewal with: a new token, which it returns, and a new refresh token.
+fn renewal_answer() -> (String, String) {
+    let token = fake_secret("ghu_");
+    let answer = json!({"access_token": token, "expires_in": 28800,
+                        "refresh_token": fake_secret("ghr_")});
+    (token, answer.to_string())
 }
 
 /// What renewing `current` through `fake` needs.
@@ -59,11 +67,14 @@ fn block_on<T>(future: impl Future<Output = T>) -> T {
 
 #[test]
 fn asks_beside_each_other_share_one_renewal_and_a_renewed_token_is_not_renewed_again() {
-    let renewed = json!({"access_token": "ghu_second", "expires_in": 28800,
-                         "refresh_token": "ghr_second"});
-    let fake = FakeHttp::start(vec![(200, renewed.to_string())]).unwrap();
+    let (second, renewed) = renewal_answer();
+    let fake = FakeHttp::start(vec![(200, renewed)]).unwrap();
     let ledger = block_on(Ledger::in_memory()).unwrap();
     let first = signed_in(&fake.url);
+    let spent = format!(
+        "refresh_token={}",
+        first.renewal.as_ref().unwrap().refresh.expose()
+    );
     let renewals = Renewals::default();
     block_on(async {
         ledger.keep_credential(&first).await.unwrap();
@@ -86,12 +97,12 @@ fn asks_beside_each_other_share_one_renewal_and_a_renewed_token_is_not_renewed_a
         assert!(late.await.is_none());
         let accounts = ledger.accounts().await.unwrap();
         let kept = accounts.credential(id).unwrap();
-        assert_eq!(kept.token.expose(), "ghu_second");
+        assert_eq!(kept.token.expose(), second);
         assert_eq!(accounts.credentials.len(), 1);
     });
     let asked = fake.received();
     assert_eq!(asked.len(), 1, "the refresh token is spent once");
-    assert!(asked[0].body.contains("refresh_token=ghr_first"));
+    assert!(asked[0].body.contains(&spent));
 }
 
 #[test]
@@ -109,16 +120,16 @@ fn a_renewal_github_refused_is_tried_again_only_after_a_while() {
             assert!(waited.await.is_none());
         }
         let accounts = ledger.accounts().await.unwrap();
-        assert_eq!(accounts.credential(id).unwrap().token.expose(), "ghu_first");
+        let kept = accounts.credential(id).unwrap();
+        assert_eq!(kept.token.expose(), first.token.expose());
     });
     assert_eq!(fake.received().len(), 1);
 }
 
 #[test]
 fn a_host_removed_before_its_renewal_is_not_renewed() {
-    let renewed = json!({"access_token": "ghu_second", "expires_in": 28800,
-                         "refresh_token": "ghr_second"});
-    let fake = FakeHttp::start(vec![(200, renewed.to_string())]).unwrap();
+    let (_, renewed) = renewal_answer();
+    let fake = FakeHttp::start(vec![(200, renewed)]).unwrap();
     let ledger = block_on(Ledger::in_memory()).unwrap();
     let first = signed_in(&fake.url);
     let renewals = Renewals::default();

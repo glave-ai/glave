@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-use glave_ports::{block_on, conformance};
+use glave_ports::testing::fake_secret;
+use glave_ports::{Bytes, block_on, conformance};
 
 use super::command::Utf8;
 use super::*;
@@ -200,8 +201,10 @@ async fn asks_for_a_password(listener: tokio::net::TcpListener) -> Vec<String> {
 #[test]
 fn a_credential_reaches_git_through_its_helper_and_never_a_disk() {
     let (work, copies) = scratch("credential");
-    let secret = "s3cret-pass";
-    let credential = GitCredential::new("glave-user", secret).unwrap();
+    let secret = fake_secret("");
+    let credential = GitCredential::new("glave-user", &secret).unwrap();
+    let basic = serde_json::to_value(Bytes::new(format!("glave-user:{secret}"))).unwrap();
+    let basic = format!("Basic {}", basic.as_str().unwrap());
     let origin = work.join("origin.git");
     let script = format!(
         "git init -q --bare {o} && git init -q src && cd src && echo hi > a.txt && git add a.txt \
@@ -228,11 +231,7 @@ fn a_credential_reaches_git_through_its_helper_and_never_a_disk() {
             .await;
         assert!(refused.is_err(), "the server never lets it in");
         let seen = server.await.unwrap();
-        assert!(
-            seen.iter()
-                .any(|header| header == "Basic Z2xhdmUtdXNlcjpzM2NyZXQtcGFzcw=="),
-            "{seen:?}"
-        );
+        assert!(seen.contains(&basic), "{seen:?}");
 
         // A clone made with it, saved and pushed with it, holds it nowhere.
         let sources = Sources::Git {
@@ -260,14 +259,14 @@ fn a_credential_reaches_git_through_its_helper_and_never_a_disk() {
             .await
             .unwrap();
         let seen = output.0.lock().unwrap().clone();
-        assert!(!seen.contains(secret), "commands never see it: {seen}");
+        assert!(!seen.contains(&secret), "commands never see it: {seen}");
         for (path, bytes) in every_file(&work).into_iter().chain(every_file(&copies)) {
             assert!(
-                !String::from_utf8_lossy(&bytes).contains(secret),
+                !String::from_utf8_lossy(&bytes).contains(&secret),
                 "{} holds the secret",
                 path.display()
             );
         }
-        assert!(!format!("{opened:?}").contains(secret));
+        assert!(!format!("{opened:?}").contains(&secret));
     });
 }

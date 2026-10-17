@@ -79,6 +79,7 @@ specs/              the model (`model.md`: organization to thread, server and co
 ```sh
 cargo xtask ci          # the full gate; must pass before anything is "done"
 cargo xtask file-sizes  # line limits only
+cargo xtask secrets     # no secret-shaped literal in a tracked file
 cargo xtask schema      # regenerate specs/session.schema.json and the web client's types after changing the session API
 cargo xtask release-workflow   # regenerate .github/workflows/release.yml after changing dist-workspace.toml or .github/build-setup.yml (needs dist, the version dist-workspace.toml names)
 cargo xtask bench       # benchmarks, alone on the machine (see Performance)
@@ -92,7 +93,7 @@ cargo build --release -p glave --features web   # the binary as it ships, the we
 
 ## Definition of done
 
-`cargo xtask ci` passes: format, clippy with `-D warnings`, all tests, `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
+`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), clippy with `-D warnings`, all tests, `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
 
 ## Quality
 
@@ -166,7 +167,8 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Property tests (`proptest`) for parsers and state machines. Snapshot tests (`insta`) for stable formats such as receipts and events.
 - Tests are deterministic: no sleeps, no real clocks (inject a clock), no network in unit tests.
 - Run tests with `cargo nextest`. Measure coverage; don't chase a percentage.
-- Fakes live in one place: `glave-ports` ships the test doubles for its ports (clock, entropy, cancellation, `block_on`) behind the `conformance` feature. Never write a second copy in a crate.
+- Fakes live in one place: `glave-ports` ships the test doubles for its ports (clock, entropy, cancellation, `block_on`, fake secrets) behind the `conformance` feature. Never write a second copy in a crate.
+- No secret-shaped string in the source: a test that needs a provider's shape makes one at run time (`fake_secret("ghp_")`), any other uses `FAKE_SECRET`, and no assertion message or log line prints a secret.
 - A scenario is tested once: in the conformance suite when there is one, otherwise beside the code it tests.
 
 ## Performance

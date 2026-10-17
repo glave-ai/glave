@@ -7,6 +7,7 @@ use glave_event::{
     MemoryScope, Outcome, Principal, ProviderConnected, ProviderId, ProviderKind, RawEvent, Secret,
     Seq, ThreadId, TurnEnded, encode,
 };
+use glave_ports::testing::FAKE_SECRET;
 use glave_ports::{OrgId, Scope, SpaceId};
 use uuid::{Builder, Uuid};
 
@@ -148,7 +149,7 @@ async fn account_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         provider: ProviderId::try_from(uuid_v7(7_101)).map_err(text)?,
         kind: ProviderKind::Openai,
         url: None,
-        key: Secret::new("sk-conformance"),
+        key: Secret::new(FAKE_SECRET),
         models: vec!["model".into()],
         by: Principal::glave(),
     };
@@ -157,27 +158,19 @@ async fn account_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         forge: Forge::Github,
         url: "https://github.com".into(),
         username: "octocat".into(),
-        token: Secret::new("ghp_conformance"),
+        token: Secret::new(FAKE_SECRET),
         login: None,
         scopes: None,
         renewal: None,
         by: Principal::glave(),
     };
     let accounts = [
-        (
-            encode(header(8_100)?, &model).map_err(text)?,
-            7_101,
-            "sk-conformance",
-        ),
-        (
-            encode(header(8_101)?, &host).map_err(text)?,
-            7_102,
-            "ghp_conformance",
-        ),
+        (encode(header(8_100)?, &model).map_err(text)?, 7_101),
+        (encode(header(8_101)?, &host).map_err(text)?, 7_102),
     ];
     let month = event(4, 1, "2026-10")?;
     let plain = keys.seal_event(&here, &month).await.map_err(text)?;
-    for (account, n, secret) in accounts {
+    for (account, n) in accounts {
         let sealed = keys.seal_event(&here, &account).await.map_err(text)?;
         let id: KeyId = sealed.key_id.parse().map_err(text)?;
         ensure(
@@ -187,8 +180,8 @@ async fn account_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         ensure(
             !sealed
                 .bytes
-                .windows(secret.len())
-                .any(|w| w == secret.as_bytes()),
+                .windows(FAKE_SECRET.len())
+                .any(|w| w == FAKE_SECRET.as_bytes()),
             "the key or token is sealed, not stored as written",
         )?;
         keys.destroy_account_key(&here, uuid_v7(n))

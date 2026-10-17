@@ -8,6 +8,10 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use glave_ports::auth::AuthError;
 use serde::Serialize;
 
+/// The lines a PEM private key's base64 sits between.
+const BEGIN: &str = "-----BEGIN PRIVATE KEY-----";
+const END: &str = "-----END PRIVATE KEY-----";
+
 /// A service account's private key, ready to sign. Never shown.
 pub(crate) struct SigningKey(RsaKeyPair);
 
@@ -22,9 +26,9 @@ impl SigningKey {
         let body: String = pem
             .lines()
             .map(str::trim)
-            .skip_while(|line| *line != "-----BEGIN PRIVATE KEY-----")
+            .skip_while(|line| *line != BEGIN)
             .skip(1)
-            .take_while(|line| *line != "-----END PRIVATE KEY-----")
+            .take_while(|line| *line != END)
             .collect();
         let der = STANDARD.decode(body).map_err(|_| unreadable())?;
         RsaKeyPair::from_pkcs8(&der)
@@ -84,7 +88,9 @@ mod tests {
 
     use super::*;
 
-    /// The RSA key of RFC 7515, Appendix A.2, as PKCS #8 PEM: a published test key.
+    /// The RSA key of RFC 7515, Appendix A.2, as PKCS #8 PEM: a published test key, kept as a
+    /// file because the RFC's signature, checked byte for byte below, is made with exactly it.
+    /// The one private key `cargo xtask secrets` allows in the source.
     const RFC_7515_KEY: &str = include_str!("jwt/rfc7515-a2.pem");
 
     #[test]
@@ -147,11 +153,11 @@ mod tests {
     #[test]
     fn a_key_that_is_not_one_is_refused_without_showing_it() {
         for pem in [
-            "",
-            "-----BEGIN PRIVATE KEY-----\nbm90IGEga2V5\n-----END PRIVATE KEY-----\n",
-            "-----BEGIN PRIVATE KEY-----\nsecret!!\n-----END PRIVATE KEY-----\n",
+            String::new(),
+            format!("{BEGIN}\nbm90IGEga2V5\n{END}\n"),
+            format!("{BEGIN}\nsecret!!\n{END}\n"),
         ] {
-            let Err(error) = SigningKey::from_pem(pem) else {
+            let Err(error) = SigningKey::from_pem(&pem) else {
                 panic!("{pem:?} is not a key");
             };
             assert!(!error.to_string().contains("secret"), "{error}");

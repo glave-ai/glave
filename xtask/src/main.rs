@@ -11,6 +11,7 @@ mod file_sizes;
 mod lock;
 mod release_workflow;
 mod schema;
+mod secrets;
 mod typescript;
 mod web;
 mod workspace;

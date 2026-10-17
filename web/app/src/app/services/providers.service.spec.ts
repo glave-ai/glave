@@ -27,8 +27,8 @@ describe('ProvidersService', () => {
     const providers = TestBed.inject(ProvidersService);
     const models = TestBed.inject(ModelsService);
     expect(await models.none()).toBe(true);
-    await providers.connect({ kind: 'openai', key: 'sk-test' });
-    expect(fake.paramsOf('provider/connect')).toEqual([{ kind: 'openai', key: 'sk-test' }]);
+    await providers.connect({ kind: 'openai', key: 'test-key' });
+    expect(fake.paramsOf('provider/connect')).toEqual([{ kind: 'openai', key: 'test-key' }]);
     expect(providers.accounts()).toEqual([ACCOUNT]);
     expect(await models.none()).toBe(false);
     expect(models.default()).toBe('gpt-6-luna');

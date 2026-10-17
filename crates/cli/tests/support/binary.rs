@@ -5,6 +5,7 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
 
+use glave_ports::testing::FAKE_SECRET;
 use glave_provider_openai::fake::FakeServer;
 use serde_json::Value;
 
@@ -56,7 +57,7 @@ pub fn start_with(
         .current_dir(&place.project)
         .env("GLAVE_BASE_URL", server.url())
         .env("GLAVE_HOME", &place.home)
-        .env("GLAVE_API_KEY", "sk-e2e-test")
+        .env("GLAVE_API_KEY", FAKE_SECRET)
         .env("NO_COLOR", "1")
         .env_remove("GLAVE_MODEL")
         .env_remove("GLAVE_PROVIDER")

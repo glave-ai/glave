@@ -379,7 +379,7 @@ fn a_hard_linked_file_can_be_edited_and_the_other_name_is_unchanged() {
 
 #[test]
 fn commands_never_see_secret_variables() {
-    let secrets = [
+    let hidden = [
         "OPENAI_API_KEY",
         "glave_api_key",
         "Github_Token",
@@ -390,7 +390,7 @@ fn commands_never_see_secret_variables() {
         "SOME_KEY_FILE",
     ];
     let mut environment = plain_environment();
-    for name in secrets {
+    for name in hidden {
         environment.push((name.into(), "hunter2".into()));
     }
     environment.push(("HARMLESS_SETTING".into(), "visible".into()));
@@ -411,7 +411,7 @@ fn commands_never_see_secret_variables() {
         !seen.contains("hunter2"),
         "a secret reached a command: {seen}"
     );
-    for name in secrets {
+    for name in hidden {
         assert!(!seen.contains(name), "{name} reached a command");
     }
 }

@@ -8,19 +8,19 @@ use super::{Verdict, ensure};
 use crate::computer::{
     Command, Computers, CredentialHost, Ending, Forge, GitCredential, WorkspaceId,
 };
-use crate::testing::{FAKE_COMMIT, FakeGitHost, FixedCredentials};
-
-/// The token every check signs in with; it must never show but where it is asked for.
-const TOKEN: &str = "ghp_conformance0token0never0shown";
+use crate::testing::{FAKE_COMMIT, FakeGitHost, FixedCredentials, fake_secret};
 
 /// git with nothing but the command's own settings, and never asking at a terminal.
 const PLAIN_GIT: &str =
     "export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0";
 
 pub(super) async fn credentials<C: Computers>(computers: &C, here: WorkspaceId) -> Verdict {
-    let host = FakeGitHost::start("x-access-token", TOKEN)
+    // The token every check signs in with; it must never show but where it is asked for.
+    let token = fake_secret("ghp_");
+    let host = FakeGitHost::start("x-access-token", &token)
         .map_err(|error| format!("start a fake git host: {error}"))?;
-    let credential = GitCredential::new("x-access-token", TOKEN).map_err(failed("a credential"))?;
+    let credential =
+        GitCredential::new("x-access-token", &token).map_err(failed("a credential"))?;
     let hosts = vec![
         CredentialHost {
             url: host.url.clone(),
@@ -62,13 +62,13 @@ pub(super) async fn credentials<C: Computers>(computers: &C, here: WorkspaceId) 
         chmod +x tools/gh\nPATH=\"${PATH%%:*}:$PWD/tools:${PATH#*:}\"\ngh pr list\n\
         echo \"outside: ${GH_TOKEN:-unset}\"\nenv\nset\nrm -rf tools";
     let (_, printed) = run(computers, here, forge, Some(&fixed)).await?;
-    let seen = format!("gh sees: {}", TOKEN.to_ascii_uppercase());
+    let seen = format!("gh sees: {}", token.to_ascii_uppercase());
     ensure(
         printed.contains(&seen) && printed.contains("outside: unset"),
         &format!("gh gets its token for its own process only: {printed}"),
     )?;
     ensure(
-        !printed.contains(TOKEN) && !printed_with.contains(TOKEN),
+        !printed.contains(&token) && !printed_with.contains(&token),
         "a token never shows in a command's environment or output",
     )
 }

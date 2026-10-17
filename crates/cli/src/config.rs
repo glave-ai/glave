@@ -228,6 +228,8 @@ pub fn context_window() -> anyhow::Result<Option<u64>> {
 
 #[cfg(test)]
 mod tests {
+    use glave_ports::testing::FAKE_SECRET;
+
     use super::*;
 
     fn endpoint(url: &str, key: Option<&str>) -> Endpoint {
@@ -245,7 +247,7 @@ mod tests {
 
     #[test]
     fn each_fix_names_the_setting_to_change() {
-        let remote = endpoint("https://openrouter.ai/api/v1", Some("sk-1"));
+        let remote = endpoint("https://openrouter.ai/api/v1", Some(FAKE_SECRET));
         let fix = |failure| fix(failure, &remote).unwrap_or_default();
         assert!(fix(Failure::Refused).contains("check GLAVE_API_KEY"));
         assert!(fix(Failure::NoCredit).contains("no credit"));

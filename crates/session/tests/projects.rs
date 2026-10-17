@@ -13,7 +13,7 @@ use glave_event::{
     SpaceFolderSet, ThreadId, decode, encode,
 };
 use glave_harness::Projects;
-use glave_ports::testing::{FakeGitHost, FixedCredentials};
+use glave_ports::testing::{FakeGitHost, FixedCredentials, fake_secret};
 use glave_ports::{BoxFuture, CredentialHost, EventLog, Forge, GitCredential, SpaceId};
 use glave_session::protocol::{Meta, NewFolder, ProjectFolder, Reply, Request, code};
 use glave_session::signin::person;
@@ -21,11 +21,6 @@ use glave_session::{Answering, Caller};
 use serde_json::json;
 
 use crate::support::*;
-
-/// A token for the fake git host to sign in with, made for this run; it must never show.
-fn token() -> String {
-    format!("ghp_projects{}never0shown", std::process::id())
-}
 
 /// Runs `script` in `dir` with git as no one in particular, and checks it worked.
 fn sh(dir: &Path, script: &str) {
@@ -264,7 +259,8 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
     );
     let projects = dir.with_extension("projects");
     let _ = std::fs::remove_dir_all(&projects);
-    let token = token();
+    // A token for the fake git host to sign in with; it must never show.
+    let token = fake_secret("ghp_");
     let host = FakeGitHost::serving(&bare, "x-access-token", &token).unwrap();
     let url = format!("{}/repo.git", host.url);
     block_on!(async {

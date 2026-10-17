@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::{ProviderId, ProviderKind, Secret};
 use glave_harness::Settings;
+use glave_ports::testing::FAKE_SECRET;
 use glave_ports::{BoxFuture, Failure};
 use glave_session::protocol::{ApiError, ErrorData, ModelInfo, ProviderInfo, Request, code, hint};
 use glave_session::signin::{LocalToken, SignIn};
@@ -20,9 +21,9 @@ use crate::support::web::{Web, serve_with};
 use crate::support::*;
 
 /// The key the fake service refuses.
-const BAD: &str = "sk-refused-0123456789abcdef";
+const BAD: &str = "a-key-it-refuses";
 /// A key it takes.
-const GOOD: &str = "sk-test-0123456789abcdefa1b2";
+const GOOD: &str = FAKE_SECRET;
 
 /// A host that keeps accounts in memory, as a service that offers two models.
 #[derive(Default)]
@@ -172,7 +173,7 @@ async fn first_run(client: &mut impl Client) {
         "never answered back: {connected}"
     );
     assert_eq!(connected["provider"]["kind"], "openai");
-    assert_eq!(connected["provider"]["hint"], "a1b2");
+    assert_eq!(connected["provider"]["hint"], hint(GOOD).unwrap());
     let models = client.call(Request::ModelList {}).await.unwrap();
     assert_eq!(ids(&models), ["fake-big", "fake-small"]);
     assert_eq!(models["models"][0]["default"], true);

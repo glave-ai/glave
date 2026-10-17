@@ -303,10 +303,11 @@ mod tests {
 
     #[test]
     fn the_policy_admits_no_inline_script_and_only_nonced_styles() {
-        let policy = policy("abc");
+        let nonce = fresh_nonce().unwrap();
+        let policy = policy(&nonce);
         assert!(policy.contains("script-src 'self'"));
         assert!(!policy.contains("unsafe-inline"));
-        assert!(policy.contains("style-src 'self' 'nonce-abc'"));
+        assert!(policy.contains(&format!("style-src 'self' 'nonce-{nonce}'")));
         assert!(policy.contains("frame-ancestors 'none'"));
         assert!(policy.contains("manifest-src 'self'"));
         assert!(policy.contains("require-trusted-types-for 'script'"));

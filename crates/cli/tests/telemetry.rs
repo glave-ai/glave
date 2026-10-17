@@ -9,18 +9,19 @@ mod support;
 
 #[cfg(test)]
 mod telemetry {
+    use glave_ports::testing::FAKE_SECRET;
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;
 
     use super::support::*;
 
-    /// Strings that are content: none may reach a log or a collector.
-    const SECRETS: [&str; 5] = [
-        "PROMPT-c0ffee",
-        "ARGUMENT-5eed",
-        "FILE-CONTENT-b1ade",
-        "ANSWER-f00d",
-        "sk-e2e-test",
+    /// Strings that are content, by what they are: none may reach a log or a collector.
+    const CONTENT: [(&str, &str); 5] = [
+        ("the prompt", "PROMPT-c0ffee"),
+        ("a tool's arguments", "ARGUMENT-5eed"),
+        ("a file", "FILE-CONTENT-b1ade"),
+        ("the answer", "ANSWER-f00d"),
+        ("the key", FAKE_SECRET),
     ];
 
     /// The model's side of a turn that writes a file and reads it back with a command.
@@ -85,8 +86,8 @@ mod telemetry {
                 "no {metric} in the log:\n{written}"
             );
         }
-        for secret in SECRETS {
-            assert!(!written.contains(secret), "{secret} in the log:\n{written}");
+        for (what, content) in CONTENT {
+            assert!(!written.contains(content), "{what} in the log:\n{written}");
         }
     }
 
@@ -155,8 +156,8 @@ mod telemetry {
         for name in ["turn", "model.call", "tool.call", "glave.turns"] {
             assert!(bodies.contains(name), "no {name} exported");
         }
-        for secret in SECRETS {
-            assert!(!bodies.contains(secret), "{secret} exported");
+        for (what, content) in CONTENT {
+            assert!(!bodies.contains(content), "{what} exported");
         }
     }
 

@@ -255,6 +255,7 @@ impl From<AuthError> for ProviderError {
 mod tests {
     use super::*;
     use crate::block_on;
+    use crate::testing::FAKE_SECRET;
 
     const REQUEST: Outgoing<'static> = Outgoing {
         method: "POST",
@@ -275,16 +276,16 @@ mod tests {
     fn a_fixed_key_goes_in_the_header_the_provider_wants() {
         let pair = |name: &str, value: &str| vec![(name.to_owned(), value.to_owned())];
         assert_eq!(
-            headers(&Auth::bearer(Some("sk-1".into()))),
-            pair("authorization", "Bearer sk-1")
+            headers(&Auth::bearer(Some(FAKE_SECRET.into()))),
+            pair("authorization", &format!("Bearer {FAKE_SECRET}"))
         );
         assert_eq!(
             headers(&Auth::key(KeyHeader::ApiKey, "az-1")),
             pair("api-key", "az-1")
         );
         assert_eq!(
-            headers(&Auth::bearer(Some("sk-ant-1".into())).in_header(KeyHeader::XApiKey)),
-            pair("x-api-key", "sk-ant-1")
+            headers(&Auth::bearer(Some(FAKE_SECRET.into())).in_header(KeyHeader::XApiKey)),
+            pair("x-api-key", FAKE_SECRET)
         );
         assert_eq!(headers(&Auth::bearer(None)), Vec::new());
     }

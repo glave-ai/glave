@@ -293,6 +293,8 @@ fn failed(error: &anyhow::Error) -> ApiError {
 
 #[cfg(test)]
 mod tests {
+    use glave_ports::testing::FAKE_SECRET;
+
     use super::*;
 
     #[test]
@@ -323,7 +325,8 @@ mod tests {
 
     #[test]
     fn a_token_is_one_line() {
-        assert_eq!(one_line(" ghp_abc \n").as_deref(), Some("ghp_abc"));
+        let pasted = format!(" {FAKE_SECRET} \n");
+        assert_eq!(one_line(&pasted).as_deref(), Some(FAKE_SECRET));
         assert_eq!(one_line("two words"), None);
         assert_eq!(one_line(""), None);
         assert_eq!(one_line(&"x".repeat(LONGEST + 1)), None);

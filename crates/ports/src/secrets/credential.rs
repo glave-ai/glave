@@ -180,22 +180,50 @@ fn value_after(rest: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::fake_secret;
 
     #[test]
     fn credentials_are_refused() {
-        for text in [
-            "use sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 for the deploy",
-            "the key is sk-proj-1234567890abcdefghijklmnopqrstuv",
-            "token ghp_aB3dE5gH7jK9mN1pQ3sT5vW7yZ9bC1dE3fG5",
-            "AWS: AKIAIOSFODNN7EXAMPLE",
-            "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk\n-----END OPENSSH PRIVATE KEY-----",
-            "auth eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
-            "the session cookie is 9fK2mQ7xL4pR8vT1wZ6bN3cH5jD0sG2aY7uE",
-            "my password: hunter2",
-            "Password = correct-horse-battery-9",
-            "the staging api key is x7f3k9q2m1",
-        ] {
-            assert!(looks_like_credential(text).is_some(), "{text}");
+        let made = [
+            (
+                "an Anthropic key",
+                format!("use {} for the deploy", fake_secret("sk-ant-")),
+            ),
+            (
+                "an OpenAI key",
+                format!("the key is {}", fake_secret("sk-proj-")),
+            ),
+            ("a GitHub token", format!("token {}", fake_secret("ghp_"))),
+            ("an AWS key id", format!("AWS: {}", fake_secret("AKIA"))),
+            (
+                "a private key",
+                format!(
+                    "-----BEGIN OPENSSH PRIVATE KEY-----\n{}\n-----END OPENSSH PRIVATE KEY-----",
+                    fake_secret("")
+                ),
+            ),
+            (
+                "a JWT",
+                format!(
+                    "auth {}.{}.{}",
+                    fake_secret("eyJ"),
+                    fake_secret("eyJ"),
+                    fake_secret("")
+                ),
+            ),
+        ];
+        let written = [
+            (
+                "a random token",
+                "the session cookie is 9fK2mQ7xL4pR8vT1wZ6bN3cH5jD0sG2aY7uE",
+            ),
+            ("a labelled password", "my password: hunter2"),
+            ("a password after =", "Password = correct-horse-battery-9"),
+            ("a key after is", "the staging api key is x7f3k9q2m1"),
+        ];
+        let made = made.iter().map(|(what, text)| (*what, text.as_str()));
+        for (what, text) in made.chain(written) {
+            assert!(looks_like_credential(text).is_some(), "{what} passed");
         }
     }
 

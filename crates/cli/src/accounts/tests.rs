@@ -2,6 +2,7 @@
 
 use glave_event::{CredentialConnected, CredentialId, Forge, Principal, Secret};
 use glave_ports::EventLog as _;
+use glave_ports::testing::fake_secret;
 use jiff::Timestamp;
 
 use super::{Ledger, random};
@@ -58,16 +59,22 @@ fn block_on<T>(future: impl Future<Output = T>) -> T {
 fn a_renewal_takes_its_place_and_the_old_id_still_names_it() {
     block_on(async {
         let ledger = ledger().await;
-        let first = host("ghu_first");
+        let tokens = [
+            fake_secret("ghu_"),
+            fake_secret("ghu_"),
+            fake_secret("ghu_"),
+        ];
+        let [one, two, three] = &tokens;
+        let first = host(one);
         ledger.keep_credential(&first).await.unwrap();
-        let second = renewal(&first, "ghu_second");
+        let second = renewal(&first, two);
         assert!(
             ledger
                 .renew_credential(first.credential, &second)
                 .await
                 .unwrap()
         );
-        let third = renewal(&second, "ghu_third");
+        let third = renewal(&second, three);
         assert!(
             ledger
                 .renew_credential(second.credential, &third)
@@ -77,7 +84,7 @@ fn a_renewal_takes_its_place_and_the_old_id_still_names_it() {
         assert_eq!(kept(&ledger).await, [third.credential]);
         let accounts = ledger.accounts().await.unwrap();
         let named = accounts.credential(first.credential).unwrap();
-        assert_eq!(named.token.expose(), "ghu_third");
+        assert_eq!(named.token.expose(), three);
         // The renewed tokens' keys are destroyed: their events read as erased.
         let ledger_id = super::ledger().unwrap();
         let raw = ledger.log.read(&ledger.scope, ledger_id, None, 100).await;
@@ -87,12 +94,8 @@ fn a_renewal_takes_its_place_and_the_old_id_still_names_it() {
             .map(|e| e.data.get().to_owned())
             .collect();
         let holding = |token: &str| data.iter().filter(|data| data.contains(token)).count();
-        assert_eq!(
-            (holding("ghu_first"), holding("ghu_second")),
-            (0, 0),
-            "{data:?}"
-        );
-        assert_eq!(holding("ghu_third"), 1);
+        assert_eq!((holding(one), holding(two)), (0, 0), "{data:?}");
+        assert_eq!(holding(three), 1);
 
         assert!(ledger.remove_credential(first.credential).await.unwrap());
         assert_eq!(kept(&ledger).await, []);
@@ -104,7 +107,7 @@ fn a_renewal_takes_its_place_and_the_old_id_still_names_it() {
 fn a_host_removed_or_replaced_while_renewed_stays_so() {
     block_on(async {
         let ledger = ledger().await;
-        let signed_in = host("ghu_signed_in");
+        let signed_in = host(&fake_secret("ghu_"));
         ledger.keep_credential(&signed_in).await.unwrap();
         assert!(
             ledger
@@ -112,7 +115,7 @@ fn a_host_removed_or_replaced_while_renewed_stays_so() {
                 .await
                 .unwrap()
         );
-        let late = renewal(&signed_in, "ghu_late");
+        let late = renewal(&signed_in, &fake_secret("ghu_"));
         assert!(
             !ledger
                 .renew_credential(signed_in.credential, &late)
@@ -121,11 +124,11 @@ fn a_host_removed_or_replaced_while_renewed_stays_so() {
         );
         assert_eq!(kept(&ledger).await, []);
 
-        let again = host("ghu_again");
+        let again = host(&fake_secret("ghu_"));
         ledger.keep_credential(&again).await.unwrap();
-        let pasted = host("github_pat_pasted");
+        let pasted = host(&fake_secret("github_pat_"));
         ledger.keep_credential(&pasted).await.unwrap();
-        let late = renewal(&again, "ghu_late_again");
+        let late = renewal(&again, &fake_secret("ghu_"));
         assert!(
             !ledger
                 .renew_credential(again.credential, &late)

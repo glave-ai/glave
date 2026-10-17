@@ -13,7 +13,7 @@ use glave_identity::signin::{SignIn, Trust, person};
 use glave_mcp::{Limits, McpServer, ServerConfig};
 use glave_ports::Caller;
 pub use glave_ports::block_on;
-use glave_ports::testing::CountingEntropy;
+use glave_ports::testing::{CountingEntropy, FAKE_SECRET};
 use glave_ports::{EventLog, LogError, MemoryLog, OrgId, Purpose, Scope, SpaceId};
 use glave_provider_openai::fake::{FakeServer, Reply};
 use glave_provider_openai::{Config, OpenAiCompatible};
@@ -23,7 +23,7 @@ use tokio::task::JoinHandle;
 use super::issuer::{AUDIENCE, Issuer, Signer, fixed_clock};
 
 /// The key the gateway holds for its model provider.
-pub const KEY: &str = "sk-upstream-secret-0123456789";
+pub const KEY: &str = FAKE_SECRET;
 
 /// One log shared by every service a test starts, as a restart would find it.
 #[derive(Clone, Default)]

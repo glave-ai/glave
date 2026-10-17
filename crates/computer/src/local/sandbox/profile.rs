@@ -356,14 +356,14 @@ mod tests {
             .filter(|(name, _)| name.starts_with("SECRET_"))
             .map(|(_, path)| path.as_path())
             .collect();
-        for secret in [
+        for path in [
             "/Users/me/.ssh",
             "/Users/me/.config/gh",
             "/Users/me/.cargo/credentials.toml",
             "/Users/me/.zsh_history",
             "/Users/me/Library/Keychains",
         ] {
-            assert!(secrets.contains(&Path::new(secret)), "{secret}");
+            assert!(secrets.contains(&Path::new(path)), "{path}");
         }
         assert!(
             !secrets.contains(&Path::new("/Users/me/.cargo")),
