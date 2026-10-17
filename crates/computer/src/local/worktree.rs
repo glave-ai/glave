@@ -2,6 +2,8 @@
 //! own, in a folder outside the repository, so threads working at once never touch each
 //! other's files. Kept until the person removes it; opening the same branch again reopens it.
 
+mod locks;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -10,6 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use super::git::{Git, not_an_option};
 use super::paths;
+
+pub(crate) use locks::Locks;
 
 /// A worktree opened: the folder its workspace is rooted at, and its repository's shared git
 /// folder.
@@ -55,10 +59,11 @@ pub(crate) async fn write_record(dest: &Path, record: &Record) -> Result<(), Com
 }
 
 /// Where the worktree for `branch` of the repository around `path` lives under `base`,
-/// created if it is not there yet, with `owner` kept beside it and any hold cleared; answers
-/// the folder matching `path` inside it.
+/// created (in its turn among `locks`) if it is not there yet, with `owner` kept beside it and
+/// any hold cleared; answers the folder matching `path` inside it.
 pub(crate) async fn open(
     environment: &[(OsString, OsString)],
+    locks: &Locks,
     base: &Path,
     path: &str,
     branch: &str,
@@ -95,11 +100,13 @@ pub(crate) async fn open(
     let prefix = git.must(&["rev-parse", "--show-prefix"]).await?;
     let common = common_dir(&git).await?;
     let dest = base.join(repository_id(&top, &common)).join(leaf(branch));
+    let turn = locks.lock(&common).await?;
     if tokio::fs::try_exists(&dest).await.unwrap_or(false) {
         check_reusable(environment, &dest, &common, branch).await?;
     } else {
         add(&git, &dest, branch).await?;
     }
+    drop(turn);
     let record = Record {
         repository: common.clone(),
         branch: branch.to_owned(),
