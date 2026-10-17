@@ -42,6 +42,8 @@ pub struct LocalComputers {
     /// Where threads' worktrees are kept, outside every repository; none means this machine
     /// opens no worktrees.
     worktrees: Option<PathBuf>,
+    /// Worktrees made in a repository one at a time, by every computer here.
+    worktree_locks: worktree::Locks,
     /// Where threads with no project get a scratch folder each; none means this machine
     /// makes none.
     scratch: Option<PathBuf>,
@@ -67,6 +69,7 @@ impl LocalComputers {
         Self {
             base: base.into(),
             worktrees: None,
+            worktree_locks: worktree::Locks::default(),
             scratch: None,
             projects: None,
             host: None,
@@ -256,7 +259,9 @@ impl LocalComputers {
                     )
                 })?;
                 let env = self.command_environment(environment);
-                let made = worktree::open(&env, base, path, branch, owner.as_deref()).await?;
+                let locks = &self.worktree_locks;
+                let made =
+                    worktree::open(&env, locks, base, path, branch, owner.as_deref()).await?;
                 (made.root, false, Some(made.common))
             }
             Sources::Scratch { name, owner } => {
