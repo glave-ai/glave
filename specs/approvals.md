@@ -91,7 +91,7 @@ Hooks are commands the person sets up to run at four points of a turn, under the
 | --- | --- | --- |
 | `PreToolUse` | before a tool call, before anyone is asked about it | stops the call; the model's result is "Not run: a hook the person set up stopped this call: <reason>" |
 | `PostToolUse` | after a tool call ran, before the model sees its result | adds "[A hook that runs after <tool> says: <reason>]" to the result |
-| `UserPromptSubmit` | when the person sends a prompt (not a goal's continuation, not a subagent's brief) | the prompt is refused with its reason (`-32008` in the session API) and never reaches the model |
+| `UserPromptSubmit` | when the person sends a prompt (not a goal's continuation, not a subagent's brief), or, for a message sent while a turn runs, just before the model reads it | the prompt is refused with its reason (`-32008` in the session API) and never reaches the model; a message sent while a turn runs is given back with the reason (`session.md`, "Steering a turn") |
 | `Stop` | once a turn has ended, unless it was cancelled; not in subagents' threads | cannot block: keeping work going until something holds is a goal's job, with a check |
 
 They are written in `config.toml`, the person's (`~/.glave/config.toml`) and a project's (`.glave/config.toml`), and they add up rather than the nearest winning: the person's run first, then the project's, in the order written.

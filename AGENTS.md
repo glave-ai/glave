@@ -40,7 +40,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 Cargo.toml          workspace: lints, profiles, shared dependencies
 xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
-crates/ports/       glave-ports: event log, blob store, model provider (and how one is reached: a key, or credentials that change), tool source and computer ports, the caller, the clock and entropy, in-memory versions, conformance suites and the test doubles every crate shares
+crates/ports/       glave-ports: event log, blob store, model provider (and how one is reached: a key, or credentials that change), tool source, computer and memory ports, the caller, the clock and entropy, in-memory versions, conformance suites and the test doubles every crate shares
 crates/identity/    glave-identity: who is calling: OIDC and local sign-in that verify the caller, the person an issuer's subject is
 crates/config/      glave-config: config and policy (specs/policy.md): choices nearest-wins, constraints that only narrow, project trust, `policy explain`; shared by the CLI and the servers
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
@@ -72,12 +72,13 @@ specs/              the model (`model.md`: organization to thread, server and co
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main); workers on a `kind` cluster (Linux); releases on version tags (`v0.1.0`): release.yml, made by `cargo xtask release-workflow` (`dist generate` from dist-workspace.toml and .github/build-setup.yml, then only the job that publishes can write), never edited by hand
 ```
 
-**Dependency rule.** Shared types depend on nothing in Glave. Ports depend only on types. Domain crates (log, harness, gateway) depend on types and ports, never on each other's internals or on adapters. Adapters depend on types, ports and their one external library. Only the binary depends on everything.
+**Dependency rule.** Shared types depend on nothing in Glave. Ports depend only on types. Domain crates (harness, gateway, keys) depend on types and ports, never on each other or on adapters. Adapters (providers, stores, computers, MCP, web, memory, identity) depend on types, ports and their one external library. Only the binary, and the crates it is wired from (config, the session API, the gateway service), depend on everything; tools (xtask, eval) may too, and nothing depends on them. Only normal dependencies count: tests may use adapters. CI checks it (`cargo xtask deps`) against one table in `xtask/src/deps.rs`: each crate's layer and why, and the few edges that cross the rule on purpose, each with its reason.
 
 ## Commands
 
 ```sh
 cargo xtask ci          # the full gate; must pass before anything is "done"
+cargo xtask deps        # the dependency rule: each crate depends only on the layers its own may use
 cargo xtask file-sizes  # line limits only
 cargo xtask secrets     # no secret-shaped literal in a tracked file
 cargo xtask schema      # regenerate specs/session.schema.json and the web client's types after changing the session API
@@ -93,7 +94,7 @@ cargo build --release -p glave --features web   # the binary as it ships, the we
 
 ## Definition of done
 
-`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), clippy with `-D warnings`, all tests, `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
+`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), the dependency rule (`cargo xtask deps`), clippy with `-D warnings`, all tests, `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
 
 ## Quality
 

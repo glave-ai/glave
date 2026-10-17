@@ -40,10 +40,11 @@ export type GlzComposerSize = 'md' | 'lg';
  * line at that width.
  *
  * Enter sends and Shift+Enter starts a new line (Cmd or Ctrl with Enter sends too), and `send`
- * emits the draft, trimmed. While the model is answering (`busy`), Send becomes Stop, and
- * Escape stops it; the person can go on writing their next message. A `lg` composer starts a
- * thread: two lines to write in, in larger type, more room round them, rounder corners, and a
- * shadow under it.
+ * emits the draft, trimmed. While the model is answering (`busy`), Stop takes Send's place,
+ * and Escape stops it; the person can go on writing, and sends with Enter, or with Send, which
+ * comes back beside Stop once there is something to send, for the app to give the model while
+ * it works. A `lg` composer starts a thread: two lines to write in, in larger type, more room
+ * round them, rounder corners, and a shadow under it.
  *
  * ```html
  * <glz-composer [(value)]="draft" [busy]="running()" (send)="start($event)" (stop)="cancel()">
@@ -69,7 +70,7 @@ export class GlzComposerComponent {
 
   /** The draft. */
   readonly value = model('');
-  /** Whether the model is answering, so Stop shows instead of Send. */
+  /** Whether the model is answering, so Stop shows where Send was. */
   readonly busy = input(false, { transform: booleanAttribute });
   readonly disabled = input(false, { transform: booleanAttribute });
   readonly size = input<GlzComposerSize>('md');
@@ -89,10 +90,10 @@ export class GlzComposerComponent {
   protected readonly icons = { send: ArrowUp, stop: Square, options: SlidersHorizontal };
   private readonly textarea = viewChild.required<ElementRef<HTMLTextAreaElement>>('textarea');
 
-  protected readonly canSend = computed(
-    () => !this.disabled() && !this.busy() && this.value().trim() !== '',
-  );
+  protected readonly canSend = computed(() => !this.disabled() && this.value().trim() !== '');
   protected readonly sendDisabled = computed(() => !this.canSend());
+  /** Whether Send shows beside Stop: while busy, once there is something to send. */
+  protected readonly sendBesideStop = computed(() => this.busy() && this.canSend());
 
   /** Sends the draft, if there is one, and clears it. */
   submit(): void {

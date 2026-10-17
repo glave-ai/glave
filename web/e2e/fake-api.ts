@@ -1,13 +1,15 @@
-import type {
-  ModelInfo,
-  RawEvent,
-  RunningCommand,
-  Space,
-  TaskInfo,
-  ThreadSummary,
-  TrustAsk,
-} from '@glave/client';
+import type { ModelInfo, RawEvent, Space, TaskInfo, ThreadSummary, TrustAsk } from '@glave/client';
 import type { Page, Route } from '@playwright/test';
+
+import {
+  type Commands,
+  SERVING,
+  SERVING_HISTORY,
+  STOP_MS,
+  background,
+  docsRunning,
+} from './fake-commands';
+import { Refusal, THREAD, bound, call, done, event } from './fake-records';
 
 /**
  * What the fake server knows: a project and the person's own space with their threads, one
@@ -58,7 +60,7 @@ function thread(
   };
 }
 
-export const THREAD = '01900000-0000-7000-8000-000000000101';
+export { THREAD };
 export const NEW_THREAD = '01900000-0000-7000-8000-000000000102';
 /** The thread that waits for the person. */
 export const WAITING = '01900000-0000-7000-8000-000000000103';
@@ -92,50 +94,6 @@ export const MODELS: readonly ModelInfo[] = [
     hope: false,
   })),
 ];
-
-function event(
-  seq: number,
-  type: string,
-  data: RawEvent['data'],
-  id = THREAD,
-  at = '2026-10-11T10:00:00.000Z',
-): RawEvent {
-  return {
-    glave: 1,
-    id: `01900000-0000-7000-8000-${String(seq).padStart(12, '0')}`,
-    thread: id,
-    seq,
-    at,
-    type,
-    v: 1,
-    data,
-  };
-}
-
-function call(
-  seq: number,
-  callId: string,
-  tool: string,
-  json: Record<string, unknown>,
-  id = THREAD,
-): RawEvent {
-  return event(seq, 'tool.call.requested', { call_id: callId, tool, arguments: { json } }, id);
-}
-
-function done(seq: number, callId: string, text: string, id = THREAD): RawEvent {
-  return event(
-    seq,
-    'tool.call.completed',
-    { call_id: callId, is_error: false, output: [{ type: 'text', text }] },
-    id,
-  );
-}
-
-/** The thread's workspace: a folder on the computer glave runs on. */
-function bound(seq: number, id = THREAD): RawEvent {
-  const computer = { id: '01900000-0000-7000-8000-0000000000c1', kind: 'local' };
-  return event(seq, 'workspace.bound', { computer, root: '/work/glave' }, id);
-}
 
 const HISTORY = [
   event(1, 'thread.started', {}),
@@ -275,89 +233,6 @@ function trusting(trust: Trust): ThreadSummary {
   return trust.asking ? { ...summary, status: 'waiting', trust: TRUST_ASK } : summary;
 }
 
-/**
- * A thread that keeps the docs site running in the background, and what it runs (`fakeApi`'s
- * `commands`).
- */
-export const SERVING = '01900000-0000-7000-8000-000000000108';
-export const DOCS_SERVER = 'npm run docs -- --port 4321 --host 127.0.0.1 --open --watch';
-export const DOCS_COMMAND = '01900000-0000-7000-8000-0000000000d1';
-
-/** The serving thread's history: it started the docs site, which still runs. */
-const SERVING_HISTORY = [
-  event(1, 'thread.started', {}, SERVING),
-  bound(2, SERVING),
-  event(3, 'turn.started', { model: { provider: 'e2e', name: DEFAULT_MODEL } }, SERVING),
-  event(
-    4,
-    'message.added',
-    { role: 'user', parts: [{ type: 'text', text: 'Start the docs site so I can look at it' }] },
-    SERVING,
-  ),
-  call(5, 'call_1', 'bash', { command: DOCS_SERVER, background: true }, SERVING),
-  done(6, 'call_1', 'Running in the background as command 1.', SERVING),
-  event(
-    7,
-    'command.started',
-    { command: DOCS_COMMAND, call_id: 'call_1', script: DOCS_SERVER },
-    SERVING,
-  ),
-  event(
-    8,
-    'message.added',
-    {
-      role: 'assistant',
-      parts: [{ type: 'text', text: 'The docs site is running at http://127.0.0.1:4321.' }],
-    },
-    SERVING,
-  ),
-  event(9, 'turn.ended', { outcome: 'completed' }, SERVING, '2026-10-11T10:00:06.000Z'),
-];
-
-/** How long stopping a command takes, so the page shows it stopping. */
-const STOP_MS = 400;
-
-/** Whether the docs site still runs, while the fake runs: until the person stops it. */
-interface Commands {
-  running: boolean;
-  /** When it started: two minutes and five seconds before the fake began. */
-  readonly startedAt: string;
-}
-
-/**
- * The answer to a call about a thread's commands in the background, else `undefined`: only the
- * serving thread has one, while it runs.
- */
-function background(
-  method: string,
-  params: Record<string, unknown>,
-  commands: Commands | null,
-): unknown {
-  const running = params['thread'] === SERVING && commands?.running === true ? commands : null;
-  switch (method) {
-    case 'command/list':
-      return { commands: running === null ? [] : [docsServer(running.startedAt)] };
-    case 'command/stop':
-      if (running === null || params['command'] !== DOCS_COMMAND) {
-        return new Refusal(-32027, 'that command is not running in this thread');
-      }
-      running.running = false;
-      return {};
-    default:
-      return undefined;
-  }
-}
-
-/** The docs site, as `command/list` lists it. */
-function docsServer(startedAt: string): RunningCommand {
-  return {
-    id: DOCS_COMMAND,
-    command: DOCS_SERVER,
-    started_at: startedAt,
-    summary: 'Still running: the agent started it, and it runs until it ends or someone stops it.',
-  };
-}
-
 /** Each thread's history, by id. */
 const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
   [THREAD]: HISTORY,
@@ -409,14 +284,6 @@ export const MISSING_REPOSITORY = 'https://github.com/acme/missing';
 
 /** How long a clone takes, so the page shows it under way. */
 const CLONE_MS = 400;
-
-/** What a server refuses a call with. */
-class Refusal {
-  constructor(
-    readonly code: number,
-    readonly message: string,
-  ) {}
-}
 
 /** The folders inside `path`, as `folder/list` answers. */
 function listFolders(path: string): unknown {
@@ -586,6 +453,127 @@ export async function streamReply(page: Page, reply = MARKDOWN_REPLY, delay = 15
   );
 }
 
+/** The id the fake answers a message sent while its turn runs with (`steerTurn`). */
+const QUEUED_ID = '01900000-0000-7000-8000-000000000999';
+
+/** What a turn that is steered sends: `steerTurn`'s page script. */
+interface Steering {
+  /** The person's message, recorded at `seq`, under `id` when it has one. */
+  readonly said: (seq: number, text: string, id?: string) => string;
+}
+
+/**
+ * Makes the page's next turn in `THREAD` one the person steers: it starts on their message and
+ * runs a command, then waits until the test lets the model read (`window.glaveSteer.read()`).
+ * A message sent meanwhile is answered at once as queued; once read, it is recorded where the
+ * model saw it, and the model answers it. The page's own `fetch` answers, as in `streamReply`.
+ */
+export async function steerTurn(page: Page): Promise<void> {
+  const after = HISTORY.length;
+  await page.addInitScript(
+    ({ after, thread, queuedId }) => {
+      const real = window.fetch.bind(window);
+      const encoder = new TextEncoder();
+      let read: () => void = () => undefined;
+      const reading = new Promise<void>((resolve) => {
+        read = resolve;
+      });
+      let sent = '';
+      let turns = 0;
+      Object.assign(window, { glaveSteer: { read } });
+      const at = '2026-10-11T10:10:00.000Z';
+      const stored = (seq: number, type: string, data: unknown, id?: string): string =>
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'thread/event',
+          params: {
+            thread,
+            event: {
+              glave: 1,
+              id: id ?? `01900000-0000-7000-8000-${String(seq).padStart(12, '0')}`,
+              thread,
+              seq,
+              at,
+              type,
+              v: 1,
+              data,
+            },
+          },
+        });
+      const steering: Steering = {
+        said: (seq, text, id) =>
+          stored(seq, 'message.added', { role: 'user', parts: [{ type: 'text', text }] }, id),
+      };
+      const live = (text: string): string =>
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'turn/live',
+          params: { thread, update: { kind: 'text', text } },
+        });
+      window.fetch = async (input, init) => {
+        const body = typeof init?.body === 'string' ? init.body : '';
+        if (!body.includes('"turn/start"')) {
+          return real(input, init);
+        }
+        const { id, params } = JSON.parse(body) as { id: number; params: { prompt: string } };
+        turns += 1;
+        if (turns > 1) {
+          sent = params.prompt;
+          const queued = { jsonrpc: '2.0', id, result: { queued: { id: queuedId } } };
+          return new Response(JSON.stringify(queued), {
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        const command = { command: 'sed -i s/8080/3000/ config.toml' };
+        const stream = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            const send = (message: string): void => {
+              controller.enqueue(
+                encoder.encode(`data: ${message}
+
+`),
+              );
+            };
+            send(stored(after + 1, 'turn.started', {}));
+            send(steering.said(after + 2, params.prompt));
+            send(live('Setting the port to 3000.'));
+            send(
+              stored(after + 3, 'tool.call.requested', {
+                call_id: 'call_9',
+                tool: 'bash',
+                arguments: { json: command },
+              }),
+            );
+            send(
+              stored(after + 4, 'tool.call.completed', {
+                call_id: 'call_9',
+                is_error: false,
+                output: [{ type: 'text', text: '' }],
+              }),
+            );
+            await reading;
+            send(steering.said(after + 5, sent, queuedId));
+            send(live('Using 4000 instead.'));
+            send(
+              stored(after + 6, 'message.added', {
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'Using 4000 instead.' }],
+              }),
+            );
+            send(stored(after + 7, 'turn.ended', { outcome: 'completed' }));
+            const tokens = { input: 1, output: 1, cache_read: 0, cache_write: 0, reasoning: 0 };
+            const turn = { outcome: 'completed', model_calls: 2, tool_calls: 1, tokens };
+            send(JSON.stringify({ jsonrpc: '2.0', id, result: { turn } }));
+            controller.close();
+          },
+        });
+        return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } });
+      };
+    },
+    { after, thread: THREAD, queuedId: QUEUED_ID },
+  );
+}
+
 /** What one fake server knows while it runs, beyond what never changes. */
 interface Known {
   /** The threads started so far. */
@@ -707,9 +695,7 @@ export async function fakeApi(
     started: [],
     made: [],
     trust: trust ? { asking: true } : null,
-    commands: commands
-      ? { running: true, startedAt: new Date(Date.now() - 125_000).toISOString() }
-      : null,
+    commands: commands ? docsRunning() : null,
   };
   await page.route('**/*', async (route: Route) => {
     const request = route.request();

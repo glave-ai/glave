@@ -18,8 +18,8 @@ use crate::support::issuer::{Issuer, Signer};
 use crate::support::web::{Events, Served, Web, serve_http};
 use crate::support::*;
 
-/// What a scenario does after a notification: nothing, or send another request.
-type Reaction = Option<Request>;
+/// What a scenario does after a notification: send these requests, in order.
+type Reaction = Vec<Request>;
 
 /// A client of one transport.
 pub(crate) trait Client {
@@ -51,7 +51,7 @@ impl Client for InProcess {
         while let Some(item) = stream.next().await {
             match item {
                 TurnItem::Note(note) => {
-                    if let Some(request) = react(&note) {
+                    for request in react(&note) {
                         // Answers and cancels are not part of the turn's own result.
                         let _ = self.0.request(request).await;
                     }
@@ -205,7 +205,7 @@ impl Client for OverJsonRpc {
             }
             if message.get("method").is_some() {
                 let note: Notification = serde_json::from_value(message).unwrap();
-                if let Some(reaction) = react(&note) {
+                for reaction in react(&note) {
                     self.send(&reaction).await;
                 }
             }
@@ -272,7 +272,7 @@ impl Client for OverHttp {
                 return ended(&message);
             }
             let note: Notification = serde_json::from_value(message).unwrap();
-            if let Some(reaction) = react(&note) {
+            for reaction in react(&note) {
                 self.web.call(&reaction).await;
             }
         }
@@ -355,7 +355,7 @@ fn a_turn_streams_its_events_and_progress_and_they_are_in_the_log() {
                         } => said.push_str(text),
                         _ => {}
                     }
-                    None
+                    Vec::new()
                 };
                 let turn = client.turn(thread, "hi", &mut follow).await.unwrap();
                 assert_eq!(turn.outcome, Outcome::Completed);
@@ -418,11 +418,14 @@ fn an_approval_answered_by_the_client_lets_the_call_run() {
                 if let Notification::Event { event, .. } = note {
                     streamed.push(event.kind.as_str().to_owned());
                 }
-                asked(note).map(|approval| Request::ApprovalDecide {
-                    thread,
-                    approval,
-                    decision: Answer::AllowOnce,
-                })
+                asked(note)
+                    .map(|approval| Request::ApprovalDecide {
+                        thread,
+                        approval,
+                        decision: Answer::AllowOnce,
+                    })
+                    .into_iter()
+                    .collect()
             };
             let turn = client.turn(thread, "touch it", &mut react).await.unwrap();
             assert_eq!(turn.outcome, Outcome::Completed);
@@ -432,6 +435,58 @@ fn an_approval_answered_by_the_client_lets_the_call_run() {
                 .unwrap();
             assert_eq!(streamed[asked + 1], "approval.decided", "{streamed:?}");
             assert!(dir.join("ran.txt").exists());
+        });
+    });
+}
+
+#[test]
+fn a_message_sent_while_a_turn_runs_reaches_the_model_in_the_same_stream() {
+    block_on!(async {
+        let touch = || {
+            vec![
+                answer(None, Some(("bash", json!({"command": "touch ran.txt"})))),
+                answer(Some("Done."), None),
+                // Had the turn ended before the message came, it would start the next one.
+                answer(Some("Done again."), None),
+            ]
+        };
+        over_each_transport!("steer", touch(), |client, dir| {
+            let thread = thread_of(&mut client).await;
+            let mut said = Vec::new();
+            // While the turn waits for the person, they send a correction, then allow the call.
+            let mut react = |note: &Notification| {
+                if let Notification::Event { event, .. } = note
+                    && let Body::MessageAdded(added) = decode(event.clone()).unwrap().body
+                    && added.role == glave_event::Role::User
+                {
+                    said.push(serde_json::to_value(&added.parts).unwrap());
+                }
+                asked(note)
+                    .map(|approval| {
+                        vec![
+                            Request::TurnStart {
+                                thread,
+                                prompt: "and name it done.txt".into(),
+                                background: false,
+                                budget: None,
+                                meta: Meta::default(),
+                                model: None,
+                                approval: None,
+                            },
+                            Request::ApprovalDecide {
+                                thread,
+                                approval,
+                                decision: Answer::AllowOnce,
+                            },
+                        ]
+                    })
+                    .unwrap_or_default()
+            };
+            let turn = client.turn(thread, "touch it", &mut react).await.unwrap();
+            assert_eq!(turn.outcome, Outcome::Completed);
+            assert!(dir.join("ran.txt").exists());
+            let last = said.last().unwrap();
+            assert_eq!(last[0]["text"], "and name it done.txt", "{said:?}");
         });
     });
 }
@@ -447,8 +502,12 @@ fn cancelling_a_paused_turn_ends_it_and_the_call_never_runs() {
         };
         over_each_transport!("cancel", touch(), |client, dir| {
             let thread = thread_of(&mut client).await;
-            let mut react =
-                |note: &Notification| asked(note).map(|_| Request::TurnCancel { thread });
+            let mut react = |note: &Notification| {
+                asked(note)
+                    .map(|_| Request::TurnCancel { thread })
+                    .into_iter()
+                    .collect()
+            };
             let turn = client.turn(thread, "touch it", &mut react).await.unwrap();
             assert_eq!(turn.outcome, Outcome::Cancelled);
             assert!(!dir.join("ran.txt").exists());

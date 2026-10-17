@@ -126,6 +126,7 @@ where
                 text: &text,
                 caller,
                 by_glave: opened.is_none(),
+                id: None,
             };
             set_running(thread, true);
             let ran = self.run_with(thread, prompt, toolset, cancel, live).await;

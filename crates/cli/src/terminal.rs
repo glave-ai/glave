@@ -169,8 +169,9 @@ impl Printer {
             Update::CompactionFailed { error } => {
                 self.note(YELLOW, "could not compact the conversation:", &error);
             }
-            // Shown by the client, which answers it.
-            Update::Asked { .. } => {}
+            // Shown by the client, which answers it; one that sends nothing mid-turn has
+            // nothing given back.
+            Update::Asked { .. } | Update::Unread { .. } => {}
             Update::Memory {
                 change,
                 memory,

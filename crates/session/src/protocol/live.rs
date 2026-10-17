@@ -1,6 +1,6 @@
 //! Progress while a turn runs, as `turn/live` carries it.
 
-use glave_event::{CallId, MemoryId, ThreadId};
+use glave_event::{CallId, EventId, MemoryId, ThreadId};
 use glave_harness::{Live, Question};
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +58,13 @@ pub enum Update {
         subagent: ThreadId,
         ok: bool,
     },
+    /// A message sent while the turn ran (its `queued` id) that the model will not read, given
+    /// back: a hook stopped it (`reason`, the hook's), or the turn was stopped or failed first.
+    Unread {
+        id: EventId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     /// A memory was saved, edited or forgotten: `change` is `remembered`, `edited` or `forgot`.
     Memory {
         change: String,
@@ -83,6 +90,7 @@ impl From<Live> for Update {
                 caution,
                 no_one_there,
             },
+            Live::Unread { id, reason } => Self::Unread { id, reason },
             Live::Waiting => Self::Waiting,
             Live::Retrying {
                 retry,

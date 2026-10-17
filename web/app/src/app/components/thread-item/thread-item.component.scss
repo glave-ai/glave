@@ -3,6 +3,12 @@
   display: contents;
 }
 
+// What the person sent while the model worked says so, small, under its text.
+.caption {
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-sm);
+}
+
 .output {
   max-height: 16rem;
   overflow: auto;

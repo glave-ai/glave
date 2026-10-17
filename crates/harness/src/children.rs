@@ -110,11 +110,7 @@ where
         let brief = subagent::brief(&asked);
         // The parent's agent writes the brief: the child's `for` is implied, as for any prompt.
         let caller = Caller::default();
-        let prompt = Prompt {
-            text: &brief,
-            caller: &caller,
-            by_glave: false,
-        };
+        let prompt = Prompt::new(&brief, &caller);
         let ran = self
             .run_with(&mut child, prompt, tools, cancel, &mut forward)
             .await;

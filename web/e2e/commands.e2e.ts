@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-import { DOCS_COMMAND, DOCS_SERVER, SERVING, fakeApi } from './fake-api';
+import { fakeApi } from './fake-api';
+import { DOCS_COMMAND, DOCS_SERVER, SERVING } from './fake-commands';
 import { SIGNED_IN, byTestId, expectAccessible, watchForProblems } from './support';
 
 for (const colorScheme of ['light', 'dark'] as const) {

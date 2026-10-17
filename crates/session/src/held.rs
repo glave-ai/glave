@@ -5,12 +5,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, PoisonError};
 
 use glave_event::ThreadId;
-use glave_harness::{Cancel, Commands, HarnessError, Standing, Thread};
+use glave_harness::{Cancel, Commands, HarnessError, Inbox, Live, Standing, Thread};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::sync::watch;
 
 use crate::protocol::{ApiError, Status, code};
 use crate::server::{Inner, Server, api, no_thread};
+use crate::turn::publish;
 
 /// Threads kept in memory while idle; more are rebuilt from the log when asked for.
 const IDLE_THREADS: usize = 64;
@@ -21,6 +22,9 @@ pub(crate) enum Slot {
     Busy {
         cancel: Cancel,
         finished: watch::Receiver<bool>,
+        /// Where a message sent meanwhile waits for the model's next call, when the work is a
+        /// turn or a goal's turns (`steer.rs`).
+        inbox: Option<Inbox>,
         /// Its commands in the background, listed and stopped while the work holds it.
         commands: Arc<Commands>,
     },
@@ -104,7 +108,7 @@ where
         F: std::future::Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
         R: Send + Sync + 'static,
     {
-        self.occupy_for(thread, done, Use::Turn, work).await
+        self.occupy_for(thread, done, Use::Work, work).await
     }
 
     /// Like [`Server::occupy`], for work of the kind `purpose` says.
@@ -123,37 +127,36 @@ where
         self.load(thread).await?;
         let cancel = Cancel::new();
         let (finish, finished) = watch::channel(false);
-        let commands = match self.lock().get(&thread) {
-            Some(Slot::Idle(held)) => held.commands(),
-            _ => Arc::default(),
-        };
         let held = {
             let mut threads = self.lock();
-            let busy = Slot::Busy {
-                cancel: cancel.clone(),
-                finished,
-                commands,
-            };
-            match threads.insert(thread, busy) {
+            match threads.remove(&thread) {
                 // Turns and compactions do not run in an archived thread.
                 Some(Slot::Idle(held))
-                    if purpose == Use::Turn && held.standing() == Standing::Archived =>
+                    if purpose != Use::Manage && held.standing() == Standing::Archived =>
                 {
                     threads.insert(thread, Slot::Idle(held));
                     return Err(api(&HarnessError::Archived(thread)));
                 }
-                Some(Slot::Idle(held)) => *held,
+                Some(Slot::Idle(held)) => {
+                    // A turn takes messages from now until it has made its last call.
+                    let inbox = (purpose == Use::Steered).then(|| held.inbox().clone());
+                    if let Some(inbox) = &inbox {
+                        inbox.open();
+                    }
+                    let slot = Slot::Busy {
+                        cancel: cancel.clone(),
+                        finished,
+                        inbox,
+                        commands: held.commands(),
+                    };
+                    threads.insert(thread, slot);
+                    *held
+                }
                 Some(running) => {
                     threads.insert(thread, running);
-                    return Err(ApiError::new(
-                        code::TURN_RUNNING,
-                        format!("a turn is already running in thread {thread}"),
-                    ));
+                    return Err(busy(thread));
                 }
-                None => {
-                    threads.remove(&thread);
-                    return Err(no_thread(thread));
-                }
+                None => return Err(no_thread(thread)),
             }
         };
         let inner = Arc::clone(&self.inner);
@@ -164,6 +167,13 @@ where
             let (held, result) = tracing::Instrument::instrument(work, span).await;
             inner.approvals.forget(thread);
             let mut threads = inner.threads.lock().unwrap_or_else(PoisonError::into_inner);
+            // Ended with the thread made idle, so a message sent from now on starts a turn:
+            // anything still waiting, which only work that ended early leaves, is given back.
+            let unread = if purpose == Use::Steered {
+                held.inbox().end()
+            } else {
+                Vec::new()
+            };
             // Archived or deleted from outside while held: the work stopped where it was, so
             // the thread is read again from the log next time, which closes what it left open.
             if matches!(
@@ -175,6 +185,10 @@ where
                 threads.insert(thread, Slot::Idle(Box::new(held)));
             }
             drop(threads);
+            for queued in unread {
+                let id = queued.id;
+                publish(&inner.hub, thread, Live::Unread { id, reason: None });
+            }
             let _ = finish.send(true);
             // Kept even when no one is following any more: a retry may still ask for it.
             done.send_replace(Some(Arc::new(result)));
@@ -193,10 +207,22 @@ where
 /// What work on a thread is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Use {
-    /// A turn, a goal or a compaction: refused in an archived thread.
-    Turn,
+    /// Other work on the conversation, a compaction or recording a goal's end: refused in an
+    /// archived thread.
+    Work,
+    /// A turn, or a goal's turns: refused in an archived thread, and messages sent while it
+    /// runs are queued to it.
+    Steered,
     /// Changing whether the thread is shown.
     Manage,
+}
+
+/// The refusal for work on `thread` while other work runs there that takes no messages.
+pub(crate) fn busy(thread: ThreadId) -> ApiError {
+    ApiError::new(
+        code::TURN_RUNNING,
+        format!("a turn is already running in thread {thread}"),
+    )
 }
 
 /// Where work on a thread sends its result: nothing until it ends, then how it ended. Shared,
