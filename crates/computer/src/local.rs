@@ -3,6 +3,7 @@
 //! folder per computer, so destroying a computer removes exactly its copies.
 
 mod anchored;
+mod background;
 mod command;
 mod credentials;
 mod files;
@@ -10,6 +11,7 @@ mod finding;
 pub(crate) mod git;
 mod listing;
 mod paths;
+mod process;
 mod project;
 mod registry;
 mod replace;
@@ -21,15 +23,18 @@ pub(crate) mod worktree;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use glave_ports::secrets::without_secrets;
 use glave_ports::{
-    BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers,
-    Credentials, Environment, FileWrite, Finished, GitCredential, Glob, Globbed, Image, Listed,
-    Listing, Network, Output, Save, Saved, Search, Searched, Size, Sources, Stat, State,
-    WorkspaceId, WorkspaceInfo,
+    Background, BoxFuture, Bytes, Cancellation, Command, CommandId, ComputerError, ComputerId,
+    ComputerInfo, Computers, Credentials, Environment, FileWrite, Finished, GitCredential, Glob,
+    Globbed, Image, Listed, Listing, Network, Output, Printed, Save, Saved, Search, Searched, Size,
+    Sources, Stat, State, WorkspaceId, WorkspaceInfo,
 };
 
+use background::Backgrounds;
+use command::Keep;
 pub(crate) use registry::new_id;
 use registry::{Opened, Registry};
 
@@ -56,6 +61,8 @@ pub struct LocalComputers {
     sandbox_helper: Option<PathBuf>,
     environment: Arc<Vec<(OsString, OsString)>>,
     registry: Registry,
+    /// The commands its workspaces keep running in the background.
+    background: Backgrounds,
 }
 
 impl LocalComputers {
@@ -76,6 +83,7 @@ impl LocalComputers {
             sandbox_helper: None,
             environment: Arc::new(without_secrets(environment)),
             registry: Registry::default(),
+            background: Backgrounds::default(),
         }
     }
 
@@ -289,6 +297,41 @@ impl LocalComputers {
         })
     }
 
+    /// Where a command in `workspace` that reaches its timeout is kept running, if it asks.
+    fn keep(&self, workspace: WorkspaceId) -> Keep<'_> {
+        Keep {
+            background: &self.background,
+            workspace,
+        }
+    }
+
+    /// Starts `command` in `workspace` and keeps it running in the background.
+    async fn start_now(
+        &self,
+        workspace: WorkspaceId,
+        command: &Command,
+    ) -> Result<CommandId, ComputerError> {
+        let opened = self.registry.workspace(workspace)?;
+        self.background.room(workspace)?;
+        let helper = self.sandbox_helper.as_deref();
+        let sandbox = command.sandbox.as_ref();
+        let spawned = command::spawn(&opened, &command.script, sandbox, helper, None).await?;
+        let limit = command.timeout_secs.map(Duration::from_secs);
+        let script = command.script.clone();
+        match (self.background).adopt(opened.computer, workspace, script, spawned, limit) {
+            Ok(id) => Ok(id),
+            // Another start took the last place meanwhile.
+            Err(mut spawned) => {
+                process::stop(&mut spawned.child).await;
+                Err(self
+                    .background
+                    .room(workspace)
+                    .err()
+                    .unwrap_or_else(|| ComputerError::Refused("there is no room for it".into())))
+            }
+        }
+    }
+
     /// What commands on a computer see: this machine's environment, then the computer's own.
     fn command_environment(&self, environment: &Environment) -> Arc<Vec<(OsString, OsString)>> {
         let mut all: Vec<(OsString, OsString)> = self
@@ -355,6 +398,7 @@ impl Computers for LocalComputers {
     fn destroy(&self, computer: ComputerId) -> BoxFuture<'_, Result<(), ComputerError>> {
         Box::pin(async move {
             self.registry.remove_computer(computer)?;
+            self.background.stop_all(|on, _| on == computer).await;
             let copies = self.base.join(computer.to_string());
             match tokio::fs::remove_dir_all(&copies).await {
                 Ok(()) => Ok(()),
@@ -387,6 +431,7 @@ impl Computers for LocalComputers {
     fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>> {
         Box::pin(async move {
             let opened = self.registry.remove_workspace(workspace)?;
+            self.background.stop_all(|_, at| at == workspace).await;
             if opened.copy {
                 tokio::fs::remove_dir_all(&opened.root)
                     .await
@@ -411,7 +456,8 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             let opened = self.registry.workspace(workspace)?;
             let helper = self.sandbox_helper.as_deref();
-            command::run(&opened, command, output, cancel, helper, None).await
+            let keep = self.keep(workspace);
+            command::run(&opened, command, (output, cancel), helper, None, keep).await
         })
     }
 
@@ -426,7 +472,50 @@ impl Computers for LocalComputers {
         Box::pin(async move {
             let opened = self.registry.workspace(workspace)?;
             let helper = self.sandbox_helper.as_deref();
-            command::run(&opened, command, output, cancel, helper, Some(credentials)).await
+            let keep = self.keep(workspace);
+            let io = (output, cancel);
+            command::run(&opened, command, io, helper, Some(credentials), keep).await
+        })
+    }
+
+    fn start<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        command: &'a Command,
+    ) -> BoxFuture<'a, Result<CommandId, ComputerError>> {
+        Box::pin(self.start_now(workspace, command))
+    }
+
+    fn output(
+        &self,
+        workspace: WorkspaceId,
+        command: CommandId,
+        wait: Duration,
+    ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
+        Box::pin(async move {
+            self.registry.workspace(workspace)?;
+            self.background.output(workspace, command, wait).await
+        })
+    }
+
+    fn stop(
+        &self,
+        workspace: WorkspaceId,
+        command: CommandId,
+    ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
+        Box::pin(async move {
+            self.registry.workspace(workspace)?;
+            self.background.stop(workspace, command).await
+        })
+    }
+
+    fn commands(
+        &self,
+        workspace: WorkspaceId,
+    ) -> BoxFuture<'_, Result<Vec<Background>, ComputerError>> {
+        Box::pin(async move {
+            self.registry.workspace(workspace)?;
+            Ok(self.background.list(workspace))
         })
     }
 

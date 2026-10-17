@@ -1,0 +1,1 @@
+The integration tests in `tests/test_api.py` fail. They talk to the app's server, which must be running while they do: start it with `python3 server.py`. Find the bug and fix it, then run the tests with `python3 -m unittest discover tests` against the server to confirm they pass. Stop the server when you are done.

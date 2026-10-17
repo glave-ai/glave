@@ -371,12 +371,7 @@ impl WorkerComputers {
     ) -> Result<glave_ports::Finished, ComputerError> {
         let worker = self.worker_of(workspace)?;
         let left = self.check_time(&worker)?;
-        let mut command = command.clone();
-        if let Some(left) = left {
-            // A command never outlives the worker's time.
-            let most = left.as_secs().max(1);
-            command.timeout_secs = Some(command.timeout_secs.map_or(most, |asked| asked.min(most)));
-        }
+        let command = within(command, left);
         let remote = self.remote(&worker).await?;
         match credentials {
             Some(credentials) => {
@@ -448,7 +443,35 @@ impl Computers for WorkerComputers {
         Box::pin(self.run_now(workspace, command, output, cancel, Some(credentials)))
     }
 
+    fn start<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        command: &'a Command,
+    ) -> BoxFuture<'a, Result<glave_ports::CommandId, ComputerError>> {
+        Box::pin(async move {
+            let worker = self.worker_of(workspace)?;
+            let command = within(command, self.check_time(&worker)?);
+            self.remote(&worker).await?.start(workspace, &command).await
+        })
+    }
+
     route::forward!();
+}
+
+/// `command` within the worker's time `left`, when policy limits it: it never outlives that
+/// time, in the foreground or the background, and one the worker's time ends stops then rather
+/// than moving to the background.
+fn within(command: &Command, left: Option<Duration>) -> Command {
+    let mut command = command.clone();
+    if let Some(left) = left {
+        let most = left.as_secs().max(1);
+        let asked = command.timeout_secs;
+        command.timeout_secs = Some(asked.map_or(most, |asked| asked.min(most)));
+        if asked.is_none_or(|asked| most < asked) {
+            command.on_timeout = glave_ports::OnTimeout::Stop;
+        }
+    }
+    command
 }
 
 #[cfg(test)]

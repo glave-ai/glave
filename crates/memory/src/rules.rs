@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use glave_event::{MemoryScope, PrincipalId};
-use glave_harness::MemoryError;
+use glave_ports::memories::MemoryError;
 use glave_ports::{Scope, SpaceId};
 
 /// What a space allows (`specs/memory.md`): its own memory, the person's too, or none.

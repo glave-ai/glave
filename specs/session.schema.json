@@ -123,6 +123,11 @@
       ],
       "type": "object"
     },
+    "CommandId": {
+      "description": "Identifies a command kept running in the background, unique everywhere (UUID v7, minted by\nthe computer it runs on).",
+      "format": "uuid",
+      "type": "string"
+    },
     "ComputerId": {
       "description": "Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it).",
       "format": "uuid",
@@ -786,6 +791,19 @@
       ],
       "type": "object"
     },
+    "QueuedMessage": {
+      "description": "A message queued to the turn running in its thread, for the model's next call.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId",
+          "description": "The id of the `message.added` it is recorded as once the model reads it: that\n`thread/event` says it was read. A `turn/live` `unread` with this id says it never will be."
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
     "RawEvent": {
       "description": "An event exactly as it is stored and sent. `data` holds the payload's bytes as written;\n[`crate::decode`] interprets them.",
       "properties": {
@@ -883,6 +901,40 @@
         "scope",
         "text",
         "saved_at"
+      ],
+      "type": "object"
+    },
+    "RunningCommand": {
+      "description": "A command a thread keeps running in the background, as a client lists it: what it runs,\nsince when, and a sentence saying so (`command/list`).",
+      "properties": {
+        "command": {
+          "description": "What it runs, as the agent wrote it.",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/CommandId",
+          "description": "Which command, for `command/stop`."
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/At"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When it started, once the thread has recorded it."
+        },
+        "summary": {
+          "description": "What it is doing, in plain words.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "command",
+        "summary"
       ],
       "type": "object"
     },
@@ -1748,6 +1800,29 @@
           "type": "object"
         },
         {
+          "description": "A message sent while the turn ran (its `queued` id) that the model will not read, given\nback: a hook stopped it (`reason`, the hook's), or the turn was stopped or failed first.",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/EventId"
+            },
+            "kind": {
+              "const": "unread",
+              "type": "string"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
           "description": "A memory was saved, edited or forgotten: `change` is `remembered`, `edited` or `forgot`.",
           "properties": {
             "change": {
@@ -1858,6 +1933,10 @@
       "code": -32004,
       "message": "No such approval is pending"
     },
+    "NO_COMMAND": {
+      "code": -32027,
+      "message": "No such command is running in the background in this thread"
+    },
     "NO_CREDENTIAL": {
       "code": -32024,
       "message": "No such git host, or sign-in, here"
@@ -1922,6 +2001,10 @@
       "code": -32020,
       "message": "The model provider failed"
     },
+    "QUEUE_FULL": {
+      "code": -32028,
+      "message": "As many messages wait for the running turn as it takes"
+    },
     "TURN_RUNNING": {
       "code": -32002,
       "message": "A turn is already running in this thread"
@@ -1949,6 +2032,55 @@
           "thread",
           "approval",
           "decision"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "command/list": {
+      "params": {
+        "properties": {
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "commands": {
+            "items": {
+              "$ref": "#/$defs/RunningCommand"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "commands"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "command/stop": {
+      "params": {
+        "properties": {
+          "command": {
+            "$ref": "#/$defs/CommandId"
+          },
+          "thread": {
+            "$ref": "#/$defs/ThreadId"
+          }
+        },
+        "required": [
+          "thread",
+          "command"
         ],
         "type": "object"
       },
@@ -3284,7 +3416,7 @@
                 "type": "null"
               }
             ],
-            "description": "How much this turn, and the thread's turns after it, ask before acting: one of the\nserver's `approvals`. The thread's latest choice when absent, else the server's."
+            "description": "How much this turn, and the thread's turns after it, ask before acting: one of the\nserver's `approvals`. The thread's latest choice when absent, else the server's.\nNot while a turn runs."
           },
           "background": {
             "description": "Runs the turn as a task, with no one attached: answered at once with the task.",
@@ -3300,7 +3432,7 @@
             ]
           },
           "model": {
-            "description": "The model this turn, and the thread's turns after it, go to: one `model/list`\nnames. The thread's latest choice when absent, else the server's default.",
+            "description": "The model this turn, and the thread's turns after it, go to: one `model/list`\nnames. The thread's latest choice when absent, else the server's default. Not while\na turn runs.",
             "type": [
               "string",
               "null"
@@ -3340,6 +3472,18 @@
             },
             "required": [
               "task"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A message sent while a turn ran, queued to it: answered at once.",
+            "properties": {
+              "queued": {
+                "$ref": "#/$defs/QueuedMessage"
+              }
+            },
+            "required": [
+              "queued"
             ],
             "type": "object"
           }

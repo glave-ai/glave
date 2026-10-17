@@ -14,6 +14,7 @@ import type { ApprovalMode } from '@glave/client';
 import {
   GlzButtonComponent,
   GlzComposerComponent,
+  GlzMessageComponent,
   GlzPanelLayoutComponent,
   GlzStickToBottomDirective,
   type GlzTrustAnswer,
@@ -28,6 +29,7 @@ import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
 import type { FirstPrompt } from '../home/home.component';
+import { MessageTextComponent } from '../message-text/message-text.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { RenameDialogComponent } from '../rename-dialog/rename-dialog.component';
 import { ThreadHeaderComponent } from '../thread-header/thread-header.component';
@@ -43,6 +45,8 @@ const COPY = {
   resize: 'Resize the tools',
   hint: 'Drag or use the arrow keys to resize; Enter collapses. Show or hide:',
   trust: 'This project brings its own tools and settings',
+  you: 'You',
+  queued: 'Waiting to be read',
 } as const;
 
 /** A turn with nothing in it yet, for a reply that streams in before anything is recorded. */
@@ -69,8 +73,9 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
  * conversation in a reading column, turn by turn, results first (the reply, what changed, the
  * receipt that opens to the steps, then what waits for the person), and after them what its
  * project asks the person to trust, while it asks; the reply streaming in as
- * markdown as a turn runs; the composer pinned below it, with the approval mode and the model
- * in its quiet line; and the tools panel beside it, resized and collapsed by its edge and shown
+ * markdown as a turn runs, and after it what the person sent meanwhile, waiting until the
+ * model reads it; the composer pinned below it, usable while a turn runs, with the approval
+ * mode and the model in its quiet line; and the tools panel beside it, resized and collapsed by its edge and shown
  * or hidden by ⌘. or Ctrl+. anywhere in the thread.
  */
 @Component({
@@ -79,9 +84,11 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
     ApprovalModeComponent,
     GlzButtonComponent,
     GlzComposerComponent,
+    GlzMessageComponent,
     GlzPanelLayoutComponent,
     GlzStickToBottomDirective,
     GlzTrustCardComponent,
+    MessageTextComponent,
     ModelPickerComponent,
     RenameDialogComponent,
     ThreadHeaderComponent,
@@ -103,7 +110,8 @@ export class ThreadComponent {
   private readonly spaces = inject(SpacesService);
   private readonly panel = inject(ToolsPanelService);
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
-  protected readonly draft = signal('');
+  /** The composer's draft, which a message the model never read comes back to. */
+  protected readonly draft = this.service.composer;
   protected readonly atBottom = signal(true);
   protected readonly awayFromBottom = computed(() => !this.atBottom());
   /** The model the person picked for the next turn, or `null` for the thread's own. */

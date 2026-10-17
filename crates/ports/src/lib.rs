@@ -5,7 +5,8 @@
 //! must pass. Ports are shaped as if they crossed a network: coarse calls, batched writes,
 //! paged reads, serializable types. Every storage call takes a [`Scope`], and no call can
 //! cross scopes. The computer port's in-process implementation runs real processes, so it
-//! lives in `glave-computer` (this machine) rather than here.
+//! lives in `glave-computer` (this machine) rather than here; the memory port's is glave's
+//! memory server over any event log, in `glave-memory`.
 
 pub mod auth;
 mod blob;
@@ -16,6 +17,7 @@ pub mod conformance;
 mod env;
 mod failure;
 mod log;
+pub mod memories;
 mod memory;
 mod model;
 mod scope;
@@ -31,11 +33,12 @@ mod view;
 pub use blob::{BlobError, BlobStore, digest};
 pub use caller::Caller;
 pub use computer::{
-    Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, CredentialAsk,
-    CredentialHost, Credentials, Ending, Entry, EntryKind, Environment, FileWrite, Finished, Forge,
-    ForgeTool, GitCredential, Glob, Globbed, Image, Listed, Listing, Match, Network, Output,
-    PROTECTED, Sandbox, SandboxLevel, Save, Saved, Search, Searched, Size, Sources, Stat, State,
-    WorkspaceId, WorkspaceInfo, is_protected, is_protected_refusal, looks_binary, refuse_protected,
+    Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
+    CredentialAsk, CredentialHost, Credentials, Ending, Entry, EntryKind, Environment, FileWrite,
+    Finished, Forge, ForgeTool, GitCredential, Glob, Globbed, IDLE, Image, KEPT_OUTPUT, Listed,
+    Listing, MAX_BACKGROUND, MAX_WAIT, Match, Network, OnTimeout, Output, PROTECTED, Printed,
+    Sandbox, SandboxLevel, Save, Saved, Search, Searched, Size, Sources, Stat, State, WorkspaceId,
+    WorkspaceInfo, is_protected, is_protected_refusal, looks_binary, refuse_protected,
 };
 pub use env::{Clock, Entropy, OsEntropy, SystemClock};
 pub use failure::Failure;

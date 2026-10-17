@@ -10,7 +10,6 @@ publish.workspace = true
 
 [dependencies]
 glave-event.workspace = true
-glave-harness.workspace = true
 # Destroying a forgotten memory's key and rotating the space key.
 glave-keys.workspace = true
 # glave's MCP client, connected in-process to the memory server.
@@ -25,6 +24,8 @@ tokio = { workspace = true, features = ["io-util", "rt", "sync"] }
 
 [dev-dependencies]
 glave-computer.workspace = true
+# The tests run memory in the harness, as glave does.
+glave-harness.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }
 glave-store-sqlite.workspace = true
 proptest.workspace = true

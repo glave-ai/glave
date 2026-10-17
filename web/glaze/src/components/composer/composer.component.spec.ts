@@ -93,9 +93,31 @@ describe('GlzComposerComponent', () => {
     const input = find<HTMLTextAreaElement>(root, 'composer-input');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(fixture.componentInstance.stops()).toBe(2);
-    type(input, 'next');
-    enter(input);
     expect(fixture.componentInstance.sent).toEqual([]);
+    await expectAccessible(root);
+  });
+
+  it('sends while busy: on Enter, or with Send beside Stop once there is something to send', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.busy.set(true);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const input = find<HTMLTextAreaElement>(root, 'composer-input');
+    type(input, ' use 4000 instead ');
+    await fixture.whenStable();
+    const send = find<HTMLButtonElement>(root, 'composer-send');
+    const stop = find<HTMLButtonElement>(root, 'composer-stop');
+    // Stop stays at the end, where Send was.
+    expect(send.nextElementSibling).toBe(stop);
+    await expectAccessible(root);
+    send.click();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.sent).toEqual(['use 4000 instead']);
+    expect(root.querySelector('[data-testid="composer-send"]')).toBeNull();
+    type(input, 'and keep the comment');
+    expect(enter(input).defaultPrevented).toBe(true);
+    expect(fixture.componentInstance.sent).toEqual(['use 4000 instead', 'and keep the comment']);
+    expect(fixture.componentInstance.stops()).toBe(0);
   });
 
   it('opens its status line from the options button, as a phone shows it', async () => {

@@ -17,7 +17,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
 
-use glave_provider_openai::{Config, OpenAiCompatible};
+use glave_provider_openai::OpenAiCompatible;
 use model::{Metered, decide_all};
 use score::Score;
 
@@ -72,13 +72,7 @@ fn run(options: &Options) -> Result<(), String> {
     if options.models.is_empty() {
         return Ok(());
     }
-    let base_url = std::env::var("GLAVE_BASE_URL")
-        .map_err(|_| "set GLAVE_BASE_URL (and GLAVE_API_KEY) to the model endpoint".to_owned())?;
-    let api_key = std::env::var("GLAVE_API_KEY")
-        .ok()
-        .filter(|key| !key.is_empty());
-    let endpoint = Config::for_url(base_url.clone(), api_key)
-        .ok_or_else(|| format!("GLAVE_BASE_URL is not a URL: {base_url}"))?;
+    let endpoint = crate::cli::endpoint()?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

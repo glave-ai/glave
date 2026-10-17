@@ -1,26 +1,32 @@
-//! Running one command at a workspace root: bash in a fresh process group, output streamed
-//! as it arrives, stopped with everything it started on a timeout or a cancel.
+//! Running one command at a workspace root: bash in a fresh process group, in the sandbox the
+//! command carries, output streamed as it arrives; at a cancel stopped with everything it
+//! started, and at a timeout stopped too, or kept running in the background when it asks.
 
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::Stdio;
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 
-use glave_ports::{Cancellation, Command, ComputerError, Credentials, Ending, Finished, Output};
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::process::{Child, ChildStdout};
+use glave_ports::{
+    Cancellation, Command, ComputerError, Credentials, Ending, Finished, OnTimeout, Output,
+    Sandbox, WorkspaceId,
+};
+use tokio::io::AsyncWriteExt as _;
+use tokio::process::Child;
+use tokio::time::Instant;
 
+use super::background::Backgrounds;
 use super::credentials::{Offered, offer};
+use super::process::{Stream, stop};
 use super::registry::Opened;
-use super::sandbox::Launch;
+use super::sandbox::{Launch, Prepared};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 const MAX_TIMEOUT_SECS: u64 = 600;
 /// How long to keep reading after the command exits, in case a background child it started
 /// still holds the output open.
-const DRAIN: Duration = Duration::from_millis(500);
-/// How long a stopped command gets between SIGTERM and SIGKILL.
-const GRACE: Duration = Duration::from_secs(3);
+pub(crate) const DRAIN: Duration = Duration::from_millis(500);
 /// Package managers' caches, kept in the home folder by default, where sandboxed commands
 /// cannot write. In the sandbox each goes in a folder of its own in glave's sandbox cache
 /// folder (`~/.glave/sandbox-cache`), kept between runs so installs stay fast, or, without
@@ -68,68 +74,135 @@ fn maven_opts(environment: &[(OsString, OsString)], caches: &Path) -> Option<OsS
     Some(opts)
 }
 
-/// Runs `command` in `opened`. `helper` runs the Linux sandbox's helper, if this machine has one.
-/// Git and the forge tools ask `credentials`, if given, for the hosts it names, at each use.
-pub(crate) async fn run(
+/// A command that has started, and what must last as long as it runs.
+#[derive(Debug)]
+pub(crate) struct Spawned {
+    pub(crate) child: Child,
+    pub(crate) stream: Stream,
+    pub(crate) held: Held,
+    pub(crate) started: Instant,
+}
+
+/// What a running command holds: the sandbox it was prepared in, whose temp folder it uses,
+/// and what launching it left in the workspace, removed once it ends.
+#[derive(Debug)]
+pub(crate) struct Held {
+    _launch: Option<Launch>,
+    _sandbox: Option<Arc<Prepared>>,
+}
+
+/// Starts `script` by bash in `opened`, in `sandbox` when there is one, its git asking
+/// `offered`'s helper when given. `helper` runs the Linux sandbox's helper, if this machine
+/// has one.
+pub(crate) async fn spawn(
     opened: &Opened,
-    command: &Command,
-    output: &dyn Output,
-    cancel: &dyn Cancellation,
+    script: &str,
+    sandbox: Option<&Sandbox>,
     helper: Option<&Path>,
-    credentials: Option<&dyn Credentials>,
-) -> Result<Finished, ComputerError> {
-    if command.script.trim().is_empty() {
+    offered: Option<&Offered>,
+) -> Result<Spawned, ComputerError> {
+    if script.trim().is_empty() {
         return Err(ComputerError::Refused("the command is empty".into()));
     }
-    let limit = command
-        .timeout_secs
-        .unwrap_or(DEFAULT_TIMEOUT_SECS)
-        .clamp(1, MAX_TIMEOUT_SECS);
-    let sandbox = match &command.sandbox {
+    let prepared = match sandbox {
         Some(sandbox) => Some(opened.sandbox(sandbox, helper).await?),
         None => None,
     };
-    // Held until the command ends: what launching it left in the workspace is removed then.
-    let launch = match &sandbox {
-        Some(sandbox) => Some((sandbox.launch().await?, sandbox.temp(), sandbox.caches())),
+    let launch = match &prepared {
+        Some(prepared) => Some(prepared.launch().await?),
         None => None,
     };
-    // Held until the command ends: its helper's folder and listener go with it.
-    let offered = match credentials {
-        Some(credentials) => offer(credentials, &opened.environment).await?,
-        None => None,
-    };
-    let started = Instant::now();
-    let mut child = bash(opened, &command.script, launch.as_ref(), offered.as_ref())
+    let confined = launch.as_ref().zip(prepared.as_deref());
+    let mut child = bash(opened, script, confined, offered)
         .spawn()
         .map_err(|error| ComputerError::Failed(format!("could not start bash: {error}")))?;
-    let input = launch
-        .as_ref()
-        .and_then(|(launch, _, _)| launch.input.as_deref());
+    let input = launch.as_ref().and_then(|launch| launch.input.as_deref());
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         // Small (a seccomp filter), so it fits the pipe; a wrapper that failed early and
         // never reads it is reported by its own output.
         let _ = stdin.write_all(input).await;
     }
-    let stdout = child.stdout.take();
-    let pump = pump(stdout, output);
-    let waiting = answering(
-        wait(&mut child, limit, cancel),
-        offered.as_ref().zip(credentials),
-    );
-    tokio::pin!(pump, waiting);
-    let (ending, pumped) = tokio::select! {
-        ending = &mut waiting => (ending, false),
-        () = &mut pump => (waiting.await, true),
-    };
-    if !pumped {
-        let _ = tokio::time::timeout(DRAIN, pump).await;
-    }
-    let millis = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-    Ok(Finished {
-        ending: ending?,
-        millis,
+    let stream = Stream::of(&mut child);
+    Ok(Spawned {
+        child,
+        stream,
+        held: Held {
+            _launch: launch,
+            _sandbox: prepared,
+        },
+        started: Instant::now(),
     })
+}
+
+/// Where a command that reaches its timeout is kept running, when it asks to be: this
+/// machine's commands in the background, in the workspace it runs in.
+pub(crate) struct Keep<'a> {
+    pub(crate) background: &'a Backgrounds,
+    pub(crate) workspace: WorkspaceId,
+}
+
+/// Runs `command` in `opened`. `helper` runs the Linux sandbox's helper, if this machine has
+/// one. Git and the forge tools ask `credentials`, if given, for the hosts it names, at each
+/// use; a command moved to the background asks no more.
+pub(crate) async fn run(
+    opened: &Opened,
+    command: &Command,
+    (output, cancel): (&dyn Output, &dyn Cancellation),
+    helper: Option<&Path>,
+    credentials: Option<&dyn Credentials>,
+    keep: Keep<'_>,
+) -> Result<Finished, ComputerError> {
+    let limit = command
+        .timeout_secs
+        .unwrap_or(DEFAULT_TIMEOUT_SECS)
+        .clamp(1, MAX_TIMEOUT_SECS);
+    // Held until the command ends, or moves to the background: its helper's folder and
+    // listener go with it.
+    let offered = match credentials {
+        Some(credentials) => offer(credentials, &opened.environment).await?,
+        None => None,
+    };
+    let sandbox = command.sandbox.as_ref();
+    let mut spawned = spawn(opened, &command.script, sandbox, helper, offered.as_ref()).await?;
+    let keeps = command.on_timeout == OnTimeout::Background;
+    let waited = {
+        let pump = spawned.stream.pump(output);
+        let waiting = answering(
+            wait(&mut spawned.child, limit, cancel, keeps),
+            offered.as_ref().zip(credentials),
+        );
+        tokio::pin!(pump, waiting);
+        let (waited, pumped) = tokio::select! {
+            waited = &mut waiting => (waited, false),
+            () = &mut pump => (waiting.await, true),
+        };
+        if !pumped && !matches!(waited, Ok(Waited::Reached)) {
+            let _ = tokio::time::timeout(DRAIN, pump).await;
+        }
+        waited
+    };
+    let millis = u64::try_from(spawned.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    let ending = match waited? {
+        Waited::Ended(ending) => ending,
+        Waited::Reached => {
+            let script = command.script.clone();
+            let adopted =
+                keep.background
+                    .adopt(opened.computer, keep.workspace, script, spawned, None);
+            match adopted {
+                Ok(command) => Ending::Backgrounded {
+                    command,
+                    after_secs: limit,
+                },
+                // The workspace keeps as many as it may: stopped, as without the move.
+                Err(mut spawned) => {
+                    stop(&mut spawned.child).await;
+                    Ending::TimedOut { after_secs: limit }
+                }
+            }
+        }
+    };
+    Ok(Finished { ending, millis })
 }
 
 /// `work`, with the command's credential helper answered meanwhile, when it has one.
@@ -157,33 +230,33 @@ async fn answering<T>(
 fn bash(
     opened: &Opened,
     script: &str,
-    sandbox: Option<&(Launch, &Path, &Path)>,
+    sandbox: Option<(&Launch, &Prepared)>,
     offered: Option<&Offered>,
 ) -> tokio::process::Command {
     let mut command = match sandbox {
-        Some((launch, _, _)) => {
+        Some((launch, _)) => {
             let mut command = tokio::process::Command::new(&launch.program);
             command.args(&launch.args).arg("bash");
             command
         }
         None => tokio::process::Command::new("bash"),
     };
-    let input = sandbox.is_some_and(|(launch, _, _)| launch.input.is_some());
+    let input = sandbox.is_some_and(|(launch, _)| launch.input.is_some());
     command
         .arg("-c")
         .arg(format!("exec 2>&1\n{script}"))
         .current_dir(&opened.root)
         .env_clear()
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
-        .envs(sandbox.map(|(_, temp, _)| ("TMPDIR", temp.to_path_buf())))
-        .envs(sandbox.into_iter().flat_map(|(_, _, caches)| {
+        .envs(sandbox.map(|(_, prepared)| ("TMPDIR", prepared.temp().to_path_buf())))
+        .envs(sandbox.into_iter().flat_map(|(_, prepared)| {
             CACHES
                 .iter()
-                .map(move |(name, folder)| (*name, caches.join(folder)))
+                .map(move |(name, folder)| (*name, prepared.caches().join(folder)))
         }))
         .envs(
             sandbox
-                .and_then(|(_, _, caches)| maven_opts(&opened.environment, caches))
+                .and_then(|(_, prepared)| maven_opts(&opened.environment, prepared.caches()))
                 .map(|opts| ("MAVEN_OPTS", opts)),
         )
         .envs(offered.into_iter().flat_map(|offered| {
@@ -201,124 +274,52 @@ fn bash(
         .stderr(Stdio::null())
         .kill_on_drop(true);
     #[cfg(unix)]
-    if !sandbox.is_some_and(|(launch, _, _)| launch.own_session) {
+    if !sandbox.is_some_and(|(launch, _)| launch.own_session) {
         command.process_group(0);
     }
     command
 }
 
-/// Waits for the command to end, stopping it on a timeout or a cancel.
+/// How waiting for a command ended.
+enum Waited {
+    Ended(Ending),
+    /// It reached its timeout still running, and is to be kept running.
+    Reached,
+}
+
+/// Waits for the command to end, stopping it on a cancel, and on a timeout unless it `keeps`
+/// running then.
 async fn wait(
     child: &mut Child,
     limit: u64,
     cancel: &dyn Cancellation,
-) -> Result<Ending, ComputerError> {
+    keeps: bool,
+) -> Result<Waited, ComputerError> {
     let waited = glave_ports::unless_cancelled(
         cancel,
         tokio::time::timeout(Duration::from_secs(limit), child.wait()),
     )
     .await;
     match waited {
-        Some(Ok(Ok(status))) => Ok(status
-            .code()
-            .map_or(Ending::Signalled, |code| Ending::Exited { code })),
+        Some(Ok(Ok(status))) => Ok(Waited::Ended(exited(status))),
         Some(Ok(Err(error))) => Err(ComputerError::Failed(format!(
             "could not wait for the command: {error}"
         ))),
+        Some(Err(_)) if keeps => Ok(Waited::Reached),
         Some(Err(_)) => {
             stop(child).await;
-            Ok(Ending::TimedOut { after_secs: limit })
+            Ok(Waited::Ended(Ending::TimedOut { after_secs: limit }))
         }
         None => {
             stop(child).await;
-            Ok(Ending::Cancelled)
+            Ok(Waited::Ended(Ending::Cancelled))
         }
     }
 }
 
-/// Stops a command and everything it started: SIGTERM to its process group, then SIGKILL to
-/// whatever of the group is still there after a grace period. Returns once the group is gone,
-/// not just bash: a child that outlives bash, or ignores SIGTERM, is stopped too.
-async fn stop(child: &mut Child) {
-    #[cfg(unix)]
-    if let Some(group) = child
-        .id()
-        .and_then(|pid| i32::try_from(pid).ok())
-        .and_then(rustix::process::Pid::from_raw)
-    {
-        use rustix::process::{Signal, kill_process_group};
-        let _ = kill_process_group(group, Signal::TERM);
-        if tokio::time::timeout(GRACE, gone(child, group))
-            .await
-            .is_err()
-        {
-            let _ = kill_process_group(group, Signal::KILL);
-            // SIGKILL cannot be ignored; this waits only for the kernel to finish the job.
-            let _ = tokio::time::timeout(GRACE, gone(child, group)).await;
-        }
-    }
-    let _ = child.kill().await;
-}
-
-/// How often a stopped command's process group is checked for anything left in it.
-#[cfg(unix)]
-const POLL: Duration = Duration::from_millis(10);
-
-/// Resolves once bash has exited and nothing is left in its process group, not even a process
-/// waiting to be reaped. Glave's workers run with an init that reaps orphans (Docker's `Init`,
-/// the Pod's shared process namespace), as does any desktop.
-#[cfg(unix)]
-async fn gone(child: &mut Child, group: rustix::process::Pid) {
-    let _ = child.wait().await;
-    while rustix::process::test_kill_process_group(group).is_ok() {
-        tokio::time::sleep(POLL).await;
-    }
-}
-
-/// Streams the command's output to `output` as text until it ends.
-async fn pump(stdout: Option<ChildStdout>, output: &dyn Output) {
-    let Some(mut stdout) = stdout else {
-        return;
-    };
-    let mut buffer = vec![0u8; 16 * 1024];
-    let mut text = Utf8::default();
-    while let Ok(read) = stdout.read(&mut buffer).await {
-        let Some(chunk) = buffer.get(..read).filter(|chunk| !chunk.is_empty()) else {
-            break;
-        };
-        let decoded = text.push(chunk);
-        if !decoded.is_empty() {
-            output.write(&decoded).await;
-        }
-    }
-    let rest = text.finish();
-    if !rest.is_empty() {
-        output.write(&rest).await;
-    }
-}
-
-/// Turns bytes into text without splitting a character across chunks.
-#[derive(Debug, Default)]
-pub(crate) struct Utf8 {
-    pending: Vec<u8>,
-}
-
-impl Utf8 {
-    pub(crate) fn push(&mut self, bytes: &[u8]) -> String {
-        self.pending.extend_from_slice(bytes);
-        let cut = match std::str::from_utf8(&self.pending) {
-            Err(error) if error.error_len().is_none() => error.valid_up_to(),
-            _ => self.pending.len(),
-        };
-        let rest = self.pending.split_off(cut);
-        let text = String::from_utf8_lossy(&self.pending).into_owned();
-        self.pending = rest;
-        text
-    }
-
-    pub(crate) fn finish(&mut self) -> String {
-        let text = String::from_utf8_lossy(&self.pending).into_owned();
-        self.pending.clear();
-        text
-    }
+/// How a command that exited ended.
+pub(crate) fn exited(status: std::process::ExitStatus) -> Ending {
+    status
+        .code()
+        .map_or(Ending::Signalled, |code| Ending::Exited { code })
 }

@@ -7,8 +7,8 @@
 use std::sync::Arc;
 
 use glave_event::{MemoryId, MemoryScope, MemorySource, Principal};
-use glave_harness::{MemoryContext, MemoryError, Remembered, Shown};
 use glave_ports::EventLog;
+use glave_ports::memories::{MemoryContext, MemoryError, Remembered, Shown};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, JsonObject,
     ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,

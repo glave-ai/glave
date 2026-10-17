@@ -23,30 +23,44 @@
     (keydown)="keydown($event)"
   ></textarea>
   <div class="start"><ng-content select="[glzComposerStart]" /></div>
-  @if (busy()) {
-    <button
-      glzIconButton
-      class="act"
-      variant="secondary"
-      [attr.data-testid]="ids().stop"
-      [label]="stopLabel()"
-      (click)="stopped()"
-    >
-      <glz-icon [icon]="icons.stop" />
-    </button>
-  } @else {
-    <button
-      glzIconButton
-      class="act"
-      variant="primary"
-      [attr.data-testid]="ids().send"
-      [label]="sendLabel()"
-      [disabled]="sendDisabled()"
-      (click)="submit()"
-    >
-      <glz-icon [icon]="icons.send" />
-    </button>
-  }
+  <div class="acts">
+    @if (busy()) {
+      @if (sendBesideStop()) {
+        <button
+          glzIconButton
+          class="act"
+          variant="primary"
+          [attr.data-testid]="ids().send"
+          [label]="sendLabel()"
+          (click)="submit()"
+        >
+          <glz-icon [icon]="icons.send" />
+        </button>
+      }
+      <button
+        glzIconButton
+        class="act"
+        variant="secondary"
+        [attr.data-testid]="ids().stop"
+        [label]="stopLabel()"
+        (click)="stopped()"
+      >
+        <glz-icon [icon]="icons.stop" />
+      </button>
+    } @else {
+      <button
+        glzIconButton
+        class="act"
+        variant="primary"
+        [attr.data-testid]="ids().send"
+        [label]="sendLabel()"
+        [disabled]="sendDisabled()"
+        (click)="submit()"
+      >
+        <glz-icon [icon]="icons.send" />
+      </button>
+    }
+  </div>
 </div>
 <p class="glz-visually-hidden" [id]="hintId">{{ hint() }}</p>
 <div

@@ -7,10 +7,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use glave_ports::{
-    BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers,
-    CredentialAsk, CredentialHost, Credentials, Environment, FileWrite, Finished, GitCredential,
-    Glob, Globbed, Listed, Listing, Output, Save, Saved, Search, Searched, Sources, Stat,
-    WorkspaceId, WorkspaceInfo,
+    Background, BoxFuture, Bytes, Cancellation, Command, CommandId, ComputerError, ComputerId,
+    ComputerInfo, Computers, CredentialAsk, CredentialHost, Credentials, Environment, FileWrite,
+    Finished, GitCredential, Glob, Globbed, Listed, Listing, Output, Printed, Save, Saved, Search,
+    Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
 };
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -365,6 +365,9 @@ fn deadline(request: &Request) -> Duration {
         Request::Run { command, .. } => command
             .timeout_secs
             .map_or(SLOW, |secs| Duration::from_secs(secs).saturating_add(GRACE)),
+        Request::Output { wait_ms, .. } => {
+            QUICK.max(Duration::from_millis(*wait_ms).saturating_add(GRACE))
+        }
         Request::Create { .. }
         | Request::Destroy { .. }
         | Request::Open { .. }
@@ -451,6 +454,63 @@ impl Computers for RemoteComputers {
         credentials: &'a dyn Credentials,
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
         Box::pin(self.run_now(workspace, command, output, cancel, Some(credentials)))
+    }
+
+    fn start<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        command: &'a Command,
+    ) -> BoxFuture<'a, Result<CommandId, ComputerError>> {
+        #[derive(Deserialize)]
+        struct Started {
+            command: CommandId,
+        }
+        let request = Request::Start {
+            workspace,
+            command: command.clone(),
+        };
+        Box::pin(async move {
+            let started: Started = self.typed(&request).await?;
+            Ok(started.command)
+        })
+    }
+
+    fn output(
+        &self,
+        workspace: WorkspaceId,
+        command: CommandId,
+        wait: Duration,
+    ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
+        let request = Request::Output {
+            workspace,
+            command,
+            wait_ms: u64::try_from(wait.as_millis()).unwrap_or(u64::MAX),
+        };
+        Box::pin(async move { self.typed(&request).await })
+    }
+
+    fn stop(
+        &self,
+        workspace: WorkspaceId,
+        command: CommandId,
+    ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
+        let request = Request::Stop { workspace, command };
+        Box::pin(async move { self.typed(&request).await })
+    }
+
+    fn commands(
+        &self,
+        workspace: WorkspaceId,
+    ) -> BoxFuture<'_, Result<Vec<Background>, ComputerError>> {
+        #[derive(Deserialize)]
+        struct Listed {
+            commands: Vec<Background>,
+        }
+        let request = Request::Commands { workspace };
+        Box::pin(async move {
+            let listed: Listed = self.typed(&request).await?;
+            Ok(listed.commands)
+        })
     }
 
     fn read<'a>(

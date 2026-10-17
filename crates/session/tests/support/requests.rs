@@ -101,15 +101,9 @@ pub async fn turn<L: EventLog + 'static>(
         .await
 }
 
-/// Starts a turn saying `prompt` and streams it, through the entry every transport uses. With
-/// `key`, a turn already started under it is followed instead.
-pub async fn stream_turn<L: EventLog + 'static>(
-    server: &Tested<L>,
-    thread: ThreadId,
-    prompt: &str,
-    key: Option<IdempotencyKey>,
-) -> Result<TurnStream, ApiError> {
-    let request = Request::TurnStart {
+/// `turn/start` saying `prompt` in `thread`, with `key` when given.
+pub fn turn_start(thread: ThreadId, prompt: &str, key: Option<IdempotencyKey>) -> Request {
+    Request::TurnStart {
         background: false,
         budget: None,
         thread,
@@ -120,7 +114,18 @@ pub async fn stream_turn<L: EventLog + 'static>(
         },
         model: None,
         approval: None,
-    };
+    }
+}
+
+/// Starts a turn saying `prompt` and streams it, through the entry every transport uses. With
+/// `key`, a turn already started under it is followed instead.
+pub async fn stream_turn<L: EventLog + 'static>(
+    server: &Tested<L>,
+    thread: ThreadId,
+    prompt: &str,
+    key: Option<IdempotencyKey>,
+) -> Result<TurnStream, ApiError> {
+    let request = turn_start(thread, prompt, key);
     server.start_streaming(&Caller::default(), request).await
 }
 

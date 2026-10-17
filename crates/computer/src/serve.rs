@@ -1,13 +1,14 @@
 //! Serving computers over one connection (`glave computer serve`): requests run
 //! concurrently, a command's output streams as notifications, a command offered credentials
-//! asks the client for each one, and when the connection ends every command it started is
-//! stopped.
+//! asks the client for each one, and when the connection ends every command it is running is
+//! stopped. Commands in the background belong to the computer, not the connection: they go on
+//! until they are stopped, their workspace closes, or nothing reads them for an hour.
 
 mod asking;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use glave_ports::{
     BoxFuture, Command, ComputerError, Computers, CredentialHost, Output, WorkspaceId,
@@ -271,6 +272,10 @@ impl<C: Computers + 'static> Connection<C> {
                 }
                 Ok(json!({}))
             }
+            request @ (Request::Start { .. }
+            | Request::Output { .. }
+            | Request::Stop { .. }
+            | Request::Commands { .. }) => self.background(request).await,
             Request::Read { workspace, path } => reply(
                 computers
                     .read(workspace, &path)
@@ -287,6 +292,38 @@ impl<C: Computers + 'static> Connection<C> {
                 reply(computers.search(workspace, &search).await)
             }
             Request::Save { workspace, save } => reply(computers.save(workspace, &save).await),
+        }
+    }
+
+    /// Answers a request about commands in the background.
+    async fn background(&self, request: Request) -> Result<Value, Value> {
+        let computers = &*self.computers;
+        match request {
+            Request::Start { workspace, command } => reply(
+                computers
+                    .start(workspace, &command)
+                    .await
+                    .map(|command| json!({"command": command})),
+            ),
+            Request::Output {
+                workspace,
+                command,
+                wait_ms,
+            } => {
+                let wait = Duration::from_millis(wait_ms);
+                reply(computers.output(workspace, command, wait).await)
+            }
+            Request::Stop { workspace, command } => reply(computers.stop(workspace, command).await),
+            Request::Commands { workspace } => reply(
+                computers
+                    .commands(workspace)
+                    .await
+                    .map(|commands| json!({"commands": commands})),
+            ),
+            other => Err(wire::failure(
+                code::INVALID_REQUEST,
+                &format!("{} is not about commands in the background", other.method()),
+            )),
         }
     }
 

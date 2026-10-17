@@ -7,12 +7,12 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use glave_event::{Body, CallId, Event, MemoryId, Sha256};
+use glave_ports::memories::{EDIT_MEMORY, FORGET, REMEMBER, Remembered, Shown};
 use glave_ports::{BlobStore, EventLog, Message, ModelProvider};
 use serde::Deserialize;
 
 use super::render::{self, Line};
 use super::state::{ConfigMemory, MemoryState, among};
-use super::{EDIT_MEMORY, FORGET, REMEMBER, Remembered, Shown};
 use crate::approval::Approver;
 use crate::conversation::follow;
 use crate::harness::{Harness, Thread};

@@ -1,0 +1,11 @@
+[task]
+name = "glave/dev-server"
+description = "Fixes a bug only an integration test against the running server shows: the server runs in the background while the tests hit it, and is stopped at the end."
+
+[glave]
+# No sandbox or approval named: the task runs as glave does by default. The server listens on
+# loopback, which the sandbox lets commands reach with the network on.
+# The grader checks that nothing still answers where the agent's server listened (a server
+# left running outside glave's view), and `commands_stopped` that every command glave kept in
+# the background was stopped, or seen to end, before the run did.
+checks = ["commands_stopped", { kept = "tests/test_api.py" }]

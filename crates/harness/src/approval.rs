@@ -215,6 +215,10 @@ pub(crate) fn summarize(tool: Tool, arguments: &Arguments) -> String {
         }
         Tool::Edit => format!("edit {path}"),
         Tool::Bash => format!("bash: {}", field("command").unwrap_or_else(|| "?".into())),
+        Tool::CommandOutput => match crate::tools::command_named(arguments) {
+            Some(number) => format!("command_output {number}"),
+            None => "command_output".to_owned(),
+        },
     }
 }
 

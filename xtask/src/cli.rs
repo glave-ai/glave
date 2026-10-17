@@ -6,9 +6,11 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
-  ci                the full local gate: format, secrets, lint, tests, dependency audit, file
-                    sizes, and the web checks, which need Node 22.22.3+ (GLAVE_SKIP_WEB=1 skips
-                    them)
+  ci                the full local gate: format, secrets, the dependency rule, lint, tests,
+                    dependency audit, file sizes, and the web checks, which need Node 22.22.3+
+                    (GLAVE_SKIP_WEB=1 skips them)
+  deps              check the dependency rule: each crate depends only on the layers its own
+                    may use (the layers are in xtask/src/deps.rs)
   file-sizes        enforce the source-file line limits
   secrets           fail on a secret-shaped literal in a tracked file (tests make their fakes at
                     run time)
@@ -19,8 +21,8 @@ commands:
                     dist-workspace.toml names), where only the job that publishes can write
   bench [args]      run benchmarks under the machine-wide benchmark lock
   eval [args]       run the harness on the eval tasks against real models and grade the
-                    results (see `cargo xtask eval --help`; needs the model endpoint in the
-                    environment)
+                    results (see `cargo xtask eval --help`); the model endpoint comes from the
+                    environment or from .env (`--env-file <path>` names another file)
   help              show this message";
 
 /// Parses the process arguments, runs the command, and maps the result to an exit code.
@@ -39,6 +41,7 @@ fn run(args: &[String]) -> Result<(), String> {
     match args.split_first() {
         Some((command, rest)) => match command.as_str() {
             "ci" => crate::ci::run(),
+            "deps" => crate::deps::check(),
             "file-sizes" => crate::file_sizes::check(),
             "secrets" => crate::secrets::check(),
             "schema" => crate::schema::run(rest),

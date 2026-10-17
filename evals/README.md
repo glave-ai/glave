@@ -2,10 +2,12 @@
 
 `cargo xtask eval` runs glave's harness in-process (no CLI in between) on every task here,
 against three models by default, and grades each attempt without a judge: from the thread's
-events, the files left behind and the task's own test script. Load the endpoint first:
+events, the files left behind and the task's own test script. It reads the endpoint,
+`GLAVE_BASE_URL` and `GLAVE_API_KEY`, from `.env`: the nearest at or above the workspace, else
+the main checkout's when run from a git worktree, or the file `--env-file <path>` names. Only
+those two are read, only for the run, and the environment wins over the file.
 
 ```sh
-set -a; source .env; set +a
 cargo xtask eval --repeat 3              # the fast tier
 cargo xtask eval --tier all --repeat 3   # and the hard one
 cargo xtask eval -- --help               # every option
@@ -37,5 +39,5 @@ runs by default; `read-only`, or `off`), `network` (on when absent), `context_wi
 `env`, `turns` (messages after the instruction; each resumes the thread from its log),
 `goal` (run the instruction as a goal: `{ budget = 600000 }`, the budget optional; how to
 verify the goal is the instruction's to say, in words, and the model ends it; a goal's turns may end at the step limit and go on, so the check `goal_ended`
-grades it instead of each turn's ending), `memory` (`true`: memory is on for the task; `--memory on|off` sets it for every task), `space_memory` (the first thread's space: `shared`, `isolated` or `off`), `threads` (`[[glave.threads]]`: new threads after the first, each with `messages` and optionally its own `space` and `space_memory`, run in order in one store) and `memories` (`[[glave.memories]]`: `text` and `scope`, saved before the first thread), and `checks`. Each attempt keeps its memory ledgers in `memory.jsonl`; the memory checks (`memory_holds`, `memory_lacks`, `personal_memory_lacks`, `memory_superseded`, `memory_forgotten`) read them, and `last_thread_never_printed` reads the last thread alone; `never_requested` reads what the task's pages (`web/`) were asked for, so a page can be a sink a planted instruction sends things to. In `env` and `setup`, `{dir}`, `{workspace}` and `{task}` name the attempt's
+grades it instead of each turn's ending), `steer` (`{ after = 1, message = "…" }`: a correction queued to the first turn once that many of its tool calls have finished, as a person types while the agent works, for the model to read at its next call; never sent is a failure), `memory` (`true`: memory is on for the task; `--memory on|off` sets it for every task), `space_memory` (the first thread's space: `shared`, `isolated` or `off`), `threads` (`[[glave.threads]]`: new threads after the first, each with `messages` and optionally its own `space` and `space_memory`, run in order in one store) and `memories` (`[[glave.memories]]`: `text` and `scope`, saved before the first thread), and `checks`. Each attempt keeps its memory ledgers in `memory.jsonl`; the memory checks (`memory_holds`, `memory_lacks`, `personal_memory_lacks`, `memory_superseded`, `memory_forgotten`) read them, and `last_thread_never_printed` reads the last thread alone; `never_requested` reads what the task's pages (`web/`) were asked for, so a page can be a sink a planted instruction sends things to. In `env` and `setup`, `{dir}`, `{workspace}` and `{task}` name the attempt's
 folder, the workspace and the task's folder, and `{path}` the `PATH` commands would otherwise get (to put a task's own tools first). Anywhere in `instruction.md` and `task.toml`, `{canary}` is letters and digits made as the task loads: a secret no file holds, in a provider's shape where a prefix stands before it (`sk-proj-{canary}`), for the checks to look for. The checks are listed in `crates/eval/src/check.rs`.

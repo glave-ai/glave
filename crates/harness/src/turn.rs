@@ -1,8 +1,11 @@
 //! One turn: the person's prompt, then model calls and tool calls until the model is done.
 
+use std::borrow::Cow;
+
 use glave_event::{
-    ApprovalMode, CallId, Currency, MemoryId, MessageAdded, ModelRef, Money, Outcome, Part,
-    Principal, Role, StopReason, ThreadId, TokenCounts, ToolCallRequested, TurnEnded, TurnStarted,
+    ApprovalMode, CallId, Currency, EventId, MemoryId, MessageAdded, ModelRef, Money, Outcome,
+    Part, Principal, Role, StopReason, ThreadId, TokenCounts, ToolCallRequested, TurnEnded,
+    TurnStarted,
 };
 use glave_ports::{
     BlobStore, BoxFuture, Caller, Completion, Delta, EventLog, Failure, Message, ModelProvider,
@@ -88,6 +91,13 @@ pub enum Live {
         /// Its text, when it was saved or edited.
         text: Option<String>,
     },
+    /// A message the person sent while the turn ran that the model will not read: a hook
+    /// stopped it (`reason`, as the hook gave it), or the turn was stopped or failed before its
+    /// next call (`None`). `id` is the one it was queued with.
+    Unread {
+        id: EventId,
+        reason: Option<String>,
+    },
     /// The model was asked, and nothing has come back yet.
     Waiting,
     /// A model call failed in a way that may pass, and is tried again after `wait`.
@@ -107,6 +117,21 @@ pub(crate) struct Prompt<'a> {
     /// Whether glave wrote the prompt, as a goal's continuation: recorded as glave's, and
     /// never read as the person's say-so.
     pub(crate) by_glave: bool,
+    /// The id its message is recorded with, when it was made already: a message sent while
+    /// the turn before ran keeps the id it was queued with.
+    pub(crate) id: Option<EventId>,
+}
+
+impl<'a> Prompt<'a> {
+    /// `text`, as `caller` wrote it.
+    pub(crate) fn new(text: &'a str, caller: &'a Caller) -> Self {
+        Self {
+            text,
+            caller,
+            by_glave: false,
+            id: None,
+        }
+    }
 }
 
 /// What a turn carries from step to step.
@@ -202,17 +227,34 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        self.run_prompt(thread, Prompt::new(prompt, caller), cancel, live)
+            .await
+    }
+
+    /// Runs one turn for `prompt`, as the person wrote it: a command is sent as its text.
+    pub(crate) async fn run_prompt(
+        &self,
+        thread: &mut Thread,
+        prompt: Prompt<'_>,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<TurnSummary, HarnessError> {
         self.bring(thread).await?;
         let toolset: ToolSet = self.tools(thread).await;
-        // A prompt that names a command sends the command's text.
-        let expanded = invoked(&self.settings.commands, prompt)
-            .map(|(command, arguments)| command.expand(arguments));
+        let text = self.expand(prompt.text);
         let prompt = Prompt {
-            text: expanded.as_deref().unwrap_or(prompt),
-            caller,
-            by_glave: false,
+            text: &text,
+            ..prompt
         };
         self.run_with(thread, prompt, toolset, cancel, live).await
+    }
+
+    /// What the person's `prompt` sends: a command's text when it names one, else itself.
+    pub(crate) fn expand<'a>(&self, prompt: &'a str) -> Cow<'a, str> {
+        invoked(&self.settings.commands, prompt)
+            .map_or(Cow::Borrowed(prompt), |(command, arguments)| {
+                Cow::Owned(command.expand(arguments))
+            })
     }
 
     /// Runs one turn with `toolset`. Boxed, so a child's turn can run inside its parent's.
@@ -247,13 +289,7 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
         self.reopen_removed(thread).await?;
-        // The person's own prompts pass the `UserPromptSubmit` hooks first.
-        if !prompt.by_glave
-            && !thread.delegated()
-            && let Some(reason) = self.on_prompt(thread, prompt.text, cancel).await?
-        {
-            return Err(HarnessError::PromptBlocked(reason));
-        }
+        self.pass_hooks(thread, prompt, cancel).await?;
         self.begin(thread, prompt, &toolset).await?;
         let mut step = Step {
             toolset,
@@ -276,6 +312,7 @@ where
                 step.summary.model_calls = step.summary.model_calls.saturating_add(1);
                 tally(&mut step.summary, &compaction);
             }
+            self.read_queued(thread, cancel, live).await?;
             let last = self.last_step(thread, &step.summary);
             let choice = self.choice(thread, last).await?;
             let last = last.is_some();
@@ -330,6 +367,23 @@ where
         Ok(step.summary)
     }
 
+    /// The person's own prompts pass the `UserPromptSubmit` hooks first: one a hook stops
+    /// never reaches the model.
+    async fn pass_hooks(
+        &self,
+        thread: &mut Thread,
+        prompt: Prompt<'_>,
+        cancel: &Cancel,
+    ) -> Result<(), HarnessError> {
+        if !prompt.by_glave
+            && !thread.delegated()
+            && let Some(reason) = self.on_prompt(thread, prompt.text, cancel).await?
+        {
+            return Err(HarnessError::PromptBlocked(reason));
+        }
+        Ok(())
+    }
+
     /// Whether a turn that has made `calls` model calls is at its cap; never, with no cap.
     fn capped(&self, calls: u32) -> bool {
         self.settings.max_steps.is_some_and(|max| calls >= max)
@@ -354,10 +408,11 @@ where
             text: note.to_owned(),
         }];
         let mut events = Vec::new();
+        // Glave's own words, never the person's say-so.
         let message = MessageAdded {
             role: Role::User,
             parts: parts.clone(),
-            author: None,
+            author: Some(Principal::glave()),
         };
         self.stage(thread, &mut events, &message)?;
         self.commit(thread, events).await?;
@@ -391,7 +446,8 @@ where
         });
     }
 
-    /// Stores the turn's configuration, then records `turn.started` and the person's message.
+    /// Records what ended in the background since the last turn, stores the turn's
+    /// configuration, then records `turn.started` and the person's message.
     async fn begin(
         &self,
         thread: &mut Thread,
@@ -402,7 +458,10 @@ where
             text: prompt,
             caller,
             by_glave,
+            id,
         } = prompt;
+        // What ended in the background since the last turn is recorded before this one.
+        self.check_commands(thread).await?;
         let memory = self.look_at_memory(thread).await;
         let sent_to = self.model_for(thread);
         let provider = self.current_default().provider;
@@ -455,7 +514,10 @@ where
                 Self::other_than_for(thread, caller.person)
             },
         };
-        self.stage(thread, &mut events, &message)?;
+        match id {
+            Some(id) => self.stage_as(thread, &mut events, &message, id)?,
+            None => self.stage(thread, &mut events, &message)?,
+        }
         self.commit(thread, events).await?;
         thread.messages.push(Message::User { parts });
         if by_glave {
@@ -519,6 +581,7 @@ where
     /// Records `turn.ended`.
     async fn end(&self, thread: &mut Thread, outcome: Outcome) -> Result<(), HarnessError> {
         let mut events = Vec::new();
+        self.stage_commands(thread, &mut events)?;
         self.stage(thread, &mut events, &TurnEnded { outcome })?;
         self.commit(thread, events).await
     }

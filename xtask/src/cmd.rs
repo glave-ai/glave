@@ -32,8 +32,14 @@ pub fn output(program: &str, args: &[&str]) -> Result<String, String> {
 ///
 /// Fails if the program cannot start or exits unsuccessfully.
 pub fn run(program: &str, args: &[&str]) -> Result<(), String> {
+    run_with(program, args, &[])
+}
+
+/// [`run`], with `env` added to the program's environment.
+pub fn run_with(program: &str, args: &[&str], env: &[(&str, String)]) -> Result<(), String> {
     let status = Command::new(program)
         .args(args)
+        .envs(env.iter().map(|(name, value)| (*name, value)))
         .current_dir(crate::workspace::root()?)
         .status()
         .map_err(|err| format!("could not start `{program}`: {err}"))?;

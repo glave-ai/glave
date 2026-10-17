@@ -156,6 +156,8 @@ where
         live(Live::ToolStarted {
             summary: summary.clone(),
         });
+        // A command it starts in the background is recorded under this call.
+        thread.commands.calling(call.call_id.clone());
         let output = source.call(name, &call.arguments, cancel);
         let output = crate::telemetry::tool_call(name, output).await;
         live(Live::ToolFinished {
@@ -408,6 +410,8 @@ where
             untrusted,
         };
         let mut events = Vec::new();
+        // A command the call started or moved to the background, or saw end, first.
+        self.stage_commands(thread, &mut events)?;
         self.stage(thread, &mut events, &completed)?;
         self.commit(thread, events).await?;
         thread.untrusted |= untrusted;

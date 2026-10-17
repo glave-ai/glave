@@ -3,6 +3,7 @@
 //! in-process to the network, carries the same messages. Network transports need a sign-in.
 
 mod approvals;
+mod background;
 pub mod client;
 mod credentials;
 mod cron;
@@ -25,6 +26,7 @@ pub mod schema;
 mod server;
 mod spaces;
 mod standing;
+mod steer;
 mod tasks;
 mod titles;
 mod trace;

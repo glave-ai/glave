@@ -10,6 +10,7 @@ use glave_event::{
     Part, Payload, Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted,
     encode,
 };
+use glave_ports::memories::Memory;
 use glave_ports::{
     BlobError, BlobStore, Caller, ComputerError, EventLog, LogError, Message, ModelProvider,
     ProviderError, Scope, ToolSource,
@@ -17,6 +18,7 @@ use glave_ports::{
 use thiserror::Error;
 
 use crate::approval::Approver;
+use crate::background::Commands;
 use crate::bind::Place;
 use crate::builtins::Builtins;
 use crate::chosen::DefaultModel;
@@ -24,7 +26,8 @@ use crate::commands::Command;
 use crate::compaction::{Compaction, Measured};
 use crate::goal::{GoalProgress, Pursuit};
 use crate::hooks::Hooks;
-use crate::memory::{Memory, MemoryState};
+use crate::inbox::Inbox;
+use crate::memory::MemoryState;
 use crate::projects::{Brought, Projects};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
@@ -211,6 +214,10 @@ pub struct Thread {
     /// What its project turned on at the start of the latest turn (`projects.rs`). A
     /// subagent's thread has its parent's.
     pub(crate) brought: Arc<Brought>,
+    /// What the person sent its running turn, waiting for the model's next call (`inbox.rs`).
+    pub(crate) inbox: Inbox,
+    /// Its commands in the background (`background.rs`). A subagent's thread has its own.
+    pub(crate) commands: Arc<Commands>,
 }
 
 impl Thread {
@@ -227,6 +234,12 @@ impl Thread {
     /// The person whose work this thread is: its recorded `for`.
     pub fn for_person(&self) -> Option<PrincipalId> {
         self.for_
+    }
+
+    /// Its commands in the background, which outlive its turns: shared, so they can be listed
+    /// and stopped while a turn holds the thread.
+    pub fn commands(&self) -> Arc<Commands> {
+        Arc::clone(&self.commands)
     }
 
     /// What opens the conversation: the thread's instructions, and where it works when that
@@ -321,6 +334,7 @@ where
             entropy: parts.entropy,
             sources: vec![Arc::new(Builtins {
                 workspace: Arc::clone(&workspace),
+                commands: Arc::default(),
             })],
             workspace,
             hooks: Hooks::default(),
@@ -511,6 +525,8 @@ where
             instructions,
             project,
             brought: Arc::default(),
+            inbox: Inbox::default(),
+            commands: Arc::default(),
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {
@@ -567,8 +583,31 @@ where
         payload: &T,
     ) -> Result<(), HarnessError> {
         let now = self.clock.now();
+        let id = EventId::new(now, self.entropy.bytes())?;
+        Self::stage_at(thread, events, payload, id, now)
+    }
+
+    /// Like [`Harness::stage`], under an id made already: a message the person sent while a
+    /// turn ran keeps the id they were answered with.
+    pub(crate) fn stage_as<T: Payload>(
+        &self,
+        thread: &Thread,
+        events: &mut Vec<RawEvent>,
+        payload: &T,
+        id: EventId,
+    ) -> Result<(), HarnessError> {
+        Self::stage_at(thread, events, payload, id, self.clock.now())
+    }
+
+    fn stage_at<T: Payload>(
+        thread: &Thread,
+        events: &mut Vec<RawEvent>,
+        payload: &T,
+        id: EventId,
+        now: jiff::Timestamp,
+    ) -> Result<(), HarnessError> {
         let header = Header {
-            id: EventId::new(now, self.entropy.bytes())?,
+            id,
             thread: thread.id,
             seq: Self::seq_after(thread, events)?,
             at: At::from(now),

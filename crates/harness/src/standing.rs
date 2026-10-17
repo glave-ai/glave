@@ -155,6 +155,10 @@ where
             Plan::Nothing => return Ok(()),
             Plan::Record => {}
         }
+        // A thread put away keeps nothing running.
+        if change != Change::Unarchive {
+            self.release_commands(thread).await?;
+        }
         let by = Self::other_than_for(thread, caller.person);
         match change {
             Change::Archive => self.record(thread, &ThreadArchived { by }).await,

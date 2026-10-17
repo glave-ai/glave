@@ -1,0 +1,10 @@
+[task]
+name = "glave/steer-correction"
+description = "Takes a correction sent while it works: the port it was asked for changes mid-turn, and the files end with the new one."
+
+[glave]
+approval = "auto"
+# The person corrects themselves once the agent's first command or read has finished, as they
+# would type while it works; the model reads it at its next call, in the same turn.
+steer = { after = 1, message = "Sorry, I meant port 4000, not 3000. Use 4000 everywhere." }
+checks = ["one_thread", { sent = "I meant port 4000" }]

@@ -4,7 +4,7 @@
 //! under it, batching the forgets since the last run, so backups lose them too.
 
 use glave_event::{At, MemoryId, Principal};
-use glave_harness::MemoryError;
+use glave_ports::memories::MemoryError;
 use glave_ports::{EventLog, Scope};
 use jiff::SignedDuration;
 

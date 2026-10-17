@@ -9,7 +9,7 @@ use glave_harness::{Caller, Goal, GoalProgress};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::sync::watch;
 
-use crate::held::{Slot, finished};
+use crate::held::{Slot, Use, finished};
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::{Server, api};
 use crate::turn::{TurnStream, publish};
@@ -40,7 +40,7 @@ where
         let (finish, done) = watch::channel(None);
         let notes = self.watch(thread);
         let caller = caller.clone();
-        self.occupy(thread, finish, move |inner, mut held, cancel| async move {
+        let work = move |inner: Arc<crate::server::Inner<P, L, B>>, mut held, cancel| async move {
             let hub = Arc::clone(&inner.hub);
             let mut live = |live| publish(&hub, thread, live);
             let harness = &inner.harness;
@@ -56,9 +56,11 @@ where
                         .await
                 }
             };
+            // What was sent after the goal's last call starts a turn of its own.
+            let ran = harness.run_queued(&mut held, ran, &cancel, &mut live).await;
             (held, ran)
-        })
-        .await?;
+        };
+        self.occupy_for(thread, finish, Use::Steered, work).await?;
         Ok(TurnStream::new(model, Some(notes), done))
     }
 
@@ -73,7 +75,9 @@ where
             return Err(no_goal(thread));
         }
         let running = match self.lock().get(&thread) {
-            Some(Slot::Busy { cancel, finished }) => {
+            Some(Slot::Busy {
+                cancel, finished, ..
+            }) => {
                 cancel.cancel();
                 Some(finished.clone())
             }

@@ -50,6 +50,12 @@ export type Choice = {
   readonly label: string;
 };
 
+/**
+ * Identifies a command kept running in the background, unique everywhere (UUID v7, minted by
+ * the computer it runs on).
+ */
+export type CommandId = string;
+
 /** Identifies a computer, unique everywhere (UUID v7, minted by the adapter that made it). */
 export type ComputerId = string;
 
@@ -269,6 +275,15 @@ export type Question = {
   readonly question: string;
 };
 
+/** A message queued to the turn running in its thread, for the model's next call. */
+export type QueuedMessage = {
+  /**
+   * The id of the `message.added` it is recorded as once the model reads it: that
+   * `thread/event` says it was read. A `turn/live` `unread` with this id says it never will be.
+   */
+  readonly id: EventId;
+};
+
 /**
  * An event exactly as it is stored and sent. `data` holds the payload's bytes as written;
  * [`crate::decode`] interprets them.
@@ -298,6 +313,21 @@ export type Remembered = {
   readonly untrusted_read?: boolean;
   /** 1 when saved, one more with each edit. */
   readonly version: number;
+};
+
+/**
+ * A command a thread keeps running in the background, as a client lists it: what it runs,
+ * since when, and a sentence saying so (`command/list`).
+ */
+export type RunningCommand = {
+  /** What it runs, as the agent wrote it. */
+  readonly command: string;
+  /** Which command, for `command/stop`. */
+  readonly id: CommandId;
+  /** When it started, once the thread has recorded it. */
+  readonly started_at?: At | null;
+  /** What it is doing, in plain words. */
+  readonly summary: string;
 };
 
 /** Identifies one schedule: a prompt or goal that runs as a task at set times. */
@@ -553,6 +583,10 @@ export type Update = {
   readonly ok: boolean;
   readonly subagent: ThreadId;
 } | {
+  readonly id: EventId;
+  readonly kind: "unread";
+  readonly reason?: string | null;
+} | {
   readonly change: string;
   readonly kind: "memory";
   readonly memory: MemoryId;
@@ -576,6 +610,21 @@ export type ApprovalDecideParams = {
 };
 
 export type ApprovalDecideResult = Readonly<Record<string, never>>;
+
+export type CommandListParams = {
+  readonly thread: ThreadId;
+};
+
+export type CommandListResult = {
+  readonly commands: readonly (RunningCommand)[];
+};
+
+export type CommandStopParams = {
+  readonly command: CommandId;
+  readonly thread: ThreadId;
+};
+
+export type CommandStopResult = Readonly<Record<string, never>>;
 
 export type CredentialConnectParams = {
   /** The token, sent once and never answered back. */
@@ -995,6 +1044,7 @@ export type TurnStartParams = {
   /**
    * How much this turn, and the thread's turns after it, ask before acting: one of the
    * server's `approvals`. The thread's latest choice when absent, else the server's.
+   * Not while a turn runs.
    */
   readonly approval?: ApprovalMode | null;
   /** Runs the turn as a task, with no one attached: answered at once with the task. */
@@ -1003,7 +1053,8 @@ export type TurnStartParams = {
   readonly budget?: number | null;
   /**
    * The model this turn, and the thread's turns after it, go to: one `model/list`
-   * names. The thread's latest choice when absent, else the server's default.
+   * names. The thread's latest choice when absent, else the server's default. Not while
+   * a turn runs.
    */
   readonly model?: string | null;
   readonly prompt: string;
@@ -1014,11 +1065,15 @@ export type TurnStartResult = {
   readonly turn: TurnResult;
 } | {
   readonly task: TaskInfo;
+} | {
+  readonly queued: QueuedMessage;
 };
 
 /** Every method, with its params and result. */
 export interface Methods {
   readonly "approval/decide": { readonly params: ApprovalDecideParams; readonly result: ApprovalDecideResult };
+  readonly "command/list": { readonly params: CommandListParams; readonly result: CommandListResult };
+  readonly "command/stop": { readonly params: CommandStopParams; readonly result: CommandStopResult };
   readonly "credential/connect": { readonly params: CredentialConnectParams; readonly result: CredentialConnectResult };
   readonly "credential/device/poll": { readonly params: CredentialDevicePollParams; readonly result: CredentialDevicePollResult };
   readonly "credential/device/start": { readonly params: CredentialDeviceStartParams; readonly result: CredentialDeviceStartResult };
@@ -1115,6 +1170,8 @@ export const ErrorCode = {
   NOT_AVAILABLE: -32022,
   /** No such approval is pending */
   NO_APPROVAL: -32004,
+  /** No such command is running in the background in this thread */
+  NO_COMMAND: -32027,
   /** No such git host, or sign-in, here */
   NO_CREDENTIAL: -32024,
   /** The thread has no active goal (or, to resume, no paused one) */
@@ -1147,6 +1204,8 @@ export const ErrorCode = {
   PROMPT_BLOCKED: -32008,
   /** The model provider failed */
   PROVIDER: -32020,
+  /** As many messages wait for the running turn as it takes */
+  QUEUE_FULL: -32028,
   /** A turn is already running in this thread */
   TURN_RUNNING: -32002,
   /** The thread's workspace could not be opened */
