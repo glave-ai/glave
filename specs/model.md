@@ -26,6 +26,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 - **The server** holds history, projects, settings and keys, runs the harness and the gateway, and answers every client: the web app, the CLI and outside agents. **The computer** holds files and runs commands. They talk through the computer protocol (`computers.md`): in-process on a laptop, over TLS elsewhere.
 - **One server for a person on a laptop; one organization's server (replicated) in a company or on Glave Cloud.** No server is tied to the folder it started in, and nothing runs once per folder.
 - **History never lives only on a computer,** so a computer can sleep, be reset or be replaced without losing a thread.
+- **People work with glave in the browser; the CLI is commands.** It runs one turn (`glave "…"`, approvals asked in place, for scripts and CI), goals, tasks and schedules, and serves. `glave` alone opens the browser at the current folder's project, or prints the link where there's no browser. There is no chat in the terminal: a terminal UI would be a second app to keep level with the first. If one comes later, it's another thin client: what a client shows that needs working out (a thread's items, what needs the person, plain summaries of actions) comes from the server, never from one client's code.
 - **A person's computer is one machine that's theirs:** their laptop, or a server or cloud machine they run (and, later, one Glave Cloud gives them). glave works on it the same way everywhere, as on a laptop today:
   - projects are folders on it, and a thread works in its project's folder in place, one thread changing a folder's files at a time;
   - "work on a separate copy" gives a thread a worktree for parallel work;
@@ -73,7 +74,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 ## Where the code disagrees
 
 1. **A server serves one folder,** its own space's, and every other space's threads get scratch folders (`session.md`, "Where a thread works"). Projects own folders instead.
-2. **`glave app` serves in the folder it starts in,** so that folder becomes a project, and a folder no key leads to becomes a project without asking (`storage.md`, "Spaces"). The CLI becomes a client of the person's server, and a new folder asks once.
+2. **`glave app` serves in the folder it starts in,** so that folder becomes a project, and a folder no key leads to becomes a project without asking (`storage.md`, "Spaces"). The CLI becomes a client of the person's server, and a new folder asks once. `glave` alone starts a chat in the terminal, one turn per line; it opens the browser instead.
 3. **The CLI's task host is a second server per folder** (`glave serve --socket`, `session.md`, "Tasks and schedules"). Tasks and schedules run in the server.
 4. **Settings are read from files and environment variables,** model accounts are refused on an organization's server, and there is one cloud provider at a time (`policy.md`, `session.md` "Model accounts", `gateway.md`). Settings become data (#222, #289, #290).
 5. **The gateway service is configured from its own environment** (`gateway.md`, "Surfaces"). It becomes a role of the server, reading the same data.
