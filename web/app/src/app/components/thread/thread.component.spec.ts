@@ -161,7 +161,7 @@ describe('ThreadComponent', () => {
     await expectAccessible(root);
   });
 
-  it('names no model over a reply, and gives every message a copy button', async () => {
+  it('names no model over a reply, and gives only the reply a copy button', async () => {
     const { root } = await open(session(ANSWERED));
     const messages = root.querySelectorAll('[data-testid="thread-message"]');
     expect(messages[0]?.getAttribute('aria-label')).toBe('You');
@@ -170,9 +170,8 @@ describe('ThreadComponent', () => {
     expect(root.querySelector('[data-testid="thread-items"] .author')).toBeNull();
     expect(root.querySelector('[data-testid="thread-items"]')?.textContent).not.toContain('Hope');
     expect(messages[0]?.querySelector('app-message-text')?.textContent).toContain('Hi');
-    for (const message of messages) {
-      expect(message.querySelector('.actions [data-testid="message-copy"]')).not.toBeNull();
-    }
+    expect(messages[0]?.querySelector('[data-testid="message-copy"]')).toBeNull();
+    expect(messages[1]?.querySelector('.actions [data-testid="message-copy"]')).not.toBeNull();
     await expectAccessible(root);
   });
 

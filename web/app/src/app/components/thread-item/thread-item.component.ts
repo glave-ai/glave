@@ -56,7 +56,8 @@ function shown(item: ThreadItem): ShownItem {
         ...item,
         author: person ? COPY.you : COPY.reply,
         markdown: !person,
-        copyable: item.text !== '',
+        // Only a reply is copied; what the person wrote is theirs already.
+        copyable: !person && item.text !== '',
       };
     }
     case 'call':
