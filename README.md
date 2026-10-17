@@ -2,7 +2,7 @@
 
 An open-source Claude or ChatGPT that you run yourself, where every conversation can have a real computer behind it.
 
-Run it on your own machine and it just works: privately, with any model, including Hope, a free open model. A company runs the very same software as its own private AI cloud, with its sign-in, models, data and rules.
+Run it on your own machine and it just works: privately, with any model. A company runs the very same software as its own private AI cloud, with its sign-in, models, data and rules.
 
 > **Early.** glave works today and is tested on three model families, but it's young. Expect rough edges and changes. Building from source is the way to run it for now.
 
