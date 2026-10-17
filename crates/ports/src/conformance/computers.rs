@@ -1,7 +1,8 @@
 //! The behaviour every [`Computers`] adapter must show, on this machine or across the wire:
-//! the lifecycle, files confined to their workspace, commands streamed and stoppable, and
-//! work leaving a computer only through git.
+//! the lifecycle, files confined to their workspace, commands streamed and stoppable, commands
+//! kept running in the background, and work leaving a computer only through git.
 
+mod background;
 mod confinement;
 mod credentials;
 mod finding;
@@ -51,6 +52,7 @@ pub async fn computers<C: Computers>(computers: &C, scratch: &str) -> Verdict {
     file_operations(computers, here.id).await?;
     finding::finding(computers, here.id).await?;
     commands(computers, here.id, &here.root).await?;
+    background::background(computers, made.id, here.id, scratch).await?;
     credentials::credentials(computers, here.id).await?;
     finding::sandboxed(computers, here.id).await?;
     moves_through_git(computers, made.id, here.id, &here.root).await?;

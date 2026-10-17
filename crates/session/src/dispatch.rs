@@ -222,6 +222,10 @@ where
             Request::GoalGet { thread } => self.goal(thread).await.map(|goal| Reply::Goal { goal }),
             Request::TasksList { limit } => self.list_tasks(limit).await,
             Request::TasksStop { thread } => self.stop_task(caller, thread).await,
+            Request::CommandList { thread } => self.list_commands(thread).await,
+            Request::CommandStop { thread, command } => {
+                self.stop_command(caller, thread, command).await
+            }
             Request::ScheduleCreate {
                 when,
                 prompt,

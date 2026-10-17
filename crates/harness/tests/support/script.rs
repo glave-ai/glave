@@ -222,6 +222,8 @@ pub fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::GoalResumed(_) => "goal.resumed",
             Body::WorkspaceBound(_) => "workspace.bound",
             Body::WorkspaceRemoved(_) => "workspace.removed",
+            Body::CommandStarted(_) => "command.started",
+            Body::CommandEnded(_) => "command.ended",
             Body::HookRan(_) => "hook.ran",
             Body::TaskStarted(_) => "task.started",
             Body::TaskEnded(_) => "task.ended",

@@ -5,7 +5,9 @@
 use std::sync::{Arc, Mutex};
 
 use glave_event::{Arguments, CallId, HookPoint, HookRan, HookResult, Outcome, Part};
-use glave_ports::{BlobStore, BoxFuture, Ending, EventLog, ModelProvider, Output, ToolOutput};
+use glave_ports::{
+    BlobStore, BoxFuture, Ending, EventLog, ModelProvider, OnTimeout, Output, ToolOutput,
+};
 use serde_json::{Map, Value, json};
 
 use super::{HOOK_TIMEOUT_SECS, Hook, point_name};
@@ -178,7 +180,8 @@ where
         );
         let timeout = hook.timeout_secs.unwrap_or(HOOK_TIMEOUT_SECS);
         let output = Kept::default();
-        let finished = workspace.run(script, timeout, &output, cancel).await;
+        let finished = workspace.run(script, (timeout, OnTimeout::Stop), &output, cancel);
+        let finished = finished.await;
         let text = output.text();
         let ending = match finished {
             Ok(finished) => finished.ending,
@@ -200,7 +203,10 @@ where
                 format!("it exited with code {code}: {}", clip(text.trim())),
             ),
             Ending::Signalled => failed(None, "it was stopped by a signal".to_owned()),
-            Ending::TimedOut { after_secs } => {
+            // A hook stops at its timeout: it never moves to the background.
+            Ending::TimedOut { after_secs }
+            | Ending::Backgrounded { after_secs, .. }
+            | Ending::Idle { after_secs } => {
                 failed(None, format!("it timed out after {after_secs} s"))
             }
             Ending::Cancelled => failed(None, "the turn was cancelled".to_owned()),

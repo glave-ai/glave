@@ -3,6 +3,7 @@
 //! the files. The calls are coarse and every type is serializable, so a computer on this
 //! machine and one across the network answer the same calls in the same way.
 
+mod background;
 pub(crate) mod bytes;
 mod credential;
 mod environment;
@@ -10,8 +11,11 @@ mod finding;
 mod sandbox;
 mod types;
 
+use std::time::Duration;
+
 use crate::tools::{BoxFuture, Cancellation};
 
+pub use background::{Background, IDLE, KEPT_OUTPUT, MAX_BACKGROUND, MAX_WAIT, Printed};
 pub use bytes::Bytes;
 pub use credential::{CredentialAsk, CredentialHost, Credentials, ForgeTool, GitCredential};
 pub use environment::{Environment, Image, Network, Size};
@@ -21,8 +25,9 @@ pub use sandbox::{
     PROTECTED, Sandbox, SandboxLevel, is_protected, is_protected_refusal, refuse_protected,
 };
 pub use types::{
-    Command, ComputerError, ComputerId, ComputerInfo, Ending, Entry, EntryKind, FileWrite,
-    Finished, Listed, Listing, Save, Saved, Sources, State, WorkspaceId, WorkspaceInfo,
+    Command, CommandId, ComputerError, ComputerId, ComputerInfo, Ending, Entry, EntryKind,
+    FileWrite, Finished, Listed, Listing, OnTimeout, Save, Saved, Sources, State, WorkspaceId,
+    WorkspaceInfo,
 };
 
 /// Where a running command's output goes, as it arrives: standard output and standard error
@@ -78,7 +83,8 @@ pub trait Computers: Send + Sync {
     fn close(&self, workspace: WorkspaceId) -> BoxFuture<'_, Result<(), ComputerError>>;
 
     /// Runs one command at the workspace root (`command/run`), streaming its output to
-    /// `output`, until it ends, times out, or `cancel` fires.
+    /// `output`, until it ends, times out (or moves to the background, as its [`OnTimeout`]
+    /// asks), or `cancel` fires.
     fn run<'a>(
         &'a self,
         workspace: WorkspaceId,
@@ -102,6 +108,56 @@ pub trait Computers: Send + Sync {
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
         let _ = credentials;
         self.run(workspace, command, output, cancel)
+    }
+
+    /// Starts one command at the workspace root and keeps it running in the background
+    /// (`command/start`), in the sandbox it carries, until it ends, is stopped, its workspace
+    /// closes, or nothing reads its output for [`IDLE`]. Its `timeout_secs`, when set, is its
+    /// time limit there. A workspace keeps at most [`MAX_BACKGROUND`] running, and refuses one
+    /// more. It is offered no credentials. A computer that cannot keep commands running
+    /// answers unsupported.
+    fn start<'a>(
+        &'a self,
+        workspace: WorkspaceId,
+        command: &'a Command,
+    ) -> BoxFuture<'a, Result<CommandId, ComputerError>> {
+        let _ = (workspace, command);
+        Box::pin(std::future::ready(Err(no_background())))
+    }
+
+    /// What a command in the background printed since the last read (`command/output`),
+    /// waiting up to `wait` (at most [`MAX_WAIT`]) for it to end first. The read that answers
+    /// its ending is its last: the computer then forgets it.
+    fn output(
+        &self,
+        workspace: WorkspaceId,
+        command: CommandId,
+        wait: Duration,
+    ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
+        let _ = (workspace, command, wait);
+        Box::pin(std::future::ready(Err(no_background())))
+    }
+
+    /// Stops a command in the background and everything it started, then forgets it
+    /// (`command/stop`), answering what it printed since the last read and how it ended. One
+    /// that has already ended is only forgotten.
+    fn stop(
+        &self,
+        workspace: WorkspaceId,
+        command: CommandId,
+    ) -> BoxFuture<'_, Result<Printed, ComputerError>> {
+        let _ = (workspace, command);
+        Box::pin(std::future::ready(Err(no_background())))
+    }
+
+    /// The commands in the background in a workspace, oldest first: running, or ended and not
+    /// yet read (`command/list`).
+    fn commands(
+        &self,
+        workspace: WorkspaceId,
+    ) -> BoxFuture<'_, Result<Vec<Background>, ComputerError>> {
+        let _ = workspace;
+        Box::pin(std::future::ready(Err(no_background())))
     }
 
     /// Reads one file in the workspace (`files/read`).
@@ -156,4 +212,11 @@ pub trait Computers: Send + Sync {
         workspace: WorkspaceId,
         save: &'a Save,
     ) -> BoxFuture<'a, Result<Saved, ComputerError>>;
+}
+
+/// What a computer that keeps no commands in the background answers.
+fn no_background() -> ComputerError {
+    ComputerError::Unsupported(
+        "this computer cannot keep commands running in the background".into(),
+    )
 }

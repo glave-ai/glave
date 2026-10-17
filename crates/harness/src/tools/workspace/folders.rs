@@ -128,9 +128,8 @@ impl Workspace {
         timeout_secs: u64,
     ) -> Result<(), ComputerError> {
         let command = Command {
-            script: script.to_owned(),
             timeout_secs: Some(timeout_secs),
-            sandbox: None,
+            ..Command::new(script)
         };
         let output = Collected::default();
         let cancel = Cancel::new();

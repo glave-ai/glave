@@ -1,4 +1,5 @@
-//! Continuing a recorded thread from the log alone, closing anything a crash left open.
+//! Continuing a recorded thread from the log alone, closing anything a crash left open, and
+//! learning which of its commands in the background still run.
 
 use std::collections::{HashMap, HashSet};
 
@@ -44,6 +45,8 @@ where
             .as_ref()
             .filter(|_| workspace.is_some())
             .and_then(|bound| crate::projects::project_of(&bound.opened));
+        let computers = workspace.as_ref().unwrap_or(&self.workspace).computers();
+        let commands = crate::background::Commands::rebuilt(&events, computers);
         let mut thread = Thread {
             scope,
             id,
@@ -69,9 +72,12 @@ where
             instructions,
             project,
             brought: std::sync::Arc::default(),
+            commands: std::sync::Arc::new(commands),
         };
         self.rebuild_memory(&mut thread, &events).await;
         self.repair(&mut thread, &events).await?;
+        // What ended while glave was away is recorded now.
+        self.check_commands(&mut thread).await?;
         Ok(thread)
     }
 

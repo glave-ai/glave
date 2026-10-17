@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use glave_ports::testing::fake_secret;
 use glave_ports::{Bytes, block_on, conformance};
 
-use super::command::Utf8;
+use super::process::Utf8;
 use super::*;
 
 /// An empty folder for one test, and another for the copies it makes.

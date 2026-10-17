@@ -391,7 +391,8 @@ where
         });
     }
 
-    /// Stores the turn's configuration, then records `turn.started` and the person's message.
+    /// Records what ended in the background since the last turn, stores the turn's
+    /// configuration, then records `turn.started` and the person's message.
     async fn begin(
         &self,
         thread: &mut Thread,
@@ -403,6 +404,8 @@ where
             caller,
             by_glave,
         } = prompt;
+        // What ended in the background since the last turn is recorded before this one.
+        self.check_commands(thread).await?;
         let memory = self.look_at_memory(thread).await;
         let sent_to = self.model_for(thread);
         let provider = self.current_default().provider;
@@ -519,6 +522,7 @@ where
     /// Records `turn.ended`.
     async fn end(&self, thread: &mut Thread, outcome: Outcome) -> Result<(), HarnessError> {
         let mut events = Vec::new();
+        self.stage_commands(thread, &mut events)?;
         self.stage(thread, &mut events, &TurnEnded { outcome })?;
         self.commit(thread, events).await
     }

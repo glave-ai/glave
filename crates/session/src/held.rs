@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, PoisonError};
 
 use glave_event::ThreadId;
-use glave_harness::{Cancel, HarnessError, Standing, Thread};
+use glave_harness::{Cancel, Commands, HarnessError, Standing, Thread};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::sync::watch;
 
@@ -21,6 +21,8 @@ pub(crate) enum Slot {
     Busy {
         cancel: Cancel,
         finished: watch::Receiver<bool>,
+        /// Its commands in the background, listed and stopped while the work holds it.
+        commands: Arc<Commands>,
     },
 }
 
@@ -121,11 +123,16 @@ where
         self.load(thread).await?;
         let cancel = Cancel::new();
         let (finish, finished) = watch::channel(false);
+        let commands = match self.lock().get(&thread) {
+            Some(Slot::Idle(held)) => held.commands(),
+            _ => Arc::default(),
+        };
         let held = {
             let mut threads = self.lock();
             let busy = Slot::Busy {
                 cancel: cancel.clone(),
                 finished,
+                commands,
             };
             match threads.insert(thread, busy) {
                 // Turns and compactions do not run in an archived thread.
