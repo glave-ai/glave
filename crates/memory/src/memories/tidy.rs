@@ -12,7 +12,7 @@ mod plan;
 use std::collections::{BTreeMap, BTreeSet};
 
 use glave_event::{At, MemoryEdited, MemoryId, MemoryTidied, Principal};
-use glave_harness::MemoryError;
+use glave_ports::memories::MemoryError;
 use glave_ports::{EventLog, ModelProvider, Scope};
 use jiff::SignedDuration;
 

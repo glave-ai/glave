@@ -4,10 +4,12 @@
 //! only when the person asked for it to be remembered, in ask mode the person is asked, and
 //! with no one there nothing is saved. Memory never changes an approval or what the judge sees.
 
+use glave_ports::memories::{
+    EDIT_MEMORY, FORGET, MemoryChange as Change, MemoryContext, RECALL, REMEMBER,
+};
 use glave_ports::{BlobStore, Effect, EventLog, ModelProvider, ToolCall, ToolOutput};
 
 use super::state::structured;
-use super::{EDIT_MEMORY, MemoryChange as Change, RECALL, REMEMBER};
 use crate::approval::{ApprovalRequest, Approver};
 use crate::calls::{Judged, NOT_RUN};
 use crate::cancel::Cancel;
@@ -93,7 +95,7 @@ where
         live(Live::ToolStarted {
             summary: summary.clone(),
         });
-        let on = super::MemoryContext {
+        let on = MemoryContext {
             seq: Some(thread.next_seq),
             ..on
         };
@@ -120,7 +122,7 @@ fn canonical(name: &str) -> &'static str {
         n if n == REMEMBER => REMEMBER,
         n if n == EDIT_MEMORY => EDIT_MEMORY,
         n if n == RECALL => RECALL,
-        _ => super::FORGET,
+        _ => FORGET,
     }
 }
 

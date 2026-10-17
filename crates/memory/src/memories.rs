@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{At, EventId, Header, MemoryId, MemoryScope, Payload, PrincipalId, Seq, encode};
-use glave_harness::{Clock, Entropy, MemoryContext, MemoryError, Remembered, Shown, memory_ledger};
-use glave_ports::{EventLog, LogError, Scope};
+use glave_ports::memories::{MemoryContext, MemoryError, Remembered, Shown, memory_ledger};
+use glave_ports::{Clock, Entropy, EventLog, LogError, Scope};
 
 use crate::book::{Book, Entry};
 use crate::rules::Rules;
