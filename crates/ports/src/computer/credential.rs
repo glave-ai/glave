@@ -156,13 +156,15 @@ impl GitCredential {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::fake_secret;
 
     #[test]
     fn the_password_never_shows_and_bad_lines_are_refused() {
-        let credential = GitCredential::new("x-access-token", "ghp_secret").unwrap();
-        assert!(!format!("{credential:?}").contains("ghp_secret"));
-        assert!(GitCredential::new("a", "b\nc").is_err());
-        assert!(GitCredential::new("", "b").is_err());
+        let token = fake_secret("ghp_");
+        let credential = GitCredential::new("x-access-token", &token).unwrap();
+        assert!(!format!("{credential:?}").contains(&token));
+        assert!(GitCredential::new("a", format!("{token}\nc")).is_err());
+        assert!(GitCredential::new("", token).is_err());
     }
 
     fn host(url: &str, forge: Forge) -> CredentialHost {

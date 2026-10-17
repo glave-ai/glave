@@ -34,7 +34,7 @@ mod tests {
     #[test]
     fn secret_names_match_the_read_tool_s_rule() {
         let names = SecretNames::new().unwrap();
-        for secret in [
+        for name in [
             ".env",
             ".ENV.local",
             "prod.env",
@@ -45,7 +45,7 @@ mod tests {
             "SECRETS.json",
             "secrets.properties",
         ] {
-            assert!(names.is_secret(secret), "{secret}");
+            assert!(names.is_secret(name), "{name}");
         }
         for open in [
             ".env.example",

@@ -12,8 +12,9 @@ publish.workspace = true
 # The OS keychain as the root for a person: macOS Keychain, Windows Credential Manager, Linux
 # Secret Service. Only the binary turns it on, so stores and their tests never touch a keychain.
 keychain = ["dep:keyring"]
-# Exposes the conformance suite so stores can run it against their own key storage.
-conformance = []
+# Exposes the conformance suite so stores can run it against their own key storage, with the
+# test doubles it uses (a fake secret).
+conformance = ["glave-ports/conformance"]
 
 [dependencies]
 chacha20poly1305.workspace = true

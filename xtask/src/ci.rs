@@ -1,5 +1,6 @@
-//! `cargo xtask ci`: the full local gate, identical to what CI runs: the Rust checks, then the
-//! web checks (`web.rs`), which need Node unless `GLAVE_SKIP_WEB=1` skips them.
+//! `cargo xtask ci`: the full local gate, identical to what CI runs: the Rust checks and that no
+//! tracked file holds a secret-shaped literal, then the web checks (`web.rs`), which need Node
+//! unless `GLAVE_SKIP_WEB=1` skips them.
 
 use serde_json::Value;
 
@@ -14,6 +15,7 @@ pub const BUILT_IN_APP: (&str, &str) = ("glave", "web");
 pub fn run() -> Result<(), String> {
     let _guard = lock::acquire(Mode::Shared)?;
     step("format", || cmd::run("cargo", &["fmt", "--all", "--check"]))?;
+    step("secrets", crate::secrets::check)?;
     let features = features_in(&crate::workspace::metadata()?)?;
     step("lint", || {
         cmd::run(

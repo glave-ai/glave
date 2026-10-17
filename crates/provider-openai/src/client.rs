@@ -263,6 +263,8 @@ fn cause_of(error: reqwest::Error) -> String {
 
 #[cfg(test)]
 mod tests {
+    use glave_ports::testing::FAKE_SECRET;
+
     use super::*;
 
     fn name(url: &str) -> Option<String> {
@@ -318,7 +320,7 @@ mod tests {
         let error = header_pair("api-key", "sk-\nsecret").unwrap_err();
         assert!(!error.to_string().contains("secret"), "{error}");
         assert!(error.to_string().contains("api-key"), "{error}");
-        let (_, value) = header_pair("authorization", "Bearer sk-1").unwrap();
+        let (_, value) = header_pair("authorization", &format!("Bearer {FAKE_SECRET}")).unwrap();
         assert!(value.is_sensitive());
         let config = Config::for_url("https://api.openai.com/v1", Some("hunter2".into())).unwrap();
         assert!(!format!("{:?}", config.auth).contains("hunter2"));

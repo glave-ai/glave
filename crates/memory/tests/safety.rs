@@ -15,6 +15,7 @@ mod safety {
     use glave_event::{Arguments, MemoryScope, Principal};
     use glave_harness::{AllowAll, ApprovalMode, Cancel, NoOneToAsk, REMEMBER};
     use glave_memory::{Remembering, Writer};
+    use glave_ports::testing::fake_secret;
     use glave_ports::{
         BoxFuture, Cancellation, Effect, Purpose, ToolError, ToolInfo, ToolOutput, ToolSource,
         ToolSpec,
@@ -209,7 +210,7 @@ mod safety {
             let kit = Kit::new();
             let memory = kit.memory(rules(), 1).await;
             let dir = folder("secret");
-            let key = "sk-proj-AbCdEfGhIjKlMnOpQrStUvWx0123456789";
+            let key = fake_secret("sk-proj-");
             let answers = vec![
                 answer(
                     None,

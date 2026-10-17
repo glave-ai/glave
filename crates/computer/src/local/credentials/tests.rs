@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedCredentials};
+use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedCredentials, fake_secret};
 use glave_ports::{
     Command, Computers, CredentialHost, Ending, Environment, Forge, GitCredential, Output, Sandbox,
     SandboxLevel, Sources, block_on,
@@ -103,7 +103,8 @@ fn gh_pointed_at_another_host_runs_without_the_token() {
     std::fs::create_dir_all(dir.join("bin")).unwrap();
     std::fs::create_dir_all(dir.join("real")).unwrap();
     let helper = dir.join("git-credential-glave");
-    std::fs::write(&helper, "#!/bin/sh\necho password=ghp_wrapped\n").unwrap();
+    let token = fake_secret("ghp_");
+    std::fs::write(&helper, format!("#!/bin/sh\necho password={token}\n")).unwrap();
     let gh = dir.join("real/gh");
     std::fs::write(&gh, "#!/bin/sh\necho \"token=${GH_TOKEN:-none}\"\n").unwrap();
     let places = Places {
@@ -140,11 +141,12 @@ fn gh_pointed_at_another_host_runs_without_the_token() {
             .unwrap();
         String::from_utf8_lossy(&output.stdout).trim().to_owned()
     };
-    assert_eq!(run(&["pr", "list"]), "token=ghp_wrapped");
-    assert_eq!(run(&["pr", "list", "-R", "acme/app"]), "token=ghp_wrapped");
+    let given = format!("token={token}");
+    assert_eq!(run(&["pr", "list"]), given);
+    assert_eq!(run(&["pr", "list", "-R", "acme/app"]), given);
     assert_eq!(
         run(&["pr", "create", "--title", "Fix the localhost redirect"]),
-        "token=ghp_wrapped",
+        given,
         "a title is text"
     );
     for elsewhere in [
@@ -162,12 +164,13 @@ fn gh_pointed_at_another_host_runs_without_the_token() {
 
 #[test]
 fn the_helper_files_hold_no_token_and_go_with_the_command() {
+    let token = fake_secret("ghp_");
     let credentials = FixedCredentials::new(
         vec![
             host("https://github.com", Forge::Github),
             host("https://x\ntouch pwned", Forge::Other),
         ],
-        GitCredential::new("x-access-token", "ghp_never_in_a_file").unwrap(),
+        GitCredential::new("x-access-token", &token).unwrap(),
     );
     let folder = block_on!(async {
         let offered = offer(&credentials, &[]).await.unwrap().unwrap();
@@ -175,7 +178,7 @@ fn the_helper_files_hold_no_token_and_go_with_the_command() {
         let folder = offered.folder.clone();
         for name in [HELPER, "bin/gh"] {
             let text = std::fs::read_to_string(folder.join(name)).unwrap();
-            assert!(!text.contains("ghp_never_in_a_file"), "{text}");
+            assert!(!text.contains(&token), "the token is in {name}");
         }
         let path = value(&offered.environment, "PATH").unwrap();
         assert!(path.ends_with("/bin"), "the wrappers alone: {path}");
@@ -183,7 +186,7 @@ fn the_helper_files_hold_no_token_and_go_with_the_command() {
         folder
     });
     assert!(!folder.exists(), "removed when the command ends");
-    let none = FixedCredentials::new(Vec::new(), GitCredential::new("a", "b").unwrap());
+    let none = FixedCredentials::new(Vec::new(), GitCredential::new("a", &token).unwrap());
     assert!(block_on!(offer(&none, &[])).unwrap().is_none());
 }
 
@@ -217,11 +220,11 @@ fn a_sandboxed_command_signs_in_through_the_helper() {
         return;
     }
     let dir = scratch("credentials");
-    let token = "ghp_sandboxed0token";
-    let fake = FakeGitHost::start("x-access-token", token).unwrap();
+    let token = fake_secret("ghp_");
+    let fake = FakeGitHost::start("x-access-token", &token).unwrap();
     let credentials = FixedCredentials::new(
         vec![host(&fake.url, Forge::Other)],
-        GitCredential::new("x-access-token", token).unwrap(),
+        GitCredential::new("x-access-token", &token).unwrap(),
     );
     let environment = std::env::vars_os().filter(|(name, _)| name == "PATH" || name == "HOME");
     let computers = LocalComputers::new(dir.join("copies"), environment);
@@ -251,5 +254,5 @@ fn a_sandboxed_command_signs_in_through_the_helper() {
     let printed = output.0.lock().unwrap().clone();
     assert_eq!(finished.ending, Ending::Exited { code: 0 }, "{printed}");
     assert!(printed.contains(FAKE_COMMIT), "{printed}");
-    assert!(!printed.contains(token), "{printed}");
+    assert!(!printed.contains(&token), "the token shows: {printed}");
 }

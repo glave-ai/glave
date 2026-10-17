@@ -11,7 +11,7 @@ mod http {
     use glave_event::{Arguments, Part};
     use glave_mcp::{Limits, McpError, McpServer, ServerConfig};
     use glave_ports::block_on;
-    use glave_ports::testing::AlreadyCancelled;
+    use glave_ports::testing::{AlreadyCancelled, FAKE_SECRET};
     use glave_ports::{NeverCancelled, ToolOutput, ToolSource as _, conformance};
     use serde_json::json;
 
@@ -147,8 +147,8 @@ mod http {
             let server = launch(&at("http://127.0.0.1:9/mcp", &[("bad header", "x")]));
             let why = start_error(server.started().await);
             assert_eq!(why, "\"bad header\" is not a header name");
-            let secret = "sk-secret\nvalue";
-            let server = launch(&at("http://127.0.0.1:9/mcp", &[("Authorization", secret)]));
+            let secret = format!("{FAKE_SECRET}\nvalue");
+            let server = launch(&at("http://127.0.0.1:9/mcp", &[("Authorization", &secret)]));
             let why = start_error(server.started().await);
             assert_eq!(why, "the value of header Authorization is not valid");
         });

@@ -7,7 +7,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use glave_ports::auth::Auth;
 use glave_ports::block_on;
-use glave_ports::testing::{FakeHttp, ManualClock, Received};
+use glave_ports::testing::{FakeHttp, ManualClock, Received, fake_secret};
 
 use super::*;
 
@@ -20,7 +20,7 @@ const REQUEST: Outgoing<'static> = Outgoing {
     body: b"{}",
 };
 
-/// The RSA key of RFC 7515, Appendix A.2: a published test key.
+/// The RSA key of RFC 7515, Appendix A.2: a published test key (`jwt.rs` says why it stays).
 const KEY: &str = include_str!("../jwt/rfc7515-a2.pem");
 
 fn token(answer: &str, expires_in: u32) -> (u16, String) {
@@ -192,11 +192,12 @@ fn gcloud_s_user_credentials_are_found_and_refreshed() {
 
 #[test]
 fn an_external_account_exchanges_its_token_then_impersonates() {
+    let impersonated = fake_secret("ya29.");
     let google = FakeHttp::start(vec![
         token("ya29.federated", 3600),
         (
             200,
-            r#"{"accessToken":"ya29.impersonated","expireTime":"1970-01-12T14:46:40Z"}"#.into(),
+            format!(r#"{{"accessToken":"{impersonated}","expireTime":"1970-01-12T14:46:40Z"}}"#),
         ),
     ])
     .unwrap();
@@ -213,7 +214,7 @@ fn an_external_account_exchanges_its_token_then_impersonates() {
     });
     let path = pod.file("wif.json", &file.to_string());
     let auth = pod.adc(&[("GOOGLE_APPLICATION_CREDENTIALS", &path)]);
-    assert_eq!(bearer(&auth).unwrap(), "Bearer ya29.impersonated");
+    assert_eq!(bearer(&auth).unwrap(), format!("Bearer {impersonated}"));
     let received = google.received();
     let sts = form(&received[0]);
     assert_eq!(received[0].path, "/v1/token");

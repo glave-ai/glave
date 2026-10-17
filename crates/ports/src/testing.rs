@@ -1,9 +1,11 @@
 //! The test doubles every crate's tests share (AGENTS.md, "Testing"): the runtime they run
-//! on, a clock they move, randomness that counts, a cancellation already fired, and a fake
-//! HTTP server. Behind the `conformance` feature, so no production build carries them.
+//! on, a clock they move, randomness that counts, a cancellation already fired, a fake HTTP
+//! server, and fake secrets. Behind the `conformance` feature, so no production build carries
+//! them.
 
 mod git;
 mod http;
+mod secret;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
@@ -15,6 +17,7 @@ use crate::tools::{BoxFuture, Cancellation};
 
 pub use git::{FAKE_COMMIT, FakeGitHost, FixedCredentials};
 pub use http::{FakeHttp, Received};
+pub use secret::{FAKE_SECRET, fake_secret};
 
 /// Runs a future to its end on a fresh current-thread runtime with every driver enabled.
 ///

@@ -109,11 +109,11 @@ describe('AccountsComponent', () => {
     await settle(fixture);
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelector('[data-testid="accounts-github-sign-in"]')).toBeNull();
-    type(root, 'accounts-github-token', 'github_pat_test');
+    type(root, 'accounts-github-token', 'test-token');
     click(root, 'accounts-github-submit');
     await settle(fixture);
     expect(fake.paramsOf('credential/connect')).toEqual([
-      { url: 'https://github.com', token: 'github_pat_test' },
+      { url: 'https://github.com', token: 'test-token' },
     ]);
   });
 
