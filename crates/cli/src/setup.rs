@@ -9,6 +9,7 @@ use std::process::ExitCode;
 use glave_harness::Hook;
 
 use crate::args::Args;
+use crate::projects::Started;
 use crate::{config, home, mcp};
 use glave_config::policy::{
     self, Choices, ConfigFile, Loaded, Locations, ProjectTrust, ServerFile, StoreFile,
@@ -31,6 +32,8 @@ pub struct Setup {
     pub hooks: Vec<Hook>,
     /// The project's hooks that stay off, and why: told to the person, never the model.
     pub hooks_off: Vec<String>,
+    /// What the project glave runs in turned on for every thread, as it started.
+    pub started: Started,
 }
 
 impl Setup {
@@ -58,6 +61,8 @@ impl Setup {
                     .map_or_else(String::new, |path| path.display().to_string())
             );
         }
+        let home = home::folder()?;
+        let started = Started::from_outcome(&Locations::here(&home, folder).root, &home, &outcome);
         let hooks = [mine.clone(), outcome.hooks].concat();
         Ok(Self {
             loaded,
@@ -66,6 +71,7 @@ impl Setup {
             withheld: outcome.withheld,
             hooks,
             hooks_off: outcome.hooks_off,
+            started,
         })
     }
 

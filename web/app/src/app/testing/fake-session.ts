@@ -8,6 +8,7 @@ import {
 } from '@glave/client';
 
 import { TOKEN_KEY } from '../lib/token';
+import { thread } from './fixtures';
 import { SESSION_CLIENT_FACTORY, type SessionClient } from '../services/session.service';
 
 /** A call the fake saw. */
@@ -20,7 +21,8 @@ type Answer = object | ((params: unknown) => unknown);
 
 /**
  * A session API in memory for tests: answers by method, notifications for a turn, and every
- * call recorded. An answer that is an `ApiError` is thrown.
+ * call recorded. An answer that is an `ApiError` is thrown. Unanswered, `thread/get` answers
+ * the thread as the fixtures make one, idle and asking nothing; any other method, `{}`.
  */
 export class FakeSession implements SessionClient {
   readonly calls: SeenCall[] = [];
@@ -50,8 +52,8 @@ export class FakeSession implements SessionClient {
 
   call<M extends Method>(method: M, params: Methods[M]['params']): Promise<Methods[M]['result']> {
     this.calls.push({ method, params });
-    const answer = this.answers.get(method);
-    const value: unknown = typeof answer === 'function' ? answer(params) : (answer ?? {});
+    const answer = this.answers.get(method) ?? unanswered(method, params);
+    const value: unknown = typeof answer === 'function' ? answer(params) : answer;
     if (value instanceof ApiError) {
       return Promise.reject(value);
     }
@@ -74,6 +76,15 @@ export class FakeSession implements SessionClient {
   paramsOf(method: Method): readonly unknown[] {
     return this.calls.filter((call) => call.method === method).map((call) => call.params);
   }
+}
+
+/** What the fake answers a method no test answered. */
+function unanswered(method: Method, params: unknown): Answer {
+  if (method === 'thread/get') {
+    const { thread: id } = params as { readonly thread: string };
+    return { thread: thread(id, null) };
+  }
+  return {};
 }
 
 /** Providers that sign the app in and send its calls to `fake`. */

@@ -13,7 +13,7 @@ use tokio::sync::watch;
 
 use crate::held::{Slot, Use, finished};
 use crate::modes::Choice;
-use crate::protocol::{ApiError, Reply, Show, ThreadSummary, code};
+use crate::protocol::{ApiError, ApprovalMode, Reply, Show, ThreadSummary, code};
 use crate::server::{MAX_PAGE, Server, api, no_thread};
 
 fn failed(error: &impl std::fmt::Display) -> ApiError {
@@ -44,17 +44,32 @@ where
             org: self.inner.home.org,
             space,
         };
-        Ok(Reply::Thread {
-            thread: self.summary(scope, thread).await?,
-        })
+        self.opened(caller, scope, thread).await
     }
 
     /// Answers `thread/get`.
-    pub(crate) async fn get_thread(&self, thread: ThreadId) -> Result<Reply, ApiError> {
+    pub(crate) async fn get_thread(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+    ) -> Result<Reply, ApiError> {
         self.load(thread).await?;
         let scope = self.scope_of(thread).await?;
+        self.opened(caller, scope, thread).await
+    }
+
+    /// The summary of `thread`, opened or started by `caller`: it raises what its project asks
+    /// them to trust, when it asks anything (`trust.rs`).
+    async fn opened(
+        &self,
+        caller: &Caller,
+        scope: Scope,
+        thread: ThreadId,
+    ) -> Result<Reply, ApiError> {
+        let summary = self.summary(scope, thread).await?;
+        let ask = self.trust_in(caller, scope.space).await;
         Ok(Reply::Thread {
-            thread: self.summary(scope, thread).await?,
+            thread: self.asking(summary, ask.as_ref(), true),
         })
     }
 
@@ -164,13 +179,18 @@ where
                 views.last().map(|view| view.cursor().to_string())
             })
             .flatten();
+        let project = self.project_approval(space).await;
+        let ask = self
+            .trust_on_page(caller, space, views.iter().map(|view| view.thread))
+            .await;
         let mut threads = Vec::with_capacity(views.len());
         for view in views {
             if crate::ledger::is_ledger(view.thread) {
                 continue;
             }
             self.place(view.thread, scope);
-            threads.push(self.summarize(scope, view).await?);
+            let summary = self.summarize(scope, view, project).await?;
+            threads.push(self.asking(summary, ask.as_ref(), false));
         }
         Ok(Reply::Threads { threads, next })
     }
@@ -194,12 +214,18 @@ where
                 .map_err(|e| failed(&e))?
                 .ok_or_else(|| no_thread(thread))?,
         };
-        self.summarize(scope, view).await
+        let project = self.project_approval(scope.space).await;
+        self.summarize(scope, view, project).await
     }
 
-    /// A view as the API shows it: what the thread is doing now, and its title, read from the
-    /// one event that gives it.
-    async fn summarize(&self, scope: Scope, view: ThreadView) -> Result<ThreadSummary, ApiError> {
+    /// A view as the API shows it: what the thread is doing now, its title, read from the one
+    /// event that gives it, and the mode it runs in, its project's (`project`) unless it chose.
+    async fn summarize(
+        &self,
+        scope: Scope,
+        view: ThreadView,
+        project: Option<ApprovalMode>,
+    ) -> Result<ThreadSummary, ApiError> {
         let title = match view.title_seq {
             Some(seq) => {
                 let before = Seq::new(seq.get().saturating_sub(1)).ok();
@@ -220,7 +246,8 @@ where
             status: self.status(view.thread),
             standing: view.standing,
             title,
-            approval: self.approval_now(&scope, view.thread).await?,
+            approval: self.approval_now(&scope, view.thread, project).await?,
+            trust: None,
             for_: view.for_,
             origin: view.origin,
             parent: view.parent,

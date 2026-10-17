@@ -114,6 +114,7 @@ where
                     .await?;
                 break;
             }
+            self.bring(thread).await?;
             let mut toolset = self.tools(thread).await;
             toolset.offer_goal();
             let opened = opening.take();

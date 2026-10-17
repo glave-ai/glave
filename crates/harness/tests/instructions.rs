@@ -14,7 +14,7 @@ mod instructions {
 
     use glave_event::{Part, StopReason};
     use glave_harness::{
-        AllowAll, Caller, Cancel, Compaction, FolderInstructions, Place, Settings, agents_md,
+        AllowAll, Caller, Cancel, Compaction, Place, Projects, Settings, agents_md,
     };
     use glave_ports::{BoxFuture, MemoryLog, Message, ModelRequest};
     use serde_json::json;
@@ -187,7 +187,7 @@ mod instructions {
     /// Instructions that name the folder a thread reads them for.
     struct Told;
 
-    impl FolderInstructions for Told {
+    impl Projects for Told {
         fn for_folder<'a>(
             &'a self,
             root: &'a Path,
@@ -210,7 +210,7 @@ mod instructions {
             ];
             let (harness, seen) =
                 harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, with_rules()).await;
-            let harness = harness.with_folder_instructions(Some(Arc::new(Told)));
+            let harness = harness.with_projects(Some(Arc::new(Told)));
             let place = Place::Folder(other.to_string_lossy().into_owned());
             let mut thread = harness
                 .start_thread_in(scope(), &Caller::default(), place)

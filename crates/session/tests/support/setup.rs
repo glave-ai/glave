@@ -10,7 +10,7 @@ use glave_event::{
     At, Checkout, EventId, FolderSource, Header, Principal, RawEvent, Seq, SpaceFolderSet,
     ThreadId, encode,
 };
-use glave_harness::{ApprovalMode, FolderInstructions, Memory, Settings, Workspace};
+use glave_harness::{ApprovalMode, Memory, Projects, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
@@ -18,7 +18,9 @@ use glave_ports::{
     OrgId, Scope, Space, SpaceId, SpaceKind, WorkspaceInfo,
 };
 use glave_session::protocol::ModelInfo;
-use glave_session::{Answering, GitHosts, Providers, Server, TaskLimits, Wiring, space_ledger};
+use glave_session::{
+    Answering, GitHosts, ProjectTrust, Providers, Server, TaskLimits, Wiring, space_ledger,
+};
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
 
@@ -78,8 +80,11 @@ pub struct Setup {
     pub hosts: Option<Arc<dyn GitHosts>>,
     /// Where new projects' folders are made; with none, making one is refused.
     pub projects: Option<PathBuf>,
-    /// Where threads in a folder of their own read their opening instructions.
-    pub instructions: Option<Arc<dyn FolderInstructions>>,
+    /// Where threads in a folder of their own read their opening instructions, and what their
+    /// project turns on.
+    pub project_host: Option<Arc<dyn Projects>>,
+    /// Where what a project asks to be trusted is read and kept.
+    pub trust: Option<Arc<dyn ProjectTrust>>,
     /// Where commands' git, and a new project's clone, ask for credentials.
     pub credentials: Option<Arc<dyn Credentials>>,
 }
@@ -102,7 +107,8 @@ impl Setup {
             providers: None,
             hosts: None,
             projects: None,
-            instructions: None,
+            project_host: None,
+            trust: None,
             credentials: None,
         }
     }
@@ -161,7 +167,8 @@ impl Setup {
             modes: self.modes,
             providers: self.providers,
             git_hosts: self.hosts,
-            instructions: self.instructions,
+            projects: self.project_host,
+            trust: self.trust,
         };
         let server = Server::new(wiring, self.settings, scope(), self.answering);
         // The server's own space, kept as its person's project at a fixed time without reading

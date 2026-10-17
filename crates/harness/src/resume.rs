@@ -39,6 +39,10 @@ where
         let instructions = self
             .instructions_for(workspace.as_deref(), bound.as_ref())
             .await;
+        let project = bound
+            .as_ref()
+            .filter(|_| workspace.is_some())
+            .and_then(|bound| crate::projects::project_of(&bound.opened));
         let mut thread = Thread {
             scope,
             id,
@@ -62,6 +66,8 @@ where
             model: crate::chosen::chosen_in(&events),
             approval: crate::chosen::approval_in(&events),
             instructions,
+            project,
+            brought: std::sync::Arc::default(),
         };
         self.rebuild_memory(&mut thread, &events).await;
         self.repair(&mut thread, &events).await?;

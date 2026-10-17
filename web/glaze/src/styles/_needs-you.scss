@@ -1,4 +1,4 @@
-// A card that needs the person (an approval, a question): lifted off the page behind a
+// A card that needs the person (an approval, a question, a project to trust): lifted off the page behind a
 // stronger line, a small label with a dot in the accent over what it asks, and its answers,
 // the primary first. On a narrow card the answers go full width, one above another, each a
 // finger's height. Once answered it rests: the plain line, no lift, no label.
@@ -16,7 +16,8 @@
   }
 
   :host(.glz-approval-card--decided),
-  :host(.glz-question-card--answered) {
+  :host(.glz-question-card--answered),
+  :host(.glz-trust-card--answered) {
     border-color: var(--glz-color-border);
     box-shadow: var(--glz-elevation-0);
   }

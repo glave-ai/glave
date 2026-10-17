@@ -179,33 +179,82 @@ fn a_no_is_remembered_too_and_with_no_one_there_servers_stay_off() {
 }
 
 #[test]
-fn a_server_started_elsewhere_leaves_every_server_and_setting_off_and_says_why() {
-    let dir = scratch("elsewhere");
+fn an_app_is_shown_each_thing_in_plain_words_and_until_it_answers_they_stay_off() {
+    let dir = scratch("plain");
     let rules = Constraints::default();
-    let both = r#""docs": {"command": "docs-mcp"}, "extra": {"command": "x"}"#;
-    let hook = "approval = \"auto\"\n\n[[hooks.PreToolUse]]\ncommand = \"./guard.sh\"\n";
-    let project = repository(&dir, both, Some(hook));
-    let mut record = Record::default();
-    let trusted = assess(project.clone(), &record, &rules).apply(Answer::Yes);
-    record.remember(&project, trusted.decisions.unwrap());
-    block_on!(record.save(&dir)).unwrap();
-    let off = block_on!(off_elsewhere(&dir, project, &rules)).unwrap();
+    let servers = r#""docs": {"command": "npx", "args": ["@acme/mcp"]}, "web": {"url": "https://mcp.example.com/mcp"}"#;
+    let config = format!(
+        "approval = \"auto\"\nsandbox = \"off\"\njudge_model = \"lenient\"\n{GUARD}\n\
+         [[hooks.Stop]]\ncommand = \"./done.sh\"\n"
+    );
+    let project = repository(&dir, servers, Some(&config));
+    let assessment = assess(project, &Record::default(), &rules);
+    let plain: Vec<(&str, Option<&str>)> = assessment
+        .plain()
+        .iter()
+        .map(|plain| (plain.text, plain.detail.as_deref()))
+        .collect();
     assert_eq!(
-        off.len(),
-        3,
-        "both servers and the settings, never the hook: {off:?}"
+        plain,
+        [
+            ("Runs a tool server", Some("npx @acme/mcp")),
+            (
+                "Connects to a tool server",
+                Some("https://mcp.example.com/mcp")
+            ),
+            ("Runs a hook before each command", Some("./guard.sh")),
+            ("Runs a hook when glave finishes a reply", Some("./done.sh")),
+            ("Lets glave approve actions without asking", None),
+            ("Turns off the sandbox", None),
+            ("Chooses which model judges risky actions", Some("lenient")),
+        ]
     );
+    let later = assessment.apply(Answer::Later);
+    assert!(later.servers.is_empty() && later.hooks.is_empty() && later.decisions.is_none());
     assert!(
-        off.iter()
-            .all(|line| line.contains("is off: glave turns on"))
+        later.withheld[0].contains("the person has not trusted this project yet"),
+        "{:?}",
+        later.withheld
     );
-    let fresh = scratch("elsewhere-new");
-    let untrusted = repository(&fresh, DOCS, None);
-    let off = block_on!(off_elsewhere(&fresh, untrusted, &rules)).unwrap();
-    assert!(
-        off.len() == 1 && off[0].contains("nobody is here to ask"),
-        "{off:?}"
+    let config = later.config.unwrap();
+    assert_eq!((config.approval, config.sandbox), (None, None));
+}
+
+#[test]
+fn trusting_what_was_shown_is_kept_as_a_yes_and_a_change_since_trusts_nothing() {
+    let dir = scratch("asked");
+    let home = dir.join("home");
+    let rules = Constraints::default();
+    let project = repository(&dir.join("repo"), DOCS, Some(GUARD));
+    let shown = block_on!(assessed(&home, project.clone(), &rules)).unwrap();
+    let asked = shown.ask_id();
+    assert_eq!(asked.len(), 64);
+    // The repository changes a server after the person was shown it: nothing is trusted.
+    let changed = repository(
+        &dir.join("repo"),
+        r#""docs": {"command": "evil"}"#,
+        Some(GUARD),
     );
+    let trusted = block_on!(trust_asked(&home, changed.clone(), &rules, &asked)).unwrap();
+    assert!(!trusted);
+    assert!(!home.join("trust.toml").exists());
+    // What was shown, trusted: kept exactly as the terminal keeps a yes.
+    let trusted = block_on!(trust_asked(&home, project.clone(), &rules, &asked)).unwrap();
+    assert!(trusted);
+    let mut by_terminal = Record::default();
+    let yes = assess(project.clone(), &Record::default(), &rules).apply(Answer::Yes);
+    by_terminal.remember(&project, yes.decisions.unwrap());
+    assert_eq!(block_on!(Record::load(&home)).unwrap(), by_terminal);
+    let now = block_on!(assessed(&home, project.clone(), &rules)).unwrap();
+    assert_eq!(now.undecided().len(), 0);
+    let on = now.apply(Answer::Later);
+    assert_eq!((on.servers.len(), on.hooks.len()), (1, 1));
+    // Answered already: the same ask trusts nothing more.
+    assert!(!block_on!(trust_asked(&home, project, &rules, &asked)).unwrap());
+    // Only what changed is asked about next, under a new name.
+    let next = block_on!(assessed(&home, changed, &rules)).unwrap();
+    assert_eq!(next.undecided().len(), 1);
+    assert_ne!(next.ask_id(), asked);
 }
 
 #[test]

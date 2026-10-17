@@ -28,6 +28,7 @@ mod standing;
 mod tasks;
 mod titles;
 mod trace;
+mod trust;
 mod turn;
 
 pub use approvals::Answering;
@@ -40,4 +41,5 @@ pub use providers::{Models, NewProvider, Providers};
 pub use server::{OnWorkers, Server, Wiring};
 pub use spaces::PERSONAL_NAME;
 pub use tasks::TaskLimits;
+pub use trust::ProjectTrust;
 pub use turn::{TurnItem, TurnStream};

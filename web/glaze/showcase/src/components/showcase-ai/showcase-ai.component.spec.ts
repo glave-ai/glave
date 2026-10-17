@@ -19,6 +19,11 @@ describe('ShowcaseAiComponent', () => {
     expect(root.querySelector('[data-testid="showcase-approval-decided"]')?.textContent).toBe(
       'Allowed once',
     );
+    root.querySelector<HTMLButtonElement>('[data-testid="showcase-trust-trust"]')?.click();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="showcase-trust-answered"]')?.textContent).toBe(
+      'Trusted',
+    );
   });
 
   it('sends from the composer and streams a reply, which can be stopped', async () => {

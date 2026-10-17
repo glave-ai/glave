@@ -1,0 +1,28 @@
+@use '../../styles/needs-you';
+@include needs-you.card;
+
+// Each thing it would turn on, one to a line: what it does, then the thing itself.
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--glz-space-2);
+}
+
+// What it runs or reaches, as code in running text is.
+.detail {
+  padding: var(--glz-space-half) var(--glz-space-2);
+  border-radius: var(--glz-radius-mark);
+  background: var(--glz-surface-sunken);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

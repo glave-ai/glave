@@ -132,7 +132,11 @@ where
         mut input: Map<String, Value>,
         cancel: &Cancel,
     ) -> Result<Option<String>, HarnessError> {
-        let hooks = self.hooks.at(point, call.map(|call| call.tool));
+        let tool = call.map(|call| call.tool);
+        // The harness's own hooks, then the project's.
+        let brought = Arc::clone(&thread.brought);
+        let mut hooks = self.hooks.at(point, tool);
+        hooks.extend(brought.hooks.at(point, tool));
         if hooks.is_empty() {
             return Ok(None);
         }

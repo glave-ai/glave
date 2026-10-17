@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use glave_harness::Hook;
 
 use crate::policy::{ConfigFile, Constraints};
-use crate::trust::project::{Item, Project, SETTINGS};
+use crate::trust::project::{Item, Plain, Project, SETTINGS};
 use crate::trust::record::{Decision, FILE, Record};
 
 /// Why an item has not been decided.
@@ -36,8 +36,11 @@ pub enum Standing {
 pub enum Answer {
     Yes,
     No,
-    /// No one is there: a flag-less script, a pipe, the session server.
+    /// No one is there: a flag-less script, a pipe.
     NoOne,
+    /// No one has answered yet, and the person can, from an app: the session server asks
+    /// them there, and what waits for their answer stays off until they trust it.
+    Later,
     /// Nobody is asked: `glave policy explain` only shows what would happen.
     Explaining,
 }
@@ -121,25 +124,26 @@ impl Assessment {
             .collect()
     }
 
-    /// What a server started in another folder leaves off of this project, one sentence each,
-    /// for the model: every server and setting it brings, the trusted ones too, since such a
-    /// server starts only its own folder's. Hooks are left out: the model never calls one.
-    pub fn off_elsewhere(&self) -> Vec<String> {
-        self.items
-            .iter()
-            .filter(|(item, _)| !item.is_hook())
-            .map(|(item, standing)| {
-                let (on, _, reason) = verdict(item, standing, Answer::NoOne);
-                let reason = if on {
-                    "glave turns on a project's own tools and settings only when it runs in the \
-                     project's folder, for now; running glave in a terminal there does"
-                        .to_owned()
-                } else {
-                    reason
-                };
-                format!("{} ({}) is off: {reason}", item.label(), item.shows)
-            })
+    /// What the person is asked, in plain words: each line of each item not decided yet.
+    pub fn plain(&self) -> Vec<&Plain> {
+        self.undecided()
+            .into_iter()
+            .flat_map(|(item, _)| &item.plain)
             .collect()
+    }
+
+    /// The name of exactly what the person is asked: the project and each item not decided
+    /// yet with its definition, digested. An answer that names it trusts only what was shown,
+    /// so a project that changed in between is asked again.
+    pub fn ask_id(&self) -> String {
+        let mut shown = self.project.root.to_string_lossy().into_owned();
+        for (item, _) in self.undecided() {
+            shown.push('\n');
+            shown.push_str(&item.id);
+            shown.push('\0');
+            shown.push_str(&item.definition);
+        }
+        glave_ports::digest(shown.as_bytes()).as_str().to_owned()
     }
 
     /// What the run does, given `answer` to the question if there was one.
@@ -239,6 +243,13 @@ fn verdict(item: &Item, standing: &Standing, answer: Answer) -> (bool, String, S
             "off: not trusted, and nobody is here to ask".to_owned(),
             "this project is not trusted yet and nobody is here to ask; running glave in a \
              terminal in the project asks once"
+                .to_owned(),
+        ),
+        (Standing::Asks(_), Answer::Later) => (
+            false,
+            "off until the person trusts it in the app".to_owned(),
+            "the person has not trusted this project yet; once they do, it is on from their \
+             next message"
                 .to_owned(),
         ),
         (Standing::Asks(why), Answer::Explaining) => {

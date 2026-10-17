@@ -1,0 +1,32 @@
+@if (!isAnswered()) {
+  <p class="label" [id]="labelId"><span class="dot" aria-hidden="true"></span>{{ label() }}</p>
+}
+<p class="summary" [id]="summaryId">{{ summary() }}</p>
+<ul class="items">
+  @for (item of items(); track $index) {
+    <li class="item" [attr.data-testid]="ids().item">
+      {{ item.text }}
+      @if (item.detail) {
+        <code class="detail">{{ item.detail }}</code>
+      }
+    </li>
+  }
+</ul>
+@if (answeredText(); as answered) {
+  <p class="decided" [attr.data-testid]="ids().answered">{{ answered }}</p>
+} @else {
+  <div class="actions">
+    <button
+      glzButton
+      variant="primary"
+      [attr.data-testid]="ids().trust"
+      [disabled]="busy()"
+      (click)="trust()"
+    >
+      {{ trustLabel() }}
+    </button>
+    <button glzButton [attr.data-testid]="ids().notNow" [disabled]="busy()" (click)="notNow()">
+      {{ notNowLabel() }}
+    </button>
+  </div>
+}

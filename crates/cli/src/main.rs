@@ -22,7 +22,7 @@ mod keys;
 mod mcp;
 mod memory;
 mod model;
-mod opening;
+mod projects;
 mod providers;
 mod remote;
 mod serving;

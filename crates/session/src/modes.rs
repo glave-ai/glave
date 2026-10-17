@@ -5,7 +5,7 @@
 
 use glave_event::{Body, ThreadId};
 use glave_harness::{Caller, HarnessError, Thread};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, SpaceId};
 
 use crate::protocol::{ApiError, ApprovalMode, code};
 use crate::server::{Glave, Server};
@@ -94,16 +94,31 @@ where
         }
     }
 
-    /// The mode `thread` runs in now, as its summary shows it.
+    /// The mode `thread` runs in now, as its summary shows it: its own choice, else its
+    /// project's (`project`), else the server's.
     pub(crate) async fn approval_now(
         &self,
         scope: &Scope,
         thread: ThreadId,
+        project: Option<ApprovalMode>,
     ) -> Result<ApprovalMode, ApiError> {
         Ok(self
             .chosen_approval(scope, thread)
             .await?
+            .or(project)
             .unwrap_or(self.inner.harness.settings().approval))
+    }
+
+    /// The mode the project of `space` gives its threads that chose none, when its trusted
+    /// settings loosen it.
+    pub(crate) async fn project_approval(&self, space: SpaceId) -> Option<ApprovalMode> {
+        let folder = self.folder_here(space).await.ok().flatten()?;
+        let loosened = self
+            .inner
+            .harness
+            .loosened(std::path::Path::new(&folder))
+            .await;
+        loosened.approval
     }
 
     /// The mode last chosen for `thread`, from its log.

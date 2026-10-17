@@ -127,7 +127,7 @@ where
                 show,
                 cursor,
             } => self.list_threads(caller, space, limit, show, cursor).await,
-            Request::ThreadGet { thread } => self.get_thread(thread).await,
+            Request::ThreadGet { thread } => self.get_thread(caller, thread).await,
             Request::ThreadRename { thread, title } => self.rename(caller, thread, title).await,
             Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
             Request::ThreadUnarchive { thread } => {
@@ -192,6 +192,11 @@ where
                 .approvals
                 .respond(thread, &question, answers)
                 .map(|()| Reply::Done {}),
+            Request::TrustAnswer {
+                thread,
+                ask,
+                answer,
+            } => self.answer_trust(caller, thread, &ask, answer).await,
             Request::GoalStart {
                 thread,
                 objective,
