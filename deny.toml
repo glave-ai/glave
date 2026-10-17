@@ -14,6 +14,7 @@ ignore = [
 ]
 
 [licenses]
+# about.toml accepts the same licences for the release archives' third-party notices: change both.
 allow = [
     "Apache-2.0",
     "MIT",
