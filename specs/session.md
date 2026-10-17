@@ -102,7 +102,7 @@ Three kinds, sent while a turn runs or a client watches:
 | Method | Params | Kept |
 | --- | --- | --- |
 | `thread/event` | `thread`; `event`, a stored event with its `seq` | Yes: it is in the log, and `thread/events` returns it again |
-| `turn/live` | `thread`; `update`, one of the kinds the schema lists: text or reasoning as it streams, a tool starting, finishing or declined, waiting, retrying, compaction done or failed, questions asked, a subagent started or ended, a memory changed | No: live updates are for showing progress, never replayed |
+| `turn/live` | `thread`; `update`, one of the kinds the schema lists: text or reasoning as it streams, a tool starting, finishing or declined, waiting, retrying, compaction done or failed, questions asked, an approval pending, a subagent started or ended, a memory changed | No: live updates are for showing progress, never replayed |
 | `task/finished` | `thread`; `task`, as `tasks/list` shows it | In the ledger as `task.ended` |
 
 A thread's notifications include its subagents': a child thread started by an `agent` call sends its events and progress to whoever follows its parent too, each under the child's own `thread`. Its first event, `thread.started`, names the parent call, and `subagent_started` gives its description. A client answers a subagent's approval with the subagent's thread.
@@ -113,7 +113,7 @@ A client that only shows the conversation needs `thread/event` alone. Rebuilding
 
 ## Approvals
 
-A tool call that needs the person records `approval.requested` (`approval`, `call_id`, `tool`, `summary`, `secret`, `caution` when a caution asks, apart from the summary, and `outside_sandbox` with the model's reason when the command would run outside the sandbox: `approvals.md`, "Recording") and the turn pauses; the thread's status becomes `waiting`. Any client may answer with `approval/decide`, now or much later, from any transport. The answer is recorded as `approval.decided` (`approval`, `decision`), and the turn continues: today in the server that runs it, later in whichever server receives the answer ("Turns that outlive a server").
+A tool call that needs the person records `approval.requested` (`approval`, `call_id`, `tool`, `summary`, `secret`, `caution` when a caution asks, apart from the summary, and `outside_sandbox` with the model's reason when the command would run outside the sandbox: `approvals.md`, "Recording") and the turn pauses; the thread's status becomes `waiting`. Once the approval is pending, the turn sends `turn/live` with `approval_pending` (`approval`, the call's id), and a client that asks the person asks then, never on the request alone: an action the judge lets run is recorded as `approval.requested` and `approval.decided` at once and is never pending (`approvals.md`, "The judge"). Any client may answer with `approval/decide`, now or much later, from any transport. The answer is recorded as `approval.decided` (`approval`, `decision`), and the turn continues: today in the server that runs it, later in whichever server receives the answer ("Turns that outlive a server").
 
 - A decision for an approval that is not pending is refused with `-32004`.
 - `allow_for_thread` is recorded, so it survives resuming the thread.

@@ -1759,6 +1759,23 @@
           "type": "object"
         },
         {
+          "description": "The `approval.requested` of call `approval` waits for an answer; give it with\n`approval/decide`. One the judge let run is decided at once and sends none.",
+          "properties": {
+            "approval": {
+              "$ref": "#/$defs/CallId"
+            },
+            "kind": {
+              "const": "approval_pending",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "approval"
+          ],
+          "type": "object"
+        },
+        {
           "description": "A subagent started; its notifications follow under its own thread.",
           "properties": {
             "description": {

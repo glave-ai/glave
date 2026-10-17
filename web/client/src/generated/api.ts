@@ -574,6 +574,9 @@ export type Update = {
   readonly question: CallId;
   readonly questions: readonly (Question)[];
 } | {
+  readonly approval: CallId;
+  readonly kind: "approval_pending";
+} | {
   readonly description: string;
   readonly kind: "subagent_started";
   readonly subagent: ThreadId;

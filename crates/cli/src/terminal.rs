@@ -171,7 +171,7 @@ impl Printer {
             }
             // Shown by the client, which answers it; one that sends nothing mid-turn has
             // nothing given back.
-            Update::Asked { .. } | Update::Unread { .. } => {}
+            Update::Asked { .. } | Update::ApprovalPending { .. } | Update::Unread { .. } => {}
             Update::Memory {
                 change,
                 memory,

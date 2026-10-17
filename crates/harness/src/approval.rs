@@ -96,6 +96,8 @@ pub trait Approver: Send + Sync {
 
     /// Decides, and names the person who did when the approver knows: someone other than the
     /// thread's `for` is recorded as the decision's `by`. Plain [`Approver::decide`] by default.
+    /// When someone can answer, the approval is pending once this returns, before the future
+    /// is awaited.
     fn decide_by(
         &self,
         request: &ApprovalRequest,
@@ -104,7 +106,8 @@ pub trait Approver: Send + Sync {
         async move { (decided.await, None) }
     }
 
-    /// Whether someone can answer questions in `thread`; `question` is offered only then.
+    /// Whether someone can answer approvals and questions in `thread`: `question` is offered,
+    /// and a pending approval announced, only then.
     fn can_answer(&self, thread: ThreadId) -> bool {
         let _ = thread;
         false

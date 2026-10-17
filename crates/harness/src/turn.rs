@@ -69,6 +69,11 @@ pub enum Live {
         call_id: CallId,
         questions: Vec<Question>,
     },
+    /// The call's `approval.requested` waits for the person's answer, which someone can give.
+    /// One the judge let run is decided at once, and never pending.
+    ApprovalPending {
+        call_id: CallId,
+    },
     /// A subagent started, in a child thread.
     SubagentStarted {
         thread: ThreadId,

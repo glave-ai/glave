@@ -331,7 +331,14 @@ where
     ) -> Result<Option<ToolOutput>, HarnessError> {
         let asked = request.asked();
         self.record(thread, &asked).await?;
-        let decided = cancel.run(self.approver.decide_by(request)).await;
+        let deciding = self.approver.decide_by(request);
+        // Pending now, so a client told of it can answer it at once.
+        if self.approver.can_answer(thread.id) {
+            live(Live::ApprovalPending {
+                call_id: request.call_id.clone(),
+            });
+        }
+        let decided = cancel.run(deciding).await;
         let (decision, person) = decided.map_or((None, None), |(d, by)| (Some(d), by));
         let verdict = match decision {
             None => Verdict::Cancelled,
