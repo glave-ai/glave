@@ -2,13 +2,16 @@
 //! the terminal, compacting, and showing what failed with what to fix. It uses nothing a
 //! remote client could not.
 
+use std::collections::HashMap;
 use std::future::{Future, poll_fn};
 use std::pin::pin;
 use std::process::ExitCode;
 use std::task::Poll;
 use std::time::Duration;
 
-use glave_event::{Body, CallId, GoalReason, Outcome, PrincipalKind, ThreadId, decode};
+use glave_event::{
+    ApprovalRequested, Body, CallId, GoalReason, Outcome, PrincipalKind, ThreadId, decode,
+};
 use glave_harness::{ApprovalMode, Caller, Cancel, Goal, Question};
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
@@ -25,6 +28,9 @@ use crate::terminal::Printer;
 use crate::waiting::Waiting;
 
 pub type Glave = Server<Switch, DataLog, DataBlobs>;
+
+/// The approvals a turn requested, by thread and call, until each is pending or decided.
+type Requested = HashMap<(ThreadId, CallId), ApprovalRequested>;
 
 /// The session API the terminal is a client of: the server in this process, or one elsewhere
 /// over HTTP. The terminal uses the same requests and follows turns the same way with either.
@@ -154,6 +160,7 @@ impl Client<'_> {
         let ended = ticking(
             async {
                 let mut cancelling = false;
+                let mut requested = Requested::new();
                 loop {
                     let item = if cancelling {
                         stream.next().await
@@ -166,7 +173,7 @@ impl Client<'_> {
                     match item {
                         Some(TurnItem::Ended(ended)) => return Some(ended),
                         Some(TurnItem::Note(note)) => {
-                            if self.note(&note, printer, &interrupt).await {
+                            if self.note(&note, &mut requested, printer, &interrupt).await {
                                 cancelling = self.cancel().await;
                             }
                         }
@@ -196,12 +203,26 @@ impl Client<'_> {
         }
     }
 
-    /// Shows one notification; answers an approval when this terminal asks them. True when the
-    /// person pressed Ctrl-C instead of answering.
-    async fn note(&self, note: &Notification, printer: &mut Printer, interrupt: &Cancel) -> bool {
+    /// Shows one notification; answers an approval once it is pending, never one already
+    /// decided, as one the judge let run. True when the person pressed Ctrl-C instead of
+    /// answering.
+    async fn note(
+        &self,
+        note: &Notification,
+        requested: &mut Requested,
+        printer: &mut Printer,
+        interrupt: &Cancel,
+    ) -> bool {
         match note {
             // A turn the terminal follows is not a task.
             Notification::TaskFinished { .. } => false,
+            Notification::Live {
+                thread,
+                update: Update::ApprovalPending { approval },
+            } => match requested.remove(&(*thread, approval.clone())) {
+                Some(asked) => self.decide(*thread, &asked, printer, interrupt).await,
+                None => false,
+            },
             Notification::Live { thread, update } if *thread != self.thread => {
                 printer.child(*thread, update.clone());
                 false
@@ -222,11 +243,16 @@ impl Client<'_> {
                 let Ok(decoded) = decode(event.clone()) else {
                     return false;
                 };
-                let asked = match decoded.body {
-                    Body::ApprovalRequested(asked) => asked,
+                match decoded.body {
+                    // Asked about once pending; dropped once decided.
+                    Body::ApprovalRequested(asked) => {
+                        requested.insert((*thread, asked.call_id.clone()), asked);
+                    }
+                    Body::ApprovalDecided(decision) => {
+                        requested.remove(&(*thread, decision.call_id));
+                    }
                     Body::GoalEnded(ended) => {
                         printer.goal_ended(ended.reason, ended.tokens, ended.note.as_deref());
-                        return false;
                     }
                     Body::MessageAdded(added)
                         if added
@@ -235,43 +261,55 @@ impl Client<'_> {
                             .is_some_and(|author| author.kind == PrincipalKind::Glave) =>
                     {
                         printer.status("\n· continuing toward the goal");
-                        return false;
                     }
-                    _ => return false,
-                };
-                let decision = if self.asks {
-                    // A subagent asks under its own thread.
-                    let summary = printer.labeled(*thread, &asked.summary);
-                    let outside = asked.outside_sandbox.as_ref();
-                    printer.approval(&summary, asked.caution.as_deref(), outside);
-                    let Some(line) = interrupt.run(self.input.line()).await else {
-                        return true;
-                    };
-                    match line
-                        .map(|answer| answer.trim().to_ascii_lowercase())
-                        .as_deref()
-                    {
-                        Some("y" | "yes") => Answer::AllowOnce,
-                        Some("a" | "always") => Answer::AllowForThread,
-                        _ => Answer::Deny,
-                    }
-                } else if matches!(self.server, Session::Elsewhere(_)) {
-                    // A server elsewhere waits for its clients; no one is at this terminal.
-                    Answer::Deny
-                } else {
-                    return false;
-                };
-                let decide = Request::ApprovalDecide {
-                    thread: *thread,
-                    approval: asked.call_id,
-                    decision,
-                };
-                if let Err(error) = self.server.request(decide).await {
-                    printer.error(&error.to_string());
+                    _ => {}
                 }
                 false
             }
         }
+    }
+
+    /// Answers `asked`, pending in `thread`: as the person says when this terminal asks, no
+    /// when the server is elsewhere and no one is here. True when the person pressed Ctrl-C
+    /// instead of answering.
+    async fn decide(
+        &self,
+        thread: ThreadId,
+        asked: &ApprovalRequested,
+        printer: &mut Printer,
+        interrupt: &Cancel,
+    ) -> bool {
+        let decision = if self.asks {
+            // A subagent asks under its own thread.
+            let summary = printer.labeled(thread, &asked.summary);
+            let outside = asked.outside_sandbox.as_ref();
+            printer.approval(&summary, asked.caution.as_deref(), outside);
+            let Some(line) = interrupt.run(self.input.line()).await else {
+                return true;
+            };
+            match line
+                .map(|answer| answer.trim().to_ascii_lowercase())
+                .as_deref()
+            {
+                Some("y" | "yes") => Answer::AllowOnce,
+                Some("a" | "always") => Answer::AllowForThread,
+                _ => Answer::Deny,
+            }
+        } else if matches!(self.server, Session::Elsewhere(_)) {
+            // A server elsewhere waits for its clients; no one is at this terminal.
+            Answer::Deny
+        } else {
+            return false;
+        };
+        let decide = Request::ApprovalDecide {
+            thread,
+            approval: asked.call_id.clone(),
+            decision,
+        };
+        if let Err(error) = self.server.request(decide).await {
+            printer.error(&error.to_string());
+        }
+        false
     }
 
     /// Puts the model's questions to the person and sends the answers. True when the person

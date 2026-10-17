@@ -2,7 +2,8 @@
 //! `glave --server` from another with nothing of its own, signed in with the server's token.
 //! The turn runs there and shows here, `--continue` continues it there, and nothing is kept
 //! on the client's side. Without a token, it says how to sign in; a model it names goes to
-//! the server, which refuses one it does not run.
+//! the server, which refuses one it does not run. An approval is answered once it waits, never
+//! when the judge already let its action run.
 
 #[cfg(test)]
 #[path = "support/binary.rs"]
@@ -15,9 +16,10 @@ mod http;
 
 #[cfg(test)]
 mod remote {
-    use std::process::{Command, Stdio};
+    use std::process::{Child, Command, Stdio};
 
     use glave_provider_openai::fake::{FakeServer, Reply};
+    use serde_json::json;
 
     use super::http::serve_http;
     use super::support::*;
@@ -91,6 +93,79 @@ mod remote {
         );
         assert!(!unknown.status.success());
         assert!(text(&unknown).contains("model/list"), "{}", text(&unknown));
+        let _ = served.kill();
+        let _ = served.wait();
+    }
+
+    /// `glave serve --http` where commands run as the person and only cautions ask, the judge
+    /// first, with `model`'s replies; its address and token.
+    fn judging(place: &Place, model: &FakeServer) -> (Child, String, String) {
+        let args = [
+            "--model",
+            "fake-model",
+            "--sandbox",
+            "off",
+            "--approval",
+            "auto",
+        ];
+        let (served, url) = serve_http(place, model, &args);
+        let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
+        (served, url, token)
+    }
+
+    #[test]
+    fn an_action_the_judge_let_run_is_not_answered_again() {
+        let place = place("remote-judged");
+        let push = "git push --dry-run origin main";
+        let model = FakeServer::start(vec![
+            Reply::tool_call("call_1", "bash", &json!({ "command": push })),
+            Reply::text(r#"{"decision":"run","reason":"the person asked to push"}"#),
+            Reply::text("Pushed."),
+        ])
+        .unwrap();
+        let (mut served, url, token) = judging(&place, &model);
+
+        let pushed = client(&place, &["--server", &url, "push my branch"], Some(&token));
+        let shown = text(&pushed);
+        assert!(pushed.status.success(), "{shown}");
+        // Requested and decided at once, so nothing was left to answer.
+        assert!(!shown.contains("no approval"), "{shown}");
+        assert!(!shown.contains("declined"), "{shown}");
+        assert!(shown.contains(&format!("bash: {push} …")), "{shown}");
+        assert!(shown.contains("Pushed."), "{shown}");
+        let received = model.received();
+        assert_eq!(received.len(), 3, "the turn's two calls and the judge's");
+        let result = said(&received[2].body, "tool").concat();
+        assert!(
+            !result.contains("declined") && !result.contains("Not run"),
+            "it ran: {result}"
+        );
+        let _ = served.kill();
+        let _ = served.wait();
+    }
+
+    #[test]
+    fn an_action_the_judge_leaves_to_the_person_is_still_answered() {
+        let place = place("remote-unjudged");
+        let model = FakeServer::start(vec![
+            Reply::tool_call("call_1", "bash", &json!({ "command": "npm publish" })),
+            Reply::text(r#"{"decision":"ask","reason":"asked to bump, not to publish"}"#),
+            Reply::text("Left it."),
+        ])
+        .unwrap();
+        let (mut served, url, token) = judging(&place, &model);
+
+        let bumped = client(
+            &place,
+            &["--server", &url, "bump the version"],
+            Some(&token),
+        );
+        let shown = text(&bumped);
+        assert!(bumped.status.success(), "{shown}");
+        // It waits, and with no one at this terminal the answer is no.
+        assert!(shown.contains("bash: npm publish … declined"), "{shown}");
+        assert!(!shown.contains("no approval"), "{shown}");
+        assert!(shown.contains("Left it."), "{shown}");
         let _ = served.kill();
         let _ = served.wait();
     }

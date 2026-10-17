@@ -48,6 +48,11 @@ pub enum Update {
         question: CallId,
         questions: Vec<Question>,
     },
+    /// The `approval.requested` of call `approval` waits for an answer; give it with
+    /// `approval/decide`. One the judge let run is decided at once and sends none.
+    ApprovalPending {
+        approval: CallId,
+    },
     /// A subagent started; its notifications follow under its own thread.
     SubagentStarted {
         subagent: ThreadId,
@@ -115,6 +120,7 @@ impl From<Live> for Update {
                 question: call_id,
                 questions,
             },
+            Live::ApprovalPending { call_id } => Self::ApprovalPending { approval: call_id },
             Live::SubagentStarted {
                 thread,
                 description,

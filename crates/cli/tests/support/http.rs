@@ -24,6 +24,7 @@ pub fn serve_http(place: &Place, server: &FakeServer, args: &[&str]) -> (Child, 
         .env("GLAVE_API_KEY", FAKE_SECRET)
         .env_remove("GLAVE_MODEL")
         .env_remove("GLAVE_PROVIDER")
+        .env_remove("GLAVE_JUDGE_MODEL")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
