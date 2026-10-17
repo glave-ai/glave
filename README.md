@@ -22,8 +22,8 @@ You need Rust (see `rust-toolchain.toml`) and Node 22.22.3 or later.
 git clone https://github.com/glave-ai/glave
 cd glave
 (cd web && npm ci && npm run build)
-cargo build --release -p glave
-./target/release/glave app --web web/dist/app/browser
+cargo build --release -p glave --features web
+./target/release/glave app
 ```
 
 Your browser opens, signed in. Add a model by pasting a key, and start a chat.

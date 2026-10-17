@@ -1,8 +1,9 @@
 name: budgets
 
 # The performance budgets in AGENTS.md, measured on the release build after every merge to
-# main, weekly, and on demand. The numbers are wall-clock, but the budgets have room enough
-# (6-11x today) that a busy runner does not trip them; a real regression does.
+# main, weekly, and on demand: the binary as it ships, with the web app inside (the `web`
+# feature). The numbers are wall-clock, but the budgets have room enough (6-11x today) that a
+# busy runner does not trip them; a real regression does.
 on:
   push:
     branches: [main]
@@ -25,4 +26,12 @@ jobs:
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo xtask bench --bench budgets
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build the web app, which the binary carries
+        run: npm ci && npm run build
+        working-directory: web
+      - run: cargo xtask bench --bench budgets --features glave/web

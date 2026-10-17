@@ -10,7 +10,7 @@
 mod body;
 mod site;
 
-pub use self::site::{NoSite, Site};
+pub use self::site::{Files, NoSite, Site};
 
 use std::convert::Infallible;
 use std::future::{Future, poll_fn};
