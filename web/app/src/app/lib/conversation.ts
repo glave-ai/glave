@@ -29,7 +29,10 @@ export interface ApprovalItem extends Placed {
   readonly kind: 'approval';
   readonly approval: string;
   readonly tool: string;
+  /** What would run, never why it asks. */
   readonly summary: string;
+  /** Why it asks whatever the mode, in the server's sentences; empty when only the mode asks. */
+  readonly caution: string;
   readonly decision: GlzDecision | null;
 }
 
@@ -206,6 +209,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           approval,
           tool: text(data['tool']),
           summary: text(data['summary']),
+          caution: text(data['caution']),
           decision: null,
         });
         break;

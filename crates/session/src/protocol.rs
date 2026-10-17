@@ -642,8 +642,12 @@ pub enum Update {
         summary: String,
         is_error: bool,
     },
+    /// An action that did not run. `summary` is what would have run; `caution`, why it asked
+    /// whatever the mode, in sentences the person reads, when a caution did.
     ToolDeclined {
         summary: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        caution: Option<String>,
         no_one_there: bool,
     },
     Waiting,
@@ -693,9 +697,11 @@ impl From<Live> for Update {
             Live::ToolFinished { summary, is_error } => Self::ToolFinished { summary, is_error },
             Live::ToolDeclined {
                 summary,
+                caution,
                 no_one_there,
             } => Self::ToolDeclined {
                 summary,
+                caution,
                 no_one_there,
             },
             Live::Waiting => Self::Waiting,

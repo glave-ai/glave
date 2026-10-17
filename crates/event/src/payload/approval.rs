@@ -17,10 +17,37 @@ pub(crate) const DECIDED: &str = "approval.decided";
 pub struct ApprovalRequested {
     pub call_id: CallId,
     pub tool: String,
-    /// What the call would do, as the person is shown it.
+    /// What would run, as the person is shown it: `bash: rm -rf ~/notes`. Never why it asks.
     pub summary: String,
     /// Whether the call would show the model a file that usually holds secrets.
     pub secret: bool,
+    /// Why the call needs the person whatever the mode, when a caution says so, in sentences
+    /// the person reads: "It deletes /home/ana/notes, outside the project." Since version 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caution: Option<String>,
+}
+
+/// Version 1, before the caution had a field of its own: it was folded into `summary`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApprovalRequestedV1 {
+    call_id: CallId,
+    tool: String,
+    summary: String,
+    secret: bool,
+}
+
+impl From<ApprovalRequestedV1> for ApprovalRequested {
+    /// Its summary keeps the caution it may end with, in brackets, as it was written.
+    fn from(old: ApprovalRequestedV1) -> Self {
+        Self {
+            call_id: old.call_id,
+            tool: old.tool,
+            summary: old.summary,
+            secret: old.secret,
+            caution: None,
+        }
+    }
 }
 
 /// The answer to an approval.
@@ -74,7 +101,7 @@ pub enum Verdict {
 
 impl Payload for ApprovalRequested {
     const TYPE: &'static str = REQUESTED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for ApprovalDecided {
@@ -87,7 +114,8 @@ pub(crate) fn decode_requested(
     data: &RawValue,
 ) -> Option<serde_json::Result<ApprovalRequested>> {
     match version {
-        1 => Some(parse(data)),
+        1 => Some(parse::<ApprovalRequestedV1>(data).map(ApprovalRequested::from)),
+        2 => Some(parse(data)),
         _ => None,
     }
 }
@@ -100,5 +128,34 @@ pub(crate) fn decode_decided(
         1 => Some(parse::<ApprovalDecidedV1>(data).map(ApprovalDecided::from)),
         2 => Some(parse(data)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const V1: &str = r#"{"call_id":"call_9","tool":"bash","summary":"bash: git clean -fdx (it deletes untracked files)","secret":false}"#;
+
+    #[test]
+    fn version_1_reads_with_its_summary_as_written_and_no_caution_of_its_own() {
+        let raw = RawValue::from_string(V1.to_owned()).unwrap();
+        let upgraded = decode_requested(1, &raw).unwrap().unwrap();
+        assert_eq!(
+            upgraded.summary,
+            "bash: git clean -fdx (it deletes untracked files)"
+        );
+        assert_eq!(upgraded.caution, None);
+        let with_caution = V1.replacen('{', r#"{"caution":"It deletes untracked files.","#, 1);
+        let raw = RawValue::from_string(with_caution).unwrap();
+        assert!(
+            decode_requested(1, &raw).unwrap().is_err(),
+            "version 1 had no caution"
+        );
+        let upgraded = decode_requested(2, &raw).unwrap().unwrap();
+        assert_eq!(
+            upgraded.caution.as_deref(),
+            Some("It deletes untracked files.")
+        );
     }
 }

@@ -518,6 +518,7 @@ export type Update = {
   readonly kind: "tool_finished";
   readonly summary: string;
 } | {
+  readonly caution?: string | null;
   readonly kind: "tool_declined";
   readonly no_one_there: boolean;
   readonly summary: string;

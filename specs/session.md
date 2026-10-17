@@ -113,7 +113,7 @@ A client that only shows the conversation needs `thread/event` alone. Rebuilding
 
 ## Approvals
 
-A tool call that needs the person records `approval.requested` (`approval`, `call_id`, `tool`, `summary`, `secret`) and the turn pauses; the thread's status becomes `waiting`. Any client may answer with `approval/decide`, now or much later, from any transport. The answer is recorded as `approval.decided` (`approval`, `decision`), and the turn continues: today in the server that runs it, later in whichever server receives the answer ("Turns that outlive a server").
+A tool call that needs the person records `approval.requested` (`approval`, `call_id`, `tool`, `summary`, `secret`, and `caution` when a caution asks, apart from the summary: `approvals.md`, "Recording") and the turn pauses; the thread's status becomes `waiting`. Any client may answer with `approval/decide`, now or much later, from any transport. The answer is recorded as `approval.decided` (`approval`, `decision`), and the turn continues: today in the server that runs it, later in whichever server receives the answer ("Turns that outlive a server").
 
 - A decision for an approval that is not pending is refused with `-32004`.
 - `allow_for_thread` is recorded, so it survives resuming the thread.

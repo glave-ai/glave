@@ -202,6 +202,7 @@ const WAITING_HISTORY = [
       tool: 'bash',
       summary: 'bash: git push -u origin docs/release-notes',
       secret: false,
+      caution: 'It pushes to a remote.',
     },
     WAITING,
   ),

@@ -35,6 +35,7 @@ function approval(seq: number, decided: boolean): ApprovalItem {
     approval: `c${String(seq)}`,
     tool: 'bash',
     summary: 'bash: git push',
+    caution: 'It pushes to a remote.',
     decision: decided ? 'allow_once' : null,
   };
 }

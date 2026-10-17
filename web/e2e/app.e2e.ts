@@ -105,6 +105,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(card).toContainText('Needs you');
     await expect(card).toContainText('Run this command?');
     await expect(card.locator('code')).toHaveText('git push -u origin docs/release-notes');
+    // Why it asks is a sentence of its own, never part of the command.
+    await expect(byTestId(page, 'thread-approval-caution')).toHaveText('It pushes to a remote.');
     await expect(card.getByRole('button')).toHaveText([
       'Allow once',
       'Allow for this thread',

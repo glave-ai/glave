@@ -41,6 +41,7 @@ const RESULTS: TurnResults = {
       approval: 'c3',
       tool: 'bash',
       summary: 'bash: git push',
+      caution: 'It pushes to a remote.',
       decision: null,
     },
   ],
