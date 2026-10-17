@@ -5,14 +5,16 @@
 //! the nonce made for that load, which `index.html` hands to Angular (`ngCspNonce`) for the
 //! styles it adds.
 //!
-//! The folder is served to anyone who can reach the listener, without sign-in, so it must hold
-//! only the built app and must not be writable by an agent: a file put there would be served
-//! from glave's own origin. Only files inside it are served: a symbolic link that leads out of
-//! it is refused, and so is any `.html` page but `index.html`.
+//! The files are in a folder, or built into the program and served from memory, under the same
+//! rules. A folder is served to anyone who can reach the listener, without sign-in, so it must
+//! hold only the built app and must not be writable by an agent: a file put there would be
+//! served from glave's own origin. Only files inside it are served: a symbolic link that leads
+//! out of it is refused. From either, no `.html` page but `index.html` is served.
 
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 use std::path::{Component, Path, PathBuf};
 
+use hyper::body::Bytes;
 use hyper::header::{self, HeaderName, HeaderValue};
 use hyper::{Response, StatusCode};
 
@@ -27,14 +29,26 @@ const NONCE_BYTES: usize = 16;
 /// The one page the site serves as HTML.
 const INDEX: &str = "index.html";
 
-/// The built web app, in a folder.
-#[derive(Debug, Clone)]
+/// A built web app's files as a program carries them (`include_bytes!`): each one's path
+/// inside the app, its parts joined by `/` (`media/font-ABCD1234.woff2`), and its bytes.
+pub type Files = &'static [(&'static str, &'static [u8])];
+
+/// The built web app.
+#[derive(Clone)]
 pub struct Site {
-    /// The folder, canonical: every file served must resolve inside it.
-    root: PathBuf,
+    source: Source,
 }
 
-/// Why a folder is not a built web app.
+/// Where a site's files are.
+#[derive(Clone)]
+enum Source {
+    /// A folder, canonical: every file served must resolve inside it.
+    Folder(PathBuf),
+    /// Built into the program.
+    Memory(Files),
+}
+
+/// Why a folder, or the files built into a program, are not a built web app.
 #[derive(Debug, thiserror::Error)]
 #[error("{0} has no index.html: build the web app (npm run build in web/) or pass --web")]
 pub struct NoSite(String);
@@ -46,9 +60,22 @@ impl Site {
         let shown = root.display().to_string();
         let root = std::fs::canonicalize(&root).map_err(|_| NoSite(shown.clone()))?;
         if root.join(INDEX).is_file() {
-            Ok(Self { root })
+            Ok(Self {
+                source: Source::Folder(root),
+            })
         } else {
             Err(NoSite(shown))
+        }
+    }
+
+    /// The app in `files`, built into the program, which must hold its `index.html`.
+    pub fn built_in(files: Files) -> Result<Self, NoSite> {
+        if files.iter().any(|(path, _)| *path == INDEX) {
+            Ok(Self {
+                source: Source::Memory(files),
+            })
+        } else {
+            Err(NoSite("the web app built into glave".into()))
         }
     }
 
@@ -61,11 +88,12 @@ impl Site {
         let Some(relative) = relative(path) else {
             return secured(status(StatusCode::NOT_FOUND), &nonce);
         };
-        // A path with an extension names a file; anything else is a route of the app.
-        if relative.extension().is_some() {
+        // A path with an extension names a file; anything else is a route of the app, and so
+        // is the page itself, which is never served without this load's nonce.
+        if relative.extension().is_some() && relative != Path::new(INDEX) {
             return secured(self.file(&relative).await, &nonce);
         }
-        match self.read_inside(Path::new(INDEX)).await {
+        match self.read(Path::new(INDEX)).await {
             Some(page) => {
                 let page = String::from_utf8_lossy(&page).replace(NONCE_PLACEHOLDER, &nonce);
                 let mut response = Response::new(Answer::once(page));
@@ -81,15 +109,16 @@ impl Site {
         }
     }
 
-    /// A file of the app, or 404. `.html` other than `index.html` is never served.
+    /// A file of the app, or 404. No `.html` page is served this way: `index.html` is the
+    /// app's routes.
     async fn file(&self, relative: &Path) -> Response<Answer> {
-        let is_html = relative
+        if relative
             .extension()
-            .is_some_and(|extension| extension == "html");
-        if is_html && relative != Path::new(INDEX) {
+            .is_some_and(|extension| extension == "html")
+        {
             return status(StatusCode::NOT_FOUND);
         }
-        let Some(bytes) = self.read_inside(relative).await else {
+        let Some(bytes) = self.read(relative).await else {
             return status(StatusCode::NOT_FOUND);
         };
         let mut response = Response::new(Answer::bytes(bytes));
@@ -102,15 +131,35 @@ impl Site {
         response
     }
 
-    /// The bytes of `relative`, if it resolves, links followed, to a file inside the folder.
-    async fn read_inside(&self, relative: &Path) -> Option<Vec<u8>> {
-        let resolved = tokio::fs::canonicalize(self.root.join(relative))
-            .await
-            .ok()?;
-        if !resolved.starts_with(&self.root) {
-            return None;
+    /// The bytes of the file at `relative`: from memory, or, links followed, a file that
+    /// resolves inside the folder.
+    async fn read(&self, relative: &Path) -> Option<Bytes> {
+        match &self.source {
+            Source::Folder(root) => {
+                let resolved = tokio::fs::canonicalize(root.join(relative)).await.ok()?;
+                if !resolved.starts_with(root) {
+                    return None;
+                }
+                tokio::fs::read(resolved).await.ok().map(Bytes::from)
+            }
+            Source::Memory(files) => {
+                let parts: Option<Vec<&str>> = relative.iter().map(|part| part.to_str()).collect();
+                let wanted = parts?.join("/");
+                files
+                    .iter()
+                    .find(|(path, _)| *path == wanted)
+                    .map(|&(_, bytes)| Bytes::from_static(bytes))
+            }
         }
-        tokio::fs::read(resolved).await.ok()
+    }
+}
+
+impl fmt::Debug for Site {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.source {
+            Source::Folder(root) => write!(f, "Site({})", root.display()),
+            Source::Memory(files) => write!(f, "Site(built in, {} files)", files.len()),
+        }
     }
 }
 

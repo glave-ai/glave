@@ -1,4 +1,4 @@
-//! Locating the workspace root.
+//! Locating the workspace root, and what Cargo says of the workspace.
 
 use std::path::{Path, PathBuf};
 
@@ -17,6 +17,13 @@ pub fn root() -> Result<PathBuf, String> {
             here.display()
         )
     })
+}
+
+/// What `cargo metadata` says of the workspace's own packages.
+pub fn metadata() -> Result<serde_json::Value, String> {
+    let text = crate::cmd::output("cargo", &["metadata", "--format-version", "1", "--no-deps"])?;
+    serde_json::from_str(&text)
+        .map_err(|err| format!("`cargo metadata` wrote something not JSON: {err}"))
 }
 
 /// The nearest folder at or above `start` that is the workspace root.

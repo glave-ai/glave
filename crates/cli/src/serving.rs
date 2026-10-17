@@ -3,8 +3,9 @@
 //! with the server's address beside it in `serve.url`, so `glave app` finds it) and given once
 //! as a link whose fragment carries it, so it never reaches a server log or a query string.
 //! Callers on other computers sign in with OIDC (`--issuer`, `--audience`).
-//! The web app is served at `/` beside the API: the build in `--web`, else the `web` folder
-//! beside the binary, as a release ships them.
+//! The web app is served at `/` beside the API: the build in `--web`, else the app built into
+//! glave (the `web` feature, which release builds turn on), else a `web` folder beside the
+//! binary.
 
 use std::io::IsTerminal as _;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -12,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use glave_harness::SystemClock;
-use glave_session::http::Site;
+use glave_session::http::{Files, Site};
 use glave_session::signin::{LOCAL_BYTES, LocalToken, SignIn, Trust};
 use tokio::net::TcpListener;
 
@@ -22,8 +23,11 @@ use crate::client::Glave;
 /// The file the local token is kept in, in glave's folder.
 pub const TOKEN_FILE: &str = "serve.token";
 
-/// The folder beside the binary a release puts the built web app in.
+/// The folder beside the binary a built web app may be in.
 const WEB_FOLDER: &str = "web";
+
+/// The web app built into glave (the `web` feature, `build.rs`), if it is.
+static BUILT_IN: Option<Files> = include!(concat!(env!("OUT_DIR"), "/app.rs"));
 
 /// Serves `server` on `address` until Ctrl-C.
 pub async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyhow::Result<()> {
@@ -92,10 +96,14 @@ pub async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyh
     Ok(())
 }
 
-/// The web app to serve: `--web`, which must hold a build, else the one beside the binary.
+/// The web app to serve: `--web`, which must hold a build, else the one built into glave, else
+/// the one beside the binary.
 fn site(args: &Args) -> anyhow::Result<Option<Site>> {
     if let Some(folder) = &args.web {
         return Ok(Some(Site::folder(folder.clone())?));
+    }
+    if let Some(files) = BUILT_IN {
+        return Ok(Some(Site::built_in(files)?));
     }
     let beside = std::env::current_exe()
         .ok()

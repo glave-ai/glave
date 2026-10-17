@@ -58,7 +58,7 @@ crates/harness/     glave-harness: the agent loop, its six tools (search, glob, 
 crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (in the sandbox by default), environments from devcontainer.json or environment.toml, workers on Docker or Kubernetes (the `kubernetes` feature), served (`glave computer serve`, TLS across machines) and reached over JSON-RPC
 crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC or local sign-in (glave-identity), and its JSON Schema (specs/session.schema.json, generated); every surface, the CLI first, runs threads through it
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
-crates/cli/         glave: the command-line binary
+crates/cli/         glave: the command-line binary; with the `web` feature, as releases build it, the web app inside (build.rs)
 web/client/         the session API's TypeScript client: types generated from the schema (`cargo xtask schema`), a small typed client, no framework
 web/glaze/          Glaze (`@glave/glaze`): glave's Angular component library, web platform first, then the Angular CDK, themed only through CSS custom properties (its AGENTS.md says how to use it); its showcase, a dev-only app (`glaze/showcase`)
 web/app/            the web app `glave serve --http` (and `glave app`) serves at `/`: sign-in; adding a model on a first run; three panes (chats and projects with what needs you, a thread streaming live with approvals, questions and a model picker, its tools: tasks and changed files); tasks, settings and memory
@@ -82,6 +82,7 @@ cargo xtask eval        # the harness on evals/tasks against three real models, 
 cargo xtask eval judge  # the action judge scored on evals/judge (the deterministic checks today)
 cargo fmt --all         # format
 cargo build --profile debugging   # full debug info, for a debugger
+cargo build --release -p glave --features web   # the binary as it ships, the web app inside (after npm run build in web/)
 (cd web && npm run check)         # the web checks alone; cargo xtask ci runs them (Node 22.22.3+, or GLAVE_SKIP_WEB=1)
 ```
 

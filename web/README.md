@@ -35,7 +35,7 @@ npm run build
 glave serve --http 8080 --web web/dist/app/browser
 ```
 
-A release puts the build in a `web` folder beside the `glave` binary, which `glave serve --http` serves by default.
+A release carries the build inside the `glave` binary, which `glave serve --http` and `glave app` serve when no `--web` is given: `npm run build`, then `cargo build --release -p glave --features web`. Without the feature, glave needs no Node to build and serves a `web` folder beside the binary, if there is one.
 
 ## Checks
 
@@ -53,7 +53,7 @@ npm run audit          # npm audit of production dependencies, high and above
 npm run e2e            # Playwright in Chromium against glave serve --http --web, axe in light and dark
 ```
 
-`cargo xtask ci` runs `npm run check`, after building `glave` for the end-to-end tests, which run against the real `glave serve --http --web`. It needs Node 22.22.3 or later; `GLAVE_SKIP_WEB=1` skips it. Run `npm run e2e` by itself after `cargo build -p glave` (or set `GLAVE_BIN`).
+`cargo xtask ci` runs `npm run check`, after building the app and `glave` with it inside (and its serving tests) for the end-to-end tests, which run against the real `glave serve --http --web`. It needs Node 22.22.3 or later; `GLAVE_SKIP_WEB=1` skips it. Run `npm run e2e` by itself after `cargo build -p glave` (or set `GLAVE_BIN`).
 
 Playwright's Chromium is installed into `node_modules` (`PLAYWRIGHT_BROWSERS_PATH=0`), nothing global.
 

@@ -1,11 +1,17 @@
-//! `glave serve --stdio`, the real binary, driven the way another program drives it: JSON-RPC
-//! 2.0 requests on its standard input, one per line, and the answers and a turn's
-//! notifications on its standard output.
+//! `glave serve`, the real binary. Over stdio, driven the way another program drives it:
+//! JSON-RPC 2.0 requests on its standard input, one per line, and the answers and a turn's
+//! notifications on its standard output. Over HTTP, the web app beside the API: the one built
+//! into glave (the `web` feature) with no folder named, under the same policy as a folder's,
+//! and `--web`'s folder rather than it; without the feature and a folder, no app, as before.
 
 #[cfg(test)]
 #[path = "support/binary.rs"]
 #[expect(dead_code, reason = "shared helpers; this file uses some of them")]
 mod support;
+
+#[cfg(test)]
+#[path = "support/http.rs"]
+mod http;
 
 #[cfg(test)]
 mod serving {
@@ -63,5 +69,101 @@ mod serving {
         drop(input);
         let status = child.wait().unwrap();
         assert!(status.success(), "glave ends when its input does");
+    }
+}
+
+#[cfg(test)]
+mod web {
+    use glave_ports::block_on;
+    use glave_provider_openai::fake::FakeServer;
+
+    use super::http::serve_http;
+    use super::support::*;
+
+    /// The nonce a Content-Security-Policy admits styles with.
+    fn nonce_of(policy: &str) -> String {
+        let (_, after) = policy.split_once("'nonce-").unwrap();
+        after.split('\'').next().unwrap().to_owned()
+    }
+
+    #[test]
+    fn the_app_built_into_glave_is_served_with_no_folder_named() {
+        let place = place("serve-built-in");
+        let model = FakeServer::start(vec![]).unwrap();
+        let (mut served, url) = serve_http(&place, &model, &[]);
+        block_on!(async {
+            if cfg!(feature = "web") {
+                the_app_is_served(&url).await;
+            } else {
+                let page = reqwest::get(format!("{url}/")).await.unwrap();
+                assert_eq!(page.status(), 405, "no app, only the API");
+            }
+        });
+        let _ = served.kill();
+        let _ = served.wait();
+    }
+
+    /// The built app: a route is its page with this load's nonce, under the policy; its script
+    /// is cached for good; an asset it does not have is not found.
+    async fn the_app_is_served(url: &str) {
+        let page = reqwest::get(format!("{url}/t/123")).await.unwrap();
+        assert_eq!(page.status(), 200);
+        let headers = page.headers().clone();
+        assert_eq!(headers["content-type"], "text/html; charset=utf-8");
+        assert_eq!(headers["cache-control"], "no-store");
+        assert_eq!(headers["x-frame-options"], "DENY");
+        let policy = headers["content-security-policy"].to_str().unwrap();
+        assert!(
+            policy.contains("require-trusted-types-for 'script'"),
+            "{policy}"
+        );
+        let nonce = nonce_of(policy);
+        let body = page.text().await.unwrap();
+        assert!(!body.contains("GLAVE_CSP_NONCE"), "{body}");
+        assert!(body.contains(&format!("ngcspnonce=\"{nonce}\"")), "{body}");
+
+        let (_, after) = body.split_once("src=\"main-").unwrap();
+        let script = format!("main-{}", after.split('"').next().unwrap());
+        let main = reqwest::get(format!("{url}/{script}")).await.unwrap();
+        assert_eq!(main.status(), 200, "{script}");
+        assert_eq!(
+            main.headers()["content-type"],
+            "text/javascript; charset=utf-8"
+        );
+        assert_eq!(
+            main.headers()["cache-control"],
+            "public, max-age=31536000, immutable"
+        );
+        assert!(!main.bytes().await.unwrap().is_empty());
+
+        let missing = reqwest::get(format!("{url}/main-ABCD1234.js"))
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), 404);
+    }
+
+    #[test]
+    fn a_web_folder_is_served_rather_than_the_app_built_in() {
+        let place = place("serve-web-folder");
+        let folder = place.project.join("../browser");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join("index.html"),
+            r#"<p>From the folder.</p><app-root ngCspNonce="GLAVE_CSP_NONCE"></app-root>"#,
+        )
+        .unwrap();
+        let model = FakeServer::start(vec![]).unwrap();
+        let (mut served, url) = serve_http(&place, &model, &["--web", folder.to_str().unwrap()]);
+        block_on!(async {
+            let page = reqwest::get(format!("{url}/t/123")).await.unwrap();
+            assert_eq!(page.status(), 200);
+            let policy = page.headers()["content-security-policy"].to_str().unwrap();
+            let nonce = nonce_of(policy);
+            let body = page.text().await.unwrap();
+            assert!(body.starts_with("<p>From the folder.</p>"), "{body}");
+            assert!(body.contains(&nonce), "{body}");
+        });
+        let _ = served.kill();
+        let _ = served.wait();
     }
 }

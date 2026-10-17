@@ -46,11 +46,11 @@ Usage:
                                 --issuer it must be this computer's. The listener has no
                                 TLS, so put it behind a proxy that has.
                                 --issuer may be given more than once. The web app is
-                                served at / too, from --web <folder> (the app's build), or
-                                else from the web folder beside the glave binary, if any.
-                                Anyone who reaches the listener gets that folder's files
-                                without signing in, so it must hold only the build and must
-                                not be writable by an agent
+                                served at / too: from --web <folder> (the app's build),
+                                else the one built into glave, else the web folder beside
+                                the glave binary, if any. Anyone who reaches the listener
+                                gets a folder's files without signing in, so it must hold
+                                only the build and must not be writable by an agent
   glave gateway serve --http <address> --issuer <url> --audience <name>
                                 serve the gateway to an organization: model calls and the
                                 tool catalog, every call signed in (glave gateway --help)
@@ -219,7 +219,7 @@ pub struct Args {
     pub issuers: Vec<String>,
     /// The audience those tokens must name.
     pub audience: Option<String>,
-    /// The built web app to serve over HTTP, rather than the one beside the binary.
+    /// The built web app to serve over HTTP, rather than the one built into glave or beside it.
     pub web: Option<PathBuf>,
     /// Run the turn or goal as a task in the folder's task host, with no one attached.
     pub background: bool,
