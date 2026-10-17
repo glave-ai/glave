@@ -113,5 +113,11 @@ pub(crate) fn command_ended(span: &Span, ending: Option<(&Ending, u64)>) {
         Ending::Cancelled => {
             span.record("ending", "cancelled");
         }
+        Ending::Backgrounded { .. } => {
+            span.record("ending", "backgrounded");
+        }
+        Ending::Idle { .. } => {
+            span.record("ending", "idle");
+        }
     }
 }

@@ -3,6 +3,7 @@
 
 pub(crate) mod approval;
 pub(crate) mod chosen;
+pub(crate) mod command;
 pub(crate) mod credential;
 pub(crate) mod gateway;
 pub(crate) mod goal;
@@ -23,6 +24,7 @@ pub(crate) mod workspace;
 
 pub use approval::{ApprovalDecided, ApprovalRequested, OutsideSandbox, Verdict};
 pub use chosen::{ApprovalMode, ApprovalModeChosen, ModelChosen};
+pub use command::{CommandEnded, CommandEnding, CommandStarted};
 pub use credential::{CredentialConnected, CredentialRemoved, Forge, Renewal};
 pub use gateway::GatewayToolCalled;
 pub use goal::{GoalEnded, GoalReason, GoalResumed, GoalSet};

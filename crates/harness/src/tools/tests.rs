@@ -32,7 +32,11 @@ impl Session {
 
     fn call(&self, tool: Tool, arguments: serde_json::Value) -> ToolOutcome {
         let arguments = Arguments::Json(serde_json::from_value(arguments).unwrap());
-        block_on!(tool.run(&arguments, &self.workspace, &Cancel::new()))
+        block_on!(tool.run(
+            &arguments,
+            (&self.workspace, &crate::background::Commands::default()),
+            &Cancel::new()
+        ))
     }
 }
 
@@ -240,7 +244,7 @@ fn bad_arguments_are_explained_to_the_model() {
     );
     let malformed = block_on!(Tool::Read.run(
         &Arguments::Malformed("{\"path\": ".into()),
-        &s.workspace,
+        (&s.workspace, &crate::background::Commands::default()),
         &Cancel::new(),
     ));
     assert!(malformed.is_error && malformed.text.contains("not valid JSON"));

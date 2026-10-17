@@ -238,6 +238,7 @@ mod gateway {
                 "write",
                 "edit",
                 "bash",
+                "command_output",
                 "web_fetch",
                 "agent"
             ],

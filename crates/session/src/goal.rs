@@ -73,7 +73,9 @@ where
             return Err(no_goal(thread));
         }
         let running = match self.lock().get(&thread) {
-            Some(Slot::Busy { cancel, finished }) => {
+            Some(Slot::Busy {
+                cancel, finished, ..
+            }) => {
                 cancel.cancel();
                 Some(finished.clone())
             }

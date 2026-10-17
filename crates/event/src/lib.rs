@@ -33,7 +33,7 @@ pub use payload::{
     ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
     ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
 };
-pub use payload::{Checkout, FolderSource};
+pub use payload::{Checkout, CommandEnded, CommandEnding, CommandStarted, FolderSource};
 pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,
     TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved, sealed_under_memory,

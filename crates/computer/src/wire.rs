@@ -5,8 +5,8 @@
 //! its own, `credentials/request`, which the caller answers on the same connection.
 
 use glave_ports::{
-    Command, ComputerError, ComputerId, CredentialAsk, CredentialHost, Environment, FileWrite,
-    GitCredential, Glob, Listing, Save, Search, Sources, WorkspaceId,
+    Command, CommandId, ComputerError, ComputerId, CredentialAsk, CredentialHost, Environment,
+    FileWrite, GitCredential, Glob, Listing, Save, Search, Sources, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -23,8 +23,10 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// server before sending it anything. The protected list is the one in `glave-ports`, the same
 /// on both sides; changing it changes the protocol. `2026-10-15` added `credentials` on
 /// `command/run` and the computer's own `credentials/request`. `2026-10-16` added the
-/// `project` sources of `workspace/open`, a new project's folder.
-pub const PROTOCOL: &str = "2026-10-16";
+/// `project` sources of `workspace/open`, a new project's folder. `2026-10-17` added commands
+/// in the background: `command/start`, `command/output`, `command/stop` and `command/list`,
+/// `on_timeout` on a command, and the `backgrounded` and `idle` endings.
+pub const PROTOCOL: &str = "2026-10-17";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";
@@ -70,6 +72,28 @@ pub(crate) enum Request {
     },
     #[serde(rename = "command/cancel")]
     Cancel { run: String },
+    /// Answered with the `command` id it runs as in the background.
+    #[serde(rename = "command/start")]
+    Start {
+        workspace: WorkspaceId,
+        command: Command,
+    },
+    /// Waits up to `wait_ms` for the command to end before answering what it printed.
+    #[serde(rename = "command/output")]
+    Output {
+        workspace: WorkspaceId,
+        command: CommandId,
+        #[serde(default)]
+        wait_ms: u64,
+    },
+    #[serde(rename = "command/stop")]
+    Stop {
+        workspace: WorkspaceId,
+        command: CommandId,
+    },
+    /// Answered with the workspace's `commands` in the background.
+    #[serde(rename = "command/list")]
+    Commands { workspace: WorkspaceId },
     #[serde(rename = "files/read")]
     Read {
         workspace: WorkspaceId,
@@ -114,6 +138,10 @@ impl Request {
             Self::Close { .. } => "workspace/close",
             Self::Run { .. } => "command/run",
             Self::Cancel { .. } => "command/cancel",
+            Self::Start { .. } => "command/start",
+            Self::Output { .. } => "command/output",
+            Self::Stop { .. } => "command/stop",
+            Self::Commands { .. } => "command/list",
             Self::Read { .. } => "files/read",
             Self::Write { .. } => "files/write",
             Self::List { .. } => "files/list",
@@ -136,6 +164,10 @@ const METHODS: &[&str] = &[
     "workspace/close",
     "command/run",
     "command/cancel",
+    "command/start",
+    "command/output",
+    "command/stop",
+    "command/list",
     "files/read",
     "files/write",
     "files/list",

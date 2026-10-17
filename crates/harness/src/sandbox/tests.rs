@@ -57,7 +57,13 @@ fn run_in(project: &Path, sandbox: Option<&Sandbox>, command: &str) -> crate::to
         if let Some(sandbox) = sandbox {
             workspace = workspace.with_sandbox(sandbox).await.unwrap();
         }
-        Tool::Bash.run(&arguments, &workspace, &Cancel::new()).await
+        Tool::Bash
+            .run(
+                &arguments,
+                (&workspace, &crate::background::Commands::default()),
+                &Cancel::new(),
+            )
+            .await
     })
 }
 
@@ -144,8 +150,20 @@ fn a_command_allowed_outside_the_sandbox_runs_without_it_and_the_next_is_sandbox
             .with_sandbox(&sandbox)
             .await
             .unwrap();
-        let ran = Tool::Bash.run(&outside, &workspace, &Cancel::new()).await;
-        let after = Tool::Bash.run(&again, &workspace, &Cancel::new()).await;
+        let ran = Tool::Bash
+            .run(
+                &outside,
+                (&workspace, &crate::background::Commands::default()),
+                &Cancel::new(),
+            )
+            .await;
+        let after = Tool::Bash
+            .run(
+                &again,
+                (&workspace, &crate::background::Commands::default()),
+                &Cancel::new(),
+            )
+            .await;
         (ran, after)
     });
     assert!(dir.join("outside.txt").exists(), "{}", ran.text);
@@ -446,7 +464,11 @@ fn the_file_tools_refuse_protected_paths_in_a_sandbox() {
                 workspace = workspace.with_sandbox(&sandbox).await.unwrap();
             }
             Tool::Write
-                .run(&arguments, &workspace, &Cancel::new())
+                .run(
+                    &arguments,
+                    (&workspace, &crate::background::Commands::default()),
+                    &Cancel::new(),
+                )
                 .await
         })
     };
@@ -528,7 +550,12 @@ fn the_file_tools_refuse_links_a_command_planted_into_protected_paths() {
                 .with_sandbox(&sandbox)
                 .await
                 .unwrap();
-            tool.run(&arguments, &workspace, &Cancel::new()).await
+            tool.run(
+                &arguments,
+                (&workspace, &crate::background::Commands::default()),
+                &Cancel::new(),
+            )
+            .await
         })
     };
     for path in planted_paths(&project) {

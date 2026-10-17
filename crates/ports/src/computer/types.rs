@@ -32,6 +32,24 @@ pub struct ComputerId(Uuid);
 #[serde(transparent)]
 pub struct WorkspaceId(Uuid);
 
+/// Identifies a command kept running in the background, unique everywhere (UUID v7, minted by
+/// the computer it runs on).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(transparent)]
+pub struct CommandId(Uuid);
+
 macro_rules! uuid_id {
     ($id:ident) => {
         impl $id {
@@ -54,6 +72,7 @@ macro_rules! uuid_id {
 
 uuid_id!(ComputerId);
 uuid_id!(WorkspaceId);
+uuid_id!(CommandId);
 
 /// Whether a computer can do work.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -144,6 +163,10 @@ pub struct Command {
     /// refuses the command as unsupported.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<Sandbox>,
+    /// What a run does when the command reaches its timeout still running: stops it, or keeps
+    /// it running in the background.
+    #[serde(default, skip_serializing_if = "OnTimeout::is_stop")]
+    pub on_timeout: OnTimeout,
 }
 
 impl Command {
@@ -152,11 +175,36 @@ impl Command {
             script: script.into(),
             timeout_secs: None,
             sandbox: None,
+            on_timeout: OnTimeout::Stop,
         }
     }
 }
 
-/// How a command ended.
+/// What a run does with a command that reaches its timeout still running.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OnTimeout {
+    /// Stops it and everything it started: [`Ending::TimedOut`].
+    #[default]
+    Stop,
+    /// Keeps it running in the background, as [`crate::Computers::start`] would have started
+    /// it, from the timeout on: [`Ending::Backgrounded`]. The output so far went to the run;
+    /// what follows waits for [`crate::Computers::output`]. When the workspace already keeps
+    /// as many running as it may, it is stopped instead.
+    Background,
+}
+
+impl OnTimeout {
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "serde's skip_serializing_if"
+    )]
+    fn is_stop(&self) -> bool {
+        *self == Self::Stop
+    }
+}
+
+/// How a command ended, or how its run did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Ending {
@@ -168,8 +216,19 @@ pub enum Ending {
     TimedOut {
         after_secs: u64,
     },
-    /// The caller cancelled it.
+    /// The caller cancelled it, or stopped it in the background.
     Cancelled,
+    /// Still running at its timeout, and kept running in the background as `command`
+    /// ([`OnTimeout::Background`]): the run ended, the command did not.
+    Backgrounded {
+        command: CommandId,
+        after_secs: u64,
+    },
+    /// Stopped in the background after `after_secs` in which nothing read its output
+    /// ([`crate::IDLE`]).
+    Idle {
+        after_secs: u64,
+    },
 }
 
 /// A command that ran: how it ended and how long it took.

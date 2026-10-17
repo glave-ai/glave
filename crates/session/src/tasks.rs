@@ -353,7 +353,9 @@ where
     /// Cancels what runs in `thread`, if anything does; what to wait on for it to end.
     fn cancel_busy(&self, thread: ThreadId) -> Option<tokio::sync::watch::Receiver<bool>> {
         match self.lock().get(&thread) {
-            Some(Slot::Busy { cancel, finished }) => {
+            Some(Slot::Busy {
+                cancel, finished, ..
+            }) => {
                 cancel.cancel();
                 Some(finished.clone())
             }

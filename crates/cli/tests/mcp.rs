@@ -76,6 +76,7 @@ mod mcp {
                 "write",
                 "edit",
                 "bash",
+                "command_output",
                 "web_fetch",
                 "mcp__tests__echo",
                 "mcp__tests__fail",

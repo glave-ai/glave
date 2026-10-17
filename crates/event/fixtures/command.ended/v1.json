@@ -1,0 +1,1 @@
+{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000062","thread":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c13","seq":21,"at":"2026-10-17T10:04:00.000Z","type":"command.ended","v":1,"data":{"command":"0192f5c6-0000-7000-8000-000000000001","ending":{"kind":"stopped","by":{"kind":"person","id":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10"}},"millis":240000}}
