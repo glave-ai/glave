@@ -269,6 +269,15 @@ export type Question = {
   readonly question: string;
 };
 
+/** A message queued to the turn running in its thread, for the model's next call. */
+export type QueuedMessage = {
+  /**
+   * The id of the `message.added` it is recorded as once the model reads it: that
+   * `thread/event` says it was read. A `turn/live` `unread` with this id says it never will be.
+   */
+  readonly id: EventId;
+};
+
 /**
  * An event exactly as it is stored and sent. `data` holds the payload's bytes as written;
  * [`crate::decode`] interprets them.
@@ -549,6 +558,10 @@ export type Update = {
   readonly kind: "subagent_ended";
   readonly ok: boolean;
   readonly subagent: ThreadId;
+} | {
+  readonly id: EventId;
+  readonly kind: "unread";
+  readonly reason?: string | null;
 } | {
   readonly change: string;
   readonly kind: "memory";
@@ -990,6 +1003,7 @@ export type TurnStartParams = {
   /**
    * How much this turn, and the thread's turns after it, ask before acting: one of the
    * server's `approvals`. The thread's latest choice when absent, else the server's.
+   * Not while a turn runs.
    */
   readonly approval?: ApprovalMode | null;
   /** Runs the turn as a task, with no one attached: answered at once with the task. */
@@ -998,7 +1012,8 @@ export type TurnStartParams = {
   readonly budget?: number | null;
   /**
    * The model this turn, and the thread's turns after it, go to: one `model/list`
-   * names. The thread's latest choice when absent, else the server's default.
+   * names. The thread's latest choice when absent, else the server's default. Not while
+   * a turn runs.
    */
   readonly model?: string | null;
   readonly prompt: string;
@@ -1009,6 +1024,8 @@ export type TurnStartResult = {
   readonly turn: TurnResult;
 } | {
   readonly task: TaskInfo;
+} | {
+  readonly queued: QueuedMessage;
 };
 
 /** Every method, with its params and result. */
@@ -1142,6 +1159,8 @@ export const ErrorCode = {
   PROMPT_BLOCKED: -32008,
   /** The model provider failed */
   PROVIDER: -32020,
+  /** As many messages wait for the running turn as it takes */
+  QUEUE_FULL: -32027,
   /** A turn is already running in this thread */
   TURN_RUNNING: -32002,
   /** The thread's workspace could not be opened */

@@ -173,6 +173,54 @@ mod attempts {
     }
 
     #[test]
+    fn a_correction_sent_while_the_turn_runs_reaches_the_model_at_its_next_call() {
+        let dir = folder("steer");
+        let steered = task(
+            &dir,
+            r#"steer = { after = 1, message = "Make it say hello instead." }
+            checks = [{ sent = "Make it say hello instead." }]"#,
+            "exit 0\n",
+        );
+        let server = FakeServer::start(writes_hello()).unwrap();
+        let run = dir.join("run");
+        let done = block_on!(attempt(&setup(&server), &steered, "fake-model", 1, &run)).unwrap();
+        assert_eq!(done.failures, Vec::<String>::new());
+        assert_eq!(done.model_calls, 2, "read in the same turn");
+        let second = server.received().pop().unwrap().body;
+        let last = second["messages"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()
+            .clone();
+        assert_eq!(last["role"], "user");
+        assert_eq!(last["content"], "Make it say hello instead.");
+        let transcript = std::fs::read_to_string(run.join("transcript.txt")).unwrap();
+        assert!(
+            transcript.contains("> (while it works) Make it say hello instead."),
+            "{transcript}"
+        );
+
+        // A turn that calls no tool never gets it, and says so.
+        let quiet = folder("steer-unsent");
+        let unsent = task(
+            &quiet,
+            "steer = { after = 1, message = \"Too late.\" }",
+            "exit 0\n",
+        );
+        let server = FakeServer::start(vec![Reply::text("Done.")]).unwrap();
+        let run = quiet.join("run");
+        let done = block_on!(attempt(&setup(&server), &unsent, "fake-model", 1, &run)).unwrap();
+        assert_eq!(
+            done.failures,
+            [
+                "the correction was never sent: the first turn ended with 0 tool calls finished, and \
+              it waits for 1"
+            ]
+        );
+    }
+
+    #[test]
     fn later_threads_share_one_store_with_memory_and_the_checks_read_it() {
         let dir = folder("threads");
         let task = task(

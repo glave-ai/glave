@@ -21,6 +21,7 @@ use serde::Deserialize;
 
 use crate::check::Check;
 use crate::error::EvalError;
+use crate::steer::Steer;
 
 /// How long a task may run when `task.toml` does not say.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
@@ -61,6 +62,8 @@ pub struct Task {
     pub outcome: Outcome,
     /// Run the instruction as a goal, worked toward across turns, rather than as one turn.
     pub goal: Option<TaskGoal>,
+    /// A correction sent while the first turn runs, for the model to read at its next call.
+    pub steer: Option<Steer>,
     /// Whether memory is on for the task (`specs/memory.md`); `--memory` overrides it.
     pub memory: bool,
     /// The first thread's space setting: `shared` (default), `isolated` or `off`.
@@ -202,6 +205,7 @@ struct Glave {
     max_steps: Option<u32>,
     outcome: Option<Outcome>,
     goal: Option<TaskGoal>,
+    steer: Option<Steer>,
     #[serde(default)]
     memory: bool,
     space_memory: Option<String>,
@@ -260,6 +264,9 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         return Err(bad("context_window is under 1,000 tokens".into()));
     }
     memory_named(&glave).map_err(bad)?;
+    if let Some(steer) = &glave.steer {
+        steer.check().map_err(bad)?;
+    }
     let mut turns = vec![instruction];
     turns.extend(glave.turns);
     Ok(Task {
@@ -280,6 +287,7 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         max_steps: glave.max_steps,
         outcome: glave.outcome.unwrap_or(Outcome::Completed),
         goal: glave.goal,
+        steer: glave.steer,
         memory: glave.memory,
         space_memory: glave.space_memory,
         threads: glave.threads,
@@ -372,6 +380,7 @@ mod tests {
             checks = ["one_thread", { missing = "x.txt" }]
             max_steps = 3
             outcome = "limit_reached"
+            steer = { after = 2, message = "Use 4000." }
             "#,
             "Do it.\n",
         );
@@ -388,6 +397,13 @@ mod tests {
         assert_eq!(task.checks.len(), 2);
         assert_eq!(task.max_steps, Some(3));
         assert_eq!(task.outcome, Outcome::LimitReached);
+        assert_eq!(
+            task.steer,
+            Some(Steer {
+                after: 2,
+                message: "Use 4000.".into()
+            })
+        );
     }
 
     #[test]
@@ -420,6 +436,8 @@ mod tests {
         assert!(error("[glave]\nsandbox = \"all\"").contains("no sandbox is named"));
         assert!(error("[glave]\ncheckz = []").contains("unknown field"));
         assert!(error("[glave]\ncontext_window = 10").contains("under 1,000"));
+        let early = "[glave]\nsteer = { after = 0, message = \"now\" }";
+        assert!(error(early).contains("1 or more tool calls"));
         assert!(
             load(&folder("empty", "", "  \n"))
                 .unwrap_err()

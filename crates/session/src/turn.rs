@@ -1,5 +1,6 @@
 //! Starting a turn and following it as it runs: its notifications in order, then how it ended.
 //! A turn started with an idempotency key can be followed again by a retry with the same key.
+//! While one runs, a message is queued to it instead (`steer.rs`).
 
 use std::future::{pending, poll_fn};
 use std::pin::pin;
@@ -7,17 +8,18 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use glave_event::ThreadId;
-use glave_harness::{Caller, Live};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_harness::{Caller, Cancel, Live, Thread};
+use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, watch};
 
-use crate::held::finished;
+use crate::held::{Use, busy, finished};
 use crate::hub::Hub;
 use crate::keyed::Done;
 use crate::modes::Choice;
 use crate::protocol::{ApiError, IdempotencyKey, Notification, TurnResult, Update, code};
-use crate::server::{Server, api};
+use crate::server::{Ended, Inner, Server, api};
+use crate::steer::{Message, Queue, Sent};
 
 /// One thing a running turn sends.
 #[derive(Debug, Clone)]
@@ -127,19 +129,25 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Starts a turn for `caller` and streams it, first choosing for the thread the model and
-    /// approval mode `choice` names, when it does: this turn and the thread's later ones go to
-    /// it and ask that much. With `key`, a turn already started in `thread` with the same key
-    /// is followed instead of starting another. The model the turn would go to must be one this server runs (`-32021`),
-    /// and its mode one the policy leaves (`-32012`).
+    /// Sends `caller`'s `message` to `thread`: it starts a turn, streamed, first choosing for
+    /// the thread the model and approval mode the message names, when it does: this turn and
+    /// the thread's later ones go to it and ask that much. While a turn runs there, a message
+    /// that may be queued is queued to it instead, for the model's next call. With `key`, a
+    /// turn already started in `thread` with the same key is followed instead of starting
+    /// another. The model the turn would go to must be one this server runs (`-32021`), and its
+    /// mode one the policy leaves (`-32012`).
     pub(crate) async fn start_turn_with(
         &self,
         caller: &Caller,
         thread: ThreadId,
-        prompt: &str,
+        message: Message<'_>,
         key: Option<&IdempotencyKey>,
-        choice: Choice,
-    ) -> Result<TurnStream, ApiError> {
+    ) -> Result<Sent, ApiError> {
+        let Message {
+            prompt,
+            choice,
+            queue,
+        } = message;
         self.authorize(caller, thread).await?;
         let model = self.model_of(thread, choice.model.as_deref()).await?;
         self.check_approval(thread, choice.approval).await?;
@@ -148,38 +156,85 @@ where
             && let Some(started) = self.inner.keyed.claim(thread, key, &done)
         {
             let notes = started.borrow().is_none().then(|| self.watch(thread));
-            return Ok(TurnStream::new(model, notes, started));
+            return Ok(Sent::Started(TurnStream::new(model, notes, started)));
         }
-        let notes = self.watch(thread);
-        let prompt = prompt.to_owned();
-        let caller = caller.clone();
-        let started = self
-            .occupy(thread, finish, move |inner, mut held, cancel| async move {
-                let hub = Arc::clone(&inner.hub);
-                let mut publish = |live| publish(&hub, thread, live);
-                let chose = crate::modes::record(&inner.harness, &mut held, &caller, &choice);
-                if let Err(error) = chose.await {
-                    return (held, Err(error));
+        let sent = loop {
+            if queue {
+                match self.queue(caller, thread, prompt, &choice) {
+                    Ok(Queue::Queued(id)) => break Ok(Sent::Queued(id)),
+                    // Started again once it has ended; never, if its work went without ending.
+                    Ok(Queue::Ending(mut ending)) => match ending.wait_for(|ended| *ended).await {
+                        Ok(_) => continue,
+                        Err(_) => break Err(busy(thread)),
+                    },
+                    Ok(Queue::Idle) => {}
+                    Err(refused) => break Err(refused),
                 }
-                let ran = inner
-                    .harness
-                    .run_turn_as(&mut held, &prompt, &caller, &cancel, &mut publish)
-                    .await;
-                // After the first exchange, a model titles the thread without holding it.
-                if ran.is_ok()
-                    && let Some(case) = inner.harness.title_case(&held)
-                {
-                    Server { inner }.title_later(thread, case);
-                }
-                (held, ran)
-            })
-            .await;
-        if let Err(failed) = started {
-            if let Some(key) = key {
-                self.inner.keyed.release(thread, key, &done);
             }
-            return Err(failed);
+            let notes = self.watch(thread);
+            let work = turn(thread, prompt, caller, &choice);
+            let started = self
+                .occupy_for(thread, finish.clone(), Use::Steered, work)
+                .await;
+            match started {
+                Ok(()) => break Ok(Sent::Started(TurnStream::new(model, Some(notes), done))),
+                // Started by someone else meanwhile: queued to it instead.
+                Err(running) if queue && running.code == code::TURN_RUNNING => {}
+                Err(failed) => break Err(failed),
+            }
+        };
+        // The key names no turn when none started.
+        if !matches!(sent, Ok(Sent::Started(_)))
+            && let Some(key) = key
+        {
+            self.inner.keyed.release(thread, key, &finish.subscribe());
         }
-        Ok(TurnStream::new(model, Some(notes), done))
+        sent
     }
+}
+
+/// Work on a held thread that ends as a turn does.
+type TurnWork<P, L, B> = Box<
+    dyn FnOnce(Arc<Inner<P, L, B>>, Thread, Cancel) -> BoxFuture<'static, (Thread, Ended)> + Send,
+>;
+
+/// A turn's work on a held thread: the model and approval mode `choice` names chosen first,
+/// then the turn, then a turn for each message sent too late for the one before it.
+fn turn<P, L, B>(
+    thread: ThreadId,
+    prompt: &str,
+    caller: &Caller,
+    choice: &Choice,
+) -> TurnWork<P, L, B>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    let (prompt, caller, choice) = (prompt.to_owned(), caller.clone(), choice.clone());
+    Box::new(move |inner, mut held, cancel| {
+        Box::pin(async move {
+            let hub = Arc::clone(&inner.hub);
+            let mut publish = |live| publish(&hub, thread, live);
+            let chose = crate::modes::record(&inner.harness, &mut held, &caller, &choice);
+            if let Err(error) = chose.await {
+                return (held, Err(error));
+            }
+            let harness = &inner.harness;
+            let ran = harness
+                .run_turn_as(&mut held, &prompt, &caller, &cancel, &mut publish)
+                .await;
+            // After the first exchange, a model titles the thread without holding it.
+            if ran.is_ok()
+                && let Some(case) = harness.title_case(&held)
+            {
+                let inner = Arc::clone(&inner);
+                Server { inner }.title_later(thread, case);
+            }
+            let ran = harness
+                .run_queued(&mut held, ran, &cancel, &mut publish)
+                .await;
+            (held, ran)
+        })
+    })
 }

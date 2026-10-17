@@ -69,6 +69,7 @@ where
             instructions,
             project,
             brought: std::sync::Arc::default(),
+            inbox: crate::inbox::Inbox::default(),
         };
         self.rebuild_memory(&mut thread, &events).await;
         self.repair(&mut thread, &events).await?;

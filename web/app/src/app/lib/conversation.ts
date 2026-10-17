@@ -13,6 +13,8 @@ export interface MessageItem extends Placed {
   readonly from: 'person' | 'model';
   readonly text: string;
   readonly reasoning: string;
+  /** Whether the person sent it while the turn ran, and the model read it as it worked. */
+  readonly steered: boolean;
 }
 
 /** A tool call: what it did and what came of it. */
@@ -127,12 +129,23 @@ function isDecision(value: unknown): value is GlzDecision {
   return typeof value === 'string' && DECISIONS.includes(value);
 }
 
+/** Whether glave wrote a message the person's side of the conversation holds, such as a note. */
+function byGlave(data: Data): boolean {
+  const author = data['author'];
+  return isRecord(author) && author['kind'] === 'glave';
+}
+
 /**
  * A thread's items from its stored events, in order: messages, tool calls with their
- * results, approvals with their decisions, and questions with their answers.
+ * results, approvals with their decisions, and questions with their answers. A message of the
+ * person's after the one that started a turn, before the turn ended, is one they sent while it
+ * ran: `steered`.
  */
 export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] {
   const items: ThreadItem[] = [];
+  // Whether a turn runs at this point of the log, and whether the person has asked in it.
+  let running = false;
+  let asked = false;
   const index = new Map<string, number>();
   const put = (item: ThreadItem): void => {
     index.set(item.key, items.length);
@@ -148,8 +161,16 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
   for (const event of events) {
     const data = event.data;
     switch (event.type) {
+      case 'turn.started':
+        running = true;
+        asked = false;
+        break;
+      case 'turn.ended':
+        running = false;
+        break;
       case 'message.added': {
         const person = data['role'] === 'user';
+        const theirs = person && !byGlave(data);
         const parts = partsText(data['parts']);
         put({
           kind: 'message',
@@ -158,7 +179,9 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           from: person ? 'person' : 'model',
           text: person ? promptOf(data['parts']) : parts.text,
           reasoning: parts.reasoning,
+          steered: theirs && running && asked,
         });
+        asked ||= theirs;
         break;
       }
       case 'tool.call.requested': {

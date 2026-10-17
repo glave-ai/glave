@@ -269,7 +269,9 @@ where
             threads
                 .values()
                 .filter_map(|slot| match slot {
-                    Slot::Busy { cancel, finished } => {
+                    Slot::Busy {
+                        cancel, finished, ..
+                    } => {
                         cancel.cancel();
                         Some(finished.clone())
                     }
@@ -408,7 +410,9 @@ where
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
             match threads.get(&thread) {
-                Some(Slot::Busy { cancel, finished }) => {
+                Some(Slot::Busy {
+                    cancel, finished, ..
+                }) => {
                     cancel.cancel();
                     finished.clone()
                 }

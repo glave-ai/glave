@@ -76,7 +76,7 @@ Types are at version 1 unless the table says otherwise.
 | --- | --- | --- |
 | `thread.started` | A thread begins; always `seq` 1 | `producer` (`name`, `version`); optional `fork` (`thread`, `seq`) when the thread continues another thread's prefix; optional `parent` (`thread`, `call_id`) when an `agent` call in another thread started it, as a subagent (version 2); `for`, `agent` and `origin` (version 3, see "Who acted") |
 | `turn.started` | A turn begins | `model` (`provider`, `name`); `config`, a blob reference to the turn's full configuration (system prompt, tools, parameters); optional `trace` and `auth` (version 2, see "Who acted") |
-| `message.added` | A finished message from the person or the assistant | `role` (`user` or `assistant`); `parts`, an ordered list of `text`, `reasoning` and `file` parts; optional `author` (version 2, see "Who acted") |
+| `message.added` | A finished message from the person or the assistant. One the person sent while a turn ran is recorded where the model read it, under the id the session API answered with when it was sent (`session.md`, "Steering a turn") | `role` (`user` or `assistant`); `parts`, an ordered list of `text`, `reasoning` and `file` parts; optional `author` (version 2, see "Who acted") |
 | `tool.call.requested` | The model asks for a tool | `call_id`; optional `provider_call_id`; `tool`; `arguments`, either `{"json": {…}}` or `{"malformed": "<raw text>"}` |
 | `tool.call.completed` | A tool call finished | `call_id`; `is_error`; `output` parts; optional `structured` result; optional `untrusted` (version 2), `true` when the output holds content from outside that no one vouches for, such as a web page (`approvals.md`, "Untrusted content"): resuming a thread rebuilds from it that the thread has read such content |
 | `model.responded` | A model response finished | `model`; optional `response_id`; `stop`; optional `provider_stop`; `usage`; optional `cost`; optional `route` and `target`, the gateway route (the call's purpose: `main`, `judge`, `summary`, `subagent` or `title`) and the target that answered, and `reasoning_stripped`, true when opaque reasoning was left out because that target could not accept it (version 2). Content-free |
@@ -170,7 +170,7 @@ A principal is anyone or anything that can act, written as a reference:
 | `goal.ended` v1 | optional `by` | who ended it. `stopped`: the person who stopped it, absent meaning the thread's `for`. Every other reason is recorded by `{"kind": "glave"}` |
 | `goal.resumed` v1 | optional `by` | who resumed it. Absent: the thread's `for` |
 
-A goal's continuation, the message glave writes to start each of its turns after the first, is a `message.added` with `author` `{"kind": "glave"}`: it is never read as the person's request.
+A goal's continuation, the message glave writes to start each of its turns after the first, is a `message.added` with `author` `{"kind": "glave"}`: it is never read as the person's request. So is each note glave writes the model about a turn: that the person cancelled it, or that it reached its step limit or its goal's budget. Notes recorded before they carried it have no `author`.
 
 Every other event (tool calls, model responses, compaction) is the thread's `agent` acting for the thread's `for`, and carries no actor of its own. `hook.ran` is glave running a command the thread's `for` configured, or trusted their project to configure.
 

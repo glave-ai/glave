@@ -14,13 +14,14 @@ use glave_event::{
 use glave_harness::{Caller, Goal};
 use glave_ports::{BlobStore, EventLog, ModelProvider, title_from};
 
-use crate::held::Slot;
+use crate::held::{Slot, busy};
 use crate::ledger::Recorded;
 use crate::modes::Choice;
 use crate::protocol::{
     ApiError, Notification, Reply, TaskInfo, TaskKind, TaskStatus, TurnResult, code,
 };
 use crate::server::Server;
+use crate::steer::{Message, Sent};
 use crate::turn::{TurnItem, TurnStream};
 
 /// What a person may run at once and keep scheduled (`[tasks]` in `policy.toml`): no limit
@@ -113,10 +114,19 @@ where
         };
         self.inner.approvals.unattend(thread);
         let stream = match work {
-            Work::Turn(prompt, chosen) => {
-                self.start_turn_with(caller, thread, &prompt, None, chosen)
-                    .await
+            // A task's own turn never queues: one running in the thread refuses it.
+            Work::Turn(prompt, choice) => {
+                let message = Message {
+                    prompt: &prompt,
+                    choice,
+                    queue: false,
+                };
+                self.start_turn_with(caller, thread, message, None).await
             }
+            .and_then(|sent| match sent {
+                Sent::Started(stream) => Ok(stream),
+                Sent::Queued(_) => Err(busy(thread)),
+            }),
             Work::Goal(goal) => self.start_goal_as(caller, thread, goal).await,
         };
         let stream = match stream {
@@ -353,7 +363,9 @@ where
     /// Cancels what runs in `thread`, if anything does; what to wait on for it to end.
     fn cancel_busy(&self, thread: ThreadId) -> Option<tokio::sync::watch::Receiver<bool>> {
         match self.lock().get(&thread) {
-            Some(Slot::Busy { cancel, finished }) => {
+            Some(Slot::Busy {
+                cancel, finished, ..
+            }) => {
                 cancel.cancel();
                 Some(finished.clone())
             }

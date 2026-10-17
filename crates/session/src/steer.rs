@@ -1,0 +1,99 @@
+//! Steering a running turn (`specs/session.md`, "Steering a turn"): a message sent while a turn
+//! or a goal's turns run is queued to that work, and the model reads it at its next call. The
+//! choice is made under the threads' lock, the same lock the work's end takes to make the
+//! thread idle, so a message lands either in the running work or in a turn of its own after
+//! it, never in between.
+
+use glave_event::{EventId, ThreadId};
+use glave_harness::{Caller, NotQueued, Queued};
+use glave_ports::{BlobStore, EventLog, ModelProvider};
+use tokio::sync::watch;
+
+use crate::held::{Slot, busy};
+use crate::modes::Choice;
+use crate::protocol::{ApiError, code};
+use crate::server::Server;
+use crate::turn::TurnStream;
+
+/// A message the person sends a thread with `turn/start`.
+pub(crate) struct Message<'a> {
+    pub(crate) prompt: &'a str,
+    /// The model and approval mode it chooses for the turn it starts.
+    pub(crate) choice: Choice,
+    /// Whether it may be queued to a turn already running: a task's own turn may not.
+    pub(crate) queue: bool,
+}
+
+/// What sending a message did.
+pub(crate) enum Sent {
+    /// It started a turn, followed here.
+    Started(TurnStream),
+    /// It was queued to the turn running in its thread, under this id (`QueuedMessage`).
+    Queued(EventId),
+}
+
+/// What queueing a message found.
+pub(crate) enum Queue {
+    Queued(EventId),
+    /// Nothing runs in the thread: the message starts a turn.
+    Idle,
+    /// The running work was stopped, or has made its last call and is ending: the message
+    /// starts a turn once it has ended (`finished`).
+    Ending(watch::Receiver<bool>),
+}
+
+impl<P, L, B> Server<P, L, B>
+where
+    P: ModelProvider + 'static,
+    L: EventLog + 'static,
+    B: BlobStore + 'static,
+{
+    /// Queues `caller`'s `prompt` to the work running in `thread`, when that work takes
+    /// messages. A message chooses no model or approval mode: those are for a turn to start
+    /// with. Refused when as many messages wait as a turn takes (`-32027`), or while work that
+    /// takes none runs (`-32002`).
+    pub(crate) fn queue(
+        &self,
+        caller: &Caller,
+        thread: ThreadId,
+        prompt: &str,
+        choice: &Choice,
+    ) -> Result<Queue, ApiError> {
+        let threads = self.lock();
+        let Some(Slot::Busy {
+            cancel,
+            finished,
+            inbox,
+        }) = threads.get(&thread)
+        else {
+            return Ok(Queue::Idle);
+        };
+        let Some(inbox) = inbox else {
+            return Err(busy(thread));
+        };
+        // A stopped turn reads nothing more: what is sent after Stop starts the next turn.
+        if cancel.is_cancelled() {
+            return Ok(Queue::Ending(finished.clone()));
+        }
+        if choice.model.is_some() || choice.approval.is_some() {
+            return Err(ApiError::new(
+                code::INVALID_PARAMS,
+                "a model or approval mode is chosen for a turn to start with: while a turn runs, \
+                 send the message without one, or choose once the turn has ended",
+            ));
+        }
+        let harness = &self.inner.harness;
+        let id = EventId::new(harness.clock().now(), harness.entropy().bytes())
+            .map_err(|error| ApiError::new(code::INTERNAL, error.to_string()))?;
+        let queued = Queued {
+            id,
+            text: prompt.to_owned(),
+            caller: caller.clone(),
+        };
+        match inbox.push(queued) {
+            Ok(()) => Ok(Queue::Queued(id)),
+            Err(NotQueued::Ending) => Ok(Queue::Ending(finished.clone())),
+            Err(full @ NotQueued::Full) => Err(ApiError::new(code::QUEUE_FULL, full.to_string())),
+        }
+    }
+}

@@ -150,6 +150,35 @@ describe('conversation', () => {
     expect(items[5]).toMatchObject({ from: 'model', text: 'Done', reasoning: 'hm' });
   });
 
+  it('marks what the person sent while a turn ran, never what glave wrote', () => {
+    const person = (text: string, author?: Record<string, unknown>): RawEvent =>
+      event('message.added', {
+        role: 'user',
+        parts: [{ type: 'text', text }],
+        ...(author === undefined ? {} : { author }),
+      });
+    const items = threadItems([
+      event('turn.started', {}),
+      person('set the port to 3000'),
+      event('tool.call.requested', { call_id: 'call_1', tool: 'bash', arguments: {} }),
+      event('tool.call.completed', { call_id: 'call_1', is_error: false, output: [] }),
+      person('actually, 4000'),
+      person('[The person cancelled this turn on purpose.]', { kind: 'glave' }),
+      event('turn.ended', { outcome: 'cancelled' }),
+      event('turn.started', {}),
+      person('go on'),
+    ]);
+    const steered = items.flatMap((item) =>
+      item.kind === 'message' ? [[item.text, item.steered] as const] : [],
+    );
+    expect(steered).toEqual([
+      ['set the port to 3000', false],
+      ['actually, 4000', true],
+      ['[The person cancelled this turn on purpose.]', false],
+      ['go on', false],
+    ]);
+  });
+
   it('keeps a call running and an approval waiting until they are answered', () => {
     const items = threadItems([
       event('tool.call.requested', { call_id: 'c1', tool: 'bash', arguments: { json: {} } }),

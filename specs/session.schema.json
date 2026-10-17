@@ -786,6 +786,19 @@
       ],
       "type": "object"
     },
+    "QueuedMessage": {
+      "description": "A message queued to the turn running in its thread, for the model's next call.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EventId",
+          "description": "The id of the `message.added` it is recorded as once the model reads it: that\n`thread/event` says it was read. A `turn/live` `unread` with this id says it never will be."
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
     "RawEvent": {
       "description": "An event exactly as it is stored and sent. `data` holds the payload's bytes as written;\n[`crate::decode`] interprets them.",
       "properties": {
@@ -1742,6 +1755,29 @@
           "type": "object"
         },
         {
+          "description": "A message sent while the turn ran (its `queued` id) that the model will not read, given\nback: a hook stopped it (`reason`, the hook's), or the turn was stopped or failed first.",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/EventId"
+            },
+            "kind": {
+              "const": "unread",
+              "type": "string"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
           "description": "A memory was saved, edited or forgotten: `change` is `remembered`, `edited` or `forgot`.",
           "properties": {
             "change": {
@@ -1915,6 +1951,10 @@
     "PROVIDER": {
       "code": -32020,
       "message": "The model provider failed"
+    },
+    "QUEUE_FULL": {
+      "code": -32027,
+      "message": "As many messages wait for the running turn as it takes"
     },
     "TURN_RUNNING": {
       "code": -32002,
@@ -3273,7 +3313,7 @@
                 "type": "null"
               }
             ],
-            "description": "How much this turn, and the thread's turns after it, ask before acting: one of the\nserver's `approvals`. The thread's latest choice when absent, else the server's."
+            "description": "How much this turn, and the thread's turns after it, ask before acting: one of the\nserver's `approvals`. The thread's latest choice when absent, else the server's.\nNot while a turn runs."
           },
           "background": {
             "description": "Runs the turn as a task, with no one attached: answered at once with the task.",
@@ -3289,7 +3329,7 @@
             ]
           },
           "model": {
-            "description": "The model this turn, and the thread's turns after it, go to: one `model/list`\nnames. The thread's latest choice when absent, else the server's default.",
+            "description": "The model this turn, and the thread's turns after it, go to: one `model/list`\nnames. The thread's latest choice when absent, else the server's default. Not while\na turn runs.",
             "type": [
               "string",
               "null"
@@ -3329,6 +3369,18 @@
             },
             "required": [
               "task"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A message sent while a turn ran, queued to it: answered at once.",
+            "properties": {
+              "queued": {
+                "$ref": "#/$defs/QueuedMessage"
+              }
+            },
+            "required": [
+              "queued"
             ],
             "type": "object"
           }

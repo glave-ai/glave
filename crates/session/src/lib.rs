@@ -25,6 +25,7 @@ pub mod schema;
 mod server;
 mod spaces;
 mod standing;
+mod steer;
 mod tasks;
 mod titles;
 mod trace;

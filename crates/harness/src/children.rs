@@ -114,6 +114,7 @@ where
             text: &brief,
             caller: &caller,
             by_glave: false,
+            id: None,
         };
         let ran = self
             .run_with(&mut child, prompt, tools, cancel, &mut forward)

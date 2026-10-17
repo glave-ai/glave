@@ -24,6 +24,7 @@ use crate::commands::Command;
 use crate::compaction::{Compaction, Measured};
 use crate::goal::{GoalProgress, Pursuit};
 use crate::hooks::Hooks;
+use crate::inbox::Inbox;
 use crate::memory::{Memory, MemoryState};
 use crate::projects::{Brought, Projects};
 use crate::prompt::system_prompt;
@@ -211,6 +212,8 @@ pub struct Thread {
     /// What its project turned on at the start of the latest turn (`projects.rs`). A
     /// subagent's thread has its parent's.
     pub(crate) brought: Arc<Brought>,
+    /// What the person sent its running turn, waiting for the model's next call (`inbox.rs`).
+    pub(crate) inbox: Inbox,
 }
 
 impl Thread {
@@ -511,6 +514,7 @@ where
             instructions,
             project,
             brought: Arc::default(),
+            inbox: Inbox::default(),
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {
@@ -567,8 +571,31 @@ where
         payload: &T,
     ) -> Result<(), HarnessError> {
         let now = self.clock.now();
+        let id = EventId::new(now, self.entropy.bytes())?;
+        Self::stage_at(thread, events, payload, id, now)
+    }
+
+    /// Like [`Harness::stage`], under an id made already: a message the person sent while a
+    /// turn ran keeps the id they were answered with.
+    pub(crate) fn stage_as<T: Payload>(
+        &self,
+        thread: &Thread,
+        events: &mut Vec<RawEvent>,
+        payload: &T,
+        id: EventId,
+    ) -> Result<(), HarnessError> {
+        Self::stage_at(thread, events, payload, id, self.clock.now())
+    }
+
+    fn stage_at<T: Payload>(
+        thread: &Thread,
+        events: &mut Vec<RawEvent>,
+        payload: &T,
+        id: EventId,
+        now: jiff::Timestamp,
+    ) -> Result<(), HarnessError> {
         let header = Header {
-            id: EventId::new(now, self.entropy.bytes())?,
+            id,
             thread: thread.id,
             seq: Self::seq_after(thread, events)?,
             at: At::from(now),

@@ -9,12 +9,13 @@ mod providers;
 mod spaces;
 mod tasks;
 mod trust;
+mod update;
 
 use glave_event::{
-    At, CallId, CredentialId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal, ProviderId,
-    RawEvent, ScheduleId, Secret, Seq, ThreadId, TokenCounts, When,
+    At, CallId, CredentialId, EventId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal,
+    ProviderId, RawEvent, ScheduleId, Secret, Seq, ThreadId, TokenCounts, When,
 };
-use glave_harness::{GoalProgress, Live, Question, Remembered, TurnSummary};
+use glave_harness::{GoalProgress, Remembered, TurnSummary};
 use glave_ports::{ComputerId, Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +27,7 @@ pub use providers::{ProviderInfo, hint};
 pub use spaces::{NewFolder, ProjectFolder};
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
+pub use update::Update;
 
 /// The protocol version this server speaks.
 pub const PROTOCOL: &str = "2026-10";
@@ -124,6 +126,8 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
     } -> [Events],
+    /// Sends the person's message: it starts a turn, or while one runs it is queued to it, and
+    /// the model reads it at its next call.
     "turn/start" => TurnStart {
         thread: ThreadId,
         prompt: String,
@@ -134,16 +138,18 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         budget: Option<u64>,
         /// The model this turn, and the thread's turns after it, go to: one `model/list`
-        /// names. The thread's latest choice when absent, else the server's default.
+        /// names. The thread's latest choice when absent, else the server's default. Not while
+        /// a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
         /// How much this turn, and the thread's turns after it, ask before acting: one of the
         /// server's `approvals`. The thread's latest choice when absent, else the server's.
+        /// Not while a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         approval: Option<ApprovalMode>,
         #[serde(rename = "_meta", default, skip_serializing_if = "Meta::is_empty")]
         meta: Meta,
-    } -> [Turn, Task],
+    } -> [Turn, Task, Queued],
     "turn/cancel" => TurnCancel { thread: ThreadId } -> [Done],
     "thread/compact" => ThreadCompact { thread: ThreadId } -> [Compacted],
     "approval/decide" => ApprovalDecide {
@@ -515,6 +521,14 @@ impl From<TurnSummary> for TurnResult {
     }
 }
 
+/// A message queued to the turn running in its thread, for the model's next call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QueuedMessage {
+    /// The id of the `message.added` it is recorded as once the model reads it: that
+    /// `thread/event` says it was read. A `turn/live` `unread` with this id says it never will be.
+    pub id: EventId,
+}
+
 /// A reply, by the shape of its result.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
@@ -538,6 +552,9 @@ pub enum Reply {
     },
     #[schemars(title = "Turn")]
     Turn { turn: TurnResult },
+    /// A message sent while a turn ran, queued to it: answered at once.
+    #[schemars(title = "Queued")]
+    Queued { queued: QueuedMessage },
     #[schemars(title = "Compacted")]
     Compacted {
         before_tokens: u64,
@@ -625,131 +642,6 @@ pub enum Notification {
     TaskFinished { thread: ThreadId, task: TaskInfo },
 }
 
-/// Progress while a turn runs: the live side of `Live`, in a form any transport carries.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Update {
-    Text {
-        text: String,
-    },
-    Reasoning {
-        text: String,
-    },
-    ToolStarted {
-        summary: String,
-    },
-    ToolFinished {
-        summary: String,
-        is_error: bool,
-    },
-    /// An action that did not run. `summary` is what would have run; `caution`, why it asked
-    /// whatever the mode, in sentences the person reads, when a caution did.
-    ToolDeclined {
-        summary: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        caution: Option<String>,
-        no_one_there: bool,
-    },
-    Waiting,
-    Retrying {
-        retry: u32,
-        of: u32,
-        wait_ms: u64,
-        error: String,
-    },
-    Compacted {
-        before_tokens: u64,
-        after_tokens: u64,
-    },
-    CompactionFailed {
-        error: String,
-    },
-    /// The model asked the person questions; answer with `question/answer`.
-    Asked {
-        question: CallId,
-        questions: Vec<Question>,
-    },
-    /// A subagent started; its notifications follow under its own thread.
-    SubagentStarted {
-        subagent: ThreadId,
-        description: String,
-    },
-    /// A subagent is done; `ok` when it finished its work.
-    SubagentEnded {
-        subagent: ThreadId,
-        ok: bool,
-    },
-    /// A memory was saved, edited or forgotten: `change` is `remembered`, `edited` or `forgot`.
-    Memory {
-        change: String,
-        memory: MemoryId,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        text: Option<String>,
-    },
-}
-
-impl From<Live> for Update {
-    fn from(live: Live) -> Self {
-        match live {
-            Live::Text(text) => Self::Text { text },
-            Live::Reasoning(text) => Self::Reasoning { text },
-            Live::ToolStarted { summary } => Self::ToolStarted { summary },
-            Live::ToolFinished { summary, is_error } => Self::ToolFinished { summary, is_error },
-            Live::ToolDeclined {
-                summary,
-                caution,
-                no_one_there,
-            } => Self::ToolDeclined {
-                summary,
-                caution,
-                no_one_there,
-            },
-            Live::Waiting => Self::Waiting,
-            Live::Retrying {
-                retry,
-                of,
-                wait,
-                error,
-            } => Self::Retrying {
-                retry,
-                of,
-                wait_ms: u64::try_from(wait.as_millis()).unwrap_or(u64::MAX),
-                error,
-            },
-            Live::Compacted {
-                before_tokens,
-                after_tokens,
-            } => Self::Compacted {
-                before_tokens,
-                after_tokens,
-            },
-            Live::CompactionFailed(error) => Self::CompactionFailed { error },
-            Live::Asked { call_id, questions } => Self::Asked {
-                question: call_id,
-                questions,
-            },
-            Live::SubagentStarted {
-                thread,
-                description,
-            } => Self::SubagentStarted {
-                subagent: thread,
-                description,
-            },
-            Live::SubagentEnded { thread, ok } => Self::SubagentEnded {
-                subagent: thread,
-                ok,
-            },
-            Live::Memory { verb, memory, text } => Self::Memory {
-                change: verb.as_str().to_owned(),
-                memory,
-                text,
-            },
-            // Published under the child's thread; see `turn::publish`.
-            Live::Child { update, .. } => Self::from(*update),
-        }
-    }
-}
-
 /// A request that failed, as JSON-RPC carries it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ApiError {
@@ -772,6 +664,16 @@ impl ApiError {
             message: message.into(),
             data: None,
         }
+    }
+
+    /// For a client that follows only turns it starts: its message was queued to a turn
+    /// already running, which it cannot follow.
+    pub fn queued_elsewhere() -> Self {
+        Self::new(
+            code::TURN_RUNNING,
+            "a turn was already running in this thread: your message was queued to it, and the \
+             model reads it at its next step",
+        )
     }
 }
 

@@ -1,6 +1,7 @@
 import { DOCUMENT, DestroyRef, Service, computed, inject, signal } from '@angular/core';
 import type {
   ApprovalMode,
+  Notification,
   RawEvent,
   ThreadId,
   TrustAsk,
@@ -13,6 +14,7 @@ import { NO_DRAFT, applyUpdate, mergeEvents, type Draft } from '../lib/conversat
 import { changedFiles } from '../lib/files';
 import { chosenModel } from '../lib/models';
 import { placeOf } from '../lib/place';
+import { type Waiting, named, notRead, together } from '../lib/queued';
 import { onApple } from '../lib/shortcuts';
 import { threadTurns } from '../lib/turns';
 import { SessionService } from './session.service';
@@ -20,9 +22,10 @@ import { SpacesService } from './spaces.service';
 
 /**
  * One open thread: its events, read from the log and followed live while a turn runs; the
- * reply being written; what its project asks the person to trust, raised by opening it; and
- * the person's actions in it (send, stop, decide, answer, trust). Each thread view provides
- * its own.
+ * reply being written; what the person sent while it ran, until the model reads it; the
+ * composer's draft; what its project asks the person to trust, raised by opening it; and the
+ * person's actions in it (send, stop, decide, answer, trust). Each thread view provides its
+ * own.
  */
 @Service({ autoProvided: false })
 export class ThreadService {
@@ -31,12 +34,19 @@ export class ThreadService {
   private readonly id = signal<ThreadId | null>(null);
   private readonly events = signal<readonly RawEvent[]>([]);
   private readonly draft = signal<Draft>(NO_DRAFT);
-  private readonly running = signal(false);
+  /** The turn streams followed now: the turn, and any message sent to it meanwhile. */
+  private readonly following = signal(0);
+  private readonly waiting = signal<readonly Waiting[]>([]);
+  /** Messages the model will not read, given back once the turn has ended. */
+  private givenBack: string[] = [];
+  /** Whether the person stopped the turn, so what waited is sent next. */
+  private stopped = false;
+  private sentWhileRunning = 0;
   private readonly failed = signal<string | null>(null);
   private readonly deciding = signal(false);
   private readonly asked = signal<TrustAsk | null>(null);
   private readonly trustAnswered = signal<TrustChoice | null>(null);
-  private controller: AbortController | null = null;
+  private readonly controllers = new Set<AbortController>();
 
   private readonly mac = onApple(inject(DOCUMENT));
 
@@ -46,7 +56,11 @@ export class ThreadService {
   /** The files the thread changed with its own `write` and `edit` calls. */
   readonly files = computed(() => changedFiles(this.events()));
   readonly reply = this.draft.asReadonly();
-  readonly busy = this.running.asReadonly();
+  readonly busy = computed(() => this.following() > 0);
+  /** What the composer holds: the person's next message. */
+  readonly composer = signal('');
+  /** What the person sent while the turn ran that the model has not read yet, oldest first. */
+  readonly queued = computed(() => notRead(this.waiting(), this.events()));
   readonly error = this.failed.asReadonly();
   readonly sending = this.deciding.asReadonly();
   /** What the thread's project asks the person to trust, while it asks or once answered here. */
@@ -64,7 +78,7 @@ export class ThreadService {
   constructor() {
     // Leaving the thread stops following its turn; the turn itself goes on in the server.
     inject(DestroyRef).onDestroy(() => {
-      this.controller?.abort();
+      this.abortAll();
     });
   }
 
@@ -73,11 +87,13 @@ export class ThreadService {
    * opening it raises.
    */
   async open(thread: ThreadId): Promise<void> {
-    this.controller?.abort();
+    this.abortAll();
     this.id.set(thread);
     this.events.set([]);
     this.draft.set(NO_DRAFT);
-    this.running.set(false);
+    this.waiting.set([]);
+    this.givenBack = [];
+    this.stopped = false;
     this.failed.set(null);
     this.asked.set(null);
     this.trustAnswered.set(null);
@@ -111,7 +127,9 @@ export class ThreadService {
 
   /**
    * Sends `prompt` and follows the turn as it runs. With `model`, the turn and the thread's
-   * turns after it go to that model; with `approval`, they run in that approval mode.
+   * turns after it go to that model; with `approval`, they run in that approval mode. While a
+   * turn runs, the message goes to it instead, for the model to read at its next step, and
+   * waits in the thread until it has; the model and mode go with the next turn.
    */
   async send(
     prompt: string,
@@ -119,46 +137,30 @@ export class ThreadService {
     approval: ApprovalMode | null = null,
   ): Promise<void> {
     const thread = this.id();
-    if (thread === null || this.running()) {
+    if (thread === null) {
       return;
     }
-    const controller = new AbortController();
-    this.controller = controller;
-    this.running.set(true);
-    this.failed.set(null);
-    try {
-      const params: TurnStartParams = {
-        thread,
-        prompt,
-        ...(model === null ? {} : { model }),
-        ...(approval === null ? {} : { approval }),
-      };
-      const turn = this.session.stream('turn/start', params, controller.signal);
-      for await (const note of turn) {
-        if (note.params.thread !== thread) {
-          continue;
-        }
-        if (note.method === 'thread/event') {
-          this.add(note.params.event);
-        } else if (note.method === 'turn/live') {
-          this.draft.update((draft) => applyUpdate(draft, note.params.update));
-        }
-      }
-    } catch (error: unknown) {
-      if (!controller.signal.aborted) {
-        this.failed.set(error instanceof Error ? error.message : String(error));
-      }
-    } finally {
-      this.running.set(false);
-      this.draft.set(NO_DRAFT);
-      void this.spaces.refresh();
+    if (this.busy()) {
+      this.sentWhileRunning += 1;
+      const key = `queued-${String(this.sentWhileRunning)}`;
+      this.waiting.update((waiting) => [...waiting, { key, text: prompt, id: null }]);
+      await this.follow(thread, { thread, prompt }, key);
+      return;
     }
+    const params: TurnStartParams = {
+      thread,
+      prompt,
+      ...(model === null ? {} : { model }),
+      ...(approval === null ? {} : { approval }),
+    };
+    await this.follow(thread, params, null);
   }
 
-  /** Stops the running turn. */
+  /** Stops the running turn; what the person sent meanwhile and the model never read is sent next. */
   async stop(): Promise<void> {
     const thread = this.id();
     if (thread !== null) {
+      this.stopped = true;
       await this.act(() => this.session.call('turn/cancel', { thread }));
     }
   }
@@ -202,12 +204,124 @@ export class ThreadService {
     }
   }
 
+  /**
+   * Sends `params` and follows what comes back: a turn of its own, streamed, or for `queued`,
+   * a message the server queued to the turn already running, answered at once with the id it
+   * will be recorded under.
+   */
+  private async follow(
+    thread: ThreadId,
+    params: TurnStartParams,
+    queued: string | null,
+  ): Promise<void> {
+    const controller = new AbortController();
+    this.controllers.add(controller);
+    this.following.update((streams) => streams + 1);
+    this.failed.set(null);
+    try {
+      const turn = this.session.stream('turn/start', params, controller.signal);
+      let next = await turn.next();
+      if (!next.done && queued !== null) {
+        // The turn had ended meanwhile, so the message started one of its own.
+        this.waiting.update((waiting) => waiting.filter((message) => message.key !== queued));
+      }
+      while (!next.done) {
+        this.take(thread, next.value);
+        next = await turn.next();
+      }
+      const result = next.value;
+      if (queued !== null && 'queued' in result) {
+        this.waiting.update((waiting) => named(waiting, queued, result.queued.id));
+      }
+    } catch (error: unknown) {
+      if (!controller.signal.aborted) {
+        this.failed.set(error instanceof Error ? error.message : String(error));
+        this.giveBack(queued, null);
+      }
+    } finally {
+      // Not when it was let go of, on leaving the thread.
+      if (this.controllers.delete(controller)) {
+        this.following.update((streams) => streams - 1);
+        if (this.following() === 0) {
+          this.settle(thread);
+        }
+      }
+    }
+  }
+
+  /** Takes one notification of the turn followed in `thread`. */
+  private take(thread: ThreadId, note: Notification): void {
+    if (note.params.thread !== thread) {
+      return;
+    }
+    if (note.method === 'thread/event') {
+      this.add(note.params.event);
+    } else if (note.method === 'turn/live') {
+      const update = note.params.update;
+      if (update.kind === 'unread') {
+        const given = this.waiting().find((message) => message.id === update.id);
+        this.giveBack(given?.key ?? null, update.reason ?? null);
+      } else {
+        this.draft.update((draft) => applyUpdate(draft, update));
+      }
+    }
+  }
+
+  /**
+   * Takes the message `key` back from the thread: a hook's `reason` says why the model will
+   * not read it, and it goes back in the box; else the turn ended first, and it is kept until
+   * the turn has.
+   */
+  private giveBack(key: string | null, reason: string | null): void {
+    const message = this.waiting().find((each) => each.key === key);
+    if (message === undefined) {
+      return;
+    }
+    this.waiting.update((waiting) => waiting.filter((each) => each.key !== key));
+    if (reason === null) {
+      this.givenBack.push(message.text);
+    } else {
+      this.failed.set(reason);
+      this.composer.update((draft) => together([message.text, draft].filter(Boolean)));
+    }
+  }
+
+  /**
+   * Once nothing is followed any more: what the model never read is sent next when the person
+   * stopped the turn, as Claude Code and Codex do; otherwise it goes back in the box.
+   */
+  private settle(thread: ThreadId): void {
+    this.draft.set(NO_DRAFT);
+    void this.spaces.refresh();
+    const unread = [...this.givenBack, ...this.queued().map((message) => message.text)];
+    this.givenBack = [];
+    this.waiting.set([]);
+    const stopped = this.stopped;
+    this.stopped = false;
+    if (unread.length === 0) {
+      return;
+    }
+    if (stopped) {
+      void this.follow(thread, { thread, prompt: together(unread) }, null);
+    } else {
+      this.composer.update((draft) => together([...unread, draft].filter(Boolean)));
+    }
+  }
+
+  private abortAll(): void {
+    for (const controller of this.controllers) {
+      controller.abort();
+    }
+    this.controllers.clear();
+    this.following.set(0);
+  }
+
   private async act(call: () => Promise<unknown>): Promise<void> {
     this.deciding.set(true);
     try {
       await call();
       // A turn this view is not following (opened while it waited) goes on in the server.
-      if (!this.running()) {
+      if (!this.busy()) {
         await this.catchUp();
       }
     } catch (error: unknown) {

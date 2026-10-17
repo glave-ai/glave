@@ -9,10 +9,19 @@ const ask: MessageItem = {
   from: 'person',
   text: 'Fix it',
   reasoning: '',
+  steered: false,
 };
 
 function say(seq: number, text: string, reasoning = ''): MessageItem {
-  return { kind: 'message', key: `m${String(seq)}`, seq, from: 'model', text, reasoning };
+  return {
+    kind: 'message',
+    key: `m${String(seq)}`,
+    seq,
+    from: 'model',
+    text,
+    reasoning,
+    steered: false,
+  };
 }
 
 function call(seq: number, status: CallItem['status'] = 'done'): CallItem {

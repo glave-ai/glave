@@ -7,10 +7,11 @@ use glave_ports::{BlobStore, EventLog, ModelProvider};
 
 use crate::credentials::NewCredential;
 use crate::modes::Choice;
-use crate::protocol::{ApiError, Reply, Request, ServerInfo, code};
+use crate::protocol::{ApiError, QueuedMessage, Reply, Request, ServerInfo, code};
 use crate::providers::NewProvider;
 use crate::schedule::NewSchedule;
 use crate::server::Server;
+use crate::steer::{Message, Sent};
 use crate::tasks::Work;
 use crate::turn::TurnStream;
 
@@ -23,7 +24,7 @@ pub enum Answered {
     /// The reply, or why there is none.
     Reply(Result<Reply, ApiError>),
     /// A turn, or a goal's turns, that someone follows: `turn/start` and `goal/start` without
-    /// `background`. Its notifications, then how it ended.
+    /// `background`, when they start one. Its notifications, then how it ended.
     Stream(TurnStream),
 }
 
@@ -64,6 +65,7 @@ where
         let method = request.method();
         match self.call(caller, request).await {
             Answered::Stream(stream) => Ok(stream),
+            Answered::Reply(Ok(Reply::Queued { .. })) => Err(ApiError::queued_elsewhere()),
             Answered::Reply(reply) => Err(reply.err().unwrap_or_else(|| {
                 ApiError::new(
                     code::INVALID_PARAMS,
@@ -153,11 +155,19 @@ where
                     return Answered::Reply(Err(unenforced_budget()));
                 }
                 let key = meta.idempotency_key.as_ref();
-                let choice = Choice { model, approval };
-                return streamed(
-                    self.start_turn_with(traced, thread, &prompt, key, choice)
-                        .await,
-                );
+                let message = Message {
+                    prompt: &prompt,
+                    choice: Choice { model, approval },
+                    queue: true,
+                };
+                let sent = self.start_turn_with(traced, thread, message, key).await;
+                return match sent {
+                    Ok(Sent::Started(stream)) => Answered::Stream(stream),
+                    Ok(Sent::Queued(id)) => Answered::Reply(Ok(Reply::Queued {
+                        queued: QueuedMessage { id },
+                    })),
+                    Err(refused) => Answered::Reply(Err(refused)),
+                };
             }
             Request::TurnStart {
                 thread,
