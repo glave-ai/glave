@@ -157,7 +157,36 @@ describe('conversation', () => {
     ]);
     expect(items[0]).toMatchObject({ status: 'running' });
     // Only the mode asks: no caution of its own.
-    expect(items[1]).toMatchObject({ decision: null, caution: '' });
+    expect(items[1]).toMatchObject({
+      decision: null,
+      caution: '',
+      outsideSandbox: false,
+      modelReason: '',
+    });
+  });
+
+  it('reads a request to run outside the sandbox, with the model’s reason apart', () => {
+    const items = threadItems([
+      event('approval.requested', {
+        call_id: 'c1',
+        tool: 'bash',
+        summary: 'bash: cargo add serde',
+        caution: 'It runs outside the sandbox.',
+        outside_sandbox: { reason: 'cargo add writes to ~/.cargo/registry.' },
+      }),
+      event('approval.requested', {
+        call_id: 'c2',
+        tool: 'bash',
+        summary: 'bash: cargo add serde',
+        outside_sandbox: {},
+      }),
+    ]);
+    expect(items[0]).toMatchObject({
+      caution: 'It runs outside the sandbox.',
+      outsideSandbox: true,
+      modelReason: 'cargo add writes to ~/.cargo/registry.',
+    });
+    expect(items[1]).toMatchObject({ outsideSandbox: true, modelReason: '' });
   });
 
   it('grows the draft with text and reasoning only', () => {

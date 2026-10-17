@@ -494,6 +494,9 @@ pub struct TurnResult {
     pub outcome: Outcome,
     pub model_calls: u32,
     pub tool_calls: u32,
+    /// The commands that ran outside the sandbox, each one allowed.
+    #[serde(default)]
+    pub outside_sandbox: u32,
     pub tokens: TokenCounts,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<Money>,
@@ -508,6 +511,7 @@ impl From<TurnSummary> for TurnResult {
             outcome: summary.outcome,
             model_calls: summary.model_calls,
             tool_calls: summary.tool_calls,
+            outside_sandbox: summary.outside_sandbox,
             tokens: summary.tokens,
             cost: summary.cost,
             estimated: summary.estimated,
