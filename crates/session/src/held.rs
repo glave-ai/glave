@@ -106,7 +106,7 @@ where
         F: std::future::Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
         R: Send + Sync + 'static,
     {
-        self.occupy_for(thread, done, Use::Turn, work).await
+        self.occupy_for(thread, done, Use::Work, work).await
     }
 
     /// Like [`Server::occupy`], for work of the kind `purpose` says.
@@ -204,8 +204,9 @@ where
 /// What work on a thread is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Use {
-    /// A compaction, or recording a goal's end: refused in an archived thread.
-    Turn,
+    /// Other work on the conversation, a compaction or recording a goal's end: refused in an
+    /// archived thread.
+    Work,
     /// A turn, or a goal's turns: refused in an archived thread, and messages sent while it
     /// runs are queued to it.
     Steered,
