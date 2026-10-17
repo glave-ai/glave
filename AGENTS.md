@@ -105,6 +105,14 @@ The bar is code a careful reader admires: every line earns its place, and each i
 
 **Keeping principle 4.** A person on their own computer runs exactly what an organization runs. What differs is what sits behind the seams, never what the person sees:
 - **The server says what exists.** `server/discover` tells a client whether there is an organization, groups, sign-in or workers, and admin UI renders only when it says so. A local server says none. No client decides which admin features exist from its own config.
+- **The server says what happened; each client draws it.** Everything about a person's work comes from the server as typed facts, each with one plain sentence: a thread's items and their status; an approval or question with its sentence, detail and choices as fields; what needs the person and why; receipts; the names of models and services; what the caller may do; why a request was refused. A client never writes its own sentence about the work from events, counts or a parsed string: it shows the server's and draws the facts around it. A client owns its chrome:
+  - layout, order, folding, icons and motion;
+  - labels, empty states, and the words for when the server can't be reached;
+  - markdown and diffs drawn from text, never HTML;
+  - numbers, money and times formatted for the reader, and words relative to the reader ("this computer");
+  - what this tab remembers: drafts, panes, scroll.
+
+  A click may show its result at once; the server's answer is what stays. No item names a pane, a fold or a place on screen: every item prints as one line of plain text, which the CLI proves.
 - **One space shows no spaces.** With a single space, the UI shows no space grouping, members or moving between projects.
 - **Plain words.** No user-visible text names a file, flag, command or error code unless the person typed it. Every error a client can show has a message a person can act on.
 - **The consumer journey test** (`web/e2e/consumer.e2e.ts`, planned in #251) runs against a real server with a fresh home: add a model, chat, approve a command, connect GitHub. It fails if an admin word appears (policy, organization, member, group, admin, SSO, `config.toml`).
