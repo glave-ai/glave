@@ -143,10 +143,6 @@ jobs:
         run: |
           cargo about generate --locked --fail --manifest-path crates/cli/Cargo.toml --features web --config about.toml --output-file THIRD-PARTY-NOTICES about.hbs
           cat web/dist/app/3rdpartylicenses.txt >> THIRD-PARTY-NOTICES
-      - uses: swatinem/rust-cache@v2
-        with:
-          key: ${{ join(matrix.targets, '-') }}
-          cache-provider: ${{ matrix.cache_provider }}
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
       # Get the dist-manifest
