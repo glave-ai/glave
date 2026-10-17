@@ -9,7 +9,7 @@ use glave_ports::{BlobStore, Effect, EventLog, ModelProvider, ToolCall, ToolOutp
 use super::state::structured;
 use super::{EDIT_MEMORY, MemoryChange as Change, RECALL, REMEMBER};
 use crate::approval::{ApprovalRequest, Approver};
-use crate::calls::{Flagged, Judged, NOT_RUN};
+use crate::calls::{Judged, NOT_RUN};
 use crate::cancel::Cancel;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::hooks::ToolHook;
@@ -67,28 +67,23 @@ where
         }
         let writes = name == REMEMBER || name == EDIT_MEMORY;
         if writes && on.untrusted_read {
-            let flagged = Flagged {
-                call,
-                name,
-                summary: &summary,
-                reason: REMEMBER_CAUTION,
+            let request = ApprovalRequest {
+                thread: thread.id,
+                call_id: call.call_id.clone(),
+                tool: name.to_owned(),
+                effect: Effect::Changes,
+                summary: summary.clone(),
+                secret: false,
+                caution: Some(REMEMBER_CAUTION.to_owned()),
+                outside_sandbox: None,
             };
             match self
-                .judged(thread, &flagged, &mut step.summary, cancel)
+                .judged(thread, &request, &mut step.summary, cancel)
                 .await?
             {
                 Judged::Cleared => {}
                 Judged::Cancelled => return Ok(ToolOutput::text(true, NOT_RUN)),
                 Judged::Ask => {
-                    let request = ApprovalRequest {
-                        thread: thread.id,
-                        call_id: call.call_id.clone(),
-                        tool: name.to_owned(),
-                        effect: Effect::Changes,
-                        summary: summary.clone(),
-                        secret: false,
-                        caution: Some(REMEMBER_CAUTION.to_owned()),
-                    };
                     if let Some(refused) = self.ask(thread, &request, cancel, live).await? {
                         return Ok(refused);
                     }

@@ -1470,6 +1470,13 @@
         "outcome": {
           "$ref": "#/$defs/Outcome"
         },
+        "outside_sandbox": {
+          "default": 0,
+          "description": "The commands that ran outside the sandbox, each one allowed.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "tokens": {
           "$ref": "#/$defs/TokenCounts"
         },

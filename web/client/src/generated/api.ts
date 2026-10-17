@@ -492,6 +492,8 @@ export type TurnResult = {
   readonly estimated?: boolean;
   readonly model_calls: number;
   readonly outcome: Outcome;
+  /** The commands that ran outside the sandbox, each one allowed. */
+  readonly outside_sandbox?: number;
   readonly tokens: TokenCounts;
   readonly tool_calls: number;
 };

@@ -16,6 +16,10 @@ use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
 use glave_ports::secrets::is_secret_file;
 
+/// Where the built-in tools are among a thread's tool sources: first, so a tool of theirs is
+/// never another source's (`Harness::source_for`).
+pub(crate) const BUILTINS: usize = 0;
+
 /// The built-in tools on one workspace.
 pub(crate) struct Builtins {
     pub(crate) workspace: Arc<Workspace>,

@@ -1,16 +1,18 @@
 //! `bash`: run one command in a fresh shell at the workspace root, on the workspace's
-//! computer, keeping the start and the end of what it prints.
+//! computer, keeping the start and the end of what it prints. A call may ask to run outside
+//! the sandbox; the harness asks the person before it lets one through (`sandbox::outside`).
 
 use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use glave_event::{Arguments, OutsideSandbox};
 use glave_ports::{BoxFuture, Cancellation, Ending as Exit, Output};
 use serde::Deserialize;
 
-use super::ToolOutcome;
-use super::workspace::Workspace;
+use super::workspace::{Workspace, explain};
+use super::{Tool, ToolOutcome, parse};
 use crate::sandbox::blocked_note;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
@@ -18,12 +20,31 @@ const MAX_TIMEOUT_SECS: u64 = 600;
 /// Output kept from the start and the end of a long run; the middle is dropped.
 const HEAD_BYTES: usize = 8 * 1024;
 const TAIL_BYTES: usize = 24 * 1024;
+/// The most of the model's reason for running outside the sandbox the person is shown.
+const MOST_REASON_CHARS: usize = 500;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct BashArgs {
     command: String,
     #[serde(default)]
     timeout_secs: Option<u64>,
+    /// Run outside the sandbox, where there is one.
+    #[serde(default)]
+    outside_sandbox: bool,
+    /// Why, in the model's words, for the person.
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+/// What a `bash` call asks to run outside the sandbox, with the model's reason, read as the
+/// tool reads its arguments; `None` when it asks nothing of the kind.
+pub(crate) fn outside_sandbox(arguments: &Arguments) -> Option<OutsideSandbox> {
+    let args: BashArgs = parse(Tool::Bash, arguments).ok()?;
+    let reason = args
+        .reason
+        .map(|reason| reason.trim().chars().take(MOST_REASON_CHARS).collect())
+        .filter(|reason: &String| !reason.is_empty());
+    args.outside_sandbox.then_some(OutsideSandbox { reason })
 }
 
 pub(crate) async fn bash(
@@ -34,6 +55,17 @@ pub(crate) async fn bash(
     if args.command.trim().is_empty() {
         return ToolOutcome::error("The command is empty.");
     }
+    // Allowed before the call got here (`calls.rs`): this one command runs without the sandbox.
+    let unconfined;
+    let workspace = if args.outside_sandbox && workspace.sandbox().is_some() {
+        unconfined = match workspace.within(None).await {
+            Ok(unconfined) => unconfined,
+            Err(error) => return ToolOutcome::error(explain(&error)),
+        };
+        &unconfined
+    } else {
+        workspace
+    };
     let limit = args
         .timeout_secs
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
@@ -184,6 +216,8 @@ mod tests {
             let args = BashArgs {
                 command: "env".into(),
                 timeout_secs: None,
+                outside_sandbox: false,
+                reason: None,
             };
             bash(&workspace, args, &crate::cancel::Cancel::new()).await
         });
@@ -198,6 +232,45 @@ mod tests {
             outcome.text
         );
         assert!(!outcome.text.contains("GLAVE_API_KEY"), "{}", outcome.text);
+    }
+
+    #[test]
+    fn a_request_to_run_outside_the_sandbox_is_read_as_the_tool_reads_it() {
+        let asked = |value: serde_json::Value| {
+            outside_sandbox(&Arguments::Json(serde_json::from_value(value).unwrap()))
+        };
+        let because = |reason: &str| {
+            Some(OutsideSandbox {
+                reason: Some(reason.to_owned()),
+            })
+        };
+        assert_eq!(
+            asked(serde_json::json!({ "command": "cargo add serde" })),
+            None
+        );
+        assert_eq!(
+            asked(serde_json::json!({ "command": "x", "outside_sandbox": false, "reason": "r" })),
+            None
+        );
+        assert_eq!(
+            asked(
+                serde_json::json!({ "command": "x", "outside_sandbox": true, "reason": " it writes ~/.cargo\n" })
+            ),
+            because("it writes ~/.cargo")
+        );
+        assert_eq!(
+            asked(serde_json::json!({ "command": "x", "outside_sandbox": true, "reason": "  " })),
+            Some(OutsideSandbox::default())
+        );
+        let long = asked(serde_json::json!({
+            "command": "x", "outside_sandbox": true, "reason": "y".repeat(2_000)
+        }));
+        assert_eq!(long, because(&"y".repeat(MOST_REASON_CHARS)));
+        // Arguments the tool would refuse ask nothing: it never runs them.
+        assert_eq!(
+            asked(serde_json::json!({ "command": "x", "outside_sandbox": "yes" })),
+            None
+        );
     }
 
     #[test]

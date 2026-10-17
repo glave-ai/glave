@@ -242,7 +242,8 @@ impl Client<'_> {
                 let decision = if self.asks {
                     // A subagent asks under its own thread.
                     let summary = printer.labeled(*thread, &asked.summary);
-                    printer.approval(&summary, asked.caution.as_deref());
+                    let outside = asked.outside_sandbox.as_ref();
+                    printer.approval(&summary, asked.caution.as_deref(), outside);
                     let Some(line) = interrupt.run(self.input.line()).await else {
                         return true;
                     };
