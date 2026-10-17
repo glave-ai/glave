@@ -81,10 +81,10 @@ describe('results', () => {
 
   it('counts the commands that ran outside the sandbox in the receipt, not those declined', () => {
     const shown = turnResults(
-      turn(
-        [ask, call(2), outside(3, 'allow_once'), call(4), outside(5, 'deny'), say(6, 'Added')],
-        { took: 2_000, outcome: 'completed' },
-      ),
+      turn([ask, call(2), outside(3, 'allow_once'), call(4), outside(5, 'deny'), say(6, 'Added')], {
+        took: 2_000,
+        outcome: 'completed',
+      }),
       null,
       false,
     );
