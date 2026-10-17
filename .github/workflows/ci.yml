@@ -141,6 +141,24 @@ jobs:
       - run: npm run build:showcase
       - run: npm run e2e
 
+  # The release workflow is dist's, with every job's token read-only but the publishing job's
+  # (`cargo xtask release-workflow`). dist doesn't check a workflow its config says is edited by
+  # hand, so this job does: what the xtask writes from today's config is what's checked in.
+  release-workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: Install dist, the version dist-workspace.toml names
+        shell: bash
+        run: |
+          version="$(sed -n 's/^cargo-dist-version = "\(.*\)"$/\1/p' dist-workspace.toml)"
+          curl --proto '=https' --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/download/v${version}/cargo-dist-installer.sh" | sh
+      - run: cargo xtask release-workflow
+      - name: release.yml is what the xtask writes
+        run: git diff --exit-code
+
   # Workers on Kubernetes: a kind cluster on the runner, and the Kubernetes backend's tests
   # against it (a stub in glave's place, then the glave this job builds in real workers, over
   # TLS through port-forward and over attach). Everything they make is labelled

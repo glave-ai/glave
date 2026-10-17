@@ -9,6 +9,7 @@ mod cmd;
 mod eval;
 mod file_sizes;
 mod lock;
+mod release_workflow;
 mod schema;
 mod typescript;
 mod web;
