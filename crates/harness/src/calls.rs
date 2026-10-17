@@ -275,8 +275,8 @@ where
         };
         // Why it asks, then the judge's own words for why it need not.
         let cleared = match why.trim() {
-            "" => sentence("glave let it run without asking"),
-            why => sentence(&format!("glave let it run without asking: {why}")),
+            "" => sentence("allowed without asking"),
+            why => sentence(&format!("allowed without asking: {why}")),
         };
         let asked = ApprovalRequested {
             call_id: call.call_id.clone(),

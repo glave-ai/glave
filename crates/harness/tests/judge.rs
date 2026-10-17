@@ -102,7 +102,7 @@ mod judging {
                 Some((
                     "bash: git push origin main",
                     Some(
-                        "It pushes to a remote. Glave let it run without asking: the person \
+                        "It pushes to a remote. Allowed without asking: the person \
                          asked to push."
                     )
                 )),
