@@ -160,7 +160,7 @@ export class ThreadService {
   async stop(): Promise<void> {
     const thread = this.id();
     if (thread !== null) {
-      this.stopped = true;
+      this.stopped = this.busy();
       await this.act(() => this.session.call('turn/cancel', { thread }));
     }
   }
@@ -235,8 +235,10 @@ export class ThreadService {
       }
     } catch (error: unknown) {
       if (!controller.signal.aborted) {
-        this.failed.set(error instanceof Error ? error.message : String(error));
-        this.giveBack(queued, null);
+        const said = error instanceof Error ? error.message : String(error);
+        this.failed.set(said);
+        // Refused, as when too many wait: back in the box at once, saying why.
+        this.giveBack(queued, said);
       }
     } finally {
       // Not when it was let go of, on leaving the thread.
@@ -268,9 +270,9 @@ export class ThreadService {
   }
 
   /**
-   * Takes the message `key` back from the thread: a hook's `reason` says why the model will
-   * not read it, and it goes back in the box; else the turn ended first, and it is kept until
-   * the turn has.
+   * Takes the message `key` back from the thread: `reason` says why the model will not read it
+   * (a hook stopped it, or the server refused it), and it goes back in the box; without one the
+   * turn ended first, and it is kept until the turn has.
    */
   private giveBack(key: string | null, reason: string | null): void {
     const message = this.waiting().find((each) => each.key === key);

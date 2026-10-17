@@ -182,6 +182,26 @@ describe('ThreadService', () => {
     expect(fake.paramsOf('turn/start')).toHaveLength(2);
   });
 
+  it('puts a message the server refused back in the box at once, saying why', async () => {
+    const first = new FakeTurn();
+    const full = new ApiError({
+      code: ErrorCode.QUEUE_FULL,
+      message: '20 messages are already waiting for the model to read them',
+    });
+    const fake = new FakeSession().answer('thread/events', { events: [] }).turn(first).turn(full);
+    const service = make(fake);
+    await service.open('thread-1');
+    const sending = service.send('go');
+    await settled();
+    await service.send('one too many');
+    expect(service.queued()).toEqual([]);
+    expect(service.composer()).toBe('one too many');
+    expect(service.error()).toContain('20 messages are already waiting');
+    first.end();
+    await sending;
+    expect(service.composer()).toBe('one too many');
+  });
+
   it('sends what was waiting, together, once the person stops the turn', async () => {
     const first = new FakeTurn();
     const fake = new FakeSession()

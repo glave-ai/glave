@@ -95,9 +95,9 @@ export class FakeSession implements SessionClient {
   }
 
   /**
-   * Answers the next `turn/start` with `turn`: a turn the test drives, or a result answered at
-   * once, such as a message queued to a turn already running. After these, every turn streams
-   * what `streams` set.
+   * Answers the next `turn/start` with `turn`: a turn the test drives, a result answered at
+   * once, such as a message queued to a turn already running, or an `ApiError`, thrown. After
+   * these, every turn streams what `streams` set.
    */
   turn(turn: FakeTurn | object): this {
     this.turns.push(turn);
@@ -122,6 +122,9 @@ export class FakeSession implements SessionClient {
     const next = this.turns.shift();
     if (next instanceof FakeTurn) {
       return yield* next.run<Methods[M]['result']>();
+    }
+    if (next instanceof ApiError) {
+      throw next;
     }
     if (next !== undefined) {
       return next as Methods[M]['result'];
