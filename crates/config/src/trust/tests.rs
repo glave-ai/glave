@@ -224,6 +224,25 @@ fn an_app_is_shown_each_thing_in_plain_words_and_until_it_answers_they_stay_off(
 }
 
 #[test]
+fn on_another_person_s_thread_every_server_and_setting_is_off_however_trusted() {
+    let dir = scratch("all-off");
+    let rules = Constraints::default();
+    let project = repository(&dir, DOCS, Some(&format!("approval = \"auto\"\n{GUARD}")));
+    let mut record = Record::default();
+    let yes = assess(project.clone(), &record, &rules).apply(Answer::Yes);
+    record.remember(&project, yes.decisions.unwrap());
+    let off = assess(project, &record, &rules).all_off("not theirs");
+    assert_eq!(
+        off,
+        [
+            "MCP server docs (docs-mcp --fast) is off: not theirs",
+            "settings (approval = \"auto\") is off: not theirs",
+        ],
+        "never the hook: the model never calls one"
+    );
+}
+
+#[test]
 fn no_name_or_definition_makes_two_different_asks_read_the_same() {
     let rules = Constraints::default();
     let record = Record::default();

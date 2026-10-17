@@ -28,6 +28,11 @@ use crate::setup::off_note;
 /// recently is closed, and started again when its next turn needs it.
 const MOST_PROJECTS: usize = 16;
 
+/// Why everything a project brings is off on a thread of someone other than the person on
+/// this computer, as the model is told.
+const FOR_OTHERS: &str = "a project's own tools and settings run only for the person on the \
+     computer glave runs on, never for anyone else's threads";
+
 /// What the project glave was started in turned on, for the whole server, when it started.
 #[derive(Debug, Clone, Default)]
 pub struct Started {
@@ -176,6 +181,15 @@ impl Projects {
         }
     }
 
+    /// What the model is told stays off of the project whose folder is `folder` on a thread
+    /// of someone other than the person on this computer: all of it.
+    async fn off_for_others(&self, folder: &Path) -> Option<String> {
+        match self.assessed(&self.root(folder).await).await {
+            Ok(assessment) => off_note(&assessment.all_off(FOR_OTHERS)),
+            Err(error) => off_note(&[format!("the project's own settings are off: {error}")]),
+        }
+    }
+
     /// How `outcome`, of the project at `root`, loosens its threads' commands beyond what glave
     /// already runs with.
     fn loosening(&self, root: &Path, outcome: &Outcome) -> Loosened {
@@ -283,6 +297,7 @@ impl Host for Projects {
         &'a self,
         root: &'a Path,
         project: Option<&'a Path>,
+        trusting: bool,
     ) -> BoxFuture<'a, Option<String>> {
         Box::pin(async move {
             let personal = self.home.join(AGENTS_MD);
@@ -294,7 +309,8 @@ impl Host for Projects {
                 }
             };
             let off = match project {
-                Some(folder) => self.off(folder).await,
+                Some(folder) if trusting => self.off(folder).await,
+                Some(folder) => self.off_for_others(folder).await,
                 None => None,
             };
             [agents, off]

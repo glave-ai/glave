@@ -76,6 +76,7 @@ impl Projects for Repository {
         &'a self,
         _root: &'a Path,
         _project: Option<&'a Path>,
+        _trusting: bool,
     ) -> BoxFuture<'a, Option<String>> {
         Box::pin(async { None })
     }
@@ -292,7 +293,7 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
     std::fs::create_dir_all(&other).unwrap();
     block_on!(async {
         let repository = Arc::new(Repository::default());
-        let (server, _) = serving(&dir, &repository, 0, Answering::Clients).await;
+        let (server, seen) = serving(&dir, &repository, 1, Answering::Clients).await;
         let grace = person("https://id.example.com", "grace").unwrap();
         let elsewhere = Caller {
             person: Some(grace),
@@ -340,5 +341,21 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
         }
         assert!(!repository.is_trusted());
+        // Trusted by the person here, it is theirs alone: grace's threads get none of it.
+        let trusted = server
+            .request(answering(started.id, &ask.ask, TrustChoice::Trust))
+            .await;
+        assert!(trusted.is_ok(), "{trusted:?}");
+        let turn = Request::TurnStart {
+            thread: started.id,
+            prompt: "search acme".into(),
+            background: false,
+            budget: None,
+            model: None,
+            approval: None,
+            meta: glave_session::protocol::Meta::default(),
+        };
+        server.request_as(&elsewhere, turn).await.unwrap();
+        assert!(!offered(&seen, 0), "no project tools for another's thread");
     });
 }

@@ -124,6 +124,17 @@ impl Assessment {
             .collect()
     }
 
+    /// Every server and setting the project brings, off because `why`, one sentence each, for
+    /// the model: on a thread of someone other than the person whose trust turns them on, all
+    /// of them are. Hooks are left out: the model never calls one.
+    pub fn all_off(&self, why: &str) -> Vec<String> {
+        self.items
+            .iter()
+            .filter(|(item, _)| !item.is_hook())
+            .map(|(item, _)| format!("{} ({}) is off: {why}", item.label(), item.shows))
+            .collect()
+    }
+
     /// What the person is asked, in plain words: each line of each item not decided yet.
     pub fn plain(&self) -> Vec<&Plain> {
         self.undecided()

@@ -479,8 +479,9 @@ where
         };
         let (workspace, bound) =
             placed.map_or((None, None), |(workspace, bound)| (workspace, Some(bound)));
+        let for_ = caller.person.or(self.actors.person);
         let instructions = self
-            .instructions_for(workspace.as_deref(), bound.as_ref())
+            .instructions_for(workspace.as_deref(), bound.as_ref(), for_)
             .await;
         let project = bound
             .as_ref()
@@ -504,7 +505,7 @@ where
             untrusted: false,
             read_secret: false,
             memory: MemoryState::default(),
-            for_: caller.person.or(self.actors.person),
+            for_,
             model: None,
             approval: None,
             instructions,

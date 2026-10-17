@@ -2,7 +2,9 @@
 //! what a thread opens with, and what its project turns on for it once the person trusts it:
 //! the project's own tools and hooks, and settings that loosen how its commands run. They are
 //! read again at the start of every turn, so what the person trusts meanwhile is on from their
-//! next message, and a thread in one project never gets another's.
+//! next message, and a thread in one project never gets another's. Trust is the person's
+//! decision about their own computer, so only their threads get any of it: another person's
+//! threads in the project get none, and are told so.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,11 +23,13 @@ pub trait Projects: Send + Sync {
     /// The instructions for a thread working at `root`, in the project whose folder is
     /// `project`: the person's own instructions, the folder's AGENTS.md, and what the project
     /// brings that stays off and why. `None` for `project` when the folder is a scratch folder
-    /// of the thread's own.
+    /// of the thread's own. `trusting`: the thread is the person's whose trust turns a
+    /// project's own on; for anyone else's, everything the project brings stays off.
     fn for_folder<'a>(
         &'a self,
         root: &'a Path,
         project: Option<&'a Path>,
+        trusting: bool,
     ) -> BoxFuture<'a, Option<String>>;
 
     /// How the project whose folder is `project` loosens the way its threads' commands run
@@ -98,18 +102,18 @@ where
 {
     /// Reads again what `thread`'s project turns on, at the start of a turn, and gives its
     /// commands the sandbox that follows: none where the project turned it off, else the
-    /// harness's own. A thread with no project of its own here gets nothing. Its settings
-    /// loosen only the threads of the person the harness works for, who trusted it: another
-    /// person's threads in the project get its tools and hooks, and the harness's own
-    /// sandbox and mode.
+    /// harness's own. A thread with no project of its own here gets nothing, and so does
+    /// another person's thread than the one the harness works for, who trusted the project:
+    /// no tools, no hooks, no settings.
     pub(crate) async fn bring(&self, thread: &mut Thread) -> Result<(), HarnessError> {
         let (Some(host), Some(project)) = (&self.projects, &thread.project) else {
             return Ok(());
         };
-        let mut brought = host.brought(project).await;
-        if thread.for_ != self.actors.person {
-            brought.loosened = Loosened::default();
-        }
+        let brought = if self.trusting(thread.for_) {
+            host.brought(project).await
+        } else {
+            Brought::default()
+        };
         if let Some(workspace) = &thread.workspace {
             let wanted = if brought.loosened.unconfined {
                 None
@@ -122,6 +126,12 @@ where
         }
         thread.brought = Arc::new(brought);
         Ok(())
+    }
+
+    /// Whether a thread for `person` is the person's the harness works for, whose trust turns
+    /// a project's own on.
+    pub(crate) fn trusting(&self, person: Option<glave_event::PrincipalId>) -> bool {
+        person == self.actors.person
     }
 
     /// How `project` loosens the commands of its threads for the person the harness works

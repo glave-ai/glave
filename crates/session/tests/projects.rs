@@ -326,6 +326,7 @@ impl Projects for Told {
         &'a self,
         root: &'a Path,
         project: Option<&'a Path>,
+        _trusting: bool,
     ) -> BoxFuture<'a, Option<String>> {
         let text = match project {
             Some(folder) => format!("Rules of {} at {}", folder.display(), root.display()),

@@ -200,13 +200,14 @@ where
         Ok((workspace.map(Arc::new), latest.cloned()))
     }
 
-    /// What a thread working where `bound` says opens with: what the host reads for its
-    /// folder (its project's, or none for a scratch folder), when the harness has a reader
-    /// and the thread a folder of its own here; else the settings' own instructions.
+    /// What a thread for `person` working where `bound` says opens with: what the host reads
+    /// for its folder (its project's, or none for a scratch folder), when the harness has a
+    /// reader and the thread a folder of its own here; else the settings' own instructions.
     pub(crate) async fn instructions_for(
         &self,
         workspace: Option<&Workspace>,
         bound: Option<&WorkspaceBound>,
+        person: Option<glave_event::PrincipalId>,
     ) -> Option<String> {
         let (Some(reader), Some(workspace), Some(bound)) = (&self.projects, workspace, bound)
         else {
@@ -218,7 +219,8 @@ where
             Opened::Scratch { .. } => None,
             Opened::Clone { .. } => return self.settings.instructions.clone(),
         };
-        reader.for_folder(workspace.root(), project).await
+        let trusting = self.trusting(person);
+        reader.for_folder(workspace.root(), project, trusting).await
     }
 
     /// The workspace `thread`'s tools act on.

@@ -192,6 +192,7 @@ mod instructions {
             &'a self,
             root: &'a Path,
             project: Option<&'a Path>,
+            _trusting: bool,
         ) -> BoxFuture<'a, Option<String>> {
             let text = format!("Rules of {project:?} at {}", root.display());
             Box::pin(std::future::ready(Some(text)))

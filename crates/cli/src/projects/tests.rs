@@ -105,7 +105,10 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
             before.tools.is_empty() && before.hooks.is_empty(),
             "off until trusted"
         );
-        let off = projects.for_folder(&project, Some(&project)).await.unwrap();
+        let off = projects
+            .for_folder(&project, Some(&project), true)
+            .await
+            .unwrap();
         assert!(
             off.contains("# Project tools that are off")
                 && off.contains("the person has not trusted this project yet"),
@@ -125,6 +128,15 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
         );
         assert!(items.values().all(|decision| decision.trusted));
         assert_eq!(projects.ask(&project).await.unwrap(), None, "asked once");
+        let theirs = projects
+            .for_folder(&project, Some(&project), false)
+            .await
+            .unwrap();
+        assert!(
+            theirs.contains("MCP server docs (/nonexistent/docs-mcp --fast) is off")
+                && theirs.contains("never for anyone else's threads"),
+            "trusted, and still off on another person's thread: {theirs}"
+        );
         let after = projects.brought(&project).await;
         assert_eq!(after.tools.len(), 2, "the server, then its resources");
         assert_eq!(after.hooks.all().count(), 1);
@@ -133,7 +145,7 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
             Arc::ptr_eq(&after.tools[0], &again.tools[0]),
             "the same server, still running"
         );
-        let told = projects.for_folder(&project, Some(&project)).await;
+        let told = projects.for_folder(&project, Some(&project), true).await;
         assert!(
             told.as_ref().is_none_or(|told| !told.contains("is off")),
             "{told:?}"

@@ -54,6 +54,7 @@ mod projects {
             &'a self,
             _root: &'a Path,
             _project: Option<&'a Path>,
+            _trusting: bool,
         ) -> BoxFuture<'a, Option<String>> {
             Box::pin(async { None })
         }
@@ -190,7 +191,7 @@ mod projects {
     }
 
     #[test]
-    fn another_person_s_thread_gets_the_project_s_tools_but_not_its_settings() {
+    fn another_person_s_thread_gets_nothing_the_project_brings() {
         let dir = folder("projects-another");
         let project_dir = std::fs::canonicalize(folder("projects-another-project")).unwrap();
         let project = Project::new(Loosened {
@@ -227,11 +228,25 @@ mod projects {
                 )
                 .await
                 .unwrap();
-            assert!(tool_names(&seen, 0).contains(&"mcp__docs__search".to_owned()));
-            assert_eq!(harness.approval_for(&thread), ApprovalMode::Ask);
+            assert!(
+                !tool_names(&seen, 0).contains(&"mcp__docs__search".to_owned()),
+                "no tools"
+            );
+            assert_eq!(
+                harness.approval_for(&thread),
+                ApprovalMode::Ask,
+                "no settings"
+            );
             assert!(
                 !project_dir.join("theirs.txt").exists(),
                 "asked, and refused"
+            );
+            let recorded = events(harness.log(), thread.id).await;
+            assert!(
+                !recorded
+                    .iter()
+                    .any(|event| matches!(event.body, Body::HookRan(_))),
+                "no hooks"
             );
         });
     }
