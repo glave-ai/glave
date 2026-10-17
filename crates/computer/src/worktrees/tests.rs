@@ -1,4 +1,6 @@
+use std::collections::BTreeSet;
 use std::process::Command as Process;
+use std::sync::Arc;
 
 use glave_ports::{Computers, Environment, FileWrite, Sources, block_on};
 
@@ -59,26 +61,38 @@ fn branches(repo: &Path) -> String {
     )
 }
 
+/// Sixteen at once, so that without one change at a time two `git worktree add`s overlap and
+/// one reads the other's half-made worktree.
 #[test]
 fn worktrees_opened_at_once_do_not_collide() {
     let (repo, base) = repository("parallel");
-    let computers = computers(&base);
+    let computers = Arc::new(computers(&base));
     block_on!(async {
         let made = computers.create(&Environment::host()).await.unwrap();
-        let (a, b) = (
-            worktree(&repo, "glave/aaaa", None),
-            worktree(&repo, "glave/bbbb", None),
-        );
-        let (a, b) = tokio::join!(computers.open(made.id, &a), computers.open(made.id, &b));
-        let (a, b) = (a.unwrap(), b.unwrap());
-        assert_ne!(a.root, b.root);
+        let mut opening = tokio::task::JoinSet::new();
+        for n in 0..16 {
+            let computers = Arc::clone(&computers);
+            let sources = worktree(&repo, &format!("glave/at-once-{n}"), None);
+            opening.spawn(async move { computers.open(made.id, &sources).await });
+        }
+        let opened: Vec<_> = opening
+            .join_all()
+            .await
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        let roots: BTreeSet<&str> = opened.iter().map(|info| info.root.as_str()).collect();
+        assert_eq!(roots.len(), opened.len(), "each has a folder of its own");
         let base = std::fs::canonicalize(&base).unwrap();
-        for root in [&a.root, &b.root] {
+        for root in roots {
             assert!(
                 Path::new(root).starts_with(&base),
                 "{root} is under the base"
             );
         }
+        let [a, b, ..] = opened.as_slice() else {
+            panic!("opened {}", opened.len())
+        };
         computers
             .write(a.id, &[file("a.txt", b"changed in a")])
             .await

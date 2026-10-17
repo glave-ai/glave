@@ -47,9 +47,11 @@ pub enum Live {
         summary: String,
         is_error: bool,
     },
-    /// An action that did not run: the person said no, or no one was there to ask.
+    /// An action that did not run: the person said no, or no one was there to ask. `caution`
+    /// is why it asked whatever the mode, as the person reads it, when a caution did.
     ToolDeclined {
         summary: String,
+        caution: Option<String>,
         no_one_there: bool,
     },
     /// The conversation was summarized to fit the context window; sizes are estimates.
@@ -197,6 +199,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
+        self.bring(thread).await?;
         let toolset: ToolSet = self.tools(thread).await;
         // A prompt that names a command sends the command's text.
         let expanded = invoked(&self.settings.commands, prompt)
@@ -422,8 +425,8 @@ where
         };
         // A new thread opens with the project's instructions.
         let opening = thread.messages.is_empty();
-        let mut parts = self
-            .opening_parts(thread)
+        let mut parts = thread
+            .opening_parts()
             .filter(|_| opening)
             .unwrap_or_default();
         parts.push(Part::Text {

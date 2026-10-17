@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
 
 import { FakeSession, provideFakeSession } from '../testing/fake-session';
-import { event } from '../testing/fixtures';
+import { event, thread } from '../testing/fixtures';
 import { ThreadService } from './thread.service';
 
 function make(fake: FakeSession): ThreadService {
@@ -105,6 +105,56 @@ describe('ThreadService', () => {
     ]);
     expect(fake.paramsOf('turn/cancel')).toEqual([{ thread: 'thread-1' }]);
     expect(fake.paramsOf('thread/events').length).toBeGreaterThan(1);
+  });
+
+  it('raises the project’s ask on opening, and answers it once', async () => {
+    const ask = { ask: 'ask-1', items: [{ text: 'Runs a tool server', detail: 'npx @acme/mcp' }] };
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [] })
+      .answer('thread/get', (params) => {
+        const id = (params as { thread: string }).thread;
+        return { thread: thread(id, 'Fix it', id === 'thread-1' ? { trust: ask } : {}) };
+      })
+      .answer('trust/answer', { thread: thread('thread-1', 'Fix it') });
+    const service = make(fake);
+    await service.open('thread-1');
+    expect(fake.paramsOf('thread/get')).toEqual([{ thread: 'thread-1' }]);
+    expect(service.trust()).toEqual(ask);
+    expect(service.trustAnswer()).toBeNull();
+    await service.answerTrust('not_now');
+    await service.answerTrust('trust');
+    expect(fake.paramsOf('trust/answer')).toEqual([
+      { thread: 'thread-1', ask: 'ask-1', answer: 'not_now' },
+    ]);
+    expect(service.trustAnswer()).toBe('not_now');
+    expect(service.trust()).toEqual(ask);
+    await service.open('thread-2');
+    expect(service.trust()).toBeNull();
+  });
+
+  it('says why an answer was refused, and shows what the project asks now', async () => {
+    const asked = (ask: string): unknown => ({
+      thread: thread('thread-1', 'Fix it', {
+        trust: { ask, items: [{ text: 'Runs a tool server' }] },
+      }),
+    });
+    let reads = 0;
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [] })
+      .answer('thread/get', () => asked((reads += 1) === 1 ? 'ask-1' : 'ask-2'))
+      .answer(
+        'trust/answer',
+        new ApiError({
+          code: ErrorCode.NO_TRUST,
+          message: 'this project changed since you were asked',
+        }),
+      );
+    const service = make(fake);
+    await service.open('thread-1');
+    await service.answerTrust('trust');
+    expect(service.error()).toContain('changed since you were asked');
+    expect(service.trust()?.ask).toBe('ask-2');
+    expect(service.trustAnswer()).toBeNull();
   });
 
   it('sends a turn to the model picked, and reads the thread’s choice', async () => {

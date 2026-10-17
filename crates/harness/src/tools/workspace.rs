@@ -5,6 +5,10 @@
 //! the file tools may not change in it, and what the model has read, so writes and edits
 //! never act on a stale view.
 
+mod folders;
+
+pub use folders::{Inside, Looked};
+
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -100,35 +104,70 @@ impl Workspace {
         Ok(self)
     }
 
-    /// A worktree of the repository around this workspace, on `branch`, on the same computer
-    /// and in the same sandbox: the one already there for that branch, or a new one made from
-    /// the current commit. `owner` is kept beside it, for whoever cleans it up later.
-    pub async fn worktree(&self, branch: &str, owner: Option<&str>) -> Result<Self, ComputerError> {
-        let sources = Sources::Worktree {
-            path: self.info.root.clone(),
+    /// A worktree of the repository around the folder at `path`, on `branch`, on the same
+    /// computer and in the same sandbox: the one already there for that branch, or a new one
+    /// made from the folder's current commit. `owner` is kept beside it, for whoever cleans it
+    /// up later.
+    pub async fn worktree(
+        &self,
+        path: &str,
+        branch: &str,
+        owner: Option<&str>,
+    ) -> Result<Self, ComputerError> {
+        self.beside(&Sources::Worktree {
+            path: path.to_owned(),
             branch: branch.to_owned(),
             owner: owner.map(str::to_owned),
-        };
-        let info = self.computers.open(self.info.computer, &sources).await?;
-        let worktree = self.sharing(Self::new(Arc::clone(&self.computers), info));
-        match &self.sandbox {
-            Some(sandbox) => worktree.with_sandbox(sandbox).await,
-            None => Ok(worktree),
-        }
+        })
+        .await
     }
 
     /// A scratch folder of its own named `name`, on the same computer and in the same sandbox:
     /// the one already there, or a new, empty one. `owner` is kept beside it, as for a worktree.
     pub async fn scratch(&self, name: &str, owner: Option<&str>) -> Result<Self, ComputerError> {
-        let sources = Sources::Scratch {
+        self.beside(&Sources::Scratch {
             name: name.to_owned(),
             owner: owner.map(str::to_owned),
-        };
-        let info = self.computers.open(self.info.computer, &sources).await?;
-        let scratch = self.sharing(Self::new(Arc::clone(&self.computers), info));
+        })
+        .await
+    }
+
+    /// The folder at `path` on the same computer, worked on in place, in the same sandbox and
+    /// with the same credentials, such as a project's.
+    pub async fn folder(&self, path: &str) -> Result<Self, ComputerError> {
+        self.beside(&Sources::Folder {
+            path: path.to_owned(),
+        })
+        .await
+    }
+
+    /// `sources` opened as another workspace on the same computer, in the same sandbox and
+    /// with the same credentials.
+    async fn beside(&self, sources: &Sources) -> Result<Self, ComputerError> {
+        let info = self.computers.open(self.info.computer, sources).await?;
+        let opened = self.sharing(Self::new(Arc::clone(&self.computers), info));
         match &self.sandbox {
-            Some(sandbox) => scratch.with_sandbox(sandbox).await,
-            None => Ok(scratch),
+            Some(sandbox) => opened.with_sandbox(sandbox).await,
+            None => Ok(opened),
+        }
+    }
+
+    /// The same binding, with what the model has read there, its commands in `sandbox`, or in
+    /// none: a project's trusted settings can turn the sandbox off for its threads.
+    pub(crate) async fn within(&self, sandbox: Option<&Sandbox>) -> Result<Self, ComputerError> {
+        let same = self.sharing(Self::new(Arc::clone(&self.computers), self.info.clone()));
+        let reads = self
+            .reads
+            .lock()
+            .map(|reads| reads.clone())
+            .unwrap_or_default();
+        let same = Self {
+            reads: Mutex::new(reads),
+            ..same
+        };
+        match sandbox {
+            Some(sandbox) => same.with_sandbox(sandbox).await,
+            None => Ok(same),
         }
     }
 
@@ -307,10 +346,10 @@ pub(crate) fn explain(error: &ComputerError) -> String {
 
 /// Collects a short command's output.
 #[derive(Default)]
-struct Collected(Mutex<String>);
+pub(crate) struct Collected(Mutex<String>);
 
 impl Collected {
-    fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         self.0.lock().map(|text| text.clone()).unwrap_or_default()
     }
 }

@@ -95,8 +95,9 @@ jobs:
 
   # web/: the session API's TypeScript client, Glaze and the app. Format, lint (eslint and
   # stylelint), type-check, the licences and audit of what ships, unit tests with axe, the
-  # library and app builds, and end-to-end tests in Chromium with axe in light and dark,
-  # against the real `glave serve --http --web` (built here) and its Content Security Policy.
+  # library and app builds, glave built with the app inside (the `web` feature) and its
+  # serving tests, and end-to-end tests in Chromium with axe in light and dark, against that
+  # real `glave serve --http --web` and its Content Security Policy.
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -112,9 +113,9 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Build glave, which serves the app in the end-to-end tests
-        run: cargo build -p glave
-        working-directory: .
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -133,6 +134,10 @@ jobs:
       - run: npm test
       - run: npm run build:glaze
       - run: npm run build
+      # The glave this builds serves the end-to-end tests too.
+      - name: Build glave with the app inside, and test that it serves it
+        run: cargo nextest run -p glave --features web --test serve
+        working-directory: .
       - run: npm run build:showcase
       - run: npm run e2e
 

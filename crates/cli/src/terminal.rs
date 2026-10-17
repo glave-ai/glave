@@ -148,19 +148,11 @@ impl Printer {
             }
             Update::ToolDeclined {
                 summary,
+                caution,
                 no_one_there,
             } => {
-                let why = if no_one_there {
-                    "not run: no one here to approve it"
-                } else {
-                    "declined"
-                };
-                println!();
-                println!(
-                    "  {} {}",
-                    paint(self.color, DIM, &format!("{summary} …")),
-                    paint(self.color, YELLOW, why)
-                );
+                let caution = caution.as_deref();
+                print!("{}", declined(self.color, &summary, caution, no_one_there));
                 self.showing = Showing::Nothing;
             }
             Update::Compacted {
@@ -258,13 +250,11 @@ impl Printer {
         flush();
     }
 
-    /// Asks the person about an action the model wants to take; the answer is typed next.
-    pub fn approval(&mut self, summary: &str) {
+    /// Asks the person about an action the model wants to take, and why when a caution says
+    /// so; the answer is typed next.
+    pub fn approval(&mut self, summary: &str, caution: Option<&str>) {
         self.waiting.stop();
-        print!(
-            "\n\n{} {summary}\n  allow? [y] once  [a] always in this thread  [N] no › ",
-            paint(self.color, YELLOW, "needs you")
-        );
+        print!("{}", approval_prompt(self.color, summary, caution));
         self.showing = Showing::Nothing;
         flush();
     }
@@ -307,14 +297,8 @@ impl Printer {
             Update::ToolDeclined {
                 summary,
                 no_one_there,
-            } => {
-                let why = if no_one_there {
-                    "not run: no one here to approve it"
-                } else {
-                    "declined"
-                };
-                format!("{summary} · {why}")
-            }
+                ..
+            } => format!("{summary} · {}", not_run(no_one_there)),
             Update::Retrying { retry, of, .. } => format!("retrying ({retry} of {of})"),
             Update::Compacted { .. } => "compacted its conversation".to_owned(),
             _ => return,
@@ -395,6 +379,39 @@ impl Printer {
 /// The most of an error shown on a retry line.
 const ERROR_CHARS: usize = 200;
 
+/// An approval's prompt: what would run, why it asks on a line of its own, then the answers.
+fn approval_prompt(color: bool, summary: &str, caution: Option<&str>) -> String {
+    let mut prompt = format!("\n\n{} {summary}\n", paint(color, YELLOW, "needs you"));
+    if let Some(caution) = caution {
+        let _ = writeln!(prompt, "  {}", paint(color, YELLOW, caution));
+    }
+    prompt.push_str("  allow? [y] once  [a] always in this thread  [N] no › ");
+    prompt
+}
+
+/// Why an action did not run.
+fn not_run(no_one_there: bool) -> &'static str {
+    if no_one_there {
+        "not run: no one here to approve it"
+    } else {
+        "declined"
+    }
+}
+
+/// An action that did not run, and why. With no one here, also why it would have asked, on a
+/// line of its own: no prompt showed it.
+fn declined(color: bool, summary: &str, caution: Option<&str>, no_one_there: bool) -> String {
+    let mut line = format!(
+        "\n  {} {}\n",
+        paint(color, DIM, &format!("{summary} …")),
+        paint(color, YELLOW, not_run(no_one_there))
+    );
+    if let Some(caution) = caution.filter(|_| no_one_there) {
+        let _ = writeln!(line, "    {}", paint(color, DIM, caution));
+    }
+    line
+}
+
 /// A model's short name for labeling its answers: `anthropic/claude-haiku-5.5` is
 /// `claude-haiku-5.5`.
 fn speaker(model: &str) -> &str {
@@ -444,6 +461,37 @@ mod tests {
     fn answers_are_labeled_with_the_model_name() {
         assert_eq!(speaker("anthropic/claude-haiku-5.5"), "claude-haiku-5.5");
         assert_eq!(speaker("gemma4:12b"), "gemma4:12b");
+    }
+
+    #[test]
+    fn an_approval_says_why_it_asks_apart_from_what_would_run() {
+        assert_eq!(
+            approval_prompt(
+                false,
+                "bash: rm -rf ~/notes",
+                Some("It deletes /home/ana/notes, outside the project.")
+            ),
+            "\n\nneeds you bash: rm -rf ~/notes\n  It deletes /home/ana/notes, outside the \
+             project.\n  allow? [y] once  [a] always in this thread  [N] no › "
+        );
+        assert_eq!(
+            approval_prompt(false, "bash: touch a", None),
+            "\n\nneeds you bash: touch a\n  allow? [y] once  [a] always in this thread  [N] no › "
+        );
+    }
+
+    #[test]
+    fn an_action_not_run_says_why_it_asked_only_when_no_prompt_did() {
+        let push = Some("It pushes to a remote.");
+        assert_eq!(
+            declined(false, "bash: git push", push, true),
+            "\n  bash: git push … not run: no one here to approve it\n    It pushes to a \
+             remote.\n"
+        );
+        assert_eq!(
+            declined(false, "bash: git push", push, false),
+            "\n  bash: git push … declined\n"
+        );
     }
 
     #[test]

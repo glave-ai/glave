@@ -13,6 +13,10 @@ name = "glave"
 path = "src/main.rs"
 
 [features]
+# The web app built into glave (build.rs), so `glave app` opens it with no folder to pass.
+# Release builds turn it on, after `npm run build` in web/: `--features web`. Off by default,
+# so building glave needs no Node; `--web <folder>` serves a build from a folder either way.
+web = []
 # Spans and metrics to an OpenTelemetry collector (`[telemetry] otlp`). Off by default to keep
 # the binary lean: it brings the OpenTelemetry SDK and protobuf encoding.
 otlp = [

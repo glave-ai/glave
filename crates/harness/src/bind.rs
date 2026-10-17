@@ -1,7 +1,9 @@
-//! Where a thread works: the harness's workspace, the folder worked on in place, or a git
-//! worktree of its own on a `glave/<thread>` branch. The binding is recorded as
-//! `workspace.bound`, and resuming the thread reads it to find the workspace again.
+//! Where a thread works: a folder worked on in place, such as its project's, a git worktree
+//! of its own of one on a `glave/<thread>` branch, a worker, or a scratch folder. The binding
+//! is recorded as `workspace.bound`, and resuming the thread reads it to find the workspace
+//! again, and the instructions it opens with.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Body, ComputerKind, ComputerRef, Event, Opened, ThreadId, WorkspaceBound};
@@ -17,18 +19,19 @@ use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
 
 /// Where a new thread works.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Place {
-    /// The harness's workspace, as it is: the folder the person is in.
-    #[default]
-    Here,
-    /// A git worktree of its own, on the branch [`branch_for`] names, beside the repository.
-    Worktree,
+    /// The folder at `path` on the harness's computer, such as its project's, worked on in
+    /// place.
+    Folder(String),
+    /// A git worktree of its own of the repository around the folder at `path`, on the branch
+    /// [`branch_for`] names, outside the repository.
+    Worktree(String),
     /// A worker of its own, made from this environment by the harness's workers (see
     /// [`crate::Workers`]), with the project's repository cloned into it.
     Worker(Environment),
     /// A folder of its own, made empty on the harness's computer, in the same sandbox: for a
-    /// thread with no project, such as a one-off chat in a person's own space.
+    /// thread with no project folder, such as a one-off chat in a person's own space.
     Scratch,
     /// A computer that is already running and dialled in, such as a person's own laptop
     /// serving a server elsewhere. Not available yet: starting a thread there is refused until
@@ -71,6 +74,9 @@ pub(crate) fn bound(workspace: &Workspace, kind: ComputerKind) -> WorkspaceBound
     let info = workspace.info();
     let opened = match &info.sources {
         Sources::Folder { path } => Opened::Folder { path: path.clone() },
+        Sources::Project { .. } => Opened::Folder {
+            path: info.root.clone(),
+        },
         Sources::Worktree { path, branch, .. } => Opened::Worktree {
             repository: path.clone(),
             branch: branch.clone(),
@@ -123,12 +129,16 @@ where
         place: Place,
     ) -> Result<(Option<Arc<Workspace>>, WorkspaceBound), HarnessError> {
         match place {
-            Place::Here => Ok((None, bound(&self.workspace, ComputerKind::Local))),
-            Place::Worktree => {
+            Place::Folder(path) => {
+                let folder = self.workspace.folder(&path).await?;
+                let recorded = bound(&folder, ComputerKind::Local);
+                Ok((Some(Arc::new(folder)), recorded))
+            }
+            Place::Worktree(path) => {
                 let owner = owner_label(scope, id);
                 let worktree = self
                     .workspace
-                    .worktree(&branch_for(id), Some(&owner))
+                    .worktree(&path, &branch_for(id), Some(&owner))
                     .await?;
                 let recorded = bound(&worktree, ComputerKind::Local);
                 Ok((Some(Arc::new(worktree)), recorded))
@@ -150,15 +160,15 @@ where
         }
     }
 
-    /// The workspace a resumed thread's events bound it to: its worktree, opened again (made
-    /// again from its branch if it was removed, and no longer held), or `None` for the
-    /// harness's own.
+    /// The workspace a resumed thread's events bound it to, and that binding: its folder or
+    /// worktree, opened again (a worktree made again from its branch if it was removed, and no
+    /// longer held), or `None` for the harness's own.
     pub(crate) async fn reopen(
         &self,
         scope: Scope,
         id: ThreadId,
         events: &[Event],
-    ) -> Result<Option<Arc<Workspace>>, HarnessError> {
+    ) -> Result<(Option<Arc<Workspace>>, Option<WorkspaceBound>), HarnessError> {
         let latest = events.iter().rev().find_map(|event| match &event.body {
             Body::WorkspaceBound(bound) => Some(bound),
             _ => None,
@@ -171,23 +181,46 @@ where
             )
             .into());
         }
-        match latest.map(|bound| &bound.opened) {
-            Some(Opened::Worktree { branch, .. }) => {
-                let owner = owner_label(scope, id);
-                let worktree = self.workspace.worktree(branch, Some(&owner)).await?;
-                Ok(Some(Arc::new(worktree)))
-            }
+        let owner = owner_label(scope, id);
+        let workspace = match latest.map(|bound| &bound.opened) {
+            Some(Opened::Folder { path }) => Some(self.workspace.folder(path).await?),
+            Some(Opened::Worktree { repository, branch }) => Some(
+                self.workspace
+                    .worktree(repository, branch, Some(&owner))
+                    .await?,
+            ),
             // Made again, empty, if a cleanup removed it.
-            Some(Opened::Scratch { .. }) => {
-                let owner = owner_label(scope, id);
-                let scratch = self
-                    .workspace
+            Some(Opened::Scratch { .. }) => Some(
+                self.workspace
                     .scratch(&id.to_string(), Some(&owner))
-                    .await?;
-                Ok(Some(Arc::new(scratch)))
-            }
-            Some(Opened::Folder { .. } | Opened::Clone { .. }) | None => Ok(None),
-        }
+                    .await?,
+            ),
+            Some(Opened::Clone { .. }) | None => None,
+        };
+        Ok((workspace.map(Arc::new), latest.cloned()))
+    }
+
+    /// What a thread for `person` working where `bound` says opens with: what the host reads
+    /// for its folder (its project's, or none for a scratch folder), when the harness has a
+    /// reader and the thread a folder of its own here; else the settings' own instructions.
+    pub(crate) async fn instructions_for(
+        &self,
+        workspace: Option<&Workspace>,
+        bound: Option<&WorkspaceBound>,
+        person: Option<glave_event::PrincipalId>,
+    ) -> Option<String> {
+        let (Some(reader), Some(workspace), Some(bound)) = (&self.projects, workspace, bound)
+        else {
+            return self.settings.instructions.clone();
+        };
+        let project = match &bound.opened {
+            Opened::Folder { path } => Some(Path::new(path)),
+            Opened::Worktree { repository, .. } => Some(Path::new(repository)),
+            Opened::Scratch { .. } => None,
+            Opened::Clone { .. } => return self.settings.instructions.clone(),
+        };
+        let trusting = self.trusting(person);
+        reader.for_folder(workspace.root(), project, trusting).await
     }
 
     /// The workspace `thread`'s tools act on.
@@ -195,14 +228,18 @@ where
         thread.workspace.as_ref().unwrap_or(&self.workspace)
     }
 
-    /// The tool source at `index` for `thread`: the built-in tools on its own workspace when
-    /// it has one, or the source as the harness holds it.
+    /// The tool source at `index` for `thread`, as [`Harness::tools`] numbers them: the
+    /// built-in tools on its own workspace when it has one, the source as the harness holds
+    /// it, then its project's.
     pub(crate) fn source_for(&self, thread: &Thread, index: usize) -> Option<Arc<dyn ToolSource>> {
         match (&thread.workspace, index) {
             (Some(workspace), 0) => Some(Arc::new(Builtins {
                 workspace: Arc::clone(workspace),
             })),
-            _ => self.sources.get(index).cloned(),
+            _ => match index.checked_sub(self.sources.len()) {
+                Some(brought) => thread.brought.tools.get(brought).cloned(),
+                None => self.sources.get(index).cloned(),
+            },
         }
     }
 }

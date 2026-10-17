@@ -13,6 +13,7 @@ import { testIds } from '../../lib/test-ids';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = {
+  caution: 'caution',
   decided: 'decided',
   deny: 'deny',
   allowThread: 'allow-thread',
@@ -38,12 +39,14 @@ const DECIDED: GlzDecisionLabels = {
 /**
  * An action waiting for the person's yes, as a card that needs them: a small label with a dot
  * ("Needs you"), one plain sentence (`summary`) with what would run after it in monospace
- * (`detail`: the command, the file, the address), and the answers, the primary first. On a narrow card the
- * answers go full width, one above another. Once `decision` is set, the card is quiet and
- * says what was decided in place of the buttons.
+ * (`detail`: the command, the file, the address), why it asks when more than the mode does
+ * (`caution`, its own sentences in the warning tone, never inside the detail), and the answers,
+ * the primary first. On a narrow card the answers go full width, one above another. Once
+ * `decision` is set, the card is quiet and says what was decided in place of the buttons.
  *
  * ```html
- * <glz-approval-card summary="Run this command?" detail="rm -rf build/"
+ * <glz-approval-card summary="Run this command?" detail="rm -rf ~/notes"
+ *   caution="It deletes /home/ana/notes, outside the project."
  *   [decision]="decided()" (decide)="answer($event)" />
  * ```
  */
@@ -58,6 +61,7 @@ const DECIDED: GlzDecisionLabels = {
     '[class.glz-approval-card--decided]': 'decided()',
     role: 'group',
     '[attr.aria-labelledby]': 'labelledBy()',
+    '[attr.aria-describedby]': 'describedBy()',
     '[attr.aria-busy]': 'ariaBusy()',
   },
 })
@@ -70,6 +74,8 @@ export class GlzApprovalCardComponent {
   readonly summary = input.required<string>();
   /** What would run, shown in monospace: the command, the file, the address. */
   readonly detail = input('');
+  /** Why it asks whatever the mode, in plain sentences, shown apart from what would run. */
+  readonly caution = input('');
   /** The answer given, once there is one. */
   readonly decision = input<GlzDecision | null>(null);
   /** Whether the answer is being sent, so the buttons wait. */
@@ -85,6 +91,7 @@ export class GlzApprovalCardComponent {
 
   protected readonly labelId = injectId('glz-approval-label');
   protected readonly summaryId = injectId('glz-approval-summary');
+  protected readonly cautionId = injectId('glz-approval-caution');
   protected readonly ariaBusy = computed(() => (this.busy() ? 'true' : null));
   protected readonly decidedText = computed(() => {
     const decision = this.decision();
@@ -92,10 +99,13 @@ export class GlzApprovalCardComponent {
   });
   protected readonly decided = computed(() => this.decision() !== null);
   protected readonly hasDetail = computed(() => this.detail() !== '');
+  protected readonly hasCaution = computed(() => this.caution() !== '');
   /** Named by its label and sentence while it waits, by its sentence once decided. */
   protected readonly labelledBy = computed(() =>
     this.decided() ? this.summaryId : `${this.labelId} ${this.summaryId}`,
   );
+  /** Described by why it asks, when a caution says. */
+  protected readonly describedBy = computed(() => (this.hasCaution() ? this.cautionId : null));
 
   protected allowOnce(): void {
     this.decide.emit('allow_once');

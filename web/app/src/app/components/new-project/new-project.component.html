@@ -1,0 +1,133 @@
+<glz-dialog testId="new-project" [heading]="copy.heading" [(open)]="open">
+  @if (open()) {
+    <!-- The server checks the address and says what it wants, in plainer words than a browser. -->
+    <form
+      novalidate
+      class="glz-stack glz-gap-5"
+      data-testid="new-project-form"
+      [id]="formId"
+      (submit)="create($event)"
+    >
+      <glz-form-field [label]="copy.name" [hint]="nameHint()">
+        <input
+          glzInput
+          autocomplete="off"
+          data-testid="new-project-name"
+          [maxLength]="limit"
+          [placeholder]="fallback()"
+          [value]="name()"
+          [disabled]="creating()"
+          (input)="typedName($event)"
+        />
+      </glz-form-field>
+      @if (local()) {
+        <glz-form-field [label]="copy.start">
+          <glz-radio-group
+            cards
+            data-testid="new-project-start"
+            [value]="start()"
+            [disabled]="creating()"
+            (valueChange)="pickStart($event)"
+          >
+            @for (choice of starts; track choice.value) {
+              <glz-radio [value]="choice.value" [hint]="choice.hint">{{ choice.label }}</glz-radio>
+            }
+          </glz-radio-group>
+        </glz-form-field>
+        @if (fromFolder()) {
+          <div
+            class="glz-stack glz-gap-1"
+            role="group"
+            data-testid="new-project-folder"
+            [attr.aria-labelledby]="folderLabelId"
+          >
+            <p class="label" [id]="folderLabelId">{{ copy.folder }}</p>
+            @if (folder(); as folder) {
+              <div class="chosen">
+                <glz-icon class="icon" [icon]="icons.folder" />
+                <span class="path" data-testid="new-project-folder-path">{{ folder }}</span>
+                <button
+                  glzButton
+                  size="sm"
+                  type="button"
+                  data-testid="new-project-change"
+                  [disabled]="creating()"
+                  (click)="change()"
+                >
+                  {{ copy.change }}
+                </button>
+              </div>
+            } @else {
+              <app-folder-picker [start]="pickFrom()" (picked)="picked($event)" />
+            }
+          </div>
+        }
+        @if (fromRepository()) {
+          <div class="glz-stack glz-gap-2">
+            <glz-form-field [label]="copy.address">
+              <input
+                glzInput
+                type="url"
+                inputmode="url"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                data-testid="new-project-url"
+                [placeholder]="copy.addressExample"
+                [value]="url()"
+                [disabled]="creating()"
+                (input)="typedUrl($event)"
+              />
+            </glz-form-field>
+            @if (connected()) {
+              <p class="note" data-testid="new-project-private">{{ copy.privateConnected }}</p>
+            } @else {
+              <p class="note" data-testid="new-project-private">
+                {{ copy.privateNeeds }}
+                <a
+                  data-testid="new-project-connect"
+                  [routerLink]="settingsLink"
+                  (click)="followed()"
+                  >{{ copy.connect }}</a
+                >
+              </p>
+            }
+            @if (cloning()) {
+              <div class="cloning" data-testid="new-project-cloning">
+                <progress class="progress" [attr.aria-labelledby]="cloningId"></progress>
+                <p class="note" [id]="cloningId">{{ copy.cloning }}</p>
+              </div>
+            }
+          </div>
+        }
+      } @else {
+        <p class="note" data-testid="new-project-no-folder">{{ copy.noFolder }}</p>
+      }
+      @if (problem(); as problem) {
+        <p class="problem" role="alert" data-testid="new-project-problem">{{ problem }}</p>
+      }
+    </form>
+  }
+  <div glzDialogActions class="glz-row glz-gap-2">
+    <button
+      glzButton
+      type="button"
+      data-testid="new-project-cancel"
+      [disabled]="creating()"
+      (click)="cancel()"
+    >
+      {{ copy.cancel }}
+    </button>
+    <button
+      glzButton
+      variant="primary"
+      type="submit"
+      data-testid="new-project-create"
+      [attr.form]="formId"
+      [attr.aria-disabled]="createBusy()"
+      [disabled]="incomplete()"
+    >
+      {{ createLabel() }}
+    </button>
+  </div>
+</glz-dialog>

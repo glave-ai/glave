@@ -12,6 +12,7 @@ import { type GlzDecision, GlzApprovalCardComponent } from './approval-card.comp
       testId="approval"
       summary="Run this command?"
       detail="rm -rf build/"
+      [caution]="caution()"
       [decision]="decision()"
       [busy]="busy()"
       (decide)="decisions.push($event)"
@@ -19,6 +20,7 @@ import { type GlzDecision, GlzApprovalCardComponent } from './approval-card.comp
   `,
 })
 class HostComponent {
+  readonly caution = signal('');
   readonly decision = signal<GlzDecision | null>(null);
   readonly busy = signal(false);
   readonly decisions: GlzDecision[] = [];
@@ -52,6 +54,23 @@ describe('GlzApprovalCardComponent', () => {
     button(root, 'approval-allow-thread')?.click();
     button(root, 'approval-deny')?.click();
     expect(fixture.componentInstance.decisions).toEqual(['allow_once', 'allow_for_thread', 'deny']);
+    // Only the mode asks: nothing more to say, and nothing describes the card.
+    expect(root.querySelector('[data-testid="approval-caution"]')).toBeNull();
+    expect(card?.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('says why it asks in a sentence of its own, apart from what would run', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.caution.set('It deletes build/ for good.');
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const caution = root.querySelector('[data-testid="approval-caution"]');
+    expect(caution?.textContent).toBe('It deletes build/ for good.');
+    expect(root.querySelector('.detail')?.textContent).toBe('rm -rf build/');
+    expect(root.querySelector('.summary')?.contains(caution)).toBe(false);
+    const card = root.querySelector('glz-approval-card');
+    expect(card?.getAttribute('aria-describedby')).toBe(caution?.id);
+    await expectAccessible(root);
   });
 
   it('waits while busy and says what was decided in place', async () => {

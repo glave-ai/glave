@@ -109,6 +109,12 @@ pub enum Sources {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         owner: Option<String>,
     },
+    /// A new folder for a project, made empty in the place the computer keeps projects in,
+    /// named `name` (letters, digits, `-`, `_` and `.`, not starting with `.` or `-`), or
+    /// `name-2` and on when that is taken: never one that was there. Kept, as the project's
+    /// folder: closing the workspace only forgets it, and from then on it is opened as a
+    /// [`Sources::Folder`].
+    Project { name: String },
 }
 
 /// A workspace: where it is and what it came from.

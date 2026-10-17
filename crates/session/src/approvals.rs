@@ -59,6 +59,11 @@ impl Approvals {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// Whether clients answer here at all, as the person at an app does.
+    pub(crate) fn clients_answer(&self) -> bool {
+        self.answering == Answering::Clients
+    }
+
     /// From now on no one answers for `thread`, which runs as a task.
     pub(crate) fn unattend(&self, thread: ThreadId) {
         self.unattended().insert(thread);

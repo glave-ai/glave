@@ -39,6 +39,18 @@ describe('ThreadItemComponent', () => {
     await expectAccessible(root);
   });
 
+  it('gives the person’s own message no copy button', async () => {
+    const { root } = await render({
+      kind: 'message',
+      key: 'm',
+      seq: 1,
+      from: 'person',
+      text: 'Fix the flaky test',
+      reasoning: '',
+    });
+    expect(root.querySelector('[data-testid="message-copy"]')).toBeNull();
+  });
+
   it('gives a message with nothing to copy no copy button', async () => {
     const { root } = await render({
       kind: 'message',
@@ -75,21 +87,43 @@ describe('ThreadItemComponent', () => {
       seq: 1,
       approval: 'c1',
       tool: 'bash',
-      summary: 'bash: git push -u origin fix/worktree-race',
+      summary: 'bash: cargo test --workspace',
+      caution: '',
       decision: null,
     });
     const card = root.querySelector('[data-testid="thread-approval"]');
     expect(card?.querySelector('.label')?.textContent).toBe('Needs you');
     expect(card?.querySelector('.summary')?.textContent).toContain('Run this command?');
-    expect(card?.querySelector('.detail')?.textContent).toBe(
-      'git push -u origin fix/worktree-race',
-    );
+    expect(card?.querySelector('.detail')?.textContent).toBe('cargo test --workspace');
+    // Only the mode asks, so there is no reason to give.
+    expect(root.querySelector('[data-testid="thread-approval-caution"]')).toBeNull();
     await expectAccessible(root);
     root.querySelector<HTMLButtonElement>('[data-testid="thread-approval-allow-thread"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
     expect(fake.paramsOf('approval/decide')).toEqual([
       { thread: 'thread-1', approval: 'c1', decision: 'allow_for_thread' },
     ]);
+  });
+
+  it('says why a risky command asks in a sentence of its own, never inside the command', async () => {
+    const { root } = await render({
+      kind: 'approval',
+      key: 'a',
+      seq: 1,
+      approval: 'c1',
+      tool: 'bash',
+      summary: 'bash: git push -u origin fix/worktree-race',
+      caution: 'It pushes to a remote.',
+      decision: null,
+    });
+    const card = root.querySelector('[data-testid="thread-approval"]');
+    expect(card?.querySelector('.detail')?.textContent).toBe(
+      'git push -u origin fix/worktree-race',
+    );
+    const caution = root.querySelector('[data-testid="thread-approval-caution"]');
+    expect(caution?.textContent).toBe('It pushes to a remote.');
+    expect(card?.querySelector('.summary')?.contains(caution)).toBe(false);
+    await expectAccessible(root);
   });
 
   it('asks questions and sends the answers', async () => {

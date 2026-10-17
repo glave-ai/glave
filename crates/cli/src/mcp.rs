@@ -124,13 +124,7 @@ impl Servers {
 
     /// The servers as tool sources, in the order of their names, then their resources.
     pub fn sources(&self) -> Vec<Arc<dyn ToolSource>> {
-        let mut sources: Vec<Arc<dyn ToolSource>> = self
-            .started
-            .iter()
-            .map(|server| Arc::clone(server) as Arc<dyn ToolSource>)
-            .collect();
-        sources.push(Arc::new(Resources::new(self.started.clone())));
-        sources
+        sources(&self.started)
     }
 
     /// The servers' names, in order.
@@ -167,13 +161,59 @@ impl Servers {
 
     /// Closes every server side by side, so one slow to exit holds up no other.
     pub async fn close(&self) {
-        let mut closing = tokio::task::JoinSet::new();
-        for server in &self.started {
-            let server = Arc::clone(server);
-            closing.spawn(async move { server.close().await });
-        }
-        while closing.join_next().await.is_some() {}
+        close(&self.started).await;
     }
+}
+
+/// `started` as tool sources, in order, then their resources.
+pub fn sources(started: &[Arc<McpServer>]) -> Vec<Arc<dyn ToolSource>> {
+    let mut sources: Vec<Arc<dyn ToolSource>> = started
+        .iter()
+        .map(|server| Arc::clone(server) as Arc<dyn ToolSource>)
+        .collect();
+    sources.push(Arc::new(Resources::new(started.to_vec())));
+    sources
+}
+
+/// Closes `started` side by side, so one slow to exit holds up no other.
+pub async fn close(started: &[Arc<McpServer>]) {
+    let mut closing = tokio::task::JoinSet::new();
+    for server in started {
+        let server = Arc::clone(server);
+        closing.spawn(async move { server.close().await });
+    }
+    while closing.join_next().await.is_some() {}
+}
+
+/// Starts the trusted `servers` of the project at `root` (by name, each as JSON), in its
+/// folder, for the threads that work in it.
+pub fn start_project(
+    servers: &BTreeMap<String, String>,
+    root: &Path,
+    constraints: &Constraints,
+) -> anyhow::Result<Vec<Arc<McpServer>>> {
+    let text = glave_config::trust::mcp_json(servers);
+    let environment = environment();
+    let configs = glave_mcp::parse(&text, &environment)
+        .context("in the project's trusted .mcp.json servers")?;
+    let marks = glave_mcp::marks(&text)?;
+    Ok(configs
+        .iter()
+        .map(|(name, config)| {
+            let untrusted = project_untrusted(name, marks.get(name).copied(), constraints);
+            let server = McpServer::start(name, config, &environment, root, Limits::default());
+            Arc::new(server.untrusted(untrusted))
+        })
+        .collect())
+}
+
+/// Whether what a project's server `name` returns is untrusted: unless a policy's `[mcp]
+/// trusted` vouches for it and neither a policy nor the project (`marked`) says otherwise. A
+/// repository cannot vouch for itself.
+fn project_untrusted(name: &str, marked: Option<bool>, constraints: &Constraints) -> bool {
+    constraints.mcp_untrusted(name).is_some()
+        || marked == Some(true)
+        || constraints.mcp_trusted(name).is_none()
 }
 
 /// The `"untrusted"` marks of the person's `mcp.json` and of the project's `.mcp.json`.
@@ -195,17 +235,16 @@ impl Marks {
         mine: &[String],
         constraints: &Constraints,
     ) -> bool {
+        if !mine.iter().any(|own| own == name) {
+            return project_untrusted(name, self.project.get(name).copied(), constraints);
+        }
         if constraints.mcp_untrusted(name).is_some() {
             return true;
         }
         let vouched = constraints.mcp_trusted(name).is_some();
-        if mine.iter().any(|own| own == name) {
-            match self.mine.get(name) {
-                Some(&marked) => marked,
-                None => config.is_remote() && !vouched,
-            }
-        } else {
-            self.project.get(name) == Some(&true) || !vouched
+        match self.mine.get(name) {
+            Some(&marked) => marked,
+            None => config.is_remote() && !vouched,
         }
     }
 }

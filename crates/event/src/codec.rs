@@ -11,11 +11,11 @@ use crate::payload::{
     ApprovalDecided, ApprovalModeChosen, ApprovalRequested, CredentialConnected, CredentialRemoved,
     GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, HookRan, MemoryEdited, MemoryForgotten,
     MemoryRestored, MemorySaved, MemoryTidied, MessageAdded, ModelChosen, ModelResponded,
-    ProviderConnected, ProviderRemoved, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted,
-    ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
-    ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
-    approval, chosen, credential, gateway, goal, hook, memory, message, model, provider, standing,
-    task, thread, tool, turn, workspace,
+    ProviderConnected, ProviderRemoved, ScheduleCreated, ScheduleDeleted, SpaceFolderSet,
+    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
+    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted,
+    WorkspaceBound, WorkspaceRemoved, approval, chosen, credential, gateway, goal, hook, memory,
+    message, model, provider, space, standing, task, thread, tool, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -50,6 +50,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (chosen::APPROVAL, 1),
     (turn::ENDED, 1),
     (approval::REQUESTED, 1),
+    (approval::REQUESTED, 2),
     (approval::DECIDED, 1),
     (approval::DECIDED, 2),
     (goal::SET, 1),
@@ -77,6 +78,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (provider::REMOVED, 1),
     (credential::CONNECTED, 1),
     (credential::REMOVED, 1),
+    (space::FOLDER_SET, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -125,6 +127,7 @@ pub enum Body {
     ProviderRemoved(ProviderRemoved),
     CredentialConnected(CredentialConnected),
     CredentialRemoved(CredentialRemoved),
+    SpaceFolderSet(SpaceFolderSet),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -288,6 +291,7 @@ impl Event {
             Body::ProviderRemoved(payload) => encode(header, payload),
             Body::CredentialConnected(payload) => encode(header, payload),
             Body::CredentialRemoved(payload) => encode(header, payload),
+            Body::SpaceFolderSet(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,
@@ -302,8 +306,8 @@ impl Event {
     }
 }
 
-/// Decodes the choices made for a thread, and the memory and accounts ledgers' types; `None`
-/// for any type that is not one of them.
+/// Decodes the choices made for a thread, and the memory, accounts and space ledgers' types;
+/// `None` for any type that is not one of them.
 fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
     match kind {
         chosen::TYPE => chosen::decode(version, data).map(|r| r.map(Body::ModelChosen)),
@@ -330,6 +334,9 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         }
         credential::REMOVED => {
             credential::decode_removed(version, data).map(|r| r.map(Body::CredentialRemoved))
+        }
+        space::FOLDER_SET => {
+            space::decode_folder_set(version, data).map(|r| r.map(Body::SpaceFolderSet))
         }
         _ => None,
     }

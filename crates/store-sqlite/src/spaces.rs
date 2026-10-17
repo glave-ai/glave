@@ -3,7 +3,9 @@
 
 use glave_event::{At, Principal};
 use glave_ports::{BoxFuture, FolderKey, OrgId, Space, SpaceError, SpaceId, SpaceKind, Spaces};
-use rusqlite::{Connection, ErrorCode, OptionalExtension as _, Transaction, params};
+use rusqlite::{
+    Connection, ErrorCode, OptionalExtension as _, Transaction, TransactionBehavior, params,
+};
 use uuid::Uuid;
 
 use crate::store::{Shared, StoreError, run};
@@ -146,8 +148,49 @@ fn write_members(transaction: &Transaction<'_>, org: &str, space: &Space) -> Res
     Ok(())
 }
 
-fn insert(transaction: &Transaction<'_>, org: &str, space: &Space) -> Result<(), Failure> {
+/// The ids and names of the projects `owner` (as stored) has in `org`.
+fn projects_of(
+    transaction: &Transaction<'_>,
+    org: &str,
+    owner: &str,
+) -> Result<Vec<(SpaceId, String)>, Failure> {
+    let rows = transaction
+        .prepare_cached(
+            "SELECT id, name FROM space_records WHERE org = ?1 AND owner = ?2 AND kind = 'project'",
+        )?
+        .query_map(params![org, owner], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    rows.into_iter()
+        .map(|(id, name)| {
+            Ok((
+                SpaceId::from_uuid(Uuid::parse_str(&id).map_err(corrupt)?),
+                name,
+            ))
+        })
+        .collect()
+}
+
+/// A write transaction that holds the database from its start, so a name read in it is
+/// still free when it is written.
+fn writing(connection: &mut Connection) -> rusqlite::Result<Transaction<'_>> {
+    connection.transaction_with_behavior(TransactionBehavior::Immediate)
+}
+
+/// Keeps `space`, a project under the next free name among its owner's; answers it as kept.
+fn insert(transaction: &Transaction<'_>, org: &str, space: &Space) -> Result<Space, Failure> {
     Space::check_name(&space.name)?;
+    let owner = principal_text(&space.owner)?;
+    let mut space = space.clone();
+    if space.kind == SpaceKind::Project {
+        let taken: Vec<String> = projects_of(transaction, org, &owner)?
+            .into_iter()
+            .map(|(_, name)| name)
+            .collect();
+        space.name = Space::free_name(&space.name, &taken);
+    }
+    let space = &space;
     let inserted = transaction.execute(
         "INSERT INTO space_records (org, id, kind, name, owner, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -156,13 +199,16 @@ fn insert(transaction: &Transaction<'_>, org: &str, space: &Space) -> Result<(),
             space.id.to_string(),
             space.kind.as_str(),
             space.name,
-            principal_text(&space.owner)?,
+            owner,
             space.created_at.to_string(),
             space.updated_at.to_string(),
         ],
     );
     match inserted {
-        Ok(_) => write_members(transaction, org, space),
+        Ok(_) => {
+            write_members(transaction, org, space)?;
+            Ok(space.clone())
+        }
         Err(rusqlite::Error::SqliteFailure(error, _))
             if error.code == ErrorCode::ConstraintViolation =>
         {
@@ -183,7 +229,7 @@ fn personal_now(connection: &mut Connection, org: &str, new: &Space) -> Result<S
         return Err(SpaceError::Invalid("a personal space must be personal".into()).into());
     }
     let owner = principal_text(&new.owner)?;
-    let transaction = connection.transaction()?;
+    let transaction = writing(connection)?;
     let found: Option<String> = transaction
         .query_row(
             "SELECT id FROM space_records WHERE org = ?1 AND owner = ?2 AND kind = 'personal'",
@@ -209,7 +255,7 @@ fn folder_now(
     keys: &[FolderKey],
     new: &Space,
 ) -> Result<Space, Failure> {
-    let transaction = connection.transaction()?;
+    let transaction = writing(connection)?;
     let mut found = None;
     for key in keys {
         found = transaction
@@ -242,13 +288,17 @@ fn folder_now(
 }
 
 impl Spaces for SqliteSpaces {
-    fn create<'a>(&'a self, org: OrgId, space: &'a Space) -> BoxFuture<'a, Result<(), SpaceError>> {
+    fn create<'a>(
+        &'a self,
+        org: OrgId,
+        space: &'a Space,
+    ) -> BoxFuture<'a, Result<Space, SpaceError>> {
         let space = space.clone();
         Box::pin(self.with(move |connection| {
-            let transaction = connection.transaction()?;
-            insert(&transaction, &org.to_string(), &space)?;
+            let transaction = writing(connection)?;
+            let kept = insert(&transaction, &org.to_string(), &space)?;
             transaction.commit()?;
-            Ok(())
+            Ok(kept)
         }))
     }
 
@@ -292,7 +342,21 @@ impl Spaces for SqliteSpaces {
         Box::pin(self.with(move |connection| {
             Space::check_name(&space.name)?;
             let org = org.to_string();
-            let transaction = connection.transaction()?;
+            let transaction = writing(connection)?;
+            let stored: Option<(String, String)> = transaction
+                .query_row(
+                    "SELECT kind, owner FROM space_records WHERE org = ?1 AND id = ?2",
+                    params![org, space.id.to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let Some((kind, owner)) = stored else {
+                return Err(SpaceError::NotFound(space.id).into());
+            };
+            if kind == SpaceKind::Project.as_str() {
+                let taken = projects_of(&transaction, &org, &owner)?;
+                Space::check_free(space.id, &space.name, &taken)?;
+            }
             let changed = transaction.execute(
                 "UPDATE space_records SET name = ?3, updated_at = ?4 WHERE org = ?1 AND id = ?2",
                 params![

@@ -10,6 +10,7 @@ mod finding;
 pub(crate) mod git;
 mod listing;
 mod paths;
+mod project;
 mod registry;
 mod replace;
 mod sandbox;
@@ -41,9 +42,16 @@ pub struct LocalComputers {
     /// Where threads' worktrees are kept, outside every repository; none means this machine
     /// opens no worktrees.
     worktrees: Option<PathBuf>,
+    /// Worktrees made in a repository one at a time, by every computer here.
+    worktree_locks: worktree::Locks,
     /// Where threads with no project get a scratch folder each; none means this machine
     /// makes none.
     scratch: Option<PathBuf>,
+    /// Where new projects' folders are made; none means this machine makes none.
+    projects: Option<PathBuf>,
+    /// The id this machine goes by as the host computer, kept across runs; a new one each
+    /// time when none.
+    host: Option<ComputerId>,
     /// A program that runs [`crate::sandbox_helper`], for Linux's Landlock fallback.
     sandbox_helper: Option<PathBuf>,
     environment: Arc<Vec<(OsString, OsString)>>,
@@ -61,7 +69,10 @@ impl LocalComputers {
         Self {
             base: base.into(),
             worktrees: None,
+            worktree_locks: worktree::Locks::default(),
             scratch: None,
+            projects: None,
+            host: None,
             sandbox_helper: None,
             environment: Arc::new(without_secrets(environment)),
             registry: Registry::default(),
@@ -101,6 +112,23 @@ impl LocalComputers {
         self
     }
 
+    /// Makes new projects' folders under `folder`, so a computer here can open
+    /// [`Sources::Project`]. They are the person's: nothing glave does removes them.
+    #[must_use]
+    pub fn with_projects(mut self, folder: impl Into<PathBuf>) -> Self {
+        self.projects = Some(folder.into());
+        self
+    }
+
+    /// Opens this machine as the host computer under `id`, one kept across runs, so whatever
+    /// names a computer (a thread's binding, a project's checkout) names this one the same way
+    /// each time.
+    #[must_use]
+    pub fn known_as(mut self, id: ComputerId) -> Self {
+        self.host = Some(id);
+        self
+    }
+
     /// Names `program` as the sandbox's helper: a program (usually this one, from
     /// `std::env::current_exe`) that calls [`crate::sandbox_helper`] first thing in `main`.
     /// Linux needs it to confine `read-only` commands with Landlock where bubblewrap cannot
@@ -117,11 +145,17 @@ impl LocalComputers {
         folder: impl AsRef<Path>,
     ) -> Result<(Arc<Self>, WorkspaceInfo), ComputerError> {
         let computers = Arc::new(self);
-        let computer = computers.create(&Environment::host()).await?;
+        let computer = match computers.host {
+            Some(id) => {
+                computers.registry.add_computer(id, Environment::host())?;
+                id
+            }
+            None => computers.create(&Environment::host()).await?.id,
+        };
         let sources = Sources::Folder {
             path: folder.as_ref().to_string_lossy().into_owned(),
         };
-        let workspace = computers.open(computer.id, &sources).await?;
+        let workspace = computers.open(computer, &sources).await?;
         Ok((computers, workspace))
     }
 
@@ -160,41 +194,9 @@ impl LocalComputers {
             .environment(computer)?
             .ok_or_else(|| ComputerError::NotFound(format!("no computer {computer}")))?;
         let id = WorkspaceId::from_uuid(registry::new_id());
-        let (root, copy, git_common) = match sources {
-            Sources::Folder { path } => (paths::folder(path).await?, false, None),
-            Sources::Git { url, at } => {
-                let dest = self.base.join(computer.to_string()).join(id.to_string());
-                let env = self.command_environment(&environment);
-                git::clone(&env, url, at.as_deref(), &dest, credential).await?;
-                (paths::folder(&dest.to_string_lossy()).await?, true, None)
-            }
-            Sources::Worktree {
-                path,
-                branch,
-                owner,
-            } => {
-                let base = self.worktrees.as_ref().ok_or_else(|| {
-                    ComputerError::Unsupported(
-                        "this computer keeps no worktrees; work in the folder itself".into(),
-                    )
-                })?;
-                let env = self.command_environment(&environment);
-                let made = worktree::open(&env, base, path, branch, owner.as_deref()).await?;
-                (made.root, false, Some(made.common))
-            }
-            Sources::Scratch { name, owner } => {
-                let base = self.scratch.as_ref().ok_or_else(|| {
-                    ComputerError::Unsupported(
-                        "this computer makes no scratch folders; work in a project folder".into(),
-                    )
-                })?;
-                (
-                    scratch::open(base, name, owner.as_deref()).await?,
-                    false,
-                    None,
-                )
-            }
-        };
+        let (root, copy, git_common) = self
+            .made(computer, id, &environment, sources, credential)
+            .await?;
         let environment = self.command_environment(&environment);
         let variable = |name: &str| {
             environment
@@ -226,6 +228,65 @@ impl LocalComputers {
             return Err(error);
         }
         Ok(info)
+    }
+
+    /// Where `sources` open as the workspace `id` on `computer`: its root, whether it is a
+    /// copy glave removes on close, and a worktree's shared git folder.
+    async fn made(
+        &self,
+        computer: ComputerId,
+        id: WorkspaceId,
+        environment: &Environment,
+        sources: &Sources,
+        credential: Option<&GitCredential>,
+    ) -> Result<(PathBuf, bool, Option<PathBuf>), ComputerError> {
+        Ok(match sources {
+            Sources::Folder { path } => (paths::folder(path).await?, false, None),
+            Sources::Git { url, at } => {
+                let dest = self.base.join(computer.to_string()).join(id.to_string());
+                let env = self.command_environment(environment);
+                git::clone(&env, url, at.as_deref(), &dest, credential).await?;
+                (paths::folder(&dest.to_string_lossy()).await?, true, None)
+            }
+            Sources::Worktree {
+                path,
+                branch,
+                owner,
+            } => {
+                let base = self.worktrees.as_ref().ok_or_else(|| {
+                    ComputerError::Unsupported(
+                        "this computer keeps no worktrees; work in the folder itself".into(),
+                    )
+                })?;
+                let env = self.command_environment(environment);
+                let locks = &self.worktree_locks;
+                let made =
+                    worktree::open(&env, locks, base, path, branch, owner.as_deref()).await?;
+                (made.root, false, Some(made.common))
+            }
+            Sources::Scratch { name, owner } => {
+                let base = self.scratch.as_ref().ok_or_else(|| {
+                    ComputerError::Unsupported(
+                        "this computer makes no scratch folders; work in a project folder".into(),
+                    )
+                })?;
+                (
+                    scratch::open(base, name, owner.as_deref()).await?,
+                    false,
+                    None,
+                )
+            }
+            Sources::Project { name } => {
+                let base = self.projects.as_ref().ok_or_else(|| {
+                    ComputerError::Unsupported(
+                        "this computer makes no folders for new projects; make the project from \
+                         a folder already on it"
+                            .into(),
+                    )
+                })?;
+                (project::make(base, name).await?, false, None)
+            }
+        })
     }
 
     /// What commands on a computer see: this machine's environment, then the computer's own.

@@ -21,6 +21,7 @@ mod join;
 mod judge;
 mod memory;
 mod outside;
+mod projects;
 mod prompt;
 mod question;
 mod removed;
@@ -62,6 +63,7 @@ pub use memory::{
     MemoryError, MemoryOutput, MemoryVerb, RECALL, REMEMBER, REMEMBER_CAUTION, Remembered, Shown,
     memory_ledger,
 };
+pub use projects::{Brought, Loosened, Projects};
 pub use prompt::system_prompt;
 pub use question::{Choice, Question, QuestionRequest};
 pub use removed::{last_active, owner_label, owner_of, record_removed};
@@ -71,7 +73,7 @@ pub use standing::{Change, MAX_TITLE, Standing, change_standing, standing_of};
 pub use subagent::SubagentType;
 pub use title::{TitleCase, Titled};
 pub use todo::{TODO, Todo};
-pub use tools::workspace::Workspace;
+pub use tools::workspace::{Inside, Looked, Workspace};
 pub use tools::{Tool, ToolOutcome};
 pub use turn::{Live, TurnSummary};
 pub use worker::{ReleasedWorker, Workers, wip_branch};

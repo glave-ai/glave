@@ -22,10 +22,18 @@
         testId="showcase-approval"
         [summary]="approval.summary"
         [detail]="approval.command"
+        [caution]="approval.caution"
         [decision]="decision()"
         (decide)="decide($event)"
       />
       <glz-question-card [questions]="questions" [answered]="answers()" (answer)="answer($event)" />
+      <glz-trust-card
+        testId="showcase-trust"
+        [summary]="copy.trust"
+        [items]="trustItems"
+        [answered]="trusted()"
+        (answer)="trust($event)"
+      />
       <div testId="showcase-markdown" [glzMarkdown]="copy.reply"></div>
     </glz-message>
     <glz-message from="note" [author]="copy.noteAuthor">{{ copy.note }}</glz-message>

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "description": "Glaze: an accessible Angular component library on the Angular CDK, themed only through CSS custom properties",
   "license": "Apache-2.0",
-  "repository": "https://github.com/seashell86/glave",
+  "repository": "https://github.com/glave-ai/glave",
   "peerDependencies": {
     "@angular/cdk": "^22.2.0",
     "@angular/common": "^22.2.0",

@@ -16,6 +16,8 @@ import {
   GlzComposerComponent,
   GlzPanelLayoutComponent,
   GlzStickToBottomDirective,
+  type GlzTrustAnswer,
+  GlzTrustCardComponent,
 } from '@glave/glaze';
 
 import { type TurnResults, turnResults } from '../../lib/results';
@@ -40,6 +42,7 @@ const COPY = {
   tools: 'Tools',
   resize: 'Resize the tools',
   hint: 'Drag or use the arrow keys to resize; Enter collapses. Show or hide:',
+  trust: 'This project brings its own tools and settings',
 } as const;
 
 /** A turn with nothing in it yet, for a reply that streams in before anything is recorded. */
@@ -64,7 +67,8 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
 /**
  * One thread: its bar across the top (title, project and where it runs, its changes); its
  * conversation in a reading column, turn by turn, results first (the reply, what changed, the
- * receipt that opens to the steps, then what waits for the person), the reply streaming in as
+ * receipt that opens to the steps, then what waits for the person), and after them what its
+ * project asks the person to trust, while it asks; the reply streaming in as
  * markdown as a turn runs; the composer pinned below it, with the approval mode and the model
  * in its quiet line; and the tools panel beside it, resized and collapsed by its edge and shown
  * or hidden by ⌘. or Ctrl+. anywhere in the thread.
@@ -77,6 +81,7 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
     GlzComposerComponent,
     GlzPanelLayoutComponent,
     GlzStickToBottomDirective,
+    GlzTrustCardComponent,
     ModelPickerComponent,
     RenameDialogComponent,
     ThreadHeaderComponent,
@@ -163,6 +168,10 @@ export class ThreadComponent {
 
   protected stop(): void {
     void this.service.stop();
+  }
+
+  protected trust(answer: GlzTrustAnswer): void {
+    void this.service.answerTrust(answer);
   }
 
   protected jumpToLatest(): void {

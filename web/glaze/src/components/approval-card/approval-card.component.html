@@ -7,6 +7,9 @@
     <code class="detail">{{ detail() }}</code>
   }
 </p>
+@if (hasCaution()) {
+  <p class="caution" [id]="cautionId" [attr.data-testid]="ids().caution">{{ caution() }}</p>
+}
 @if (decidedText(); as decided) {
   <p class="decided" [attr.data-testid]="ids().decided">{{ decided }}</p>
 } @else {

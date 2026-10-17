@@ -8,7 +8,7 @@ use glave_ports::{
     Assessment, BlobStore, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
 };
 
-use crate::approval::{ApprovalRequest, Approver, Decision, asks_for, no_one_there};
+use crate::approval::{ApprovalRequest, Approver, Decision, asks_for, no_one_there, sentence};
 use crate::cancel::Cancel;
 use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -155,10 +155,7 @@ where
                 call_id: call.call_id.clone(),
                 tool: name.to_owned(),
                 effect,
-                summary: match &caution {
-                    Some(reason) => format!("{summary} ({reason})"),
-                    None => summary.clone(),
-                },
+                summary: summary.clone(),
                 secret,
                 caution,
             };
@@ -258,7 +255,7 @@ where
         }
         let case = JudgeCase {
             asked: &thread.asked,
-            rules: self.settings.instructions.as_deref(),
+            rules: thread.instructions.as_deref(),
             action: summary,
             flagged: reason,
             untrusted: thread.untrusted,
@@ -276,11 +273,17 @@ where
         let Ruling::Run { reason: why } = ruling else {
             return Ok(Judged::Ask);
         };
+        // Why it asks, then the judge's own words for why it need not.
+        let cleared = match why.trim() {
+            "" => sentence("allowed without asking"),
+            why => sentence(&format!("allowed without asking: {why}")),
+        };
         let asked = ApprovalRequested {
             call_id: call.call_id.clone(),
             tool: name.to_owned(),
-            summary: format!("{summary} ({reason}; the judge let it run: {why})"),
+            summary: summary.to_owned(),
             secret: false,
+            caution: Some(format!("{} {cleared}", sentence(reason))),
         };
         self.record(thread, &asked).await?;
         let decided = ApprovalDecided {
@@ -301,12 +304,7 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<ToolOutput>, HarnessError> {
-        let asked = ApprovalRequested {
-            call_id: request.call_id.clone(),
-            tool: request.tool.clone(),
-            summary: request.summary.clone(),
-            secret: request.secret,
-        };
+        let asked = request.asked();
         self.record(thread, &asked).await?;
         let decided = cancel.run(self.approver.decide_by(request)).await;
         let (decision, person) = decided.map_or((None, None), |(d, by)| (Some(d), by));
@@ -343,7 +341,8 @@ where
             Verdict::Cancelled => Some(ToolOutput::text(true, NOT_RUN)),
             Verdict::Deny | Verdict::NoOneThere => {
                 live(Live::ToolDeclined {
-                    summary: request.summary.clone(),
+                    summary: asked.summary,
+                    caution: asked.caution,
                     no_one_there: verdict == Verdict::NoOneThere,
                 });
                 Some(ToolOutput::text(

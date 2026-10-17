@@ -6,16 +6,21 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glave_computer::LocalComputers;
-use glave_event::{At, Principal, RawEvent, Seq, ThreadId};
-use glave_harness::{ApprovalMode, Memory, Settings, Workspace};
+use glave_event::{
+    At, Checkout, EventId, FolderSource, Header, Principal, RawEvent, Seq, SpaceFolderSet,
+    ThreadId, encode,
+};
+use glave_harness::{ApprovalMode, Memory, Projects, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
-    Completion, EventLog, LogError, MemoryBlobs, MemoryLog, MemorySpaces, OrgId, Scope, Space,
-    SpaceId, SpaceKind,
+    Completion, ComputerId, Credentials, EventLog, LogError, MemoryBlobs, MemoryLog, MemorySpaces,
+    OrgId, Scope, Space, SpaceId, SpaceKind, WorkspaceInfo,
 };
 use glave_session::protocol::ModelInfo;
-use glave_session::{Answering, GitHosts, Providers, Server, TaskLimits, Wiring};
+use glave_session::{
+    Answering, GitHosts, ProjectTrust, Providers, Server, TaskLimits, Wiring, space_ledger,
+};
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
 
@@ -73,6 +78,15 @@ pub struct Setup {
     pub providers: Option<Arc<dyn Providers>>,
     /// Where accounts with hosts are kept; with none, connecting one is refused.
     pub hosts: Option<Arc<dyn GitHosts>>,
+    /// Where new projects' folders are made; with none, making one is refused.
+    pub projects: Option<PathBuf>,
+    /// Where threads in a folder of their own read their opening instructions, and what their
+    /// project turns on.
+    pub project_host: Option<Arc<dyn Projects>>,
+    /// Where what a project asks to be trusted is read and kept.
+    pub trust: Option<Arc<dyn ProjectTrust>>,
+    /// Where commands' git, and a new project's clone, ask for credentials.
+    pub credentials: Option<Arc<dyn Credentials>>,
 }
 
 impl Setup {
@@ -92,6 +106,10 @@ impl Setup {
             worktrees: None,
             providers: None,
             hosts: None,
+            projects: None,
+            project_host: None,
+            trust: None,
+            credentials: None,
         }
     }
 
@@ -108,8 +126,8 @@ impl Setup {
         self.build_on(dir, MemoryLog::new()).await
     }
 
-    /// The server on `log`, working in `dir`, with its own space kept, and every request its
-    /// model receives. Threads outside that space get scratch folders beside `dir`.
+    /// The server on `log`, its own space a project whose folder is `dir`, and every request
+    /// its model receives. Threads in spaces with no folder get scratch folders beside `dir`.
     pub async fn build_on<L: EventLog + 'static>(self, dir: &Path, log: L) -> (Tested<L>, Seen) {
         let (provider, seen) = Script::new(self.answers, self.gate);
         let computers = LocalComputers::for_here(std::env::vars_os())
@@ -118,14 +136,26 @@ impl Setup {
             Some(base) => computers.with_worktrees(base),
             None => computers,
         };
+        let computers = match &self.projects {
+            Some(base) => computers.with_projects(base),
+            None => computers,
+        };
+        // One computer for every test server, as this machine's own id is kept across runs.
+        let computers = computers.known_as(ComputerId::from_uuid(uuid::Uuid::from_u128(7)));
         let (computers, info) = computers.open_here(dir).await.unwrap();
+        keep_folder(&log, &info).await;
+        let workspace = Workspace::new(computers, info);
+        let workspace = match self.credentials {
+            Some(credentials) => workspace.with_credentials(credentials),
+            None => workspace,
+        };
         let wiring = Wiring {
             provider,
             log,
             blobs: MemoryBlobs::new(),
             clock: Box::new(self.clock),
             entropy: Box::new(CountingEntropy::starting_at(self.seed << 32)),
-            workspace: Workspace::new(computers, info),
+            workspace,
             tools: Vec::new(),
             worktree: false,
             hooks: glave_harness::Hooks::default(),
@@ -137,6 +167,8 @@ impl Setup {
             modes: self.modes,
             providers: self.providers,
             git_hosts: self.hosts,
+            projects: self.project_host,
+            trust: self.trust,
         };
         let server = Server::new(wiring, self.settings, scope(), self.answering);
         // The server's own space, kept as its person's project at a fixed time without reading
@@ -154,6 +186,29 @@ impl Setup {
         server.spaces().create(scope().org, &home).await.unwrap();
         (server, seen)
     }
+}
+
+/// Keeps the folder `info` opened as the server's own project's, as glave keeps the folder it
+/// runs in: at a fixed time with fixed ids, for the same reason as the space itself. A second
+/// server on a shared log finds it there already.
+async fn keep_folder<L: EventLog>(log: &L, info: &WorkspaceInfo) {
+    let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
+    let header = Header {
+        id: EventId::new(at.timestamp(), [9; 10]).unwrap(),
+        thread: space_ledger().unwrap(),
+        seq: Seq::FIRST,
+        at,
+    };
+    let set = SpaceFolderSet {
+        folder: uuid::Uuid::from_u128(3),
+        source: FolderSource::Local,
+        checkout: Checkout {
+            computer: info.computer.as_uuid(),
+            path: info.root.clone(),
+        },
+        by: None,
+    };
+    let _ = log.append(&scope(), &[encode(header, &set).unwrap()]).await;
 }
 
 /// The server of `Setup::asking`.

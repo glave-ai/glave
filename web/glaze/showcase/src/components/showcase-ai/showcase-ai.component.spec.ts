@@ -13,11 +13,19 @@ describe('ShowcaseAiComponent', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     expect(root.querySelectorAll('glz-receipt')).toHaveLength(2);
+    expect(root.querySelector('[data-testid="showcase-approval-caution"]')?.textContent).toBe(
+      'It deletes untracked files.',
+    );
     await expectAccessible(root);
     root.querySelector<HTMLButtonElement>('[data-testid="showcase-approval-allow-once"]')?.click();
     await fixture.whenStable();
     expect(root.querySelector('[data-testid="showcase-approval-decided"]')?.textContent).toBe(
       'Allowed once',
+    );
+    root.querySelector<HTMLButtonElement>('[data-testid="showcase-trust-trust"]')?.click();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="showcase-trust-answered"]')?.textContent).toBe(
+      'Trusted',
     );
   });
 

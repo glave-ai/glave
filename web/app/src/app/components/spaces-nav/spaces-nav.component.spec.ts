@@ -7,14 +7,19 @@ import { FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { space, thread } from '../../testing/fixtures';
 import { SpacesNavComponent } from './spaces-nav.component';
 
-async function render(query = ''): Promise<{
+const SPACES = [space('p1', 'glave'), space('p2', 'Garden'), space('me', 'Personal', 'personal')];
+
+async function render(
+  query = '',
+  spaces = SPACES,
+): Promise<{
   readonly root: HTMLElement;
   readonly fixture: ReturnType<typeof TestBed.createComponent<SpacesNavComponent>>;
 }> {
   const fake = new FakeSession()
-    .answer('space/list', {
-      spaces: [space('p1', 'glave'), space('p2', 'Garden'), space('me', 'Personal', 'personal')],
-    })
+    .answer('space/list', { spaces })
+    .answer('folder/list', { path: '/Users/ana', parent: '/Users', folders: [] })
+    .answer('credential/list', { credentials: [], device: false })
     .answer('thread/list', (params) => {
       const threads: Readonly<Record<string, unknown>> = {
         p1: [thread('t1', 'Plan the launch'), thread('t2', null, { status: 'waiting' })],
@@ -96,5 +101,46 @@ describe('SpacesNavComponent', () => {
       'No threads match',
     );
     await expectAccessible(root);
+  });
+
+  it('opens New project from the + beside Projects', async () => {
+    const { root, fixture } = await render();
+    const add = root.querySelector<HTMLButtonElement>('[data-testid="nav-new-project"]');
+    expect(add?.closest('[data-testid="nav-projects"]')).not.toBeNull();
+    expect(add?.getAttribute('aria-label')).toBe('New project');
+    // It is loaded the first time it opens.
+    expect(root.querySelector('[data-testid="new-project"]')).toBeNull();
+    add?.click();
+    await fixture.whenStable();
+    expect(root.querySelector<HTMLDialogElement>('[data-testid="new-project"]')?.open).toBe(true);
+    expect(root.querySelector('[data-testid="nav-start-project"]')).toBeNull();
+  });
+
+  it('with no projects yet, offers one quiet row to start one instead of a heading', async () => {
+    const { root, fixture } = await render('', [space('me', 'Personal', 'personal')]);
+    expect(root.querySelector('[data-testid="nav-projects"]')).toBeNull();
+    const offer = root.querySelector<HTMLButtonElement>('[data-testid="nav-start-project"]');
+    expect(offer?.textContent.trim()).toBe('Start a project');
+    await expectAccessible(root);
+    offer?.click();
+    await fixture.whenStable();
+    expect(root.querySelector<HTMLDialogElement>('[data-testid="new-project"]')?.open).toBe(true);
+    // A search is about threads: the offer steps aside.
+    fixture.componentRef.setInput('query', 'trip');
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="nav-start-project"]')).toBeNull();
+  });
+
+  it('offers nothing before the lists are read', async () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        ...provideFakeSession(new FakeSession()),
+      ],
+    });
+    const fixture = TestBed.createComponent(SpacesNavComponent);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('[data-testid="nav-start-project"]')).toBeNull();
   });
 });

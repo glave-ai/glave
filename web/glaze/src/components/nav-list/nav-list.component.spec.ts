@@ -20,6 +20,7 @@ import { GlzNavListComponent } from './nav-list.component';
         <a glzNavItem href="/t/3">Fix the build</a>
       </glz-nav-list>
       <glz-nav-list heading="Projects" testId="projects">
+        <button glzNavListActions type="button" data-testid="new-project">New project</button>
         <glz-nav-list heading="Garden" testId="project" collapsible [icon]="folder">
           <a glzNavItem href="/t/4">Plant the beans</a>
         </glz-nav-list>
@@ -86,5 +87,18 @@ describe('GlzNavListComponent', () => {
     await fixture.whenStable();
     expect(toggle?.getAttribute('aria-expanded')).toBe('false');
     expect(root.querySelector<HTMLElement>('[data-testid="project-items"]')?.hidden).toBe(true);
+  });
+
+  it('puts a heading’s actions beside it, whether or not the list collapses', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const projects = root.querySelector('[data-testid="projects"]');
+    const header = projects?.querySelector(':scope > .header');
+    expect(header?.querySelector('.heading')?.textContent).toBe('Projects');
+    expect(header?.querySelector('.actions [data-testid="new-project"]')).not.toBeNull();
+    // The project's own actions stay in its own header.
+    expect(header?.querySelectorAll('.actions button')).toHaveLength(1);
+    await expectAccessible(root);
   });
 });

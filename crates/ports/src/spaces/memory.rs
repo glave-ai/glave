@@ -33,7 +33,7 @@ impl MemorySpaces {
             .map_err(|_| SpaceError::Storage("the in-memory spaces' lock is poisoned".into()))
     }
 
-    fn create_now(&self, org: OrgId, space: &Space) -> Result<(), SpaceError> {
+    fn create_now(&self, org: OrgId, space: &Space) -> Result<Space, SpaceError> {
         Space::check_name(&space.name)?;
         let mut held = self.held()?;
         insert(&mut held, org, space)
@@ -58,6 +58,16 @@ impl MemorySpaces {
     fn update_now(&self, org: OrgId, space: &Space) -> Result<(), SpaceError> {
         Space::check_name(&space.name)?;
         let mut held = self.held()?;
+        let stored = held
+            .spaces
+            .get(&(org, space.id))
+            .ok_or(SpaceError::NotFound(space.id))?;
+        if stored.kind == SpaceKind::Project {
+            let taken = projects_of(&held, org, &stored.owner)
+                .map(|other| (other.id, other.name.clone()))
+                .collect::<Vec<_>>();
+            Space::check_free(space.id, &space.name, &taken)?;
+        }
         let kept = held
             .spaces
             .get_mut(&(org, space.id))
@@ -78,8 +88,7 @@ impl MemorySpaces {
         if let Some(found) = personal_of(&held, org, &new.owner) {
             return Ok(found);
         }
-        insert(&mut held, org, new)?;
-        Ok(new.clone())
+        insert(&mut held, org, new)
     }
 
     fn folder_now(&self, org: OrgId, keys: &[FolderKey], new: &Space) -> Result<Space, SpaceError> {
@@ -94,8 +103,7 @@ impl MemorySpaces {
                 .ok_or(SpaceError::NotFound(id))?
         } else {
             Space::check_name(&new.name)?;
-            insert(&mut held, org, new)?;
-            new.clone()
+            insert(&mut held, org, new)?
         };
         for key in keys {
             held.folders.entry((org, key.stored())).or_insert(space.id);
@@ -113,7 +121,19 @@ fn personal_of(held: &Held, org: OrgId, owner: &Principal) -> Option<Space> {
         .map(|(_, space)| space.clone())
 }
 
-fn insert(held: &mut Held, org: OrgId, space: &Space) -> Result<(), SpaceError> {
+/// The projects `owner` has in `org`.
+fn projects_of<'a>(
+    held: &'a Held,
+    org: OrgId,
+    owner: &'a Principal,
+) -> impl Iterator<Item = &'a Space> {
+    held.spaces.iter().filter_map(move |((at, _), space)| {
+        (*at == org && space.kind == SpaceKind::Project && space.owner == *owner).then_some(space)
+    })
+}
+
+/// Keeps `space`, a project under the next free name among its owner's; answers it as kept.
+fn insert(held: &mut Held, org: OrgId, space: &Space) -> Result<Space, SpaceError> {
     if held.spaces.contains_key(&(org, space.id)) {
         return Err(SpaceError::Conflict(format!(
             "space {} exists already",
@@ -125,12 +145,23 @@ fn insert(held: &mut Held, org: OrgId, space: &Space) -> Result<(), SpaceError> 
             "this person has a personal space already".into(),
         ));
     }
-    held.spaces.insert((org, space.id), space.clone());
-    Ok(())
+    let mut kept = space.clone();
+    if kept.kind == SpaceKind::Project {
+        let taken: Vec<String> = projects_of(held, org, &kept.owner)
+            .map(|other| other.name.clone())
+            .collect();
+        kept.name = Space::free_name(&kept.name, &taken);
+    }
+    held.spaces.insert((org, space.id), kept.clone());
+    Ok(kept)
 }
 
 impl Spaces for MemorySpaces {
-    fn create<'a>(&'a self, org: OrgId, space: &'a Space) -> BoxFuture<'a, Result<(), SpaceError>> {
+    fn create<'a>(
+        &'a self,
+        org: OrgId,
+        space: &'a Space,
+    ) -> BoxFuture<'a, Result<Space, SpaceError>> {
         Box::pin(std::future::ready(self.create_now(org, space)))
     }
 

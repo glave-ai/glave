@@ -8,6 +8,17 @@
   }
   @if (hasProjects()) {
     <glz-nav-list testId="nav-projects" [heading]="copy.projects">
+      <button
+        glzNavListActions
+        glzIconButton
+        size="sm"
+        type="button"
+        data-testid="nav-new-project"
+        [label]="copy.newProject"
+        (click)="startProject()"
+      >
+        <glz-icon [icon]="icons.add" />
+      </button>
       @for (project of projects(); track project.id) {
         <glz-nav-list
           testId="nav-space"
@@ -36,10 +47,26 @@
       }
     </glz-nav-list>
   }
+  @if (offerProject()) {
+    <button
+      glzNavItem
+      type="button"
+      class="offer"
+      data-testid="nav-start-project"
+      [icon]="icons.start"
+      (click)="startProject()"
+    >
+      {{ copy.startProject }}
+    </button>
+  }
   @if (noMatch()) {
     <p class="empty" data-testid="nav-no-match">{{ copy.noMatch }}</p>
   }
 </nav>
+<!-- Loaded the first time it opens: its forms stay out of the app's first load. -->
+@defer (when newProject(); prefetch on idle) {
+  <app-new-project [(open)]="newProject" (navigated)="followed()" />
+}
 <ng-template #line let-thread>
   <a
     glzNavItem

@@ -22,8 +22,9 @@ pub(crate) const MAX_LINE: u64 = 32 * 1024 * 1024;
 /// server that predates it would ignore the field and write, so the client refuses such a
 /// server before sending it anything. The protected list is the one in `glave-ports`, the same
 /// on both sides; changing it changes the protocol. `2026-10-15` added `credentials` on
-/// `command/run` and the computer's own `credentials/request`.
-pub const PROTOCOL: &str = "2026-10-15";
+/// `command/run` and the computer's own `credentials/request`. `2026-10-16` added the
+/// `project` sources of `workspace/open`, a new project's folder.
+pub const PROTOCOL: &str = "2026-10-16";
 
 /// The notification that carries a command's output.
 pub(crate) const OUTPUT: &str = "command/output";

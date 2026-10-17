@@ -1,12 +1,12 @@
-import type { ModelInfo, RawEvent, Space, TaskInfo, ThreadSummary } from '@glave/client';
+import type { ModelInfo, RawEvent, Space, TaskInfo, ThreadSummary, TrustAsk } from '@glave/client';
 import type { Page, Route } from '@playwright/test';
 
 /**
  * What the fake server knows: a project and the person's own space with their threads, one
  * thread's history (a turn on this computer that ran a command, edited a file and wrote a new
  * one, and replied from the default model, which the picker shows; how long it took and what
- * it cost), another waiting for the person to allow a push, the models, the tasks, and what a
- * turn streams.
+ * it cost), another waiting for the person to allow a push, the models, the tasks, what a
+ * turn streams, the folders on the person's computer, and the projects made while it runs.
  */
 const OWNER = { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' } as const;
 
@@ -202,15 +202,74 @@ const WAITING_HISTORY = [
       tool: 'bash',
       summary: 'bash: git push -u origin docs/release-notes',
       secret: false,
+      caution: 'It pushes to a remote.',
     },
     WAITING,
   ),
 ];
 
+/**
+ * A project whose folder brings its own tools and settings, not trusted yet, and its thread,
+ * which asks the person to trust them (`fakeApi`'s `trust`).
+ */
+const ACME = space('01900000-0000-7000-8000-000000000003', 'acme', 'project');
+export const TRUSTING = '01900000-0000-7000-8000-000000000107';
+
+/** What acme asks to be trusted, in the plain words the server sends. */
+export const TRUST_ASK: TrustAsk = {
+  ask: '5f2c9d0a1b7e4c3d8e6f0a9b2c1d4e7f5a8b3c6d9e0f1a2b4c7d8e9f0a1b2c3d',
+  items: [
+    { text: 'Runs a tool server', detail: 'npx @acme/mcp' },
+    { text: 'Runs a hook before each command', detail: './scripts/check.sh' },
+    { text: 'Lets glave approve actions without asking' },
+    { text: 'Turns off the sandbox' },
+  ],
+};
+
+/** The trusting thread's history: one exchange, before the project's tools are on. */
+const TRUSTING_HISTORY = [
+  event(1, 'thread.started', {}, TRUSTING),
+  bound(2, TRUSTING),
+  event(3, 'turn.started', { model: { provider: 'e2e', name: DEFAULT_MODEL } }, TRUSTING),
+  event(
+    4,
+    'message.added',
+    { role: 'user', parts: [{ type: 'text', text: 'Search the Acme docs for the release steps' }] },
+    TRUSTING,
+  ),
+  event(
+    5,
+    'message.added',
+    {
+      role: 'assistant',
+      parts: [
+        {
+          type: 'text',
+          text: 'The Acme docs search is one of this project’s own tools, which are off until you trust the project.',
+        },
+      ],
+    },
+    TRUSTING,
+  ),
+  event(6, 'turn.ended', { outcome: 'completed' }, TRUSTING, '2026-10-11T10:00:04.000Z'),
+];
+
+/** Whether acme asks to be trusted, while the fake runs: until the person answers. */
+interface Trust {
+  asking: boolean;
+}
+
+/** The trusting thread as acme's lists and `thread/get` show it. */
+function trusting(trust: Trust): ThreadSummary {
+  const summary = thread(TRUSTING, 'Search the Acme docs', 'idle', ACME);
+  return trust.asking ? { ...summary, status: 'waiting', trust: TRUST_ASK } : summary;
+}
+
 /** Each thread's history, by id. */
 const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
   [THREAD]: HISTORY,
   [WAITING]: WAITING_HISTORY,
+  [TRUSTING]: TRUSTING_HISTORY,
 };
 
 const TASKS: readonly TaskInfo[] = [
@@ -238,6 +297,76 @@ const TASKS: readonly TaskInfo[] = [
     outcome: 'completed',
   },
 ];
+
+/** The folders on the person's computer, by path; the home folder is /Users/ana. */
+const HOME = '/Users/ana';
+const FOLDERS: Readonly<Record<string, readonly string[]>> = {
+  '/': ['Users'],
+  '/Users': ['ana'],
+  [HOME]: ['code', 'Documents'],
+  [`${HOME}/code`]: ['glave', 'notes'],
+  [`${HOME}/code/glave`]: [],
+  [`${HOME}/code/notes`]: [],
+  [`${HOME}/Documents`]: [],
+};
+
+/** The repository the fake host does not have, which a clone fails on. */
+export const MISSING_REPOSITORY = 'https://github.com/acme/missing';
+
+/** How long a clone takes, so the page shows it under way. */
+const CLONE_MS = 400;
+
+/** What a server refuses a call with. */
+class Refusal {
+  constructor(
+    readonly code: number,
+    readonly message: string,
+  ) {}
+}
+
+/** The folders inside `path`, as `folder/list` answers. */
+function listFolders(path: string): unknown {
+  const folders = FOLDERS[path];
+  if (folders === undefined) {
+    return new Refusal(-32602, `there is no folder at ${path}`);
+  }
+  const parent = path === '/' ? null : path.slice(0, path.lastIndexOf('/')) || '/';
+  return { path, parent, folders };
+}
+
+/**
+ * Makes a project as `space/create` does: a name taken among the person's projects gets the
+ * next free one, and a repository the host does not have is refused with what git said.
+ */
+function makeProject(params: Record<string, unknown>, made: Space[]): unknown {
+  const folder = params['folder'] as { kind: string; url?: string } | null | undefined;
+  const url = folder?.url ?? '';
+  if (folder?.kind === 'repository' && !/^https:\/\/[^/@]+\/./u.test(url)) {
+    return new Refusal(
+      -32602,
+      `"${url}" is not a repository's address: give its https:// address, such as https://github.com/acme/app, with no user name or token in it`,
+    );
+  }
+  if (folder?.kind === 'repository' && url === MISSING_REPOSITORY) {
+    return new Refusal(
+      -32025,
+      `could not clone ${MISSING_REPOSITORY}: remote: Repository not found. If the repository is private, connect its git host first`,
+    );
+  }
+  const asked = String(params['name']);
+  const taken = new Set([PROJECT, ...made].map((each) => each.name.toLowerCase()));
+  let name = asked;
+  for (let next = 2; taken.has(name.toLowerCase()); next += 1) {
+    name = `${asked} ${String(next)}`;
+  }
+  const project = space(
+    `01900000-0000-7000-8000-${String(900 + made.length).padStart(12, '0')}`,
+    name,
+    'project',
+  );
+  made.push(project);
+  return { space: project };
+}
 
 /** A request the fake answered: its method and params. */
 export interface Request {
@@ -363,15 +492,30 @@ export async function streamReply(page: Page, reply = MARKDOWN_REPLY, delay = 15
   );
 }
 
-/** The answer to a call that is not a turn; `started` holds the threads started so far. */
+/**
+ * The answer to a call that is not a turn; `started` holds the threads started so far, `made`
+ * the projects made, and `trust` acme's ask, when the test has acme.
+ */
 function answer(
   method: string,
   params: Record<string, unknown>,
   started: ThreadSummary[],
+  made: Space[],
+  trust: Trust | null,
 ): unknown {
+  if (trust !== null) {
+    const asked = trusted(method, params, trust);
+    if (asked !== undefined) {
+      return asked;
+    }
+  }
   switch (method) {
     case 'space/list':
-      return { spaces: [PROJECT, PERSONAL] };
+      return { spaces: [...made, PROJECT, PERSONAL] };
+    case 'space/create':
+      return makeProject(params, made);
+    case 'folder/list':
+      return listFolders(typeof params['path'] === 'string' ? params['path'] : HOME);
     case 'thread/list': {
       const space = String(params['space']);
       const fresh = started.filter((each) => each.space === space);
@@ -421,13 +565,39 @@ function answer(
   }
 }
 
-/** Answers the session API's calls the app makes, as JSON-RPC over POST /. */
+/** The answer to a call about acme, the project that asks to be trusted; else `undefined`. */
+function trusted(method: string, params: Record<string, unknown>, trust: Trust): unknown {
+  switch (method) {
+    case 'space/list':
+      return { spaces: [ACME, PROJECT, PERSONAL] };
+    case 'thread/list':
+      return params['space'] === ACME.id ? { threads: [trusting(trust)] } : undefined;
+    case 'thread/get':
+      return params['thread'] === TRUSTING ? { thread: trusting(trust) } : undefined;
+    case 'trust/answer':
+      if (params['ask'] !== TRUST_ASK.ask || !trust.asking) {
+        return new Refusal(-32026, 'this project changed since you were asked');
+      }
+      trust.asking = false;
+      return { thread: trusting(trust) };
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Answers the session API's calls the app makes, as JSON-RPC over POST /. With `trust`, the
+ * person also has acme, a project that asks to be trusted.
+ */
 export async function fakeApi(
   page: Page,
+  { trust = false }: { readonly trust?: boolean } = {},
 ): Promise<{ readonly calls: readonly string[]; readonly requests: readonly Request[] }> {
   const calls: string[] = [];
   const requests: Request[] = [];
   const started: ThreadSummary[] = [];
+  const made: Space[] = [];
+  const asking: Trust | null = trust ? { asking: true } : null;
   await page.route('**/*', async (route: Route) => {
     const request = route.request();
     if (request.method() !== 'POST') {
@@ -445,13 +615,18 @@ export async function fakeApi(
       await route.fulfill({ contentType: 'text/event-stream', body: turn(message) });
       return;
     }
+    const folder = message.params['folder'] as { kind: string } | null | undefined;
+    if (message.method === 'space/create' && folder?.kind === 'repository') {
+      await new Promise((resolve) => setTimeout(resolve, CLONE_MS));
+    }
+    const answered = answer(message.method, message.params, started, made, asking);
+    const reply =
+      answered instanceof Refusal
+        ? { error: { code: answered.code, message: answered.message } }
+        : { result: answered };
     await route.fulfill({
       contentType: 'application/json',
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: message.id,
-        result: answer(message.method, message.params, started),
-      }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: message.id, ...reply }),
     });
   });
   return { calls, requests };

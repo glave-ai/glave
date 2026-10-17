@@ -105,6 +105,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(card).toContainText('Needs you');
     await expect(card).toContainText('Run this command?');
     await expect(card.locator('code')).toHaveText('git push -u origin docs/release-notes');
+    // Why it asks is a sentence of its own, never part of the command.
+    await expect(byTestId(page, 'thread-approval-caution')).toHaveText('It pushes to a remote.');
     await expect(card.getByRole('button')).toHaveText([
       'Allow once',
       'Allow for this thread',
@@ -122,7 +124,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       .toMatchObject({ approval: 'call_2', decision: 'allow_once' });
   });
 
-  test(`each message has a copy button, shown on hover and focus, that copies its text (${colorScheme})`, async ({
+  test(`a reply has a copy button, shown on hover and focus, that copies its text (${colorScheme})`, async ({
     page,
     context,
   }) => {
@@ -133,7 +135,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.goto(`/t/${THREAD}${SIGNED_IN}`);
     const messages = byTestId(page, 'thread-message');
     await expect(messages.last()).toContainText('They pass now.');
-    await expect(byTestId(page, 'message-copy')).toHaveCount(2);
+    // Only the reply: what the person wrote needs no copying.
+    await expect(byTestId(page, 'message-copy')).toHaveCount(1);
     const copy = messages.last().getByTestId('message-copy');
     // Hidden until the pointer is over the message, or focus is in it.
     await page.mouse.move(0, 0);
@@ -146,8 +149,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(page.locator('[aria-live]', { hasText: 'Copied' })).toHaveCount(1);
     const copied = await page.evaluate(() => navigator.clipboard.readText());
     expect(copied).toContain('They pass now.');
-    await messages.first().hover();
-    await expect.poll(() => shownOpacity(messages.first().getByTestId('message-copy'))).toBe(1);
+    await messages.last().hover();
+    await expect.poll(() => shownOpacity(copy)).toBe(1);
   });
 }
 

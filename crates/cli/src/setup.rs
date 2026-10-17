@@ -9,6 +9,7 @@ use std::process::ExitCode;
 use glave_harness::Hook;
 
 use crate::args::Args;
+use crate::projects::Started;
 use crate::{config, home, mcp};
 use glave_config::policy::{
     self, Choices, ConfigFile, Loaded, Locations, ProjectTrust, ServerFile, StoreFile,
@@ -27,10 +28,13 @@ pub struct Setup {
     pub project_servers: BTreeMap<String, String>,
     /// What the project brings that stays off, and why.
     pub withheld: Vec<String>,
-    /// The hooks that run: the person's own, then the project's trusted ones.
+    /// The hooks that run for every thread: the person's own. A project's trusted hooks run
+    /// for its own threads alone, run in its own folder (`projects.rs`).
     pub hooks: Vec<Hook>,
     /// The project's hooks that stay off, and why: told to the person, never the model.
     pub hooks_off: Vec<String>,
+    /// What the project glave runs in turned on for every thread, as it started.
+    pub started: Started,
 }
 
 impl Setup {
@@ -58,7 +62,9 @@ impl Setup {
                     .map_or_else(String::new, |path| path.display().to_string())
             );
         }
-        let hooks = [mine.clone(), outcome.hooks].concat();
+        let home = home::folder()?;
+        let started = Started::from_outcome(&Locations::here(&home, folder).root, &home, &outcome);
+        let hooks = mine.clone();
         Ok(Self {
             loaded,
             choices,
@@ -66,6 +72,7 @@ impl Setup {
             withheld: outcome.withheld,
             hooks,
             hooks_off: outcome.hooks_off,
+            started,
         })
     }
 
@@ -77,19 +84,25 @@ impl Setup {
 
     /// What to tell the model, so it does not look for tools that are not there.
     pub fn model_note(&self) -> Option<String> {
-        (!self.withheld.is_empty()).then(|| {
-            format!(
-                "# Project tools that are off\n\nThis project brings tools or settings that glave \
-                 did not turn on:\n{}\nDo not look for them or try to run them yourself. If the \
-                 task needs them, say so to the person.",
-                self.withheld
-                    .iter()
-                    .map(|line| format!("- {line}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            )
-        })
+        off_note(&self.withheld)
     }
+}
+
+/// What the model is told of `withheld`, a project's tools and settings that stay off with
+/// why, so it does not look for them; nothing when nothing is off.
+pub fn off_note(withheld: &[String]) -> Option<String> {
+    (!withheld.is_empty()).then(|| {
+        format!(
+            "# Project tools that are off\n\nThis project brings tools or settings that glave \
+             did not turn on:\n{}\nDo not look for them or try to run them yourself. If the \
+             task needs them, say so to the person.",
+            withheld
+                .iter()
+                .map(|line| format!("- {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    })
 }
 
 /// `glave policy explain`: prints every setting and constraint, and fails when glave would

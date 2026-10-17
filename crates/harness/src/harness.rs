@@ -1,6 +1,7 @@
 //! The harness: its parts, its settings, and how it records events.
 
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 
@@ -24,6 +25,7 @@ use crate::compaction::{Compaction, Measured};
 use crate::goal::{GoalProgress, Pursuit};
 use crate::hooks::Hooks;
 use crate::memory::{Memory, MemoryState};
+use crate::projects::{Brought, Projects};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
 use crate::standing::Standing;
@@ -143,6 +145,10 @@ pub struct Harness<P, L, B, A> {
     /// What threads remember from one to the next; none by default, so the model is sent
     /// exactly what it is sent without memory.
     pub(crate) memory: Option<Arc<dyn Memory>>,
+    /// Where threads in a folder of their own read their opening instructions, and what their
+    /// project turns on; none by default, so every thread opens with the settings' own and
+    /// gets only the harness's tools and hooks.
+    pub(crate) projects: Option<Arc<dyn Projects>>,
 }
 
 /// One thread: where it is stored, where it continues, and the conversation so far.
@@ -196,6 +202,15 @@ pub struct Thread {
     pub(crate) model: Option<String>,
     /// The approval mode chosen for the thread (`chosen.rs`); the harness's own when `None`.
     pub(crate) approval: Option<ApprovalMode>,
+    /// The instructions the thread opens with, and the judge reads as the project's rules:
+    /// its folder's, or the settings' own (`bind.rs`). A subagent's thread has its parent's.
+    pub(crate) instructions: Option<String>,
+    /// The folder of the project the thread works in, when it works in one here: its own
+    /// folder, or the one its worktree was made from. A subagent's thread has its parent's.
+    pub(crate) project: Option<PathBuf>,
+    /// What its project turned on at the start of the latest turn (`projects.rs`). A
+    /// subagent's thread has its parent's.
+    pub(crate) brought: Arc<Brought>,
 }
 
 impl Thread {
@@ -212,6 +227,17 @@ impl Thread {
     /// The person whose work this thread is: its recorded `for`.
     pub fn for_person(&self) -> Option<PrincipalId> {
         self.for_
+    }
+
+    /// What opens the conversation: the thread's instructions, and where it works when that
+    /// is a worker, if there is either.
+    pub(crate) fn opening_parts(&self) -> Option<Vec<Part>> {
+        let parts: Vec<Part> = [self.instructions.as_ref(), self.note.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|text| Part::Text { text: text.clone() })
+            .collect();
+        (!parts.is_empty()).then_some(parts)
     }
 
     /// Whether an agent, not the person, writes this thread's prompts: a subagent's thread.
@@ -306,7 +332,17 @@ where
             learned_window: AtomicU64::new(0),
             workers: None,
             memory: None,
+            projects: None,
         }
+    }
+
+    /// Opens each thread that works in a folder of its own with what `projects` reads for that
+    /// folder, rather than the settings' instructions, and gives it what its project turns on
+    /// at the start of each turn.
+    #[must_use]
+    pub fn with_projects(mut self, projects: Option<Arc<dyn Projects>>) -> Self {
+        self.projects = projects;
+        self
     }
 
     /// Gives threads `memory`: loaded at their start, its tools offered, the person's controls
@@ -357,9 +393,11 @@ where
         self
     }
 
-    /// The tools on offer now in `thread`, from every source.
+    /// The tools on offer now in `thread`, from every source: the harness's, then its
+    /// project's.
     pub(crate) async fn tools(&self, thread: &Thread) -> ToolSet {
-        let mut set = ToolSet::gather(&self.sources, &self.system_for(thread)).await;
+        let sources = [self.sources.as_slice(), thread.brought.tools.as_slice()].concat();
+        let mut set = ToolSet::gather(&sources, &self.system_for(thread)).await;
         if let Some(credentials) = self.workspace_for(thread).credentials()
             && let Some(note) = crate::prompt::signed_in(&credentials.hosts().await)
         {
@@ -441,6 +479,13 @@ where
         };
         let (workspace, bound) =
             placed.map_or((None, None), |(workspace, bound)| (workspace, Some(bound)));
+        let for_ = caller.person.or(self.actors.person);
+        let instructions = self
+            .instructions_for(workspace.as_deref(), bound.as_ref(), for_)
+            .await;
+        let project = bound
+            .as_ref()
+            .and_then(|bound| crate::projects::project_of(&bound.opened));
         let mut thread = Thread {
             scope,
             id,
@@ -460,9 +505,12 @@ where
             untrusted: false,
             read_secret: false,
             memory: MemoryState::default(),
-            for_: caller.person.or(self.actors.person),
+            for_,
             model: None,
             approval: None,
+            instructions,
+            project,
+            brought: Arc::default(),
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {
@@ -492,17 +540,6 @@ where
         }
         self.commit(&mut thread, events).await?;
         Ok(thread)
-    }
-
-    /// What opens a conversation: the project's instructions, and where the thread works when
-    /// that is a worker, if there is either.
-    pub(crate) fn opening_parts(&self, thread: &Thread) -> Option<Vec<Part>> {
-        let parts: Vec<Part> = [self.settings.instructions.as_ref(), thread.note.as_ref()]
-            .into_iter()
-            .flatten()
-            .map(|text| Part::Text { text: text.clone() })
-            .collect();
-        (!parts.is_empty()).then_some(parts)
     }
 
     /// Records one event on its own.

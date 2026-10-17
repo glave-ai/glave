@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
 use glave_harness::{
-    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Memory, Parts, Place, ReleasedWorker,
-    Settings, TurnSummary, Workers, Workspace,
+    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Memory, Parts, Place, Projects,
+    ReleasedWorker, Settings, TurnSummary, Workers, Workspace,
 };
 use glave_ports::{
     BlobStore, Environment, EventLog, ModelProvider, Scope, SpaceId, Spaces, ToolSource,
@@ -28,6 +28,7 @@ use crate::protocol::{ApiError, ApprovalMode, ErrorData, ModelInfo, Notification
 use crate::providers::Providers;
 use crate::spaces::Places;
 use crate::tasks::{TaskLimits, Tasks};
+use crate::trust::{Asks, ProjectTrust};
 
 /// The most events or threads one page returns.
 pub(crate) const MAX_PAGE: usize = 5_000;
@@ -42,8 +43,8 @@ pub struct Wiring<P, L, B> {
     pub workspace: Workspace,
     /// Tools beside the built-in ones, such as MCP servers'.
     pub tools: Vec<Arc<dyn ToolSource>>,
-    /// Whether a new thread works in a worktree of its own unless `thread/start` says; off,
-    /// it works in the workspace itself.
+    /// Whether a new thread in a project with a folder works in a worktree of its own unless
+    /// `thread/start` says; off, it works in the folder itself.
     pub worktree: bool,
     /// Commands run at points of every turn.
     pub hooks: Hooks,
@@ -68,6 +69,14 @@ pub struct Wiring<P, L, B> {
     /// The git hosts the person on this computer connects; none where whoever runs the
     /// server sets up what its threads sign in to.
     pub git_hosts: Option<Arc<dyn GitHosts>>,
+    /// Where a thread in a folder of its own reads the instructions it opens with (its
+    /// project's AGENTS.md and what its folder brings that stays off), and what its project
+    /// turns on at each turn. None: every thread opens with the settings' instructions, with
+    /// the server's tools and hooks alone.
+    pub projects: Option<Arc<dyn Projects>>,
+    /// Where what a project asks to be trusted is read, and the person's yes kept; none where
+    /// no one may trust a project from a client.
+    pub trust: Option<Arc<dyn ProjectTrust>>,
 }
 
 /// Threads on workers: where workers come from, and the environment each is made from.
@@ -79,8 +88,8 @@ pub struct OnWorkers {
     pub every_thread: bool,
 }
 
-/// A session server for one workspace and the spaces of one organization, the folder's own
-/// first. Clones share it.
+/// A session server for the spaces of one organization, its own first, whose threads work in
+/// their projects' folders on the computer its workspace is on. Clones share it.
 pub struct Server<P, L, B> {
     pub(crate) inner: Arc<Inner<P, L, B>>,
 }
@@ -97,13 +106,14 @@ pub(crate) type Glave<P, L, B> = Harness<P, Observed<L>, B, Approvals>;
 
 pub(crate) struct Inner<P, L, B> {
     pub(crate) harness: Glave<P, L, B>,
-    /// The server's own space: the folder it serves, whose workspace its threads use. Its
-    /// tasks, schedules and memory are this space's.
+    /// The server's own space: where a request that names none acts, and whose tasks,
+    /// schedules and memory these are.
     pub(crate) home: Scope,
     pub(crate) spaces: Arc<dyn Spaces>,
     /// The spaces of threads looked up.
     pub(crate) places: Mutex<Places>,
-    /// Whether new threads get a worktree when `thread/start` does not say.
+    /// Whether new threads in a project's folder get a worktree when `thread/start` does not
+    /// say.
     pub(crate) worktree: bool,
     /// The environment new threads' workers are made from, when they work on workers.
     pub(crate) worker: Option<Environment>,
@@ -132,6 +142,10 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) tasks: Mutex<Vec<JoinHandle<()>>>,
     /// Turns started with an idempotency key, for retries.
     pub(crate) keyed: Keyed,
+    /// Where what a project asks to be trusted is read, and the person's yes kept.
+    pub(crate) trust: Option<Arc<dyn ProjectTrust>>,
+    /// What the threads opened or started here did with their projects' asks.
+    pub(crate) asks: Mutex<Asks>,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -140,7 +154,8 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// A server whose own space is `home`: the space of the folder `wiring.workspace` opens.
+    /// A server whose own space is `home`, its threads working on the computer
+    /// `wiring.workspace` is on: in their projects' folders, or scratch folders.
     pub fn new(
         wiring: Wiring<P, L, B>,
         settings: Settings,
@@ -170,7 +185,8 @@ where
                 }
                 .with_tools(wiring.tools)
                 .with_hooks(wiring.hooks)
-                .with_memory_if(wiring.memory),
+                .with_memory_if(wiring.memory)
+                .with_projects(wiring.projects),
                 worker: wiring.workers.map(|on| on.environment),
                 every_thread,
                 models: RwLock::new(catalog),
@@ -191,6 +207,8 @@ where
                 threads: Mutex::new(HashMap::new()),
                 tasks: Mutex::new(Vec::new()),
                 keyed: Keyed::default(),
+                trust: wiring.trust,
+                asks: Mutex::new(Asks::default()),
             }),
         }
     }
@@ -274,11 +292,13 @@ where
         }
     }
 
-    /// Starts a thread for `caller` in `space`. In the server's own space: where `worktree`
-    /// says, else on a worker when the server puts every thread, or a task's (`background`),
-    /// on one, else as the server is set. In any other space there is no folder to work in, so
-    /// the thread gets a scratch folder of its own. With a model or an approval mode in
-    /// `choice`, its turns go to that model, or ask that much.
+    /// Starts a thread for `caller` in `space`. In a project with a folder, the thread works
+    /// in a worktree of it where `worktree` says (the server's choice when it does not), else
+    /// in the folder itself; in the server's own space, a task's thread (`background`), or
+    /// every thread when the server puts them there, works on a worker instead, which clones
+    /// the repository the server's workers are set up with. With no folder (a person's Chats,
+    /// or a project without one), the thread gets a scratch folder of its own. With a model or
+    /// an approval mode in `choice`, its turns go to that model, or ask that much.
     pub(crate) async fn new_thread(
         &self,
         caller: &Caller,
@@ -294,25 +314,23 @@ where
             self.allowed_mode(mode)?;
         }
         let home = space == self.inner.home.space;
-        let on_worker = self.inner.every_thread || background;
-        let place = match (worktree, &self.inner.worker) {
-            (Some(true), _) if !home => {
+        let on_worker = home && (self.inner.every_thread || background);
+        let folder = self.folder_here(space).await?;
+        let place = match (folder, worktree, &self.inner.worker) {
+            (None, Some(true), _) => {
                 return Err(ApiError::new(
                     code::WORKSPACE,
-                    "a thread outside this server's own space has no repository to make a \
-                     worktree of",
+                    "there is no project folder here to make a worktree of: threads here work \
+                     in a scratch folder of their own",
                 ));
             }
-            _ if !home => Place::Scratch,
-            (Some(true), _) => Place::Worktree,
-            (None, Some(environment)) if on_worker => Place::Worker(environment.clone()),
-            (None, _) if self.inner.worktree => Place::Worktree,
-            _ => Place::Here,
+            (None, _, _) => Place::Scratch,
+            (Some(folder), Some(true), _) => Place::Worktree(folder),
+            (Some(_), None, Some(environment)) if on_worker => Place::Worker(environment.clone()),
+            (Some(folder), None, _) if self.inner.worktree => Place::Worktree(folder),
+            (Some(folder), _, _) => Place::Folder(folder),
         };
-        let scope = Scope {
-            org: self.inner.home.org,
-            space,
-        };
+        let scope = self.scope_in(space);
         let mut thread = self
             .inner
             .harness

@@ -1,22 +1,22 @@
-@if (collapsible()) {
+@if (hasHeader()) {
   <div class="header">
-    <button
-      type="button"
-      class="heading toggle"
-      [id]="headingId"
-      [attr.data-testid]="ids().toggle"
-      [attr.aria-expanded]="expanded()"
-      [attr.aria-controls]="itemsId"
-      (click)="toggle()"
-    >
-      <glz-icon class="lead" [icon]="lead()" />
-      <span class="text">{{ heading() }}</span>
-    </button>
-    <span class="actions"><ng-content select="[glzNavListActions]" /></span>
-  </div>
-} @else if (hasHeading()) {
-  <div class="header">
-    <p class="heading" [id]="headingId">{{ heading() }}</p>
+    @if (collapsible()) {
+      <button
+        type="button"
+        class="heading toggle"
+        [id]="headingId"
+        [attr.data-testid]="ids().toggle"
+        [attr.aria-expanded]="expanded()"
+        [attr.aria-controls]="itemsId"
+        (click)="toggle()"
+      >
+        <glz-icon class="lead" [icon]="lead()" />
+        <span class="text">{{ heading() }}</span>
+      </button>
+    } @else {
+      <p class="heading" [id]="headingId">{{ heading() }}</p>
+    }
+    <!-- One slot for the actions: content goes to the first slot that matches. -->
     <span class="actions"><ng-content select="[glzNavListActions]" /></span>
   </div>
 }

@@ -265,7 +265,7 @@ where
             .and_then(|seq| Seq::new(seq).ok())
             .ok_or_else(|| HarnessError::Event("there is nothing to compact".into()))?;
         // The project's instructions open the restarted conversation, as they opened the first.
-        let mut parts = self.opening_parts(thread).unwrap_or_default();
+        let mut parts = thread.opening_parts().unwrap_or_default();
         parts.push(Part::Text {
             text: restart_text(&summary, thread.request.as_deref()),
         });

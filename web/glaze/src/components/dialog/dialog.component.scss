@@ -35,10 +35,14 @@
   font-size: var(--glz-text-xl);
 }
 
+// Sized to what it holds, and scrolling once the dialog meets the viewport's edge. A basis of
+// auto, not flex: 1's 0%: Safari sizes a 0% basis to nothing in a column with no set height,
+// which left only the header showing.
 .content {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   flex-direction: column;
+  min-height: 0;
   gap: var(--glz-space-4);
   overflow-y: auto;
 }

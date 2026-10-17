@@ -1,6 +1,8 @@
 //! The web checks in `cargo xtask ci`: format, lint, type-check, licences and audit of what
 //! ships, unit tests, the library and app builds, and the end-to-end tests of `web/`
-//! (`npm run check`), served by the real `glave serve --http --web`, which this step builds.
+//! (`npm run check`), served by the real `glave serve --http --web`. This step builds that
+//! glave with the app inside it (the `web` feature, after `npm run build`), and runs its
+//! serving tests against it first.
 //! They need Node 22.22.3 or later: without it the step fails, unless `GLAVE_SKIP_WEB=1` says
 //! to skip it, as CI's Rust jobs do (its `web` job runs these).
 
@@ -34,8 +36,23 @@ pub fn check() -> Result<(), String> {
         npm(&web, &["ci"], None)?;
     }
     npm(&web, &["run", "e2e:install"], None)?;
-    // The end-to-end tests run against the real server.
-    crate::cmd::run("cargo", &["build", "-p", "glave"])?;
+    // glave with the app inside, which its serving tests check; the end-to-end tests run
+    // against this glave too.
+    npm(&web, &["run", "build"], None)?;
+    let (package, feature) = crate::ci::BUILT_IN_APP;
+    crate::cmd::run(
+        "cargo",
+        &[
+            "nextest",
+            "run",
+            "-p",
+            package,
+            "--features",
+            feature,
+            "--test",
+            "serve",
+        ],
+    )?;
     let glave = target_directory()?.join("debug/glave");
     npm(&web, &["run", "check"], Some(&glave))
 }
@@ -43,16 +60,12 @@ pub fn check() -> Result<(), String> {
 /// Where cargo builds this workspace: `CARGO_TARGET_DIR` or `build.target-dir` when set, else
 /// the workspace's own `target/`, as `cargo metadata` reports it.
 fn target_directory() -> Result<PathBuf, String> {
-    let metadata =
-        crate::cmd::output("cargo", &["metadata", "--format-version", "1", "--no-deps"])?;
-    target_directory_in(&metadata)
+    target_directory_in(&crate::workspace::metadata()?)
 }
 
 /// The `target_directory` in `cargo metadata`'s JSON.
-fn target_directory_in(metadata: &str) -> Result<PathBuf, String> {
-    let value: serde_json::Value = serde_json::from_str(metadata)
-        .map_err(|err| format!("`cargo metadata` wrote something not JSON: {err}"))?;
-    value
+fn target_directory_in(metadata: &serde_json::Value) -> Result<PathBuf, String> {
+    metadata
         .get("target_directory")
         .and_then(serde_json::Value::as_str)
         .map(PathBuf::from)
@@ -124,12 +137,12 @@ mod tests {
 
     #[test]
     fn the_target_directory_is_cargo_metadatas() {
+        let metadata = serde_json::json!({"target_directory": "/cache/glave-target", "version": 1});
         assert_eq!(
-            target_directory_in(r#"{"target_directory":"/cache/glave-target","version":1}"#),
+            target_directory_in(&metadata),
             Ok(PathBuf::from("/cache/glave-target"))
         );
-        assert!(target_directory_in(r#"{"version":1}"#).is_err());
-        assert!(target_directory_in("not json").is_err());
+        assert!(target_directory_in(&serde_json::json!({"version": 1})).is_err());
     }
 
     #[test]

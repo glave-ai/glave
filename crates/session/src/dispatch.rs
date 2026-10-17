@@ -127,7 +127,7 @@ where
                 show,
                 cursor,
             } => self.list_threads(caller, space, limit, show, cursor).await,
-            Request::ThreadGet { thread } => self.get_thread(thread).await,
+            Request::ThreadGet { thread } => self.get_thread(caller, thread).await,
             Request::ThreadRename { thread, title } => self.rename(caller, thread, title).await,
             Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
             Request::ThreadUnarchive { thread } => {
@@ -192,6 +192,11 @@ where
                 .approvals
                 .respond(thread, &question, answers)
                 .map(|()| Reply::Done {}),
+            Request::TrustAnswer {
+                thread,
+                ask,
+                answer,
+            } => self.answer_trust(caller, thread, &ask, answer).await,
             Request::GoalStart {
                 thread,
                 objective,
@@ -236,14 +241,14 @@ where
             Request::ScheduleList {} => self.list_schedules().await,
             Request::ScheduleDelete { schedule } => self.delete_schedule(caller, schedule).await,
             Request::SpaceList { limit } => self.list_spaces(caller, limit).await,
-            Request::SpaceGet { space } => self
-                .member_of(caller, space)
-                .await
-                .map(|space| Reply::Space { space }),
-            Request::SpaceCreate { name, members } => {
-                self.create_space(caller, name, members).await
-            }
+            Request::SpaceGet { space } => self.get_space(caller, space).await,
+            Request::SpaceCreate {
+                name,
+                members,
+                folder,
+            } => self.create_space(caller, name, members, folder).await,
             Request::SpaceRename { space, name } => self.rename_space(caller, space, name).await,
+            Request::FolderList { path } => self.list_folders(caller, path).await,
             Request::MemoryList { scope } => self.remember(caller, Control::List { scope }).await,
             Request::MemorySave { text, scope } => {
                 self.remember(caller, Control::Save { text, scope }).await

@@ -10,9 +10,9 @@ describe('approvals', () => {
       sentence: 'Edit this file?',
       detail: 'src/main.rs',
     });
-    expect(askOf('read', 'read .env (holds secrets)')).toEqual({
+    expect(askOf('read', 'read .env')).toEqual({
       sentence: 'Read this file?',
-      detail: '.env (holds secrets)',
+      detail: '.env',
     });
     expect(askOf('github__merge', 'Merge pull request 12')).toEqual({
       sentence: 'Allow this?',

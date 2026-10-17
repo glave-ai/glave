@@ -13,6 +13,7 @@ pub(crate) mod model;
 pub(crate) mod part;
 pub(crate) mod principal;
 pub(crate) mod provider;
+pub(crate) mod space;
 pub(crate) mod standing;
 pub(crate) mod task;
 pub(crate) mod thread;
@@ -35,6 +36,7 @@ pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};
 pub use principal::{Principal, PrincipalKind};
 pub use provider::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_account};
+pub use space::{Checkout, FolderSource, SpaceFolderSet};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
 pub use task::{Fired, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, When};
 pub use thread::{

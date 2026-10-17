@@ -114,6 +114,7 @@ mod recorded {
             };
             assert_eq!(requested.tool, "bash");
             assert_eq!(requested.summary, "bash: touch a");
+            assert_eq!(requested.caution, None, "only the mode asks");
             let asked = harness_asked(&harness);
             assert_eq!(asked[0].thread, thread.id, "the approver knows the thread");
             assert_eq!(asked[0].call_id.as_str(), decided[0].0, "and the call");

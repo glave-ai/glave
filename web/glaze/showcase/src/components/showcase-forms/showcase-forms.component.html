@@ -28,9 +28,9 @@
       <input glzInput type="date" formControlName="due" />
     </glz-form-field>
     <glz-form-field [label]="copy.approval">
-      <glz-radio-group formControlName="approval">
+      <glz-radio-group cards formControlName="approval">
         @for (mode of approvals; track mode.value) {
-          <glz-radio [value]="mode.value">{{ mode.label }}</glz-radio>
+          <glz-radio [value]="mode.value" [hint]="mode.hint">{{ mode.label }}</glz-radio>
         }
       </glz-radio-group>
     </glz-form-field>

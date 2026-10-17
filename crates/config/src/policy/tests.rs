@@ -18,6 +18,11 @@ pub(crate) fn constraints(text: &str) -> Constraints {
     Constraints::of(&[policy_at(ORG, text)])
 }
 
+/// glave's own choices, with nothing chosen anywhere.
+pub(crate) fn defaults() -> Choices {
+    choices::resolve(&[])
+}
+
 fn policy_at(path: &str, text: &str) -> (PathBuf, PolicyFile) {
     (
         PathBuf::from(path),
