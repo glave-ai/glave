@@ -39,4 +39,4 @@ github-release = "host"
 # Pull requests check the plan, not the builds: building every target takes about 25 minutes,
 # two of them on macOS, which ci.yml keeps off pull requests. Set "upload" in a pull request to
 # have it build and keep every target, as a release would.
-pr-run-mode = "plan"
+pr-run-mode = "upload"
