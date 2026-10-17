@@ -110,6 +110,8 @@ describe('ThreadItemComponent', () => {
       tool: 'bash',
       summary: 'bash: cargo test --workspace',
       caution: '',
+      outsideSandbox: false,
+      modelReason: '',
       decision: null,
     });
     const card = root.querySelector('[data-testid="thread-approval"]');
@@ -135,6 +137,8 @@ describe('ThreadItemComponent', () => {
       tool: 'bash',
       summary: 'bash: git push -u origin fix/worktree-race',
       caution: 'It pushes to a remote.',
+      outsideSandbox: false,
+      modelReason: '',
       decision: null,
     });
     const card = root.querySelector('[data-testid="thread-approval"]');
@@ -145,6 +149,40 @@ describe('ThreadItemComponent', () => {
     expect(caution?.textContent).toBe('It pushes to a remote.');
     expect(card?.querySelector('.summary')?.contains(caution)).toBe(false);
     await expectAccessible(root);
+  });
+
+  it('asks to run a command outside the sandbox once, with the model’s reason as its words', async () => {
+    const { root, fake } = await render({
+      kind: 'approval',
+      key: 'a',
+      seq: 1,
+      approval: 'c1',
+      tool: 'bash',
+      summary: 'bash: cargo add serde',
+      caution: 'It runs outside the sandbox, where it can read and change any file you can.',
+      outsideSandbox: true,
+      modelReason: 'cargo add writes to ~/.cargo/registry, which the sandbox blocks.',
+      decision: null,
+    });
+    const card = root.querySelector('[data-testid="thread-approval"]');
+    expect(card?.querySelector('.summary')?.textContent).toContain('Run this command?');
+    expect(card?.querySelector('.detail')?.textContent).toBe('cargo add serde');
+    expect(root.querySelector('[data-testid="thread-approval-caution"]')?.textContent).toBe(
+      'It runs outside the sandbox, where it can read and change any file you can.',
+    );
+    const reason = root.querySelector('[data-testid="thread-approval-reason"]');
+    expect(reason?.textContent.replace(/\s+/gu, ' ').trim()).toBe(
+      'The model says cargo add writes to ~/.cargo/registry, which the sandbox blocks.',
+    );
+    expect(reason?.querySelector('q')).not.toBeNull();
+    // Each one asks: no answer for the rest of the thread.
+    expect(root.querySelector('[data-testid="thread-approval-allow-thread"]')).toBeNull();
+    await expectAccessible(root);
+    root.querySelector<HTMLButtonElement>('[data-testid="thread-approval-allow-once"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(fake.paramsOf('approval/decide')).toEqual([
+      { thread: 'thread-1', approval: 'c1', decision: 'allow_once' },
+    ]);
   });
 
   it('asks questions and sends the answers', async () => {

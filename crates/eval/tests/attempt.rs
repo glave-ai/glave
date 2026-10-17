@@ -8,11 +8,12 @@ mod attempts {
 
     use glave_eval::{Plan, Setup, attempt, load};
     use glave_ports::block_on;
+    use glave_ports::testing::FAKE_SECRET;
     use glave_provider_openai::Config;
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;
 
-    const KEY: &str = "sk-fake-eval-key-0123";
+    const KEY: &str = FAKE_SECRET;
 
     fn folder(name: &str) -> PathBuf {
         let dir = std::env::temp_dir()

@@ -1,6 +1,6 @@
 # Approvals
 
-How much glave asks the person before acting. Tracks issues #21, #24, #78 and #81; the walls around commands are in `sandbox.md`.
+How much glave asks the person before acting. Tracks issues #21, #24, #78, #81 and #319; the walls around commands are in `sandbox.md`.
 
 ## Modes
 
@@ -47,6 +47,24 @@ A rule cannot tell "push my branch" from a push nobody asked for. In auto mode, 
 
 The judge is the main model unless `GLAVE_JUDGE_MODEL` names another; `off` turns it off. On `evals/judge` (`cargo xtask eval judge --model …`), any of the three default models as judge lowers false alarms on actions the person asked for from 56% to 1–6%, and lets through no case that should ask.
 
+## Running outside the sandbox
+
+A `bash` call may ask to run its command outside the sandbox (`sandbox.md`, *Letting one command out*): `outside_sandbox: true`, with a `reason` in the model's words. Where commands run in a sandbox, that is a caution of its own, "it runs outside the sandbox, where it can read and change any file you can", added after any caution the command itself has. Where they run without one, it changes nothing.
+
+- **It asks in every mode**, `auto` included, as every caution does.
+- **Each one asks.** "Always in this thread" does not cover it: an answer for the thread allows that one command, and is recorded as `allow_once`. Clients offer only once or no.
+- **The judge decides only when it could have asked.** In `auto` mode with a judge, it may let the command run without asking, when the person's own messages ask for that very command (it is told that asking for a goal the command serves is not enough), and only while someone could be asked instead and the thread has read nothing untrusted. With no one at the keyboard, or after untrusted content, the judge is never asked.
+- **With no one at the keyboard it never runs.** The model is told why, not to get the same result another way (such as pointing the command at folders inside the project), and to say at the end which command still needs a person.
+- **The model's reason is its own.** The person sees it apart from glave's caution, as the model's words, never as glave's. The judge never sees it: like any of the model's words, it could argue for itself.
+
+How the modes behave, where commands run in a sandbox:
+
+| | Someone can answer | No one at the keyboard |
+| --- | --- | --- |
+| `auto`, judge on, nothing untrusted read | the judge may clear it; otherwise the person is asked | not run |
+| `auto`, after untrusted content, or judge off | the person is asked | not run |
+| `ask` | the person is asked | not run |
+
 ## Untrusted content
 
 Some tool output comes from outside and no one vouches for it: a page `web_fetch` read, the result of an MCP tool whose annotations say `openWorldHint: true` (MCP's flag for a tool that reaches beyond its server, such as a web search), anything from an untrusted MCP server, and what a `bash` command prints when it runs a forge's tool (`gh`, `glab` or `tea`, anywhere in the command): issues, pull requests, comments and CI logs are written by others. The command is labelled whole, by what runs in it rather than by which subcommand only reads: every such tool's output can carry what others wrote, and a command that fails is not labelled, as errors are not. Such output may hold instructions planted to make the agent act.
@@ -61,7 +79,7 @@ The organization's catalog, served by its gateway, is the organization's and tru
 
 - **Labelled.** The model is shown it between `<untrusted>` tags, after a line saying it is data, not instructions, and not to follow requests in it or run commands it suggests unless the person asked. A closing tag inside the content is broken up, so the content cannot end the label early. Errors are glave's own words and are not labelled.
 - **Remembered.** The call's `tool.call.completed` records `untrusted: true` (`events.md`), so the thread knows it has read such content, and resuming it rebuilds that. A subagent starts knowing what its parent read, and the report of a subagent that read such content is labelled and marks the parent too.
-- **Risky actions after it are judged knowing it.** The cautions above still ask in every mode. In auto mode, a soft caution goes to the judge as before, which is also told that the agent has read untrusted content and that asking the agent to do what some content says is not asking for the action; it never sees the content itself. With the judge off, or in `ask` mode, the caution asks as always. Actions that are not cautions are left to the mode: the sandbox, not the label, is the boundary.
+- **Risky actions after it are judged knowing it.** The cautions above still ask in every mode. In auto mode, a soft caution goes to the judge as before, which is also told that the agent has read untrusted content and that asking the agent to do what some content says is not asking for the action; it never sees the content itself. A request to run outside the sandbox never goes to the judge after it: the person decides. With the judge off, or in `ask` mode, the caution asks as always. Actions that are not cautions are left to the mode: the sandbox, not the label, is the boundary.
 
 `web_fetch` is the one web tool built in (on by default, `[web]` in `config.toml`, `policy.md`): an HTTP GET of an http or https URL, read as Markdown, with the URL it ended at. It reaches beyond the workspace, so in `ask` mode it asks. It refuses private addresses (this computer, private networks, link-local and cloud metadata, carrier NAT, multicast, reserved ranges, and IPv6 forms that carry such an IPv4 address): addresses written in the URL, however spelled (decimal, octal, hex), are checked before anything is sent; names are checked as they resolve, and only the allowed addresses are connected to, so a name cannot resolve one way when checked and another when connected. Redirects (at most 5) are followed by hand and each hop is checked again; no proxy is used. A fetch reads at most 5 MB within 30 seconds, and the model is given at most 50,000 characters; pages are kept for 15 minutes (at most 32). Search is not built in: it comes from remote tools, such as an MCP server for Brave Search or SearXNG.
 
@@ -112,8 +130,4 @@ Each turn's configuration (`turn.started`) records the mode it ran in, the threa
 
 Every question is recorded with its answer: `approval.requested`, then `approval.decided`, before the call's result (`events.md`). So the log shows who allowed what, and "always in this thread" survives resuming the thread. The question carries the thread and call it is about, so a client of the session API can answer it later (`session.md`).
 
-What would run and why it asks are recorded apart: the request's `summary` is the action alone (`bash: rm -rf ~/notes`), and a caution's reason is its `caution`, made a sentence for the person ("It deletes /home/ana/notes, outside the project."). Every client shows the action as it is and the reason as words of its own, never one inside the other. The model and the judge are told the reason as the rule wrote it, unchanged.
-
-## Later
-
-- Asking to let one sandboxed command out of the sandbox.
+What would run and why it asks are recorded apart: the request's `summary` is the action alone (`bash: rm -rf ~/notes`), and a caution's reason is its `caution`, made a sentence for the person ("It deletes /home/ana/notes, outside the project."). Every client shows the action as it is and the reason as words of its own, never one inside the other. The model and the judge are told the reason as the rule wrote it, unchanged. A request to run outside the sandbox also carries `outside_sandbox`, with the model's `reason` inside it: the model's words, shown apart from both, never folded into the caution.

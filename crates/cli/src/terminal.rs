@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use std::io::{IsTerminal as _, Write as _};
 use std::time::Duration;
 
-use glave_event::{Currency, GoalReason, Money, Outcome, ThreadId};
+use glave_event::{Currency, GoalReason, Money, Outcome, OutsideSandbox, ThreadId};
 use glave_harness::Question;
 use glave_session::protocol::{TurnResult, Update};
 
@@ -219,29 +219,7 @@ impl Printer {
             Outcome::Cancelled => ("cancelled", YELLOW),
             Outcome::Failed => ("failed", RED),
         };
-        let tokens = &summary.tokens;
-        let mut line = format!("{} · ", self.protections);
-        let _ = write!(
-            line,
-            "{} model call{} · {} tool call{} · {} tokens",
-            summary.model_calls,
-            plural(u64::from(summary.model_calls)),
-            summary.tool_calls,
-            plural(u64::from(summary.tool_calls)),
-            thousands(tokens.input.saturating_add(tokens.output)),
-        );
-        if tokens.cache_read > 0 {
-            let _ = write!(line, " ({} cached)", thousands(tokens.cache_read));
-        }
-        let cost = match summary.cost {
-            Some(money) if money.micros > 0 || !local => format_money(money),
-            Some(_) | None if local => "$0.00, on this computer".to_owned(),
-            _ => "cost not reported".to_owned(),
-        };
-        let _ = write!(line, " · {cost}");
-        if summary.estimated {
-            line.push_str(" (estimated)");
-        }
+        let line = receipt_line(&self.protections, summary, local);
         println!(
             "\n\n{} {}",
             paint(self.color, color, word),
@@ -251,11 +229,17 @@ impl Printer {
         flush();
     }
 
-    /// Asks the person about an action the model wants to take, and why when a caution says
-    /// so; the answer is typed next.
-    pub fn approval(&mut self, summary: &str, caution: Option<&str>) {
+    /// Asks the person about an action the model wants to take, why when a caution says so,
+    /// and, for a command that would run outside the sandbox, the model's reason; the answer
+    /// is typed next.
+    pub fn approval(
+        &mut self,
+        summary: &str,
+        caution: Option<&str>,
+        outside: Option<&OutsideSandbox>,
+    ) {
         self.waiting.stop();
-        print!("{}", approval_prompt(self.color, summary, caution));
+        print!("{}", approval_prompt(self.color, summary, caution, outside));
         self.showing = Showing::Nothing;
         flush();
     }
@@ -380,13 +364,64 @@ impl Printer {
 /// The most of an error shown on a retry line.
 const ERROR_CHARS: usize = 200;
 
-/// An approval's prompt: what would run, why it asks on a line of its own, then the answers.
-fn approval_prompt(color: bool, summary: &str, caution: Option<&str>) -> String {
+/// What a turn did and cost, after the protections it ran under: the commands that ran outside
+/// the sandbox, if any, then the calls, the tokens and the cost.
+fn receipt_line(protections: &str, summary: &TurnResult, local: bool) -> String {
+    let tokens = &summary.tokens;
+    let mut line = format!("{protections} · ");
+    if summary.outside_sandbox > 0 {
+        let _ = write!(
+            line,
+            "{} command{} outside the sandbox · ",
+            summary.outside_sandbox,
+            plural(u64::from(summary.outside_sandbox))
+        );
+    }
+    let _ = write!(
+        line,
+        "{} model call{} · {} tool call{} · {} tokens",
+        summary.model_calls,
+        plural(u64::from(summary.model_calls)),
+        summary.tool_calls,
+        plural(u64::from(summary.tool_calls)),
+        thousands(tokens.input.saturating_add(tokens.output)),
+    );
+    if tokens.cache_read > 0 {
+        let _ = write!(line, " ({} cached)", thousands(tokens.cache_read));
+    }
+    let cost = match summary.cost {
+        Some(money) if money.micros > 0 || !local => format_money(money),
+        Some(_) | None if local => "$0.00, on this computer".to_owned(),
+        _ => "cost not reported".to_owned(),
+    };
+    let _ = write!(line, " · {cost}");
+    if summary.estimated {
+        line.push_str(" (estimated)");
+    }
+    line
+}
+
+/// An approval's prompt: what would run, why it asks on a line of its own, the model's reason
+/// for running outside the sandbox as its words, then the answers. Running outside the sandbox
+/// is allowed one command at a time, so it offers no "always".
+fn approval_prompt(
+    color: bool,
+    summary: &str,
+    caution: Option<&str>,
+    outside: Option<&OutsideSandbox>,
+) -> String {
     let mut prompt = format!("\n\n{} {summary}\n", paint(color, YELLOW, "needs you"));
     if let Some(caution) = caution {
         let _ = writeln!(prompt, "  {}", paint(color, YELLOW, caution));
     }
-    prompt.push_str("  allow? [y] once  [a] always in this thread  [N] no › ");
+    if let Some(reason) = outside.and_then(|outside| outside.reason.as_deref()) {
+        let _ = writeln!(prompt, "  The model says: \"{reason}\"");
+    }
+    prompt.push_str(if outside.is_some() {
+        "  allow? [y] once  [N] no › "
+    } else {
+        "  allow? [y] once  [a] always in this thread  [N] no › "
+    });
     prompt
 }
 
@@ -470,14 +505,67 @@ mod tests {
             approval_prompt(
                 false,
                 "bash: rm -rf ~/notes",
-                Some("It deletes /home/ana/notes, outside the project.")
+                Some("It deletes /home/ana/notes, outside the project."),
+                None
             ),
             "\n\nneeds you bash: rm -rf ~/notes\n  It deletes /home/ana/notes, outside the \
              project.\n  allow? [y] once  [a] always in this thread  [N] no › "
         );
         assert_eq!(
-            approval_prompt(false, "bash: touch a", None),
+            approval_prompt(false, "bash: touch a", None, None),
             "\n\nneeds you bash: touch a\n  allow? [y] once  [a] always in this thread  [N] no › "
+        );
+    }
+
+    #[test]
+    fn running_outside_the_sandbox_shows_the_model_s_reason_as_its_words_and_asks_once() {
+        let caution =
+            Some("It runs outside the sandbox, where it can read and change any file you can.");
+        let outside = OutsideSandbox {
+            reason: Some("cargo add writes to ~/.cargo/registry, which the sandbox blocks.".into()),
+        };
+        assert_eq!(
+            approval_prompt(false, "bash: cargo add serde", caution, Some(&outside)),
+            "\n\nneeds you bash: cargo add serde\n  It runs outside the sandbox, where it can \
+             read and change any file you can.\n  The model says: \"cargo add writes to \
+             ~/.cargo/registry, which the sandbox blocks.\"\n  allow? [y] once  [N] no › "
+        );
+        let unexplained = OutsideSandbox::default();
+        assert_eq!(
+            approval_prompt(false, "bash: cargo add serde", caution, Some(&unexplained)),
+            "\n\nneeds you bash: cargo add serde\n  It runs outside the sandbox, where it can \
+             read and change any file you can.\n  allow? [y] once  [N] no › "
+        );
+    }
+
+    #[test]
+    fn the_receipt_counts_the_commands_that_ran_outside_the_sandbox() {
+        let mut turn = TurnResult {
+            outcome: Outcome::Completed,
+            model_calls: 2,
+            tool_calls: 1,
+            outside_sandbox: 0,
+            tokens: glave_event::TokenCounts {
+                input: 1_200,
+                cache_read: 0,
+                cache_write: 0,
+                output: 34,
+                reasoning: 0,
+            },
+            cost: None,
+            estimated: false,
+        };
+        let protections = "approval: auto · sandbox: project + network";
+        assert_eq!(
+            receipt_line(protections, &turn, true),
+            "approval: auto · sandbox: project + network · 2 model calls · 1 tool call · 1,234 \
+             tokens · $0.00, on this computer"
+        );
+        turn.outside_sandbox = 1;
+        assert_eq!(
+            receipt_line(protections, &turn, true),
+            "approval: auto · sandbox: project + network · 1 command outside the sandbox · 2 \
+             model calls · 1 tool call · 1,234 tokens · $0.00, on this computer"
         );
     }
 

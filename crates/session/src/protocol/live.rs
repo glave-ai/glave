@@ -1,4 +1,4 @@
-//! Progress while a turn runs, sent as `turn/live`: never stored, never replayed.
+//! Progress while a turn runs, as `turn/live` carries it.
 
 use glave_event::{CallId, EventId, MemoryId, ThreadId};
 use glave_harness::{Live, Question};

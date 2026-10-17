@@ -159,7 +159,8 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
                 }))
                 .unwrap(),
             );
-            let outcome = Tool::Write.run(&arguments, &ws, &Cancel::new()).await;
+            let at = (&ws, &crate::background::Commands::default());
+            let outcome = Tool::Write.run(&arguments, at, &Cancel::new()).await;
             if outcome.is_error {
                 refusals.push(outcome.text);
             } else {

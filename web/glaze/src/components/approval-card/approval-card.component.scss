@@ -20,3 +20,8 @@
 :host(.glz-approval-card--decided) .caution {
   color: var(--glz-color-text-muted);
 }
+
+// The agent's own words, quoted after who said them, in the plain tone: never the app's warning.
+.reason {
+  overflow-wrap: anywhere;
+}

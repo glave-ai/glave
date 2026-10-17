@@ -4,7 +4,7 @@ An open-source Claude or ChatGPT that you run yourself, where every conversation
 
 Run it on your own machine and it just works: privately, with any model. A company runs the very same software as its own private AI cloud, with its sign-in, models, data and rules.
 
-> **Early.** glave works today and is tested on three model families, but it's young. Expect rough edges and changes. Building from source is the way to run it for now.
+> **Early.** glave works today and is tested on three model families, but it's young. Expect rough edges and changes.
 
 ## What it does
 
@@ -16,6 +16,21 @@ Run it on your own machine and it just works: privately, with any model. A compa
 
 ## Run it
 
+On macOS or Linux:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/glave-ai/glave/releases/latest/download/glave-installer.sh | sh
+glave app
+```
+
+Your browser opens, signed in. Add a model by pasting a key, and start a chat.
+
+Prefer the terminal? `glave` starts a session right there. `glave --help` lists everything.
+
+With Homebrew instead: `brew install glave-ai/tap/glave`. Both ways work once the first release is published; until then, build glave from source.
+
+### From source
+
 You need Rust (see `rust-toolchain.toml`) and Node 22.22.3 or later.
 
 ```sh
@@ -25,10 +40,6 @@ cd glave
 cargo build --release -p glave --features web
 ./target/release/glave app
 ```
-
-Your browser opens, signed in. Add a model by pasting a key, and start a chat.
-
-Prefer the terminal? `./target/release/glave` starts a session right there. `glave --help` lists everything.
 
 ## For companies
 

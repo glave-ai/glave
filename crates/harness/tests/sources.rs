@@ -106,11 +106,19 @@ mod sources {
                 .map(|spec| spec.name.clone())
                 .collect();
             assert_eq!(
-                &offered[..6],
-                ["search", "glob", "read", "write", "edit", "bash"]
+                &offered[..7],
+                [
+                    "search",
+                    "glob",
+                    "read",
+                    "write",
+                    "edit",
+                    "bash",
+                    "command_output"
+                ]
             );
             assert_eq!(
-                &offered[6..],
+                &offered[7..],
                 ["mcp__docs__search", "mcp__tracker__create_issue"]
             );
             assert_eq!(tools.calls().len(), 1, "a read-only tool never asks");

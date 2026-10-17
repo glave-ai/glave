@@ -28,12 +28,12 @@ pub use payload::{
     AuthMethod, Cost, ForkPoint, GatewayToolCalled, GoalEnded, GoalReason, GoalResumed, GoalSet,
     HookPoint, HookRan, HookResult, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved,
     MemoryScope, MemorySource, MemoryTidied, MessageAdded, ModelChosen, ModelRef, ModelResponded,
-    Opaque, Origin, OriginKind, Outcome, ParentCall, Part, Principal, PrincipalKind, Producer,
-    Role, StopReason, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted,
-    ThreadUnarchived, TokenCounts, ToolCallCompleted, ToolCallRequested, TraceId, TurnEnded,
-    TurnStarted, Usage, Verdict,
+    Opaque, Origin, OriginKind, Outcome, OutsideSandbox, ParentCall, Part, Principal,
+    PrincipalKind, Producer, Role, StopReason, ThreadArchived, ThreadCompacted, ThreadDeleted,
+    ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
+    ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
 };
-pub use payload::{Checkout, FolderSource};
+pub use payload::{Checkout, CommandEnded, CommandEnding, CommandStarted, FolderSource};
 pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,
     TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved, sealed_under_memory,

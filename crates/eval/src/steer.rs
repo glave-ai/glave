@@ -6,22 +6,34 @@ use glave_event::EventId;
 use glave_harness::{Caller, Clock, Entropy, Inbox, Live, Queued, Thread};
 use serde::Deserialize;
 
-/// `[glave] steer = { after = 1, message = "…" }`.
+/// `[glave] steer = { after = 1, message = "…" }`: never sent before a tool call, never empty.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "Written")]
 pub struct Steer {
     /// How many of the first turn's tool calls finish before it is sent: 1 or more.
     pub after: u32,
     pub message: String,
 }
 
-impl Steer {
-    /// Refuses one sent before any tool call, or with nothing to say.
-    pub(crate) fn check(&self) -> Result<(), String> {
-        if self.after == 0 || self.message.trim().is_empty() {
+/// `steer` as a task writes it, before it is checked.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Written {
+    after: u32,
+    message: String,
+}
+
+impl TryFrom<Written> for Steer {
+    type Error = String;
+
+    fn try_from(written: Written) -> Result<Self, Self::Error> {
+        if written.after == 0 || written.message.trim().is_empty() {
             return Err("steer is sent after 1 or more tool calls, with a message".into());
         }
-        Ok(())
+        Ok(Self {
+            after: written.after,
+            message: written.message,
+        })
     }
 }
 

@@ -3,6 +3,7 @@
 //! step is recorded as events, so the log alone can rebuild and resume any thread.
 
 mod approval;
+mod background;
 mod bind;
 mod builtins;
 mod caller;
@@ -44,6 +45,7 @@ mod untrusted;
 mod worker;
 
 pub use approval::{AllowAll, ApprovalRequest, Approver, Decision, NoOneToAsk};
+pub use background::{Commands, RunningCommand};
 pub use bind::{Place, branch_for};
 pub use cancel::Cancel;
 pub use commands::{Command, FoundCommands, command_folders, find_commands};

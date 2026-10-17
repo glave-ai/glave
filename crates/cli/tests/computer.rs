@@ -8,6 +8,7 @@ mod computer_tests {
     use std::sync::Mutex;
 
     use glave_computer::RemoteComputers;
+    use glave_ports::testing::FAKE_SECRET;
     use glave_ports::{
         BoxFuture, Command, Computers, Ending, Environment, NeverCancelled, Output, Sources,
         block_on, conformance,
@@ -33,7 +34,7 @@ mod computer_tests {
             let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_glave"))
                 .args(["computer", "serve", "--stdio"])
                 .env("GLAVE_HOME", dir.join("home"))
-                .env("GLAVE_API_KEY", "sk-must-not-leak")
+                .env("GLAVE_API_KEY", FAKE_SECRET)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .kill_on_drop(true)
@@ -58,7 +59,7 @@ mod computer_tests {
             assert_eq!(finished.ending, Ending::Exited { code: 0 });
             let seen = seen.0.lock().unwrap().clone();
             assert!(seen.contains("PATH="), "{seen}");
-            assert!(!seen.contains("sk-must-not-leak"), "{seen}");
+            assert!(!seen.contains(FAKE_SECRET), "glave's key reached a command");
             remote.destroy(made.id).await.unwrap();
 
             let suite = dir.join("suite");

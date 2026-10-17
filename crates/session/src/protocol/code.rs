@@ -43,5 +43,6 @@ codes! {
     NO_CREDENTIAL = -32024, "No such git host, or sign-in, here";
     HOST = -32025, "The git host refused, or could not be reached";
     NO_TRUST = -32026, "No such ask waits: the project changed since, or asks nothing now";
-    QUEUE_FULL = -32027, "As many messages wait for the running turn as it takes";
+    NO_COMMAND = -32027, "No such command is running in the background in this thread";
+    QUEUE_FULL = -32028, "As many messages wait for the running turn as it takes";
 }

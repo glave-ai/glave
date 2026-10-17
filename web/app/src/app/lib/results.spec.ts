@@ -45,7 +45,19 @@ function approval(seq: number, decided: boolean): ApprovalItem {
     tool: 'bash',
     summary: 'bash: git push',
     caution: 'It pushes to a remote.',
+    outsideSandbox: false,
+    modelReason: '',
     decision: decided ? 'allow_once' : null,
+  };
+}
+
+function outside(seq: number, decision: ApprovalItem['decision']): ApprovalItem {
+  return {
+    ...approval(seq, false),
+    summary: 'bash: cargo add serde',
+    caution: 'It runs outside the sandbox.',
+    outsideSandbox: true,
+    decision,
   };
 }
 
@@ -74,6 +86,20 @@ describe('results', () => {
     expect(shown.steps.map((item) => item.key)).toEqual(['m2', 'c3', 'a4', 'c5']);
     expect(shown.receipt).toEqual({ status: 'done', facts: ['4m 02s', '$0.04'], steps: '2 steps' });
     expect(shown.waiting).toEqual([]);
+  });
+
+  it('counts the commands that ran outside the sandbox in the receipt, not those declined', () => {
+    const shown = turnResults(
+      turn([ask, call(2), outside(3, 'allow_once'), call(4), outside(5, 'deny'), say(6, 'Added')], {
+        took: 2_000,
+        outcome: 'completed',
+      }),
+      null,
+      false,
+    );
+    expect(shown.receipt?.facts).toEqual(['2s', '1 command outside the sandbox']);
+    const none = turnResults(turn([ask, call(2), outside(3, 'deny')]), null, false);
+    expect(none.receipt?.facts).toEqual([]);
   });
 
   it('shows what waits for the person last, never folded', () => {

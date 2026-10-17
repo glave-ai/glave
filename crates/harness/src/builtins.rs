@@ -12,13 +12,19 @@ use glave_ports::{
 use glave_shell::{Context, Kind, Verdict, judge, untrusted_output};
 
 use crate::approval::{reads_secret, summarize};
+use crate::background::Commands;
 use crate::tools::Tool;
 use crate::tools::workspace::Workspace;
 use glave_ports::secrets::is_secret_file;
 
-/// The built-in tools on one workspace.
+/// Where the built-in tools are among a thread's tool sources: first, so a tool of theirs is
+/// never another source's (`Harness::source_for`).
+pub(crate) const BUILTINS: usize = 0;
+
+/// The built-in tools on one workspace, for one thread's commands in the background.
 pub(crate) struct Builtins {
     pub(crate) workspace: Arc<Workspace>,
+    pub(crate) commands: Arc<Commands>,
 }
 
 impl Tool {
@@ -28,7 +34,9 @@ impl Tool {
         match self {
             Self::Search | Self::Glob | Self::Read => Effect::Reads,
             Self::Write | Self::Edit => Effect::Changes,
-            Self::Bash => Effect::Runs,
+            // It acts on what commands run, so an explorer never has it; each call only reads
+            // or stops what the model started, so none asks (`Builtins::assess`).
+            Self::Bash | Self::CommandOutput => Effect::Runs,
         }
     }
 }
@@ -82,6 +90,8 @@ impl ToolSource for Builtins {
         Box::pin(async move {
             match Tool::named(name) {
                 Some(Tool::Bash) => self.judge(arguments),
+                // Reading a command's output, or stopping one the model started, as Ctrl-C would.
+                Some(Tool::CommandOutput) => Assessment::Reads,
                 Some(tool) if reads_secret(&self.workspace, tool, arguments).await => {
                     Assessment::Caution {
                         reason: "this file usually holds secrets; the model would see them"
@@ -111,13 +121,20 @@ impl ToolSource for Builtins {
         Box::pin(async move {
             match Tool::named(name) {
                 Some(tool) => {
-                    let outcome = tool.run(arguments, &self.workspace, cancel).await;
+                    let at = (&*self.workspace, &*self.commands);
+                    let outcome = tool.run(arguments, at, cancel).await;
                     let mut output = ToolOutput::text(outcome.is_error, outcome.text);
-                    // What a forge's tool prints is what others wrote there, as a web page is.
-                    output.untrusted = matches!(tool, Tool::Bash)
-                        && command(arguments).is_some_and(|command| {
-                            untrusted_output(command, self.workspace.root())
-                        });
+                    // What a forge's tool prints is what others wrote there, as a web page is,
+                    // in the foreground or the background.
+                    let script = match tool {
+                        Tool::Bash => command(arguments).map(str::to_owned),
+                        Tool::CommandOutput => crate::tools::command_named(arguments)
+                            .and_then(|number| self.commands.numbered(number))
+                            .map(|entry| entry.script),
+                        _ => None,
+                    };
+                    output.untrusted = script
+                        .is_some_and(|script| untrusted_output(&script, self.workspace.root()));
                     output
                 }
                 None => ToolOutput::text(true, format!("There is no tool named {name:?}.")),
@@ -142,6 +159,7 @@ mod tests {
             let workspace = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
             let builtins = Builtins {
                 workspace: Arc::new(workspace),
+                commands: Arc::default(),
             };
             assert_eq!(
                 glave_ports::conformance::tool_source(&builtins).await,
@@ -164,6 +182,7 @@ mod tests {
                 let workspace = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
                 let builtins = Builtins {
                     workspace: Arc::new(workspace),
+                    commands: Arc::default(),
                 };
                 let cancel = crate::cancel::Cancel::new();
                 builtins.call("bash", &arguments, &cancel).await

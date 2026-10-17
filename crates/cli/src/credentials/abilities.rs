@@ -173,6 +173,8 @@ fn ordered(can: &[Ability]) -> Vec<Ability> {
 
 #[cfg(test)]
 mod tests {
+    use glave_ports::testing::fake_secret;
+
     use super::*;
 
     fn scopes(given: &[&str]) -> Vec<String> {
@@ -201,14 +203,14 @@ mod tests {
     fn only_a_classic_token_s_scopes_header_is_read() {
         let mut headers = HeaderMap::new();
         headers.insert("x-oauth-scopes", "repo, workflow".parse().unwrap());
-        let read = |token: &str| github_scopes(&headers, &Secret::new(token));
+        let read = |prefix: &str| github_scopes(&headers, &Secret::new(fake_secret(prefix)));
         assert_eq!(
-            read("ghp_classic"),
+            read("ghp_"),
             Some(scopes(&["repo"])),
             "only what glave reads"
         );
-        assert_eq!(read("github_pat_fine"), None);
-        assert_eq!(read("ghu_app"), None);
+        assert_eq!(read("github_pat_"), None);
+        assert_eq!(read("ghu_"), None);
         assert_eq!(
             ordered(&[Ability::Issues, Ability::Read, Ability::Read]),
             [Ability::Read, Ability::Issues]

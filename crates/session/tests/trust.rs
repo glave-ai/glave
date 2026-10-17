@@ -200,12 +200,12 @@ fn a_thread_in_an_untrusted_project_asks_the_person_here_and_waits_until_they_an
             "it still asks"
         );
         // Trusted: asked nothing more, in this thread or a new one, and on from the next turn.
-        let trusted = server
+        let answered = server
             .request(answering(started.id, &ask.ask, TrustChoice::Trust))
             .await
             .unwrap();
-        let trusted = summary(trusted);
-        assert_eq!((trusted.trust, trusted.status), (None, Status::Idle));
+        let answered = summary(answered);
+        assert_eq!((answered.trust, answered.status), (None, Status::Idle));
         assert!(repository.is_trusted());
         turn(&server, started.id, "search acme").await.unwrap();
         assert!(offered(&seen, 1), "the project's tool, from the next turn");
@@ -342,10 +342,10 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
         }
         assert!(!repository.is_trusted());
         // Trusted by the person here, it is theirs alone: grace's threads get none of it.
-        let trusted = server
+        let answered = server
             .request(answering(started.id, &ask.ask, TrustChoice::Trust))
             .await;
-        assert!(trusted.is_ok(), "{trusted:?}");
+        assert!(answered.is_ok(), "{answered:?}");
         let turn = Request::TurnStart {
             thread: started.id,
             prompt: "search acme".into(),

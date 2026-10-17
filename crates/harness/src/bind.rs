@@ -13,7 +13,7 @@ use glave_ports::{
 };
 
 use crate::approval::Approver;
-use crate::builtins::Builtins;
+use crate::builtins::{BUILTINS, Builtins};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
@@ -48,7 +48,8 @@ pub fn branch_for(thread: ThreadId) -> String {
 }
 
 /// How many of `events` are glave's own record of where the thread works (bindings and
-/// removals) and of whether the thread is shown, which call ids do not count.
+/// removals), of whether the thread is shown, and of its commands in the background, which
+/// call ids do not count.
 pub(crate) fn own_records(events: &[Event]) -> u64 {
     let count = events
         .iter()
@@ -63,6 +64,8 @@ pub(crate) fn own_records(events: &[Event]) -> u64 {
                     | Body::ThreadRenamed(_)
                     | Body::ModelChosen(_)
                     | Body::ApprovalModeChosen(_)
+                    | Body::CommandStarted(_)
+                    | Body::CommandEnded(_)
             )
         })
         .count();
@@ -229,12 +232,13 @@ where
     }
 
     /// The tool source at `index` for `thread`, as [`Harness::tools`] numbers them: the
-    /// built-in tools on its own workspace when it has one, the source as the harness holds
-    /// it, then its project's.
+    /// built-in tools on its workspace, with its commands in the background, the source as the
+    /// harness holds it, then its project's.
     pub(crate) fn source_for(&self, thread: &Thread, index: usize) -> Option<Arc<dyn ToolSource>> {
-        match (&thread.workspace, index) {
-            (Some(workspace), 0) => Some(Arc::new(Builtins {
-                workspace: Arc::clone(workspace),
+        match index {
+            BUILTINS => Some(Arc::new(Builtins {
+                workspace: Arc::clone(self.workspace_for(thread)),
+                commands: Arc::clone(&thread.commands),
             })),
             _ => match index.checked_sub(self.sources.len()) {
                 Some(brought) => thread.brought.tools.get(brought).cloned(),

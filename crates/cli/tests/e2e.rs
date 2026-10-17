@@ -10,6 +10,7 @@ mod glave_binary {
     use std::path::Path;
     use std::process::Command;
 
+    use glave_ports::testing::FAKE_SECRET;
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::{Value, json};
 
@@ -56,7 +57,7 @@ mod glave_binary {
         );
         assert_eq!(
             received[0].authorization.as_deref(),
-            Some("Bearer sk-e2e-test")
+            Some(&*format!("Bearer {FAKE_SECRET}"))
         );
     }
 

@@ -12,6 +12,7 @@ mod store {
     use glave_event::{MemoryScope, Principal, decode};
     use glave_harness::{MemoryContext, MemoryError, memory_ledger};
     use glave_memory::{Remembering, Writer};
+    use glave_ports::testing::fake_secret;
     use glave_ports::{EventLog, Scope};
 
     use super::support::*;
@@ -131,14 +132,9 @@ mod store {
         block_on!(async {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 1);
+            let text = format!("use {} for the deploy", fake_secret("sk-proj-"));
             let refused = memories
-                .remember(
-                    &writer(shared()),
-                    "use sk-proj-1234567890abcdefghijklmnopqrstuv for the deploy",
-                    MemoryScope::Space,
-                    None,
-                    true,
-                )
+                .remember(&writer(shared()), &text, MemoryScope::Space, None, true)
                 .await;
             let Err(MemoryError::Invalid(why)) = refused else {
                 panic!("{refused:?}");

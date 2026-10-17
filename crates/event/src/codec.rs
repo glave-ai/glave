@@ -8,14 +8,15 @@ use serde_json::value::RawValue;
 use crate::envelope::{ENVELOPE_VERSION, Header, PayloadVersion, RawEvent, TypeName};
 use crate::error::{DecodeError, EncodeError};
 use crate::payload::{
-    ApprovalDecided, ApprovalModeChosen, ApprovalRequested, CredentialConnected, CredentialRemoved,
-    GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, HookRan, MemoryEdited, MemoryForgotten,
-    MemoryRestored, MemorySaved, MemoryTidied, MessageAdded, ModelChosen, ModelResponded,
-    ProviderConnected, ProviderRemoved, ScheduleCreated, ScheduleDeleted, SpaceFolderSet,
-    TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted, ThreadRenamed,
-    ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted,
-    WorkspaceBound, WorkspaceRemoved, approval, chosen, credential, gateway, goal, hook, memory,
-    message, model, provider, space, standing, task, thread, tool, turn, workspace,
+    ApprovalDecided, ApprovalModeChosen, ApprovalRequested, CommandEnded, CommandStarted,
+    CredentialConnected, CredentialRemoved, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
+    HookRan, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryTidied,
+    MessageAdded, ModelChosen, ModelResponded, ProviderConnected, ProviderRemoved, ScheduleCreated,
+    ScheduleDeleted, SpaceFolderSet, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
+    ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
+    ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, chosen,
+    command, credential, gateway, goal, hook, memory, message, model, provider, space, standing,
+    task, thread, tool, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -51,6 +52,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (turn::ENDED, 1),
     (approval::REQUESTED, 1),
     (approval::REQUESTED, 2),
+    (approval::REQUESTED, 3),
     (approval::DECIDED, 1),
     (approval::DECIDED, 2),
     (goal::SET, 1),
@@ -62,6 +64,8 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (workspace::BOUND, 2),
     (workspace::REMOVED, 1),
     (workspace::REMOVED, 2),
+    (command::STARTED, 1),
+    (command::ENDED, 1),
     (hook::TYPE, 1),
     (task::STARTED, 1),
     (task::ENDED, 1),
@@ -112,6 +116,8 @@ pub enum Body {
     GoalResumed(GoalResumed),
     WorkspaceBound(WorkspaceBound),
     WorkspaceRemoved(WorkspaceRemoved),
+    CommandStarted(CommandStarted),
+    CommandEnded(CommandEnded),
     HookRan(HookRan),
     TaskStarted(TaskStarted),
     TaskEnded(TaskEnded),
@@ -276,6 +282,8 @@ impl Event {
             Body::GoalResumed(payload) => encode(header, payload),
             Body::WorkspaceBound(payload) => encode(header, payload),
             Body::WorkspaceRemoved(payload) => encode(header, payload),
+            Body::CommandStarted(payload) => encode(header, payload),
+            Body::CommandEnded(payload) => encode(header, payload),
             Body::HookRan(payload) => encode(header, payload),
             Body::TaskStarted(payload) => encode(header, payload),
             Body::TaskEnded(payload) => encode(header, payload),
@@ -306,10 +314,15 @@ impl Event {
     }
 }
 
-/// Decodes the choices made for a thread, and the memory, accounts and space ledgers' types;
+/// Decodes commands in the background, the choices made for a thread, and the memory, accounts
+/// and space ledgers' types;
 /// `None` for any type that is not one of them.
 fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
     match kind {
+        command::STARTED => {
+            command::decode_started(version, data).map(|r| r.map(Body::CommandStarted))
+        }
+        command::ENDED => command::decode_ended(version, data).map(|r| r.map(Body::CommandEnded)),
         chosen::TYPE => chosen::decode(version, data).map(|r| r.map(Body::ModelChosen)),
         chosen::APPROVAL => {
             chosen::decode_approval(version, data).map(|r| r.map(Body::ApprovalModeChosen))

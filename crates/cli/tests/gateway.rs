@@ -22,6 +22,7 @@ mod gateway {
     use std::process::{Child, Command, Stdio};
     use std::sync::{Arc, Mutex, mpsc};
 
+    use glave_ports::testing::FAKE_SECRET;
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;
 
@@ -29,7 +30,7 @@ mod gateway {
     use super::support::*;
 
     /// The key only the gateway holds.
-    const KEY: &str = "sk-gateway-only-0123456789";
+    const KEY: &str = FAKE_SECRET;
 
     /// The fake identity provider, served from a thread of its own, and the key it signs with.
     struct Identity {
@@ -220,7 +221,7 @@ mod gateway {
         assert_eq!(body["model"], "m");
         assert_eq!(
             received[0].authorization.as_deref(),
-            Some("Bearer sk-e2e-test")
+            Some(&*format!("Bearer {FAKE_SECRET}"))
         );
         let offered: Vec<&str> = body["tools"]
             .as_array()
@@ -237,6 +238,7 @@ mod gateway {
                 "write",
                 "edit",
                 "bash",
+                "command_output",
                 "web_fetch",
                 "agent"
             ],

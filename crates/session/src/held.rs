@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, PoisonError};
 
 use glave_event::ThreadId;
-use glave_harness::{Cancel, HarnessError, Inbox, Live, Standing, Thread};
+use glave_harness::{Cancel, Commands, HarnessError, Inbox, Live, Standing, Thread};
 use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::sync::watch;
 
@@ -25,6 +25,8 @@ pub(crate) enum Slot {
         /// Where a message sent meanwhile waits for the model's next call, when the work is a
         /// turn or a goal's turns (`steer.rs`).
         inbox: Option<Inbox>,
+        /// Its commands in the background, listed and stopped while the work holds it.
+        commands: Arc<Commands>,
     },
 }
 
@@ -145,6 +147,7 @@ where
                         cancel: cancel.clone(),
                         finished,
                         inbox,
+                        commands: held.commands(),
                     };
                     threads.insert(thread, slot);
                     *held

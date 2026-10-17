@@ -16,7 +16,7 @@ mod served;
 #[cfg(test)]
 mod hosts {
     use glave_ports::Bytes;
-    use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FakeHttp};
+    use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FakeHttp, fake_secret};
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;
 
@@ -25,10 +25,44 @@ mod hosts {
 
     /// The token the person pastes.
     const TOKEN: &str = "gta_e2e0token0never0shown0wxyz";
-    /// The token GitHub hands back after the person approves the sign-in.
-    const SIGNED_IN: &str = "ghu_e2e0signed0in0never0shown";
-    /// The token that renews it.
-    const RENEWED: &str = "ghu_e2e0renewed0never0shown";
+
+    /// What GitHub hands back: a GitHub App's user token once the person approves the sign-in,
+    /// with the refresh token that renews it, and the pair that renewal brings.
+    struct Tokens {
+        signed_in: String,
+        refresh: String,
+        renewed: String,
+        second_refresh: String,
+    }
+
+    impl Tokens {
+        fn new() -> Self {
+            Self {
+                signed_in: fake_secret("ghu_"),
+                refresh: fake_secret("ghr_"),
+                renewed: fake_secret("ghu_"),
+                second_refresh: fake_secret("ghr_"),
+            }
+        }
+
+        /// GitHub's answer to the renewal: the renewed token and its own refresh token.
+        fn renewal(&self) -> (u16, String) {
+            let renewed = json!({"access_token": self.renewed, "token_type": "bearer",
+                                 "expires_in": 28800, "refresh_token": self.second_refresh});
+            (200, renewed.to_string())
+        }
+
+        /// Each by what it is, and the device code: none may show.
+        fn kept_out(&self) -> [(&'static str, &str); 5] {
+            [
+                ("the token", self.signed_in.as_str()),
+                ("the renewed token", self.renewed.as_str()),
+                ("the device code", "dc-e2e"),
+                ("the refresh token", self.refresh.as_str()),
+                ("the second refresh token", self.second_refresh.as_str()),
+            ]
+        }
+    }
 
     /// The command the model runs: git asking the fake host for its branches.
     fn fetch(host: &FakeGitHost) -> String {
@@ -114,7 +148,7 @@ mod hosts {
     /// GitHub's side of a sign-in in the browser at a fake, then `then`: the code, one poll
     /// still waiting, a GitHub App's user token about to expire with the refresh token that
     /// renews it, whom it is for, and what the app may do.
-    fn github(then: Vec<(u16, String)>) -> FakeHttp {
+    fn github(tokens: &Tokens, then: Vec<(u16, String)>) -> FakeHttp {
         let signed_in = vec![
             (
                 200,
@@ -126,8 +160,8 @@ mod hosts {
             (200, json!({"error": "authorization_pending"}).to_string()),
             (
                 200,
-                json!({"access_token": SIGNED_IN, "token_type": "bearer", "expires_in": 60,
-                       "refresh_token": "ghr_e2e0refresh0never0shown"})
+                json!({"access_token": tokens.signed_in, "token_type": "bearer",
+                       "expires_in": 60, "refresh_token": tokens.refresh})
                 .to_string(),
             ),
             (200, json!({"login": "octocat"}).to_string()),
@@ -179,16 +213,9 @@ mod hosts {
     #[test]
     fn signing_in_to_github_in_the_browser_connects_it_and_renews_its_token() {
         let place = place("hosts-device");
-        let github = github(vec![
-            (
-                200,
-                json!({"access_token": RENEWED, "token_type": "bearer", "expires_in": 28800,
-                       "refresh_token": "ghr_e2e0second0refresh"})
-                .to_string(),
-            ),
-            (404, "{}".to_owned()),
-            installed(),
-        ]);
+        let tokens = Tokens::new();
+        let then = vec![tokens.renewal(), (404, "{}".to_owned()), installed()];
+        let github = github(&tokens, then);
         std::fs::create_dir_all(&place.home).unwrap();
         let app = format!(
             "[github]\nclient_id = \"Iv23li0e2e\"\napp = \"glave-e2e\"\nurl = \"{}\"\n",
@@ -219,20 +246,19 @@ mod hosts {
         removes_by_its_first_id(&mut served, &signed_in);
 
         let said = served.end();
-        let refreshes = ["ghr_e2e0refresh0never0shown", "ghr_e2e0second0refresh"];
-        for secret in [SIGNED_IN, RENEWED, "dc-e2e"].into_iter().chain(refreshes) {
-            assert!(!said.contains(secret), "{secret} never shows: {said}");
-            assert!(!results.contains(secret), "{results}");
+        for (what, secret) in tokens.kept_out() {
+            assert!(!said.contains(secret), "{what} shows: {said}");
+            assert!(!results.contains(secret), "{what} reached the model");
             assert!(
                 !holds(&place.home, secret),
-                "{secret} sealed at rest, and in no log"
+                "{what} is sealed at rest, and in no log"
             );
         }
         let asked = github.received();
         assert_eq!(asked[0].path, "/login/device/code");
         assert_eq!(asked[2].path, "/login/oauth/access_token");
         assert_eq!(asked[3].path, "/api/v3/user");
-        let bearer = format!("Bearer {SIGNED_IN}");
+        let bearer = format!("Bearer {}", tokens.signed_in);
         assert_eq!(asked[3].headers.get("authorization"), Some(&bearer));
         assert_eq!(asked[4].path, "/api/v3/user/installations");
         assert_eq!(asked[4].headers.get("authorization"), Some(&bearer));
@@ -242,7 +268,7 @@ mod hosts {
                 && refresh.body.contains("grant_type=refresh_token")
                 && refresh
                     .body
-                    .contains("refresh_token=ghr_e2e0refresh0never0shown")
+                    .contains(&format!("refresh_token={}", tokens.refresh))
                 && !refresh.body.contains("client_secret"),
             "renewed with the refresh token alone: {}",
             refresh.body
@@ -253,10 +279,10 @@ mod hosts {
         let sent = String::from_utf8(sent.as_slice().to_vec()).unwrap();
         assert_eq!(
             sent,
-            format!("octocat:{RENEWED}"),
+            format!("octocat:{}", tokens.renewed),
             "git got the renewed token"
         );
-        let renewed = format!("Bearer {RENEWED}");
+        let renewed = format!("Bearer {}", tokens.renewed);
         assert_eq!(asked[7].headers.get("authorization"), Some(&renewed));
     }
 }

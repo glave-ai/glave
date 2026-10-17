@@ -44,16 +44,26 @@ fn sandbox(level: SandboxLevel, network: bool, home: &Path) -> Sandbox {
     }
 }
 
+/// A `bash` call's arguments.
+fn bash(arguments: serde_json::Value) -> Arguments {
+    Arguments::Json(serde_json::from_value(arguments).unwrap())
+}
+
 /// Runs `command` with bash in `project`, under `sandbox` if one is given.
 fn run_in(project: &Path, sandbox: Option<&Sandbox>, command: &str) -> crate::tools::ToolOutcome {
-    let arguments =
-        Arguments::Json(serde_json::from_value(serde_json::json!({ "command": command })).unwrap());
+    let arguments = bash(serde_json::json!({ "command": command }));
     block_on!(async {
         let mut workspace = Workspace::open(project, std::env::vars_os()).await.unwrap();
         if let Some(sandbox) = sandbox {
             workspace = workspace.with_sandbox(sandbox).await.unwrap();
         }
-        Tool::Bash.run(&arguments, &workspace, &Cancel::new()).await
+        Tool::Bash
+            .run(
+                &arguments,
+                (&workspace, &crate::background::Commands::default()),
+                &Cancel::new(),
+            )
+            .await
     })
 }
 
@@ -107,6 +117,74 @@ fn writes_stay_in_the_project_and_temp_folder() {
         read_only.text.contains("blocked by the sandbox"),
         "{}",
         read_only.text
+    );
+}
+
+#[test]
+fn a_command_allowed_outside_the_sandbox_runs_without_it_and_the_next_is_sandboxed_again() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("outside");
+    let project = dir.join("project");
+    let sandbox = sandbox(SandboxLevel::Project, false, &dir);
+    let blocked = run(&project, &sandbox, "echo out > ../outside.txt");
+    assert!(!dir.join("outside.txt").exists(), "{}", blocked.text);
+    assert!(
+        blocked
+            .text
+            .contains("run it again with outside_sandbox: true and a reason"),
+        "the note says how to ask: {}",
+        blocked.text
+    );
+    let outside = bash(serde_json::json!({
+        "command": "echo out > ../outside.txt",
+        "outside_sandbox": true,
+        "reason": "it writes beside the project",
+    }));
+    let again = bash(serde_json::json!({ "command": "echo again > ../again.txt" }));
+    let (ran, after) = block_on!(async {
+        let workspace = Workspace::open(&project, std::env::vars_os())
+            .await
+            .unwrap()
+            .with_sandbox(&sandbox)
+            .await
+            .unwrap();
+        let ran = Tool::Bash
+            .run(
+                &outside,
+                (&workspace, &crate::background::Commands::default()),
+                &Cancel::new(),
+            )
+            .await;
+        let after = Tool::Bash
+            .run(
+                &again,
+                (&workspace, &crate::background::Commands::default()),
+                &Cancel::new(),
+            )
+            .await;
+        (ran, after)
+    });
+    assert!(dir.join("outside.txt").exists(), "{}", ran.text);
+    assert!(!dir.join("again.txt").exists(), "{}", after.text);
+}
+
+#[test]
+fn running_outside_the_sandbox_is_added_to_a_command_s_own_caution() {
+    use super::{OUTSIDE_SANDBOX, with_outside};
+    assert_eq!(with_outside(None, false), None);
+    assert_eq!(with_outside(None, true).as_deref(), Some(OUTSIDE_SANDBOX));
+    assert_eq!(
+        with_outside(Some("it pushes to a remote".to_owned()), true).as_deref(),
+        Some(
+            "it pushes to a remote, and it runs outside the sandbox, where it can read and \
+             change any file you can"
+        )
+    );
+    assert_eq!(
+        with_outside(Some("it pushes to a remote".to_owned()), false).as_deref(),
+        Some("it pushes to a remote")
     );
 }
 
@@ -386,7 +464,11 @@ fn the_file_tools_refuse_protected_paths_in_a_sandbox() {
                 workspace = workspace.with_sandbox(&sandbox).await.unwrap();
             }
             Tool::Write
-                .run(&arguments, &workspace, &Cancel::new())
+                .run(
+                    &arguments,
+                    (&workspace, &crate::background::Commands::default()),
+                    &Cancel::new(),
+                )
                 .await
         })
     };
@@ -468,7 +550,12 @@ fn the_file_tools_refuse_links_a_command_planted_into_protected_paths() {
                 .with_sandbox(&sandbox)
                 .await
                 .unwrap();
-            tool.run(&arguments, &workspace, &Cancel::new()).await
+            tool.run(
+                &arguments,
+                (&workspace, &crate::background::Commands::default()),
+                &Cancel::new(),
+            )
+            .await
         })
     };
     for path in planted_paths(&project) {

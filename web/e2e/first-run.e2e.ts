@@ -14,8 +14,8 @@ import {
 } from './support';
 
 /** The key the person pastes, and one the fake service refuses. */
-const KEY = 'sk-e2e-first-run-0123456789wxyz';
-const WRONG = 'sk-e2e-wrong-key-0123456789abcd';
+const KEY = 'fake-key-for-the-first-run-wxyz';
+const WRONG = 'fake-key-the-service-refuses';
 
 /** Words a person on their own computer should never meet (AGENTS.md, "Keeping principle 4"). */
 const ADMIN_WORDS = /policy|organization|member|group|admin|SSO|config\.toml|GLAVE_/u;

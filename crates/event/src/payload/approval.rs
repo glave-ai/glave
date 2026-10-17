@@ -25,6 +25,19 @@ pub struct ApprovalRequested {
     /// the person reads: "It deletes /home/ana/notes, outside the project." Since version 2.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caution: Option<String>,
+    /// The command would run outside the sandbox the turn's commands run in, as the model
+    /// asked. Such a request asks every time, and is allowed only once. Since version 3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outside_sandbox: Option<OutsideSandbox>,
+}
+
+/// A request to run one command outside the sandbox.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OutsideSandbox {
+    /// Why, in the model's own words as it wrote them: shown as the model's, never as glave's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// Version 1, before the caution had a field of its own: it was folded into `summary`.
@@ -46,6 +59,7 @@ impl From<ApprovalRequestedV1> for ApprovalRequested {
             summary: old.summary,
             secret: old.secret,
             caution: None,
+            outside_sandbox: None,
         }
     }
 }
@@ -101,7 +115,7 @@ pub enum Verdict {
 
 impl Payload for ApprovalRequested {
     const TYPE: &'static str = REQUESTED;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 3;
 }
 
 impl Payload for ApprovalDecided {
@@ -115,7 +129,8 @@ pub(crate) fn decode_requested(
 ) -> Option<serde_json::Result<ApprovalRequested>> {
     match version {
         1 => Some(parse::<ApprovalRequestedV1>(data).map(ApprovalRequested::from)),
-        2 => Some(parse(data)),
+        // Version 3 only adds `outside_sandbox`, which version 2 never wrote.
+        2 | 3 => Some(parse(data)),
         _ => None,
     }
 }
@@ -156,6 +171,30 @@ mod tests {
         assert_eq!(
             upgraded.caution.as_deref(),
             Some("It deletes untracked files.")
+        );
+        assert_eq!(upgraded.outside_sandbox, None);
+    }
+
+    #[test]
+    fn a_request_to_run_outside_the_sandbox_keeps_the_model_s_reason_apart() {
+        let read = |data: &str| {
+            let raw = RawValue::from_string(data.to_owned()).unwrap();
+            decode_requested(3, &raw).unwrap().unwrap()
+        };
+        let asked = read(
+            r#"{"call_id":"call_4","tool":"bash","summary":"bash: cargo add serde","secret":false,"caution":"It runs outside the sandbox.","outside_sandbox":{"reason":"cargo add writes ~/.cargo/registry"}}"#,
+        );
+        assert_eq!(asked.summary, "bash: cargo add serde");
+        assert_eq!(
+            asked.outside_sandbox.and_then(|outside| outside.reason),
+            Some("cargo add writes ~/.cargo/registry".to_owned())
+        );
+        let without_reason = read(
+            r#"{"call_id":"call_4","tool":"bash","summary":"bash: cargo add serde","secret":false,"outside_sandbox":{}}"#,
+        );
+        assert_eq!(
+            without_reason.outside_sandbox,
+            Some(OutsideSandbox::default())
         );
     }
 }

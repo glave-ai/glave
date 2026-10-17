@@ -11,6 +11,7 @@ mod support;
 mod skills {
     use std::process::{Command, Output, Stdio};
 
+    use glave_ports::testing::FAKE_SECRET;
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;
 
@@ -40,7 +41,7 @@ mod skills {
             .env("HOME", &place.home)
             .env("GLAVE_BASE_URL", server.url())
             .env("GLAVE_HOME", &place.home)
-            .env("GLAVE_API_KEY", "sk-e2e-test")
+            .env("GLAVE_API_KEY", FAKE_SECRET)
             .env("NO_COLOR", "1")
             .env_remove("GLAVE_MODEL")
             .env_remove("GLAVE_PROVIDER")

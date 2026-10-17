@@ -174,7 +174,15 @@ mod subagents {
             let seen = seen.lock().unwrap();
             assert_eq!(
                 names(&seen[1]),
-                ["search", "glob", "read", "write", "edit", "bash"]
+                [
+                    "search",
+                    "glob",
+                    "read",
+                    "write",
+                    "edit",
+                    "bash",
+                    "command_output"
+                ]
             );
         });
     }

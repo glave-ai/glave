@@ -17,6 +17,7 @@ use glave_ports::{
 use thiserror::Error;
 
 use crate::approval::Approver;
+use crate::background::Commands;
 use crate::bind::Place;
 use crate::builtins::Builtins;
 use crate::chosen::DefaultModel;
@@ -214,6 +215,8 @@ pub struct Thread {
     pub(crate) brought: Arc<Brought>,
     /// What the person sent its running turn, waiting for the model's next call (`inbox.rs`).
     pub(crate) inbox: Inbox,
+    /// Its commands in the background (`background.rs`). A subagent's thread has its own.
+    pub(crate) commands: Arc<Commands>,
 }
 
 impl Thread {
@@ -230,6 +233,12 @@ impl Thread {
     /// The person whose work this thread is: its recorded `for`.
     pub fn for_person(&self) -> Option<PrincipalId> {
         self.for_
+    }
+
+    /// Its commands in the background, which outlive its turns: shared, so they can be listed
+    /// and stopped while a turn holds the thread.
+    pub fn commands(&self) -> Arc<Commands> {
+        Arc::clone(&self.commands)
     }
 
     /// What opens the conversation: the thread's instructions, and where it works when that
@@ -324,6 +333,7 @@ where
             entropy: parts.entropy,
             sources: vec![Arc::new(Builtins {
                 workspace: Arc::clone(&workspace),
+                commands: Arc::default(),
             })],
             workspace,
             hooks: Hooks::default(),
@@ -515,6 +525,7 @@ where
             project,
             brought: Arc::default(),
             inbox: Inbox::default(),
+            commands: Arc::default(),
         };
         let mut events = Vec::new();
         let mut origin = Origin::of(if parent.is_some() {

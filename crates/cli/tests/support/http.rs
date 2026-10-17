@@ -4,6 +4,7 @@
 use std::io::{BufRead as _, BufReader};
 use std::process::{Child, Command, Stdio};
 
+use glave_ports::testing::FAKE_SECRET;
 use glave_provider_openai::fake::FakeServer;
 
 use crate::support::Place;
@@ -20,7 +21,7 @@ pub fn serve_http(place: &Place, server: &FakeServer, args: &[&str]) -> (Child, 
         .current_dir(&place.project)
         .env("GLAVE_BASE_URL", server.url())
         .env("GLAVE_HOME", &place.home)
-        .env("GLAVE_API_KEY", "sk-e2e-test")
+        .env("GLAVE_API_KEY", FAKE_SECRET)
         .env_remove("GLAVE_MODEL")
         .env_remove("GLAVE_PROVIDER")
         .stdin(Stdio::null())

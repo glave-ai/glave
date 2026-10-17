@@ -53,8 +53,9 @@ impl Output for Tail {
 }
 
 /// The [`glave_ports::Computers`] methods that go straight to the worker holding the
-/// workspace. Writing is new work, so it waits on the worker's run time; reading, finding and
-/// saving do not, so a worker out of time can still be saved.
+/// workspace. Writing is new work, so it waits on the worker's run time; reading, finding,
+/// saving and reading or stopping a command in the background do not, so a worker out of time
+/// can still be saved.
 macro_rules! forward {
     () => {
         fn read<'a>(
@@ -132,6 +133,42 @@ macro_rules! forward {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
                 self.remote(&worker).await?.save(workspace, save).await
+            })
+        }
+
+        fn output(
+            &self,
+            workspace: WorkspaceId,
+            command: glave_ports::CommandId,
+            wait: std::time::Duration,
+        ) -> BoxFuture<'_, Result<glave_ports::Printed, ComputerError>> {
+            Box::pin(async move {
+                let worker = self.worker_of(workspace)?;
+                self.remote(&worker)
+                    .await?
+                    .output(workspace, command, wait)
+                    .await
+            })
+        }
+
+        fn stop(
+            &self,
+            workspace: WorkspaceId,
+            command: glave_ports::CommandId,
+        ) -> BoxFuture<'_, Result<glave_ports::Printed, ComputerError>> {
+            Box::pin(async move {
+                let worker = self.worker_of(workspace)?;
+                self.remote(&worker).await?.stop(workspace, command).await
+            })
+        }
+
+        fn commands(
+            &self,
+            workspace: WorkspaceId,
+        ) -> BoxFuture<'_, Result<Vec<glave_ports::Background>, ComputerError>> {
+            Box::pin(async move {
+                let worker = self.worker_of(workspace)?;
+                self.remote(&worker).await?.commands(workspace).await
             })
         }
     };

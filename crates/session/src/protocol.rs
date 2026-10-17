@@ -4,30 +4,30 @@
 
 pub mod code;
 mod credentials;
+mod live;
 mod models;
 mod providers;
 mod spaces;
 mod tasks;
 mod trust;
-mod update;
 
 use glave_event::{
     At, CallId, CredentialId, EventId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal,
     ProviderId, RawEvent, ScheduleId, Secret, Seq, ThreadId, TokenCounts, When,
 };
-use glave_harness::{GoalProgress, Remembered, TurnSummary};
-use glave_ports::{ComputerId, Failure, Space, SpaceId, Standing};
+use glave_harness::{GoalProgress, Remembered, RunningCommand, TurnSummary};
+use glave_ports::{CommandId, ComputerId, Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
 pub use glave_event::ApprovalMode;
 pub use glave_event::{Forge, ProviderKind};
+pub use live::Update;
 pub use models::ModelInfo;
 pub use providers::{ProviderInfo, hint};
 pub use spaces::{NewFolder, ProjectFolder};
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
-pub use update::Update;
 
 /// The protocol version this server speaks.
 pub const PROTOCOL: &str = "2026-10";
@@ -197,6 +197,10 @@ methods! {
     } -> [Tasks],
     /// Stops the task running in a thread.
     "tasks/stop" => TasksStop { thread: ThreadId } -> [Done],
+    /// The commands a thread keeps running in the background, oldest first.
+    "command/list" => CommandList { thread: ThreadId } -> [Commands],
+    /// Stops one of a thread's commands in the background, and everything it started.
+    "command/stop" => CommandStop { thread: ThreadId, command: CommandId } -> [Done],
     /// Runs a prompt, or works toward a goal, as a task at set times.
     "schedule/create" => ScheduleCreate {
         when: When,
@@ -328,7 +332,9 @@ impl Request {
             | Self::GoalStart { thread, .. }
             | Self::GoalStop { thread }
             | Self::GoalGet { thread }
-            | Self::TasksStop { thread } => Some(*thread),
+            | Self::TasksStop { thread }
+            | Self::CommandList { thread }
+            | Self::CommandStop { thread, .. } => Some(*thread),
             _ => None,
         }
     }
@@ -500,6 +506,9 @@ pub struct TurnResult {
     pub outcome: Outcome,
     pub model_calls: u32,
     pub tool_calls: u32,
+    /// The commands that ran outside the sandbox, each one allowed.
+    #[serde(default)]
+    pub outside_sandbox: u32,
     pub tokens: TokenCounts,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<Money>,
@@ -514,6 +523,7 @@ impl From<TurnSummary> for TurnResult {
             outcome: summary.outcome,
             model_calls: summary.model_calls,
             tool_calls: summary.tool_calls,
+            outside_sandbox: summary.outside_sandbox,
             tokens: summary.tokens,
             cost: summary.cost,
             estimated: summary.estimated,
@@ -613,6 +623,8 @@ pub enum Reply {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         install: Option<String>,
     },
+    #[schemars(title = "Commands")]
+    Commands { commands: Vec<RunningCommand> },
     #[schemars(title = "Device")]
     Device { device: DeviceCode },
     /// A sign-in in the browser still waiting for the person.

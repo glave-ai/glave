@@ -4,7 +4,9 @@
 use std::future::{Future, ready};
 use std::path::Path;
 
-use glave_event::{ApprovalMode, ApprovalRequested, Arguments, CallId, PrincipalId, ThreadId};
+use glave_event::{
+    ApprovalMode, ApprovalRequested, Arguments, CallId, OutsideSandbox, PrincipalId, ThreadId,
+};
 use glave_ports::Effect;
 
 use crate::question::QuestionRequest;
@@ -31,6 +33,9 @@ pub struct ApprovalRequest {
     /// Why the call needs the person whatever the mode, when it does, as the model and the
     /// judge are told it: "it deletes ~/x". The person reads it as a sentence ([`sentence`]).
     pub caution: Option<String>,
+    /// The command would run outside the sandbox, as the model asked, with its reason. Such a
+    /// request asks every time: allowing it for the thread allows it once.
+    pub outside_sandbox: Option<OutsideSandbox>,
 }
 
 impl ApprovalRequest {
@@ -42,6 +47,7 @@ impl ApprovalRequest {
             summary: self.summary.clone(),
             secret: self.secret,
             caution: self.caution.as_deref().map(sentence),
+            outside_sandbox: self.outside_sandbox.clone(),
         }
     }
 }
@@ -143,12 +149,20 @@ impl Approver for AllowAll {
 /// What the model is told when an action needs a person and no one is at the keyboard: not to
 /// retry or work around it, and to say what is left for a person.
 pub(crate) fn no_one_there(request: &ApprovalRequest) -> String {
+    let outside = request.outside_sandbox.is_some();
     if request.secret {
         "No one is available to approve this, which would show you secrets such as keys, tokens \
          or passwords: glave is running without anyone at the keyboard. Do not try to get them \
          another way. Finish what you can without it, and say at the end which value a person \
          must provide."
             .to_owned()
+    } else if let Some(reason) = request.caution.as_ref().filter(|_| outside) {
+        format!(
+            "Not run, because {reason}, and no one is available to allow that: glave is running \
+             without anyone at the keyboard. Do not get the same result another way, such as by \
+             pointing the command at folders inside the project. Finish what you can in the \
+             sandbox, and say at the end which command still needs a person to allow it."
+        )
     } else if let Some(reason) = &request.caution {
         format!(
             "Not run, because {reason}, and no one is available to approve that: glave is \
@@ -201,6 +215,10 @@ pub(crate) fn summarize(tool: Tool, arguments: &Arguments) -> String {
         }
         Tool::Edit => format!("edit {path}"),
         Tool::Bash => format!("bash: {}", field("command").unwrap_or_else(|| "?".into())),
+        Tool::CommandOutput => match crate::tools::command_named(arguments) {
+            Some(number) => format!("command_output {number}"),
+            None => "command_output".to_owned(),
+        },
     }
 }
 
@@ -266,6 +284,7 @@ mod tests {
             summary: "read .env".into(),
             secret,
             caution: None,
+            outside_sandbox: None,
         };
         assert_eq!(block_on!(AllowAll.decide(&request(true))), Decision::Deny);
         assert_eq!(

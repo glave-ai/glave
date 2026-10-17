@@ -16,9 +16,9 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::Sha256;
 use glave_ports::{
-    Bytes, Cancellation, Command, ComputerError, Computers, Credentials, FileWrite, Finished, Glob,
-    Globbed, Listed, Listing, Output, Sandbox, Search, Searched, Sources, Stat, WorkspaceInfo,
-    digest, is_protected, is_protected_refusal, refuse_protected,
+    Bytes, Cancellation, Command, CommandId, ComputerError, Computers, Credentials, FileWrite,
+    Finished, Glob, Globbed, Listed, Listing, OnTimeout, Output, Sandbox, Search, Searched,
+    Sources, Stat, WorkspaceInfo, digest, is_protected, is_protected_refusal, refuse_protected,
 };
 
 use crate::cancel::Cancel;
@@ -180,7 +180,12 @@ impl Workspace {
     pub(crate) async fn quietly(&self, script: &str) -> Result<(Finished, String), ComputerError> {
         let output = Collected::default();
         let finished = self
-            .run(script.to_owned(), 120, &output, &Cancel::new())
+            .run(
+                script.to_owned(),
+                (120, OnTimeout::Stop),
+                &output,
+                &Cancel::new(),
+            )
             .await?;
         Ok((finished, output.text()))
     }
@@ -277,11 +282,11 @@ impl Workspace {
     }
 
     /// Runs `command` in this workspace, in its sandbox if it has one, with its credentials if
-    /// it has them.
+    /// it has them, doing at its timeout what `on_timeout` says.
     pub(crate) async fn run(
         &self,
         script: String,
-        timeout_secs: u64,
+        (timeout_secs, on_timeout): (u64, OnTimeout),
         output: &dyn Output,
         cancel: &dyn Cancellation,
     ) -> Result<Finished, ComputerError> {
@@ -289,6 +294,7 @@ impl Workspace {
             script,
             timeout_secs: Some(timeout_secs),
             sandbox: self.sandbox.clone(),
+            on_timeout,
         };
         let span = crate::telemetry::command();
         let running = match &self.credentials {
@@ -305,6 +311,16 @@ impl Workspace {
         let ended = finished.as_ref().ok();
         crate::telemetry::command_ended(&span, ended.map(|done| (&done.ending, done.millis)));
         finished
+    }
+
+    /// Starts `script` in this workspace, in its sandbox if it has one, and keeps it running in
+    /// the background. Its git and forge tools get no credentials there.
+    pub(crate) async fn start(&self, script: String) -> Result<CommandId, ComputerError> {
+        let command = Command {
+            sandbox: self.sandbox.clone(),
+            ..Command::new(script)
+        };
+        self.computers.start(self.info.id, &command).await
     }
 
     /// Records that the model has seen `content` as the current state of `path`.

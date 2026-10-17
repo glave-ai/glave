@@ -122,6 +122,18 @@ pub(crate) struct Prompt<'a> {
     pub(crate) id: Option<EventId>,
 }
 
+impl<'a> Prompt<'a> {
+    /// `text`, as `caller` wrote it.
+    pub(crate) fn new(text: &'a str, caller: &'a Caller) -> Self {
+        Self {
+            text,
+            caller,
+            by_glave: false,
+            id: None,
+        }
+    }
+}
+
 /// What a turn carries from step to step.
 pub(crate) struct Step {
     pub(crate) toolset: ToolSet,
@@ -135,6 +147,8 @@ pub struct TurnSummary {
     pub outcome: Outcome,
     pub model_calls: u32,
     pub tool_calls: u32,
+    /// The commands that ran outside the sandbox, each one allowed.
+    pub outside_sandbox: u32,
     pub tokens: TokenCounts,
     /// The total the provider reported, when it reported a cost for every call.
     pub cost: Option<Money>,
@@ -148,6 +162,7 @@ impl TurnSummary {
             outcome: Outcome::Completed,
             model_calls: 0,
             tool_calls: 0,
+            outside_sandbox: 0,
             tokens: TokenCounts::default(),
             cost: Some(Money {
                 micros: 0,
@@ -212,13 +227,8 @@ where
         cancel: &Cancel,
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<TurnSummary, HarnessError> {
-        let prompt = Prompt {
-            text: prompt,
-            caller,
-            by_glave: false,
-            id: None,
-        };
-        self.run_prompt(thread, prompt, cancel, live).await
+        self.run_prompt(thread, Prompt::new(prompt, caller), cancel, live)
+            .await
     }
 
     /// Runs one turn for `prompt`, as the person wrote it: a command is sent as its text.
@@ -436,7 +446,8 @@ where
         });
     }
 
-    /// Stores the turn's configuration, then records `turn.started` and the person's message.
+    /// Records what ended in the background since the last turn, stores the turn's
+    /// configuration, then records `turn.started` and the person's message.
     async fn begin(
         &self,
         thread: &mut Thread,
@@ -449,6 +460,8 @@ where
             by_glave,
             id,
         } = prompt;
+        // What ended in the background since the last turn is recorded before this one.
+        self.check_commands(thread).await?;
         let memory = self.look_at_memory(thread).await;
         let sent_to = self.model_for(thread);
         let provider = self.current_default().provider;
@@ -568,6 +581,7 @@ where
     /// Records `turn.ended`.
     async fn end(&self, thread: &mut Thread, outcome: Outcome) -> Result<(), HarnessError> {
         let mut events = Vec::new();
+        self.stage_commands(thread, &mut events)?;
         self.stage(thread, &mut events, &TurnEnded { outcome })?;
         self.commit(thread, events).await
     }
@@ -637,6 +651,9 @@ fn outcome_of(stop: StopReason) -> Outcome {
 pub(crate) fn absorb(summary: &mut TurnSummary, child: &TurnSummary) {
     summary.model_calls = summary.model_calls.saturating_add(child.model_calls);
     summary.tool_calls = summary.tool_calls.saturating_add(child.tool_calls);
+    summary.outside_sandbox = summary
+        .outside_sandbox
+        .saturating_add(child.outside_sandbox);
     let (total, more) = (&mut summary.tokens, &child.tokens);
     total.input = total.input.saturating_add(more.input);
     total.cache_read = total.cache_read.saturating_add(more.cache_read);

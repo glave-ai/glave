@@ -50,7 +50,7 @@ where
 {
     /// Queues `caller`'s `prompt` to the work running in `thread`, when that work takes
     /// messages. A message chooses no model or approval mode: those are for a turn to start
-    /// with. Refused when as many messages wait as a turn takes (`-32027`), or while work that
+    /// with. Refused when as many messages wait as a turn takes (`-32028`), or while work that
     /// takes none runs (`-32002`).
     pub(crate) fn queue(
         &self,
@@ -64,6 +64,7 @@ where
             cancel,
             finished,
             inbox,
+            ..
         }) = threads.get(&thread)
         else {
             return Ok(Queue::Idle);

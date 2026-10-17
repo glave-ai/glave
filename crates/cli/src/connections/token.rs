@@ -82,12 +82,14 @@ impl Drop for Hidden {
 
 #[cfg(test)]
 mod tests {
+    use glave_ports::testing::fake_secret;
+
     use super::*;
 
     #[test]
     fn a_token_is_told_from_an_address() {
-        for token in ["ghp_x", "github_pat_x", "glpat-x", "ghu_x"] {
-            assert!(looks_like(token), "{token}");
+        for prefix in ["ghp_", "github_pat_", "glpat-", "ghu_"] {
+            assert!(looks_like(&fake_secret(prefix)), "a {prefix} token");
         }
         for address in ["https://gitlab.com", "github", "git.example.com"] {
             assert!(!looks_like(address), "{address}");

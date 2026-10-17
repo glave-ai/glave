@@ -1,0 +1,47 @@
+[workspace]
+members = ["cargo:."]
+
+# Releases, with dist (https://axodotdev.github.io/cargo-dist/): pushing a version tag (`v0.1.0`)
+# builds glave for each target, with the web app inside, and publishes the archives, their
+# checksums, GitHub's build provenance, an install script and a Homebrew formula. The workflow it
+# runs, .github/workflows/release.yml, is generated from this file: after changing it, run
+# `cargo xtask release-workflow`, with dist installed at the version below.
+[dist]
+cargo-dist-version = "0.33.0"
+# dist gives the whole workflow a token that can change releases and tags, and has no setting to
+# narrow it, so `cargo xtask release-workflow` runs `dist generate` and makes the token read-only
+# for every job but the one that publishes. This line keeps dist from failing on that change; CI
+# checks that release.yml is still what the xtask writes.
+allow-dirty = ["ci"]
+ci = "github"
+hosting = "github"
+# Only what ships is built (the glave command, crates/cli/Cargo.toml), not the whole workspace.
+precise-builds = true
+# Linux builds are static (musl), so one binary runs on any distribution and in any container.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-unknown-linux-musl",
+    "x86_64-unknown-linux-musl",
+]
+github-build-setup = "../build-setup.yml"
+# Beside the README and LICENSE in each archive: the binary carries code under its notices, and
+# the licences of the Rust crates and npm packages built into it, which the build writes
+# (.github/build-setup.yml).
+include = ["NOTICE", "THIRD-PARTY-NOTICES"]
+installers = ["shell", "homebrew"]
+# Where the install script puts glave, as uv's and Claude Code's do; it adds the folder to PATH
+# when it isn't there already.
+install-path = "~/.local/bin"
+# No separate updater program: dist's is a prebuilt binary that glave's builds don't make.
+install-updater = false
+tap = "glave-ai/homebrew-tap"
+publish-jobs = ["homebrew"]
+# Provenance for what is released, made when it is: pull requests' builds are not attested.
+github-attestations = true
+github-attestations-phase = "host"
+github-release = "host"
+# Pull requests check the plan, not the builds: building every target takes about 25 minutes,
+# two of them on macOS, which ci.yml keeps off pull requests. Set "upload" in a pull request to
+# have it build and keep every target, as a release would.
+pr-run-mode = "plan"

@@ -1,0 +1,28 @@
+# Steps the release workflow runs before dist builds glave (dist-workspace.toml): the pinned
+# Rust toolchain, the web app, which release builds carry (the `web` feature), and the notices
+# of the third-party code in both.
+- name: Install the pinned toolchain (rust-toolchain.toml)
+  run: rustup toolchain install
+- name: Install Node
+  uses: actions/setup-node@v7
+  with:
+    node-version: 22
+    cache: npm
+    cache-dependency-path: web/package-lock.json
+# In web/ by `cd`: dist leaves out a step's `working-directory`.
+- name: Build the web app, which the binary carries
+  run: cd web && npm ci && npm run build
+# cargo-about reads which crates glave links, and their licences, from Cargo (about.toml). It is
+# built from crates.io at a fixed version: it publishes no binary for Intel Macs.
+- name: Install cargo-about
+  run: cargo install --locked --features cli cargo-about@0.9.2
+# Every archive carries them (dist-workspace.toml): the licences of the Rust crates glave links
+# for the target this job builds (dist's matrix, one target a job), then those of the npm
+# packages in the web app, which its build writes beside the app, not into it.
+- name: Write the third-party notices
+  env:
+    TARGET: ${{ join(matrix.targets, ' ') }}
+  run: |
+    test -n "$TARGET"
+    cargo about generate --locked --fail --target "$TARGET" --manifest-path crates/cli/Cargo.toml --features web --config about.toml --output-file THIRD-PARTY-NOTICES about.hbs
+    cat web/dist/app/3rdpartylicenses.txt >> THIRD-PARTY-NOTICES

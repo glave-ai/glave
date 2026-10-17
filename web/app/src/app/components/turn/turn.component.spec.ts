@@ -51,6 +51,8 @@ const RESULTS: TurnResults = {
       tool: 'bash',
       summary: 'bash: git push',
       caution: 'It pushes to a remote.',
+      outsideSandbox: false,
+      modelReason: '',
       decision: null,
     },
   ],

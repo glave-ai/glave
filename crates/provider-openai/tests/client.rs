@@ -4,6 +4,7 @@
 #[cfg(test)]
 mod over_http {
     use glave_event::{Arguments, Part, StopReason};
+    use glave_ports::testing::fake_secret;
     use glave_ports::{Message, ModelProvider, ModelRequest, ProviderError, ToolChoice, block_on};
     use glave_provider_openai::fake::{FakeServer, Reply};
     use glave_provider_openai::{Config, IDLE_TIMEOUT, OpenAiCompatible};
@@ -51,7 +52,8 @@ mod over_http {
     #[test]
     fn a_streamed_answer_arrives_live_and_whole() {
         let server = FakeServer::start(vec![Reply::text("hi there")]).unwrap();
-        let (result, live) = ask(&provider(server.url(), Some("sk-test")));
+        let key = fake_secret("sk-");
+        let (result, live) = ask(&provider(server.url(), Some(&key)));
         let completion = result.unwrap();
         assert_eq!(live, "hi there");
         assert_eq!(
@@ -64,7 +66,8 @@ mod over_http {
         assert_eq!(completion.usage.counts().input, 100);
         let received = server.received();
         assert_eq!(received.len(), 1);
-        assert_eq!(received[0].authorization.as_deref(), Some("Bearer sk-test"));
+        let bearer = format!("Bearer {key}");
+        assert_eq!(received[0].authorization.as_deref(), Some(bearer.as_str()));
         assert_eq!(received[0].body["model"], "fake-model");
         assert_eq!(received[0].body["stream"], true);
     }
@@ -319,17 +322,16 @@ mod over_http {
             Reply::Status(401, r#"{"error":{"message":"Incorrect API key"}}"#.into()),
         ])
         .unwrap();
-        let provider = provider(server.url(), Some("sk-listing"));
+        let key = fake_secret("sk-");
+        let provider = provider(server.url(), Some(&key));
         let models = block_on!(provider.get("models")).unwrap();
         assert_eq!(models["data"][0]["id"], "gpt-test");
         let refused = block_on!(provider.get("/models")).unwrap_err();
         assert_eq!(refused.failure(), glave_ports::Failure::Refused);
         let received = server.received();
         assert_eq!(received[0].line, "GET /v1/models");
-        assert_eq!(
-            received[0].authorization.as_deref(),
-            Some("Bearer sk-listing")
-        );
-        assert!(!format!("{refused:?}").contains("sk-listing"));
+        let bearer = format!("Bearer {key}");
+        assert_eq!(received[0].authorization.as_deref(), Some(bearer.as_str()));
+        assert!(!format!("{refused:?}").contains(&key));
     }
 }

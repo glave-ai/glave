@@ -57,7 +57,7 @@ crates/shell/       glave-shell: shell commands read before they run (tree-sitte
 crates/mcp/         glave-mcp: MCP servers as tool sources, through the official rmcp SDK (a test server behind `test-server`); open-world tools and servers marked untrusted return untrusted output
 crates/memory/      glave-memory: memory (specs/memory.md): an in-process MCP server over the data store, each memory sealed under its own key, scoped by the session
 crates/web/         glave-web: web_fetch as a tool source: private addresses refused at every hop, limits, a host policy, HTML as Markdown, output untrusted (a local page server behind `pages`)
-crates/harness/     glave-harness: the agent loop, its six tools (search, glob, read, write, edit, bash) run on a computer through the port, approvals, resume, AGENTS.md, skills (agentskills.io), custom commands, hooks
+crates/harness/     glave-harness: the agent loop, its seven tools (search, glob, read, write, edit, bash, command_output for commands kept running in the background) run on a computer through the port, approvals, resume, AGENTS.md, skills (agentskills.io), custom commands, hooks
 crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (in the sandbox by default), environments from devcontainer.json or environment.toml, workers on Docker or Kubernetes (the `kubernetes` feature), served (`glave computer serve`, TLS across machines) and reached over JSON-RPC
 crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC or local sign-in (glave-identity), and its JSON Schema (specs/session.schema.json, generated); every surface, the CLI first, runs threads through it
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
@@ -69,7 +69,7 @@ web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app an
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
 specs/              the model (`model.md`: organization to thread, server and computer), and the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
-.github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main); workers on a `kind` cluster (Linux)
+.github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main); workers on a `kind` cluster (Linux); releases on version tags (`v0.1.0`): release.yml, made by `cargo xtask release-workflow` (`dist generate` from dist-workspace.toml and .github/build-setup.yml, then only the job that publishes can write), never edited by hand
 ```
 
 **Dependency rule.** Shared types depend on nothing in Glave. Ports depend only on types. Domain crates (log, harness, gateway) depend on types and ports, never on each other's internals or on adapters. Adapters depend on types, ports and their one external library. Only the binary depends on everything.
@@ -79,9 +79,11 @@ specs/              the model (`model.md`: organization to thread, server and co
 ```sh
 cargo xtask ci          # the full gate; must pass before anything is "done"
 cargo xtask file-sizes  # line limits only
+cargo xtask secrets     # no secret-shaped literal in a tracked file
 cargo xtask schema      # regenerate specs/session.schema.json and the web client's types after changing the session API
+cargo xtask release-workflow   # regenerate .github/workflows/release.yml after changing dist-workspace.toml or .github/build-setup.yml (needs dist, the version dist-workspace.toml names)
 cargo xtask bench       # benchmarks, alone on the machine (see Performance)
-cargo xtask eval        # the harness on evals/tasks against three real models, graded (costs cents)
+cargo xtask eval        # the harness on evals/tasks against three real models, graded (costs cents); the endpoint from .env (or `--env-file <path>`)
 cargo xtask eval judge  # the action judge scored on evals/judge (the deterministic checks today)
 cargo fmt --all         # format
 cargo build --profile debugging   # full debug info, for a debugger
@@ -91,7 +93,7 @@ cargo build --release -p glave --features web   # the binary as it ships, the we
 
 ## Definition of done
 
-`cargo xtask ci` passes: format, clippy with `-D warnings`, all tests, `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
+`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), clippy with `-D warnings`, all tests, `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
 
 ## Quality
 
@@ -165,7 +167,8 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Property tests (`proptest`) for parsers and state machines. Snapshot tests (`insta`) for stable formats such as receipts and events.
 - Tests are deterministic: no sleeps, no real clocks (inject a clock), no network in unit tests.
 - Run tests with `cargo nextest`. Measure coverage; don't chase a percentage.
-- Fakes live in one place: `glave-ports` ships the test doubles for its ports (clock, entropy, cancellation, `block_on`) behind the `conformance` feature. Never write a second copy in a crate.
+- Fakes live in one place: `glave-ports` ships the test doubles for its ports (clock, entropy, cancellation, `block_on`, fake secrets) behind the `conformance` feature. Never write a second copy in a crate.
+- No secret-shaped string in the source: a test that needs a provider's shape makes one at run time (`fake_secret("ghp_")`), any other uses `FAKE_SECRET`, and no assertion message or log line prints a secret.
 - A scenario is tested once: in the conformance suite when there is one, otherwise beside the code it tests.
 
 ## Performance
@@ -232,5 +235,5 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Make the smallest change that does the job. Don't add crates, ports, dependencies or files the task doesn't need.
 - No TODO comments; note follow-ups in the pull request.
 - Run `cargo xtask ci` before saying something is done, and report failures as they are.
-- After changes the model will feel (prompt, tools, approvals, the loop), run `cargo xtask eval --repeat 3` (add `--tier all` for the hard tasks) and report pass rates per model. Load the endpoint from the environment first (`set -a; source .env; set +a`).
+- After changes the model will feel (prompt, tools, approvals, the loop), run `cargo xtask eval --repeat 3` (add `--tier all` for the hard tasks) and report pass rates per model. It reads the endpoint from `.env` itself (the nearest at or above the workspace, else the main checkout's from a worktree), so no shell step comes first.
 - Ask before anything destructive or hard to undo.

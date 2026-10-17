@@ -19,7 +19,8 @@ glave-harness.workspace = true
 # Each attempt keeps its memory in a sealed store of its own, as glave does.
 glave-keys.workspace = true
 glave-memory.workspace = true
-glave-ports.workspace = true
+# The secret a task's `{canary}` becomes, a fake made as it loads (`testing`).
+glave-ports = { workspace = true, features = ["conformance"] }
 glave-provider-openai.workspace = true
 glave-shell.workspace = true
 glave-store-sqlite.workspace = true
@@ -34,7 +35,6 @@ toml.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-glave-ports = { workspace = true, features = ["conformance"] }
 glave-provider-openai = { workspace = true, features = ["fake-server"] }
 
 [lints]
