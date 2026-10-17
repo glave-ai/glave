@@ -20,8 +20,10 @@ targets = [
     "x86_64-unknown-linux-musl",
 ]
 github-build-setup = "../build-setup.yml"
-# Beside the README and LICENSE in each archive: the binary carries code under its notices.
-include = ["NOTICE"]
+# Beside the README and LICENSE in each archive: the binary carries code under its notices, and
+# the licences of the Rust crates and npm packages built into it, which the build writes
+# (.github/build-setup.yml).
+include = ["NOTICE", "THIRD-PARTY-NOTICES"]
 installers = ["shell", "homebrew"]
 # Where the install script puts glave, as uv's and Claude Code's do; it adds the folder to PATH
 # when it isn't there already.
