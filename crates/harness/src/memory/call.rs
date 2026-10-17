@@ -85,7 +85,7 @@ where
                         call_id: call.call_id.clone(),
                         tool: name.to_owned(),
                         effect: Effect::Changes,
-                        summary: format!("{summary} ({REMEMBER_CAUTION})"),
+                        summary: summary.clone(),
                         secret: false,
                         caution: Some(REMEMBER_CAUTION.to_owned()),
                     };

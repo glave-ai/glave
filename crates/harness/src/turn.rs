@@ -47,9 +47,11 @@ pub enum Live {
         summary: String,
         is_error: bool,
     },
-    /// An action that did not run: the person said no, or no one was there to ask.
+    /// An action that did not run: the person said no, or no one was there to ask. `caution`
+    /// is why it asked whatever the mode, as the person reads it, when a caution did.
     ToolDeclined {
         summary: String,
+        caution: Option<String>,
         no_one_there: bool,
     },
     /// The conversation was summarized to fit the context window; sizes are estimates.

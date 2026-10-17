@@ -93,6 +93,21 @@ mod judging {
                 [Some(glave_event::Principal::glave())],
                 "the judge's ruling is glave's decision"
             );
+            let asked = recorded.iter().find_map(|event| match &event.body {
+                Body::ApprovalRequested(asked) => Some(asked),
+                _ => None,
+            });
+            assert_eq!(
+                asked.map(|asked| (asked.summary.as_str(), asked.caution.as_deref())),
+                Some((
+                    "bash: git push origin main",
+                    Some(
+                        "It pushes to a remote. Glave let it run without asking: the person \
+                         asked to push."
+                    )
+                )),
+                "what ran, and apart from it why it asked and why the judge let it run"
+            );
         });
     }
 

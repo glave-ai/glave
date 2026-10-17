@@ -1563,7 +1563,14 @@
           "type": "object"
         },
         {
+          "description": "An action that did not run. `summary` is what would have run; `caution`, why it asked\nwhatever the mode, in sentences the person reads, when a caution did.",
           "properties": {
+            "caution": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "kind": {
               "const": "tool_declined",
               "type": "string"

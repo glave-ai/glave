@@ -465,7 +465,12 @@ fn note(transcript: &mut String, live: Live) {
             summary,
             is_error: true,
         } => writeln!(transcript, "[tool failed] {summary}"),
-        Live::ToolDeclined { summary, .. } => writeln!(transcript, "[declined] {summary}"),
+        Live::ToolDeclined {
+            summary, caution, ..
+        } => match caution {
+            Some(caution) => writeln!(transcript, "[declined] {summary}\n[why it asked] {caution}"),
+            None => writeln!(transcript, "[declined] {summary}"),
+        },
         Live::Compacted {
             before_tokens,
             after_tokens,

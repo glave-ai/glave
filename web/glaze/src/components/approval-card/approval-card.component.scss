@@ -9,3 +9,14 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+
+// Why it asks, in its own words under what would run: the warning tone while it waits, muted
+// once answered, as the card rests.
+.caution {
+  color: var(--glz-color-warning);
+  overflow-wrap: anywhere;
+}
+
+:host(.glz-approval-card--decided) .caution {
+  color: var(--glz-color-text-muted);
+}

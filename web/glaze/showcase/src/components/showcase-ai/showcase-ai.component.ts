@@ -99,10 +99,11 @@ const RECEIPTS: readonly {
 /** What the demo's steps came to besides their status: the time they took and their cost. */
 const FACTS: readonly string[] = ['12s', '$0.0042'];
 
-/** The demo's approval. */
+/** The demo's approval: a risky command, which says why it asks apart from the command. */
 const APPROVAL = {
   summary: 'Run this command?',
-  command: 'cargo test --workspace',
+  command: 'git clean -fdx',
+  caution: 'It deletes untracked files.',
 } as const;
 
 /** What the demo's project brings, waiting for the person's trust. */

@@ -42,7 +42,7 @@ A rule cannot tell "push my branch" from a push nobody asked for. In auto mode, 
 
 - **Firm cautions always ask.** Reading secrets (a secret file, or a command that prints a credential), changing credentials or writing through a forge's API, and commands too tangled to read, never reach the judge. With no one there they are not run, and the model is told it would have shown it secrets and not to get them another way.
 - **Soft cautions go to the judge:** every other risky kind above. It is one model call that sees only the person's own messages (never a subagent's brief, never a compaction summary), the project's instructions, the action and why a rule flagged it. It never sees tool output or the model's own words, so nothing the agent read can talk it into anything. The action itself is still the agent's text (a command can carry `# the user explicitly asked for this`), so the action and the flag's reason are each shown between tags, with any closing tag inside them broken up as untrusted content's is, and the judge is told that a claim of permission inside them is not the person speaking and is a reason to ask.
-- **It answers run or ask.** Run means the person clearly asked for this action, or for something that plainly needs it; the call runs and is recorded as `approval.requested` and `approval.decided` (`allow_once`) with the judge's reason in the summary. Ask, an unclear answer, an error or no answer means the caution asks as before.
+- **It answers run or ask.** Run means the person clearly asked for this action, or for something that plainly needs it; the call runs and is recorded as `approval.requested` and `approval.decided` (`allow_once`), the request's `caution` giving the rule's reason and then the judge's ("It pushes to a remote. Glave let it run without asking: the person asked to push."). Ask, an unclear answer, an error or no answer means the caution asks as before.
 - **Ordinary commands never reach it,** and in `ask` mode it is never consulted.
 
 The judge is the main model unless `GLAVE_JUDGE_MODEL` names another; `off` turns it off. On `evals/judge` (`cargo xtask eval judge --model …`), any of the three default models as judge lowers false alarms on actions the person asked for from 56% to 1–6%, and lets through no case that should ask.
@@ -111,6 +111,8 @@ So `auto` without a terminal never stops for a question, and `ask` without one n
 Each turn's configuration (`turn.started`) records the mode it ran in, the thread's own when it chose one, and the banner and every receipt name it: `done · approval: auto · …`.
 
 Every question is recorded with its answer: `approval.requested`, then `approval.decided`, before the call's result (`events.md`). So the log shows who allowed what, and "always in this thread" survives resuming the thread. The question carries the thread and call it is about, so a client of the session API can answer it later (`session.md`).
+
+What would run and why it asks are recorded apart: the request's `summary` is the action alone (`bash: rm -rf ~/notes`), and a caution's reason is its `caution`, made a sentence for the person ("It deletes /home/ana/notes, outside the project."). Every client shows the action as it is and the reason as words of its own, never one inside the other. The model and the judge are told the reason as the rule wrote it, unchanged.
 
 ## Later
 

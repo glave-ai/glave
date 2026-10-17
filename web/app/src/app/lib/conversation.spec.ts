@@ -94,7 +94,12 @@ describe('conversation', () => {
         tool: 'bash',
         arguments: { json: { command: 'rm -rf build' } },
       }),
-      event('approval.requested', { call_id: 'c1', tool: 'bash', summary: 'Delete build' }),
+      event('approval.requested', {
+        call_id: 'c1',
+        tool: 'bash',
+        summary: 'bash: rm -rf build',
+        caution: 'It deletes build.',
+      }),
       event('approval.decided', { call_id: 'c1', decision: 'deny' }),
       event('tool.call.requested', {
         call_id: 'c2',
@@ -134,7 +139,12 @@ describe('conversation', () => {
     ]);
     expect(items[0]).toMatchObject({ from: 'person', text: 'Fix it' });
     expect(items[1]).toMatchObject({ tool: 'bash', summary: 'rm -rf build', status: 'declined' });
-    expect(items[2]).toMatchObject({ approval: 'c1', decision: 'deny', summary: 'Delete build' });
+    expect(items[2]).toMatchObject({
+      approval: 'c1',
+      decision: 'deny',
+      summary: 'bash: rm -rf build',
+      caution: 'It deletes build.',
+    });
     expect(items[3]).toMatchObject({ status: 'failed', output: 'no such file' });
     expect(items[4]).toMatchObject({ call: 'c3', answers: ['B'] });
     expect(items[5]).toMatchObject({ from: 'model', text: 'Done', reasoning: 'hm' });
@@ -146,7 +156,8 @@ describe('conversation', () => {
       event('approval.requested', { call_id: 'c1', tool: 'bash', summary: 'x' }),
     ]);
     expect(items[0]).toMatchObject({ status: 'running' });
-    expect(items[1]).toMatchObject({ decision: null });
+    // Only the mode asks: no caution of its own.
+    expect(items[1]).toMatchObject({ decision: null, caution: '' });
   });
 
   it('grows the draft with text and reasoning only', () => {

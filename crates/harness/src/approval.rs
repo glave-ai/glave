@@ -4,7 +4,7 @@
 use std::future::{Future, ready};
 use std::path::Path;
 
-use glave_event::{ApprovalMode, Arguments, CallId, PrincipalId, ThreadId};
+use glave_event::{ApprovalMode, ApprovalRequested, Arguments, CallId, PrincipalId, ThreadId};
 use glave_ports::Effect;
 
 use crate::question::QuestionRequest;
@@ -23,12 +23,45 @@ pub struct ApprovalRequest {
     pub tool: String,
     /// What the tool does.
     pub effect: Effect,
+    /// What would run: `bash: cargo test`. Never why it asks.
     pub summary: String,
     /// The model would see a file that usually holds secrets, such as `.env`. With no one to
     /// ask, these requests are declined.
     pub secret: bool,
-    /// Why the call needs the person whatever the mode, when it does: "it deletes ~/x".
+    /// Why the call needs the person whatever the mode, when it does, as the model and the
+    /// judge are told it: "it deletes ~/x". The person reads it as a sentence ([`sentence`]).
     pub caution: Option<String>,
+}
+
+impl ApprovalRequest {
+    /// The record of this request: what would run, and apart from it, why it asks.
+    pub(crate) fn asked(&self) -> ApprovalRequested {
+        ApprovalRequested {
+            call_id: self.call_id.clone(),
+            tool: self.tool.clone(),
+            summary: self.summary.clone(),
+            secret: self.secret,
+            caution: self.caution.as_deref().map(sentence),
+        }
+    }
+}
+
+/// A caution's reason as the person reads it, a sentence of its own: "it deletes ~/x" is
+/// "It deletes ~/x.".
+pub(crate) fn sentence(reason: &str) -> String {
+    let reason = reason.trim();
+    let mut chars = reason.chars();
+    let mut sentence: String = chars
+        .next()
+        .map(char::to_uppercase)
+        .into_iter()
+        .flatten()
+        .chain(chars)
+        .collect();
+    if !sentence.is_empty() && !sentence.ends_with(['.', '!', '?']) {
+        sentence.push('.');
+    }
+    sentence
 }
 
 /// Whether a tool with `effect` needs the person's approval in `mode`.
@@ -207,6 +240,20 @@ mod tests {
         assert!(!asks_for(Ask, Effect::Reads) && !asks_for(Auto, Effect::Reads));
         assert!(asks_for(Ask, Effect::Changes) && !asks_for(Auto, Effect::Changes));
         assert!(asks_for(Ask, Effect::Runs) && !asks_for(Auto, Effect::Runs));
+    }
+
+    #[test]
+    fn a_caution_reads_as_a_sentence_of_its_own() {
+        assert_eq!(
+            sentence("it deletes /home/ana/notes, outside the project"),
+            "It deletes /home/ana/notes, outside the project."
+        );
+        assert_eq!(
+            sentence("this file usually holds secrets; the model would see them"),
+            "This file usually holds secrets; the model would see them."
+        );
+        assert_eq!(sentence(" Already one. "), "Already one.");
+        assert_eq!(sentence(""), "");
     }
 
     #[test]

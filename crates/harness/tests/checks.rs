@@ -13,7 +13,7 @@ mod checks {
     use std::future::{Future, ready};
     use std::sync::Mutex;
 
-    use glave_event::{Part, StopReason};
+    use glave_event::{Body, Part, StopReason};
     use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, NoOneToAsk};
     use glave_ports::Message;
     use serde_json::json;
@@ -138,15 +138,31 @@ mod checks {
                 .run_turn(&mut thread, "tidy up", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
-            let asked = harness.approver().asked.lock().unwrap();
+            let asked = harness.approver().asked.lock().unwrap().clone();
             assert_eq!(asked.len(), 2, "the risky command asked again");
-            assert_eq!(
-                asked[1].summary,
-                "bash: git clean -fdx (it deletes untracked files)"
-            );
+            assert_eq!(asked[1].summary, "bash: git clean -fdx");
             assert_eq!(
                 asked[1].caution.as_deref(),
                 Some("it deletes untracked files")
+            );
+            // Recorded, what would run and why it asks are apart, the reason a sentence.
+            let recorded: Vec<_> = events(harness.log(), thread.id)
+                .await
+                .into_iter()
+                .filter_map(|event| match event.body {
+                    Body::ApprovalRequested(asked) => Some((asked.summary, asked.caution)),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                recorded,
+                [
+                    ("bash: touch a.txt".to_owned(), None),
+                    (
+                        "bash: git clean -fdx".to_owned(),
+                        Some("It deletes untracked files.".to_owned())
+                    ),
+                ]
             );
         });
     }

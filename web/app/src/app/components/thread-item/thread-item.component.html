@@ -27,6 +27,7 @@
       testId="thread-approval"
       [summary]="item.ask.sentence"
       [detail]="item.ask.detail"
+      [caution]="item.caution"
       [decision]="item.decision"
       [busy]="sending()"
       (decide)="decide(item.approval, $event)"
