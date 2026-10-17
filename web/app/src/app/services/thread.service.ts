@@ -10,6 +10,7 @@ import type {
 } from '@glave/client';
 import type { GlzDecision } from '@glave/glaze';
 
+import { lastCommandChange } from '../lib/commands';
 import { NO_DRAFT, applyUpdate, mergeEvents, type Draft } from '../lib/conversation';
 import { changedFiles } from '../lib/files';
 import { chosenModel } from '../lib/models';
@@ -55,6 +56,8 @@ export class ThreadService {
   readonly turns = computed(() => threadTurns(this.events()));
   /** The files the thread changed with its own `write` and `edit` calls. */
   readonly files = computed(() => changedFiles(this.events()));
+  /** The `seq` of the latest start or end of a command in the background it recorded, if any. */
+  readonly commandChange = computed(() => lastCommandChange(this.events()));
   readonly reply = this.draft.asReadonly();
   readonly busy = computed(() => this.following() > 0);
   /** What the composer holds: the person's next message. */

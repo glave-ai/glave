@@ -1,6 +1,7 @@
 import type {
   ModelInfo,
   RawEvent,
+  RunningCommand,
   ScheduleInfo,
   Space,
   TaskInfo,
@@ -81,6 +82,21 @@ export function task(threadId: string, title: string, overrides: Partial<TaskInf
     started_at: '2026-10-11T10:00:00.000Z',
     elapsed_ms: 125_000,
     status: 'running',
+    ...overrides,
+  };
+}
+
+/** A command running in the background, as `command/list` lists one, started at 10:00. */
+export function command(
+  id: string,
+  script: string,
+  overrides: Partial<RunningCommand> = {},
+): RunningCommand {
+  return {
+    id,
+    command: script,
+    started_at: '2026-10-11T10:00:00.000Z',
+    summary: 'Still running: the agent started it, and it runs until it ends or someone stops it.',
     ...overrides,
   };
 }

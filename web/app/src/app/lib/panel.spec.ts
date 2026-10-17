@@ -18,6 +18,7 @@ describe('toPanelState', () => {
       width: 412,
       tab: 'changes',
     });
+    expect(toPanelState({ open: false, tab: 'commands' }).tab).toBe('commands');
   });
 
   it('takes the default for anything missing or wrong', () => {

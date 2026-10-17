@@ -1,5 +1,5 @@
 /** The tabs of the thread's tools panel, in order. */
-export const TOOL_TABS = ['tasks', 'changes'] as const;
+export const TOOL_TABS = ['tasks', 'changes', 'commands'] as const;
 export type ToolTab = (typeof TOOL_TABS)[number];
 
 /** How the person left a side panel: open or collapsed, and its width. */
