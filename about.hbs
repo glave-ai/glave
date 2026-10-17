@@ -1,0 +1,22 @@
+THIRD-PARTY NOTICES
+
+glave is built from the third-party software below, each part under its own licence: first the
+Rust crates compiled into the glave program, then the npm packages of the web app built into it.
+
+================================================================================
+Rust crates, by licence
+================================================================================
+{{#each licenses}}
+
+--------------------------------------------------------------------------------
+{{{name}}} ({{{id}}}), the licence of:
+{{#each used_by}}
+  {{{crate.name}}} {{{crate.version}}}{{#if crate.repository}} ({{{crate.repository}}}){{/if}}
+{{/each}}
+
+{{{text}}}
+{{/each}}
+
+================================================================================
+npm packages
+================================================================================

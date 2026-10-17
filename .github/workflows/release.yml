@@ -137,6 +137,15 @@ jobs:
           "node-version": 22
       - name: "Build the web app, which the binary carries"
         run: "cd web && npm ci && npm run build"
+      - name: "Install cargo-about"
+        run: "cargo install --locked --features cli cargo-about@0.9.2"
+      - name: "Write the third-party notices"
+        run: |
+          test -n "$TARGET"
+          cargo about generate --locked --fail --target "$TARGET" --manifest-path crates/cli/Cargo.toml --features web --config about.toml --output-file THIRD-PARTY-NOTICES about.hbs
+          cat web/dist/app/3rdpartylicenses.txt >> THIRD-PARTY-NOTICES
+        env:
+          "TARGET": "${{ join(matrix.targets, ' ') }}"
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
       # Get the dist-manifest

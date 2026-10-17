@@ -1,0 +1,23 @@
+# cargo-about (https://github.com/EmbarkStudios/cargo-about): the licences of the Rust crates the
+# released glave is built from, for THIRD-PARTY-NOTICES in every release archive. The release
+# build writes it for each archive's own target (.github/build-setup.yml).
+
+# Every licence deny.toml allows ([licenses] allow), and only those. Where a crate offers a
+# choice, the first one here that it offers is the one taken: glave's own licence first.
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+]
+# What glave links: not what only builds it or tests it.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# glave's own crates aren't third-party.
+private = { ignore = true }

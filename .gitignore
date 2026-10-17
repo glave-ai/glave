@@ -1,6 +1,9 @@
 # Rust build output
 /target/
 
+# Written by release builds (.github/build-setup.yml)
+/THIRD-PARTY-NOTICES
+
 # Secrets stay local. A template with no real values may be committed.
 .env*
 !.env.example
