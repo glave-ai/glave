@@ -22,10 +22,13 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 
 | Term | Meaning |
 | --- | --- |
-| Space | The scope boundary: memory, history, files, members, policy, budget, default environment |
+| Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud. Holds providers, catalogs, policy, the theme, the budget (`specs/model.md`) |
+| Team | A flat group of people, granted models, connections and budgets |
+| Person | Someone who signs in: their Chats, their computer, their own sign-ins and choices |
+| Space | The scope boundary in code: a project (folders, instructions, members) or a person's Chats. Holds memory, history, files, members, policy, budget, default environment |
 | Thread | A conversation or task in a space. Workers fork from a parent with permissions and budget ⊆ the parent's |
 | Environment | A reusable template for where work runs: computer type, image, setup, network, credentials, limits |
-| Computer | A running instance of an environment: created, snapshotted, slept, woken, destroyed |
+| Computer | A person's one machine (laptop, server or cloud machine) where the agent works, its reach drawn by the operating system's sandbox: secrets hidden, the machine readable, the project writable. Fresh per-task workers are an upgrade |
 | Harness | The agent loop: context, tool calls, approvals, receipts, threads, scheduling |
 | Gateway | The single door out for models and remote tools: routing, keys, policy, budgets, metering |
 | Data store | Everything durable: the event log (history), memory, files, config. Enforces scope on every query |
@@ -65,7 +68,7 @@ web/app/            the web app `glave serve --http` (and `glave app`) serves at
 web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app and Glaze's showcase, served with glave's Content Security Policy
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
-specs/              the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
+specs/              the model (`model.md`: organization to thread, server and computer), and the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main); workers on a `kind` cluster (Linux)
 ```
 
@@ -103,6 +106,14 @@ The bar is code a careful reader admires: every line earns its place, and each i
 
 **Keeping principle 4.** A person on their own computer runs exactly what an organization runs. What differs is what sits behind the seams, never what the person sees:
 - **The server says what exists.** `server/discover` tells a client whether there is an organization, groups, sign-in or workers, and admin UI renders only when it says so. A local server says none. No client decides which admin features exist from its own config.
+- **The server says what happened; each client draws it.** Everything about a person's work comes from the server as typed facts, each with one plain sentence: a thread's items and their status; an approval or question with its sentence, detail and choices as fields; what needs the person and why; receipts; the names of models and services; what the caller may do; why a request was refused. A client never writes its own sentence about the work from events, counts or a parsed string: it shows the server's and draws the facts around it. A client owns its chrome:
+  - layout, order, folding, icons and motion;
+  - labels, empty states, and the words for when the server can't be reached;
+  - markdown and diffs drawn from text, never HTML;
+  - numbers, money and times formatted for the reader, and words relative to the reader ("this computer");
+  - what this tab remembers: drafts, panes, scroll.
+
+  A click may show its result at once; the server's answer is what stays. No item names a pane, a fold or a place on screen: every item prints as one line of plain text, which the CLI proves.
 - **One space shows no spaces.** With a single space, the UI shows no space grouping, members or moving between projects.
 - **Plain words.** No user-visible text names a file, flag, command or error code unless the person typed it. Every error a client can show has a message a person can act on.
 - **The consumer journey test** (`web/e2e/consumer.e2e.ts`, planned in #251) runs against a real server with a fresh home: add a model, chat, approve a command, connect GitHub. It fails if an admin word appears (policy, organization, member, group, admin, SSO, `config.toml`).
