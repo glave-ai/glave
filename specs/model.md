@@ -25,8 +25,13 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 - **The server** holds history, projects, settings and keys, runs the harness and the gateway, and answers every client: the web app, the CLI and outside agents. **The computer** holds files and runs commands. They talk through the computer protocol (`computers.md`): in-process on a laptop, over TLS elsewhere.
 - **One server for a person on a laptop; one organization's server (replicated) in a company or on Glave Cloud.** No server is tied to the folder it started in, and nothing runs once per folder.
 - **History never lives only on a computer,** so a computer can sleep, be reset or be replaced without losing a thread.
-- **A computer is persistent and belongs to one person.** On a laptop it is the laptop. In the cloud it is made the first time one of the person's threads needs it; its disk is kept and its compute sleeps when idle (`computers.md`, "Placement defaults"). What runs there is the person's own, as on their own laptop: it can be broken, and the person can reset it to its environment, with their projects coming back from their repositories.
-- **A project's folder** is a path on a computer, or a repository cloned there. A thread works in a worktree of its project's folders; a chat works in a scratch folder on the same computer.
+- **On a laptop, the computer is the laptop:** the person's own, persistent by nature. A project's folder is worked in where it is, with one thread changing its files at a time.
+- **In the cloud, every thread gets a fresh computer:** a worker made from the project's environment, released when the thread goes quiet, and made again from the thread's branch when it continues (`computers.md`, "Workers"). This is the industry's default for agents: Codex cloud, Claude Code on the web, Cursor's background agents, GitHub's Copilot agent. Nothing lasting lives on a cloud computer, so there is nothing to wreck, to reset or to leave behind, and threads run side by side without waiting on each other.
+  - Code comes in by clone and leaves as the thread's pushed `glave/` branch; unpushed work is saved to `glave/wip/` when the computer is released.
+  - Files that aren't code (uploads, documents, results to download) are the project's files, kept on the server.
+  - A project's prepared setup (installed dependencies, built tools) is cached after the first run, so a new thread starts in seconds.
+  - A long-lived personal machine in the cloud is a different product, and an environment option later if an organization asks.
+- **A project's folder** is a path on a laptop, or a repository: cloned once on a laptop, or into each cloud thread's computer. A chat works in a scratch folder.
 
 ## Settings are data
 
@@ -65,3 +70,8 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 6. **There are no teams,** policy can't tell callers apart, and budgets live in one process's memory. Teams and grants fix all three.
 7. **There is no admin API and no admin screens.** They come as described under "Admin".
 8. **`ModelInfo.hope` exists and there is no theme.** The flag is removed (#289) and theming arrives (#283).
+9. **Cloud computers are fresh per thread, but four pieces are missing:**
+   - a project's setup is not cached;
+   - a computer is kept until its session ends, not released when the thread goes quiet;
+   - a continued thread does not get a new computer from its branch;
+   - files that aren't code have no home on the server.

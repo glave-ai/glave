@@ -28,7 +28,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 | Space | The scope boundary in code: a project (folders, instructions, members) or a person's Chats. Holds memory, history, files, members, policy, budget, default environment |
 | Thread | A conversation or task in a space. Workers fork from a parent with permissions and budget ⊆ the parent's |
 | Environment | A reusable template for where work runs: computer type, image, setup, network, credentials, limits |
-| Computer | A running instance of an environment, one per person and persistent: its disk kept, its compute slept and woken, reset on request |
+| Computer | A running instance of an environment: on a laptop, the laptop; in the cloud, a fresh one per thread, released when the thread goes quiet. Work leaves it only through git, the project's files and the store |
 | Harness | The agent loop: context, tool calls, approvals, receipts, threads, scheduling |
 | Gateway | The single door out for models and remote tools: routing, keys, policy, budgets, metering |
 | Data store | Everything durable: the event log (history), memory, files, config. Enforces scope on every query |
