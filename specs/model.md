@@ -39,6 +39,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
   Approvals sit on top: a risky action asks even inside the writable zone. The zones bind the agent, never the person.
 - **The machine's files live on a disk that's the person's;** the running machine is replaceable. It can be reset or moved without losing their files, and history is never on it.
+- **Where glave runs the machine, its system comes from an image glave updates without asking;** the person's home (`/home/<name>`) is on their kept disk. What a person installs for the whole system goes on a setup list that runs again on each new image, so an update never loses it.
 - **Fresh machines per task are an upgrade, not the default.** They're workers (`computers.md`, "Workers"), used for parallel or untrusted work where the machine can run them: Docker (rootless, or Podman, since a Docker socket is root on its host) or a company's Kubernetes. Code comes in by clone and leaves as a pushed `glave/` branch.
 - **Isolating each project on its own machine** (a consultant keeping clients apart) is an option to add when someone needs it, never the default.
 - **Not at launch:** browser sessions kept logged in on a machine. A logged-in browser driven by an agent that reads untrusted pages is the riskiest piece, and it comes later, with its own design.
@@ -54,6 +55,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 ## Models
 
 - **Providers are added in the app.** Each provider's catalog is cached in the data store, refreshed when the provider is added, daily, and on demand (#290).
+- **A person's own model accounts are an organization's setting:** on for a person on their own, off by default in a company, where the organization's providers serve everyone.
 - **One entry per model, and glave picks the route** (#289): the organization's cloud contract first, then the model maker's API, then aggregators, each later one only as fallback. Policy can pin a route. Every call records where it ran.
 - **The picker lists** the default, the person's recent picks, the most used in the organization, then everything else through search.
 
