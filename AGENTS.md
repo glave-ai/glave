@@ -69,7 +69,7 @@ web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app an
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
 specs/              the model (`model.md`: organization to thread, server and computer), and the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
-.github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main); workers on a `kind` cluster (Linux); releases on version tags (`v0.1.0`): release.yml, made by `dist generate` from dist-workspace.toml and .github/build-setup.yml, never edited by hand
+.github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main); workers on a `kind` cluster (Linux); releases on version tags (`v0.1.0`): release.yml, made by `cargo xtask release-workflow` (`dist generate` from dist-workspace.toml and .github/build-setup.yml, then only the job that publishes can write), never edited by hand
 ```
 
 **Dependency rule.** Shared types depend on nothing in Glave. Ports depend only on types. Domain crates (log, harness, gateway) depend on types and ports, never on each other's internals or on adapters. Adapters depend on types, ports and their one external library. Only the binary depends on everything.
@@ -80,6 +80,7 @@ specs/              the model (`model.md`: organization to thread, server and co
 cargo xtask ci          # the full gate; must pass before anything is "done"
 cargo xtask file-sizes  # line limits only
 cargo xtask schema      # regenerate specs/session.schema.json and the web client's types after changing the session API
+cargo xtask release-workflow   # regenerate .github/workflows/release.yml after changing dist-workspace.toml or .github/build-setup.yml (needs dist, the version dist-workspace.toml names)
 cargo xtask bench       # benchmarks, alone on the machine (see Performance)
 cargo xtask eval        # the harness on evals/tasks against three real models, graded (costs cents)
 cargo xtask eval judge  # the action judge scored on evals/judge (the deterministic checks today)
