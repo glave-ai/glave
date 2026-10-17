@@ -8,11 +8,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use glave_event::{MemoryId, Part};
+use glave_ports::memories::{Memory, MemoryChange as Change, MemoryContext, Remembered, Shown};
 use glave_ports::{BlobStore, EventLog, Message, ModelProvider};
 use serde::{Deserialize, Serialize};
 
 use super::render::{self, Line, changes};
-use super::{Memory, MemoryChange as Change, MemoryContext, Remembered, Shown};
 use crate::approval::Approver;
 use crate::harness::{Harness, Thread};
 

@@ -6,8 +6,8 @@ use glave_event::{
     At, MemoryEdited, MemoryForgotten, MemoryId, MemoryRestored, MemorySaved, MemoryScope,
     MemorySource, Principal, PrincipalId,
 };
-use glave_harness::{MemoryError, Remembered};
 use glave_ports::Scope;
+use glave_ports::memories::{MemoryError, Remembered};
 use glave_ports::secrets::looks_like_credential;
 use jiff::{SignedDuration, Timestamp};
 

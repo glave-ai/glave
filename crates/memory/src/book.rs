@@ -9,7 +9,7 @@ use glave_event::{
     At, Body, EventId, MemoryId, MemoryScope, MemorySource, Principal, PrincipalKind, RawEvent,
     decode,
 };
-use glave_harness::Remembered;
+use glave_ports::memories::Remembered;
 
 /// One version of a memory's text.
 #[derive(Debug, Clone)]
