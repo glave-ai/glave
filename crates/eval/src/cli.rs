@@ -24,7 +24,8 @@ usage: glave-eval [options]
        glave-eval judge [options]   score the action judge on evals/judge (see judge --help)
 
 Runs glave's harness in-process on the task folders against real models and grades the results.
-The endpoint comes from GLAVE_BASE_URL and GLAVE_API_KEY.
+The endpoint comes from GLAVE_BASE_URL and GLAVE_API_KEY, which `cargo xtask eval` reads from
+.env (or the file --env-file <path> names) when the environment has none.
 
 options:
   --model <id>         a model to run (repeat for several; default: the three default models)
@@ -77,15 +78,24 @@ pub fn main() -> ExitCode {
     }
 }
 
-/// Runs the suite; `Ok(false)` when an attempt failed or was skipped.
-fn run(options: &Options) -> Result<bool, String> {
-    let base_url = std::env::var("GLAVE_BASE_URL")
-        .map_err(|_| "set GLAVE_BASE_URL (and GLAVE_API_KEY) to the model endpoint".to_owned())?;
+/// The model endpoint, from GLAVE_BASE_URL and GLAVE_API_KEY.
+pub(crate) fn endpoint() -> Result<Config, String> {
+    let base_url = std::env::var("GLAVE_BASE_URL").map_err(|_| {
+        "GLAVE_BASE_URL is not set: give the model endpoint as GLAVE_BASE_URL (and \
+         GLAVE_API_KEY, if it needs a key) in .env, which `cargo xtask eval` reads, or in the \
+         environment"
+            .to_owned()
+    })?;
     let api_key = std::env::var("GLAVE_API_KEY")
         .ok()
         .filter(|key| !key.is_empty());
-    let endpoint = Config::for_url(base_url.clone(), api_key)
-        .ok_or_else(|| format!("GLAVE_BASE_URL is not a URL: {base_url}"))?;
+    Config::for_url(base_url.clone(), api_key)
+        .ok_or_else(|| format!("GLAVE_BASE_URL is not a URL: {base_url}"))
+}
+
+/// Runs the suite; `Ok(false)` when an attempt failed or was skipped.
+fn run(options: &Options) -> Result<bool, String> {
+    let endpoint = endpoint()?;
     let tasks = chosen(
         task::load_all(&options.tasks).map_err(|err| err.to_string())?,
         options,

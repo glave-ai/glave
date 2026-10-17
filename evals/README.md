@@ -2,10 +2,12 @@
 
 `cargo xtask eval` runs glave's harness in-process (no CLI in between) on every task here,
 against three models by default, and grades each attempt without a judge: from the thread's
-events, the files left behind and the task's own test script. Load the endpoint first:
+events, the files left behind and the task's own test script. It reads the endpoint,
+`GLAVE_BASE_URL` and `GLAVE_API_KEY`, from `.env`: the nearest at or above the workspace, else
+the main checkout's when run from a git worktree, or the file `--env-file <path>` names. Only
+those two are read, only for the run, and the environment wins over the file.
 
 ```sh
-set -a; source .env; set +a
 cargo xtask eval --repeat 3              # the fast tier
 cargo xtask eval --tier all --repeat 3   # and the hard one
 cargo xtask eval -- --help               # every option

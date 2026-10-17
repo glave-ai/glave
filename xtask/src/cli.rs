@@ -19,8 +19,8 @@ commands:
                     dist-workspace.toml names), where only the job that publishes can write
   bench [args]      run benchmarks under the machine-wide benchmark lock
   eval [args]       run the harness on the eval tasks against real models and grade the
-                    results (see `cargo xtask eval --help`; needs the model endpoint in the
-                    environment)
+                    results (see `cargo xtask eval --help`); the model endpoint comes from the
+                    environment or from .env (`--env-file <path>` names another file)
   help              show this message";
 
 /// Parses the process arguments, runs the command, and maps the result to an exit code.
