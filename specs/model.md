@@ -13,10 +13,11 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 | Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud | Model providers and their catalogs, the connections catalog, environments, policy, the theme, the budget |
 | Team | A flat group of people, mirrored from the identity provider's groups where there are some | What it is granted: models, connections, budgets |
 | Person | Someone who signs in | Their Chats, their computer, their own sign-ins (git hosts, MCP servers), their own choices |
-| Project | A named place for work, owned by a person or a team | Folders on a computer, instructions, variables, secrets, members |
+| Project | A named place for work. It belongs to the organization, is managed by a person or a team, and is private to its manager, shared with people or teams, or open to everyone in the organization | Folders, instructions, variables, secrets, members |
 | Thread | A conversation or task, in a project or in the person's Chats | Its events, and a worktree of the project's folders |
 
 - **One rule at every level** (`policy.md`): choices, the nearest wins; constraints, they only narrow. A level grants only what it was given.
+- **No project needs a team.** Anyone can make one, private to them at first. The organization always owns its data, so when a person leaves, the projects they managed pass to an admin, and nothing is lost or orphaned.
 - **Words:** people see Chats and projects. "Space" stays the code's word for either: a project space, or a person's personal space (`storage.md`).
 - **A laptop is an organization of one:** no teams, one person. The organization's screens are that person's Settings, and the word "organization" never appears there (AGENTS.md, "Keeping principle 4").
 
