@@ -70,6 +70,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (task::STARTED, 1),
     (task::ENDED, 1),
     (task::CREATED, 1),
+    (task::CREATED, 2),
     (task::DELETED, 1),
     (gateway::TOOL_CALLED, 1),
     (memory::SAVED, 1),

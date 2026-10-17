@@ -19,6 +19,8 @@ use crate::server::{Server, no_thread};
 
 /// Threads whose space a server remembers; past this, it forgets them all and asks again.
 const PLACES: usize = 4_096;
+/// The most spaces whose tasks and schedules one person sees.
+const MOST_SPACES: usize = 1_000;
 
 /// What a personal space is called until its person renames it.
 pub const PERSONAL_NAME: &str = "Chats";
@@ -174,6 +176,21 @@ where
         self.personal_space(caller).await
     }
 
+    /// The spaces `caller` works in, the server's own among them when they do: those whose
+    /// tasks and schedules they see.
+    pub(crate) async fn spaces_of(&self, caller: &Caller) -> Result<Vec<SpaceId>, ApiError> {
+        // The server's own space is kept first, so it is listed for those who work in it.
+        self.home_space().await?;
+        let person = Principal::person(self.person_of(caller)?);
+        let spaces = self
+            .inner
+            .spaces
+            .list(self.inner.home.org, &person, MOST_SPACES)
+            .await
+            .map_err(|e| failed(&e))?;
+        Ok(spaces.into_iter().map(|space| space.id).collect())
+    }
+
     /// The scope `thread` is stored in: remembered, or found in the log.
     pub(crate) async fn scope_of(&self, thread: ThreadId) -> Result<Scope, ApiError> {
         if crate::ledger::is_ledger(thread) {
@@ -216,7 +233,7 @@ where
     }
 
     /// Refuses `request` unless `caller` may make it: for a thread, they work in its space;
-    /// for the server's tasks, schedules and memory, in the server's own space.
+    /// for the server's memory, in the server's own space.
     pub(crate) async fn allow(&self, caller: &Caller, request: &Request) -> Result<(), ApiError> {
         if let Some(thread) = request.thread() {
             self.authorize(caller, thread).await?;

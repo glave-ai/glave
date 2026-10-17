@@ -987,12 +987,6 @@
         },
         "when": {
           "$ref": "#/$defs/When"
-        },
-        "worktree": {
-          "type": [
-            "boolean",
-            "null"
-          ]
         }
       },
       "required": [
@@ -1226,6 +1220,10 @@
           ],
           "description": "The schedule that started it, if one did."
         },
+        "space": {
+          "$ref": "#/$defs/SpaceId",
+          "description": "The space its thread is in."
+        },
         "started_at": {
           "$ref": "#/$defs/At"
         },
@@ -1246,6 +1244,7 @@
       },
       "required": [
         "thread",
+        "space",
         "kind",
         "title",
         "model",
@@ -2732,14 +2731,19 @@
           "prompt": {
             "type": "string"
           },
+          "space": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SpaceId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The space its runs are in, by default as `thread/start` picks one."
+          },
           "when": {
             "$ref": "#/$defs/When"
-          },
-          "worktree": {
-            "type": [
-              "boolean",
-              "null"
-            ]
           }
         },
         "required": [
@@ -3274,7 +3278,7 @@
             "description": "How much the thread's turns ask before acting, one of the server's `approvals`;\nthe server's own mode when absent."
           },
           "background": {
-            "description": "For a thread that runs as a task: it works on a worker when the server has them,\neven when other threads work here.",
+            "description": "For a thread that runs as a task: in a project with a folder it works on a copy\nof its own, a worktree (or a worker, where every thread works on one), never in\nthe folder itself, so `worktree: false` is refused.",
             "type": "boolean"
           },
           "computer": {

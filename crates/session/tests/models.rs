@@ -244,12 +244,11 @@ fn a_model_the_server_does_not_run_is_refused() {
 
 #[test]
 fn a_background_turn_runs_on_the_model_it_chose_and_the_task_says_so() {
-    let dir = folder("models-task");
     block_on!(async {
-        let (server, _) = setup(vec![from("other", "Done.")])
-            .build_on(&dir, Shared::default())
+        let (server, _, _) = setup(vec![from("other", "Done.")])
+            .build_in_repository("models-task", Shared::default())
             .await;
-        let thread = start_on(&server, None).await.unwrap();
+        let thread = start_for_tasks(&server, None).await.unwrap();
         let reply = server
             .request(Request::TurnStart {
                 thread,

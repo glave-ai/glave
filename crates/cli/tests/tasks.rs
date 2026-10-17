@@ -23,12 +23,37 @@ mod glave_binary {
         std::fs::write(place.home.join("config.toml"), config).unwrap();
     }
 
+    /// Makes the project a repository with a commit, so tasks have a copy to work on.
+    fn committed(place: &Place) {
+        let ran = std::process::Command::new("bash")
+            .args([
+                "-c",
+                "git init -q && git add . && \
+                 git -c user.name=t -c user.email=t@example.com commit -q -m one",
+            ])
+            .current_dir(&place.project)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .status()
+            .unwrap();
+        assert!(ran.success());
+    }
+
     #[test]
     fn a_background_turn_runs_in_the_task_host_after_the_command_returns() {
         let place = place("background");
         with_model(&place);
         let server =
             FakeServer::start(vec![Reply::text("Tidied."), Reply::text("Hello.")]).unwrap();
+        // A task works on a copy, which a folder that is no repository cannot give.
+        let refused = glave(&place, &server, &["-b", "tidy the notes"], "");
+        assert!(!refused.status.success());
+        assert!(
+            text(&refused).contains("not a git repository with a commit"),
+            "{}",
+            text(&refused)
+        );
+        committed(&place);
         let started = glave(&place, &server, &["-b", "tidy the notes"], "");
         let shown = text(&started);
         assert!(started.status.success(), "{shown}");

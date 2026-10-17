@@ -89,12 +89,39 @@ pub struct ScheduleCreated {
     /// Tokens, in and out, each run may use, subagents' included. Required: no schedule runs
     /// unbounded.
     pub budget: u64,
-    /// Whether each run gets a worktree of its own; the server's choice when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub worktree: Option<bool>,
     /// Who made it. Absent: the space's person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
+}
+
+/// Version 1, which could say whether each run got a worktree of its own. Every run now works
+/// on a copy of its project's folder, so the choice is dropped.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScheduleCreatedV1 {
+    schedule: ScheduleId,
+    when: When,
+    prompt: String,
+    #[serde(default)]
+    goal: bool,
+    budget: u64,
+    #[serde(default, rename = "worktree")]
+    _worktree: Option<bool>,
+    #[serde(default)]
+    by: Option<Principal>,
+}
+
+impl From<ScheduleCreatedV1> for ScheduleCreated {
+    fn from(old: ScheduleCreatedV1) -> Self {
+        Self {
+            schedule: old.schedule,
+            when: old.when,
+            prompt: old.prompt,
+            goal: old.goal,
+            budget: old.budget,
+            by: old.by,
+        }
+    }
 }
 
 /// A schedule was deleted: it starts no more runs.
@@ -119,7 +146,7 @@ impl Payload for TaskEnded {
 
 impl Payload for ScheduleCreated {
     const TYPE: &'static str = CREATED;
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
 }
 
 impl Payload for ScheduleDeleted {
@@ -142,7 +169,11 @@ pub(crate) fn decode_created(
     version: u32,
     data: &RawValue,
 ) -> Option<serde_json::Result<ScheduleCreated>> {
-    (version == 1).then(|| parse(data))
+    match version {
+        1 => Some(parse::<ScheduleCreatedV1>(data).map(ScheduleCreated::from)),
+        2 => Some(parse(data)),
+        _ => None,
+    }
 }
 
 pub(crate) fn decode_deleted(
@@ -150,4 +181,21 @@ pub(crate) fn decode_deleted(
     data: &RawValue,
 ) -> Option<serde_json::Result<ScheduleDeleted>> {
     (version == 1).then(|| parse(data))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_1_reads_without_its_worktree_choice() {
+        let v1 = r#"{"schedule":"0192f5c1-0000-7000-8000-000000000001","when":{"cron":"0 9 * * *"},"prompt":"Triage","budget":10,"worktree":false}"#;
+        let raw = RawValue::from_string(v1.to_owned()).unwrap();
+        let upgraded = decode_created(1, &raw).unwrap().unwrap();
+        assert_eq!((upgraded.prompt.as_str(), upgraded.budget), ("Triage", 10));
+        assert!(
+            decode_created(2, &raw).unwrap().is_err(),
+            "version 2 has no worktree"
+        );
+    }
 }

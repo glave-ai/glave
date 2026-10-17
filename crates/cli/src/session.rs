@@ -184,9 +184,8 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
     let servers = mcp_servers(&setup, &root, remote.as_ref()).await?;
-    // The task host puts tasks on workers whenever a backend is set up.
     let (on_workers, workers) =
-        crate::cloud::workers(choices, &setup.loaded.constraints, &folder, args.socket).await?;
+        crate::cloud::workers(choices, &setup.loaded.constraints, &folder).await?;
     let scope = crate::spaces::here(&store, &root, identity.person).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let projects = projects_for(&setup, &servers, asking)?;

@@ -93,8 +93,6 @@ fn on_a_thread(thread: ThreadId) -> Vec<Request> {
         Request::ThreadDelete { thread },
         Request::TurnCancel { thread },
         Request::TasksStop { thread },
-        Request::TasksList { limit: None },
-        Request::ScheduleList {},
     ]
 }
 
@@ -153,6 +151,29 @@ fn one_person_can_neither_read_nor_answer_anothers_threads() {
         // Her own listing is of her own space, without ada's thread.
         let hers = grace.call(&listing(None)).await;
         assert_eq!(hers["result"]["threads"], json!([]), "{hers}");
+        // So are her tasks and schedules: none of ada's, which she cannot delete.
+        let schedule = ada
+            .call(&Request::ScheduleCreate {
+                space: None,
+                when: glave_event::When::Cron("0 9 * * *".into()),
+                prompt: "triage".into(),
+                goal: false,
+                budget: 1_000,
+            })
+            .await["result"]["schedule"]["schedule"]
+            .clone();
+        let listed = ada.call(&Request::ScheduleList {}).await;
+        assert_eq!(listed["result"]["schedules"][0]["schedule"], schedule);
+        let hers = grace.call(&Request::ScheduleList {}).await;
+        assert_eq!(hers["result"]["schedules"], json!([]), "{hers}");
+        let hers = grace.call(&Request::TasksList { limit: None }).await;
+        assert_eq!(hers["result"]["tasks"], json!([]), "{hers}");
+        let deleted = grace
+            .call(&Request::ScheduleDelete {
+                schedule: serde_json::from_value(schedule).unwrap(),
+            })
+            .await;
+        assert_eq!(refused(&deleted), Some(code::NO_SCHEDULE), "{deleted}");
         // ada still reads her thread, recorded as hers.
         let read = ada.call(&events_of(thread)).await;
         let ada_person = person(&issuer.url, "ada").unwrap();

@@ -1,6 +1,6 @@
-//! `glave tasks` and `glave schedule`: the folder's tasks (threads that run with no one
-//! attached) and the schedules that start them, through the task host. And, at the start of
-//! every session here, a word about tasks that finished since the last one.
+//! `glave tasks` and `glave schedule`: every project's tasks (threads that run with no one
+//! attached) and the schedules that start them, through the folder's task host. And, at the
+//! start of every session here, a word about tasks that finished since the last one.
 
 mod show;
 
@@ -28,8 +28,9 @@ Usage:
                               tokens and cost so far, elapsed time, status
   glave tasks stop <thread>   stop a running task
   glave --background <prompt>, or -b
-                              start one: the turn runs in this folder's task host (on a
-                              worker of its own when [workers] has a backend), so you can
+                              start one: the turn runs in this folder's task host, on a
+                              worktree of its own (so the folder must be a git repository
+                              with a commit), or a worker with on = \"cloud\", so you can
                               close the terminal. With --goal it works toward the goal;
                               --budget <tokens> stops the turn at that many tokens
 
@@ -39,7 +40,7 @@ pub const SCHEDULE_USAGE: &str = "\
 glave schedule: run a prompt or a goal as a task at set times
 
 Usage:
-  glave schedule add \"<cron>\" <prompt> [--goal] [--budget <tokens>] [--worktree]
+  glave schedule add \"<cron>\" <prompt> [--goal] [--budget <tokens>]
                               whenever the five-field cron expression (minute hour day
                               month weekday, in UTC) matches; --goal works toward the
                               prompt as a goal across turns
@@ -48,9 +49,10 @@ Usage:
   glave schedule list         the schedules, with when each runs next
   glave schedule rm <id>      delete a schedule; no more runs start
 
-Every run has a token budget: --budget, or 1000000. Runs happen in this folder's task host,
-which glave starts when needed. Runs missed while it was not running run once, as soon as
-it is, never once for each.";
+Every run has a token budget: --budget, or 1000000. Each run is a new thread in this
+folder's project, on a worktree of its own. Runs happen in a task host, which glave starts
+when needed; one runs every project's schedules. Runs missed while none was running run
+once, as soon as one is, never once for each.";
 
 /// `glave tasks ...`.
 pub fn tasks_main(words: &[String]) -> ExitCode {
@@ -173,8 +175,8 @@ pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Says which tasks finished since the last session here, and starts the task host when a
-/// schedule is waiting and none is running (as after a restart).
+/// Says which tasks finished since the last session here, and starts the task host here when a
+/// schedule is waiting and no host fires the schedules (as after a restart).
 pub async fn at_start(server: &Glave, args: &Args) {
     let Ok(folder) = std::env::current_dir() else {
         return;
@@ -186,7 +188,9 @@ pub async fn at_start(server: &Glave, args: &Args) {
         server.request(Request::ScheduleList {}).await,
         Ok(Reply::Schedules { schedules }) if schedules.iter().any(|s| s.next.is_some())
     );
+    // A host already running here takes the schedules over at its next look.
     if waiting
+        && !crate::daemon::schedules_fired()
         && matches!(Host::connect(&folder).await, Ok(None))
         && let Err(error) = Host::connect_or_start(&folder, args).await
     {
@@ -229,7 +233,6 @@ fn schedule_request(words: &[String]) -> anyhow::Result<Request> {
     let mut when = None;
     let mut goal = false;
     let mut budget = DEFAULT_BUDGET;
-    let mut worktree = None;
     let mut prompt = Vec::new();
     let mut rest = words.iter();
     while let Some(word) = rest.next() {
@@ -244,7 +247,6 @@ fn schedule_request(words: &[String]) -> anyhow::Result<Request> {
                 when = Some(When::At(At::from(at)));
             }
             "--goal" => goal = true,
-            "--worktree" => worktree = Some(true),
             "--budget" => {
                 let tokens = rest.next().context("--budget needs a number of tokens")?;
                 budget = tokens
@@ -264,11 +266,11 @@ fn schedule_request(words: &[String]) -> anyhow::Result<Request> {
         bail!("glave schedule add needs a prompt");
     }
     Ok(Request::ScheduleCreate {
+        space: None,
         when,
         prompt,
         goal,
         budget,
-        worktree,
     })
 }
 
@@ -297,7 +299,7 @@ mod tests {
             prompt,
             goal,
             budget,
-            worktree,
+            ..
         } = schedule_request(&words(&[
             "0 9 * * 1-5",
             "triage",
@@ -311,8 +313,8 @@ mod tests {
         };
         assert_eq!(when, When::Cron("0 9 * * 1-5".into()));
         assert_eq!(
-            (prompt.as_str(), goal, budget, worktree),
-            ("triage issues", false, 5000, None)
+            (prompt.as_str(), goal, budget),
+            ("triage issues", false, 5000)
         );
         let Request::ScheduleCreate {
             when, goal, budget, ..
@@ -320,7 +322,6 @@ mod tests {
             "--at",
             "2026-10-11T09:00:00Z",
             "--goal",
-            "--worktree",
             "make it pass",
         ]))
         .unwrap()
@@ -334,6 +335,7 @@ mod tests {
             &["--at", "tomorrow", "x"],
             &["0 9 * * *", "x", "--budget", "0"],
             &["0 9 * * *", "x", "--every"],
+            &["0 9 * * *", "x", "--worktree"],
         ] {
             assert!(schedule_request(&words(wrong)).is_err(), "{wrong:?}");
         }
