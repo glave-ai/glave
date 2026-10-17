@@ -26,13 +26,22 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 - **The server** holds history, projects, settings and keys, runs the harness and the gateway, and answers every client: the web app, the CLI and outside agents. **The computer** holds files and runs commands. They talk through the computer protocol (`computers.md`): in-process on a laptop, over TLS elsewhere.
 - **One server for a person on a laptop; one organization's server (replicated) in a company or on Glave Cloud.** No server is tied to the folder it started in, and nothing runs once per folder.
 - **History never lives only on a computer,** so a computer can sleep, be reset or be replaced without losing a thread.
-- **On a laptop, the computer is the laptop:** the person's own, persistent by nature. A project's folder is worked in where it is, with one thread changing its files at a time.
-- **In the cloud, every thread gets a fresh computer:** a worker made from the project's environment, released when the thread goes quiet, and made again from the thread's branch when it continues (`computers.md`, "Workers"). This is the industry's default for agents: Codex cloud, Claude Code on the web, Cursor's background agents, GitHub's Copilot agent. Nothing lasting lives on a cloud computer, so there is nothing to wreck, to reset or to leave behind, and threads run side by side without waiting on each other.
-  - Code comes in by clone and leaves as the thread's pushed `glave/` branch; unpushed work is saved to `glave/wip/` when the computer is released.
-  - Files that aren't code (uploads, documents, results to download) are the project's files, kept on the server.
-  - A project's prepared setup (installed dependencies, built tools) is cached after the first run, so a new thread starts in seconds.
-  - A long-lived personal machine in the cloud is a different product, and an environment option later if an organization asks.
-- **A project's folder** is a path on a laptop, or a repository: cloned once on a laptop, or into each cloud thread's computer. A chat works in a scratch folder.
+- **A person's computer is one machine that's theirs:** their laptop, or a server or cloud machine they run (and, later, one Glave Cloud gives them). glave works on it the same way everywhere, as on a laptop today:
+  - projects are folders on it, and a thread works in its project's folder in place, one thread changing a folder's files at a time;
+  - "work on a separate copy" gives a thread a worktree for parallel work;
+  - chats work in a scratch folder.
+- **The agent's reach is drawn by the machine's own sandbox,** the operating system's (Seatbelt on macOS; bubblewrap, Landlock and seccomp on Linux), never by asking the model (`sandbox.md`). Three zones:
+  - **Hidden:** secrets (keys, cloud and git sign-ins, browser profiles, keychains, shell history, `.env` files) and glave's own data.
+  - **Read, never written:** the rest of the machine, and the machinery inside a project that runs code later (git hooks and config, `.glave/`, `.mcp.json`).
+  - **Read and written:** the project folder or the chat's scratch folder, temp folders, and any folder the person grants for a thread ("Allow writing to ~/Downloads?").
+
+  Approvals sit on top: a risky action asks even inside the writable zone. The zones bind the agent, never the person.
+- **The machine's files live on a disk that's the person's;** the running machine is replaceable. It can be reset or moved without losing their files, and history is never on it.
+- **Fresh machines per task are an upgrade, not the default.** They're workers (`computers.md`, "Workers"), used for parallel or untrusted work where the machine can run them: Docker (rootless, or Podman, since a Docker socket is root on its host) or a company's Kubernetes. Code comes in by clone and leaves as a pushed `glave/` branch.
+- **Isolating each project on its own machine** (a consultant keeping clients apart) is an option to add when someone needs it, never the default.
+- **Not at launch:** browser sessions kept logged in on a machine. A logged-in browser driven by an agent that reads untrusted pages is the riskiest piece, and it comes later, with its own design.
+- **Untrusted travels with work:** a thread an assistant starts after reading untrusted content inherits that label, so its risky actions need approval.
+- **A person's files on a machine are personal data:** sealed under their key where the store keeps them, erased with it, and exportable.
 
 ## Settings are data
 
@@ -71,8 +80,4 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 6. **There are no teams,** policy can't tell callers apart, and budgets live in one process's memory. Teams and grants fix all three.
 7. **There is no admin API and no admin screens.** They come as described under "Admin".
 8. **`ModelInfo.hope` exists and there is no theme.** The flag is removed (#289) and theming arrives (#283).
-9. **Cloud computers are fresh per thread, but four pieces are missing:**
-   - a project's setup is not cached;
-   - a computer is kept until its session ends, not released when the thread goes quiet;
-   - a continued thread does not get a new computer from its branch;
-   - files that aren't code have no home on the server.
+9. **`computers.md`'s "Placement defaults" puts each cloud task on a worker by default.** The default becomes the person's one machine, with workers as the upgrade. A person on a server or cloud machine reaching it from a phone needs a sign-in that isn't a company identity provider.
