@@ -28,6 +28,8 @@
       [summary]="item.ask.sentence"
       [detail]="item.ask.detail"
       [caution]="item.caution"
+      [reason]="item.modelReason"
+      [onlyOnce]="item.outsideSandbox"
       [decision]="item.decision"
       [busy]="sending()"
       (decide)="decide(item.approval, $event)"

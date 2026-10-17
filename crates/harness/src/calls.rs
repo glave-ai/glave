@@ -9,12 +9,14 @@ use glave_ports::{
 };
 
 use crate::approval::{ApprovalRequest, Approver, Decision, asks_for, no_one_there, sentence};
+use crate::builtins::BUILTINS;
 use crate::cancel::Cancel;
 use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::hooks::ToolHook;
 use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
+use crate::sandbox;
 use crate::turn::{Live, Step, TurnSummary, absorb, tally};
 
 /// The result of a tool call the turn never ran because the person cancelled it.
@@ -121,7 +123,7 @@ where
         if let Some(stopped) = hook.await? {
             return Ok(stopped);
         }
-        let (effect, mut caution, secret, firm) = match source.assess(name, &call.arguments).await {
+        let (effect, caution, secret, firm) = match source.assess(name, &call.arguments).await {
             Assessment::AsDeclared => (info.effect, None, false, false),
             Assessment::Reads => (Effect::Reads, None, false, false),
             Assessment::Caution {
@@ -130,38 +132,26 @@ where
                 firm,
             } => (info.effect, Some(reason), secret, firm),
         };
-        if let Some(reason) = caution.as_deref().filter(|_| !firm) {
-            let flagged = Flagged {
-                call,
-                name,
-                summary: &summary,
-                reason,
-            };
-            match self
-                .judged(thread, &flagged, &mut step.summary, cancel)
-                .await?
-            {
-                Judged::Cleared => caution = None,
-                Judged::Ask => {}
-                Judged::Cancelled => return Ok(ToolOutput::text(true, NOT_RUN)),
-            }
+        let outside = (index == BUILTINS)
+            .then(|| sandbox::outside(self.workspace_for(thread), name, &call.arguments))
+            .flatten();
+        let request = ApprovalRequest {
+            thread: thread.id,
+            call_id: call.call_id.clone(),
+            tool: name.to_owned(),
+            effect,
+            summary: summary.clone(),
+            secret,
+            caution: sandbox::with_outside(caution, outside.is_some()),
+            outside_sandbox: outside,
+        };
+        let needs = Needs { request, firm };
+        let turn = &mut step.summary;
+        if let Some(refused) = self.approve(thread, &needs, turn, cancel, live).await? {
+            return Ok(refused);
         }
-        // A caution asks even when the tool was allowed for the rest of the thread.
-        let asks = caution.is_some()
-            || (asks_for(self.approval_for(thread), effect) && !thread.allowed.contains(name));
-        if asks {
-            let request = ApprovalRequest {
-                thread: thread.id,
-                call_id: call.call_id.clone(),
-                tool: name.to_owned(),
-                effect,
-                summary: summary.clone(),
-                secret,
-                caution,
-            };
-            if let Some(refused) = self.ask(thread, &request, cancel, live).await? {
-                return Ok(refused);
-            }
+        if needs.request.outside_sandbox.is_some() {
+            step.summary.outside_sandbox = step.summary.outside_sandbox.saturating_add(1);
         }
         live(Live::ToolStarted {
             summary: summary.clone(),
@@ -234,31 +224,67 @@ where
         }
     }
 
+    /// Asks the person about a call when it needs them: for its caution in every mode, unless
+    /// the judge clears it, or for the mode. `None` when the call may run; otherwise the result
+    /// the model is given instead.
+    async fn approve(
+        &self,
+        thread: &mut Thread,
+        needs: &Needs,
+        turn: &mut TurnSummary,
+        cancel: &Cancel,
+        live: &mut (dyn FnMut(Live) + Send),
+    ) -> Result<Option<ToolOutput>, HarnessError> {
+        let request = &needs.request;
+        let mut cautioned = request.caution.is_some();
+        if cautioned && self.judgeable(thread, needs) {
+            match self.judged(thread, request, turn, cancel).await? {
+                Judged::Cleared => cautioned = false,
+                Judged::Ask => {}
+                Judged::Cancelled => return Ok(Some(ToolOutput::text(true, NOT_RUN))),
+            }
+        }
+        // A caution asks even when the tool was allowed for the rest of the thread.
+        let asks = cautioned
+            || (asks_for(self.approval_for(thread), request.effect)
+                && !thread.allowed.contains(&request.tool));
+        if !asks {
+            return Ok(None);
+        }
+        self.ask(thread, request, cancel, live).await
+    }
+
+    /// Whether the judge may clear a call's caution: never a firm one. One that would run a
+    /// command outside the sandbox only while someone could be asked instead, and only in a
+    /// thread that has read nothing untrusted.
+    fn judgeable(&self, thread: &Thread, needs: &Needs) -> bool {
+        let unsandboxed = needs.request.outside_sandbox.is_some();
+        !needs.firm && (!unsandboxed || (!thread.untrusted && self.approver.can_answer(thread.id)))
+    }
+
     /// In auto mode with a judge, asks it whether a soft caution may run because the person
     /// asked for it. The judge's call is recorded and counted in the turn, as model usage this
     /// thread caused; a cleared action is recorded as an approval glave decided.
     pub(crate) async fn judged(
         &self,
         thread: &mut Thread,
-        flagged: &Flagged<'_>,
+        request: &ApprovalRequest,
         turn: &mut TurnSummary,
         cancel: &Cancel,
     ) -> Result<Judged, HarnessError> {
-        let Flagged {
-            call,
-            name,
-            summary,
-            reason,
-        } = *flagged;
+        let Some(reason) = request.caution.as_deref() else {
+            return Ok(Judged::Ask);
+        };
         if !self.settings.judge || self.approval_for(thread) != ApprovalMode::Auto {
             return Ok(Judged::Ask);
         }
         let case = JudgeCase {
             asked: &thread.asked,
             rules: thread.instructions.as_deref(),
-            action: summary,
+            action: &request.summary,
             flagged: reason,
             untrusted: thread.untrusted,
+            outside_sandbox: request.outside_sandbox.is_some(),
         };
         let model = &self.default_model();
         let asking = judge(&self.provider, model, &case, thread.lineage());
@@ -279,15 +305,12 @@ where
             why => sentence(&format!("allowed without asking: {why}")),
         };
         let asked = ApprovalRequested {
-            call_id: call.call_id.clone(),
-            tool: name.to_owned(),
-            summary: summary.to_owned(),
-            secret: false,
             caution: Some(format!("{} {cleared}", sentence(reason))),
+            ..request.asked()
         };
         self.record(thread, &asked).await?;
         let decided = ApprovalDecided {
-            call_id: call.call_id.clone(),
+            call_id: request.call_id.clone(),
             decision: Verdict::AllowOnce,
             by: Some(Principal::glave()),
         };
@@ -311,6 +334,10 @@ where
         let verdict = match decision {
             None => Verdict::Cancelled,
             Some(Decision::AllowOnce) => Verdict::AllowOnce,
+            // Running outside the sandbox is allowed one command at a time.
+            Some(Decision::AllowForThread) if request.outside_sandbox.is_some() => {
+                Verdict::AllowOnce
+            }
             Some(Decision::AllowForThread) => Verdict::AllowForThread,
             Some(Decision::Deny) => Verdict::Deny,
             Some(Decision::Unavailable) => Verdict::NoOneThere,
@@ -393,6 +420,13 @@ where
     }
 }
 
+/// What a call needs before it runs: the person's yes, asked as `request`, unless the judge may
+/// clear its caution and does. A `firm` caution only the person can clear.
+struct Needs {
+    request: ApprovalRequest,
+    firm: bool,
+}
+
 /// What the judge made of a soft caution.
 pub(crate) enum Judged {
     /// The person asked for it: it runs without asking.
@@ -401,13 +435,4 @@ pub(crate) enum Judged {
     Ask,
     /// The turn was cancelled while the judge thought.
     Cancelled,
-}
-
-/// A call a rule flagged, as the judge is told about it.
-#[derive(Clone, Copy)]
-pub(crate) struct Flagged<'a> {
-    pub(crate) call: &'a ToolCall,
-    pub(crate) name: &'a str,
-    pub(crate) summary: &'a str,
-    pub(crate) reason: &'a str,
 }

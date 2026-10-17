@@ -13,7 +13,7 @@ use glave_ports::{
 };
 
 use crate::approval::Approver;
-use crate::builtins::Builtins;
+use crate::builtins::{BUILTINS, Builtins};
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::owner_label;
 use crate::tools::workspace::Workspace;
@@ -233,7 +233,7 @@ where
     /// it, then its project's.
     pub(crate) fn source_for(&self, thread: &Thread, index: usize) -> Option<Arc<dyn ToolSource>> {
         match (&thread.workspace, index) {
-            (Some(workspace), 0) => Some(Arc::new(Builtins {
+            (Some(workspace), BUILTINS) => Some(Arc::new(Builtins {
                 workspace: Arc::clone(workspace),
             })),
             _ => match index.checked_sub(self.sources.len()) {

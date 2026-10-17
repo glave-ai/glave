@@ -33,6 +33,10 @@ export interface ApprovalItem extends Placed {
   readonly summary: string;
   /** Why it asks whatever the mode, in the server's sentences; empty when only the mode asks. */
   readonly caution: string;
+  /** Whether the command would run outside the sandbox: each one asks, and is allowed once. */
+  readonly outsideSandbox: boolean;
+  /** The model's own words for why it must run outside the sandbox; empty when it gave none. */
+  readonly modelReason: string;
   readonly decision: GlzDecision | null;
 }
 
@@ -202,6 +206,7 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
       }
       case 'approval.requested': {
         const approval = text(data['call_id']);
+        const outside = data['outside_sandbox'];
         put({
           kind: 'approval',
           key: `approval-${approval}`,
@@ -210,6 +215,8 @@ export function threadItems(events: readonly RawEvent[]): readonly ThreadItem[] 
           tool: text(data['tool']),
           summary: text(data['summary']),
           caution: text(data['caution']),
+          outsideSandbox: isRecord(outside),
+          modelReason: isRecord(outside) ? text(outside['reason']) : '',
           decision: null,
         });
         break;
