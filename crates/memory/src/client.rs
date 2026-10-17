@@ -1,5 +1,5 @@
 //! glave's side of its own memory server: an MCP client over an in-process connection, as the
-//! harness's [`Memory`]. The model's tools and the current memories go through MCP, each
+//! memory port ([`Memory`]). The model's tools and the current memories go through MCP, each
 //! request carrying who and where in its `_meta`; the person's own controls (listing, moving,
 //! restoring) are their actions, not the model's, and go to the store directly.
 //!
@@ -10,11 +10,11 @@
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use glave_event::{Arguments, MemoryId, Principal};
-use glave_harness::{
+use glave_mcp::{Limits, McpServer, tool_output};
+use glave_ports::memories::{
     Access, Control, MEMORY_SERVER, Memory, MemoryChange, MemoryContext, MemoryError, MemoryOutput,
     Remembered, Shown,
 };
-use glave_mcp::{Limits, McpServer, tool_output};
 use glave_ports::{
     BoxFuture, EventLog, ModelProvider, NeverCancelled, Scope, ToolError, ToolInfo, ToolSource,
 };

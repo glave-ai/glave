@@ -5,7 +5,8 @@
 //! must pass. Ports are shaped as if they crossed a network: coarse calls, batched writes,
 //! paged reads, serializable types. Every storage call takes a [`Scope`], and no call can
 //! cross scopes. The computer port's in-process implementation runs real processes, so it
-//! lives in `glave-computer` (this machine) rather than here.
+//! lives in `glave-computer` (this machine) rather than here; the memory port's is glave's
+//! memory server over any event log, in `glave-memory`.
 
 pub mod auth;
 mod blob;
@@ -16,6 +17,7 @@ pub mod conformance;
 mod env;
 mod failure;
 mod log;
+pub mod memories;
 mod memory;
 mod model;
 mod scope;

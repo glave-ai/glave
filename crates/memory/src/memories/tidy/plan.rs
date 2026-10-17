@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use glave_event::{At, Part};
-use glave_harness::MemoryError;
+use glave_ports::memories::MemoryError;
 use glave_ports::{Message, ModelProvider, ModelRequest, Purpose, ToolChoice};
 use serde::Deserialize;
 

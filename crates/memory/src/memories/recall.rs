@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use glave_event::{At, Body, MemoryId, MemoryScope, MemorySource, Role, Seq, ThreadId, decode};
-use glave_harness::{MemoryContext, MemoryError, memory_ledger};
+use glave_ports::memories::{MemoryContext, MemoryError, memory_ledger};
 use glave_ports::search::{Found, query_terms, searchable_body, terms};
 use glave_ports::{EventLog, Scope};
 

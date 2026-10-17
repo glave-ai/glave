@@ -52,6 +52,10 @@ pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;
 pub use glave_event::ApprovalMode;
 pub use glave_ports::Caller;
+pub use glave_ports::memories::{
+    Access, Control, EDIT_MEMORY, FORGET, MEMORY_SERVER, Memory, MemoryChange, MemoryContext,
+    MemoryError, MemoryOutput, RECALL, REMEMBER, Remembered, Shown, memory_ledger,
+};
 pub use glave_ports::secrets::{is_secret_file, is_secret_variable};
 pub use glave_ports::{Clock, Entropy, OsEntropy, SystemClock};
 pub use glave_ports::{Sandbox, SandboxLevel};
@@ -60,11 +64,7 @@ pub use harness::{Harness, HarnessError, Parts, Settings, Thread};
 pub use hooks::{Hook, HookError, HookPoint, Hooks, point_name};
 pub use instructions::{AGENTS_MD, Instructions, agents_md};
 pub use judge::{JudgeCase, Ruling, judge};
-pub use memory::{
-    Access, Control, EDIT_MEMORY, FORGET, MEMORY_SERVER, Memory, MemoryChange, MemoryContext,
-    MemoryError, MemoryOutput, MemoryVerb, RECALL, REMEMBER, REMEMBER_CAUTION, Remembered, Shown,
-    memory_ledger,
-};
+pub use memory::{MemoryVerb, REMEMBER_CAUTION};
 pub use projects::{Brought, Loosened, Projects};
 pub use prompt::system_prompt;
 pub use question::{Choice, Question, QuestionRequest};

@@ -10,6 +10,7 @@ use glave_event::{
     Part, Payload, Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted,
     encode,
 };
+use glave_ports::memories::Memory;
 use glave_ports::{
     BlobError, BlobStore, Caller, ComputerError, EventLog, LogError, Message, ModelProvider,
     ProviderError, Scope, ToolSource,
@@ -25,7 +26,7 @@ use crate::commands::Command;
 use crate::compaction::{Compaction, Measured};
 use crate::goal::{GoalProgress, Pursuit};
 use crate::hooks::Hooks;
-use crate::memory::{Memory, MemoryState};
+use crate::memory::MemoryState;
 use crate::projects::{Brought, Projects};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;

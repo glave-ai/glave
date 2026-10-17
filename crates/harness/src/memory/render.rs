@@ -6,8 +6,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use glave_event::{At, MemoryId};
-
-use super::Remembered;
+use glave_ports::memories::Remembered;
 
 const START: &str = "# Memory\n\n<MEMORY>\nWhat you saved with the memory tools in earlier \
      threads, about the person (personal) and this space (space). The person can see, edit and \
