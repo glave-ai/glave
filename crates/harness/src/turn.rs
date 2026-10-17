@@ -122,6 +122,8 @@ pub struct TurnSummary {
     pub outcome: Outcome,
     pub model_calls: u32,
     pub tool_calls: u32,
+    /// The commands that ran outside the sandbox, each one allowed.
+    pub outside_sandbox: u32,
     pub tokens: TokenCounts,
     /// The total the provider reported, when it reported a cost for every call.
     pub cost: Option<Money>,
@@ -135,6 +137,7 @@ impl TurnSummary {
             outcome: Outcome::Completed,
             model_calls: 0,
             tool_calls: 0,
+            outside_sandbox: 0,
             tokens: TokenCounts::default(),
             cost: Some(Money {
                 micros: 0,
@@ -585,6 +588,9 @@ fn outcome_of(stop: StopReason) -> Outcome {
 pub(crate) fn absorb(summary: &mut TurnSummary, child: &TurnSummary) {
     summary.model_calls = summary.model_calls.saturating_add(child.model_calls);
     summary.tool_calls = summary.tool_calls.saturating_add(child.tool_calls);
+    summary.outside_sandbox = summary
+        .outside_sandbox
+        .saturating_add(child.outside_sandbox);
     let (total, more) = (&mut summary.tokens, &child.tokens);
     total.input = total.input.saturating_add(more.input);
     total.cache_read = total.cache_read.saturating_add(more.cache_read);
