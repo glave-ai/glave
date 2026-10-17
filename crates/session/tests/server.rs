@@ -1,7 +1,7 @@
 //! The session server in-process, beyond what the conformance suite checks on every transport:
-//! one turn at a time, cancelling a running turn, a retried turn following the first, an
-//! approval with no one to answer it, a fresh server picking a thread up from the log alone,
-//! and the shape of the messages.
+//! one turn at a time (a message sent meanwhile is queued to it, `steer.rs`), cancelling a
+//! running turn, a retried turn following the first, an approval with no one to answer it, a
+//! fresh server picking a thread up from the log alone, and the shape of the messages.
 
 use std::sync::Arc;
 
@@ -30,8 +30,12 @@ fn one_turn_runs_at_a_time_and_cancel_ends_it() {
         let server = gated(&dir, &Arc::new(Notify::new())).await;
         let thread = start(&server, false).await;
         let mut first = stream_turn(&server, thread, "slow", None).await.unwrap();
-        let second = stream_turn(&server, thread, "again", None).await;
-        assert_eq!(second.err().map(|e| e.code), Some(code::TURN_RUNNING));
+        // A second message is queued to the running turn, not a turn of its own.
+        let second = server.request(turn_start(thread, "again", None)).await;
+        assert!(matches!(second, Ok(Reply::Queued { .. })), "{second:?}");
+        // A client that follows only turns it starts is told so.
+        let followed = stream_turn(&server, thread, "and again", None).await;
+        assert_eq!(followed.err().map(|e| e.code), Some(code::TURN_RUNNING));
         match server.request(Request::ThreadGet { thread }).await.unwrap() {
             Reply::Thread { thread } => assert_eq!(thread.status, Status::Running),
             other => panic!("{other:?}"),
@@ -60,9 +64,12 @@ fn a_retry_with_the_same_key_follows_the_running_turn_instead_of_starting_one() 
             |key: &IdempotencyKey| stream_turn(&server, thread, "slow", Some(key.clone()));
         let mut first = attempt(&key).await.unwrap();
         let mut retried = attempt(&key).await.unwrap();
+        // Another key's message is queued to the running turn instead.
         let other = IdempotencyKey::new("attempt-2").unwrap();
-        let refused = attempt(&other).await;
-        assert_eq!(refused.err().map(|e| e.code), Some(code::TURN_RUNNING));
+        let queued = server
+            .request(turn_start(thread, "slow", Some(other)))
+            .await;
+        assert!(matches!(queued, Ok(Reply::Queued { .. })), "{queued:?}");
         gate.notify_one();
         let (first, retried) = (first.finish().await, retried.finish().await);
         assert_eq!(first.unwrap(), retried.unwrap());

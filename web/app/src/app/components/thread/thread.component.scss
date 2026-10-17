@@ -49,6 +49,12 @@
   padding-bottom: var(--glz-space-5);
 }
 
+// What the person sent while the model works says it waits, small, under its text.
+.caption {
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-sm);
+}
+
 .error {
   color: var(--glz-color-danger);
 }

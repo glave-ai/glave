@@ -27,6 +27,12 @@
         @for (turn of turns(); track turn.key) {
           <app-turn [turn]="turn" />
         }
+        @for (message of service.queued(); track message.key) {
+          <glz-message from="person" data-testid="thread-queued" [author]="copy.you">
+            <app-message-text [text]="message.text" />
+            <p class="caption">{{ copy.queued }}</p>
+          </glz-message>
+        }
         @if (service.trust(); as ask) {
           <glz-trust-card
             testId="thread-trust"

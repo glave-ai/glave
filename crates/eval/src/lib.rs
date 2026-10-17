@@ -15,6 +15,7 @@ mod oracle;
 mod prepare;
 mod report;
 mod run;
+mod steer;
 mod suite;
 mod task;
 mod trace;

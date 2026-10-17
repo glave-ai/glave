@@ -25,6 +25,7 @@ use crate::check::{Context, ended};
 use crate::error::EvalError;
 use crate::memory::{MemoryReport, Remembering};
 use crate::prepare::{Environment, Prepared, last_lines, prepare, script, tidy};
+use crate::steer::{Steer, Steering};
 use crate::task::Task;
 use crate::trace::{self, Trace};
 
@@ -322,7 +323,8 @@ async fn converse(
     for (index, (space, turns)) in threads.iter().enumerate() {
         let scope = crate::memory::space(space.as_deref());
         let goal = task.goal.as_ref().filter(|_| index == 0);
-        let Some(thread) = conversation.thread(scope, turns, goal).await? else {
+        let steer = task.steer.as_ref().filter(|_| index == 0);
+        let Some(thread) = conversation.thread(scope, turns, goal, steer).await? else {
             break;
         };
         let events = harness
@@ -379,13 +381,14 @@ struct Talk<'a> {
 }
 
 impl Talk<'_> {
-    /// Runs `turns` in a new thread in `scope`, the first as `goal` when there is one, and
-    /// gives the thread's id; `None` when it could not start.
+    /// Runs `turns` in a new thread in `scope`, the first as `goal` when there is one, with
+    /// `steer` sent while it runs, and gives the thread's id; `None` when it could not start.
     async fn thread(
         &mut self,
         scope: glave_ports::Scope,
         turns: &[String],
         goal: Option<&crate::task::TaskGoal>,
+        steer: Option<&Steer>,
     ) -> Result<Option<glave_event::ThreadId>, EvalError> {
         let fail = |err: glave_harness::HarnessError| EvalError::Setup(err.to_string());
         let harness = self.harness;
@@ -402,7 +405,18 @@ impl Talk<'_> {
             let cancel = Cancel::new();
             let _deadline = Deadline::cancels(&cancel, self.deadline);
             let transcript = &mut self.transcript;
-            let mut show = |live| note(transcript, live);
+            let mut steering = steer
+                .filter(|_| index == 0)
+                .map(|steer| Steering::new(steer, &thread));
+            let mut show = |live: Live| {
+                if let Some(sent) = steering
+                    .as_mut()
+                    .and_then(|steering| steering.see(&live, harness.clock(), harness.entropy()))
+                {
+                    let _ = write!(transcript, "\n> (while it works) {sent}\n");
+                }
+                note(transcript, live);
+            };
             let ran = match (goal, index) {
                 (Some(goal), 0) => {
                     let goal = Goal {
@@ -419,6 +433,12 @@ impl Talk<'_> {
                         .await
                 }
             };
+            // What was sent after the model's last call starts a turn of its own.
+            let ran = harness
+                .run_queued(&mut thread, ran, &cancel, &mut show)
+                .await;
+            self.failures
+                .extend(steering.as_ref().and_then(Steering::unsent));
             match ran {
                 Ok(_) if cancel.is_cancelled() => {
                     let seconds = self.task.timeout.as_secs();
@@ -504,6 +524,9 @@ fn note(transcript: &mut String, live: Live) {
         Live::Asked { questions, .. } => {
             let asked: Vec<&str> = questions.iter().map(|q| q.question.as_str()).collect();
             writeln!(transcript, "[asked] {}", asked.join(" / "))
+        }
+        Live::Unread { reason, .. } => {
+            writeln!(transcript, "[not read] {}", reason.unwrap_or_default())
         }
         Live::Reasoning(_) | Live::ToolFinished { .. } | Live::Waiting => Ok(()),
     };

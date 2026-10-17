@@ -72,8 +72,16 @@
   display: none;
 }
 
-.act {
+// Send, or while the model answers Stop, with Send before it once there is something to
+// send: Stop stays at the end, where Send was.
+.acts {
+  display: flex;
   grid-area: act;
+  align-items: end;
+  gap: var(--glz-space-2);
+}
+
+.act {
   width: var(--glz-composer-send-size);
   min-height: var(--glz-composer-send-size);
 }

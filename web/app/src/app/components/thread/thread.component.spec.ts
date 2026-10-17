@@ -6,7 +6,7 @@ import { of } from 'rxjs';
 
 import { SpacesService } from '../../services/spaces.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
-import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { FakeSession, FakeTurn, provideFakeSession } from '../../testing/fake-session';
 import { MODELS, SERVER, event, space, thread } from '../../testing/fixtures';
 import { ThreadComponent } from './thread.component';
 
@@ -247,6 +247,69 @@ describe('ThreadComponent', () => {
     await type(root, 'Go');
     expect(fake.paramsOf('turn/start')).toEqual([{ thread: 'thread-1', prompt: 'Go' }]);
     expect(root.textContent).toContain('Done.');
+  });
+
+  it('takes a message while a turn runs: waiting to be read, then read where the model saw it', async () => {
+    const turn = new FakeTurn();
+    const fake = session(ANSWERED)
+      .turn(turn)
+      .turn({ queued: { id: 'event-6' } });
+    const { root, fixture } = await open(fake);
+    await type(root, 'Set the port to 3000');
+    turn.send({
+      jsonrpc: '2.0',
+      method: 'thread/event',
+      params: {
+        thread: 'thread-1',
+        event: event(4, 'turn.started', {}),
+      },
+    });
+    await fixture.whenStable();
+    // The composer stays usable; Stop stays where it was.
+    const input = root.querySelector<HTMLTextAreaElement>('[data-testid="thread-composer-input"]');
+    expect(input?.disabled).toBe(false);
+    expect(root.querySelector('[data-testid="thread-composer-stop"]')).not.toBeNull();
+    await type(root, 'Actually, use 4000');
+    await fixture.whenStable();
+    const waiting = root.querySelector('[data-testid="thread-queued"]');
+    expect(waiting?.textContent).toContain('Actually, use 4000');
+    expect(waiting?.textContent).toContain('Waiting to be read');
+    expect(root.querySelector('[data-testid="thread-composer-stop"]')).not.toBeNull();
+    await expectAccessible(root);
+    turn.send(
+      {
+        jsonrpc: '2.0',
+        method: 'thread/event',
+        params: {
+          thread: 'thread-1',
+          event: event(5, 'message.added', {
+            role: 'user',
+            parts: [{ type: 'text', text: 'Set the port to 3000' }],
+          }),
+        },
+      },
+      {
+        jsonrpc: '2.0',
+        method: 'thread/event',
+        params: {
+          thread: 'thread-1',
+          event: event(6, 'message.added', {
+            role: 'user',
+            parts: [{ type: 'text', text: 'Actually, use 4000' }],
+          }),
+        },
+      },
+    );
+    await settle();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="thread-queued"]')).toBeNull();
+    expect(root.querySelector('[data-testid="thread-message-read"]')?.textContent).toBe(
+      'Read while working',
+    );
+    turn.end();
+    await settle();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="thread-composer-stop"]')).toBeNull();
   });
 
   it('sends the model picked with the next turn, and only when it changes', async () => {

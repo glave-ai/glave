@@ -25,6 +25,7 @@ import { MessageTextComponent } from '../message-text/message-text.component';
 const COPY = {
   you: 'You',
   reply: 'Reply',
+  read: 'Read while working',
 } as const;
 
 /** A message as the thread shows it: named for screen readers, "You" or "Reply". */
@@ -71,9 +72,9 @@ function shown(item: ThreadItem): ShownItem {
 
 /**
  * One thing in a thread, as its kind shows: a message (the person's as a bubble of what they
- * typed, a reply as markdown with no name over it, each with a copy button; its reasoning), a
- * tool call as a quiet line, an approval or questions as a card that needs the person,
- * answered in place.
+ * typed, saying so when the model read it as it worked; a reply as markdown with no name over
+ * it, each with a copy button; its reasoning), a tool call as a quiet line, an approval or
+ * questions as a card that needs the person, answered in place.
  */
 @Component({
   selector: 'app-thread-item',
@@ -97,6 +98,7 @@ export class ThreadItemComponent {
   /** Whether an answer is being sent, so the cards wait. */
   protected readonly sending = this.thread.sending;
   protected readonly shown = computed(() => shown(this.item()));
+  protected readonly copy = COPY;
 
   protected decide(approval: string, decision: GlzDecision): void {
     void this.thread.decide(approval, decision);

@@ -73,11 +73,13 @@ impl Remote {
             .and_then(|value| value.to_str().ok())
             .is_some_and(|value| value.starts_with("text/event-stream"));
         if !streams {
-            // Refused before it started: a JSON answer with the error.
+            // Refused before it started, or queued to a turn already running: a JSON answer.
             let text = response.text().await.map_err(|e| self.unreachable(&e))?;
-            return Err(reply(&text).err().unwrap_or_else(|| {
-                ApiError::new(code::INTERNAL, "the server did not stream the turn")
-            }));
+            return Err(match reply(&text) {
+                Ok(Reply::Queued { .. }) => ApiError::queued_elsewhere(),
+                Ok(_) => ApiError::new(code::INTERNAL, "the server did not stream the turn"),
+                Err(refused) => refused,
+            });
         }
         Ok(RemoteTurn {
             response,

@@ -12,8 +12,8 @@ mod tasks;
 mod trust;
 
 use glave_event::{
-    At, CallId, CredentialId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal, ProviderId,
-    RawEvent, ScheduleId, Secret, Seq, ThreadId, TokenCounts, When,
+    At, CallId, CredentialId, EventId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal,
+    ProviderId, RawEvent, ScheduleId, Secret, Seq, ThreadId, TokenCounts, When,
 };
 use glave_harness::{GoalProgress, Remembered, RunningCommand, TurnSummary};
 use glave_ports::{CommandId, ComputerId, Failure, Space, SpaceId, Standing};
@@ -126,6 +126,8 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
     } -> [Events],
+    /// Sends the person's message: it starts a turn, or while one runs it is queued to it, and
+    /// the model reads it at its next call.
     "turn/start" => TurnStart {
         thread: ThreadId,
         prompt: String,
@@ -136,16 +138,18 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         budget: Option<u64>,
         /// The model this turn, and the thread's turns after it, go to: one `model/list`
-        /// names. The thread's latest choice when absent, else the server's default.
+        /// names. The thread's latest choice when absent, else the server's default. Not while
+        /// a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
         /// How much this turn, and the thread's turns after it, ask before acting: one of the
         /// server's `approvals`. The thread's latest choice when absent, else the server's.
+        /// Not while a turn runs.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         approval: Option<ApprovalMode>,
         #[serde(rename = "_meta", default, skip_serializing_if = "Meta::is_empty")]
         meta: Meta,
-    } -> [Turn, Task],
+    } -> [Turn, Task, Queued],
     "turn/cancel" => TurnCancel { thread: ThreadId } -> [Done],
     "thread/compact" => ThreadCompact { thread: ThreadId } -> [Compacted],
     "approval/decide" => ApprovalDecide {
@@ -527,6 +531,14 @@ impl From<TurnSummary> for TurnResult {
     }
 }
 
+/// A message queued to the turn running in its thread, for the model's next call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct QueuedMessage {
+    /// The id of the `message.added` it is recorded as once the model reads it: that
+    /// `thread/event` says it was read. A `turn/live` `unread` with this id says it never will be.
+    pub id: EventId,
+}
+
 /// A reply, by the shape of its result.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
@@ -550,6 +562,9 @@ pub enum Reply {
     },
     #[schemars(title = "Turn")]
     Turn { turn: TurnResult },
+    /// A message sent while a turn ran, queued to it: answered at once.
+    #[schemars(title = "Queued")]
+    Queued { queued: QueuedMessage },
     #[schemars(title = "Compacted")]
     Compacted {
         before_tokens: u64,
@@ -661,6 +676,16 @@ impl ApiError {
             message: message.into(),
             data: None,
         }
+    }
+
+    /// For a client that follows only turns it starts: its message was queued to a turn
+    /// already running, which it cannot follow.
+    pub fn queued_elsewhere() -> Self {
+        Self::new(
+            code::TURN_RUNNING,
+            "a turn was already running in this thread: your message was queued to it, and the \
+             model reads it at its next step",
+        )
     }
 }
 

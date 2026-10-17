@@ -30,6 +30,7 @@ describe('ThreadItemComponent', () => {
       from: 'model',
       text: 'It **works**',
       reasoning: 'Checked it',
+      steered: false,
     });
     const message = root.querySelector('[data-testid="thread-message"]');
     expect(message?.getAttribute('aria-label')).toBe('Reply');
@@ -47,8 +48,27 @@ describe('ThreadItemComponent', () => {
       from: 'person',
       text: 'Fix the flaky test',
       reasoning: '',
+      steered: false,
     });
     expect(root.querySelector('[data-testid="message-copy"]')).toBeNull();
+  });
+
+  it('says the model read a message the person sent while it worked', async () => {
+    const message = {
+      kind: 'message',
+      key: 'm',
+      seq: 4,
+      from: 'person',
+      text: 'Actually, use 4000',
+      reasoning: '',
+    } as const;
+    const read = await render({ ...message, steered: true });
+    const caption = read.root.querySelector('[data-testid="thread-message-read"]');
+    expect(caption?.textContent).toBe('Read while working');
+    await expectAccessible(read.root);
+    TestBed.resetTestingModule();
+    const asked = await render({ ...message, steered: false });
+    expect(asked.root.querySelector('[data-testid="thread-message-read"]')).toBeNull();
   });
 
   it('gives a message with nothing to copy no copy button', async () => {
@@ -59,6 +79,7 @@ describe('ThreadItemComponent', () => {
       from: 'model',
       text: '',
       reasoning: 'Thinking it over',
+      steered: false,
     });
     expect(root.querySelector('[data-testid="message-copy"]')).toBeNull();
   });
