@@ -39,6 +39,18 @@ describe('ThreadItemComponent', () => {
     await expectAccessible(root);
   });
 
+  it('gives the person’s own message no copy button', async () => {
+    const { root } = await render({
+      kind: 'message',
+      key: 'm',
+      seq: 1,
+      from: 'person',
+      text: 'Fix the flaky test',
+      reasoning: '',
+    });
+    expect(root.querySelector('[data-testid="message-copy"]')).toBeNull();
+  });
+
   it('gives a message with nothing to copy no copy button', async () => {
     const { root } = await render({
       kind: 'message',
