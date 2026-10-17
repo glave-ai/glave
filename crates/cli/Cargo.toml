@@ -6,6 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 publish.workspace = true
 
 [[bin]]
@@ -81,6 +82,11 @@ tokio-postgres.workspace = true
 [[bench]]
 name = "budgets"
 harness = false
+
+# Released (dist-workspace.toml), though not to crates.io, with the web app inside.
+[package.metadata.dist]
+dist = true
+features = ["web"]
 
 [lints]
 workspace = true
