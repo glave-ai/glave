@@ -48,6 +48,7 @@ pub fn run() -> Result<(), String> {
     step("unused dependencies", || cmd::run("cargo-machete", &[]))?;
     step("file sizes", crate::file_sizes::check)?;
     step("api schema", || crate::schema::run(&["--check".to_owned()]))?;
+    step("release workflow", crate::release_workflow::check)?;
     step("web", crate::web::check)?;
     println!("\nxtask: all checks passed");
     Ok(())
