@@ -2,7 +2,16 @@
 all-features = true
 
 [advisories]
-ignore = []
+# Each entry says why it is safe and when it goes.
+ignore = [
+    # zvariant, zbus_names and zvariant_derive were merged into zbus 6: "unmaintained" notices
+    # about the crates' names, not security flaws. They arrive through keyring's Linux secret
+    # store (keyring -> secret-service -> zbus 5), which has no zbus 6 release yet. Remove these
+    # when secret-service moves to zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant merged into zbus 6; no fix through keyring yet" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names merged into zbus 6; no fix through keyring yet" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive merged into zbus 6; no fix through keyring yet" },
+]
 
 [licenses]
 allow = [
