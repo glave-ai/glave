@@ -190,6 +190,53 @@ mod projects {
     }
 
     #[test]
+    fn another_person_s_thread_gets_the_project_s_tools_but_not_its_settings() {
+        let dir = folder("projects-another");
+        let project_dir = std::fs::canonicalize(folder("projects-another-project")).unwrap();
+        let project = Project::new(Loosened {
+            approval: Some(ApprovalMode::Auto),
+            unconfined: false,
+        });
+        project.trust();
+        block_on!(async {
+            let write = ("write", json!({"path": "theirs.txt", "content": "x"}));
+            let answers = vec![
+                answer(None, vec![write], StopReason::ToolUse),
+                answer(Some("Not allowed."), vec![], StopReason::EndTurn),
+            ];
+            let (harness, seen) =
+                harness_seeing(&dir, answers, Refuse, MemoryLog::new(), 1, asking()).await;
+            let harness = harness.with_projects(Some(project.clone() as Arc<dyn Projects>));
+            let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
+            let grace = Caller {
+                person: Some(someone.unwrap()),
+                ..Caller::default()
+            };
+            let place = Place::Folder(project_dir.to_string_lossy().into_owned());
+            let mut thread = harness
+                .start_thread_in(scope(), &grace, place)
+                .await
+                .unwrap();
+            harness
+                .run_turn_as(
+                    &mut thread,
+                    "write theirs",
+                    &grace,
+                    &Cancel::new(),
+                    &mut |_| {},
+                )
+                .await
+                .unwrap();
+            assert!(tool_names(&seen, 0).contains(&"mcp__docs__search".to_owned()));
+            assert_eq!(harness.approval_for(&thread), ApprovalMode::Ask);
+            assert!(
+                !project_dir.join("theirs.txt").exists(),
+                "asked, and refused"
+            );
+        });
+    }
+
+    #[test]
     fn a_project_that_turned_the_sandbox_off_runs_its_commands_without_it_once_trusted() {
         if !glave_computer::sandbox_available() {
             assert!(

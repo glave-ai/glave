@@ -67,6 +67,27 @@ fn plain(ask: &TrustAsk) -> Vec<(&str, Option<&str>)> {
 }
 
 #[test]
+fn servers_put_away_close_only_once_no_turn_holds_them() {
+    let kept = |root: &str| Kept {
+        root: PathBuf::from(root),
+        servers: BTreeMap::new(),
+        started: Vec::new(),
+        sources: vec![Arc::new(glave_ports::MemoryTools::new(Vec::new())) as Arc<dyn ToolSource>],
+    };
+    let mut running = Running::default();
+    let held = kept("/held");
+    let turn = held.sources.clone();
+    let closing = running.retire([held, kept("/idle")]);
+    assert_eq!(closing.len(), 1);
+    assert_eq!(closing[0].root, PathBuf::from("/idle"));
+    assert_eq!(running.retired.len(), 1, "a turn still holds it");
+    drop(turn);
+    let closing = running.retire([]);
+    assert_eq!(closing.len(), 1, "its turn is over");
+    assert!(running.retired.is_empty());
+}
+
+#[test]
 fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
     let (home, project) = place("asked", DOCS, GUARD);
     block_on!(async {
@@ -137,7 +158,7 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
 }
 
 #[test]
-fn what_glave_started_with_in_its_own_project_is_not_brought_twice() {
+fn what_glave_started_with_in_its_own_project_is_not_brought_twice_but_its_hooks_are_its_own() {
     let (home, project) = place("started", DOCS, &format!("approval = \"auto\"\n{GUARD}"));
     block_on!(async {
         let first = projects(&home, Started::default(), Vec::new()).await;
@@ -158,8 +179,12 @@ fn what_glave_started_with_in_its_own_project_is_not_brought_twice() {
             brought.tools.is_empty(),
             "its server already runs for every thread"
         );
-        assert!(brought.hooks.is_empty(), "and its hook");
-        assert_eq!(brought.loosened, Loosened::default(), "and its settings");
+        assert_eq!(brought.loosened, Loosened::default(), "nor its settings");
+        assert_eq!(
+            brought.hooks.all().count(),
+            1,
+            "its hooks run for its own threads alone, as any project's do"
+        );
         let elsewhere = projects(&home, Started::default(), vec!["docs".into()]).await;
         let brought = elsewhere.brought(&project).await;
         assert!(

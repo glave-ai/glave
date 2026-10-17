@@ -182,7 +182,7 @@ fn a_no_is_remembered_too_and_with_no_one_there_servers_stay_off() {
 fn an_app_is_shown_each_thing_in_plain_words_and_until_it_answers_they_stay_off() {
     let dir = scratch("plain");
     let rules = Constraints::default();
-    let servers = r#""docs": {"command": "npx", "args": ["@acme/mcp"]}, "web": {"url": "https://mcp.example.com/mcp"}"#;
+    let servers = r#""docs": {"command": "npx", "args": ["@acme/mcp"], "env": {"ACME_TOKEN": "${ACME_TOKEN}"}}, "web": {"url": "https://mcp.example.com/mcp", "headers": {"Authorization": "Bearer ${WEB_TOKEN}"}}"#;
     let config = format!(
         "approval = \"auto\"\nsandbox = \"off\"\njudge_model = \"lenient\"\n{GUARD}\n\
          [[hooks.Stop]]\ncommand = \"./done.sh\"\n"
@@ -197,10 +197,13 @@ fn an_app_is_shown_each_thing_in_plain_words_and_until_it_answers_they_stay_off(
     assert_eq!(
         plain,
         [
-            ("Runs a tool server", Some("npx @acme/mcp")),
+            (
+                "Runs a tool server",
+                Some("npx @acme/mcp (with ACME_TOKEN)")
+            ),
             (
                 "Connects to a tool server",
-                Some("https://mcp.example.com/mcp")
+                Some("https://mcp.example.com/mcp (sending Authorization)")
             ),
             ("Runs a hook before each command", Some("./guard.sh")),
             ("Runs a hook when glave finishes a reply", Some("./done.sh")),
@@ -218,6 +221,19 @@ fn an_app_is_shown_each_thing_in_plain_words_and_until_it_answers_they_stay_off(
     );
     let config = later.config.unwrap();
     assert_eq!((config.approval, config.sandbox), (None, None));
+}
+
+#[test]
+fn no_name_or_definition_makes_two_different_asks_read_the_same() {
+    let rules = Constraints::default();
+    let record = Record::default();
+    // One server whose name spells out a second item, then the two items it spells.
+    let one = r#""x\u0000{\"command\":\"evil\"}\nmcp:z": {"command": "ls"}"#;
+    let two = r#""x": {"command": "evil"}, "z": {"command": "ls"}"#;
+    let dir = scratch("collide");
+    let first = assess(repository(&dir, one, None), &record, &rules).ask_id();
+    let second = assess(repository(&dir, two, None), &record, &rules).ask_id();
+    assert_ne!(first, second);
 }
 
 #[test]

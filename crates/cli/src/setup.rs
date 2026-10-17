@@ -28,7 +28,8 @@ pub struct Setup {
     pub project_servers: BTreeMap<String, String>,
     /// What the project brings that stays off, and why.
     pub withheld: Vec<String>,
-    /// The hooks that run: the person's own, then the project's trusted ones.
+    /// The hooks that run for every thread: the person's own. A project's trusted hooks run
+    /// for its own threads alone, run in its own folder (`projects.rs`).
     pub hooks: Vec<Hook>,
     /// The project's hooks that stay off, and why: told to the person, never the model.
     pub hooks_off: Vec<String>,
@@ -63,7 +64,7 @@ impl Setup {
         }
         let home = home::folder()?;
         let started = Started::from_outcome(&Locations::here(&home, folder).root, &home, &outcome);
-        let hooks = [mine.clone(), outcome.hooks].concat();
+        let hooks = mine.clone();
         Ok(Self {
             loaded,
             choices,

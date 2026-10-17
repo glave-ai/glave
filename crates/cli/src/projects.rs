@@ -3,9 +3,10 @@
 //! then what its project brings that stays off, and why); what its project turns on for it at
 //! the start of each turn once you trust it (its servers, started in its folder, its hooks,
 //! and settings that loosen its commands); and, for an app, what it asks you to trust, with
-//! your yes kept in `trust.toml` exactly as the terminal keeps it. What the project glave was
-//! started in had trusted then runs for the whole server, as it always has; only what you
-//! trust since, and every other project's, comes through here.
+//! your yes kept in `trust.toml` exactly as the terminal keeps it. The servers and settings the
+//! project glave was started in had trusted then run for the whole server, as they always
+//! have; only what you trust since, every other project's, and every project's hooks, which
+//! run its own files, come through here.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -14,7 +15,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use glave_config::policy::{Choices, Constraints, Locations, SandboxChoice};
 use glave_config::trust::{self, Answer, Outcome, Project};
 use glave_harness::{
-    AGENTS_MD, ApprovalMode, Brought, Hook, Hooks, Loosened, Projects as Host, agents_md,
+    AGENTS_MD, ApprovalMode, Brought, Hooks, Loosened, Projects as Host, agents_md,
 };
 use glave_mcp::McpServer;
 use glave_ports::{BoxFuture, ToolSource};
@@ -33,8 +34,6 @@ pub struct Started {
     /// The project, as trust names it (its root, links resolved). Its servers that started
     /// with glave are among the ones glave runs for every thread, by name.
     pub root: PathBuf,
-    /// Its hooks that run for every thread.
-    pub hooks: Vec<Hook>,
     /// Whether its settings that loosen commands were part of glave's own.
     pub settings: bool,
 }
@@ -48,7 +47,6 @@ impl Started {
         });
         Self {
             root: project_root(home, root),
-            hooks: outcome.hooks.clone(),
             settings,
         }
     }
@@ -61,6 +59,36 @@ struct Kept {
     servers: BTreeMap<String, String>,
     started: Vec<Arc<McpServer>>,
     sources: Vec<Arc<dyn ToolSource>>,
+}
+
+impl Kept {
+    /// Whether a thread may still use these servers: its turn's tools hold their sources.
+    fn in_use(&self) -> bool {
+        self.sources
+            .last()
+            .is_some_and(|resources| Arc::strong_count(resources) > 1)
+    }
+}
+
+/// The servers started for projects' threads.
+#[derive(Default)]
+struct Running {
+    /// Each project's, most recently used last.
+    kept: Vec<Kept>,
+    /// Replaced or put away while a thread still held them: closed once none does.
+    retired: Vec<Kept>,
+}
+
+impl Running {
+    /// Puts `kept` away, and takes out what no thread uses any more, to close.
+    fn retire(&mut self, kept: impl IntoIterator<Item = Kept>) -> Vec<Kept> {
+        self.retired.extend(kept);
+        let (busy, idle) = std::mem::take(&mut self.retired)
+            .into_iter()
+            .partition(Kept::in_use);
+        self.retired = busy;
+        idle
+    }
 }
 
 /// Every project as this glave reads it: see the module's documentation.
@@ -76,8 +104,9 @@ pub struct Projects {
     /// The servers glave runs for every thread, which a project's server of the same name
     /// gives way to.
     taken: Vec<String>,
-    /// Projects' servers, most recently used last.
-    running: Mutex<Vec<Kept>>,
+    /// Projects' servers, most recently used last; and those that were replaced or put away
+    /// while a turn could still be using them, closed once none is.
+    running: Mutex<Running>,
     /// Held while a yes is kept, so two answers at once never lose one.
     keeping: tokio::sync::Mutex<()>,
 }
@@ -101,21 +130,30 @@ impl Projects {
             choices,
             started,
             taken,
-            running: Mutex::new(Vec::new()),
+            running: Mutex::new(Running::default()),
             keeping: tokio::sync::Mutex::new(()),
         }
     }
 
-    /// Closes every project's servers. Call when glave ends.
+    /// Closes every project's servers. Call when glave ends, once no turn runs.
     pub async fn close(&self) {
-        let kept = std::mem::take(&mut *self.lock());
-        for kept in kept {
+        let running = std::mem::take(&mut *self.lock());
+        for kept in running.kept.into_iter().chain(running.retired) {
             crate::mcp::close(&kept.started).await;
         }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Kept>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Running> {
         self.running.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The project around `folder` as trust names it, looked for off the async runtime, since
+    /// it reads the disk.
+    async fn root(&self, folder: &Path) -> PathBuf {
+        let (home, looked) = (self.home.clone(), folder.to_owned());
+        tokio::task::spawn_blocking(move || project_root(&home, &looked))
+            .await
+            .unwrap_or_else(|_| folder.to_owned())
     }
 
     /// Where each item of the project at `root` stands now.
@@ -131,7 +169,7 @@ impl Projects {
 
     /// What the model is told stays off of the project whose folder is `folder`.
     async fn off(&self, folder: &Path) -> Option<String> {
-        match self.outcome(&project_root(&self.home, folder)).await {
+        match self.outcome(&self.root(folder).await).await {
             Ok(outcome) => off_note(&outcome.withheld),
             // A project file that does not parse turns nothing on; say so rather than fail.
             Err(error) => off_note(&[format!("the project's own settings are off: {error}")]),
@@ -148,7 +186,8 @@ impl Projects {
     }
 
     /// The tool sources of the project at `root` for `servers`: kept from an earlier turn
-    /// while they are the same, else started now, closing what they replace.
+    /// while they are the same, else started now. What they replace, and a project's past
+    /// [`MOST_PROJECTS`], is closed once no thread's turn holds it any more.
     async fn tools(
         &self,
         root: &Path,
@@ -157,11 +196,11 @@ impl Projects {
         let (sources, closing) = {
             let mut running = self.lock();
             let mut closing = Vec::new();
-            if let Some(at) = running.iter().position(|kept| kept.root == root) {
-                let kept = running.remove(at);
+            if let Some(at) = running.kept.iter().position(|kept| kept.root == root) {
+                let kept = running.kept.remove(at);
                 if kept.servers == servers {
                     let sources = kept.sources.clone();
-                    running.push(kept);
+                    running.kept.push(kept);
                     return sources;
                 }
                 closing.push(kept);
@@ -172,7 +211,7 @@ impl Projects {
                 match crate::mcp::start_project(&servers, root, &self.constraints) {
                     Ok(started) => {
                         let sources = crate::mcp::sources(&started);
-                        running.push(Kept {
+                        running.kept.push(Kept {
                             root: root.to_owned(),
                             servers,
                             started,
@@ -186,8 +225,9 @@ impl Projects {
                     }
                 }
             };
-            let over = running.len().saturating_sub(MOST_PROJECTS);
-            closing.extend(running.drain(..over));
+            let over = running.kept.len().saturating_sub(MOST_PROJECTS);
+            closing.extend(running.kept.drain(..over));
+            let closing = running.retire(closing);
             (sources, closing)
         };
         for kept in closing {
@@ -199,7 +239,6 @@ impl Projects {
     /// What the project at `root` turns on now beyond what glave runs for every thread.
     async fn bring(&self, root: &Path) -> glave_config::Result<Brought> {
         let outcome = self.outcome(root).await?;
-        let here = *root == self.started.root;
         let chosen = self.choices.mcp.as_ref().map(|chosen| &chosen.value);
         let servers: BTreeMap<String, String> = outcome
             .servers
@@ -208,13 +247,7 @@ impl Projects {
             .filter(|(name, _)| chosen.is_none_or(|chosen| chosen.contains(name)))
             .map(|(name, definition)| (name.clone(), definition.clone()))
             .collect();
-        let hooks: Vec<Hook> = outcome
-            .hooks
-            .iter()
-            .filter(|hook| !(here && self.started.hooks.contains(hook)))
-            .cloned()
-            .collect();
-        let hooks = Hooks::new(hooks).unwrap_or_else(|error| {
+        let hooks = Hooks::new(outcome.hooks.clone()).unwrap_or_else(|error| {
             tracing::warn!(%error, "a project's trusted hooks could not be used");
             Hooks::default()
         });
@@ -234,11 +267,14 @@ fn project_root(home: &Path, folder: &Path) -> PathBuf {
     std::fs::canonicalize(&root).unwrap_or(root)
 }
 
-/// A failure reading a project, as the session API reports it.
+/// A failure reading a project, as the session API reports it: in plain words, the files it
+/// names kept to the server's log.
 fn failed(error: &glave_config::Error) -> ApiError {
+    tracing::warn!(%error, "a project or the trust record could not be read");
     ApiError::new(
         code::INTERNAL,
-        format!("could not read the project: {error}"),
+        "glave could not read what this project brings, so it stays off; try again, or open the \
+         project in a terminal to see why",
     )
 }
 
@@ -270,7 +306,7 @@ impl Host for Projects {
 
     fn loosened<'a>(&'a self, project: &'a Path) -> BoxFuture<'a, Loosened> {
         Box::pin(async move {
-            let root = project_root(&self.home, project);
+            let root = self.root(project).await;
             match self.outcome(&root).await {
                 Ok(outcome) => self.loosening(&root, &outcome),
                 Err(_) => Loosened::default(),
@@ -280,7 +316,7 @@ impl Host for Projects {
 
     fn brought<'a>(&'a self, project: &'a Path) -> BoxFuture<'a, Brought> {
         Box::pin(async move {
-            let root = project_root(&self.home, project);
+            let root = self.root(project).await;
             self.bring(&root).await.unwrap_or_else(|error| {
                 tracing::warn!(%error, "what a project brings could not be read");
                 Brought::default()
@@ -292,7 +328,7 @@ impl Host for Projects {
 impl ProjectTrust for Projects {
     fn ask<'a>(&'a self, folder: &'a Path) -> BoxFuture<'a, Result<Option<TrustAsk>, ApiError>> {
         Box::pin(async move {
-            let root = project_root(&self.home, folder);
+            let root = self.root(folder).await;
             // A project whose files do not read runs nothing, so it has nothing to trust.
             let Ok(project) = Project::read(&root, &crate::mcp::environment()).await else {
                 return Ok(None);
@@ -324,7 +360,7 @@ impl ProjectTrust for Projects {
         ask: &'a str,
     ) -> BoxFuture<'a, Result<bool, ApiError>> {
         Box::pin(async move {
-            let root = project_root(&self.home, folder);
+            let root = self.root(folder).await;
             let _keeping = self.keeping.lock().await;
             let project = Project::read(&root, &crate::mcp::environment())
                 .await

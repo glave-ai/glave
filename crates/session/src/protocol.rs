@@ -450,7 +450,8 @@ pub struct ThreadSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     /// How much its turns ask before acting: the mode last chosen for it, else its project's,
-    /// else the server's.
+    /// else the server's; never auto where its project runs commands without the sandbox and
+    /// auto was chosen nowhere.
     pub approval: ApprovalMode,
     /// What its project asks the person on this computer to trust, once the thread was opened
     /// or started: shown to them alone, until they answer it.

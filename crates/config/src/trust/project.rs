@@ -292,11 +292,30 @@ fn servers(
                 id: format!("mcp:{name}"),
                 definition: definition.to_string(),
                 shows: shows(definition),
-                plain: vec![Plain::new(text, Some(shows(definition)))],
+                plain: vec![Plain::new(text, Some(passes(definition)))],
             };
             (name.clone(), item)
         })
         .collect())
+}
+
+/// What a server runs or where it connects, and the names of the variables or headers it is
+/// given (never their values), for the person deciding: what is trusted includes them.
+fn passes(definition: &Value) -> String {
+    let names = |key: &str| -> Vec<String> {
+        definition
+            .get(key)
+            .and_then(Value::as_object)
+            .map(|named| named.keys().cloned().collect())
+            .unwrap_or_default()
+    };
+    let (env, headers) = (names("env"), names("headers"));
+    let given = match (env.is_empty(), headers.is_empty()) {
+        (false, _) => format!(" (with {})", env.join(", ")),
+        (true, false) => format!(" (sending {})", headers.join(", ")),
+        (true, true) => String::new(),
+    };
+    format!("{}{given}", shows(definition))
 }
 
 /// What a server runs or where it connects, as written (variables unfilled).

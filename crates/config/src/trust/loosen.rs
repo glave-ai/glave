@@ -2,7 +2,9 @@
 //! many projects (`specs/policy.md`, "Project trust"): its `approval = "auto"` and its
 //! `sandbox = "off"`, under the same rules the terminal settles them by. A flag is nearer than
 //! a project, a policy that requires the sandbox or leaves no auto wins, and commands run
-//! unconfined with nothing asked only when someone chose both.
+//! unconfined with nothing asked only when someone chose both, or a policy leaves only auto.
+//! Where its commands run unconfined the mode is always set, so a thread's own choice of auto,
+//! made behind the sandbox, never carries over (`Loosened::mode`).
 
 use glave_harness::{ApprovalMode, Loosened};
 
@@ -29,9 +31,10 @@ pub fn loosened(outcome: &Outcome, choices: &Choices, constraints: &Constraints)
     let both = off || (choices.sandbox.value.is_none() && chosen(&choices.sandbox.from));
     let server_auto =
         choices.approval.value == ApprovalMode::Auto && chosen(&choices.approval.from);
-    let approval = if auto && (walled || both) {
+    let only_auto = !allowed.contains(&ApprovalMode::Ask);
+    let approval = if (auto && (walled || both)) || (off && (server_auto || only_auto)) {
         Some(ApprovalMode::Auto)
-    } else if off && !server_auto && allowed.contains(&ApprovalMode::Ask) {
+    } else if off {
         Some(ApprovalMode::Ask)
     } else {
         None
@@ -105,6 +108,15 @@ mod tests {
         });
         let auto = loosened(&project(AUTO, None), &asking, &none);
         assert_eq!((auto.approval, auto.unconfined), (AUTO, false), "nearer");
+        let mine = server(|choices| {
+            choices.approval.from = Source::File(PathBuf::from("/home/ada/.glave/config.toml"));
+        });
+        let chose = loosened(&project(None, OFF), &mine, &none);
+        assert_eq!(
+            (chose.approval, chose.unconfined),
+            (AUTO, true),
+            "auto chosen by the person, the sandbox off by the project: both chosen"
+        );
         assert_eq!(
             loosened(&project(None, None), &asking, &none),
             Loosened::default()
@@ -137,6 +149,9 @@ mod tests {
         let required = constraints("version = 1\n[sandbox]\nrequired = true\n");
         let held = loosened(&project(AUTO, OFF), &server(|_| {}), &required);
         assert_eq!((held.approval, held.unconfined), (AUTO, false));
+        let auto_only = constraints("version = 1\n[approval]\nmodes = [\"auto\"]\n");
+        let only = loosened(&project(None, OFF), &server(|_| {}), &auto_only);
+        assert_eq!((only.approval, only.unconfined), (AUTO, true));
         let asking_only = constraints("version = 1\n[approval]\nmodes = [\"ask\"]\n");
         let ask = loosened(&project(AUTO, OFF), &server(|_| {}), &asking_only);
         assert_eq!(

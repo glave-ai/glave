@@ -29,7 +29,7 @@ pub trait Projects: Send + Sync {
     ) -> BoxFuture<'a, Option<String>>;
 
     /// How the project whose folder is `project` loosens the way its threads' commands run
-    /// now. Cheap: it starts nothing. Nothing by default.
+    /// now. It starts nothing, only reads. Nothing by default.
     fn loosened<'a>(&'a self, project: &'a Path) -> BoxFuture<'a, Loosened> {
         let _ = project;
         Box::pin(async { Loosened::default() })
@@ -47,11 +47,26 @@ pub trait Projects: Send + Sync {
 /// How a trusted project's settings loosen the way its threads' commands run.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Loosened {
-    /// The mode its threads run in when they chose none: `auto` when the project chose it,
-    /// `ask` when it turned the sandbox off without choosing auto; none to leave the harness's.
+    /// The mode its threads run in when they chose none: `auto` when it is chosen, `ask` when
+    /// the project turned the sandbox off with auto chosen nowhere; none to leave the
+    /// harness's. Always set where its commands run unconfined.
     pub approval: Option<ApprovalMode>,
     /// Whether its threads' commands run without the sandbox.
     pub unconfined: bool,
+}
+
+impl Loosened {
+    /// The mode a thread of the project runs in: its own choice (`chosen`), else the
+    /// project's, else the harness's (`own`). Where the project runs commands unconfined
+    /// without auto chosen, it asks whatever the thread chose: its auto was chosen behind the
+    /// sandbox, and commands run unconfined with nothing asked only when auto is chosen for
+    /// that.
+    pub fn mode(self, chosen: Option<ApprovalMode>, own: ApprovalMode) -> ApprovalMode {
+        if self.unconfined && self.approval != Some(ApprovalMode::Auto) {
+            return ApprovalMode::Ask;
+        }
+        chosen.or(self.approval).unwrap_or(own)
+    }
 }
 
 /// What a project turns on for the threads that work in it.
@@ -83,12 +98,18 @@ where
 {
     /// Reads again what `thread`'s project turns on, at the start of a turn, and gives its
     /// commands the sandbox that follows: none where the project turned it off, else the
-    /// harness's own. A thread with no project of its own here gets nothing.
+    /// harness's own. A thread with no project of its own here gets nothing. Its settings
+    /// loosen only the threads of the person the harness works for, who trusted it: another
+    /// person's threads in the project get its tools and hooks, and the harness's own
+    /// sandbox and mode.
     pub(crate) async fn bring(&self, thread: &mut Thread) -> Result<(), HarnessError> {
         let (Some(host), Some(project)) = (&self.projects, &thread.project) else {
             return Ok(());
         };
-        let brought = host.brought(project).await;
+        let mut brought = host.brought(project).await;
+        if thread.for_ != self.actors.person {
+            brought.loosened = Loosened::default();
+        }
         if let Some(workspace) = &thread.workspace {
             let wanted = if brought.loosened.unconfined {
                 None
@@ -103,8 +124,8 @@ where
         Ok(())
     }
 
-    /// How `project` loosens its threads' commands now, as the host reads it; nothing without
-    /// a host.
+    /// How `project` loosens the commands of its threads for the person the harness works
+    /// for, as the host reads it now; nothing without a host.
     pub async fn loosened(&self, project: &Path) -> Loosened {
         match &self.projects {
             Some(host) => host.loosened(project).await,
@@ -120,5 +141,39 @@ pub(crate) fn project_of(opened: &glave_event::Opened) -> Option<PathBuf> {
         glave_event::Opened::Folder { path } => Some(PathBuf::from(path)),
         glave_event::Opened::Worktree { repository, .. } => Some(PathBuf::from(repository)),
         glave_event::Opened::Scratch { .. } | glave_event::Opened::Clone { .. } => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_thread_never_runs_in_auto_where_its_project_unconfines_it_without_auto() {
+        use ApprovalMode::{Ask, Auto};
+        let none = Loosened::default();
+        assert_eq!(none.mode(None, Auto), Auto);
+        assert_eq!(none.mode(Some(Ask), Auto), Ask, "its own choice");
+        let auto = Loosened {
+            approval: Some(Auto),
+            unconfined: false,
+        };
+        assert_eq!(auto.mode(None, Ask), Auto, "the project's");
+        assert_eq!(auto.mode(Some(Ask), Ask), Ask, "its own, nearer");
+        let off = Loosened {
+            approval: Some(Ask),
+            unconfined: true,
+        };
+        assert_eq!(
+            off.mode(Some(Auto), Auto),
+            Ask,
+            "auto chosen behind the sandbox"
+        );
+        let both = Loosened {
+            approval: Some(Auto),
+            unconfined: true,
+        };
+        assert_eq!(both.mode(None, Ask), Auto);
+        assert_eq!(both.mode(Some(Ask), Ask), Ask);
     }
 }

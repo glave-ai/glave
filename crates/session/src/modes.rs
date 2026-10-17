@@ -4,7 +4,7 @@
 //! may be chosen, so the log tells any server of the deployment which mode a thread runs in.
 
 use glave_event::{Body, ThreadId};
-use glave_harness::{Caller, HarnessError, Thread};
+use glave_harness::{Caller, HarnessError, Loosened, Thread};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, SpaceId};
 
 use crate::protocol::{ApiError, ApprovalMode, code};
@@ -94,31 +94,28 @@ where
         }
     }
 
-    /// The mode `thread` runs in now, as its summary shows it: its own choice, else its
-    /// project's (`project`), else the server's.
+    /// The mode `thread` runs in now, as its summary shows it, as its turns run in it: its
+    /// own choice, else its project's, else the server's, as `project` loosens them.
     pub(crate) async fn approval_now(
         &self,
         scope: &Scope,
         thread: ThreadId,
-        project: Option<ApprovalMode>,
+        project: Loosened,
     ) -> Result<ApprovalMode, ApiError> {
-        Ok(self
-            .chosen_approval(scope, thread)
-            .await?
-            .or(project)
-            .unwrap_or(self.inner.harness.settings().approval))
+        let chosen = self.chosen_approval(scope, thread).await?;
+        Ok(project.mode(chosen, self.inner.harness.settings().approval))
     }
 
-    /// The mode the project of `space` gives its threads that chose none, when its trusted
-    /// settings loosen it.
-    pub(crate) async fn project_approval(&self, space: SpaceId) -> Option<ApprovalMode> {
-        let folder = self.folder_here(space).await.ok().flatten()?;
-        let loosened = self
-            .inner
-            .harness
-            .loosened(std::path::Path::new(&folder))
-            .await;
-        loosened.approval
+    /// How the project of `space` loosens its threads' commands, when its trusted settings
+    /// do: for the person on this computer's threads.
+    pub(crate) async fn project_loosened(&self, space: SpaceId) -> Loosened {
+        match self.folder_here(space).await {
+            Ok(Some(folder)) => {
+                let folder = std::path::Path::new(&folder);
+                self.inner.harness.loosened(folder).await
+            }
+            _ => Loosened::default(),
+        }
     }
 
     /// The mode last chosen for `thread`, from its log.

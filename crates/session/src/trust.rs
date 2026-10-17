@@ -178,6 +178,9 @@ where
                  on this computer",
             ));
         }
+        if !self.inner.approvals.clients_answer() {
+            return Err(nothing_waits());
+        }
         let scope = self.scope_of(thread).await?;
         let host = self.inner.trust.as_ref().ok_or_else(nothing_waits)?;
         let folder = self

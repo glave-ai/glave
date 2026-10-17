@@ -4,7 +4,7 @@
 //! server that holds the thread, so it never conflicts with a thread open in that server.
 
 use glave_event::{Seq, ThreadId};
-use glave_harness::{Caller, Change, Standing, standing_of};
+use glave_harness::{Caller, Change, Loosened, Standing, standing_of};
 use glave_ports::{
     BlobStore, EventLog, ModelProvider, Scope, SpaceId, ThreadCursor, ThreadQuery, ThreadView,
     title_of,
@@ -13,7 +13,7 @@ use tokio::sync::watch;
 
 use crate::held::{Slot, Use, finished};
 use crate::modes::Choice;
-use crate::protocol::{ApiError, ApprovalMode, Reply, Show, ThreadSummary, code};
+use crate::protocol::{ApiError, Reply, Show, ThreadSummary, code};
 use crate::server::{MAX_PAGE, Server, api, no_thread};
 
 fn failed(error: &impl std::fmt::Display) -> ApiError {
@@ -130,8 +130,12 @@ where
             .ok_or_else(|| ApiError::new(code::INTERNAL, "the rename stopped"))?;
         ended.as_ref().as_ref().map_err(api)?;
         let scope = self.scope_of(thread).await?;
+        let summary = self.summary(scope, thread).await?;
+        let ask = self
+            .trust_on_page(caller, scope.space, std::iter::once(thread))
+            .await;
         Ok(Reply::Thread {
-            thread: self.summary(scope, thread).await?,
+            thread: self.asking(summary, ask.as_ref(), false),
         })
     }
 
@@ -179,7 +183,7 @@ where
                 views.last().map(|view| view.cursor().to_string())
             })
             .flatten();
-        let project = self.project_approval(space).await;
+        let project = self.project_loosened(space).await;
         let ask = self
             .trust_on_page(caller, space, views.iter().map(|view| view.thread))
             .await;
@@ -214,18 +218,25 @@ where
                 .map_err(|e| failed(&e))?
                 .ok_or_else(|| no_thread(thread))?,
         };
-        let project = self.project_approval(scope.space).await;
+        let project = self.project_loosened(scope.space).await;
         self.summarize(scope, view, project).await
     }
 
     /// A view as the API shows it: what the thread is doing now, its title, read from the one
-    /// event that gives it, and the mode it runs in, its project's (`project`) unless it chose.
+    /// event that gives it, and the mode it runs in, as its project loosens it (`project`)
+    /// when it is the person on this computer's.
     async fn summarize(
         &self,
         scope: Scope,
         view: ThreadView,
-        project: Option<ApprovalMode>,
+        project: Loosened,
     ) -> Result<ThreadSummary, ApiError> {
+        let theirs = view.for_.as_ref().and_then(|whose| whose.id);
+        let project = if theirs.is_none_or(|person| Some(person) == self.person()) {
+            project
+        } else {
+            Loosened::default()
+        };
         let title = match view.title_seq {
             Some(seq) => {
                 let before = Seq::new(seq.get().saturating_sub(1)).ok();

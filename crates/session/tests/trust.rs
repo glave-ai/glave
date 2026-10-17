@@ -165,6 +165,14 @@ fn a_thread_in_an_untrusted_project_asks_the_person_here_and_waits_until_they_an
         let (server, seen) = serving(&dir, &repository, 2, Answering::Clients).await;
         let started = summary(server.request(thread_start(None)).await.unwrap());
         let ask = started.trust.clone().expect("it asks");
+        let renamed = server
+            .request(Request::ThreadRename {
+                thread: started.id,
+                title: "Acme".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(summary(renamed).trust.as_ref(), Some(&ask), "still asking");
         assert_eq!(ask.items[0].detail.as_deref(), Some("npx @acme/mcp"));
         assert_eq!(started.status, Status::Waiting, "so Needs you lists it");
         let listed = server
@@ -268,6 +276,12 @@ fn with_no_one_to_answer_nothing_is_asked() {
         let (server, _) = serving(&dir, &repository, 0, Answering::NoOne).await;
         let started = summary(server.request(thread_start(None)).await.unwrap());
         assert_eq!((started.trust, started.status), (None, Status::Idle));
+        let answered = server
+            .request(answering(started.id, "v0", TrustChoice::Trust))
+            .await
+            .unwrap_err();
+        assert_eq!(answered.code, code::NO_TRUST);
+        assert!(!repository.is_trusted());
     });
 }
 

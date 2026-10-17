@@ -412,7 +412,8 @@ export type ThreadId = string;
 export type ThreadSummary = {
   /**
    * How much its turns ask before acting: the mode last chosen for it, else its project's,
-   * else the server's.
+   * else the server's; never auto where its project runs commands without the sandbox and
+   * auto was chosen nowhere.
    */
   readonly approval: ApprovalMode;
   /** What they cost, when every call reported a cost. */

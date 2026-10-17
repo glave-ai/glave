@@ -134,16 +134,18 @@ impl Assessment {
 
     /// The name of exactly what the person is asked: the project and each item not decided
     /// yet with its definition, digested. An answer that names it trusts only what was shown,
-    /// so a project that changed in between is asked again.
+    /// so a project that changed in between is asked again. They are digested as JSON, so no
+    /// name or definition, whatever it holds, can make two different asks read the same.
     pub fn ask_id(&self) -> String {
-        let mut shown = self.project.root.to_string_lossy().into_owned();
-        for (item, _) in self.undecided() {
-            shown.push('\n');
-            shown.push_str(&item.id);
-            shown.push('\0');
-            shown.push_str(&item.definition);
-        }
-        glave_ports::digest(shown.as_bytes()).as_str().to_owned()
+        let items: Vec<[&str; 2]> = self
+            .undecided()
+            .into_iter()
+            .map(|(item, _)| [item.id.as_str(), item.definition.as_str()])
+            .collect();
+        let shown = serde_json::json!([self.project.root.to_string_lossy(), items]);
+        glave_ports::digest(shown.to_string().as_bytes())
+            .as_str()
+            .to_owned()
     }
 
     /// What the run does, given `answer` to the question if there was one.
