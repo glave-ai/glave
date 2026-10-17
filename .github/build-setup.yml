@@ -1,0 +1,13 @@
+# Steps the release workflow runs before dist builds glave (dist-workspace.toml): the pinned
+# Rust toolchain, and the web app, which release builds carry (the `web` feature).
+- name: Install the pinned toolchain (rust-toolchain.toml)
+  run: rustup toolchain install
+- name: Install Node
+  uses: actions/setup-node@v7
+  with:
+    node-version: 22
+    cache: npm
+    cache-dependency-path: web/package-lock.json
+# In web/ by `cd`: dist leaves out a step's `working-directory`.
+- name: Build the web app, which the binary carries
+  run: cd web && npm ci && npm run build

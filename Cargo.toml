@@ -8,6 +8,7 @@ edition = "2024"
 rust-version = "1.99"
 license = "Apache-2.0"
 repository = "https://github.com/glave-ai/glave"
+homepage = "https://github.com/glave-ai/glave"
 publish = false
 
 [workspace.lints.rust]
@@ -161,3 +162,7 @@ lto = true
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+# Releases (dist-workspace.toml): dist builds with a profile of its own name, the release one.
+[profile.dist]
+inherits = "release"
