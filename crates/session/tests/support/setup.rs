@@ -176,6 +176,7 @@ impl Setup {
             workspace,
             web: None,
             tools: Vec::new(),
+            own: Vec::new(),
             worktree: false,
             hooks: glave_harness::Hooks::default(),
             workers: None,

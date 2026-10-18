@@ -45,8 +45,11 @@ pub struct Wiring<P, L, B> {
     /// `web_fetch`, which a project's own settings replace for its threads; none when it is
     /// off.
     pub web: Option<Arc<dyn ToolSource>>,
-    /// Tools beside the built-in ones and `web_fetch`, such as MCP servers'.
+    /// Tools beside the built-in ones and `web_fetch`, such as skills.
     pub tools: Vec<Arc<dyn ToolSource>>,
+    /// The person's own tools, such as their MCP servers': for their threads alone, never a
+    /// thread of anyone signed in from elsewhere.
+    pub own: Vec<Arc<dyn ToolSource>>,
     /// Whether a new thread in a project with a folder works in a worktree of its own unless
     /// `thread/start` or its project says; off, it works in the folder itself.
     pub worktree: bool,
@@ -184,6 +187,7 @@ where
                 }
                 .with_web(wiring.web)
                 .with_tools(wiring.tools)
+                .with_own_tools(wiring.own)
                 .with_hooks(wiring.hooks)
                 .with_memory_if(wiring.memory)
                 .with_projects(wiring.projects),
