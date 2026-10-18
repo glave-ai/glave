@@ -32,6 +32,64 @@ export async function shownOpacity(locator: Locator): Promise<number> {
   });
 }
 
+/** A box on the screen, as Playwright measures it. */
+interface Box {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** How far a box may stick out of another, for sub-pixel rounding. */
+const ROUNDING = 1;
+
+/** Fails unless `inner` has a size and lies inside `outer`. */
+function expectInside(name: string, inner: Box, outer: Box): void {
+  const inside =
+    inner.width > 0 &&
+    inner.height > 0 &&
+    inner.x >= outer.x - ROUNDING &&
+    inner.y >= outer.y - ROUNDING &&
+    inner.x + inner.width <= outer.x + outer.width + ROUNDING &&
+    inner.y + inner.height <= outer.y + outer.height + ROUNDING;
+  expect(inside, `${name} ${JSON.stringify(inner)} shows inside ${JSON.stringify(outer)}`).toBe(
+    true,
+  );
+}
+
+/** The box of the element with this `data-testid`; fails when it has none. */
+async function boxOf(page: Page, testId: string): Promise<Box> {
+  const element = byTestId(page, testId);
+  await expect(element).toBeVisible();
+  const box = await element.boundingBox();
+  if (box === null) {
+    throw new Error(`${testId} has no box`);
+  }
+  return box;
+}
+
+/**
+ * Fails unless the dialog `testId` shows whole, measured by the boxes on the screen: the dialog
+ * inside the viewport, and its close button (in its header), its body and each of `parts` (what
+ * the body holds, the actions) inside the dialog, none of them empty. A dialog cut short hides
+ * what overflows it, so a part outside its box is a part the person cannot see.
+ */
+export async function expectDialogShown(
+  page: Page,
+  testId: string,
+  parts: readonly string[],
+): Promise<void> {
+  const size = page.viewportSize();
+  if (size === null) {
+    throw new Error('the page has no viewport');
+  }
+  const dialog = await boxOf(page, testId);
+  expectInside(testId, dialog, { x: 0, y: 0, ...size });
+  for (const part of [`${testId}-close`, `${testId}-body`, ...parts]) {
+    expectInside(part, await boxOf(page, part), dialog);
+  }
+}
+
 /** Collects what the page says went wrong: errors on the console, and CSP violations. */
 export function watchForProblems(page: Page): () => readonly string[] {
   const problems: string[] = [];

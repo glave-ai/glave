@@ -8,7 +8,7 @@ function click(root: HTMLElement, testId: string): void {
 }
 
 describe('ShowcaseOverlaysComponent', () => {
-  it('opens the dialog, saves, and confirms a deletion', async () => {
+  it('opens the dialog, saves, confirms a deletion, and chooses in a long dialog', async () => {
     const fixture = TestBed.createComponent(ShowcaseOverlaysComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -24,6 +24,16 @@ describe('ShowcaseOverlaysComponent', () => {
     await fixture.whenStable();
     expect(root.querySelector('dialog[open]')?.textContent).toContain('Delete the thread?');
     click(root, 'showcase-confirm-ok');
+    await fixture.whenStable();
+    expect(root.querySelector('dialog[open]')).toBeNull();
+
+    click(root, 'showcase-open-long');
+    await fixture.whenStable();
+    expect(root.querySelectorAll('[data-testid="showcase-long-body"] glz-checkbox')).toHaveLength(
+      24,
+    );
+    await expectAccessible(root);
+    click(root, 'showcase-long-done');
     await fixture.whenStable();
     expect(root.querySelector('dialog[open]')).toBeNull();
   });

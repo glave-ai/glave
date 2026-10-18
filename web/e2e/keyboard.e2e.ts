@@ -89,7 +89,11 @@ test('a message is written and sent by keyboard alone', async ({ page }) => {
   await expect(byTestId(page, 'thread-message').last()).toContainText('Glad to help.');
 });
 
-test('a model is searched and picked by name, by keyboard alone', async ({ page }) => {
+test('a model is searched and picked by name, by keyboard alone', async ({ page, browserName }) => {
+  test.skip(
+    browserName === 'webkit' && process.platform === 'darwin',
+    'WebKit on a Mac Tabs only to fields and links, as Safari does by default',
+  );
   await tabTo(page, 'model-picker-trigger');
   await page.keyboard.press('Enter');
   const search = byTestId(page, 'model-picker-search');
@@ -113,7 +117,14 @@ test('a model is searched and picked by name, by keyboard alone', async ({ page 
   expect(turn?.params).toMatchObject({ prompt: 'Go on', model: 'openai/gpt-6-luna' });
 });
 
-test('the approval mode is chosen by keyboard and goes with the next turn', async ({ page }) => {
+test('the approval mode is chosen by keyboard and goes with the next turn', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(
+    browserName === 'webkit' && process.platform === 'darwin',
+    'WebKit on a Mac Tabs only to fields and links, as Safari does by default',
+  );
   const trigger = byTestId(page, 'approval-mode-trigger');
   await expect(trigger).toContainText('Auto');
   await tabTo(page, 'approval-mode-trigger');

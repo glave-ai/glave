@@ -96,8 +96,8 @@ jobs:
   # web/: the session API's TypeScript client, Glaze and the app. Format, lint (eslint and
   # stylelint), type-check, the licences and audit of what ships, unit tests with axe, the
   # library and app builds, glave built with the app inside (the `web` feature) and its
-  # serving tests, and end-to-end tests in Chromium with axe in light and dark, against that
-  # real `glave serve --http --web` and its Content Security Policy.
+  # serving tests, and end-to-end tests in Chromium and WebKit with axe in light and dark,
+  # against that real `glave serve --http --web` and its Content Security Policy.
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -122,10 +122,8 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-      - name: Install Chromium for the end-to-end tests
-        run: npx playwright install chromium --only-shell --with-deps
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: "0"
+      - name: Install Chromium and WebKit for the end-to-end tests, with what they need
+        run: npm run e2e:install -- --with-deps
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck

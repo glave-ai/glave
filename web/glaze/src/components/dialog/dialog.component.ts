@@ -16,14 +16,16 @@ import { GlzIconButtonComponent } from '../icon-button/icon-button.component';
 import { testIds } from '../../lib/test-ids';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
-const PARTS = { close: 'close' } as const;
+const PARTS = { close: 'close', body: 'body' } as const;
 
 /**
  * A modal dialog: the native `<dialog>` opened with `showModal()`, so the browser puts it in
  * the top layer, makes the page behind it inert, moves focus in, closes it on Escape and
  * returns focus after; a click on the backdrop closes it too. Escape closes it alone, even
  * when it was opened from a drawer. Named by its heading; a close
- * button, the content, and actions at the end (`[glzDialogActions]`). `open` is bound two ways.
+ * button, the content, and actions at the end (`[glzDialogActions]`). It grows with its content
+ * up to the screen's height, then only the content scrolls: the heading and actions always
+ * show. `open` is bound two ways.
  *
  * ```html
  * <glz-dialog heading="Rename the thread" [(open)]="renaming">

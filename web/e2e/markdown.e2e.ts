@@ -97,7 +97,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
   });
 }
 
-test('a code block’s copy button copies its code', async ({ page, context }) => {
+test('a code block’s copy button copies its code', async ({ page, context, browserName }) => {
+  test.skip(browserName === 'webkit', "Playwright's WebKit cannot be granted the clipboard");
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await fakeApi(page);
   await streamReply(page, '```sh\ncargo test --workspace\n```', 0);
