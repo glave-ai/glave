@@ -1,5 +1,17 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   GlzButtonComponent,
   GlzCardComponent,
@@ -9,6 +21,7 @@ import {
   GlzRadioGroupComponent,
 } from '@glave/glaze';
 
+import { ACCOUNTS_SECTION } from '../../lib/credentials';
 import { REMOVE_FAILED, accountName, changeQuery, keyHint } from '../../lib/providers';
 import { ModelsService } from '../../services/models.service';
 import { ProvidersService } from '../../services/providers.service';
@@ -47,7 +60,7 @@ const COPY = {
 /**
  * Settings: the theme, the model accounts (add, change, remove), the connected accounts git
  * signs in with, memory (its own page), the server, signing this tab or every other browser
- * out.
+ * out. A link to `#accounts` scrolls to the connected accounts.
  */
 @Component({
   selector: 'app-settings',
@@ -81,6 +94,11 @@ export class SettingsComponent {
   private readonly models = inject(ModelsService);
   protected readonly connectLink = '/connect';
   protected readonly memoryLink = '/memory';
+  protected readonly accountsSection = ACCOUNTS_SECTION;
+  private readonly accountsCard = viewChild.required<AccountsComponent, ElementRef<HTMLElement>>(
+    AccountsComponent,
+    { read: ElementRef },
+  );
   /** The accounts as the list shows them, each with the link that changes its key. */
   protected readonly accounts = computed(() =>
     this.providers.accounts().map((account) => ({
@@ -106,7 +124,19 @@ export class SettingsComponent {
 
   constructor() {
     void inject(ServerService).load();
-    void this.providers.load();
+    const loaded = this.providers.load();
+    // Settings scrolls inside the workspace's main pane, not the window, which is all the
+    // router's anchor scrolling moves; scrollIntoView scrolls whatever holds it. It waits for
+    // the model accounts above, which push the connected accounts down as they come.
+    const fragment = toSignal(inject(ActivatedRoute).fragment);
+    const injector = inject(Injector);
+    effect(() => {
+      if (fragment() === ACCOUNTS_SECTION) {
+        void loaded.then(() => {
+          afterNextRender(() => this.accountsCard().nativeElement.scrollIntoView(), { injector });
+        });
+      }
+    });
   }
 
   protected ask(id: string): void {

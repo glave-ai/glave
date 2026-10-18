@@ -8,13 +8,12 @@
       [id]="formId"
       (submit)="create($event)"
     >
-      <glz-form-field [label]="copy.name" [hint]="nameHint()">
+      <glz-form-field [label]="copy.name">
         <input
           glzInput
           autocomplete="off"
           data-testid="new-project-name"
           [maxLength]="limit"
-          [placeholder]="fallback()"
           [value]="name()"
           [disabled]="creating()"
           (input)="typedName($event)"
@@ -87,6 +86,7 @@
                 <a
                   data-testid="new-project-connect"
                   [routerLink]="settingsLink"
+                  [fragment]="accountsSection"
                   (click)="followed()"
                   >{{ copy.connect }}</a
                 >

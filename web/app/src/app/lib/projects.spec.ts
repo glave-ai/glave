@@ -33,6 +33,16 @@ describe('folderName', () => {
     expect(folderName('/Users/ana/code/app/')).toBe('app');
     expect(folderName('/')).toBe('');
   });
+
+  it('reads Windows paths, a drive’s root by the drive’s name', () => {
+    expect(folderName('C:\\Users\\ana\\app')).toBe('app');
+    expect(folderName('D:/code/app/')).toBe('app');
+    expect(folderName('C:\\')).toBe('C:');
+  });
+
+  it('keeps a path not written from the top whole', () => {
+    expect(folderName('code\\app')).toBe('code\\app');
+  });
 });
 
 describe('repositoryName', () => {
@@ -53,6 +63,7 @@ describe('repositoryName', () => {
 describe('fallbackName', () => {
   it('names a project after its folder or repository, and nothing else', () => {
     expect(fallbackName({ ...DRAFT, folder: '/Users/ana/code/app' })).toBe('app');
+    expect(fallbackName({ ...DRAFT, folder: 'C:\\code\\app' })).toBe('app');
     expect(fallbackName(DRAFT)).toBe('');
     expect(fallbackName({ ...DRAFT, start: 'repository', url: 'https://github.com/a/b' })).toBe(
       'b',
@@ -106,8 +117,23 @@ describe('crumbs', () => {
     expect(crumbs('/')).toEqual([{ name: '', path: '/' }]);
   });
 
+  it('starts a Windows path at its drive’s root, joined by backslashes', () => {
+    expect(crumbs('C:\\Users\\ana')).toEqual([
+      { name: 'C:', path: 'C:\\' },
+      { name: 'Users', path: 'C:\\Users' },
+      { name: 'ana', path: 'C:\\Users\\ana' },
+    ]);
+    expect(crumbs('C:\\')).toEqual([{ name: 'C:', path: 'C:\\' }]);
+    expect(crumbs('d:/code/app/')).toEqual([
+      { name: 'd:', path: 'd:\\' },
+      { name: 'code', path: 'd:\\code' },
+      { name: 'app', path: 'd:\\code\\app' },
+    ]);
+  });
+
   it('keeps a path not written from the top whole', () => {
-    expect(crumbs('C:\\Users\\ana')).toEqual([{ name: 'C:\\Users\\ana', path: 'C:\\Users\\ana' }]);
+    expect(crumbs('Users\\ana')).toEqual([{ name: 'Users\\ana', path: 'Users\\ana' }]);
+    expect(crumbs('C:')).toEqual([{ name: 'C:', path: 'C:' }]);
   });
 });
 
@@ -115,6 +141,11 @@ describe('joinPath', () => {
   it('puts the name inside the folder', () => {
     expect(joinPath('/Users/ana', 'code')).toBe('/Users/ana/code');
     expect(joinPath('/', 'Users')).toBe('/Users');
+  });
+
+  it('joins a Windows path with a backslash', () => {
+    expect(joinPath('C:\\Users', 'ana')).toBe('C:\\Users\\ana');
+    expect(joinPath('C:\\', 'Users')).toBe('C:\\Users');
   });
 });
 

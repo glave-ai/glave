@@ -2,6 +2,9 @@ import { type Ability, ApiError, type CredentialInfo, ErrorCode, type Forge } fr
 
 import { SOMETHING_WRONG, sentence } from './text';
 
+/** Where Settings shows the connected accounts: a link to `/settings#accounts` lands there. */
+export const ACCOUNTS_SECTION = 'accounts';
+
 /** GitHub's own address: connecting GitHub with a token sends it here. */
 export const GITHUB = 'https://github.com';
 

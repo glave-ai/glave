@@ -23,6 +23,7 @@ import {
 } from '@glave/glaze';
 import { Folder } from 'lucide';
 
+import { ACCOUNTS_SECTION } from '../../lib/credentials';
 import {
   NAME_LIMIT,
   type ProjectDraft,
@@ -40,8 +41,6 @@ import { FolderPickerComponent } from '../folder-picker/folder-picker.component'
 const COPY = {
   heading: 'New project',
   name: 'Name',
-  nameFromFolder: 'Leave it blank to use the folder’s name.',
-  nameFromRepository: 'Leave it blank to use the repository’s name.',
   start: 'Start from',
   folder: 'Folder',
   change: 'Change',
@@ -82,9 +81,10 @@ const STARTS: readonly {
  * New project: a name, and for the person on the computer glave runs on, where its files come
  * from: a folder there (picked from the folders the server lists), a repository it clones
  * there, or a new, empty folder. Anyone else makes a project with no folder, by name alone: the
- * server would refuse them a folder, so none is offered. The name may be left blank to take
- * the folder's or the repository's. Making it goes straight into the project, at the home
- * screen with the project chosen for the first message, and says the name the server gave it.
+ * server would refuse them a folder, so none is offered. The name is the folder's or the
+ * repository's, following it until the person types in the field. Making it goes straight into
+ * the project, at the home screen with the project chosen for the first message (the composer
+ * takes focus there), and says the name the server gave it.
  *
  * It starts afresh each time it opens, except while a project is being made, after one could
  * not be made, and after the person went to connect a git host: then it is as they left it.
@@ -117,6 +117,7 @@ export class NewProjectComponent {
   protected readonly limit = NAME_LIMIT;
   protected readonly icons = { folder: Folder };
   protected readonly settingsLink = '/settings';
+  protected readonly accountsSection = ACCOUNTS_SECTION;
   protected readonly formId = injectId('new-project-form');
   protected readonly folderLabelId = injectId('new-project-folder');
   protected readonly cloningId = injectId('new-project-cloning');
@@ -130,7 +131,6 @@ export class NewProjectComponent {
 
   /** Whether the person is on the computer glave runs on, where a project's folder would be. */
   protected readonly local = this.session.local;
-  protected readonly name = signal('');
   protected readonly start = signal<ProjectStart>('folder');
   /** The folder picked; while there is none, the picker shows. */
   protected readonly folder = signal<string | null>(null);
@@ -139,26 +139,19 @@ export class NewProjectComponent {
   protected readonly url = signal('');
   protected readonly creating = signal(false);
   protected readonly problem = signal<string | null>(null);
+  /** The name as the person typed it, once they have typed in the field. */
+  private readonly typed = signal<string | null>(null);
 
-  private readonly draft = computed<ProjectDraft>(() => ({
-    name: this.name(),
+  /** Where its files come from. */
+  private readonly source = computed<Omit<ProjectDraft, 'name'>>(() => ({
     start: this.local() ? this.start() : null,
     folder: this.folder(),
     url: this.url(),
   }));
+  /** The name: the folder's or the repository's, until the person types one of their own. */
+  protected readonly name = computed(() => this.typed() ?? fallbackName(this.source()));
+  private readonly draft = computed<ProjectDraft>(() => ({ ...this.source(), name: this.name() }));
   private readonly params = computed(() => createParams(this.draft()));
-  /** The name the project takes if none is typed, shown in the empty field. */
-  protected readonly fallback = computed(() => fallbackName(this.draft()));
-  protected readonly nameHint = computed(() => {
-    switch (this.draft().start) {
-      case 'folder':
-        return COPY.nameFromFolder;
-      case 'repository':
-        return COPY.nameFromRepository;
-      default:
-        return '';
-    }
-  });
   protected readonly fromFolder = computed(() => this.draft().start === 'folder');
   protected readonly fromRepository = computed(() => this.draft().start === 'repository');
   protected readonly connected = computed(() => this.credentials.accounts().length > 0);
@@ -186,7 +179,7 @@ export class NewProjectComponent {
 
   protected typedName(event: Event): void {
     if (event.target instanceof HTMLInputElement) {
-      this.name.set(event.target.value);
+      this.typed.set(event.target.value);
     }
   }
 
@@ -249,9 +242,10 @@ export class NewProjectComponent {
       this.keep = false;
       void this.announcer.announce(`${COPY.created} ${space.name}`);
       if (this.open()) {
+        // A drawer closes first, so the composer can take focus once the page is shown.
         this.open.set(false);
-        await this.router.navigate(['/'], { queryParams: { space: space.id } });
         this.navigated.emit();
+        await this.router.navigate(['/'], { queryParams: { space: space.id } });
       }
     } catch (error: unknown) {
       this.keep = true;
@@ -271,7 +265,7 @@ export class NewProjectComponent {
     if (kept) {
       return;
     }
-    this.name.set('');
+    this.typed.set(null);
     this.start.set('folder');
     this.folder.set(null);
     this.pickFrom.set(null);

@@ -132,8 +132,9 @@ describe('NewProjectComponent', () => {
     await settle(fixture);
     expect(find(root, 'new-project-folder-path').textContent).toBe('/Users/ana/code/app');
     const name = find<HTMLInputElement>(root, 'new-project-name');
-    expect(name.placeholder).toBe('app');
-    expect(root.textContent).toContain('Leave it blank to use the folder’s name.');
+    // The folder's name, as a value the person can change, not a placeholder.
+    expect(name.value).toBe('app');
+    expect(name.placeholder).toBe('');
     await expectAccessible(root);
     create(root).click();
     await settle(fixture);
@@ -145,6 +146,36 @@ describe('NewProjectComponent', () => {
     expect(TestBed.inject(SpacesService).spaces()[0]?.space.name).toBe('app');
     expect(announce).toHaveBeenLastCalledWith('Created the project app');
     expect(navigated()).toBe(1);
+  });
+
+  it('names it after the folder or repository until the person types a name', async () => {
+    const { root, fixture } = await render();
+    const name = (): string => find<HTMLInputElement>(root, 'new-project-name').value;
+    expect(name()).toBe('');
+    find(root, 'folder-picker-use').click();
+    await settle(fixture);
+    expect(name()).toBe('ana');
+    find(root, 'new-project-change').click();
+    await settle(fixture);
+    find(root, 'folder-picker-folder').click();
+    await settle(fixture);
+    find(root, 'folder-picker-use').click();
+    await settle(fixture);
+    expect(name()).toBe('code');
+    choose(root, 'A repository');
+    await settle(fixture);
+    type(root, 'new-project-url', 'https://github.com/acme/site');
+    await settle(fixture);
+    expect(name()).toBe('site');
+    // Once typed in, it stays as the person left it.
+    type(root, 'new-project-name', 'Website');
+    await settle(fixture);
+    type(root, 'new-project-url', 'https://github.com/acme/blog');
+    await settle(fixture);
+    expect(name()).toBe('Website');
+    choose(root, 'A folder on this computer');
+    await settle(fixture);
+    expect(name()).toBe('Website');
   });
 
   it('takes the name typed, and changes the folder from the one picked', async () => {
@@ -184,10 +215,10 @@ describe('NewProjectComponent', () => {
     expect(find(root, 'new-project-private').textContent).toContain(
       'Private repositories need a connected git host',
     );
-    expect(find(root, 'new-project-connect').getAttribute('href')).toBe('/settings');
+    expect(find(root, 'new-project-connect').getAttribute('href')).toBe('/settings#accounts');
     type(root, 'new-project-url', 'https://github.com/acme/secret.git');
     await settle(fixture);
-    expect(find<HTMLInputElement>(root, 'new-project-name').placeholder).toBe('secret');
+    expect(find<HTMLInputElement>(root, 'new-project-name').value).toBe('secret');
     await expectAccessible(root);
     create(root).click();
     await settle(fixture);

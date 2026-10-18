@@ -36,6 +36,18 @@ function listed(params: unknown): unknown {
   return { path, parent, folders };
 }
 
+/** The folders on a fake Windows computer, by path, under its drive C:. */
+const WINDOWS: Readonly<Record<string, readonly string[]>> = {
+  'C:\\': ['Users'],
+  'C:\\Users\\ana': ['code'],
+  'C:\\Users\\ana\\code': [],
+};
+
+function listedOnWindows(params: unknown): unknown {
+  const path = (params as { path?: string | null }).path ?? 'C:\\Users\\ana';
+  return { path, parent: null, folders: WINDOWS[path] ?? [] };
+}
+
 /** The picker as a test sees it: what it asked, said and picked. */
 interface Rendered {
   readonly fixture: ComponentFixture<FolderPickerComponent>;
@@ -45,8 +57,8 @@ interface Rendered {
   readonly root: HTMLElement;
 }
 
-async function render(start: string | null = null): Promise<Rendered> {
-  const fake = new FakeSession().answer('folder/list', listed);
+async function render(start: string | null = null, answer = listed): Promise<Rendered> {
+  const fake = new FakeSession().answer('folder/list', answer);
   const announce = vi.fn<(message: string) => Promise<void>>(() => Promise.resolve());
   TestBed.configureTestingModule({
     providers: [...provideFakeSession(fake), { provide: LiveAnnouncer, useValue: { announce } }],
@@ -149,5 +161,22 @@ describe('FolderPickerComponent', () => {
     all(root, 'folder-picker-folder')[0]?.click();
     await settle(fixture);
     expect(root.querySelector('[data-testid="folder-picker-problem"]')).toBeNull();
+  });
+
+  it('on Windows, starts at the drive’s root and joins folders with backslashes', async () => {
+    const { root, fixture, fake } = await render(null, listedOnWindows);
+    expect(root.querySelector('[data-testid="folder-picker-top"]')).toBeNull();
+    expect(texts(root, 'folder-picker-crumb')).toEqual(['C:', 'Users', 'ana']);
+    await expectAccessible(root);
+    all(root, 'folder-picker-folder')[0]?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('folder/list').at(-1)).toEqual({ path: 'C:\\Users\\ana\\code' });
+    all(root, 'folder-picker-crumb')[0]?.click();
+    await settle(fixture);
+    expect(fake.paramsOf('folder/list').at(-1)).toEqual({ path: 'C:\\' });
+    expect(texts(root, 'folder-picker-crumb')).toEqual(['C:']);
+    expect(
+      root.querySelector('[data-testid="folder-picker-folders"]')?.getAttribute('aria-label'),
+    ).toBe('Folders in C:');
   });
 });

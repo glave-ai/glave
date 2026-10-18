@@ -74,6 +74,9 @@ describe('HomeComponent', () => {
       'GPT-6 Luna',
     );
     expect(where(root)).toBe('Where: A chat');
+    expect(document.activeElement).not.toBe(
+      root.querySelector('[data-testid="home-composer-input"]'),
+    );
     // Where it goes in the box; the approval mode and the model in the quiet line under it.
     const box = root.querySelector('[data-testid="home-composer"] .box');
     const status = root.querySelector('[data-testid="home-composer-status"]');
@@ -95,6 +98,8 @@ describe('HomeComponent', () => {
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake, 'p2');
     expect(where(root)).toBe('Where: Garden');
+    // Opened for a space, the cursor is in the composer, to write the first message.
+    expect(document.activeElement).toBe(root.querySelector('[data-testid="home-composer-input"]'));
     root.querySelector<HTMLButtonElement>('[data-testid="model-picker-trigger"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
     document.querySelectorAll<HTMLElement>('[data-testid="model-picker-option"]')[1]?.click();
