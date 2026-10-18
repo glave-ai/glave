@@ -6,9 +6,10 @@
 //! Every request needs a valid sign-in, but `server/discover` and, from this computer,
 //! `signin/redeem`: without one the answer is HTTP 401 with error `-32013`. Served with a
 //! [`Site`], any `GET` is the web app instead (`site`), with no sign-in: the app signs in to
-//! the API itself.
+//! the API itself. On a loopback listener, a foreign `Host` or `Origin` is refused (`hosts`).
 
 mod body;
+mod hosts;
 mod site;
 
 pub use self::site::{Files, NoSite, Site};
@@ -31,6 +32,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use self::body::Answer;
+use self::hosts::Hosts;
 use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Request, code};
 use crate::rpc::{Id, parse, respond};
@@ -74,6 +76,7 @@ where
         None => signin,
     });
     let site = Arc::new(site);
+    let hosts = Arc::new(Hosts::of(listener.local_addr()?));
     let mut connections = JoinSet::new();
     let mut stop = pin!(stop);
     loop {
@@ -96,11 +99,19 @@ where
         };
         let peer = peer.ip();
         let (server, signin, site) = (server.clone(), Arc::clone(&signin), Arc::clone(&site));
+        let hosts = Arc::clone(&hosts);
         connections.spawn(async move {
-            let service = service_fn(move |request| {
+            let service = service_fn(move |request: HttpRequest<Incoming>| {
                 let (server, signin, site) =
                     (server.clone(), Arc::clone(&signin), Arc::clone(&site));
+                let foreign = hosts
+                    .as_ref()
+                    .as_ref()
+                    .is_some_and(|hosts| !hosts.allow(request.headers()));
                 async move {
+                    if foreign {
+                        return Ok::<_, Infallible>(plain(StatusCode::FORBIDDEN));
+                    }
                     let answered = match site.as_ref() {
                         Some(site) if is_read(request.method()) => {
                             site.answer(request.uri().path()).await

@@ -67,7 +67,7 @@ async fn serve(dir: &Path, site: Site) -> Served {
 /// in between to tidy the path.
 async fn raw_status(address: SocketAddr, target: &str) -> u16 {
     let mut stream = TcpStream::connect(address).await.unwrap();
-    let request = format!("GET {target} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+    let request = format!("GET {target} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).await.unwrap();
     let mut answer = Vec::new();
     stream.read_to_end(&mut answer).await.unwrap();
