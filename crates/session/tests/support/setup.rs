@@ -174,6 +174,7 @@ impl Setup {
             clock: Box::new(self.clock),
             entropy: Box::new(CountingEntropy::starting_at(self.seed << 32)),
             workspace,
+            web: None,
             tools: Vec::new(),
             worktree: false,
             hooks: glave_harness::Hooks::default(),

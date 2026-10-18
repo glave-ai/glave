@@ -89,8 +89,8 @@ where
     }
 
     /// The model `thread`'s next turn goes to: `asked`, else the thread's latest choice, else
-    /// the default. Refused with `-32021` when this server does not run it, as when a model
-    /// chosen before is no longer offered.
+    /// its project's, else the default. Refused with `-32021` when this server does not run
+    /// it, as when a model chosen before is no longer offered.
     pub(crate) async fn model_of(
         &self,
         thread: ThreadId,
@@ -98,13 +98,34 @@ where
     ) -> Result<String, ApiError> {
         let model = match asked {
             Some(model) => model.to_owned(),
-            None => self
-                .chosen(thread)
-                .await?
-                .unwrap_or_else(|| self.inner.harness.default_model()),
+            None => match self.chosen(thread).await? {
+                Some(model) => model,
+                None => self
+                    .project_model(thread)
+                    .await?
+                    .unwrap_or_else(|| self.inner.harness.default_model()),
+            },
         };
         self.known_model(&model)?;
         Ok(model)
+    }
+
+    /// The model `thread`'s project chooses for it, when the thread is the person's here
+    /// whose trust turns on what a project brings.
+    async fn project_model(&self, thread: ThreadId) -> Result<Option<String>, ApiError> {
+        let scope = self.scope_of(thread).await?;
+        let view = self
+            .inner
+            .harness
+            .log()
+            .thread_view(&scope, thread)
+            .await
+            .map_err(|error| ApiError::new(code::INTERNAL, error.to_string()))?;
+        let whose = view.and_then(|view| view.for_).and_then(|whose| whose.id);
+        if whose.is_some_and(|person| Some(person) != self.person()) {
+            return Ok(None);
+        }
+        Ok(self.project_settled(scope.space).await.model)
     }
 
     /// The model last chosen for `thread`, from its log.

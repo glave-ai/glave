@@ -1,7 +1,8 @@
-//! The settings a run uses: its flags and the environment over the `config.toml` files, kept
-//! within the policy (`specs/policy.md`), and `glave policy explain`, which shows them.
+//! The settings a run uses: its flags and the environment over the person's `config.toml`,
+//! kept within the policy (`specs/policy.md`); what the folder it runs in asks the person here
+//! to trust; and `glave policy explain`, which shows them. A project's own settings are its
+//! threads' alone (`projects.rs`), never the server's.
 
-use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
@@ -9,7 +10,6 @@ use std::process::ExitCode;
 use glave_harness::Hook;
 
 use crate::args::Args;
-use crate::projects::Started;
 use crate::{config, home, mcp};
 use glave_config::policy::{
     self, Choices, ConfigFile, Loaded, Locations, ProjectTrust, ServerFile, StoreFile,
@@ -24,24 +24,16 @@ const NO_SANDBOX: &str = "this computer has no sandbox glave can use (macOS's Se
 pub struct Setup {
     pub loaded: Loaded,
     pub choices: Choices,
-    /// The project's `.mcp.json` servers that are trusted, to start with the person's own.
-    pub project_servers: BTreeMap<String, String>,
-    /// What the project brings that stays off, and why.
-    pub withheld: Vec<String>,
-    /// The hooks that run for every thread: the person's own. A project's trusted hooks run
-    /// for its own threads alone, run in its own folder (`projects.rs`).
+    /// The hooks that run for the person's threads everywhere: their own. A project's trusted
+    /// hooks run for its own threads alone, in its own folder (`projects.rs`).
     pub hooks: Vec<Hook>,
-    /// The project's hooks that stay off, and why: told to the person, never the model.
-    pub hooks_off: Vec<String>,
-    /// What the project glave runs in turned on for every thread, as it started.
-    pub started: Started,
 }
 
 impl Setup {
-    /// Reads the files for this run in `folder` and keeps its choices within the policy.
-    /// Asks the person about the project once, if `asking` allows and there is a question.
-    pub async fn load(args: &Args, folder: &Path, asking: Asking) -> anyhow::Result<Self> {
-        let (loaded, outcome) = read(args, folder, asking).await?;
+    /// Reads the files for this run in `folder`, the project's own aside, and keeps its choices
+    /// within the policy.
+    pub async fn load(args: &Args, folder: &Path) -> anyhow::Result<Self> {
+        let loaded = read(args, folder, None).await?;
         let choices = loaded.settle()?;
         if args.network.is_some() && choices.sandbox.value.is_none() {
             anyhow::bail!(
@@ -62,30 +54,21 @@ impl Setup {
                     .map_or_else(String::new, |path| path.display().to_string())
             );
         }
-        let home = home::folder()?;
-        let started = Started::from_outcome(&Locations::here(&home, folder).root, &home, &outcome);
         let hooks = mine.clone();
         Ok(Self {
             loaded,
             choices,
-            project_servers: outcome.servers,
-            withheld: outcome.withheld,
             hooks,
-            hooks_off: outcome.hooks_off,
-            started,
         })
     }
+}
 
-    /// What to tell the person before the first turn, if anything.
-    pub fn notice(&self) -> Option<String> {
-        let lines = [self.withheld.as_slice(), self.hooks_off.as_slice()].concat();
-        (!lines.is_empty()).then(|| lines.join("\nglave: "))
-    }
-
-    /// What to tell the model, so it does not look for tools that are not there.
-    pub fn model_note(&self) -> Option<String> {
-        off_note(&self.withheld)
-    }
+/// Asks the person about the project around `folder` once, if `asking` allows and there is a
+/// question, keeping the answer where every server reads it; then what it brings that stays
+/// off, and why, to tell the person.
+pub async fn ask_here(folder: &Path, setup: &Setup, asking: Asking) -> anyhow::Result<Vec<String>> {
+    let outcome = resolve(folder, &setup.loaded.constraints, asking).await?;
+    Ok([outcome.withheld, outcome.hooks_off].concat())
 }
 
 /// What the model is told of `withheld`, a project's tools and settings that stay off with
@@ -105,10 +88,15 @@ pub fn off_note(withheld: &[String]) -> Option<String> {
     })
 }
 
-/// `glave policy explain`: prints every setting and constraint, and fails when glave would
-/// refuse to run here.
+/// `glave policy explain`: prints every setting and constraint as a thread in this folder's
+/// project would run with them, and fails when glave would refuse to run here.
 pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
-    let (mut loaded, _) = read(args, &std::env::current_dir()?, Asking::Explaining).await?;
+    let folder = std::env::current_dir()?;
+    let home = home::folder()?;
+    let policies = policy::policies(&Locations::here(&home, &folder)).await?;
+    let constraints = policy::Constraints::of(&policies);
+    let outcome = resolve(&folder, &constraints, Asking::Explaining).await?;
+    let mut loaded = read(args, &folder, Some(&outcome)).await?;
     if !glave_computer::sandbox_available() {
         loaded.no_sandbox_here = Some(NO_SANDBOX.to_owned());
     }
@@ -132,26 +120,35 @@ pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
     })
 }
 
-async fn read(args: &Args, folder: &Path, asking: Asking) -> anyhow::Result<(Loaded, Outcome)> {
+/// What the project around `folder` runs, asking the person when `asking` lets and keeping
+/// their answer.
+async fn resolve(
+    folder: &Path,
+    constraints: &policy::Constraints,
+    asking: Asking,
+) -> anyhow::Result<Outcome> {
+    let home = home::folder()?;
+    let root = Locations::here(&home, folder).root;
+    let project = Project::read(&root, &mcp::environment()).await?;
+    Ok(trust::resolve(&home, project, constraints, asking, ask).await?)
+}
+
+/// The files for a run in `folder`, with the project's settings as `project` applies them,
+/// when they count: `glave policy explain` shows a thread of that project.
+async fn read(args: &Args, folder: &Path, project: Option<&Outcome>) -> anyhow::Result<Loaded> {
     let home = home::folder()?;
     let locations = Locations::here(&home, folder);
     let policies = policy::policies(&locations).await?;
-    let constraints = policy::Constraints::of(&policies);
-    let project = Project::read(&locations.root, &mcp::environment()).await?;
-    let outcome = trust::resolve(&home, project, &constraints, asking, ask).await?;
-    let mut loaded = policy::load(
-        &locations,
-        &policies,
-        outcome.config.clone(),
-        flags(args),
-        environment(),
-    )
-    .await?;
-    loaded.project = (!outcome.rows.is_empty()).then(|| ProjectTrust {
-        root: locations.root.clone(),
-        rows: outcome.rows.clone(),
-    });
-    Ok((loaded, outcome))
+    let config = project.and_then(|outcome| outcome.config.clone());
+    let mut loaded =
+        policy::load(&locations, &policies, config, flags(args), environment()).await?;
+    loaded.project = project
+        .filter(|outcome| !outcome.rows.is_empty())
+        .map(|outcome| ProjectTrust {
+            root: locations.root.clone(),
+            rows: outcome.rows.clone(),
+        });
+    Ok(loaded)
 }
 
 /// Shows `question` in the terminal and reads the line typed; nothing when input ends first.
@@ -169,14 +166,17 @@ async fn ask(question: String) -> std::io::Result<Option<String>> {
     .map_err(std::io::Error::other)?
 }
 
-/// The choices made with flags.
+/// The choices made with flags. A prompt given on the command line is answered once, so its
+/// thread gets no title from a model.
 fn flags(args: &Args) -> ConfigFile {
+    let one_shot = args.action == crate::args::Action::Run && !args.prompt.is_empty();
     ConfigFile {
         model: args.model.clone(),
         approval: args.approval,
         sandbox: args.sandbox,
         network: args.network,
         worktree: args.worktree.then_some(true),
+        titles: one_shot.then_some(false),
         on: args.on,
         server: args.server.clone().map(|url| ServerFile { url }),
         ..ConfigFile::default()

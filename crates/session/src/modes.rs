@@ -4,7 +4,7 @@
 //! may be chosen, so the log tells any server of the deployment which mode a thread runs in.
 
 use glave_event::{Body, ThreadId};
-use glave_harness::{Caller, HarnessError, Loosened, Thread};
+use glave_harness::{Caller, HarnessError, Protections, Settled, Thread};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, SpaceId};
 
 use crate::protocol::{ApiError, ApprovalMode, code};
@@ -95,26 +95,26 @@ where
     }
 
     /// The mode `thread` runs in now, as its summary shows it, as its turns run in it: its
-    /// own choice, else its project's, else the server's, as `project` loosens them.
+    /// own choice, else its project's, else the server's, as `project` changes them.
     pub(crate) async fn approval_now(
         &self,
         scope: &Scope,
         thread: ThreadId,
-        project: Loosened,
+        project: Protections,
     ) -> Result<ApprovalMode, ApiError> {
         let chosen = self.chosen_approval(scope, thread).await?;
         Ok(project.mode(chosen, self.inner.harness.settings().approval))
     }
 
-    /// How the project of `space` loosens its threads' commands, when its trusted settings
-    /// do: for the person on this computer's threads.
-    pub(crate) async fn project_loosened(&self, space: SpaceId) -> Loosened {
+    /// What the project of `space` chooses for its threads: for the person on this
+    /// computer's threads.
+    pub(crate) async fn project_settled(&self, space: SpaceId) -> Settled {
         match self.folder_here(space).await {
             Ok(Some(folder)) => {
                 let folder = std::path::Path::new(&folder);
-                self.inner.harness.loosened(folder).await
+                self.inner.harness.settled(folder).await
             }
-            _ => Loosened::default(),
+            _ => Settled::default(),
         }
     }
 

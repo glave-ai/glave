@@ -17,7 +17,6 @@ use crate::data::{Data, DataLog};
 use crate::setup::Setup;
 use crate::{home, identity};
 use glave_config::policy::MemorySettings;
-use glave_config::trust::Asking;
 
 pub const USAGE: &str = "\
 glave memory: what glave remembers here, for later threads
@@ -74,7 +73,9 @@ pub async fn start_for(
     start(store, &settings, person, scope).await
 }
 
-/// Starts memory for `person` working in `scope`, when `settings` turn it on.
+/// Starts memory for `person`, tidied in `scope` and their own, when `settings` turn it on:
+/// each space with the setting `settings` choose, until its project's settings choose another
+/// (`projects.rs`).
 pub async fn start(
     store: &Data,
     settings: &MemorySettings,
@@ -85,15 +86,15 @@ pub async fn start(
         return Ok(None);
     }
     let personal = crate::spaces::personal(store, person).await?;
-    let mut rules = Rules {
+    let rules = Rules {
         personal: settings.personal.then_some(Personal {
             scope: personal,
             person,
         }),
+        default: settings.space,
         retention_days: settings.retention_days,
         ..Rules::default()
     };
-    rules.spaces.insert(scope.space, settings.space);
     let memories = Memories::new(
         store.log(),
         store.shredder(),
@@ -192,7 +193,7 @@ pub fn main(arguments: &[String]) -> ExitCode {
 
 async fn run(command: Command) -> anyhow::Result<()> {
     let folder = std::env::current_dir()?;
-    let setup = Setup::load(&Args::default(), &folder, Asking::NoOne).await?;
+    let setup = Setup::load(&Args::default(), &folder).await?;
     let settings =
         glave_config::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
     let home = home::folder()?;

@@ -47,7 +47,7 @@ impl<L: EventLog + 'static> Memories<L> {
         let mut done = Housekept::default();
         let now = self.now();
         for scope in scopes {
-            if let Some(days) = self.inner.rules.retention_days {
+            if let Some(days) = self.rules().retention_days {
                 let cutoff = days_before(now, i64::from(days));
                 let stale: Vec<MemoryId> = self
                     .with_book(*scope, |book| {

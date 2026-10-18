@@ -45,7 +45,7 @@ A rule cannot tell "push my branch" from a push nobody asked for. In auto mode, 
 - **It answers run or ask.** Run means the person clearly asked for this action, or for something that plainly needs it; the call runs and is recorded as `approval.requested` and `approval.decided` (`allow_once`), the request's `caution` giving the rule's reason and then the judge's ("It pushes to a remote. Allowed without asking: the person asked to push."). Ask, an unclear answer, an error or no answer means the caution asks as before.
 - **Ordinary commands never reach it,** and in `ask` mode it is never consulted.
 
-The judge is the main model unless `GLAVE_JUDGE_MODEL` names another; `off` turns it off. On `evals/judge` (`cargo xtask eval judge --model …`), any of the three default models as judge lowers false alarms on actions the person asked for from 56% to 1–6%, and lets through no case that should ask.
+The judge is the main model unless `GLAVE_JUDGE_MODEL` names another; `off` turns it off. A trusted project's `judge_model` judges its own threads' actions instead (`policy.md`, "Project trust"). On `evals/judge` (`cargo xtask eval judge --model …`), any of the three default models as judge lowers false alarms on actions the person asked for from 56% to 1–6%, and lets through no case that should ask.
 
 ## Running outside the sandbox
 

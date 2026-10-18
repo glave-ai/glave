@@ -7,6 +7,7 @@
 mod support;
 
 mod background_commands;
+mod choices;
 mod commands;
 mod conformance;
 mod credentials;

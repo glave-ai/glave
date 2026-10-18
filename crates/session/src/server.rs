@@ -42,12 +42,15 @@ pub struct Wiring<P, L, B> {
     pub clock: Box<dyn Clock>,
     pub entropy: Box<dyn Entropy>,
     pub workspace: Workspace,
-    /// Tools beside the built-in ones, such as MCP servers'.
+    /// `web_fetch`, which a project's own settings replace for its threads; none when it is
+    /// off.
+    pub web: Option<Arc<dyn ToolSource>>,
+    /// Tools beside the built-in ones and `web_fetch`, such as MCP servers'.
     pub tools: Vec<Arc<dyn ToolSource>>,
     /// Whether a new thread in a project with a folder works in a worktree of its own unless
-    /// `thread/start` says; off, it works in the folder itself.
+    /// `thread/start` or its project says; off, it works in the folder itself.
     pub worktree: bool,
-    /// Commands run at points of every turn.
+    /// Commands run at points of every turn of the person the server works for.
     pub hooks: Hooks,
     /// When set, every new thread in the server's own space works on a worker of its own
     /// (`--on cloud`) unless `thread/start` asks for a worktree; none by default.
@@ -179,6 +182,7 @@ where
                     Some(on) => Harness::new(parts, settings).with_workers(on.workers),
                     None => Harness::new(parts, settings),
                 }
+                .with_web(wiring.web)
                 .with_tools(wiring.tools)
                 .with_hooks(wiring.hooks)
                 .with_memory_if(wiring.memory)
@@ -211,6 +215,14 @@ where
     /// The person threads are for unless someone else starts them.
     pub fn person(&self) -> Option<PrincipalId> {
         self.inner.harness.person()
+    }
+
+    /// Whether what `caller` starts is the person's the server works for, whose trust turns
+    /// on what a project brings.
+    pub(crate) fn is_theirs(&self, caller: &Caller) -> bool {
+        caller
+            .person
+            .is_none_or(|person| Some(person) == self.person())
     }
 
     /// The spaces this server serves, for a host to manage.
@@ -313,6 +325,17 @@ where
         }
         let home = space == self.inner.home.space;
         let folder = self.folder_here(space).await?;
+        // The project's own choice, for the person here, is nearer than the server's.
+        let copies = match &folder {
+            Some(folder) if self.is_theirs(caller) => self
+                .inner
+                .harness
+                .settled(std::path::Path::new(folder))
+                .await
+                .worktree
+                .unwrap_or(self.inner.worktree),
+            _ => self.inner.worktree,
+        };
         let place = match (folder, worktree, &self.inner.worker) {
             (None, Some(true), _) => {
                 return Err(ApiError::new(
@@ -325,7 +348,7 @@ where
             (Some(_), Some(false), _) if background => return Err(crate::tasks::in_place()),
             (Some(folder), Some(true), _) => Place::Worktree(folder),
             (Some(_), None, Some(environment)) if home => Place::Worker(environment.clone()),
-            (Some(folder), None, _) if background || self.inner.worktree => Place::Worktree(folder),
+            (Some(folder), None, _) if background || copies => Place::Worktree(folder),
             (Some(folder), _, _) => Place::Folder(folder),
         };
         let copy = background && matches!(place, Place::Worktree(_));
