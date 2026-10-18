@@ -68,8 +68,8 @@ mod projects {
         let thread = started["result"]["thread"].clone();
         if let Some(ask) = thread["trust"]["ask"].as_str() {
             let answer = json!({"thread": thread["id"], "ask": ask, "answer": "trust"});
-            let trusted = served.call("trust/answer", &answer);
-            assert!(trusted["result"]["thread"].is_object(), "{trusted}");
+            let answered = served.call("trust/answer", &answer);
+            assert!(answered["result"]["thread"].is_object(), "{answered}");
         }
         let turn = json!({"thread": thread["id"], "prompt": "go"});
         let ran = served.call("turn/start", &turn);
