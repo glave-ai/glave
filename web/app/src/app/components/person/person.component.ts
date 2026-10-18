@@ -47,6 +47,6 @@ export class PersonComponent {
   }
 
   protected signOut(): void {
-    this.session.signOut();
+    void this.session.signOut();
   }
 }

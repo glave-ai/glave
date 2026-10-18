@@ -1543,6 +1543,7 @@ dependencies = [
 name = "glave-identity"
 version = "0.0.0"
 dependencies = [
+ "getrandom 0.4.3",
  "glave-event",
  "glave-ports",
  "jiff",
@@ -1552,6 +1553,8 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

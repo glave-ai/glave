@@ -7,9 +7,22 @@ import {
   type StreamingMethod,
 } from '@glave/client';
 
-import { TOKEN_KEY } from '../lib/token';
+import type { BrowserSession } from '../lib/token';
 import { thread } from './fixtures';
-import { SESSION_CLIENT_FACTORY, type SessionClient } from '../services/session.service';
+import {
+  INITIAL_SESSION,
+  SESSION_CLIENT_FACTORY,
+  type SessionClient,
+} from '../services/session.service';
+
+/** The server the fake is, by the id its `server/discover` answers. */
+export const FAKE_SERVER = 'fake-server';
+
+/** A tab signed in to the fake: with a browser session, so on this computer. */
+export const SIGNED_IN: BrowserSession = { token: 'glave_session_test', server: FAKE_SERVER };
+
+/** A tab signed in to the fake with a token from elsewhere, not a session of glave's own. */
+export const ELSEWHERE: BrowserSession = { token: 'an-access-token', server: FAKE_SERVER };
 
 /** A call the fake saw. */
 interface SeenCall {
@@ -155,12 +168,13 @@ function unanswered(method: Method, params: unknown): Answer {
   return {};
 }
 
-/** Providers that sign the app in and send its calls to `fake`. */
-export function provideFakeSession(fake: FakeSession, signedIn = true): Provider[] {
-  if (signedIn) {
-    sessionStorage.setItem(TOKEN_KEY, 'glave_local_test');
-  } else {
-    sessionStorage.removeItem(TOKEN_KEY);
-  }
-  return [{ provide: SESSION_CLIENT_FACTORY, useValue: () => fake }];
+/** Providers that sign the app in with `session` (none: signed out) and send its calls to `fake`. */
+export function provideFakeSession(
+  fake: FakeSession,
+  session: BrowserSession | null = SIGNED_IN,
+): Provider[] {
+  return [
+    { provide: SESSION_CLIENT_FACTORY, useValue: () => fake },
+    { provide: INITIAL_SESSION, useValue: session },
+  ];
 }

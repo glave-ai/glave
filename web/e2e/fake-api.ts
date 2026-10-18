@@ -29,6 +29,7 @@ import {
   refusedTurn,
 } from './fake-gone';
 import { Refusal, THREAD, bound, call, done, event } from './fake-records';
+import { FAKE_SERVER, signIn } from './fake-signin';
 
 /**
  * What the fake server knows: a project and the person's own space with their threads, one
@@ -698,9 +699,10 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
         protocols: ['2026-10'],
         approval: 'auto',
         approvals: ['ask', 'auto'],
+        id: FAKE_SERVER,
       };
     default:
-      return {};
+      return signIn(method, params) ?? {};
   }
 }
 

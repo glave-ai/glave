@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import AxeBuilder from '@axe-core/playwright';
 import { type Locator, type Page, expect } from '@playwright/test';
 
@@ -6,15 +9,34 @@ export const APP_URL = 'http://127.0.0.1:4310';
 export const SHOWCASE_URL = 'http://127.0.0.1:4311';
 /** Where a glave with nothing set up serves the app, for the first run (first-run.e2e.ts). */
 export const FIRST_RUN_URL = 'http://127.0.0.1:4312';
-/** The variable that names that glave's home, so the test can read its sign-in token. */
+/** The variable that names that glave's home, so the test can read its local token. */
 export const FIRST_RUN_HOME = 'GLAVE_E2E_FIRST_RUN_HOME';
 /** Where a glave with a model serves the app, for connecting accounts (accounts.e2e.ts). */
 export const ACCOUNTS_URL = 'http://127.0.0.1:4313';
 /** The variable that names that glave's home. */
 export const ACCOUNTS_HOME = 'GLAVE_E2E_ACCOUNTS_HOME';
 
-/** The fragment of the link that signs the app in (`glave serve` prints one). */
-export const SIGNED_IN = '#token=glave_local_test';
+/** The fragment of the link that signs the app in, with a code the fake API takes. */
+export const SIGNED_IN = '#code=e2e-code';
+
+/**
+ * A sign-in link's one-time code from the real glave at `url` whose home is `home`, asked for
+ * with its local token, as `glave app` asks for one.
+ */
+export async function signInCode(url: string, home: string): Promise<string> {
+  const token = readFileSync(join(home, 'serve.token'), 'utf8').trim();
+  const response = await fetch(`${url}/`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'signin/link', params: {} }),
+  });
+  const answer = (await response.json()) as { readonly result?: { readonly code?: unknown } };
+  const code = answer.result?.code;
+  if (typeof code !== 'string') {
+    throw new Error(`glave gave no sign-in code: ${JSON.stringify(answer)}`);
+  }
+  return code;
+}
 
 /** Elements end-to-end tests use, by their `data-testid` (AGENTS.md, "Test hooks"). */
 export function byTestId(page: Page, testId: string): ReturnType<Page['getByTestId']> {

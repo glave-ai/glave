@@ -3,8 +3,7 @@ import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import { TOKEN_KEY } from '../../lib/token';
-import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { ELSEWHERE, FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { FolderGoneComponent } from './folder-gone.component';
 
 const GONE = 'This project’s folder isn’t there anymore.';
@@ -25,10 +24,7 @@ interface Rendered {
 }
 
 async function render(fake: FakeSession, local = true): Promise<Rendered> {
-  const providers = provideFakeSession(fake);
-  if (!local) {
-    sessionStorage.setItem(TOKEN_KEY, 'signed-in-elsewhere');
-  }
+  const providers = provideFakeSession(fake, local ? undefined : ELSEWHERE);
   TestBed.configureTestingModule({
     providers: [
       ...providers,

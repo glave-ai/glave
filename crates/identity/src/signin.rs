@@ -2,14 +2,16 @@
 //! checked against the identity provider's published keys. A token is signed with RS256 or
 //! ES256 by a key in the issuer's JWKS, names a trusted issuer and this server's audience, and
 //! is within its lifetime. The verified caller is a person whose id comes from the token's
-//! issuer and subject. And local sign-in: a browser on the person's own computer presents the
-//! server's local token from a loopback address, and is the local person. A token is never
-//! logged or stored.
+//! issuer and subject. And local sign-in: a program on the person's own computer presents the
+//! server's local token from a loopback address, and is the local person, as is a browser
+//! that traded a link's code for a browser session. A token is never logged or stored.
 
+mod browsers;
 mod keys;
 mod local;
 
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use glave_event::{Auth, AuthMethod, PrincipalId};
 use glave_ports::auth::safe_to_send;
@@ -19,8 +21,10 @@ use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
+use self::browsers::SESSION_PREFIX;
+pub use self::browsers::{BrowserError, Browsers, Session};
 use self::keys::Keys;
-pub use self::local::{LOCAL_BYTES, LOCAL_PREFIX, LocalToken, is_loopback};
+pub use self::local::{LOCAL_BYTES, LOCAL_PREFIX, LocalToken, is_loopback, keep};
 
 /// How far the clocks of the server and the identity provider may disagree, in seconds.
 const SKEW: f64 = 60.0;
@@ -67,6 +71,8 @@ pub enum SignInError {
     NotLoopback,
     #[error("that is not this server's local token: read it again from serve.token")]
     WrongLocalToken,
+    #[error("this browser's sign-in has ended: open glave again to sign in")]
+    EndedSession,
 }
 
 /// Checks sign-in tokens for one server. Keys are fetched from each issuer when first needed,
@@ -77,6 +83,8 @@ pub struct SignIn {
     clock: Box<dyn Clock>,
     /// The local token, accepted from loopback callers as the local person.
     local: Option<LocalToken>,
+    /// Browser sessions, accepted from loopback callers as the local person.
+    browsers: Option<Arc<Browsers>>,
 }
 
 /// The claims glave reads. `iss` and `aud` are checked while decoding.
@@ -119,6 +127,7 @@ impl SignIn {
             issuers,
             clock,
             local: None,
+            browsers: None,
         })
     }
 
@@ -129,6 +138,7 @@ impl SignIn {
             issuers: Vec::new(),
             clock,
             local: Some(token),
+            browsers: None,
         }
     }
 
@@ -139,9 +149,28 @@ impl SignIn {
         self
     }
 
+    /// Accepts the sessions of `browsers` too, from loopback callers, as the local person.
+    #[must_use]
+    pub fn with_browsers(mut self, browsers: Arc<Browsers>) -> Self {
+        self.browsers = Some(browsers);
+        self
+    }
+
     /// The caller a token proves when it comes from `peer`: the local person for the local
-    /// token from this computer, else whoever an OIDC token names.
+    /// token or a browser session from this computer, else whoever an OIDC token names.
     pub async fn verify_from(&self, token: &str, peer: IpAddr) -> Result<Caller, SignInError> {
+        if token.starts_with(SESSION_PREFIX) {
+            let browsers = self.browsers.as_ref().ok_or(SignInError::EndedSession)?;
+            // Checked first, so a session is never renewed from elsewhere.
+            if !is_loopback(peer) {
+                return Err(SignInError::NotLoopback);
+            }
+            let session = browsers
+                .verify(token)
+                .await
+                .map_err(|_| SignInError::EndedSession)?;
+            return Ok(local_person(Some(session)));
+        }
         if token.starts_with(LOCAL_PREFIX) {
             if !self
                 .local
@@ -153,16 +182,7 @@ impl SignIn {
             if !is_loopback(peer) {
                 return Err(SignInError::NotLoopback);
             }
-            return Ok(Caller {
-                person: None,
-                auth: Some(Auth {
-                    method: AuthMethod::Local,
-                    issuer: None,
-                    subject: None,
-                    session: None,
-                }),
-                trace: None,
-            });
+            return Ok(local_person(None));
         }
         if self.issuers.is_empty() {
             return Err(SignInError::UnknownIssuer);
@@ -222,6 +242,20 @@ impl SignIn {
             }),
             trace: None,
         })
+    }
+}
+
+/// The local person, signed in locally: with the local token, or in the browser `session`.
+fn local_person(session: Option<String>) -> Caller {
+    Caller {
+        person: None,
+        auth: Some(Auth {
+            method: AuthMethod::Local,
+            issuer: None,
+            subject: None,
+            session,
+        }),
+        trace: None,
     }
 }
 

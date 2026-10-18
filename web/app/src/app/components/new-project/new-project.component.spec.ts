@@ -5,9 +5,8 @@ import { ApiError, type CredentialInfo, ErrorCode, type Space } from '@glave/cli
 import { expectAccessible } from '@glave/glaze/testing';
 import type { Mock } from 'vitest';
 
-import { TOKEN_KEY } from '../../lib/token';
 import { SpacesService } from '../../services/spaces.service';
-import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { ELSEWHERE, FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { space } from '../../testing/fixtures';
 import { NewProjectComponent } from './new-project.component';
 
@@ -61,10 +60,7 @@ async function render(options: Options = {}): Promise<Rendered> {
         }),
     );
   const announce = vi.fn<(message: string) => Promise<void>>(() => Promise.resolve());
-  const providers = provideFakeSession(fake);
-  if (options.local === false) {
-    sessionStorage.setItem(TOKEN_KEY, 'signed-in-elsewhere');
-  }
+  const providers = provideFakeSession(fake, options.local === false ? ELSEWHERE : undefined);
   TestBed.configureTestingModule({
     providers: [
       provideRouter([{ path: '**', children: [] }]),

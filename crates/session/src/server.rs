@@ -11,6 +11,7 @@ use glave_harness::{
     Caller, Clock, Entropy, Harness, HarnessError, Hooks, Memory, Parts, Place, Projects,
     ReleasedWorker, Settings, TurnSummary, Workers, Workspace,
 };
+use glave_identity::signin::Browsers;
 use glave_ports::{
     BlobStore, ComputerError, Environment, EventLog, ModelProvider, Scope, SpaceId, Spaces,
     ToolSource,
@@ -84,6 +85,9 @@ pub struct Wiring<P, L, B> {
     /// Where what a project asks to be trusted is read, and the person's yes kept; none where
     /// no one may trust a project from a client.
     pub trust: Option<Arc<dyn ProjectTrust>>,
+    /// The browsers signed in on this computer, by links' one-time codes; none where no
+    /// browser is signed in that way, as over stdio.
+    pub browsers: Option<Arc<Browsers>>,
 }
 
 /// Threads on workers: where workers come from, and the environment each is made from.
@@ -147,6 +151,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) keyed: Keyed,
     /// Where what a project asks to be trusted is read, and the person's yes kept.
     pub(crate) trust: Option<Arc<dyn ProjectTrust>>,
+    /// The browsers signed in on this computer, when it signs them in.
+    pub(crate) browsers: Option<Arc<Browsers>>,
     /// What the threads opened or started here did with their projects' asks.
     pub(crate) asks: Mutex<Asks>,
 }
@@ -212,6 +218,7 @@ where
                 keyed: Keyed::default(),
                 trust: wiring.trust,
                 asks: Mutex::new(Asks::default()),
+                browsers: wiring.browsers,
             }),
         }
     }

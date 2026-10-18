@@ -68,7 +68,22 @@ macro_rules! methods {
 }
 
 methods! {
+    /// What the server is. Over HTTP it needs no sign-in, so a browser learns which server it
+    /// reached before it presents a session.
     "server/discover" => Discover {} -> [Server],
+    /// A one-time code for a link that signs a browser on this computer in: good once, for
+    /// five minutes. Only glave on this computer: a local transport, or the local token.
+    "signin/link" => SigninLink {} -> [Link],
+    /// Trades a link's code for a browser session with this server, from this computer: a
+    /// bearer token, good for 30 days from its last use. Over HTTP it needs no sign-in.
+    "signin/redeem" => SigninRedeem {
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        code: Secret,
+    } -> [Browser],
+    /// Ends this browser's session: signing out.
+    "signin/end" => SigninEnd {} -> [Done],
+    /// Ends every browser session but this one's: signing other browsers out.
+    "signin/end_others" => SigninEndOthers {} -> [Done],
     /// The models this server can run: the default first.
     "model/list" => ModelList {} -> [Models],
     "thread/start" => ThreadStart {
@@ -461,6 +476,10 @@ pub struct ServerInfo {
     /// The modes a thread may choose (`approval` on `thread/start` and `turn/start`): those
     /// the policy leaves, cautious first.
     pub approvals: Vec<ApprovalMode>,
+    /// The server's id, where it signs browsers in: the same across restarts, and the one a
+    /// browser's session must name before the browser presents it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 /// A thread, as a list shows it: from the threads view, with what it is doing now.
@@ -647,6 +666,21 @@ pub enum Reply {
     /// A sign-in in the browser still waiting for the person.
     #[schemars(title = "Waiting")]
     Waiting { flow: String },
+    /// A link's one-time code, sent once.
+    #[schemars(title = "Link")]
+    Link {
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        code: Secret,
+    },
+    /// A browser session, sent once.
+    #[schemars(title = "Browser")]
+    Browser {
+        /// The bearer token the browser signs in with, kept in the tab.
+        #[serde(serialize_with = "glave_event::serialize_exposed")]
+        session: Secret,
+        /// The id of the server it is for: the browser presents it to no other.
+        server: String,
+    },
     // After every reply with a field of its own, since a missing `goal` reads as `null`;
     // before `Done`, which takes any object.
     /// The thread's latest goal, or `null`.

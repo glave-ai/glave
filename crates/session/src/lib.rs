@@ -4,6 +4,7 @@
 
 mod approvals;
 mod background;
+mod browsers;
 pub mod client;
 mod credentials;
 mod cron;

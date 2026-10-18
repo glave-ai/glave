@@ -34,6 +34,7 @@ describe('PersonComponent', () => {
     const session = TestBed.inject(SessionService);
     expect(session.signedIn()).toBe(true);
     root.querySelector<HTMLButtonElement>('[data-testid="person-sign-out"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
     expect(session.signedIn()).toBe(false);
   });
 });

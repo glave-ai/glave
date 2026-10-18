@@ -216,6 +216,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         spaces: store.spaces(),
         projects: Some(Arc::clone(&projects) as Arc<dyn glave_harness::Projects>),
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
+        browsers: crate::serving::browsers(args)?,
     };
     let server = Server::new(wiring, settings, scope, answering);
     // The folder glave runs in is its project's folder: where its threads work.

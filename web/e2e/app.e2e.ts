@@ -24,7 +24,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(project.getByTestId('nav-thread').first()).toContainText(
       'Review the release notes',
     );
-    expect(page.url()).not.toContain('token');
+    expect(page.url()).not.toContain('code');
     await expectAccessible(page);
     expect(problems()).toEqual([]);
   });
@@ -220,7 +220,7 @@ test.describe('on a touch screen', () => {
 test('a new chat starts a thread and sends the first message', async ({ page }) => {
   const api = await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
-  // Signed in with the local token: glave runs on this computer, and says what stays here.
+  // Signed in with a browser session: glave runs on this computer, and says what stays here.
   await expect(byTestId(page, 'home-private')).toHaveText(
     'Private on this computer. Only the model you pick sees what you send.',
   );

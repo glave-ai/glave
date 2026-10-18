@@ -377,6 +377,11 @@ export type ServerInfo = {
    * the policy leaves, cautious first.
    */
   readonly approvals: readonly (ApprovalMode)[];
+  /**
+   * The server's id, where it signs browsers in: the same across restarts, and the one a
+   * browser's session must name before the browser presents it.
+   */
+  readonly id?: string | null;
   readonly name: string;
   /** The protocol versions spoken. */
   readonly protocols: readonly (string)[];
@@ -867,6 +872,33 @@ export type ServerDiscoverParams = Readonly<Record<string, never>>;
 
 export type ServerDiscoverResult = ServerInfo;
 
+export type SigninEndParams = Readonly<Record<string, never>>;
+
+export type SigninEndResult = Readonly<Record<string, never>>;
+
+export type SigninEndOthersParams = Readonly<Record<string, never>>;
+
+export type SigninEndOthersResult = Readonly<Record<string, never>>;
+
+export type SigninLinkParams = Readonly<Record<string, never>>;
+
+/** A link's one-time code, sent once. */
+export type SigninLinkResult = {
+  readonly code: Secret;
+};
+
+export type SigninRedeemParams = {
+  readonly code: Secret;
+};
+
+/** A browser session, sent once. */
+export type SigninRedeemResult = {
+  /** The id of the server it is for: the browser presents it to no other. */
+  readonly server: string;
+  /** The bearer token the browser signs in with, kept in the tab. */
+  readonly session: Secret;
+};
+
 export type SpaceCreateParams = {
   readonly folder?: NewFolder | null;
   readonly members?: readonly (Principal)[];
@@ -1131,6 +1163,10 @@ export interface Methods {
   readonly "schedule/delete": { readonly params: ScheduleDeleteParams; readonly result: ScheduleDeleteResult };
   readonly "schedule/list": { readonly params: ScheduleListParams; readonly result: ScheduleListResult };
   readonly "server/discover": { readonly params: ServerDiscoverParams; readonly result: ServerDiscoverResult };
+  readonly "signin/end": { readonly params: SigninEndParams; readonly result: SigninEndResult };
+  readonly "signin/end_others": { readonly params: SigninEndOthersParams; readonly result: SigninEndOthersResult };
+  readonly "signin/link": { readonly params: SigninLinkParams; readonly result: SigninLinkResult };
+  readonly "signin/redeem": { readonly params: SigninRedeemParams; readonly result: SigninRedeemResult };
   readonly "space/create": { readonly params: SpaceCreateParams; readonly result: SpaceCreateResult };
   readonly "space/folder/set": { readonly params: SpaceFolderSetParams; readonly result: SpaceFolderSetResult };
   readonly "space/get": { readonly params: SpaceGetParams; readonly result: SpaceGetResult };
