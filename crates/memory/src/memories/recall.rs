@@ -70,7 +70,7 @@ impl<L: EventLog + 'static> Memories<L> {
                 "recall needs a few distinctive keywords to search for".into(),
             ));
         }
-        let readable = self.inner.rules.readable(on.person, on.scope);
+        let readable = self.rules().readable(on.person, on.scope);
         let mut memories = Vec::new();
         // Where forgotten memories were saved: those turns are never returned.
         let mut hidden = Vec::new();

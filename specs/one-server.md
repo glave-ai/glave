@@ -4,7 +4,7 @@ How a person's glave runs as one server on their own computer: how it starts and
 
 ## Status
 
-Designed, not built; reviewed adversarially on 2026-10-17. Decisions marked *decided* were made in that review; those marked (decided) were made with #294. "The pull requests" gives the order. Each pull request moves the sections of `session.md`, `policy.md`, `computers.md`, `storage.md` and `events.md` that it changes, and AGENTS.md where a rule or a budget changes; this spec keeps the decisions that span them.
+Reviewed adversarially on 2026-10-17. Pull request 1a is built (#344); 1b is built but for its servers' idle close and the person's own servers kept from others' threads, which come next; the rest is designed, not built. Decisions marked *decided* were made in that review; those marked (decided) were made with #294. "The pull requests" gives the order. Each pull request moves the sections of `session.md`, `policy.md`, `computers.md`, `storage.md` and `events.md` that it changes, and AGENTS.md where a rule or a budget changes; this spec keeps the decisions that span them.
 
 ## How the others do it
 
@@ -19,7 +19,7 @@ What glave takes: Claude Code's start on first use, one server per glave folder,
 ### One per glave folder
 
 - **One server per glave folder** (`GLAVE_HOME`, `~/.glave` by default), the holder of its lock. It opens the data store, holds the keys, runs the harness and the gateway, and is the only glave that fires schedules and recovers tasks, and the one whose tasks outlive the clients that start them. Other glaves may write the same store meanwhile, as today: a command run in-process where no server runs, `glave serve --stdio`'s own server, and worktree cleanup; the log's `(thread, seq)` guard and "Records from outside" (`session.md`) keep them apart. A second glave folder (tests, a second profile) is a second person's server.
-- **It has no folder of its own.** Nothing depends on where it started: no start folder's project, settings, tools or instructions. Today `wire` reads all of them from the current folder.
+- **It has no folder of its own.** Nothing depends on where it started: no start folder's project, settings, tools or instructions. Today the in-process CLI still asks about the folder it runs in and works there, and that folder still gives every thread its skills and commands, and is the space `memory/*` acts in and workers clone.
 - **An organization runs the same program** (`glave serve` in a unit or a container), its people reaching it over HTTP.
 
 ### Starting
@@ -116,12 +116,12 @@ Every command is a client of the person's server over its socket, or of a server
 
 ## Each project's own tools, hooks and settings
 
-Every project's trusted servers and hooks already reach only its threads (`policy.md`, "Project trust"), except the folder the server started in, whose servers and settings reach every thread. That exception goes.
+Every project's trusted servers and hooks reach only its threads (`policy.md`, "Project trust"), the folder the server started in as much as any: that folder no longer lends its servers and settings to every thread.
 
 - **The person's own** (servers in their `mcp.json`, hooks in their `config.toml`, their AGENTS.md) are for their threads everywhere: in every project and in Chats. Their servers start once, in the home folder, after the server starts: most are services behind an API, and one process each keeps a laptop light. A server that needs a project's folder belongs in that project's `.mcp.json`. Considered: one per project, in its folder, as each Claude Code session starts its own; rejected for the number of processes, to revisit if a person's server turns out to need the folder.
 - **A project's own** (servers in its `.mcp.json`, hooks and settings in its `.glave/config.toml`) are for its threads alone, once trusted. `Started`, which made the start folder's servers and settings the whole server's, goes, and with it the rule that a project's server gives way to a server-wide one of the same name: now only the person's own can share a name, theirs wins as today, and the model is told the project's is off (#305).
 - **Lifetimes.** A project's servers start in its folder the first time one of its turns needs tools, and stay up for its later turns, as OpenCode keeps a folder's. New: they close after 30 minutes no turn of the project used them; as today, at most 16 projects' run at once, the least recently used closed first, and a set a running turn still holds closes when the turn lets go. One that fails to start leaves the turn without it, and the model and the person are told, as today.
-- **A project's settings** apply to its threads alone, read at the start of each turn as its trust is: what glave run in that folder applies today. Its model, `network = false`, a tighter approval or sandbox, `worktree`, `titles` and `space_memory` apply at once; looser approval and sandbox, `judge_model` and a wider `[web]` once trusted. The nearest choice wins: the thread's own, the project's, the person's, glave's (`policy.md`); constraints only narrow. A project's model must be one the server offers; one it does not is set aside with a sentence, and its threads use the default. What only the person's or the server's file sets (store, gateway, provider, GitHub, telemetry, server) a project never does, as today. Settings move into the store with #222; the order stays.
+- **A project's settings** apply to its threads alone, read at the start of each turn as its trust is. Its model, `network = false`, a tighter approval or sandbox, `worktree`, `titles` and `space_memory` apply at once; looser approval and sandbox, `judge_model` and a wider `[web]` once trusted. The nearest choice wins: the thread's own, the project's, the person's, glave's (`policy.md`); constraints only narrow. A project's model must be one the server offers; one it does not is set aside with a sentence, and its threads use the default. What only the person's or the server's file sets (store, gateway, provider, GitHub, telemetry, server) a project never does, as today. Settings move into the store with #222; the order stays.
 - **Anyone signed in from elsewhere** gets none of a project's, trusted or not, as today, and none of the person's own servers and hooks, which run with that person's sign-ins. Today the server's own tools reach every thread.
 - **Threads on workers** run the person's own hooks alone, as today (#305 decides the rest).
 

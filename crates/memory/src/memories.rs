@@ -8,14 +8,14 @@ mod tidy;
 mod write;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
 use glave_event::{At, EventId, Header, MemoryId, MemoryScope, Payload, PrincipalId, Seq, encode};
 use glave_ports::memories::{MemoryContext, MemoryError, Remembered, Shown, memory_ledger};
-use glave_ports::{Clock, Entropy, EventLog, LogError, Scope};
+use glave_ports::{Clock, Entropy, EventLog, LogError, Scope, SpaceId};
 
 use crate::book::{Book, Entry};
-use crate::rules::Rules;
+use crate::rules::{Rules, SpaceMemory};
 use crate::shred::Shredder;
 
 pub use housekeep::Housekept;
@@ -47,7 +47,7 @@ impl<L> Clone for Memories<L> {
 struct Inner<L> {
     log: L,
     shredder: Arc<dyn Shredder>,
-    rules: Rules,
+    rules: RwLock<Rules>,
     clock: Box<dyn Clock>,
     entropy: Box<dyn Entropy>,
     books: Mutex<HashMap<Scope, Book>>,
@@ -66,7 +66,7 @@ impl<L: EventLog + 'static> Memories<L> {
             inner: Arc::new(Inner {
                 log,
                 shredder,
-                rules,
+                rules: RwLock::new(rules),
                 clock,
                 entropy,
                 books: Mutex::new(HashMap::new()),
@@ -74,8 +74,27 @@ impl<L: EventLog + 'static> Memories<L> {
         }
     }
 
-    pub fn rules(&self) -> &Rules {
-        &self.inner.rules
+    /// The rules memory runs by now.
+    pub fn rules(&self) -> Rules {
+        self.inner
+            .rules
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Sets `space`'s memory to `setting` from now on, as its project's settings choose it.
+    pub fn set_space(&self, space: SpaceId, setting: SpaceMemory) {
+        let mut rules = self
+            .inner
+            .rules
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        if setting == rules.default {
+            rules.spaces.remove(&space);
+        } else {
+            rules.spaces.insert(space, setting);
+        }
     }
 
     pub(crate) fn now(&self) -> At {
@@ -185,7 +204,7 @@ impl<L: EventLog + 'static> Memories<L> {
         which: Option<MemoryScope>,
     ) -> Result<Vec<Remembered>, MemoryError> {
         let mut memories = Vec::new();
-        for (kind, ledger) in self.inner.rules.readable(person, scope) {
+        for (kind, ledger) in self.rules().readable(person, scope) {
             if which.is_some_and(|which| which != kind) {
                 continue;
             }
@@ -199,7 +218,7 @@ impl<L: EventLog + 'static> Memories<L> {
     /// reads: both are kept until one of them changes.
     pub async fn questions(&self, on: &MemoryContext) -> Result<Vec<[MemoryId; 2]>, MemoryError> {
         let mut open = Vec::new();
-        for (_, ledger) in self.inner.rules.readable(on.person, on.scope) {
+        for (_, ledger) in self.rules().readable(on.person, on.scope) {
             open.extend(self.with_book(ledger, Book::open_questions).await?);
         }
         Ok(open)
@@ -213,7 +232,7 @@ impl<L: EventLog + 'static> Memories<L> {
         wanted: &[Shown],
     ) -> Result<Vec<Remembered>, MemoryError> {
         let mut found = Vec::new();
-        for (kind, ledger) in self.inner.rules.readable(on.person, on.scope) {
+        for (kind, ledger) in self.rules().readable(on.person, on.scope) {
             let mut here = self
                 .with_book(ledger, |book| {
                     wanted
@@ -238,7 +257,7 @@ impl<L: EventLog + 'static> Memories<L> {
         scope: Scope,
         memory: glave_event::MemoryId,
     ) -> Result<(Scope, Entry), MemoryError> {
-        for (kind, ledger) in self.inner.rules.readable(person, scope) {
+        for (kind, ledger) in self.rules().readable(person, scope) {
             let entry = self
                 .with_book(ledger, |book| book.entries.get(&memory).cloned())
                 .await?;

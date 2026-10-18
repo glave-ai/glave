@@ -1,0 +1,124 @@
+//! What a project chooses for its threads (`specs/one-server.md`, "Each project's own tools,
+//! hooks and settings"): its `.glave/config.toml`, as far as it applies, among glave's own
+//! levels, nearest first: a flag, the environment, the project, the person's file, glave's
+//! defaults. Its constraints only narrow, as everywhere. A model it chooses must be one glave
+//! offers, and settings the constraints refuse are set aside whole, each with a sentence.
+
+use std::path::Path;
+use std::sync::Arc;
+
+use anyhow::Context as _;
+use glave_config::policy::{self, Choices, Source, WebFile};
+use glave_config::trust::{self, Outcome};
+use glave_harness::{Judge, Settled};
+use glave_ports::ToolSource;
+use glave_web::{Web, WebSettings};
+
+use super::Projects;
+
+/// What one project chooses, as read at the start of a turn.
+pub(super) struct Read {
+    pub(super) settled: Settled,
+    /// Every choice its threads run with, when its settings fit the constraints.
+    pub(super) choices: Option<Choices>,
+    /// What of its settings glave sets aside, and why, one sentence each.
+    pub(super) aside: Vec<String>,
+}
+
+impl Read {
+    /// `web_fetch` as the project's own `[web]` sets it up, when it has one.
+    pub(super) fn web(&self, root: &Path) -> Option<Arc<dyn ToolSource>> {
+        let choices = self.choices.as_ref()?;
+        if choices.web.from != Source::File(config_of(root)) {
+            return None;
+        }
+        match web_fetch(&choices.web.value) {
+            Ok(web) => Some(Arc::new(web)),
+            Err(error) => {
+                tracing::warn!(%error, "a project's [web] could not be used");
+                None
+            }
+        }
+    }
+}
+
+/// `web_fetch` as `web` sets it up, offering nothing when it is off.
+pub fn web_fetch(web: &WebFile) -> anyhow::Result<Web> {
+    let settings = WebSettings {
+        policy: web.policy()?,
+        limits: glave_web::Limits::default(),
+    };
+    Web::new(settings).context("could not set up web_fetch")
+}
+
+/// A project's `config.toml`, in the project at `root`.
+fn config_of(root: &Path) -> std::path::PathBuf {
+    root.join(".glave").join(policy::CONFIG)
+}
+
+impl Projects {
+    /// What the project at `root`, as `outcome` applies its files, chooses for its threads.
+    pub(super) fn settle(&self, root: &Path, outcome: &Outcome) -> Read {
+        let constraints = &self.loaded.constraints;
+        let protections = trust::protections(outcome, &self.choices, constraints);
+        let path = config_of(root);
+        let config = outcome.config.clone().unwrap_or_default();
+        let choices = match self.loaded.with_project(&path, config).settle() {
+            Ok(choices) => choices,
+            Err(error) => {
+                tracing::warn!(project = %root.display(), %error, "a project's settings are set aside");
+                return Read {
+                    settled: Settled {
+                        protections,
+                        ..Settled::default()
+                    },
+                    choices: None,
+                    aside: vec![format!(
+                        "this project's settings are set aside, since glave cannot use them: \
+                         {error}"
+                    )],
+                };
+            }
+        };
+        let ours = |from: &Source| *from == Source::File(path.clone());
+        let mut aside = Vec::new();
+        let mut offered = |model: &str, key: &str| {
+            let offered = self.models.offers(model);
+            if !offered {
+                aside.push(format!(
+                    "this project's {key} {model:?} is set aside: glave does not offer that \
+                     model here, so its threads use the default"
+                ));
+            }
+            offered
+        };
+        let model = choices
+            .model
+            .as_ref()
+            .filter(|model| ours(&model.from))
+            .map(|model| model.value.clone())
+            .filter(|model| offered(model, "model"));
+        let judge = Some(&choices.judge)
+            .filter(|judge| ours(&judge.from))
+            .map(|judge| judge.value.clone())
+            .filter(|judge| match judge {
+                Judge::Model(model) => offered(model, "judge_model"),
+                Judge::Main | Judge::Off => true,
+            });
+        let settled = Settled {
+            protections,
+            model,
+            judge,
+            titles: ours(&choices.titles.from).then_some(choices.titles.value),
+            worktree: ours(&choices.worktree.from).then_some(choices.worktree.value),
+        };
+        for line in &aside {
+            tracing::warn!(project = %root.display(), "{line}");
+        }
+        Read {
+            settled,
+            choices: Some(choices),
+            aside,
+        }
+    }
+}

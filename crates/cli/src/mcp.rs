@@ -1,7 +1,8 @@
-//! The MCP servers in glave's settings, `mcp.json` in glave's folder, and the ones a trusted
-//! project's `.mcp.json` brings: started in the background with the session, waited for before
-//! the first turn, and closed when glave ends. A `config.toml` may turn on only some of them,
-//! and a policy may forbid them.
+//! The MCP servers in glave's settings, `mcp.json` in glave's folder: the person's own, for
+//! their threads everywhere, started once in their home folder in the background with the
+//! session, waited for before the first turn, and closed when glave ends; and how a trusted
+//! project's `.mcp.json` servers start in its folder (`projects.rs`). A `config.toml` may turn
+//! on only some of them, and a policy may forbid them.
 //!
 //! The organization's catalog (`[mcp] catalog`) comes from its gateway when `[gateway] url` is
 //! set: one source, first, so a catalog tool wins over a server of the person's with the same
@@ -9,7 +10,6 @@
 //! only the others are the person's own, which `[mcp] own = false` forbids.
 
 use std::collections::BTreeMap;
-use std::collections::btree_map::Entry;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -32,25 +32,21 @@ pub fn environment() -> BTreeMap<String, String> {
         .collect()
 }
 
-/// The servers of one session.
+/// The person's own servers, for their threads everywhere.
 pub struct Servers {
     started: Vec<Arc<McpServer>>,
     reported: AtomicBool,
-    /// Project servers left out because the person's own has the same name.
-    shadowed: Vec<String>,
 }
 
 impl Servers {
-    /// Starts the servers in `home`'s settings and the trusted `project` servers (a
-    /// `.mcp.json`'s text), in `root`: those `chosen`, or every one; and first the catalog of
-    /// the `remote` gateway, when there is one. With no settings file there are none of the
-    /// person's. Fails when `constraints` forbid the person's own.
+    /// Starts the servers in `home`'s settings, in `root`: those `chosen`, or every one; and
+    /// first the catalog of the `remote` gateway, when there is one. With no settings file
+    /// there are none of the person's. Fails when `constraints` forbid the person's own.
     pub async fn start(
         home: &Path,
         root: &Path,
         chosen: Option<&Chosen<Vec<String>>>,
         constraints: &Constraints,
-        project: Option<&str>,
         remote: Option<&Remote>,
     ) -> anyhow::Result<Self> {
         let path = home.join(FILE);
@@ -69,21 +65,7 @@ impl Servers {
                 .with_context(|| format!("in {}", path.display()))?
         };
         let mine: Vec<String> = own.keys().cloned().collect();
-        let mut configs = own;
-        let mut shadowed = Vec::new();
-        if let Some(project) = project {
-            for (name, config) in glave_mcp::parse(project, &environment)
-                .context("in the project's trusted .mcp.json servers")?
-            {
-                match configs.entry(name) {
-                    Entry::Occupied(taken) => shadowed.push(taken.key().clone()),
-                    Entry::Vacant(free) => {
-                        free.insert(config);
-                    }
-                }
-            }
-        }
-        let configs = turned_on(configs, chosen, &path)?;
+        let configs = turned_on(own, chosen, &path)?;
         // Without a gateway, the catalog's servers are the ones in mcp.json it names.
         let catalog = match (remote, constraints.mcp_catalog()) {
             (None, Some((names, _))) => names,
@@ -95,22 +77,16 @@ impl Servers {
             .map(String::as_str)
             .collect();
         check_own_servers(&on, constraints)?;
-        let marks = Marks {
-            mine: if text.is_empty() {
-                BTreeMap::new()
-            } else {
-                glave_mcp::marks(&text).with_context(|| format!("in {}", path.display()))?
-            },
-            project: match project {
-                Some(project) => glave_mcp::marks(project)?,
-                None => BTreeMap::new(),
-            },
+        let marks = if text.is_empty() {
+            BTreeMap::new()
+        } else {
+            glave_mcp::marks(&text).with_context(|| format!("in {}", path.display()))?
         };
         let offered = remote.map(|remote| Arc::new(remote.catalog()));
         let servers = offered
             .into_iter()
             .chain(configs.iter().map(|(name, config)| {
-                let untrusted = marks.untrusted(name, config, &mine, constraints);
+                let untrusted = mine_untrusted(name, config, marks.get(name), constraints);
                 let server = McpServer::start(name, config, &environment, root, Limits::default());
                 Arc::new(server.untrusted(untrusted))
             }))
@@ -118,7 +94,6 @@ impl Servers {
         Ok(Self {
             started: servers,
             reported: AtomicBool::new(false),
-            shadowed,
         })
     }
 
@@ -143,11 +118,6 @@ impl Servers {
             .filter(|server| server.starting())
             .map(|server| server.name())
             .collect();
-        for name in &self.shadowed {
-            printer.warning(&format!(
-                "the project's MCP server {name:?} is not started: your mcp.json has one of the same name"
-            ));
-        }
         if !starting.is_empty() {
             printer.status(&format!("starting MCP servers: {}", starting.join(", ")));
         }
@@ -216,36 +186,25 @@ fn project_untrusted(name: &str, marked: Option<bool>, constraints: &Constraints
         || constraints.mcp_trusted(name).is_none()
 }
 
-/// The `"untrusted"` marks of the person's `mcp.json` and of the project's `.mcp.json`.
-struct Marks {
-    mine: BTreeMap<String, bool>,
-    project: BTreeMap<String, bool>,
-}
-
-impl Marks {
-    /// Whether what the server `name` returns is untrusted, as a web page is. A policy's
-    /// `[mcp] untrusted` always wins. The person's own servers (`mine`) follow their own mark;
-    /// unmarked, one on this computer is trusted and a remote one is not. A project's servers
-    /// are untrusted unless a policy's `[mcp] trusted` vouches for them: a repository cannot
-    /// vouch for itself, and the person who wants to trust one copies it into `mcp.json`.
-    fn untrusted(
-        &self,
-        name: &str,
-        config: &ServerConfig,
-        mine: &[String],
-        constraints: &Constraints,
-    ) -> bool {
-        if !mine.iter().any(|own| own == name) {
-            return project_untrusted(name, self.project.get(name).copied(), constraints);
-        }
-        if constraints.mcp_untrusted(name).is_some() {
-            return true;
-        }
-        let vouched = constraints.mcp_trusted(name).is_some();
-        match self.mine.get(name) {
-            Some(&marked) => marked,
-            None => config.is_remote() && !vouched,
-        }
+/// Whether what the person's own server `name` returns is untrusted, as a web page is. A
+/// policy's `[mcp] untrusted` always wins. Otherwise their own mark in `mcp.json`
+/// (`marked`) holds; unmarked, one on this computer is trusted and a remote one is not, unless
+/// a policy's `[mcp] trusted` vouches for it. A project's servers are untrusted unless a
+/// policy vouches for them (`project_untrusted`): a repository cannot vouch for itself, and the
+/// person who wants to trust one copies it into `mcp.json`.
+fn mine_untrusted(
+    name: &str,
+    config: &ServerConfig,
+    marked: Option<&bool>,
+    constraints: &Constraints,
+) -> bool {
+    if constraints.mcp_untrusted(name).is_some() {
+        return true;
+    }
+    let vouched = constraints.mcp_trusted(name).is_some();
+    match marked {
+        Some(&marked) => marked,
+        None => config.is_remote() && !vouched,
     }
 }
 
@@ -267,8 +226,7 @@ fn turned_on(
         .collect();
     if !missing.is_empty() {
         bail!(
-            "mcp (from {}) names servers with no settings in {} or the project's trusted \
-             .mcp.json: {}",
+            "mcp (from {}) names servers with no settings in {}: {}",
             chosen.from,
             path.display(),
             missing.join(", ")
@@ -304,19 +262,22 @@ mod tests {
             "repo": {"command": "repo-mcp"},
             "claims": {"command": "claims-mcp", "untrusted": false}
         }}"#;
-        let mut configs = glave_mcp::parse(mine_text, &env).unwrap();
-        let mine: Vec<String> = configs.keys().cloned().collect();
-        configs.extend(glave_mcp::parse(project_text, &env).unwrap());
-        let marks = Marks {
-            mine: glave_mcp::marks(mine_text).unwrap(),
-            project: glave_mcp::marks(project_text).unwrap(),
-        };
+        let mine = glave_mcp::parse(mine_text, &env).unwrap();
+        let theirs = glave_mcp::parse(project_text, &env).unwrap();
+        let (mine_marks, their_marks) = (
+            glave_mcp::marks(mine_text).unwrap(),
+            glave_mcp::marks(project_text).unwrap(),
+        );
         let untrusted = |rules: &Constraints| -> Vec<&str> {
-            configs
-                .iter()
-                .filter(|(name, config)| marks.untrusted(name, config, &mine, rules))
-                .map(|(name, _)| name.as_str())
-                .collect()
+            let own = mine.iter().filter(|(name, config)| {
+                mine_untrusted(name, config, mine_marks.get(*name), rules)
+            });
+            let project = theirs.iter().filter(|(name, _)| {
+                project_untrusted(name, their_marks.get(*name).copied(), rules)
+            });
+            let mut names: Vec<&str> = own.chain(project).map(|(name, _)| name.as_str()).collect();
+            names.sort_unstable();
+            names
         };
         let none = constraints("version = 1\n");
         assert_eq!(untrusted(&none), ["claims", "doubted", "remote", "repo"]);
@@ -337,7 +298,7 @@ mod tests {
             .build()
             .unwrap();
         let start =
-            |chosen| runtime.block_on(Servers::start(&home, &home, chosen, &forbidden, None, None));
+            |chosen| runtime.block_on(Servers::start(&home, &home, chosen, &forbidden, None));
         let refused = start(None).err().unwrap().to_string();
         assert!(
             refused.contains("mine") && refused.contains("[mcp] own = false"),
@@ -350,7 +311,7 @@ mod tests {
         assert_eq!(start(Some(&none)).unwrap().names(), Vec::<&str>::new());
         let offered = constraints("version = 1\n[mcp]\nown = false\ncatalog = [\"mine\"]\n");
         let started = runtime
-            .block_on(Servers::start(&home, &home, None, &offered, None, None))
+            .block_on(Servers::start(&home, &home, None, &offered, None))
             .unwrap();
         assert_eq!(
             started.names(),

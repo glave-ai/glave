@@ -135,9 +135,13 @@ where
         cancel: &Cancel,
     ) -> Result<Option<String>, HarnessError> {
         let tool = call.map(|call| call.tool);
-        // The harness's own hooks, then the project's.
+        // The harness's own hooks, the person's, for their threads alone; then the project's.
         let brought = Arc::clone(&thread.brought);
-        let mut hooks = self.hooks.at(point, tool);
+        let mut hooks = if self.trusting(thread.for_) {
+            self.hooks.at(point, tool)
+        } else {
+            Vec::new()
+        };
         hooks.extend(brought.hooks.at(point, tool));
         if hooks.is_empty() {
             return Ok(None);

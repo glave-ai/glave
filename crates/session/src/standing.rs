@@ -4,7 +4,7 @@
 //! server that holds the thread, so it never conflicts with a thread open in that server.
 
 use glave_event::{Seq, ThreadId};
-use glave_harness::{Caller, Change, Loosened, Standing, standing_of};
+use glave_harness::{Caller, Change, Protections, Standing, standing_of};
 use glave_ports::{
     BlobStore, EventLog, ModelProvider, Scope, SpaceId, ThreadCursor, ThreadQuery, ThreadView,
     title_of,
@@ -183,7 +183,7 @@ where
                 views.last().map(|view| view.cursor().to_string())
             })
             .flatten();
-        let project = self.project_loosened(space).await;
+        let project = self.project_settled(space).await.protections;
         let ask = self
             .trust_on_page(caller, space, views.iter().map(|view| view.thread))
             .await;
@@ -218,24 +218,24 @@ where
                 .map_err(|e| failed(&e))?
                 .ok_or_else(|| no_thread(thread))?,
         };
-        let project = self.project_loosened(scope.space).await;
+        let project = self.project_settled(scope.space).await.protections;
         self.summarize(scope, view, project).await
     }
 
     /// A view as the API shows it: what the thread is doing now, its title, read from the one
-    /// event that gives it, and the mode it runs in, as its project loosens it (`project`)
+    /// event that gives it, and the mode it runs in, as its project changes it (`project`)
     /// when it is the person on this computer's.
     async fn summarize(
         &self,
         scope: Scope,
         view: ThreadView,
-        project: Loosened,
+        project: Protections,
     ) -> Result<ThreadSummary, ApiError> {
         let theirs = view.for_.as_ref().and_then(|whose| whose.id);
         let project = if theirs.is_none_or(|person| Some(person) == self.person()) {
             project
         } else {
-            Loosened::default()
+            Protections::default()
         };
         let title = match view.title_seq {
             Some(seq) => {

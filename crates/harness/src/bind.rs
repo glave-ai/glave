@@ -232,18 +232,15 @@ where
     }
 
     /// The tool source at `index` for `thread`, as [`Harness::tools`] numbers them: the
-    /// built-in tools on its workspace, with its commands in the background, the source as the
-    /// harness holds it, then its project's.
+    /// built-in tools on its workspace, with its commands in the background, else the source
+    /// [`Harness::sources_for`] lists there.
     pub(crate) fn source_for(&self, thread: &Thread, index: usize) -> Option<Arc<dyn ToolSource>> {
         match index {
             BUILTINS => Some(Arc::new(Builtins {
                 workspace: Arc::clone(self.workspace_for(thread)),
                 commands: Arc::clone(&thread.commands),
             })),
-            _ => match index.checked_sub(self.sources.len()) {
-                Some(brought) => thread.brought.tools.get(brought).cloned(),
-                None => self.sources.get(index).cloned(),
-            },
+            _ => self.sources_for(thread).get(index).cloned(),
         }
     }
 }

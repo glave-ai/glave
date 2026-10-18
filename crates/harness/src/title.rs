@@ -69,9 +69,15 @@ where
 {
     /// What to title `thread` from, right after its first exchange: its one message from the
     /// person, and the first reply. `None` when titles are off, at any other time (a later
-    /// turn, a conversation compacted), and in a subagent's thread.
+    /// turn, a conversation compacted), and in a subagent's thread. Its project's choice is
+    /// nearer than the harness's.
     pub fn title_case(&self, thread: &Thread) -> Option<TitleCase> {
-        if !self.settings.titles || !thread.above.is_empty() {
+        let titles = thread
+            .brought
+            .settled
+            .titles
+            .unwrap_or(self.settings.titles);
+        if !titles || !thread.above.is_empty() {
             return None;
         }
         let mut asked = thread.messages.iter().filter_map(|message| match message {

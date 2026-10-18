@@ -57,7 +57,7 @@ pub fn gateway(
     }
     let routes = Routes::new(vec![main])?;
     let mut choices: Vec<Target> = Vec::new();
-    // The judge's calls name its model: this choice, or the main one.
+    // The judge's calls name its model, so a project's judge is found among the choices too.
     if let Some(model) = judge.filter(|model| *model != endpoint.model) {
         let target = Target::new(Arc::clone(&handle), name.clone(), model);
         if checks {
@@ -108,6 +108,22 @@ impl Switch {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    /// Whether a thread may be sent to `model` now: one `model/list` offers.
+    pub fn offers(&self, model: &str) -> bool {
+        self.current()
+            .is_some_and(|gateway| models(&gateway).any(|target| target.model == model))
+    }
+}
+
+/// The models `gateway` offers threads: the main one, then its choices.
+fn models(gateway: &Gateway) -> impl Iterator<Item = &Target> {
+    let routes = gateway.routes();
+    routes
+        .targets(Purpose::Main)
+        .first()
+        .into_iter()
+        .chain(routes.choices())
 }
 
 impl ModelProvider for Switch {
@@ -139,14 +155,7 @@ pub fn offered(gateway: &Gateway, entries: &[ModelEntry]) -> Vec<ModelInfo> {
             hope: entry.is_some_and(|entry| entry.hope),
         }
     };
-    let routes = gateway.routes();
-    routes
-        .targets(Purpose::Main)
-        .first()
-        .into_iter()
-        .chain(routes.choices())
-        .map(|target| info(&target.model))
-        .collect()
+    models(gateway).map(|target| info(&target.model)).collect()
 }
 
 #[cfg(test)]
@@ -165,7 +174,7 @@ pub(crate) mod tests {
 
     use super::offered as offered_models;
 
-    fn endpoint() -> Endpoint {
+    pub(crate) fn endpoint() -> Endpoint {
         let provider = Config::for_url("https://openrouter.ai/api/v1", None).unwrap();
         Endpoint {
             local: false,
@@ -259,11 +268,15 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_judge_s_calls_go_to_the_model_they_name() {
+    fn the_judge_s_calls_go_to_the_model_they_name_whoever_chose_it() {
         assert_eq!(judge_target(None, "big"), "openrouter/big");
         assert_eq!(judge_target(Some("big"), "big"), "openrouter/big");
         assert_eq!(judge_target(Some("small"), "small"), "openrouter/small");
-        assert_eq!(judge_target(Some("small"), "big"), "openrouter/big");
+        assert_eq!(
+            judge_target(Some("small"), "big"),
+            "openrouter/big",
+            "a project whose judge is the main model"
+        );
         let gateway = built(Some("small"), &Constraints::default()).unwrap();
         assert_eq!(
             gateway.routes().targets(Purpose::Main)[0].name,
