@@ -146,6 +146,10 @@ where
         let (finish, finished) = watch::channel(false);
         let held = {
             let mut threads = self.lock();
+            // Checked under the threads' lock, which a stop sets it under.
+            if self.is_stopping() {
+                return Err(crate::stopping::stopping());
+            }
             match threads.remove(&thread) {
                 // Turns and compactions do not run in an archived thread.
                 Some(Slot::Idle(held))

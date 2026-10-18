@@ -305,7 +305,7 @@ where
         let mut squeezed = false;
         step.summary.outcome = loop {
             if cancel.is_cancelled() {
-                break Outcome::Cancelled;
+                break cancel.outcome();
             }
             if self.capped(step.summary.model_calls) {
                 break Outcome::LimitReached;
@@ -326,7 +326,7 @@ where
                 .run(self.ask_model(thread, &step.toolset, choice, live))
                 .await
             else {
-                break Outcome::Cancelled;
+                break cancel.outcome();
             };
             step.summary.model_calls = step.summary.model_calls.saturating_add(1);
             let mut completion = match asked {
@@ -362,11 +362,13 @@ where
             self.run_calls(thread, &calls, &mut step, cancel, live)
                 .await?;
         };
-        if step.summary.outcome == Outcome::Cancelled {
+        // Stopped from outside: by the person (cancelled), or by glave stopping (interrupted).
+        let stopped = cancel.is_cancelled() && step.summary.outcome == cancel.outcome();
+        if stopped && step.summary.outcome == Outcome::Cancelled {
             self.add_note(thread, CANCELLED).await?;
         }
         self.end(thread, step.summary.outcome).await?;
-        if !thread.delegated() && step.summary.outcome != Outcome::Cancelled {
+        if !thread.delegated() && !stopped {
             self.on_stop(thread, step.summary.outcome, cancel).await?;
         }
         Ok(step.summary)

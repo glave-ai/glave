@@ -4,6 +4,7 @@
 //! to the callers who work in that space.
 
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
@@ -155,6 +156,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) browsers: Option<Arc<Browsers>>,
     /// What the threads opened or started here did with their projects' asks.
     pub(crate) asks: Mutex<Asks>,
+    /// Set once the server stops: it starts no new work (`stopping.rs`).
+    pub(crate) stopping: AtomicBool,
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -219,6 +222,7 @@ where
                 trust: wiring.trust,
                 asks: Mutex::new(Asks::default()),
                 browsers: wiring.browsers,
+                stopping: AtomicBool::new(false),
             }),
         }
     }
@@ -274,42 +278,6 @@ where
             self.lock().insert(id, Slot::Idle(thread));
         }
         released
-    }
-
-    /// Cancels every running turn and waits for each to end. Call before dropping the server.
-    pub async fn shutdown(&self) {
-        let finished: Vec<watch::Receiver<bool>> = {
-            let threads = self
-                .inner
-                .threads
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            threads
-                .values()
-                .filter_map(|slot| match slot {
-                    Slot::Busy {
-                        cancel, finished, ..
-                    } => {
-                        cancel.cancel();
-                        Some(finished.clone())
-                    }
-                    Slot::Idle(_) => None,
-                })
-                .collect()
-        };
-        for mut done in finished {
-            let _ = done.wait_for(|done| *done).await;
-        }
-        let tasks: Vec<JoinHandle<()>> = std::mem::take(
-            &mut *self
-                .inner
-                .tasks
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner),
-        );
-        for task in tasks {
-            let _ = task.await;
-        }
     }
 
     /// Starts a thread for `caller` in `space`. In a project with a folder, the thread works
