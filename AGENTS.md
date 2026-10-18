@@ -60,6 +60,7 @@ crates/memory/      glave-memory: memory (specs/memory.md): an in-process MCP se
 crates/web/         glave-web: web_fetch as a tool source: private addresses refused at every hop, limits, a host policy, HTML as Markdown, output untrusted (a local page server behind `pages`)
 crates/harness/     glave-harness: the agent loop, its seven tools (search, glob, read, write, edit, bash, command_output for commands kept running in the background) run on a computer through the port, approvals, resume, AGENTS.md, skills (agentskills.io), custom commands, hooks
 crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (in the sandbox by default), environments from devcontainer.json or environment.toml, workers on Docker or Kubernetes (the `kubernetes` feature), served (`glave computer serve`, TLS across machines) and reached over JSON-RPC
+crates/process/     glave-process: every operating-system process glave owns, started in one place (`cargo xtask spawns`), in a process group of its own, recorded in a ledger while it runs, and stopped at the next start when its glave is gone
 crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC or local sign-in (glave-identity), and its JSON Schema (specs/session.schema.json, generated); every surface, the CLI first, runs threads through it
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary; with the `web` feature, as releases build it, the web app inside (build.rs)
@@ -69,7 +70,7 @@ web/app/            the web app `glave serve --http` (and `glave app`) serves at
 web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app and Glaze's showcase, served with glave's Content Security Policy
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
-specs/              the model (`model.md`: organization to thread, server and computer), and the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; tool calls, verbs and scopes planned
+specs/              the model (`model.md`: organization to thread, server and computer), and the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; the invariants (`invariants.md`), each with its test; tool calls, verbs and scopes planned
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main); workers on a `kind` cluster (Linux); releases on version tags (`v0.1.0`): release.yml, made by `cargo xtask release-workflow` (`dist generate` from dist-workspace.toml and .github/build-setup.yml, then only the job that publishes can write), never edited by hand
 ```
 
@@ -107,6 +108,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - **Search before writing.** Before adding a helper, parser, URL check, error mapper or storage wrapper, `git grep` for one. Where a second copy would go, share the first instead.
 - **Nothing before its second user.** A trait needs two real implementations, and a config key two values that both work today. Anything `pub` needs a caller outside its crate. Code whose last caller goes is deleted with it.
 - **Specs hold decisions and invariants,** never method tables, field lists or crate descriptions; the generated schema is the reference. A PR that changes a type rereads the spec section that describes it.
+- **Invariants keep their tests.** A change that touches one of `specs/invariants.md` says so in its pull request and keeps the test that proves it; one that closes a gap updates the entry.
 - **Reviewed before merge.** Every feature PR gets an independent review (not its author) before it merges, beyond CI.
 
 **Keeping principle 4.** A person on their own computer runs exactly what an organization runs. What differs is what sits behind the seams, never what the person sees:
