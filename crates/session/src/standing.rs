@@ -284,7 +284,7 @@ where
     /// Whether `thread` is shown, from memory when the server holds it, else from the log.
     pub(crate) async fn standing(&self, thread: ThreadId) -> Result<Standing, ApiError> {
         match self.lock().get(&thread) {
-            Some(Slot::Idle(held)) => return Ok(held.standing()),
+            Some(Slot::Idle { thread: held, .. }) => return Ok(held.standing()),
             // Nothing runs in an archived or deleted thread.
             Some(Slot::Busy { .. }) => return Ok(Standing::Active),
             None => {}

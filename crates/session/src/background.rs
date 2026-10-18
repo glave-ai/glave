@@ -25,7 +25,7 @@ where
     async fn commands_of(&self, thread: ThreadId) -> Result<Arc<Commands>, ApiError> {
         self.load(thread).await?;
         match self.lock().get(&thread) {
-            Some(Slot::Idle(held)) => Ok(held.commands()),
+            Some(Slot::Idle { thread: held, .. }) => Ok(held.commands()),
             Some(Slot::Busy { commands, .. }) => Ok(Arc::clone(commands)),
             None => Err(no_thread(thread)),
         }
@@ -76,7 +76,7 @@ where
     /// Records what the thread's commands are waiting to have recorded, when no turn holds it;
     /// a turn that does records it with its next event.
     async fn record_commands(&self, thread: ThreadId) {
-        if !matches!(self.lock().get(&thread), Some(Slot::Idle(_))) {
+        if !matches!(self.lock().get(&thread), Some(Slot::Idle { .. })) {
             return;
         }
         let (finish, mut done) = watch::channel(None);
