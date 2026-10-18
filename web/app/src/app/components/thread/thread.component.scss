@@ -37,16 +37,38 @@
   display: flex;
   flex-direction: column;
   gap: var(--glz-space-5);
-  padding-block: var(--glz-inset-page-block) var(--glz-space-5);
+
+  // Room at the end for the error line, so what the conversation ends on is never under it.
+  padding-block: var(--glz-inset-page-block) var(--glz-space-8);
 }
 
 // The composer, pinned at the foot of the column.
 .dock {
+  position: relative;
   display: flex;
   flex: none;
   flex-direction: column;
   gap: var(--glz-space-2);
   padding-bottom: var(--glz-space-5);
+}
+
+// "Jump to latest" and the error line float over the conversation's bottom edge, centred
+// just above the composer, so the conversation scrolls all the way down to it. Only what is
+// shown takes a click; the rest of the layer lets the conversation under it scroll.
+.float {
+  position: absolute;
+  bottom: 100%;
+  inset-inline: var(--glz-inset-page-inline);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--glz-space-2);
+  padding-bottom: var(--glz-space-2);
+  pointer-events: none;
+
+  > * {
+    pointer-events: auto;
+  }
 }
 
 // What the person sent while the model works says it waits, small, under its text.
@@ -56,9 +78,33 @@
 }
 
 .error {
+  padding: var(--glz-inset-strip);
+  border-radius: var(--glz-radius-strip);
+  background: var(--glz-surface-overlay);
+  box-shadow: var(--glz-elevation-3);
   color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
 }
 
+// Shown only once the person has scrolled up; it fades in and out (no motion when they ask
+// for less: the durations are 0 then), and hidden it can't be clicked, focused or read.
 .latest {
-  align-self: center;
+  display: flex;
+  border-radius: var(--glz-radius-full);
+  box-shadow: var(--glz-elevation-3);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--glz-duration-normal) var(--glz-easing),
+    visibility var(--glz-duration-normal);
+
+  // Over the conversation, the button needs a surface of its own.
+  > button {
+    --glz-button-bg: var(--glz-surface-overlay);
+  }
+
+  &.shown {
+    opacity: 1;
+    visibility: visible;
+  }
 }
