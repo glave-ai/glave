@@ -46,14 +46,15 @@
       </div>
     </section>
     <div class="dock">
-      @if (service.error(); as error) {
-        <p class="error" role="alert" data-testid="thread-error">{{ copy.failed }} {{ error }}</p>
-      }
-      @if (awayFromBottom()) {
-        <button glzButton size="sm" class="latest" (click)="jumpToLatest()">
-          {{ copy.latest }}
-        </button>
-      }
+      <!-- Laid over the conversation's bottom edge, just above the composer: it takes no room. -->
+      <div class="float">
+        <div class="latest" data-testid="thread-latest" [class.shown]="awayFromBottom()">
+          <button glzButton size="sm" pill (click)="jumpToLatest()">{{ copy.latest }}</button>
+        </div>
+        @if (service.error(); as error) {
+          <p class="error" role="alert" data-testid="thread-error">{{ copy.failed }} {{ error }}</p>
+        }
+      </div>
       @if (gone(); as gone) {
         <app-folder-gone testId="thread-gone" [space]="gone.space" [message]="gone.message" />
       }

@@ -175,6 +175,29 @@ describe('ThreadComponent', () => {
     await expectAccessible(root);
   });
 
+  it('floats "Jump to latest" over the conversation once scrolled up, and jumps back', async () => {
+    const { root, fixture } = await open(session(ANSWERED));
+    const items = root.querySelector<HTMLElement>('[data-testid="thread-items"]');
+    const latest = root.querySelector('[data-testid="thread-latest"]');
+    // It lives in the layer over the conversation, never in the dock's own flow.
+    expect(latest?.parentElement?.classList).toContain('float');
+    expect(latest?.classList).not.toContain('shown');
+    if (items === null) {
+      throw new Error('no conversation');
+    }
+    Object.defineProperty(items, 'scrollHeight', { value: 1000 });
+    Object.defineProperty(items, 'clientHeight', { value: 200 });
+    items.scrollTop = 0;
+    items.dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+    expect(latest?.classList).toContain('shown');
+    expect(latest?.querySelector('button')?.textContent.trim()).toBe('Jump to latest');
+    await expectAccessible(root);
+    latest?.querySelector('button')?.click();
+    await fixture.whenStable();
+    expect(latest?.classList).not.toContain('shown');
+  });
+
   it('shows a turn that worked results first: the reply, what changed, then its steps', async () => {
     const call = (seq: number, id: string, tool: string, json: Record<string, unknown>): unknown =>
       event(seq, 'tool.call.requested', { call_id: id, tool, arguments: { json } });
