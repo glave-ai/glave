@@ -150,13 +150,17 @@ impl Program {
         self.failed(error)
     }
 
-    /// Starts it apart from this process, in a process group of its own, and lets it go: only
-    /// for a glave of its own (the task host), which owns what it starts and exits on its own
-    /// once it has nothing to do. The system reaps it when it exits.
+    /// Starts it apart from this process, in a process group of its own (or the session it
+    /// starts, [`Program::starts_own_session`]), and lets it go: only for a glave of its own
+    /// (the task host, the person's server), which owns what it starts. The system reaps it
+    /// when it exits.
     pub fn detach(&mut self) -> Result<(), ProcessError> {
         use std::os::unix::process::CommandExt as _;
+        let grouped = self.grouped;
         let command = self.command.as_std_mut();
-        command.process_group(0);
+        if grouped {
+            command.process_group(0);
+        }
         let child = command.spawn().map_err(|error| self.failed(error))?;
         drop(child);
         Ok(())

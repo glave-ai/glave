@@ -62,7 +62,9 @@ opentelemetry_sdk = { workspace = true, optional = true }
 # Checking a git host's token, and signing in to GitHub in the browser (already in the tree via
 # the providers).
 reqwest.workspace = true
-rustix = { workspace = true, features = ["termios"] }
+# The terminal; and for the person's server, a session of its own and `glave server stop`'s
+# signal.
+rustix = { workspace = true, features = ["process", "termios"] }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["fs", "io-std", "io-util", "net", "rt", "signal", "sync", "time"] }
 tracing.workspace = true

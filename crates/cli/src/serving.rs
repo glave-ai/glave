@@ -1,17 +1,17 @@
-//! `glave serve --http`: the session API over HTTP. Programs on this computer sign in with a
-//! local token made at every start, kept in `GLAVE_HOME/serve.token` (readable only by you,
-//! with the server's address beside it in `serve.url`, so `glave app` finds it). A browser
-//! here signs in through a link whose fragment carries a one-time code, never the token, which
-//! it trades for a browser session kept in `GLAVE_HOME/browsers.json` as hashes alone, so it
-//! stays signed in across restarts. Callers on other computers sign in with OIDC
-//! (`--issuer`, `--audience`).
+//! The person's server over HTTP: the session API, on loopback at 127.0.0.1:4180 unless
+//! `--http` says where. Programs on this computer sign in with a local token made at every
+//! start, kept in `GLAVE_HOME/serve.token` (readable only by you, with the server's address
+//! beside it in `serve.url`). A browser here signs in through a link whose fragment carries a
+//! one-time code, never the token, which it trades for a browser session kept in
+//! `GLAVE_HOME/browsers.json` as hashes alone, so it stays signed in across restarts. Callers
+//! on other computers sign in with OIDC (`--issuer`, `--audience`).
 //! The web app is served at `/` beside the API: the build in `--web`, else the app built into
 //! glave (the `web` feature, which release builds turn on), else a `web` folder beside the
 //! binary.
 
 use std::io::IsTerminal as _;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context as _;
@@ -37,8 +37,19 @@ const WEB_FOLDER: &str = "web";
 /// The web app built into glave (the `web` feature, `build.rs`), if it is.
 static BUILT_IN: Option<Files> = include!(concat!(env!("OUT_DIR"), "/app.rs"));
 
-/// Serves `server` on `address` until Ctrl-C.
-pub async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyhow::Result<()> {
+/// The HTTP listener, bound, with its address and token written for programs here to find.
+pub struct Http {
+    listener: TcpListener,
+    signin: SignIn,
+    site: Option<Site>,
+    token: LocalToken,
+    /// `serve.token`, with `serve.url` beside it.
+    path: PathBuf,
+}
+
+/// Listens on `address` for the server `args` choose, and writes its address and a new local
+/// token where programs here find them.
+pub async fn open(args: &Args, address: SocketAddr) -> anyhow::Result<Http> {
     let token = LocalToken::new(random()?);
     let signin = if args.issuers.is_empty() {
         SignIn::local(token.clone(), Box::new(SystemClock))
@@ -55,51 +66,56 @@ pub async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyh
         .with_context(|| format!("could not listen on {address}"))?;
     let bound = listener.local_addr()?;
     let path = crate::home::database().await?.with_file_name(TOKEN_FILE);
-    let url = format!("http://{}", here(bound));
     keep(&path, token.reveal())?;
-    keep(&path.with_file_name(crate::app::URL_FILE), &url)?;
+    keep(
+        &path.with_file_name(crate::app::URL_FILE),
+        &format!("http://{}", here(bound)),
+    )?;
     eprintln!("glave: serving the session API on http://{bound}");
     if site.is_none() {
         eprintln!(
             "glave: no web app beside glave; build it (npm run build in web/) and pass --web <folder>"
         );
     }
-    let opened = if args.open {
-        let folder = path.parent().unwrap_or(&path);
-        crate::app::show(folder, &url, &link(&server).await?).await
-    } else {
-        Err(anyhow::anyhow!("not asked to open"))
-    };
-    if opened.is_ok() {
-        eprintln!("glave: glave is open in your browser; Ctrl-C here stops it");
-    } else if std::io::stderr().is_terminal() {
-        // Shown only to a person at a terminal: a service's error output often ends up in a
-        // log. The code is good once, for five minutes, so the link is no key left behind.
-        let code = link(&server).await?;
-        eprintln!(
-            "glave: open {url}/#code={} in a browser on this computer (the link works once, \
-             for five minutes; glave app opens another)",
-            code.expose()
-        );
-    } else {
-        eprintln!("glave: run glave app on this computer to open glave in a browser");
-    }
-    let stop = async {
-        // Without Ctrl-C, the server runs until it is stopped some other way.
-        if tokio::signal::ctrl_c().await.is_err() {
-            std::future::pending::<()>().await;
+    Ok(Http {
+        listener,
+        signin,
+        site,
+        token,
+        path,
+    })
+}
+
+impl Http {
+    /// Serves `server` until `stop` completes, then cancels its running turns. The token and
+    /// address go with it.
+    pub async fn serve(self, server: Glave, stop: impl Future<Output = ()>) -> anyhow::Result<()> {
+        if std::io::stderr().is_terminal() {
+            // Shown only to a person at a terminal: a service's error output often ends up in
+            // a log. The code is good once, for five minutes, so the link is no key left behind.
+            let url = std::fs::read_to_string(self.path.with_file_name(crate::app::URL_FILE))?;
+            let code = link(&server).await?;
+            eprintln!(
+                "glave: open {url}/#code={} in a browser on this computer (the link works once, \
+                 for five minutes; glave app opens another)",
+                code.expose()
+            );
+        } else {
+            eprintln!("glave: run glave app on this computer to open glave in a browser");
         }
-    };
-    let ended = glave_session::http::serve(server, signin, site, listener, stop).await;
-    // The token is good only while this server runs; the next start makes another. A newer
-    // server's files are left alone.
-    if std::fs::read_to_string(&path).is_ok_and(|kept| kept == token.reveal()) {
-        for file in [TOKEN_FILE, crate::app::URL_FILE, crate::app::OPEN_FILE] {
-            let _ = std::fs::remove_file(path.with_file_name(file));
+        let ended =
+            glave_session::http::serve(server, self.signin, self.site, self.listener, stop).await;
+        // The token is good only while this server runs; the next start makes another. A newer
+        // server's files are left alone.
+        let path = &self.path;
+        if std::fs::read_to_string(path).is_ok_and(|kept| kept == self.token.reveal()) {
+            for file in [TOKEN_FILE, crate::app::URL_FILE, crate::app::OPEN_FILE] {
+                let _ = std::fs::remove_file(path.with_file_name(file));
+            }
         }
+        ended?;
+        Ok(())
     }
-    ended?;
-    Ok(())
 }
 
 /// The web app to serve: `--web`, which must hold a build, else the one built into glave, else

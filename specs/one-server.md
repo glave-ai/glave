@@ -4,7 +4,7 @@ How a person's glave runs as one server on their own computer: how it starts and
 
 ## Status
 
-Reviewed adversarially on 2026-10-17. Pull requests 1a (#344), 1b and 2a are built; the rest is designed, not built. Decisions marked *decided* were made in that review; those marked (decided) were made with #294. "The pull requests" gives the order. Each pull request moves the sections of `session.md`, `policy.md`, `computers.md`, `storage.md` and `events.md` that it changes, and AGENTS.md where a rule or a budget changes; this spec keeps the decisions that span them.
+Reviewed adversarially on 2026-10-17. Pull requests 1a (#344), 1b and 2a are built, and 2b in part: the lock, the socket, `glave serve` in the foreground, the start on first use (only `glave app`, and `glave` on a first run, need the server until PR 3), `glave server status|stop|restart`, and loopback HTTP always on. A stop takes no new requests, cancels running turns, removes the socket and lets go of the lock last; the rest of 2b, the capped log and a stop that records turns and tasks `interrupted` after its 10 seconds, follows in its own pull request. The person's server takes part in the task hosts' two locks (`hosts.lock`, `schedules.lock`), which stay until 2c removes the task host, since `server.lock` keeps out only a second server. The rest is designed, not built. Decisions marked *decided* were made in that review; those marked (decided) were made with #294. "The pull requests" gives the order. Each pull request moves the sections of `session.md`, `policy.md`, `computers.md`, `storage.md` and `events.md` that it changes, and AGENTS.md where a rule or a budget changes; this spec keeps the decisions that span them.
 
 ## How the others do it
 

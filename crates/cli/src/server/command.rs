@@ -1,0 +1,144 @@
+//! `glave server status|stop|restart`: the person's server as a process, through its socket
+//! and a signal. A stop is graceful (`SIGTERM`, as logging out sends); a restart stops it and
+//! starts it again from this shell, so it takes this shell's settings.
+
+use std::process::ExitCode;
+use std::time::Duration;
+
+use anyhow::Context as _;
+use glave_session::protocol::{Reply, Request, TaskStatus};
+use rustix::process::{Pid, Signal};
+
+use super::{connect, log_path, socket_path, start};
+use crate::socket::Connection;
+
+const USAGE: &str = "\
+glave server: the glave that runs for you on this computer, in the background
+
+Usage:
+  glave server status    whether it runs, its version and address, and the tasks running
+                         (exits 3 when it does not run)
+  glave server stop      stop it, gracefully: running turns and tasks end
+  glave server restart   stop it and start it again from this terminal, with its settings";
+
+/// How long a stopping server has to end.
+const STOP_WAIT: Duration = Duration::from_secs(30);
+/// How often a stopping server is looked for.
+const STOP_POLL: Duration = Duration::from_millis(50);
+
+/// What `glave server status` exits with when it does not run, as `systemctl status` does.
+const NOT_RUNNING: u8 = 3;
+
+/// `glave server …`, reading the words after `server`.
+pub fn main(words: &[String]) -> ExitCode {
+    let words: Vec<&str> = words.iter().map(String::as_str).collect();
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            eprintln!("glave: could not start: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let ran = match words.as_slice() {
+        ["status"] => runtime.block_on(status()),
+        ["stop"] => runtime.block_on(stop()).map(|()| ExitCode::SUCCESS),
+        ["restart"] => runtime.block_on(restart()),
+        ["--help" | "-h"] => {
+            println!("{USAGE}");
+            return ExitCode::SUCCESS;
+        }
+        _ => {
+            eprintln!("glave: glave server takes one command: status, stop or restart\n\n{USAGE}");
+            return ExitCode::from(2);
+        }
+    };
+    match ran {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("glave: {error:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `glave server status`.
+async fn status() -> anyhow::Result<ExitCode> {
+    let Some(mut server) = connect().await? else {
+        println!("glave is not running");
+        return Ok(ExitCode::from(NOT_RUNNING));
+    };
+    let Reply::Server(info) = server.request(Request::Discover {}).await? else {
+        anyhow::bail!("glave answered server/discover with something else");
+    };
+    let process = server
+        .pid()
+        .map_or_else(String::new, |pid| format!(" (process {pid})"));
+    println!("glave {} is running{process}", info.version);
+    let url = std::fs::read_to_string(crate::home::folder()?.join(crate::app::URL_FILE));
+    if let Ok(url) = url {
+        println!("  in a browser: {}", url.trim());
+    }
+    println!("  socket: {}", socket_path()?.display());
+    println!("  log: {}", log_path()?.display());
+    let running = running_tasks(&mut server).await?;
+    println!("  tasks running: {running}");
+    let here = env!("CARGO_PKG_VERSION");
+    if info.version != here {
+        println!("  this glave is {here}: glave server restart moves to it");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// How many tasks `server` runs now.
+async fn running_tasks(server: &mut Connection) -> anyhow::Result<usize> {
+    let Reply::Tasks { tasks } = server.request(Request::TasksList { limit: None }).await? else {
+        anyhow::bail!("glave answered tasks/list with something else");
+    };
+    Ok(tasks
+        .iter()
+        .filter(|task| task.status == TaskStatus::Running)
+        .count())
+}
+
+/// `glave server stop`: asks the server to stop, and waits until its process has ended.
+async fn stop() -> anyhow::Result<()> {
+    let Some(server) = connect().await? else {
+        println!("glave is not running");
+        return Ok(());
+    };
+    let pid = server
+        .pid()
+        .and_then(Pid::from_raw)
+        .context("could not tell which process glave is")?;
+    drop(server);
+    rustix::process::kill_process(pid, Signal::TERM)
+        .with_context(|| format!("could not ask glave (process {}) to stop", pid.as_raw_pid()))?;
+    let waited = tokio::time::Instant::now();
+    while rustix::process::test_kill_process(pid).is_ok() {
+        if waited.elapsed() > STOP_WAIT {
+            anyhow::bail!(
+                "glave (process {}) did not stop within {} seconds; what it said is in {}",
+                pid.as_raw_pid(),
+                STOP_WAIT.as_secs(),
+                log_path()?.display()
+            );
+        }
+        tokio::time::sleep(STOP_POLL).await;
+    }
+    println!("glave stopped");
+    Ok(())
+}
+
+/// `glave server restart`: stops the server, if it runs, and starts it from this shell.
+async fn restart() -> anyhow::Result<ExitCode> {
+    stop().await?;
+    let mut server = start().await?;
+    let Reply::Server(info) = server.request(Request::Discover {}).await? else {
+        anyhow::bail!("glave answered server/discover with something else");
+    };
+    println!("glave {} is running", info.version);
+    Ok(ExitCode::SUCCESS)
+}
