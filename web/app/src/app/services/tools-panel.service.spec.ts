@@ -46,6 +46,16 @@ describe('ToolsPanelService', () => {
     expect([panel.open(), panel.tab()]).toEqual([true, 'changes']);
   });
 
+  it('knows when it shows the commands', () => {
+    const panel = TestBed.inject(ToolsPanelService);
+    panel.showTab(2);
+    expect([panel.tab(), panel.commandsShown()]).toEqual(['commands', false]);
+    panel.open.set(true);
+    expect(panel.commandsShown()).toBe(true);
+    panel.showTab(0);
+    expect(panel.commandsShown()).toBe(false);
+  });
+
   it('toggles on its shortcut', () => {
     const panel = TestBed.inject(ToolsPanelService);
     const mod = /mac|iphone|ipad/iu.test(navigator.platform || navigator.userAgent)

@@ -1,12 +1,24 @@
 import type { ModelInfo, RawEvent, Space, TaskInfo, ThreadSummary, TrustAsk } from '@glave/client';
 import type { Page, Route } from '@playwright/test';
 
+import {
+  type Commands,
+  SERVING,
+  SERVING_HISTORY,
+  STOP_MS,
+  background,
+  docsRunning,
+} from './fake-commands';
+import { Refusal, THREAD, bound, call, done, event } from './fake-records';
+
 /**
  * What the fake server knows: a project and the person's own space with their threads, one
  * thread's history (a turn on this computer that ran a command, edited a file and wrote a new
  * one, and replied from the default model, which the picker shows; how long it took and what
  * it cost), another waiting for the person to allow a push, the models, the tasks, what a
- * turn streams, the folders on the person's computer, and the projects made while it runs.
+ * turn streams, the folders on the person's computer, and the projects made while it runs; and
+ * when a test asks, a project that asks to be trusted, and a thread that keeps the docs site
+ * running in the background.
  */
 const OWNER = { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' } as const;
 
@@ -48,7 +60,7 @@ function thread(
   };
 }
 
-export const THREAD = '01900000-0000-7000-8000-000000000101';
+export { THREAD };
 export const NEW_THREAD = '01900000-0000-7000-8000-000000000102';
 /** The thread that waits for the person. */
 export const WAITING = '01900000-0000-7000-8000-000000000103';
@@ -82,50 +94,6 @@ export const MODELS: readonly ModelInfo[] = [
     hope: false,
   })),
 ];
-
-function event(
-  seq: number,
-  type: string,
-  data: RawEvent['data'],
-  id = THREAD,
-  at = '2026-10-11T10:00:00.000Z',
-): RawEvent {
-  return {
-    glave: 1,
-    id: `01900000-0000-7000-8000-${String(seq).padStart(12, '0')}`,
-    thread: id,
-    seq,
-    at,
-    type,
-    v: 1,
-    data,
-  };
-}
-
-function call(
-  seq: number,
-  callId: string,
-  tool: string,
-  json: Record<string, unknown>,
-  id = THREAD,
-): RawEvent {
-  return event(seq, 'tool.call.requested', { call_id: callId, tool, arguments: { json } }, id);
-}
-
-function done(seq: number, callId: string, text: string, id = THREAD): RawEvent {
-  return event(
-    seq,
-    'tool.call.completed',
-    { call_id: callId, is_error: false, output: [{ type: 'text', text }] },
-    id,
-  );
-}
-
-/** The thread's workspace: a folder on the computer glave runs on. */
-function bound(seq: number, id = THREAD): RawEvent {
-  const computer = { id: '01900000-0000-7000-8000-0000000000c1', kind: 'local' };
-  return event(seq, 'workspace.bound', { computer, root: '/work/glave' }, id);
-}
 
 const HISTORY = [
   event(1, 'thread.started', {}),
@@ -270,6 +238,7 @@ const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
   [THREAD]: HISTORY,
   [WAITING]: WAITING_HISTORY,
   [TRUSTING]: TRUSTING_HISTORY,
+  [SERVING]: SERVING_HISTORY,
 };
 
 const TASKS: readonly TaskInfo[] = [
@@ -317,14 +286,6 @@ export const MISSING_REPOSITORY = 'https://github.com/acme/missing';
 
 /** How long a clone takes, so the page shows it under way. */
 const CLONE_MS = 400;
-
-/** What a server refuses a call with. */
-class Refusal {
-  constructor(
-    readonly code: number,
-    readonly message: string,
-  ) {}
-}
 
 /** The folders inside `path`, as `folder/list` answers. */
 function listFolders(path: string): unknown {
@@ -615,22 +576,30 @@ export async function steerTurn(page: Page): Promise<void> {
   );
 }
 
-/**
- * The answer to a call that is not a turn; `started` holds the threads started so far, `made`
- * the projects made, and `trust` acme's ask, when the test has acme.
- */
-function answer(
-  method: string,
-  params: Record<string, unknown>,
-  started: ThreadSummary[],
-  made: Space[],
-  trust: Trust | null,
-): unknown {
+/** What one fake server knows while it runs, beyond what never changes. */
+interface Known {
+  /** The threads started so far. */
+  readonly started: ThreadSummary[];
+  /** The projects made so far. */
+  readonly made: Space[];
+  /** Acme's ask, when the test has acme. */
+  readonly trust: Trust | null;
+  /** The serving thread's commands, when the test has it. */
+  readonly commands: Commands | null;
+}
+
+/** The answer to a call that is not a turn. */
+function answer(method: string, params: Record<string, unknown>, known: Known): unknown {
+  const { started, made, trust, commands } = known;
   if (trust !== null) {
     const asked = trusted(method, params, trust);
     if (asked !== undefined) {
       return asked;
     }
+  }
+  const ran = background(method, params, commands);
+  if (ran !== undefined) {
+    return ran;
   }
   switch (method) {
     case 'space/list':
@@ -642,7 +611,9 @@ function answer(
     case 'thread/list': {
       const space = String(params['space']);
       const fresh = started.filter((each) => each.space === space);
-      return { threads: [...fresh, ...(THREADS[space] ?? [])] };
+      const serving =
+        commands !== null && space === PROJECT.id ? [thread(SERVING, 'Preview the docs')] : [];
+      return { threads: [...fresh, ...serving, ...(THREADS[space] ?? [])] };
     }
     case 'thread/get':
       return { thread: thread(String(params['thread']), 'Make the tests pass') };
@@ -710,17 +681,24 @@ function trusted(method: string, params: Record<string, unknown>, trust: Trust):
 
 /**
  * Answers the session API's calls the app makes, as JSON-RPC over POST /. With `trust`, the
- * person also has acme, a project that asks to be trusted.
+ * person also has acme, a project that asks to be trusted; with `commands`, a thread in the
+ * project that keeps the docs site running in the background.
  */
 export async function fakeApi(
   page: Page,
-  { trust = false }: { readonly trust?: boolean } = {},
+  {
+    trust = false,
+    commands = false,
+  }: { readonly trust?: boolean; readonly commands?: boolean } = {},
 ): Promise<{ readonly calls: readonly string[]; readonly requests: readonly Request[] }> {
   const calls: string[] = [];
   const requests: Request[] = [];
-  const started: ThreadSummary[] = [];
-  const made: Space[] = [];
-  const asking: Trust | null = trust ? { asking: true } : null;
+  const known: Known = {
+    started: [],
+    made: [],
+    trust: trust ? { asking: true } : null,
+    commands: commands ? docsRunning() : null,
+  };
   await page.route('**/*', async (route: Route) => {
     const request = route.request();
     if (request.method() !== 'POST') {
@@ -742,7 +720,10 @@ export async function fakeApi(
     if (message.method === 'space/create' && folder?.kind === 'repository') {
       await new Promise((resolve) => setTimeout(resolve, CLONE_MS));
     }
-    const answered = answer(message.method, message.params, started, made, asking);
+    if (message.method === 'command/stop') {
+      await new Promise((resolve) => setTimeout(resolve, STOP_MS));
+    }
+    const answered = answer(message.method, message.params, known);
     const reply =
       answered instanceof Refusal
         ? { error: { code: answered.code, message: answered.message } }
