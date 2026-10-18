@@ -23,6 +23,38 @@ pub fn settle(mut choices: Choices, constraints: &Constraints) -> crate::Result<
     Ok(asks_unconfined(choices, constraints))
 }
 
+/// `choices` within `constraints` for a server that already runs, and so cannot refuse to
+/// start: an approval mode, a judge, a sandbox or memory a rule refuses gives way as glave's
+/// default would, each said in a sentence. A constraint added while it runs narrows its next
+/// turn whatever the person's file says. Anything else outside them still fails.
+pub fn give_way(
+    mut choices: Choices,
+    constraints: &Constraints,
+) -> crate::Result<(Choices, Vec<String>)> {
+    let mut aside = Vec::new();
+    if let Err(refused) = approval(choices.approval.clone(), constraints) {
+        aside.push(refused.to_string());
+        choices.approval.from = Source::Default;
+    }
+    if let Err(refused) = judge(choices.judge.clone(), constraints) {
+        aside.push(refused.to_string());
+        choices.judge = Chosen {
+            value: Judge::Main,
+            from: Source::Default,
+        };
+    }
+    if let Err(refused) = sandbox(choices.sandbox.clone(), constraints) {
+        aside.push(refused.to_string());
+        choices.sandbox.from = Source::Default;
+    }
+    if let Err(refused) = crate::policy::memory::settle(&choices, constraints) {
+        aside.push(refused.to_string());
+        choices.memory.from = Source::Default;
+        choices.space_memory.from = Source::Default;
+    }
+    Ok((settle(choices, constraints)?, aside))
+}
+
 /// `choices` once glave's default sandbox turned out not to run here, for the reason `why`:
 /// no sandbox, and commands asking unless someone chose otherwise. A sandbox someone chose,
 /// or a policy requires, never gets here: without it glave refuses to run commands.

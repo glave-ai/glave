@@ -170,3 +170,38 @@ fn a_thread_may_choose_auto_only_behind_a_wall_and_within_the_policy() {
         [ApprovalMode::Ask]
     );
 }
+
+#[test]
+fn on_a_running_server_a_rule_added_narrows_what_the_person_s_file_loosens() {
+    let loose = layers(
+        ConfigFile::default(),
+        ConfigFile::default(),
+        vec![file(
+            PERSON,
+            "approval = \"auto\"\nsandbox = \"off\"\njudge_model = \"off\"\nmemory = \"on\"\n",
+        )],
+    );
+    let strict = [policy_at(
+        ORG,
+        "version = 1\n[approval]\nmodes = [\"ask\"]\njudge = \"required\"\n[sandbox]\n\
+         required = true\n[memory]\nenabled = false\n",
+    )];
+    let loaded = assemble(&loose, &strict, None);
+    assert!(loaded.settle().is_err(), "a start refuses");
+    let (choices, aside) = loaded.settle_giving_way().unwrap();
+    assert_eq!(choices.approval.value, ApprovalMode::Ask);
+    assert_eq!(choices.sandbox.value, Some(SandboxLevel::Project));
+    assert_eq!(choices.judge.value, Judge::Main);
+    assert!(!memory_settings(&choices, &loaded.constraints).unwrap().on);
+    assert_eq!(aside.len(), 4, "each said: {aside:?}");
+    assert!(
+        aside[0].contains(&format!("approval auto (from {PERSON})")),
+        "{aside:?}"
+    );
+
+    // With nothing refused, nothing gives way.
+    let (same, none) = assemble(&loose, &[], None).settle_giving_way().unwrap();
+    assert_eq!(same.approval.value, ApprovalMode::Auto);
+    assert_eq!(same.sandbox.value, None);
+    assert_eq!(none, Vec::<String>::new());
+}

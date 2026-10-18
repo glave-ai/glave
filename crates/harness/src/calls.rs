@@ -267,7 +267,7 @@ where
                 .clone()
                 .unwrap_or_else(|| self.default_model())
         };
-        match settled.judge.as_ref().unwrap_or(&self.settings.judge) {
+        match settled.judge.as_ref().unwrap_or(&thread.defaults.judge) {
             Judge::Off => None,
             Judge::Main => Some(main()),
             Judge::Model(model) => Some(model.clone()),

@@ -87,6 +87,7 @@ where
         child.instructions.clone_from(&parent.instructions);
         child.project.clone_from(&parent.project);
         child.brought = std::sync::Arc::clone(&parent.brought);
+        child.defaults = std::sync::Arc::clone(&parent.defaults);
         child.untrusted = parent.untrusted;
         child.read_secret = parent.read_secret;
         child.model.clone_from(&parent.model);

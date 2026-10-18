@@ -44,7 +44,7 @@ pub use glave_identity::signin;
 pub use glave_ports::Caller;
 pub use ledger::{accounts_ledger, is_ledger, space_ledger};
 pub use providers::{Models, NewProvider, Providers};
-pub use reread::{Apply, Changed, Rereads};
+pub use reread::{Apply, Changed, Rereads, Runs};
 pub use server::{OnWorkers, Server, Wiring};
 pub use spaces::PERSONAL_NAME;
 pub use tasks::TaskLimits;

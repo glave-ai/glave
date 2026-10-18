@@ -17,10 +17,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::Duration;
 
+use glave_config::policy::memory_settings;
 use glave_config::policy::{Choices, Loaded, Locations};
 use glave_config::trust::{self, Answer, Outcome, Project};
 use glave_harness::{AGENTS_MD, Brought, Hooks, Projects as Host, Settled, agents_md};
-use glave_memory::GlaveMemory;
+use glave_memory::{GlaveMemory, Personal, SpaceMemory};
 use glave_ports::{BoxFuture, Clock, SpaceId, ToolSource};
 use glave_process::Processes;
 use glave_session::ProjectTrust;
@@ -32,7 +33,7 @@ use crate::gateway::Switch;
 use crate::setup::off_note;
 use servers::Running;
 
-pub use settle::web_fetch;
+pub use settle::web_offered;
 
 /// How often glave looks for projects' servers to close.
 const TIDY_EVERY: Duration = Duration::from_secs(60);
@@ -61,16 +62,25 @@ pub struct Own {
     pub processes: Processes,
 }
 
+/// The levels glave's own choices came from, the constraints, and those choices: what each
+/// project's settings go among, as the person's settings read last.
+struct Base {
+    loaded: Loaded,
+    choices: Choices,
+}
+
 /// Every project as this glave reads it: see the module's documentation.
 pub struct Projects {
     /// glave's folder: the person's AGENTS.md and the trust record.
     home: PathBuf,
-    loaded: Loaded,
-    choices: Choices,
+    base: RwLock<Arc<Base>>,
     /// The names of the person's own servers, as they run now.
     taken: RwLock<Vec<String>>,
     models: Switch,
     memory: Option<Arc<GlaveMemory<DataLog>>>,
+    /// The person's own memory as memory started: read in shared spaces while the settings
+    /// allow it.
+    personal: Option<Personal>,
     clock: Box<dyn Clock>,
     processes: Processes,
     /// Who answers what a project asks: the person from an app, or no one.
@@ -90,10 +100,16 @@ impl Projects {
     pub fn new(home: PathBuf, own: Own, later: bool) -> Self {
         Self {
             home,
-            loaded: own.loaded,
-            choices: own.choices,
+            base: RwLock::new(Arc::new(Base {
+                loaded: own.loaded,
+                choices: own.choices,
+            })),
             taken: RwLock::new(own.taken),
             models: own.models,
+            personal: own
+                .memory
+                .as_ref()
+                .and_then(|memory| memory.memories().rules().personal),
             memory: own.memory,
             clock: own.clock,
             processes: own.processes,
@@ -163,6 +179,43 @@ impl Projects {
         }
     }
 
+    /// Settles each project's settings among `loaded`'s levels and constraints, and glave's
+    /// own `choices`, from its threads' next turn on, and runs memory by them from its next
+    /// read or write: the person's settings as read again.
+    pub fn set_own(&self, loaded: Loaded, choices: Choices) {
+        self.remember(&loaded, &choices);
+        let base = Arc::new(Base { loaded, choices });
+        *self.base.write().unwrap_or_else(PoisonError::into_inner) = base;
+    }
+
+    /// Runs memory, when it runs, by the person's `choices` within `loaded`'s constraints.
+    /// Memory that was off when glave started stays off until it restarts, and so does the
+    /// person's own.
+    fn remember(&self, loaded: &Loaded, choices: &Choices) {
+        let settings = match memory_settings(choices, &loaded.constraints) {
+            Ok(settings) => settings,
+            Err(error) => {
+                tracing::warn!("memory's settings cannot be used, so the last ones stay: {error}");
+                return;
+            }
+        };
+        let Some(memory) = &self.memory else {
+            if settings.on {
+                tracing::warn!("memory was off when glave started; restart glave to turn it on");
+            }
+            return;
+        };
+        let on = settings.on;
+        let default = if on { settings.space } else { SpaceMemory::Off };
+        let personal = self.personal.filter(|_| on && settings.personal);
+        let memories = memory.memories();
+        memories.set_person(personal, default, settings.retention_days);
+    }
+
+    fn base(&self) -> Arc<Base> {
+        Arc::clone(&self.base.read().unwrap_or_else(PoisonError::into_inner))
+    }
+
     /// Gives way to the person's own servers named `taken` from now on, as they run now.
     pub fn set_taken(&self, taken: Vec<String>) {
         *self.taken.write().unwrap_or_else(PoisonError::into_inner) = taken;
@@ -205,7 +258,7 @@ impl Projects {
     /// Where each item of the project at `root` stands now.
     async fn assessed(&self, root: &Path) -> glave_config::Result<trust::Assessment> {
         let project = Project::read(root, &crate::mcp::environment()).await?;
-        trust::assessed(&self.home, project, &self.loaded.constraints).await
+        trust::assessed(&self.home, project, &self.base().loaded.constraints).await
     }
 
     /// What the project at `root` runs now, and what stays off and why.
@@ -241,7 +294,8 @@ impl Projects {
         trusted: BTreeMap<String, String>,
     ) -> Vec<Arc<dyn ToolSource>> {
         let now = self.clock.now();
-        let constraints = &self.loaded.constraints;
+        let base = self.base();
+        let constraints = &base.loaded.constraints;
         let processes = &self.processes;
         let (sources, closing) = self
             .lock()
@@ -255,7 +309,8 @@ impl Projects {
     async fn bring(&self, root: &Path, space: SpaceId) -> glave_config::Result<Brought> {
         let outcome = self.outcome(root).await?;
         let read = self.settle(root, &outcome);
-        let mcp = read.choices.as_ref().unwrap_or(&self.choices).mcp.as_ref();
+        let base = self.base();
+        let mcp = read.choices.as_ref().unwrap_or(&base.choices).mcp.as_ref();
         let chosen = mcp.map(|chosen| &chosen.value);
         let servers: BTreeMap<String, String> = outcome
             .servers
@@ -284,11 +339,20 @@ impl Projects {
             return;
         };
         let memories = memory.memories();
+        let constraints = &self.base().loaded.constraints;
+        // Memory the person turned off stays off in every space.
         let setting = choices
-            .and_then(|choices| {
-                glave_config::policy::memory_settings(choices, &self.loaded.constraints).ok()
-            })
-            .map_or_else(|| memories.rules().default, |settings| settings.space);
+            .and_then(|choices| memory_settings(choices, constraints).ok())
+            .map_or_else(
+                || memories.rules().default,
+                |settings| {
+                    if settings.on {
+                        settings.space
+                    } else {
+                        SpaceMemory::Off
+                    }
+                },
+            );
         memories.set_space(space, setting);
     }
 }
@@ -368,7 +432,8 @@ impl ProjectTrust for Projects {
             let Ok(project) = Project::read(&root, &crate::mcp::environment()).await else {
                 return Ok(None);
             };
-            let assessment = trust::assessed(&self.home, project, &self.loaded.constraints)
+            let constraints = &self.base().loaded.constraints;
+            let assessment = trust::assessed(&self.home, project, constraints)
                 .await
                 .map_err(|error| failed(&error))?;
             if assessment.undecided().is_empty() {
@@ -400,7 +465,7 @@ impl ProjectTrust for Projects {
             let project = Project::read(&root, &crate::mcp::environment())
                 .await
                 .map_err(|error| failed(&error))?;
-            trust::trust_asked(&self.home, project, &self.loaded.constraints, ask)
+            trust::trust_asked(&self.home, project, &self.base().loaded.constraints, ask)
                 .await
                 .map_err(|error| failed(&error))
         })

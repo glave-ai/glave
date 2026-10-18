@@ -14,6 +14,7 @@ mod chosen;
 mod commands;
 mod compaction;
 mod conversation;
+mod defaults;
 mod goal;
 mod harness;
 mod hooks;
@@ -51,6 +52,7 @@ pub use cancel::Cancel;
 pub use commands::{Command, FoundCommands, command_folders, find_commands};
 pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;
+pub use defaults::Defaults;
 pub use glave_event::ApprovalMode;
 pub use glave_ports::Caller;
 pub use glave_ports::memories::{

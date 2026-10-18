@@ -24,6 +24,7 @@ use crate::builtins::Builtins;
 use crate::chosen::DefaultModel;
 use crate::commands::Command;
 use crate::compaction::{Compaction, Measured};
+use crate::defaults::Defaults;
 use crate::goal::{GoalProgress, Pursuit};
 use crate::hooks::Hooks;
 use crate::inbox::Inbox;
@@ -135,15 +136,13 @@ pub struct Harness<P, L, B, A> {
     pub(crate) workspace: Arc<Workspace>,
     /// Where tools come from: the built-in tools first, then any others, such as MCP servers.
     pub(crate) sources: Vec<Arc<dyn ToolSource>>,
-    /// `web_fetch`, offered right after the built-in tools, unless a thread's project sets up
-    /// its own; none by default.
-    pub(crate) web: Option<Arc<dyn ToolSource>>,
     /// The person's own tools, such as their MCP servers', offered after the other sources to
     /// their threads alone: they run with the person's sign-ins. None by default; the host
     /// replaces them when the person's settings change.
     pub(crate) own: RwLock<Vec<Arc<dyn ToolSource>>>,
-    /// Commands run at points of a turn; none by default.
-    pub(crate) hooks: Hooks,
+    /// What threads run with where neither they nor their projects choose: the settings' and
+    /// the workspace's at first, then the host's. Each turn takes them as it starts.
+    pub(crate) defaults: RwLock<Arc<Defaults>>,
     pub(crate) settings: Settings,
     /// The model threads that chose none go to: the settings' at first, then the host's.
     pub(crate) default: RwLock<DefaultModel>,
@@ -222,6 +221,9 @@ pub struct Thread {
     /// What its project turned on at the start of the latest turn (`projects.rs`). A
     /// subagent's thread has its parent's.
     pub(crate) brought: Arc<Brought>,
+    /// The harness's defaults as the latest turn started (`defaults.rs`). A subagent's thread
+    /// has its parent's.
+    pub(crate) defaults: Arc<Defaults>,
     /// What the person sent its running turn, waiting for the model's next call (`inbox.rs`).
     pub(crate) inbox: Inbox,
     /// Its commands in the background (`background.rs`). A subagent's thread has its own.
@@ -344,10 +346,16 @@ where
                 workspace: Arc::clone(&workspace),
                 commands: Arc::default(),
             })],
+            defaults: RwLock::new(Arc::new(Defaults {
+                approval: settings.approval,
+                judge: settings.judge.clone(),
+                titles: settings.titles,
+                sandbox: workspace.sandbox().cloned(),
+                hooks: Hooks::default(),
+                web: None,
+            })),
             workspace,
-            web: None,
             own: RwLock::default(),
-            hooks: Hooks::default(),
             default: RwLock::new(DefaultModel {
                 model: settings.model.clone(),
                 provider: settings.provider.clone(),
@@ -413,8 +421,8 @@ where
     /// Offers `web_fetch` from `web`, right after the built-in tools, to every thread whose
     /// project sets up none of its own; none leaves it to the other sources.
     #[must_use]
-    pub fn with_web(mut self, web: Option<Arc<dyn ToolSource>>) -> Self {
-        self.web = web;
+    pub fn with_web(self, web: Option<Arc<dyn ToolSource>>) -> Self {
+        self.change_defaults(|defaults| defaults.web = web);
         self
     }
 
@@ -434,8 +442,8 @@ where
 
     /// Runs `hooks` at their points of the turns of the person the harness works for.
     #[must_use]
-    pub fn with_hooks(mut self, hooks: Hooks) -> Self {
-        self.hooks = hooks;
+    pub fn with_hooks(self, hooks: Hooks) -> Self {
+        self.change_defaults(|defaults| defaults.hooks = hooks);
         self
     }
 
@@ -444,7 +452,7 @@ where
     /// other sources, the person's own when the thread is theirs, then its project's.
     pub(crate) fn sources_for(&self, thread: &Thread) -> Vec<Arc<dyn ToolSource>> {
         let mut sources = self.sources.clone();
-        if let Some(web) = thread.brought.web.as_ref().or(self.web.as_ref()) {
+        if let Some(web) = thread.brought.web.as_ref().or(thread.defaults.web.as_ref()) {
             let after = crate::builtins::BUILTINS
                 .saturating_add(1)
                 .min(sources.len());
@@ -491,8 +499,8 @@ where
         &self.log
     }
 
-    /// What the harness was set up with: the default model at the start and the approval
-    /// mode among them. The default model now is [`Harness::default_model`].
+    /// What the harness was set up with: the default model and the approval mode among them,
+    /// as it started. Those now are [`Harness::default_model`] and [`Harness::defaults`].
     pub fn settings(&self) -> &Settings {
         &self.settings
     }
@@ -576,6 +584,7 @@ where
             instructions,
             project,
             brought: Arc::default(),
+            defaults: self.defaults(),
             inbox: Inbox::default(),
             commands: Arc::default(),
         };

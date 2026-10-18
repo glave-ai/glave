@@ -1,32 +1,35 @@
 //! The person's own settings, read again (`specs/one-server.md`, "Its settings"): a server that
 //! runs for days looks at its `config.toml`, the policy and `mcp.json` at the start of each
-//! turn, and when their content's hash changed, reads them again. The models follow from the
-//! next turn (the model, the models offered beside it, within the policy), and the person's
-//! own servers are reconciled: an added one starts, a removed one stops, a changed one starts
-//! again. What only a start applies stays as the start set it until glave restarts, and the
-//! log says so. Settings that no longer read leave the last that did in place.
+//! turn, and when their content's hash changed, reads them again. From the next turn, threads
+//! run with what they choose: the models (and the judge, with the models it names), approval,
+//! the sandbox and its network, hooks, `[web]`, titles and memory; a new thread takes
+//! `worktree`; and the person's own servers are reconciled: an added one starts, a removed one
+//! stops, a changed one starts again. A constraint added meanwhile narrows the next turn
+//! whatever the person's file says. What only a start applies stays as the start set it until
+//! glave restarts, and the log says so. Settings that no longer read leave the last that did.
 
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
-use glave_config::policy::{Choices, Locations};
-use glave_ports::BoxFuture;
-use glave_session::{Apply, Changed, Models, Rereads};
+use glave_config::policy::{self, Choices, Chosen, Constraints, Judge, Locations, Source};
+use glave_harness::{ApprovalMode, Defaults, Hooks};
+use glave_ports::{BoxFuture, ToolSource};
+use glave_session::{Apply, Changed, Models, Rereads, Runs};
 
 use crate::args::Args;
 use crate::gateway::Switch;
 use crate::mcp::{self, Servers};
 use crate::projects::Projects;
 use crate::providers::{Host, Lineup};
-use crate::setup::Setup;
+use crate::setup::{NO_SANDBOX, Setup};
 
 /// What the person's settings change as they are read again.
 pub struct Rereading {
     args: Args,
-    /// The folder glave started in, whose policies are read as at the start.
-    folder: PathBuf,
-    /// glave's folder: the person's `mcp.json`.
+    /// Where the person's `config.toml` and the policies are, as glave started.
+    locations: Locations,
+    /// glave's folder: the person's `mcp.json`, and what the sandbox protects.
     home: PathBuf,
     /// Every file read again, hashed together.
     files: Vec<PathBuf>,
@@ -34,6 +37,8 @@ pub struct Rereading {
     seen: tokio::sync::Mutex<u64>,
     /// The choices glave started with: what only a start applies.
     start: Choices,
+    /// The judge as last run: one the models in use serve.
+    judge: std::sync::Mutex<Judge>,
     /// Where model accounts are kept, when the person may connect them here; else the gateway
     /// the models run on alone.
     host: Option<Arc<Host>>,
@@ -58,18 +63,19 @@ impl Rereading {
     /// Reads again what `parts` started with, from the content of its files now.
     pub async fn new(parts: Parts) -> Self {
         let locations = Locations::here(&parts.home, &parts.folder);
-        let files = [locations.person]
+        let files = [locations.person.clone()]
             .into_iter()
-            .chain(locations.policies)
+            .chain(locations.policies.iter().cloned())
             .chain([parts.home.join(mcp::FILE)])
             .collect::<Vec<_>>();
         let seen = digest(&files).await;
         Self {
             args: parts.args,
-            folder: parts.folder,
+            locations,
             home: parts.home,
             files,
             seen: tokio::sync::Mutex::new(seen),
+            judge: std::sync::Mutex::new(parts.start.judge.value.clone()),
             start: parts.start,
             host: parts.host,
             switch: parts.switch,
@@ -78,51 +84,62 @@ impl Rereading {
         }
     }
 
-    /// The settings as they read now, and what follows from them.
+    /// The settings as they read now, and what follows from them. How threads run follows
+    /// even where the models no longer line up, or the person's servers no longer read.
     async fn read(&self) -> anyhow::Result<Changed> {
-        let mut setup = Setup::load(&self.args, &self.folder).await?;
-        setup.choices = self.as_started(setup.choices);
-        let constraints = &setup.loaded.constraints;
-        let through_gateway = self.start.gateway.is_some();
-        let mcp = setup.choices.mcp.as_ref();
-        let wanted = mcp::wanted(&self.home, mcp, constraints, through_gateway).await?;
-        let models = self.models(&setup).await?;
-        let own = self.servers.reconcile(wanted).then(|| {
-            self.projects.set_taken(self.servers.names());
-            self.servers.sources()
-        });
+        let setup = reloaded(&self.args, &self.locations, &self.start).await?;
+        let mut runs = runs(&setup, &self.home)?;
+        let own = self.own_servers(&setup).await;
+        let models = match self.models(&setup).await {
+            Ok(models) => Some(models),
+            Err(error) => {
+                tracing::warn!(
+                    "glave's models changed but cannot be used, so the last ones stay: {error:#}"
+                );
+                runs.defaults.judge = kept(&runs.defaults.judge, self.last_judge());
+                None
+            }
+        };
+        *self.judge.lock().unwrap_or_else(PoisonError::into_inner) = runs.defaults.judge.clone();
+        self.projects.set_own(setup.loaded, setup.choices);
         Ok(Changed {
-            models: Some(models),
+            models,
             own,
+            runs: Some(runs),
         })
     }
 
-    /// `now`, with what only a start applies as glave started with it, said in the log when
-    /// it differs. The judge stays too: the harness keeps the start's.
-    fn as_started(&self, now: Choices) -> Choices {
-        let start = &self.start;
-        let waits = start.gateway != now.gateway
-            || start.provider != now.provider
-            || start.store != now.store
-            || start.telemetry != now.telemetry
-            || start.workers != now.workers
-            || start.github != now.github;
-        if waits {
-            tracing::warn!(
-                "glave's settings changed where only a restart applies them (the store, the \
-                 gateway, the provider, telemetry, workers or GitHub); restart glave for them"
-            );
-        }
-        Choices {
-            gateway: start.gateway.clone(),
-            provider: start.provider.clone(),
-            store: start.store.clone(),
-            telemetry: start.telemetry.clone(),
-            workers: start.workers.clone(),
-            github: start.github.clone(),
-            judge: start.judge.clone(),
-            ..now
-        }
+    fn last_judge(&self) -> Judge {
+        self.judge
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// The person's own servers as `setup` turns them on, when they changed. A rule that now
+    /// forbids them puts them all away; a `mcp.json` that no longer reads leaves them running.
+    async fn own_servers(&self, setup: &Setup) -> Option<Vec<Arc<dyn ToolSource>>> {
+        let constraints = &setup.loaded.constraints;
+        let through_gateway = self.start.gateway.is_some();
+        let mcp = setup.choices.mcp.as_ref();
+        let wanted = match mcp::wanted(&self.home, mcp, constraints, through_gateway).await {
+            Ok(wanted) => wanted,
+            Err(error) if constraints.own_mcp_forbidden().is_some() => {
+                tracing::warn!("your own MCP servers are put away: {error:#}");
+                Vec::new()
+            }
+            Err(error) => {
+                tracing::warn!(
+                    "your MCP servers changed but cannot be used, so the last ones stay: \
+                     {error:#}"
+                );
+                return None;
+            }
+        };
+        self.servers.reconcile(wanted).then(|| {
+            self.projects.set_taken(self.servers.names());
+            self.servers.sources()
+        })
     }
 
     /// The models of `setup`, run from now on.
@@ -136,6 +153,105 @@ impl Rereading {
         self.switch.set(built.gateway);
         Ok(built.models)
     }
+}
+
+/// The judge to run, `chosen` now, while the models stay as they were, with `last`: one that
+/// names a model goes with the models it names, so it stays `last` (the main model where that
+/// was off); off, or the main model, needs none.
+fn kept(chosen: &Judge, last: Judge) -> Judge {
+    match (chosen, last) {
+        (Judge::Model(_), Judge::Off) => Judge::Main,
+        (Judge::Model(_), last) => last,
+        (chosen, _) => chosen.clone(),
+    }
+}
+
+/// The person's settings at `locations` as a server that started with `start` runs them
+/// from now on: within the constraints as they are now, and walled as glave can wall them.
+async fn reloaded(args: &Args, locations: &Locations, start: &Choices) -> anyhow::Result<Setup> {
+    let (mut setup, aside) = Setup::reload(args, locations).await?;
+    for line in aside {
+        tracing::warn!(
+            "the policy does not allow what your settings chose, so glave's default applies: {line}"
+        );
+    }
+    let constraints = &setup.loaded.constraints;
+    setup.choices = walled(as_started(start, setup.choices), start, constraints);
+    Ok(setup)
+}
+
+/// `now`, with what only a start applies as glave started with it (`start`), said in the log
+/// when it differs.
+fn as_started(start: &Choices, now: Choices) -> Choices {
+    let waits = start.gateway != now.gateway
+        || start.provider != now.provider
+        || start.store != now.store
+        || start.telemetry != now.telemetry
+        || start.workers != now.workers
+        || start.github != now.github;
+    if waits {
+        tracing::warn!(
+            "glave's settings changed where only a restart applies them (the store, the \
+             gateway, the provider, telemetry, workers or GitHub); restart glave for them"
+        );
+    }
+    Choices {
+        gateway: start.gateway.clone(),
+        provider: start.provider.clone(),
+        store: start.store.clone(),
+        telemetry: start.telemetry.clone(),
+        workers: start.workers.clone(),
+        github: start.github.clone(),
+        ..now
+    }
+}
+
+/// `choices`, with the sandbox given up where it cannot run here: glave's default could not
+/// when it started (`start`), or this computer has none. Where the person or the policy asks
+/// for one that cannot run, commands still never run unconfined without asking.
+fn walled(choices: Choices, start: &Choices, constraints: &Constraints) -> Choices {
+    if choices.sandbox.value.is_none() {
+        return choices;
+    }
+    let why = match &start.sandbox.from {
+        Source::Unavailable(why) => why.clone(),
+        _ if glave_computer::sandbox_available() => return choices,
+        _ => NO_SANDBOX.to_owned(),
+    };
+    let mut choices = crate::sandboxing::given_up(choices, &why, constraints);
+    if choices.sandbox.value.is_some() {
+        tracing::warn!(
+            "a sandbox is asked for, but it cannot run on this computer ({why}), so every \
+             command and change asks first"
+        );
+        choices.sandbox = Chosen {
+            value: None,
+            from: Source::Unavailable(why),
+        };
+        choices.approval = Chosen {
+            value: ApprovalMode::Ask,
+            from: Source::Unsandboxed,
+        };
+    }
+    choices
+}
+
+/// How threads run with `setup`'s choices, where neither they nor their projects choose;
+/// `glave_home`, glave's folder, protected in the sandbox.
+fn runs(setup: &Setup, glave_home: &Path) -> anyhow::Result<Runs> {
+    let choices = &setup.choices;
+    Ok(Runs {
+        defaults: Defaults {
+            approval: choices.approval.value,
+            judge: choices.judge.value.clone(),
+            titles: choices.titles.value,
+            sandbox: crate::sandboxing::sandbox_of(choices, Some(glave_home)),
+            hooks: Hooks::new(setup.hooks.clone())?,
+            web: crate::projects::web_offered(&choices.web.value)?,
+        },
+        modes: policy::thread_modes(choices, &setup.loaded.constraints),
+        worktree: choices.worktree.value,
+    })
 }
 
 impl Rereads for Rereading {
@@ -174,3 +290,6 @@ async fn digest(files: &[PathBuf]) -> u64 {
 async fn content(file: &Path) -> Result<Vec<u8>, std::io::ErrorKind> {
     tokio::fs::read(file).await.map_err(|error| error.kind())
 }
+
+#[cfg(test)]
+mod tests;

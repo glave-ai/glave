@@ -1,10 +1,13 @@
 //! The host's own settings, read again (`specs/one-server.md`, "Its settings"): a server that
-//! runs for days notices when the person edits them, at the start of each turn and when the
-//! models are listed, and runs what they choose from then on. The host decides what changed;
-//! the server takes the models and the person's own tools it answers with.
+//! runs for days notices when the person edits them, at the start of each turn and thread, and
+//! when the models are listed or the server discovered, and runs what they choose from then on.
+//! The host decides what changed; the server takes the models, how threads run and the
+//! person's own tools it answers with.
 
-use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, PoisonError};
 
+use glave_harness::{ApprovalMode, Defaults};
 use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ToolSource};
 
 use crate::providers::Models;
@@ -17,6 +20,20 @@ pub struct Changed {
     pub models: Option<Models>,
     /// The person's own tools from now on, such as their MCP servers'.
     pub own: Option<Vec<Arc<dyn ToolSource>>>,
+    /// How threads run from now on where neither they nor their projects choose.
+    pub runs: Option<Runs>,
+}
+
+/// How threads run where neither they nor their projects choose: from each one's next turn,
+/// or, for where a thread works, from the next new one.
+pub struct Runs {
+    /// What every thread's turns run with: the approval mode, the judge, the sandbox and the
+    /// rest. The judge comes with the models it names, so it never names one that is gone.
+    pub defaults: Defaults,
+    /// The approval modes the policy leaves a thread to choose.
+    pub modes: Vec<ApprovalMode>,
+    /// Whether a new thread in a project with a folder works in a worktree of its own.
+    pub worktree: bool,
 }
 
 /// Runs what changed, as the server takes it: synchronously, so the host knows once it
@@ -51,6 +68,16 @@ where
             }
             if let Some(own) = changed.own {
                 self.inner.harness.set_own_tools(own);
+            }
+            if let Some(runs) = changed.runs {
+                let modes = crate::modes::choosable(runs.defaults.approval, &runs.modes);
+                *self
+                    .inner
+                    .modes
+                    .write()
+                    .unwrap_or_else(PoisonError::into_inner) = modes;
+                self.inner.worktree.store(runs.worktree, Ordering::Relaxed);
+                self.inner.harness.set_defaults(runs.defaults);
             }
         };
         rereads.reread(&apply).await;

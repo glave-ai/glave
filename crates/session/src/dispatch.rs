@@ -93,14 +93,17 @@ where
             Err(refused) => Answered::Reply(Err(refused)),
         };
         Answered::Reply(match request {
-            Request::Discover {} => Ok(Reply::Server(ServerInfo {
-                name: "glave".to_owned(),
-                version: env!("CARGO_PKG_VERSION").to_owned(),
-                protocols: vec![crate::protocol::PROTOCOL.to_owned()],
-                approval: self.inner.harness.settings().approval,
-                approvals: self.inner.modes.clone(),
-                id: self.server_id(),
-            })),
+            Request::Discover {} => {
+                self.reread().await;
+                Ok(Reply::Server(ServerInfo {
+                    name: "glave".to_owned(),
+                    version: env!("CARGO_PKG_VERSION").to_owned(),
+                    protocols: vec![crate::protocol::PROTOCOL.to_owned()],
+                    approval: self.inner.harness.defaults().approval,
+                    approvals: self.modes(),
+                    id: self.server_id(),
+                }))
+            }
             Request::SigninLink {} => self.link(caller),
             Request::SigninRedeem { code } => self.redeem(code.expose()).await,
             Request::SigninEnd {} => self.end_session(caller).await,

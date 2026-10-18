@@ -137,8 +137,9 @@ where
         let tool = call.map(|call| call.tool);
         // The harness's own hooks, the person's, for their threads alone; then the project's.
         let brought = Arc::clone(&thread.brought);
+        let defaults = Arc::clone(&thread.defaults);
         let mut hooks = if self.trusting(thread.for_) {
-            self.hooks.at(point, tool)
+            defaults.hooks.at(point, tool)
         } else {
             Vec::new()
         };

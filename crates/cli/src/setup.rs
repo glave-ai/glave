@@ -17,7 +17,7 @@ use glave_config::policy::{
 use glave_config::trust::{self, Asking, Outcome, Project};
 
 /// Why the sandbox cannot run, as `glave policy explain` says it without trying.
-const NO_SANDBOX: &str = "this computer has no sandbox glave can use (macOS's Seatbelt, or \
+pub const NO_SANDBOX: &str = "this computer has no sandbox glave can use (macOS's Seatbelt, or \
                           bubblewrap on Linux)";
 
 /// What this run uses: the files read, and the choices within the constraints.
@@ -60,6 +60,31 @@ impl Setup {
             choices,
             hooks,
         })
+    }
+
+    /// The files at `locations` read again by a server that already runs (`reread.rs`), as
+    /// [`Setup::load`] reads them, but it cannot refuse to start: a choice the constraints
+    /// refuse now gives way as glave's default would, and the person's hooks a rule forbids
+    /// are left out. What gave way, one sentence each.
+    pub async fn reload(args: &Args, locations: &Locations) -> anyhow::Result<(Self, Vec<String>)> {
+        let loaded = read_at(args, locations, None).await?;
+        let (choices, mut aside) = loaded.settle_giving_way()?;
+        let mine = &loaded.person_hooks;
+        let hooks = match loaded.constraints.own_hooks_forbidden() {
+            Some(rule) if !mine.is_empty() => {
+                aside.push(format!(
+                    "your own hooks are off: {rule} does not allow them"
+                ));
+                Vec::new()
+            }
+            _ => mine.clone(),
+        };
+        let setup = Self {
+            loaded,
+            choices,
+            hooks,
+        };
+        Ok((setup, aside))
     }
 }
 
@@ -137,11 +162,18 @@ async fn resolve(
 /// when they count: `glave policy explain` shows a thread of that project.
 async fn read(args: &Args, folder: &Path, project: Option<&Outcome>) -> anyhow::Result<Loaded> {
     let home = home::folder()?;
-    let locations = Locations::here(&home, folder);
-    let policies = policy::policies(&locations).await?;
+    read_at(args, &Locations::here(&home, folder), project).await
+}
+
+/// The files at `locations`, as [`read`] reads them.
+async fn read_at(
+    args: &Args,
+    locations: &Locations,
+    project: Option<&Outcome>,
+) -> anyhow::Result<Loaded> {
+    let policies = policy::policies(locations).await?;
     let config = project.and_then(|outcome| outcome.config.clone());
-    let mut loaded =
-        policy::load(&locations, &policies, config, flags(args), environment()).await?;
+    let mut loaded = policy::load(locations, &policies, config, flags(args), environment()).await?;
     loaded.project = project
         .filter(|outcome| !outcome.rows.is_empty())
         .map(|outcome| ProjectTrust {

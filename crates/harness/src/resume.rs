@@ -84,6 +84,7 @@ where
             instructions,
             project,
             brought: std::sync::Arc::default(),
+            defaults: self.defaults(),
             inbox: crate::inbox::Inbox::default(),
             commands: std::sync::Arc::new(commands),
         };
