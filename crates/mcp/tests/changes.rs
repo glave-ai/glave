@@ -6,10 +6,11 @@ mod changes {
     use std::collections::BTreeMap;
     use std::io::{BufRead as _, BufReader};
     use std::path::Path;
-    use std::process::{Child, Command, Stdio};
+    use std::process::{Command, Stdio};
 
     use glave_event::{Arguments, Part};
     use glave_mcp::{Limits, McpServer, ServerConfig};
+    use glave_ports::testing::Running;
     use glave_ports::{NeverCancelled, ToolSource as _, block_on};
 
     const SERVER: &str = env!("CARGO_BIN_EXE_glave-mcp-test-server");
@@ -72,29 +73,19 @@ mod changes {
         block_on!(async { changes_are_heard(&launch(&program(&["--legacy"]))).await });
     }
 
-    /// The test server over HTTP, killed when this is dropped.
-    struct Listening(Child);
-
-    impl Drop for Listening {
-        fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
-        }
-    }
-
     #[test]
     fn over_http_a_change_is_heard_too() {
-        let mut child = Command::new(SERVER)
+        let child = Command::new(SERVER)
             .arg("--http")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
+        let mut listening = Running::new(child);
         let mut url = String::new();
-        BufReader::new(child.stdout.take().unwrap())
+        BufReader::new(listening.stdout.take().unwrap())
             .read_line(&mut url)
             .unwrap();
-        let _listening = Listening(child);
         let config = ServerConfig::Http {
             url: url.trim().to_owned(),
             headers: BTreeMap::new(),

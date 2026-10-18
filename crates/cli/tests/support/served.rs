@@ -3,16 +3,18 @@
 
 use std::io::{BufRead as _, BufReader, Lines, Write as _};
 use std::path::Path;
-use std::process::{Child, ChildStdin, ChildStdout};
+use std::process::{ChildStdin, ChildStdout};
 
+use glave_ports::testing::Running;
 use glave_provider_openai::fake::FakeServer;
 use serde_json::{Value, json};
 
 use crate::support::{Place, start_with, text};
 
-/// `glave serve --stdio` with `args`, logging everything into the home, and a client of it.
+/// `glave serve --stdio` with `args`, logging everything into the home, and a client of it;
+/// the server is stopped when this drops.
 pub struct Served {
-    child: Child,
+    child: Running,
     input: ChildStdin,
     output: Lines<BufReader<ChildStdout>>,
     next: i64,

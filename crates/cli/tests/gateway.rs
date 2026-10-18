@@ -19,10 +19,10 @@ mod issuer;
 mod gateway {
     use std::io::{BufRead as _, BufReader};
     use std::path::{Path, PathBuf};
-    use std::process::{Child, Command, Stdio};
+    use std::process::{Command, Stdio};
     use std::sync::{Arc, Mutex, mpsc};
 
-    use glave_ports::testing::FAKE_SECRET;
+    use glave_ports::testing::{FAKE_SECRET, Running};
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;
 
@@ -75,19 +75,12 @@ mod gateway {
         }
     }
 
-    /// `glave gateway serve`, killed when dropped.
+    /// `glave gateway serve`, stopped when dropped.
     struct Gateway {
-        child: Child,
+        _running: Running,
         url: String,
         /// What it has said on its standard error so far.
         said: Arc<Mutex<Vec<String>>>,
-    }
-
-    impl Drop for Gateway {
-        fn drop(&mut self) {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
-        }
     }
 
     fn test_server() -> PathBuf {
@@ -105,7 +98,7 @@ mod gateway {
         std::fs::write(home.join("mcp.json"), servers.to_string()).unwrap();
         let policy = home.join("policy.toml");
         std::fs::write(&policy, "version = 1\n[mcp]\ncatalog = [\"docs\"]\n").unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_glave"))
+        let child = Command::new(env!("CARGO_BIN_EXE_glave"))
             .args(["gateway", "serve", "--http", "127.0.0.1:0"])
             .args(["--issuer", &identity.url, "--audience", AUDIENCE])
             .arg("--policy")
@@ -121,7 +114,8 @@ mod gateway {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        let mut lines = BufReader::new(child.stderr.take().unwrap()).lines();
+        let mut running = Running::new(child);
+        let mut lines = BufReader::new(running.stderr.take().unwrap()).lines();
         let said = Arc::new(Mutex::new(Vec::new()));
         let url = loop {
             let line = lines.next().unwrap().unwrap();
@@ -137,7 +131,11 @@ mod gateway {
                 saying.lock().unwrap().push(line);
             }
         });
-        Gateway { child, url, said }
+        Gateway {
+            _running: running,
+            url,
+            said,
+        }
     }
 
     #[test]

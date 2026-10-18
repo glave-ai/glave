@@ -3,6 +3,7 @@
 //! notifications on its standard output. Over HTTP, the web app beside the API: the one built
 //! into glave (the `web` feature) with no folder named, under the same policy as a folder's,
 //! and `--web`'s folder rather than it; without the feature and a folder, no app, as before.
+//! And a server a test started is gone when the test ends, by failing too.
 
 #[cfg(test)]
 #[path = "support/binary.rs"]
@@ -90,7 +91,7 @@ mod web {
     fn the_app_built_into_glave_is_served_with_no_folder_named() {
         let place = place("serve-built-in");
         let model = FakeServer::start(vec![]).unwrap();
-        let (mut served, url) = serve_http(&place, &model, &[]);
+        let (_served, url) = serve_http(&place, &model, &[]);
         block_on!(async {
             if cfg!(feature = "web") {
                 the_app_is_served(&url).await;
@@ -99,8 +100,6 @@ mod web {
                 assert_eq!(page.status(), 405, "no app, only the API");
             }
         });
-        let _ = served.kill();
-        let _ = served.wait();
     }
 
     /// The built app: a route is its page with this load's nonce, under the policy; its script
@@ -153,7 +152,7 @@ mod web {
         )
         .unwrap();
         let model = FakeServer::start(vec![]).unwrap();
-        let (mut served, url) = serve_http(&place, &model, &["--web", folder.to_str().unwrap()]);
+        let (_served, url) = serve_http(&place, &model, &["--web", folder.to_str().unwrap()]);
         block_on!(async {
             let page = reqwest::get(format!("{url}/t/123")).await.unwrap();
             assert_eq!(page.status(), 200);
@@ -163,7 +162,45 @@ mod web {
             assert!(body.starts_with("<p>From the folder.</p>"), "{body}");
             assert!(body.contains(&nonce), "{body}");
         });
-        let _ = served.kill();
-        let _ = served.wait();
+    }
+}
+
+#[cfg(test)]
+mod stopped {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use std::process::Command;
+
+    use glave_provider_openai::fake::FakeServer;
+
+    use super::http::serve_http;
+    use super::support::*;
+
+    /// Whether the process `id` is still there.
+    fn there(id: u32) -> bool {
+        Command::new("kill")
+            .args(["-0", &id.to_string()])
+            .status()
+            .unwrap()
+            .success()
+    }
+
+    #[test]
+    fn a_server_a_test_started_is_gone_when_the_test_ends_even_by_failing() {
+        let place = place("serve-stopped");
+        let model = FakeServer::start(vec![]).unwrap();
+        let (served, _) = serve_http(&place, &model, &[]);
+        let id = served.id();
+        assert!(there(id));
+        drop(served);
+        assert!(!there(id), "gone once dropped");
+
+        let mut id = None;
+        let failed = catch_unwind(AssertUnwindSafe(|| {
+            let (served, _) = serve_http(&place, &model, &[]);
+            id = Some(served.id());
+            panic!("the test fails while its server runs");
+        }));
+        assert!(failed.is_err());
+        assert!(!there(id.unwrap()), "gone once the failed test unwound");
     }
 }

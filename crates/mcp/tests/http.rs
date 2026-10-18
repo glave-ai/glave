@@ -6,44 +6,38 @@ mod http {
     use std::collections::BTreeMap;
     use std::io::{BufRead as _, BufReader};
     use std::path::Path;
-    use std::process::{Child, Command, Stdio};
+    use std::process::{Command, Stdio};
 
     use glave_event::{Arguments, Part};
     use glave_mcp::{Limits, McpError, McpServer, ServerConfig};
     use glave_ports::block_on;
-    use glave_ports::testing::{AlreadyCancelled, FAKE_SECRET};
+    use glave_ports::testing::{AlreadyCancelled, FAKE_SECRET, Running};
     use glave_ports::{NeverCancelled, ToolOutput, ToolSource as _, conformance};
     use serde_json::json;
 
     /// The test server serving HTTP, killed when this is dropped.
     struct Served {
-        child: Child,
+        _running: Running,
         url: String,
     }
 
     impl Served {
         fn start() -> Self {
-            let mut child = Command::new(env!("CARGO_BIN_EXE_glave-mcp-test-server"))
+            let child = Command::new(env!("CARGO_BIN_EXE_glave-mcp-test-server"))
                 .arg("--http")
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .spawn()
                 .unwrap();
+            let mut running = Running::new(child);
             let mut url = String::new();
-            BufReader::new(child.stdout.take().unwrap())
+            BufReader::new(running.stdout.take().unwrap())
                 .read_line(&mut url)
                 .unwrap();
             Self {
-                child,
+                _running: running,
                 url: url.trim().to_owned(),
             }
-        }
-    }
-
-    impl Drop for Served {
-        fn drop(&mut self) {
-            let _ = self.child.kill();
-            let _ = self.child.wait();
         }
     }
 
