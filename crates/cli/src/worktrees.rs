@@ -166,9 +166,9 @@ fn this_machines_trash(now: Timestamp) -> Option<Trash> {
     Trash::for_home(&home, data_home.as_deref(), &deleted_at)
 }
 
-/// Checks this machine's worktrees as glave starts, at most once a day, with what `log`
-/// holds; says what it did on standard error. Never stops glave from starting.
-pub async fn check_at_start<L: EventLog>(log: &L) {
+/// Checks this machine's worktrees as glave starts, and in the person's server as it runs, at
+/// most once a day, with what `log` holds; says what it did on standard error. Never stops glave.
+pub async fn check_daily<L: EventLog>(log: &L) {
     let Ok(home) = home::folder() else {
         return;
     };

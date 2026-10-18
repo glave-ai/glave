@@ -1,14 +1,7 @@
-//! How tasks and schedules read in the terminal, and which finished tasks the person has not
-//! been told about yet.
-
-use std::path::Path;
+//! How tasks and schedules read in the terminal.
 
 use glave_event::{Money, Outcome, When};
-use glave_session::protocol::{Reply, Request, ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
-use jiff::{SignedDuration, Timestamp};
-
-use crate::client::Glave;
-use crate::daemon;
+use glave_session::protocol::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 
 /// One task: status, kind, elapsed time, tokens, cost, model, thread and title.
 pub fn task_line(task: &TaskInfo) -> String {
@@ -53,58 +46,6 @@ pub fn schedule_line(schedule: &ScheduleInfo) -> String {
         short(schedule.budget),
         schedule.prompt
     )
-}
-
-/// The tasks of this folder's project that finished since the person was last told, as lines
-/// to show, and remembers them as told.
-pub async fn finished_since(server: &Glave, folder: &Path) -> Vec<String> {
-    let Ok(Reply::Tasks { tasks }) = server.request(Request::TasksList { limit: Some(50) }).await
-    else {
-        return Vec::new();
-    };
-    let Ok(here) = server.home_space().await else {
-        return Vec::new();
-    };
-    let Ok(mark) = daemon::seen_file(folder) else {
-        return Vec::new();
-    };
-    let seen: Option<Timestamp> = tokio::fs::read_to_string(&mark)
-        .await
-        .ok()
-        .and_then(|text| text.trim().parse().ok());
-    let mut latest = seen;
-    let mut lines = Vec::new();
-    for task in tasks
-        .iter()
-        .filter(|task| task.status == TaskStatus::Finished && task.space == here.id)
-    {
-        let ended = ended_at(task);
-        if seen.is_some_and(|seen| ended <= seen) {
-            continue;
-        }
-        latest = latest.max(Some(ended));
-        lines.push(format!("task finished: {}", task_line(task)));
-    }
-    if let Some(latest) = latest.filter(|latest| Some(*latest) != seen) {
-        remember_shown(&mark, latest).await;
-    }
-    lines
-}
-
-/// Remembers that tasks which ended by `latest` have been shown.
-pub async fn remember_shown(mark: &Path, latest: Timestamp) {
-    if let Some(folder) = mark.parent() {
-        let _ = tokio::fs::create_dir_all(folder).await;
-    }
-    let _ = tokio::fs::write(mark, latest.to_string()).await;
-}
-
-fn ended_at(task: &TaskInfo) -> Timestamp {
-    let elapsed = SignedDuration::from_millis(i64::try_from(task.elapsed_ms).unwrap_or(i64::MAX));
-    task.started_at
-        .timestamp()
-        .checked_add(elapsed)
-        .unwrap_or_else(|_| task.started_at.timestamp())
 }
 
 fn outcome_name(outcome: Outcome) -> &'static str {

@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::future::{Future, poll_fn};
+use std::path::Path;
 use std::pin::pin;
 use std::process::ExitCode;
 use std::task::Poll;
@@ -415,4 +416,30 @@ async fn ticking<T>(work: impl Future<Output = T>, waiting: &Waiting) -> T {
         Poll::Pending
     })
     .await
+}
+
+/// Writes the thread's events as JSON Lines, one event per line, exactly as stored.
+pub async fn export(server: Session<'_>, thread: ThreadId, path: &Path) -> anyhow::Result<()> {
+    let mut lines = String::new();
+    let mut after = None;
+    loop {
+        let page = Request::ThreadEvents {
+            thread,
+            after,
+            limit: Some(5_000),
+        };
+        let Reply::Events { events, next } = server.request(page).await? else {
+            anyhow::bail!("the server answered thread/events with something else");
+        };
+        for event in &events {
+            lines.push_str(&event.to_json()?);
+            lines.push('\n');
+        }
+        match next {
+            Some(seq) => after = Some(seq),
+            None => break,
+        }
+    }
+    tokio::fs::write(path, lines).await?;
+    Ok(())
 }

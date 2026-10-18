@@ -96,7 +96,7 @@ impl OverJsonRpc {
         }
     }
 
-    /// A client of `server` serving on a Unix socket, as `glave serve --socket` does.
+    /// A client of `server` serving on a Unix socket, as the person's server does.
     pub(crate) async fn on_socket(server: Tested, name: &str) -> Self {
         // Short, as socket paths must be.
         let path =

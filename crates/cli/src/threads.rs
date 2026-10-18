@@ -1,15 +1,18 @@
-//! `glave threads`: the threads in this folder, and archiving, unarchiving and deleting them.
-//! A change is made straight in the log; a glave holding the thread takes it in before its
-//! next event, so the two never fight.
+//! `glave threads`: the threads in this folder, and archiving, unarchiving and deleting them,
+//! through the person's server when it runs (or a terminal starts it). Where none runs and no
+//! one is at the terminal, a change is made straight in the log; a glave holding the thread
+//! takes it in before its next event, so the two never fight.
 
 use std::process::ExitCode;
 
 use glave_event::ThreadId;
 use glave_harness::{Change, Entropy, OsEntropy, Standing, change_standing};
 use glave_ports::{EventLog, Scope, ThreadQuery};
+use glave_session::protocol::{Reply, Request, Show};
 use jiff::Timestamp;
 use uuid::Uuid;
 
+use crate::reach::Reached;
 use crate::{home, worktrees};
 
 pub const USAGE: &str = "\
@@ -90,6 +93,69 @@ pub fn main(arguments: &[String]) -> ExitCode {
 }
 
 async fn run(command: Command) -> anyhow::Result<()> {
+    match crate::server::connect_or_start().await? {
+        Some(server) => through(&mut Reached::Server(server), command).await,
+        None => in_the_log(command).await,
+    }
+}
+
+/// `command` through the person's server; worktrees released here, as `glave worktrees` does.
+async fn through(server: &mut Reached, command: Command) -> anyhow::Result<()> {
+    let thread = match command {
+        Command::List(standing) => {
+            let show = match standing {
+                Standing::Active => Show::Active,
+                Standing::Archived => Show::Archived,
+                Standing::Deleted => Show::Deleted,
+            };
+            let listed = Request::ThreadList {
+                space: Some(server.project(&std::env::current_dir()?).await?),
+                limit: Some(MOST_LISTED),
+                show: Some(show),
+                cursor: None,
+            };
+            let Reply::Threads { threads, .. } = server.request(listed).await? else {
+                anyhow::bail!("glave answered thread/list with something else");
+            };
+            for thread in &threads {
+                println!("{}", thread.id);
+            }
+            return Ok(());
+        }
+        Command::Change(change, thread) => {
+            let request = match change {
+                Change::Archive => Request::ThreadArchive { thread },
+                Change::Unarchive => Request::ThreadUnarchive { thread },
+                Change::Delete => Request::ThreadDelete { thread },
+            };
+            server.request(request).await?;
+            println!("{} {thread}", done(change));
+            if change == Change::Unarchive {
+                return Ok(());
+            }
+            thread
+        }
+    };
+    // The change is made; a worktree that could not be looked at stays, and is said.
+    match released(thread).await {
+        Ok(lines) => lines.iter().for_each(|line| println!("{line}")),
+        Err(error) => println!("its worktree, if it has one, is kept: {error:#}"),
+    }
+    Ok(())
+}
+
+/// Releases the worktrees of `thread`, just archived or deleted: what became of each.
+async fn released(thread: ThreadId) -> anyhow::Result<Vec<String>> {
+    let store = crate::data::Data::here().await?;
+    let log = store.log();
+    match log.locate(thread).await? {
+        Some(scope) => worktrees::release_archived(&log, scope, thread).await,
+        None => Ok(Vec::new()),
+    }
+}
+
+/// `command` made straight in the log.
+async fn in_the_log(command: Command) -> anyhow::Result<()> {
     let home = home::folder()?;
     let store = crate::data::Data::here().await?;
     let person = crate::identity::load_or_make(&home).await?.person;
@@ -122,18 +188,22 @@ async fn apply<L: EventLog>(
 ) -> anyhow::Result<()> {
     let now = Timestamp::now();
     change_standing(log, &scope, thread, now, OsEntropy.bytes(), change).await?;
-    let verb = match change {
-        Change::Archive => "archived",
-        Change::Unarchive => "unarchived",
-        Change::Delete => "deleted",
-    };
-    println!("{verb} {thread}");
+    println!("{} {thread}", done(change));
     if change != Change::Unarchive {
         for line in worktrees::release_archived(log, scope, thread).await? {
             println!("{line}");
         }
     }
     Ok(())
+}
+
+/// What `change` did, as said.
+fn done(change: Change) -> &'static str {
+    match change {
+        Change::Archive => "archived",
+        Change::Unarchive => "unarchived",
+        Change::Delete => "deleted",
+    }
 }
 
 #[cfg(test)]

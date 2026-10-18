@@ -1,23 +1,21 @@
 //! `glave connect` and `glave connections`: the person's git hosts from the terminal, through
-//! the session API of this folder's own task host (`specs/session.md`, "Git hosts"), as the
-//! web app's settings reach them. A token is read from standard input, hidden on a terminal,
-//! never from an argument, so it lands in neither the shell's history nor the list of
+//! the session API of the person's server (`reach.rs`, `specs/session.md`, "Git hosts"), as
+//! the web app's settings reach them. A token is read from standard input, hidden on a
+//! terminal, never from an argument, so it lands in neither the shell's history nor the list of
 //! processes (`token.rs`).
 
 mod token;
 
 use std::fmt::Write as _;
-use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{Context as _, bail};
-use glave_event::{CredentialId, Forge};
+use glave_event::{CredentialId, Forge, Secret};
 use glave_session::protocol::{Ability, CredentialInfo, Reply, Request};
 use tokio::signal::unix::{SignalKind, signal};
 use uuid::Uuid;
 
-use crate::args::Args;
-use crate::daemon::Host;
+use crate::reach::{self, Reached};
 use crate::tasks::run_with;
 
 pub const CONNECT_USAGE: &str = "\
@@ -50,37 +48,40 @@ const GITHUB: &str = "https://github.com";
 /// `glave connect ...`.
 pub fn connect_main(words: &[String]) -> ExitCode {
     run_with(words, CONNECT_USAGE, |words| async move {
-        let folder = std::env::current_dir()?;
         let words: Vec<&str> = words.iter().map(String::as_str).collect();
         let token = |word: &&str| *word == "--token" || token::looks_like(word);
-        match words.as_slice() {
-            ["github"] => sign_in(&folder).await,
+        let (url, username) = match words.as_slice() {
+            ["github"] => return reach::with(sign_in).await,
             words if words.iter().any(token) => bail!("{}", token::NOT_AN_ARGUMENT),
-            [url] if !url.starts_with('-') => with_token(&folder, url, None).await,
-            [url, "--username", name] => with_token(&folder, url, Some(name)).await,
+            [url] if !url.starts_with('-') => (*url, None),
+            [url, "--username", name] => (*url, Some(*name)),
             _ => bail!("give a host's address, or github\n\n{CONNECT_USAGE}"),
-        }
+        };
+        let (url, token) = asked_token(url).await?;
+        reach::with(async |server| connect(server, &url, token, username).await).await
     })
 }
 
 /// `glave connections ...`.
 pub fn connections_main(words: &[String]) -> ExitCode {
     run_with(words, CONNECTIONS_USAGE, |words| async move {
-        let folder = std::env::current_dir()?;
         let words: Vec<&str> = words.iter().map(String::as_str).collect();
         match words.as_slice() {
-            [] => list(&folder).await,
-            ["remove", id] => remove(&folder, id).await,
+            [] => reach::with(list).await,
+            ["remove", id] => {
+                let credential = credential_id(id)?;
+                reach::with(async |server| remove(server, credential, id).await).await
+            }
             _ => bail!("unexpected words\n\n{CONNECTIONS_USAGE}"),
         }
     })
 }
 
 /// Signs in to GitHub in the browser, or connects it with a token where that is not set up.
-async fn sign_in(folder: &Path) -> anyhow::Result<()> {
-    let mut host = Host::connect_or_start(folder, &Args::default()).await?;
-    let Reply::Credentials { device, .. } = host.request(Request::CredentialList {}).await? else {
-        bail!("the task host answered credential/list with something else");
+async fn sign_in(server: &mut Reached) -> anyhow::Result<()> {
+    let Reply::Credentials { device, .. } = server.request(Request::CredentialList {}).await?
+    else {
+        bail!("glave answered credential/list with something else");
     };
     if !device {
         eprintln!(
@@ -88,26 +89,32 @@ async fn sign_in(folder: &Path) -> anyhow::Result<()> {
              make one at {GITHUB}/settings/personal-access-tokens/new for the repositories glave \
              works on."
         );
-        return with_token(folder, GITHUB, None).await;
+        let (url, token) = asked_token(GITHUB).await?;
+        return connect(server, &url, token, None).await;
     }
-    let Reply::Device { device } = host.request(Request::CredentialDeviceStart {}).await? else {
-        bail!("the task host answered credential/device/start with something else");
+    let Reply::Device { device } = server.request(Request::CredentialDeviceStart {}).await? else {
+        bail!("glave answered credential/device/start with something else");
     };
     println!("Open {} and enter the code {}", device.url, device.code);
     println!("Waiting while you approve glave there (Ctrl-C stops)...");
     loop {
         let flow = device.flow.clone();
-        match host.request(Request::CredentialDevicePoll { flow }).await? {
-            Reply::Credential { credential } => break said_connected(&mut host, &credential).await,
+        match server
+            .request(Request::CredentialDevicePoll { flow })
+            .await?
+        {
+            Reply::Credential { credential } => {
+                break said_connected(server, &credential).await;
+            }
             Reply::Waiting { .. } => {}
-            _ => bail!("the task host answered credential/device/poll with something else"),
+            _ => bail!("glave answered credential/device/poll with something else"),
         }
     }
 }
 
-/// Connects the host at `address` with a token read from standard input; Ctrl-C stops it, the
-/// terminal as it was.
-async fn with_token(folder: &Path, address: &str, username: Option<&str>) -> anyhow::Result<()> {
+/// The git host at `address`, as glave keeps it, and its token, read from standard input;
+/// Ctrl-C stops it, the terminal as it was.
+async fn asked_token(address: &str) -> anyhow::Result<(String, Secret)> {
     let Some(url) = crate::credentials::origin(address) else {
         bail!(
             "that is not a git host's address glave can use: give it as https:// and its host, \
@@ -117,50 +124,52 @@ async fn with_token(folder: &Path, address: &str, username: Option<&str>) -> any
     // Listening before the terminal's echo goes off, so no Ctrl-C leaves it off.
     let mut interrupts = signal(SignalKind::interrupt()).context("could not listen for Ctrl-C")?;
     tokio::select! {
-        connected = connect(folder, &url, username) => connected,
+        token = token::read(&url) => Ok((url, token?)),
         _ = interrupts.recv() => bail!("stopped"),
     }
 }
 
-async fn connect(folder: &Path, url: &str, username: Option<&str>) -> anyhow::Result<()> {
-    let token = token::read(url).await?;
-    let mut host = Host::connect_or_start(folder, &Args::default()).await?;
+async fn connect(
+    server: &mut Reached,
+    url: &str,
+    token: Secret,
+    username: Option<&str>,
+) -> anyhow::Result<()> {
     let request = Request::CredentialConnect {
         url: url.to_owned(),
         token,
         username: username.map(str::to_owned),
     };
-    let Reply::Credential { credential } = host.request(request).await? else {
-        bail!("the task host answered credential/connect with something else");
+    let Reply::Credential { credential } = server.request(request).await? else {
+        bail!("glave answered credential/connect with something else");
     };
-    said_connected(&mut host, &credential).await
+    said_connected(server, &credential).await
 }
 
 /// Says what was connected and what glave can do with it, and where to choose the
 /// repositories GitHub's app may use.
-async fn said_connected(host: &mut Host, credential: &CredentialInfo) -> anyhow::Result<()> {
+async fn said_connected(server: &mut Reached, credential: &CredentialInfo) -> anyhow::Result<()> {
     println!("Connected {}", shown(credential));
     println!("  {}", can(credential));
     if credential.forge == Forge::Github
         && let Reply::Credentials {
             install: Some(install),
             ..
-        } = host.request(Request::CredentialList {}).await?
+        } = server.request(Request::CredentialList {}).await?
     {
         println!("Choose the repositories glave may use at {install}");
     }
     Ok(())
 }
 
-async fn list(folder: &Path) -> anyhow::Result<()> {
-    let mut host = Host::connect_or_start(folder, &Args::default()).await?;
+async fn list(server: &mut Reached) -> anyhow::Result<()> {
     let Reply::Credentials {
         credentials,
         install,
         ..
-    } = host.request(Request::CredentialList {}).await?
+    } = server.request(Request::CredentialList {}).await?
     else {
-        bail!("the task host answered credential/list with something else");
+        bail!("glave answered credential/list with something else");
     };
     if credentials.is_empty() {
         println!("No git host is connected. Connect one with glave connect github, or");
@@ -181,12 +190,14 @@ async fn list(folder: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn remove(folder: &Path, id: &str) -> anyhow::Result<()> {
+fn credential_id(id: &str) -> anyhow::Result<CredentialId> {
     let uuid = Uuid::parse_str(id).with_context(|| format!("{id:?} is not a connection's id"))?;
-    let credential =
-        CredentialId::try_from(uuid).with_context(|| format!("{id:?} is not a connection's id"))?;
-    let mut host = Host::connect_or_start(folder, &Args::default()).await?;
-    host.request(Request::CredentialRemove { credential })
+    CredentialId::try_from(uuid).with_context(|| format!("{id:?} is not a connection's id"))
+}
+
+async fn remove(server: &mut Reached, credential: CredentialId, id: &str) -> anyhow::Result<()> {
+    server
+        .request(Request::CredentialRemove { credential })
         .await?;
     println!("Removed {id}: its token is destroyed.");
     Ok(())

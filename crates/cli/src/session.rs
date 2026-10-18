@@ -109,8 +109,8 @@ pub fn main() -> ExitCode {
 }
 
 /// The server for this folder, and what the terminal needs to show it.
-struct Wired {
-    server: Glave,
+pub struct Wired {
+    pub server: Glave,
     servers: Arc<Servers>,
     /// The default model's endpoint; none while no model is set up.
     endpoint: Option<Endpoint>,
@@ -125,6 +125,8 @@ struct Wired {
     workers: Option<Arc<WorkerComputers>>,
     /// Memory, when it is on.
     memory: Option<crate::memory::Running>,
+    /// The store's log, for the daily work of the person's server.
+    log: crate::data::DataLog,
     /// Each project's own servers, hooks and settings, and what it asks to be trusted.
     projects: Arc<Projects>,
     /// Logs and telemetry, stopped last.
@@ -220,11 +222,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         browsers: crate::serving::browsers(args)?,
     };
     let server = Server::new(wiring, settings, scope, answering);
-    // The folder glave runs in is its project's folder: where its threads work.
-    server
-        .keep_folder(scope.space, &root.to_string_lossy())
-        .await
-        .with_context(|| format!("could not keep {} as its project's folder", root.display()))?;
+    keep_here(&server, scope.space, &root).await?;
     Ok(Wired {
         server,
         servers,
@@ -235,9 +233,19 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         choices: setup.choices,
         workers,
         memory,
+        log: store.log(),
         projects,
         _telemetry: telemetry,
     })
+}
+
+/// Keeps `root`, the folder glave runs in, as the folder of its project, `space`: where its
+/// threads work.
+async fn keep_here(server: &Glave, space: SpaceId, root: &Path) -> anyhow::Result<()> {
+    server
+        .keep_folder(space, &root.to_string_lossy())
+        .await
+        .with_context(|| format!("could not keep {} as its project's folder", root.display()))
 }
 
 /// What reads the person's settings again for a server started in `folder` with `args` and
@@ -402,7 +410,7 @@ fn web(choices: &Choices) -> anyhow::Result<Option<Arc<dyn ToolSource>>> {
 /// daily check.
 async fn store(setup: &Setup) -> anyhow::Result<Data> {
     let store = Data::chosen(&setup.choices).await?;
-    crate::worktrees::check_at_start(&store.log()).await;
+    crate::worktrees::check_daily(&store.log()).await;
     Ok(store)
 }
 
@@ -513,12 +521,7 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
         Box::pin(session(&args, &wired, asks)).await
     };
     wired.server.shutdown().await;
-    if let Some(workers) = &wired.workers {
-        crate::cloud::release(&wired.server, workers).await;
-    }
-    wired.servers.close().await;
-    wired.projects.close().await;
-    close_memory(&wired).await;
+    wired.close().await;
     if opens_app {
         eprintln!("glave: no model is set up yet, so glave opens in your browser to add one");
         return crate::app::main().await;
@@ -526,32 +529,50 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     ran
 }
 
-/// Serves the session API: to the program that started glave until its input ends, as a
-/// folder's task host until it is idle, or as the person's server until it is told to stop.
+/// A server in this process for a command's requests, where none runs for the person and no
+/// one is at the terminal: answered by no one, asking nothing.
+pub async fn here() -> anyhow::Result<Wired> {
+    wire(&Args::default(), Answering::NoOne, Asking::NoOne).await
+}
+
+impl Wired {
+    /// Lets go of what the server started: workers, MCP servers, projects' tools, memory.
+    pub async fn close(&self) {
+        if let Some(workers) = &self.workers {
+            crate::cloud::release(&self.server, workers).await;
+        }
+        self.servers.close().await;
+        self.projects.close().await;
+        if let Some(memory) = &self.memory {
+            // The session's forgets batched into a space-key rotation.
+            memory.housekeep().await;
+            memory.memory.close().await;
+        }
+    }
+}
+
+/// Serves the session API: to the program that started glave until its input ends, or as the
+/// person's server until it is told to stop.
 pub async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
     let lock = crate::server::claim(&mut args).await?; // Held to the very end.
     // The session API owns standard input: a project is asked about through it, in an app.
     let wired = wire(&args, Answering::Clients, Asking::Later).await?;
-    let served = if args.socket {
-        let folder = std::env::current_dir()?;
-        crate::daemon::host(&wired.server, &crate::daemon::socket(&folder)?).await
-    } else if let Some(lock) = &lock {
-        crate::server::run(&args, &wired.server, lock).await
+    let served = if let Some(lock) = &lock {
+        let daily = crate::server::Daily {
+            log: wired.log.clone(),
+            memory: wired.memory.as_ref(),
+        };
+        crate::server::run(&args, &wired.server, &daily, lock).await
     } else {
         let input = tokio::io::BufReader::new(tokio::io::stdin());
         glave_session::rpc::serve(wired.server.clone(), input, tokio::io::stdout())
             .await
             .map_err(anyhow::Error::from)
     };
-    if args.socket || wired.workers.is_some() {
+    if wired.workers.is_some() {
         wired.server.shutdown().await;
     }
-    if let Some(workers) = &wired.workers {
-        crate::cloud::release(&wired.server, workers).await;
-    }
-    wired.servers.close().await;
-    wired.projects.close().await;
-    close_memory(&wired).await;
+    wired.close().await;
     drop(lock); // Last, once everything it ran has stopped.
     served?;
     Ok(ExitCode::SUCCESS)
@@ -569,6 +590,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         choices,
         workers: _,
         memory: _,
+        log: _,
         projects,
         _telemetry: _,
     } = wired;
@@ -578,7 +600,6 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
     // The terminal's threads are the folder's project's, so it shows what that chooses.
     let project = projects.settled(root).await;
     let model = project.model.unwrap_or_else(|| endpoint.model.clone());
-    crate::tasks::at_start(server, args).await;
     let here = Session::Here(server);
     let (thread, note) = pick_thread(here, Some(*space), args.resume, None, None, None).await?;
     if let Some(working) = crate::worktrees::note(server, thread).await {
@@ -618,7 +639,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         client.turn(&args.prompt, &mut printer).await
     };
     if let Some(path) = &args.events {
-        export(here, thread, path).await?;
+        crate::client::export(here, thread, path).await?;
     }
     Ok(code)
 }
@@ -708,14 +729,6 @@ pub async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
     code
 }
 
-/// Batches the session's forgets into a space-key rotation, then stops memory.
-async fn close_memory(wired: &Wired) {
-    if let Some(memory) = &wired.memory {
-        memory.housekeep().await;
-        memory.memory.close().await;
-    }
-}
-
 /// `/memory`: the memories this session's threads read, through the session API.
 async fn show_memory(server: Session<'_>) {
     match server.request(Request::MemoryList { scope: None }).await {
@@ -729,32 +742,6 @@ async fn show_memory(server: Session<'_>) {
         Ok(_) => {}
         Err(error) => println!("{error}"),
     }
-}
-
-/// Writes the thread's events as JSON Lines, one event per line, exactly as stored.
-pub async fn export(server: Session<'_>, thread: ThreadId, path: &Path) -> anyhow::Result<()> {
-    let mut lines = String::new();
-    let mut after = None;
-    loop {
-        let page = Request::ThreadEvents {
-            thread,
-            after,
-            limit: Some(5_000),
-        };
-        let Reply::Events { events, next } = server.request(page).await? else {
-            anyhow::bail!("the server answered thread/events with something else");
-        };
-        for event in &events {
-            lines.push_str(&event.to_json()?);
-            lines.push('\n');
-        }
-        match next {
-            Some(seq) => after = Some(seq),
-            None => break,
-        }
-    }
-    tokio::fs::write(path, lines).await?;
-    Ok(())
 }
 
 /// The instruction files for the banner, with the home folder as `~`:
