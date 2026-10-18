@@ -88,14 +88,16 @@ where
         ))
     }
 
-    /// The model `thread`'s next turn goes to: `asked`, else the thread's latest choice, else
-    /// its project's, else the default. Refused with `-32021` when this server does not run
-    /// it, as when a model chosen before is no longer offered.
+    /// The model `thread`'s next turn goes to, once the host's settings are read again:
+    /// `asked`, else the thread's latest choice, else its project's, else the default. Refused
+    /// with `-32021` when this server does not run it, as when a model chosen before is no
+    /// longer offered.
     pub(crate) async fn model_of(
         &self,
         thread: ThreadId,
         asked: Option<&str>,
     ) -> Result<String, ApiError> {
+        self.reread().await;
         let model = match asked {
             Some(model) => model.to_owned(),
             None => match self.chosen(thread).await? {

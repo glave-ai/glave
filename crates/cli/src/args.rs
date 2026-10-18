@@ -188,7 +188,7 @@ pub enum Action {
 }
 
 /// What the person asked for.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "independent command-line flags, each a yes or no"

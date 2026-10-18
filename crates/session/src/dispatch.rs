@@ -105,7 +105,10 @@ where
             Request::SigninRedeem { code } => self.redeem(code.expose()).await,
             Request::SigninEnd {} => self.end_session(caller).await,
             Request::SigninEndOthers {} => self.end_others(caller).await,
-            Request::ModelList {} => Ok(self.list_models()),
+            Request::ModelList {} => {
+                self.reread().await;
+                Ok(self.list_models())
+            }
             Request::ThreadStart {
                 computer: Some(computer),
                 ..

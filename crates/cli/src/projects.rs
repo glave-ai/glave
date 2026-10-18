@@ -14,7 +14,7 @@ mod tests;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::Duration;
 
 use glave_config::policy::{Choices, Loaded, Locations};
@@ -67,7 +67,8 @@ pub struct Projects {
     home: PathBuf,
     loaded: Loaded,
     choices: Choices,
-    taken: Vec<String>,
+    /// The names of the person's own servers, as they run now.
+    taken: RwLock<Vec<String>>,
     models: Switch,
     memory: Option<Arc<GlaveMemory<DataLog>>>,
     clock: Box<dyn Clock>,
@@ -91,7 +92,7 @@ impl Projects {
             home,
             loaded: own.loaded,
             choices: own.choices,
-            taken: own.taken,
+            taken: RwLock::new(own.taken),
             models: own.models,
             memory: own.memory,
             clock: own.clock,
@@ -162,12 +163,23 @@ impl Projects {
         }
     }
 
+    /// Gives way to the person's own servers named `taken` from now on, as they run now.
+    pub fn set_taken(&self, taken: Vec<String>) {
+        *self.taken.write().unwrap_or_else(PoisonError::into_inner) = taken;
+    }
+
+    /// Whether one of the person's own servers is named `name`.
+    fn is_taken(&self, name: &str) -> bool {
+        let taken = self.taken.read().unwrap_or_else(PoisonError::into_inner);
+        taken.iter().any(|taken| taken == name)
+    }
+
     /// Why each of `outcome`'s servers that shares a name with one of the person's own is off.
     fn taken_from(&self, outcome: &Outcome) -> Vec<String> {
         outcome
             .servers
             .keys()
-            .filter(|name| self.taken.contains(name))
+            .filter(|name| self.is_taken(name))
             .map(|name| {
                 format!(
                     "MCP server {name} is off: the person's own server of the same name runs \
@@ -248,7 +260,7 @@ impl Projects {
         let servers: BTreeMap<String, String> = outcome
             .servers
             .iter()
-            .filter(|(name, _)| !self.taken.contains(name))
+            .filter(|(name, _)| !self.is_taken(name))
             .filter(|(name, _)| chosen.is_none_or(|chosen| chosen.contains(name)))
             .map(|(name, definition)| (name.clone(), definition.clone()))
             .collect();

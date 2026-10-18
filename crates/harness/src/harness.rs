@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_event::{
     ApprovalMode, At, EncodeError, EventId, Header, InvalidValue, Origin, OriginKind, ParentCall,
@@ -139,8 +139,9 @@ pub struct Harness<P, L, B, A> {
     /// its own; none by default.
     pub(crate) web: Option<Arc<dyn ToolSource>>,
     /// The person's own tools, such as their MCP servers', offered after the other sources to
-    /// their threads alone: they run with the person's sign-ins. None by default.
-    pub(crate) own: Vec<Arc<dyn ToolSource>>,
+    /// their threads alone: they run with the person's sign-ins. None by default; the host
+    /// replaces them when the person's settings change.
+    pub(crate) own: RwLock<Vec<Arc<dyn ToolSource>>>,
     /// Commands run at points of a turn; none by default.
     pub(crate) hooks: Hooks,
     pub(crate) settings: Settings,
@@ -345,7 +346,7 @@ where
             })],
             workspace,
             web: None,
-            own: Vec::new(),
+            own: RwLock::default(),
             hooks: Hooks::default(),
             default: RwLock::new(DefaultModel {
                 model: settings.model.clone(),
@@ -420,9 +421,15 @@ where
     /// Offers the tools of `sources`, the person's own, to the threads of the person the
     /// harness works for alone, after its other sources.
     #[must_use]
-    pub fn with_own_tools(mut self, sources: Vec<Arc<dyn ToolSource>>) -> Self {
-        self.own = sources;
+    pub fn with_own_tools(self, sources: Vec<Arc<dyn ToolSource>>) -> Self {
+        self.set_own_tools(sources);
         self
+    }
+
+    /// Offers the tools of `sources` as the person's own in place of those before, from each
+    /// thread's next turn on: a turn already running keeps the tools it started with.
+    pub fn set_own_tools(&self, sources: Vec<Arc<dyn ToolSource>>) {
+        *self.own.write().unwrap_or_else(PoisonError::into_inner) = sources;
     }
 
     /// Runs `hooks` at their points of the turns of the person the harness works for.
@@ -444,7 +451,8 @@ where
             sources.insert(after, Arc::clone(web));
         }
         if self.trusting(thread.for_) {
-            sources.extend(self.own.iter().cloned());
+            let own = self.own.read().unwrap_or_else(PoisonError::into_inner);
+            sources.extend(own.iter().cloned());
         }
         sources.extend(thread.brought.tools.iter().cloned());
         sources

@@ -192,6 +192,7 @@ impl Setup {
             models: self.models,
             modes: self.modes,
             providers: self.providers,
+            rereads: None,
             git_hosts: self.hosts,
             projects: self.project_host,
             trust: self.trust,

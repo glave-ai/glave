@@ -29,6 +29,7 @@ use crate::ledger::{Ledgers, is_ledger};
 use crate::modes::Choice;
 use crate::protocol::{ApiError, ApprovalMode, ErrorData, ModelInfo, Notification, Reply, code};
 use crate::providers::Providers;
+use crate::reread::Rereads;
 use crate::spaces::Places;
 use crate::tasks::{TaskLimits, Tasks};
 use crate::trust::{Asks, ProjectTrust};
@@ -75,6 +76,9 @@ pub struct Wiring<P, L, B> {
     /// The model accounts the person on this computer connects, which the models follow;
     /// none where whoever runs the server sets up its models.
     pub providers: Option<Arc<dyn Providers>>,
+    /// What reads the host's own settings again at the start of each turn, which the models
+    /// and the person's own tools follow; none where they are read only at the start.
+    pub rereads: Option<Arc<dyn Rereads>>,
     /// The git hosts the person on this computer connects; none where whoever runs the
     /// server sets up what its threads sign in to.
     pub git_hosts: Option<Arc<dyn GitHosts>>,
@@ -131,7 +135,9 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) models: RwLock<Vec<ModelInfo>>,
     /// Where model accounts are kept, when the person here may connect them.
     pub(crate) providers: Option<Arc<dyn Providers>>,
-    /// Held while model accounts change and the models follow.
+    /// What reads the host's own settings again, when it has any.
+    pub(crate) rereads: Option<Arc<dyn Rereads>>,
+    /// Held while model accounts or the host's settings change and the models follow.
     pub(crate) changing_models: tokio::sync::Mutex<()>,
     /// Where git hosts are kept, when the person here may connect them.
     pub(crate) git_hosts: Option<Arc<dyn GitHosts>>,
@@ -203,6 +209,7 @@ where
                 worker: wiring.workers.map(|on| on.environment),
                 models: RwLock::new(catalog),
                 providers: wiring.providers,
+                rereads: wiring.rereads,
                 changing_models: tokio::sync::Mutex::new(()),
                 git_hosts: wiring.git_hosts,
                 modes: choosable,

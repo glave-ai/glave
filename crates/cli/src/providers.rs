@@ -7,6 +7,8 @@
 mod check;
 mod lineup;
 
+use std::sync::{Mutex, PoisonError};
+
 use glave_event::{Principal, ProviderConnected, ProviderId, ProviderKind, Secret};
 use glave_ports::{BoxFuture, Failure, ProviderError};
 use glave_provider_openai::Config;
@@ -18,7 +20,7 @@ use crate::config::Endpoint;
 use crate::gateway::Switch;
 use crate::model;
 
-pub use lineup::{Built, Lineup};
+pub use lineup::{Built, Lineup, endpoint};
 
 /// The longest key taken, in bytes.
 const LONGEST_KEY: usize = 4096;
@@ -32,7 +34,8 @@ const AT: &str = "the model account you connected";
 /// The person's model accounts, and the gateway their models run on.
 pub struct Host {
     ledger: Ledger,
-    lineup: Lineup,
+    /// What the models are built from: replaced when the person's settings change.
+    lineup: Mutex<Lineup>,
     switch: Switch,
 }
 
@@ -40,16 +43,34 @@ impl Host {
     pub fn new(ledger: Ledger, lineup: Lineup, switch: Switch) -> Self {
         Self {
             ledger,
-            lineup,
+            lineup: Mutex::new(lineup),
             switch,
         }
+    }
+
+    /// What the models are built from now.
+    fn lineup(&self) -> Lineup {
+        self.lineup
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Builds the models from `lineup` from now on, with the accounts kept, and sends calls
+    /// to them.
+    pub async fn relined(&self, lineup: Lineup) -> anyhow::Result<Models> {
+        let accounts = self.ledger.accounts().await?;
+        let built = lineup.build(&accounts.providers)?;
+        *self.lineup.lock().unwrap_or_else(PoisonError::into_inner) = lineup;
+        self.switch.set(built.gateway);
+        Ok(built.models)
     }
 
     /// Builds the models of the accounts kept now, and sends calls to them.
     async fn rebuilt(&self) -> Result<Models, ApiError> {
         let accounts = self.ledger.accounts().await.map_err(|e| failed(&e))?;
         let built = self
-            .lineup
+            .lineup()
             .build(&accounts.providers)
             .map_err(|e| failed(&e))?;
         self.switch.set(built.gateway);
@@ -91,7 +112,7 @@ impl Host {
             .map_err(|e| failed(&e))?
             .providers;
         accounts.push(account.clone());
-        self.lineup.build(&accounts).map_err(|e| {
+        self.lineup().build(&accounts).map_err(|e| {
             ApiError::new(
                 code::NOT_ALLOWED,
                 format!("glave cannot run this account's models here: {e:#}"),
