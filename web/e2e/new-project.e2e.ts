@@ -63,7 +63,8 @@ test('a project made from a folder picked on this computer, then its first threa
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(new RegExp(`/\\?space=${FIRST}$`, 'u'));
   await expect(byTestId(page, 'home-where-trigger')).toContainText('glave 2');
-  await expect(byTestId(page, 'nav-space-toggle')).toHaveText(['glave 2', 'glave']);
+  // glave, where a thread waits for the person, stays first; then the project just made.
+  await expect(byTestId(page, 'nav-space-toggle')).toHaveText(['glave', 'glave 2']);
   expect(created(api.requests)).toEqual([
     { name: 'glave', folder: { kind: 'path', path: '/Users/ana/code/glave' } },
   ]);

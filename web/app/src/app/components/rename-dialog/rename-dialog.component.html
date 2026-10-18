@@ -1,6 +1,6 @@
-<glz-dialog testId="rename" [heading]="copy.heading" [(open)]="open">
+<glz-dialog testId="rename" [heading]="naming().heading" [(open)]="open">
   <form (submit)="save($event)">
-    <glz-form-field [label]="copy.label" [hint]="copy.hint">
+    <glz-form-field [label]="naming().label" [hint]="copy.hint">
       <input
         glzInput
         data-testid="rename-input"

@@ -114,6 +114,36 @@ describe('SpacesService', () => {
     expect(fake.paramsOf('space/list')).toHaveLength(0);
   });
 
+  it('renames a project, then lists it by its new name', async () => {
+    let name = 'glave';
+    const fake = new FakeSession()
+      .answer('space/list', () => ({ spaces: [space('p1', name)] }))
+      .answer('thread/list', { threads: [] })
+      .answer('space/rename', (params) => {
+        name = (params as { name: string }).name;
+        return { space: space('p1', name) };
+      });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const spaces = TestBed.inject(SpacesService);
+    await spaces.refresh();
+    await spaces.rename('p1', 'glave app');
+    expect(fake.paramsOf('space/rename')).toEqual([{ space: 'p1', name: 'glave app' }]);
+    expect(spaces.spaces().map((entry) => entry.space.name)).toEqual(['glave app']);
+  });
+
+  it('throws a rename the server refused', async () => {
+    const fake = new FakeSession()
+      .answer('space/list', { spaces: [] })
+      .answer(
+        'space/rename',
+        new ApiError({ code: ErrorCode.NOT_ALLOWED, message: 'only its owner renames it' }),
+      );
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const spaces = TestBed.inject(SpacesService);
+    await expect(spaces.rename('p1', 'x')).rejects.toThrow('only its owner renames it');
+    expect(fake.paramsOf('space/list')).toHaveLength(0);
+  });
+
   it('polls only while the tab is shown', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);

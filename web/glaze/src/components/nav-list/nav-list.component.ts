@@ -3,39 +3,43 @@ import {
   Component,
   booleanAttribute,
   computed,
+  contentChildren,
+  inject,
   input,
   model,
 } from '@angular/core';
-import { ChevronDown, ChevronRight } from 'lucide';
+import { ChevronDown } from 'lucide';
 
-import type { GlzIconData } from '../../lib/icons';
 import { testIds } from '../../lib/test-ids';
 import { injectId } from '../../tokens/ids';
 import { GlzIconComponent } from '../icon/icon.component';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
-const PARTS = { toggle: 'toggle', items: 'items' } as const;
+const PARTS = { toggle: 'toggle', caret: 'caret', end: 'end', items: 'items' } as const;
 
 /**
  * A list of links in a side nav, under an optional heading that names the group for screen
- * readers. Its items are `glzNavItem` links or buttons. A `collapsible` list's heading is a
- * disclosure button that shows or hides its items (`expanded`, bound two ways). Actions for
- * the group, such as "New thread here", go at the heading's end (`[glzNavListActions]`), and
- * show while the pointer or focus is on the heading (always on a touch screen).
+ * readers: small and muted, its items' text at the same left edge. Its items are `glzNavItem`
+ * links or buttons. A `collapsible` list's heading is a disclosure button that shows or hides
+ * its items (`expanded`, bound two ways), with a caret just after its name that turns while
+ * the list is closed. Actions for the group, such as "New thread here", go beside the heading
+ * (`[glzNavListActions]`); they and the caret show while the pointer or focus is on the
+ * heading, and always on a touch screen, the caret faintly. A mark goes at the heading's end
+ * (`[glzNavListEnd]`), such as a dot for what waits in a closed list; it describes the toggle.
  *
- * A collapsible list with an `icon` is a group inside a list, such as a project: its heading is
- * a row like its items, with the icon before its name in place of the chevron, and its items
- * are indented to line up with that name.
+ * A list inside another list is a group, such as a project: its heading is quieter than the
+ * outer list's, and the groups sit further apart than the items in each.
  *
  * ```html
  * <glz-nav-list heading="Threads">
  *   <a glzNavItem routerLink="/t/1" [current]="true">Plan the launch</a>
  *   <a glzNavItem routerLink="/t/2">Fix the build <glz-badge glzNavItemEnd tone="warning">1</glz-badge></a>
  * </glz-nav-list>
- * <glz-nav-list heading="Projects">
+ * <glz-nav-list heading="Projects" collapsible [(expanded)]="projects">
  *   <button glzNavListActions glzIconButton size="sm" label="New project">…</button>
- *   <glz-nav-list heading="glave" collapsible [icon]="folder" [(expanded)]="open">
+ *   <glz-nav-list heading="glave" collapsible [(expanded)]="open">
  *     <button glzNavListActions glzIconButton size="sm" label="New thread in glave">…</button>
+ *     <glz-badge glzNavListEnd tone="accent" variant="dot">needs you</glz-badge>
  *     …
  *   </glz-nav-list>
  * </glz-nav-list>
@@ -51,7 +55,8 @@ const PARTS = { toggle: 'toggle', items: 'items' } as const;
     role: 'group',
     '[attr.aria-labelledby]': 'labelledBy()',
     '[attr.data-testid]': 'testId()',
-    '[class.glz-nav-list--row]': 'hasIcon()',
+    '[class.glz-nav-list--group]': 'nested',
+    '[class.glz-nav-list--groups]': 'hasGroups()',
   },
 })
 export class GlzNavListComponent {
@@ -64,21 +69,21 @@ export class GlzNavListComponent {
   readonly collapsible = input(false, { transform: booleanAttribute });
   /** Whether a collapsible list shows its items. */
   readonly expanded = model(true);
-  /** An icon before a collapsible list's heading, which makes the heading a row like the items. */
-  readonly icon = input<GlzIconData | null>(null);
 
+  protected readonly icons = { caret: ChevronDown };
   protected readonly headingId = injectId('glz-nav-list');
   protected readonly itemsId = injectId('glz-nav-list-items');
+  protected readonly endId = injectId('glz-nav-list-end');
+  /** Whether this list is a group inside another, such as a project under Projects. */
+  protected readonly nested =
+    inject(GlzNavListComponent, { optional: true, skipSelf: true }) !== null;
+  private readonly groups = contentChildren(GlzNavListComponent, { descendants: true });
+  protected readonly hasGroups = computed(() => this.groups().length > 0);
   protected readonly hasHeading = computed(() => this.heading() !== '');
   /** Whether it has a header: a heading, or a collapsible list's toggle. */
   protected readonly hasHeader = computed(() => this.collapsible() || this.hasHeading());
   protected readonly labelledBy = computed(() => (this.hasHeading() ? this.headingId : null));
   protected readonly collapsed = computed(() => this.collapsible() && !this.expanded());
-  protected readonly hasIcon = computed(() => this.collapsible() && this.icon() !== null);
-  /** What leads the heading: its icon, else a collapsible list's chevron. */
-  protected readonly lead = computed(
-    () => this.icon() ?? (this.expanded() ? ChevronDown : ChevronRight),
-  );
 
   protected toggle(): void {
     this.expanded.update((expanded) => !expanded);

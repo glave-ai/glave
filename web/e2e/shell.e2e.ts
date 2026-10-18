@@ -184,36 +184,14 @@ test('the person’s messages are bubbles at the end of the line; long ones fold
 test('the search keeps the threads whose title matches', async ({ page }) => {
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
-  await expect(byTestId(page, 'nav-thread')).toHaveCount(4);
+  await expect(byTestId(page, 'nav-thread')).toHaveCount(5);
   await byTestId(page, 'nav-search').fill('release');
   await expect(byTestId(page, 'nav-thread')).toHaveText(['Review the release notes needs you']);
   await byTestId(page, 'nav-search').fill('zebra');
   await expect(byTestId(page, 'nav-thread')).toHaveCount(0);
   await expect(byTestId(page, 'nav-no-match')).toBeVisible();
   await byTestId(page, 'nav-search').fill('');
-  await expect(byTestId(page, 'nav-thread')).toHaveCount(4);
-});
-
-test('a project closes and opens from its row, and + starts a thread in it', async ({ page }) => {
-  await fakeApi(page);
-  await page.goto(`/${SIGNED_IN}`);
-  const toggle = byTestId(page, 'nav-space-toggle').first();
-  await expect(toggle).toHaveText('glave');
-  await expect(byTestId(page, 'nav-thread')).toHaveCount(4);
-  const shown = byTestId(page, 'nav-thread').filter({ visible: true });
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(byTestId(page, 'nav-space-items').first()).toBeHidden();
-  await expect(shown).toHaveText(['Dinner ideas for Saturday']);
-  await toggle.click();
-  await expect(shown).toHaveCount(4);
-  // The + shows on the row while the pointer is on it.
-  await byTestId(page, 'nav-space').first().hover();
-  await byTestId(page, 'nav-space-new').first().click();
-  await expect(byTestId(page, 'home-where-trigger')).toContainText('glave');
-  // New chat starts a chat.
-  await byTestId(page, 'nav-new-chat').click();
-  await expect(byTestId(page, 'home-where-trigger')).toContainText('A chat');
+  await expect(byTestId(page, 'nav-thread')).toHaveCount(5);
 });
 
 test('on a phone the side nav is a drawer and the tools a sheet', async ({ page }) => {

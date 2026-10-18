@@ -11,13 +11,19 @@
   min-width: 0;
 }
 
-// Its heading lines up with the items' text, a little above them.
+// Its heading lines up with the items' text, a little above them: small and muted, in bold
+// for a list of its own, regular for a group inside one (a project under Projects).
 .heading {
   flex: 1;
   min-width: 0;
   padding: 0 var(--glz-space-3) var(--glz-space-1);
   color: var(--glz-color-text-muted);
   font-size: var(--glz-text-xs);
+  font-weight: var(--glz-weight-bold);
+}
+
+:host(.glz-nav-list--group) .heading {
+  font-weight: var(--glz-weight-regular);
 }
 
 .toggle {
@@ -25,7 +31,6 @@
   align-items: center;
   gap: var(--glz-space-1);
   padding-block: var(--glz-space-1);
-  padding-inline-start: var(--glz-space-2);
   border: 0;
   border-radius: var(--glz-radius-row);
   background: none;
@@ -44,38 +49,67 @@
 }
 
 .text {
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.lead {
+// The caret follows the name, and turns to point at it while the list is closed.
+.caret {
   flex: none;
+  transition:
+    opacity var(--glz-duration-fast) var(--glz-easing),
+    transform var(--glz-duration-fast) var(--glz-easing);
 }
 
-// A heading's actions show while the pointer or focus is on its header, and always on touch;
-// every list's line up at the same end.
+.toggle[aria-expanded='false'] .caret {
+  transform: rotate(-90deg);
+}
+
+// The caret and the heading's actions show while the pointer or focus is on its header, and
+// always on touch, the caret faintly; every list's actions line up at the same end.
+.caret,
 .actions {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  padding-inline-end: var(--glz-space-1);
   opacity: 0;
 }
 
-.actions:empty {
-  display: none;
-}
-
+.header:hover .caret,
+.header:focus-within .caret,
 .header:hover .actions,
 .header:focus-within .actions {
   opacity: 1;
 }
 
 @media (hover: none) {
+  .caret,
   .actions {
     opacity: 1;
   }
+
+  .caret {
+    color: var(--glz-color-text-disabled);
+  }
+}
+
+.actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding-inline-end: var(--glz-space-1);
+}
+
+// A mark at the heading's end, where its items' marks are.
+.end {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding-inline-end: var(--glz-space-3);
+}
+
+.actions:empty,
+.end:empty {
+  display: none;
 }
 
 .items {
@@ -88,29 +122,7 @@
   display: none;
 }
 
-// A group inside a list, such as a project: its heading a row like the items (an icon, then its
-// name), and its items' text indented to line up with that name (past glz-icon's 1.25em and the
-// gap after it).
-:host(.glz-nav-list--row) .header {
-  border-radius: var(--glz-radius-row);
-}
-
-:host(.glz-nav-list--row) .header:hover {
-  background: var(--glz-surface-hover);
-}
-
-:host(.glz-nav-list--row) .toggle {
-  gap: var(--glz-space-2);
-  padding: var(--glz-inset-row);
-  color: var(--glz-color-text-secondary);
-  font-size: inherit;
-  line-height: var(--glz-leading-tight);
-}
-
-:host(.glz-nav-list--row) .lead {
-  color: var(--glz-color-text-muted);
-}
-
-:host(.glz-nav-list--row) .items {
-  --glz-nav-indent: calc(1.25em + var(--glz-space-2));
+// Groups (projects) sit further apart than the items inside each.
+:host(.glz-nav-list--groups) > .items {
+  gap: var(--glz-space-4);
 }
