@@ -120,7 +120,9 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
                 which.as_str()
             )));
         }
-        let memory = MemoryId::new(self.inner.clock.now(), self.inner.entropy.bytes())
+        let random = (self.inner.entropy.bytes())
+            .map_err(|error| MemoryError::Storage(error.to_string()))?;
+        let memory = MemoryId::new(self.inner.clock.now(), random)
             .map_err(|error| MemoryError::Storage(error.to_string()))?;
         let saved = MemorySaved {
             memory,

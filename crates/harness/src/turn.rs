@@ -571,7 +571,9 @@ where
                 Ok(completion) => return Ok(completion),
                 Err(error) if error.is_transient() && retry < retries.attempts => {
                     retry += 1;
-                    let wait = retries.wait(retry, self.entropy.bytes());
+                    // Only the wait's jitter: without randomness it waits the plain backoff.
+                    let jitter = self.entropy.bytes().unwrap_or_default();
+                    let wait = retries.wait(retry, jitter);
                     live(Live::Retrying {
                         retry,
                         of: retries.attempts,

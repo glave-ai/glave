@@ -73,7 +73,7 @@ pub async fn computer(home: &Path) -> anyhow::Result<ComputerId> {
 }
 
 fn make() -> anyhow::Result<PrincipalId> {
-    Ok(PrincipalId::new(SystemClock.now(), OsEntropy.bytes())?)
+    Ok(PrincipalId::new(SystemClock.now(), OsEntropy.bytes()?)?)
 }
 
 fn render(identity: &Identity) -> String {

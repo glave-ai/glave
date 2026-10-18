@@ -180,7 +180,7 @@ where
             };
             let now = self.inner.harness.clock().now();
             let header = Header {
-                id: EventId::new(now, self.inner.harness.entropy().bytes())
+                id: EventId::new(now, self.inner.harness.entropy().bytes()?)
                     .map_err(|error| internal(&error))?,
                 thread: ledger,
                 seq: current
@@ -235,7 +235,7 @@ where
                 Some(set) => set.folder,
                 None => ThreadId::new(
                     self.inner.harness.clock().now(),
-                    self.inner.harness.entropy().bytes(),
+                    self.inner.harness.entropy().bytes()?,
                 )
                 .map_err(|error| internal(&error))?
                 .as_uuid(),

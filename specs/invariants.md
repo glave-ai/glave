@@ -66,5 +66,5 @@ Tests are named by file and function. A conformance suite is a function in `crat
     - *Partly:* events, the session protocol, the computer protocol, the process ledger, `browsers.json` and `trust.toml` do; the `identity` and `computer` files and worktree records do not (#400).
     - *Proved by:* `crates/event/tests/fixtures.rs` `every_known_version_has_a_fixture_that_decodes`, `latest_versions_encode_to_exactly_the_saved_bytes`, `every_fixture_is_a_known_version`; `crates/store-sqlite/src/tests.rs` `a_newer_schema_is_refused`. No test for the files.
 16. **Time and randomness are injected.**
-    - *Partly:* library code in glave-computer and glave-process still reads the real clock (a lint in #366), and `OsEntropy` yields zeros when the system's source fails (#399).
-    - *Proved by:* nothing enforces it; tests use `glave_ports::testing::ManualClock`.
+    - *Partly:* library code in glave-computer and glave-process still reads the real clock (a lint in #366). Randomness that fails is an error, never a weaker id.
+    - *Proved by:* nothing enforces injection; tests use `glave_ports::testing::ManualClock`. `crates/harness/tests/turn.rs` `a_random_source_that_fails_makes_no_thread`.

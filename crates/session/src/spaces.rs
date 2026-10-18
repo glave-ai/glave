@@ -141,7 +141,7 @@ where
     /// The caller's personal space, made the first time.
     pub(crate) async fn personal_space(&self, caller: &Caller) -> Result<Space, ApiError> {
         let now = self.inner.harness.clock().now();
-        let id = ThreadId::new(now, self.inner.harness.entropy().bytes())
+        let id = ThreadId::new(now, self.inner.harness.entropy().bytes()?)
             .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
         let new = Space {
             id: SpaceId::from_uuid(id.as_uuid()),
@@ -271,7 +271,7 @@ where
     ) -> Result<Reply, ApiError> {
         Space::check_name(&name).map_err(|e| failed(&e))?;
         let now = self.inner.harness.clock().now();
-        let id = ThreadId::new(now, self.inner.harness.entropy().bytes())
+        let id = ThreadId::new(now, self.inner.harness.entropy().bytes()?)
             .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
         let space = Space {
             id: SpaceId::from_uuid(id.as_uuid()),

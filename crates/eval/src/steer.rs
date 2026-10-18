@@ -73,7 +73,7 @@ impl<'a> Steering<'a> {
             return None;
         }
         let queued = Queued {
-            id: EventId::new(clock.now(), entropy.bytes()).ok()?,
+            id: EventId::new(clock.now(), entropy.bytes().ok()?).ok()?,
             text: self.steer.message.clone(),
             caller: Caller::default(),
         };

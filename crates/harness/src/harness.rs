@@ -37,7 +37,7 @@ use crate::retry::Retries;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
 use crate::worker::Workers;
-use glave_ports::{Clock, Entropy, Standing};
+use glave_ports::{Clock, Entropy, EntropyError, Standing};
 
 /// How the harness runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -288,6 +288,8 @@ pub enum HarnessError {
     Provider(#[from] ProviderError),
     #[error("could not build an event: {0}")]
     Event(String),
+    #[error(transparent)]
+    Entropy(#[from] EntropyError),
     #[error("thread {0} has no events in this space")]
     NotFound(ThreadId),
     /// The thread was archived, from outside this harness, while it held the thread.
@@ -329,7 +331,11 @@ where
 {
     pub fn new(parts: Parts<P, L, B, A>, settings: Settings) -> Self {
         let workspace = Arc::new(parts.workspace);
-        let made = || PrincipalId::new(parts.clock.now(), parts.entropy.bytes()).ok();
+        // Without randomness the actor stays unnamed rather than getting a weak id.
+        let made = || {
+            let random = parts.entropy.bytes().ok()?;
+            PrincipalId::new(parts.clock.now(), random).ok()
+        };
         let actors = Actors {
             person: settings.person.or_else(made),
             agent: settings.agent.or_else(made),
@@ -545,7 +551,7 @@ where
         caller: &Caller,
         place: Option<Place>,
     ) -> Result<Thread, HarnessError> {
-        let id = ThreadId::new(self.clock.now(), self.entropy.bytes())?;
+        let id = ThreadId::new(self.clock.now(), self.entropy.bytes()?)?;
         let placed = match place {
             Some(place) => Some(self.place(scope, id, place).await?),
             None => None,
@@ -643,7 +649,7 @@ where
         payload: &T,
     ) -> Result<(), HarnessError> {
         let now = self.clock.now();
-        let id = EventId::new(now, self.entropy.bytes())?;
+        let id = EventId::new(now, self.entropy.bytes()?)?;
         Self::stage_at(thread, events, payload, id, now)
     }
 

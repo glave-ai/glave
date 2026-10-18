@@ -24,6 +24,8 @@ pub(crate) enum Kind {
     Upstream,
     /// The model's provider sent nothing for too long.
     Timeout,
+    /// The gateway itself failed, such as its computer's random source.
+    Internal,
 }
 
 /// A refusal or failure, ready to send.
@@ -45,6 +47,7 @@ impl Refusal {
             Kind::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Kind::Upstream => StatusCode::BAD_GATEWAY,
             Kind::Timeout => StatusCode::GATEWAY_TIMEOUT,
+            Kind::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
         Self {
             kind,
@@ -104,7 +107,7 @@ impl Refusal {
             Kind::NotFound => "not_found_error",
             Kind::Budget => "insufficient_quota",
             Kind::RateLimited => "rate_limit_error",
-            Kind::Upstream | Kind::Timeout => "api_error",
+            Kind::Upstream | Kind::Timeout | Kind::Internal => "api_error",
         };
         json!({"error": {"message": self.message, "type": kind, "code": null}})
     }
@@ -117,7 +120,7 @@ impl Refusal {
             Kind::Forbidden => "permission_error",
             Kind::NotFound => "not_found_error",
             Kind::RateLimited => "rate_limit_error",
-            Kind::Upstream => "api_error",
+            Kind::Upstream | Kind::Internal => "api_error",
             Kind::Timeout => "overloaded_error",
         };
         json!({"type": "error", "error": {"type": kind, "message": self.message}})

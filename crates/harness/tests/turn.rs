@@ -15,6 +15,34 @@ mod scripted {
     use serde_json::json;
 
     #[test]
+    fn a_random_source_that_fails_makes_no_thread() {
+        let dir = folder("no-entropy");
+        block_on!(async {
+            let parts = glave_harness::Parts {
+                provider: Script {
+                    answers: std::sync::Mutex::default(),
+                    seen: std::sync::Arc::default(),
+                },
+                log: InMemoryLog::new(),
+                blobs: glave_ports::InMemoryBlobs::new(),
+                approver: AllowAll,
+                clock: Box::new(glave_ports::testing::ManualClock::ticking(
+                    1_791_000_000_000,
+                )),
+                entropy: Box::new(glave_ports::testing::FailingEntropy),
+                workspace: workspace(&dir).await,
+            };
+            let harness = glave_harness::Harness::new(parts, settings());
+            let started = harness.start_thread(scope()).await;
+            assert!(
+                matches!(started, Err(glave_harness::HarnessError::Entropy(_))),
+                "an id with no randomness is never made: {:?}",
+                started.err()
+            );
+        });
+    }
+
+    #[test]
     fn a_turn_writes_a_file_and_records_every_step() {
         let dir = folder("write");
         block_on!(async {

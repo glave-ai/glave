@@ -187,7 +187,7 @@ async fn apply<L: EventLog>(
     thread: ThreadId,
 ) -> anyhow::Result<()> {
     let now = Timestamp::now();
-    change_standing(log, &scope, thread, now, OsEntropy.bytes(), change).await?;
+    change_standing(log, &scope, thread, now, OsEntropy.bytes()?, change).await?;
     println!("{} {thread}", done(change));
     if change != Change::Unarchive {
         for line in worktrees::release_archived(log, scope, thread).await? {

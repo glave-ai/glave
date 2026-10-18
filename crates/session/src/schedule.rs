@@ -84,7 +84,7 @@ where
             }
         }
         let now = self.inner.harness.clock().now();
-        let schedule = ScheduleId::new(now, self.inner.harness.entropy().bytes())
+        let schedule = ScheduleId::new(now, self.inner.harness.entropy().bytes()?)
             .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
         let created = ScheduleCreated {
             schedule,
