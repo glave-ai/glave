@@ -3,8 +3,6 @@
 //! an index into spaces, never a space's identity: a moved or re-cloned project finds its space
 //! again by its `origin` remote.
 
-mod memory;
-
 use std::fmt;
 
 use glave_event::{At, Principal, PrincipalId};
@@ -13,8 +11,6 @@ use thiserror::Error;
 
 use crate::scope::{OrgId, SpaceId};
 use crate::tools::BoxFuture;
-
-pub use memory::MemorySpaces;
 
 /// The longest name a space may have, in characters.
 pub const MAX_NAME: usize = 200;

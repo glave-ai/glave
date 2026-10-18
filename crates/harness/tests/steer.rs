@@ -14,9 +14,10 @@ mod steering {
     use glave_event::StopReason;
     use glave_event::{Body, Event, EventId, HookPoint, Outcome, Part, PrincipalKind, Role};
     use glave_harness::{
-        AllowAll, Caller, Cancel, Hook, Hooks, Inbox, Live, NotQueued, Queued, conversation,
+        AllowAll, Cancel, Hook, Hooks, Inbox, Live, NotQueued, Queued, conversation,
     };
-    use glave_ports::{MemoryLog, Message, ModelRequest};
+    use glave_ports::Caller;
+    use glave_ports::{InMemoryLog, Message, ModelRequest};
     use serde_json::json;
 
     use super::support::*;
@@ -112,7 +113,7 @@ mod steering {
                 answer(Some("Set to 4000."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let sent = vec![
                 queued(1, "actually, 4000"),
@@ -183,7 +184,7 @@ mod steering {
                 answer(Some("And the other thing."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let late = queued(1, "one more thing");
             let inbox = thread.inbox().clone();
@@ -240,7 +241,7 @@ mod steering {
                 answer(Some("never"), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let waiting = queued(1, "and then this");
             let inbox = thread.inbox().clone();
@@ -307,7 +308,7 @@ mod steering {
                 answer(Some("Done."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let harness = harness.with_hooks(Hooks::new(vec![hook]).unwrap());
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let (blocked, passed) = (queued(1, "my secret is 42"), queued(2, "go on"));

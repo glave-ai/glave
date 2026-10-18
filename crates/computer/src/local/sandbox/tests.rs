@@ -8,9 +8,10 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command as Process;
 
-use glave_ports::{
-    Command, Computers, Ending, Environment, Output, Sandbox, SandboxLevel, Sources, WorkspaceId,
-    block_on,
+use glave_ports::block_on;
+use glave_ports::computer::{
+    Command, ComputerError, Computers, Ending, Environment, Output, Sandbox, SandboxLevel, Sources,
+    WorkspaceId,
 };
 
 use super::sandbox_available;
@@ -347,7 +348,7 @@ fn other_spellings_of_protected_paths_are_protected_too() {
                 .run(here.id, &command, &Collect::default(), &never)
                 .await;
             assert!(
-                matches!(refused, Err(glave_ports::ComputerError::Unsupported(_))),
+                matches!(refused, Err(ComputerError::Unsupported(_))),
                 "{refused:?}"
             );
             for (spelled, protected) in SPELLINGS {

@@ -13,8 +13,8 @@ use glave_event::{
     At, Body, Currency, Fired, Money, Opened, Outcome, Payload, Principal, PrincipalId, TaskEnded,
     TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
-use glave_harness::{Caller, Goal};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, SpaceId, title_from};
+use glave_harness::Goal;
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, SpaceId, title_from};
 
 use crate::held::{Slot, busy};
 use crate::ledger::Recorded;

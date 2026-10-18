@@ -18,7 +18,7 @@ mod retrying {
     use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Live, Parts, Retries};
     use glave_ports::testing::{CountingEntropy, ManualClock};
     use glave_ports::{
-        Completion, Delta, MemoryBlobs, MemoryLog, ModelProvider, ModelRequest, ProviderError,
+        Completion, Delta, InMemoryBlobs, InMemoryLog, ModelProvider, ModelRequest, ProviderError,
     };
 
     use super::support::*;
@@ -64,7 +64,7 @@ mod retrying {
     async fn harness(
         failures: Vec<ProviderError>,
         first_wait: Duration,
-    ) -> Harness<Flaky, MemoryLog, MemoryBlobs, AllowAll> {
+    ) -> Harness<Flaky, InMemoryLog, InMemoryBlobs, AllowAll> {
         let mut settings = settings();
         settings.retries = Retries {
             attempts: 4,
@@ -74,8 +74,8 @@ mod retrying {
             provider: Flaky {
                 failures: Mutex::new(failures.into()),
             },
-            log: MemoryLog::new(),
-            blobs: MemoryBlobs::new(),
+            log: InMemoryLog::new(),
+            blobs: InMemoryBlobs::new(),
             approver: AllowAll,
             clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
             entropy: Box::new(CountingEntropy::starting_at(1)),
@@ -184,8 +184,8 @@ mod retrying {
             };
             let parts = Parts {
                 provider: Broken,
-                log: MemoryLog::new(),
-                blobs: MemoryBlobs::new(),
+                log: InMemoryLog::new(),
+                blobs: InMemoryBlobs::new(),
                 approver: AllowAll,
                 clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
                 entropy: Box::new(CountingEntropy::starting_at(1)),

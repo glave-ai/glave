@@ -3,7 +3,7 @@
 
 use std::fmt::Write as _;
 
-use glave_ports::Glob;
+use glave_ports::computer::Glob;
 use serde::Deserialize;
 
 use super::ToolOutcome;

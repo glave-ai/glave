@@ -9,12 +9,12 @@ use std::time::Instant;
 
 use glave_computer::LocalComputers;
 use glave_harness::{
-    ApprovalMode, Caller, Cancel, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, OsEntropy,
-    Parts, Sandbox, Settings, Skills, SystemClock, Todo, Workspace, agents_md, find_skills,
-    skill_folders,
+    ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Harness, Live, NoOneToAsk, Parts, Settings, Skills,
+    Todo, Workspace, agents_md, find_skills, skill_folders,
 };
 use glave_memory::Tidier;
-use glave_ports::{EventLog, ToolSource};
+use glave_ports::computer::Sandbox;
+use glave_ports::{Caller, EventLog, OsEntropy, SystemClock, ToolSource};
 use glave_provider_openai::{Config, OpenAiCompatible};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 use glave_web::pages::Pages;
@@ -281,7 +281,7 @@ async fn wire(
     let memory = remembering
         .memory
         .clone()
-        .map(|memory| memory as Arc<dyn glave_harness::Memory>);
+        .map(|memory| memory as Arc<dyn glave_ports::memories::Memory>);
     Ok(Harness::new(parts, settings)
         .with_tools(tools)
         .with_memory_if(memory))

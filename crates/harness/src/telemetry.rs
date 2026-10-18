@@ -8,7 +8,8 @@
 use std::time::Instant;
 
 use glave_event::{Outcome, ThreadId, TraceId, Verdict};
-use glave_ports::{Ending, ToolOutput};
+use glave_ports::ToolOutput;
+use glave_ports::computer::Ending;
 use tracing::{Instrument as _, Span, field};
 
 /// The span of one turn in `thread`, in `trace` when the caller sent one.

@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use glave_keys::{KeySettings, MemoryRoot};
+use glave_keys::{InMemoryRoot, KeySettings};
 pub use glave_ports::block_on;
 use glave_store_postgres::{Config, Store, StoreError};
 use tokio::task::JoinHandle;
@@ -16,7 +16,7 @@ pub struct Scratch {
     connection: JoinHandle<()>,
     pub schema: String,
     pub config: Config,
-    root: Arc<MemoryRoot>,
+    root: Arc<InMemoryRoot>,
 }
 
 impl Scratch {
@@ -45,7 +45,7 @@ impl Scratch {
             connection,
             schema,
             config,
-            root: Arc::new(MemoryRoot::new().unwrap()),
+            root: Arc::new(InMemoryRoot::new().unwrap()),
         })
     }
 

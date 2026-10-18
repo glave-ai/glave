@@ -10,10 +10,11 @@ use glave_event::{
     Part, Payload, Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted,
     encode,
 };
+use glave_ports::computer::ComputerError;
 use glave_ports::memories::Memory;
 use glave_ports::{
-    BlobError, BlobStore, Caller, ComputerError, EventLog, LogError, Message, ModelProvider,
-    ProviderError, Scope, ToolSource,
+    BlobError, BlobStore, Caller, EventLog, LogError, Message, ModelProvider, ProviderError, Scope,
+    ToolSource,
 };
 use thiserror::Error;
 
@@ -33,11 +34,10 @@ use crate::memory::MemoryState;
 use crate::projects::{Brought, Projects};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
-use crate::standing::Standing;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
 use crate::worker::Workers;
-use glave_ports::{Clock, Entropy};
+use glave_ports::{Clock, Entropy, Standing};
 
 /// How the harness runs.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use glave_ports::{Environment, Image, Network, Size};
+use glave_ports::computer::{Environment, Image, Network, Size};
 use serde::Deserialize;
 
 use super::{EnvironmentError, is_variable_name};

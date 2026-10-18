@@ -9,7 +9,7 @@ use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use glave_ports::{CredentialHost, ForgeTool};
+use glave_ports::computer::{CredentialHost, ForgeTool};
 
 /// Where a wrapper's pieces are.
 pub(super) struct Places<'a> {

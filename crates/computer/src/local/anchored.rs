@@ -12,7 +12,7 @@ use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Component, Path, PathBuf};
 
-use glave_ports::ComputerError;
+use glave_ports::computer::ComputerError;
 use rustix::fs::{AtFlags, FileType, Mode, OFlags, Stat, fstat, openat, readlinkat, statat};
 use rustix::io::Errno;
 

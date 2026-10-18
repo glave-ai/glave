@@ -5,9 +5,10 @@ use std::io::Read as _;
 use std::os::fd::AsFd as _;
 use std::path::{Path, PathBuf};
 
-use glave_ports::{
-    Bytes, ComputerError, EntryKind, FileWrite, Stat, digest, is_protected, refuse_protected,
+use glave_ports::computer::{
+    Bytes, ComputerError, EntryKind, FileWrite, Stat, is_protected, refuse_protected,
 };
+use glave_ports::digest;
 use rustix::fs::FileType;
 
 use super::anchored::{Found, Root, count, open_to_read, resolve, shown};

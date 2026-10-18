@@ -5,10 +5,10 @@
 //! the model exactly what it always did.
 
 use glave_event::{CallId, Opened, Principal, ThreadId};
-use glave_ports::{SpaceId, SpaceKind};
+use glave_ports::{Caller, SpaceId, SpaceKind};
+use glave_session::Answering;
 use glave_session::protocol::{Answer, Meta, Reply, Request, code};
 use glave_session::signin::person;
-use glave_session::{Answering, Caller};
 use serde_json::{Value, json};
 
 use crate::support::issuer::{Issuer, Signer};

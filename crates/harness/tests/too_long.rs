@@ -17,8 +17,8 @@ mod too_long {
     use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Parts};
     use glave_ports::testing::{CountingEntropy, ManualClock};
     use glave_ports::{
-        Completion, Delta, Failure, MemoryBlobs, MemoryLog, Message, ModelProvider, ModelRequest,
-        ProviderError,
+        Completion, Delta, Failure, InMemoryBlobs, InMemoryLog, Message, ModelProvider,
+        ModelRequest, ProviderError,
     };
     use serde_json::json;
 
@@ -72,7 +72,7 @@ mod too_long {
         name: &str,
         answers: Vec<Result<Completion, ProviderError>>,
     ) -> (
-        Harness<Cramped, MemoryLog, MemoryBlobs, AllowAll>,
+        Harness<Cramped, InMemoryLog, InMemoryBlobs, AllowAll>,
         Arc<Mutex<Vec<ModelRequest>>>,
     ) {
         let dir = folder(name);
@@ -83,8 +83,8 @@ mod too_long {
                 answers: Mutex::new(answers.into()),
                 seen: Arc::clone(&seen),
             },
-            log: MemoryLog::new(),
-            blobs: MemoryBlobs::new(),
+            log: InMemoryLog::new(),
+            blobs: InMemoryBlobs::new(),
             approver: AllowAll,
             clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
             entropy: Box::new(CountingEntropy::starting_at(1)),

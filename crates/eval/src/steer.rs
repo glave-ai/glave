@@ -3,7 +3,8 @@
 //! its next call, as glave's session API queues a message sent mid-turn.
 
 use glave_event::EventId;
-use glave_harness::{Caller, Clock, Entropy, Inbox, Live, Queued, Thread};
+use glave_harness::{Inbox, Live, Queued, Thread};
+use glave_ports::{Caller, Clock, Entropy};
 use serde::Deserialize;
 
 /// `[glave] steer = { after = 1, message = "…" }`: never sent before a tool call, never empty.

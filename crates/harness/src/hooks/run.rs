@@ -5,9 +5,8 @@
 use std::sync::{Arc, Mutex};
 
 use glave_event::{Arguments, CallId, HookPoint, HookRan, HookResult, Outcome, Part};
-use glave_ports::{
-    BlobStore, BoxFuture, Ending, EventLog, ModelProvider, OnTimeout, Output, ToolOutput,
-};
+use glave_ports::computer::{Ending, OnTimeout, Output};
+use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ToolOutput};
 use serde_json::{Map, Value, json};
 
 use super::{HOOK_TIMEOUT_SECS, Hook, point_name};

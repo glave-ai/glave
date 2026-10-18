@@ -10,7 +10,7 @@ mod trash;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::ComputerError;
+use glave_ports::computer::ComputerError;
 
 use crate::local::git::Git;
 use crate::local::worktree::{Record, read_record, record_path, write_record};

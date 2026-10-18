@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use glave_event::{At, CallId, CommandEnded, CommandEnding, CommandStarted};
-use glave_ports::{CommandId, Computers, Ending, WorkspaceId};
+use glave_ports::computer::{CommandId, Computers, Ending, WorkspaceId};
 
 /// A thread's commands in the background. Clones of a thread share it.
 #[derive(Default)]

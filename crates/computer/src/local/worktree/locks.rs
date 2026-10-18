@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 
-use glave_ports::ComputerError;
+use glave_ports::computer::ComputerError;
 use tokio::sync::OwnedMutexGuard;
 
 /// The most repositories a worktree is made in at once.

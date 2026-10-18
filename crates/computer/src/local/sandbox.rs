@@ -27,7 +27,7 @@ use unsupported as platform;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::{ComputerError, Sandbox};
+use glave_ports::computer::{ComputerError, Sandbox};
 
 /// The first argument that makes glave the Linux sandbox's helper (see [`sandbox_helper`]).
 pub(crate) const SANDBOX_HELPER_ARG: &str = "__glave-sandbox";

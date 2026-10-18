@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use glave_event::Secret;
-use glave_harness::SystemClock;
+use glave_ports::SystemClock;
 use glave_session::http::{Files, Site};
 use glave_session::protocol::{Reply, Request};
 use glave_session::signin::{Browsers, LOCAL_BYTES, LocalToken, SignIn, Trust};

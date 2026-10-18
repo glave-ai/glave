@@ -11,8 +11,9 @@ mod support;
 #[cfg(test)]
 mod background {
     use glave_event::{Body, CommandEnding, Event, Principal, PrincipalId, StopReason};
-    use glave_harness::{Caller, Cancel, Change, NoOneToAsk};
-    use glave_ports::{EventLog as _, MemoryLog};
+    use glave_harness::{Cancel, Change, NoOneToAsk};
+    use glave_ports::Caller;
+    use glave_ports::{EventLog as _, InMemoryLog};
     use serde_json::json;
 
     use super::support::*;
@@ -132,7 +133,7 @@ mod background {
                 .unwrap();
 
             // Another glave, on another computer, finds the second one gone.
-            let log = MemoryLog::new();
+            let log = InMemoryLog::new();
             let here = scope();
             let stored = harness.log().read(&here, thread.id, None, usize::MAX);
             log.append(&here, &stored.await.unwrap()).await.unwrap();

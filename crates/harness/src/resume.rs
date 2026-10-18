@@ -73,7 +73,7 @@ where
             workspace,
             unnumbered: crate::bind::own_records(&events),
             note: None,
-            standing: crate::standing::standing_after(crate::Standing::Active, &events),
+            standing: crate::standing::standing_after(glave_ports::Standing::Active, &events),
             removed: false,
             untrusted: read_untrusted(&events),
             read_secret: read_secret(&events),

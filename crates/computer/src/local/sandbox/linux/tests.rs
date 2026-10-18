@@ -8,9 +8,10 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command as Process;
 
-use glave_ports::{
+use glave_ports::block_on;
+use glave_ports::computer::{
     Command, ComputerError, Computers, Ending, Environment, Output, Sandbox, SandboxLevel, Sources,
-    WorkspaceId, block_on,
+    WorkspaceId,
 };
 
 use super::landlocked;

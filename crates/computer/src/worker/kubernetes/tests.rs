@@ -12,7 +12,8 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use glave_ports::{Command, Computers, Ending, Environment, Image, Network, Sources, block_on};
+use glave_ports::block_on;
+use glave_ports::computer::{Command, Computers, Ending, Environment, Image, Network, Sources};
 use k8s_openapi::api::core::v1::{Pod, Secret};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use kube::Api;

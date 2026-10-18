@@ -9,13 +9,15 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::{Auth, AuthMethod, Principal, ThreadId};
 use glave_harness::{Brought, Projects};
-use glave_ports::{BoxFuture, Effect, MemoryTools, SpaceId, ToolInfo, ToolOutput, ToolSpec};
+use glave_ports::{
+    BoxFuture, Caller, Effect, InMemoryTools, SpaceId, ToolInfo, ToolOutput, ToolSpec,
+};
 use glave_session::protocol::{
     ApiError, NewFolder, Reply, Request, Status, ThreadSummary, TrustAsk, TrustChoice, TrustItem,
     code,
 };
 use glave_session::signin::person;
-use glave_session::{Answering, Caller, ProjectTrust};
+use glave_session::{Answering, ProjectTrust};
 use serde_json::json;
 
 use crate::support::*;
@@ -94,7 +96,7 @@ impl Projects for Repository {
             effect: Effect::Reads,
             parallel: true,
         };
-        let tools = MemoryTools::new(vec![(info, ToolOutput::text(false, "Found."))]);
+        let tools = InMemoryTools::new(vec![(info, ToolOutput::text(false, "Found."))]);
         let brought = Brought {
             tools: vec![Arc::new(tools)],
             ..Brought::default()

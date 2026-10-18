@@ -28,5 +28,5 @@ pub use key_id::{KeyId, Month, Period};
 pub use keychain::KeychainRoot;
 pub use keys::{EventFields, KeySettings, Keys, Sealed, erased_payload};
 pub use material::KeyMaterial;
-pub use root::{KeyFileRoot, MemoryRoot, Root};
-pub use storage::{KeyStorage, MemoryKeyStorage, StoredSpace};
+pub use root::{InMemoryRoot, KeyFileRoot, Root};
+pub use storage::{InMemoryKeyStorage, KeyStorage, StoredSpace};

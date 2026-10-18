@@ -4,8 +4,8 @@
 //! may be chosen, so the log tells any server of the deployment which mode a thread runs in.
 
 use glave_event::{Body, ThreadId};
-use glave_harness::{Caller, HarnessError, Protections, Settled, Thread};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, SpaceId};
+use glave_harness::{HarnessError, Protections, Settled, Thread};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, SpaceId};
 
 use crate::protocol::{ApiError, ApprovalMode, code};
 use crate::server::{Glave, Server};

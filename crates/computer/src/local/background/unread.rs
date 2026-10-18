@@ -3,7 +3,7 @@
 
 use std::collections::VecDeque;
 
-use glave_ports::KEPT_OUTPUT;
+use glave_ports::computer::KEPT_OUTPUT;
 
 #[derive(Debug, Default)]
 pub(super) struct Unread {

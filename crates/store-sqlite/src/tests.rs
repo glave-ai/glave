@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use glave_keys::{KeyFileRoot, KeySettings, MemoryRoot};
+use glave_keys::{InMemoryRoot, KeyFileRoot, KeySettings};
 use glave_ports::{EventLog, Spaces as _, Standing, ThreadQuery, block_on, conformance};
 use uuid::Uuid;
 
@@ -11,7 +11,7 @@ mod sealing;
 
 /// Keys under a root that lives only in this process.
 fn keys() -> KeySettings {
-    KeySettings::new(Arc::new(MemoryRoot::new().unwrap()))
+    KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()))
 }
 
 /// Keys under the key file beside `database`, so a reopened database can read its content.

@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use glave_ports::ComputerError;
+use glave_ports::computer::ComputerError;
 
 use super::TOKEN_LIFETIME;
 use super::backend::Backend;

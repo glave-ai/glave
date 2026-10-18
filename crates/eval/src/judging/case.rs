@@ -51,7 +51,7 @@ impl Action {
             Self::Bash { command } => format!("bash: {command}"),
             Self::Read { path } => format!("read {path}"),
             Self::Remember { text } => glave_ports::describe_call(
-                glave_harness::REMEMBER,
+                glave_ports::memories::REMEMBER,
                 &glave_event::Arguments::Json(
                     [
                         ("text".to_owned(), serde_json::Value::from(text.as_str())),

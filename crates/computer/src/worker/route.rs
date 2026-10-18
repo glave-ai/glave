@@ -4,7 +4,8 @@
 
 use std::sync::Mutex;
 
-use glave_ports::{BoxFuture, ComputerId, ComputerInfo, Output, Size, State};
+use glave_ports::BoxFuture;
+use glave_ports::computer::{ComputerId, ComputerInfo, Output, Size, State};
 
 /// What a computer this adapter does not hold is: gone.
 pub(crate) fn gone(computer: ComputerId) -> ComputerInfo {
@@ -52,7 +53,7 @@ impl Output for Tail {
     }
 }
 
-/// The [`glave_ports::Computers`] methods that go straight to the worker holding the
+/// The [`glave_ports::computer::Computers`] methods that go straight to the worker holding the
 /// workspace. Writing is new work, so it waits on the worker's run time; reading, finding,
 /// saving and reading or stopping a command in the background do not, so a worker out of time
 /// can still be saved.
@@ -62,7 +63,7 @@ macro_rules! forward {
             &'a self,
             workspace: WorkspaceId,
             path: &'a str,
-        ) -> BoxFuture<'a, Result<glave_ports::Bytes, ComputerError>> {
+        ) -> BoxFuture<'a, Result<glave_ports::computer::Bytes, ComputerError>> {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
                 self.remote(&worker).await?.read(workspace, path).await
@@ -72,7 +73,7 @@ macro_rules! forward {
         fn write<'a>(
             &'a self,
             workspace: WorkspaceId,
-            files: &'a [glave_ports::FileWrite],
+            files: &'a [glave_ports::computer::FileWrite],
         ) -> BoxFuture<'a, Result<(), ComputerError>> {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
@@ -84,8 +85,8 @@ macro_rules! forward {
         fn list<'a>(
             &'a self,
             workspace: WorkspaceId,
-            listing: &'a glave_ports::Listing,
-        ) -> BoxFuture<'a, Result<glave_ports::Listed, ComputerError>> {
+            listing: &'a glave_ports::computer::Listing,
+        ) -> BoxFuture<'a, Result<glave_ports::computer::Listed, ComputerError>> {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
                 self.remote(&worker).await?.list(workspace, listing).await
@@ -96,7 +97,7 @@ macro_rules! forward {
             &'a self,
             workspace: WorkspaceId,
             path: &'a str,
-        ) -> BoxFuture<'a, Result<glave_ports::Stat, ComputerError>> {
+        ) -> BoxFuture<'a, Result<glave_ports::computer::Stat, ComputerError>> {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
                 self.remote(&worker).await?.stat(workspace, path).await
@@ -106,8 +107,8 @@ macro_rules! forward {
         fn glob<'a>(
             &'a self,
             workspace: WorkspaceId,
-            glob: &'a glave_ports::Glob,
-        ) -> BoxFuture<'a, Result<glave_ports::Globbed, ComputerError>> {
+            glob: &'a glave_ports::computer::Glob,
+        ) -> BoxFuture<'a, Result<glave_ports::computer::Globbed, ComputerError>> {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
                 self.remote(&worker).await?.glob(workspace, glob).await
@@ -117,8 +118,8 @@ macro_rules! forward {
         fn search<'a>(
             &'a self,
             workspace: WorkspaceId,
-            search: &'a glave_ports::Search,
-        ) -> BoxFuture<'a, Result<glave_ports::Searched, ComputerError>> {
+            search: &'a glave_ports::computer::Search,
+        ) -> BoxFuture<'a, Result<glave_ports::computer::Searched, ComputerError>> {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
                 self.remote(&worker).await?.search(workspace, search).await
@@ -128,8 +129,8 @@ macro_rules! forward {
         fn save<'a>(
             &'a self,
             workspace: WorkspaceId,
-            save: &'a glave_ports::Save,
-        ) -> BoxFuture<'a, Result<glave_ports::Saved, ComputerError>> {
+            save: &'a glave_ports::computer::Save,
+        ) -> BoxFuture<'a, Result<glave_ports::computer::Saved, ComputerError>> {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
                 self.remote(&worker).await?.save(workspace, save).await
@@ -139,9 +140,9 @@ macro_rules! forward {
         fn output(
             &self,
             workspace: WorkspaceId,
-            command: glave_ports::CommandId,
+            command: glave_ports::computer::CommandId,
             wait: std::time::Duration,
-        ) -> BoxFuture<'_, Result<glave_ports::Printed, ComputerError>> {
+        ) -> BoxFuture<'_, Result<glave_ports::computer::Printed, ComputerError>> {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
                 self.remote(&worker)
@@ -154,8 +155,8 @@ macro_rules! forward {
         fn stop(
             &self,
             workspace: WorkspaceId,
-            command: glave_ports::CommandId,
-        ) -> BoxFuture<'_, Result<glave_ports::Printed, ComputerError>> {
+            command: glave_ports::computer::CommandId,
+        ) -> BoxFuture<'_, Result<glave_ports::computer::Printed, ComputerError>> {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
                 self.remote(&worker).await?.stop(workspace, command).await
@@ -165,7 +166,7 @@ macro_rules! forward {
         fn commands(
             &self,
             workspace: WorkspaceId,
-        ) -> BoxFuture<'_, Result<Vec<glave_ports::Background>, ComputerError>> {
+        ) -> BoxFuture<'_, Result<Vec<glave_ports::computer::Background>, ComputerError>> {
             Box::pin(async move {
                 let worker = self.worker_of(workspace)?;
                 self.remote(&worker).await?.commands(workspace).await

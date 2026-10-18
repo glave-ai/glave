@@ -345,7 +345,7 @@ pub fn random() -> anyhow::Result<[u8; 10]> {
 impl Ledger {
     /// A new person's ledger, on a store in memory.
     pub async fn in_memory() -> anyhow::Result<Self> {
-        let root = glave_keys::MemoryRoot::new()?;
+        let root = glave_keys::InMemoryRoot::new()?;
         let keys = glave_keys::KeySettings::new(std::sync::Arc::new(root));
         let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys)?);
         let person = PrincipalId::new(Timestamp::now(), random()?)?;

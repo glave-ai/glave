@@ -15,7 +15,7 @@ mod served;
 
 #[cfg(test)]
 mod hosts {
-    use glave_ports::Bytes;
+    use glave_ports::computer::Bytes;
     use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FakeHttp, fake_secret};
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;

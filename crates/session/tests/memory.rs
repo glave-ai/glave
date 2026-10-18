@@ -5,10 +5,9 @@
 use std::sync::Arc;
 
 use glave_event::{MemoryScope, PrincipalId};
-use glave_harness::Caller;
-use glave_keys::{KeySettings, MemoryRoot};
+use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
-use glave_ports::{OrgId, Scope, SpaceId};
+use glave_ports::{Caller, OrgId, Scope, SpaceId};
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, code};
 use glave_store_sqlite::{SqliteLog, Store};
@@ -31,7 +30,7 @@ fn personal() -> Scope {
 
 async fn served(name: &str) -> (Tested<SqliteLog>, Store) {
     let store =
-        Store::open_in_memory(KeySettings::new(Arc::new(MemoryRoot::new().unwrap()))).unwrap();
+        Store::open_in_memory(KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()))).unwrap();
     let rules = Rules {
         personal: Some(Personal {
             scope: personal(),
@@ -43,8 +42,8 @@ async fn served(name: &str) -> (Tested<SqliteLog>, Store) {
         store.log(),
         store.keyring(),
         rules,
-        Box::new(glave_harness::SystemClock),
-        Box::new(glave_harness::OsEntropy),
+        Box::new(glave_ports::SystemClock),
+        Box::new(glave_ports::OsEntropy),
     );
     let mut setup = Setup::new(Vec::new());
     setup.answering = Answering::NoOne;
@@ -54,7 +53,7 @@ async fn served(name: &str) -> (Tested<SqliteLog>, Store) {
     (server, store)
 }
 
-fn listed(reply: Reply) -> Vec<glave_harness::Remembered> {
+fn listed(reply: Reply) -> Vec<glave_ports::memories::Remembered> {
     match reply {
         Reply::Memories { memories } => memories,
         other => panic!("{other:?}"),

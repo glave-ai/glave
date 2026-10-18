@@ -18,11 +18,10 @@ mod workers {
     use super::support::*;
     use glave_computer::LocalComputers;
     use glave_event::{Body, ComputerKind, Event, Opened, RemovedReason, StopReason};
-    use glave_harness::{AllowAll, Caller, Cancel, HarnessError, Place, Workers, wip_branch};
-    use glave_ports::{
-        Bytes, Completion, Environment, EventLog as _, FileWrite, MemoryLog, Sources, Standing,
-        ThreadQuery,
-    };
+    use glave_harness::{AllowAll, Cancel, HarnessError, Place, Workers, wip_branch};
+    use glave_ports::Caller;
+    use glave_ports::computer::{Bytes, Environment, FileWrite, Sources};
+    use glave_ports::{Completion, EventLog as _, InMemoryLog, Standing, ThreadQuery};
     use serde_json::json;
 
     fn environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
@@ -119,7 +118,7 @@ mod workers {
                 workspace(&dir).await,
                 read(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -132,7 +131,7 @@ mod workers {
                 workspace(&dir).await,
                 read(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -168,7 +167,7 @@ mod workers {
                 workspace(&here).await,
                 script(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -246,7 +245,7 @@ mod workers {
                 workspace(&dir).await,
                 Vec::new(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -286,7 +285,7 @@ mod workers {
                 workspace(&here).await,
                 answers,
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -337,7 +336,7 @@ mod workers {
                 workspace(&dir).await,
                 Vec::new(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );

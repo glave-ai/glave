@@ -6,7 +6,8 @@
 use std::sync::{Arc, PoisonError};
 
 use glave_event::ApprovalMode;
-use glave_ports::{BlobStore, EventLog, ModelProvider, Sandbox, ToolSource};
+use glave_ports::computer::Sandbox;
+use glave_ports::{BlobStore, EventLog, ModelProvider, ToolSource};
 
 use crate::approval::Approver;
 use crate::harness::Harness;

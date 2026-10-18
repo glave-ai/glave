@@ -7,7 +7,7 @@
 use std::process::Stdio;
 use std::time::Duration;
 
-use glave_ports::{ComputerError, GitCredential};
+use glave_ports::computer::{ComputerError, GitCredential};
 
 /// How long the person's credential helper has to answer.
 const FILL_TIMEOUT: Duration = Duration::from_secs(20);

@@ -2,7 +2,7 @@
 //! person's own laptop dialled in, later) is refused with `-32022` until computers can dial
 //! in, and no thread starts. A summary says nothing that assumes a worker.
 
-use glave_ports::ComputerId;
+use glave_ports::computer::ComputerId;
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, Show, code};
 

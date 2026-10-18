@@ -13,7 +13,7 @@ mod recorded {
 
     use glave_event::{Body, StopReason, Verdict};
     use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, NoOneToAsk};
-    use glave_ports::MemoryLog;
+    use glave_ports::InMemoryLog;
     use serde_json::json;
 
     use super::support::*;
@@ -122,7 +122,7 @@ mod recorded {
     }
 
     fn harness_asked<L: glave_ports::EventLog>(
-        harness: &glave_harness::Harness<Script, L, glave_ports::MemoryBlobs, Answers>,
+        harness: &glave_harness::Harness<Script, L, glave_ports::InMemoryBlobs, Answers>,
     ) -> Vec<ApprovalRequest> {
         harness.approver().asked.lock().unwrap().clone()
     }
@@ -139,7 +139,8 @@ mod recorded {
             ];
             // Allowed for the thread once; asked again, it would refuse.
             let approver = Answers::new(&[Decision::AllowForThread]);
-            let harness = harness_on(&dir, answers, approver, MemoryLog::new(), 1, asking()).await;
+            let harness =
+                harness_on(&dir, answers, approver, InMemoryLog::new(), 1, asking()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "first", &Cancel::new(), &mut |_| {})

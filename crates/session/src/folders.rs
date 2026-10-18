@@ -12,10 +12,11 @@ use glave_event::{
     At, Body, Checkout, EventId, FolderSource, Header, Payload, Principal, Seq, SpaceFolderSet,
     ThreadId, decode, encode,
 };
-use glave_harness::{Caller, Looked};
+use glave_harness::Looked;
+use glave_ports::computer::{ComputerError, CredentialHost, Forge};
 use glave_ports::{
-    BlobStore, ComputerError, CredentialHost, EventLog, FolderKey, Forge, LogError, ModelProvider,
-    Scope, Space, SpaceId, SpaceKind,
+    BlobStore, Caller, EventLog, FolderKey, LogError, ModelProvider, Scope, Space, SpaceId,
+    SpaceKind,
 };
 
 use crate::ledger::space_ledger;

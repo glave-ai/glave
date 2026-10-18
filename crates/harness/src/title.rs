@@ -9,14 +9,14 @@ use glave_event::{
 };
 use glave_ports::{
     BlobStore, Completion, EventLog, LogError, Message, ModelProvider, ModelRequest, Purpose,
-    Scope, ToolChoice, title_from,
+    Scope, Standing, ToolChoice, title_from,
 };
 
 use crate::approval::Approver;
 use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::last_event;
-use crate::standing::{Standing, standing_of};
+use crate::standing::standing_of;
 use crate::untrusted::defuse;
 
 /// The most of the person's first message the model reads, in characters.

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_computer::{RemoteComputers, serve};
-use glave_ports::Computers;
+use glave_ports::computer::Computers;
 use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader};
 use tokio::sync::watch;
 use tokio::task::{AbortHandle, JoinHandle};

@@ -12,7 +12,8 @@ mod remote_tests {
     use glave_computer::{
         Identity, LocalComputers, RemoteComputers, Token, connect_tls, serve, serve_tcp, serve_tls,
     };
-    use glave_ports::{ComputerError, ComputerId, Computers, block_on, conformance};
+    use glave_ports::computer::{ComputerError, ComputerId, Computers};
+    use glave_ports::{block_on, conformance};
     use tokio::io::BufReader;
     use tokio::net::{TcpListener, TcpStream};
 
@@ -143,7 +144,8 @@ mod remote_tests {
 
     /// Runs `env` on `remote` in `work`: ordinary settings come through, secrets never do.
     async fn secrets_stay_out<C: Computers>(remote: &C, work: &std::path::Path) {
-        use glave_ports::{BoxFuture, Command, Environment, Output, Sources};
+        use glave_ports::BoxFuture;
+        use glave_ports::computer::{Command, Environment, Output, Sources};
         use std::sync::Mutex;
 
         struct Text(Mutex<String>);

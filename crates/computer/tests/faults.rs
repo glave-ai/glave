@@ -17,7 +17,8 @@ mod faults {
     use std::time::Duration;
 
     use glave_computer::{CancelSwitch, RemoteComputers};
-    use glave_ports::{BoxFuture, Command, ComputerError, Computers, Ending, FileWrite, Output};
+    use glave_ports::BoxFuture;
+    use glave_ports::computer::{Command, ComputerError, Computers, Ending, FileWrite, Output};
     use proptest::prelude::*;
     use tokio::time::Instant;
 
@@ -82,7 +83,7 @@ mod faults {
             Op::Write(n) => {
                 let file = FileWrite::new(
                     format!("w{n}.txt"),
-                    glave_ports::Bytes::new(format!("written {n}")),
+                    glave_ports::computer::Bytes::new(format!("written {n}")),
                 );
                 remote.write(workspace(), &[file]).await
             }

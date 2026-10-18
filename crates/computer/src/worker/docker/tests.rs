@@ -11,7 +11,8 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use glave_ports::{Command, Computers, Ending, Environment, Image, Sources, block_on};
+use glave_ports::block_on;
+use glave_ports::computer::{Command, Computers, Ending, Environment, Image, Sources};
 use http::Method;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};

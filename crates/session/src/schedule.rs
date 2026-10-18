@@ -10,8 +10,8 @@ use std::future::Future;
 use std::time::Duration;
 
 use glave_event::{At, Fired, ScheduleCreated, ScheduleDeleted, ScheduleId, ThreadId, When};
-use glave_harness::{Caller, Goal};
-use glave_ports::{BlobStore, EventLog, ModelProvider, SpaceId};
+use glave_harness::Goal;
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, SpaceId};
 use jiff::Timestamp;
 
 use crate::cron::Cron;

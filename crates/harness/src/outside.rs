@@ -10,12 +10,13 @@
 use std::sync::Arc;
 
 use glave_event::{Body, Event, RawEvent, Seq, decode};
-use glave_ports::{BlobStore, EventLog, LogError, ModelProvider, Sources};
+use glave_ports::computer::Sources;
+use glave_ports::{BlobStore, EventLog, LogError, ModelProvider, Standing};
 
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::removed::owner_label;
-use crate::standing::{KINDS, Standing, standing_after};
+use crate::standing::{KINDS, standing_after};
 
 /// The most records taken in at once; more than this from outside is not a cleanup.
 const MOST: usize = 100;

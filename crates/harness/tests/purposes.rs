@@ -11,7 +11,7 @@ mod support;
 mod purposes {
     use glave_event::{Body, ModelResponded, StopReason, ThreadId};
     use glave_harness::{Cancel, NoOneToAsk};
-    use glave_ports::{MemoryLog, ModelRequest, Purpose, Served};
+    use glave_ports::{InMemoryLog, ModelRequest, Purpose, Served};
     use serde_json::json;
 
     use super::support::*;
@@ -53,7 +53,7 @@ mod purposes {
                 &dir,
                 vec![said, summary],
                 NoOneToAsk,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             )
@@ -114,7 +114,7 @@ mod purposes {
             let mut settings = settings();
             settings.subagents = true;
             let (harness, seen) =
-                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings).await;
+                harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "look around", &Cancel::new(), &mut |_| {})
@@ -153,7 +153,7 @@ mod purposes {
             let mut settings = settings();
             settings.judge = glave_harness::Judge::Main;
             let (harness, seen) =
-                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings).await;
+                harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let summary = harness
                 .run_turn(&mut thread, "push to main", &Cancel::new(), &mut |_| {})

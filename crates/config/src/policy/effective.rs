@@ -3,7 +3,8 @@
 //! glave's own defaults give way, to the value the policy leaves.
 
 use crate::error::refuse;
-use glave_harness::{ApprovalMode, SandboxLevel};
+use glave_harness::ApprovalMode;
+use glave_ports::computer::SandboxLevel;
 
 use crate::policy::choices::{Choices, Chosen, Judge, Source};
 use crate::policy::files::JudgeRule;

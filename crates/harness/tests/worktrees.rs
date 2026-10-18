@@ -16,10 +16,10 @@ mod worktrees {
     use super::support::*;
     use glave_computer::{LocalComputers, RemoteComputers, serve_tcp};
     use glave_event::{Body, Event, Opened, StopReason, WorkspaceBound};
-    use glave_harness::{AllowAll, Caller, Cancel, HarnessError, Place, Workspace, branch_for};
-    use glave_ports::{
-        Completion, Computers, Environment, EventLog, MemoryLog, Sources, Standing, ThreadQuery,
-    };
+    use glave_harness::{AllowAll, Cancel, HarnessError, Place, Workspace, branch_for};
+    use glave_ports::Caller;
+    use glave_ports::computer::{Computers, Environment, Sources};
+    use glave_ports::{Completion, EventLog, InMemoryLog, Standing, ThreadQuery};
     use serde_json::json;
 
     fn environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
@@ -99,7 +99,7 @@ mod worktrees {
                 workspace(&dir).await,
                 script(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -113,7 +113,7 @@ mod worktrees {
                 workspace(&dir).await,
                 script(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -150,7 +150,7 @@ mod worktrees {
                 workspace_keeping(&elsewhere, &base).await,
                 writes("notes.txt", "one\n"),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -167,7 +167,7 @@ mod worktrees {
                 workspace_keeping(&repo, &base).await,
                 answers,
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -238,7 +238,7 @@ mod worktrees {
                 Workspace::new(computers, info),
                 answers,
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -282,7 +282,7 @@ mod worktrees {
                 workspace_keeping(&repo, &base).await,
                 Vec::new(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -309,7 +309,7 @@ mod worktrees {
                 workspace_keeping(&dir, &base).await,
                 Vec::new(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -357,7 +357,7 @@ mod worktrees {
                 Workspace::new(Arc::new(remote), info),
                 writes("remote.txt", "far\n"),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -389,11 +389,11 @@ mod worktrees {
                 workspace(&dir).await,
                 Vec::new(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
-            let laptop = glave_ports::ComputerId::from_uuid(uuid::Uuid::nil());
+            let laptop = glave_ports::computer::ComputerId::from_uuid(uuid::Uuid::nil());
             let refused = harness
                 .start_thread_in(scope(), &Caller::default(), Place::Computer(laptop))
                 .await;

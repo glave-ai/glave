@@ -6,10 +6,10 @@
 //! threads work from then on; `space/remove` archives its threads and lists it no more.
 
 use glave_event::{Principal, SpaceRemoved, ThreadId};
-use glave_harness::{Caller, Change, Standing, change_standing};
+use glave_harness::{Change, change_standing};
 use glave_ports::{
-    BlobStore, EventLog, FolderKey, ModelProvider, Space, SpaceError, SpaceId, SpaceKind,
-    ThreadQuery,
+    BlobStore, Caller, EventLog, FolderKey, ModelProvider, Space, SpaceError, SpaceId, SpaceKind,
+    Standing, ThreadQuery,
 };
 
 use crate::folders::only_here;

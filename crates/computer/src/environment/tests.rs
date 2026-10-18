@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use glave_ports::{Image, Network, Size};
+use glave_ports::computer::{Image, Network, Size};
 use proptest::prelude::*;
 use serde_json::json;
 

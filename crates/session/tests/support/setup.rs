@@ -10,12 +10,14 @@ use glave_event::{
     At, Checkout, EventId, FolderSource, Header, Principal, RawEvent, Seq, SpaceFolderSet,
     ThreadId, encode,
 };
-use glave_harness::{ApprovalMode, Memory, Projects, Settings, Workspace};
+use glave_harness::{ApprovalMode, Projects, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
+use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
+use glave_ports::memories::Memory;
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
-    Completion, ComputerId, EventLog, GitCredentials, LogError, MemoryBlobs, MemoryLog,
-    MemorySpaces, OrgId, Scope, Space, SpaceId, SpaceKind, Spaces, WorkspaceInfo,
+    Completion, EventLog, InMemoryBlobs, InMemoryLog, InMemorySpaces, LogError, OrgId, Scope,
+    Space, SpaceId, SpaceKind, Spaces,
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
@@ -28,7 +30,7 @@ use tokio::sync::Notify;
 use super::script::{Script, Seen};
 
 /// A test server on the log `L`.
-pub type Tested<L = MemoryLog> = Server<Script, L, MemoryBlobs>;
+pub type Tested<L = InMemoryLog> = Server<Script, L, InMemoryBlobs>;
 
 /// A fresh folder for the test called `name`.
 pub fn folder(name: &str) -> PathBuf {
@@ -130,7 +132,7 @@ impl Setup {
 
     /// The server on a log of its own; see `build_on`.
     pub async fn build(self, dir: &Path) -> (Tested, Seen) {
-        self.build_on(dir, MemoryLog::new()).await
+        self.build_on(dir, InMemoryLog::new()).await
     }
 
     /// The server on `log`, its own space a project whose folder is a repository made in the
@@ -174,7 +176,7 @@ impl Setup {
         let wiring = Wiring {
             provider,
             log,
-            blobs: MemoryBlobs::new(),
+            blobs: InMemoryBlobs::new(),
             clock: Box::new(self.clock),
             entropy: Box::new(CountingEntropy::starting_at(self.seed << 32)),
             workspace,
@@ -188,7 +190,7 @@ impl Setup {
             memory: self.memory,
             spaces: self
                 .spaces
-                .unwrap_or_else(|| Arc::new(MemorySpaces::new()) as Arc<dyn Spaces>),
+                .unwrap_or_else(|| Arc::new(InMemorySpaces::new()) as Arc<dyn Spaces>),
             models: self.models,
             modes: self.modes,
             providers: self.providers,
@@ -255,7 +257,7 @@ pub async fn server(dir: &Path, answers: Vec<Completion>, answering: Answering) 
 
 /// A log in memory that two servers can share, as two processes share a database.
 #[derive(Clone, Default)]
-pub struct Shared(pub Arc<MemoryLog>);
+pub struct Shared(pub Arc<InMemoryLog>);
 
 impl EventLog for Shared {
     fn append(

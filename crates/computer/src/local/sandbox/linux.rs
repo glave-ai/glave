@@ -19,7 +19,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use glave_ports::{ComputerError, Sandbox, SandboxLevel};
+use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel};
 
 use super::{Launch, SANDBOX_HELPER_ARG, failed, resolved};
 use mounts::{Layout, StandIns};

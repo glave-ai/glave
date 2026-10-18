@@ -4,7 +4,7 @@
 
 use std::fmt::Write as _;
 
-use glave_ports::{Search, Searched};
+use glave_ports::computer::{Search, Searched};
 use serde::Deserialize;
 
 use super::ToolOutcome;

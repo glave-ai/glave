@@ -2,7 +2,8 @@ use std::collections::BTreeSet;
 use std::process::Command as Process;
 use std::sync::Arc;
 
-use glave_ports::{Computers, Environment, FileWrite, Sources, block_on};
+use glave_ports::block_on;
+use glave_ports::computer::{Computers, Environment, FileWrite, Sources};
 
 use super::*;
 use crate::LocalComputers;
@@ -47,7 +48,7 @@ fn worktree(repo: &Path, branch: &str, owner: Option<&str>) -> Sources {
 }
 
 fn file(path: &str, content: &[u8]) -> FileWrite {
-    FileWrite::new(path, glave_ports::Bytes::new(content))
+    FileWrite::new(path, glave_ports::computer::Bytes::new(content))
 }
 
 fn computers(base: &Path) -> LocalComputers {

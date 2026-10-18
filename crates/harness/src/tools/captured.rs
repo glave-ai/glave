@@ -5,7 +5,8 @@ use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::sync::Mutex;
 
-use glave_ports::{BoxFuture, Output};
+use glave_ports::BoxFuture;
+use glave_ports::computer::Output;
 
 /// Output kept from the start and the end of a long run; the middle is dropped.
 const HEAD_BYTES: usize = 8 * 1024;

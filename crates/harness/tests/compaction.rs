@@ -10,7 +10,7 @@ mod support;
 mod compacting {
     use glave_event::{Part, StopReason};
     use glave_harness::{AllowAll, Cancel, Compaction, Live};
-    use glave_ports::{MemoryLog, Message, ModelRequest};
+    use glave_ports::{InMemoryLog, Message, ModelRequest};
     use serde_json::json;
 
     use super::support::*;
@@ -62,8 +62,9 @@ mod compacting {
                 ),
                 answer(Some("It repeats marigold."), vec![], StopReason::EndTurn),
             ];
+            let log = InMemoryLog::new();
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, tiny_window()).await;
+                harness_seeing(&dir, answers, AllowAll, log, 1, tiny_window()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let mut shown = Vec::new();
             let summary = harness
@@ -141,7 +142,7 @@ mod compacting {
                 answer(Some("It says hello."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "read small.txt", &Cancel::new(), &mut |_| {})
@@ -162,7 +163,7 @@ mod compacting {
                 answer(Some("We said hello."), vec![], StopReason::EndTurn),
             ];
             let (harness, _) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
@@ -197,8 +198,9 @@ mod compacting {
                 answer(None, vec![], StopReason::EndTurn),
                 answer(Some("It repeats marigold."), vec![], StopReason::EndTurn),
             ];
+            let log = InMemoryLog::new();
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, tiny_window()).await;
+                harness_seeing(&dir, answers, AllowAll, log, 1, tiny_window()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let mut shown = Vec::new();
             harness

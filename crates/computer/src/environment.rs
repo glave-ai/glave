@@ -7,10 +7,10 @@ mod recipe;
 
 use std::path::{Path, PathBuf};
 
+use glave_ports::computer::Environment;
 use thiserror::Error;
 
 pub use devcontainer::parse_devcontainer;
-pub use glave_ports::Environment;
 pub use recipe::parse_environment_toml;
 
 /// Where devcontainer.json may be, in the order looked for.

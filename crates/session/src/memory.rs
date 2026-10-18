@@ -3,8 +3,8 @@
 //! or the server's own. The caller decides what may be seen and changed: a space's members may
 //! change its memory, and only the person their own.
 
-use glave_harness::{Access, Caller, Control, MemoryError};
-use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, SpaceId};
+use glave_ports::memories::{Access, Control, MemoryError};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, SpaceId};
 
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;

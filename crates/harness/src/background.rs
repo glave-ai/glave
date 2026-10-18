@@ -11,10 +11,8 @@ mod record;
 use std::sync::Arc;
 
 use glave_event::{Body, CommandEnding, Event, Principal};
-use glave_ports::{
-    BlobStore, CommandId, ComputerError, Computers, Ending, EventLog, ModelProvider, Printed,
-    WorkspaceId,
-};
+use glave_ports::computer::{CommandId, ComputerError, Computers, Ending, Printed, WorkspaceId};
+use glave_ports::{BlobStore, EventLog, ModelProvider};
 
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};

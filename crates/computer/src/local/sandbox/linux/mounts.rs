@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use glave_ports::{PROTECTED, SandboxLevel};
+use glave_ports::computer::{PROTECTED, SandboxLevel};
 
 use super::super::secrets::HOME_SECRETS;
 use super::names::SecretNames;

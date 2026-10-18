@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use glave_ports::ComputerError;
+use glave_ports::computer::ComputerError;
 
 /// An existing folder, made canonical.
 pub(crate) async fn folder(path: &str) -> Result<PathBuf, ComputerError> {

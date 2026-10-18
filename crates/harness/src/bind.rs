@@ -7,10 +7,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Body, ComputerKind, ComputerRef, Event, Opened, ThreadId, WorkspaceBound};
-use glave_ports::{
-    BlobStore, Caller, ComputerError, ComputerId, Environment, EventLog, ModelProvider, Scope,
-    Sources, ToolSource,
-};
+use glave_ports::computer::{ComputerError, ComputerId, Environment, Sources};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, ToolSource};
 
 use crate::approval::Approver;
 use crate::builtins::{BUILTINS, Builtins};

@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use glave_ports::{ComputerError, ComputerId, Environment, GitCredential, Sandbox, WorkspaceId};
+use glave_ports::computer::{
+    ComputerError, ComputerId, Environment, GitCredential, Sandbox, WorkspaceId,
+};
 use uuid::{Builder, Uuid};
 
 use super::sandbox::Prepared;

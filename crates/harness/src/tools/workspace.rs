@@ -15,11 +15,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use glave_event::Sha256;
-use glave_ports::{
-    Bytes, Cancellation, Command, CommandId, ComputerError, Computers, FileWrite, Finished,
-    GitCredentials, Glob, Globbed, Listed, Listing, OnTimeout, Output, Sandbox, Search, Searched,
-    Sources, Stat, WorkspaceInfo, digest, is_protected, is_protected_refusal, refuse_protected,
+use glave_ports::computer::{
+    Bytes, Command, CommandId, ComputerError, Computers, FileWrite, Finished, GitCredentials, Glob,
+    Globbed, Listed, Listing, OnTimeout, Output, Sandbox, Search, Searched, Sources, Stat,
+    WorkspaceInfo, is_protected, is_protected_refusal, refuse_protected,
 };
+use glave_ports::{Cancellation, digest};
 
 use crate::cancel::Cancel;
 
@@ -94,7 +95,8 @@ impl Workspace {
             .run(self.info.id, &probe, &temp, &Cancel::new())
             .await?;
         let temp = temp.text();
-        if finished.ending != (glave_ports::Ending::Exited { code: 0 }) || temp.is_empty() {
+        if finished.ending != (glave_ports::computer::Ending::Exited { code: 0 }) || temp.is_empty()
+        {
             return Err(ComputerError::Failed(format!(
                 "a command in the sandbox did not run: {temp}"
             )));

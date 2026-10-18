@@ -5,10 +5,10 @@
 
 use std::sync::Arc;
 
-use glave_ports::{
+use glave_ports::computer::{
     Command, ComputerError, Ending, EntryKind, Listing, Sources, WorkspaceId, WorkspaceInfo,
-    origin_remote,
 };
+use glave_ports::origin_remote;
 
 use super::{Collected, Workspace};
 use crate::cancel::Cancel;

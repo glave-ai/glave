@@ -9,13 +9,14 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
 use glave_harness::{
-    Caller, Clock, Entropy, Harness, HarnessError, Hooks, Memory, Parts, Place, Projects,
-    ReleasedWorker, Settings, TurnSummary, Workers, Workspace,
+    Harness, HarnessError, Hooks, Parts, Place, Projects, ReleasedWorker, Settings, TurnSummary,
+    Workers, Workspace,
 };
 use glave_identity::signin::Browsers;
+use glave_ports::computer::{ComputerError, Environment};
+use glave_ports::memories::Memory;
 use glave_ports::{
-    BlobStore, ComputerError, Environment, EventLog, ModelProvider, Scope, SpaceId, Spaces,
-    ToolSource,
+    BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, Scope, SpaceId, Spaces, ToolSource,
 };
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;

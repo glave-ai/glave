@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use glave_event::{Opened, Outcome};
 use glave_harness::ApprovalMode;
-use glave_ports::MemoryLog;
+use glave_ports::InMemoryLog;
 use glave_session::Answering;
 use glave_session::protocol::{Notification, Reply, Request, TaskStatus, code};
 use serde_json::json;
@@ -21,7 +21,7 @@ use crate::support::*;
 
 /// `setup` on a repository of its own, its tasks working on worktrees of it.
 async fn in_repository(name: &str, setup: Setup) -> (Tested, Seen, std::path::PathBuf) {
-    setup.build_in_repository(name, MemoryLog::new()).await
+    setup.build_in_repository(name, InMemoryLog::new()).await
 }
 
 /// A thread of `server`'s own space that tasks run in, on a copy of its own.

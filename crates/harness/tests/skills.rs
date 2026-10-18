@@ -13,7 +13,7 @@ mod skills {
 
     use glave_event::{Part, StopReason};
     use glave_harness::{Cancel, NoOneToAsk, Skills, find_skills, skill_folders};
-    use glave_ports::{MemoryLog, Message, ModelRequest, ToolSource};
+    use glave_ports::{InMemoryLog, Message, ModelRequest, ToolSource};
     use serde_json::json;
 
     use super::support::*;
@@ -31,7 +31,7 @@ mod skills {
     async fn first_request(dir: &Path, with_skills: bool) -> ModelRequest {
         let answers = vec![answer(Some("Done."), vec![], StopReason::EndTurn)];
         let (harness, seen) =
-            harness_seeing(dir, answers, NoOneToAsk, MemoryLog::new(), 1, asking()).await;
+            harness_seeing(dir, answers, NoOneToAsk, InMemoryLog::new(), 1, asking()).await;
         let harness = if with_skills {
             harness.with_tools(skill_sources(dir).await)
         } else {
@@ -76,7 +76,7 @@ mod skills {
                 answer(Some("Tabs it is."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, asking()).await;
+                harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, asking()).await;
             let harness = harness.with_tools(skill_sources(&dir).await);
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness

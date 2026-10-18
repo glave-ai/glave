@@ -14,8 +14,9 @@ mod recall {
         At, CallId, EventId, Header, MemoryScope, MessageAdded, Part, Principal, RawEvent, Role,
         Seq, ThreadId, ToolCallCompleted, encode,
     };
-    use glave_harness::{AllowAll, Cancel, MemoryContext, RECALL};
+    use glave_harness::{AllowAll, Cancel};
     use glave_memory::{MOST_HITS, Recalled, Source, Writer};
+    use glave_ports::memories::{MemoryContext, RECALL};
     use glave_ports::{EventLog, Scope};
     use serde_json::json;
 
@@ -239,7 +240,7 @@ mod recall {
             let dir = folder("recall-forget");
             let save = json!({"text": "The favourite flower is marigold", "scope": "personal"});
             let answers = vec![
-                answer(None, vec![(glave_harness::REMEMBER, save)]),
+                answer(None, vec![(glave_ports::memories::REMEMBER, save)]),
                 said("OK, remembered marigold."),
                 said("Marigold beds need sun."),
             ];

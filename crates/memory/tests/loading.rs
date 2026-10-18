@@ -11,9 +11,10 @@ mod support;
 #[cfg(test)]
 mod loading {
     use glave_event::{MemoryScope, Principal};
-    use glave_harness::{AllowAll, Cancel, REMEMBER};
+    use glave_harness::{AllowAll, Cancel};
     use glave_memory::{Remembering, Writer};
     use glave_ports::Message;
+    use glave_ports::memories::REMEMBER;
     use serde_json::json;
 
     use super::support::*;
@@ -280,7 +281,7 @@ mod loading {
             let with = run(true).await;
             assert_eq!(format!("{without:?}"), format!("{with:?}"));
             assert!(
-                !format!("{with:?}").contains(glave_harness::RECALL),
+                !format!("{with:?}").contains(glave_ports::memories::RECALL),
                 "no memory tool, recall included, is offered where memory is off"
             );
         });

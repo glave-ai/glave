@@ -6,9 +6,8 @@
 
 use glave_event::AuthMethod;
 use glave_identity::signin::{BrowserError, Browsers};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
-use crate::Caller;
 use crate::protocol::{ApiError, Reply, code};
 use crate::providers::local;
 use crate::server::Server;

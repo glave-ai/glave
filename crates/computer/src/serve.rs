@@ -10,8 +10,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use glave_ports::{
-    BoxFuture, Command, ComputerError, Computers, CredentialHost, Output, WorkspaceId,
+use glave_ports::BoxFuture;
+use glave_ports::computer::{
+    Command, ComputerError, Computers, CredentialHost, Output, WorkspaceId,
 };
 use serde::Serialize;
 use serde_json::{Value, json};

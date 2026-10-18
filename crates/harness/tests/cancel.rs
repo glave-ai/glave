@@ -16,7 +16,7 @@ mod cancelling {
     use glave_harness::{AllowAll, ApprovalRequest, Approver, Cancel, Decision, Harness, Parts};
     use glave_ports::testing::{CountingEntropy, ManualClock};
     use glave_ports::{
-        Completion, Delta, MemoryBlobs, MemoryLog, Message, ModelProvider, ModelRequest,
+        Completion, Delta, InMemoryBlobs, InMemoryLog, Message, ModelProvider, ModelRequest,
         ProviderError,
     };
     use serde_json::json;
@@ -71,7 +71,7 @@ mod cancelling {
         block_on!(async {
             let answers = vec![answer(Some("Here now."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let cancel = Cancel::new();
             cancel.cancel();
@@ -117,8 +117,8 @@ mod cancelling {
             let cancel = Cancel::new();
             let parts = Parts {
                 provider: Stalls(cancel.clone()),
-                log: MemoryLog::new(),
-                blobs: MemoryBlobs::new(),
+                log: InMemoryLog::new(),
+                blobs: InMemoryBlobs::new(),
                 approver: AllowAll,
                 clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
                 entropy: Box::new(CountingEntropy::starting_at(1)),

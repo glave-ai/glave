@@ -12,7 +12,8 @@ mod actors {
         Auth, AuthMethod, Body, OriginKind, Principal, PrincipalId, PrincipalKind, Role,
         StopReason, Verdict,
     };
-    use glave_harness::{Caller, Cancel, NoOneToAsk};
+    use glave_harness::{Cancel, NoOneToAsk};
+    use glave_ports::Caller;
     use serde_json::json;
 
     use super::support::*;

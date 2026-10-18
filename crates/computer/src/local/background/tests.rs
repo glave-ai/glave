@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use glave_ports::{
-    BoxFuture, Command, Computers, Ending, NeverCancelled, Output, WorkspaceInfo, block_on,
-};
+use glave_ports::computer::{Command, Computers, Ending, Output, WorkspaceInfo};
+use glave_ports::{BoxFuture, NeverCancelled, block_on};
 
 use super::Backgrounds;
 use crate::LocalComputers;

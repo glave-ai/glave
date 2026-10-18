@@ -14,7 +14,8 @@ use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_config::policy::GithubFile;
 use glave_event::{CredentialConnected, CredentialId, Forge, Principal, PrincipalId, Secret};
-use glave_ports::{BoxFuture, CredentialHost};
+use glave_ports::BoxFuture;
+use glave_ports::computer::CredentialHost;
 use glave_session::protocol::{ApiError, CredentialInfo, DeviceCode, code, hint};
 use glave_session::{GitHosts, NewCredential};
 

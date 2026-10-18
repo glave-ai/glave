@@ -12,7 +12,7 @@ mod support;
 mod step_limit {
     use glave_event::{Outcome, Part, StopReason};
     use glave_harness::{AllowAll, Cancel};
-    use glave_ports::{MemoryLog, Message, ToolChoice};
+    use glave_ports::{InMemoryLog, Message, ToolChoice};
     use serde_json::json;
 
     use super::support::*;
@@ -51,7 +51,7 @@ mod step_limit {
             let settings = settings();
             assert_eq!(settings.max_steps, None, "no limit by default");
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let summary = harness
                 .run_turn(
@@ -94,7 +94,7 @@ mod step_limit {
             let mut settings = settings();
             settings.max_steps = Some(2);
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let summary = harness
                 .run_turn(&mut thread, "read everything", &Cancel::new(), &mut |_| {})
@@ -149,7 +149,7 @@ mod step_limit {
             let mut settings = settings();
             settings.max_steps = Some(1);
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let summary = harness
                 .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})

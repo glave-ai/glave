@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use glave_ports::EntryKind;
+use glave_ports::computer::EntryKind;
 use globset::{GlobBuilder, GlobMatcher};
 use ignore::{Walk, WalkBuilder};
 

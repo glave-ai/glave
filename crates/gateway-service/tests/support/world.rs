@@ -14,7 +14,7 @@ use glave_mcp::{Limits, McpServer, ServerConfig};
 use glave_ports::Caller;
 pub use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, FAKE_SECRET};
-use glave_ports::{EventLog, LogError, MemoryLog, OrgId, Purpose, Scope, SpaceId};
+use glave_ports::{EventLog, InMemoryLog, LogError, OrgId, Purpose, Scope, SpaceId};
 use glave_provider_openai::fake::{FakeServer, Reply};
 use glave_provider_openai::{Config, OpenAiCompatible};
 use tokio::sync::oneshot;
@@ -27,7 +27,7 @@ pub const KEY: &str = FAKE_SECRET;
 
 /// One log shared by every service a test starts, as a restart would find it.
 #[derive(Clone, Default)]
-pub struct SharedLog(pub Arc<MemoryLog>);
+pub struct SharedLog(pub Arc<InMemoryLog>);
 
 impl EventLog for SharedLog {
     async fn append(&self, scope: &Scope, events: &[RawEvent]) -> Result<(), LogError> {

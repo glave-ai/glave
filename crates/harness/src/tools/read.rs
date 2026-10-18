@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use glave_ports::{EntryKind, Listing, looks_binary};
+use glave_ports::computer::{EntryKind, Listing, looks_binary};
 use serde::Deserialize;
 
 use super::ToolOutcome;

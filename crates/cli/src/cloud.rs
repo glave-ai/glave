@@ -14,7 +14,7 @@ use glave_computer::{
     https_url, read_environment,
 };
 use glave_harness::Workers;
-use glave_ports::Sources;
+use glave_ports::computer::Sources;
 use glave_session::OnWorkers;
 
 use crate::client::Glave;
@@ -175,7 +175,10 @@ pub async fn release(server: &Glave, workers: &WorkerComputers) {
 }
 
 /// Saves handed-back files under GLAVE_HOME/out/<thread>.
-async fn save(thread: &str, files: &[(String, glave_ports::Bytes)]) -> anyhow::Result<PathBuf> {
+async fn save(
+    thread: &str,
+    files: &[(String, glave_ports::computer::Bytes)],
+) -> anyhow::Result<PathBuf> {
     let folder = home::folder()?.join("out").join(thread);
     for (name, content) in files {
         let Some(path) = inside(&folder, name) else {

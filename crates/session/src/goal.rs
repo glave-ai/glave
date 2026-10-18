@@ -5,8 +5,8 @@
 use std::sync::Arc;
 
 use glave_event::ThreadId;
-use glave_harness::{Caller, Goal, GoalProgress};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_harness::{Goal, GoalProgress};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 
 use crate::held::{Slot, Use, finished};

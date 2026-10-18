@@ -1,6 +1,6 @@
 //! `write`: create a file, or replace one the model has read.
 
-use glave_ports::EntryKind;
+use glave_ports::computer::EntryKind;
 use serde::Deserialize;
 
 use super::ToolOutcome;

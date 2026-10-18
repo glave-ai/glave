@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use glave_event::{MemoryId, MemoryScope, PrincipalId};
-use glave_harness::{Access, Control, Memory, OsEntropy, Remembered, SystemClock};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, Tidier};
-use glave_ports::{ModelProvider, Scope, SpaceId};
+use glave_ports::memories::{Access, Control, Memory, Remembered};
+use glave_ports::{ModelProvider, OsEntropy, Scope, SpaceId, SystemClock};
 use glave_session::protocol::{ApiError, Reply, Request, code};
 
 use crate::args::Args;

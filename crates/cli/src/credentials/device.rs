@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use glave_config::policy::GithubFile;
 use glave_event::{At, Forge, Renewal, Secret};
-use glave_ports::CredentialHost;
 use glave_ports::auth::safe_to_send;
+use glave_ports::computer::CredentialHost;
 use glave_session::protocol::{ApiError, DeviceCode, code};
 use serde_json::Value;
 

@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use glave_ports::ComputerError;
+use glave_ports::computer::ComputerError;
 
 use super::paths;
 use super::worktree::{Record, write_record};

@@ -11,8 +11,9 @@ mod support;
 #[cfg(test)]
 mod goals {
     use glave_event::{Body, Event, GoalReason, Part, PrincipalKind, StopReason};
-    use glave_harness::{AllowAll, Caller, Cancel, Goal, UPDATE_GOAL};
-    use glave_ports::{Completion, EventLog, MemoryLog, Message, ModelRequest};
+    use glave_harness::{AllowAll, Cancel, Goal, UPDATE_GOAL};
+    use glave_ports::Caller;
+    use glave_ports::{Completion, EventLog, InMemoryLog, Message, ModelRequest};
     use serde_json::json;
 
     use super::support::*;
@@ -83,7 +84,7 @@ mod goals {
                 done("Wrote it and read it back."),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let objective = "make done.txt; read it back to check";
             let summary = harness
@@ -143,7 +144,7 @@ mod goals {
                 done("Serving on 8080."),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let caller = Caller::default();
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let serve = goal("serve it", 1_000_000);
@@ -205,7 +206,7 @@ mod goals {
                 done("Out of budget: here is where I got to."),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .start_goal(
@@ -291,7 +292,7 @@ mod goals {
                 .await;
             assert!(crashed.is_err(), "the script runs out mid-goal");
             // A new process on the same log.
-            let log = MemoryLog::new();
+            let log = InMemoryLog::new();
             let stored = first
                 .log()
                 .read(&scope(), thread.id, None, usize::MAX)
@@ -367,7 +368,7 @@ mod goals {
                 &dir,
                 vec![done("Hi.")],
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             )

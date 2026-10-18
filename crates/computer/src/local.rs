@@ -25,13 +25,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use glave_ports::secrets::without_secrets;
-use glave_ports::{
-    Background, BoxFuture, Bytes, Cancellation, Command, CommandId, ComputerError, ComputerId,
-    ComputerInfo, Computers, Environment, FileWrite, Finished, GitCredential, GitCredentials, Glob,
-    Globbed, Image, Listed, Listing, Network, Output, Printed, Save, Saved, Search, Searched, Size,
-    Sources, Stat, State, WorkspaceId, WorkspaceInfo,
+use glave_ports::computer::{
+    Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
+    Environment, FileWrite, Finished, GitCredential, GitCredentials, Glob, Globbed, Image, Listed,
+    Listing, Network, Output, Printed, Save, Saved, Search, Searched, Size, Sources, Stat, State,
+    WorkspaceId, WorkspaceInfo,
 };
+use glave_ports::secrets::without_secrets;
+use glave_ports::{BoxFuture, Cancellation};
 use glave_process::{Owner, Processes};
 
 use background::Backgrounds;

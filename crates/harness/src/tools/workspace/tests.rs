@@ -122,7 +122,7 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use glave_event::Arguments;
-    use glave_ports::SandboxLevel;
+    use glave_ports::computer::SandboxLevel;
 
     use crate::cancel::Cancel;
     use crate::tools::Tool;

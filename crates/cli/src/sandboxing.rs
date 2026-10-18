@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Context as _;
 use glave_computer::LocalComputers;
 use glave_config::policy::{self, Choices, Constraints, On, Source};
-use glave_harness::{ApprovalMode, Sandbox, Workspace};
+use glave_harness::{ApprovalMode, Workspace};
+use glave_ports::computer::Sandbox;
 use glave_process::Processes;
 
 use crate::setup::Setup;

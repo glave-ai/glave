@@ -98,7 +98,7 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
     let sandbox = choices
         .sandbox
         .value
-        .map_or("off", glave_harness::SandboxLevel::name);
+        .map_or("off", glave_ports::computer::SandboxLevel::name);
     let mut rows = vec![
         match &choices.model {
             Some(model) => row("model", model.value.clone(), &model.from),

@@ -10,10 +10,13 @@ use glave_event::{
     Body, EventId, Header, MemoryId, MemoryScope, MessageAdded, Part, Principal, PrincipalId, Role,
     Seq, ThreadId, decode, encode,
 };
-use glave_harness::{Clock as _, Entropy as _, OsEntropy, SystemClock, memory_ledger};
-use glave_keys::{KeySettings, MemoryRoot};
+use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory, Tidier, Writer};
-use glave_ports::{EventLog, ModelProvider, OrgId, Scope, SpaceId};
+use glave_ports::memories::memory_ledger;
+use glave_ports::{
+    Clock as _, Entropy as _, EventLog, ModelProvider, OrgId, OsEntropy, Scope, SpaceId,
+    SystemClock,
+};
 use glave_store_sqlite::{SqliteLog, Store};
 
 use crate::error::EvalError;
@@ -85,7 +88,7 @@ impl Remembering {
     /// The store for `task`'s attempt, with memory when `on`, and its seeded memories saved.
     pub async fn open(task: &Task, on: bool) -> Result<Self, EvalError> {
         let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("memory: {error}"));
-        let root = MemoryRoot::new().map_err(|e| fail(&e))?;
+        let root = InMemoryRoot::new().map_err(|e| fail(&e))?;
         let store =
             Store::open_in_memory(KeySettings::new(Arc::new(root))).map_err(|e| fail(&e))?;
         let person = person()?;
@@ -262,7 +265,7 @@ async fn seed(
 /// A clock that always reads one time: when a seeded memory was saved.
 struct Fixed(jiff::Timestamp);
 
-impl glave_harness::Clock for Fixed {
+impl glave_ports::Clock for Fixed {
     fn now(&self) -> jiff::Timestamp {
         self.0
     }

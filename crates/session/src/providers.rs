@@ -4,8 +4,7 @@
 //! models each change leaves.
 
 use glave_event::{AuthMethod, ProviderId, ProviderKind, Secret};
-use glave_harness::Caller;
-use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider};
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, ModelInfo, ProviderInfo, Reply, code};
 use crate::server::Server;

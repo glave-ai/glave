@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use glave_ports::{Environment, Image, Size};
+use glave_ports::computer::{Environment, Image, Size};
 use serde_json::{Map, Value};
 
 use super::EnvironmentError;

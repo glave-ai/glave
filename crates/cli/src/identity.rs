@@ -9,8 +9,8 @@ use std::path::Path;
 
 use anyhow::{Context as _, bail};
 use glave_event::PrincipalId;
-use glave_harness::{Clock as _, Entropy as _, OsEntropy, SystemClock};
-use glave_ports::ComputerId;
+use glave_ports::computer::ComputerId;
+use glave_ports::{Clock as _, Entropy as _, OsEntropy, SystemClock};
 use uuid::Uuid;
 
 /// The file, in glave's folder.
