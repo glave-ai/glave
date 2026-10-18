@@ -2,11 +2,42 @@ import { TestBed } from '@angular/core/testing';
 import { ApiError, ErrorCode } from '@glave/client';
 
 import { TOKEN_KEY } from '../lib/token';
-import { FakeSession, provideFakeSession } from '../testing/fake-session';
-import { SESSION_CLIENT_FACTORY, SessionService } from './session.service';
+import {
+  ELSEWHERE,
+  FAKE_SERVER,
+  FakeSession,
+  SIGNED_IN,
+  provideFakeSession,
+} from '../testing/fake-session';
+import { INITIAL_SESSION, SESSION_CLIENT_FACTORY, SessionService } from './session.service';
+
+/** A tab that starts signed out, its calls going to `fake`, whose token each call is sent with. */
+function startingOut(fake: FakeSession): { readonly token: () => string } {
+  let sent: () => string = () => '';
+  TestBed.configureTestingModule({
+    providers: [
+      {
+        provide: SESSION_CLIENT_FACTORY,
+        useValue: (token: () => string) => {
+          sent = token;
+          return fake;
+        },
+      },
+      { provide: INITIAL_SESSION, useValue: null },
+    ],
+  });
+  return { token: () => sent() };
+}
+
+const DISCOVERED = { name: 'glave', id: FAKE_SERVER };
 
 describe('SessionService', () => {
-  it('is signed in with a kept token, and calls through the client', async () => {
+  afterEach(() => {
+    sessionStorage.clear();
+    history.replaceState(null, '', '/');
+  });
+
+  it('is signed in with a session, and calls through the client', async () => {
     const fake = new FakeSession().answer('server/discover', { name: 'glave' });
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const session = TestBed.inject(SessionService);
@@ -40,19 +71,86 @@ describe('SessionService', () => {
     expect(last.done).toBe(true);
   });
 
-  it('signs each call in with the token, from the default client', () => {
-    sessionStorage.setItem(TOKEN_KEY, 'glave_local_x');
-    const factory = TestBed.inject(SESSION_CLIENT_FACTORY);
-    expect(typeof factory).toBe('function');
-    expect(TestBed.inject(SessionService).signedIn()).toBe(true);
+  it("trades the link's code for a session with the server that served the app", async () => {
+    history.replaceState(null, '', '/t/1#code=abc');
+    const fake = new FakeSession()
+      .answer('server/discover', DISCOVERED)
+      .answer('signin/redeem', { session: 'glave_session_new', server: FAKE_SERVER });
+    const sent = startingOut(fake);
+    const session = TestBed.inject(SessionService);
+    await session.start();
+    expect(location.hash).toBe('');
+    expect(location.pathname).toBe('/t/1');
+    expect(fake.paramsOf('signin/redeem')).toEqual([{ code: 'abc' }]);
+    expect(session.signedIn()).toBe(true);
+    expect(sent.token()).toBe('glave_session_new');
+    expect(JSON.parse(sessionStorage.getItem(TOKEN_KEY) ?? 'null')).toEqual({
+      token: 'glave_session_new',
+      server: FAKE_SERVER,
+    });
   });
 
-  it('is with a glave elsewhere when signed in with another token', () => {
-    sessionStorage.setItem(TOKEN_KEY, '"an-access-token"');
+  it('stays signed in after a reload with the session the tab kept', async () => {
+    sessionStorage.setItem(TOKEN_KEY, JSON.stringify(SIGNED_IN));
+    const fake = new FakeSession().answer('server/discover', DISCOVERED);
+    const sent = startingOut(fake);
+    const session = TestBed.inject(SessionService);
+    await session.start();
+    expect(session.signedIn()).toBe(true);
+    expect(sent.token()).toBe(SIGNED_IN.token);
+  });
+
+  it('never presents a session to a server with another id, or none', async () => {
+    for (const discovered of [{ name: 'glave', id: 'another-server' }, { name: 'glave' }]) {
+      TestBed.resetTestingModule();
+      sessionStorage.setItem(TOKEN_KEY, JSON.stringify(SIGNED_IN));
+      const fake = new FakeSession().answer('server/discover', discovered);
+      const sent = startingOut(fake);
+      const session = TestBed.inject(SessionService);
+      await session.start();
+      expect(session.signedIn()).toBe(false);
+      expect(sent.token()).toBe('');
+    }
+  });
+
+  it('stays signed out when the server cannot be reached, or the code is spent', async () => {
+    const away = new FakeSession().answer(
+      'server/discover',
+      new ApiError({ code: ErrorCode.INTERNAL, message: 'away' }),
+    );
+    startingOut(away);
+    await TestBed.inject(SessionService).start();
+    expect(TestBed.inject(SessionService).signedIn()).toBe(false);
+
+    TestBed.resetTestingModule();
+    history.replaceState(null, '', '/#code=spent');
+    const spent = new FakeSession()
+      .answer('server/discover', DISCOVERED)
+      .answer('signin/redeem', new ApiError({ code: ErrorCode.NO_SIGN_IN, message: 'used' }));
+    startingOut(spent);
+    const session = TestBed.inject(SessionService);
+    await session.start();
+    expect(session.signedIn()).toBe(false);
+  });
+
+  it('signs out with the server, and signs other browsers out', async () => {
+    const fake = new FakeSession();
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const session = TestBed.inject(SessionService);
+    await session.signOutOthers();
+    expect(fake.paramsOf('signin/end_others')).toEqual([{}]);
+    expect(session.signedIn()).toBe(true);
+    await session.signOut();
+    expect(fake.paramsOf('signin/end')).toEqual([{}]);
+    expect(session.signedIn()).toBe(false);
+  });
+
+  it('is with a glave elsewhere when signed in with another token', async () => {
+    TestBed.configureTestingModule({ providers: provideFakeSession(new FakeSession(), ELSEWHERE) });
     const session = TestBed.inject(SessionService);
     expect(session.signedIn()).toBe(true);
     expect(session.local()).toBe(false);
-    session.signOut();
+    await session.signOut();
     expect(session.local()).toBe(false);
   });
 });

@@ -18,6 +18,7 @@ use glave_ports::{
     OrgId, Scope, Space, SpaceId, SpaceKind, Spaces, WorkspaceInfo,
 };
 use glave_session::protocol::ModelInfo;
+use glave_session::signin::Browsers;
 use glave_session::{
     Answering, GitHosts, ProjectTrust, Providers, Server, TaskLimits, Wiring, space_ledger,
 };
@@ -89,6 +90,8 @@ pub struct Setup {
     pub credentials: Option<Arc<dyn Credentials>>,
     /// The spaces another server keeps, to share its store; spaces of its own when none.
     pub spaces: Option<Arc<dyn Spaces>>,
+    /// The browsers it signs in; with none, it signs in none.
+    pub browsers: Option<Arc<Browsers>>,
 }
 
 impl Setup {
@@ -113,6 +116,7 @@ impl Setup {
             trust: None,
             credentials: None,
             spaces: None,
+            browsers: None,
         }
     }
 
@@ -191,6 +195,7 @@ impl Setup {
             git_hosts: self.hosts,
             projects: self.project_host,
             trust: self.trust,
+            browsers: self.browsers,
         };
         let server = Server::new(wiring, self.settings, scope(), self.answering);
         // The server's own space, kept as its person's project at a fixed time without reading

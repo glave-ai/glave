@@ -1,20 +1,25 @@
-//! `glave serve --http`: the session API over HTTP. A browser on this computer signs in with a
+//! `glave serve --http`: the session API over HTTP. Programs on this computer sign in with a
 //! local token made at every start, kept in `GLAVE_HOME/serve.token` (readable only by you,
-//! with the server's address beside it in `serve.url`, so `glave app` finds it) and given once
-//! as a link whose fragment carries it, so it never reaches a server log or a query string.
-//! Callers on other computers sign in with OIDC (`--issuer`, `--audience`).
+//! with the server's address beside it in `serve.url`, so `glave app` finds it). A browser
+//! here signs in through a link whose fragment carries a one-time code, never the token, which
+//! it trades for a browser session kept in `GLAVE_HOME/browsers.json` as hashes alone, so it
+//! stays signed in across restarts. Callers on other computers sign in with OIDC
+//! (`--issuer`, `--audience`).
 //! The web app is served at `/` beside the API: the build in `--web`, else the app built into
 //! glave (the `web` feature, which release builds turn on), else a `web` folder beside the
 //! binary.
 
 use std::io::IsTerminal as _;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::Context as _;
+use glave_event::Secret;
 use glave_harness::SystemClock;
 use glave_session::http::{Files, Site};
-use glave_session::signin::{LOCAL_BYTES, LocalToken, SignIn, Trust};
+use glave_session::protocol::{Reply, Request};
+use glave_session::signin::{Browsers, LOCAL_BYTES, LocalToken, SignIn, Trust};
 use tokio::net::TcpListener;
 
 use crate::args::Args;
@@ -22,6 +27,9 @@ use crate::client::Glave;
 
 /// The file the local token is kept in, in glave's folder.
 pub const TOKEN_FILE: &str = "serve.token";
+
+/// The file browser sessions are kept in, as hashes, in glave's folder.
+const BROWSERS_FILE: &str = "browsers.json";
 
 /// The folder beside the binary a built web app may be in.
 const WEB_FOLDER: &str = "web";
@@ -58,7 +66,7 @@ pub async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyh
     }
     let opened = if args.open {
         let folder = path.parent().unwrap_or(&path);
-        crate::app::show(folder, &url, token.reveal()).await
+        crate::app::show(folder, &url, &link(&server).await?).await
     } else {
         Err(anyhow::anyhow!("not asked to open"))
     };
@@ -66,17 +74,15 @@ pub async fn serve_http(args: &Args, server: Glave, address: SocketAddr) -> anyh
         eprintln!("glave: glave is open in your browser; Ctrl-C here stops it");
     } else if std::io::stderr().is_terminal() {
         // Shown only to a person at a terminal: a service's error output often ends up in a
-        // log.
+        // log. The code is good once, for five minutes, so the link is no key left behind.
+        let code = link(&server).await?;
         eprintln!(
-            "glave: open http://{}/#token={} in a browser on this computer",
-            here(bound),
-            token.reveal()
+            "glave: open {url}/#code={} in a browser on this computer (the link works once, \
+             for five minutes; glave app opens another)",
+            code.expose()
         );
     } else {
-        eprintln!(
-            "glave: a browser on this computer signs in with the token in {}",
-            path.display()
-        );
+        eprintln!("glave: run glave app on this computer to open glave in a browser");
     }
     let stop = async {
         // Without Ctrl-C, the server runs until it is stopped some other way.
@@ -111,6 +117,24 @@ fn site(args: &Args) -> anyhow::Result<Option<Site>> {
     Ok(beside.and_then(|folder| Site::folder(folder).ok()))
 }
 
+/// The browsers a server signs in, when it serves over HTTP: kept in glave's folder, so a
+/// browser's session outlives a restart.
+pub fn browsers(args: &Args) -> anyhow::Result<Option<Arc<Browsers>>> {
+    if args.http.is_none() {
+        return Ok(None);
+    }
+    let path = crate::home::folder()?.join(BROWSERS_FILE);
+    Ok(Some(Arc::new(Browsers::open(path, Box::new(SystemClock))?)))
+}
+
+/// A new one-time code for a sign-in link, from `server`.
+async fn link(server: &Glave) -> anyhow::Result<Secret> {
+    match server.request(Request::SigninLink {}).await? {
+        Reply::Link { code } => Ok(code),
+        other => anyhow::bail!("asked for a sign-in link, the server answered {other:?}"),
+    }
+}
+
 /// Random bytes for the local token, from the operating system.
 fn random() -> anyhow::Result<[u8; LOCAL_BYTES]> {
     let mut bytes = [0u8; LOCAL_BYTES];
@@ -119,24 +143,10 @@ fn random() -> anyhow::Result<[u8; LOCAL_BYTES]> {
     Ok(bytes)
 }
 
-/// Writes `token` to `path`, readable and writable only by you, replacing any earlier one.
-pub fn keep(path: &Path, token: &str) -> anyhow::Result<()> {
-    let fresh: PathBuf = path.with_extension("token.new");
-    let _ = std::fs::remove_file(&fresh);
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.mode(0o600);
-    }
-    let mut file = options
-        .open(&fresh)
-        .with_context(|| format!("could not write {}", fresh.display()))?;
-    std::io::Write::write_all(&mut file, token.as_bytes())
-        .with_context(|| format!("could not write {}", fresh.display()))?;
-    drop(file);
-    std::fs::rename(&fresh, path).with_context(|| format!("could not write {}", path.display()))
+/// Writes `contents` to `path`, readable and writable only by you, replacing any earlier one.
+pub fn keep(path: &Path, contents: &str) -> anyhow::Result<()> {
+    glave_session::signin::keep(path, contents)
+        .with_context(|| format!("could not write {}", path.display()))
 }
 
 /// The address a browser on this computer reaches `bound` at: itself, or loopback for a
@@ -153,24 +163,6 @@ fn here(bound: SocketAddr) -> SocketAddr {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_token_file_is_private_and_replaced() {
-        let dir = std::env::temp_dir().join(format!("glave-serve-token-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(TOKEN_FILE);
-        keep(&path, "first").unwrap();
-        keep(&path, "second").unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "second");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-            assert_eq!(mode & 0o777, 0o600);
-        }
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 
     #[test]
     fn a_link_points_at_this_computer() {

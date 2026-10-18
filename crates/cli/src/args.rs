@@ -38,8 +38,10 @@ Usage:
                                 until nothing is left (glave starts it when needed)
   glave serve --http <address> [--issuer <url> --audience <name>] [options]
                                 serve the session API over HTTP. A browser on this
-                                computer signs in with a token made at every start (kept in
-                                GLAVE_HOME/serve.token; glave prints a link with it); with
+                                computer signs in by a link glave prints or opens, good
+                                once for five minutes, and stays signed in; programs here
+                                use the token in GLAVE_HOME/serve.token, made at every
+                                start; with
                                 --issuer and --audience, clients elsewhere sign in with an
                                 OIDC access token from that issuer for that audience.
                                 The address is host:port, or a port on 127.0.0.1; without

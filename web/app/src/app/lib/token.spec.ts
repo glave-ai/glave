@@ -1,5 +1,4 @@
-import { forget } from './storage';
-import { TOKEN_KEY, isLocalToken, takeToken } from './token';
+import { TOKEN_KEY, isLocalToken, keepSession, readSession, sessionFor, takeCode } from './token';
 
 function storage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> & {
   readonly kept: Map<string, string>;
@@ -13,34 +12,46 @@ function storage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> & {
   };
 }
 
+const SESSION = { token: 'glave_session_abc', server: 'server-1' } as const;
+
 describe('token', () => {
-  it('takes the token from the link, out of the address bar and into the tab', () => {
-    const kept = storage();
+  it('takes the code from the link, out of the address bar', () => {
     const replaceState = vi.fn();
-    const token = takeToken({
-      location: { hash: '#token=glave_local_abc', pathname: '/t/1', search: '?x=1' },
+    const code = takeCode({
+      location: { hash: '#code=abc', pathname: '/t/1', search: '?x=1' },
       history: { replaceState },
-      storage: kept,
     });
-    expect(token).toBe('glave_local_abc');
+    expect(code).toBe('abc');
     expect(replaceState).toHaveBeenCalledWith(null, '', '/t/1?x=1');
-    expect(kept.kept.get(TOKEN_KEY)).toBe('"glave_local_abc"');
   });
 
-  it('reads a kept token when the link has none, and forgets it', () => {
-    const kept = storage();
-    kept.setItem(TOKEN_KEY, 'kept');
+  it('finds no code in a link without one, and leaves the address alone', () => {
     const replaceState = vi.fn();
     const place = { location: { hash: '', pathname: '/', search: '' }, history: { replaceState } };
-    expect(takeToken({ ...place, storage: kept })).toBe('kept');
+    expect(takeCode(place)).toBeNull();
+    expect(takeCode({ ...place, location: { ...place.location, hash: '#token=x' } })).toBeNull();
     expect(replaceState).not.toHaveBeenCalled();
-    forget(kept, TOKEN_KEY);
-    expect(takeToken({ ...place, storage: kept })).toBeNull();
-    expect(takeToken({ ...place, storage: null })).toBeNull();
   });
 
-  it('knows a local token, which only a glave on this computer takes', () => {
-    expect(isLocalToken('glave_local_abc')).toBe(true);
+  it('keeps a session for the tab, and reads back only a whole one', () => {
+    const kept = storage();
+    expect(readSession(kept)).toBeNull();
+    keepSession(kept, SESSION);
+    expect(readSession(kept)).toEqual(SESSION);
+    kept.setItem(TOKEN_KEY, '"glave_local_old"');
+    expect(readSession(kept)).toBeNull();
+    expect(readSession(null)).toBeNull();
+  });
+
+  it('presents a session only to the server that made it', () => {
+    expect(sessionFor(SESSION, 'server-1')).toEqual(SESSION);
+    expect(sessionFor(SESSION, 'server-2')).toBeNull();
+    expect(sessionFor(SESSION, undefined)).toBeNull();
+    expect(sessionFor(null, 'server-1')).toBeNull();
+  });
+
+  it('knows a browser session, which only a glave on this computer gives', () => {
+    expect(isLocalToken('glave_session_abc')).toBe(true);
     expect(isLocalToken('eyJhbGciOi.an-access-token')).toBe(false);
     expect(isLocalToken('')).toBe(false);
   });

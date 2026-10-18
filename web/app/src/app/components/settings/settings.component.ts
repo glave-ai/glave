@@ -39,11 +39,15 @@ const COPY = {
   server: 'This server',
   serverUnknown: 'Reading…',
   signOut: 'Sign out of this tab',
+  signOutOthers: 'Sign out other browsers',
+  signedOutOthers: 'Every other browser is signed out. This tab stays signed in.',
+  signOutOthersFailed: 'Other browsers could not be signed out. Try again.',
 } as const;
 
 /**
  * Settings: the theme, the model accounts (add, change, remove), the connected accounts git
- * signs in with, memory (its own page), the server, sign out.
+ * signs in with, memory (its own page), the server, signing this tab or every other browser
+ * out.
  */
 @Component({
   selector: 'app-settings',
@@ -88,6 +92,8 @@ export class SettingsComponent {
   );
   protected readonly confirming = signal(false);
   protected readonly problem = signal<string | null>(null);
+  /** What signing other browsers out came to, once asked. */
+  protected readonly others = signal<string | null>(null);
   private removing: string | null = null;
 
   protected readonly choice = this.theme.choice;
@@ -134,7 +140,17 @@ export class SettingsComponent {
   }
 
   protected async signOut(): Promise<void> {
-    this.session.signOut();
+    await this.session.signOut();
     await this.router.navigateByUrl('/sign-in');
+  }
+
+  protected async signOutOthers(): Promise<void> {
+    this.others.set(null);
+    try {
+      await this.session.signOutOthers();
+      this.others.set(COPY.signedOutOthers);
+    } catch {
+      this.others.set(COPY.signOutOthersFailed);
+    }
   }
 }

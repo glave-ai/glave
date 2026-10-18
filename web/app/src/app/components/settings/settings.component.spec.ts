@@ -50,8 +50,20 @@ describe('SettingsComponent', () => {
     root.querySelectorAll<HTMLInputElement>('input[type="radio"]')[2]?.click();
     expect(TestBed.inject(ThemeService).choice()).toBe('dark');
 
-    root.querySelector<HTMLButtonElement>('[data-testid="settings-sign-out"]')?.click();
+    root.querySelector<HTMLButtonElement>('[data-testid="settings-sign-out-others"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
     await fixture.whenStable();
+    expect(fake.paramsOf('signin/end_others')).toEqual([{}]);
+    expect(root.querySelector('[data-testid="settings-signed-out-others"]')?.textContent).toContain(
+      'This tab stays signed in.',
+    );
+    expect(TestBed.inject(SessionService).signedIn()).toBe(true);
+    await expectAccessible(root);
+
+    root.querySelector<HTMLButtonElement>('[data-testid="settings-sign-out"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    expect(fake.paramsOf('signin/end')).toEqual([{}]);
     expect(TestBed.inject(SessionService).signedIn()).toBe(false);
     expect(navigate).toHaveBeenCalledWith('/sign-in');
   });

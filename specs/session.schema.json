@@ -1022,6 +1022,13 @@
           },
           "type": "array"
         },
+        "id": {
+          "description": "The server's id, where it signs browsers in: the same across restarts, and the one a\nbrowser's session must name before the browser presents it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "type": "string"
         },
@@ -2826,6 +2833,74 @@
       },
       "result": {
         "$ref": "#/$defs/ServerInfo"
+      },
+      "streams": false
+    },
+    "signin/end": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "signin/end_others": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "signin/link": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "description": "A link's one-time code, sent once.",
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/Secret"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "signin/redeem": {
+      "params": {
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/Secret"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A browser session, sent once.",
+        "properties": {
+          "server": {
+            "description": "The id of the server it is for: the browser presents it to no other.",
+            "type": "string"
+          },
+          "session": {
+            "$ref": "#/$defs/Secret",
+            "description": "The bearer token the browser signs in with, kept in the tab."
+          }
+        },
+        "required": [
+          "session",
+          "server"
+        ],
+        "type": "object"
       },
       "streams": false
     },

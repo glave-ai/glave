@@ -86,7 +86,7 @@ fn a_browser_here_signs_in_with_the_local_token_as_the_local_person() {
             ),
         ] {
             let refused = Web::new(&served, presented)
-                .call(&Request::Discover {})
+                .call(&Request::SpaceList { limit: None })
                 .await;
             assert_eq!(refused["error"]["code"], json!(code::NO_SIGN_IN), "{case}");
             let message: &Value = &refused["error"]["message"];

@@ -8,7 +8,7 @@ import { SignInComponent } from './sign-in.component';
 describe('SignInComponent', () => {
   it('says how to sign in, in plain words', async () => {
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), ...provideFakeSession(new FakeSession(), false)],
+      providers: [provideRouter([]), ...provideFakeSession(new FakeSession(), null)],
     });
     const fixture = TestBed.createComponent(SignInComponent);
     await fixture.whenStable();
@@ -22,7 +22,7 @@ describe('SignInComponent', () => {
 
   it('goes to the workspace once signed in', async () => {
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), ...provideFakeSession(new FakeSession(), true)],
+      providers: [provideRouter([]), ...provideFakeSession(new FakeSession())],
     });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
     const fixture = TestBed.createComponent(SignInComponent);

@@ -1,6 +1,7 @@
 import { type Page, expect, test } from '@playwright/test';
 
 import { MISSING_REPOSITORY, type Request, fakeApi } from './fake-api';
+import { SIGNED_IN_ELSEWHERE } from './fake-signin';
 import { SIGNED_IN, byTestId, expectAccessible, shownOpacity, watchForProblems } from './support';
 
 /** Words New project never says (AGENTS.md, "Keeping principle 4"). */
@@ -136,7 +137,7 @@ test('an empty project needs a name, then glave makes its folder', async ({ page
 
 test('signed in from another computer, a project is made by its name alone', async ({ page }) => {
   const api = await fakeApi(page);
-  await page.goto('/#token=signed-in-elsewhere');
+  await page.goto(`/${SIGNED_IN_ELSEWHERE}`);
   await byTestId(page, 'nav-new-project').click();
   await expect(byTestId(page, 'new-project')).toBeVisible();
   await expect(page.getByRole('radio')).toHaveCount(0);

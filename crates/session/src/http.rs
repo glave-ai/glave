@@ -3,9 +3,10 @@
 //! token. The answer is JSON, or for `turn/start` a
 //! `text/event-stream` of the turn's notifications ending with its response. The method may
 //! also be named in the `Glave-Method` header, for proxies and logs; when it is, it must match.
-//! Every request needs a valid sign-in: without one the answer is HTTP 401 with error `-32013`.
-//! Served with a [`Site`], any `GET` is the web app instead (`site`), with no sign-in: the app
-//! signs in to the API itself.
+//! Every request needs a valid sign-in, but `server/discover` and, from this computer,
+//! `signin/redeem`: without one the answer is HTTP 401 with error `-32013`. Served with a
+//! [`Site`], any `GET` is the web app instead (`site`), with no sign-in: the app signs in to
+//! the API itself.
 
 mod body;
 mod site;
@@ -34,10 +35,13 @@ use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Request, code};
 use crate::rpc::{Id, parse, respond};
 use crate::server::Server;
-use crate::signin::{SignIn, SignInError};
+use crate::signin::{SignIn, SignInError, is_loopback};
 
 /// The largest request body accepted, in bytes.
 const MAX_BODY: usize = 16 * 1024 * 1024;
+
+/// The largest request body accepted without a sign-in, in bytes: room for a code.
+const MAX_OPEN_BODY: usize = 4 * 1024;
 
 /// Connections served at once.
 const MAX_CONNECTIONS: usize = 1_024;
@@ -50,7 +54,8 @@ const METHOD_HEADER: &str = "glave-method";
 
 /// Serves `server` over HTTP on `listener`, each request signed in through `signin`, until
 /// `stop` completes. Then it cancels running turns and closes every connection. With `site`,
-/// the web app too: every `GET` is one of its files.
+/// the web app too: every `GET` is one of its files. Browsers the server signs in sign in
+/// through `signin` too.
 pub async fn serve<P, L, B, S>(
     server: Server<P, L, B>,
     signin: SignIn,
@@ -64,7 +69,10 @@ where
     B: BlobStore + 'static,
     S: Future<Output = ()>,
 {
-    let signin = Arc::new(signin);
+    let signin = Arc::new(match server.inner.browsers.clone() {
+        Some(browsers) => signin.with_browsers(browsers),
+        None => signin,
+    });
     let site = Arc::new(site);
     let mut connections = JoinSet::new();
     let mut stop = pin!(stop);
@@ -138,26 +146,50 @@ where
             .insert(header::ALLOW, HeaderValue::from_static("POST"));
         return refused;
     }
-    let caller = match bearer(request.headers()) {
-        Some(token) => signin.verify_from(token, peer).await,
-        None => Err(SignInError::Missing),
+    let token = bearer(request.headers()).map(str::to_owned);
+    let caller = match &token {
+        Some(token) => match signin.verify_from(token, peer).await {
+            Ok(caller) => Some(caller),
+            Err(refused) => return unauthorized(&refused),
+        },
+        None => None,
+    };
+    let most = if caller.is_some() {
+        MAX_BODY
+    } else {
+        MAX_OPEN_BODY
+    };
+    let (id, request) = match message(request, most).await {
+        Ok(message) => message,
+        // Without a sign-in, nothing is said about what was sent.
+        Err(_) if caller.is_none() => return unauthorized(&SignInError::Missing),
+        Err(failed) => return json(StatusCode::OK, failed),
     };
     let caller = match caller {
-        Ok(caller) => caller,
-        Err(refused) => return unauthorized(&refused),
+        Some(caller) => caller,
+        None => match open(&request, peer) {
+            // Neither reads who calls.
+            Ok(()) => crate::Caller::default(),
+            Err(refused) => return unauthorized(&refused),
+        },
     };
+    dispatch(server, &caller, id, request).await
+}
+
+/// The JSON-RPC request `request` carries, of at most `most` bytes, or the error response
+/// saying why it is none. The `Glave-Method` header, when sent, must name its method.
+async fn message(
+    request: HttpRequest<Incoming>,
+    most: usize,
+) -> Result<(Option<Id>, Request), String> {
     let named = request
         .headers()
         .get(METHOD_HEADER)
         .map(|value| value.to_str().unwrap_or("").to_owned());
-    let line = match read(request.into_body()).await {
-        Ok(line) => line,
-        Err(failed) => return json(StatusCode::OK, respond(None, Err(&failed))),
-    };
-    let (id, request) = match parse(&line) {
-        Ok(parsed) => parsed,
-        Err((id, failed)) => return json(StatusCode::OK, respond(id.as_ref(), Err(&failed))),
-    };
+    let line = read(request.into_body(), most)
+        .await
+        .map_err(|failed| respond(None, Err(&failed)))?;
+    let (id, request) = parse(&line).map_err(|(id, failed)| respond(id.as_ref(), Err(&failed)))?;
     if let Some(named) = named
         && named != request.method()
     {
@@ -168,9 +200,20 @@ where
                 request.method()
             ),
         );
-        return json(StatusCode::OK, respond(id.as_ref(), Err(&failed)));
+        return Err(respond(id.as_ref(), Err(&failed)));
     }
-    dispatch(server, &caller, id, request).await
+    Ok((id, request))
+}
+
+/// Whether `request` may be answered without a sign-in, from `peer`: what the server is, and
+/// trading a link's code for a session from this computer.
+fn open(request: &Request, peer: IpAddr) -> Result<(), SignInError> {
+    match request {
+        Request::Discover {} => Ok(()),
+        Request::SigninRedeem { .. } if is_loopback(peer) => Ok(()),
+        Request::SigninRedeem { .. } => Err(SignInError::NotLoopback),
+        _ => Err(SignInError::Missing),
+    }
 }
 
 /// Runs a request for a signed-in caller.
@@ -210,16 +253,16 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
     (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then_some(token)
 }
 
-/// The request body as text, up to `MAX_BODY` bytes.
-async fn read(body: Incoming) -> Result<String, ApiError> {
+/// The request body as text, up to `most` bytes.
+async fn read(body: Incoming, most: usize) -> Result<String, ApiError> {
     let failed = |message: String| ApiError::new(code::PARSE, message);
     let mut body = pin!(body);
     let mut bytes = Vec::new();
     while let Some(frame) = poll_fn(|cx| Pin::as_mut(&mut body).poll_frame(cx)).await {
         let frame = frame.map_err(|e| failed(format!("could not read the request: {e}")))?;
         if let Ok(data) = frame.into_data() {
-            if bytes.len().saturating_add(data.len()) > MAX_BODY {
-                return Err(failed(format!("a request is longer than {MAX_BODY} bytes")));
+            if bytes.len().saturating_add(data.len()) > most {
+                return Err(failed(format!("a request is longer than {most} bytes")));
             }
             bytes.extend_from_slice(&data);
         }

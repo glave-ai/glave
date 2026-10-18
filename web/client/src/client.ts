@@ -34,7 +34,10 @@ export class ApiError extends Error {
 export interface ClientOptions {
   /** The server's address, such as `http://127.0.0.1:8080/`. */
   readonly url: string;
-  /** The bearer token for each request: the server's local token, or an OIDC access token. */
+  /**
+   * The bearer token for each request: a browser session, the server's local token, or an
+   * OIDC access token; empty for none, as `server/discover` and `signin/redeem` need none.
+   */
   readonly token: () => string | Promise<string>;
   /** The fetch to use; the global one by default. */
   readonly fetch?: typeof fetch;
@@ -112,7 +115,7 @@ export class GlaveClient {
         Accept: streams.includes(method)
           ? 'text/event-stream, application/json'
           : 'application/json',
-        Authorization: `Bearer ${token}`,
+        ...(token === '' ? {} : { Authorization: `Bearer ${token}` }),
         'Glave-Method': method,
       },
       ...(signal === undefined ? {} : { signal }),
@@ -121,11 +124,14 @@ export class GlaveClient {
   }
 }
 
-/** The token in a link `glave serve` printed (`…/#token=<token>`), if the fragment has one. */
-export function tokenFromFragment(fragment: string): string | undefined {
+/**
+ * The one-time code in a sign-in link glave opened or printed (`…/#code=<code>`), if the
+ * fragment has one: `signin/redeem` trades it for a browser session.
+ */
+export function codeFromFragment(fragment: string): string | undefined {
   const fields = new URLSearchParams(fragment.startsWith('#') ? fragment.slice(1) : fragment);
-  const token = fields.get('token');
-  return token === null || token === '' ? undefined : token;
+  const code = fields.get('code');
+  return code === null || code === '' ? undefined : code;
 }
 
 function isEventStream(response: Response): boolean {

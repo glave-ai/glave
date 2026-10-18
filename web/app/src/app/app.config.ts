@@ -14,9 +14,7 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes, withComponentInputBinding()),
-    // Take the sign-in token out of the address bar before the router reads it.
-    provideAppInitializer(() => {
-      inject(SessionService);
-    }),
+    // Sign the tab in before the router reads the address, which the link's code leaves.
+    provideAppInitializer(() => inject(SessionService).start()),
   ],
 };

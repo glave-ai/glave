@@ -136,7 +136,7 @@ async fn pages_carry_the_policy_and_their_nonce(served: &Served, site: &str) {
 
     let api = http
         .post(format!("{url}/"))
-        .body(r#"{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}"#)
+        .body(r#"{"jsonrpc":"2.0","id":1,"method":"space/list","params":{}}"#)
         .send()
         .await
         .unwrap();

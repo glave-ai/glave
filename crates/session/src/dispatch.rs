@@ -99,7 +99,12 @@ where
                 protocols: vec![crate::protocol::PROTOCOL.to_owned()],
                 approval: self.inner.harness.settings().approval,
                 approvals: self.inner.modes.clone(),
+                id: self.server_id(),
             })),
+            Request::SigninLink {} => self.link(caller),
+            Request::SigninRedeem { code } => self.redeem(code.expose()).await,
+            Request::SigninEnd {} => self.end_session(caller).await,
+            Request::SigninEndOthers {} => self.end_others(caller).await,
             Request::ModelList {} => Ok(self.list_models()),
             Request::ThreadStart {
                 computer: Some(computer),

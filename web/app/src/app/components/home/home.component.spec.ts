@@ -5,9 +5,8 @@ import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { of } from 'rxjs';
 
-import { TOKEN_KEY } from '../../lib/token';
 import { SpacesService } from '../../services/spaces.service';
-import { FakeSession, provideFakeSession } from '../../testing/fake-session';
+import { ELSEWHERE, FakeSession, provideFakeSession } from '../../testing/fake-session';
 import { MODELS, SERVER, space, thread } from '../../testing/fixtures';
 import { HomeComponent } from './home.component';
 
@@ -149,9 +148,8 @@ describe('HomeComponent', () => {
     TestBed.resetTestingModule();
     const fake = session();
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), ...provideFakeSession(fake)],
+      providers: [provideRouter([]), ...provideFakeSession(fake, ELSEWHERE)],
     });
-    sessionStorage.setItem(TOKEN_KEY, '"an-access-token"');
     const fixture = TestBed.createComponent(HomeComponent);
     await fixture.whenStable();
     expect(

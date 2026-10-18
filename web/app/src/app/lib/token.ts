@@ -1,40 +1,73 @@
-import { tokenFromFragment } from '@glave/client';
+import { codeFromFragment } from '@glave/client';
 
 import { type Store, readStored, writeStored } from './storage';
 
-/** Where the sign-in token is kept for this tab: never in a URL, a cookie or a log. */
-export const TOKEN_KEY = 'glave-token';
+/** Where this tab keeps its browser session: never in a URL, a cookie or a log. */
+export const TOKEN_KEY = 'glave-session';
 
-/**
- * How a server's local token starts (`specs/session.md`, "Signing in"). The server takes it
- * only from this computer, so a session signed in with one is with a glave on this computer.
- */
-const LOCAL_PREFIX = 'glave_local_';
-
-/** Whether `token` is a server's local token, so the server runs on this computer. */
-export function isLocalToken(token: string): boolean {
-  return token.startsWith(LOCAL_PREFIX);
+/** A browser session, and the id of the server that made it: it is presented to no other. */
+export interface BrowserSession {
+  readonly token: string;
+  readonly server: string;
 }
 
-/** What reading the token needs from the browser. */
-interface TokenPlace {
+/**
+ * How a browser session starts (`specs/one-server.md`, "Finding it"). A glave makes one only
+ * for the person on its own computer, and takes it only from there, so a tab signed in with
+ * one is with a glave on this computer.
+ */
+const SESSION_PREFIX = 'glave_session_';
+
+/** Whether `token` is a browser session, so the server runs on this computer. */
+export function isLocalToken(token: string): boolean {
+  return token.startsWith(SESSION_PREFIX);
+}
+
+/** What reading the link needs from the browser. */
+interface LinkPlace {
   readonly location: Pick<Location, 'hash' | 'pathname' | 'search'>;
   readonly history: Pick<History, 'replaceState'>;
-  readonly storage: Store;
 }
 
 /**
- * The sign-in token: from the link `glave serve` printed (`#token=…`), which is then taken
- * out of the address bar and kept in this tab's session storage, or else from that storage.
- * Without storage the token lasts for this page.
+ * The one-time code in the link glave opened (`#code=…`), taken out of the address bar at
+ * once, so it is in no history entry; `null` when the link has none.
  */
-export function takeToken(place: TokenPlace): string | null {
-  const fromLink = tokenFromFragment(place.location.hash);
-  if (fromLink === undefined) {
-    const kept = readStored(place.storage, TOKEN_KEY);
-    return typeof kept === 'string' ? kept : null;
+export function takeCode(place: LinkPlace): string | null {
+  const code = codeFromFragment(place.location.hash);
+  if (code === undefined) {
+    return null;
   }
   place.history.replaceState(null, '', `${place.location.pathname}${place.location.search}`);
-  writeStored(place.storage, TOKEN_KEY, fromLink);
-  return fromLink;
+  return code;
+}
+
+/** The session this tab kept, if it kept one. */
+export function readSession(storage: Store): BrowserSession | null {
+  const kept = readStored(storage, TOKEN_KEY);
+  return isSession(kept) ? kept : null;
+}
+
+/** Keeps `session` for this tab; without storage it lasts for this page. */
+export function keepSession(storage: Store, session: BrowserSession): void {
+  writeStored(storage, TOKEN_KEY, session);
+}
+
+/**
+ * The session to present to the server whose `server/discover` answered the id `server`: only
+ * one that server made. Another server, or one that names none, gets nothing.
+ */
+export function sessionFor(
+  kept: BrowserSession | null,
+  server: string | undefined,
+): BrowserSession | null {
+  return kept !== null && server !== undefined && kept.server === server ? kept : null;
+}
+
+function isSession(value: unknown): value is BrowserSession {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const fields = value as Readonly<Record<string, unknown>>;
+  return typeof fields['token'] === 'string' && typeof fields['server'] === 'string';
 }

@@ -3,10 +3,11 @@
 //! and opens that. `glave` alone does the same when no model is set up yet, since the browser
 //! is where a first model is added; with one, `glave` stays the terminal session.
 //!
-//! The browser is sent to the sign-in link through a page in glave's folder, readable only by
-//! you, as Jupyter does, so the token never shows in the list of running programs. The page is
-//! opened with the operating system's own opener (`open`, `xdg-open`, `start`): a dependency
-//! would add nothing these three lines do not.
+//! The browser is sent to a sign-in link, whose one-time code the server gives glave signed in
+//! with its local token, through a page in glave's folder, readable only by you, as Jupyter
+//! does, so the code never shows in the list of running programs. The page is opened with the
+//! operating system's own opener (`open`, `xdg-open`, `start`): a dependency would add nothing
+//! these three lines do not.
 
 use std::io::IsTerminal as _;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -15,6 +16,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use anyhow::Context as _;
+use glave_session::client::Remote;
+use glave_session::protocol::{Reply, Request};
 
 use crate::args::{Action, Args};
 use crate::home;
@@ -113,10 +116,15 @@ pub async fn main(mut args: Args) -> anyhow::Result<ExitCode> {
     let token = std::fs::read_to_string(folder.join(crate::serving::TOKEN_FILE)).ok();
     match decide(url.as_deref(), token.as_deref(), answers) {
         Opening::Running { url, token } => {
-            if let Err(error) = show(&folder, &url, &token).await {
+            let code = link(&url, token).await?;
+            if let Err(error) = show(&folder, &url, &code).await {
                 // Shown only to a person at a terminal: error output often ends up in a log.
                 anyhow::ensure!(std::io::stderr().is_terminal(), error);
-                eprintln!("glave: {error:#}; open {url}/#token={token} in a browser here");
+                eprintln!(
+                    "glave: {error:#}; open {url}/#code={} in a browser here (it works once, \
+                     for five minutes)",
+                    code.expose()
+                );
                 return Ok(ExitCode::FAILURE);
             }
             eprintln!("glave: opened glave in your browser");
@@ -131,11 +139,21 @@ pub async fn main(mut args: Args) -> anyhow::Result<ExitCode> {
     }
 }
 
-/// Opens glave at `url`, signed in with `token`, in the person's browser: through the page in
-/// glave's folder, so the token is never an argument of a program.
-pub async fn show(folder: &Path, url: &str, token: &str) -> anyhow::Result<()> {
+/// A new one-time code for a sign-in link, from the server at `url`, signed in with its local
+/// `token`.
+async fn link(url: &str, token: String) -> anyhow::Result<glave_event::Secret> {
+    let server = Remote::new(url, token)?;
+    match server.request(&Request::SigninLink {}).await? {
+        Reply::Link { code } => Ok(code),
+        other => anyhow::bail!("asked {url} for a sign-in link, it answered {other:?}"),
+    }
+}
+
+/// Opens glave at `url` in the person's browser, signed in by the link with `code`: through the
+/// page in glave's folder, so the code is never an argument of a program.
+pub async fn show(folder: &Path, url: &str, code: &glave_event::Secret) -> anyhow::Result<()> {
     let page = folder.join(OPEN_FILE);
-    let link = format!("{}/#token={token}", url.trim_end_matches('/'));
+    let link = format!("{}/#code={}", url.trim_end_matches('/'), code.expose());
     crate::serving::keep(&page, &redirect(&link))?;
     let (program, arguments) = opener(std::env::consts::OS, &page);
     let opened = glave_process::Program::new(program)
@@ -251,8 +269,8 @@ mod tests {
 
     #[test]
     fn the_page_sends_the_browser_to_the_link() {
-        let page = redirect("http://127.0.0.1:4180/#token=glave_local_x");
-        assert!(page.contains("content=\"0;url=http://127.0.0.1:4180/#token=glave_local_x\""));
-        assert!(page.contains("<a href=\"http://127.0.0.1:4180/#token=glave_local_x\">"));
+        let page = redirect("http://127.0.0.1:4180/#code=abc");
+        assert!(page.contains("content=\"0;url=http://127.0.0.1:4180/#code=abc\""));
+        assert!(page.contains("<a href=\"http://127.0.0.1:4180/#code=abc\">"));
     }
 }

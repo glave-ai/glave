@@ -1,7 +1,5 @@
-import { readFileSync } from 'node:fs';
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { join } from 'node:path';
 
 import { expect, test } from '@playwright/test';
 
@@ -10,6 +8,7 @@ import {
   FIRST_RUN_URL,
   byTestId,
   expectAccessible,
+  signInCode,
   watchForProblems,
 } from './support';
 
@@ -68,11 +67,10 @@ test.afterAll(async () => {
 
 test('a first run adds a model in the browser, then chats with it', async ({ page }) => {
   const problems = watchForProblems(page);
-  const home = process.env[FIRST_RUN_HOME] ?? '';
-  const token = readFileSync(join(home, 'serve.token'), 'utf8').trim();
+  const code = await signInCode(FIRST_RUN_URL, process.env[FIRST_RUN_HOME] ?? '');
   const { port } = service.address() as AddressInfo;
 
-  await page.goto(`${FIRST_RUN_URL}/#token=${token}`);
+  await page.goto(`${FIRST_RUN_URL}/#code=${code}`);
   await expect(page).toHaveURL(/\/connect$/u);
   await expect(page.getByRole('heading', { name: 'Add a model' })).toBeVisible();
   expect(await page.locator('body').innerText()).not.toMatch(ADMIN_WORDS);
