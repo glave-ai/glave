@@ -78,6 +78,7 @@ fn the_person_lists_saves_edits_moves_and_forgets_their_memory() {
                 .request(Request::MemoryEdit {
                     memory: id,
                     text: "Ada prefers very short answers".into(),
+                    space: None,
                 })
                 .await
                 .unwrap(),
@@ -88,6 +89,7 @@ fn the_person_lists_saves_edits_moves_and_forgets_their_memory() {
                 .request(Request::MemoryMove {
                     memory: id,
                     scope: MemoryScope::Personal,
+                    space: None,
                 })
                 .await
                 .unwrap(),
@@ -95,7 +97,10 @@ fn the_person_lists_saves_edits_moves_and_forgets_their_memory() {
         assert_eq!(moved[0].scope, MemoryScope::Personal);
         let all = listed(
             server
-                .request(Request::MemoryList { scope: None })
+                .request(Request::MemoryList {
+                    scope: None,
+                    space: None,
+                })
                 .await
                 .unwrap(),
         );
@@ -105,16 +110,52 @@ fn the_person_lists_saves_edits_moves_and_forgets_their_memory() {
                 memory: Some(moved[0].memory),
                 all: false,
                 scope: None,
+                space: None,
             })
             .await;
         assert!(forgot.is_ok(), "{forgot:?}");
-        let left = server.request(Request::MemoryList { scope: None }).await;
+        let left = server
+            .request(Request::MemoryList {
+                scope: None,
+                space: None,
+            })
+            .await;
         assert_eq!(listed(left.unwrap()).len(), 0);
         let missing = server
-            .request(Request::MemoryRestore { memory: id })
+            .request(Request::MemoryRestore {
+                memory: id,
+                space: None,
+            })
             .await
             .unwrap_err();
         assert_eq!(missing.code, code::NO_MEMORY);
+    });
+}
+
+#[test]
+fn a_request_that_names_a_space_acts_in_that_space_s_memory() {
+    block_on!(async {
+        let (server, _store) = served("memory-spaces").await;
+        let created = Request::SpaceCreate {
+            name: "other".into(),
+            members: Vec::new(),
+            folder: None,
+        };
+        let Ok(Reply::Space { space: other, .. }) = server.request(created).await else {
+            panic!("space/create");
+        };
+        let save = Request::MemorySave {
+            text: "the other project ships on Fridays".into(),
+            scope: MemoryScope::Space,
+            space: Some(other.id),
+        };
+        assert_eq!(listed(server.request(save).await.unwrap()).len(), 1);
+        let list = |space| Request::MemoryList { scope: None, space };
+        let here = listed(server.request(list(None)).await.unwrap());
+        assert!(here.is_empty(), "not the server's own space's: {here:?}");
+        let there = listed(server.request(list(Some(other.id))).await.unwrap());
+        assert_eq!(there.len(), 1);
+        assert_eq!(there[0].text, "the other project ships on Fridays");
     });
 }
 
@@ -138,6 +179,7 @@ fn another_person_may_not_change_the_persons_own_memory() {
                 Request::MemorySave {
                     text: "they like tea".into(),
                     scope: MemoryScope::Personal,
+                    space: None,
                 },
             )
             .await
@@ -152,7 +194,10 @@ fn a_server_without_memory_says_so() {
         let dir = folder("memory-off");
         let server = server(&dir, Vec::new(), Answering::NoOne).await;
         let off = server
-            .request(Request::MemoryList { scope: None })
+            .request(Request::MemoryList {
+                scope: None,
+                space: None,
+            })
             .await
             .unwrap_err();
         assert_eq!(off.code, code::MEMORY_OFF);

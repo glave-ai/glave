@@ -1,10 +1,10 @@
 //! The person's controls over memory (`specs/memory.md`, "Seeing, editing and forgetting"):
-//! `memory/list`, `save`, `edit`, `move`, `forget` and `restore`. The caller and the server's
-//! space decide what may be seen and changed, never the parameters: a space's members may change
-//! its memory, and only the person their own.
+//! `memory/list`, `save`, `edit`, `move`, `forget` and `restore`, in the space a request names
+//! or the server's own. The caller decides what may be seen and changed: a space's members may
+//! change its memory, and only the person their own.
 
 use glave_harness::{Access, Caller, Control, MemoryError};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, SpaceId};
 
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
@@ -15,10 +15,12 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Answers a `memory/*` request for `caller`: `control` on the memory here.
+    /// Answers a `memory/*` request for `caller`: `control` on the memory of `space` (the
+    /// server's own when it names none) and the caller's own.
     pub(crate) async fn remember(
         &self,
         caller: &Caller,
+        space: Option<SpaceId>,
         control: Control,
     ) -> Result<Reply, ApiError> {
         let memory = self
@@ -26,9 +28,13 @@ where
             .harness
             .memory()
             .ok_or_else(|| ApiError::new(code::MEMORY_OFF, "memory is off for this server"))?;
+        let home = self.inner.home;
         let access = Access {
             person: caller.person,
-            scope: self.inner.home,
+            scope: Scope {
+                org: home.org,
+                space: space.unwrap_or(home.space),
+            },
         };
         match memory.control(&access, control).await {
             Ok(memories) => Ok(Reply::Memories { memories }),

@@ -276,13 +276,31 @@ methods! {
     "memory/list" => MemoryList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<MemoryScope>,
+        /// The space whose memory, beside the person's own: the server's own when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<SpaceId>,
     } -> [Memories],
-    "memory/save" => MemorySave { text: String, scope: MemoryScope } -> [Memories],
-    "memory/edit" => MemoryEdit { memory: MemoryId, text: String } -> [Memories],
+    "memory/save" => MemorySave {
+        text: String,
+        scope: MemoryScope,
+        /// The space whose memory, beside the person's own: the server's own when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<SpaceId>,
+    } -> [Memories],
+    "memory/edit" => MemoryEdit {
+        memory: MemoryId,
+        text: String,
+        /// The space whose memory, beside the person's own: the server's own when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<SpaceId>,
+    } -> [Memories],
     /// Saved in the new scope, forgotten in the old.
     "memory/move" => MemoryMove {
         memory: MemoryId,
         scope: MemoryScope,
+        /// The space whose memory, beside the person's own: the server's own when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<SpaceId>,
     } -> [Memories],
     /// Forgets one memory, or with `all`, every memory of `scope`.
     "memory/forget" => MemoryForget {
@@ -292,9 +310,17 @@ methods! {
         all: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<MemoryScope>,
+        /// The space whose memory, beside the person's own: the server's own when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<SpaceId>,
     } -> [Memories],
     /// Undoes glave's latest change to a memory, within 30 days.
-    "memory/restore" => MemoryRestore { memory: MemoryId } -> [Memories],
+    "memory/restore" => MemoryRestore {
+        memory: MemoryId,
+        /// The space whose memory, beside the person's own: the server's own when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<SpaceId>,
+    } -> [Memories],
     /// Connects a model account: the key is checked with the service, then kept sealed, and
     /// the account's models join `model/list`. Connecting the same service (and URL) again
     /// replaces its account. Only the person on this computer.
@@ -371,17 +397,18 @@ impl Request {
         }
     }
 
-    /// Whether the request acts in the server's own space as a whole: its memory.
-    pub(crate) fn in_home(&self) -> bool {
-        matches!(
-            self,
-            Self::MemoryList { .. }
-                | Self::MemorySave { .. }
-                | Self::MemoryEdit { .. }
-                | Self::MemoryMove { .. }
-                | Self::MemoryForget { .. }
-                | Self::MemoryRestore { .. }
-        )
+    /// For a request on a space's memory, the space it acts in: the one it names, else
+    /// `home`, the server's own.
+    pub(crate) fn memory_space(&self, home: SpaceId) -> Option<SpaceId> {
+        match self {
+            Self::MemoryList { space, .. }
+            | Self::MemorySave { space, .. }
+            | Self::MemoryEdit { space, .. }
+            | Self::MemoryMove { space, .. }
+            | Self::MemoryForget { space, .. }
+            | Self::MemoryRestore { space, .. } => Some(space.unwrap_or(home)),
+            _ => None,
+        }
     }
 }
 

@@ -230,12 +230,12 @@ where
     }
 
     /// Refuses `request` unless `caller` may make it: for a thread, they work in its space;
-    /// for the server's memory, in the server's own space.
+    /// for a space's memory, in that space, the server's own when it names none.
     pub(crate) async fn allow(&self, caller: &Caller, request: &Request) -> Result<(), ApiError> {
         if let Some(thread) = request.thread() {
             self.authorize(caller, thread).await?;
-        } else if request.in_home() {
-            self.member_of(caller, self.inner.home.space).await?;
+        } else if let Some(space) = request.memory_space(self.inner.home.space) {
+            self.member_of(caller, space).await?;
         }
         Ok(())
     }

@@ -646,7 +646,13 @@ pub async fn converse(client: &Client<'_>, printer: &mut Printer) -> ExitCode {
 
 /// `/memory`: the memories this session's threads read, through the session API.
 async fn show_memory(server: Session<'_>) {
-    match server.request(Request::MemoryList { scope: None }).await {
+    match server
+        .request(Request::MemoryList {
+            scope: None,
+            space: None,
+        })
+        .await
+    {
         Ok(Reply::Memories { memories }) if memories.is_empty() => println!("no memories here"),
         Ok(Reply::Memories { memories }) => {
             for memory in &memories {

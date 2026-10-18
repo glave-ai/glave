@@ -2435,6 +2435,17 @@
           "memory": {
             "$ref": "#/$defs/MemoryId"
           },
+          "space": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SpaceId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The space whose memory, beside the person's own: the server's own when absent."
+          },
           "text": {
             "type": "string"
           }
@@ -2487,6 +2498,17 @@
                 "type": "null"
               }
             ]
+          },
+          "space": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SpaceId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The space whose memory, beside the person's own: the server's own when absent."
           }
         },
         "type": "object"
@@ -2520,6 +2542,17 @@
                 "type": "null"
               }
             ]
+          },
+          "space": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SpaceId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The space whose memory, beside the person's own: the server's own when absent."
           }
         },
         "type": "object"
@@ -2549,6 +2582,17 @@
           },
           "scope": {
             "$ref": "#/$defs/MemoryScope"
+          },
+          "space": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SpaceId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The space whose memory, beside the person's own: the server's own when absent."
           }
         },
         "required": [
@@ -2579,6 +2623,17 @@
         "properties": {
           "memory": {
             "$ref": "#/$defs/MemoryId"
+          },
+          "space": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SpaceId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The space whose memory, beside the person's own: the server's own when absent."
           }
         },
         "required": [
@@ -2608,6 +2663,17 @@
         "properties": {
           "scope": {
             "$ref": "#/$defs/MemoryScope"
+          },
+          "space": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/SpaceId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The space whose memory, beside the person's own: the server's own when absent."
           },
           "text": {
             "type": "string"

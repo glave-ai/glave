@@ -1,6 +1,7 @@
 //! Memory on this computer (`specs/memory.md`): glave's memory server over the local store,
 //! started when the person's `memory` choice is on and the policy allows it, and `glave memory`,
-//! which lists, edits, moves and forgets memories from the terminal.
+//! which lists, edits, moves and forgets memories from the terminal: through the person's server
+//! when it runs (or a terminal starts it) and keeps memory on, otherwise in the store itself.
 
 use std::fmt::Write as _;
 use std::process::ExitCode;
@@ -10,10 +11,12 @@ use anyhow::Context as _;
 use glave_event::{MemoryId, MemoryScope, PrincipalId};
 use glave_harness::{Access, Control, Memory, OsEntropy, Remembered, SystemClock};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, Tidier};
-use glave_ports::{ModelProvider, Scope};
+use glave_ports::{ModelProvider, Scope, SpaceId};
+use glave_session::protocol::{ApiError, Reply, Request, code};
 
 use crate::args::Args;
 use crate::data::{Data, DataLog};
+use crate::reach::Reached;
 use crate::setup::Setup;
 use crate::{home, identity};
 use glave_config::policy::MemorySettings;
@@ -192,6 +195,97 @@ pub fn main(arguments: &[String]) -> ExitCode {
 }
 
 async fn run(command: Command) -> anyhow::Result<()> {
+    if let Some(server) = crate::server::connect_or_start().await? {
+        match through(&mut Reached::Server(server), &command).await {
+            // With memory off, the person still sees and forgets what was kept, here.
+            Err(error) if is_off(&error) => {}
+            ran => return ran,
+        }
+    }
+    in_the_store(command).await
+}
+
+/// Whether the server said memory is off.
+fn is_off(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<ApiError>()
+        .is_some_and(|refused| refused.code == code::MEMORY_OFF)
+}
+
+/// `command` through the person's server, in this folder's project.
+async fn through(server: &mut Reached, command: &Command) -> anyhow::Result<()> {
+    let space = Some(server.project(&std::env::current_dir()?).await?);
+    let Command::Run(controls) = command else {
+        let memories = changed(
+            server
+                .request(Request::MemoryList { scope: None, space })
+                .await?,
+        )?;
+        if memories.is_empty() {
+            println!("no memories here");
+        }
+        for memory in &memories {
+            println!("{}", line(memory));
+        }
+        return Ok(());
+    };
+    for control in controls {
+        let verb = verb(control);
+        for memory in changed(server.request(asked(control.clone(), space)?).await?)? {
+            println!("{verb} {}", line(&memory));
+        }
+    }
+    Ok(())
+}
+
+/// The memories a `memory/*` request answered with.
+fn changed(reply: Reply) -> anyhow::Result<Vec<Remembered>> {
+    match reply {
+        Reply::Memories { memories } => Ok(memories),
+        _ => anyhow::bail!("glave answered memory/* with something else"),
+    }
+}
+
+/// The request that makes `control` in `space`.
+fn asked(control: Control, space: Option<SpaceId>) -> anyhow::Result<Request> {
+    Ok(match control {
+        Control::Edit { memory, text } => Request::MemoryEdit {
+            memory,
+            text,
+            space,
+        },
+        Control::Move { memory, scope } => Request::MemoryMove {
+            memory,
+            scope,
+            space,
+        },
+        Control::Forget { memory } => Request::MemoryForget {
+            memory: Some(memory),
+            all: false,
+            scope: None,
+            space,
+        },
+        Control::ForgetAll { scope } => Request::MemoryForget {
+            memory: None,
+            all: true,
+            scope: Some(scope),
+            space,
+        },
+        other => anyhow::bail!("glave memory does not make {other:?}"),
+    })
+}
+
+/// What `control` did, as said.
+fn verb(control: &Control) -> &'static str {
+    match control {
+        Control::Edit { .. } => "edited",
+        Control::Move { .. } => "moved",
+        _ => "forgot",
+    }
+}
+
+/// `command` in the store itself, with memory on for it.
+async fn in_the_store(command: Command) -> anyhow::Result<()> {
     let folder = std::env::current_dir()?;
     let setup = Setup::load(&Args::default(), &folder).await?;
     let settings =
@@ -231,11 +325,7 @@ async fn run(command: Command) -> anyhow::Result<()> {
         }
         Command::Run(controls) => {
             for control in controls {
-                let verb = match &control {
-                    Control::Edit { .. } => "edited",
-                    Control::Move { .. } => "moved",
-                    _ => "forgot",
-                };
+                let verb = verb(&control);
                 for memory in running.memory.control(&access, control).await? {
                     println!("{verb} {}", line(&memory));
                 }

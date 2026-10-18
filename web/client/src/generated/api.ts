@@ -745,6 +745,8 @@ export type GoalStopResult = Readonly<Record<string, never>>;
 
 export type MemoryEditParams = {
   readonly memory: MemoryId;
+  /** The space whose memory, beside the person's own: the server's own when absent. */
+  readonly space?: SpaceId | null;
   readonly text: string;
 };
 
@@ -757,6 +759,8 @@ export type MemoryForgetParams = {
   readonly all?: boolean;
   readonly memory?: MemoryId | null;
   readonly scope?: MemoryScope | null;
+  /** The space whose memory, beside the person's own: the server's own when absent. */
+  readonly space?: SpaceId | null;
 };
 
 /** Memories listed, or the ones a change touched. */
@@ -766,6 +770,8 @@ export type MemoryForgetResult = {
 
 export type MemoryListParams = {
   readonly scope?: MemoryScope | null;
+  /** The space whose memory, beside the person's own: the server's own when absent. */
+  readonly space?: SpaceId | null;
 };
 
 /** Memories listed, or the ones a change touched. */
@@ -776,6 +782,8 @@ export type MemoryListResult = {
 export type MemoryMoveParams = {
   readonly memory: MemoryId;
   readonly scope: MemoryScope;
+  /** The space whose memory, beside the person's own: the server's own when absent. */
+  readonly space?: SpaceId | null;
 };
 
 /** Memories listed, or the ones a change touched. */
@@ -785,6 +793,8 @@ export type MemoryMoveResult = {
 
 export type MemoryRestoreParams = {
   readonly memory: MemoryId;
+  /** The space whose memory, beside the person's own: the server's own when absent. */
+  readonly space?: SpaceId | null;
 };
 
 /** Memories listed, or the ones a change touched. */
@@ -794,6 +804,8 @@ export type MemoryRestoreResult = {
 
 export type MemorySaveParams = {
   readonly scope: MemoryScope;
+  /** The space whose memory, beside the person's own: the server's own when absent. */
+  readonly space?: SpaceId | null;
   readonly text: string;
 };
 
