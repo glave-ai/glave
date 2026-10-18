@@ -50,12 +50,12 @@ npm run build          # the app, production, within its size budget (angular.js
 npm run build:showcase # Glaze's showcase, for the end-to-end tests
 npm run licenses       # every production dependency's licence is one deny.toml allows (plus OFL fonts, 0BSD)
 npm run audit          # npm audit of production dependencies, high and above
-npm run e2e            # Playwright in Chromium against glave serve --http --web, axe in light and dark
+npm run e2e            # Playwright in Chromium and WebKit against glave serve --http --web, axe in light and dark
 ```
 
 `cargo xtask ci` runs `npm run check`, after building the app and `glave` with it inside (and its serving tests) for the end-to-end tests, which run against the real `glave serve --http --web`. It needs Node 22.22.3 or later; `GLAVE_SKIP_WEB=1` skips it. Run `npm run e2e` by itself after `cargo build -p glave` (or set `GLAVE_BIN`).
 
-Playwright's Chromium is installed into `node_modules` (`PLAYWRIGHT_BROWSERS_PATH=0`), nothing global.
+Playwright's Chromium and WebKit (Safari's engine) are installed into `node_modules` (`npm run e2e:install`, `PLAYWRIGHT_BROWSERS_PATH=0`), nothing global. Every end-to-end test runs in both, headless; one that skips WebKit says why.
 
 ## How the app is built
 

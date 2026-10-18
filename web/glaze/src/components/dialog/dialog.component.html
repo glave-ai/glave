@@ -15,7 +15,7 @@
         <glz-icon [icon]="closeIcon" />
       </button>
     </div>
-    <div class="content"><ng-content /></div>
+    <div class="content" [attr.data-testid]="ids().body"><ng-content /></div>
     <div class="actions"><ng-content select="[glzDialogActions]" /></div>
   </div>
 </dialog>
