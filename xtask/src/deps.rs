@@ -36,6 +36,8 @@ const LAYERS: &[(&str, Layer)] = &[
     ("glave-keys", Domain),
     // Shell commands read and judged before they run.
     ("glave-shell", Domain),
+    // Every operating-system process glave starts, owned and recorded, over tokio and rustix.
+    ("glave-process", Adapter),
     // The computer port: this machine, and workers on Docker or Kubernetes.
     ("glave-computer", Adapter),
     // The verified caller: OIDC (jsonwebtoken) and local sign-in.
@@ -81,6 +83,18 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "glave-shell",
         "the harness judges every command with it before it runs; one judge, so concrete \
          rather than a port (a port needs two implementations)",
+    ),
+    (
+        "glave-computer",
+        "glave-process",
+        "every process glave starts goes through one place that gives it an owner and records \
+         it, so a crashed glave's commands are stopped at the next start (#361)",
+    ),
+    (
+        "glave-mcp",
+        "glave-process",
+        "every process glave starts goes through one place that gives it an owner and records \
+         it, so a crashed glave's MCP servers are stopped at the next start (#361)",
     ),
     (
         "glave-memory",

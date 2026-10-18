@@ -97,7 +97,7 @@ async fn computers(
 
 /// Runs git in `folder`; its output, or an error saying what it said.
 async fn git(folder: &Path, args: &[&str]) -> anyhow::Result<String> {
-    let output = tokio::process::Command::new("git")
+    let output = glave_process::Program::new("git")
         .args(args)
         .current_dir(folder)
         .output()

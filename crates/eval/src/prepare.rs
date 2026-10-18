@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use tokio::process::Command;
+use glave_process::Program;
 
 use crate::error::EvalError;
 use crate::task::Task;
@@ -114,7 +114,8 @@ pub async fn script(
     dir: &Path,
     environment: &Environment,
 ) -> Result<Output, EvalError> {
-    let child = Command::new(program)
+    let mut script = Program::new(program);
+    script
         .args(args)
         .current_dir(dir)
         .env_clear()
@@ -125,11 +126,8 @@ pub async fn script(
         )
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(EvalError::io("run a script in", dir))?;
-    match tokio::time::timeout(SCRIPT_TIMEOUT, child.wait_with_output()).await {
+        .stderr(Stdio::piped());
+    match tokio::time::timeout(SCRIPT_TIMEOUT, script.output()).await {
         Ok(Ok(output)) => Ok(Output {
             success: output.status.success(),
             text: format!(
@@ -138,7 +136,9 @@ pub async fn script(
                 String::from_utf8_lossy(&output.stderr)
             ),
         }),
-        Ok(Err(err)) => Err(EvalError::io("wait for a script in", dir)(err)),
+        Ok(Err(err)) => Err(EvalError::io("run a script in", dir)(
+            std::io::Error::other(err),
+        )),
         Err(_) => Ok(Output {
             success: false,
             text: format!("stopped after {}s", SCRIPT_TIMEOUT.as_secs()),

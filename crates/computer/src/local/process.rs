@@ -1,18 +1,11 @@
-//! A command's process on this machine once it runs: its output read as text, a chunk at a
-//! time, without losing a chunk when reading stops part way; and its process group stopped
-//! whole, children it started included.
-
-use std::time::Duration;
+//! A command's output on this machine once it runs: read as text, a chunk at a time, without
+//! losing a chunk when reading stops part way. Its process group is stopped whole through
+//! glave-process's `Child`.
 
 use glave_ports::Output;
 use tokio::io::AsyncReadExt as _;
 use tokio::process::{Child, ChildStdout};
 
-/// How long a stopped command gets between SIGTERM and SIGKILL.
-const GRACE: Duration = Duration::from_secs(3);
-/// How often a stopped command's process group is checked for anything left in it.
-#[cfg(unix)]
-const POLL: Duration = Duration::from_millis(10);
 /// How much is read from a command's output at once.
 const CHUNK: usize = 16 * 1024;
 
@@ -75,67 +68,6 @@ impl Stream {
                 return;
             }
         }
-    }
-}
-
-/// The process group a child leads, while it runs.
-#[cfg(unix)]
-pub(crate) fn group_of(child: &Child) -> Option<rustix::process::Pid> {
-    child
-        .id()
-        .and_then(|pid| i32::try_from(pid).ok())
-        .and_then(rustix::process::Pid::from_raw)
-}
-
-/// Stops a command and everything it started: SIGTERM to its process group, then SIGKILL to
-/// whatever of the group is still there after a grace period. Returns once the group is gone,
-/// not just bash: a child that outlives bash, or ignores SIGTERM, is stopped too.
-pub(crate) async fn stop(child: &mut Child) {
-    #[cfg(unix)]
-    if let Some(group) = group_of(child) {
-        use rustix::process::{Signal, kill_process_group};
-        let _ = kill_process_group(group, Signal::TERM);
-        if tokio::time::timeout(GRACE, gone(child, group))
-            .await
-            .is_err()
-        {
-            let _ = kill_process_group(group, Signal::KILL);
-            // SIGKILL cannot be ignored; this waits only for the kernel to finish the job.
-            let _ = tokio::time::timeout(GRACE, gone(child, group)).await;
-        }
-    }
-    let _ = child.kill().await;
-}
-
-/// Stops what is left of a process group whose leader has exited: what a command left running
-/// when it ended.
-#[cfg(unix)]
-pub(crate) async fn stop_left(group: rustix::process::Pid) {
-    use rustix::process::{Signal, kill_process_group, test_kill_process_group};
-    if test_kill_process_group(group).is_err() {
-        return;
-    }
-    let _ = kill_process_group(group, Signal::TERM);
-    if tokio::time::timeout(GRACE, emptied(group)).await.is_err() {
-        let _ = kill_process_group(group, Signal::KILL);
-        let _ = tokio::time::timeout(GRACE, emptied(group)).await;
-    }
-}
-
-/// Resolves once bash has exited and nothing is left in its process group, not even a process
-/// waiting to be reaped. Glave's workers run with an init that reaps orphans (Docker's `Init`,
-/// the Pod's shared process namespace), as does any desktop.
-#[cfg(unix)]
-async fn gone(child: &mut Child, group: rustix::process::Pid) {
-    let _ = child.wait().await;
-    emptied(group).await;
-}
-
-/// Resolves once nothing is left in a process group.
-#[cfg(unix)]
-async fn emptied(group: rustix::process::Pid) {
-    while rustix::process::test_kill_process_group(group).is_ok() {
-        tokio::time::sleep(POLL).await;
     }
 }
 

@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{Context as _, bail};
 use glave_mcp::{Limits, McpServer, Resources, ServerConfig};
 use glave_ports::ToolSource;
+use glave_process::{Owner, Processes};
 
 use crate::gateway::remote::Remote;
 use crate::terminal::Printer;
@@ -36,6 +37,8 @@ pub fn environment() -> BTreeMap<String, String> {
 pub struct Servers {
     started: Vec<Arc<McpServer>>,
     reported: AtomicBool,
+    /// Where they started, and where each project's servers start too.
+    processes: Processes,
 }
 
 impl Servers {
@@ -48,6 +51,7 @@ impl Servers {
         chosen: Option<&Chosen<Vec<String>>>,
         constraints: &Constraints,
         remote: Option<&Remote>,
+        processes: &Processes,
     ) -> anyhow::Result<Self> {
         let path = home.join(FILE);
         let text = match tokio::fs::read_to_string(&path).await {
@@ -87,14 +91,21 @@ impl Servers {
             .into_iter()
             .chain(configs.iter().map(|(name, config)| {
                 let untrusted = mine_untrusted(name, config, marks.get(name), constraints);
-                let server = McpServer::start(name, config, &environment, root, Limits::default());
+                let limits = Limits::default();
+                let server = McpServer::start(name, config, &environment, root, limits, processes);
                 Arc::new(server.untrusted(untrusted))
             }))
             .collect();
         Ok(Self {
             started: servers,
             reported: AtomicBool::new(false),
+            processes: processes.clone(),
         })
+    }
+
+    /// Where glave's servers start: the person's, and each project's.
+    pub fn processes(&self) -> &Processes {
+        &self.processes
     }
 
     /// The servers as tool sources, in the order of their names, then their resources.
@@ -161,7 +172,9 @@ pub fn start_project(
     servers: &BTreeMap<String, String>,
     root: &Path,
     constraints: &Constraints,
+    processes: &Processes,
 ) -> anyhow::Result<Vec<Arc<McpServer>>> {
+    let processes = processes.owned_by(Owner::Project(root.to_string_lossy().into_owned()));
     let text = glave_config::trust::mcp_json(servers);
     let environment = environment();
     let configs = glave_mcp::parse(&text, &environment)
@@ -171,7 +184,8 @@ pub fn start_project(
         .iter()
         .map(|(name, config)| {
             let untrusted = project_untrusted(name, marks.get(name).copied(), constraints);
-            let server = McpServer::start(name, config, &environment, root, Limits::default());
+            let limits = Limits::default();
+            let server = McpServer::start(name, config, &environment, root, limits, &processes);
             Arc::new(server.untrusted(untrusted))
         })
         .collect())
@@ -294,11 +308,20 @@ mod tests {
         let servers = r#"{"mcpServers": {"mine": {"command": "/nonexistent/server"}}}"#;
         std::fs::write(home.join(FILE), servers).unwrap();
         let forbidden = constraints("version = 1\n[mcp]\nown = false\n");
+        let unrecorded = Processes::unrecorded();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap();
-        let start =
-            |chosen| runtime.block_on(Servers::start(&home, &home, chosen, &forbidden, None));
+        let start = |chosen| {
+            runtime.block_on(Servers::start(
+                &home,
+                &home,
+                chosen,
+                &forbidden,
+                None,
+                &unrecorded,
+            ))
+        };
         let refused = start(None).err().unwrap().to_string();
         assert!(
             refused.contains("mine") && refused.contains("[mcp] own = false"),
@@ -311,7 +334,14 @@ mod tests {
         assert_eq!(start(Some(&none)).unwrap().names(), Vec::<&str>::new());
         let offered = constraints("version = 1\n[mcp]\nown = false\ncatalog = [\"mine\"]\n");
         let started = runtime
-            .block_on(Servers::start(&home, &home, None, &offered, None))
+            .block_on(Servers::start(
+                &home,
+                &home,
+                None,
+                &offered,
+                None,
+                &unrecorded,
+            ))
             .unwrap();
         assert_eq!(
             started.names(),

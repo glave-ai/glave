@@ -138,17 +138,18 @@ pub async fn show(folder: &Path, url: &str, token: &str) -> anyhow::Result<()> {
     let link = format!("{}/#token={token}", url.trim_end_matches('/'));
     crate::serving::keep(&page, &redirect(&link))?;
     let (program, arguments) = opener(std::env::consts::OS, &page);
-    let opened = tokio::task::spawn_blocking(move || {
-        std::process::Command::new(program)
-            .args(&arguments)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-    })
-    .await?
-    .with_context(|| format!("could not run {program} to open the browser"))?;
-    anyhow::ensure!(opened.success(), "{program} could not open the browser");
+    let opened = glave_process::Program::new(program)
+        .args(&arguments)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .await
+        .with_context(|| format!("could not run {program} to open the browser"))?;
+    anyhow::ensure!(
+        opened.status.success(),
+        "{program} could not open the browser"
+    );
     Ok(())
 }
 

@@ -18,7 +18,14 @@ mod resources {
             env: BTreeMap::new(),
         };
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let server = McpServer::start("tests", &config, &BTreeMap::new(), dir, Limits::default());
+        let server = McpServer::start(
+            "tests",
+            &config,
+            &BTreeMap::new(),
+            dir,
+            Limits::default(),
+            &glave_process::Processes::unrecorded(),
+        );
         Resources::new(vec![Arc::new(server)])
     }
 

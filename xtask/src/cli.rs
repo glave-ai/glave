@@ -6,14 +6,16 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
-  ci                the full local gate: format, secrets, the dependency rule, lint, tests,
-                    dependency audit, file sizes, and the web checks, which need Node 22.22.3+
-                    (GLAVE_SKIP_WEB=1 skips them)
+  ci                the full local gate: format, secrets, the dependency rule, one spawn path,
+                    lint, tests, dependency audit, file sizes, and the web checks, which need
+                    Node 22.22.3+ (GLAVE_SKIP_WEB=1 skips them)
   deps              check the dependency rule: each crate depends only on the layers its own
                     may use (the layers are in xtask/src/deps.rs)
   file-sizes        enforce the source-file line limits
   secrets           fail on a secret-shaped literal in a tracked file (tests make their fakes at
                     run time)
+  spawns            fail on a process started outside glave-process (crates/process), which
+                    gives each one an owner
   schema            write specs/session.schema.json from the session API's Rust types, and the
                     web client's TypeScript types from it (`--check`: fail if either is out of
                     date)
@@ -44,6 +46,7 @@ fn run(args: &[String]) -> Result<(), String> {
             "deps" => crate::deps::check(),
             "file-sizes" => crate::file_sizes::check(),
             "secrets" => crate::secrets::check(),
+            "spawns" => crate::spawns::check(),
             "schema" => crate::schema::run(rest),
             "release-workflow" => crate::release_workflow::run(rest),
             "bench" => crate::bench::run(rest),

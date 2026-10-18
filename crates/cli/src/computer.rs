@@ -137,11 +137,13 @@ async fn read(folder: &Path, name: &str) -> anyhow::Result<String> {
 
 async fn run(transport: Transport) -> anyhow::Result<()> {
     let home = home::folder()?;
+    let processes = home::reaped().await?;
     let computers = Arc::new(with_sandbox_helper(
         LocalComputers::new(home.join("workspaces"), std::env::vars_os())
             .with_worktrees(home.join(crate::worktrees::FOLDER))
             .with_scratch(home.join(crate::worktrees::SCRATCH))
-            .with_projects(crate::home::projects()?),
+            .with_projects(crate::home::projects()?)
+            .with_processes(processes),
     ));
     match transport {
         Transport::Stdio => {

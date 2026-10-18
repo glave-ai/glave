@@ -15,6 +15,7 @@ use glave_harness::{
 };
 use glave_memory::Tidier;
 use glave_ports::{Credentials, SpaceId, ToolSource};
+use glave_process::Processes;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Server, Wiring};
 
@@ -139,13 +140,18 @@ fn task_limits(constraints: &policy::Constraints) -> glave_session::TaskLimits {
 
 /// The MCP servers the setup turns on for the person's threads everywhere, in their home
 /// folder: their own, or the catalog of the gateway elsewhere.
-async fn mcp_servers(setup: &Setup, remote: Option<&Remote>) -> anyhow::Result<Servers> {
+async fn mcp_servers(
+    setup: &Setup,
+    remote: Option<&Remote>,
+    processes: &Processes,
+) -> anyhow::Result<Servers> {
     Servers::start(
         &home::folder()?,
         &home::person()?,
         setup.choices.mcp.as_ref(),
         &setup.loaded.constraints,
         remote,
+        processes,
     )
     .await
 }
@@ -161,7 +167,8 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     };
     let telemetry = crate::telemetry::start_for(args.log.as_deref(), &setup.choices)?;
     let database = home::database().await?;
-    let workspace = workspace(&folder, &mut setup, &database).await?;
+    let processes = home::reaped().await?;
+    let workspace = workspace(&folder, &mut setup, &database, &processes).await?;
     let choices = &setup.choices;
     let (remote, configured) = endpoint(choices)?;
     let store = store(&setup).await?;
@@ -176,7 +183,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let model = settings.model.clone();
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
-    let servers = mcp_servers(&setup, remote.as_ref()).await?;
+    let servers = mcp_servers(&setup, remote.as_ref(), &processes).await?;
     let (on_workers, workers) =
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder).await?;
     let scope = crate::spaces::here(&store, &root, identity.person).await?;
@@ -248,6 +255,7 @@ fn projects_for(
         models: models.clone(),
         memory: memory.map(|memory| Arc::clone(&memory.memory)),
         clock: Box::new(SystemClock),
+        processes: servers.processes().clone(),
     };
     let later = asking == Asking::Later;
     let projects = Arc::new(Projects::new(home::folder()?, own, later));
@@ -405,10 +413,15 @@ async fn store(setup: &Setup) -> anyhow::Result<Data> {
 /// becomes `ask` (`policy::unsandboxed`), unless threads work on workers, whose own
 /// container or virtual machine is their wall. A sandbox someone chose, or a policy
 /// requires, is never given up: glave refuses to start instead.
-async fn workspace(folder: &Path, setup: &mut Setup, database: &Path) -> anyhow::Result<Workspace> {
+async fn workspace(
+    folder: &Path,
+    setup: &mut Setup,
+    database: &Path,
+    processes: &Processes,
+) -> anyhow::Result<Workspace> {
     let choices = &setup.choices;
     let Some(level) = choices.sandbox.value else {
-        return open_here(folder).await;
+        return open_here(folder, processes).await;
     };
     let sandbox = Sandbox {
         level,
@@ -416,7 +429,11 @@ async fn workspace(folder: &Path, setup: &mut Setup, database: &Path) -> anyhow:
         home: std::env::var_os("HOME").map(PathBuf::from),
         glave_home: database.parent().map(Path::to_path_buf),
     };
-    let error = match open_here(folder).await?.with_sandbox(&sandbox).await {
+    let error = match open_here(folder, processes)
+        .await?
+        .with_sandbox(&sandbox)
+        .await
+    {
         Ok(workspace) => return Ok(workspace),
         Err(error) => error,
     };
@@ -437,17 +454,18 @@ async fn workspace(folder: &Path, setup: &mut Setup, database: &Path) -> anyhow:
     } else {
         eprintln!("glave: {}", unsandboxed_notice(&setup.choices, &why));
     }
-    open_here(folder).await
+    open_here(folder, processes).await
 }
 
 /// The workspace in `folder` on this computer, without a sandbox yet.
-async fn open_here(folder: &Path) -> anyhow::Result<Workspace> {
+async fn open_here(folder: &Path, processes: &Processes) -> anyhow::Result<Workspace> {
     let computer = identity::computer(&home::folder()?).await?;
     let computers = LocalComputers::for_here(std::env::vars_os())
         .known_as(computer)
         .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER))
         .with_scratch(home::folder()?.join(crate::worktrees::SCRATCH))
-        .with_projects(home::projects()?);
+        .with_projects(home::projects()?)
+        .with_processes(processes.clone());
     let (computers, here) = crate::computer::with_sandbox_helper(computers)
         .open_here(folder)
         .await?;

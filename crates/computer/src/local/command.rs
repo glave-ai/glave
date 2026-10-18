@@ -12,13 +12,13 @@ use glave_ports::{
     Cancellation, Command, ComputerError, Credentials, Ending, Finished, OnTimeout, Output,
     Sandbox, WorkspaceId,
 };
+use glave_process::{Child, Program};
 use tokio::io::AsyncWriteExt as _;
-use tokio::process::Child;
 use tokio::time::Instant;
 
 use super::background::Backgrounds;
 use super::credentials::{Offered, offer};
-use super::process::{Stream, stop};
+use super::process::Stream;
 use super::registry::Opened;
 use super::sandbox::{Launch, Prepared};
 
@@ -113,9 +113,9 @@ pub(crate) async fn spawn(
         None => None,
     };
     let confined = launch.as_ref().zip(prepared.as_deref());
-    let mut child = bash(opened, script, confined, offered)
-        .spawn()
-        .map_err(|error| ComputerError::Failed(format!("could not start bash: {error}")))?;
+    let mut bash = bash(opened, script, confined, offered);
+    let mut child = (opened.processes.spawn(&mut bash).await)
+        .map_err(|error| ComputerError::Failed(error.to_string()))?;
     let input = launch.as_ref().and_then(|launch| launch.input.as_deref());
     if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
         // Small (a seccomp filter), so it fits the pipe; a wrapper that failed early and
@@ -196,7 +196,7 @@ pub(crate) async fn run(
                 },
                 // The workspace keeps as many as it may: stopped, as without the move.
                 Err(mut spawned) => {
-                    stop(&mut spawned.child).await;
+                    spawned.child.stop().await;
                     Ending::TimedOut { after_secs: limit }
                 }
             }
@@ -232,14 +232,17 @@ fn bash(
     script: &str,
     sandbox: Option<(&Launch, &Prepared)>,
     offered: Option<&Offered>,
-) -> tokio::process::Command {
+) -> Program {
     let mut command = match sandbox {
         Some((launch, _)) => {
-            let mut command = tokio::process::Command::new(&launch.program);
+            let mut command = Program::new(&launch.program);
             command.args(&launch.args).arg("bash");
+            if launch.own_session {
+                command.starts_own_session();
+            }
             command
         }
-        None => tokio::process::Command::new("bash"),
+        None => Program::new("bash"),
     };
     let input = sandbox.is_some_and(|(launch, _)| launch.input.is_some());
     command
@@ -271,12 +274,7 @@ fn bash(
         .env("GIT_PAGER", "cat")
         .stdin(if input { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    #[cfg(unix)]
-    if !sandbox.is_some_and(|(launch, _)| launch.own_session) {
-        command.process_group(0);
-    }
+        .stderr(Stdio::null());
     command
 }
 
@@ -307,11 +305,11 @@ async fn wait(
         ))),
         Some(Err(_)) if keeps => Ok(Waited::Reached),
         Some(Err(_)) => {
-            stop(child).await;
+            child.stop().await;
             Ok(Waited::Ended(Ending::TimedOut { after_secs: limit }))
         }
         None => {
-            stop(child).await;
+            child.stop().await;
             Ok(Waited::Ended(Ending::Cancelled))
         }
     }

@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context as _, bail};
+use glave_process::Processes;
 
 /// glave's folder: `$GLAVE_HOME`, or `~/.glave`.
 pub fn folder() -> anyhow::Result<PathBuf> {
@@ -13,6 +14,20 @@ pub fn folder() -> anyhow::Result<PathBuf> {
             None => bail!("cannot find your home folder; set GLAVE_HOME"),
         },
     }
+}
+
+/// Where this glave's processes are recorded while they run: its folder's `run`, once what a
+/// glave that ended without stopping them left running is stopped, as glave starts.
+pub async fn reaped() -> anyhow::Result<Processes> {
+    let processes = Processes::recorded(folder()?.join("run"));
+    match processes.reap().await {
+        Ok(0) => {}
+        Ok(stopped) => {
+            eprintln!("glave: stopped {stopped} programs a glave that ended had left running");
+        }
+        Err(error) => eprintln!("glave: {error}"),
+    }
+    Ok(processes)
 }
 
 /// The person's home folder, where their own MCP servers start: `$HOME`, else glave's folder.

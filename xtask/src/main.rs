@@ -14,6 +14,7 @@ mod lock;
 mod release_workflow;
 mod schema;
 mod secrets;
+mod spawns;
 mod typescript;
 mod web;
 mod workspace;

@@ -201,19 +201,17 @@ async fn start(folder: &Path, args: &Args) -> anyhow::Result<()> {
         .append(true)
         .open(log_file(folder)?)?;
     let glave = std::env::current_exe().context("could not find this glave to start the host")?;
-    let mut command = std::process::Command::new(glave);
-    command
+    // Apart from this process, in a group of its own, so Ctrl-C in this terminal does not reach
+    // it: it outlives this command on purpose, owns what it starts, and exits once idle.
+    glave_process::Program::new(glave)
         .args(["serve", "--socket"])
         .args(settings(args))
         .current_dir(folder)
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
-        .stderr(log);
-    // Its own process group: Ctrl-C in this terminal does not reach it.
-    std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    let child = command.spawn().context("could not start the task host")?;
-    // The host outlives this process on purpose; the system reaps it when it exits.
-    drop(child);
+        .stderr(log)
+        .detach()
+        .context("could not start the task host")?;
     Ok(())
 }
 

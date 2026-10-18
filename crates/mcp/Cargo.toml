@@ -32,12 +32,14 @@ required-features = ["test-server"]
 [dependencies]
 glave-event.workspace = true
 glave-ports.workspace = true
+# A stdio server's process: owned, in a group of its own, recorded while it runs.
+glave-process.workspace = true
 # Header types for rmcp's HTTP transport, which does not re-export them.
 http.workspace = true
 rmcp = { workspace = true, features = [
     "client",
     "reqwest",
-    "transport-child-process",
+    "transport-async-rw",
     "transport-streamable-http-client-reqwest",
 ] }
 # Named only to find why an HTTP server could not be reached; rmcp already uses it.
@@ -45,7 +47,7 @@ reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["process", "rt", "sync", "time"] }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
 # Only for the test server.
 hyper = { workspace = true, optional = true, features = ["http1", "server"] }
 hyper-util = { workspace = true, optional = true, features = ["service", "tokio"] }
