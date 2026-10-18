@@ -14,9 +14,9 @@ Usage:
   glave [options] [prompt...]   run one turn with this prompt
   glave [options]               start a session; each line you type is a turn. With no
                                 model set up yet, glave opens in your browser instead
-  glave app                     open glave in your browser, signed in on this computer: the
-                                server glave's folder runs, or a new one in this folder, on
-                                127.0.0.1:4180 when it is free; Ctrl-C stops it
+  glave app                     open glave in your browser, signed in on this computer;
+                                from a terminal, it starts glave in the background first
+                                when it is not running (glave server --help)
   glave --goal <objective> [--goal-budget <tokens>] [options]
                                 keep working across turns until the model has checked the
                                 goal is met, or pauses it because it needs you. Say how to
@@ -36,12 +36,15 @@ Usage:
                                 be this folder's task host: serve the session API on a Unix
                                 socket in GLAVE_HOME/run and run its tasks and schedules
                                 until nothing is left (glave starts it when needed)
-  glave serve --http <address> [--issuer <url> --audience <name>] [options]
-                                serve the session API over HTTP. A browser on this
-                                computer signs in by a link glave prints or opens, good
-                                once for five minutes, and stays signed in; programs here
-                                use the token in GLAVE_HOME/serve.token, made at every
-                                start; with
+  glave serve [--http <address> [--issuer <url> --audience <name>]] [options]
+                                run glave for you in the foreground, as a service or a
+                                container does: one per GLAVE_HOME (a second one exits),
+                                on the Unix socket GLAVE_HOME/run/server.sock and over
+                                HTTP, on 127.0.0.1:4180 (any free port when that is taken)
+                                unless --http says where. A browser on this computer signs
+                                in by a link glave prints or opens, good once for five
+                                minutes, and stays signed in; programs here use the token
+                                in GLAVE_HOME/serve.token, made at every start; with
                                 --issuer and --audience, clients elsewhere sign in with an
                                 OIDC access token from that issuer for that audience.
                                 The address is host:port, or a port on 127.0.0.1; without
@@ -53,6 +56,9 @@ Usage:
                                 the glave binary, if any. Anyone who reaches the listener
                                 gets a folder's files without signing in, so it must hold
                                 only the build and must not be writable by an agent
+  glave server status|stop|restart
+                                whether glave runs for you in the background, stop it, or
+                                restart it from this terminal (glave server --help)
   glave gateway serve --http <address> --issuer <url> --audience <name>
                                 serve the gateway to an organization: model calls and the
                                 tool catalog, every call signed in (glave gateway --help)
@@ -229,8 +235,19 @@ pub struct Args {
     pub budget: Option<u64>,
     /// Serve as the folder's task host, on its Unix socket.
     pub socket: bool,
-    /// With `http`, open the browser at the server, signed in (`glave app`).
-    pub open: bool,
+    /// Serve the program that started glave, over stdin and stdout.
+    pub stdio: bool,
+    /// As the person's server started in the background: a session of its own first
+    /// (`crate::server::start` passes it).
+    pub own_session: bool,
+}
+
+impl Args {
+    /// Whether `glave serve` runs as the person's server: not a program's own over stdio, nor
+    /// a folder's task host.
+    pub fn person_s_server(&self) -> bool {
+        self.action == Action::Serve && !self.stdio && !self.socket
+    }
 }
 
 pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String> {
@@ -242,7 +259,6 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
     if !serving {
         args.action = command(&mut rest)?;
     }
-    let mut stdio = false;
     while let Some(argument) = rest.next() {
         match argument.as_str() {
             "--model" => args.model = Some(rest.next().ok_or("--model needs a name")?),
@@ -276,7 +292,8 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--background" | "-b" => args.background = true,
             "--budget" => args.budget = Some(tokens("--budget", rest.next())?),
             "--socket" if serving => args.socket = true,
-            "--stdio" if serving => stdio = true,
+            "--stdio" if serving => args.stdio = true,
+            "--own-session" if serving => args.own_session = true,
             "--http" if serving => args.http = Some(address(rest.next())?),
             "--issuer" if serving => args
                 .issuers
@@ -284,7 +301,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--audience" if serving => {
                 args.audience = Some(rest.next().ok_or("--audience needs a name")?);
             }
-            "--web" if serving || args.action == Action::App => {
+            "--web" if serving => {
                 args.web = Some(rest.next().ok_or("--web needs a folder")?.into());
             }
             "--continue" | "-c" => args.resume = true,
@@ -301,7 +318,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
     args.prompt = words.join(" ");
     alone(&args)?;
     if serving && args.action == Action::Run {
-        transport(&args, stdio)?;
+        transport(&args)?;
         args.action = Action::Serve;
     }
     goal(&args)?;
@@ -398,23 +415,26 @@ fn budget(value: Option<String>) -> Result<u64, String> {
     }
 }
 
-/// Checks that `glave serve` has one transport, and sign-in for HTTP.
-fn transport(args: &Args, stdio: bool) -> Result<(), String> {
+/// Checks that `glave serve` has at most one transport (none is the person's server, on its
+/// socket and loopback HTTP), and sign-in for HTTP.
+fn transport(args: &Args) -> Result<(), String> {
+    let stdio = args.stdio;
     if [stdio, args.http.is_some(), args.socket]
         .iter()
         .filter(|chosen| **chosen)
         .count()
-        != 1
+        > 1
     {
-        return Err(
-            "glave serve needs one transport: --stdio, --socket or --http <address>".into(),
-        );
+        return Err("glave serve takes one of --stdio, --socket or --http <address>".into());
+    }
+    if args.own_session && (stdio || args.socket) {
+        return Err("--own-session is for the person's server, not --stdio or --socket".into());
     }
     if !args.prompt.is_empty() || args.resume || args.events.is_some() {
         return Err("glave serve takes no prompt, --continue or --events: clients choose".into());
     }
-    if args.web.is_some() && args.http.is_none() {
-        return Err("--web is for --http: the web app is served over HTTP".into());
+    if args.web.is_some() && (stdio || args.socket) {
+        return Err("--web is for HTTP: the web app is served over HTTP".into());
     }
     let signs_in = !args.issuers.is_empty() || args.audience.is_some();
     if (stdio || args.socket) && signs_in {
@@ -523,7 +543,15 @@ mod tests {
         let serve = parse_words(&["serve", "--stdio", "--approval", "auto"]).unwrap();
         assert_eq!(serve.action, Action::Serve);
         assert_eq!(serve.approval, Some(ApprovalMode::Auto));
-        assert!(parse_words(&["serve"]).unwrap_err().contains("--stdio"));
+        let person = parse_words(&["serve"]).unwrap();
+        assert!(person.person_s_server() && !person.own_session);
+        assert!(
+            parse_words(&["serve", "--own-session"])
+                .unwrap()
+                .own_session
+        );
+        assert!(parse_words(&["serve", "--stdio", "--own-session"]).is_err());
+        assert!(!serve.person_s_server(), "a program's own server");
         assert!(
             parse_words(&["--http", "8080"]).is_err(),
             "only serve takes --http"

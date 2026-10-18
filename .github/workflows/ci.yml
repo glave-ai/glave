@@ -261,7 +261,7 @@ jobs:
       - name: bubblewrap and seccomp
         env:
           GLAVE_REQUIRE_SANDBOX: "1"
-        run: cargo nextest run -p glave-computer -p glave-harness -E 'test(/sandbox/)'
+        run: cargo nextest run -p glave-computer -p glave-harness -p glave -E 'test(/sandbox/)'
       - name: Disk space after the build
         if: always()
         run: df -h /

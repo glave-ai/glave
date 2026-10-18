@@ -3,7 +3,8 @@
 //! project's schedules. It is `glave serve --socket`, serving the session API on a Unix socket
 //! in GLAVE_HOME that only the person can open. Commands that need it (`--background`,
 //! `glave tasks`, `glave schedule`) start it when it is not running, and it exits on its own
-//! once nothing runs, no schedule waits for it and no one is connected.
+//! once nothing runs, no schedule waits for it and no one is connected. It goes once the
+//! person's server (`crate::server`) runs tasks and schedules alone (`specs/one-server.md`, 2c).
 
 mod host;
 mod locks;
@@ -14,18 +15,15 @@ use std::time::Duration;
 
 use anyhow::{Context as _, bail};
 use glave_session::protocol::{Reply, Request};
-use glave_session::rpc;
-use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
-use tokio::net::UnixStream;
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 use crate::args::Args;
 use crate::home;
+use crate::socket::{self, Connection};
 
-pub use host::host;
+pub use host::{Scheduling, host, join_hosts, listen, serve_client};
+pub use locks::folder as run_folder;
 
-/// Whether a task host fires every project's schedules now.
+/// Whether a task host, or the person's server, fires every project's schedules now.
 pub fn schedules_fired() -> bool {
     locks::folder().is_ok_and(|run| locks::schedules_fired(&run))
 }
@@ -35,110 +33,30 @@ const START_WAIT: Duration = Duration::from_secs(20);
 /// How often a starting host is tried.
 const START_POLL: Duration = Duration::from_millis(50);
 
-/// The longest socket path every system takes (macOS allows 104 bytes with the terminator).
-const MAX_SOCKET: usize = 100;
-
 /// Where the host for `folder` keeps its socket name, log and marks: `GLAVE_HOME/run/<hash of
 /// the folder>`, with an extension.
 fn run_file(folder: &Path, extension: &str) -> anyhow::Result<PathBuf> {
     Ok(home::folder()?.join("run").join(format!(
         "{:016x}.{extension}",
-        fnv1a(folder.as_os_str().as_encoded_bytes())
+        socket::fnv1a(folder.as_os_str().as_encoded_bytes())
     )))
 }
 
-/// Where the host for `folder` listens: `GLAVE_HOME/run/<hash of the folder>.sock`, or, when
-/// that path is too long for a socket, `/tmp/glave-<uid>/<hash of that path>.sock` in a folder
-/// only the person may open.
+/// Where the host for `folder` listens: `GLAVE_HOME/run/<hash of the folder>.sock`, or where
+/// `socket::place` moves a path too long for a socket.
 pub fn socket(folder: &Path) -> anyhow::Result<PathBuf> {
-    let usual = run_file(folder, "sock")?;
-    if usual.as_os_str().len() <= MAX_SOCKET {
-        return Ok(usual);
-    }
-    let uid = {
-        use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _};
-        let home = home::folder()?;
-        // Made as `home::database` makes it, so its owner says who the person is.
-        let _ = std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&home);
-        std::fs::metadata(&home)
-            .context("could not read glave's folder")?
-            .uid()
-    };
-    Ok(PathBuf::from(format!("/tmp/glave-{uid}")).join(format!(
-        "{:016x}.sock",
-        fnv1a(usual.as_os_str().as_encoded_bytes())
-    )))
-}
-
-/// Makes the folder `socket` goes in, readable only by the person, and refuses one that
-/// someone else could open.
-pub async fn private_folder_for(socket: &Path) -> anyhow::Result<()> {
-    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
-    let folder = socket.parent().context("the socket has no folder")?;
-    let mut builder = tokio::fs::DirBuilder::new();
-    builder.recursive(true).mode(0o700);
-    builder
-        .create(folder)
-        .await
-        .with_context(|| format!("could not create {}", folder.display()))?;
-    let made = tokio::fs::metadata(folder).await?;
-    let mine = tokio::fs::metadata(home::folder()?).await?.uid();
-    if made.uid() != mine || made.permissions().mode() & 0o077 != 0 {
-        bail!(
-            "{} is not private to you, so the task host will not listen there",
-            folder.display()
-        );
-    }
-    Ok(())
-}
-
-/// FNV-1a: a hash that stays the same in every glave, so every version finds the same host.
-fn fnv1a(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
-    })
+    socket::place(run_file(folder, "sock")?)
 }
 
 /// A connection to the task host.
-pub struct Host {
-    lines: Lines<BufReader<OwnedReadHalf>>,
-    writer: OwnedWriteHalf,
-    next_id: u64,
-}
+pub struct Host(Connection);
 
 impl Host {
-    /// The host for `folder`, if one is running. Only the person's own: a socket in a folder
-    /// others may open, or one another user listens on, is refused before anything is sent,
-    /// since requests may carry a token.
+    /// The host for `folder`, if one is running: only the person's own.
     pub async fn connect(folder: &Path) -> anyhow::Result<Option<Self>> {
-        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
-        let path = socket(folder)?;
-        let Ok(stream) = UnixStream::connect(&path).await else {
-            return Ok(None);
-        };
-        let mine = tokio::fs::metadata(home::folder()?).await?.uid();
-        let around = tokio::fs::metadata(path.parent().context("the socket has no folder")?);
-        let around = around.await?;
-        let open = around.uid() != mine || around.permissions().mode() & 0o077 != 0;
-        let theirs = stream
-            .peer_cred()
-            .context("could not tell who listens at the task host's socket")?
-            .uid();
-        if open || theirs != mine {
-            bail!(
-                "{} is not your own task host's, so glave did not use it",
-                path.display()
-            );
-        }
-        let (read, writer) = stream.into_split();
-        Ok(Some(Self {
-            lines: BufReader::new(read).lines(),
-            writer,
-            next_id: 1,
-        }))
+        Ok(Connection::open(&socket(folder)?, "task host")
+            .await?
+            .map(Self))
     }
 
     /// The host for `folder`, started with the settings `args` choose when none is running.
@@ -164,21 +82,7 @@ impl Host {
 
     /// Sends `request` and answers with the reply, or the error the host gave.
     pub async fn request(&mut self, request: Request) -> anyhow::Result<Reply> {
-        let id = self.next_id;
-        self.next_id = self.next_id.saturating_add(1);
-        let mut line = rpc::message(id, &request).to_string();
-        line.push('\n');
-        self.writer.write_all(line.as_bytes()).await?;
-        self.writer.flush().await?;
-        while let Some(line) = self.lines.next_line().await? {
-            let message: Value = serde_json::from_str(&line)?;
-            if message.get("id") != Some(&json!(id)) {
-                // A notification, for clients that follow turns.
-                continue;
-            }
-            return rpc::outcome(&message).map_err(|error| anyhow::anyhow!("{error}"));
-        }
-        bail!("the task host closed the connection")
+        self.0.request(request).await
     }
 }
 
@@ -194,8 +98,8 @@ pub fn seen_file(folder: &Path) -> anyhow::Result<PathBuf> {
 
 /// Starts the host for `folder` on its own, apart from this process and its terminal.
 async fn start(folder: &Path, args: &Args) -> anyhow::Result<()> {
-    private_folder_for(&log_file(folder)?).await?;
-    private_folder_for(&socket(folder)?).await?;
+    socket::private_folder_for(&log_file(folder)?).await?;
+    socket::private_folder_for(&socket(folder)?).await?;
     let log = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -239,16 +143,4 @@ fn settings(args: &Args) -> Vec<String> {
         words.extend(["--max-steps".to_owned(), steps.to_string()]);
     }
     words
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_folder_has_its_own_socket_and_the_name_never_changes() {
-        assert_eq!(fnv1a(b""), 0xcbf2_9ce4_8422_2325);
-        assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
-        assert_ne!(fnv1a(b"/code/one"), fnv1a(b"/code/two"));
-    }
 }

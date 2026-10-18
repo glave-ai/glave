@@ -42,7 +42,8 @@ type Subcommand = fn(&[String]) -> ExitCode;
 
 /// The commands that are their first word, each reading the words after it. Only as the
 /// first word: a prompt starting with one goes after `--`.
-const SUBCOMMANDS: [(&str, Subcommand); 9] = [
+const SUBCOMMANDS: [(&str, Subcommand); 10] = [
+    ("server", crate::server::main),
     ("computer", crate::computer::main),
     ("worktrees", crate::worktrees::main),
     ("threads", crate::threads::main),
@@ -94,7 +95,7 @@ pub fn main() -> ExitCode {
         Action::Explain => runtime.block_on(setup::explain(&args)),
         Action::Skills => runtime.block_on(crate::skills::list()),
         Action::Commands => runtime.block_on(crate::commands::list()),
-        Action::App => runtime.block_on(Box::pin(crate::app::main(args))),
+        Action::App => runtime.block_on(crate::app::main()),
         _ => runtime.block_on(run(args)),
     };
     match ran {
@@ -524,21 +525,22 @@ async fn run(args: Args) -> anyhow::Result<ExitCode> {
     close_memory(&wired).await;
     if opens_app {
         eprintln!("glave: no model is set up yet, so glave opens in your browser to add one");
-        return Box::pin(crate::app::main(args)).await;
+        return crate::app::main().await;
     }
     ran
 }
 
-/// Serves the session API: to the program that started glave until its input ends, or over
-/// HTTP until Ctrl-C.
-pub async fn serve(args: Args) -> anyhow::Result<ExitCode> {
+/// Serves the session API: to the program that started glave until its input ends, as a
+/// folder's task host until it is idle, or as the person's server until it is told to stop.
+pub async fn serve(mut args: Args) -> anyhow::Result<ExitCode> {
+    let lock = crate::server::claim(&mut args).await?; // Held to the very end.
     // The session API owns standard input: a project is asked about through it, in an app.
     let wired = wire(&args, Answering::Clients, Asking::Later).await?;
     let served = if args.socket {
         let folder = std::env::current_dir()?;
         crate::daemon::host(&wired.server, &crate::daemon::socket(&folder)?).await
-    } else if let Some(address) = args.http {
-        crate::serving::serve_http(&args, wired.server.clone(), address).await
+    } else if let Some(lock) = &lock {
+        crate::server::run(&args, &wired.server, lock).await
     } else {
         let input = tokio::io::BufReader::new(tokio::io::stdin());
         glave_session::rpc::serve(wired.server.clone(), input, tokio::io::stdout())
@@ -554,6 +556,7 @@ pub async fn serve(args: Args) -> anyhow::Result<ExitCode> {
     wired.servers.close().await;
     wired.projects.close().await;
     close_memory(&wired).await;
+    drop(lock); // Last, once everything it ran has stopped.
     served?;
     Ok(ExitCode::SUCCESS)
 }

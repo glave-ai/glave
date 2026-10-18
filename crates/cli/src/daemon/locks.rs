@@ -1,9 +1,11 @@
-//! How the task hosts of one glave folder, one per folder, share the work every one of them
-//! could do, now that each runs every project's tasks and schedules, until one server serves
-//! the person (`specs/one-server.md`). Two locks in GLAVE_HOME/run, which the system lets go of
-//! however a host ends: each host holds `hosts.lock` shared while it runs, so a host that can
-//! hold it alone knows no other host runs tasks, and only then records the tasks left open as
-//! interrupted; and one host at a time holds `schedules.lock` and fires the schedules.
+//! How the task hosts of one glave folder, one per folder, and the person's server share the
+//! work every one of them could do, since each runs every project's tasks and schedules, until
+//! the person's server alone runs them and the task hosts go (`specs/one-server.md`, 2c). The
+//! server's own lock (`server.lock`) keeps out only a second server, not the task hosts, so
+//! these stay until then. Two locks in GLAVE_HOME/run, which the system lets go of however a
+//! glave ends: each holds `hosts.lock` shared while it runs, so one that can hold it alone
+//! knows no other runs tasks, and only then records the tasks left open as interrupted; and
+//! one at a time holds `schedules.lock` and fires the schedules.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};

@@ -23,7 +23,7 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/glave-ai/glave/releases
 glave app
 ```
 
-Your browser opens, signed in. Add a model by pasting a key, and start a chat.
+Your browser opens, signed in. Add a model by pasting a key, and start a chat. glave keeps running in the background, so the page stays connected; `glave server stop` stops it.
 
 Prefer the terminal? `glave` starts a session right there. `glave --help` lists everything.
 
