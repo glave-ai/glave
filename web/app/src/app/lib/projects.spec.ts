@@ -6,6 +6,7 @@ import {
   crumbs,
   fallbackName,
   folderCount,
+  folderGone,
   folderName,
   isProjectStart,
   joinPath,
@@ -125,6 +126,18 @@ describe('folderCount', () => {
   });
 });
 
+describe('folderGone', () => {
+  it('knows the refusal for a project whose folder is gone, and only that', () => {
+    const gone = new ApiError({
+      code: ErrorCode.NO_FOLDER,
+      message: "This project's folder isn't there anymore.",
+    });
+    expect(folderGone(gone)).toBe(true);
+    expect(folderGone(new ApiError({ code: ErrorCode.WORKSPACE, message: 'no' }))).toBe(false);
+    expect(folderGone(new Error('offline'))).toBe(false);
+  });
+});
+
 describe('projectProblem', () => {
   it('passes on what the server wrote for people, as a sentence', () => {
     const refused = new ApiError({
@@ -148,6 +161,14 @@ describe('projectProblem', () => {
         }),
       ),
     ).toBe('/x belongs to a project you do not work in.');
+    expect(
+      projectProblem(
+        new ApiError({
+          code: ErrorCode.TURN_RUNNING,
+          message: 'something is running in this project: stop it first, then remove the project',
+        }),
+      ),
+    ).toBe('Something is running in this project: stop it first, then remove the project.');
   });
 
   it('says only that something went wrong otherwise', () => {

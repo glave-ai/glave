@@ -18,6 +18,16 @@ import {
   background,
   docsRunning,
 } from './fake-commands';
+import { HOME, listFolders } from './fake-folders';
+import {
+  type Gone,
+  LOST,
+  LOST_HISTORY,
+  aboutGone,
+  folderGone,
+  listedGone,
+  refusedTurn,
+} from './fake-gone';
 import { Refusal, THREAD, bound, call, done, event } from './fake-records';
 
 /**
@@ -263,6 +273,7 @@ const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
   [WAITING]: WAITING_HISTORY,
   [TRUSTING]: TRUSTING_HISTORY,
   [SERVING]: SERVING_HISTORY,
+  [LOST]: LOST_HISTORY,
 };
 
 const TASKS: readonly TaskInfo[] = [
@@ -313,33 +324,11 @@ const GITHUB: CredentialInfo = {
   can: ['read', 'push'],
 };
 
-/** The folders on the person's computer, by path; the home folder is /Users/ana. */
-const HOME = '/Users/ana';
-const FOLDERS: Readonly<Record<string, readonly string[]>> = {
-  '/': ['Users'],
-  '/Users': ['ana'],
-  [HOME]: ['code', 'Documents'],
-  [`${HOME}/code`]: ['glave', 'notes'],
-  [`${HOME}/code/glave`]: [],
-  [`${HOME}/code/notes`]: [],
-  [`${HOME}/Documents`]: [],
-};
-
 /** The repository the fake host does not have, which a clone fails on. */
 export const MISSING_REPOSITORY = 'https://github.com/acme/missing';
 
 /** How long a clone takes, so the page shows it under way. */
 const CLONE_MS = 400;
-
-/** The folders inside `path`, as `folder/list` answers. */
-function listFolders(path: string): unknown {
-  const folders = FOLDERS[path];
-  if (folders === undefined) {
-    return new Refusal(-32602, `there is no folder at ${path}`);
-  }
-  const parent = path === '/' ? null : path.slice(0, path.lastIndexOf('/')) || '/';
-  return { path, parent, folders };
-}
 
 /**
  * Makes a project as `space/create` does: a name taken among the person's projects gets the
@@ -391,7 +380,7 @@ function turnNotes(
   pieces: readonly string[],
   id: number,
 ): readonly Note[] {
-  const after = target === THREAD ? HISTORY.length : 0;
+  const after = HISTORIES[target]?.length ?? 0;
   const added = (seq: number, role: string, text: string): Note => ({
     jsonrpc: '2.0',
     method: 'thread/event',
@@ -631,24 +620,30 @@ interface Known {
   readonly credentials: readonly CredentialInfo[];
   /** The threads given a message, which are then the latest. */
   readonly touched: Set<string>;
+  /** Playground, whose folder is gone, when the test has it. */
+  readonly gone: Gone | null;
 }
 
 /** The answer to a call that is not a turn. */
 function answer(method: string, params: Record<string, unknown>, known: Known): unknown {
-  const { started, made, trust, commands, credentials, touched } = known;
+  const { started, made, trust, commands, credentials, touched, gone } = known;
   if (trust !== null) {
     const asked = trusted(method, params, trust);
     if (asked !== undefined) {
       return asked;
     }
   }
-  const ran = background(method, params, commands);
+  const ran =
+    background(method, params, commands) ??
+    (gone === null ? undefined : aboutGone(method, params, gone));
   if (ran !== undefined) {
     return ran;
   }
   switch (method) {
-    case 'space/list':
-      return { spaces: [...made, PROJECT, PERSONAL] };
+    case 'space/list': {
+      const lost = listedGone(gone);
+      return { spaces: [...made, ...lost.spaces, PROJECT, PERSONAL], gone: lost.gone };
+    }
     case 'space/create':
       return makeProject(params, made);
     case 'folder/list':
@@ -733,7 +728,7 @@ function trusted(method: string, params: Record<string, unknown>, trust: Trust):
  * Answers the session API's calls the app makes, as JSON-RPC over POST /. With `trust`, the
  * person also has acme, a project that asks to be trusted; with `commands`, a thread in the
  * project that keeps the docs site running in the background; with `account`, a GitHub account
- * connected.
+ * connected; with `gone`, playground, a project whose folder isn't there anymore.
  */
 export async function fakeApi(
   page: Page,
@@ -741,7 +736,13 @@ export async function fakeApi(
     trust = false,
     commands = false,
     account = false,
-  }: { readonly trust?: boolean; readonly commands?: boolean; readonly account?: boolean } = {},
+    gone = false,
+  }: {
+    readonly trust?: boolean;
+    readonly commands?: boolean;
+    readonly account?: boolean;
+    readonly gone?: boolean;
+  } = {},
 ): Promise<{ readonly calls: readonly string[]; readonly requests: readonly Request[] }> {
   const calls: string[] = [];
   const requests: Request[] = [];
@@ -752,6 +753,7 @@ export async function fakeApi(
     commands: commands ? docsRunning() : null,
     credentials: account ? [GITHUB] : [],
     touched: new Set(),
+    gone: gone ? folderGone() : null,
   };
   await page.route('**/*', async (route: Route) => {
     const request = route.request();
@@ -766,7 +768,9 @@ export async function fakeApi(
     };
     calls.push(message.method);
     requests.push({ method: message.method, params: message.params });
-    if (message.method === 'turn/start') {
+    const turnStart = message.method === 'turn/start';
+    const refused = turnStart ? refusedTurn(message.params, known.gone) : undefined;
+    if (turnStart && refused === undefined) {
       known.touched.add(String(message.params['thread']));
       await route.fulfill({ contentType: 'text/event-stream', body: turn(message) });
       return;
@@ -778,7 +782,7 @@ export async function fakeApi(
     if (message.method === 'command/stop') {
       await new Promise((resolve) => setTimeout(resolve, STOP_MS));
     }
-    const answered = answer(message.method, message.params, known);
+    const answered = refused ?? answer(message.method, message.params, known);
     const reply =
       answered instanceof Refusal
         ? { error: { code: answered.code, message: answered.message } }

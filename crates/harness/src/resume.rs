@@ -29,6 +29,18 @@ where
     /// interrupted result for any tool call and an ending for any turn a crash left open, so
     /// the conversation is valid to send again.
     pub async fn resume_thread(&self, scope: Scope, id: ThreadId) -> Result<Thread, HarnessError> {
+        self.resume_thread_in(scope, id, None).await
+    }
+
+    /// Continues thread `id` as [`Harness::resume_thread`] does, where its project's folder is
+    /// now `folder`: a thread whose own folder isn't there anymore works there from now on,
+    /// and records that it does (`workspace.bound`).
+    pub async fn resume_thread_in(
+        &self,
+        scope: Scope,
+        id: ThreadId,
+        folder: Option<&str>,
+    ) -> Result<Thread, HarnessError> {
         let events = self.load(&scope, id).await?;
         let last = events.last().ok_or(HarnessError::NotFound(id))?;
         let next_seq = last
@@ -36,7 +48,7 @@ where
             .seq
             .next()
             .ok_or_else(|| HarnessError::Event(format!("thread {id} is full")))?;
-        let (workspace, bound) = self.reopen(scope, id, &events).await?;
+        let (workspace, bound, moved) = self.reopen(scope, id, &events, folder).await?;
         let for_ = for_of(&events).or(self.actors.person);
         let instructions = self
             .instructions_for(workspace.as_deref(), bound.as_ref(), for_)
@@ -77,6 +89,11 @@ where
         };
         self.rebuild_memory(&mut thread, &events).await;
         self.repair(&mut thread, &events).await?;
+        if moved && let Some(bound) = &bound {
+            self.record(&mut thread, bound).await?;
+            // Glave's own record: call ids do not count it, so the model is sent the same.
+            thread.unnumbered = thread.unnumbered.saturating_add(1);
+        }
         // What ended while glave was away is recorded now.
         self.check_commands(&mut thread).await?;
         Ok(thread)

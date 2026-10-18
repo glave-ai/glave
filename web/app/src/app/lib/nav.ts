@@ -16,6 +16,8 @@ export type NavSort = 'recent' | 'name';
 export interface SpaceWithThreads {
   readonly space: Space;
   readonly threads: readonly ThreadSummary[];
+  /** What the server says when the project's folder isn't there anymore. */
+  readonly gone?: string;
 }
 
 /** A thread's line in the side nav, with the threads it started under it. */
@@ -43,6 +45,8 @@ export interface NavProject extends NavHeading {
   readonly id: string;
   readonly name: string;
   readonly threads: readonly NavThread[];
+  /** What the server says when its folder isn't there anymore, which its mark says too. */
+  readonly gone: string | null;
 }
 
 /** What the side nav lists: each project with its threads, then the person's own chats. */
@@ -104,7 +108,7 @@ export function matchesQuery(title: string, query: string): boolean {
 export function navSections(spaces: readonly SpaceWithThreads[], view: NavView): NavSections {
   const projects = spaces
     .filter(({ space }) => space.kind === 'project')
-    .map(({ space, threads }) => rankedProject(space, threads, view))
+    .map(({ space, threads, gone }) => rankedProject(space, threads, view, gone ?? null))
     .filter(({ item }) => !searching(view) || item.threads.length > 0);
   const chats = threadTree(personalThreads(spaces), view, view.byName.has(CHATS_LIST));
   return {
@@ -153,14 +157,19 @@ function rankedProject(
   space: Space,
   threads: readonly ThreadSummary[],
   view: NavView,
+  gone: string | null,
 ): Ranked<NavProject> {
   const tree = threadTree(threads, view, view.byName.has(space.id));
+  const shown = heading(space.id, tree.waiting, view);
   return {
     item: {
-      ...heading(space.id, tree.waiting, view),
+      ...shown,
+      // A folder that went is marked open or closed: nothing runs there until it is found.
+      mark: gone === null ? shown.mark : { text: gone, tone: 'warning', variant: 'dot' },
       id: space.id,
       name: space.name,
       threads: tree.list,
+      gone,
     },
     waiting: tree.waiting,
     latest: [space.created_at, ...threads.map((thread) => thread.updated_at)].reduce(later),

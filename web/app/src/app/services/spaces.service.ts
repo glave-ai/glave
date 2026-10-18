@@ -69,6 +69,30 @@ export class SpacesService {
     await this.reread();
   }
 
+  /**
+   * Gives a project whose folder isn't there anymore its folder's new place, the folder at
+   * `path` on this computer (`space/folder/set`), and reads the lists again. Throws what the
+   * server refused.
+   */
+  async findFolder(space: SpaceId, path: string): Promise<void> {
+    await this.session.call('space/folder/set', { space, path });
+    await this.reread();
+  }
+
+  /**
+   * Removes a project (`space/remove`): its threads go to the archive. Reads the lists again,
+   * which no longer have it. Throws what the server refused.
+   */
+  async remove(space: SpaceId): Promise<void> {
+    await this.session.call('space/remove', { space });
+    await this.reread();
+  }
+
+  /** What the server says of the project `space` when its folder isn't there anymore. */
+  gone(space: SpaceId): string | null {
+    return this.lists().find((entry) => entry.space.id === space)?.gone ?? null;
+  }
+
   /** Reads the lists again after a change: after the read under way, which began before it. */
   private async reread(): Promise<void> {
     if (this.pending !== null) {
@@ -79,14 +103,16 @@ export class SpacesService {
 
   private async readAll(): Promise<void> {
     try {
-      const { spaces } = await this.session.call('space/list', {});
+      const { spaces, gone = [] } = await this.session.call('space/list', {});
+      const said = new Map(gone.map((each) => [each.space, each.message]));
       const lists = await Promise.all(
-        spaces.map(async (space) => {
+        spaces.map(async (space): Promise<SpaceWithThreads> => {
           const { threads } = await this.session.call('thread/list', {
             space: space.id,
             limit: 30,
           });
-          return { space, threads };
+          const message = said.get(space.id);
+          return message === undefined ? { space, threads } : { space, threads, gone: message };
         }),
       );
       this.lists.set(lists);

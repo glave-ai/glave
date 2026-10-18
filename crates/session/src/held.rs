@@ -36,7 +36,9 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Loads `thread` from the log unless it is already held. A deleted thread is not there.
+    /// Loads `thread` from the log unless it is already held, where its project's folder is
+    /// now: refused with `-32029` when that isn't there anymore. A deleted thread is not
+    /// there.
     pub(crate) async fn load(&self, thread: ThreadId) -> Result<(), ApiError> {
         if crate::ledger::is_ledger(thread) {
             return Err(no_thread(thread));
@@ -49,10 +51,11 @@ where
             None => {}
         }
         let scope = self.scope_of(thread).await?;
+        let folder = self.folder_now(scope.space).await?;
         let resumed = self
             .inner
             .harness
-            .resume_thread(scope, thread)
+            .resume_thread_in(scope, thread, folder.as_deref())
             .await
             .map_err(|error| api(&error))?;
         if resumed.standing() == Standing::Deleted {
@@ -62,6 +65,15 @@ where
             self.keep(thread, resumed);
         }
         Ok(())
+    }
+
+    /// The folder of the project `space` on this computer, where its threads work: refused
+    /// with `-32029` when it isn't there anymore; none when it has none here.
+    async fn folder_now(&self, space: glave_ports::SpaceId) -> Result<Option<String>, ApiError> {
+        match self.folder_found(space).await {
+            Err(refused) if crate::gone::is_gone(&refused) => Err(refused),
+            found => Ok(found.ok().flatten()),
+        }
     }
 
     /// Holds `thread` idle, letting go of others beyond the cap.
@@ -124,6 +136,11 @@ where
         F: std::future::Future<Output = (Thread, Result<R, HarnessError>)> + Send + 'static,
         R: Send + Sync + 'static,
     {
+        // Nothing but changing whether it is shown runs where its project's folder was.
+        if purpose != Use::Manage {
+            let scope = self.scope_of(thread).await?;
+            self.folder_now(scope.space).await?;
+        }
         self.load(thread).await?;
         let cancel = Cancel::new();
         let (finish, finished) = watch::channel(false);

@@ -202,6 +202,23 @@ describe('ThreadService', () => {
     expect(service.composer()).toBe('one too many');
   });
 
+  it('reads the lists again, rather than showing an error, when the project’s folder went', async () => {
+    const gone = new ApiError({
+      code: ErrorCode.NO_FOLDER,
+      message: "This project's folder isn't there anymore.",
+    });
+    const fake = new FakeSession()
+      .answer('thread/events', { events: [] })
+      .answer('space/list', { spaces: [] })
+      .turn(gone);
+    const service = make(fake);
+    await service.open('thread-1');
+    await service.send('go');
+    await settled();
+    expect(service.error()).toBeNull();
+    expect(fake.paramsOf('space/list')).toHaveLength(1);
+  });
+
   it('sends what was waiting, together, once the person stops the turn', async () => {
     const first = new FakeTurn();
     const fake = new FakeSession()

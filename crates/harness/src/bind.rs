@@ -165,13 +165,16 @@ where
 
     /// The workspace a resumed thread's events bound it to, and that binding: its folder or
     /// worktree, opened again (a worktree made again from its branch if it was removed, and no
-    /// longer held), or `None` for the harness's own.
+    /// longer held), or `None` for the harness's own. A folder that isn't there anymore, where
+    /// its project's folder is now `moved` elsewhere, opens there instead, with the binding to
+    /// record for it, and `true`.
     pub(crate) async fn reopen(
         &self,
         scope: Scope,
         id: ThreadId,
         events: &[Event],
-    ) -> Result<(Option<Arc<Workspace>>, Option<WorkspaceBound>), HarnessError> {
+        moved: Option<&str>,
+    ) -> Result<(Option<Arc<Workspace>>, Option<WorkspaceBound>, bool), HarnessError> {
         let latest = events.iter().rev().find_map(|event| match &event.body {
             Body::WorkspaceBound(bound) => Some(bound),
             _ => None,
@@ -185,13 +188,36 @@ where
             .into());
         }
         let owner = owner_label(scope, id);
+        let elsewhere = |was: &str| moved.filter(|now| *now != was);
         let workspace = match latest.map(|bound| &bound.opened) {
-            Some(Opened::Folder { path }) => Some(self.workspace.folder(path).await?),
-            Some(Opened::Worktree { repository, branch }) => Some(
-                self.workspace
+            Some(Opened::Folder { path }) => {
+                match (self.workspace.folder(path).await, elsewhere(path)) {
+                    (Err(ComputerError::NotFound(_)), Some(now)) => {
+                        let folder = self.workspace.folder(now).await?;
+                        let recorded = bound(&folder, ComputerKind::Local);
+                        return Ok((Some(Arc::new(folder)), Some(recorded), true));
+                    }
+                    (opened, _) => Some(opened?),
+                }
+            }
+            Some(Opened::Worktree { repository, branch }) => {
+                match self
+                    .workspace
                     .worktree(repository, branch, Some(&owner))
-                    .await?,
-            ),
+                    .await
+                {
+                    Err(ComputerError::NotFound(_)) if elsewhere(repository).is_some() => {
+                        return Err(ComputerError::Unsupported(
+                            "this thread worked on a copy of its project made before the \
+                             project's folder moved, and glave can't move that copy yet. Start \
+                             a new thread to go on"
+                                .into(),
+                        )
+                        .into());
+                    }
+                    opened => Some(opened?),
+                }
+            }
             // Made again, empty, if a cleanup removed it.
             Some(Opened::Scratch { .. }) => Some(
                 self.workspace
@@ -200,7 +226,7 @@ where
             ),
             Some(Opened::Clone { .. }) | None => None,
         };
-        Ok((workspace.map(Arc::new), latest.cloned()))
+        Ok((workspace.map(Arc::new), latest.cloned(), false))
     }
 
     /// What a thread for `person` working where `bound` says opens with: what the host reads

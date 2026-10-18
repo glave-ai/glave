@@ -2,6 +2,7 @@
 //! lives.
 
 use glave_event::{Checkout, FolderSource};
+use glave_ports::SpaceId;
 use serde::{Deserialize, Serialize};
 
 /// A new project's folder, on the computer glave runs on.
@@ -15,6 +16,14 @@ pub enum NewFolder {
     Repository { url: String },
     /// A new, empty folder, made a git repository.
     Empty,
+}
+
+/// A project whose folder isn't there anymore, on the computer it is checked out on, with the
+/// sentence that says so.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct GoneFolder {
+    pub space: SpaceId,
+    pub message: String,
 }
 
 /// A project's folder: where its files come from, and where they are checked out.

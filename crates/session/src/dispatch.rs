@@ -262,6 +262,8 @@ where
                 folder,
             } => self.create_space(caller, name, members, folder).await,
             Request::SpaceRename { space, name } => self.rename_space(caller, space, name).await,
+            Request::SpaceFolderSet { space, path } => self.move_folder(caller, space, path).await,
+            Request::SpaceRemove { space } => self.remove_space(caller, space).await,
             Request::FolderList { path } => self.list_folders(caller, path).await,
             Request::MemoryList { scope } => self.remember(caller, Control::List { scope }).await,
             Request::MemorySave { text, scope } => {

@@ -160,6 +160,24 @@ describe('nav', () => {
     expect(navSections(spaces, VIEW).projects.list[0]?.mark).toBeNull();
   });
 
+  it('marks a project whose folder is gone in the server’s words, open or closed', () => {
+    const gone = "This project's folder isn't there anymore.";
+    const spaces: readonly SpaceWithThreads[] = [
+      {
+        space: made('p1', 'playground', 0),
+        threads: [line('t1', 'Sketch', 1, { status: 'waiting' })],
+        gone,
+      },
+      { space: made('p2', 'Garden', 0), threads: [line('t2', 'Plant', 2)] },
+    ];
+    for (const collapsed of [new Set<string>(), new Set(['p1'])]) {
+      const [playground, garden] = navSections(spaces, { ...VIEW, collapsed }).projects.list;
+      expect(playground?.gone).toBe(gone);
+      expect(playground?.mark).toEqual({ text: gone, tone: 'warning', variant: 'dot' });
+      expect(garden?.gone).toBeNull();
+    }
+  });
+
   it('keeps only the matching threads and their projects, open, while searching', () => {
     const cafe = navSections(SPACES, { ...VIEW, query: 'CAFE' });
     expect(titles(cafe.chats.list)).toEqual(['Café ideas']);
