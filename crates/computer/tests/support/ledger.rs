@@ -7,11 +7,12 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use glave_ports::{
-    BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers,
-    Ending, Environment, FileWrite, Finished, Glob, Globbed, Listed, Listing, Output, Save, Saved,
-    Search, Searched, Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
+use glave_ports::computer::{
+    Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment,
+    FileWrite, Finished, Glob, Globbed, Listed, Listing, Output, Save, Saved, Search, Searched,
+    Size, Sources, Stat, State, WorkspaceId, WorkspaceInfo,
 };
+use glave_ports::{BoxFuture, Cancellation};
 
 /// How long a `slow` command takes.
 pub const SLOW: Duration = Duration::from_secs(60);

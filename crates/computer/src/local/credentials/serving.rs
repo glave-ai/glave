@@ -7,7 +7,7 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use glave_ports::{CredentialAsk, CredentialHost, GitCredentials};
+use glave_ports::computer::{CredentialAsk, CredentialHost, GitCredentials};
 use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};

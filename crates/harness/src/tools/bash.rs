@@ -8,7 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::{Arguments, OutsideSandbox};
-use glave_ports::{Cancellation, Ending as Exit, OnTimeout};
+use glave_ports::Cancellation;
+use glave_ports::computer::{Ending as Exit, OnTimeout};
 use serde::Deserialize;
 
 use super::background::{moved, start};

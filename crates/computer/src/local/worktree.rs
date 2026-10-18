@@ -7,7 +7,8 @@ mod locks;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::{ComputerError, digest};
+use glave_ports::computer::ComputerError;
+use glave_ports::digest;
 use serde::{Deserialize, Serialize};
 
 use super::git::{Git, not_an_option};

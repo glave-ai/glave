@@ -6,7 +6,7 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::process::Stdio;
 
-use glave_ports::{ComputerError, GitCredential, Save, Saved};
+use glave_ports::computer::{ComputerError, GitCredential, Save, Saved};
 
 use super::registry::Opened;
 

@@ -1,11 +1,12 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials, fake_secret};
-use glave_ports::{
+use glave_ports::block_on;
+use glave_ports::computer::{
     Command, Computers, CredentialHost, Ending, Environment, Forge, GitCredential, Output, Sandbox,
-    SandboxLevel, Sources, block_on,
+    SandboxLevel, Sources,
 };
+use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials, fake_secret};
 
 use super::*;
 use crate::{CancelSwitch, LocalComputers, sandbox_available};

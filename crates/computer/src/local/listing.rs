@@ -6,7 +6,7 @@ use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
 
-use glave_ports::{ComputerError, Entry, EntryKind, Listed, Listing};
+use glave_ports::computer::{ComputerError, Entry, EntryKind, Listed, Listing};
 use rustix::fs::{AtFlags, Dir, FileType, Mode, openat, statat};
 
 use super::anchored::{FOLDER, Found, Root, changed, count, plain, resolve, shown};

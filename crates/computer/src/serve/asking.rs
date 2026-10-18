@@ -8,7 +8,8 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use glave_ports::{BoxFuture, CredentialAsk, CredentialHost, GitCredential, GitCredentials};
+use glave_ports::BoxFuture;
+use glave_ports::computer::{CredentialAsk, CredentialHost, GitCredential, GitCredentials};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};

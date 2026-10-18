@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use glave_ports::ComputerError;
+use glave_ports::computer::ComputerError;
 
 /// The most names tried before giving up on finding a free one in the Trash.
 const MAX_NAMES: u32 = 1_000;

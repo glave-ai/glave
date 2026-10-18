@@ -22,9 +22,10 @@ mod projects {
         AllowAll, ApprovalMode, Brought, Caller, Cancel, Hook, Hooks, Judge, NoOneToAsk, Place,
         Projects, Protections, Settled,
     };
+    use glave_ports::computer::{Sandbox, SandboxLevel};
     use glave_ports::{
-        BoxFuture, Effect, InMemoryLog, InMemoryTools, Purpose, Sandbox, SandboxLevel, SpaceId,
-        ToolInfo, ToolOutput, ToolSpec,
+        BoxFuture, Effect, InMemoryLog, InMemoryTools, Purpose, SpaceId, ToolInfo, ToolOutput,
+        ToolSpec,
     };
     use serde_json::json;
 

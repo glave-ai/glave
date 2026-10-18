@@ -8,11 +8,9 @@ mod computer_tests {
     use std::sync::Mutex;
 
     use glave_computer::RemoteComputers;
+    use glave_ports::computer::{Command, Computers, Ending, Environment, Output, Sources};
     use glave_ports::testing::FAKE_SECRET;
-    use glave_ports::{
-        BoxFuture, Command, Computers, Ending, Environment, NeverCancelled, Output, Sources,
-        block_on, conformance,
-    };
+    use glave_ports::{BoxFuture, NeverCancelled, block_on, conformance};
 
     #[derive(Default)]
     struct Collect(Mutex<String>);

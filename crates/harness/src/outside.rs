@@ -10,7 +10,8 @@
 use std::sync::Arc;
 
 use glave_event::{Body, Event, RawEvent, Seq, decode};
-use glave_ports::{BlobStore, EventLog, LogError, ModelProvider, Sources};
+use glave_ports::computer::Sources;
+use glave_ports::{BlobStore, EventLog, LogError, ModelProvider};
 
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};

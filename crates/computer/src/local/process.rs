@@ -2,7 +2,7 @@
 //! losing a chunk when reading stops part way. Its process group is stopped whole through
 //! glave-process's `Child`.
 
-use glave_ports::Output;
+use glave_ports::computer::Output;
 use tokio::io::AsyncReadExt as _;
 use tokio::process::{Child, ChildStdout};
 

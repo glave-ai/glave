@@ -1,7 +1,7 @@
 //! The default system prompt: short and plain, so it fits small models and leaves them room.
 //! And what is added to any prompt about the accounts the person connected.
 
-use glave_ports::{CredentialHost, ForgeTool};
+use glave_ports::computer::{CredentialHost, ForgeTool};
 
 const RULES: &str = "\
 Rules:
@@ -74,7 +74,7 @@ fn listed(items: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use glave_ports::Forge;
+    use glave_ports::computer::Forge;
 
     use super::*;
 

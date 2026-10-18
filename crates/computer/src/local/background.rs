@@ -1,8 +1,8 @@
 //! Commands kept running in the background on this machine (`specs/computers.md`, "Background
 //! commands"). Each is watched by a task of its own, which this registry owns: it keeps the
-//! command's unread output (the most recent [`glave_ports::KEPT_OUTPUT`]), and stops its process
+//! command's unread output (the most recent [`glave_ports::computer::KEPT_OUTPUT`]), and stops its process
 //! group whole when asked, at its time limit, or once nothing has read its output for
-//! [`glave_ports::IDLE`]; when the
+//! [`glave_ports::computer::IDLE`]; when the
 //! command exits by itself, it stops whatever the command left running. Dropping the registry
 //! drops every watcher, and with it each command's `Child`, which kills its group, so nothing
 //! outlives this machine's computers.
@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use glave_ports::{
+use glave_ports::computer::{
     Background, CommandId, ComputerError, ComputerId, Ending, Finished, IDLE, MAX_BACKGROUND,
     MAX_WAIT, Printed, WorkspaceId,
 };

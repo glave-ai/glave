@@ -4,7 +4,7 @@
 //! TLS port in the Pod, so the TLS session (pinned certificate, token) runs end to end inside
 //! it. Without: attached to glave's standard input and output, as with Docker.
 
-use glave_ports::ComputerError;
+use glave_ports::computer::ComputerError;
 use k8s_openapi::api::core::v1::Pod;
 use kube::Api;
 use kube::api::{AttachParams, AttachedProcess, Portforwarder};

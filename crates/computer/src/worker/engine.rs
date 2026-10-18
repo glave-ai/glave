@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use glave_ports::ComputerError;
+use glave_ports::computer::ComputerError;
 use http::{Method, Request, StatusCode, header};
 use http_body_util::{BodyExt as _, Full};
 use hyper::upgrade::Upgraded;

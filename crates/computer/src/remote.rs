@@ -6,12 +6,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use glave_ports::{
-    Background, BoxFuture, Bytes, Cancellation, Command, CommandId, ComputerError, ComputerId,
-    ComputerInfo, Computers, CredentialAsk, CredentialHost, Environment, FileWrite, Finished,
-    GitCredential, GitCredentials, Glob, Globbed, Listed, Listing, Output, Printed, Save, Saved,
-    Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
+use glave_ports::computer::{
+    Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
+    CredentialAsk, CredentialHost, Environment, FileWrite, Finished, GitCredential, GitCredentials,
+    Glob, Globbed, Listed, Listing, Output, Printed, Save, Saved, Search, Searched, Sources, Stat,
+    WorkspaceId, WorkspaceInfo,
 };
+use glave_ports::{BoxFuture, Cancellation};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};

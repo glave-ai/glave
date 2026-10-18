@@ -4,7 +4,7 @@
 //! command offered credentials runs, the computer asks the caller for one with a request of
 //! its own, `credentials/request`, which the caller answers on the same connection.
 
-use glave_ports::{
+use glave_ports::computer::{
     Command, CommandId, ComputerError, ComputerId, CredentialAsk, CredentialHost, Environment,
     FileWrite, GitCredential, Glob, Listing, Save, Search, Sources, WorkspaceId,
 };

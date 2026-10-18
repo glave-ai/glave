@@ -120,7 +120,7 @@ mod tests {
 
     #[test]
     fn glave_s_own_commands_comments_and_tests_pass() {
-        let fine = "use glave_ports::Command;\nuse tokio::process::{Child, ChildStdout};\n\
+        let fine = "use glave_ports::computer::Command;\nuse tokio::process::{Child, ChildStdout};\n\
             // std::process::Command is not used here\nlet c = Command::new(\"ls\");\n\
             #[cfg(test)]\nmod tests {\n    use std::process::Command;\n}\n";
         assert!(bypasses(fine).is_empty(), "{:?}", bypasses(fine));

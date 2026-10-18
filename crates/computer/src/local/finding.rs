@@ -10,8 +10,8 @@ use std::os::fd::AsFd as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use glave_ports::computer::{ComputerError, Glob, Globbed, Match, Search, Searched, looks_binary};
 use glave_ports::secrets::is_secret_file;
-use glave_ports::{ComputerError, Glob, Globbed, Match, Search, Searched, looks_binary};
 use regex::{Regex, RegexBuilder};
 use rustix::fs::Stat;
 

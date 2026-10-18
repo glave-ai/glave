@@ -9,10 +9,11 @@ use std::sync::Arc;
 use glave_event::{
     ComputerKind, Opened, RemovedReason, ThreadId, WorkspaceBound, WorkspaceRemoved,
 };
-use glave_ports::{
-    BlobStore, Bytes, ComputerError, Computers, Ending, EntryKind, Environment, EventLog,
-    FileWrite, Listing, ModelProvider, Save, Sources,
+use glave_ports::computer::{
+    Bytes, ComputerError, Computers, Ending, EntryKind, Environment, FileWrite, Listing, Save,
+    Sources,
 };
+use glave_ports::{BlobStore, EventLog, ModelProvider};
 
 use crate::approval::Approver;
 use crate::bind::{bound, branch_for};

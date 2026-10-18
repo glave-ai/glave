@@ -8,9 +8,10 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use glave_ports::{
-    Cancellation, Command, ComputerError, Ending, Finished, GitCredentials, OnTimeout, Output,
-    Sandbox, WorkspaceId,
+use glave_ports::Cancellation;
+use glave_ports::computer::{
+    Command, ComputerError, Ending, Finished, GitCredentials, OnTimeout, Output, Sandbox,
+    WorkspaceId,
 };
 use glave_process::{Child, Program};
 use tokio::io::AsyncWriteExt as _;

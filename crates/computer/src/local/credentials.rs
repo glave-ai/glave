@@ -14,7 +14,7 @@ use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use glave_ports::{ComputerError, CredentialHost, ForgeTool, GitCredentials};
+use glave_ports::computer::{ComputerError, CredentialHost, ForgeTool, GitCredentials};
 use tokio::net::TcpListener;
 use wrapper::{Places, quoted};
 

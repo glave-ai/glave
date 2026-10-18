@@ -373,7 +373,7 @@ fn worker_limits_narrow_and_an_allow_list_refuses_to_run() {
         ),
         (Some(2), Some(8), Some(90), Some(3))
     );
-    assert_eq!(limits.network, Some(glave_ports::Network::Off));
+    assert_eq!(limits.network, Some(glave_ports::computer::Network::Off));
     assert!(effective::settle(no_choices(), &rules).is_ok());
     let allowlist = constraints("version = 1\n[workers]\nnetwork = \"allowlist\"\n");
     let refused = effective::settle(no_choices(), &allowlist)

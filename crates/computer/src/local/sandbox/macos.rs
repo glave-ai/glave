@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::{ComputerError, Sandbox};
+use glave_ports::computer::{ComputerError, Sandbox};
 
 use super::profile::{Places, home_secrets, profile};
 use super::{Launch, failed, own_git_folder, resolved};

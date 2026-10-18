@@ -13,10 +13,8 @@ use glave_harness::{
     ReleasedWorker, Settings, TurnSummary, Workers, Workspace,
 };
 use glave_identity::signin::Browsers;
-use glave_ports::{
-    BlobStore, ComputerError, Environment, EventLog, ModelProvider, Scope, SpaceId, Spaces,
-    ToolSource,
-};
+use glave_ports::computer::{ComputerError, Environment};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Scope, SpaceId, Spaces, ToolSource};
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 

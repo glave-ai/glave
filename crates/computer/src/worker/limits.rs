@@ -4,8 +4,8 @@
 
 use std::ffi::OsStr;
 
+use glave_ports::computer::{ComputerError, Environment, Image, Network};
 use glave_ports::secrets::is_secret_variable;
-use glave_ports::{ComputerError, Environment, Image, Network};
 
 /// Policy's limits on workers (`[workers]` in `policy.toml`). Every one is optional.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

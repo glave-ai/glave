@@ -6,8 +6,9 @@ use glave_event::{
     Body, ComputerKind, ComputerRef, EventId, Header, Opened, Seq, WorkspaceBound, decode, encode,
 };
 use glave_ports::block_on;
+use glave_ports::computer::{Computers, Environment, Sources};
 use glave_ports::testing::CountingEntropy;
-use glave_ports::{Computers, Environment, InMemoryLog, OrgId, Sources, SpaceId};
+use glave_ports::{InMemoryLog, OrgId, SpaceId};
 
 use super::*;
 use crate::worktrees::{FOLDER, SWEPT, check_if_due};

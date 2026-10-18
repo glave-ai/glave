@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use glave_event::{Principal, ThreadId};
 use glave_harness::{Caller, Commands};
-use glave_ports::{BlobStore, CommandId, EventLog, ModelProvider};
+use glave_ports::computer::CommandId;
+use glave_ports::{BlobStore, EventLog, ModelProvider};
 use tokio::sync::watch;
 
 use crate::held::{Slot, Use, finished};

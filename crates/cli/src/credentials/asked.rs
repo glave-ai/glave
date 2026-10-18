@@ -5,7 +5,8 @@
 use std::sync::PoisonError;
 
 use glave_event::CredentialConnected;
-use glave_ports::{BoxFuture, CredentialAsk, CredentialHost, GitCredential, GitCredentials};
+use glave_ports::BoxFuture;
+use glave_ports::computer::{CredentialAsk, CredentialHost, GitCredential, GitCredentials};
 
 use super::Hosts;
 use super::renewing::Renewing;

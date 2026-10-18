@@ -11,7 +11,7 @@
 pub mod auth;
 mod blob;
 mod caller;
-mod computer;
+pub mod computer;
 #[cfg(any(test, feature = "conformance"))]
 pub mod conformance;
 mod env;
@@ -32,14 +32,6 @@ mod view;
 
 pub use blob::{BlobError, BlobStore, digest};
 pub use caller::Caller;
-pub use computer::{
-    Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    CredentialAsk, CredentialHost, Ending, Entry, EntryKind, Environment, FileWrite, Finished,
-    Forge, ForgeTool, GitCredential, GitCredentials, Glob, Globbed, IDLE, Image, KEPT_OUTPUT,
-    Listed, Listing, MAX_BACKGROUND, MAX_WAIT, Match, Network, OnTimeout, Output, PROTECTED,
-    Printed, Sandbox, SandboxLevel, Save, Saved, Search, Searched, Size, Sources, Stat, State,
-    WorkspaceId, WorkspaceInfo, is_protected, is_protected_refusal, looks_binary, refuse_protected,
-};
 pub use env::{Clock, Entropy, OsEntropy, SystemClock};
 pub use failure::Failure;
 pub use in_memory::{InMemoryBlobs, InMemoryLog, InMemorySpaces, InMemoryTools};

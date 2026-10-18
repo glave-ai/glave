@@ -19,10 +19,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
-use glave_ports::{
-    BoxFuture, Cancellation, Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending,
-    Environment, NeverCancelled, Output, Sources, WorkspaceId, WorkspaceInfo,
+use glave_ports::computer::{
+    Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment, Output,
+    Sources, WorkspaceId, WorkspaceInfo,
 };
+use glave_ports::{BoxFuture, Cancellation, NeverCancelled};
 use tokio::task::JoinHandle;
 
 use crate::remote::RemoteComputers;
@@ -375,8 +376,8 @@ impl WorkerComputers {
         command: &Command,
         output: &dyn Output,
         cancel: &dyn Cancellation,
-        credentials: Option<&dyn glave_ports::GitCredentials>,
-    ) -> Result<glave_ports::Finished, ComputerError> {
+        credentials: Option<&dyn glave_ports::computer::GitCredentials>,
+    ) -> Result<glave_ports::computer::Finished, ComputerError> {
         let worker = self.worker_of(workspace)?;
         let left = self.check_time(&worker)?;
         let command = within(command, left);
@@ -436,7 +437,7 @@ impl Computers for WorkerComputers {
         command: &'a Command,
         output: &'a dyn Output,
         cancel: &'a dyn Cancellation,
-    ) -> BoxFuture<'a, Result<glave_ports::Finished, ComputerError>> {
+    ) -> BoxFuture<'a, Result<glave_ports::computer::Finished, ComputerError>> {
         Box::pin(self.run_now(workspace, command, output, cancel, None))
     }
 
@@ -446,8 +447,8 @@ impl Computers for WorkerComputers {
         command: &'a Command,
         output: &'a dyn Output,
         cancel: &'a dyn Cancellation,
-        credentials: &'a dyn glave_ports::GitCredentials,
-    ) -> BoxFuture<'a, Result<glave_ports::Finished, ComputerError>> {
+        credentials: &'a dyn glave_ports::computer::GitCredentials,
+    ) -> BoxFuture<'a, Result<glave_ports::computer::Finished, ComputerError>> {
         Box::pin(self.run_now(workspace, command, output, cancel, Some(credentials)))
     }
 
@@ -455,7 +456,7 @@ impl Computers for WorkerComputers {
         &'a self,
         workspace: WorkspaceId,
         command: &'a Command,
-    ) -> BoxFuture<'a, Result<glave_ports::CommandId, ComputerError>> {
+    ) -> BoxFuture<'a, Result<glave_ports::computer::CommandId, ComputerError>> {
         Box::pin(async move {
             let worker = self.worker_of(workspace)?;
             let command = within(command, self.check_time(&worker)?);
@@ -476,7 +477,7 @@ fn within(command: &Command, left: Option<Duration>) -> Command {
         let asked = command.timeout_secs;
         command.timeout_secs = Some(asked.map_or(most, |asked| asked.min(most)));
         if asked.is_none_or(|asked| most < asked) {
-            command.on_timeout = glave_ports::OnTimeout::Stop;
+            command.on_timeout = glave_ports::computer::OnTimeout::Stop;
         }
     }
     command

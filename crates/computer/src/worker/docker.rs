@@ -8,7 +8,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
-use glave_ports::{BoxFuture, ComputerError};
+use glave_ports::BoxFuture;
+use glave_ports::computer::ComputerError;
 use http::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};

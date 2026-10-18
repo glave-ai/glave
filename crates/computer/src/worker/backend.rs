@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::net::SocketAddr;
 
-use glave_ports::{BoxFuture, ComputerError};
+use glave_ports::BoxFuture;
+use glave_ports::computer::ComputerError;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::JoinHandle;
 

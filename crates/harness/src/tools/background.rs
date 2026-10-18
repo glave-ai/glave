@@ -7,9 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_event::CommandEnding;
-use glave_ports::{
-    Cancellation, ComputerError, Ending, Finished, KEPT_OUTPUT, MAX_WAIT, Printed, unless_cancelled,
-};
+use glave_ports::computer::{ComputerError, Ending, Finished, KEPT_OUTPUT, MAX_WAIT, Printed};
+use glave_ports::{Cancellation, unless_cancelled};
 use serde::Deserialize;
 
 use super::ToolOutcome;

@@ -12,9 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glave_event::ApprovalMode;
-use glave_ports::{
-    BlobStore, BoxFuture, EventLog, ModelProvider, Sandbox, SandboxLevel, SpaceId, ToolSource,
-};
+use glave_ports::computer::{Sandbox, SandboxLevel};
+use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, SpaceId, ToolSource};
 
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};

@@ -5,7 +5,7 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use glave_ports::{PROTECTED, SandboxLevel};
+use glave_ports::computer::{PROTECTED, SandboxLevel};
 
 use super::secrets::{ENV_FILES, HOME_SECRETS, OTHER_SECRET_FILES, TEMPLATE_WORDS};
 

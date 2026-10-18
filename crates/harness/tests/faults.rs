@@ -20,11 +20,12 @@ mod faults {
     use glave_computer::{LocalComputers, RemoteComputers, serve};
     use glave_event::{Body, Event, Outcome, RemovedReason, StopReason};
     use glave_harness::{AllowAll, Caller, Cancel, Place, Workers, Workspace, wip_branch};
-    use glave_ports::{
-        BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo,
-        Computers, Environment, FileWrite, Finished, Glob, Globbed, InMemoryLog, Listed, Listing,
-        Output, Save, Saved, Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
+    use glave_ports::computer::{
+        Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Environment, FileWrite,
+        Finished, Glob, Globbed, Listed, Listing, Output, Save, Saved, Search, Searched, Sources,
+        Stat, WorkspaceId, WorkspaceInfo,
     };
+    use glave_ports::{BoxFuture, Cancellation, InMemoryLog};
     use serde_json::json;
     use tokio::io::BufReader;
     use tokio::sync::Notify;

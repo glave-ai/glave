@@ -16,7 +16,8 @@ use glave_event::{
     ProviderId, RawEvent, ScheduleId, Secret, Seq, ThreadId, TokenCounts, When,
 };
 use glave_harness::{GoalProgress, Remembered, RunningCommand, TurnSummary};
-use glave_ports::{CommandId, ComputerId, Failure, Space, SpaceId, Standing};
+use glave_ports::computer::{CommandId, ComputerId};
+use glave_ports::{Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 
 pub use credentials::{Ability, CredentialInfo, DeviceCode};

@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::UNIX_EPOCH;
 
-use glave_ports::{Bytes, Glob, Image, Network, Save, block_on};
+use glave_ports::block_on;
+use glave_ports::computer::{Bytes, Glob, Image, Network, Save};
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
@@ -266,7 +267,7 @@ fn a_worker_is_made_cloned_into_set_up_saved_and_removed() {
         assert!(workers.save(opened.id, &save).await.unwrap().pushed);
         workers.destroy(made.id).await.unwrap();
         let after = workers.status(made.id).await.unwrap();
-        assert_eq!(after.state, glave_ports::State::Gone);
+        assert_eq!(after.state, glave_ports::computer::State::Gone);
         assert!(workers.read(opened.id, "a.txt").await.is_err());
     });
 }

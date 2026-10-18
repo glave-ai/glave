@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
+use glave_ports::computer::Bytes;
 use glave_ports::testing::fake_secret;
-use glave_ports::{Bytes, block_on, conformance};
+use glave_ports::{block_on, conformance};
 
 use super::process::Utf8;
 use super::*;
@@ -106,7 +107,7 @@ fn a_cancelled_command_returns_only_once_everything_it_started_has_gone() {
             .run(here.id, &Command::new(script), &output, &cancel)
             .await
             .unwrap();
-        assert_eq!(finished.ending, glave_ports::Ending::Cancelled);
+        assert_eq!(finished.ending, glave_ports::computer::Ending::Cancelled);
         for name in ["plain.pid", "stubborn.pid"] {
             let pid = std::fs::read_to_string(work.join(name)).unwrap();
             let alive = std::process::Command::new("kill")
@@ -243,7 +244,7 @@ fn a_credential_reaches_git_through_its_helper_and_never_a_disk() {
             .await
             .unwrap();
         std::fs::write(std::path::Path::new(&opened.root).join("b.txt"), "two").unwrap();
-        let save = glave_ports::Save {
+        let save = glave_ports::computer::Save {
             branch: "glave/wip/test".into(),
             message: "work".into(),
         };

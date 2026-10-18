@@ -14,7 +14,8 @@ use glave_harness::{
     Protections, Sandbox, Settings, SystemClock, Workspace, agents_md,
 };
 use glave_memory::Tidier;
-use glave_ports::{GitCredentials, SpaceId};
+use glave_ports::SpaceId;
+use glave_ports::computer::GitCredentials;
 use glave_process::Processes;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring};

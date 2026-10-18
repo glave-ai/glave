@@ -4,7 +4,8 @@ mod matcher;
 
 use std::fmt::Write as _;
 
-use glave_ports::{Bytes, EntryKind, digest};
+use glave_ports::computer::{Bytes, EntryKind};
+use glave_ports::digest;
 use serde::Deserialize;
 
 use super::ToolOutcome;

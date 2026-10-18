@@ -4,7 +4,7 @@
 //! outside the sandbox, and a record of what a turn ran under.
 
 use glave_event::{Arguments, OutsideSandbox};
-use glave_ports::{Sandbox, SandboxLevel};
+use glave_ports::computer::{Sandbox, SandboxLevel};
 use serde::Serialize;
 
 use crate::tools::Tool;

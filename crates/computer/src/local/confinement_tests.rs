@@ -6,12 +6,13 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use glave_ports::BoxFuture;
+use glave_ports::computer::{
+    Bytes, Command, ComputerId, Computers, Environment, FileWrite, Glob, Listing, Output, Search,
+    Sources, WorkspaceId,
+};
 use glave_ports::conformance::{
     Confinement, confinement_case, confinement_escapes, confinement_fixture, confinement_untouched,
-};
-use glave_ports::{
-    BoxFuture, Bytes, Command, ComputerId, Computers, Environment, FileWrite, Glob, Listing,
-    Output, Search, Sources, WorkspaceId,
 };
 use proptest::prelude::*;
 
@@ -280,7 +281,7 @@ fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
             };
             match rt.block_on(computers.write(here.id, &[write])) {
                 Ok(()) => landed += 1,
-                Err(error) if glave_ports::is_protected_refusal(&error) => refused += 1,
+                Err(error) if glave_ports::computer::is_protected_refusal(&error) => refused += 1,
                 Err(_) => {}
             }
         }

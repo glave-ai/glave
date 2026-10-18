@@ -7,7 +7,8 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use glave_ports::{ComputerError, digest};
+use glave_ports::computer::ComputerError;
+use glave_ports::digest;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{CryptoProvider, WebPkiSupportedAlgorithms, aws_lc_rs};
 use rustls::pki_types::pem::PemObject as _;

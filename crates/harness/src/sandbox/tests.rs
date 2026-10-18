@@ -8,7 +8,7 @@ use glave_event::Arguments;
 use glave_ports::block_on;
 
 use glave_computer::sandbox_available;
-use glave_ports::{Sandbox, SandboxLevel, is_protected};
+use glave_ports::computer::{Sandbox, SandboxLevel, is_protected};
 
 use crate::cancel::Cancel;
 use crate::tools::Tool;

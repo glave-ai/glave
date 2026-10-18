@@ -16,7 +16,8 @@ mod golden {
     use glave_computer::{LocalComputers, RemoteComputers, serve_tcp};
     use glave_event::{Event, StopReason};
     use glave_harness::{AllowAll, Cancel, Workspace};
-    use glave_ports::{Completion, Computers, Environment, InMemoryLog, Sources};
+    use glave_ports::computer::{Computers, Environment, Sources};
+    use glave_ports::{Completion, InMemoryLog};
     use serde_json::json;
 
     /// The project both runs start from. Times are fixed, so `glob`'s newest-first order is too.
@@ -164,8 +165,9 @@ mod credentials {
     use super::support::*;
     use glave_event::{Body, StopReason};
     use glave_harness::{AllowAll, Cancel};
+    use glave_ports::InMemoryLog;
+    use glave_ports::computer::{CredentialHost, Forge, GitCredential};
     use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials, fake_secret};
-    use glave_ports::{CredentialHost, Forge, GitCredential, InMemoryLog};
     use serde_json::json;
 
     /// With hosts connected, the model is told what is signed in, never a token, and the

@@ -10,10 +10,11 @@ use glave_event::{
     Part, Payload, Principal, PrincipalId, Producer, RawEvent, Seq, ThreadId, ThreadStarted,
     encode,
 };
+use glave_ports::computer::ComputerError;
 use glave_ports::memories::Memory;
 use glave_ports::{
-    BlobError, BlobStore, Caller, ComputerError, EventLog, LogError, Message, ModelProvider,
-    ProviderError, Scope, ToolSource,
+    BlobError, BlobStore, Caller, EventLog, LogError, Message, ModelProvider, ProviderError, Scope,
+    ToolSource,
 };
 use thiserror::Error;
 

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use glave_ports::ComputerError;
+use glave_ports::computer::ComputerError;
 
 /// Random bytes in a minted token.
 const MINTED_BYTES: usize = 32;
