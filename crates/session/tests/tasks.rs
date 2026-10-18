@@ -307,6 +307,19 @@ fn stopping_a_task_cancels_it_cleanly() {
 }
 
 #[test]
+fn a_task_a_stop_cuts_short_is_recorded_interrupted() {
+    block_on!(async {
+        let mut setup = Setup::new(vec![answer(Some("never"), None)]);
+        setup.gate = Some(Arc::new(Notify::new()));
+        let (server, _, _) = in_repository("task-interrupted", setup).await;
+        let thread = task_thread(&server).await;
+        background(&server, thread, None).await;
+        server.stop(std::time::Duration::ZERO).await;
+        assert_eq!(tasks(&server).await[0].outcome, Some(Outcome::Interrupted));
+    });
+}
+
+#[test]
 fn archiving_a_task_s_thread_stops_the_task() {
     block_on!(async {
         let mut setup = Setup::new(vec![answer(Some("never"), None)]);

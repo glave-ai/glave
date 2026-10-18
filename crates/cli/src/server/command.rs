@@ -9,7 +9,7 @@ use anyhow::Context as _;
 use glave_session::protocol::{Reply, Request, TaskStatus};
 use rustix::process::{Pid, Signal};
 
-use super::{connect, log_path, socket_path, start};
+use super::{Lock, connect, log_path, socket_path, start};
 use crate::socket::Connection;
 
 const USAGE: &str = "\
@@ -18,7 +18,8 @@ glave server: the glave that runs for you on this computer, in the background
 Usage:
   glave server status    whether it runs, its version and address, and the tasks running
                          (exits 3 when it does not run)
-  glave server stop      stop it, gracefully: running turns and tasks end
+  glave server stop      stop it, gracefully: running turns and tasks have 10 seconds to
+                         finish, and are interrupted after that
   glave server restart   stop it and start it again from this terminal, with its settings";
 
 /// How long a stopping server has to end.
@@ -103,7 +104,8 @@ async fn running_tasks(server: &mut Connection) -> anyhow::Result<usize> {
         .count())
 }
 
-/// `glave server stop`: asks the server to stop, and waits until its process has ended.
+/// `glave server stop`: asks the server to stop, and waits until its process has let go of
+/// the lock, which it does last.
 async fn stop() -> anyhow::Result<()> {
     let Some(server) = connect().await? else {
         println!("glave is not running");
@@ -116,8 +118,11 @@ async fn stop() -> anyhow::Result<()> {
     drop(server);
     rustix::process::kill_process(pid, Signal::TERM)
         .with_context(|| format!("could not ask glave (process {}) to stop", pid.as_raw_pid()))?;
+    println!("glave is stopping: what runs has up to 10 seconds to finish");
     let waited = tokio::time::Instant::now();
-    while rustix::process::test_kill_process(pid).is_ok() {
+    // Gone once its lock is free: the lock outlives everything else it holds, and a process
+    // that ended but was not yet reaped still answers a signal.
+    while Lock::take().await?.is_none() {
         if waited.elapsed() > STOP_WAIT {
             anyhow::bail!(
                 "glave (process {}) did not stop within {} seconds; what it said is in {}",

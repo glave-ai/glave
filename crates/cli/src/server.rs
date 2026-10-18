@@ -7,6 +7,7 @@
 //! and `ssh host glave "…"` never leave one behind. It runs until `glave server stop`.
 
 mod command;
+mod log;
 mod serve;
 
 use std::fs::{File, OpenOptions, TryLockError};

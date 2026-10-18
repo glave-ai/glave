@@ -221,7 +221,7 @@ where
         let Some(running) = self.tasks().remove(&thread) else {
             return;
         };
-        let ended = settle(&running, &ended);
+        let ended = settle(&running, &ended, self.is_stopping());
         // Recorded on a best effort: the thread's own events hold the work either way.
         let _ = self.record_in_ledger(running.space, &ended).await;
         let now = At::from(self.inner.harness.clock().now());
@@ -477,12 +477,18 @@ where
     }
 }
 
-/// How a task ended: the turn's own totals when it reports them, else the tally.
-fn settle(running: &Running, ended: &Result<TurnResult, ApiError>) -> TaskEnded {
+/// How a task ended: the turn's own totals when it reports them, else the tally. One the
+/// server's stop cut short, not the person, was interrupted.
+fn settle(running: &Running, ended: &Result<TurnResult, ApiError>, stopping: bool) -> TaskEnded {
     let (outcome, tokens, cost) = match ended {
         Ok(turn) => (turn.outcome, turn.tokens, turn.cost),
         Err(error) if error.code == code::CANCELLED => {
-            (Outcome::Cancelled, running.tokens, running.cost)
+            let outcome = if stopping && !running.stopped {
+                Outcome::Interrupted
+            } else {
+                Outcome::Cancelled
+            };
+            (outcome, running.tokens, running.cost)
         }
         Err(_) => (Outcome::Failed, running.tokens, running.cost),
     };

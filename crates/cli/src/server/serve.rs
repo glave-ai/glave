@@ -1,7 +1,9 @@
 //! Serving as the person's server, once it holds the lock: the session API on the person's
 //! socket and over HTTP, the scheduler while it holds the schedules' lock, until `SIGTERM` or
 //! `SIGINT` (`glave server stop`, Ctrl-C in the foreground, logging out). Then it takes no new
-//! requests, cancels running turns, removes its socket, and its caller lets go of the lock last.
+//! requests and starts nothing new, gives running turns and tasks 10 seconds to end, interrupts
+//! the rest, removes its socket, and its caller lets go of the lock last. Started in the
+//! background, it keeps its log under its cap.
 
 use std::pin::pin;
 use std::time::Duration;
@@ -11,13 +13,17 @@ use glave_harness::Cancel;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::task::JoinSet;
 
-use super::{Lock, socket_path};
+use super::{Lock, log, log_path, socket_path};
 use crate::args::Args;
 use crate::client::Glave;
 use crate::daemon::{self, Scheduling};
 
-/// How often the server takes over the schedules when the glave that fired them ended.
+/// How often the server takes over the schedules when the glave that fired them ended, and
+/// looks at its log's size.
 const TICK: Duration = Duration::from_secs(30);
+
+/// How long running turns and tasks have to end on their own once the server stops.
+const GRACE: Duration = Duration::from_secs(10);
 
 /// Serves `server` as the person's server, holding its lock, until it is told to stop. When no
 /// other glave runs tasks, it first records those one before it left running as interrupted.
@@ -39,6 +45,8 @@ pub async fn run(args: &Args, server: &Glave, _held: &Lock) -> anyhow::Result<()
     let mut http = pin!(http.serve(server.clone(), async move { stop.cancelled().await }));
     let mut clients = JoinSet::new();
     let mut scheduling = Scheduling::start(server, &run);
+    // Only a server started in the background writes to the log.
+    let log = args.own_session.then(log_path).transpose()?;
     let mut tick = tokio::time::interval_at(tokio::time::Instant::now() + TICK, TICK);
     let ended = loop {
         tokio::select! {
@@ -51,6 +59,11 @@ pub async fn run(args: &Args, server: &Glave, _held: &Lock) -> anyhow::Result<()
                 if scheduling.is_none() {
                     scheduling = Scheduling::start(server, &run);
                 }
+                if let Some(log) = &log
+                    && let Err(error) = log::keep_capped(log.clone()).await
+                {
+                    eprintln!("glave: could not keep the log under its cap: {error}");
+                }
             }
             outcome = &mut http => break Some(outcome),
             _ = terminate.recv() => break None,
@@ -60,7 +73,11 @@ pub async fn run(args: &Args, server: &Glave, _held: &Lock) -> anyhow::Result<()
     eprintln!("glave: stopping");
     drop(listener);
     let _ = tokio::fs::remove_file(&path).await;
-    // HTTP's end cancels every running turn, the socket's clients' too.
+    if let Some(scheduling) = scheduling.take() {
+        scheduling.stop().await;
+    }
+    // Every turn, the socket's clients' too: what still runs after the grace is interrupted.
+    server.stop(GRACE).await;
     stopping.cancel();
     let outcome = match ended {
         Some(outcome) => outcome,
@@ -68,8 +85,5 @@ pub async fn run(args: &Args, server: &Glave, _held: &Lock) -> anyhow::Result<()
     };
     clients.abort_all();
     while clients.join_next().await.is_some() {}
-    if let Some(scheduling) = scheduling {
-        scheduling.stop().await;
-    }
     outcome
 }

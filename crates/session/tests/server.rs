@@ -1,9 +1,11 @@
 //! The session server in-process, beyond what the conformance suite checks on every transport:
 //! one turn at a time (a message sent meanwhile is queued to it, `steer.rs`), cancelling a
 //! running turn, a retried turn following the first, an approval with no one to answer it, a
-//! fresh server picking a thread up from the log alone, and the shape of the messages.
+//! fresh server picking a thread up from the log alone, stopping with a grace, and the shape
+//! of the messages.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use glave_event::{Body, Outcome, Verdict, decode};
 use glave_session::Answering;
@@ -49,6 +51,41 @@ fn one_turn_runs_at_a_time_and_cancel_ends_it() {
         assert_eq!(ended.outcome, Outcome::Cancelled);
         let again = server.request(Request::TurnCancel { thread }).await;
         assert_eq!(again.err().map(|e| e.code), Some(code::NO_TURN));
+    });
+}
+
+#[test]
+fn a_stop_interrupts_a_turn_still_running_after_its_grace_and_starts_nothing_new() {
+    let dir = folder("stop-interrupts");
+    block_on!(async {
+        let server = gated(&dir, &Arc::new(Notify::new())).await;
+        let thread = start(&server, false).await;
+        let mut running = stream_turn(&server, thread, "slow", None).await.unwrap();
+        server.stop(Duration::ZERO).await;
+        let ended = running.finish().await.unwrap();
+        assert_eq!(
+            ended.outcome,
+            Outcome::Interrupted,
+            "the person did not stop it"
+        );
+        let refused = server.request(turn_start(thread, "again", None)).await;
+        assert_eq!(refused.err().map(|e| e.code), Some(code::NOT_AVAILABLE));
+    });
+}
+
+#[test]
+fn a_turn_that_ends_within_the_grace_ends_as_it_would_have() {
+    let dir = folder("stop-grace");
+    block_on!(async {
+        let gate = Arc::new(Notify::new());
+        let server = gated(&dir, &gate).await;
+        let thread = start(&server, false).await;
+        let mut running = stream_turn(&server, thread, "slow", None).await.unwrap();
+        // The stop starts first, then the model answers: well within the grace.
+        tokio::join!(server.stop(Duration::from_secs(3_600)), async {
+            gate.notify_one();
+        });
+        assert_eq!(running.finish().await.unwrap().outcome, Outcome::Completed);
     });
 }
 

@@ -29,6 +29,7 @@ mod server;
 mod spaces;
 mod standing;
 mod steer;
+mod stopping;
 mod tasks;
 mod titles;
 mod trace;

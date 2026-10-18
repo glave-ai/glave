@@ -191,7 +191,8 @@ The model can keep a command running while it goes on: `bash` with `background` 
 - **A turn's result** says how it ended and what it cost, as `events.md` counts it, and how many commands it ran outside the sandbox (`outside_sandbox`); `estimated` is true when a usage count was estimated because a stream ended before the provider reported it.
 - **Custom commands.** A `prompt` that starts with `/name` where `name` is one of the server's commands (Markdown files in `.glave/commands` or `.claude/commands` in the project, then the person's own) is sent as that command's text, with `$ARGUMENTS` replaced by the rest of the prompt and `$1` to `$9` by each word of it; the stored `message.added` holds the text sent. Any other prompt, `/usr/bin is slow` included, is sent as written. Listing the commands over the API comes later; `glave commands` lists them.
 - A turn's notifications go to the client that started it and to every client watching the thread.
-- If the server stops mid-turn, the log ends without `turn.ended`. Resuming records the turn as `interrupted` and gives every unanswered tool call a result, so the thread continues.
+- **A server that stops** starts no new work: a turn, task or compaction asked for meanwhile is refused with `-32022`. Running turns get the stop's grace (10 seconds for the person's server, none for a program's own) to end on their own; the rest are stopped and end `interrupted`, not `cancelled`, since the person did not stop them, and so do the tasks they ran. A turn waiting for an approval or an answer is among them until waits are durable ("A paused turn will be durable").
+- If the server dies mid-turn, the log ends without `turn.ended`. Resuming records the turn as `interrupted` and gives every unanswered tool call a result, so the thread continues.
 
 ## Steering a turn
 
