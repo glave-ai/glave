@@ -1,6 +1,7 @@
 //! Spaces over the session API, and who may do what in them (`specs/session.md`, "Spaces and
-//! who may do what"). A server serves many spaces of one organization: its own (where requests
-//! that name none act) and any other its callers work in. Every request that acts on a thread, or
+//! who may do what"). A server serves many spaces of one organization: its own, any other its
+//! callers work in, and each caller's Chats, where requests that name none act. Every request
+//! that acts on a thread, or
 //! on the server's own space as a whole, is checked against the caller: they must own the
 //! thread's space or be one of its members, or it is refused with `-32012` before anything is
 //! read or recorded.
@@ -159,21 +160,17 @@ where
             .map_err(|e| failed(&e))
     }
 
-    /// The space a request without one acts in: `asked`, when the caller works in it; else
-    /// the server's own, when they work in it; else their personal space.
+    /// The space a request acts in: `asked`, when the caller works in it; with none, their
+    /// personal space, their Chats, whatever folder the server started in.
     pub(crate) async fn space_for(
         &self,
         caller: &Caller,
         asked: Option<SpaceId>,
     ) -> Result<Space, ApiError> {
-        if let Some(space) = asked {
-            return self.member_of(caller, space).await;
+        match asked {
+            Some(space) => self.member_of(caller, space).await,
+            None => self.personal_space(caller).await,
         }
-        let home = self.home_space().await?;
-        if home.admits_person(self.person_of(caller)?) {
-            return Ok(home);
-        }
-        self.personal_space(caller).await
     }
 
     /// The spaces `caller` works in, the server's own among them when they do: those whose

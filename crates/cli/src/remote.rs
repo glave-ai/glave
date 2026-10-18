@@ -64,8 +64,10 @@ pub async fn run(args: &Args, url: &str) -> anyhow::Result<ExitCode> {
         );
     }
     let worktree = args.worktree.then_some(true);
+    // A server elsewhere has no folder of this computer: the thread is in the person's Chats.
     let (thread, note) = pick_thread(
         elsewhere,
+        None,
         args.resume,
         worktree,
         args.model.clone(),

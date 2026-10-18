@@ -45,7 +45,7 @@ async fn start_in(
 ) -> Result<Reply, ApiError> {
     server
         .request(Request::ThreadStart {
-            space: None,
+            space: Some(scope().space),
             worktree: None,
             background: false,
             computer: None,
@@ -191,7 +191,7 @@ fn a_mode_the_policy_does_not_leave_is_refused() {
         assert!(refused.message.contains("auto"), "{}", refused.message);
         let Reply::Threads { threads, .. } = server
             .request(Request::ThreadList {
-                space: None,
+                space: Some(scope().space),
                 limit: None,
                 show: None,
                 cursor: None,

@@ -294,7 +294,7 @@ fn asked(note: &Notification) -> Option<glave_event::CallId> {
 async fn thread_of(client: &mut impl Client) -> ThreadId {
     let reply = client
         .call(Request::ThreadStart {
-            space: None,
+            space: Some(scope().space),
             background: false,
             worktree: None,
             computer: None,
@@ -388,7 +388,7 @@ fn a_turn_streams_its_events_and_progress_and_they_are_in_the_log() {
                 assert!(logged.ends_with(&streamed), "{logged:?}");
                 let listed = client
                     .call(Request::ThreadList {
-                        space: None,
+                        space: Some(scope().space),
                         limit: None,
                         show: None,
                         cursor: None,
@@ -548,7 +548,7 @@ fn models_are_listed_and_one_the_server_does_not_run_is_refused() {
             );
             let refused = client
                 .call(Request::ThreadStart {
-                    space: None,
+                    space: Some(scope().space),
                     background: false,
                     worktree: None,
                     computer: None,
@@ -573,7 +573,7 @@ fn a_thread_chooses_its_approval_mode_and_its_summary_shows_it() {
             assert_eq!(info["approvals"], json!(["ask", "auto"]));
             let started = client
                 .call(Request::ThreadStart {
-                    space: None,
+                    space: Some(scope().space),
                     background: false,
                     worktree: None,
                     computer: None,

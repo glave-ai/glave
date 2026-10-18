@@ -35,7 +35,7 @@ fn a_turn_elsewhere_streams_and_its_approvals_are_answered_as_here() {
         let found = remote.request(&Request::Discover {}).await.unwrap();
         assert!(matches!(found, Reply::Server(_)), "{found:?}");
         let started = Request::ThreadStart {
-            space: None,
+            space: Some(scope().space),
             worktree: None,
             background: false,
             computer: None,

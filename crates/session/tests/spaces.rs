@@ -1,10 +1,11 @@
 //! Spaces over the session API: a server serves many spaces, a thread is for whoever started
 //! it, a caller who does not work in a thread's space can neither read nor answer it, a one-off
-//! chat lands in the caller's personal space with a scratch folder of its own, and a local turn
-//! sends the model exactly what it always did.
+//! chat lands in the caller's personal space with a scratch folder of its own, as does every
+//! request that names no space whatever folder the server started in, and a local turn sends
+//! the model exactly what it always did.
 
-use glave_event::{CallId, Principal, ThreadId};
-use glave_ports::SpaceId;
+use glave_event::{CallId, Opened, Principal, ThreadId};
+use glave_ports::{SpaceId, SpaceKind};
 use glave_session::protocol::{Answer, Meta, Reply, Request, code};
 use glave_session::signin::person;
 use glave_session::{Answering, Caller};
@@ -342,5 +343,46 @@ fn spaces_are_made_shared_and_renamed_only_by_their_owner() {
             .request_as(&grace, Request::MemoryList { scope: None })
             .await;
         assert_eq!(memory.unwrap_err().code, code::NOT_ALLOWED);
+    });
+}
+
+#[test]
+fn a_request_that_names_no_space_acts_in_the_person_s_chats_whatever_folder_the_server_started_in()
+{
+    let dir = folder("spaces-chats");
+    block_on!(async {
+        let server = server(&dir, vec![answer(Some("Hi."), None)], Answering::NoOne).await;
+        let started = server
+            .request(Request::ThreadStart {
+                space: None,
+                worktree: None,
+                background: false,
+                computer: None,
+                model: None,
+                approval: None,
+            })
+            .await
+            .unwrap();
+        let Reply::Thread { thread } = started else {
+            panic!("a thread");
+        };
+        assert_ne!(thread.space, scope().space, "not the folder's project");
+        let got = server.request(Request::SpaceGet {
+            space: thread.space,
+        });
+        let Reply::Space { space, folder } = got.await.unwrap() else {
+            panic!("a space");
+        };
+        assert_eq!((space.kind, folder), (SpaceKind::Personal, None));
+        let (place, _) = opened(&server, thread.id).await;
+        assert!(matches!(place, Opened::Scratch { .. }), "{place:?}");
+        let ids = |reply: Reply| match reply {
+            Reply::Threads { threads, .. } => threads.into_iter().map(|t| t.id).collect::<Vec<_>>(),
+            other => panic!("threads, not {other:?}"),
+        };
+        let chats = server.request(listing(None)).await.unwrap();
+        assert_eq!(ids(chats), [thread.id]);
+        let project = server.request(listing(Some(scope().space))).await.unwrap();
+        assert_eq!(ids(project), Vec::new());
     });
 }
