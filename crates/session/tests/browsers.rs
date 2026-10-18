@@ -1,17 +1,20 @@
 //! Signing browsers in on the person's own computer (`specs/one-server.md`, "Finding it"): a
 //! link's code works once, for a session that outlives a restart, is the local person, ends
-//! when the browser signs out, and is this server's and this computer's alone.
+//! when the browser signs out, and is this server's and this computer's alone; a foreign
+//! `Host` or `Origin` is refused; and nobody an identity provider signs in gets a session, so their sign-in ends
+//! when the provider stops renewing it (#365).
 
 use std::path::Path;
 use std::sync::Arc;
 
 use glave_ports::testing::ManualClock;
 use glave_session::Answering;
-use glave_session::protocol::{Request, code};
-use glave_session::signin::{Browsers, LocalToken, SignIn};
-use serde_json::json;
+use glave_session::client::Remote;
+use glave_session::protocol::{Reply, Request, code};
+use glave_session::signin::{Browsers, LocalToken, SignIn, Trust};
+use serde_json::{Value, json};
 
-use crate::support::issuer::fixed_clock;
+use crate::support::issuer::{AUDIENCE, Issuer, NOW, Signer, fixed_clock};
 use crate::support::web::{Served, Web, serve_with};
 use crate::support::*;
 
@@ -169,5 +172,89 @@ fn a_session_is_one_servers_and_this_computers_alone() {
         );
         served.close().await;
         other.close().await;
+    });
+}
+
+#[test]
+fn a_foreign_host_or_origin_is_refused() {
+    block_on!(async {
+        let dir = folder("browsers-hosts");
+        let token = LocalToken::new([7; 32]);
+        let served = serve(&dir, browsers(&dir, &fixed_clock()), &token).await;
+        let http = reqwest::Client::new();
+        let discover = json!({"jsonrpc": "2.0", "id": 1, "method": "server/discover"});
+        let port = served.address.port();
+        let status = |host: String, origin: Option<String>| {
+            let mut request = http
+                .post(&served.url)
+                .header("Host", host)
+                .body(discover.to_string());
+            if let Some(origin) = origin {
+                request = request.header("Origin", origin);
+            }
+            async move { request.send().await.unwrap().status().as_u16() }
+        };
+        let own = format!("127.0.0.1:{port}");
+        assert_eq!(status(own.clone(), None).await, 200);
+        assert_eq!(
+            status(own.clone(), Some(format!("http://{own}"))).await,
+            200
+        );
+        assert_eq!(status(format!("rebound.example:{port}"), None).await, 403);
+        let foreign = Some("https://evil.example".to_owned());
+        assert_eq!(status(own.clone(), foreign).await, 403);
+        let page = http
+            .get(&served.url)
+            .header("Host", format!("rebound.example:{port}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(page.status().as_u16(), 403, "not even a page");
+
+        // `glave app` asks for its link as a program here does, and is let through.
+        let glave = Remote::new(&served.url, token.reveal().to_owned()).unwrap();
+        let linked = glave.request(&Request::SigninLink {}).await.unwrap();
+        assert!(matches!(linked, Reply::Link { .. }), "{linked:?}");
+        served.close().await;
+    });
+}
+
+#[test]
+fn nobody_a_provider_signs_in_gets_a_session_so_theirs_ends_with_the_provider() {
+    block_on!(async {
+        let issuer = Issuer::start().await;
+        let signer = Signer::es256("key-1");
+        issuer.publish(&signer);
+        let dir = folder("browsers-oidc");
+        let clock = fixed_clock();
+        let mut setup = Setup::asking(Vec::new(), Answering::Clients);
+        setup.browsers = Some(browsers(&dir, &clock));
+        let (built, _) = setup.build(&dir).await;
+        let trust = Trust {
+            issuers: vec![issuer.url.clone()],
+            audience: AUDIENCE.into(),
+        };
+        let signin = SignIn::new(trust, Box::new(clock.clone())).unwrap();
+        let served = serve_with(built, signin, None).await;
+        // The provider signs ada in for ten minutes at a time.
+        let mut ada = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
+        assert!(ada.call(&spaces()).await["result"].is_object());
+        let refused: Value = ada.call(&Request::SigninLink {}).await;
+        assert_eq!(
+            refused["error"]["code"],
+            json!(code::NOT_ALLOWED),
+            "{refused}"
+        );
+        assert_eq!(
+            ada.call(&Request::SigninEnd {}).await["error"]["code"],
+            json!(code::INVALID_PARAMS),
+            "she holds no session of glave's"
+        );
+
+        // The provider refuses her from now on: it renews nothing, and what it gave her ends.
+        clock.set_millis((NOW + 600 + 61) * 1_000);
+        let ended = ada.call(&spaces()).await;
+        assert_eq!(ended["error"]["code"], json!(code::NO_SIGN_IN), "{ended}");
+        served.close().await;
     });
 }
