@@ -23,13 +23,13 @@ use crate::home;
 use crate::socket::{self, Connection};
 
 pub use command::main;
-pub use serve::run;
+pub use serve::{Daily, run};
 
 /// The port the person's server listens on over HTTP when it is free, so the browser's origin
 /// stays the same across restarts.
 const PORT: u16 = 4180;
 
-/// How long a new server has to start listening, as the task host's starter waits.
+/// How long a new server has to start listening.
 const START_WAIT: Duration = Duration::from_secs(20);
 /// How often a starting server is tried.
 const START_POLL: Duration = Duration::from_millis(50);
@@ -161,7 +161,7 @@ pub async fn start() -> anyhow::Result<Connection> {
 /// starts nothing: a session of its own when started in the background, so closing the
 /// terminal that started it or Ctrl-C there never reaches it; then the lock, refused when
 /// another server holds it; and loopback HTTP when nothing else is chosen. No lock for a
-/// program's own server or a task host.
+/// program's own server.
 pub async fn claim(args: &mut crate::args::Args) -> anyhow::Result<Option<Lock>> {
     if !args.person_s_server() {
         return Ok(None);

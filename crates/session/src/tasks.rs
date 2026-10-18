@@ -391,11 +391,6 @@ where
         Ok(recovered)
     }
 
-    /// How many tasks run in this server now.
-    pub fn running_tasks(&self) -> usize {
-        self.tasks().len()
-    }
-
     pub(crate) fn tasks(&self) -> std::sync::MutexGuard<'_, Tasks> {
         self.inner
             .running

@@ -1,10 +1,9 @@
 //! `glave tasks` and `glave schedule`: every project's tasks (threads that run with no one
-//! attached) and the schedules that start them, through the folder's task host. And, at the
-//! start of every session here, a word about tasks that finished since the last one.
+//! attached) and the schedules that start them, through the person's server (`reach.rs`); and
+//! `glave --background`, which starts a task there.
 
 mod show;
 
-use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{Context as _, bail};
@@ -16,10 +15,7 @@ use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::args::Args;
-use crate::client::Glave;
-use crate::daemon::Host;
-
-pub use show::finished_since;
+use crate::reach::{self, Reached};
 
 pub const TASKS_USAGE: &str = "\
 glave tasks: what runs here with no one attached
@@ -29,11 +25,12 @@ Usage:
                               tokens and cost so far, elapsed time, status
   glave tasks stop <thread>   stop a running task
   glave --background <prompt>, or -b
-                              start one: the turn runs in this folder's task host, on a
-                              worktree of its own (so the folder must be a git repository
-                              with a commit), or a worker with on = \"cloud\", so you can
-                              close the terminal. With --goal it works toward the goal;
-                              --budget <tokens> stops the turn at that many tokens
+                              start one: the turn runs in glave running for you in the
+                              background, on a worktree of its own (so the folder must be a
+                              git repository with a commit), or a worker with
+                              on = \"cloud\", so you can close the terminal. With --goal it
+                              works toward the goal; --budget <tokens> stops the turn at
+                              that many tokens
 
 Read a task's thread with `glave threads`, or continue it in a session with --continue.";
 
@@ -51,37 +48,50 @@ Usage:
   glave schedule rm <id>      delete a schedule; no more runs start
 
 Every run has a token budget: --budget, or 1000000. Each run is a new thread in this
-folder's project, on a worktree of its own. Runs happen in a task host, which glave starts
-when needed; one runs every project's schedules. Runs missed while none was running run
-once, as soon as one is, never once for each.";
+folder's project, on a worktree of its own. Runs happen while glave runs for you in the
+background, which these commands start from a terminal; runs missed while it was not
+running run once, as soon as it is, never once for each.";
 
 /// `glave tasks ...`.
 pub fn tasks_main(words: &[String]) -> ExitCode {
     run_with(words, TASKS_USAGE, |words| async move {
-        let folder = std::env::current_dir()?;
-        match words.as_slice() {
-            [] => list_tasks(&folder).await,
-            [stop, thread] if stop == "stop" => stop_task(&folder, thread_id(thread)?).await,
+        let stop = match words.as_slice() {
+            [] => None,
+            [stop, thread] if stop == "stop" => Some(thread_id(thread)?),
             [first, ..] => bail!("unexpected {first:?}"),
-        }
+        };
+        reach::with(async |server| match stop {
+            None => list_tasks(server).await,
+            Some(thread) => stop_task(server, thread).await,
+        })
+        .await
     })
 }
 
 /// `glave schedule ...`.
 pub fn schedule_main(words: &[String]) -> ExitCode {
     run_with(words, SCHEDULE_USAGE, |words| async move {
-        let folder = std::env::current_dir()?;
-        match words.split_first() {
-            Some((add, rest)) if add == "add" => {
-                let request = schedule_request(rest, Some(folder_space(&folder).await?))?;
-                add_schedule(&folder, request).await
-            }
-            Some((list, [])) if list == "list" => list_schedules(&folder).await,
-            Some((rm, [id])) if rm == "rm" => remove_schedule(&folder, schedule_id(id)?).await,
+        let asked = match words.split_first() {
+            Some((add, rest)) if add == "add" => Asked::Add(schedule_request(rest, None)?),
+            Some((list, [])) if list == "list" => Asked::List,
+            Some((rm, [id])) if rm == "rm" => Asked::Remove(schedule_id(id)?),
             Some((first, _)) => bail!("unexpected {first:?}"),
-            None => list_schedules(&folder).await,
-        }
+            None => Asked::List,
+        };
+        reach::with(async |server| match asked {
+            Asked::Add(request) => add_schedule(server, request).await,
+            Asked::List => list_schedules(server).await,
+            Asked::Remove(schedule) => remove_schedule(server, schedule).await,
+        })
+        .await
     })
+}
+
+/// What `glave schedule` was asked.
+enum Asked {
+    Add(Request),
+    List,
+    Remove(ScheduleId),
 }
 
 pub(crate) fn run_with<F, R>(words: &[String], usage: &str, run: F) -> ExitCode
@@ -112,10 +122,9 @@ where
     }
 }
 
-async fn list_tasks(folder: &Path) -> anyhow::Result<()> {
-    let mut host = Host::connect_or_start(folder, &Args::default()).await?;
-    let Reply::Tasks { tasks } = host.request(Request::TasksList { limit: None }).await? else {
-        bail!("the task host answered tasks/list with something else");
+async fn list_tasks(server: &mut Reached) -> anyhow::Result<()> {
+    let Reply::Tasks { tasks } = server.request(Request::TasksList { limit: None }).await? else {
+        bail!("glave answered tasks/list with something else");
     };
     if tasks.is_empty() {
         println!("No tasks here. Start one with glave --background <prompt>.");
@@ -126,41 +135,34 @@ async fn list_tasks(folder: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn stop_task(folder: &Path, thread: ThreadId) -> anyhow::Result<()> {
-    let Some(mut host) = Host::connect(folder).await? else {
-        bail!("no task is running here: the task host is not running");
-    };
-    host.request(Request::TasksStop { thread }).await?;
+async fn stop_task(server: &mut Reached, thread: ThreadId) -> anyhow::Result<()> {
+    server.request(Request::TasksStop { thread }).await?;
     println!("stopped the task in {thread}");
     Ok(())
 }
 
-/// The project of `folder`, as glave run there finds it: a task or a schedule started here is
-/// its own, never the person's Chats.
-async fn folder_space(folder: &Path) -> anyhow::Result<SpaceId> {
-    let store = crate::data::Data::here().await?;
-    let person = crate::identity::load_or_make(&crate::home::folder()?)
-        .await?
-        .person;
-    Ok(crate::spaces::here(&store, folder, person).await?.space)
-}
-
 /// Starts `prompt` (or `args.goal`) as a task in a new thread of this folder's project, for
-/// `glave --background`.
+/// `glave --background`: only in the person's server, since a task outlives this command.
 pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
     let folder = std::env::current_dir()?;
-    let space = folder_space(&folder).await?;
-    let mut host = Host::connect_or_start(&folder, args).await?;
+    let Some(server) = crate::server::connect_or_start().await? else {
+        bail!(
+            "a task runs in glave running for you in the background, which is not running, and \
+             only a command run in a terminal starts it: run this in one, or run glave serve"
+        );
+    };
+    let mut server = Reached::Server(server);
+    let space = server.project(&folder).await?;
     let started = Request::ThreadStart {
         space: Some(space),
-        worktree: args.worktree.then_some(true),
+        worktree: None,
         background: true,
         computer: None,
-        model: None,
-        approval: None,
+        model: args.model.clone(),
+        approval: args.approval,
     };
-    let Reply::Thread { thread } = host.request(started).await? else {
-        bail!("the task host answered thread/start with something else");
+    let Reply::Thread { thread } = server.request(started).await? else {
+        bail!("glave answered thread/start with something else");
     };
     let thread = thread.id;
     let request = match &args.goal {
@@ -180,50 +182,29 @@ pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
             approval: None,
         },
     };
-    let Reply::Task { task } = host.request(request).await? else {
-        bail!("the task host did not start a task");
+    let Reply::Task { task } = server.request(request).await? else {
+        bail!("glave did not start a task");
     };
     println!("{}", show::task_line(&task));
     println!("glave tasks to follow it; glave tasks stop {thread} to stop it");
     Ok(ExitCode::SUCCESS)
 }
 
-/// Says which tasks finished since the last session here, and starts the task host here when a
-/// schedule is waiting and no host fires the schedules (as after a restart).
-pub async fn at_start(server: &Glave, args: &Args) {
-    let Ok(folder) = std::env::current_dir() else {
-        return;
-    };
-    for line in finished_since(server, &folder).await {
-        eprintln!("glave: {line}");
+/// Adds the schedule `request` asks for in this folder's project.
+async fn add_schedule(server: &mut Reached, mut request: Request) -> anyhow::Result<()> {
+    if let Request::ScheduleCreate { space, .. } = &mut request {
+        *space = Some(server.project(&std::env::current_dir()?).await?);
     }
-    let waiting = matches!(
-        server.request(Request::ScheduleList {}).await,
-        Ok(Reply::Schedules { schedules }) if schedules.iter().any(|s| s.next.is_some())
-    );
-    // A host already running here takes the schedules over at its next look.
-    if waiting
-        && !crate::daemon::schedules_fired()
-        && matches!(Host::connect(&folder).await, Ok(None))
-        && let Err(error) = Host::connect_or_start(&folder, args).await
-    {
-        eprintln!("glave: schedules wait here, but the task host did not start: {error:#}");
-    }
-}
-
-async fn add_schedule(folder: &Path, request: Request) -> anyhow::Result<()> {
-    let mut host = Host::connect_or_start(folder, &Args::default()).await?;
-    let Reply::Schedule { schedule } = host.request(request).await? else {
-        bail!("the task host answered schedule/create with something else");
+    let Reply::Schedule { schedule } = server.request(request).await? else {
+        bail!("glave answered schedule/create with something else");
     };
     println!("{}", show::schedule_line(&schedule));
     Ok(())
 }
 
-async fn list_schedules(folder: &Path) -> anyhow::Result<()> {
-    let mut host = Host::connect_or_start(folder, &Args::default()).await?;
-    let Reply::Schedules { schedules } = host.request(Request::ScheduleList {}).await? else {
-        bail!("the task host answered schedule/list with something else");
+async fn list_schedules(server: &mut Reached) -> anyhow::Result<()> {
+    let Reply::Schedules { schedules } = server.request(Request::ScheduleList {}).await? else {
+        bail!("glave answered schedule/list with something else");
     };
     if schedules.is_empty() {
         println!("No schedules here. Add one with glave schedule add \"<cron>\" <prompt>.");
@@ -234,9 +215,8 @@ async fn list_schedules(folder: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn remove_schedule(folder: &Path, schedule: ScheduleId) -> anyhow::Result<()> {
-    let mut host = Host::connect_or_start(folder, &Args::default()).await?;
-    host.request(Request::ScheduleDelete { schedule }).await?;
+async fn remove_schedule(server: &mut Reached, schedule: ScheduleId) -> anyhow::Result<()> {
+    server.request(Request::ScheduleDelete { schedule }).await?;
     println!("deleted schedule {schedule}");
     Ok(())
 }

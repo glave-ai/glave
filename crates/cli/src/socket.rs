@@ -1,8 +1,8 @@
-//! The Unix sockets glave serves the session API on for the person alone: the person's server's
-//! (`GLAVE_HOME/run/server.sock`) and, until it goes, each folder's task host's. Each is `0600`
-//! in a folder only the person may open; where its path is too long for a socket, it is
-//! `/tmp/glave-<uid>/<hash of that path>.sock` instead. A client checks the folder's owner and
-//! mode and the listener's user before it sends anything, since requests may carry a token.
+//! The Unix socket glave serves the session API on for the person alone: the person's server's
+//! (`GLAVE_HOME/run/server.sock`), `0600` in a folder only the person may open; where its path
+//! is too long for a socket, it is `/tmp/glave-<uid>/<hash of that path>.sock` instead. A
+//! client checks the folder's owner and mode and the listener's user before it sends anything,
+//! since requests may carry a token.
 
 use std::path::{Path, PathBuf};
 
@@ -11,8 +11,8 @@ use glave_session::protocol::{Reply, Request};
 use glave_session::rpc;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
-use tokio::net::UnixStream;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::net::{UnixListener, UnixStream};
 
 use crate::home;
 
@@ -70,6 +70,18 @@ pub async fn private_folder_for(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Listens at `path`, `0600` in a folder private to the person, in place of a socket file a
+/// server that stopped without removing it left there: only for the lock's holder.
+pub async fn listen(path: &Path) -> anyhow::Result<UnixListener> {
+    use std::os::unix::fs::PermissionsExt as _;
+    private_folder_for(path).await?;
+    let _ = tokio::fs::remove_file(path).await;
+    let listener = UnixListener::bind(path)
+        .with_context(|| format!("could not listen on {}", path.display()))?;
+    tokio::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).await?;
+    Ok(listener)
+}
+
 /// Whether a folder `owner` owns with `mode` is the person's (`mine`) alone.
 fn private(owner: u32, mode: u32, mine: u32) -> bool {
     // Read, write or search by the group or anyone else.
@@ -84,7 +96,7 @@ fn own(owner: u32, mode: u32, listener: u32, mine: u32) -> bool {
 }
 
 /// FNV-1a: a hash that stays the same in every glave, so every version finds the same socket.
-pub fn fnv1a(bytes: &[u8]) -> u64 {
+fn fnv1a(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
     })

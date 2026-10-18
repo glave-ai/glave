@@ -12,6 +12,7 @@ mod support;
 
 #[cfg(test)]
 #[path = "support/http.rs"]
+#[expect(dead_code, reason = "shared helpers; this file uses some of them")]
 mod http;
 
 #[cfg(test)]

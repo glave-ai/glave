@@ -152,7 +152,7 @@ impl Program {
 
     /// Starts it apart from this process, in a process group of its own (or the session it
     /// starts, [`Program::starts_own_session`]), and lets it go: only for a glave of its own
-    /// (the task host, the person's server), which owns what it starts. The system reaps it
+    /// (the person's server), which owns what it starts. The system reaps it
     /// when it exits.
     pub fn detach(&mut self) -> Result<(), ProcessError> {
         use std::os::unix::process::CommandExt as _;

@@ -14,10 +14,11 @@ use glave_session::client::Remote;
 use glave_session::protocol::{Reply, Request};
 
 use crate::args::Args;
+use crate::client::export;
 use crate::client::{Client, Session};
 use crate::home;
 use crate::input::Input;
-use crate::session::{converse, export, pick_thread};
+use crate::session::{converse, pick_thread};
 use crate::terminal::Printer;
 
 /// Where the token that signs this client in comes from.

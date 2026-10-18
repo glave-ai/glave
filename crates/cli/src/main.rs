@@ -12,7 +12,7 @@ mod computer;
 mod config;
 mod connections;
 mod credentials;
-mod daemon;
+
 mod data;
 mod gateway;
 mod home;
@@ -24,6 +24,7 @@ mod memory;
 mod model;
 mod projects;
 mod providers;
+mod reach;
 mod remote;
 mod reread;
 mod server;

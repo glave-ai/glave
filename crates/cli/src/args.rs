@@ -24,18 +24,14 @@ Usage:
                                 Stops when its token budget (default 1000000) runs out,
                                 after three turns in a row without a tool call, or on Ctrl-C
   glave --background <prompt> [--budget <tokens>], or -b
-                                run the turn as a task, with no one attached, in this
-                                folder's task host, so it goes on when you leave; with
-                                --goal, work toward the goal (glave tasks --help)
+                                run the turn as a task, with no one attached, in glave
+                                running for you in the background, so it goes on when you
+                                leave; with --goal, work toward the goal (glave tasks --help)
   glave tasks [stop <thread>]   list the tasks running and recently finished, or stop one
   glave schedule add|list|rm    run a prompt or a goal as a task at set times
                                 (glave schedule --help)
   glave serve --stdio [options] serve the session API (JSON-RPC 2.0, one message per line)
                                 to the program that started glave
-  glave serve --socket [options]
-                                be this folder's task host: serve the session API on a Unix
-                                socket in GLAVE_HOME/run and run its tasks and schedules
-                                until nothing is left (glave starts it when needed)
   glave serve [--http <address> [--issuer <url> --audience <name>]] [options]
                                 run glave for you in the foreground, as a service or a
                                 container does: one per GLAVE_HOME (a second one exits),
@@ -229,12 +225,10 @@ pub struct Args {
     pub audience: Option<String>,
     /// The built web app to serve over HTTP, rather than the one built into glave or beside it.
     pub web: Option<PathBuf>,
-    /// Run the turn or goal as a task in the folder's task host, with no one attached.
+    /// Run the turn or goal as a task in the person's server, with no one attached.
     pub background: bool,
     /// With `background`, tokens the turn may use.
     pub budget: Option<u64>,
-    /// Serve as the folder's task host, on its Unix socket.
-    pub socket: bool,
     /// Serve the program that started glave, over stdin and stdout.
     pub stdio: bool,
     /// As the person's server started in the background: a session of its own first
@@ -243,10 +237,9 @@ pub struct Args {
 }
 
 impl Args {
-    /// Whether `glave serve` runs as the person's server: not a program's own over stdio, nor
-    /// a folder's task host.
+    /// Whether `glave serve` runs as the person's server: not a program's own over stdio.
     pub fn person_s_server(&self) -> bool {
-        self.action == Action::Serve && !self.stdio && !self.socket
+        self.action == Action::Serve && !self.stdio
     }
 }
 
@@ -291,7 +284,6 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Args, String
             "--goal-budget" => args.goal_budget = Some(budget(rest.next())?),
             "--background" | "-b" => args.background = true,
             "--budget" => args.budget = Some(tokens("--budget", rest.next())?),
-            "--socket" if serving => args.socket = true,
             "--stdio" if serving => args.stdio = true,
             "--own-session" if serving => args.own_session = true,
             "--http" if serving => args.http = Some(address(rest.next())?),
@@ -377,6 +369,14 @@ fn background(args: &Args) -> Result<(), String> {
     if args.resume || args.events.is_some() {
         return Err("--background starts a new thread: not with --continue or --events".into());
     }
+    let runs_here = args.sandbox.is_some() || args.network.is_some() || args.on.is_some();
+    if runs_here || args.max_steps.is_some() {
+        return Err(
+            "--sandbox, --network, --no-network, --on and --max-steps choose how glave \
+                    runs, not one task: set them in config.toml"
+                .into(),
+        );
+    }
     Ok(())
 }
 
@@ -419,28 +419,21 @@ fn budget(value: Option<String>) -> Result<u64, String> {
 /// socket and loopback HTTP), and sign-in for HTTP.
 fn transport(args: &Args) -> Result<(), String> {
     let stdio = args.stdio;
-    if [stdio, args.http.is_some(), args.socket]
-        .iter()
-        .filter(|chosen| **chosen)
-        .count()
-        > 1
-    {
-        return Err("glave serve takes one of --stdio, --socket or --http <address>".into());
+    if stdio && args.http.is_some() {
+        return Err("glave serve takes one of --stdio or --http <address>".into());
     }
-    if args.own_session && (stdio || args.socket) {
-        return Err("--own-session is for the person's server, not --stdio or --socket".into());
+    if args.own_session && stdio {
+        return Err("--own-session is for the person's server, not --stdio".into());
     }
     if !args.prompt.is_empty() || args.resume || args.events.is_some() {
         return Err("glave serve takes no prompt, --continue or --events: clients choose".into());
     }
-    if args.web.is_some() && (stdio || args.socket) {
+    if args.web.is_some() && stdio {
         return Err("--web is for HTTP: the web app is served over HTTP".into());
     }
     let signs_in = !args.issuers.is_empty() || args.audience.is_some();
-    if (stdio || args.socket) && signs_in {
-        return Err(
-            "--issuer and --audience are for --http; stdio and the socket need no sign-in".into(),
-        );
+    if stdio && signs_in {
+        return Err("--issuer and --audience are for --http; stdio needs no sign-in".into());
     }
     if let Some(address) = args.http {
         if args.issuers.is_empty() != args.audience.is_none() {
@@ -703,12 +696,11 @@ mod tests {
         assert!(parse_words(&["-b", "--goal", "x", "--budget", "5"]).is_err());
         assert!(parse_words(&["-b", "--continue", "hi"]).is_err());
         assert!(parse_words(&["-b", "--budget", "0", "hi"]).is_err());
-        let host = parse_words(&["serve", "--socket", "--model", "m"]).unwrap();
-        assert!(host.socket && host.action == Action::Serve);
-        assert!(parse_words(&["serve", "--socket", "--stdio"]).is_err());
+        assert!(parse_words(&["-b", "--sandbox", "off", "hi"]).is_err());
+        assert!(parse_words(&["-b", "--max-steps", "3", "hi"]).is_err());
         assert!(
-            parse_words(&["--socket"]).is_err(),
-            "only serve takes --socket"
+            parse_words(&["serve", "--socket"]).is_err(),
+            "the folder's task host is gone"
         );
     }
 

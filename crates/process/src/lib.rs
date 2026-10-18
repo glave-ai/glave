@@ -7,7 +7,7 @@
 //! [`Processes::reap`], as a glave starts, stops what a glave that is gone left running; a
 //! process whose start time differs from the one recorded has the same number but is another
 //! process, and is never touched. A program its caller waits for ([`Program::output`]) ends
-//! with the call, and the task host ([`Program::detach`]) is a glave of its own.
+//! with the call, and the person's server ([`Program::detach`]) is a glave of its own.
 
 mod child;
 mod error;

@@ -250,14 +250,6 @@ where
             .min()
     }
 
-    /// Whether any space whose tasks this server runs has a schedule that will run again.
-    pub async fn has_schedules(&self) -> Result<bool, ApiError> {
-        for space in self.task_spaces().await? {
-            self.catch_up(space).await?;
-        }
-        Ok(self.next_due().is_some())
-    }
-
     /// Starts `schedule`'s run that was due at `at`, in a thread of its own in `space`, which
     /// works on a copy of the project's folder.
     async fn fire(

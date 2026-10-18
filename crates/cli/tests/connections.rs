@@ -1,4 +1,4 @@
-//! `glave connect` and `glave connections`, the real binary through this folder's task host:
+//! `glave connect` and `glave connections`, the real binary through the person's server:
 //! a token read from standard input, never an argument, checked with its host, listed with
 //! what glave can do with it and never shown, and removed; GitHub signed in to in the browser.
 
@@ -13,11 +13,16 @@ mod support;
 mod served;
 
 #[cfg(test)]
+#[path = "support/http.rs"]
+mod http;
+
+#[cfg(test)]
 mod terminal {
     use glave_ports::testing::{FAKE_SECRET, FakeGitHost, FakeHttp, fake_secret};
     use glave_provider_openai::fake::FakeServer;
     use serde_json::json;
 
+    use super::http::{only_the_server_answers, serve_http};
     use super::served::holds;
     use super::support::*;
 
@@ -29,6 +34,8 @@ mod terminal {
         let place = place("connect-token");
         let host = FakeGitHost::start("ana", TOKEN).unwrap();
         let model = FakeServer::start(Vec::new()).unwrap();
+        let (_served, _) = serve_http(&place, &model, &[]);
+        only_the_server_answers(&place);
         let run = |args: &[&str], stdin: &str| {
             let output = glave(&place, &model, args, stdin);
             (output.status.success(), text(&output))
@@ -103,6 +110,8 @@ mod terminal {
         ])
         .unwrap();
         let model = FakeServer::start(Vec::new()).unwrap();
+        let (_served, _) = serve_http(&place, &model, &[]);
+        only_the_server_answers(&place);
         let output = glave(
             &place,
             &model,
@@ -155,6 +164,8 @@ mod terminal {
         );
         std::fs::write(place.home.join("config.toml"), app).unwrap();
         let model = FakeServer::start(Vec::new()).unwrap();
+        let (_served, _) = serve_http(&place, &model, &[]);
+        only_the_server_answers(&place);
 
         let output = glave(&place, &model, &["connect", "github"], "");
         let said = text(&output);
