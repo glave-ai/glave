@@ -1,8 +1,9 @@
 //! Each project as this glave reads it: asked about in plain words, a yes kept exactly as the
 //! terminal keeps it, what it brings on from then and only then, a change asked about again,
 //! the model told what stays off; what each project chooses reaching its own threads alone,
-//! a model glave does not offer set aside with a sentence; and a project's server giving way
-//! to the person's own of the same name.
+//! a model glave does not offer set aside with a sentence; a project's server giving way to
+//! the person's own of the same name, the model told; and a project's servers closed after 30
+//! idle minutes, never while a turn holds them, and started again when needed.
 
 use std::path::{Path, PathBuf};
 
@@ -10,7 +11,9 @@ use glave_config::policy::{self, ConfigFile, Constraints, ModelEntry, Source};
 use glave_config::trust::Record;
 use glave_harness::{ApprovalMode, Judge, Protections, SandboxLevel};
 use glave_ports::block_on;
+use glave_ports::testing::ManualClock;
 
+use super::servers::Kept;
 use super::*;
 use crate::gateway::{Allowed, gateway};
 use crate::model::Model;
@@ -82,6 +85,14 @@ fn offering(models: &[&str]) -> Switch {
 /// The projects of a glave in `home` already running the person's own servers `taken`,
 /// offering the models `models` besides its main one.
 async fn projects(home: &Path, taken: Vec<String>, models: &[&str]) -> Projects {
+    timed(home, taken, models, ManualClock::at_millis(NOW)).await
+}
+
+/// When the tests' clocks stand.
+const NOW: i64 = 1_791_000_000_000;
+
+/// `projects` on `clock`.
+async fn timed(home: &Path, taken: Vec<String>, models: &[&str], clock: ManualClock) -> Projects {
     let loaded = loaded(home).await;
     let own = Own {
         choices: loaded.settle().unwrap(),
@@ -89,6 +100,7 @@ async fn projects(home: &Path, taken: Vec<String>, models: &[&str]) -> Projects 
         taken,
         models: offering(models),
         memory: None,
+        clock: Box::new(clock),
     };
     Projects::new(home.to_owned(), own, true)
 }
@@ -111,6 +123,7 @@ fn servers_put_away_close_only_once_no_turn_holds_them() {
         servers: BTreeMap::new(),
         started: Vec::new(),
         sources: vec![Arc::new(glave_ports::MemoryTools::new(Vec::new())) as Arc<dyn ToolSource>],
+        used: jiff::Timestamp::UNIX_EPOCH,
     };
     let mut running = Running::default();
     let held = kept("/held");
@@ -292,5 +305,40 @@ fn a_project_s_server_gives_way_to_the_person_s_own_of_the_same_name() {
         assert!(projects.trust(&project, &ask.ask).await.unwrap());
         let brought = projects.brought(&project, space()).await;
         assert!(brought.tools.is_empty(), "the person's own runs instead");
+        let told = projects
+            .for_folder(&project, Some(&project), true)
+            .await
+            .unwrap();
+        let said = "MCP server docs is off: the person's own server of the same name runs instead";
+        assert!(told.contains(said), "the model is told: {told}");
+        assert_eq!(projects.set_aside(&project).await, [said], "and the person");
+    });
+}
+
+#[test]
+fn an_idle_project_s_servers_close_and_start_again_when_needed() {
+    let (home, project) = place("idle", DOCS, "");
+    block_on!(async {
+        let clock = ManualClock::at_millis(NOW);
+        let projects = timed(&home, Vec::new(), &[], clock.clone()).await;
+        let ask = projects.ask(&project).await.unwrap().unwrap();
+        assert!(projects.trust(&project, &ask.ask).await.unwrap());
+        let held = projects.brought(&project, space()).await.tools;
+        let minutes = |n: i64| clock.advance_millis(n * 60_000);
+        let running = |projects: &Projects| projects.lock().kept.len();
+        minutes(60);
+        projects.sweep().await;
+        assert_eq!(running(&projects), 1, "a turn holds them: in use");
+        drop(held);
+        minutes(29);
+        projects.sweep().await;
+        assert_eq!(running(&projects), 1, "used 29 minutes ago");
+        minutes(2);
+        projects.sweep().await;
+        assert_eq!(running(&projects), 0, "closed after 30 minutes unused");
+        let again = projects.brought(&project, space()).await;
+        assert_eq!(again.tools.len(), 2, "started again for the next turn");
+        assert_eq!(running(&projects), 1);
+        projects.close().await;
     });
 }

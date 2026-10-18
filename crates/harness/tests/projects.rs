@@ -3,7 +3,8 @@
 //! mode its settings loosen to, its commands out of the sandbox where it turned the sandbox
 //! off, and its model, judge, titles and `web_fetch` in place of the harness's. Nothing of it
 //! before the person trusts it, all of it from the next turn after, none of it in a thread
-//! elsewhere, and nothing of the project's, nor the harness's own hooks, in another person's.
+//! elsewhere, and nothing of the project's, nor the harness's own hooks and tools, in another
+//! person's.
 
 #[cfg(test)]
 #[path = "support/script.rs"]
@@ -227,10 +228,12 @@ mod projects {
             ];
             let (harness, seen) =
                 harness_seeing(&dir, answers, Refuse, MemoryLog::new(), 1, asking()).await;
-            // The harness's own hooks are the person's, run with their sign-ins: not for grace.
+            // The harness's own hooks and tools are the person's, run with their sign-ins: not
+            // for grace.
             let harness = harness
                 .with_projects(Some(project.clone() as Arc<dyn Projects>))
-                .with_hooks(Hooks::new(vec![prompt_hook()]).unwrap());
+                .with_hooks(Hooks::new(vec![prompt_hook()]).unwrap())
+                .with_own_tools(vec![Arc::new(tool("mcp__mine__search", "Mine."))]);
             let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
             let grace = Caller {
                 person: Some(someone.unwrap()),
@@ -251,9 +254,14 @@ mod projects {
                 )
                 .await
                 .unwrap();
+            let offered = tool_names(&seen, 0);
             assert!(
-                !tool_names(&seen, 0).contains(&"mcp__docs__search".to_owned()),
+                !offered.contains(&"mcp__docs__search".to_owned()),
                 "no tools"
+            );
+            assert!(
+                !offered.contains(&"mcp__mine__search".to_owned()),
+                "none of the person's own"
             );
             assert_eq!(
                 harness.approval_for(&thread),

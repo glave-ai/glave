@@ -198,8 +198,9 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         entropy: Box::new(OsEntropy),
         workspace,
         web: web(choices)?,
-        // The skills, then the MCP servers' tools.
-        tools: [crate::skills::offered(&root).await?, servers.sources()].concat(),
+        tools: crate::skills::offered(&root).await?,
+        // The person's own servers, for their threads alone.
+        own: servers.sources(),
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
         workers: on_workers,
@@ -246,9 +247,12 @@ fn projects_for(
         taken: servers.names().into_iter().map(str::to_owned).collect(),
         models: models.clone(),
         memory: memory.map(|memory| Arc::clone(&memory.memory)),
+        clock: Box::new(SystemClock),
     };
     let later = asking == Asking::Later;
-    Ok(Arc::new(Projects::new(home::folder()?, own, later)))
+    let projects = Arc::new(Projects::new(home::folder()?, own, later));
+    Projects::tidy(&projects);
+    Ok(projects)
 }
 
 /// How the harness runs: the default model, the instructions a thread opens with when it has

@@ -138,6 +138,9 @@ pub struct Harness<P, L, B, A> {
     /// `web_fetch`, offered right after the built-in tools, unless a thread's project sets up
     /// its own; none by default.
     pub(crate) web: Option<Arc<dyn ToolSource>>,
+    /// The person's own tools, such as their MCP servers', offered after the other sources to
+    /// their threads alone: they run with the person's sign-ins. None by default.
+    pub(crate) own: Vec<Arc<dyn ToolSource>>,
     /// Commands run at points of a turn; none by default.
     pub(crate) hooks: Hooks,
     pub(crate) settings: Settings,
@@ -342,6 +345,7 @@ where
             })],
             workspace,
             web: None,
+            own: Vec::new(),
             hooks: Hooks::default(),
             default: RwLock::new(DefaultModel {
                 model: settings.model.clone(),
@@ -413,6 +417,14 @@ where
         self
     }
 
+    /// Offers the tools of `sources`, the person's own, to the threads of the person the
+    /// harness works for alone, after its other sources.
+    #[must_use]
+    pub fn with_own_tools(mut self, sources: Vec<Arc<dyn ToolSource>>) -> Self {
+        self.own = sources;
+        self
+    }
+
     /// Runs `hooks` at their points of the turns of the person the harness works for.
     #[must_use]
     pub fn with_hooks(mut self, hooks: Hooks) -> Self {
@@ -422,7 +434,7 @@ where
 
     /// Every source of `thread`'s tools, in the order a tool keeps the first that names it:
     /// the built-in tools, `web_fetch` (its project's, else the harness's), the harness's
-    /// other sources, then its project's.
+    /// other sources, the person's own when the thread is theirs, then its project's.
     pub(crate) fn sources_for(&self, thread: &Thread) -> Vec<Arc<dyn ToolSource>> {
         let mut sources = self.sources.clone();
         if let Some(web) = thread.brought.web.as_ref().or(self.web.as_ref()) {
@@ -430,6 +442,9 @@ where
                 .saturating_add(1)
                 .min(sources.len());
             sources.insert(after, Arc::clone(web));
+        }
+        if self.trusting(thread.for_) {
+            sources.extend(self.own.iter().cloned());
         }
         sources.extend(thread.brought.tools.iter().cloned());
         sources
