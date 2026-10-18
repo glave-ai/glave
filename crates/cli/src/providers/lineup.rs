@@ -5,12 +5,13 @@
 
 use std::sync::Arc;
 
-use glave_config::policy::{Constraints, Judge, ModelEntry, Source, check_model};
+use glave_config::policy::{Choices, Constraints, Judge, ModelEntry, Source, check_model};
 use glave_event::ProviderConnected;
 use glave_gateway::{Gateway, Target};
 use glave_session::Models;
 
 use crate::config::Endpoint;
+use crate::gateway::remote::Remote;
 use crate::gateway::{Allowed, gateway, offered};
 use crate::model::Model;
 use crate::setup::Setup;
@@ -116,4 +117,33 @@ impl Lineup {
             endpoint: Some(endpoint),
         })
     }
+}
+
+/// The gateway elsewhere, when `[gateway] url` names one, and the endpoint model calls go to:
+/// that gateway, or the model chosen, if any is.
+pub fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Option<Endpoint>)> {
+    let remote = choices
+        .gateway
+        .as_ref()
+        .map(Remote::from_choice)
+        .transpose()?;
+    let model = choices.model.as_ref().map(|m| m.value.clone());
+    let endpoint = match (&remote, model) {
+        (Some(remote), model) => Some(remote.endpoint(model)?),
+        (None, Some(model)) => Some(crate::config::endpoint(
+            Some(model),
+            choices.provider.as_ref(),
+        )?),
+        (None, None) => None,
+    };
+    let idle = crate::config::idle_timeout()?;
+    Ok((
+        remote,
+        endpoint.map(|mut endpoint| {
+            if let Some(idle) = idle {
+                endpoint.provider.idle_timeout = idle;
+            }
+            endpoint
+        }),
+    ))
 }

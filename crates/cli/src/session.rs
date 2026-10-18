@@ -17,7 +17,7 @@ use glave_memory::Tidier;
 use glave_ports::{Credentials, SpaceId, ToolSource};
 use glave_process::Processes;
 use glave_session::protocol::{Reply, Request};
-use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Server, Wiring};
+use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring};
 
 use crate::accounts::Ledger;
 use crate::args::{self, Action, Args, USAGE};
@@ -31,6 +31,7 @@ use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::projects::Projects;
 use crate::providers::{Built, Host, Lineup};
+use crate::reread::Rereading;
 use crate::setup::{self, Setup};
 use crate::terminal::Printer;
 use crate::{home, identity};
@@ -110,7 +111,7 @@ pub fn main() -> ExitCode {
 /// The server for this folder, and what the terminal needs to show it.
 struct Wired {
     server: Glave,
-    servers: Servers,
+    servers: Arc<Servers>,
     /// The default model's endpoint; none while no model is set up.
     endpoint: Option<Endpoint>,
     /// The project of the folder glave runs in, where the terminal's threads are.
@@ -140,21 +141,18 @@ fn task_limits(constraints: &policy::Constraints) -> glave_session::TaskLimits {
 }
 
 /// The MCP servers the setup turns on for the person's threads everywhere, in their home
-/// folder: their own, or the catalog of the gateway elsewhere.
+/// folder: their own, after the catalog of the gateway elsewhere.
 async fn mcp_servers(
     setup: &Setup,
     remote: Option<&Remote>,
     processes: &Processes,
-) -> anyhow::Result<Servers> {
-    Servers::start(
-        &home::folder()?,
-        &home::person()?,
-        setup.choices.mcp.as_ref(),
-        &setup.loaded.constraints,
-        remote,
-        processes,
-    )
-    .await
+) -> anyhow::Result<Arc<Servers>> {
+    let chosen = setup.choices.mcp.as_ref();
+    let constraints = &setup.loaded.constraints;
+    let home = home::folder()?;
+    let wanted = crate::mcp::wanted(&home, chosen, constraints, remote.is_some()).await?;
+    let root = home::person()?;
+    Ok(Arc::new(Servers::start(wanted, &root, remote, processes)))
 }
 
 /// Builds the session server on this computer's store and the current folder.
@@ -171,7 +169,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let processes = home::reaped().await?;
     let workspace = workspace(&folder, &mut setup, &database, &processes).await?;
     let choices = &setup.choices;
-    let (remote, configured) = endpoint(choices)?;
+    let (remote, configured) = crate::providers::endpoint(choices)?;
     let store = store(&setup).await?;
     let identity = identity::load_or_make(&home::folder()?).await?;
     let lineup = Lineup::new(&setup, configured);
@@ -194,11 +192,13 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         eprintln!("glave: {line}");
     }
     tidy(memory.as_ref(), &lined.switch, model);
+    let rereads = rereading(args, &folder, choices, &lined, &servers, &projects).await?;
     let wiring = Wiring {
         models: lined.built.models.offered,
         modes: policy::thread_modes(choices, &setup.loaded.constraints),
         provider: lined.switch,
-        providers: lined.providers,
+        providers: lined.host.map(|host| host as Arc<dyn Providers>),
+        rereads: Some(rereads),
         git_hosts: hosts.map(|hosts| hosts as Arc<dyn GitHosts>),
         log: store.log(),
         blobs: store.blobs(),
@@ -240,6 +240,29 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     })
 }
 
+/// What reads the person's settings again for a server started in `folder` with `args` and
+/// the choices `start`, which its models, servers and projects follow.
+async fn rereading(
+    args: &Args,
+    folder: &Path,
+    start: &Choices,
+    lined: &Lined,
+    servers: &Arc<Servers>,
+    projects: &Arc<Projects>,
+) -> anyhow::Result<Arc<dyn Rereads>> {
+    let rereading = Rereading::new(crate::reread::Parts {
+        args: args.clone(),
+        folder: folder.to_owned(),
+        home: home::folder()?,
+        start: start.clone(),
+        host: lined.host.clone(),
+        switch: lined.switch.clone(),
+        servers: Arc::clone(servers),
+        projects: Arc::clone(projects),
+    });
+    Ok(Arc::new(rereading.await))
+}
+
 /// Each project as this glave reads it, beside the `servers` it runs for the person's threads
 /// everywhere, offering the models of `models`, with `memory`; asked about from an app when
 /// `asking` says the person answers later.
@@ -253,7 +276,7 @@ fn projects_for(
     let own = crate::projects::Own {
         loaded: setup.loaded.clone(),
         choices: setup.choices.clone(),
-        taken: servers.names().into_iter().map(str::to_owned).collect(),
+        taken: servers.names(),
         models: models.clone(),
         memory: memory.map(|memory| Arc::clone(&memory.memory)),
         clock: Box::new(SystemClock),
@@ -327,7 +350,7 @@ struct Lined {
     built: Built,
     switch: Switch,
     /// The person's model accounts, when they may connect them here.
-    providers: Option<Arc<dyn Providers>>,
+    host: Option<Arc<Host>>,
 }
 
 /// Lines up the models of `lineup` and of the model accounts `person` connected, which they
@@ -359,39 +382,12 @@ async fn line_up(
         Err(error) => return Err(error),
     };
     let switch = Switch::new(built.gateway.take());
-    let providers = ledger
-        .map(|ledger| Arc::new(Host::new(ledger, lineup, switch.clone())) as Arc<dyn Providers>);
+    let host = ledger.map(|ledger| Arc::new(Host::new(ledger, lineup, switch.clone())));
     Ok(Lined {
         built,
         switch,
-        providers,
+        host,
     })
-}
-
-/// The gateway elsewhere, when `[gateway] url` names one, and the endpoint model calls go to:
-/// that gateway, or the model chosen, if any is.
-fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Option<Endpoint>)> {
-    let remote = choices
-        .gateway
-        .as_ref()
-        .map(Remote::from_choice)
-        .transpose()?;
-    let model = choices.model.as_ref().map(|m| m.value.clone());
-    let endpoint = match (&remote, model) {
-        (Some(remote), model) => Some(remote.endpoint(model)?),
-        (None, Some(model)) => Some(config::endpoint(Some(model), choices.provider.as_ref())?),
-        (None, None) => None,
-    };
-    let idle = config::idle_timeout()?;
-    Ok((
-        remote,
-        endpoint.map(|mut endpoint| {
-            if let Some(idle) = idle {
-                endpoint.provider.idle_timeout = idle;
-            }
-            endpoint
-        }),
-    ))
 }
 
 /// `web_fetch`, as `[web]` sets it up; nothing when it is off.
