@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
 use glave_computer::{
-    Credentials, Docker, DockerSettings, Kubernetes, KubernetesSettings, WorkerComputers,
+    Docker, DockerSettings, Kubernetes, KubernetesSettings, WorkerComputers, WorkerCredentials,
     https_url, read_environment,
 };
 use glave_harness::Workers;
@@ -80,7 +80,7 @@ async fn computers(
                 },
                 std::env::var_os("HOME").map(PathBuf::from).as_deref(),
             );
-            WorkerComputers::docker(docker, limits, Credentials::HostGit)
+            WorkerComputers::docker(docker, limits, WorkerCredentials::HostGit)
         }
         Backend::Kubernetes => {
             let kubernetes = Kubernetes::connect(KubernetesSettings {
@@ -90,7 +90,7 @@ async fn computers(
                 glave: file.glave.clone(),
             })
             .await?;
-            WorkerComputers::kubernetes(kubernetes, limits, Credentials::HostGit)
+            WorkerComputers::kubernetes(kubernetes, limits, WorkerCredentials::HostGit)
         }
     })
 }

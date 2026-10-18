@@ -14,7 +14,7 @@ use glave_harness::{
     Protections, Sandbox, Settings, SystemClock, Workspace, agents_md,
 };
 use glave_memory::Tidier;
-use glave_ports::{Credentials, SpaceId};
+use glave_ports::{GitCredentials, SpaceId};
 use glave_process::Processes;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring};
@@ -25,12 +25,12 @@ use crate::client::{Client, Glave, Session};
 use crate::config::{self, Endpoint};
 use crate::credentials::Hosts;
 use crate::data::Data;
-use crate::gateway::Switch;
+use crate::gateway::GatewaySwitch;
 use crate::gateway::remote::Remote;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::projects::Projects;
-use crate::providers::{Built, Host, Lineup};
+use crate::providers::{Built, Lineup, ModelAccounts};
 use crate::reread::Rereading;
 use crate::setup::{self, Setup};
 use crate::terminal::Printer;
@@ -200,7 +200,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         models: lined.built.models.offered,
         modes: policy::thread_modes(choices, &setup.loaded.constraints),
         provider: lined.switch,
-        providers: lined.host.map(|host| host as Arc<dyn Providers>),
+        providers: lined.accounts.map(|kept| kept as Arc<dyn Providers>),
         rereads: Some(rereads),
         git_hosts: hosts.map(|hosts| hosts as Arc<dyn GitHosts>),
         log: store.log(),
@@ -264,7 +264,7 @@ async fn rereading(
         folder: folder.to_owned(),
         home: home::folder()?,
         start: start.clone(),
-        host: lined.host.clone(),
+        accounts: lined.accounts.clone(),
         switch: lined.switch.clone(),
         servers: Arc::clone(servers),
         projects: Arc::clone(projects),
@@ -278,7 +278,7 @@ async fn rereading(
 fn projects_for(
     setup: &Setup,
     servers: &Servers,
-    models: &Switch,
+    models: &GatewaySwitch,
     memory: Option<&crate::memory::Running>,
     asking: Asking,
 ) -> anyhow::Result<Arc<Projects>> {
@@ -336,7 +336,7 @@ async fn with_hosts(
     let hosts = Hosts::for_person(store, person, github, others_sign_in).await?;
     Ok(match hosts {
         Some(hosts) => {
-            let asked = Arc::clone(&hosts) as Arc<dyn Credentials>;
+            let asked = Arc::clone(&hosts) as Arc<dyn GitCredentials>;
             (workspace.with_credentials(asked), Some(hosts))
         }
         None => (workspace, None),
@@ -345,7 +345,7 @@ async fn with_hosts(
 
 /// Tidies memory in the background, when it is on: tidy-up asks the gateway too, which sends
 /// it on the `summary` route.
-fn tidy(memory: Option<&crate::memory::Running>, switch: &Switch, model: String) {
+fn tidy(memory: Option<&crate::memory::Running>, switch: &GatewaySwitch, model: String) {
     if let Some(memory) = memory {
         memory.tidy_with(Tidier {
             provider: switch.clone(),
@@ -357,9 +357,9 @@ fn tidy(memory: Option<&crate::memory::Running>, switch: &Switch, model: String)
 /// The models a run offers and the gateway to them.
 struct Lined {
     built: Built,
-    switch: Switch,
+    switch: GatewaySwitch,
     /// The person's model accounts, when they may connect them here.
-    host: Option<Arc<Host>>,
+    accounts: Option<Arc<ModelAccounts>>,
 }
 
 /// Lines up the models of `lineup` and of the model accounts `person` connected, which they
@@ -390,12 +390,13 @@ async fn line_up(
         }
         Err(error) => return Err(error),
     };
-    let switch = Switch::new(built.gateway.take());
-    let host = ledger.map(|ledger| Arc::new(Host::new(ledger, lineup, switch.clone())));
+    let switch = GatewaySwitch::new(built.gateway.take());
+    let model_accounts =
+        ledger.map(|ledger| Arc::new(ModelAccounts::new(ledger, lineup, switch.clone())));
     Ok(Lined {
         built,
         switch,
-        host,
+        accounts: model_accounts,
     })
 }
 

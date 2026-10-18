@@ -24,7 +24,7 @@ use super::super::backend::{Backend, Link, Spec};
 use super::{Kubernetes, KubernetesSettings};
 use crate::tls::Identity;
 use crate::token::Token;
-use crate::{Credentials, Limits, Switch, WorkerComputers};
+use crate::{CancelSwitch, Limits, WorkerComputers, WorkerCredentials};
 
 /// alpine 3.21, by the digest of its multi-platform index.
 const IMAGE: &str =
@@ -286,7 +286,7 @@ async fn real(cluster: &Kubernetes, image: &str, network: Network) {
         isolation: cluster.isolation(),
         ..Limits::default()
     };
-    let workers = WorkerComputers::kubernetes(cluster.clone(), limits, Credentials::None);
+    let workers = WorkerComputers::kubernetes(cluster.clone(), limits, WorkerCredentials::None);
     let environment = Environment {
         image: Image::Oci(image.to_owned()),
         network: Some(network),
@@ -317,7 +317,7 @@ async fn real(cluster: &Kubernetes, image: &str, network: Network) {
                     opened.id,
                     &Command::new("uname -s"),
                     &output,
-                    &Switch::default(),
+                    &CancelSwitch::default(),
                 )
                 .await
                 .map(|finished| (finished.ending, output.text(100)))

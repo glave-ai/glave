@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use glave_ports::auth::{AuthError, Credentials, Fresh, Header, Outgoing, Refreshing, Secret};
+use glave_ports::auth::{AuthError, Fresh, Header, Outgoing, Refreshing, RequestSigner, Secret};
 use glave_ports::{BoxFuture, Clock};
 use jiff::{SignedDuration, Timestamp};
 use serde::Deserialize;
@@ -141,7 +141,7 @@ impl Adc {
     }
 }
 
-impl Credentials for Adc {
+impl RequestSigner for Adc {
     fn authorize<'a>(
         &'a self,
         _request: &'a Outgoing<'a>,

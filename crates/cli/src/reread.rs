@@ -18,10 +18,10 @@ use glave_ports::{BoxFuture, ToolSource};
 use glave_session::{Apply, Changed, Models, Rereads, Runs};
 
 use crate::args::Args;
-use crate::gateway::Switch;
+use crate::gateway::GatewaySwitch;
 use crate::mcp::{self, Servers};
 use crate::projects::Projects;
-use crate::providers::{Host, Lineup};
+use crate::providers::{Lineup, ModelAccounts};
 use crate::setup::{NO_SANDBOX, Setup};
 
 /// What the person's settings change as they are read again.
@@ -41,8 +41,8 @@ pub struct Rereading {
     judge: std::sync::Mutex<Judge>,
     /// Where model accounts are kept, when the person may connect them here; else the gateway
     /// the models run on alone.
-    host: Option<Arc<Host>>,
-    switch: Switch,
+    accounts: Option<Arc<ModelAccounts>>,
+    switch: GatewaySwitch,
     servers: Arc<Servers>,
     projects: Arc<Projects>,
 }
@@ -53,8 +53,8 @@ pub struct Parts {
     pub folder: PathBuf,
     pub home: PathBuf,
     pub start: Choices,
-    pub host: Option<Arc<Host>>,
-    pub switch: Switch,
+    pub accounts: Option<Arc<ModelAccounts>>,
+    pub switch: GatewaySwitch,
     pub servers: Arc<Servers>,
     pub projects: Arc<Projects>,
 }
@@ -77,7 +77,7 @@ impl Rereading {
             seen: tokio::sync::Mutex::new(seen),
             judge: std::sync::Mutex::new(parts.start.judge.value.clone()),
             start: parts.start,
-            host: parts.host,
+            accounts: parts.accounts,
             switch: parts.switch,
             servers: parts.servers,
             projects: parts.projects,
@@ -146,8 +146,8 @@ impl Rereading {
     async fn models(&self, setup: &Setup) -> anyhow::Result<Models> {
         let (_, configured) = crate::providers::endpoint(&setup.choices)?;
         let lineup = Lineup::new(setup, configured);
-        if let Some(host) = &self.host {
-            return host.relined(lineup).await;
+        if let Some(accounts) = &self.accounts {
+            return accounts.relined(lineup).await;
         }
         let built = lineup.build(&[])?;
         self.switch.set(built.gateway);

@@ -48,7 +48,7 @@ fn commands_see_this_machine_and_the_computer_but_nothing_else() {
             .await
             .unwrap();
         let output = Collect::default();
-        let never = crate::Switch::default();
+        let never = crate::CancelSwitch::default();
         computers
             .run(here.id, &Command::new("env"), &output, &never)
             .await
@@ -73,7 +73,7 @@ impl Output for Collect {
 }
 
 /// Output that cancels the command once it has said its child is running.
-struct CancelsWhenUp(Collect, crate::Switch);
+struct CancelsWhenUp(Collect, crate::CancelSwitch);
 
 impl Output for CancelsWhenUp {
     fn write<'a>(&'a self, text: &'a str) -> BoxFuture<'a, ()> {
@@ -97,7 +97,7 @@ fn a_cancelled_command_returns_only_once_everything_it_started_has_gone() {
             .open(made.id, &Sources::Folder { path })
             .await
             .unwrap();
-        let cancel = crate::Switch::default();
+        let cancel = crate::CancelSwitch::default();
         let output = CancelsWhenUp(Collect::default(), cancel.clone());
         // One child that dies with bash, one that ignores SIGTERM and needs SIGKILL.
         let script = "sleep 30 & echo $! > plain.pid; (trap '' TERM; exec sleep 30) & \
@@ -254,7 +254,7 @@ fn a_credential_reaches_git_through_its_helper_and_never_a_disk() {
                 opened.id,
                 &Command::new("env; git config --list"),
                 &output,
-                &crate::Switch::default(),
+                &crate::CancelSwitch::default(),
             )
             .await
             .unwrap();

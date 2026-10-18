@@ -52,7 +52,7 @@ pub struct Header {
     pub value: Secret,
 }
 
-/// The request about to go out, for credentials that sign it.
+/// The request about to go out, for a [`RequestSigner`].
 #[derive(Debug, Clone, Copy)]
 pub struct Outgoing<'a> {
     pub method: &'a str,
@@ -62,8 +62,9 @@ pub struct Outgoing<'a> {
     pub body: &'a [u8],
 }
 
-/// Credentials that change: each request asks them for the headers that prove who is calling.
-pub trait Credentials: Send + Sync {
+/// Credentials that change, signing each request: each request asks the signer for the
+/// headers that prove who is calling.
+pub trait RequestSigner: Send + Sync {
     /// The headers that authenticate `request`: a fresh bearer token, or a signature over it.
     fn authorize<'a>(
         &'a self,
@@ -83,8 +84,8 @@ pub enum Auth {
     None,
     /// A fixed key, in the header the provider wants.
     Key { header: KeyHeader, key: Secret },
-    /// Credentials that change.
-    Changing(Arc<dyn Credentials>),
+    /// Credentials that change: a signer asked on each request.
+    Changing(Arc<dyn RequestSigner>),
 }
 
 impl Auth {
@@ -133,7 +134,7 @@ impl Auth {
                 name: header.name().to_owned(),
                 value: header.value(key),
             }]),
-            Self::Changing(credentials) => credentials.authorize(request).await,
+            Self::Changing(signer) => signer.authorize(request).await,
         }
     }
 
@@ -142,7 +143,7 @@ impl Auth {
         match self {
             Self::None => "no key".to_owned(),
             Self::Key { header, .. } => format!("the key in {}", header.name()),
-            Self::Changing(credentials) => credentials.describe(),
+            Self::Changing(signer) => signer.describe(),
         }
     }
 }
@@ -156,7 +157,7 @@ impl fmt::Debug for Auth {
                 .field("header", header)
                 .field("key", key)
                 .finish(),
-            Self::Changing(credentials) => write!(f, "Auth::Changing({})", credentials.describe()),
+            Self::Changing(signer) => write!(f, "Auth::Changing({})", signer.describe()),
         }
     }
 }
@@ -292,7 +293,7 @@ mod tests {
 
     struct Signer;
 
-    impl Credentials for Signer {
+    impl RequestSigner for Signer {
         fn authorize<'a>(
             &'a self,
             request: &'a Outgoing<'a>,

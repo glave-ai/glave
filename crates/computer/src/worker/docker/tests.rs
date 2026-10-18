@@ -20,7 +20,7 @@ use super::super::backend::{Backend, Link, Spec};
 use super::{Docker, DockerSettings};
 use crate::tls::Identity;
 use crate::token::Token;
-use crate::{Credentials, Limits, Switch, WorkerComputers};
+use crate::{CancelSwitch, Limits, WorkerComputers, WorkerCredentials};
 
 /// alpine 3.21, by the digest of its multi-platform index.
 const IMAGE: &str =
@@ -241,7 +241,8 @@ fn a_real_worker_runs_a_command_over_tls() {
         return;
     };
     block_on!(async {
-        let workers = WorkerComputers::docker(docker.clone(), Limits::default(), Credentials::None);
+        let workers =
+            WorkerComputers::docker(docker.clone(), Limits::default(), WorkerCredentials::None);
         let environment = Environment {
             image: Image::Oci(image),
             ..Environment::host()
@@ -259,7 +260,7 @@ fn a_real_worker_runs_a_command_over_tls() {
                         opened.id,
                         &Command::new("uname -s"),
                         &output,
-                        &Switch::default(),
+                        &CancelSwitch::default(),
                     )
                     .await
                     .map(|finished| (finished.ending, output.text(100)))

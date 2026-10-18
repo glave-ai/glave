@@ -15,7 +15,7 @@ use glave_ports::{
 
 use super::landlocked;
 use crate::local::sandbox_available;
-use crate::{LocalComputers, Switch};
+use crate::{CancelSwitch, LocalComputers};
 
 fn bubblewrap() -> bool {
     let available = sandbox_available();
@@ -90,7 +90,7 @@ fn run(
         let workspace: WorkspaceId = computers.open(computer.id, &sources).await?.id;
         let output = Collect::default();
         let finished = computers
-            .run(workspace, &command, &output, &Switch::default())
+            .run(workspace, &command, &output, &CancelSwitch::default())
             .await?;
         Ok((finished.ending, output.0.lock().unwrap().clone()))
     })

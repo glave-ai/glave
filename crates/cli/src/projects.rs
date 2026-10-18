@@ -20,7 +20,7 @@ use std::time::Duration;
 use glave_config::policy::memory_settings;
 use glave_config::policy::{Choices, Loaded, Locations};
 use glave_config::trust::{self, Answer, Outcome, Project};
-use glave_harness::{AGENTS_MD, Brought, Hooks, Projects as Host, Settled, agents_md};
+use glave_harness::{AGENTS_MD, Brought, Hooks, Settled, agents_md};
 use glave_memory::{GlaveMemory, Personal, SpaceMemory};
 use glave_ports::{BoxFuture, Clock, SpaceId, ToolSource};
 use glave_process::Processes;
@@ -29,7 +29,7 @@ use glave_session::protocol::{ApiError, TrustAsk, TrustItem, code};
 use tokio::task::JoinHandle;
 
 use crate::data::DataLog;
-use crate::gateway::Switch;
+use crate::gateway::GatewaySwitch;
 use crate::setup::off_note;
 use servers::Running;
 
@@ -53,7 +53,7 @@ pub struct Own {
     /// server of the same name gives way to theirs.
     pub taken: Vec<String>,
     /// The models a thread may be sent to now.
-    pub models: Switch,
+    pub models: GatewaySwitch,
     /// Memory, when it is on: each project's settings choose its space's.
     pub memory: Option<Arc<GlaveMemory<DataLog>>>,
     /// What tells how long a project's servers have gone unused.
@@ -76,7 +76,7 @@ pub struct Projects {
     base: RwLock<Arc<Base>>,
     /// The names of the person's own servers, as they run now.
     taken: RwLock<Vec<String>>,
-    models: Switch,
+    models: GatewaySwitch,
     memory: Option<Arc<GlaveMemory<DataLog>>>,
     /// The person's own memory as memory started: read in shared spaces while the settings
     /// allow it.
@@ -375,7 +375,7 @@ fn failed(error: &glave_config::Error) -> ApiError {
     )
 }
 
-impl Host for Projects {
+impl glave_harness::Projects for Projects {
     fn for_folder<'a>(
         &'a self,
         root: &'a Path,

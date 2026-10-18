@@ -11,11 +11,11 @@ use glave_identity::signin::is_loopback;
 use hyper::header::{self, HeaderMap};
 
 /// The names a loopback listener answers to.
-pub(crate) struct Hosts {
+pub(crate) struct ListenerNames {
     names: [String; 2],
 }
 
-impl Hosts {
+impl ListenerNames {
     /// The names of the listener bound at `bound`, when it listens on loopback alone.
     pub(crate) fn of(bound: SocketAddr) -> Option<Self> {
         is_loopback(bound.ip()).then(|| Self {
@@ -67,7 +67,7 @@ mod tests {
 
     #[test]
     fn a_loopback_listener_answers_only_its_own_names_and_pages() {
-        let hosts = Hosts::of("127.0.0.1:4180".parse().unwrap()).unwrap();
+        let hosts = ListenerNames::of("127.0.0.1:4180".parse().unwrap()).unwrap();
         for (host, origin) in [
             (Some("127.0.0.1:4180"), None),
             (Some("localhost:4180"), None),
@@ -91,9 +91,9 @@ mod tests {
 
     #[test]
     fn only_a_loopback_listener_checks() {
-        assert!(Hosts::of("0.0.0.0:8080".parse().unwrap()).is_none());
-        assert!(Hosts::of("192.168.1.2:8080".parse().unwrap()).is_none());
-        let ipv6 = Hosts::of("[::1]:4180".parse().unwrap()).unwrap();
+        assert!(ListenerNames::of("0.0.0.0:8080".parse().unwrap()).is_none());
+        assert!(ListenerNames::of("192.168.1.2:8080".parse().unwrap()).is_none());
+        let ipv6 = ListenerNames::of("[::1]:4180".parse().unwrap()).unwrap();
         assert!(ipv6.allow(&headers(Some("[::1]:4180"), Some("http://[::1]:4180"))));
     }
 }

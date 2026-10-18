@@ -22,13 +22,13 @@ use glave_session::{Server, TurnItem, TurnStream};
 use crate::asking;
 use crate::config::{self, Endpoint};
 use crate::data::{DataBlobs, DataLog};
-use crate::gateway::Switch;
+use crate::gateway::GatewaySwitch;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
 use crate::terminal::Printer;
 use crate::waiting::Waiting;
 
-pub type Glave = Server<Switch, DataLog, DataBlobs>;
+pub type Glave = Server<GatewaySwitch, DataLog, DataBlobs>;
 
 /// The approvals a turn requested, by thread and call, until each is pending or decided.
 type Requested = HashMap<(ThreadId, CallId), ApprovalRequested>;

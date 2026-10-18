@@ -50,7 +50,7 @@ impl Output for Text {
 
 async fn output_of(computers: &LocalComputers, at: WorkspaceId, script: &str) -> String {
     let text = Text(Mutex::default());
-    let never = crate::Switch::default();
+    let never = crate::CancelSwitch::default();
     computers
         .run(at, &Command::new(script), &text, &never)
         .await

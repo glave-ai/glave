@@ -11,7 +11,7 @@ use std::time::Duration;
 use glave_ports::BoxFuture;
 use glave_ports::Clock;
 use glave_ports::auth::{
-    AuthError, Credentials, Fresh, Header, Outgoing, Refreshing, Secret, safe_to_send,
+    AuthError, Fresh, Header, Outgoing, Refreshing, RequestSigner, Secret, safe_to_send,
 };
 use jiff::SignedDuration;
 use reqwest::header::CONTENT_TYPE;
@@ -146,7 +146,7 @@ impl WorkloadIdentity {
     }
 }
 
-impl Credentials for WorkloadIdentity {
+impl RequestSigner for WorkloadIdentity {
     fn authorize<'a>(
         &'a self,
         _request: &'a Outgoing<'a>,

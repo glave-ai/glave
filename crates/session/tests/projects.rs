@@ -12,7 +12,7 @@ use glave_event::{
     SpaceFolderSet, ThreadId, decode, encode,
 };
 use glave_harness::Projects;
-use glave_ports::testing::{FakeGitHost, FixedCredentials, fake_secret};
+use glave_ports::testing::{FakeGitHost, FixedGitCredentials, fake_secret};
 use glave_ports::{BoxFuture, CredentialHost, EventLog, Forge, GitCredential, SpaceId};
 use glave_session::protocol::{Meta, NewFolder, ProjectFolder, Reply, Request, code};
 use glave_session::signin::person;
@@ -248,7 +248,7 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
             url: host.url.clone(),
             forge: Forge::Other,
         }];
-        let fixed = Arc::new(FixedCredentials::new(hosts, credential));
+        let fixed = Arc::new(FixedGitCredentials::new(hosts, credential));
         let mut setup = Setup::new(Vec::new());
         setup.projects = Some(projects.clone());
         setup.credentials = Some(fixed.clone());

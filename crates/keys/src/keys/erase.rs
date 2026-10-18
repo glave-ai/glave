@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::error::KeyError;
 use crate::key_id::{KeyId, Period};
+use crate::material::KeyMaterial;
 use crate::record::{SpaceRecord, SpaceVersion};
-use crate::secret::Secret;
 use crate::storage::KeyStorage;
 
 use super::hierarchy::{ATTEMPTS, SpaceKey, key_id, unwrap_data, wrap_data, wrap_space};
@@ -153,7 +153,7 @@ impl<S: KeyStorage> Keys<S> {
             return Ok(());
         };
         let fresh = SpaceKey {
-            wrap: Secret::random()?,
+            wrap: KeyMaterial::random()?,
             name: self.space_key_at(scope, record, live.version).await?.name,
         };
         let version = record.next_version();

@@ -14,8 +14,8 @@ use glave_harness::{ApprovalMode, Memory, Projects, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
-    Completion, ComputerId, Credentials, EventLog, LogError, MemoryBlobs, MemoryLog, MemorySpaces,
-    OrgId, Scope, Space, SpaceId, SpaceKind, Spaces, WorkspaceInfo,
+    Completion, ComputerId, EventLog, GitCredentials, LogError, MemoryBlobs, MemoryLog,
+    MemorySpaces, OrgId, Scope, Space, SpaceId, SpaceKind, Spaces, WorkspaceInfo,
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
@@ -87,7 +87,7 @@ pub struct Setup {
     /// Where what a project asks to be trusted is read and kept.
     pub trust: Option<Arc<dyn ProjectTrust>>,
     /// Where commands' git, and a new project's clone, ask for credentials.
-    pub credentials: Option<Arc<dyn Credentials>>,
+    pub credentials: Option<Arc<dyn GitCredentials>>,
     /// The spaces another server keeps, to share its store; spaces of its own when none.
     pub spaces: Option<Arc<dyn Spaces>>,
     /// The browsers it signs in; with none, it signs in none.

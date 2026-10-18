@@ -7,7 +7,7 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use glave_ports::{CredentialAsk, CredentialHost, Credentials};
+use glave_ports::{CredentialAsk, CredentialHost, GitCredentials};
 use tokio::io::{AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
@@ -36,7 +36,7 @@ pub(super) async fn serve(
     listener: &TcpListener,
     password: &str,
     hosts: &[CredentialHost],
-    credentials: &dyn Credentials,
+    credentials: &dyn GitCredentials,
 ) {
     let mut reading = JoinSet::new();
     let mut oldest: VecDeque<AbortHandle> = VecDeque::new();
@@ -95,7 +95,7 @@ async fn read(
 async fn answer(
     mut write: OwnedWriteHalf,
     ask: &CredentialAsk,
-    credentials: &dyn Credentials,
+    credentials: &dyn GitCredentials,
 ) -> std::io::Result<()> {
     if let Some(credential) = credentials.request(ask).await
         && credential.check().is_ok()

@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use glave_ports::{OrgId, Scope};
 
 use crate::key_id::{KeyId, Period};
-use crate::secret::Secret;
+use crate::material::KeyMaterial;
 
 use super::hierarchy::SpaceKey;
 
@@ -36,7 +36,7 @@ impl Slot {
 
 #[derive(Debug, Clone)]
 pub(crate) enum Value {
-    Key(Secret),
+    Key(KeyMaterial),
     Space(SpaceKey),
     Version(u32),
     Id(KeyId),

@@ -164,7 +164,7 @@ mod credentials {
     use super::support::*;
     use glave_event::{Body, StopReason};
     use glave_harness::{AllowAll, Cancel};
-    use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedCredentials, fake_secret};
+    use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials, fake_secret};
     use glave_ports::{CredentialHost, Forge, GitCredential, MemoryLog};
     use serde_json::json;
 
@@ -186,7 +186,7 @@ mod credentials {
             },
         ];
         let credential = GitCredential::new("x-access-token", &token).unwrap();
-        let credentials = Arc::new(FixedCredentials::new(hosts, credential));
+        let credentials = Arc::new(FixedGitCredentials::new(hosts, credential));
         let fetch = format!(
             "GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 \
              git ls-remote {}/repo.git",

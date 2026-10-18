@@ -16,10 +16,10 @@ mod key_id;
 #[cfg(feature = "keychain")]
 mod keychain;
 mod keys;
+mod material;
 mod record;
 mod root;
 mod seal;
-mod secret;
 mod storage;
 
 pub use error::KeyError;
@@ -27,6 +27,6 @@ pub use key_id::{KeyId, Month, Period};
 #[cfg(feature = "keychain")]
 pub use keychain::KeychainRoot;
 pub use keys::{EventFields, KeySettings, Keys, Sealed, erased_payload};
+pub use material::KeyMaterial;
 pub use root::{KeyFileRoot, MemoryRoot, Root};
-pub use secret::Secret;
 pub use storage::{KeyStorage, MemoryKeyStorage, StoredSpace};

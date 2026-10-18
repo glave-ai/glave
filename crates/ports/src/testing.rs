@@ -16,7 +16,7 @@ use jiff::Timestamp;
 use crate::env::{Clock, Entropy};
 use crate::tools::{BoxFuture, Cancellation};
 
-pub use git::{FAKE_COMMIT, FakeGitHost, FixedCredentials};
+pub use git::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials};
 pub use http::{FakeHttp, Received};
 pub use process::Running;
 pub use secret::{FAKE_SECRET, fake_secret};
