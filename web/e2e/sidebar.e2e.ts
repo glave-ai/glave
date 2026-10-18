@@ -22,18 +22,30 @@ async function sortBy(page: Page, testId: string, sort: string): Promise<void> {
   await byTestId(page, `${testId}-choice`).filter({ hasText: sort }).click();
 }
 
+/** A row's marker as drawn: its width, and its contrast against the row's fill and the sidebar. */
+interface Marker {
+  readonly width: string;
+  readonly againstFill: number;
+  readonly againstSidebar: number;
+}
+
 /**
- * How far apart two colours on the page are, as WCAG measures contrast: the computed background
- * of `locator`, and the first one behind it that is not transparent.
+ * The bar beside the row `locator` (its `::before`), with its contrast as WCAG measures it
+ * against the row's own background and the first one behind the row that is not transparent.
  */
-async function contrastWithWhatIsBehind(locator: Locator): Promise<number> {
+async function markerOf(locator: Locator): Promise<Marker> {
   return locator.evaluate((element) => {
-    const channels = (color: string): readonly number[] =>
-      (color.match(/[\d.]+/gu) ?? []).map(Number);
-    const opaque = (node: Element): string | null => {
-      const color = getComputedStyle(node).backgroundColor;
-      return (channels(color)[3] ?? 1) === 0 ? null : color;
+    // Any colour the browser computes (rgb, oklch, color()) as sRGB bytes, painted on a canvas.
+    const canvas = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    const channels = (color: string): readonly number[] => {
+      canvas?.clearRect(0, 0, 1, 1);
+      if (canvas !== null) {
+        canvas.fillStyle = color;
+        canvas.fillRect(0, 0, 1, 1);
+      }
+      return Array.from(canvas?.getImageData(0, 0, 1, 1).data ?? []);
     };
+    const opaque = (color: string): boolean => (channels(color)[3] ?? 0) !== 0;
     const luminance = (color: string): number => {
       const [r = 0, g = 0, b = 0] = channels(color).map((value) => {
         const unit = value / 255;
@@ -41,16 +53,25 @@ async function contrastWithWhatIsBehind(locator: Locator): Promise<number> {
       });
       return 0.2126 * r + 0.7152 * g + 0.0722 * b;
     };
-    let behind: string | null = null;
+    const contrast = (one: string, other: string): number => {
+      const [a, b] = [luminance(one), luminance(other)];
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+    let sidebar = '';
     for (
       let node = element.parentElement;
-      node !== null && behind === null;
+      node !== null && sidebar === '';
       node = node.parentElement
     ) {
-      behind = opaque(node);
+      const color = getComputedStyle(node).backgroundColor;
+      sidebar = opaque(color) ? color : '';
     }
-    const [one, other] = [luminance(opaque(element) ?? ''), luminance(behind ?? '')];
-    return (Math.max(one, other) + 0.05) / (Math.min(one, other) + 0.05);
+    const bar = getComputedStyle(element, '::before');
+    return {
+      width: bar.width,
+      againstFill: contrast(bar.backgroundColor, getComputedStyle(element).backgroundColor),
+      againstSidebar: contrast(bar.backgroundColor, sidebar),
+    };
   });
 }
 
@@ -183,7 +204,7 @@ test('each + starts in its own place: a project, a thread in the project, a chat
 });
 
 for (const colorScheme of ['light', 'dark'] as const) {
-  test(`the thread shown is marked by its background alone, and the side nav passes axe (${colorScheme})`, async ({
+  test(`the thread shown is marked by a bar beside it, and the side nav passes axe (${colorScheme})`, async ({
     page,
   }) => {
     await page.emulateMedia({ colorScheme });
@@ -196,7 +217,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
     const weight = (row: Locator): Promise<string> =>
       row.evaluate((element) => getComputedStyle(element).fontWeight);
     expect(await weight(current)).toBe(await weight(other));
-    expect(await contrastWithWhatIsBehind(current)).toBeGreaterThanOrEqual(3);
+    // A bar 3px wide, 3:1 or more against the row's fill and against the sidebar.
+    const marker = await markerOf(current);
+    expect(marker.width).toBe('3px');
+    expect(marker.againstFill).toBeGreaterThanOrEqual(3);
+    expect(marker.againstSidebar).toBeGreaterThanOrEqual(3);
+    expect((await markerOf(other)).width).toBe('auto');
     await expectAccessible(page);
     // A closed project with its dot, and its menu open.
     await byTestId(page, 'nav-space-toggle').click();

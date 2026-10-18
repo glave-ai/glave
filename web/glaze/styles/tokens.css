@@ -34,7 +34,7 @@
     oklch(from var(--glz-accent) max(l, 0.78) c h)
   );
 
-  /* Text. Muted text keeps 4.5:1 or more on every surface but the selected one, which has none. */
+  /* Text. Muted text keeps 4.5:1 or more on every surface but the selected one. */
   --glz-color-text: light-dark(#1b1c1d, #ececec);
   --glz-color-text-secondary: light-dark(#2a2b2d, #d6d7d9);
   --glz-color-text-muted: light-dark(#63666b, #9a9da3);
@@ -80,11 +80,15 @@
   --glz-surface-overlay: light-dark(#fff, #222427);
   --glz-surface-bubble: light-dark(#efefef, #222427);
 
+  /* What is chosen, such as the thread shown in a side nav: a subtle fill beside its marker. */
+  --glz-surface-selected: light-dark(#e4e4e4, #25272a);
+
   /*
-   * What is chosen, such as the thread shown in a side nav: 3:1 or more against the side panes
-   * and the page (WCAG 1.4.11), with text (never muted) 4.5:1 or more on it.
+   * The marker beside what is chosen: a bar in a vertical list, an underline under a tab, a
+   * check by a picked option. The accent as it reads on the page, so 3:1 or more against the
+   * side panes, the page and the selected surface (WCAG 1.4.11).
    */
-  --glz-surface-selected: light-dark(#888, #666);
+  --glz-selected-marker: var(--glz-accent-text);
   --glz-surface-hover: light-dark(rgb(27 28 29 / 5%), rgb(236 236 236 / 6%));
   --glz-surface-inverse: light-dark(#1b1c1d, #ececec);
   --glz-color-on-inverse: light-dark(#fafafa, #121314);

@@ -31,7 +31,7 @@ describe('GlzNavItemComponent', () => {
     expect(link?.querySelector('svg')).not.toBeNull();
   });
 
-  it('marks the current page by its background alone, at the weight of the rest', async () => {
+  it('marks the current page, at the weight of the rest', async () => {
     const fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
