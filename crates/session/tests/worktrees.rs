@@ -27,7 +27,7 @@ fn a_thread_works_in_the_folder_unless_it_asks_for_a_worktree() {
         // This server's computer keeps no worktrees, so asking for one is refused.
         let refused = server
             .request(Request::ThreadStart {
-                space: None,
+                space: Some(scope().space),
                 background: false,
                 worktree: Some(true),
                 computer: None,

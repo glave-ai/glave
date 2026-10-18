@@ -177,7 +177,7 @@ fn a_task_never_works_in_a_folder_itself() {
         assert!(refused.message.contains("make it one"), "{refused}");
         let listed = server
             .request(Request::ThreadList {
-                space: None,
+                space: Some(scope().space),
                 limit: None,
                 show: None,
                 cursor: None,
@@ -191,7 +191,7 @@ fn a_task_never_works_in_a_folder_itself() {
         // Asked for in the folder itself, or on a thread that works there, it is refused.
         let in_place = server
             .request(Request::ThreadStart {
-                space: None,
+                space: Some(scope().space),
                 background: true,
                 worktree: Some(false),
                 computer: None,

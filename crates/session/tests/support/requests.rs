@@ -10,7 +10,7 @@ use glave_session::protocol::{
 };
 use glave_session::{Caller, TurnStream};
 
-use super::setup::Tested;
+use super::setup::{Tested, scope};
 
 /// A project called `name` whose folder is `path`, on this computer.
 pub async fn project<L: EventLog + 'static>(
@@ -38,7 +38,7 @@ pub async fn start_for_tasks<L: EventLog + 'static>(
     space: Option<SpaceId>,
 ) -> Result<ThreadId, ApiError> {
     let started = Request::ThreadStart {
-        space,
+        space: space.or(Some(scope().space)),
         background: true,
         worktree: None,
         computer: None,
@@ -69,7 +69,7 @@ pub async fn opened<L: EventLog + 'static>(
 /// Starts a thread, in a worktree of its own when `worktree`.
 pub async fn start<L: EventLog + 'static>(server: &Tested<L>, worktree: bool) -> ThreadId {
     let started = Request::ThreadStart {
-        space: None,
+        space: Some(scope().space),
         background: false,
         worktree: worktree.then_some(true),
         computer: None,

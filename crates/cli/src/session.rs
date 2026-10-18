@@ -14,7 +14,7 @@ use glave_harness::{
     SystemClock, Workspace, agents_md,
 };
 use glave_memory::Tidier;
-use glave_ports::{Credentials, ToolSource};
+use glave_ports::{Credentials, SpaceId, ToolSource};
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Server, Wiring};
 use glave_web::{Web, WebSettings};
@@ -112,6 +112,8 @@ struct Wired {
     servers: Servers,
     /// The default model's endpoint; none while no model is set up.
     endpoint: Option<Endpoint>,
+    /// The project of the folder glave runs in, where the terminal's threads are.
+    space: SpaceId,
     root: PathBuf,
     /// The instruction files the model is given, for the banner.
     files: Vec<PathBuf>,
@@ -227,6 +229,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         server,
         servers,
         endpoint: lined.built.endpoint,
+        space: scope.space,
         root,
         files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
         choices: setup.choices,
@@ -549,6 +552,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         server,
         servers,
         endpoint,
+        space,
         root,
         files,
         choices,
@@ -562,7 +566,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
     };
     crate::tasks::at_start(server, args).await;
     let here = Session::Here(server);
-    let (thread, note) = pick_thread(here, args.resume, None, None, None).await?;
+    let (thread, note) = pick_thread(here, Some(*space), args.resume, None, None, None).await?;
     if let Some(working) = crate::worktrees::note(server, thread).await {
         eprintln!("glave: {working}");
     }
@@ -605,11 +609,12 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
     Ok(code)
 }
 
-/// The thread to use: the newest one here with `--continue`, otherwise a new one, in a
-/// worktree of its own when `worktree` says so (the server's choice when it says nothing),
-/// choosing `model` and `approval` when they are given.
+/// The thread to use in `space` (the caller's Chats when none): the newest one there with
+/// `--continue`, otherwise a new one, in a worktree of its own when `worktree` says so (the
+/// server's choice when it says nothing), choosing `model` and `approval` when they are given.
 pub async fn pick_thread(
     server: Session<'_>,
+    space: Option<SpaceId>,
     resume: bool,
     worktree: Option<bool>,
     model: Option<String>,
@@ -618,7 +623,7 @@ pub async fn pick_thread(
     if resume {
         let latest = match server
             .request(Request::ThreadList {
-                space: None,
+                space,
                 limit: Some(1),
                 show: None,
                 cursor: None,
@@ -641,7 +646,7 @@ pub async fn pick_thread(
     };
     match server
         .request(Request::ThreadStart {
-            space: None,
+            space,
             background: false,
             worktree,
             computer: None,

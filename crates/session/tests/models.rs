@@ -40,7 +40,7 @@ fn from(model: &str, text: &str) -> Completion {
 
 async fn start_on(server: &Tested<Shared>, model: Option<&str>) -> Result<ThreadId, ApiError> {
     let started = Request::ThreadStart {
-        space: None,
+        space: Some(scope().space),
         worktree: None,
         background: false,
         computer: None,

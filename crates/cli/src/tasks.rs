@@ -10,6 +10,7 @@ use std::process::ExitCode;
 use anyhow::{Context as _, bail};
 use glave_event::{At, ScheduleId, ThreadId, When};
 use glave_harness::DEFAULT_BUDGET;
+use glave_ports::SpaceId;
 use glave_session::protocol::{Reply, Request};
 use jiff::Timestamp;
 use uuid::Uuid;
@@ -72,7 +73,7 @@ pub fn schedule_main(words: &[String]) -> ExitCode {
         let folder = std::env::current_dir()?;
         match words.split_first() {
             Some((add, rest)) if add == "add" => {
-                let request = schedule_request(rest)?;
+                let request = schedule_request(rest, Some(folder_space(&folder).await?))?;
                 add_schedule(&folder, request).await
             }
             Some((list, [])) if list == "list" => list_schedules(&folder).await,
@@ -134,12 +135,24 @@ async fn stop_task(folder: &Path, thread: ThreadId) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Starts `prompt` (or `args.goal`) as a task in a new thread, for `glave --background`.
+/// The project of `folder`, as glave run there finds it: a task or a schedule started here is
+/// its own, never the person's Chats.
+async fn folder_space(folder: &Path) -> anyhow::Result<SpaceId> {
+    let store = crate::data::Data::here().await?;
+    let person = crate::identity::load_or_make(&crate::home::folder()?)
+        .await?
+        .person;
+    Ok(crate::spaces::here(&store, folder, person).await?.space)
+}
+
+/// Starts `prompt` (or `args.goal`) as a task in a new thread of this folder's project, for
+/// `glave --background`.
 pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
     let folder = std::env::current_dir()?;
+    let space = folder_space(&folder).await?;
     let mut host = Host::connect_or_start(&folder, args).await?;
     let started = Request::ThreadStart {
-        space: None,
+        space: Some(space),
         worktree: args.worktree.then_some(true),
         background: true,
         computer: None,
@@ -228,8 +241,8 @@ async fn remove_schedule(folder: &Path, schedule: ScheduleId) -> anyhow::Result<
     Ok(())
 }
 
-/// `schedule/create` from the words after `glave schedule add`.
-fn schedule_request(words: &[String]) -> anyhow::Result<Request> {
+/// `schedule/create` in `space` from the words after `glave schedule add`.
+fn schedule_request(words: &[String], space: Option<SpaceId>) -> anyhow::Result<Request> {
     let mut when = None;
     let mut goal = false;
     let mut budget = DEFAULT_BUDGET;
@@ -266,7 +279,7 @@ fn schedule_request(words: &[String]) -> anyhow::Result<Request> {
         bail!("glave schedule add needs a prompt");
     }
     Ok(Request::ScheduleCreate {
-        space: None,
+        space,
         when,
         prompt,
         goal,
@@ -300,13 +313,10 @@ mod tests {
             goal,
             budget,
             ..
-        } = schedule_request(&words(&[
-            "0 9 * * 1-5",
-            "triage",
-            "issues",
-            "--budget",
-            "5000",
-        ]))
+        } = schedule_request(
+            &words(&["0 9 * * 1-5", "triage", "issues", "--budget", "5000"]),
+            None,
+        )
         .unwrap()
         else {
             panic!("schedule/create");
@@ -318,12 +328,10 @@ mod tests {
         );
         let Request::ScheduleCreate {
             when, goal, budget, ..
-        } = schedule_request(&words(&[
-            "--at",
-            "2026-10-11T09:00:00Z",
-            "--goal",
-            "make it pass",
-        ]))
+        } = schedule_request(
+            &words(&["--at", "2026-10-11T09:00:00Z", "--goal", "make it pass"]),
+            None,
+        )
         .unwrap()
         else {
             panic!("schedule/create");
@@ -337,7 +345,7 @@ mod tests {
             &["0 9 * * *", "x", "--every"],
             &["0 9 * * *", "x", "--worktree"],
         ] {
-            assert!(schedule_request(&words(wrong)).is_err(), "{wrong:?}");
+            assert!(schedule_request(&words(wrong), None).is_err(), "{wrong:?}");
         }
     }
 }

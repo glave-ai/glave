@@ -112,7 +112,7 @@ Every command is a client of the person's server over its socket, or of a server
 - **Found by the server**: the project whose folder is this folder; else, inside a git repository, the project of the repository's top folder or of its `origin` (`storage.md`, "Spaces"); else none. A subfolder of a repository opens its project and never moves the project's folder; a folder that is its own repository is never taken for a project above it.
 - **A new folder asks once** (decided), in the terminal: "Make ~/code/app a glave project?" Yes makes it, as the app's New project does (`space/create` with the folder); No runs nothing and keeps nothing, so it asks again next time, as trust's "Not now" does. The lookup that asks first makes nothing; it is new. With no one at the terminal the folder becomes a project without asking, as today: a script that runs glave in a folder has chosen it, and nothing a project brings runs until it is trusted.
 - **Never a project**: the home folder, the folders above it, and the temporary folder. `glave` there opens Chats, and `glave "…"` starts a chat in a scratch folder of its own (`computers.md`).
-- **No server's own space.** A request that names no space acts in the caller's Chats; today it acts in the space of the folder the server started in.
+- **No server's own space.** A request that names no space acts in the caller's Chats, whatever folder the server started in.
 
 ## Each project's own tools, hooks and settings
 
