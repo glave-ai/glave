@@ -273,24 +273,41 @@ where
             Request::SpaceFolderSet { space, path } => self.move_folder(caller, space, path).await,
             Request::SpaceRemove { space } => self.remove_space(caller, space).await,
             Request::FolderList { path } => self.list_folders(caller, path).await,
-            Request::MemoryList { scope } => self.remember(caller, Control::List { scope }).await,
-            Request::MemorySave { text, scope } => {
-                self.remember(caller, Control::Save { text, scope }).await
+            Request::MemoryList { scope, space } => {
+                self.remember(caller, space, Control::List { scope }).await
             }
-            Request::MemoryEdit { memory, text } => {
-                self.remember(caller, Control::Edit { memory, text }).await
+            Request::MemorySave { text, scope, space } => {
+                self.remember(caller, space, Control::Save { text, scope })
+                    .await
             }
-            Request::MemoryMove { memory, scope } => {
-                self.remember(caller, Control::Move { memory, scope }).await
+            Request::MemoryEdit {
+                memory,
+                text,
+                space,
+            } => {
+                self.remember(caller, space, Control::Edit { memory, text })
+                    .await
             }
-            Request::MemoryForget { memory, all, scope } => {
-                match crate::memory::forget(memory, all, scope) {
-                    Ok(control) => self.remember(caller, control).await,
-                    Err(refused) => Err(refused),
-                }
+            Request::MemoryMove {
+                memory,
+                scope,
+                space,
+            } => {
+                self.remember(caller, space, Control::Move { memory, scope })
+                    .await
             }
-            Request::MemoryRestore { memory } => {
-                self.remember(caller, Control::Restore { memory }).await
+            Request::MemoryForget {
+                memory,
+                all,
+                scope,
+                space,
+            } => match crate::memory::forget(memory, all, scope) {
+                Ok(control) => self.remember(caller, space, control).await,
+                Err(refused) => Err(refused),
+            },
+            Request::MemoryRestore { memory, space } => {
+                self.remember(caller, space, Control::Restore { memory })
+                    .await
             }
             Request::ProviderConnect { kind, key, url } => {
                 let new = NewProvider { kind, key, url };

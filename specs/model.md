@@ -76,9 +76,9 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 ## Where the code disagrees
 
-1. **A server still keeps a little of the folder it started in:** its skills and commands reach every thread, `memory/*` acts in its space, and only its threads go to workers (`session.md`, "Where a thread works"). Otherwise every project owns its folder, and its settings, servers and hooks reach its threads alone; a request that names no space acts in the caller's Chats.
+1. **A server still keeps a little of the folder it started in:** its skills and commands reach every thread, `memory/*` acts in its space when a request names none, and only its threads go to workers (`session.md`, "Where a thread works"). Otherwise every project owns its folder, and its settings, servers and hooks reach its threads alone; a request that names no space acts in the caller's Chats.
 2. **`glave app` serves in the folder it starts in,** so that folder becomes a project, and a folder no key leads to becomes a project without asking (`storage.md`, "Spaces"). The CLI becomes a client of the person's server, and a new folder asks once. `glave` alone starts a chat in the terminal, one turn per line; it opens the browser instead.
-3. **`glave memory` still opens the store itself** rather than asking the person's server, since `memory/*` acts in the server's own space (item 1); the CLI's other commands for tasks, schedules, threads and git hosts are clients of the server (`one-server.md`, 2c).
+3. **Settled** (`one-server.md`, 2c): tasks and schedules run in the person's server, and the CLI's commands for tasks, schedules, threads, memory and git hosts are its clients.
 4. **Settings are read from files and environment variables,** model accounts are refused on an organization's server, and there is one cloud provider at a time (`policy.md`, `session.md` "Model accounts", `gateway.md`). Settings become data (#222, #289, #290).
 5. **The gateway service is configured from its own environment** (`gateway.md`, "Surfaces"). It becomes a role of the server, reading the same data.
 6. **There are no teams,** policy can't tell callers apart, and budgets live in one process's memory. Teams and grants fix all three.

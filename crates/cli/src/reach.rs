@@ -47,7 +47,7 @@ impl Reached {
             Self::Server(server) => server.request(request).await,
             Self::Here(wired) => Box::pin(wired.server.request(request))
                 .await
-                .map_err(|error| anyhow::anyhow!("{error}")),
+                .map_err(anyhow::Error::new),
         }
     }
 
