@@ -1,5 +1,9 @@
 //! Making a conversation fit the model: the oldest tool outputs give way to a short note, and a
-//! refusal that states the model's real context window is believed for the rest of the session.
+//! refusal that states a model's real context window is believed for that model for the rest
+//! of the session.
+
+use std::collections::VecDeque;
+use std::sync::{Mutex, PoisonError};
 
 use glave_event::Part;
 use glave_ports::Message;
@@ -62,6 +66,40 @@ pub(crate) fn stated_window(message: &str) -> Option<u64> {
     })
 }
 
+/// The most models whose window is remembered; the one learned longest ago is let go first.
+const MAX_LEARNED: usize = 64;
+
+/// The context windows too-long refusals have stated, by model: one model's refusal says
+/// nothing of another's.
+#[derive(Debug, Default)]
+pub(crate) struct LearnedWindows {
+    windows: Mutex<VecDeque<(String, u64)>>,
+}
+
+impl LearnedWindows {
+    /// The window a refusal stated for `model`, if one has.
+    pub(crate) fn of(&self, model: &str) -> Option<u64> {
+        self.lock()
+            .iter()
+            .find(|(learned, _)| learned == model)
+            .map(|(_, tokens)| *tokens)
+    }
+
+    /// Believes `tokens` for `model` from now on.
+    pub(crate) fn learn(&self, model: &str, tokens: u64) {
+        let mut windows = self.lock();
+        windows.retain(|(learned, _)| learned != model);
+        if windows.len() >= MAX_LEARNED {
+            windows.pop_front();
+        }
+        windows.push_back((model.to_owned(), tokens));
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<(String, u64)>> {
+        self.windows.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +150,31 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn a_window_is_learned_for_its_model_alone() {
+        let windows = LearnedWindows::default();
+        windows.learn("a", 4_096);
+        assert_eq!(windows.of("a"), Some(4_096));
+        assert_eq!(windows.of("b"), None, "another model's window is unchanged");
+        windows.learn("a", 8_192);
+        assert_eq!(
+            windows.of("a"),
+            Some(8_192),
+            "the latest refusal is believed"
+        );
+    }
+
+    #[test]
+    fn the_window_learned_longest_ago_goes_first() {
+        let windows = LearnedWindows::default();
+        for n in 0..=MAX_LEARNED {
+            windows.learn(&format!("model-{n}"), 1_000);
+        }
+        assert_eq!(windows.of("model-0"), None);
+        assert_eq!(windows.of(&format!("model-{MAX_LEARNED}")), Some(1_000));
+        assert_eq!(windows.lock().len(), MAX_LEARNED);
     }
 
     #[test]

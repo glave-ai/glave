@@ -446,7 +446,7 @@ where
     /// After a refusal as too long for the model: the thread counts as full, so the next step
     /// compacts first and then tries again.
     fn mark_full(&self, thread: &mut Thread, refused: &ProviderError) {
-        self.learn_window(refused);
+        self.learn_window(&self.model_for(thread), refused);
         thread.measured = Some(Measured {
             tokens: u64::MAX,
             chars: chars(&thread.messages),

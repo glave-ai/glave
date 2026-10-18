@@ -2,7 +2,6 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use glave_event::{
@@ -34,6 +33,7 @@ use crate::memory::MemoryState;
 use crate::projects::{Brought, Projects};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
+use crate::room::LearnedWindows;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
 use crate::worker::Workers;
@@ -148,8 +148,8 @@ pub struct Harness<P, L, B, A> {
     pub(crate) default: RwLock<DefaultModel>,
     /// Who every thread works for, and the agent that runs it: from the settings, or made once.
     pub(crate) actors: Actors,
-    /// The model's real context window, once a refusal has stated it; 0 until then.
-    pub(crate) learned_window: AtomicU64,
+    /// Each model's real context window, once a refusal has stated it.
+    pub(crate) learned_windows: LearnedWindows,
     /// Where threads placed on a worker get one; none by default.
     pub(crate) workers: Option<Workers>,
     /// What threads remember from one to the next; none by default, so the model is sent
@@ -361,7 +361,7 @@ where
                 provider: settings.provider.clone(),
             }),
             settings,
-            learned_window: AtomicU64::new(0),
+            learned_windows: LearnedWindows::default(),
             workers: None,
             memory: None,
             projects: None,

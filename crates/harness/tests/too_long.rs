@@ -1,6 +1,7 @@
 //! A model whose window is smaller than glave thought: a step refused as too long compacts the
 //! thread and tries again; a summary refused as too long loses its oldest tool outputs first;
-//! and a step still too long after that fails with the refusal.
+//! and a step still too long after that fails with the refusal. The window a refusal states is
+//! believed for that model alone.
 
 #[cfg(test)]
 #[path = "support/script.rs"]
@@ -15,6 +16,7 @@ mod too_long {
 
     use glave_event::{Outcome, Part, StopReason};
     use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Parts};
+    use glave_ports::Caller;
     use glave_ports::testing::{CountingEntropy, ManualClock};
     use glave_ports::{
         Completion, Delta, Failure, InMemoryBlobs, InMemoryLog, Message, ModelProvider,
@@ -141,6 +143,52 @@ mod too_long {
             assert!(
                 restarted.contains("Summary: read big.txt.") && restarted.contains("and now?"),
                 "{restarted}"
+            );
+        });
+    }
+
+    #[test]
+    fn a_window_one_model_states_leaves_another_models_alone() {
+        block_on!(async {
+            let mut answers = first_turn();
+            answers.extend([
+                too_long(),
+                Ok(text("Summary: read big.txt.")),
+                Ok(text("Done.")),
+                Ok(text("Summary of the other.")),
+            ]);
+            let (harness, seen) = harness("too-long-per-model", answers).await;
+            let cancel = Cancel::new();
+            let mut cramped = harness.start_thread(scope()).await.unwrap();
+            harness
+                .run_turn(&mut cramped, "read big.txt", &cancel, &mut |_| {})
+                .await
+                .unwrap();
+            harness
+                .run_turn(&mut cramped, "and now?", &cancel, &mut |_| {})
+                .await
+                .unwrap();
+            let mut roomy = harness.start_thread(scope()).await.unwrap();
+            harness
+                .choose_model(&mut roomy, &Caller::default(), "roomy-model")
+                .await
+                .unwrap();
+            harness
+                .compact(&mut roomy, &cancel, &mut |_| {})
+                .await
+                .unwrap();
+            let seen = seen.lock().unwrap();
+            assert_eq!(seen.len(), 6);
+            assert_eq!(
+                seen[3].max_output_tokens,
+                Some(1_024),
+                "the refused model's summary fits the window it stated"
+            );
+            assert_eq!(seen[5].model, "roomy-model");
+            assert_eq!(
+                seen[5].max_output_tokens,
+                Some(4_000),
+                "another model's summary keeps the configured window"
             );
         });
     }
