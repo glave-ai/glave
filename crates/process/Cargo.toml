@@ -1,0 +1,24 @@
+[package]
+name = "glave-process"
+description = "Every operating-system process glave owns: started in one place, in a process group of its own, recorded in a ledger while it runs, and stopped at the next start when the glave that owned it is gone"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Signalling a process group, and seeing whether one is still there.
+rustix = { workspace = true, features = ["process"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["process", "rt", "time"] }
+
+[dev-dependencies]
+# The runtime tests run on (`block_on!`).
+glave-ports = { workspace = true, features = ["conformance"] }
+
+[lints]
+workspace = true

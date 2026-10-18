@@ -17,7 +17,14 @@ mod changes {
 
     fn launch(config: &ServerConfig) -> McpServer {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        McpServer::start("t", config, &BTreeMap::new(), dir, Limits::default())
+        McpServer::start(
+            "t",
+            config,
+            &BTreeMap::new(),
+            dir,
+            Limits::default(),
+            &glave_process::Processes::unrecorded(),
+        )
     }
 
     fn program(args: &[&str]) -> ServerConfig {

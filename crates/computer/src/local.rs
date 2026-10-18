@@ -32,6 +32,7 @@ use glave_ports::{
     Globbed, Image, Listed, Listing, Network, Output, Printed, Save, Saved, Search, Searched, Size,
     Sources, Stat, State, WorkspaceId, WorkspaceInfo,
 };
+use glave_process::{Owner, Processes};
 
 use background::Backgrounds;
 use command::Keep;
@@ -63,6 +64,8 @@ pub struct LocalComputers {
     registry: Registry,
     /// The commands its workspaces keep running in the background.
     background: Backgrounds,
+    /// Where its commands are recorded while they run, each owned by its workspace.
+    processes: Processes,
 }
 
 impl LocalComputers {
@@ -84,6 +87,7 @@ impl LocalComputers {
             environment: Arc::new(without_secrets(environment)),
             registry: Registry::default(),
             background: Backgrounds::default(),
+            processes: Processes::unrecorded(),
         }
     }
 
@@ -144,6 +148,15 @@ impl LocalComputers {
     #[must_use]
     pub fn with_sandbox_helper(mut self, program: impl Into<PathBuf>) -> Self {
         self.sandbox_helper = Some(program.into());
+        self
+    }
+
+    /// Records the commands its workspaces start in `processes`' ledger while they run, so a
+    /// glave that starts after this one crashed stops them (`glave_process`). Without it they
+    /// are still stopped with their workspace, only not recorded.
+    #[must_use]
+    pub fn with_processes(mut self, processes: Processes) -> Self {
+        self.processes = processes;
         self
     }
 
@@ -228,6 +241,7 @@ impl LocalComputers {
             environment,
             credential: credential.cloned(),
             prepared: Mutex::new(None),
+            processes: self.processes.owned_by(Owner::Workspace(id.to_string())),
         };
         if let Err(error) = self.registry.add_workspace(id, opened) {
             if copy {
@@ -322,7 +336,7 @@ impl LocalComputers {
             Ok(id) => Ok(id),
             // Another start took the last place meanwhile.
             Err(mut spawned) => {
-                process::stop(&mut spawned.child).await;
+                spawned.child.stop().await;
                 Err(self
                     .background
                     .room(workspace)

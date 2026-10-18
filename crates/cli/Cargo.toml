@@ -44,6 +44,9 @@ glave-keys = { workspace = true, features = ["keychain"] }
 glave-mcp.workspace = true
 glave-memory.workspace = true
 glave-ports.workspace = true
+# Every process glave starts, recorded under GLAVE_HOME/run while it runs, and what a glave
+# that ended left, stopped as glave starts.
+glave-process.workspace = true
 glave-provider-anthropic.workspace = true
 glave-provider-openai.workspace = true
 glave-session.workspace = true

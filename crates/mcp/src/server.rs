@@ -11,11 +11,11 @@ use glave_event::Arguments;
 use glave_ports::{
     BoxFuture, Cancellation, ToolError, ToolInfo, ToolOutput, ToolSource, unless_cancelled,
 };
+use glave_process::{Child, ProcessError, Processes, Program};
 use http::{HeaderName, HeaderValue};
 use rmcp::service::RoleClient;
 use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
-use rmcp::transport::{IntoTransport, StreamableHttpClientTransport, TokioChildProcess};
-use tokio::process::Command;
+use rmcp::transport::{IntoTransport, StreamableHttpClientTransport};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -47,6 +47,9 @@ impl Default for Limits {
     }
 }
 
+/// How long a server whose input is closed has to exit before it is stopped.
+const EXITING: Duration = Duration::from_secs(3);
+
 #[derive(Clone)]
 enum State {
     Starting,
@@ -60,6 +63,9 @@ pub struct McpServer {
     state: watch::Receiver<State>,
     /// The start in the background, until it is over or the server is closed.
     starting: Mutex<Option<JoinHandle<()>>>,
+    /// A server's process, once started: stopped, with everything it started, when the
+    /// server is closed or dropped.
+    process: Arc<Mutex<Option<Child>>>,
     call_limit: Duration,
     /// Whether what every tool and resource of the server returns is untrusted, as the person
     /// or a policy marked it.
@@ -68,39 +74,50 @@ pub struct McpServer {
 
 impl McpServer {
     /// Starts the server `config` describes: a program in `dir`, which gets the few
-    /// `PASSED_ON` variables from `environment`, then its own; or a server at a URL.
+    /// `PASSED_ON` variables from `environment`, then its own, started through `processes`
+    /// for its owner; or a server at a URL.
     pub fn start(
         name: &str,
         config: &ServerConfig,
         environment: &BTreeMap<String, String>,
         dir: &Path,
         limits: Limits,
+        processes: &Processes,
     ) -> Self {
         if tokio::runtime::Handle::try_current().is_err() {
             let error = McpError::start(name, "glave started it outside its async runtime");
             return Self::failed(name, error, limits);
         }
-        let started = match config {
+        match config {
             ServerConfig::Stdio { command, args, env } => {
-                let process = process(command, args, env, environment, dir);
-                Self::program(name, process, command, limits)
+                let program = program(command, args, env, environment, dir);
+                Self::program(name, program, processes.clone(), limits)
             }
-            ServerConfig::Http { url, headers } => Self::http(name, url, headers, limits, false),
-        };
-        started.unwrap_or_else(|error| Self::failed(name, error, limits))
+            ServerConfig::Http { url, headers } => Self::http(name, url, headers, limits, false)
+                .unwrap_or_else(|error| Self::failed(name, error, limits)),
+        }
     }
 
-    fn program(
-        name: &str,
-        process: Command,
-        command: &str,
-        limits: Limits,
-    ) -> Result<Self, McpError> {
-        let (transport, _) = TokioChildProcess::builder(process)
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|err| McpError::start(name, format!("could not run {command}: {err}")))?;
-        Ok(Self::connect(name, transport, limits))
+    /// A server that is a program, started in the background with its connection, its
+    /// standard error dropped.
+    fn program(name: &str, mut program: Program, processes: Processes, limits: Limits) -> Self {
+        let owned = name.to_owned();
+        let transport = async move {
+            let mut child = processes.spawn(&mut program).await.map_err(|error| {
+                let message = match error {
+                    ProcessError::Start { program, source } => {
+                        format!("could not run {program}: {source}")
+                    }
+                    other => other.to_string(),
+                };
+                McpError::start(&owned, message)
+            })?;
+            let pipes = child.stdout.take().zip(child.stdin.take());
+            let pipes = pipes
+                .ok_or_else(|| McpError::start(&owned, "its input and output were not kept"))?;
+            Ok((pipes, Some(child)))
+        };
+        Self::open(name, transport, limits, false)
     }
 
     /// A gateway's catalog at `url` (its `/mcp`), sent `headers` with every request: one
@@ -136,7 +153,12 @@ impl McpServer {
         }
         let config = StreamableHttpClientTransportConfig::with_uri(url).custom_headers(sent);
         let transport = StreamableHttpClientTransport::from_config(config);
-        Ok(Self::open(name, transport, limits, catalog))
+        Ok(Self::open(
+            name,
+            async { Ok((transport, None)) },
+            limits,
+            catalog,
+        ))
     }
 
     /// Starts talking MCP over `transport`.
@@ -146,10 +168,17 @@ impl McpServer {
         E: std::error::Error + Send + Sync + 'static,
         A: 'static,
     {
-        Self::open(name, transport, limits, false)
+        Self::open(name, async { Ok((transport, None)) }, limits, false)
     }
 
-    fn open<T, E, A>(name: &str, transport: T, limits: Limits, catalog: bool) -> Self
+    /// Talks MCP over the transport `transport` makes, in the background, with the server's
+    /// process when it has one: kept while connected, and stopped if it never connects.
+    fn open<T, E, A>(
+        name: &str,
+        transport: impl Future<Output = Result<(T, Option<Child>), McpError>> + Send + 'static,
+        limits: Limits,
+        catalog: bool,
+    ) -> Self
     where
         T: IntoTransport<RoleClient, E, A> + Send + 'static,
         E: std::error::Error + Send + Sync + 'static,
@@ -161,8 +190,20 @@ impl McpServer {
         };
         let (sender, state) = watch::channel(State::Starting);
         let owned = name.to_owned();
+        let process = Arc::new(Mutex::new(None));
+        let held = Arc::clone(&process);
         let starting = runtime.spawn(async move {
-            let opened = Connection::open(&owned, transport, limits.startup, catalog).await;
+            let opened = match transport.await {
+                Ok((transport, child)) => {
+                    let opened = Connection::open(&owned, transport, limits.startup, catalog);
+                    let opened = opened.await;
+                    if opened.is_ok() {
+                        *held.lock().unwrap_or_else(PoisonError::into_inner) = child;
+                    }
+                    opened
+                }
+                Err(error) => Err(error),
+            };
             sender.send_replace(match opened {
                 Ok(connection) => State::Ready(Arc::new(connection)),
                 Err(err) => State::Failed(err),
@@ -172,6 +213,7 @@ impl McpServer {
             name: name.to_owned(),
             state,
             starting: Mutex::new(Some(starting)),
+            process,
             call_limit: limits.call,
             untrusted: false,
         }
@@ -196,6 +238,7 @@ impl McpServer {
             name: name.to_owned(),
             state: watch::channel(State::Failed(error)).1,
             starting: Mutex::new(None),
+            process: Arc::new(Mutex::new(None)),
             call_limit: limits.call,
             untrusted: false,
         }
@@ -236,7 +279,8 @@ impl McpServer {
     }
 
     /// Stops the server: a start still under way is abandoned, and a started server has its
-    /// input closed, then is killed if it has not exited within a few seconds.
+    /// input closed, then is stopped with everything it started if it has not exited within a
+    /// few seconds.
     pub async fn close(&self) {
         let starting = self
             .starting
@@ -251,6 +295,17 @@ impl McpServer {
         let state = self.state.borrow().clone();
         if let State::Ready(connection) = state {
             connection.close().await;
+        }
+        let process = self
+            .process
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(mut process) = process {
+            if tokio::time::timeout(EXITING, process.wait()).await.is_err() {
+                process.stop().await;
+            }
+            process.stop_left().await;
         }
     }
 
@@ -327,28 +382,29 @@ impl McpServer {
     }
 }
 
-/// The program for a server, with only the environment it should have. If glave goes
-/// without closing it, the server goes too.
-fn process(
+/// The program for a server, with only the environment it should have.
+fn program(
     command: &str,
     args: &[String],
     env: &BTreeMap<String, String>,
     environment: &BTreeMap<String, String>,
     dir: &Path,
-) -> Command {
-    let mut process = Command::new(command);
-    process
+) -> Program {
+    let mut program = Program::new(command);
+    program
         .args(args)
         .current_dir(dir)
         .env_clear()
-        .kill_on_drop(true);
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
     for variable in PASSED_ON {
         if let Some(value) = environment.get(*variable) {
-            process.env(variable, value);
+            program.env(variable, value);
         }
     }
-    process.envs(env);
-    process
+    program.envs(env);
+    program
 }
 
 impl Drop for McpServer {

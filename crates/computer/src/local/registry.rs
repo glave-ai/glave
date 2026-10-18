@@ -35,6 +35,8 @@ pub(crate) struct Opened {
     /// The sandbox its commands last ran in, prepared once and kept while they ask for the
     /// same one, so its temp folder lasts as long as the workspace.
     pub(crate) prepared: Mutex<Option<Arc<Prepared>>>,
+    /// Where its commands start, owned by it.
+    pub(crate) processes: glave_process::Processes,
 }
 
 impl Opened {

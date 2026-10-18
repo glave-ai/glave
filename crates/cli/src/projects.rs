@@ -22,6 +22,7 @@ use glave_config::trust::{self, Answer, Outcome, Project};
 use glave_harness::{AGENTS_MD, Brought, Hooks, Projects as Host, Settled, agents_md};
 use glave_memory::GlaveMemory;
 use glave_ports::{BoxFuture, Clock, SpaceId, ToolSource};
+use glave_process::Processes;
 use glave_session::ProjectTrust;
 use glave_session::protocol::{ApiError, TrustAsk, TrustItem, code};
 use tokio::task::JoinHandle;
@@ -56,6 +57,8 @@ pub struct Own {
     pub memory: Option<Arc<GlaveMemory<DataLog>>>,
     /// What tells how long a project's servers have gone unused.
     pub clock: Box<dyn Clock>,
+    /// Where a project's servers start, each owned by its project.
+    pub processes: Processes,
 }
 
 /// Every project as this glave reads it: see the module's documentation.
@@ -68,6 +71,7 @@ pub struct Projects {
     models: Switch,
     memory: Option<Arc<GlaveMemory<DataLog>>>,
     clock: Box<dyn Clock>,
+    processes: Processes,
     /// Who answers what a project asks: the person from an app, or no one.
     answer: Answer,
     /// Projects' servers, most recently used last; and those that were replaced or put away
@@ -91,6 +95,7 @@ impl Projects {
             models: own.models,
             memory: own.memory,
             clock: own.clock,
+            processes: own.processes,
             answer: if later { Answer::Later } else { Answer::NoOne },
             running: Mutex::new(Running::default()),
             tidying: Mutex::new(None),
@@ -225,7 +230,10 @@ impl Projects {
     ) -> Vec<Arc<dyn ToolSource>> {
         let now = self.clock.now();
         let constraints = &self.loaded.constraints;
-        let (sources, closing) = self.lock().sources(root, trusted, now, constraints);
+        let processes = &self.processes;
+        let (sources, closing) = self
+            .lock()
+            .sources(root, trusted, now, constraints, processes);
         servers::close(closing).await;
         sources
     }

@@ -4,7 +4,8 @@
 //! group whole when asked, at its time limit, or once nothing has read its output for
 //! [`glave_ports::IDLE`]; when the
 //! command exits by itself, it stops whatever the command left running. Dropping the registry
-//! kills every group still running, so nothing outlives this machine's computers.
+//! drops every watcher, and with it each command's `Child`, which kills its group, so nothing
+//! outlives this machine's computers.
 
 mod unread;
 
@@ -21,7 +22,6 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use super::command::{DRAIN, Spawned, exited};
-use super::process::stop;
 use super::registry::new_id;
 use unread::Unread;
 
@@ -58,9 +58,6 @@ struct Entry {
     workspace: WorkspaceId,
     script: String,
     started: Instant,
-    /// Its process group, while it runs.
-    #[cfg(unix)]
-    group: Option<rustix::process::Pid>,
     shared: Arc<Shared>,
     watcher: JoinHandle<()>,
 }
@@ -159,8 +156,6 @@ impl Backgrounds {
         }
         let id = CommandId::from_uuid(new_id());
         let started = spawned.started;
-        #[cfg(unix)]
-        let group = super::process::group_of(&spawned.child);
         let (ended, _) = watch::channel(None);
         let shared = Arc::new(Shared {
             unread: Mutex::new(Unread::default()),
@@ -181,8 +176,6 @@ impl Backgrounds {
                 workspace,
                 script,
                 started,
-                #[cfg(unix)]
-                group,
                 shared,
                 watcher,
             },
@@ -298,12 +291,6 @@ impl Drop for Backgrounds {
     fn drop(&mut self) {
         let held = self.held.get_mut().unwrap_or_else(PoisonError::into_inner);
         for entry in held.values() {
-            #[cfg(unix)]
-            if entry.shared.ended().is_none()
-                && let Some(group) = entry.group
-            {
-                let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
-            }
             entry.watcher.abort();
         }
     }
@@ -376,8 +363,6 @@ async fn watch_over(
         held,
         started,
     } = spawned;
-    #[cfg(unix)]
-    let group = super::process::group_of(&child);
     let mut open = true;
     let ending = loop {
         let idle_at = shared.idle_at(idle);
@@ -388,17 +373,17 @@ async fn watch_over(
                 shared.push(&stream.take());
             }
             () = shared.stop.notified() => {
-                stop(&mut child).await;
+                child.stop().await;
                 break Ending::Cancelled;
             }
             () = tokio::time::sleep_until(idle_at) => {
                 if shared.idle_at(idle) <= Instant::now() {
-                    stop(&mut child).await;
+                    child.stop().await;
                     break Ending::Idle { after_secs: idle.as_secs() };
                 }
             }
             () = until(deadline) => {
-                stop(&mut child).await;
+                child.stop().await;
                 let after = deadline.map_or(Duration::ZERO, |at| at.duration_since(started));
                 break Ending::TimedOut { after_secs: after.as_secs() };
             }
@@ -414,11 +399,8 @@ async fn watch_over(
     let _ = tokio::time::timeout(DRAIN, rest).await;
     shared.push(&stream.take());
     // What it left running goes with it.
-    #[cfg(unix)]
-    if let Some(group) = group {
-        super::process::stop_left(group).await;
-    }
-    drop(held);
+    child.stop_left().await;
+    drop((child, held));
     let finished = Finished {
         ending,
         millis: millis(started.elapsed()),

@@ -11,6 +11,7 @@ use std::sync::Arc;
 use glave_config::policy::Constraints;
 use glave_mcp::McpServer;
 use glave_ports::ToolSource;
+use glave_process::Processes;
 use jiff::{SignedDuration, Timestamp};
 
 /// The projects whose servers run at once for their threads; past this, the one used least
@@ -86,6 +87,7 @@ impl Running {
         servers: BTreeMap<String, String>,
         now: Timestamp,
         constraints: &Constraints,
+        processes: &Processes,
     ) -> (Vec<Arc<dyn ToolSource>>, Vec<Kept>) {
         let mut closing = Vec::new();
         if let Some(at) = self.kept.iter().position(|kept| kept.root == root) {
@@ -101,7 +103,7 @@ impl Running {
         let sources = if servers.is_empty() {
             Vec::new()
         } else {
-            match crate::mcp::start_project(&servers, root, constraints) {
+            match crate::mcp::start_project(&servers, root, constraints, processes) {
                 Ok(started) => {
                     let sources = crate::mcp::sources(&started);
                     self.kept.push(Kept {

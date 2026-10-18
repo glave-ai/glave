@@ -137,6 +137,7 @@ pub fn catalog() -> Vec<Arc<McpServer>> {
                 &BTreeMap::new(),
                 &dir,
                 Limits::default(),
+                &glave_process::Processes::unrecorded(),
             ))
         })
         .collect()

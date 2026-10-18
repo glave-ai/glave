@@ -36,7 +36,14 @@ mod server {
 
     fn launch(name: &str, config: &ServerConfig, limits: Limits) -> McpServer {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        McpServer::start(name, config, &environment(), dir, limits)
+        McpServer::start(
+            name,
+            config,
+            &environment(),
+            dir,
+            limits,
+            &glave_process::Processes::unrecorded(),
+        )
     }
 
     async fn start(env: &[(&str, &str)]) -> McpServer {

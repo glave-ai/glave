@@ -187,7 +187,8 @@ async fn run(options: Options) -> anyhow::Result<()> {
     )?
     .with_budgets(budgets);
     let home = home::folder()?;
-    let (catalog, mut secrets) = catalog(&home, &constraints).await?;
+    let processes = home::reaped().await?;
+    let (catalog, mut secrets) = catalog(&home, &constraints, &processes).await?;
     secrets.extend(
         endpoint
             .provider
@@ -238,6 +239,7 @@ async fn run(options: Options) -> anyhow::Result<()> {
 async fn catalog(
     home: &Path,
     constraints: &Constraints,
+    processes: &glave_process::Processes,
 ) -> anyhow::Result<(Vec<Arc<McpServer>>, Vec<String>)> {
     let path = home.join(mcp::FILE);
     let text = match tokio::fs::read_to_string(&path).await {
@@ -284,6 +286,7 @@ async fn catalog(
                 &environment,
                 home,
                 Limits::default(),
+                processes,
             ))
         })
         .collect();

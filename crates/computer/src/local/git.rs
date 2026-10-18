@@ -38,7 +38,7 @@ impl<'a> Git<'a> {
 
     /// Runs git with `args`; its output, or what it said when it failed.
     pub(crate) async fn run(&self, args: &[&str]) -> Result<String, String> {
-        let mut command = tokio::process::Command::new("git");
+        let mut command = glave_process::Program::new("git");
         if self.credential.is_some() {
             command
                 .args(["-c", "credential.helper=", "-c"])
@@ -60,7 +60,7 @@ impl<'a> Git<'a> {
             .stdin(Stdio::null())
             .output()
             .await
-            .map_err(|error| format!("could not start git: {error}"))?;
+            .map_err(|error| error.to_string())?;
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
         } else {

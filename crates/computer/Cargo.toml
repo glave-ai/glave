@@ -14,6 +14,8 @@ bytes.workspace = true
 # The random part of new computer and workspace ids (UUID v7), and workers' tokens.
 getrandom.workspace = true
 glave-ports.workspace = true
+# Every process it starts: commands owned by their workspace and recorded while they run.
+glave-process.workspace = true
 # File patterns as models write them, for files/glob and files/search.
 globset.workspace = true
 # The Docker Engine API, over its Unix socket (already in the tree via reqwest).
@@ -33,8 +35,8 @@ rcgen.workspace = true
 regex.workspace = true
 # Resolving every path one name at a time from an open handle on the workspace root
 # (openat, no-follow), so a link swapped in by a command cannot lead a file tool outside.
-# Process calls: stopping a command's process group and seeing it gone; on Linux, the
-# Landlock helper's own session and the user id that names the sandbox's folder.
+# Process calls on Linux: the Landlock helper's own session and the user id that names the
+# sandbox's folder.
 rustix = { workspace = true, features = ["process"] }
 # TLS between the harness and a worker (already in the tree via reqwest).
 rustls.workspace = true

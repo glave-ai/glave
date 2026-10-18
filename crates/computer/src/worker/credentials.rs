@@ -8,7 +8,6 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use glave_ports::{ComputerError, GitCredential};
-use tokio::io::AsyncWriteExt as _;
 
 /// How long the person's credential helper has to answer.
 const FILL_TIMEOUT: Duration = Duration::from_secs(20);
@@ -45,25 +44,17 @@ async fn fill(rest: &str) -> Result<Option<GitCredential>, ComputerError> {
     let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
     let host = host.rsplit_once('@').map_or(host, |(_, host)| host);
     let asked = format!("protocol=https\nhost={host}\npath={path}\n\n");
-    let mut child = tokio::process::Command::new("git")
-        .args(["credential", "fill"])
+    let mut git = glave_process::Program::new("git");
+    git.args(["credential", "fill"])
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "never")
-        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|error| ComputerError::Failed(format!("could not start git: {error}")))?;
-    if let Some(mut input) = child.stdin.take() {
-        input
-            .write_all(asked.as_bytes())
-            .await
-            .map_err(|error| ComputerError::Failed(format!("could not ask git: {error}")))?;
-    }
-    let Ok(Ok(output)) = tokio::time::timeout(FILL_TIMEOUT, child.wait_with_output()).await else {
+        .stderr(Stdio::null());
+    let answered = tokio::time::timeout(FILL_TIMEOUT, git.output_with(asked.as_bytes())).await;
+    let Ok(output) = answered else {
         return Ok(None);
     };
+    let output = output.map_err(|error| ComputerError::Failed(error.to_string()))?;
     if !output.status.success() {
         return Ok(None);
     }

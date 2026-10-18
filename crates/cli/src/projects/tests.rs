@@ -101,6 +101,7 @@ async fn timed(home: &Path, taken: Vec<String>, models: &[&str], clock: ManualCl
         models: offering(models),
         memory: None,
         clock: Box::new(clock),
+        processes: glave_process::Processes::unrecorded(),
     };
     Projects::new(home.to_owned(), own, true)
 }

@@ -2,7 +2,9 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+
+use glave_process::Program;
 
 use super::mounts::{Layout, Mount};
 
@@ -48,14 +50,14 @@ pub(super) fn find(writable: &[&Path]) -> Option<PathBuf> {
 /// are off, or where AppArmor stops it making them (Ubuntu 23.10 and later, without a
 /// profile for it). Blocking; says why not.
 pub(super) fn starts(bwrap: &Path) -> Result<(), String> {
-    let output = Command::new(bwrap)
+    let output = Program::new(bwrap)
         .args(ISOLATION)
         .args(["--unshare-net", "--ro-bind", "/", "/", "--dev", "/dev"])
         .args(["--proc", "/proc", "--", "true"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
-        .output()
+        .output_blocking()
         .map_err(|error| error.to_string())?;
     if output.status.success() {
         return Ok(());

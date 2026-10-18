@@ -53,7 +53,14 @@ mod http {
 
     fn launch(config: &ServerConfig) -> McpServer {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        McpServer::start("web", config, &BTreeMap::new(), dir, Limits::default())
+        McpServer::start(
+            "web",
+            config,
+            &BTreeMap::new(),
+            dir,
+            Limits::default(),
+            &glave_process::Processes::unrecorded(),
+        )
     }
 
     fn arguments(value: serde_json::Value) -> Arguments {

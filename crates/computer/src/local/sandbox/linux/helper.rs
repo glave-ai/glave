@@ -3,7 +3,6 @@
 //! seccomp filter, then becomes the command (`exec`), which keeps every restriction.
 
 use std::ffi::OsString;
-use std::os::unix::process::CommandExt as _;
 
 use super::landlocked::{self, Plan};
 use super::seccomp;
@@ -33,6 +32,8 @@ pub(in crate::local::sandbox) fn helper(args: &[OsString]) -> String {
     if let Err(error) = seccomp::apply(plan.network) {
         return error;
     }
-    let error = std::process::Command::new(program).args(rest).exec();
-    format!("could not start {}: {error}", program.to_string_lossy())
+    glave_process::Program::new(program)
+        .args(rest)
+        .exec()
+        .to_string()
 }

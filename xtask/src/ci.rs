@@ -1,6 +1,7 @@
 //! `cargo xtask ci`: the full local gate, identical to what CI runs: the Rust checks, that no
-//! tracked file holds a secret-shaped literal and that crates keep the dependency rule, then
-//! the web checks (`web.rs`), which need Node unless `GLAVE_SKIP_WEB=1` skips them.
+//! tracked file holds a secret-shaped literal, that crates keep the dependency rule and start
+//! processes only through glave-process, then the web checks (`web.rs`), which need Node
+//! unless `GLAVE_SKIP_WEB=1` skips them.
 
 use serde_json::Value;
 
@@ -17,6 +18,7 @@ pub fn run() -> Result<(), String> {
     step("format", || cmd::run("cargo", &["fmt", "--all", "--check"]))?;
     step("secrets", crate::secrets::check)?;
     step("dependency rule", crate::deps::check)?;
+    step("one spawn path", crate::spawns::check)?;
     let features = features_in(&crate::workspace::metadata()?)?;
     step("lint", || {
         cmd::run(
