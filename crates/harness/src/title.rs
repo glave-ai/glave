@@ -76,7 +76,7 @@ where
             .brought
             .settled
             .titles
-            .unwrap_or(self.settings.titles);
+            .unwrap_or(thread.defaults.titles);
         if !titles || !thread.above.is_empty() {
             return None;
         }

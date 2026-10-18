@@ -61,10 +61,11 @@ where
 {
     /// Refuses `mode` with `-32012` unless a thread here may choose it.
     pub(crate) fn allowed_mode(&self, mode: ApprovalMode) -> Result<(), ApiError> {
-        if self.inner.modes.contains(&mode) {
+        let modes = self.modes();
+        if modes.contains(&mode) {
             return Ok(());
         }
-        let left: Vec<&str> = self.inner.modes.iter().map(|mode| mode.name()).collect();
+        let left: Vec<&str> = modes.iter().map(|mode| mode.name()).collect();
         Err(ApiError::new(
             code::NOT_ALLOWED,
             format!(
@@ -103,7 +104,16 @@ where
         project: Protections,
     ) -> Result<ApprovalMode, ApiError> {
         let chosen = self.chosen_approval(scope, thread).await?;
-        Ok(project.mode(chosen, self.inner.harness.settings().approval))
+        Ok(project.mode(chosen, self.inner.harness.defaults().approval))
+    }
+
+    /// The modes a thread may choose now, cautious first.
+    pub(crate) fn modes(&self) -> Vec<ApprovalMode> {
+        self.inner
+            .modes
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// What the project of `space` chooses for its threads: for the person on this

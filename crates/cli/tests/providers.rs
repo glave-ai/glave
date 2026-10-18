@@ -11,6 +11,7 @@ mod support;
 
 #[cfg(test)]
 #[path = "support/served.rs"]
+#[expect(dead_code, reason = "shared helpers; this file uses some of them")]
 mod served;
 
 #[cfg(test)]

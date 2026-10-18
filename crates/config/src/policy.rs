@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use glave_harness::Hook;
 
 pub use choices::{Choices, Chosen, Judge, Layer, Level, Source};
-pub use effective::{check_model, check_own_servers, thread_modes, unsandboxed};
+pub use effective::{check_model, check_own_servers, give_way, thread_modes, unsandboxed};
 pub use explain::explain;
 pub use files::{
     ConfigFile, GithubFile, HooksFile, ModelEntry, PolicyFile, SandboxChoice, ServerFile,
@@ -107,6 +107,19 @@ impl Loaded {
         Ok(match &self.no_sandbox_here {
             Some(why) => effective::unsandboxed(choices, why, &self.constraints),
             None => choices,
+        })
+    }
+
+    /// The choices within the constraints for a server that already runs ([`give_way`]),
+    /// and what gave way, one sentence each.
+    pub fn settle_giving_way(&self) -> crate::Result<(Choices, Vec<String>)> {
+        let (choices, aside) = effective::give_way(self.choices.clone(), &self.constraints)?;
+        Ok(match &self.no_sandbox_here {
+            Some(why) => (
+                effective::unsandboxed(choices, why, &self.constraints),
+                aside,
+            ),
+            None => (choices, aside),
         })
     }
 

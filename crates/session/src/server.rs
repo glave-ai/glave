@@ -4,7 +4,7 @@
 //! to the callers who work in that space.
 
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
@@ -127,8 +127,8 @@ pub(crate) struct Inner<P, L, B> {
     /// The spaces of threads looked up.
     pub(crate) places: Mutex<Places>,
     /// Whether new threads in a project's folder get a worktree when `thread/start` does not
-    /// say.
-    pub(crate) worktree: bool,
+    /// say: the person's choice, which follows their settings.
+    pub(crate) worktree: AtomicBool,
     /// The environment new threads' workers are made from, when they work on workers.
     pub(crate) worker: Option<Environment>,
     /// The models threads may be sent to, the default first; none until one is set up.
@@ -141,8 +141,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) changing_models: tokio::sync::Mutex<()>,
     /// Where git hosts are kept, when the person here may connect them.
     pub(crate) git_hosts: Option<Arc<dyn GitHosts>>,
-    /// The modes a thread may choose, cautious first.
-    pub(crate) modes: Vec<ApprovalMode>,
+    /// The modes a thread may choose, cautious first, as the policy now leaves them.
+    pub(crate) modes: RwLock<Vec<ApprovalMode>>,
     /// The space's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
@@ -212,7 +212,7 @@ where
                 rereads: wiring.rereads,
                 changing_models: tokio::sync::Mutex::new(()),
                 git_hosts: wiring.git_hosts,
-                modes: choosable,
+                modes: RwLock::new(choosable),
                 person,
                 limits: wiring.tasks,
                 ledgers: Mutex::new(Ledgers::new()),
@@ -220,7 +220,7 @@ where
                 home,
                 spaces: wiring.spaces,
                 places: Mutex::new(Places::default()),
-                worktree: wiring.worktree,
+                worktree: AtomicBool::new(wiring.worktree),
                 hub,
                 approvals,
                 threads: Mutex::new(HashMap::new()),
@@ -303,6 +303,8 @@ where
         background: bool,
         choice: &Choice,
     ) -> Result<ThreadId, ApiError> {
+        // What the person chose meanwhile applies to the new thread.
+        self.reread().await;
         if let Some(model) = &choice.model {
             self.known_model(model)?;
         }
@@ -310,6 +312,7 @@ where
             self.allowed_mode(mode)?;
         }
         let home = space == self.inner.home.space;
+        let own = self.inner.worktree.load(Ordering::Relaxed);
         let folder = self.folder_found(space).await?;
         // The project's own choice, for the person here, is nearer than the server's.
         let copies = match &folder {
@@ -319,8 +322,8 @@ where
                 .settled(std::path::Path::new(folder))
                 .await
                 .worktree
-                .unwrap_or(self.inner.worktree),
-            _ => self.inner.worktree,
+                .unwrap_or(own),
+            _ => own,
         };
         let place = match (folder, worktree, &self.inner.worker) {
             (None, Some(true), _) => {

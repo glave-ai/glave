@@ -15,7 +15,7 @@ use glave_ports::memories::{MemoryContext, MemoryError, Remembered, Shown, memor
 use glave_ports::{Clock, Entropy, EventLog, LogError, Scope, SpaceId};
 
 use crate::book::{Book, Entry};
-use crate::rules::{Rules, SpaceMemory};
+use crate::rules::{Personal, Rules, SpaceMemory};
 use crate::shred::Shredder;
 
 pub use housekeep::Housekept;
@@ -95,6 +95,26 @@ impl<L: EventLog + 'static> Memories<L> {
         } else {
             rules.spaces.insert(space, setting);
         }
+    }
+
+    /// Runs by what the person's settings choose now, from the next read or write: whether
+    /// their own memory is read (`personal`), every space's setting where its project chooses
+    /// none (`default`), and how long memories are kept.
+    pub fn set_person(
+        &self,
+        personal: Option<Personal>,
+        default: SpaceMemory,
+        retention_days: Option<u32>,
+    ) {
+        let mut rules = self
+            .inner
+            .rules
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        rules.personal = personal;
+        rules.default = default;
+        rules.retention_days = retention_days;
+        rules.spaces.retain(|_, setting| *setting != default);
     }
 
     pub(crate) fn now(&self) -> At {

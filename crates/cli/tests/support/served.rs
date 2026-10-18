@@ -41,19 +41,61 @@ impl Served {
 
     /// Calls `method` and waits for its answer.
     pub fn call(&mut self, method: &str, params: &Value) -> Value {
+        let id = self.send(method, params);
+        loop {
+            let message = self.read();
+            if message["id"] == id {
+                return message;
+            }
+        }
+    }
+
+    /// The next message the server sends.
+    fn read(&mut self) -> Value {
+        let line = self.output.next().unwrap().unwrap();
+        self.seen.push_str(&line);
+        serde_json::from_str(&line).unwrap()
+    }
+
+    /// Calls `method` and waits for its answer, answering each approval it waits for with
+    /// what `decide` returns for its notification (`allow_once`, `deny`); and how many asked.
+    /// Before each answer the models are listed, which reads the server's settings again
+    /// while the turn waits, as another client's request would.
+    pub fn call_deciding(
+        &mut self,
+        method: &str,
+        params: &Value,
+        mut decide: impl FnMut(&Value) -> &'static str,
+    ) -> (Value, usize) {
+        let id = self.send(method, params);
+        let mut asked = 0;
+        loop {
+            let message = self.read();
+            if message["id"] == id {
+                return (message, asked);
+            }
+            let update = &message["params"]["update"];
+            if message["method"] == "turn/live" && update["kind"] == "approval_pending" {
+                asked += 1;
+                let decision = decide(&message);
+                let listed = self.send("model/list", &json!({}));
+                while self.read()["id"] != listed {}
+                let thread = &message["params"]["thread"];
+                let answer = json!({"thread": thread, "approval": update["approval"],
+                                    "decision": decision});
+                self.send("approval/decide", &answer);
+            }
+        }
+    }
+
+    /// Sends a request for `method`; its id.
+    fn send(&mut self, method: &str, params: &Value) -> i64 {
         self.next += 1;
         let id = self.next;
         let message = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
         writeln!(self.input, "{message}").unwrap();
         self.input.flush().unwrap();
-        loop {
-            let line = self.output.next().unwrap().unwrap();
-            self.seen.push_str(&line);
-            let message: Value = serde_json::from_str(&line).unwrap();
-            if message["id"] == id {
-                return message;
-            }
-        }
+        id
     }
 
     pub fn models(&mut self) -> Vec<String> {

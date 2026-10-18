@@ -7,14 +7,14 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use glave_computer::{LocalComputers, WorkerComputers};
+use glave_computer::WorkerComputers;
 use glave_event::ThreadId;
 use glave_harness::{
     AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Projects as _,
     Protections, Sandbox, Settings, SystemClock, Workspace, agents_md,
 };
 use glave_memory::Tidier;
-use glave_ports::{Credentials, SpaceId, ToolSource};
+use glave_ports::{Credentials, SpaceId};
 use glave_process::Processes;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring};
@@ -35,7 +35,7 @@ use crate::reread::Rereading;
 use crate::setup::{self, Setup};
 use crate::terminal::Printer;
 use crate::{home, identity};
-use glave_config::policy::{self, Choices, On, Source};
+use glave_config::policy::{self, Choices};
 use glave_config::trust::Asking;
 
 /// A command's own entry: it reads the words after its name.
@@ -169,7 +169,8 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let telemetry = crate::telemetry::start_for(args.log.as_deref(), &setup.choices)?;
     let database = home::database().await?;
     let processes = home::reaped().await?;
-    let workspace = workspace(&folder, &mut setup, &database, &processes).await?;
+    let workspace =
+        crate::sandboxing::workspace(&folder, &mut setup, &database, &processes).await?;
     let choices = &setup.choices;
     let (remote, configured) = crate::providers::endpoint(choices)?;
     let store = store(&setup).await?;
@@ -207,7 +208,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         clock: Box::new(SystemClock),
         entropy: Box::new(OsEntropy),
         workspace,
-        web: web(choices)?,
+        web: crate::projects::web_offered(&choices.web.value)?,
         tools: crate::skills::offered(&root).await?,
         // The person's own servers, for their threads alone.
         own: servers.sources(),
@@ -398,98 +399,12 @@ async fn line_up(
     })
 }
 
-/// `web_fetch`, as `[web]` sets it up; nothing when it is off.
-fn web(choices: &Choices) -> anyhow::Result<Option<Arc<dyn ToolSource>>> {
-    let web = crate::projects::web_fetch(&choices.web.value)?;
-    Ok(web
-        .offers_any()
-        .then(|| Arc::new(web) as Arc<dyn ToolSource>))
-}
-
 /// The data store the setup's choices name, once this machine's worktrees have had their
 /// daily check.
 async fn store(setup: &Setup) -> anyhow::Result<Data> {
     let store = Data::chosen(&setup.choices).await?;
     crate::worktrees::check_daily(&store.log()).await;
     Ok(store)
-}
-
-/// The workspace in `folder`, in the sandbox the setup's choices ask for. Where glave's
-/// default sandbox cannot run, commands go unconfined and the choices say so: approval
-/// becomes `ask` (`policy::unsandboxed`), unless threads work on workers, whose own
-/// container or virtual machine is their wall. A sandbox someone chose, or a policy
-/// requires, is never given up: glave refuses to start instead.
-async fn workspace(
-    folder: &Path,
-    setup: &mut Setup,
-    database: &Path,
-    processes: &Processes,
-) -> anyhow::Result<Workspace> {
-    let choices = &setup.choices;
-    let Some(level) = choices.sandbox.value else {
-        return open_here(folder, processes).await;
-    };
-    let sandbox = Sandbox {
-        level,
-        network: choices.network.value,
-        home: std::env::var_os("HOME").map(PathBuf::from),
-        glave_home: database.parent().map(Path::to_path_buf),
-    };
-    let error = match open_here(folder, processes)
-        .await?
-        .with_sandbox(&sandbox)
-        .await
-    {
-        Ok(workspace) => return Ok(workspace),
-        Err(error) => error,
-    };
-    if choices.sandbox.from != Source::Default {
-        return Err(error).with_context(|| {
-            format!(
-                "the sandbox was asked for (by {}), so glave will not run commands without it",
-                choices.sandbox.from
-            )
-        });
-    }
-    let why = error.to_string();
-    let approval = choices.approval.clone();
-    let constraints = &setup.loaded.constraints;
-    setup.choices = policy::unsandboxed(setup.choices.clone(), &why, constraints);
-    if setup.choices.on.value == On::Cloud {
-        setup.choices.approval = approval;
-    } else {
-        eprintln!("glave: {}", unsandboxed_notice(&setup.choices, &why));
-    }
-    open_here(folder, processes).await
-}
-
-/// The workspace in `folder` on this computer, without a sandbox yet.
-async fn open_here(folder: &Path, processes: &Processes) -> anyhow::Result<Workspace> {
-    let computer = identity::computer(&home::folder()?).await?;
-    let computers = LocalComputers::for_here(std::env::vars_os())
-        .known_as(computer)
-        .with_worktrees(home::folder()?.join(crate::worktrees::FOLDER))
-        .with_scratch(home::folder()?.join(crate::worktrees::SCRATCH))
-        .with_projects(home::projects()?)
-        .with_processes(processes.clone());
-    let (computers, here) = crate::computer::with_sandbox_helper(computers)
-        .open_here(folder)
-        .await?;
-    Ok(Workspace::new(computers, here))
-}
-
-/// What the person is told, once at startup, when glave's default sandbox cannot run here.
-fn unsandboxed_notice(choices: &Choices, why: &str) -> String {
-    let asks = if choices.approval.value == ApprovalMode::Ask {
-        "so every command and change asks you first (approval: ask)"
-    } else {
-        "and the policy allows only approval auto, so commands run as you without asking"
-    };
-    format!(
-        "the sandbox cannot run on this computer ({why}), {asks}. To run commands without \
-         the sandbox and without asking, choose both sandbox = \"off\" and approval = \"auto\" \
-         (--sandbox off --approval auto)."
-    )
 }
 
 async fn run(args: Args) -> anyhow::Result<ExitCode> {

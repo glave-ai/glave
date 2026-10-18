@@ -51,6 +51,14 @@ pub fn web_fetch(web: &WebFile) -> anyhow::Result<Web> {
     Web::new(settings).context("could not set up web_fetch")
 }
 
+/// `web_fetch` as `web` sets it up, as a tool source; nothing when it is off.
+pub fn web_offered(web: &WebFile) -> anyhow::Result<Option<Arc<dyn ToolSource>>> {
+    let web = web_fetch(web)?;
+    Ok(web
+        .offers_any()
+        .then(|| Arc::new(web) as Arc<dyn ToolSource>))
+}
+
 /// A project's `config.toml`, in the project at `root`.
 fn config_of(root: &Path) -> std::path::PathBuf {
     root.join(".glave").join(policy::CONFIG)
@@ -59,11 +67,12 @@ fn config_of(root: &Path) -> std::path::PathBuf {
 impl Projects {
     /// What the project at `root`, as `outcome` applies its files, chooses for its threads.
     pub(super) fn settle(&self, root: &Path, outcome: &Outcome) -> Read {
-        let constraints = &self.loaded.constraints;
-        let protections = trust::protections(outcome, &self.choices, constraints);
+        let base = self.base();
+        let constraints = &base.loaded.constraints;
+        let protections = trust::protections(outcome, &base.choices, constraints);
         let path = config_of(root);
         let config = outcome.config.clone().unwrap_or_default();
-        let choices = match self.loaded.with_project(&path, config).settle() {
+        let choices = match base.loaded.with_project(&path, config).settle() {
             Ok(choices) => choices,
             Err(error) => {
                 tracing::warn!(project = %root.display(), %error, "a project's settings are set aside");

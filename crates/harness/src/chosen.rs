@@ -138,7 +138,7 @@ where
             .brought
             .settled
             .protections
-            .mode(thread.approval, self.settings.approval)
+            .mode(thread.approval, thread.defaults.approval)
     }
 
     /// Runs `thread`'s turns in approval mode `mode` from now on, recorded as

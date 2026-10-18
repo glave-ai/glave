@@ -140,25 +140,28 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// Reads again what `thread`'s project chooses and turns on, at the start of a turn, and
-    /// gives its commands the sandbox that follows: none where the project turned it off, else
-    /// the harness's own as the project narrows it. A thread with no project of its own here
-    /// gets nothing, and so does another person's thread than the one the harness works for,
-    /// who trusted the project: no settings, no tools, no hooks.
+    /// Takes the harness's defaults as they are now, and reads again what `thread`'s project
+    /// chooses and turns on, at the start of a turn; then gives its commands on this computer
+    /// the sandbox that follows: none where the project turned it off, else the defaults' as
+    /// the project narrows it. A thread with no project of its own here gets nothing of a
+    /// project, and so does another person's thread than the one the harness works for, who
+    /// trusted the project: no settings, no tools, no hooks.
     pub(crate) async fn bring(&self, thread: &mut Thread) -> Result<(), HarnessError> {
-        let (Some(host), Some(project)) = (&self.projects, &thread.project) else {
-            return Ok(());
+        thread.defaults = self.defaults();
+        let brought = match (&self.projects, &thread.project) {
+            (Some(host), Some(project)) if self.trusting(thread.for_) => {
+                host.brought(project, thread.scope.space).await
+            }
+            _ => Brought::default(),
         };
-        let brought = if self.trusting(thread.for_) {
-            host.brought(project, thread.scope.space).await
-        } else {
-            Brought::default()
-        };
-        if let Some(workspace) = &thread.workspace {
+        let workspace = self.workspace_for(thread);
+        // A worker's own container or virtual machine is its wall: only this computer's
+        // commands run in the sandbox.
+        if workspace.info().computer == self.workspace.info().computer {
             let wanted = brought
                 .settled
                 .protections
-                .sandbox(self.workspace.sandbox());
+                .sandbox(thread.defaults.sandbox.as_ref());
             if workspace.sandbox() != wanted.as_ref() {
                 thread.workspace = Some(Arc::new(workspace.within(wanted.as_ref()).await?));
             }
