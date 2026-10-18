@@ -62,15 +62,9 @@ mod compacting {
                 ),
                 answer(Some("It repeats marigold."), vec![], StopReason::EndTurn),
             ];
-            let (harness, seen) = harness_seeing(
-                &dir,
-                answers,
-                AllowAll,
-                InMemoryLog::new(),
-                1,
-                tiny_window(),
-            )
-            .await;
+            let log = InMemoryLog::new();
+            let (harness, seen) =
+                harness_seeing(&dir, answers, AllowAll, log, 1, tiny_window()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let mut shown = Vec::new();
             let summary = harness
@@ -204,15 +198,9 @@ mod compacting {
                 answer(None, vec![], StopReason::EndTurn),
                 answer(Some("It repeats marigold."), vec![], StopReason::EndTurn),
             ];
-            let (harness, seen) = harness_seeing(
-                &dir,
-                answers,
-                AllowAll,
-                InMemoryLog::new(),
-                1,
-                tiny_window(),
-            )
-            .await;
+            let log = InMemoryLog::new();
+            let (harness, seen) =
+                harness_seeing(&dir, answers, AllowAll, log, 1, tiny_window()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let mut shown = Vec::new();
             harness
