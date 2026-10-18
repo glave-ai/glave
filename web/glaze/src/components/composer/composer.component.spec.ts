@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 
 import { expectAccessible } from '../../testing/axe';
 import { GlzComposerComponent, type GlzComposerSize } from './composer.component';
@@ -142,5 +143,16 @@ describe('GlzComposerComponent', () => {
     await fixture.whenStable();
     expect(find(root, 'composer').classList).toContain('glz-composer--lg');
     await expectAccessible(root);
+  });
+
+  it('puts the cursor in the box when asked', async () => {
+    const fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    fixture.debugElement
+      .query(By.directive(GlzComposerComponent))
+      .injector.get(GlzComposerComponent)
+      .focus();
+    expect(document.activeElement).toBe(find(root, 'composer-input'));
   });
 });

@@ -28,20 +28,48 @@ export interface ProjectDraft {
   readonly url: string;
 }
 
-/** A folder on the way down to another, to go up to: its name (empty for the top) and path. */
+/**
+ * A folder on the way down to another, to go up to: its name (empty for the top of the
+ * computer, the drive's for a Windows drive's root) and path.
+ */
 export interface Crumb {
   readonly name: string;
   readonly path: string;
 }
 
-/** The last name in the path `path`: `app` for `/Users/ana/code/app`; empty for the top. */
+/** A path written from the top, taken apart: its top, the folders under it, what joins them. */
+interface Parts {
+  /** The top: `/`, named `''`, or a Windows drive's root such as `C:\`, named `C:`. */
+  readonly top: Crumb;
+  readonly names: readonly string[];
+  readonly separator: '/' | '\\';
+}
+
+/** A Windows drive's root, `C:\` (or `C:/`), capturing the drive's name. */
+const DRIVE = /^([a-z]:)[\\/]/iu;
+
+/** `path` taken apart, or `null` for a path not written from the top. */
+function parts(path: string): Parts | null {
+  const named = (name: string): boolean => name !== '';
+  if (path.startsWith('/')) {
+    return { top: { name: '', path: '/' }, names: path.split('/').filter(named), separator: '/' };
+  }
+  const drive = DRIVE.exec(path)?.[1];
+  if (drive === undefined) {
+    return null;
+  }
+  const top = { name: drive, path: `${drive}\\` };
+  const names = path.slice(top.path.length).split(/[\\/]/u).filter(named);
+  return { top, names, separator: '\\' };
+}
+
+/**
+ * The last name in the path `path`: `app` for `/Users/ana/code/app` or `C:\code\app`; the
+ * drive's name for a drive's root (`C:`), and empty for the top of the computer.
+ */
 export function folderName(path: string): string {
-  return (
-    path
-      .split('/')
-      .filter((name) => name !== '')
-      .at(-1) ?? ''
-  );
+  const parted = parts(path);
+  return parted === null ? path : (parted.names.at(-1) ?? parted.top.name);
 }
 
 /**
@@ -63,7 +91,7 @@ export function repositoryName(url: string): string {
 }
 
 /** The name a project takes when none is typed: its folder's or its repository's, if it has one. */
-export function fallbackName(draft: ProjectDraft): string {
+export function fallbackName(draft: Omit<ProjectDraft, 'name'>): string {
   switch (draft.start) {
     case 'folder':
       return draft.folder === null ? '' : folderName(draft.folder);
@@ -98,22 +126,28 @@ export function createParams(draft: ProjectDraft): SpaceCreateParams | null {
 
 /**
  * The folders from the top of this computer down to `path`, an absolute path as `folder/list`
- * gives it, each with its own path. A path not written from the top is one crumb.
+ * gives it, each with its own path; on Windows, a drive's root is the top. A path not written
+ * from the top is one crumb.
  */
 export function crumbs(path: string): readonly Crumb[] {
-  if (!path.startsWith('/')) {
+  const parted = parts(path);
+  if (parted === null) {
     return [{ name: path, path }];
   }
-  const names = path.split('/').filter((name) => name !== '');
+  const { top, names, separator } = parted;
   return [
-    { name: '', path: '/' },
-    ...names.map((name, index) => ({ name, path: `/${names.slice(0, index + 1).join('/')}` })),
+    top,
+    ...names.map((name, index) => ({
+      name,
+      path: `${top.path}${names.slice(0, index + 1).join(separator)}`,
+    })),
   ];
 }
 
-/** The path of the folder `name` inside the folder at `path`. */
+/** The path of the folder `name` inside the folder at `path`, joined as `path` is written. */
 export function joinPath(path: string, name: string): string {
-  return path.endsWith('/') ? `${path}${name}` : `${path}/${name}`;
+  const separator = parts(path)?.separator ?? '/';
+  return path.endsWith(separator) ? `${path}${name}` : `${path}${separator}${name}`;
 }
 
 /** How many folders a folder holds, in words. */

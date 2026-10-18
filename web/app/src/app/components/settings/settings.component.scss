@@ -1,5 +1,11 @@
 @use '../page';
 
+// Scrolled to, it stops below the floating top bar, not under it.
+.accounts {
+  display: block;
+  scroll-margin-top: calc(var(--glz-top-bar-height) + var(--glz-space-4));
+}
+
 .account {
   display: flex;
   align-items: center;

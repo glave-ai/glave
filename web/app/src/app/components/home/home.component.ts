@@ -1,11 +1,13 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  afterRenderEffect,
   computed,
   inject,
   input,
   linkedSignal,
   signal,
+  viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
 import type { ApprovalMode, ThreadStartParams } from '@glave/client';
@@ -43,7 +45,8 @@ export interface FirstPrompt {
  * chat, or a project) in its box, and the approval mode and the model in the quiet line under
  * it. Sending starts the thread there,
  * on the model and in the approval mode picked, and opens it. When glave runs on this
- * computer, a line under it says what stays private.
+ * computer, a line under it says what stays private. Opened for a space, the composer takes
+ * focus.
  */
 @Component({
   selector: 'app-home',
@@ -98,6 +101,17 @@ export class HomeComponent {
    */
   protected readonly whereInBox = computed(() => this.places().length > 0 && !this.narrow());
   protected readonly whereInStatus = computed(() => this.places().length > 0 && this.narrow());
+  private readonly composer = viewChild.required(GlzComposerComponent);
+
+  constructor() {
+    // A link that names a space (a project just made, a project's +) is there to start a
+    // thread in it: the cursor goes to the composer.
+    afterRenderEffect(() => {
+      if (this.space() !== undefined) {
+        this.composer().focus();
+      }
+    });
+  }
 
   protected async send(prompt: string): Promise<void> {
     this.starting.set(true);

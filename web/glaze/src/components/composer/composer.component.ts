@@ -95,6 +95,11 @@ export class GlzComposerComponent {
   /** Whether Send shows beside Stop: while busy, once there is something to send. */
   protected readonly sendBesideStop = computed(() => this.busy() && this.canSend());
 
+  /** Puts the cursor in the box, so the person can start writing. */
+  focus(): void {
+    this.textarea().nativeElement.focus();
+  }
+
   /** Sends the draft, if there is one, and clears it. */
   submit(): void {
     if (!this.canSend()) {

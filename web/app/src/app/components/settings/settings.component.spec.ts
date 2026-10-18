@@ -110,4 +110,29 @@ describe('SettingsComponent', () => {
     expect(root.querySelector('[data-testid="settings-account"]')).toBeNull();
     expect(navigate).toHaveBeenCalledWith('/connect');
   });
+
+  it('scrolls to the connected accounts once the model accounts above them are in', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    const fake = new FakeSession()
+      .answer('server/discover', SERVER)
+      .answer('provider/list', () => new Promise((resolve) => (answer = resolve)))
+      .answer('credential/list', { credentials: [], device: false });
+    TestBed.configureTestingModule({
+      providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeSession(fake)],
+    });
+    await TestBed.inject(Router).navigateByUrl('/settings#accounts');
+    const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView');
+    const fixture = TestBed.createComponent(SettingsComponent);
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const accounts = root.querySelector('#accounts');
+    expect(accounts?.querySelector('[data-testid="accounts"]')).not.toBeNull();
+    expect(scrolled).not.toHaveBeenCalled();
+    answer({ providers: [] });
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    expect(scrolled.mock.contexts).toEqual([accounts]);
+    await expectAccessible(root);
+  });
 });

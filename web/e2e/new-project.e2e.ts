@@ -56,13 +56,15 @@ test('a project made from a folder picked on this computer, then its first threa
   await expect(byTestId(page, 'folder-picker-empty')).toBeVisible();
   await byTestId(page, 'folder-picker-use').click();
   await expect(byTestId(page, 'new-project-folder-path')).toHaveText('/Users/ana/code/glave');
-  await expect(byTestId(page, 'new-project-name')).toHaveAttribute('placeholder', 'glave');
+  await expect(byTestId(page, 'new-project-name')).toHaveValue('glave');
   await accessibleInBoth(page);
 
   await byTestId(page, 'new-project-create').click();
   // The person already has a glave, so the server calls this one glave 2, as the app does.
   await expect(dialog).toBeHidden();
   await expect(page).toHaveURL(new RegExp(`/\\?space=${FIRST}$`, 'u'));
+  // The cursor waits in the composer for the project's first message.
+  await expect(byTestId(page, 'home-composer-input')).toBeFocused();
   await expect(byTestId(page, 'home-where-trigger')).toContainText('glave 2');
   // glave, where a thread waits for the person, stays first; then the project just made.
   await expect(byTestId(page, 'nav-space-toggle')).toHaveText(['glave', 'glave 2']);
@@ -91,7 +93,7 @@ test('a repository clones while it shows, and a refusal is told in the server’
   await expect(byTestId(page, 'new-project-private')).toContainText(
     'Private repositories need a connected git host',
   );
-  await expect(byTestId(page, 'new-project-connect')).toHaveAttribute('href', '/settings');
+  await expect(byTestId(page, 'new-project-connect')).toHaveAttribute('href', '/settings#accounts');
   // The server, not the browser, says what address it wants.
   await byTestId(page, 'new-project-url').fill('git@github.com:acme/site.git');
   await byTestId(page, 'new-project-create').click();
@@ -99,7 +101,7 @@ test('a repository clones while it shows, and a refusal is told in the server’
     '"git@github.com:acme/site.git" is not a repository\'s address: give its https:// address, such as https://github.com/acme/app, with no user name or token in it.',
   );
   await byTestId(page, 'new-project-url').fill(MISSING_REPOSITORY);
-  await expect(byTestId(page, 'new-project-name')).toHaveAttribute('placeholder', 'missing');
+  await expect(byTestId(page, 'new-project-name')).toHaveValue('missing');
   await byTestId(page, 'new-project-create').click();
   await expect(byTestId(page, 'new-project-cloning')).toBeVisible();
   await expect(byTestId(page, 'new-project-create')).toHaveText('Cloning…');
@@ -120,6 +122,31 @@ test('a repository clones while it shows, and a refusal is told in the server’
     { name: 'missing', folder: { kind: 'repository', url: MISSING_REPOSITORY } },
     { name: 'site', folder: { kind: 'repository', url: 'https://github.com/acme/site.git' } },
   ]);
+});
+
+test('connecting a git host opens Settings at the connected accounts', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 480 });
+  await fakeApi(page);
+  await page.goto(`/${SIGNED_IN}`);
+  await byTestId(page, 'nav-new-project').click();
+  await page.getByRole('radio', { name: 'A repository' }).check();
+  await byTestId(page, 'new-project-connect').click();
+  await expect(byTestId(page, 'new-project')).toBeHidden();
+  await expect(page).toHaveURL(/\/settings#accounts$/u);
+  const accounts = byTestId(page, 'accounts');
+  // Settings scrolls inside the main pane, which moved to the accounts, their heading clear of
+  // the floating top bar.
+  await expect
+    .poll(() => accounts.evaluate((card) => card.closest('main')?.scrollTop ?? 0))
+    .toBeGreaterThan(0);
+  const heading = accounts.getByRole('heading', { name: 'Connected accounts' });
+  await expect(heading).toBeInViewport();
+  const uncovered = await heading.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const top = document.elementFromPoint(box.left + 4, box.top + box.height / 2);
+    return top !== null && element.contains(top);
+  });
+  expect(uncovered).toBe(true);
 });
 
 test('an empty project needs a name, then glave makes its folder', async ({ page }) => {
@@ -192,5 +219,18 @@ test.describe('on a touch screen', () => {
     await page.keyboard.press('Escape');
     await expect(byTestId(page, 'new-project')).toBeHidden();
     await expect(nav).toBeVisible();
+  });
+
+  test('made from the drawer, the drawer closes and the composer takes focus', async ({ page }) => {
+    await fakeApi(page);
+    await page.goto(`/${SIGNED_IN}`);
+    await byTestId(page, 'page-menu').click();
+    await byTestId(page, 'nav-new-project').click();
+    await byTestId(page, 'folder-picker-use').click();
+    await expect(byTestId(page, 'new-project-name')).toHaveValue('ana');
+    await byTestId(page, 'new-project-create').click();
+    await expect(byTestId(page, 'new-project')).toBeHidden();
+    await expect(byTestId(page, 'workspace-nav')).toBeHidden();
+    await expect(byTestId(page, 'home-composer-input')).toBeFocused();
   });
 });
