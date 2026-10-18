@@ -27,6 +27,7 @@ use crate::compaction::{Compaction, Measured};
 use crate::goal::{GoalProgress, Pursuit};
 use crate::hooks::Hooks;
 use crate::inbox::Inbox;
+use crate::judge::Judge;
 use crate::memory::MemoryState;
 use crate::projects::{Brought, Projects};
 use crate::prompt::system_prompt;
@@ -61,9 +62,9 @@ pub struct Settings {
     /// Whether the model may hand work to subagents with `agent`.
     pub subagents: bool,
     /// Whether, in auto mode, a judge decides if an action a rule flagged may run because the
-    /// person asked for it. Its model is chosen by the provider's `judge` route (see the
-    /// gateway); off, every flagged action asks.
-    pub judge: bool,
+    /// person asked for it, and which model: its calls name it, for the `judge` purpose. Off
+    /// by default: every flagged action asks.
+    pub judge: Judge,
     /// The person whose work every thread is: recorded as the thread's `for`. When `None`,
     /// the harness makes one id when it is created, used for all its threads.
     pub person: Option<PrincipalId>,
@@ -94,7 +95,7 @@ impl Settings {
             max_steps: None,
             max_output_tokens: None,
             subagents: false,
-            judge: false,
+            judge: Judge::Off,
             person: None,
             agent: None,
             commands: Vec::new(),

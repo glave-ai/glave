@@ -65,7 +65,7 @@ pub use harness::{Harness, HarnessError, Parts, Settings, Thread};
 pub use hooks::{Hook, HookError, HookPoint, Hooks, point_name};
 pub use inbox::{Inbox, MAX_QUEUED, NotQueued, Queued};
 pub use instructions::{AGENTS_MD, Instructions, agents_md};
-pub use judge::{JudgeCase, Ruling, judge};
+pub use judge::{Judge, JudgeCase, Ruling, judge};
 pub use memory::{MemoryVerb, REMEMBER_CAUTION};
 pub use projects::{Brought, Loosened, Projects};
 pub use prompt::system_prompt;

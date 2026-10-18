@@ -58,11 +58,6 @@ impl Lineup {
         }
     }
 
-    /// Whether, in auto mode, a judge decides on flagged actions.
-    pub fn judges(&self) -> bool {
-        !matches!(self.judge, Judge::Off)
-    }
-
     /// The models of the configured endpoint and of `accounts`, those the policy allows.
     pub fn build(&self, accounts: &[ProviderConnected]) -> anyhow::Result<Built> {
         let mut targets = Vec::new();

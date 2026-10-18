@@ -151,7 +151,7 @@ mod purposes {
                 answer(Some("Pushed."), vec![], StopReason::EndTurn),
             ];
             let mut settings = settings();
-            settings.judge = true;
+            settings.judge = glave_harness::Judge::Main;
             let (harness, seen) =
                 harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();

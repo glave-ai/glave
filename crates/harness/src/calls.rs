@@ -14,7 +14,7 @@ use crate::cancel::Cancel;
 use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::hooks::ToolHook;
-use crate::judge::{JudgeCase, Ruling, judge};
+use crate::judge::{Judge, JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
 use crate::sandbox;
 use crate::turn::{Live, Step, TurnSummary, absorb, tally};
@@ -277,7 +277,12 @@ where
         let Some(reason) = request.caution.as_deref() else {
             return Ok(Judged::Ask);
         };
-        if !self.settings.judge || self.approval_for(thread) != ApprovalMode::Auto {
+        let model = match &self.settings.judge {
+            Judge::Off => return Ok(Judged::Ask),
+            Judge::Main => self.default_model(),
+            Judge::Model(model) => model.clone(),
+        };
+        if self.approval_for(thread) != ApprovalMode::Auto {
             return Ok(Judged::Ask);
         }
         let case = JudgeCase {
@@ -288,8 +293,7 @@ where
             untrusted: thread.untrusted,
             outside_sandbox: request.outside_sandbox.is_some(),
         };
-        let model = &self.default_model();
-        let asking = judge(&self.provider, model, &case, thread.lineage());
+        let asking = judge(&self.provider, &model, &case, thread.lineage());
         let Some((ruling, answer)) = cancel.run(asking).await else {
             return Ok(Judged::Cancelled);
         };

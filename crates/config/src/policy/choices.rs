@@ -4,6 +4,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
+pub use glave_harness::Judge;
 use glave_harness::{ApprovalMode, SandboxLevel};
 
 use crate::policy::files::{ConfigFile, GithubFile, ModelEntry, SandboxChoice};
@@ -47,45 +48,6 @@ impl fmt::Display for Source {
 pub struct Chosen<T> {
     pub value: T,
     pub from: Source,
-}
-
-/// The model that judges flagged actions in auto mode.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Judge {
-    /// The main model.
-    Main,
-    Off,
-    Model(String),
-}
-
-impl Judge {
-    /// `judge_model` as written: `off`, a model, or nothing (the main model).
-    pub fn named(text: &str) -> Self {
-        match text.trim() {
-            "" => Self::Main,
-            "off" => Self::Off,
-            model => Self::Model(model.to_owned()),
-        }
-    }
-
-    /// The judge's model when the main one is `main`, or none when it is off.
-    pub fn model(&self, main: &str) -> Option<String> {
-        match self {
-            Self::Main => Some(main.to_owned()),
-            Self::Off => None,
-            Self::Model(model) => Some(model.clone()),
-        }
-    }
-}
-
-impl fmt::Display for Judge {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Main => f.write_str("the main model"),
-            Self::Off => f.write_str("off"),
-            Self::Model(model) => f.write_str(model),
-        }
-    }
 }
 
 /// Every choice, resolved.

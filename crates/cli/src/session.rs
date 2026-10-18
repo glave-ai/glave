@@ -271,7 +271,7 @@ fn settings_for(
     // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt ends with its answer.
     let one_shot = args.action == Action::Run && !args.prompt.is_empty();
     settings.titles = choices.titles.value && !one_shot;
-    settings.judge = lined.judges;
+    settings.judge = choices.judge.value.clone();
     (settings.person, settings.agent) = (Some(identity.person), Some(identity.agent));
     let window = config::context_window()?.unwrap_or(settings.compaction.window_tokens);
     settings.compaction.window_tokens = window;
@@ -310,13 +310,12 @@ fn tidy(memory: Option<&crate::memory::Running>, switch: &Switch, model: String)
     }
 }
 
-/// The models a run offers and the gateway to them, and whether a judge decides.
+/// The models a run offers and the gateway to them.
 struct Lined {
     built: Built,
     switch: Switch,
     /// The person's model accounts, when they may connect them here.
     providers: Option<Arc<dyn Providers>>,
-    judges: bool,
 }
 
 /// Lines up the models of `lineup` and of the model accounts `person` connected, which they
@@ -348,14 +347,12 @@ async fn line_up(
         Err(error) => return Err(error),
     };
     let switch = Switch::new(built.gateway.take());
-    let judges = lineup.judges();
     let providers = ledger
         .map(|ledger| Arc::new(Host::new(ledger, lineup, switch.clone())) as Arc<dyn Providers>);
     Ok(Lined {
         built,
         switch,
         providers,
-        judges,
     })
 }
 
