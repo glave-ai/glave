@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::{Auth, AuthMethod, Principal, ThreadId};
 use glave_harness::{Brought, Projects};
-use glave_ports::{BoxFuture, Effect, MemoryTools, SpaceId, ToolInfo, ToolOutput, ToolSpec};
+use glave_ports::{BoxFuture, Effect, InMemoryTools, SpaceId, ToolInfo, ToolOutput, ToolSpec};
 use glave_session::protocol::{
     ApiError, NewFolder, Reply, Request, Status, ThreadSummary, TrustAsk, TrustChoice, TrustItem,
     code,
@@ -94,7 +94,7 @@ impl Projects for Repository {
             effect: Effect::Reads,
             parallel: true,
         };
-        let tools = MemoryTools::new(vec![(info, ToolOutput::text(false, "Found."))]);
+        let tools = InMemoryTools::new(vec![(info, ToolOutput::text(false, "Found."))]);
         let brought = Brought {
             tools: vec![Arc::new(tools)],
             ..Brought::default()

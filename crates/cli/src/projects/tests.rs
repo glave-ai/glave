@@ -124,7 +124,7 @@ fn servers_put_away_close_only_once_no_turn_holds_them() {
         root: PathBuf::from(root),
         servers: BTreeMap::new(),
         started: Vec::new(),
-        sources: vec![Arc::new(glave_ports::MemoryTools::new(Vec::new())) as Arc<dyn ToolSource>],
+        sources: vec![Arc::new(glave_ports::InMemoryTools::new(Vec::new())) as Arc<dyn ToolSource>],
         used: jiff::Timestamp::UNIX_EPOCH,
     };
     let mut running = Running::default();

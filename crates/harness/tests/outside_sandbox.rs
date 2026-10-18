@@ -16,7 +16,7 @@ mod outside_sandbox {
 
     use glave_event::{Body, Event, Part, Principal, StopReason, ThreadId, Verdict};
     use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, NoOneToAsk, Settings};
-    use glave_ports::{MemoryLog, Message, ModelRequest, Purpose, Sandbox, SandboxLevel};
+    use glave_ports::{InMemoryLog, Message, ModelRequest, Purpose, Sandbox, SandboxLevel};
     use serde_json::json;
 
     use super::support::*;
@@ -150,7 +150,7 @@ mod outside_sandbox {
                 workspace,
                 answers,
                 person.clone(),
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -214,7 +214,7 @@ mod outside_sandbox {
                 workspace,
                 answers,
                 NoOneToAsk,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 judged(),
             );
@@ -280,7 +280,7 @@ mod outside_sandbox {
                 workspace,
                 answers,
                 person.clone(),
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 judged(),
             );
@@ -319,7 +319,7 @@ mod outside_sandbox {
                 workspace,
                 answers,
                 person.clone(),
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 judged(),
             );

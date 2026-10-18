@@ -22,7 +22,7 @@ mod faults {
     use glave_harness::{AllowAll, Caller, Cancel, Place, Workers, Workspace, wip_branch};
     use glave_ports::{
         BoxFuture, Bytes, Cancellation, Command, ComputerError, ComputerId, ComputerInfo,
-        Computers, Environment, FileWrite, Finished, Glob, Globbed, Listed, Listing, MemoryLog,
+        Computers, Environment, FileWrite, Finished, Glob, Globbed, InMemoryLog, Listed, Listing,
         Output, Save, Saved, Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
     };
     use serde_json::json;
@@ -213,7 +213,7 @@ mod faults {
                 answer(Some("The computer is gone."), vec![], StopReason::EndTurn),
                 answer(Some("Still here."), vec![], StopReason::EndTurn),
             ];
-            let log = MemoryLog::new();
+            let log = InMemoryLog::new();
             let (harness, seen) = harness_with(workspace, answers, AllowAll, log, 1, settings());
             let mut thread = harness.start_thread(scope()).await.unwrap();
             // The computer's side ends once the command has started, as a killed process's
@@ -291,7 +291,7 @@ mod faults {
         origin: &Path,
         faulty: &Arc<Faulty>,
     ) -> (
-        glave_harness::Harness<Script, MemoryLog, glave_ports::MemoryBlobs, AllowAll>,
+        glave_harness::Harness<Script, InMemoryLog, glave_ports::InMemoryBlobs, AllowAll>,
         glave_harness::Thread,
     ) {
         let answers = vec![
@@ -312,7 +312,7 @@ mod faults {
             workspace(dir).await,
             answers,
             AllowAll,
-            MemoryLog::new(),
+            InMemoryLog::new(),
             1,
             settings(),
         );

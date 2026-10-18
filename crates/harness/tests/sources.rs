@@ -17,7 +17,7 @@ mod sources {
     use glave_event::Arguments;
     use glave_harness::{ApprovalRequest, Approver, Cancel, Decision, NoOneToAsk};
     use glave_ports::{
-        BoxFuture, Cancellation, Effect, MemoryLog, MemoryTools, Message, ToolError, ToolInfo,
+        BoxFuture, Cancellation, Effect, InMemoryLog, InMemoryTools, Message, ToolError, ToolInfo,
         ToolOutput, ToolSource, ToolSpec,
     };
     use serde_json::json;
@@ -37,8 +37,8 @@ mod sources {
         (info, ToolOutput::text(false, answer))
     }
 
-    fn extra() -> Arc<MemoryTools> {
-        Arc::new(MemoryTools::new(vec![
+    fn extra() -> Arc<InMemoryTools> {
+        Arc::new(InMemoryTools::new(vec![
             tool(
                 "mcp__docs__search",
                 Effect::Reads,
@@ -93,7 +93,7 @@ mod sources {
             ];
             let tools = extra();
             let (harness, seen) =
-                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
             let harness = harness.with_tools(vec![tools.clone()]);
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
@@ -182,7 +182,7 @@ mod sources {
     }
 
     /// A source whose maker says how to use it.
-    struct Noted(Arc<MemoryTools>);
+    struct Noted(Arc<InMemoryTools>);
 
     impl ToolSource for Noted {
         fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {
@@ -210,7 +210,7 @@ mod sources {
                 answer(Some("Plain."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
             let plain = settings().system_prompt;
             let harness = harness.with_tools(vec![Arc::new(Noted(extra()))]);
             let mut thread = harness.start_thread(scope()).await.unwrap();
@@ -236,7 +236,7 @@ mod sources {
         block_on!(async {
             let answers = vec![answer(Some("Plain."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
-                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
             let harness = harness.with_tools(vec![extra()]);
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness

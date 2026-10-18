@@ -11,7 +11,7 @@ mod support;
 mod judging {
     use glave_event::{Body, Part, StopReason, Verdict};
     use glave_harness::{ApprovalMode, Cancel, NoOneToAsk, Settings};
-    use glave_ports::{MemoryLog, Message};
+    use glave_ports::{InMemoryLog, Message};
     use serde_json::json;
 
     use super::support::*;
@@ -73,7 +73,7 @@ mod judging {
                 answer(Some("Pushed."), vec![], StopReason::EndTurn),
             ];
             let harness =
-                harness_on(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, judged()).await;
+                harness_on(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, judged()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(
@@ -125,7 +125,7 @@ mod judging {
                 answer(Some("Left it."), vec![], StopReason::EndTurn),
             ];
             let harness =
-                harness_on(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, judged()).await;
+                harness_on(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, judged()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(
@@ -155,7 +155,7 @@ mod judging {
                 answer(Some("I did not read it."), vec![], StopReason::EndTurn),
             ];
             let harness =
-                harness_on(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, judged()).await;
+                harness_on(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, judged()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(
@@ -184,7 +184,7 @@ mod judging {
             let mut settings = judged();
             settings.approval = ApprovalMode::Ask;
             let harness =
-                harness_on(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings).await;
+                harness_on(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "push my commits", &Cancel::new(), &mut |_| {})

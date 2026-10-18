@@ -91,11 +91,11 @@ pub(crate) use local_root;
 /// A root that lives only in this process: everything it wraps is unreadable once the
 /// process ends. For tests and in-memory stores.
 #[derive(Debug, Clone)]
-pub struct MemoryRoot {
+pub struct InMemoryRoot {
     local: LocalRoot,
 }
 
-impl MemoryRoot {
+impl InMemoryRoot {
     pub fn new() -> Result<Self, KeyError> {
         Ok(Self {
             local: LocalRoot::new(KeyMaterial::random()?),
@@ -103,7 +103,7 @@ impl MemoryRoot {
     }
 }
 
-local_root!(MemoryRoot);
+local_root!(InMemoryRoot);
 
 /// A root kept in a file readable only by its owner (mode 0600), for machines without a
 /// keychain: headless servers, containers, tests. The file holds the 32 key bytes.
@@ -233,7 +233,7 @@ mod tests {
     fn a_memory_root_cannot_unwrap_another_roots_keys() {
         let org = OrgId::from_uuid(Uuid::from_u128(1));
         let key = KeyMaterial::random().unwrap();
-        let wrapped = block_on!(MemoryRoot::new().unwrap().wrap(org, &key)).unwrap();
-        assert!(block_on!(MemoryRoot::new().unwrap().unwrap(org, &wrapped)).is_err());
+        let wrapped = block_on!(InMemoryRoot::new().unwrap().wrap(org, &key)).unwrap();
+        assert!(block_on!(InMemoryRoot::new().unwrap().unwrap(org, &wrapped)).is_err());
     }
 }

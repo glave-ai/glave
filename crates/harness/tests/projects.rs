@@ -23,7 +23,7 @@ mod projects {
         Projects, Protections, Settled,
     };
     use glave_ports::{
-        BoxFuture, Effect, MemoryLog, MemoryTools, Purpose, Sandbox, SandboxLevel, SpaceId,
+        BoxFuture, Effect, InMemoryLog, InMemoryTools, Purpose, Sandbox, SandboxLevel, SpaceId,
         ToolInfo, ToolOutput, ToolSpec,
     };
     use serde_json::json;
@@ -93,7 +93,7 @@ mod projects {
     }
 
     /// A tool `name` that answers every call with `says`.
-    fn tool(name: &str, says: &str) -> MemoryTools {
+    fn tool(name: &str, says: &str) -> InMemoryTools {
         let info = ToolInfo {
             spec: ToolSpec {
                 name: name.into(),
@@ -103,7 +103,7 @@ mod projects {
             effect: Effect::Reads,
             parallel: true,
         };
-        MemoryTools::new(vec![(info, ToolOutput::text(false, says))])
+        InMemoryTools::new(vec![(info, ToolOutput::text(false, says))])
     }
 
     /// A hook that runs, and lets through, every prompt.
@@ -147,7 +147,7 @@ mod projects {
                 answer(Some("Done."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, Refuse, MemoryLog::new(), 1, asking()).await;
+                harness_seeing(&dir, answers, Refuse, InMemoryLog::new(), 1, asking()).await;
             let harness = harness.with_projects(Some(project.clone() as Arc<dyn Projects>));
             let place = Place::Folder(project_dir.to_string_lossy().into_owned());
             let mut thread = harness
@@ -227,7 +227,7 @@ mod projects {
                 answer(Some("Not allowed."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, Refuse, MemoryLog::new(), 1, asking()).await;
+                harness_seeing(&dir, answers, Refuse, InMemoryLog::new(), 1, asking()).await;
             // The harness's own hooks and tools are the person's, run with their sign-ins: not
             // for grace.
             let harness = harness
@@ -346,7 +346,7 @@ mod projects {
             settings.judge = Judge::Main;
             settings.titles = true;
             let (harness, seen) =
-                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings).await;
+                harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
             let harness = harness
                 .with_projects(Some(Arc::new(Choosing) as Arc<dyn Projects>))
                 .with_web(Some(Arc::new(tool("web_fetch", "the harness's web"))));
@@ -448,7 +448,7 @@ mod projects {
                 workspace,
                 answers,
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );

@@ -52,12 +52,12 @@ pub trait KeyStorage: Send + Sync {
 
 /// Wrapped keys held in memory, for tests and in-memory stores.
 #[derive(Debug, Default)]
-pub struct MemoryKeyStorage {
+pub struct InMemoryKeyStorage {
     orgs: Mutex<BTreeMap<OrgId, Vec<u8>>>,
     spaces: Mutex<BTreeMap<Scope, StoredSpace>>,
 }
 
-impl MemoryKeyStorage {
+impl InMemoryKeyStorage {
     pub fn new() -> Self {
         Self::default()
     }
@@ -89,7 +89,7 @@ impl MemoryKeyStorage {
     }
 }
 
-impl KeyStorage for MemoryKeyStorage {
+impl KeyStorage for InMemoryKeyStorage {
     fn org_key(
         &self,
         org: OrgId,

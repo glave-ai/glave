@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use glave_event::{Opened, Principal, ThreadId};
 use glave_harness::{Brought, Projects, Settled};
-use glave_ports::{BoxFuture, MemoryLog, SpaceId};
+use glave_ports::{BoxFuture, InMemoryLog, SpaceId};
 use glave_session::Caller;
 use glave_session::protocol::{ModelInfo, Reply, Request};
 use glave_session::signin::person;
@@ -81,7 +81,7 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
         setup.project_host = Some(Arc::new(Chooses));
         setup.models = vec![ModelInfo::new("project-model")];
         let (server, seen, _) = setup
-            .build_in_repository("choices-project", MemoryLog::new())
+            .build_in_repository("choices-project", InMemoryLog::new())
             .await;
         let grace = person("https://id.example.com", "grace").unwrap();
         let mut home = server.home_space().await.unwrap();

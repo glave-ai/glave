@@ -13,7 +13,7 @@ mod hooks {
 
     use glave_event::{Body, Event, HookPoint, HookRan, HookResult, Part, StopReason};
     use glave_harness::{Cancel, HarnessError, Hook, Hooks, NoOneToAsk};
-    use glave_ports::{MemoryLog, Message, ModelRequest};
+    use glave_ports::{InMemoryLog, Message, ModelRequest};
     use serde_json::{Value, json};
 
     use super::support::*;
@@ -73,7 +73,7 @@ mod hooks {
             ),
             answer(Some("Done."), vec![], StopReason::EndTurn),
         ];
-        let log = MemoryLog::new();
+        let log = InMemoryLog::new();
         let (harness, seen) = harness_seeing(dir, answers, Refuse, log, 1, settings).await;
         let harness = harness.with_hooks(Hooks::new(hooks).unwrap());
         let mut thread = harness.start_thread(scope()).await.unwrap();
@@ -179,7 +179,7 @@ mod hooks {
         block_on!(async {
             let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
-                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
             let harness = harness.with_hooks(hooks);
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let refused = harness
@@ -211,7 +211,7 @@ mod hooks {
         block_on!(async {
             let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
-                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
             let harness = harness.with_hooks(hooks);
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
@@ -242,7 +242,7 @@ mod hooks {
             answer(Some("Done."), vec![], StopReason::EndTurn),
         ];
         let (harness, seen) =
-            harness_seeing(dir, answers, NoOneToAsk, MemoryLog::new(), 1, settings()).await;
+            harness_seeing(dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings()).await;
         let harness = match hooks {
             Some(hooks) => harness.with_hooks(Hooks::new(hooks).unwrap()),
             None => harness,

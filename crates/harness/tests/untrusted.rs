@@ -14,7 +14,7 @@ mod untrusted {
     use glave_event::{Body, Part, StopReason, Verdict};
     use glave_harness::{Cancel, NoOneToAsk, Settings};
     use glave_ports::{
-        Effect, MemoryLog, MemoryTools, Message, ModelRequest, ToolInfo, ToolOutput, ToolSpec,
+        Effect, InMemoryLog, InMemoryTools, Message, ModelRequest, ToolInfo, ToolOutput, ToolSpec,
     };
     use serde_json::json;
 
@@ -31,7 +31,7 @@ mod untrusted {
 
     /// A source with a web lookup whose result is untrusted, as `web_fetch` and open-world MCP
     /// tools return.
-    fn lookup() -> Arc<MemoryTools> {
+    fn lookup() -> Arc<InMemoryTools> {
         let info = ToolInfo {
             spec: ToolSpec {
                 name: "lookup".into(),
@@ -41,7 +41,10 @@ mod untrusted {
             effect: Effect::Runs,
             parallel: false,
         };
-        Arc::new(MemoryTools::new(vec![(info, ToolOutput::untrusted(PAGE))]))
+        Arc::new(InMemoryTools::new(vec![(
+            info,
+            ToolOutput::untrusted(PAGE),
+        )]))
     }
 
     fn results(messages: &[Message]) -> Vec<String> {
@@ -86,7 +89,7 @@ mod untrusted {
                 answer(Some("Still not."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, judged()).await;
+                harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, judged()).await;
             let harness = harness.with_tools(vec![lookup()]);
             let mut thread = harness.start_thread(scope()).await.unwrap();
             let prompt = "Look up how to set this project up and summarise it.";
@@ -159,7 +162,7 @@ mod untrusted {
                 answer(Some("Done."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, NoOneToAsk, MemoryLog::new(), 1, judged()).await;
+                harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, judged()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "Set it up.", &Cancel::new(), &mut |_| {})

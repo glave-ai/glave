@@ -16,7 +16,7 @@ mod subagents {
     use glave_harness::{AllowAll, Cancel, Harness, Live, Parts};
     use glave_ports::testing::{CountingEntropy, ManualClock};
     use glave_ports::{
-        Completion, Delta, MemoryBlobs, MemoryLog, Message, ModelProvider, ModelRequest,
+        Completion, Delta, InMemoryBlobs, InMemoryLog, Message, ModelProvider, ModelRequest,
         ProviderError,
     };
     use serde_json::json;
@@ -84,7 +84,7 @@ mod subagents {
                 answer(Some("Found tests/a.rs."), vec![], StopReason::EndTurn),
                 answer(Some("There is one test file."), vec![], StopReason::EndTurn),
             ];
-            let log = MemoryLog::new();
+            let log = InMemoryLog::new();
             let (harness, seen) =
                 harness_seeing(&dir, answers, AllowAll, log, 1, with_subagents()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
@@ -161,7 +161,7 @@ mod subagents {
                 &dir,
                 answers,
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 with_subagents(),
             )
@@ -193,7 +193,7 @@ mod subagents {
         block_on!(async {
             let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "hi", &Cancel::new(), &mut |_| {})
@@ -257,8 +257,8 @@ mod subagents {
                     barrier: Arc::new(Barrier::new(2)),
                     parent: Mutex::new(parent),
                 },
-                log: MemoryLog::new(),
-                blobs: MemoryBlobs::new(),
+                log: InMemoryLog::new(),
+                blobs: InMemoryBlobs::new(),
                 approver: AllowAll,
                 clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
                 entropy: Box::new(CountingEntropy::starting_at(1)),

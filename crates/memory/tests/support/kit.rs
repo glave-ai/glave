@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::{Arguments, ModelRef, Part, PrincipalId, StopReason, TokenCounts, Usage};
 use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
-use glave_keys::{KeySettings, MemoryRoot};
+use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory};
 pub use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, ManualClock};
@@ -79,7 +79,7 @@ pub struct Kit {
 impl Kit {
     pub fn new() -> Self {
         let clock = ManualClock::ticking(START);
-        let mut keys = KeySettings::new(Arc::new(MemoryRoot::new().unwrap()));
+        let mut keys = KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()));
         let reading = clock.clone();
         keys.clock = Arc::new(move || Timestamp::from_millisecond(reading.millis()).unwrap());
         Self {

@@ -16,9 +16,9 @@ mod computer;
 pub mod conformance;
 mod env;
 mod failure;
+mod in_memory;
 mod log;
 pub mod memories;
-mod memory;
 mod model;
 mod scope;
 pub mod search;
@@ -42,16 +42,14 @@ pub use computer::{
 };
 pub use env::{Clock, Entropy, OsEntropy, SystemClock};
 pub use failure::Failure;
+pub use in_memory::{InMemoryBlobs, InMemoryLog, InMemorySpaces, InMemoryTools};
 pub use log::{EventLog, LogError, check_append};
-pub use memory::{MemoryBlobs, MemoryLog, MemoryTools};
 pub use model::{
     Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose, RequestedCall,
     Served, ToolCall, ToolChoice, ToolSpec,
 };
 pub use scope::{OrgId, Scope, SpaceId};
-pub use spaces::{
-    FolderKey, MAX_NAME, MemorySpaces, Space, SpaceError, SpaceKind, Spaces, origin_remote,
-};
+pub use spaces::{FolderKey, MAX_NAME, Space, SpaceError, SpaceKind, Spaces, origin_remote};
 pub use sse::{SseDecoder, SseError};
 pub use tools::{
     Assessment, BoxFuture, Cancellation, Effect, NeverCancelled, ToolError, ToolInfo, ToolOutput,

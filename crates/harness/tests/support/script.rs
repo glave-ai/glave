@@ -13,7 +13,7 @@ use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Setting
 pub use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
-    Completion, Delta, EventLog, MemoryBlobs, MemoryLog, ModelProvider, ModelRequest, OrgId,
+    Completion, Delta, EventLog, InMemoryBlobs, InMemoryLog, ModelProvider, ModelRequest, OrgId,
     ProviderError, RequestedCall, Scope, SpaceId,
 };
 
@@ -105,8 +105,8 @@ pub async fn harness<A: Approver>(
     dir: &std::path::Path,
     answers: Vec<Completion>,
     approver: A,
-) -> Harness<Script, MemoryLog, MemoryBlobs, A> {
-    harness_on(dir, answers, approver, MemoryLog::new(), 1, settings()).await
+) -> Harness<Script, InMemoryLog, InMemoryBlobs, A> {
+    harness_on(dir, answers, approver, InMemoryLog::new(), 1, settings()).await
 }
 
 pub fn settings() -> Settings {
@@ -125,8 +125,8 @@ pub async fn asking_harness<A: Approver>(
     dir: &std::path::Path,
     answers: Vec<Completion>,
     approver: A,
-) -> Harness<Script, MemoryLog, MemoryBlobs, A> {
-    harness_on(dir, answers, approver, MemoryLog::new(), 1, asking()).await
+) -> Harness<Script, InMemoryLog, InMemoryBlobs, A> {
+    harness_on(dir, answers, approver, InMemoryLog::new(), 1, asking()).await
 }
 
 /// A harness on a given log. `seed` keeps ids distinct between harnesses sharing a log.
@@ -137,7 +137,7 @@ pub async fn harness_on<L: EventLog, A: Approver>(
     log: L,
     seed: u64,
     settings: Settings,
-) -> Harness<Script, L, MemoryBlobs, A> {
+) -> Harness<Script, L, InMemoryBlobs, A> {
     harness_seeing(dir, answers, approver, log, seed, settings)
         .await
         .0
@@ -154,7 +154,7 @@ pub async fn harness_seeing<L: EventLog, A: Approver>(
     log: L,
     seed: u64,
     settings: Settings,
-) -> (Harness<Script, L, MemoryBlobs, A>, Seen) {
+) -> (Harness<Script, L, InMemoryBlobs, A>, Seen) {
     harness_with(workspace(dir).await, answers, approver, log, seed, settings)
 }
 
@@ -166,7 +166,7 @@ pub fn harness_with<L: EventLog, A: Approver>(
     log: L,
     seed: u64,
     settings: Settings,
-) -> (Harness<Script, L, MemoryBlobs, A>, Seen) {
+) -> (Harness<Script, L, InMemoryBlobs, A>, Seen) {
     let requests: Seen = Arc::new(Mutex::new(Vec::new()));
     let script = Script {
         answers: Mutex::new(answers.into()),
@@ -175,7 +175,7 @@ pub fn harness_with<L: EventLog, A: Approver>(
     let parts = Parts {
         provider: script,
         log,
-        blobs: MemoryBlobs::new(),
+        blobs: InMemoryBlobs::new(),
         approver,
         clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
         entropy: Box::new(CountingEntropy::starting_at(seed)),

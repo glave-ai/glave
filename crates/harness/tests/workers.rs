@@ -20,7 +20,7 @@ mod workers {
     use glave_event::{Body, ComputerKind, Event, Opened, RemovedReason, StopReason};
     use glave_harness::{AllowAll, Caller, Cancel, HarnessError, Place, Workers, wip_branch};
     use glave_ports::{
-        Bytes, Completion, Environment, EventLog as _, FileWrite, MemoryLog, Sources, Standing,
+        Bytes, Completion, Environment, EventLog as _, FileWrite, InMemoryLog, Sources, Standing,
         ThreadQuery,
     };
     use serde_json::json;
@@ -119,7 +119,7 @@ mod workers {
                 workspace(&dir).await,
                 read(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -132,7 +132,7 @@ mod workers {
                 workspace(&dir).await,
                 read(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -168,7 +168,7 @@ mod workers {
                 workspace(&here).await,
                 script(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -246,7 +246,7 @@ mod workers {
                 workspace(&dir).await,
                 Vec::new(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -286,7 +286,7 @@ mod workers {
                 workspace(&here).await,
                 answers,
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );
@@ -337,7 +337,7 @@ mod workers {
                 workspace(&dir).await,
                 Vec::new(),
                 AllowAll,
-                MemoryLog::new(),
+                InMemoryLog::new(),
                 1,
                 settings(),
             );

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use glave_event::{MemoryScope, PrincipalId};
 use glave_harness::Caller;
-use glave_keys::{KeySettings, MemoryRoot};
+use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 use glave_ports::{OrgId, Scope, SpaceId};
 use glave_session::Answering;
@@ -31,7 +31,7 @@ fn personal() -> Scope {
 
 async fn served(name: &str) -> (Tested<SqliteLog>, Store) {
     let store =
-        Store::open_in_memory(KeySettings::new(Arc::new(MemoryRoot::new().unwrap()))).unwrap();
+        Store::open_in_memory(KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()))).unwrap();
     let rules = Rules {
         personal: Some(Personal {
             scope: personal(),

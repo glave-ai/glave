@@ -6,8 +6,8 @@ use std::sync::{Mutex, MutexGuard};
 
 use glave_event::Principal;
 
-use super::{FolderKey, Space, SpaceError, SpaceKind, Spaces};
 use crate::scope::{OrgId, SpaceId};
+use crate::spaces::{FolderKey, Space, SpaceError, SpaceKind, Spaces};
 use crate::tools::BoxFuture;
 
 #[derive(Debug, Default)]
@@ -18,11 +18,11 @@ struct Held {
 
 /// Spaces held in memory. Nothing survives the process.
 #[derive(Debug, Default)]
-pub struct MemorySpaces {
+pub struct InMemorySpaces {
     held: Mutex<Held>,
 }
 
-impl MemorySpaces {
+impl InMemorySpaces {
     pub fn new() -> Self {
         Self::default()
     }
@@ -156,7 +156,7 @@ fn insert(held: &mut Held, org: OrgId, space: &Space) -> Result<Space, SpaceErro
     Ok(kept)
 }
 
-impl Spaces for MemorySpaces {
+impl Spaces for InMemorySpaces {
     fn create<'a>(
         &'a self,
         org: OrgId,
@@ -205,16 +205,16 @@ impl Spaces for MemorySpaces {
 
 #[cfg(test)]
 mod tests {
-    use super::MemorySpaces;
+    use super::InMemorySpaces;
     use crate::conformance;
 
     #[test]
-    fn memory_spaces_pass_the_spaces_conformance_suite() {
+    fn in_memory_spaces_pass_the_spaces_conformance_suite() {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("a current-thread runtime always builds");
         assert_eq!(
-            runtime.block_on(conformance::spaces(&MemorySpaces::new())),
+            runtime.block_on(conformance::spaces(&InMemorySpaces::new())),
             Ok(())
         );
     }

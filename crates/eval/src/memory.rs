@@ -11,7 +11,7 @@ use glave_event::{
     Seq, ThreadId, decode, encode,
 };
 use glave_harness::{Clock as _, Entropy as _, OsEntropy, SystemClock, memory_ledger};
-use glave_keys::{KeySettings, MemoryRoot};
+use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory, Tidier, Writer};
 use glave_ports::{EventLog, ModelProvider, OrgId, Scope, SpaceId};
 use glave_store_sqlite::{SqliteLog, Store};
@@ -85,7 +85,7 @@ impl Remembering {
     /// The store for `task`'s attempt, with memory when `on`, and its seeded memories saved.
     pub async fn open(task: &Task, on: bool) -> Result<Self, EvalError> {
         let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("memory: {error}"));
-        let root = MemoryRoot::new().map_err(|e| fail(&e))?;
+        let root = InMemoryRoot::new().map_err(|e| fail(&e))?;
         let store =
             Store::open_in_memory(KeySettings::new(Arc::new(root))).map_err(|e| fail(&e))?;
         let person = person()?;

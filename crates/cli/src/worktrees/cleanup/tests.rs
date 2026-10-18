@@ -7,7 +7,7 @@ use glave_event::{
 };
 use glave_ports::block_on;
 use glave_ports::testing::CountingEntropy;
-use glave_ports::{Computers, Environment, MemoryLog, OrgId, Sources, SpaceId};
+use glave_ports::{Computers, Environment, InMemoryLog, OrgId, Sources, SpaceId};
 
 use super::*;
 use crate::worktrees::{FOLDER, SWEPT, check_if_due};
@@ -58,7 +58,7 @@ fn day(n: i64) -> Timestamp {
 }
 
 /// A thread whose one event happened at `at`.
-async fn thread(log: &MemoryLog, n: u8, at: Timestamp) -> ThreadId {
+async fn thread(log: &InMemoryLog, n: u8, at: Timestamp) -> ThreadId {
     let id = ThreadId::new(at, [n; 10]).unwrap();
     let header = Header {
         id: EventId::new(at, [n; 10]).unwrap(),
@@ -101,7 +101,7 @@ async fn kept(home: &Path) -> Vec<Kept> {
 }
 
 /// The `workspace.removed` events of `thread`.
-async fn removals(log: &MemoryLog, thread: ThreadId) -> Vec<WorkspaceRemoved> {
+async fn removals(log: &InMemoryLog, thread: ThreadId) -> Vec<WorkspaceRemoved> {
     let events = log.read(&scope(), thread, None, 100).await.unwrap();
     events
         .into_iter()
@@ -122,7 +122,7 @@ fn branches(repo: &Path) -> String {
 #[test]
 fn idle_threads_lose_their_worktrees_only_when_nothing_is_lost() {
     let (home, repo) = place("idle");
-    let log = MemoryLog::new();
+    let log = InMemoryLog::new();
     let env = environment();
     block_on!(async {
         let quiet = thread(&log, 1, day(0)).await;
@@ -170,7 +170,7 @@ fn idle_threads_lose_their_worktrees_only_when_nothing_is_lost() {
 #[test]
 fn the_check_runs_at_most_once_a_day() {
     let (home, repo) = place("daily");
-    let log = MemoryLog::new();
+    let log = InMemoryLog::new();
     let env = environment();
     block_on!(async {
         let quiet = thread(&log, 1, day(0)).await;
@@ -203,7 +203,7 @@ fn the_check_runs_at_most_once_a_day() {
 #[test]
 fn a_gone_repositorys_worktree_goes_to_the_trash_and_is_recorded() {
     let (home, repo) = place("gone");
-    let log = MemoryLog::new();
+    let log = InMemoryLog::new();
     let env = environment();
     block_on!(async {
         let owner = thread(&log, 1, day(30)).await;
@@ -244,7 +244,7 @@ fn a_gone_repositorys_worktree_goes_to_the_trash_and_is_recorded() {
 #[test]
 fn prune_removes_the_safe_explains_the_rest_and_forces_only_by_name() {
     let (home, repo) = place("prune");
-    let log = MemoryLog::new();
+    let log = InMemoryLog::new();
     let env = environment();
     block_on!(async {
         let owner = thread(&log, 1, day(30)).await;
@@ -284,7 +284,7 @@ fn prune_removes_the_safe_explains_the_rest_and_forces_only_by_name() {
 #[test]
 fn archiving_a_thread_releases_only_its_worktrees() {
     let (home, repo) = place("archive");
-    let log = MemoryLog::new();
+    let log = InMemoryLog::new();
     let env = environment();
     block_on!(async {
         let archived = thread(&log, 1, day(30)).await;

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use glave_event::{At, Opened, ScheduleId, When};
 use glave_ports::testing::ManualClock;
-use glave_ports::{EventLog, MemoryLog, SpaceId};
+use glave_ports::{EventLog, InMemoryLog, SpaceId};
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
 use jiff::Timestamp;
 
@@ -35,7 +35,7 @@ fn setup() -> Setup {
 async fn on_repository(name: &str) -> (Tested, ManualClock, PathBuf) {
     let setup = setup();
     let now = setup.clock.clone();
-    let (server, _, repo) = setup.build_in_repository(name, MemoryLog::new()).await;
+    let (server, _, repo) = setup.build_in_repository(name, InMemoryLog::new()).await;
     (server, now, repo)
 }
 

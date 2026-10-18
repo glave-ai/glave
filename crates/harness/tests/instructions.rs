@@ -16,7 +16,7 @@ mod instructions {
     use glave_harness::{
         AllowAll, Caller, Cancel, Compaction, Place, Projects, Settings, agents_md,
     };
-    use glave_ports::{BoxFuture, MemoryLog, Message, ModelRequest};
+    use glave_ports::{BoxFuture, InMemoryLog, Message, ModelRequest};
     use serde_json::json;
 
     use super::support::*;
@@ -59,7 +59,7 @@ mod instructions {
                 answer(Some("Back."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, with_rules()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, with_rules()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
@@ -103,7 +103,7 @@ mod instructions {
         block_on!(async {
             let answers = vec![answer(Some("Hi."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings()).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
@@ -137,7 +137,7 @@ mod instructions {
                 at_percent: 80,
             };
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(
@@ -173,7 +173,7 @@ mod instructions {
             settings.instructions = Some(loaded.text);
             let answers = vec![answer(Some("Bonjour."), vec![], StopReason::EndTurn)];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, settings).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, settings).await;
             let mut thread = harness.start_thread(scope()).await.unwrap();
             harness
                 .run_turn(&mut thread, "hello", &Cancel::new(), &mut |_| {})
@@ -210,7 +210,7 @@ mod instructions {
                 answer(Some("We said hello."), vec![], StopReason::EndTurn),
             ];
             let (harness, seen) =
-                harness_seeing(&dir, answers, AllowAll, MemoryLog::new(), 1, with_rules()).await;
+                harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, with_rules()).await;
             let harness = harness.with_projects(Some(Arc::new(Told)));
             let place = Place::Folder(other.to_string_lossy().into_owned());
             let mut thread = harness

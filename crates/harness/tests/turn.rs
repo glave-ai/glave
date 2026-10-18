@@ -11,7 +11,7 @@ mod scripted {
     use super::support::*;
     use glave_event::{Body, Outcome, Part, RawEvent, StopReason};
     use glave_harness::{AllowAll, Cancel, Live, conversation};
-    use glave_ports::{EventLog, MemoryLog, OrgId, Scope, SpaceId};
+    use glave_ports::{EventLog, InMemoryLog, OrgId, Scope, SpaceId};
     use serde_json::json;
 
     #[test]
@@ -117,7 +117,7 @@ mod scripted {
                 let mut settings = settings();
                 settings.approval = mode;
                 let harness =
-                    harness_on(&dir, answers, Refuse, MemoryLog::new(), 1, settings).await;
+                    harness_on(&dir, answers, Refuse, InMemoryLog::new(), 1, settings).await;
                 let mut thread = harness.start_thread(scope()).await.unwrap();
                 harness
                     .run_turn(&mut thread, "go", &Cancel::new(), &mut |_| {})
@@ -271,7 +271,7 @@ mod scripted {
                 .read(&scope(), thread.id, None, usize::MAX)
                 .await
                 .unwrap();
-            let log = MemoryLog::new();
+            let log = InMemoryLog::new();
             log.append(&scope(), &raw).await.unwrap();
             let later = vec![answer(Some("Again."), vec![], StopReason::EndTurn)];
             let resumed_harness = harness_on(&dir, later, AllowAll, log, 1_000, settings()).await;
@@ -321,7 +321,7 @@ mod scripted {
                 .await
                 .unwrap();
             let cut: Vec<RawEvent> = raw.into_iter().take(5).collect();
-            let log = MemoryLog::new();
+            let log = InMemoryLog::new();
             log.append(&scope(), &cut).await.unwrap();
             let resumed_harness = harness_on(&dir, vec![], AllowAll, log, 1_000, settings()).await;
             let resumed = resumed_harness
