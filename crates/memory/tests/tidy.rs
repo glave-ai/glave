@@ -13,8 +13,9 @@ mod tidy {
     use std::sync::{Arc, Mutex};
 
     use glave_event::{Body, MemoryId, MemoryScope, Principal, PrincipalKind, decode};
-    use glave_harness::{AllowAll, Cancel, MemoryContext, memory_ledger};
+    use glave_harness::{AllowAll, Cancel};
     use glave_memory::{Remembering, Tidied, Tidier, Writer};
+    use glave_ports::memories::{MemoryContext, memory_ledger};
     use glave_ports::{
         Completion, Delta, EventLog, ModelProvider, ModelRequest, ProviderError, Purpose, Scope,
         ToolChoice,
@@ -390,7 +391,7 @@ mod tidy {
             let dir = folder("tidy-background");
             let save = serde_json::json!({"text": TABS_AGAIN, "scope": "space", "force": true});
             let answers = vec![
-                answer(None, vec![(glave_harness::REMEMBER, save)]),
+                answer(None, vec![(glave_ports::memories::REMEMBER, save)]),
                 said("saved"),
             ];
             let (harness, _) = kit

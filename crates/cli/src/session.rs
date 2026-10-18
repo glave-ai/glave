@@ -10,12 +10,12 @@ use anyhow::Context as _;
 use glave_computer::WorkerComputers;
 use glave_event::ThreadId;
 use glave_harness::{
-    AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Projects as _,
-    Protections, Sandbox, Settings, SystemClock, Workspace, agents_md,
+    AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, Projects as _, Protections,
+    Settings, Workspace, agents_md,
 };
 use glave_memory::Tidier;
-use glave_ports::SpaceId;
-use glave_ports::computer::GitCredentials;
+use glave_ports::computer::{GitCredentials, Sandbox};
+use glave_ports::{OsEntropy, SpaceId, SystemClock};
 use glave_process::Processes;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring};

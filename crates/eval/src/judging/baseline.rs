@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use glave_harness::is_secret_file;
+use glave_ports::secrets::is_secret_file;
 use glave_shell::{Context, Verdict, judge};
 
 use super::case::{Action, Label};

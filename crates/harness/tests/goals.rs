@@ -11,7 +11,8 @@ mod support;
 #[cfg(test)]
 mod goals {
     use glave_event::{Body, Event, GoalReason, Part, PrincipalKind, StopReason};
-    use glave_harness::{AllowAll, Caller, Cancel, Goal, UPDATE_GOAL};
+    use glave_harness::{AllowAll, Cancel, Goal, UPDATE_GOAL};
+    use glave_ports::Caller;
     use glave_ports::{Completion, EventLog, InMemoryLog, Message, ModelRequest};
     use serde_json::json;
 

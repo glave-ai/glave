@@ -20,7 +20,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use glave_event::Outcome;
-use glave_harness::{ApprovalMode, SandboxLevel};
+use glave_harness::ApprovalMode;
+use glave_ports::computer::SandboxLevel;
 use serde::Deserialize;
 
 use crate::check::Check;

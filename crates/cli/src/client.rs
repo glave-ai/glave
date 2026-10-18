@@ -13,7 +13,8 @@ use std::time::Duration;
 use glave_event::{
     ApprovalRequested, Body, CallId, GoalReason, Outcome, PrincipalKind, ThreadId, decode,
 };
-use glave_harness::{ApprovalMode, Caller, Cancel, Goal, Question};
+use glave_harness::{ApprovalMode, Cancel, Goal, Question};
+use glave_ports::Caller;
 use glave_session::client::{Remote, RemoteTurn};
 use glave_session::protocol::Meta;
 use glave_session::protocol::{Answer, ApiError, Notification, Reply, Request, Update, code};

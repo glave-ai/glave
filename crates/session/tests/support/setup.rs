@@ -10,9 +10,10 @@ use glave_event::{
     At, Checkout, EventId, FolderSource, Header, Principal, RawEvent, Seq, SpaceFolderSet,
     ThreadId, encode,
 };
-use glave_harness::{ApprovalMode, Memory, Projects, Settings, Workspace};
+use glave_harness::{ApprovalMode, Projects, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
+use glave_ports::memories::Memory;
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
     Completion, EventLog, InMemoryBlobs, InMemoryLog, InMemorySpaces, LogError, OrgId, Scope,

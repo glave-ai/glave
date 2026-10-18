@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, PoisonError};
 
 use glave_event::ThreadId;
-use glave_harness::{Cancel, Commands, HarnessError, Inbox, Live, Standing, Thread};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_harness::{Cancel, Commands, HarnessError, Inbox, Live, Thread};
+use glave_ports::{BlobStore, EventLog, ModelProvider, Standing};
 use tokio::sync::watch;
 
 use crate::protocol::{ApiError, Status, code};

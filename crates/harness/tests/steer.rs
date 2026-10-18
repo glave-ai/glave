@@ -14,8 +14,9 @@ mod steering {
     use glave_event::StopReason;
     use glave_event::{Body, Event, EventId, HookPoint, Outcome, Part, PrincipalKind, Role};
     use glave_harness::{
-        AllowAll, Caller, Cancel, Hook, Hooks, Inbox, Live, NotQueued, Queued, conversation,
+        AllowAll, Cancel, Hook, Hooks, Inbox, Live, NotQueued, Queued, conversation,
     };
+    use glave_ports::Caller;
     use glave_ports::{InMemoryLog, Message, ModelRequest};
     use serde_json::json;
 

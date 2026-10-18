@@ -10,9 +10,8 @@ use std::process::ExitCode;
 
 use glave_computer::worktrees::{self, Kept, Trash};
 use glave_event::{Body, Opened, ThreadId, decode};
-use glave_harness::OsEntropy;
 use glave_ports::secrets::without_secrets;
-use glave_ports::{EventLog, Scope};
+use glave_ports::{EventLog, OsEntropy, Scope};
 use glave_session::protocol::{Reply, Request};
 use jiff::{SignedDuration, Timestamp};
 

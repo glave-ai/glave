@@ -54,14 +54,6 @@ pub use compaction::{Compacted, Compaction};
 pub use conversation::conversation;
 pub use defaults::Defaults;
 pub use glave_event::ApprovalMode;
-pub use glave_ports::Caller;
-pub use glave_ports::computer::{Sandbox, SandboxLevel};
-pub use glave_ports::memories::{
-    Access, Control, EDIT_MEMORY, FORGET, MEMORY_SERVER, Memory, MemoryChange, MemoryContext,
-    MemoryError, MemoryOutput, RECALL, REMEMBER, Remembered, Shown, memory_ledger,
-};
-pub use glave_ports::secrets::{is_secret_file, is_secret_variable};
-pub use glave_ports::{Clock, Entropy, OsEntropy, SystemClock};
 pub use goal::{DEFAULT_BUDGET, Goal, GoalProgress, UPDATE_GOAL};
 pub use harness::{Harness, HarnessError, Parts, Settings, Thread};
 pub use hooks::{Hook, HookError, HookPoint, Hooks, point_name};
@@ -75,7 +67,7 @@ pub use question::{Choice, Question, QuestionRequest};
 pub use removed::{last_active, owner_label, owner_of, record_removed};
 pub use retry::Retries;
 pub use skills::{Found, MAX_LISTED, SKILL, Skill, Skills, find_skills, skill_folders};
-pub use standing::{Change, MAX_TITLE, Standing, change_standing, standing_of};
+pub use standing::{Change, MAX_TITLE, change_standing, standing_of};
 pub use subagent::SubagentType;
 pub use title::{TitleCase, Titled};
 pub use todo::{TODO, Todo};

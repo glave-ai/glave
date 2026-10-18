@@ -2,8 +2,9 @@
 //! either at once with a reply or with a turn to follow. A transport carries the answer; it
 //! never decides what a method does.
 
-use glave_harness::{Caller, Change, Control, DEFAULT_BUDGET, Goal};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_harness::{Change, DEFAULT_BUDGET, Goal};
+use glave_ports::memories::Control;
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::credentials::NewCredential;
 use crate::modes::Choice;

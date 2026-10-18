@@ -34,11 +34,10 @@ use crate::memory::MemoryState;
 use crate::projects::{Brought, Projects};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
-use crate::standing::Standing;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
 use crate::worker::Workers;
-use glave_ports::{Clock, Entropy};
+use glave_ports::{Clock, Entropy, Standing};
 
 /// How the harness runs.
 #[derive(Debug, Clone, PartialEq, Eq)]

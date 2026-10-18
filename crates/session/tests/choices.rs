@@ -7,8 +7,7 @@ use std::sync::Arc;
 
 use glave_event::{Opened, Principal, ThreadId};
 use glave_harness::{Brought, Projects, Settled};
-use glave_ports::{BoxFuture, InMemoryLog, SpaceId};
-use glave_session::Caller;
+use glave_ports::{BoxFuture, Caller, InMemoryLog, SpaceId};
 use glave_session::protocol::{ModelInfo, Reply, Request};
 use glave_session::signin::person;
 

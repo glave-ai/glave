@@ -9,9 +9,8 @@
 use std::collections::HashMap;
 
 use glave_event::{At, Principal, PrincipalId, ThreadId};
-use glave_harness::Caller;
 use glave_ports::{
-    BlobStore, EventLog, ModelProvider, Scope, Space, SpaceError, SpaceId, SpaceKind,
+    BlobStore, Caller, EventLog, ModelProvider, Scope, Space, SpaceError, SpaceId, SpaceKind,
 };
 
 use crate::held::Slot;

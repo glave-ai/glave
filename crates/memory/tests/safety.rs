@@ -13,8 +13,9 @@ mod safety {
     use std::sync::Arc;
 
     use glave_event::{Arguments, MemoryScope, Principal};
-    use glave_harness::{AllowAll, ApprovalMode, Cancel, NoOneToAsk, REMEMBER};
+    use glave_harness::{AllowAll, ApprovalMode, Cancel, NoOneToAsk};
     use glave_memory::{Remembering, Writer};
+    use glave_ports::memories::REMEMBER;
     use glave_ports::testing::fake_secret;
     use glave_ports::{
         BoxFuture, Cancellation, Effect, Purpose, ToolError, ToolInfo, ToolOutput, ToolSource,

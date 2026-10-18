@@ -19,9 +19,10 @@ mod projects {
 
     use glave_event::{Body, HookPoint, StopReason};
     use glave_harness::{
-        AllowAll, ApprovalMode, Brought, Caller, Cancel, Hook, Hooks, Judge, NoOneToAsk, Place,
-        Projects, Protections, Settled,
+        AllowAll, ApprovalMode, Brought, Cancel, Hook, Hooks, Judge, NoOneToAsk, Place, Projects,
+        Protections, Settled,
     };
+    use glave_ports::Caller;
     use glave_ports::computer::{Sandbox, SandboxLevel};
     use glave_ports::{
         BoxFuture, Effect, InMemoryLog, InMemoryTools, Purpose, SpaceId, ToolInfo, ToolOutput,

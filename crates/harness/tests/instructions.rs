@@ -13,9 +13,8 @@ mod instructions {
     use std::sync::Arc;
 
     use glave_event::{Part, StopReason};
-    use glave_harness::{
-        AllowAll, Caller, Cancel, Compaction, Place, Projects, Settings, agents_md,
-    };
+    use glave_harness::{AllowAll, Cancel, Compaction, Place, Projects, Settings, agents_md};
+    use glave_ports::Caller;
     use glave_ports::{BoxFuture, InMemoryLog, Message, ModelRequest};
     use serde_json::json;
 

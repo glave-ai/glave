@@ -4,11 +4,11 @@
 use std::path::Path;
 
 use glave_event::{Body, Opened, RawEvent, ThreadId, decode};
-use glave_ports::{EventLog, SpaceId};
+use glave_ports::{Caller, EventLog, SpaceId};
+use glave_session::TurnStream;
 use glave_session::protocol::{
     ApiError, IdempotencyKey, Meta, NewFolder, Reply, Request, TaskInfo, TaskStatus,
 };
-use glave_session::{Caller, TurnStream};
 
 use super::setup::{Tested, scope};
 

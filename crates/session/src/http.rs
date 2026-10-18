@@ -180,7 +180,7 @@ where
         Some(caller) => caller,
         None => match open(&request, peer) {
             // Neither reads who calls.
-            Ok(()) => crate::Caller::default(),
+            Ok(()) => glave_ports::Caller::default(),
             Err(refused) => return unauthorized(&refused),
         },
     };
@@ -230,7 +230,7 @@ fn open(request: &Request, peer: IpAddr) -> Result<(), SignInError> {
 /// Runs a request for a signed-in caller.
 async fn dispatch<P, L, B>(
     server: &Server<P, L, B>,
-    caller: &crate::Caller,
+    caller: &glave_ports::Caller,
     id: Option<Id>,
     request: Request,
 ) -> Response<Answer>

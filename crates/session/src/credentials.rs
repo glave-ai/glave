@@ -4,8 +4,7 @@
 //! server decides who may ask.
 
 use glave_event::{CredentialId, Secret};
-use glave_harness::Caller;
-use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider};
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, CredentialInfo, DeviceCode, Reply, code};
 use crate::providers::local;

@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use glave_event::{GoalReason, ThreadId};
 use glave_harness::GoalProgress;
-use glave_ports::Completion;
+use glave_ports::{Caller, Completion};
 use glave_session::protocol::{Reply, Request, code};
-use glave_session::{Answering, Caller, TurnItem};
+use glave_session::{Answering, TurnItem};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::sync::Notify;

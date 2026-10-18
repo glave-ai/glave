@@ -14,8 +14,8 @@ use anyhow::{Context as _, bail};
 use glave_event::{Currency, Money};
 use glave_gateway::{Budgets, Limit};
 use glave_gateway_service::{Policy, Service, Wiring};
-use glave_harness::{Caller, OsEntropy, SystemClock};
 use glave_mcp::{Limits, McpServer, ServerConfig};
+use glave_ports::{Caller, OsEntropy, SystemClock};
 use glave_session::signin::{SignIn, Trust};
 use tokio::net::TcpListener;
 

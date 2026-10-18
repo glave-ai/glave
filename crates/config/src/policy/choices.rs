@@ -4,8 +4,9 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use glave_harness::ApprovalMode;
 pub use glave_harness::Judge;
-use glave_harness::{ApprovalMode, SandboxLevel};
+use glave_ports::computer::SandboxLevel;
 
 use crate::policy::files::{ConfigFile, GithubFile, ModelEntry, SandboxChoice};
 use crate::policy::memory::{MemoryChoice, SpaceChoice};

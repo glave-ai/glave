@@ -7,8 +7,9 @@
 use std::sync::Arc;
 
 use glave_event::{Body, EventId, Outcome, Role, ThreadId, decode};
+use glave_ports::Caller;
 use glave_session::protocol::{Notification, Reply, Request, Update, code};
-use glave_session::{Answered, Answering, Caller, TurnItem, TurnStream};
+use glave_session::{Answered, Answering, TurnItem, TurnStream};
 use serde_json::json;
 use tokio::sync::Notify;
 

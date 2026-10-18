@@ -6,8 +6,7 @@
 use glave_event::{
     Body, Event, ThreadArchived, ThreadDeleted, ThreadId, ThreadRenamed, ThreadUnarchived,
 };
-pub use glave_ports::Standing;
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, Standing};
 use jiff::Timestamp;
 
 use crate::approval::Approver;

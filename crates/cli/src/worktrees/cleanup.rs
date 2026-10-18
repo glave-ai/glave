@@ -9,8 +9,8 @@ use std::path::Path;
 
 use glave_computer::worktrees::{self, Condition, Kept, Released, Trash};
 use glave_event::{RemovedReason, ThreadId, WorkspaceRemoved};
-use glave_harness::{Entropy, last_active, owner_label, owner_of, record_removed};
-use glave_ports::{EventLog, Scope};
+use glave_harness::{last_active, owner_label, owner_of, record_removed};
+use glave_ports::{Entropy, EventLog, Scope};
 use jiff::{SignedDuration, Timestamp};
 
 /// How long a thread may do nothing before its worktree is cleaned up.

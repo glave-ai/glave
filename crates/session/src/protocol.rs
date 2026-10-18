@@ -15,8 +15,9 @@ use glave_event::{
     At, CallId, CredentialId, EventId, MemoryId, MemoryScope, Money, Origin, Outcome, Principal,
     ProviderId, RawEvent, ScheduleId, Secret, Seq, ThreadId, TokenCounts, When,
 };
-use glave_harness::{GoalProgress, Remembered, RunningCommand, TurnSummary};
+use glave_harness::{GoalProgress, RunningCommand, TurnSummary};
 use glave_ports::computer::{CommandId, ComputerId};
+use glave_ports::memories::Remembered;
 use glave_ports::{Failure, Space, SpaceId, Standing};
 use serde::{Deserialize, Serialize};
 

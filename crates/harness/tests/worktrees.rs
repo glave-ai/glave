@@ -16,7 +16,8 @@ mod worktrees {
     use super::support::*;
     use glave_computer::{LocalComputers, RemoteComputers, serve_tcp};
     use glave_event::{Body, Event, Opened, StopReason, WorkspaceBound};
-    use glave_harness::{AllowAll, Caller, Cancel, HarnessError, Place, Workspace, branch_for};
+    use glave_harness::{AllowAll, Cancel, HarnessError, Place, Workspace, branch_for};
+    use glave_ports::Caller;
     use glave_ports::computer::{Computers, Environment, Sources};
     use glave_ports::{Completion, EventLog, InMemoryLog, Standing, ThreadQuery};
     use serde_json::json;

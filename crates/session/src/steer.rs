@@ -5,8 +5,8 @@
 //! it, never in between.
 
 use glave_event::{EventId, ThreadId};
-use glave_harness::{Caller, NotQueued, Queued};
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_harness::{NotQueued, Queued};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use tokio::sync::watch;
 
 use crate::held::{Slot, busy};

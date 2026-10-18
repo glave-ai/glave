@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::task::Poll;
 
 use glave_event::ThreadId;
-use glave_harness::{Caller, Cancel, Live, Thread};
-use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider};
+use glave_harness::{Cancel, Live, Thread};
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, watch};
 

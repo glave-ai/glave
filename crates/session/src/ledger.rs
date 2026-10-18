@@ -10,8 +10,7 @@ use glave_event::{
     At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, TaskEnded,
     TaskStarted, ThreadId, decode, encode,
 };
-use glave_harness::Caller;
-use glave_ports::{BlobStore, EventLog, LogError, ModelProvider, SpaceId};
+use glave_ports::{BlobStore, Caller, EventLog, LogError, ModelProvider, SpaceId};
 use jiff::Timestamp;
 
 use crate::protocol::{ApiError, code};
@@ -60,7 +59,7 @@ fn reserved(last: u8) -> Option<ThreadId> {
 pub fn is_ledger(thread: ThreadId) -> bool {
     [
         ledger_id(),
-        glave_harness::memory_ledger(),
+        glave_ports::memories::memory_ledger(),
         accounts_ledger(),
         space_ledger(),
     ]

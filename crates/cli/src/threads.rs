@@ -6,8 +6,8 @@
 use std::process::ExitCode;
 
 use glave_event::ThreadId;
-use glave_harness::{Change, Entropy, OsEntropy, Standing, change_standing};
-use glave_ports::{EventLog, Scope, ThreadQuery};
+use glave_harness::{Change, change_standing};
+use glave_ports::{Entropy, EventLog, OsEntropy, Scope, Standing, ThreadQuery};
 use glave_session::protocol::{Reply, Request, Show};
 use jiff::Timestamp;
 use uuid::Uuid;

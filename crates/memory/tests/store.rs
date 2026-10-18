@@ -10,8 +10,8 @@ mod support;
 #[cfg(test)]
 mod store {
     use glave_event::{MemoryScope, Principal, decode};
-    use glave_harness::{MemoryContext, MemoryError, memory_ledger};
     use glave_memory::{Remembering, SpaceMemory, Writer};
+    use glave_ports::memories::{MemoryContext, MemoryError, memory_ledger};
     use glave_ports::testing::fake_secret;
     use glave_ports::{EventLog, Scope};
 
@@ -38,7 +38,7 @@ mod store {
         }
     }
 
-    fn saved(remembering: Remembering) -> glave_harness::Remembered {
+    fn saved(remembering: Remembering) -> glave_ports::memories::Remembered {
         match remembering {
             Remembering::Saved { memory, .. } => memory,
             Remembering::Similar(similar) => panic!("not saved; similar to {similar:?}"),
@@ -87,7 +87,7 @@ mod store {
                     .await
                     .unwrap(),
             );
-            let texts = |list: Vec<glave_harness::Remembered>| {
+            let texts = |list: Vec<glave_ports::memories::Remembered>| {
                 list.into_iter().map(|m| m.text).collect::<Vec<_>>()
             };
             assert_eq!(

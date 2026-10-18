@@ -11,7 +11,8 @@ mod support;
 #[cfg(test)]
 mod background {
     use glave_event::{Body, CommandEnding, Event, Principal, PrincipalId, StopReason};
-    use glave_harness::{Caller, Cancel, Change, NoOneToAsk};
+    use glave_harness::{Cancel, Change, NoOneToAsk};
+    use glave_ports::Caller;
     use glave_ports::{EventLog as _, InMemoryLog};
     use serde_json::json;
 

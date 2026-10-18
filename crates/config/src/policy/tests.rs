@@ -2,7 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use glave_harness::{ApprovalMode, SandboxLevel};
+use glave_harness::ApprovalMode;
+use glave_ports::computer::SandboxLevel;
 
 use super::*;
 use crate::policy::choices::Judge;

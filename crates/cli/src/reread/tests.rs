@@ -4,8 +4,9 @@
 use std::path::{Path, PathBuf};
 
 use glave_config::policy::Locations;
-use glave_harness::{ApprovalMode, SandboxLevel};
+use glave_harness::ApprovalMode;
 use glave_ports::block_on;
+use glave_ports::computer::SandboxLevel;
 
 use super::*;
 

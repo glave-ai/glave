@@ -19,7 +19,8 @@ mod faults {
     use super::support::*;
     use glave_computer::{LocalComputers, RemoteComputers, serve};
     use glave_event::{Body, Event, Outcome, RemovedReason, StopReason};
-    use glave_harness::{AllowAll, Caller, Cancel, Place, Workers, Workspace, wip_branch};
+    use glave_harness::{AllowAll, Cancel, Place, Workers, Workspace, wip_branch};
+    use glave_ports::Caller;
     use glave_ports::computer::{
         Bytes, Command, ComputerError, ComputerId, ComputerInfo, Computers, Environment, FileWrite,
         Finished, Glob, Globbed, Listed, Listing, Output, Save, Saved, Search, Searched, Sources,

@@ -10,10 +10,13 @@ use glave_event::{
     Body, EventId, Header, MemoryId, MemoryScope, MessageAdded, Part, Principal, PrincipalId, Role,
     Seq, ThreadId, decode, encode,
 };
-use glave_harness::{Clock as _, Entropy as _, OsEntropy, SystemClock, memory_ledger};
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory, Tidier, Writer};
-use glave_ports::{EventLog, ModelProvider, OrgId, Scope, SpaceId};
+use glave_ports::memories::memory_ledger;
+use glave_ports::{
+    Clock as _, Entropy as _, EventLog, ModelProvider, OrgId, OsEntropy, Scope, SpaceId,
+    SystemClock,
+};
 use glave_store_sqlite::{SqliteLog, Store};
 
 use crate::error::EvalError;
@@ -262,7 +265,7 @@ async fn seed(
 /// A clock that always reads one time: when a seeded memory was saved.
 struct Fixed(jiff::Timestamp);
 
-impl glave_harness::Clock for Fixed {
+impl glave_ports::Clock for Fixed {
     fn now(&self) -> jiff::Timestamp {
         self.0
     }

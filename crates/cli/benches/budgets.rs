@@ -12,11 +12,12 @@ use std::time::{Duration, Instant};
 use anyhow::{Context as _, bail};
 use glave_computer::LocalComputers;
 use glave_event::{Arguments, ModelRef, Part, StopReason, TokenCounts, Usage};
-use glave_harness::{
-    AllowAll, Cancel, Harness, OsEntropy, Parts, Settings, SystemClock, Workspace,
-};
+use glave_harness::{AllowAll, Cancel, Harness, Parts, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
-use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError, RequestedCall};
+use glave_ports::{
+    Completion, Delta, ModelProvider, ModelRequest, OsEntropy, ProviderError, RequestedCall,
+    SystemClock,
+};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 
 /// Events in the resumed thread.

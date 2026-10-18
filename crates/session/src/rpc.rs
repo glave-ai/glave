@@ -7,8 +7,7 @@
 
 use std::sync::Arc;
 
-use glave_harness::Caller;
-use glave_ports::{BlobStore, EventLog, ModelProvider};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::io::{

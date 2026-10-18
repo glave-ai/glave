@@ -12,8 +12,7 @@ use std::path::Path;
 use std::sync::{MutexGuard, PoisonError};
 
 use glave_event::ThreadId;
-use glave_harness::Caller;
-use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, SpaceId};
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, SpaceId};
 
 use crate::protocol::{ApiError, Reply, Status, ThreadSummary, TrustAsk, TrustChoice, code};
 use crate::providers::local;
