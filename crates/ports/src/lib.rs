@@ -34,11 +34,11 @@ pub use blob::{BlobError, BlobStore, digest};
 pub use caller::Caller;
 pub use computer::{
     Background, Bytes, Command, CommandId, ComputerError, ComputerId, ComputerInfo, Computers,
-    CredentialAsk, CredentialHost, Credentials, Ending, Entry, EntryKind, Environment, FileWrite,
-    Finished, Forge, ForgeTool, GitCredential, Glob, Globbed, IDLE, Image, KEPT_OUTPUT, Listed,
-    Listing, MAX_BACKGROUND, MAX_WAIT, Match, Network, OnTimeout, Output, PROTECTED, Printed,
-    Sandbox, SandboxLevel, Save, Saved, Search, Searched, Size, Sources, Stat, State, WorkspaceId,
-    WorkspaceInfo, is_protected, is_protected_refusal, looks_binary, refuse_protected,
+    CredentialAsk, CredentialHost, Ending, Entry, EntryKind, Environment, FileWrite, Finished,
+    Forge, ForgeTool, GitCredential, GitCredentials, Glob, Globbed, IDLE, Image, KEPT_OUTPUT,
+    Listed, Listing, MAX_BACKGROUND, MAX_WAIT, Match, Network, OnTimeout, Output, PROTECTED,
+    Printed, Sandbox, SandboxLevel, Save, Saved, Search, Searched, Size, Sources, Stat, State,
+    WorkspaceId, WorkspaceInfo, is_protected, is_protected_refusal, looks_binary, refuse_protected,
 };
 pub use env::{Clock, Entropy, OsEntropy, SystemClock};
 pub use failure::Failure;

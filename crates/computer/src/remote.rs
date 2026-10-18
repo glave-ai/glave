@@ -8,9 +8,9 @@ use std::time::Duration;
 
 use glave_ports::{
     Background, BoxFuture, Bytes, Cancellation, Command, CommandId, ComputerError, ComputerId,
-    ComputerInfo, Computers, CredentialAsk, CredentialHost, Credentials, Environment, FileWrite,
-    Finished, GitCredential, Glob, Globbed, Listed, Listing, Output, Printed, Save, Saved, Search,
-    Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
+    ComputerInfo, Computers, CredentialAsk, CredentialHost, Environment, FileWrite, Finished,
+    GitCredential, GitCredentials, Glob, Globbed, Listed, Listing, Output, Printed, Save, Saved,
+    Search, Searched, Sources, Stat, WorkspaceId, WorkspaceInfo,
 };
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -185,7 +185,7 @@ impl RemoteComputers {
         command: &Command,
         output: &dyn Output,
         cancel: &dyn Cancellation,
-        credentials: Option<&dyn Credentials>,
+        credentials: Option<&dyn GitCredentials>,
     ) -> Result<Finished, ComputerError> {
         let run = format!("run-{}", self.next.fetch_add(1, Ordering::Relaxed));
         // Forgets the run however this call ends, dropped included.
@@ -260,7 +260,7 @@ impl RemoteComputers {
         id: u64,
         ask: &CredentialAsk,
         hosts: &[CredentialHost],
-        credentials: Option<&dyn Credentials>,
+        credentials: Option<&dyn GitCredentials>,
     ) {
         let credential = match credentials {
             Some(credentials) if hosts.iter().any(|host| host.is_for(ask)) => {
@@ -451,7 +451,7 @@ impl Computers for RemoteComputers {
         command: &'a Command,
         output: &'a dyn Output,
         cancel: &'a dyn Cancellation,
-        credentials: &'a dyn Credentials,
+        credentials: &'a dyn GitCredentials,
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
         Box::pin(self.run_now(workspace, command, output, cancel, Some(credentials)))
     }

@@ -17,6 +17,7 @@ use super::servers::Kept;
 use super::*;
 use crate::gateway::{Allowed, gateway};
 use crate::model::Model;
+use glave_harness::Projects as _;
 
 /// A home folder and a project in it whose `.mcp.json` has `servers` and whose config is
 /// `config`, both fresh for the test `name`.
@@ -61,7 +62,7 @@ async fn loaded(home: &Path) -> Loaded {
 }
 
 /// The models a gateway offers: its main one, `big`, and each of `models`.
-fn offering(models: &[&str]) -> Switch {
+fn offering(models: &[&str]) -> GatewaySwitch {
     let endpoint = crate::gateway::tests::endpoint();
     let entries: Vec<ModelEntry> = models
         .iter()
@@ -79,7 +80,7 @@ fn offering(models: &[&str]) -> Switch {
     };
     let provider = Model::for_endpoint(&endpoint).unwrap();
     let built = gateway(provider, &endpoint, None, &entries, Vec::new(), &allowed).unwrap();
-    Switch::new(Some(built))
+    GatewaySwitch::new(Some(built))
 }
 
 /// The projects of a glave in `home` already running the person's own servers `taken`,

@@ -148,7 +148,7 @@ mod over_http {
     /// Signs each request with its method and body length, as a cloud's signer would.
     struct Signer;
 
-    impl glave_ports::auth::Credentials for Signer {
+    impl glave_ports::auth::RequestSigner for Signer {
         fn authorize<'a>(
             &'a self,
             request: &'a glave_ports::auth::Outgoing<'a>,
@@ -177,7 +177,7 @@ mod over_http {
     /// Credentials that cannot be had.
     struct Missing;
 
-    impl glave_ports::auth::Credentials for Missing {
+    impl glave_ports::auth::RequestSigner for Missing {
         fn authorize<'a>(
             &'a self,
             _request: &'a glave_ports::auth::Outgoing<'a>,

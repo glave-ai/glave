@@ -14,7 +14,7 @@ use glave_ports::{
 };
 
 use super::sandbox_available;
-use crate::{LocalComputers, Switch};
+use crate::{CancelSwitch, LocalComputers};
 
 fn enforced() -> bool {
     let available = sandbox_available();
@@ -57,7 +57,7 @@ async fn run(
     command.sandbox = Some(sandbox.clone());
     let output = Collect::default();
     let finished = computers
-        .run(workspace, &command, &output, &Switch::default())
+        .run(workspace, &command, &output, &CancelSwitch::default())
         .await
         .unwrap();
     (finished.ending, output.0.lock().unwrap().clone())
@@ -342,8 +342,9 @@ fn other_spellings_of_protected_paths_are_protected_too() {
                 .unwrap();
             let mut command = Command::new(write_spellings());
             command.sandbox = Some(sandbox.clone());
+            let never = CancelSwitch::default();
             let refused = computers
-                .run(here.id, &command, &Collect::default(), &Switch::default())
+                .run(here.id, &command, &Collect::default(), &never)
                 .await;
             assert!(
                 matches!(refused, Err(glave_ports::ComputerError::Unsupported(_))),

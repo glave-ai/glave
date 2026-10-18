@@ -14,7 +14,7 @@ use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use glave_ports::{ComputerError, CredentialHost, Credentials, ForgeTool};
+use glave_ports::{ComputerError, CredentialHost, ForgeTool, GitCredentials};
 use tokio::net::TcpListener;
 use wrapper::{Places, quoted};
 
@@ -55,7 +55,7 @@ impl Drop for Offered {
 
 impl Offered {
     /// Answers the command's helper until the command ends: run it beside the command.
-    pub(crate) async fn serve(&self, credentials: &dyn Credentials) {
+    pub(crate) async fn serve(&self, credentials: &dyn GitCredentials) {
         serving::serve(&self.listener, &self.password, &self.hosts, credentials).await;
     }
 }
@@ -64,7 +64,7 @@ impl Offered {
 /// environment is `environment`; none when it names none. A host whose URL is not a plain
 /// origin is never offered.
 pub(crate) async fn offer(
-    credentials: &dyn Credentials,
+    credentials: &dyn GitCredentials,
     environment: &[(OsString, OsString)],
 ) -> Result<Option<Offered>, ComputerError> {
     let hosts: Vec<CredentialHost> = credentials

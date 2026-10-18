@@ -23,7 +23,7 @@ fn shared(dir: &Path) -> (Arc<InProcess>, WorkerComputers) {
     let workers = WorkerComputers::on(
         Box::new(Shared(Arc::clone(&backend))),
         Limits::default(),
-        Credentials::None,
+        WorkerCredentials::None,
     );
     (backend, workers)
 }

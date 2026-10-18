@@ -28,7 +28,7 @@ use std::time::Duration;
 use glave_ports::secrets::without_secrets;
 use glave_ports::{
     Background, BoxFuture, Bytes, Cancellation, Command, CommandId, ComputerError, ComputerId,
-    ComputerInfo, Computers, Credentials, Environment, FileWrite, Finished, GitCredential, Glob,
+    ComputerInfo, Computers, Environment, FileWrite, Finished, GitCredential, GitCredentials, Glob,
     Globbed, Image, Listed, Listing, Network, Output, Printed, Save, Saved, Search, Searched, Size,
     Sources, Stat, State, WorkspaceId, WorkspaceInfo,
 };
@@ -481,7 +481,7 @@ impl Computers for LocalComputers {
         command: &'a Command,
         output: &'a dyn Output,
         cancel: &'a dyn Cancellation,
-        credentials: &'a dyn Credentials,
+        credentials: &'a dyn GitCredentials,
     ) -> BoxFuture<'a, Result<Finished, ComputerError>> {
         Box::pin(async move {
             let opened = self.registry.workspace(workspace)?;

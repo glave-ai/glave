@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use aws_credential_types::Credentials as AwsKeys;
 use aws_sigv4::http_request::{SignableBody, SignableRequest, SigningSettings, sign};
 use aws_sigv4::sign::v4;
-use glave_ports::auth::{AuthError, Credentials, Header, Outgoing, Refreshing, Secret};
+use glave_ports::auth::{AuthError, Header, Outgoing, Refreshing, RequestSigner, Secret};
 use glave_ports::{BoxFuture, Clock};
 use jiff::{SignedDuration, Timestamp};
 
@@ -51,7 +51,7 @@ impl SigV4 {
     }
 }
 
-impl Credentials for SigV4 {
+impl RequestSigner for SigV4 {
     fn authorize<'a>(
         &'a self,
         request: &'a Outgoing<'a>,

@@ -14,7 +14,7 @@ const FILL_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Where workers' git credentials come from.
 #[derive(Debug, Clone, Default)]
-pub enum Credentials {
+pub enum WorkerCredentials {
     /// None: only public repositories can be cloned, and nothing can be pushed.
     #[default]
     None,
@@ -25,7 +25,7 @@ pub enum Credentials {
     HostGit,
 }
 
-impl Credentials {
+impl WorkerCredentials {
     /// The credential for the repository at `url`, if there is one. Only HTTPS URLs get one.
     pub async fn for_url(&self, url: &str) -> Result<Option<GitCredential>, ComputerError> {
         let Some(rest) = url.strip_prefix("https://") else {
@@ -117,7 +117,7 @@ mod tests {
             ("me", "s3cret")
         );
         assert!(parse("protocol=https\nhost=h\n").is_none());
-        let fixed = Credentials::Fixed(credential);
+        let fixed = WorkerCredentials::Fixed(credential);
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap();

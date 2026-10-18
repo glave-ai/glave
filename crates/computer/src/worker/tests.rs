@@ -12,7 +12,7 @@ use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
 use super::*;
-use crate::{LocalComputers, Switch, serve, serve_tls};
+use crate::{CancelSwitch, LocalComputers, serve, serve_tls};
 
 mod reconnect;
 
@@ -231,7 +231,7 @@ fn a_worker_is_made_cloned_into_set_up_saved_and_removed() {
         memory_gb: Some(4),
         ..Limits::default()
     };
-    let workers = WorkerComputers::on(Box::new(backend), limits, Credentials::None);
+    let workers = WorkerComputers::on(Box::new(backend), limits, WorkerCredentials::None);
     block_on!(async {
         let made = workers.create(&environment()).await.unwrap();
         assert_eq!(made.environment, Some(environment()));
@@ -254,7 +254,7 @@ fn a_worker_is_made_cloned_into_set_up_saved_and_removed() {
                 opened.id,
                 &Command::new("echo more > b.txt"),
                 &Quiet,
-                &Switch::default(),
+                &CancelSwitch::default(),
             )
             .await
             .unwrap();
@@ -287,7 +287,7 @@ fn a_worker_runs_within_its_minutes_and_can_still_be_saved_after() {
     };
     let backend = InProcess::new(&dir.join("copies"));
     let workers =
-        WorkerComputers::on(Box::new(backend), limits, Credentials::None).with_clock(clock);
+        WorkerComputers::on(Box::new(backend), limits, WorkerCredentials::None).with_clock(clock);
     block_on!(async {
         let made = workers.create(&environment()).await.unwrap();
         let second = workers.create(&environment()).await;
@@ -299,7 +299,12 @@ fn a_worker_runs_within_its_minutes_and_can_still_be_saved_after() {
         let opened = workers.open(made.id, &sources).await.unwrap();
         now.store(1_000 + 5 * 60, Ordering::SeqCst);
         let late = workers
-            .run(opened.id, &Command::new("true"), &Quiet, &Switch::default())
+            .run(
+                opened.id,
+                &Command::new("true"),
+                &Quiet,
+                &CancelSwitch::default(),
+            )
             .await;
         assert!(
             matches!(&late, Err(ComputerError::Refused(m)) if m.contains("max_minutes")),
@@ -318,7 +323,11 @@ fn a_worker_runs_within_its_minutes_and_can_still_be_saved_after() {
 fn a_worker_with_no_network_is_reached_by_stream_and_clones_nothing() {
     let dir = scratch("offline");
     let backend = InProcess::new(&dir.join("copies"));
-    let workers = WorkerComputers::on(Box::new(backend), Limits::default(), Credentials::None);
+    let workers = WorkerComputers::on(
+        Box::new(backend),
+        Limits::default(),
+        WorkerCredentials::None,
+    );
     let mut offline = environment();
     offline.network = Some(Network::Off);
     offline.setup.clear();
@@ -341,7 +350,12 @@ fn a_worker_with_no_network_is_reached_by_stream_and_clones_nothing() {
             .await
             .unwrap();
         let finished = workers
-            .run(opened.id, &Command::new("true"), &Quiet, &Switch::default())
+            .run(
+                opened.id,
+                &Command::new("true"),
+                &Quiet,
+                &CancelSwitch::default(),
+            )
             .await
             .unwrap();
         assert_eq!(finished.ending, Ending::Exited { code: 0 });
@@ -357,7 +371,7 @@ fn a_policy_requiring_vm_isolation_refuses_a_backend_without_it() {
         isolation: Isolation::Vm,
         ..Limits::default()
     };
-    let workers = WorkerComputers::on(Box::new(backend), limits, Credentials::None);
+    let workers = WorkerComputers::on(Box::new(backend), limits, WorkerCredentials::None);
     block_on!(async {
         let refused = workers.create(&environment()).await;
         assert!(
@@ -376,7 +390,7 @@ fn a_failed_setup_says_why() {
         cpus: Some(2),
         ..Limits::default()
     };
-    let workers = WorkerComputers::on(Box::new(backend), limits, Credentials::None);
+    let workers = WorkerComputers::on(Box::new(backend), limits, WorkerCredentials::None);
     let mut broken = environment();
     broken.setup = vec!["echo missing tool >&2; exit 3".into()];
     block_on!(async {

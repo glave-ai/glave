@@ -1,7 +1,7 @@
 //! Credentials on a computer (`specs/computers.md`, rule 8): what git asks a credential helper
 //! for when it fetches or pushes over HTTPS. A workspace's sources may bring one inside
 //! `workspace/open`, kept in memory; a command's git and the forge's own command-line tool ask
-//! [`Credentials`] for one each time they need it (`credentials/request`), so the value
+//! [`GitCredentials`] for one each time they need it (`credentials/request`), so the value
 //! reaches only the process that asked, never a disk or the command's environment.
 
 use glave_event::{Forge, Secret};
@@ -106,9 +106,10 @@ pub struct CredentialAsk {
     pub path: Option<String>,
 }
 
-/// Where a command's credentials come from, asked for at each use: the hosts a person
-/// connected, sealed in the store, or an organization's grants. Either may refuse.
-pub trait Credentials: Send + Sync {
+/// Where a command's git credentials come from, asked for at each use by its git and by the
+/// forge tools that ask through git's helper: the hosts a person connected, sealed in the
+/// store, or an organization's grants. Either may refuse.
+pub trait GitCredentials: Send + Sync {
     /// The hosts it may answer for now.
     fn hosts(&self) -> BoxFuture<'_, Vec<CredentialHost>>;
 

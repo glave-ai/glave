@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use glave_ports::{BoxFuture, CredentialAsk, CredentialHost, Credentials, GitCredential};
+use glave_ports::{BoxFuture, CredentialAsk, CredentialHost, GitCredential, GitCredentials};
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
@@ -75,7 +75,7 @@ pub(super) struct Asking<'a> {
     pub(super) hosts: Vec<CredentialHost>,
 }
 
-impl Credentials for Asking<'_> {
+impl GitCredentials for Asking<'_> {
     fn hosts(&self) -> BoxFuture<'_, Vec<CredentialHost>> {
         Box::pin(std::future::ready(self.hosts.clone()))
     }

@@ -8,7 +8,7 @@ use super::{Verdict, ensure};
 use crate::computer::{
     Command, Computers, CredentialHost, Ending, Forge, GitCredential, WorkspaceId,
 };
-use crate::testing::{FAKE_COMMIT, FakeGitHost, FixedCredentials, fake_secret};
+use crate::testing::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials, fake_secret};
 
 /// git with nothing but the command's own settings, and never asking at a terminal.
 const PLAIN_GIT: &str =
@@ -31,7 +31,7 @@ pub(super) async fn credentials<C: Computers>(computers: &C, here: WorkspaceId) 
             forge: Forge::Github,
         },
     ];
-    let fixed = FixedCredentials::new(hosts, credential);
+    let fixed = FixedGitCredentials::new(hosts, credential);
     let fetch = format!("{PLAIN_GIT}\ngit ls-remote {}/repo.git", host.url);
 
     let (ending, printed) = run(computers, here, &fetch, None).await?;
@@ -78,7 +78,7 @@ async fn run<C: Computers>(
     computers: &C,
     here: WorkspaceId,
     script: &str,
-    credentials: Option<&FixedCredentials>,
+    credentials: Option<&FixedGitCredentials>,
 ) -> Result<(Ending, String), String> {
     let command = Command::new(script);
     let output = Collect::new();

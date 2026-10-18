@@ -5,7 +5,7 @@ use chacha20poly1305::aead::{Aead as _, KeyInit as _, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 
 use crate::error::KeyError;
-use crate::secret::{Secret, random};
+use crate::material::{KeyMaterial, random};
 
 const NONCE: usize = 24;
 
@@ -22,7 +22,7 @@ pub(crate) fn associated(fields: &[&[u8]]) -> Vec<u8> {
 }
 
 /// Seals `plaintext` under `key`, bound to `aad`.
-pub(crate) fn seal(key: &Secret, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, KeyError> {
+pub(crate) fn seal(key: &KeyMaterial, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, KeyError> {
     let cipher = XChaCha20Poly1305::new(&(*key.bytes()).into());
     let mut nonce = [0u8; NONCE];
     random(&mut nonce)?;
@@ -44,7 +44,7 @@ pub(crate) fn seal(key: &Secret, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>
 /// Opens what [`seal`] made under `key` and the same `aad`. `name` names the key in the
 /// error when the bytes do not open.
 pub(crate) fn open(
-    key: &Secret,
+    key: &KeyMaterial,
     aad: &[u8],
     sealed: &[u8],
     name: &str,
@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn sealed_content_opens_only_with_its_key_and_associated_data() {
-        let key = Secret::random().unwrap();
+        let key = KeyMaterial::random().unwrap();
         let aad = associated(&[b"row", b"1"]);
         let sealed = seal(&key, &aad, b"hello").unwrap();
         assert_eq!(sealed.len(), 24 + 5 + 16, "nonce, ciphertext, tag");
@@ -74,7 +74,7 @@ mod tests {
             open(&key, &other_row, &sealed, "k"),
             Err(KeyError::Tampered("k".into()))
         );
-        let other_key = Secret::random().unwrap();
+        let other_key = KeyMaterial::random().unwrap();
         assert!(open(&other_key, &aad, &sealed, "k").is_err());
         let mut flipped = sealed.clone();
         if let Some(byte) = flipped.last_mut() {
@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn every_seal_uses_a_fresh_nonce() {
-        let key = Secret::random().unwrap();
+        let key = KeyMaterial::random().unwrap();
         assert_ne!(
             seal(&key, b"", b"same").unwrap(),
             seal(&key, b"", b"same").unwrap()

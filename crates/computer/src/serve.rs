@@ -24,7 +24,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
 
-use crate::cancel::Switch;
+use crate::cancel::CancelSwitch;
 use crate::token::{Token, Tokens};
 use crate::wire::{self, Chunk, MAX_LINE, OUTPUT, Request, code};
 use asking::{Asking, Asks};
@@ -44,7 +44,7 @@ const SEEN: usize = 4096;
 struct Connection<C> {
     computers: Arc<C>,
     /// Running commands by run name, so `command/cancel` can stop them.
-    runs: Mutex<HashMap<String, Switch>>,
+    runs: Mutex<HashMap<String, CancelSwitch>>,
     seen: Mutex<Seen>,
     lines: mpsc::Sender<String>,
     /// The computer's own credential requests, waiting for the client's answers.
@@ -362,7 +362,7 @@ impl<C: Computers + 'static> Connection<C> {
     }
 
     /// Registers a run under its name, refusing a name already running.
-    fn start(&self, run: &str) -> Result<Switch, Value> {
+    fn start(&self, run: &str) -> Result<CancelSwitch, Value> {
         let mut runs = self
             .runs
             .lock()
@@ -371,7 +371,7 @@ impl<C: Computers + 'static> Connection<C> {
             let error = ComputerError::Refused(format!("a run named {run:?} is already running"));
             return Err(wire::computer_failure(&error));
         }
-        let switch = Switch::default();
+        let switch = CancelSwitch::default();
         runs.insert(run.to_owned(), switch.clone());
         Ok(switch)
     }

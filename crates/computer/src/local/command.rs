@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use glave_ports::{
-    Cancellation, Command, ComputerError, Credentials, Ending, Finished, OnTimeout, Output,
+    Cancellation, Command, ComputerError, Ending, Finished, GitCredentials, OnTimeout, Output,
     Sandbox, WorkspaceId,
 };
 use glave_process::{Child, Program};
@@ -149,7 +149,7 @@ pub(crate) async fn run(
     command: &Command,
     (output, cancel): (&dyn Output, &dyn Cancellation),
     helper: Option<&Path>,
-    credentials: Option<&dyn Credentials>,
+    credentials: Option<&dyn GitCredentials>,
     keep: Keep<'_>,
 ) -> Result<Finished, ComputerError> {
     let limit = command
@@ -208,7 +208,7 @@ pub(crate) async fn run(
 /// `work`, with the command's credential helper answered meanwhile, when it has one.
 async fn answering<T>(
     work: impl Future<Output = T>,
-    helper: Option<(&Offered, &dyn Credentials)>,
+    helper: Option<(&Offered, &dyn GitCredentials)>,
 ) -> T {
     let Some((offered, credentials)) = helper else {
         return work.await;

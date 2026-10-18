@@ -16,8 +16,8 @@ use std::sync::{Arc, Mutex};
 
 use glave_event::Sha256;
 use glave_ports::{
-    Bytes, Cancellation, Command, CommandId, ComputerError, Computers, Credentials, FileWrite,
-    Finished, Glob, Globbed, Listed, Listing, OnTimeout, Output, Sandbox, Search, Searched,
+    Bytes, Cancellation, Command, CommandId, ComputerError, Computers, FileWrite, Finished,
+    GitCredentials, Glob, Globbed, Listed, Listing, OnTimeout, Output, Sandbox, Search, Searched,
     Sources, Stat, WorkspaceInfo, digest, is_protected, is_protected_refusal, refuse_protected,
 };
 
@@ -31,7 +31,7 @@ pub struct Workspace {
     root: PathBuf,
     sandbox: Option<Sandbox>,
     /// Where commands' git and forge tools ask for credentials, at each use; none by default.
-    credentials: Option<Arc<dyn Credentials>>,
+    credentials: Option<Arc<dyn GitCredentials>>,
     temp: Option<PathBuf>,
     /// What the model last read of each file, by its path in the workspace.
     reads: Mutex<HashMap<String, Sha256>>,
@@ -64,13 +64,13 @@ impl Workspace {
     /// they need one (`specs/computers.md`, rule 8), as do the worktrees and scratch folders
     /// made from this workspace.
     #[must_use]
-    pub fn with_credentials(mut self, credentials: Arc<dyn Credentials>) -> Self {
+    pub fn with_credentials(mut self, credentials: Arc<dyn GitCredentials>) -> Self {
         self.credentials = Some(credentials);
         self
     }
 
     /// Where commands ask for credentials, if anywhere.
-    pub(crate) fn credentials(&self) -> Option<&Arc<dyn Credentials>> {
+    pub(crate) fn credentials(&self) -> Option<&Arc<dyn GitCredentials>> {
         self.credentials.as_ref()
     }
 

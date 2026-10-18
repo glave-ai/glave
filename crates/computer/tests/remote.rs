@@ -163,7 +163,7 @@ mod remote_tests {
             .await
             .unwrap();
         let text = Text(Mutex::default());
-        let never = glave_computer::Switch::default();
+        let never = glave_computer::CancelSwitch::default();
         remote
             .run(here.id, &Command::new("env"), &text, &never)
             .await

@@ -16,7 +16,7 @@ mod faults {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    use glave_computer::{RemoteComputers, Switch};
+    use glave_computer::{CancelSwitch, RemoteComputers};
     use glave_ports::{BoxFuture, Command, ComputerError, Computers, Ending, FileWrite, Output};
     use proptest::prelude::*;
     use tokio::time::Instant;
@@ -95,7 +95,7 @@ mod faults {
                 command.timeout_secs = Some(timeout);
                 let text = Text::default();
                 let finished = remote
-                    .run(workspace(), &command, &text, &Switch::default())
+                    .run(workspace(), &command, &text, &CancelSwitch::default())
                     .await?;
                 assert_eq!(finished.ending, Ending::Exited { code: 0 }, "{op:?}");
                 let printed = text.0.lock().unwrap().clone();

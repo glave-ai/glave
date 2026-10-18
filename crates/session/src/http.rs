@@ -32,7 +32,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use self::body::Answer;
-use self::hosts::Hosts;
+use self::hosts::ListenerNames;
 use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Request, code};
 use crate::rpc::{Id, parse, respond};
@@ -76,7 +76,7 @@ where
         None => signin,
     });
     let site = Arc::new(site);
-    let hosts = Arc::new(Hosts::of(listener.local_addr()?));
+    let hosts = Arc::new(ListenerNames::of(listener.local_addr()?));
     let mut connections = JoinSet::new();
     let mut stop = pin!(stop);
     loop {

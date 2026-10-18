@@ -19,7 +19,7 @@ mod wire;
 mod worker;
 pub mod worktrees;
 
-pub use cancel::Switch;
+pub use cancel::CancelSwitch;
 pub use environment::{EnvironmentError, Found, read_environment};
 pub use local::{LocalComputers, sandbox_available, sandbox_helper};
 pub use remote::RemoteComputers;
@@ -27,7 +27,7 @@ pub use serve::{serve, serve_tcp, serve_tls};
 pub use tls::{Fingerprint, Identity, connect_tls};
 pub use token::{MIN_SECRET, Token, Tokens};
 pub use worker::{
-    Clock, Credentials, Docker, DockerSettings, Isolation, Limits, WorkerComputers, https_url,
+    Clock, Docker, DockerSettings, Isolation, Limits, WorkerComputers, WorkerCredentials, https_url,
 };
 #[cfg(feature = "kubernetes")]
 pub use worker::{Kubernetes, KubernetesSettings};

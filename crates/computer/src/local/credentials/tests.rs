@@ -1,14 +1,14 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedCredentials, fake_secret};
+use glave_ports::testing::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials, fake_secret};
 use glave_ports::{
     Command, Computers, CredentialHost, Ending, Environment, Forge, GitCredential, Output, Sandbox,
     SandboxLevel, Sources, block_on,
 };
 
 use super::*;
-use crate::{LocalComputers, Switch, sandbox_available};
+use crate::{CancelSwitch, LocalComputers, sandbox_available};
 
 fn host(url: &str, forge: Forge) -> CredentialHost {
     CredentialHost {
@@ -165,7 +165,7 @@ fn gh_pointed_at_another_host_runs_without_the_token() {
 #[test]
 fn the_helper_files_hold_no_token_and_go_with_the_command() {
     let token = fake_secret("ghp_");
-    let credentials = FixedCredentials::new(
+    let credentials = FixedGitCredentials::new(
         vec![
             host("https://github.com", Forge::Github),
             host("https://x\ntouch pwned", Forge::Other),
@@ -186,7 +186,7 @@ fn the_helper_files_hold_no_token_and_go_with_the_command() {
         folder
     });
     assert!(!folder.exists(), "removed when the command ends");
-    let none = FixedCredentials::new(Vec::new(), GitCredential::new("a", &token).unwrap());
+    let none = FixedGitCredentials::new(Vec::new(), GitCredential::new("a", &token).unwrap());
     assert!(block_on!(offer(&none, &[])).unwrap().is_none());
 }
 
@@ -222,7 +222,7 @@ fn a_sandboxed_command_signs_in_through_the_helper() {
     let dir = scratch("credentials");
     let token = fake_secret("ghp_");
     let fake = FakeGitHost::start("x-access-token", &token).unwrap();
-    let credentials = FixedCredentials::new(
+    let credentials = FixedGitCredentials::new(
         vec![host(&fake.url, Forge::Other)],
         GitCredential::new("x-access-token", &token).unwrap(),
     );
@@ -247,7 +247,13 @@ fn a_sandboxed_command_signs_in_through_the_helper() {
             glave_home: None,
         });
         computers
-            .run_with_credentials(here.id, &command, &output, &Switch::default(), &credentials)
+            .run_with_credentials(
+                here.id,
+                &command,
+                &output,
+                &CancelSwitch::default(),
+                &credentials,
+            )
             .await
             .unwrap()
     });

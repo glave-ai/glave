@@ -7,7 +7,7 @@
 //! The judge model and each of `[[models]]` are choices a thread may make instead of the main
 //! model (`model/list`), checked against the policy as the main model is, and so are the
 //! models of the accounts the person connected (`providers`), leaving out those it refuses.
-//! The gateway in use is replaced whole when those accounts change ([`Switch`]).
+//! The gateway in use is replaced whole when those accounts change ([`GatewaySwitch`]).
 
 pub mod remote;
 pub mod serve;
@@ -90,9 +90,9 @@ pub fn gateway(
 /// connects or removes a model account, so each call goes to the models set up when it
 /// starts. Clones share it.
 #[derive(Clone, Default)]
-pub struct Switch(Arc<RwLock<Option<Arc<Gateway>>>>);
+pub struct GatewaySwitch(Arc<RwLock<Option<Arc<Gateway>>>>);
 
-impl Switch {
+impl GatewaySwitch {
     pub fn new(gateway: Option<Gateway>) -> Self {
         Self(Arc::new(RwLock::new(gateway.map(Arc::new))))
     }
@@ -126,7 +126,7 @@ fn models(gateway: &Gateway) -> impl Iterator<Item = &Target> {
         .chain(routes.choices())
 }
 
-impl ModelProvider for Switch {
+impl ModelProvider for GatewaySwitch {
     async fn complete(
         &self,
         request: &ModelRequest,

@@ -8,9 +8,9 @@ use crate::error::KeyError;
 
 /// A 256-bit key.
 #[derive(Clone)]
-pub struct Secret(Zeroizing<[u8; 32]>);
+pub struct KeyMaterial(Zeroizing<[u8; 32]>);
 
-impl Secret {
+impl KeyMaterial {
     /// A fresh key from the operating system's random source.
     pub fn random() -> Result<Self, KeyError> {
         let mut bytes = Zeroizing::new([0u8; 32]);
@@ -36,9 +36,9 @@ impl Secret {
     }
 }
 
-impl fmt::Debug for Secret {
+impl fmt::Debug for KeyMaterial {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Secret(..)")
+        f.write_str("KeyMaterial(..)")
     }
 }
 
@@ -53,16 +53,16 @@ mod tests {
 
     #[test]
     fn keys_are_never_printed() {
-        let secret = Secret::from_bytes(&[7; 32]).unwrap();
-        assert_eq!(format!("{secret:?}"), "Secret(..)");
+        let key = KeyMaterial::from_bytes(&[7; 32]).unwrap();
+        assert_eq!(format!("{key:?}"), "KeyMaterial(..)");
     }
 
     #[test]
     fn a_key_must_be_32_bytes() {
-        assert!(Secret::from_bytes(&[1; 31]).is_err());
+        assert!(KeyMaterial::from_bytes(&[1; 31]).is_err());
         assert_ne!(
-            Secret::random().unwrap().bytes(),
-            Secret::random().unwrap().bytes()
+            KeyMaterial::random().unwrap().bytes(),
+            KeyMaterial::random().unwrap().bytes()
         );
     }
 }

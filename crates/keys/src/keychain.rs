@@ -4,8 +4,8 @@
 use keyring::{Entry, Error};
 
 use crate::error::KeyError;
+use crate::material::KeyMaterial;
 use crate::root::{LocalRoot, local_root};
-use crate::secret::Secret;
 
 /// A root whose key is one keychain item, created on first use.
 #[derive(Debug, Clone)]
@@ -28,14 +28,14 @@ impl KeychainRoot {
         let failed = |e: Error| KeyError::Root(format!("the keychain: {e}"));
         let entry = Entry::new(service, account).map_err(failed)?;
         let key = match entry.get_secret() {
-            Ok(bytes) => Secret::from_bytes(&zeroize::Zeroizing::new(bytes))?,
+            Ok(bytes) => KeyMaterial::from_bytes(&zeroize::Zeroizing::new(bytes))?,
             Err(Error::NoEntry) => {
                 entry
-                    .set_secret(Secret::random()?.bytes())
+                    .set_secret(KeyMaterial::random()?.bytes())
                     .map_err(failed)?;
                 // Read back what was kept, so two first starts at once agree on one key.
                 let kept = zeroize::Zeroizing::new(entry.get_secret().map_err(failed)?);
-                Secret::from_bytes(&kept)?
+                KeyMaterial::from_bytes(&kept)?
             }
             Err(e) => return Err(failed(e)),
         };

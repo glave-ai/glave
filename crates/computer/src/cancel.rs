@@ -8,11 +8,11 @@ use tokio::sync::watch;
 
 /// Cancels whatever runs with it. Clones share one switch.
 #[derive(Debug, Clone)]
-pub struct Switch {
+pub struct CancelSwitch {
     sender: Arc<watch::Sender<bool>>,
 }
 
-impl Default for Switch {
+impl Default for CancelSwitch {
     fn default() -> Self {
         Self {
             sender: Arc::new(watch::Sender::new(false)),
@@ -20,13 +20,13 @@ impl Default for Switch {
     }
 }
 
-impl Switch {
+impl CancelSwitch {
     pub fn cancel(&self) {
         self.sender.send_replace(true);
     }
 }
 
-impl Cancellation for Switch {
+impl Cancellation for CancelSwitch {
     fn is_cancelled(&self) -> bool {
         *self.sender.borrow()
     }

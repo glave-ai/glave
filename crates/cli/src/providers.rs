@@ -17,7 +17,7 @@ use glave_session::{Models, NewProvider, Providers};
 
 use crate::accounts::{Ledger, random};
 use crate::config::Endpoint;
-use crate::gateway::Switch;
+use crate::gateway::GatewaySwitch;
 use crate::model;
 
 pub use lineup::{Built, Lineup, endpoint};
@@ -32,15 +32,15 @@ const KEY_FROM: &str = "the key of the model account you connected";
 const AT: &str = "the model account you connected";
 
 /// The person's model accounts, and the gateway their models run on.
-pub struct Host {
+pub struct ModelAccounts {
     ledger: Ledger,
     /// What the models are built from: replaced when the person's settings change.
     lineup: Mutex<Lineup>,
-    switch: Switch,
+    switch: GatewaySwitch,
 }
 
-impl Host {
-    pub fn new(ledger: Ledger, lineup: Lineup, switch: Switch) -> Self {
+impl ModelAccounts {
+    pub fn new(ledger: Ledger, lineup: Lineup, switch: GatewaySwitch) -> Self {
         Self {
             ledger,
             lineup: Mutex::new(lineup),
@@ -126,7 +126,7 @@ impl Host {
     }
 }
 
-impl Providers for Host {
+impl Providers for ModelAccounts {
     fn connect(&self, new: NewProvider) -> BoxFuture<'_, Result<(ProviderInfo, Models), ApiError>> {
         Box::pin(Self::connect(self, new))
     }

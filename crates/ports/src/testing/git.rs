@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use crate::computer::bytes::encode;
-use crate::computer::{CredentialAsk, CredentialHost, Credentials, GitCredential};
+use crate::computer::{CredentialAsk, CredentialHost, GitCredential, GitCredentials};
 use crate::tools::BoxFuture;
 
 /// The commit the repository's one branch points at.
@@ -171,15 +171,15 @@ fn served(bare: &Path, path: &str) -> Option<Vec<u8>> {
     std::fs::read(bare.join(relative)).ok()
 }
 
-/// Credentials for tests: one credential for every host they name, and what they were asked.
+/// Git credentials for tests: one credential for every host they name, and what they were asked.
 #[derive(Debug)]
-pub struct FixedCredentials {
+pub struct FixedGitCredentials {
     hosts: Vec<CredentialHost>,
     credential: GitCredential,
     asked: Mutex<Vec<CredentialAsk>>,
 }
 
-impl FixedCredentials {
+impl FixedGitCredentials {
     pub fn new(hosts: Vec<CredentialHost>, credential: GitCredential) -> Self {
         Self {
             hosts,
@@ -197,7 +197,7 @@ impl FixedCredentials {
     }
 }
 
-impl Credentials for FixedCredentials {
+impl GitCredentials for FixedGitCredentials {
     fn hosts(&self) -> BoxFuture<'_, Vec<CredentialHost>> {
         Box::pin(std::future::ready(self.hosts.clone()))
     }

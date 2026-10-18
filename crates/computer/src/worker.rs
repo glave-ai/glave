@@ -31,7 +31,7 @@ use crate::token::Token;
 use backend::{Backend, Link, Spec, Started};
 use reconnect::Connection;
 
-pub use credentials::{Credentials, https_url};
+pub use credentials::{WorkerCredentials, https_url};
 pub use docker::{Docker, DockerSettings};
 #[cfg(feature = "kubernetes")]
 pub use kubernetes::{Kubernetes, KubernetesSettings};
@@ -78,7 +78,7 @@ struct Held {
 pub struct WorkerComputers {
     backend: Box<dyn Backend>,
     limits: Limits,
-    credentials: Credentials,
+    credentials: WorkerCredentials,
     clock: Clock,
     held: Mutex<Held>,
 }
@@ -93,17 +93,25 @@ impl std::fmt::Debug for WorkerComputers {
 
 impl WorkerComputers {
     /// Workers on Docker, within `limits`, fetching sources with `credentials`.
-    pub fn docker(docker: Docker, limits: Limits, credentials: Credentials) -> Self {
+    pub fn docker(docker: Docker, limits: Limits, credentials: WorkerCredentials) -> Self {
         Self::on(Box::new(docker), limits, credentials)
     }
 
     /// Workers on Kubernetes, within `limits`, fetching sources with `credentials`.
     #[cfg(feature = "kubernetes")]
-    pub fn kubernetes(kubernetes: Kubernetes, limits: Limits, credentials: Credentials) -> Self {
+    pub fn kubernetes(
+        kubernetes: Kubernetes,
+        limits: Limits,
+        credentials: WorkerCredentials,
+    ) -> Self {
         Self::on(Box::new(kubernetes), limits, credentials)
     }
 
-    pub(crate) fn on(backend: Box<dyn Backend>, limits: Limits, credentials: Credentials) -> Self {
+    pub(crate) fn on(
+        backend: Box<dyn Backend>,
+        limits: Limits,
+        credentials: WorkerCredentials,
+    ) -> Self {
         Self {
             backend,
             limits,
@@ -367,7 +375,7 @@ impl WorkerComputers {
         command: &Command,
         output: &dyn Output,
         cancel: &dyn Cancellation,
-        credentials: Option<&dyn glave_ports::Credentials>,
+        credentials: Option<&dyn glave_ports::GitCredentials>,
     ) -> Result<glave_ports::Finished, ComputerError> {
         let worker = self.worker_of(workspace)?;
         let left = self.check_time(&worker)?;
@@ -438,7 +446,7 @@ impl Computers for WorkerComputers {
         command: &'a Command,
         output: &'a dyn Output,
         cancel: &'a dyn Cancellation,
-        credentials: &'a dyn glave_ports::Credentials,
+        credentials: &'a dyn glave_ports::GitCredentials,
     ) -> BoxFuture<'a, Result<glave_ports::Finished, ComputerError>> {
         Box::pin(self.run_now(workspace, command, output, cancel, Some(credentials)))
     }

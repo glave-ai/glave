@@ -9,9 +9,9 @@ use zeroize::Zeroizing;
 
 use crate::error::KeyError;
 use crate::key_id::{KeyId, Month, Period};
+use crate::material::KeyMaterial;
 use crate::record::{DataKey, SpaceRecord, SpaceVersion};
 use crate::seal::{associated, open, seal};
-use crate::secret::Secret;
 use crate::storage::KeyStorage;
 
 use super::cache::{Slot, Value};
@@ -25,15 +25,15 @@ pub(super) const ATTEMPTS: usize = 8;
 /// erased.
 #[derive(Debug, Clone)]
 pub(crate) struct SpaceKey {
-    pub(super) wrap: Secret,
-    pub(super) name: Secret,
+    pub(super) wrap: KeyMaterial,
+    pub(super) name: KeyMaterial,
 }
 
 impl SpaceKey {
     pub(super) fn fresh() -> Result<Self, KeyError> {
         Ok(Self {
-            wrap: Secret::random()?,
-            name: Secret::random()?,
+            wrap: KeyMaterial::random()?,
+            name: KeyMaterial::random()?,
         })
     }
 
@@ -77,8 +77,8 @@ impl SpaceKey {
             .filter(|(_, name)| name.len() == 32)
             .ok_or_else(|| KeyError::Corrupt("a space key is 64 bytes".into()))?;
         Ok(Self {
-            wrap: Secret::from_bytes(wrap)?,
-            name: Secret::from_bytes(name)?,
+            wrap: KeyMaterial::from_bytes(wrap)?,
+            name: KeyMaterial::from_bytes(name)?,
         })
     }
 }
@@ -102,7 +102,7 @@ fn data_aad(scope: &Scope, id: &KeyId, space_version: u32) -> Vec<u8> {
 }
 
 pub(super) fn wrap_space(
-    org_key: &Secret,
+    org_key: &KeyMaterial,
     scope: &Scope,
     version: u32,
     key: &SpaceKey,
@@ -115,7 +115,7 @@ pub(super) fn wrap_data(
     scope: &Scope,
     id: &KeyId,
     space_version: u32,
-    key: &Secret,
+    key: &KeyMaterial,
 ) -> Result<Vec<u8>, KeyError> {
     seal(
         &space.wrap,
@@ -129,14 +129,14 @@ pub(super) fn unwrap_data(
     scope: &Scope,
     id: &KeyId,
     entry: &DataKey,
-) -> Result<Secret, KeyError> {
+) -> Result<KeyMaterial, KeyError> {
     let wrapped = entry
         .wrapped
         .as_deref()
         .ok_or_else(|| KeyError::Destroyed(id.to_string()))?;
     let aad = data_aad(scope, id, entry.space_version);
     let bytes = Zeroizing::new(open(&space.wrap, &aad, wrapped, &id.to_string())?);
-    Secret::from_bytes(&bytes)
+    KeyMaterial::from_bytes(&bytes)
 }
 
 pub(super) fn key_id(scope: &Scope, entry: &DataKey) -> KeyId {
@@ -149,14 +149,14 @@ pub(super) fn key_id(scope: &Scope, entry: &DataKey) -> KeyId {
 
 impl<S: KeyStorage> Keys<S> {
     /// The organization's key, made and wrapped by the root the first time.
-    pub(super) async fn org_key(&self, org: OrgId) -> Result<Secret, KeyError> {
+    pub(super) async fn org_key(&self, org: OrgId) -> Result<KeyMaterial, KeyError> {
         if let Some(Value::Key(key)) = self.cache.get(&Slot::Org(org)) {
             return Ok(key);
         }
         let wrapped = if let Some(wrapped) = self.storage.org_key(org).await? {
             wrapped
         } else {
-            let fresh = Secret::random()?;
+            let fresh = KeyMaterial::random()?;
             let wrapped = self.root.wrap(org, &fresh).await?;
             self.storage.add_org_key(org, wrapped).await?
         };
@@ -216,7 +216,7 @@ impl<S: KeyStorage> Keys<S> {
     }
 
     /// The data key that opens content sealed under `id`.
-    pub(super) async fn data_key(&self, scope: &Scope, id: KeyId) -> Result<Secret, KeyError> {
+    pub(super) async fn data_key(&self, scope: &Scope, id: KeyId) -> Result<KeyMaterial, KeyError> {
         check_space(scope, &id)?;
         if let Some(Value::Key(key)) = self.cache.get(&Slot::Data(*scope, id)) {
             return Ok(key);
@@ -243,7 +243,7 @@ impl<S: KeyStorage> Keys<S> {
         &self,
         scope: &Scope,
         period: Period,
-    ) -> Result<(KeyId, Secret), KeyError> {
+    ) -> Result<(KeyId, KeyMaterial), KeyError> {
         if let Some(Value::Id(id)) = self.cache.get(&Slot::Sealing(*scope, period))
             && let Some(Value::Key(key)) = self.cache.get(&Slot::Data(*scope, id))
         {
@@ -277,7 +277,7 @@ impl<S: KeyStorage> Keys<S> {
                     period,
                     n: record.next_n(period),
                 };
-                let key = Secret::random()?;
+                let key = KeyMaterial::random()?;
                 let made = Month::of((self.clock)());
                 let (month, memory, provider) = match period {
                     Period::Month(month) => (month, None, None),

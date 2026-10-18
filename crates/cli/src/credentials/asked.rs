@@ -5,7 +5,7 @@
 use std::sync::PoisonError;
 
 use glave_event::CredentialConnected;
-use glave_ports::{BoxFuture, CredentialAsk, CredentialHost, Credentials, GitCredential};
+use glave_ports::{BoxFuture, CredentialAsk, CredentialHost, GitCredential, GitCredentials};
 
 use super::Hosts;
 use super::renewing::Renewing;
@@ -13,7 +13,7 @@ use super::renewing::Renewing;
 /// How long before it expires a token is renewed, in seconds.
 const RENEW_BEFORE: i64 = 5 * 60;
 
-impl Credentials for Hosts {
+impl GitCredentials for Hosts {
     fn hosts(&self) -> BoxFuture<'_, Vec<CredentialHost>> {
         let offered = self
             .offered
