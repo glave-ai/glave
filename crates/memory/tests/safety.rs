@@ -131,7 +131,7 @@ mod safety {
                 said(r#"{"decision": "run", "reason": "the person asked to remember it"}"#),
             );
             let mut judged = settings();
-            judged.judge = true;
+            judged.judge = glave_harness::Judge::Main;
             let (harness, seen) = kit
                 .harness(&dir, answers, NoOneToAsk, Some(memory), judged)
                 .await;

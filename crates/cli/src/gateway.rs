@@ -1,7 +1,7 @@
 //! The gateway every model call goes through, built from today's settings: `GLAVE_MODEL` is
 //! the `main` route, and `GLAVE_JUDGE_MODEL`, when it names another model at the same
-//! endpoint, the `judge` route. Every other purpose uses `main`, and there are no budgets, so
-//! nothing changes for anyone who sets nothing new. A policy's `[models]` rules are kept
+//! endpoint, a choice the judge's calls name. Every purpose uses `main` unless a call names a
+//! choice, and there are no budgets, so nothing changes for anyone who sets nothing new. A policy's `[models]` rules are kept
 //! here: a target they do not allow is refused before the gateway exists. With `[gateway]
 //! url`, the endpoint is the organization's gateway, which keeps them itself, for each caller.
 //! The judge model and each of `[[models]]` are choices a thread may make instead of the main
@@ -34,8 +34,8 @@ pub struct Allowed<'a> {
     pub models: &'a Source,
 }
 
-/// The gateway over `provider` at `endpoint`, with a judge route when `judge` names a model
-/// other than the main one, and the judge's model and each of `offered` as choices. Fails
+/// The gateway over `provider` at `endpoint`, with the judge's model, when `judge` names one
+/// other than the main one, and each of `offered` as choices. Fails
 /// when `allowed` refuses any of them. Then each of `accounts` the policy allows is a choice
 /// too, unless a model of the same id already is.
 pub fn gateway(
@@ -55,15 +55,15 @@ pub fn gateway(
     if checks {
         check_model(&main.name, chosen, allowed.constraints)?;
     }
-    let mut routes = Routes::new(vec![main])?;
+    let routes = Routes::new(vec![main])?;
     let mut choices: Vec<Target> = Vec::new();
+    // The judge's calls name its model: this choice, or the main one.
     if let Some(model) = judge.filter(|model| *model != endpoint.model) {
         let target = Target::new(Arc::clone(&handle), name.clone(), model);
         if checks {
             check_model(&target.name, allowed.judge, allowed.constraints)?;
         }
-        choices.push(target.clone());
-        routes = routes.with_route(Purpose::Judge, vec![target])?;
+        choices.push(target);
     }
     for entry in offered {
         let id = entry.id.trim();
@@ -250,18 +250,20 @@ pub(crate) mod tests {
         );
     }
 
-    fn judge_target(judge: Option<&str>) -> String {
+    /// Where a judge's call naming `named` goes, on the gateway whose judge is `judge`.
+    fn judge_target(judge: Option<&str>, named: &str) -> String {
         let gateway = built(judge, &Constraints::default()).unwrap();
-        let targets = gateway.routes().targets(Purpose::Judge);
+        let targets = gateway.routes().for_model(Purpose::Judge, named);
         assert_eq!(targets.len(), 1);
         targets[0].name.clone()
     }
 
     #[test]
-    fn the_judge_has_a_route_only_when_it_names_another_model() {
-        assert_eq!(judge_target(None), "openrouter/big");
-        assert_eq!(judge_target(Some("big")), "openrouter/big");
-        assert_eq!(judge_target(Some("small")), "openrouter/small");
+    fn the_judge_s_calls_go_to_the_model_they_name() {
+        assert_eq!(judge_target(None, "big"), "openrouter/big");
+        assert_eq!(judge_target(Some("big"), "big"), "openrouter/big");
+        assert_eq!(judge_target(Some("small"), "small"), "openrouter/small");
+        assert_eq!(judge_target(Some("small"), "big"), "openrouter/big");
         let gateway = built(Some("small"), &Constraints::default()).unwrap();
         assert_eq!(
             gateway.routes().targets(Purpose::Main)[0].name,

@@ -18,7 +18,7 @@ mod judging {
 
     fn judged() -> Settings {
         let mut settings = settings();
-        settings.judge = true;
+        settings.judge = glave_harness::Judge::Main;
         settings
     }
 
