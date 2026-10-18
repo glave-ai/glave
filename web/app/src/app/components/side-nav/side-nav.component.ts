@@ -32,8 +32,8 @@ const COPY = {
 } as const;
 
 /**
- * The side nav: glave's name with New chat beside it, and the search; the person's chats and
- * projects with their threads; and at its foot Tasks (only while tasks are going or a schedule
+ * The side nav: glave's name with New chat beside it, and the search; the person's projects
+ * with their threads, then their chats; and at its foot Tasks (only while tasks are going or a schedule
  * will start one), what needs the person, and the person signed in, with their pages.
  */
 @Component({

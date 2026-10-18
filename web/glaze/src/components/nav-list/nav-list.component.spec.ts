@@ -1,13 +1,13 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Folder } from 'lucide';
 
 import { expectAccessible } from '../../testing/axe';
+import { GlzBadgeComponent } from '../badge/badge.component';
 import { GlzNavItemComponent } from '../nav-item/nav-item.component';
 import { GlzNavListComponent } from './nav-list.component';
 
 @Component({
-  imports: [GlzNavListComponent, GlzNavItemComponent],
+  imports: [GlzBadgeComponent, GlzNavListComponent, GlzNavItemComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <nav aria-label="Threads">
@@ -17,11 +17,12 @@ import { GlzNavListComponent } from './nav-list.component';
       <glz-nav-list testId="plain"><a glzNavItem href="/t/2">Other</a></glz-nav-list>
       <glz-nav-list heading="glave" testId="space" collapsible [(expanded)]="expanded">
         <button glzNavListActions type="button" data-testid="add">New thread in glave</button>
+        <glz-badge glzNavListEnd tone="accent" variant="dot">needs you</glz-badge>
         <a glzNavItem href="/t/3">Fix the build</a>
       </glz-nav-list>
-      <glz-nav-list heading="Projects" testId="projects">
+      <glz-nav-list heading="Projects" testId="projects" collapsible>
         <button glzNavListActions type="button" data-testid="new-project">New project</button>
-        <glz-nav-list heading="Garden" testId="project" collapsible [icon]="folder">
+        <glz-nav-list heading="Garden" testId="project" collapsible>
           <a glzNavItem href="/t/4">Plant the beans</a>
         </glz-nav-list>
       </glz-nav-list>
@@ -30,12 +31,15 @@ import { GlzNavListComponent } from './nav-list.component';
 })
 class HostComponent {
   readonly expanded = signal(true);
-  readonly folder = Folder;
+}
+
+function render(): ReturnType<typeof TestBed.createComponent<HostComponent>> {
+  return TestBed.createComponent(HostComponent);
 }
 
 describe('GlzNavListComponent', () => {
   it('names its group by its heading, when it has one', async () => {
-    const fixture = TestBed.createComponent(HostComponent);
+    const fixture = render();
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const today = root.querySelector('[data-testid="today"]');
@@ -48,18 +52,21 @@ describe('GlzNavListComponent', () => {
     await expectAccessible(root);
   });
 
-  it('shows and hides a collapsible list from its heading, beside its actions', async () => {
-    const fixture = TestBed.createComponent(HostComponent);
+  it('shows and hides a collapsible list from its heading, the caret after the name', async () => {
+    const fixture = render();
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const toggle = root.querySelector<HTMLButtonElement>('[data-testid="space-toggle"]');
     const items = root.querySelector<HTMLElement>('[data-testid="space-items"]');
     expect(toggle?.textContent.trim()).toBe('glave');
+    expect(toggle?.lastElementChild?.getAttribute('data-testid')).toBe('space-caret');
     expect(toggle?.getAttribute('aria-expanded')).toBe('true');
     expect(toggle?.getAttribute('aria-controls')).toBe(items?.id);
     expect(root.querySelector('[data-testid="space"]')?.getAttribute('aria-labelledby')).toBe(
       toggle?.id,
     );
+    // The actions sit beside the toggle, never inside it.
+    expect(toggle?.querySelector('button')).toBeNull();
     expect(root.querySelector('[data-testid="space"] .actions [data-testid="add"]')).not.toBeNull();
     await expectAccessible(root);
     toggle?.click();
@@ -70,34 +77,37 @@ describe('GlzNavListComponent', () => {
     await expectAccessible(root);
   });
 
-  it('with an icon, makes its heading a row that leads with the icon, not a chevron', async () => {
-    const fixture = TestBed.createComponent(HostComponent);
+  it('puts a mark at the heading’s end, which describes its toggle', async () => {
+    const fixture = render();
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    const project = root.querySelector('[data-testid="project"]');
-    const toggle = root.querySelector<HTMLButtonElement>('[data-testid="project-toggle"]');
-    expect(project?.classList).toContain('glz-nav-list--row');
-    expect(root.querySelector('[data-testid="space"]')?.classList).not.toContain(
-      'glz-nav-list--row',
-    );
-    expect(toggle?.querySelectorAll('glz-icon')).toHaveLength(1);
-    expect(toggle?.textContent.trim()).toBe('Garden');
-    await expectAccessible(root);
-    toggle?.click();
-    await fixture.whenStable();
-    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
-    expect(root.querySelector<HTMLElement>('[data-testid="project-items"]')?.hidden).toBe(true);
+    const toggle = root.querySelector('[data-testid="space-toggle"]');
+    const end = root.ownerDocument.getElementById(toggle?.getAttribute('aria-describedby') ?? '');
+    expect(end?.textContent.trim()).toBe('needs you');
+    expect(end?.previousElementSibling?.classList).toContain('actions');
   });
 
-  it('puts a heading’s actions beside it, whether or not the list collapses', async () => {
-    const fixture = TestBed.createComponent(HostComponent);
+  it('makes a list inside another a group, and spaces the groups apart', async () => {
+    const fixture = render();
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const projects = root.querySelector('[data-testid="projects"]');
+    const project = root.querySelector('[data-testid="project"]');
+    expect(projects?.classList).toContain('glz-nav-list--groups');
+    expect(projects?.classList).not.toContain('glz-nav-list--group');
+    expect(project?.classList).toContain('glz-nav-list--group');
+    expect(project?.classList).not.toContain('glz-nav-list--groups');
+    expect(root.querySelector('[data-testid="space"]')?.classList).not.toContain(
+      'glz-nav-list--group',
+    );
+    // The outer list's own actions stay in its own header, and its end, with no mark, is empty.
     const header = projects?.querySelector(':scope > .header');
-    expect(header?.querySelector('.heading')?.textContent).toBe('Projects');
-    expect(header?.querySelector('.actions [data-testid="new-project"]')).not.toBeNull();
-    // The project's own actions stay in its own header.
+    const end = header?.querySelector('.end');
+    expect(Array.from(end?.childNodes ?? []).map((node) => node.nodeType)).not.toContain(
+      Node.TEXT_NODE,
+    );
+    expect(end?.children).toHaveLength(0);
+    expect(header?.querySelector('.heading')?.textContent.trim()).toBe('Projects');
     expect(header?.querySelectorAll('.actions button')).toHaveLength(1);
     await expectAccessible(root);
   });

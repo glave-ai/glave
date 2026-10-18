@@ -56,11 +56,25 @@ export class SpacesService {
    */
   async create(params: SpaceCreateParams): Promise<Space> {
     const { space } = await this.session.call('space/create', params);
+    await this.reread();
+    return space;
+  }
+
+  /**
+   * Gives a project a new name (`space/rename`) and reads the lists again so it shows, as
+   * `create` does. Throws what the server refused.
+   */
+  async rename(space: SpaceId, name: string): Promise<void> {
+    await this.session.call('space/rename', { space, name });
+    await this.reread();
+  }
+
+  /** Reads the lists again after a change: after the read under way, which began before it. */
+  private async reread(): Promise<void> {
     if (this.pending !== null) {
       await this.pending;
     }
     await this.refresh();
-    return space;
   }
 
   private async readAll(): Promise<void> {

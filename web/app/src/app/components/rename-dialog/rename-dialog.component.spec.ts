@@ -53,6 +53,21 @@ describe('RenameDialogComponent', () => {
     expect(renamed).toEqual(['Notes']);
   });
 
+  it('renames a project by its name', async () => {
+    const fixture = TestBed.createComponent(RenameDialogComponent);
+    fixture.componentRef.setInput('kind', 'project');
+    fixture.componentRef.setInput('title', 'glave');
+    fixture.componentRef.setInput('open', true);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="rename"]')?.textContent).toContain(
+      'Rename the project',
+    );
+    expect(root.querySelector('label')?.textContent).toContain('Name');
+    expect(input(root).value).toBe('glave');
+    await expectAccessible(root);
+  });
+
   it('closes on Cancel', async () => {
     const fixture = TestBed.createComponent(RenameDialogComponent);
     fixture.componentRef.setInput('open', true);

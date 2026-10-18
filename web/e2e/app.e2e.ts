@@ -21,7 +21,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await fakeApi(page);
     await page.goto(`/${SIGNED_IN}`);
     const project = byTestId(page, 'nav-space').filter({ hasText: 'glave' });
-    await expect(project.getByTestId('nav-thread').first()).toContainText('Make the tests pass');
+    await expect(project.getByTestId('nav-thread').first()).toContainText(
+      'Review the release notes',
+    );
     expect(page.url()).not.toContain('token');
     await expectAccessible(page);
     expect(problems()).toEqual([]);
@@ -244,7 +246,7 @@ test('New chat starts its thread in Chats, not in the project listed first', asy
   const chats = byTestId(page, 'nav-chats');
   await expect(chats.getByTestId('nav-thread').first()).toHaveText('New chat');
   const project = byTestId(page, 'nav-space').filter({ hasText: 'glave' });
-  await expect(project.getByTestId('nav-thread')).toHaveCount(3);
+  await expect(project.getByTestId('nav-thread')).toHaveCount(4);
 });
 
 test('tasks, settings and memory open from the side nav', async ({ page }) => {

@@ -18,8 +18,29 @@ describe('ShowcaseLayoutComponent', () => {
     expect(
       root.querySelector('[data-testid="showcase-earlier-toggle"]')?.getAttribute('aria-expanded'),
     ).toBe('false');
+    // Closed, Earlier says something in it waits.
+    expect(root.querySelector('[data-testid="showcase-earlier"] .end')?.textContent.trim()).toBe(
+      'needs you',
+    );
     expect(root.querySelector<HTMLElement>('[data-testid="showcase-panel-panel"]')?.inert).toBe(
       true,
     );
+  });
+
+  it('opens a list’s options from its ⋯, and sorts it', async () => {
+    const fixture = TestBed.createComponent(ShowcaseLayoutComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    // A menu that opens before its trigger's first tick closes again (the CDK's focus check).
+    await new Promise((resolve) => setTimeout(resolve));
+    root.querySelector<HTMLButtonElement>('[data-testid="showcase-earlier-more-trigger"]')?.click();
+    await fixture.whenStable();
+    const choices = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-testid="showcase-earlier-more-choice"]'),
+    );
+    expect(choices.map((choice) => choice.getAttribute('aria-checked'))).toEqual(['true', 'false']);
+    choices[1]?.click();
+    await fixture.whenStable();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
   });
 });

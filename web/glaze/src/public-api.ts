@@ -20,6 +20,7 @@ export * from './components/form-field/form-field.component';
 export * from './components/icon-button/icon-button.component';
 export * from './components/icon/icon.component';
 export * from './components/markdown/markdown.component';
+export * from './components/menu-button/menu-button.component';
 export * from './components/menu-select/menu-select.component';
 export * from './components/message/message.component';
 export * from './components/nav-item/nav-item.component';

@@ -14,7 +14,18 @@
   font-size: var(--glz-text-sm);
 }
 
+.error {
+  padding: var(--glz-inset-row);
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
+}
+
 // A row that offers rather than lists: quieter than a thread's.
 .offer {
   color: var(--glz-color-text-muted);
+}
+
+// A list's ⋯, beside its +.
+.more {
+  display: inline-flex;
 }

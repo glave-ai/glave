@@ -8,16 +8,20 @@
         [attr.data-testid]="ids().toggle"
         [attr.aria-expanded]="expanded()"
         [attr.aria-controls]="itemsId"
+        [attr.aria-describedby]="endId"
         (click)="toggle()"
       >
-        <glz-icon class="lead" [icon]="lead()" />
         <span class="text">{{ heading() }}</span>
+        <glz-icon class="caret" [icon]="icons.caret" [attr.data-testid]="ids().caret" />
       </button>
     } @else {
       <p class="heading" [id]="headingId">{{ heading() }}</p>
     }
-    <!-- One slot for the actions: content goes to the first slot that matches. -->
+    <!-- One slot each: content goes to the first slot that matches. -->
     <span class="actions"><ng-content select="[glzNavListActions]" /></span>
+    <span class="end" [id]="endId" [attr.data-testid]="ids().end">
+      <ng-content select="[glzNavListEnd]" />
+    </span>
   </div>
 }
 <div class="items" [id]="itemsId" [attr.data-testid]="ids().items" [hidden]="collapsed()">

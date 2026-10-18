@@ -1,0 +1,24 @@
+// The line, then the threads it started, as close together as the lines of a list.
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-half);
+}
+
+// Indented to the thread's title, on a thin line from it: the line under the title's start,
+// the rows past it.
+.children {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--glz-space-half);
+  padding-inline-start: calc(var(--glz-space-3) + var(--glz-border-width));
+}
+
+.children::before {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: var(--glz-space-3);
+  border-inline-start: var(--glz-border-width) solid var(--glz-color-border);
+  content: '';
+}

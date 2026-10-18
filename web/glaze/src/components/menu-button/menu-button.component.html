@@ -1,0 +1,49 @@
+<button
+  glzIconButton
+  size="sm"
+  type="button"
+  [label]="label()"
+  [attr.data-testid]="ids().trigger"
+  [cdkMenuTriggerFor]="menu"
+  [cdkMenuPosition]="positions"
+>
+  <glz-icon [icon]="icons.more" />
+</button>
+<ng-template #menu>
+  <div class="menu" cdkMenu [attr.aria-label]="label()">
+    @for (each of actions(); track each.value) {
+      <button
+        type="button"
+        class="item"
+        cdkMenuItem
+        [attr.data-testid]="ids().action"
+        (cdkMenuItemTriggered)="act(each.value)"
+      >
+        <span class="check"></span>
+        {{ each.label }}
+      </button>
+    }
+    @if (hasChoices()) {
+      <div cdkMenuGroup [attr.aria-labelledby]="choiceId">
+        <p class="group" [id]="choiceId">{{ choiceLabel() }}</p>
+        @for (option of shownChoices(); track option.value) {
+          <button
+            type="button"
+            class="item"
+            cdkMenuItemRadio
+            [attr.data-testid]="ids().choice"
+            [cdkMenuItemChecked]="option.checked"
+            (cdkMenuItemTriggered)="choose(option.value)"
+          >
+            <span class="check">
+              @if (option.checked) {
+                <glz-icon [icon]="icons.check" />
+              }
+            </span>
+            {{ option.label }}
+          </button>
+        }
+      </div>
+    }
+  </div>
+</ng-template>

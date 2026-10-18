@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core';
 import {
   GlzBadgeComponent,
   GlzIconButtonComponent,
   GlzIconComponent,
+  GlzMenuButtonComponent,
   GlzNavItemComponent,
   GlzNavListComponent,
   GlzPanelLayoutComponent,
@@ -37,6 +38,9 @@ const COPY = {
   content: 'The page goes here. On a narrow screen the side nav slides over it instead.',
   layoutTitle: 'glave',
   newIn: 'New thread in Earlier',
+  more: 'Options for Earlier',
+  sortBy: 'Sort by',
+  needsYou: 'needs you',
   details: 'Details',
   detailsToggle: 'Show or hide the details',
   detailsText: 'A panel at the end: drag its edge, or use the arrow keys on it, to resize it.',
@@ -49,6 +53,7 @@ const COPY = {
     GlzBadgeComponent,
     GlzIconButtonComponent,
     GlzIconComponent,
+    GlzMenuButtonComponent,
     GlzNavItemComponent,
     GlzNavListComponent,
     GlzPanelLayoutComponent,
@@ -71,6 +76,14 @@ export class ShowcaseLayoutComponent {
   };
   protected readonly tab = signal(0);
   protected readonly earlier = signal(true);
+  /** Closed, Earlier shows that something in it waits. */
+  protected readonly earlierClosed = computed(() => !this.earlier());
+  protected readonly actions = [{ value: 'rename', label: 'Rename' }] as const;
+  protected readonly sorts = [
+    { value: 'recent', label: 'Recent activity' },
+    { value: 'name', label: 'Name' },
+  ] as const;
+  protected readonly sort = signal<string | null>('recent');
   protected readonly details = signal(true);
   protected readonly detailsWidth = signal<number | null>(null);
   protected readonly values = { link: '#layout', narrow: '(max-width: 40rem)' } as const;

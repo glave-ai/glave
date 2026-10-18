@@ -1,0 +1,19 @@
+<a
+  glzNavItem
+  data-testid="nav-thread"
+  [routerLink]="thread().link"
+  [current]="thread().current"
+  (click)="followed()"
+>
+  {{ thread().title }}
+  @if (thread().mark; as mark) {
+    <glz-badge glzNavItemEnd [tone]="mark.tone" [variant]="mark.variant">{{ mark.text }}</glz-badge>
+  }
+</a>
+@if (thread().hasChildren) {
+  <div class="children" data-testid="nav-children">
+    @for (child of thread().children; track child.id) {
+      <app-nav-thread [thread]="child" (navigated)="followed()" />
+    }
+  </div>
+}

@@ -43,7 +43,7 @@ function space(id: string, name: string, kind: Space['kind']): Space {
   };
 }
 
-const PROJECT = space('01900000-0000-7000-8000-000000000001', 'glave', 'project');
+export const PROJECT = space('01900000-0000-7000-8000-000000000001', 'glave', 'project');
 export const PERSONAL = space('01900000-0000-7000-8000-000000000002', 'Personal', 'personal');
 
 const TOKENS = { input: 1200, output: 300, cache_read: 0, cache_write: 0, reasoning: 0 };
@@ -53,6 +53,7 @@ function thread(
   title: string,
   status: ThreadSummary['status'] = 'idle',
   inSpace = PROJECT,
+  more: Partial<ThreadSummary> = {},
 ): ThreadSummary {
   return {
     id,
@@ -66,19 +67,33 @@ function thread(
     updated_at: '2026-10-11T10:05:00.000Z',
     turns: 1,
     tokens: TOKENS,
+    ...more,
   };
 }
 
+/** A time after every fixture's: when a thread gets a message or a project is made meanwhile. */
+const LATER = '2026-10-11T10:30:00.000Z';
+
 export { THREAD };
 export const NEW_THREAD = '01900000-0000-7000-8000-000000000102';
-/** The thread that waits for the person. */
+/** The thread that waits for the person: the oldest of the project's. */
 export const WAITING = '01900000-0000-7000-8000-000000000103';
+/** The thread an agent call in `THREAD` started. */
+export const SUBAGENT = '01900000-0000-7000-8000-000000000109';
 
 const THREADS: Readonly<Record<string, readonly ThreadSummary[]>> = {
   [PROJECT.id]: [
     thread(THREAD, 'Make the tests pass'),
-    thread(WAITING, 'Review the release notes', 'waiting'),
-    thread('01900000-0000-7000-8000-000000000104', 'Nightly dependency audit', 'running'),
+    thread(SUBAGENT, 'Check the parser’s edge cases', 'idle', PROJECT, {
+      parent: THREAD,
+      updated_at: '2026-10-11T10:04:00.000Z',
+    }),
+    thread(WAITING, 'Review the release notes', 'waiting', PROJECT, {
+      updated_at: '2026-10-11T10:01:00.000Z',
+    }),
+    thread('01900000-0000-7000-8000-000000000104', 'Nightly dependency audit', 'running', PROJECT, {
+      updated_at: '2026-10-11T10:06:00.000Z',
+    }),
   ],
   [PERSONAL.id]: [
     thread('01900000-0000-7000-8000-000000000105', 'Dinner ideas for Saturday', 'idle', PERSONAL),
@@ -351,11 +366,8 @@ function makeProject(params: Record<string, unknown>, made: Space[]): unknown {
   for (let next = 2; taken.has(name.toLowerCase()); next += 1) {
     name = `${asked} ${String(next)}`;
   }
-  const project = space(
-    `01900000-0000-7000-8000-${String(900 + made.length).padStart(12, '0')}`,
-    name,
-    'project',
-  );
+  const id = `01900000-0000-7000-8000-${String(900 + made.length).padStart(12, '0')}`;
+  const project = { ...space(id, name, 'project'), created_at: LATER };
   made.push(project);
   return { space: project };
 }
@@ -617,11 +629,13 @@ interface Known {
   readonly commands: Commands | null;
   /** The git hosts the person connected. */
   readonly credentials: readonly CredentialInfo[];
+  /** The threads given a message, which are then the latest. */
+  readonly touched: Set<string>;
 }
 
 /** The answer to a call that is not a turn. */
 function answer(method: string, params: Record<string, unknown>, known: Known): unknown {
-  const { started, made, trust, commands, credentials } = known;
+  const { started, made, trust, commands, credentials, touched } = known;
   if (trust !== null) {
     const asked = trusted(method, params, trust);
     if (asked !== undefined) {
@@ -644,7 +658,12 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
       const fresh = started.filter((each) => each.space === space);
       const serving =
         commands !== null && space === PROJECT.id ? [thread(SERVING, 'Preview the docs')] : [];
-      return { threads: [...fresh, ...serving, ...(THREADS[space] ?? [])] };
+      const threads = [...fresh, ...serving, ...(THREADS[space] ?? [])];
+      return {
+        threads: threads.map((each) =>
+          touched.has(each.id) ? { ...each, updated_at: LATER } : each,
+        ),
+      };
     }
     case 'thread/get':
       return { thread: thread(String(params['thread']), 'Make the tests pass') };
@@ -732,6 +751,7 @@ export async function fakeApi(
     trust: trust ? { asking: true } : null,
     commands: commands ? docsRunning() : null,
     credentials: account ? [GITHUB] : [],
+    touched: new Set(),
   };
   await page.route('**/*', async (route: Route) => {
     const request = route.request();
@@ -747,6 +767,7 @@ export async function fakeApi(
     calls.push(message.method);
     requests.push({ method: message.method, params: message.params });
     if (message.method === 'turn/start') {
+      known.touched.add(String(message.params['thread']));
       await route.fulfill({ contentType: 'text/event-stream', body: turn(message) });
       return;
     }

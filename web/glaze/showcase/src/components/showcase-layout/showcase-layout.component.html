@@ -31,6 +31,18 @@
             <button glzNavListActions glzIconButton size="sm" [label]="copy.newIn">
               <glz-icon [icon]="icons.add" />
             </button>
+            <glz-menu-button
+              glzNavListActions
+              testId="showcase-earlier-more"
+              [label]="copy.more"
+              [actions]="actions"
+              [choiceLabel]="copy.sortBy"
+              [choices]="sorts"
+              [(choice)]="sort"
+            />
+            @if (earlierClosed()) {
+              <glz-badge glzNavListEnd tone="accent" variant="dot">{{ copy.needsYou }}</glz-badge>
+            }
             <a glzNavItem [href]="values.link" [icon]="icons.thread">
               {{ copy.notes }}
               <glz-badge glzNavItemEnd>{{ copy.running }}</glz-badge>

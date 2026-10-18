@@ -1,13 +1,27 @@
 <nav class="lists" [attr.aria-label]="copy.threads">
-  @if (hasChats()) {
-    <glz-nav-list testId="nav-chats" [heading]="copy.chats">
-      @for (thread of chats(); track thread.id) {
-        <ng-container *ngTemplateOutlet="line; context: { $implicit: thread }" />
-      }
-    </glz-nav-list>
+  @if (offerProject()) {
+    <button
+      glzNavItem
+      type="button"
+      class="offer"
+      data-testid="nav-start-project"
+      [icon]="icons.start"
+      (click)="startProject()"
+    >
+      {{ copy.startProject }}
+    </button>
+  }
+  @if (renameError(); as error) {
+    <p class="error" role="alert" data-testid="nav-error">{{ copy.renameFailed }} {{ error }}</p>
   }
   @if (hasProjects()) {
-    <glz-nav-list testId="nav-projects" [heading]="copy.projects">
+    <glz-nav-list
+      testId="nav-projects"
+      collapsible
+      [heading]="copy.projects"
+      [expanded]="projects().expanded"
+      (expandedChange)="setExpanded(lists.projects, $event)"
+    >
       <button
         glzNavListActions
         glzIconButton
@@ -19,11 +33,30 @@
       >
         <glz-icon [icon]="icons.add" />
       </button>
-      @for (project of projects(); track project.id) {
+      <!-- Each list's menu loads once the page is idle, keeping the CDK's menu out of the first load. -->
+      <span glzNavListActions class="more">
+        @defer (on idle) {
+          <app-nav-list-menu
+            testId="nav-projects-more"
+            [label]="copy.projectsOptions"
+            [sort]="projects().sort"
+            (sortChange)="setSort(lists.projects, $event)"
+          />
+        } @placeholder {
+          <button glzIconButton size="sm" type="button" [label]="copy.projectsOptions">
+            <glz-icon [icon]="icons.more" />
+          </button>
+        }
+      </span>
+      @if (projects().mark; as mark) {
+        <glz-badge glzNavListEnd [tone]="mark.tone" [variant]="mark.variant">{{
+          mark.text
+        }}</glz-badge>
+      }
+      @for (project of projectList(); track project.id) {
         <glz-nav-list
           testId="nav-space"
           collapsible
-          [icon]="icons.project"
           [heading]="project.name"
           [expanded]="project.expanded"
           (expandedChange)="setExpanded(project.id, $event)"
@@ -40,46 +73,90 @@
           >
             <glz-icon [icon]="icons.add" />
           </a>
+          <span glzNavListActions class="more">
+            @defer (on idle) {
+              <app-nav-list-menu
+                testId="nav-space-more"
+                [label]="project.optionsLabel"
+                [actions]="projectActions"
+                [sort]="project.sort"
+                (sortChange)="setSort(project.id, $event)"
+                (action)="act(project, $event)"
+              />
+            } @placeholder {
+              <button glzIconButton size="sm" type="button" [label]="project.optionsLabel">
+                <glz-icon [icon]="icons.more" />
+              </button>
+            }
+          </span>
+          @if (project.mark; as mark) {
+            <glz-badge glzNavListEnd [tone]="mark.tone" [variant]="mark.variant">{{
+              mark.text
+            }}</glz-badge>
+          }
           @for (thread of project.threads; track thread.id) {
-            <ng-container *ngTemplateOutlet="line; context: { $implicit: thread }" />
+            <app-nav-thread [thread]="thread" (navigated)="followed()" />
           }
         </glz-nav-list>
       }
     </glz-nav-list>
   }
-  @if (offerProject()) {
-    <button
-      glzNavItem
-      type="button"
-      class="offer"
-      data-testid="nav-start-project"
-      [icon]="icons.start"
-      (click)="startProject()"
+  @if (hasChats()) {
+    <glz-nav-list
+      testId="nav-chats"
+      collapsible
+      [heading]="copy.chats"
+      [expanded]="chats().expanded"
+      (expandedChange)="setExpanded(lists.chats, $event)"
     >
-      {{ copy.startProject }}
-    </button>
+      <a
+        glzNavListActions
+        glzIconButton
+        size="sm"
+        data-testid="nav-chats-new"
+        [label]="copy.newChat"
+        [routerLink]="newLink"
+        (click)="followed()"
+      >
+        <glz-icon [icon]="icons.add" />
+      </a>
+      <span glzNavListActions class="more">
+        @defer (on idle) {
+          <app-nav-list-menu
+            testId="nav-chats-more"
+            [label]="copy.chatsOptions"
+            [sort]="chats().sort"
+            (sortChange)="setSort(lists.chats, $event)"
+          />
+        } @placeholder {
+          <button glzIconButton size="sm" type="button" [label]="copy.chatsOptions">
+            <glz-icon [icon]="icons.more" />
+          </button>
+        }
+      </span>
+      @if (chats().mark; as mark) {
+        <glz-badge glzNavListEnd [tone]="mark.tone" [variant]="mark.variant">{{
+          mark.text
+        }}</glz-badge>
+      }
+      @for (thread of chats().list; track thread.id) {
+        <app-nav-thread [thread]="thread" (navigated)="followed()" />
+      }
+    </glz-nav-list>
   }
   @if (noMatch()) {
     <p class="empty" data-testid="nav-no-match">{{ copy.noMatch }}</p>
   }
 </nav>
-<!-- Loaded the first time it opens: its forms stay out of the app's first load. -->
+<!-- Loaded the first time they open: their forms stay out of the app's first load. -->
 @defer (when newProject(); prefetch on idle) {
   <app-new-project [(open)]="newProject" (navigated)="followed()" />
 }
-<ng-template #line let-thread>
-  <a
-    glzNavItem
-    data-testid="nav-thread"
-    [routerLink]="thread.link"
-    [current]="thread.current"
-    (click)="followed()"
-  >
-    {{ thread.title }}
-    @if (thread.mark; as mark) {
-      <glz-badge glzNavItemEnd [tone]="mark.tone" [variant]="mark.variant">{{
-        mark.text
-      }}</glz-badge>
-    }
-  </a>
-</ng-template>
+@defer (when renameOpen(); prefetch on idle) {
+  <app-rename-dialog
+    kind="project"
+    [title]="renamingName()"
+    [(open)]="renameOpen"
+    (renamed)="rename($event)"
+  />
+}
