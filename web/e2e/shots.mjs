@@ -30,7 +30,7 @@ for (const colorScheme of ['light', 'dark']) {
       isMobile: screen.touch,
     });
     await fakeApi(main);
-    await main.goto(`${url}/t/${THREAD}#token=glave_local_test`);
+    await main.goto(`${url}/t/${THREAD}#code=e2e-code`);
     await main.getByTestId('thread-message').last().waitFor();
     if (screen.tools) {
       await main.getByTestId('tools-handle').press('Enter');
