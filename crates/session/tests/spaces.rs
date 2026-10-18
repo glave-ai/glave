@@ -340,7 +340,13 @@ fn spaces_are_made_shared_and_renamed_only_by_their_owner() {
         let local = server.request(Request::SpaceGet { space: space.id }).await;
         assert_eq!(local.unwrap_err().code, code::NOT_ALLOWED);
         let memory = server
-            .request_as(&grace, Request::MemoryList { scope: None })
+            .request_as(
+                &grace,
+                Request::MemoryList {
+                    scope: None,
+                    space: None,
+                },
+            )
             .await;
         assert_eq!(memory.unwrap_err().code, code::NOT_ALLOWED);
     });

@@ -1,10 +1,15 @@
 //! Memory end to end through the binary: off when the person chooses it (the model is offered no memory tool),
 //! on by the person's choice, a save shown at once, the next thread opening with it, and
-//! `glave memory` listing and forgetting it.
+//! `glave memory` listing and forgetting it, in the store itself and through the person's
+//! server, in the project of the folder it runs in.
 
 #[cfg(test)]
 #[path = "support/binary.rs"]
 mod support;
+
+#[cfg(test)]
+#[path = "support/http.rs"]
+mod http;
 
 #[cfg(test)]
 mod memory {
@@ -13,6 +18,7 @@ mod memory {
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;
 
+    use super::http::{only_the_server_answers, serve_http};
     use super::support::*;
 
     fn memory_cli(place: &Place, args: &[&str]) -> String {
@@ -77,6 +83,45 @@ mod memory {
         let forgot = memory_cli(&place, &["forget", &id]);
         assert!(forgot.contains("forgot"), "{forgot}");
         let after = memory_cli(&place, &[]);
+        assert!(after.contains("no memories here"), "{after}");
+    }
+
+    #[test]
+    fn through_the_person_s_server_memory_is_the_folder_s_project_s() {
+        let place = place("memory-server");
+        std::fs::create_dir_all(&place.home).unwrap();
+        std::fs::write(place.home.join("config.toml"), "memory = \"on\"\n").unwrap();
+        // A second project, in a folder of its own, beside the one the server starts in.
+        let other = Place {
+            project: place.project.join("other"),
+            home: place.home.clone(),
+        };
+        std::fs::create_dir_all(&other.project).unwrap();
+        let save = json!({"text": "this project ships on Fridays", "scope": "space"});
+        let model = FakeServer::start(vec![
+            Reply::tool_call("call_a", "mcp__memory__remember", &save),
+            Reply::text("Noted."),
+        ])
+        .unwrap();
+        let args = ["--sandbox", "off", "--approval", "auto", "--model", "m"];
+        let saved = glave(
+            &other,
+            &model,
+            &[&args[..], &["remember: fridays"]].concat(),
+            "",
+        );
+        assert!(saved.status.success(), "{}", text(&saved));
+        let (_served, _) = serve_http(&place, &model, &["--model", "m"]);
+        only_the_server_answers(&place);
+
+        let listed = memory_cli(&other, &[]);
+        assert!(listed.contains("this project ships on Fridays"), "{listed}");
+        let elsewhere = memory_cli(&place, &[]);
+        assert!(elsewhere.contains("no memories here"), "{elsewhere}");
+        let id = listed.split_whitespace().next().unwrap().to_owned();
+        let forgot = memory_cli(&other, &["forget", &id]);
+        assert!(forgot.contains("forgot"), "{forgot}");
+        let after = memory_cli(&other, &[]);
         assert!(after.contains("no memories here"), "{after}");
     }
 }

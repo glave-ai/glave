@@ -160,7 +160,7 @@ impl Connection {
                 // A notification, for clients that follow turns.
                 continue;
             }
-            return rpc::outcome(&message).map_err(|error| anyhow::anyhow!("{error}"));
+            return rpc::outcome(&message).map_err(anyhow::Error::new);
         }
         bail!("glave closed the connection")
     }
