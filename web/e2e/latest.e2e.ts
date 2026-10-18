@@ -16,9 +16,7 @@ async function askForMarkdown(page: Page): Promise<void> {
 }
 
 /** Where `locator` shows on the screen; fails when it has no box. */
-async function boxOf(
-  locator: Locator,
-): Promise<{
+async function boxOf(locator: Locator): Promise<{
   readonly x: number;
   readonly y: number;
   readonly width: number;
