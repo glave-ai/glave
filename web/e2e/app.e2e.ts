@@ -127,7 +127,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test(`a reply has a copy button, shown on hover and focus, that copies its text (${colorScheme})`, async ({
     page,
     context,
+    browserName,
   }) => {
+    test.skip(browserName === 'webkit', "Playwright's WebKit cannot be granted the clipboard");
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.emulateMedia({ colorScheme });
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -272,7 +274,12 @@ test('tasks, settings and memory open from the side nav', async ({ page }) => {
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`Needs you lists every thread that waits for the person, and goes to one (${colorScheme})`, async ({
     page,
+    browserName,
   }) => {
+    test.skip(
+      browserName === 'webkit',
+      'Safari gives a clicked button no focus, so none stays on it',
+    );
     await page.emulateMedia({ colorScheme });
     await fakeApi(page);
     await page.goto(`/${SIGNED_IN}`);

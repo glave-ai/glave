@@ -8,13 +8,18 @@
     <button glzButton variant="danger" data-testid="showcase-open-confirm" (click)="openConfirm()">
       {{ copy.openConfirm }}
     </button>
+    <button glzButton data-testid="showcase-open-long" (click)="openLong()">
+      {{ copy.openLong }}
+    </button>
   </div>
-  <glz-dialog [heading]="copy.dialogHeading" [(open)]="renaming">
+  <glz-dialog testId="showcase-dialog" [heading]="copy.dialogHeading" [(open)]="renaming">
     <glz-form-field [label]="copy.title">
       <input glzInput data-testid="showcase-dialog-title" />
     </glz-form-field>
     <div glzDialogActions class="glz-row glz-gap-2">
-      <button glzButton (click)="closeRename()">{{ copy.cancel }}</button>
+      <button glzButton data-testid="showcase-dialog-cancel" (click)="closeRename()">
+        {{ copy.cancel }}
+      </button>
       <button
         glzButton
         variant="primary"
@@ -33,4 +38,14 @@
     [confirmLabel]="copy.delete"
     [(open)]="confirming"
   />
+  <glz-dialog testId="showcase-long" [heading]="copy.longHeading" [(open)]="choosing">
+    @for (choice of choices; track choice) {
+      <glz-checkbox>{{ choice }}</glz-checkbox>
+    }
+    <div glzDialogActions class="glz-row glz-gap-2">
+      <button glzButton variant="primary" data-testid="showcase-long-done" (click)="closeLong()">
+        {{ copy.done }}
+      </button>
+    </div>
+  </glz-dialog>
 </section>

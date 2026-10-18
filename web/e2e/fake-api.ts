@@ -1,4 +1,13 @@
-import type { ModelInfo, RawEvent, Space, TaskInfo, ThreadSummary, TrustAsk } from '@glave/client';
+import type {
+  CredentialInfo,
+  ModelInfo,
+  RawEvent,
+  Remembered,
+  Space,
+  TaskInfo,
+  ThreadSummary,
+  TrustAsk,
+} from '@glave/client';
 import type { Page, Route } from '@playwright/test';
 
 import {
@@ -15,10 +24,10 @@ import { Refusal, THREAD, bound, call, done, event } from './fake-records';
  * What the fake server knows: a project and the person's own space with their threads, one
  * thread's history (a turn on this computer that ran a command, edited a file and wrote a new
  * one, and replied from the default model, which the picker shows; how long it took and what
- * it cost), another waiting for the person to allow a push, the models, the tasks, what a
- * turn streams, the folders on the person's computer, and the projects made while it runs; and
- * when a test asks, a project that asks to be trusted, and a thread that keeps the docs site
- * running in the background.
+ * it cost), another waiting for the person to allow a push, the models, the tasks, one
+ * memory, what a turn streams, the folders on the person's computer, and the projects made
+ * while it runs; and when a test asks, a project that asks to be trusted, a thread that keeps
+ * the docs site running in the background, and a connected GitHub account.
  */
 const OWNER = { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' } as const;
 
@@ -268,6 +277,26 @@ const TASKS: readonly TaskInfo[] = [
     outcome: 'completed',
   },
 ];
+
+const MEMORIES: readonly Remembered[] = [
+  {
+    memory: '01900000-0000-7000-8000-000000000501',
+    scope: 'personal',
+    text: 'Prefers short answers',
+    saved_at: '2026-10-11T10:00:00.000Z',
+    version: 1,
+  },
+];
+
+/** A GitHub account, connected when a test asks. */
+const GITHUB: CredentialInfo = {
+  id: '01900000-0000-7000-8000-000000000601',
+  forge: 'github',
+  url: 'https://github.com',
+  login: 'ana',
+  hint: 'wxyz',
+  can: ['read', 'push'],
+};
 
 /** The folders on the person's computer, by path; the home folder is /Users/ana. */
 const HOME = '/Users/ana';
@@ -586,11 +615,13 @@ interface Known {
   readonly trust: Trust | null;
   /** The serving thread's commands, when the test has it. */
   readonly commands: Commands | null;
+  /** The git hosts the person connected. */
+  readonly credentials: readonly CredentialInfo[];
 }
 
 /** The answer to a call that is not a turn. */
 function answer(method: string, params: Record<string, unknown>, known: Known): unknown {
-  const { started, made, trust, commands } = known;
+  const { started, made, trust, commands, credentials } = known;
   if (trust !== null) {
     const asked = trusted(method, params, trust);
     if (asked !== undefined) {
@@ -632,7 +663,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     case 'tasks/list':
       return { tasks: TASKS };
     case 'memory/list':
-      return { memories: [] };
+      return { memories: MEMORIES };
     case 'provider/list':
       return {
         providers: [
@@ -645,7 +676,7 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
         ],
       };
     case 'credential/list':
-      return { credentials: [], device: true };
+      return { credentials, device: true };
     case 'server/discover':
       return {
         name: 'glave',
@@ -682,14 +713,16 @@ function trusted(method: string, params: Record<string, unknown>, trust: Trust):
 /**
  * Answers the session API's calls the app makes, as JSON-RPC over POST /. With `trust`, the
  * person also has acme, a project that asks to be trusted; with `commands`, a thread in the
- * project that keeps the docs site running in the background.
+ * project that keeps the docs site running in the background; with `account`, a GitHub account
+ * connected.
  */
 export async function fakeApi(
   page: Page,
   {
     trust = false,
     commands = false,
-  }: { readonly trust?: boolean; readonly commands?: boolean } = {},
+    account = false,
+  }: { readonly trust?: boolean; readonly commands?: boolean; readonly account?: boolean } = {},
 ): Promise<{ readonly calls: readonly string[]; readonly requests: readonly Request[] }> {
   const calls: string[] = [];
   const requests: Request[] = [];
@@ -698,6 +731,7 @@ export async function fakeApi(
     made: [],
     trust: trust ? { asking: true } : null,
     commands: commands ? docsRunning() : null,
+    credentials: account ? [GITHUB] : [],
   };
   await page.route('**/*', async (route: Route) => {
     const request = route.request();

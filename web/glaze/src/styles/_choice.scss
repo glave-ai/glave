@@ -1,7 +1,11 @@
 // The shared look of a checkbox or radio: a visually hidden native input that keeps keyboard
 // and screen-reader behaviour, followed by a drawn mark and the label's text.
 @mixin choice {
+  // Positioned, so the hidden input is placed in its own label: placed against anything
+  // further out, it overflows that, and a long list of choices in a dialog's scrolling body
+  // made the dialog itself scroll, its heading and actions with it.
   .choice {
+    position: relative;
     display: inline-flex;
     align-items: flex-start;
     gap: var(--glz-space-2);

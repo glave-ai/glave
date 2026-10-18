@@ -51,7 +51,7 @@
     }
   </div>
 </div>
-<glz-dialog [heading]="copy.editHeading" [(open)]="editOpen">
+<glz-dialog testId="memory-editor" [heading]="copy.editHeading" [(open)]="editOpen">
   <glz-form-field [label]="copy.text">
     <textarea glzInput [rows]="textRows" data-testid="memory-text" [formControl]="text"></textarea>
     @if (textMissing()) {
@@ -59,14 +59,16 @@
     }
   </glz-form-field>
   <div glzDialogActions class="glz-row glz-gap-2">
-    <button glzButton (click)="cancelEdit()">{{ copy.cancel }}</button>
+    <button glzButton data-testid="memory-cancel" (click)="cancelEdit()">
+      {{ copy.cancel }}
+    </button>
     <button glzButton variant="primary" data-testid="memory-save" (click)="save()">
       {{ copy.save }}
     </button>
   </div>
 </glz-dialog>
 <glz-confirm-dialog
-  testId="memory-forget"
+  testId="memory-forget-confirm"
   danger
   [heading]="copy.forgetHeading"
   [message]="copy.forgetMessage"

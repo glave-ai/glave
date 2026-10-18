@@ -50,10 +50,11 @@ const SITES = [
 /**
  * End-to-end smoke tests: the production builds (`npm run build`, `npm run build:showcase`)
  * served by the real `glave serve --http --web`, with glave's own Content Security Policy and
- * headers, in Chromium. The session API's calls are answered by each test's fake
- * (fake-api.ts), so no model is needed; the first run's are the real server's, with a fake
- * model service (first-run.e2e.ts). Build glave first (`cargo build -p glave`); `cargo
- * xtask ci` does.
+ * headers, in Chromium and in WebKit, Safari's engine, headless. Every test runs in both, so a
+ * screen Safari alone gets wrong fails here first; the few that skip WebKit say why. The
+ * session API's calls are answered by each test's fake (fake-api.ts), so no model is needed;
+ * the first run's are the real server's, with a fake model service (first-run.e2e.ts). Build
+ * glave first (`cargo build -p glave`); `cargo xtask ci` does.
  */
 export default defineConfig({
   testDir: '.',
@@ -66,7 +67,16 @@ export default defineConfig({
     baseURL: APP_URL,
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+      // These two change a real glave (its first model, a connected account), which the
+      // Chromium run owns: run twice, they would race on its state.
+      testIgnore: ['first-run.e2e.ts', 'accounts.e2e.ts'],
+    },
+  ],
   webServer: SITES.map(({ url, web, env }) => ({
     command: `"${glave}" serve --http ${new URL(url).port} --web ${web}`,
     url,

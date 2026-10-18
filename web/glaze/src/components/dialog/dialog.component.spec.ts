@@ -38,7 +38,7 @@ describe('GlzDialogComponent', () => {
     expect(dialog.open).toBe(true);
     expect(dialog.dataset['modal']).toBe('true');
     expect(dialog.getAttribute('aria-labelledby')).toBe(root.querySelector('h2')?.id);
-    expect(root.querySelector('.content')?.textContent).toBe('Body');
+    expect(root.querySelector('[data-testid="dialog-body"]')?.textContent).toBe('Body');
     expect(root.querySelector('.actions button')?.textContent).toBe('Save');
     await expectAccessible(root);
   });

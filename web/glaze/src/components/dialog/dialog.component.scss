@@ -1,8 +1,9 @@
-// The native <dialog>, styled. The surface fills it, so a click on the dialog element itself
+// The native <dialog>, styled. It is as tall as its surface, which holds the height cap (the
+// browser's own is a little lower, and would cut it), so a click on the dialog element itself
 // can only be on the backdrop around the surface.
 .dialog {
   width: min(var(--glz-dialog-width, 32rem), calc(100vw - 2rem));
-  max-height: calc(100vh - 2rem);
+  max-height: none;
   padding: 0;
   border: 0;
   border-radius: var(--glz-radius-card);
@@ -15,12 +16,15 @@
   background: var(--glz-color-scrim);
 }
 
+// Sized to what it holds, up to the screen's height (dvh, so a phone's address bar counts).
+// Never a percentage of the dialog's height: a modal dialog's height is fit-content, so a
+// percentage inside it is circular. Safari 26 resolves it to 0, which left only the header
+// showing (WebKit bug 289876, fixed in WebKit since, so Playwright's newer WebKit can't show it).
 .surface {
   display: flex;
   flex-direction: column;
   gap: var(--glz-space-4);
-  max-height: inherit;
-  height: 100%;
+  max-height: calc(100dvh - 2rem);
   padding: var(--glz-inset-dialog);
 }
 
@@ -35,9 +39,8 @@
   font-size: var(--glz-text-xl);
 }
 
-// Sized to what it holds, and scrolling once the dialog meets the viewport's edge. A basis of
-// auto, not flex: 1's 0%: Safari sizes a 0% basis to nothing in a column with no set height,
-// which left only the header showing.
+// The one part that scrolls, once the surface reaches its cap: the header and the actions
+// always show.
 .content {
   display: flex;
   flex: 1 1 auto;
