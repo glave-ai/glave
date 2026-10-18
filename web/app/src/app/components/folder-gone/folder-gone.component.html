@@ -1,0 +1,49 @@
+<div class="gone glz-stack glz-gap-2" [attr.data-testid]="testId()">
+  <p class="message" [attr.data-testid]="ids().message">{{ message() }}</p>
+  @if (local()) {
+    <div class="glz-row glz-gap-2">
+      <button
+        glzButton
+        size="sm"
+        type="button"
+        [attr.data-testid]="ids().find"
+        [disabled]="busy()"
+        (click)="find()"
+      >
+        {{ copy.find }}
+      </button>
+      <button
+        glzButton
+        size="sm"
+        type="button"
+        [attr.data-testid]="ids().remove"
+        [disabled]="busy()"
+        (click)="askRemove()"
+      >
+        {{ copy.remove }}
+      </button>
+    </div>
+  }
+  @if (problem(); as problem) {
+    <p class="problem" role="alert" [attr.data-testid]="ids().problem">{{ problem }}</p>
+  }
+</div>
+<!-- Loaded the first time they open: the folder browser stays out of the app's first load. -->
+@defer (when picking(); prefetch on idle) {
+  <glz-dialog [testId]="ids().picking" [heading]="copy.findHeading" [(open)]="picking">
+    @if (picking()) {
+      <app-folder-picker (picked)="picked($event)" />
+    }
+  </glz-dialog>
+}
+@defer (when confirming(); prefetch on idle) {
+  <glz-confirm-dialog
+    danger
+    [testId]="ids().confirm"
+    [heading]="copy.removeHeading"
+    [message]="copy.removeMessage"
+    [confirmLabel]="copy.removeConfirm"
+    [(open)]="confirming"
+    (decided)="decided($event)"
+  />
+}

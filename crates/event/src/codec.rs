@@ -12,11 +12,11 @@ use crate::payload::{
     CredentialConnected, CredentialRemoved, GatewayToolCalled, GoalEnded, GoalResumed, GoalSet,
     HookRan, MemoryEdited, MemoryForgotten, MemoryRestored, MemorySaved, MemoryTidied,
     MessageAdded, ModelChosen, ModelResponded, ProviderConnected, ProviderRemoved, ScheduleCreated,
-    ScheduleDeleted, SpaceFolderSet, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted,
-    ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted,
-    ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, chosen,
-    command, credential, gateway, goal, hook, memory, message, model, provider, space, standing,
-    task, thread, tool, turn, workspace,
+    ScheduleDeleted, SpaceFolderSet, SpaceRemoved, TaskEnded, TaskStarted, ThreadArchived,
+    ThreadCompacted, ThreadDeleted, ThreadRenamed, ThreadStarted, ThreadUnarchived,
+    ToolCallCompleted, ToolCallRequested, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved,
+    approval, chosen, command, credential, gateway, goal, hook, memory, message, model, provider,
+    space, standing, task, thread, tool, turn, workspace,
 };
 
 /// A payload type: the data of one event type at its latest version.
@@ -84,6 +84,7 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (credential::CONNECTED, 1),
     (credential::REMOVED, 1),
     (space::FOLDER_SET, 1),
+    (space::REMOVED, 1),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -135,6 +136,7 @@ pub enum Body {
     CredentialConnected(CredentialConnected),
     CredentialRemoved(CredentialRemoved),
     SpaceFolderSet(SpaceFolderSet),
+    SpaceRemoved(SpaceRemoved),
     /// An event this reader does not understand: an unknown type, or a newer version of a
     /// known one. Kept exactly as written.
     Unknown(Unknown),
@@ -301,6 +303,7 @@ impl Event {
             Body::CredentialConnected(payload) => encode(header, payload),
             Body::CredentialRemoved(payload) => encode(header, payload),
             Body::SpaceFolderSet(payload) => encode(header, payload),
+            Body::SpaceRemoved(payload) => encode(header, payload),
             Body::Unknown(unknown) => Ok(RawEvent {
                 glave: ENVELOPE_VERSION,
                 id: header.id,
@@ -352,6 +355,7 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         space::FOLDER_SET => {
             space::decode_folder_set(version, data).map(|r| r.map(Body::SpaceFolderSet))
         }
+        space::REMOVED => space::decode_removed(version, data).map(|r| r.map(Body::SpaceRemoved)),
         _ => None,
     }
 }

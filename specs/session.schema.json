@@ -441,6 +441,22 @@
         }
       ]
     },
+    "GoneFolder": {
+      "description": "A project whose folder isn't there anymore, on the computer it is checked out on, with the\nsentence that says so.",
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "space": {
+          "$ref": "#/$defs/SpaceId"
+        }
+      },
+      "required": [
+        "space",
+        "message"
+      ],
+      "type": "object"
+    },
     "IdempotencyKey": {
       "description": "A client's name for one attempt at a turn: 1 to 255 bytes of text.",
       "type": "string"
@@ -1965,6 +1981,10 @@
       "code": -32024,
       "message": "No such git host, or sign-in, here"
     },
+    "NO_FOLDER": {
+      "code": -32029,
+      "message": "The project's folder isn't there anymore: give it its new place (`space/folder/set`) or remove the project (`space/remove`)"
+    },
     "NO_GOAL": {
       "code": -32007,
       "message": "The thread has no active goal (or, to resume, no paused one)"
@@ -2957,6 +2977,48 @@
       },
       "streams": false
     },
+    "space/folder/set": {
+      "params": {
+        "properties": {
+          "path": {
+            "description": "The folder's full path.",
+            "type": "string"
+          },
+          "space": {
+            "$ref": "#/$defs/SpaceId"
+          }
+        },
+        "required": [
+          "space",
+          "path"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A space: one asked for, made or renamed, with its folder when it has one.",
+        "properties": {
+          "folder": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectFolder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where its threads work."
+          },
+          "space": {
+            "$ref": "#/$defs/Space"
+          }
+        },
+        "required": [
+          "space"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "space/get": {
       "params": {
         "properties": {
@@ -3010,6 +3072,13 @@
       },
       "result": {
         "properties": {
+          "gone": {
+            "description": "The projects among them whose folder isn't there anymore.",
+            "items": {
+              "$ref": "#/$defs/GoneFolder"
+            },
+            "type": "array"
+          },
           "spaces": {
             "items": {
               "$ref": "#/$defs/Space"
@@ -3020,6 +3089,23 @@
         "required": [
           "spaces"
         ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "space/remove": {
+      "params": {
+        "properties": {
+          "space": {
+            "$ref": "#/$defs/SpaceId"
+          }
+        },
+        "required": [
+          "space"
+        ],
+        "type": "object"
+      },
+      "result": {
         "type": "object"
       },
       "streams": false

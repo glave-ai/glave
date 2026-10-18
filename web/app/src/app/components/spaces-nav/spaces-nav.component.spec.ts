@@ -269,6 +269,24 @@ describe('SpacesNavComponent', () => {
     expect(root.querySelector('[data-testid="nav-start-project"]')).toBeNull();
   });
 
+  it('says on a project whose folder is gone what the server says, and what can be done', async () => {
+    const gone = "This project's folder isn't there anymore.";
+    const rendered = await render();
+    rendered.fake.answer('space/list', { spaces: SPACES, gone: [{ space: 'p2', message: gone }] });
+    await TestBed.inject(SpacesService).refresh();
+    await settle(rendered);
+    const { root } = rendered;
+    expect(texts(root, 'nav-gone-message')).toEqual([gone]);
+    expect(texts(root, 'nav-gone-find')).toEqual(['Find it']);
+    expect(texts(root, 'nav-gone-remove')).toEqual(['Remove the project']);
+    const garden = Array.from(root.querySelectorAll('[data-testid="nav-space"]')).find((each) =>
+      each.textContent.includes('Garden'),
+    );
+    expect(garden?.querySelector('[data-testid="nav-gone"]')).not.toBeNull();
+    expect(garden?.querySelector('[data-testid="nav-space-end"]')?.textContent).toContain(gone);
+    await expectAccessible(root);
+  });
+
   it('offers nothing before the lists are read', async () => {
     TestBed.configureTestingModule({
       providers: [

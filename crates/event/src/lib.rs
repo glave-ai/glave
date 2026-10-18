@@ -40,6 +40,6 @@ pub use payload::{
 };
 pub use payload::{
     CredentialConnected, CredentialRemoved, Forge, ProviderConnected, ProviderKind,
-    ProviderRemoved, Renewal, SpaceFolderSet, sealed_under_account,
+    ProviderRemoved, Renewal, SpaceFolderSet, SpaceRemoved, sealed_under_account,
 };
 pub use secret::{Secret, serialize_exposed};

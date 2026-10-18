@@ -27,6 +27,7 @@ import {
 } from '../../lib/nav';
 import { NavListsService } from '../../services/nav-lists.service';
 import { SpacesService } from '../../services/spaces.service';
+import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
 import { NavListMenuComponent } from '../nav-list-menu/nav-list-menu.component';
 import { NavThreadComponent } from '../nav-thread/nav-thread.component';
 import { NewProjectComponent } from '../new-project/new-project.component';
@@ -57,7 +58,9 @@ const PROJECT_ACTIONS: readonly GlzOption[] = [{ value: RENAME, label: 'Rename' 
  * opens and closes its list; beside it, on hover and focus, its + starts a project, a thread
  * in the project or a chat, and its ⋯ sorts the list (and renames a project). A closed list
  * still shows, with a dot, that something in it needs the person. A thread another started sits
- * under it. How the person left the lists is kept in this browser. A search keeps the threads
+ * under it. A project whose folder isn't there anymore says so, in the server's words: a mark
+ * on its heading, and above its threads, what can be done about it. How the person left the
+ * lists is kept in this browser. A search keeps the threads
  * whose title matches. A list with nothing in it does not show: with no projects yet, one quiet
  * row offers to start one, as the + beside Projects does once there are some.
  */
@@ -65,6 +68,7 @@ const PROJECT_ACTIONS: readonly GlzOption[] = [{ value: RENAME, label: 'Rename' 
   selector: 'app-spaces-nav',
   imports: [
     RouterLink,
+    FolderGoneComponent,
     GlzBadgeComponent,
     GlzIconButtonComponent,
     GlzIconComponent,

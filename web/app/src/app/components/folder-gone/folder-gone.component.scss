@@ -1,0 +1,21 @@
+:host {
+  display: block;
+}
+
+// A strip that stands where work would go: quiet, sunken, never alarming.
+.gone {
+  padding: var(--glz-inset-strip);
+  border: 1px solid var(--glz-color-border);
+  border-radius: var(--glz-radius-strip);
+  background: var(--glz-surface-sunken);
+}
+
+.message {
+  color: var(--glz-color-text-secondary);
+  font-size: var(--glz-text-sm);
+}
+
+.problem {
+  color: var(--glz-color-danger);
+  font-size: var(--glz-text-sm);
+}

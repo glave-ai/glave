@@ -29,6 +29,7 @@ import { SpacesService } from '../../services/spaces.service';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
+import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
 import type { FirstPrompt } from '../home/home.component';
 import { MessageTextComponent } from '../message-text/message-text.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
@@ -76,13 +77,15 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
  * project asks the person to trust, while it asks; the reply streaming in as
  * markdown as a turn runs, and after it what the person sent meanwhile, waiting until the
  * model reads it; the composer pinned below it, usable while a turn runs, with the approval
- * mode and the model in its quiet line; and the tools panel beside it, resized and collapsed by its edge and shown
+ * mode and the model in its quiet line, or in its place, when the project's folder isn't there
+ * anymore, what the server says of it and what can be done; and the tools panel beside it, resized and collapsed by its edge and shown
  * or hidden by ⌘. or Ctrl+. anywhere in the thread.
  */
 @Component({
   selector: 'app-thread',
   imports: [
     ApprovalModeComponent,
+    FolderGoneComponent,
     GlzButtonComponent,
     GlzComposerComponent,
     GlzMessageComponent,
@@ -147,6 +150,13 @@ export class ThreadComponent {
     return space?.kind === 'project' ? space.name : null;
   });
   protected readonly changes = computed(() => this.service.files().length);
+  /** When the thread's project folder isn't there anymore: the project, and what the server says. */
+  protected readonly gone = computed(() => {
+    const space = this.spaces.spaceOf(this.thread());
+    const message = space === undefined ? null : this.spaces.gone(space.id);
+    return space === undefined || message === null ? null : { space: space.id, message };
+  });
+  protected readonly folderGone = computed(() => this.gone() !== null);
 
   constructor() {
     const navigation = inject(Router).currentNavigation();

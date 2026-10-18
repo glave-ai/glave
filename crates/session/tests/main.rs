@@ -13,6 +13,7 @@ mod commands;
 mod conformance;
 mod credentials;
 mod goals;
+mod gone;
 mod http;
 mod listing;
 mod local;

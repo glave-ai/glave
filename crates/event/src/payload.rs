@@ -38,7 +38,7 @@ pub use model::{Cost, ModelRef, ModelResponded, StopReason, TokenCounts, Usage};
 pub use part::{Opaque, Part};
 pub use principal::{Principal, PrincipalKind};
 pub use provider::{ProviderConnected, ProviderKind, ProviderRemoved, sealed_under_account};
-pub use space::{Checkout, FolderSource, SpaceFolderSet};
+pub use space::{Checkout, FolderSource, SpaceFolderSet, SpaceRemoved};
 pub use standing::{ThreadArchived, ThreadDeleted, ThreadRenamed, ThreadUnarchived};
 pub use task::{Fired, ScheduleCreated, ScheduleDeleted, TaskEnded, TaskStarted, When};
 pub use thread::{

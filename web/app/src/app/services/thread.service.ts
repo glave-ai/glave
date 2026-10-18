@@ -15,6 +15,7 @@ import { NO_DRAFT, applyUpdate, mergeEvents, type Draft } from '../lib/conversat
 import { changedFiles } from '../lib/files';
 import { chosenModel } from '../lib/models';
 import { placeOf } from '../lib/place';
+import { folderGone } from '../lib/projects';
 import { type Waiting, named, notRead, together } from '../lib/queued';
 import { onApple } from '../lib/shortcuts';
 import { threadTurns } from '../lib/turns';
@@ -237,7 +238,10 @@ export class ThreadService {
         this.waiting.update((waiting) => named(waiting, queued, result.queued.id));
       }
     } catch (error: unknown) {
-      if (!controller.signal.aborted) {
+      if (folderGone(error)) {
+        // The project's folder went since the lists were read: they say so in its place.
+        void this.spaces.refresh();
+      } else if (!controller.signal.aborted) {
         const said = error instanceof Error ? error.message : String(error);
         this.failed.set(said);
         // Refused, as when too many wait: back in the box at once, saying why.

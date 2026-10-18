@@ -240,7 +240,8 @@ where
         Ok(())
     }
 
-    /// Answers `space/list`: the spaces `caller` works in.
+    /// Answers `space/list`: the spaces `caller` works in but removed projects, and which of
+    /// them have no folder here anymore.
     pub(crate) async fn list_spaces(
         &self,
         caller: &Caller,
@@ -256,7 +257,8 @@ where
             .list(self.inner.home.org, &person, limit)
             .await
             .map_err(|e| failed(&e))?;
-        Ok(Reply::Spaces { spaces })
+        let (spaces, gone) = self.listed(spaces).await?;
+        Ok(Reply::Spaces { spaces, gone })
     }
 
     /// Answers `space/create`: a project space owned by `caller`, with its folder when it is

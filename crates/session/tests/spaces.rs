@@ -288,7 +288,7 @@ fn spaces_are_made_shared_and_renamed_only_by_their_owner() {
         let Reply::Space { space, .. } = made else {
             panic!("a space, not {made:?}");
         };
-        let Reply::Spaces { spaces } = server
+        let Reply::Spaces { spaces, .. } = server
             .request_as(&linus, Request::SpaceList { limit: None })
             .await
             .unwrap()

@@ -142,6 +142,15 @@ export type GoalProgress = {
 /** Why a goal ended. */
 export type GoalReason = "met" | "paused" | "stopped" | "budget" | "stalled";
 
+/**
+ * A project whose folder isn't there anymore, on the computer it is checked out on, with the
+ * sentence that says so.
+ */
+export type GoneFolder = {
+  readonly message: string;
+  readonly space: SpaceId;
+};
+
 /** A client's name for one attempt at a turn: 1 to 255 bytes of text. */
 export type IdempotencyKey = string;
 
@@ -903,6 +912,19 @@ export type SpaceCreateResult = {
   readonly space: Space;
 };
 
+export type SpaceFolderSetParams = {
+  /** The folder's full path. */
+  readonly path: string;
+  readonly space: SpaceId;
+};
+
+/** A space: one asked for, made or renamed, with its folder when it has one. */
+export type SpaceFolderSetResult = {
+  /** Where its threads work. */
+  readonly folder?: ProjectFolder | null;
+  readonly space: Space;
+};
+
 export type SpaceGetParams = {
   readonly space: SpaceId;
 };
@@ -919,8 +941,16 @@ export type SpaceListParams = {
 };
 
 export type SpaceListResult = {
+  /** The projects among them whose folder isn't there anymore. */
+  readonly gone?: readonly (GoneFolder)[];
   readonly spaces: readonly (Space)[];
 };
+
+export type SpaceRemoveParams = {
+  readonly space: SpaceId;
+};
+
+export type SpaceRemoveResult = Readonly<Record<string, never>>;
 
 export type SpaceRenameParams = {
   readonly name: string;
@@ -1138,8 +1168,10 @@ export interface Methods {
   readonly "signin/link": { readonly params: SigninLinkParams; readonly result: SigninLinkResult };
   readonly "signin/redeem": { readonly params: SigninRedeemParams; readonly result: SigninRedeemResult };
   readonly "space/create": { readonly params: SpaceCreateParams; readonly result: SpaceCreateResult };
+  readonly "space/folder/set": { readonly params: SpaceFolderSetParams; readonly result: SpaceFolderSetResult };
   readonly "space/get": { readonly params: SpaceGetParams; readonly result: SpaceGetResult };
   readonly "space/list": { readonly params: SpaceListParams; readonly result: SpaceListResult };
+  readonly "space/remove": { readonly params: SpaceRemoveParams; readonly result: SpaceRemoveResult };
   readonly "space/rename": { readonly params: SpaceRenameParams; readonly result: SpaceRenameResult };
   readonly "tasks/list": { readonly params: TasksListParams; readonly result: TasksListResult };
   readonly "tasks/stop": { readonly params: TasksStopParams; readonly result: TasksStopResult };
@@ -1213,6 +1245,8 @@ export const ErrorCode = {
   NO_COMMAND: -32027,
   /** No such git host, or sign-in, here */
   NO_CREDENTIAL: -32024,
+  /** The project's folder isn't there anymore: give it its new place (`space/folder/set`) or remove the project (`space/remove`) */
+  NO_FOLDER: -32029,
   /** The thread has no active goal (or, to resume, no paused one) */
   NO_GOAL: -32007,
   /** No such memory here */

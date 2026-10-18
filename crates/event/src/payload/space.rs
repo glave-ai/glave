@@ -1,7 +1,9 @@
-//! `space.folder.set`: one of a project's folders, where its threads work. In the space
-//! ledger; for each folder, the latest one holds (`specs/storage.md`, "Spaces"). Where the
+//! The space ledger's records (`specs/storage.md`, "Spaces"). `space.folder.set`: one of a
+//! project's folders, where its threads work; for each folder, the latest one holds. Where the
 //! folder's files come from is kept apart from where they are checked out, so the project can
 //! be checked out again, on another computer or after one is reset, from its source alone.
+//! `space.removed`: the project was put away, its threads archived; a folder set after it
+//! brings it back.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -11,6 +13,7 @@ use crate::codec::{Payload, parse};
 use crate::payload::principal::Principal;
 
 pub(crate) const FOLDER_SET: &str = "space.folder.set";
+pub(crate) const REMOVED: &str = "space.removed";
 
 /// A project's folder was set: added, or its source or checkout changed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +49,28 @@ pub struct Checkout {
     pub computer: Uuid,
     /// The folder's absolute path there, links resolved.
     pub path: String,
+}
+
+/// A project was removed: its threads archived, and it is listed no more until a folder is set
+/// for it again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpaceRemoved {
+    /// Who removed it. Absent: the space's person.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<Principal>,
+}
+
+impl Payload for SpaceRemoved {
+    const TYPE: &'static str = REMOVED;
+    const VERSION: u32 = 1;
+}
+
+pub(crate) fn decode_removed(
+    version: u32,
+    data: &RawValue,
+) -> Option<serde_json::Result<SpaceRemoved>> {
+    (version == 1).then(|| parse(data))
 }
 
 impl Payload for SpaceFolderSet {

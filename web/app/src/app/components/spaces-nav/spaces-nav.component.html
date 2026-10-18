@@ -94,6 +94,11 @@
               mark.text
             }}</glz-badge>
           }
+          @if (project.gone; as gone) {
+            @defer (on immediate) {
+              <app-folder-gone testId="nav-gone" [space]="project.id" [message]="gone" />
+            }
+          }
           @for (thread of project.threads; track thread.id) {
             <app-nav-thread [thread]="thread" (navigated)="followed()" />
           }

@@ -11,6 +11,7 @@ mod cron;
 mod dispatch;
 mod folders;
 mod goal;
+mod gone;
 mod held;
 pub mod http;
 mod hub;
