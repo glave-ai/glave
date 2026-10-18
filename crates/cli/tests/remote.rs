@@ -16,8 +16,9 @@ mod http;
 
 #[cfg(test)]
 mod remote {
-    use std::process::{Child, Command, Stdio};
+    use std::process::{Command, Stdio};
 
+    use glave_ports::testing::Running;
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;
 
@@ -52,7 +53,7 @@ mod remote {
             Reply::text("Still there."),
         ])
         .unwrap();
-        let (mut served, url) = serve_http(&place, &model, &["--model", "fake-model"]);
+        let (_served, url) = serve_http(&place, &model, &["--model", "fake-model"]);
         let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
 
         let first = client(&place, &["--server", &url, "where are you?"], Some(&token));
@@ -93,13 +94,11 @@ mod remote {
         );
         assert!(!unknown.status.success());
         assert!(text(&unknown).contains("model/list"), "{}", text(&unknown));
-        let _ = served.kill();
-        let _ = served.wait();
     }
 
     /// `glave serve --http` where commands run as the person and only cautions ask, the judge
-    /// first, with `model`'s replies; its address and token.
-    fn judging(place: &Place, model: &FakeServer) -> (Child, String, String) {
+    /// first, with `model`'s replies, stopped when dropped; its address and token.
+    fn judging(place: &Place, model: &FakeServer) -> (Running, String, String) {
         let args = [
             "--model",
             "fake-model",
@@ -123,7 +122,7 @@ mod remote {
             Reply::text("Pushed."),
         ])
         .unwrap();
-        let (mut served, url, token) = judging(&place, &model);
+        let (_served, url, token) = judging(&place, &model);
 
         let pushed = client(&place, &["--server", &url, "push my branch"], Some(&token));
         let shown = text(&pushed);
@@ -140,8 +139,6 @@ mod remote {
             !result.contains("declined") && !result.contains("Not run"),
             "it ran: {result}"
         );
-        let _ = served.kill();
-        let _ = served.wait();
     }
 
     #[test]
@@ -153,7 +150,7 @@ mod remote {
             Reply::text("Left it."),
         ])
         .unwrap();
-        let (mut served, url, token) = judging(&place, &model);
+        let (_served, url, token) = judging(&place, &model);
 
         let bumped = client(
             &place,
@@ -166,7 +163,5 @@ mod remote {
         assert!(shown.contains("bash: npm publish … declined"), "{shown}");
         assert!(!shown.contains("no approval"), "{shown}");
         assert!(shown.contains("Left it."), "{shown}");
-        let _ = served.kill();
-        let _ = served.wait();
     }
 }

@@ -15,9 +15,10 @@ mod support;
 #[cfg(test)]
 mod cloud {
     use std::path::{Path, PathBuf};
-    use std::process::{Child, Command, Stdio};
+    use std::process::{Command, Stdio};
     use std::time::Duration;
 
+    use glave_ports::testing::Running;
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;
 
@@ -66,14 +67,15 @@ mod cloud {
         }
     }
 
-    /// `git daemon` serving `base` on all addresses, pushes allowed, once it answers.
-    fn daemon(base: &Path) -> (Child, u16) {
+    /// `git daemon` serving `base` on all addresses, pushes allowed, once it answers; stopped
+    /// when dropped.
+    fn daemon(base: &Path) -> (Running, u16) {
         let port = std::net::TcpListener::bind("0.0.0.0:0")
             .unwrap()
             .local_addr()
             .unwrap()
             .port();
-        let mut child = Command::new("git")
+        let child = Command::new("git")
             .args([
                 "daemon",
                 "--export-all",
@@ -88,6 +90,7 @@ mod cloud {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
+        let running = Running::new(child);
         let url = format!("git://127.0.0.1:{port}/origin.git");
         for _ in 0..100 {
             let answered = Command::new("git")
@@ -95,12 +98,10 @@ mod cloud {
                 .output()
                 .is_ok_and(|output| output.status.success());
             if answered {
-                return (child, port);
+                return (running, port);
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        let _ = child.kill();
-        let _ = child.wait();
         panic!("git daemon did not start");
     }
 
@@ -139,7 +140,7 @@ mod cloud {
         let place = place("cloud");
         let (repos, origin) = pushed_project(&place.project);
         let project = &place.project;
-        let (mut daemon, port) = daemon(&repos);
+        let (daemon, port) = daemon(&repos);
         let url = format!("git://{}:{port}/origin.git", host());
         run(project, "git", &["remote", "set-url", "origin", &url]);
         std::fs::create_dir_all(project.join(".glave")).unwrap();
@@ -168,8 +169,7 @@ mod cloud {
         ])
         .unwrap();
         let output = glave(&place, &server, &["--model", "m", "write notes"], "");
-        let _ = daemon.kill();
-        let _ = daemon.wait();
+        drop(daemon);
         let shown = text(&output);
         assert!(output.status.success(), "{shown}");
         assert!(shown.contains("glave/wip/"), "{shown}");

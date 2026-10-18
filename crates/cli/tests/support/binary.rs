@@ -3,9 +3,9 @@
 
 use std::io::Write as _;
 use std::path::PathBuf;
-use std::process::{Child, Command, Output, Stdio};
+use std::process::{Command, Output, Stdio};
 
-use glave_ports::testing::FAKE_SECRET;
+use glave_ports::testing::{FAKE_SECRET, Running};
 use glave_provider_openai::fake::FakeServer;
 use serde_json::Value;
 
@@ -39,19 +39,20 @@ pub fn glave(place: &Place, server: &FakeServer, args: &[&str], stdin: &str) -> 
     child.wait_with_output().unwrap()
 }
 
-/// `glave` started with `args`, still running.
-pub fn start(place: &Place, server: &FakeServer, args: &[&str]) -> Child {
+/// `glave` started with `args`, still running, and stopped when dropped.
+pub fn start(place: &Place, server: &FakeServer, args: &[&str]) -> Running {
     start_with(place, server, args, &[])
 }
 
-/// `glave` started with `args` and the variables `env`, still running.
+/// `glave` started with `args` and the variables `env`, still running, and stopped when
+/// dropped.
 pub fn start_with(
     place: &Place,
     server: &FakeServer,
     args: &[&str],
     env: &[(&str, &str)],
-) -> Child {
-    Command::new(env!("CARGO_BIN_EXE_glave"))
+) -> Running {
+    let child = Command::new(env!("CARGO_BIN_EXE_glave"))
         .args(args)
         .envs(env.iter().copied())
         .current_dir(&place.project)
@@ -65,7 +66,8 @@ pub fn start_with(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .unwrap()
+        .unwrap();
+    Running::new(child)
 }
 
 pub fn text(output: &Output) -> String {
