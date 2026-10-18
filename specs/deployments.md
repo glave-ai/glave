@@ -1,0 +1,53 @@
+# Deployments
+
+Who glave serves, and what differs between them: five deployments, one program. Every design is checked against all five. The owner, 2026-10-18: "architecture is absolutely everything… think about the matrix of who we're serving and we must account for all of it."
+
+## Status
+
+Written 2026-10-18 (#395) from the specs and that day's decisions: stores by standard (#414), buckets for blobs (#416), publishing (#417), live previews (#356), the person's server (`one-server.md`), leases (#410) and updates (#272, #377). Each cell says what sits behind the seam and whether it is *built*, *planned* (with its issue) or *undecided*. A pull request that builds or decides a cell updates it here.
+
+## The five deployments
+
+1. **A laptop:** the person's own computer. One person, an organization of one that is never shown.
+2. **A person's own server:** a machine they rent or keep (a Hetzner VPS, a box at home), often their computer in the cloud. The same binary and the same defaults as the laptop, kept running by what installed it (systemd, Compose).
+3. **Glave Cloud, personal plan:** we run the server; the person is an organization of one on it.
+4. **Glave Cloud, enterprise plan:** an organization hosted by us, its people signed in through it.
+5. **Enterprise, self-hosted:** an organization runs glave on its own servers, with its own identity, store, models and compute.
+
+## The matrix
+
+| | 1. Laptop | 2. Own server | 3. Glave Cloud, personal | 4. Glave Cloud, enterprise | 5. Enterprise, self-hosted |
+| --- | --- | --- | --- | --- | --- |
+| **Server processes** | One per glave home, held by `server.lock`. *Built* | The same. *Built* | Replicas on one store, each turn, task and schedule under a lease. *Planned (#410)* | The same. *Planned (#410)* | One, or replicas under leases. One *built*; replicas *planned (#410)* |
+| **Data store** | SQLite in glave's folder. *Built* | SQLite; Postgres if `[store] url` names one. *Built* | Postgres. *Built*; how many organizations share one database: *undecided* | Postgres, ours. *Built*; the same question | Their Postgres (RDS, Cloud SQL, AlloyDB, their own). *Built*; its password only from the environment *planned (#415)* |
+| **Blobs** (bytes; records stay in the store) | A folder in glave's folder. *Planned (#416)*; today in the SQLite file | The same. *Planned (#416)* | R2: one bucket, a prefix per organization. *Planned (#416)* | Glave Cloud's bucket under the organization's prefix, or the organization's own bucket. *Planned (#416)* | Their S3-compatible bucket (a cloud's, Ceph RGW; SeaweedFS for trials). *Planned (#416)* |
+| **Keys at rest** (the root) | The OS keychain; a key file without one. *Built*. The whole file encrypted: *planned (#22)* | A key file (0600). *Built*. systemd credentials or the TPM first: *planned (#22)* | A KMS. *Planned (#22)* | A KMS; whether the organization brings its own: *undecided* | Their KMS (AWS KMS, Vault transit, GCP KMS, Azure Key Vault). *Planned (#22)* |
+| **Sign-in** | The local person: the socket, the local token, a one-time link to a browser session. *Built* | The same from the machine itself, or through an SSH tunnel. *Built*. From anywhere, a passkey: *planned (#306)* | An email code or link, and passkeys. *Planned*, no issue yet | Glave Cloud's sign-in, or the organization's SSO: OIDC *built*, SAML *planned (#64)*; SCIM *planned (#365, #222)* | Their identity provider: OIDC *built*, SAML *planned (#64)*, SCIM *planned (#365, #222)* |
+| **Its address** | 127.0.0.1:4180, loopback only. *Built* | Loopback, reached by a tunnel. *Built*. Its public origin: *planned (#306)* | Glave Cloud's domain. *Planned*, no issue yet | Glave Cloud's domain, or the organization's own: *undecided* | Theirs (`glave serve --http`). *Built* |
+| **The person's computer** | This computer, in the operating system's sandbox. *Built* | The server's machine, in the same sandbox. *Built*; a cloud machine's metadata address is not blocked (`sandbox.md`) | A machine Glave Cloud gives the person, its system an image we update, its home on a kept disk (`model.md`). *Planned (#221)* | The same, on our cluster. *Planned (#221)* | A machine of theirs, or one per person on their cluster. *Undecided* |
+| **Workers** (a fresh machine per task, when chosen) | Docker. *Built* | Docker. *Built* | Kubernetes, every worker in gVisor or Kata. Backend *built*; on agent-sandbox *planned (#221)* | The same, workers per organization. *Planned*, no issue yet | Their Kubernetes or Docker, isolation as their policy sets. *Built*; the cluster's private network still reachable (#393) |
+| **Models** | The person's own accounts, connected in the app, or an endpoint in their settings. *Built* | The same. *Built* | Glave Cloud's credits. *Planned*, no issue yet. The person's own accounts beside them (`model.md`); today refused on a server people sign in to (`-32022`) | The organization's providers through the gateway. *Built* for one provider; providers as data *planned (#290, #289)*. Credits: *undecided* | Their providers and cloud contracts (Azure, Bedrock, Vertex) through the gateway. *Built* for one provider; as data *planned (#290, #289)* |
+| **Budgets and spend** | Per run, set by no one else. *Built* | The same. *Built* | The plan's credits. *Planned*, no issue yet | The organization's budgets per person and team. Per process today, reset at a restart (#410); teams *planned (#222)* | The same |
+| **Tasks and schedules** | In the person's server while it runs. *Built*. Start at login, offered once: decided, not built. Awake while working: *planned (#342)* | The same, the server always running. *Built* | Always running, by lease. *Planned (#410)* | The same. Today a server people sign in to fires no schedules. *Planned (#410)* | The same. *Planned (#410)* |
+| **Live previews** | A loopback port per preview. *Planned (#356)* | A subdomain per preview under its public origin (a wildcard name and certificate). *Planned (#356)*; reached only by a tunnel: *undecided* | `<id>.preview.<domain>`, proxied over the computer protocol. *Planned (#356)* | The same. *Planned (#356)* | The same, on their domain. *Planned (#356)* |
+| **Publishing** | Never; live previews only. Decided (#417) | Served by its own server from its own store, on an origin apart from glave's. *Planned (#417)* | A public bucket behind a CDN, a subdomain per site on a user-content domain (its name the owner's call). *Planned (#417)* | The same, unless the organization's policy forbids it. *Planned (#417)* | By their policy, from their server or their own bucket and CDN. *Planned (#417)* |
+| **Policy** | None: an organization of one allows everything. Device management may install `policy.toml`. *Built* | None. *Built* | None the person sees. Glave Cloud's own limits (workers in a VM, sizes) as the server's: which ones, *undecided* | The organization's, edited in the admin console. *Planned (#222)*; a signed bundle *planned (#22)* | The same, or a file through device management. File *built*; bundle *planned (#22)* |
+| **Admin UI** | None: `server/discover` says no organization | None | None | `/admin` for admins, when `server/discover` says the caller is one. *Planned (#222)* | The same. *Planned (#222)* |
+| **Updates** | Never updates itself or checks. Decided (#272). A quiet "new version" line in Settings: *undecided (#377)* | Never checks and never contacts us; the person updates (the install script, Compose). Decided (#272) | We update it, a small slice first; two versions side by side on one store (expand, then contract). *Planned (#377)* | We update it, as 3. *Planned (#377)* | They update it (the image, the Helm chart, #220); it never checks. Decided (#272) |
+
+**The same in every column:** the binary, the session API and its schema, the harness and its tools, approvals and the judge, the sandbox wherever the machine can run it, the event format and its sealing, memory, the web app, and what a person sees. Waits that survive a restart, watching a thread live and one writer per folder (`one-server.md`) hold in every column; with more than one server process they hold by lease.
+
+## One code path
+
+- **Every column runs the same binary and the same code.** Only what sits behind the seams differs (AGENTS.md, principle 4): the store, the bucket, the key root, the identity provider, the models, the machines work runs on.
+- **A capability exists because the server's configuration provides it**: a store URL, a bucket, a public origin for sites, an identity provider, a workers backend. `server/discover` says what exists, and every client draws only that. No client decides it, and no setting names a deployment type: there is no `mode = "cloud"`, no `--enterprise`, no edition.
+- **So a column is a configuration, not a build.** A laptop and a person's own server are the same program with the same defaults; what makes a laptop one is that its server listens on loopback and has no public origin, so it previews on localhost and never publishes. Give the same server a public origin and it is a person's own server.
+- **One process or many is configuration too.** Anything with more than one server process (Glave Cloud, an organization's replicas) works through leases in the store (`invariants.md`, "Where state lives"); one process takes the same leases and always wins them, so the code is the same.
+- **Today `server/discover` says none of it.** It answers the server's id, name, version, protocols and approval modes; whether there is an organization, which sign-in, workers, previews or publishing are still to add, each with the capability it reports.
+
+## Every design passes the check
+
+- **Every design is checked against all five columns** in its spec or its pull request description: for each column, what sits behind the seam and whether it works there.
+- **A gap is named, not skipped.** A design that does not yet serve a column says which and why, and the cell here says so; "later" without a column is not an answer.
+- **A cell is changed in the same pull request** that builds or decides it.
+- **Principle 4 holds in every row**: no column adds a click, a word or a setting for a person on a laptop or their own server. If an organization's capability would, it belongs behind a seam.

@@ -70,7 +70,7 @@ web/app/            the web app `glave serve --http` (and `glave app`) serves at
 web/e2e/            end-to-end smoke tests (Playwright, axe) of the built app and Glaze's showcase, served with glave's Content Security Policy
 evals/tasks/        eval tasks in Harbor's layout: instruction, starting files, hidden grader, reference solution
 evals/judge/        judge cases: a request, an action, and whether it should run in auto mode (README.md)
-specs/              the model (`model.md`: organization to thread, server and computer), and the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; the invariants (`invariants.md`), each with its test; tool calls, verbs and scopes planned
+specs/              the model (`model.md`: organization to thread, server and computer), the deployments it serves (`deployments.md`), and the contracts: events, storage, config and policy, computers, the gateway, the sandbox, approvals, the session API; the invariants (`invariants.md`), each with its test; tool calls, verbs and scopes planned
 .github/workflows/  CI: `cargo xtask ci` on Linux (every push and PR) and macOS (main); workers on a `kind` cluster (Linux); releases on version tags (`v0.1.0`): release.yml, made by `cargo xtask release-workflow` (`dist generate` from dist-workspace.toml and .github/build-setup.yml, then only the job that publishes can write), never edited by hand
 ```
 
@@ -112,6 +112,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - **Reviewed before merge.** Every feature PR gets an independent review (not its author) before it merges, beyond CI.
 
 **Keeping principle 4.** A person on their own computer runs exactly what an organization runs. What differs is what sits behind the seams, never what the person sees:
+- **Five deployments, one program.** `specs/deployments.md` is the matrix of who glave serves: a laptop, a person's own server, Glave Cloud's personal and enterprise plans, and an enterprise's own servers. Every design is checked against all five columns in its spec or pull request description, and a gap is named, not skipped. A capability exists because the server's configuration provides it, never because a client or a deployment-type setting says so.
 - **The server says what exists.** `server/discover` tells a client whether there is an organization, groups, sign-in or workers, and admin UI renders only when it says so. A local server says none. No client decides which admin features exist from its own config.
 - **The server says what happened; each client draws it.** Everything about a person's work comes from the server as typed facts, each with one plain sentence: a thread's items and their status; an approval or question with its sentence, detail and choices as fields; what needs the person and why; receipts; the names of models and services; what the caller may do; why a request was refused. A client never writes its own sentence about the work from events, counts or a parsed string: it shows the server's and draws the facts around it. A client owns its chrome:
   - layout, order, folding, icons and motion;
