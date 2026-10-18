@@ -51,9 +51,14 @@ where
     B: BlobStore,
     A: Approver,
 {
-    /// The model `thread`'s turns are sent to: its own choice, else the default now.
+    /// The model `thread`'s turns are sent to: its own choice, else its project's, else the
+    /// default now.
     pub fn model_for(&self, thread: &Thread) -> String {
-        thread.model.clone().unwrap_or_else(|| self.default_model())
+        thread
+            .model
+            .clone()
+            .or_else(|| thread.brought.settled.model.clone())
+            .unwrap_or_else(|| self.default_model())
     }
 
     /// The model threads that chose none are sent to now: the settings' until the host
@@ -127,11 +132,12 @@ where
 
     /// How much `thread`'s turns ask before acting: its own choice, else its project's, else
     /// the harness's mode; never auto where its project runs commands unconfined without auto
-    /// chosen ([`crate::Loosened::mode`]).
+    /// chosen ([`crate::Protections::mode`]).
     pub fn approval_for(&self, thread: &Thread) -> ApprovalMode {
         thread
             .brought
-            .loosened
+            .settled
+            .protections
             .mode(thread.approval, self.settings.approval)
     }
 

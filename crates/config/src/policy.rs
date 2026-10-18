@@ -87,6 +87,9 @@ pub struct Loaded {
     pub person_hooks: Vec<Hook>,
     /// Why this computer cannot run the sandbox, when that is known before trying.
     pub no_sandbox_here: Option<String>,
+    /// The levels the choices came from other than a project's, nearest first: what
+    /// [`Loaded::with_project`] puts a project's among.
+    pub layers: Vec<Layer>,
 }
 
 /// A project's trust, for `glave policy explain`.
@@ -106,6 +109,67 @@ impl Loaded {
             None => choices,
         })
     }
+
+    /// The choices for a thread in a project whose `config.toml`, at `path`, applies as
+    /// `project`: its choices come after the flags' and the environment's and before the
+    /// person's, as [`load`] puts them, under the same constraints. A project's these already
+    /// hold gives way to it.
+    #[must_use]
+    pub fn with_project(&self, path: &Path, project: ConfigFile) -> Self {
+        let layers = with_project(&self.layers, project_layer(path, project));
+        Self {
+            choices: choices::resolve(&layers),
+            configs: files_of(&layers),
+            ..self.clone()
+        }
+    }
+}
+
+/// `own`, the levels other than a project's, with `project` among them: after the flags and
+/// the environment, before the person's file.
+fn with_project(own: &[Layer], project: Layer) -> Vec<Layer> {
+    let at = own
+        .iter()
+        .position(|layer| matches!(layer.level, Level::File(_)))
+        .unwrap_or(own.len());
+    let mut layers = own.to_vec();
+    layers.insert(at, project);
+    layers
+}
+
+/// The layer of a project's `config.toml` at `path`, choosing `values` less what a project
+/// never chooses. A project never chooses the gateway: the person's sign-in would go where it
+/// said. Nor whether the person's memory is on: that is theirs alone. Nor where telemetry goes,
+/// nor where history is kept, nor which server to sign in to, nor which cloud the
+/// organization's credentials go to, nor which app their GitHub sign-in goes to. It may take
+/// the network away from sandboxed commands, never give it back.
+fn project_layer(path: &Path, values: ConfigFile) -> Layer {
+    let values = ConfigFile {
+        gateway: None,
+        memory: None,
+        telemetry: None,
+        store: None,
+        server: None,
+        provider: None,
+        github: None,
+        network: values.network.filter(|on| !on),
+        ..values
+    };
+    Layer {
+        level: Level::File(path.to_owned()),
+        values,
+    }
+}
+
+/// The `config.toml` files among `layers`, nearest first.
+fn files_of(layers: &[Layer]) -> Vec<PathBuf> {
+    layers
+        .iter()
+        .filter_map(|layer| match &layer.level {
+            Level::File(path) => Some(path.clone()),
+            Level::Flags | Level::Env => None,
+        })
+        .collect()
 }
 
 /// The policy files that exist at `locations`, organization first.
@@ -150,7 +214,7 @@ pub async fn load(
         .and_then(|file| file.hooks.as_ref())
         .map(HooksFile::hooks)
         .unwrap_or_default();
-    let mut layers = vec![
+    let mut own = vec![
         Layer {
             level: Level::Flags,
             values: flags,
@@ -160,35 +224,20 @@ pub async fn load(
             values: env,
         },
     ];
-    if let Some(values) = project {
-        // A project never chooses the gateway: the person's sign-in would go where it said.
-        // Nor whether the person's memory is on: that is theirs alone. Nor where telemetry
-        // goes, nor where history is kept, nor which server to sign in to, nor which cloud the
-        // organization's credentials go to, nor which app their GitHub sign-in goes to. It may
-        // take the network away from sandboxed commands, never give it back.
-        let values = ConfigFile {
-            gateway: None,
-            memory: None,
-            telemetry: None,
-            store: None,
-            server: None,
-            provider: None,
-            github: None,
-            network: values.network.filter(|on| !on),
-            ..values
-        };
-        layers.push(Layer {
-            level: Level::File(locations.project.clone()),
-            values,
-        });
-    }
     if let Some(values) = person {
-        layers.push(Layer {
+        own.push(Layer {
             level: Level::File(locations.person.clone()),
             values,
         });
     }
-    let mut loaded = assemble(&layers, policies, None);
+    let mut loaded = match project {
+        Some(values) => {
+            let layers = with_project(&own, project_layer(&locations.project, values));
+            assemble(&layers, policies, None)
+        }
+        None => assemble(&own, policies, None),
+    };
+    loaded.layers = own;
     loaded.person_hooks = person_hooks;
     Ok(loaded)
 }
@@ -202,17 +251,12 @@ pub fn assemble(
     Loaded {
         choices: choices::resolve(layers),
         constraints: Constraints::of(policies),
-        configs: layers
-            .iter()
-            .filter_map(|layer| match &layer.level {
-                Level::File(path) => Some(path.clone()),
-                Level::Flags | Level::Env => None,
-            })
-            .collect(),
+        configs: files_of(layers),
         policies: policies.iter().map(|(path, _)| path.clone()).collect(),
         project,
         person_hooks: Vec::new(),
         no_sandbox_here: None,
+        layers: layers.to_vec(),
     }
 }
 

@@ -135,6 +135,9 @@ pub struct Harness<P, L, B, A> {
     pub(crate) workspace: Arc<Workspace>,
     /// Where tools come from: the built-in tools first, then any others, such as MCP servers.
     pub(crate) sources: Vec<Arc<dyn ToolSource>>,
+    /// `web_fetch`, offered right after the built-in tools, unless a thread's project sets up
+    /// its own; none by default.
+    pub(crate) web: Option<Arc<dyn ToolSource>>,
     /// Commands run at points of a turn; none by default.
     pub(crate) hooks: Hooks,
     pub(crate) settings: Settings,
@@ -338,6 +341,7 @@ where
                 commands: Arc::default(),
             })],
             workspace,
+            web: None,
             hooks: Hooks::default(),
             default: RwLock::new(DefaultModel {
                 model: settings.model.clone(),
@@ -401,17 +405,40 @@ where
         self
     }
 
-    /// Runs `hooks` at their points of every turn.
+    /// Offers `web_fetch` from `web`, right after the built-in tools, to every thread whose
+    /// project sets up none of its own; none leaves it to the other sources.
+    #[must_use]
+    pub fn with_web(mut self, web: Option<Arc<dyn ToolSource>>) -> Self {
+        self.web = web;
+        self
+    }
+
+    /// Runs `hooks` at their points of the turns of the person the harness works for.
     #[must_use]
     pub fn with_hooks(mut self, hooks: Hooks) -> Self {
         self.hooks = hooks;
         self
     }
 
+    /// Every source of `thread`'s tools, in the order a tool keeps the first that names it:
+    /// the built-in tools, `web_fetch` (its project's, else the harness's), the harness's
+    /// other sources, then its project's.
+    pub(crate) fn sources_for(&self, thread: &Thread) -> Vec<Arc<dyn ToolSource>> {
+        let mut sources = self.sources.clone();
+        if let Some(web) = thread.brought.web.as_ref().or(self.web.as_ref()) {
+            let after = crate::builtins::BUILTINS
+                .saturating_add(1)
+                .min(sources.len());
+            sources.insert(after, Arc::clone(web));
+        }
+        sources.extend(thread.brought.tools.iter().cloned());
+        sources
+    }
+
     /// The tools on offer now in `thread`, from every source: the harness's, then its
     /// project's.
     pub(crate) async fn tools(&self, thread: &Thread) -> ToolSet {
-        let sources = [self.sources.as_slice(), thread.brought.tools.as_slice()].concat();
+        let sources = self.sources_for(thread);
         let mut set = ToolSet::gather(&sources, &self.system_for(thread)).await;
         if let Some(credentials) = self.workspace_for(thread).credentials()
             && let Some(note) = crate::prompt::signed_in(&credentials.hosts().await)

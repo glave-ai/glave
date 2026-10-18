@@ -256,6 +256,24 @@ where
         self.ask(thread, request, cancel, live).await
     }
 
+    /// The model that judges `thread`'s flagged actions, or none when no judge does: its
+    /// project's choice, else the harness's. The main model is its project's, else the
+    /// default.
+    fn judge_for(&self, thread: &Thread) -> Option<String> {
+        let settled = &thread.brought.settled;
+        let main = || {
+            settled
+                .model
+                .clone()
+                .unwrap_or_else(|| self.default_model())
+        };
+        match settled.judge.as_ref().unwrap_or(&self.settings.judge) {
+            Judge::Off => None,
+            Judge::Main => Some(main()),
+            Judge::Model(model) => Some(model.clone()),
+        }
+    }
+
     /// Whether the judge may clear a call's caution: never a firm one. One that would run a
     /// command outside the sandbox only while someone could be asked instead, and only in a
     /// thread that has read nothing untrusted.
@@ -277,10 +295,8 @@ where
         let Some(reason) = request.caution.as_deref() else {
             return Ok(Judged::Ask);
         };
-        let model = match &self.settings.judge {
-            Judge::Off => return Ok(Judged::Ask),
-            Judge::Main => self.default_model(),
-            Judge::Model(model) => model.clone(),
+        let Some(model) = self.judge_for(thread) else {
+            return Ok(Judged::Ask);
         };
         if self.approval_for(thread) != ApprovalMode::Auto {
             return Ok(Judged::Ask);

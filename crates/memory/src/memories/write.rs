@@ -90,7 +90,7 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         force: bool,
     ) -> Result<Remembering, MemoryError> {
         let text = checked(text)?;
-        let ledger = self.inner.rules.place(who.person, who.scope, which)?;
+        let ledger = self.rules().place(who.person, who.scope, which)?;
         let old = match replaces {
             Some(memory) => Some(self.locate(who.person, who.scope, memory).await?),
             None => None,
@@ -222,7 +222,7 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         who: &Writer,
         which: MemoryScope,
     ) -> Result<Vec<Remembered>, MemoryError> {
-        let ledger = self.inner.rules.place(who.person, who.scope, which)?;
+        let ledger = self.rules().place(who.person, who.scope, which)?;
         let all: Vec<Remembered> = self
             .with_book(ledger, Book::live)
             .await?

@@ -7,8 +7,8 @@
 
 mod ask;
 mod assess;
-mod loosen;
 mod project;
+mod protect;
 mod record;
 #[cfg(test)]
 mod tests;
@@ -17,8 +17,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 pub use assess::{Answer, Assessment, Outcome, assess};
-pub use loosen::loosened;
 pub use project::{Plain, Project, remote};
+pub use protect::protections;
 pub use record::Record;
 
 use crate::policy::Constraints;

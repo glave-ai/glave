@@ -154,6 +154,11 @@ mod project {
             "approval = \"ask\"\nmodel = \"from-project\"\n",
         )
         .unwrap();
+        // A project's model must be one glave offers: the person's own choices offer it, and
+        // the project's is nearer than theirs, though a flag would be nearer still.
+        std::fs::create_dir_all(&place.home).unwrap();
+        let offered = "model = \"m\"\nmemory = \"off\"\n[[models]]\nid = \"from-project\"\n";
+        std::fs::write(place.home.join("config.toml"), offered).unwrap();
         let model = FakeServer::start(vec![Reply::text("Hi.")]).unwrap();
         let output = glave(&place, &model, &["hello"], "");
         let shown = text(&output);
@@ -169,6 +174,29 @@ mod project {
                 .join("")
                 .contains("Project tools")
         );
+    }
+
+    #[test]
+    fn a_project_s_model_glave_does_not_offer_is_set_aside_with_a_sentence() {
+        let place = place("project-aside");
+        std::fs::create_dir_all(place.project.join(".glave")).unwrap();
+        std::fs::write(
+            place.project.join(".glave/config.toml"),
+            "model = \"from-project\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(&place.home).unwrap();
+        let mine = "model = \"m\"\nmemory = \"off\"\n";
+        std::fs::write(place.home.join("config.toml"), mine).unwrap();
+        let model = FakeServer::start(vec![Reply::text("Hi.")]).unwrap();
+        let output = glave(&place, &model, &["hello"], "");
+        let shown = text(&output);
+        assert!(output.status.success(), "{shown}");
+        assert!(
+            shown.contains("\"from-project\" is set aside") && shown.contains("does not offer"),
+            "{shown}"
+        );
+        assert_eq!(model.received()[0].body["model"], "m", "the default");
     }
 
     #[test]

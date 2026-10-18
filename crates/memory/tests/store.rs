@@ -11,7 +11,7 @@ mod support;
 mod store {
     use glave_event::{MemoryScope, Principal, decode};
     use glave_harness::{MemoryContext, MemoryError, memory_ledger};
-    use glave_memory::{Remembering, Writer};
+    use glave_memory::{Remembering, SpaceMemory, Writer};
     use glave_ports::testing::fake_secret;
     use glave_ports::{EventLog, Scope};
 
@@ -382,6 +382,24 @@ mod store {
             assert_ne!(moved.memory, space.memory);
             let elsewhere = memories.list(&on(scope(1, 5))).await.unwrap();
             assert_eq!(elsewhere, [moved], "personal now, so read in another space");
+        });
+    }
+
+    #[test]
+    fn a_space_s_setting_follows_its_project_s_settings_while_memory_runs() {
+        block_on!(async {
+            let kit = Kit::new();
+            let memories = kit.memories(rules(), 1);
+            let mine = writer(shared());
+            let save = || memories.remember(&mine, "A fact", MemoryScope::Space, None, false);
+            memories.set_space(shared().space, SpaceMemory::Off);
+            assert!(matches!(save().await, Err(MemoryError::Off(_))));
+            memories.set_space(shared().space, SpaceMemory::Shared);
+            assert!(
+                !memories.rules().spaces.contains_key(&shared().space),
+                "the default again"
+            );
+            saved(save().await.unwrap());
         });
     }
 }

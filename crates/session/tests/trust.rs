@@ -81,7 +81,7 @@ impl Projects for Repository {
         Box::pin(async { None })
     }
 
-    fn brought<'a>(&'a self, _project: &'a Path) -> BoxFuture<'a, Brought> {
+    fn brought<'a>(&'a self, _project: &'a Path, _space: SpaceId) -> BoxFuture<'a, Brought> {
         if !self.is_trusted() {
             return Box::pin(async { Brought::default() });
         }

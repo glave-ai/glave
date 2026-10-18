@@ -1,14 +1,19 @@
 //! Each project as this glave reads it: asked about in plain words, a yes kept exactly as the
 //! terminal keeps it, what it brings on from then and only then, a change asked about again,
-//! the model told what stays off, and nothing twice of the project glave started in.
+//! the model told what stays off; what each project chooses reaching its own threads alone,
+//! a model glave does not offer set aside with a sentence; and a project's server giving way
+//! to the person's own of the same name.
 
 use std::path::{Path, PathBuf};
 
-use glave_config::policy::{self, ConfigFile};
+use glave_config::policy::{self, ConfigFile, Constraints, ModelEntry, Source};
 use glave_config::trust::Record;
+use glave_harness::{ApprovalMode, Judge, Protections, SandboxLevel};
 use glave_ports::block_on;
 
 use super::*;
+use crate::gateway::{Allowed, gateway};
+use crate::model::Model;
 
 /// A home folder and a project in it whose `.mcp.json` has `servers` and whose config is
 /// `config`, both fresh for the test `name`.
@@ -16,11 +21,17 @@ fn place(name: &str, servers: &str, config: &str) -> (PathBuf, PathBuf) {
     let dir = std::env::temp_dir().join(format!("glave-projects-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("home")).unwrap();
-    let project = dir.join("project");
+    let dir = std::fs::canonicalize(dir).unwrap();
+    let project = another(&dir, "project", servers, config);
+    (dir.join("home"), project)
+}
+
+/// Another project beside it, called `name`.
+fn another(dir: &Path, name: &str, servers: &str, config: &str) -> PathBuf {
+    let project = dir.join(name);
     std::fs::create_dir_all(project.join(".glave")).unwrap();
     write(&project, servers, config);
-    let dir = std::fs::canonicalize(dir).unwrap();
-    (dir.join("home"), dir.join("project"))
+    project
 }
 
 fn write(project: &Path, servers: &str, config: &str) {
@@ -32,8 +43,8 @@ fn write(project: &Path, servers: &str, config: &str) {
 const DOCS: &str = r#""docs": {"command": "/nonexistent/docs-mcp", "args": ["--fast"]}"#;
 const GUARD: &str = "[[hooks.PreToolUse]]\nmatcher = \"bash\"\ncommand = \"./guard.sh\"\n";
 
-/// glave's own choices in `home`, with nothing chosen.
-async fn choices(home: &Path) -> Choices {
+/// glave's own levels in `home`, with nothing chosen.
+async fn loaded(home: &Path) -> Loaded {
     let locations = Locations {
         root: home.to_owned(),
         person: home.join("config.toml"),
@@ -41,22 +52,49 @@ async fn choices(home: &Path) -> Choices {
         policies: Vec::new(),
     };
     let none = ConfigFile::default();
-    let loaded = policy::load(&locations, &[], None, none.clone(), none)
+    policy::load(&locations, &[], None, none.clone(), none)
         .await
-        .unwrap();
-    loaded.settle().unwrap()
+        .unwrap()
 }
 
-async fn projects(home: &Path, started: Started, taken: Vec<String>) -> Projects {
-    let choices = choices(home).await;
-    Projects::new(
-        home.to_owned(),
-        Constraints::default(),
-        choices,
-        started,
+/// The models a gateway offers: its main one, `big`, and each of `models`.
+fn offering(models: &[&str]) -> Switch {
+    let endpoint = crate::gateway::tests::endpoint();
+    let entries: Vec<ModelEntry> = models
+        .iter()
+        .map(|id| ModelEntry {
+            id: (*id).to_owned(),
+            name: None,
+            hope: false,
+        })
+        .collect();
+    let allowed = Allowed {
+        constraints: &Constraints::default(),
+        main: None,
+        judge: &Source::Default,
+        models: &Source::Default,
+    };
+    let provider = Model::for_endpoint(&endpoint).unwrap();
+    let built = gateway(provider, &endpoint, None, &entries, Vec::new(), &allowed).unwrap();
+    Switch::new(Some(built))
+}
+
+/// The projects of a glave in `home` already running the person's own servers `taken`,
+/// offering the models `models` besides its main one.
+async fn projects(home: &Path, taken: Vec<String>, models: &[&str]) -> Projects {
+    let loaded = loaded(home).await;
+    let own = Own {
+        choices: loaded.settle().unwrap(),
+        loaded,
         taken,
-        true,
-    )
+        models: offering(models),
+        memory: None,
+    };
+    Projects::new(home.to_owned(), own, true)
+}
+
+fn space() -> SpaceId {
+    SpaceId::from_uuid(uuid::Uuid::from_u128(2))
 }
 
 fn plain(ask: &TrustAsk) -> Vec<(&str, Option<&str>)> {
@@ -91,7 +129,7 @@ fn servers_put_away_close_only_once_no_turn_holds_them() {
 fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
     let (home, project) = place("asked", DOCS, GUARD);
     block_on!(async {
-        let projects = projects(&home, Started::default(), Vec::new()).await;
+        let projects = projects(&home, Vec::new(), &[]).await;
         let ask = projects.ask(&project).await.unwrap().unwrap();
         assert_eq!(
             plain(&ask),
@@ -100,7 +138,7 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
                 ("Runs a hook before each command", Some("./guard.sh")),
             ]
         );
-        let before = projects.brought(&project).await;
+        let before = projects.brought(&project, space()).await;
         assert!(
             before.tools.is_empty() && before.hooks.is_empty(),
             "off until trusted"
@@ -137,10 +175,10 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
                 && theirs.contains("never for anyone else's threads"),
             "trusted, and still off on another person's thread: {theirs}"
         );
-        let after = projects.brought(&project).await;
+        let after = projects.brought(&project, space()).await;
         assert_eq!(after.tools.len(), 2, "the server, then its resources");
         assert_eq!(after.hooks.all().count(), 1);
-        let again = projects.brought(&project).await;
+        let again = projects.brought(&project, space()).await;
         assert!(
             Arc::ptr_eq(&after.tools[0], &again.tools[0]),
             "the same server, still running"
@@ -162,49 +200,97 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
             !projects.trust(&project, &ask.ask).await.unwrap(),
             "not what was shown"
         );
-        let meanwhile = projects.brought(&project).await;
+        let meanwhile = projects.brought(&project, space()).await;
         assert!(meanwhile.tools.is_empty());
         assert_eq!(meanwhile.hooks.all().count(), 1, "the hook did not change");
         projects.close().await;
     });
 }
 
+/// A project that chooses almost everything a project may, two of them needing trust.
+const CHOOSES: &str = "model = \"alpha\"\njudge_model = \"alpha-judge\"\napproval = \"ask\"\n\
+                       sandbox = \"read-only\"\nnetwork = false\ntitles = false\nworktree = true\n\
+                       [web]\nfetch = false\n";
+
 #[test]
-fn what_glave_started_with_in_its_own_project_is_not_brought_twice_but_its_hooks_are_its_own() {
-    let (home, project) = place("started", DOCS, &format!("approval = \"auto\"\n{GUARD}"));
+fn each_project_s_settings_reach_its_own_threads_alone() {
+    let (home, alpha) = place("settled", "", CHOOSES);
+    let beta = another(home.parent().unwrap(), "beta", "", "model = \"beta\"\n");
     block_on!(async {
-        let first = projects(&home, Started::default(), Vec::new()).await;
-        let ask = first.ask(&project).await.unwrap().unwrap();
-        assert!(first.trust(&project, &ask.ask).await.unwrap());
-        let read = Project::read(&project, &crate::mcp::environment())
-            .await
-            .unwrap();
-        let outcome = trust::assessed(&home, read, &Constraints::default())
-            .await
-            .unwrap()
-            .apply(Answer::Later);
-        let started = Started::from_outcome(&project, &home, &outcome);
-        assert!(started.settings);
-        let restarted = projects(&home, started, vec!["docs".into()]).await;
-        let brought = restarted.brought(&project).await;
-        assert!(
-            brought.tools.is_empty(),
-            "its server already runs for every thread"
-        );
-        assert_eq!(brought.loosened, Loosened::default(), "nor its settings");
+        let projects = projects(&home, Vec::new(), &["alpha", "alpha-judge", "beta"]).await;
+        let ask = projects.ask(&alpha).await.unwrap().unwrap();
         assert_eq!(
-            brought.hooks.all().count(),
-            1,
-            "its hooks run for its own threads alone, as any project's do"
+            plain(&ask),
+            [(
+                "Chooses which model judges risky actions",
+                Some("alpha-judge")
+            )]
         );
-        let elsewhere = projects(&home, Started::default(), vec!["docs".into()]).await;
-        let brought = elsewhere.brought(&project).await;
+        let untrusted = projects.settled(&alpha).await;
+        assert_eq!(
+            untrusted.model.as_deref(),
+            Some("alpha"),
+            "a model needs no trust"
+        );
+        assert_eq!(untrusted.judge, None, "its judge does");
+        assert!(projects.trust(&alpha, &ask.ask).await.unwrap());
+        let settled = projects.settled(&alpha).await;
+        assert_eq!(
+            settled.protections,
+            Protections {
+                approval: Some(ApprovalMode::Ask),
+                unconfined: false,
+                level: Some(SandboxLevel::ReadOnly),
+                offline: true,
+            }
+        );
+        assert_eq!(
+            (settled.judge, settled.titles, settled.worktree),
+            (
+                Some(Judge::Model("alpha-judge".into())),
+                Some(false),
+                Some(true)
+            )
+        );
+        let brought = projects.brought(&alpha, space()).await;
+        let web = brought.web.expect("its own web_fetch");
+        assert!(web.tools().await.unwrap().is_empty(), "turned off");
+
+        let other = projects.settled(&beta).await;
+        assert_eq!(other.model.as_deref(), Some("beta"));
+        assert_eq!(
+            (other.protections, other.judge, other.titles, other.worktree),
+            (Protections::default(), None, None, None),
+            "none of alpha's"
+        );
+        assert!(projects.brought(&beta, space()).await.web.is_none());
+        assert_eq!(projects.set_aside(&beta).await, Vec::<String>::new());
+    });
+}
+
+#[test]
+fn a_model_glave_does_not_offer_is_set_aside_with_a_sentence() {
+    let (home, project) = place("aside", "", "model = \"elsewhere\"\n");
+    block_on!(async {
+        let projects = projects(&home, Vec::new(), &[]).await;
+        assert_eq!(projects.settled(&project).await.model, None, "the default");
+        let aside = projects.set_aside(&project).await;
+        assert_eq!(aside.len(), 1, "{aside:?}");
         assert!(
-            brought.tools.is_empty(),
-            "a server of the same name runs already"
+            aside[0].contains("\"elsewhere\"") && aside[0].contains("does not offer"),
+            "{aside:?}"
         );
-        assert_eq!(brought.hooks.all().count(), 1);
-        assert_eq!(brought.loosened.approval, Some(ApprovalMode::Auto));
-        first.close().await;
+    });
+}
+
+#[test]
+fn a_project_s_server_gives_way_to_the_person_s_own_of_the_same_name() {
+    let (home, project) = place("taken", DOCS, "");
+    block_on!(async {
+        let projects = projects(&home, vec!["docs".into()], &[]).await;
+        let ask = projects.ask(&project).await.unwrap().unwrap();
+        assert!(projects.trust(&project, &ask.ask).await.unwrap());
+        let brought = projects.brought(&project, space()).await;
+        assert!(brought.tools.is_empty(), "the person's own runs instead");
     });
 }

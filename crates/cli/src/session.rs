@@ -10,14 +10,13 @@ use anyhow::Context as _;
 use glave_computer::{LocalComputers, WorkerComputers};
 use glave_event::ThreadId;
 use glave_harness::{
-    AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Sandbox, Settings,
-    SystemClock, Workspace, agents_md,
+    AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, OsEntropy, Projects as _,
+    Protections, Sandbox, Settings, SystemClock, Workspace, agents_md,
 };
 use glave_memory::Tidier;
 use glave_ports::{Credentials, SpaceId, ToolSource};
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Server, Wiring};
-use glave_web::{Web, WebSettings};
 
 use crate::accounts::Ledger;
 use crate::args::{self, Action, Args, USAGE};
@@ -35,7 +34,7 @@ use crate::setup::{self, Setup};
 use crate::terminal::Printer;
 use crate::{home, identity};
 use glave_config::policy::{self, Choices, On, Source};
-use glave_config::trust::{self, Asking};
+use glave_config::trust::Asking;
 
 /// A command's own entry: it reads the words after its name.
 type Subcommand = fn(&[String]) -> ExitCode;
@@ -138,21 +137,14 @@ fn task_limits(constraints: &policy::Constraints) -> glave_session::TaskLimits {
     }
 }
 
-/// The MCP servers the setup turns on in `root`: the person's, then the project's trusted
-/// ones, or the catalog of the gateway elsewhere.
-async fn mcp_servers(
-    setup: &Setup,
-    root: &Path,
-    remote: Option<&Remote>,
-) -> anyhow::Result<Servers> {
+/// The MCP servers the setup turns on for the person's threads everywhere, in their home
+/// folder: their own, or the catalog of the gateway elsewhere.
+async fn mcp_servers(setup: &Setup, remote: Option<&Remote>) -> anyhow::Result<Servers> {
     Servers::start(
         &home::folder()?,
-        root,
+        &home::person()?,
         setup.choices.mcp.as_ref(),
         &setup.loaded.constraints,
-        (!setup.project_servers.is_empty())
-            .then(|| trust::mcp_json(&setup.project_servers))
-            .as_deref(),
         remote,
     )
     .await
@@ -161,10 +153,12 @@ async fn mcp_servers(
 /// Builds the session server on this computer's store and the current folder.
 async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Result<Wired> {
     let folder = std::env::current_dir()?;
-    let mut setup = Setup::load(args, &folder, asking).await?;
-    if let Some(notice) = setup.notice() {
-        eprintln!("glave: {notice}");
-    }
+    let mut setup = Setup::load(args, &folder).await?;
+    // The terminal asks about the folder's project before glave starts; an app asks later.
+    let told = match asking {
+        Asking::Later => Vec::new(),
+        asking => setup::ask_here(&folder, &setup, asking).await?,
+    };
     let telemetry = crate::telemetry::start_for(args.log.as_deref(), &setup.choices)?;
     let database = home::database().await?;
     let workspace = workspace(&folder, &mut setup, &database).await?;
@@ -177,20 +171,20 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let (workspace, hosts) = with_hosts(args, &store, identity.person, choices, workspace).await?;
     let personal = home::folder()?.join(AGENTS_MD);
     let instructions = agents_md(workspace.root(), Some(&personal)).await?;
-    let opening = [
-        instructions.as_ref().map(|loaded| loaded.text.clone()),
-        setup.model_note(),
-    ];
+    let opening = instructions.as_ref().map(|loaded| loaded.text.clone());
     let mut settings = settings_for(args, choices, &lined, identity, opening)?;
     let model = settings.model.clone();
     let root = workspace.root().to_owned();
     settings.commands = crate::commands::find(&root).await?;
-    let servers = mcp_servers(&setup, &root, remote.as_ref()).await?;
+    let servers = mcp_servers(&setup, remote.as_ref()).await?;
     let (on_workers, workers) =
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder).await?;
     let scope = crate::spaces::here(&store, &root, identity.person).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
-    let projects = projects_for(&setup, &servers, asking)?;
+    let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asking)?;
+    for line in [told, projects.set_aside(&folder).await].concat() {
+        eprintln!("glave: {line}");
+    }
     tidy(memory.as_ref(), &lined.switch, model);
     let wiring = Wiring {
         models: lined.built.models.offered,
@@ -203,13 +197,9 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         clock: Box::new(SystemClock),
         entropy: Box::new(OsEntropy),
         workspace,
-        // web_fetch first, then the project's skills, then the MCP servers' tools.
-        tools: [
-            web(choices)?,
-            crate::skills::offered(&root).await?,
-            servers.sources(),
-        ]
-        .concat(),
+        web: web(choices)?,
+        // The skills, then the MCP servers' tools.
+        tools: [crate::skills::offered(&root).await?, servers.sources()].concat(),
         worktree: choices.worktree.value,
         hooks: Hooks::new(setup.hooks.clone())?,
         workers: on_workers,
@@ -240,40 +230,45 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     })
 }
 
-/// Each project as this glave reads it, beside the `servers` it runs for every thread; asked
-/// about from an app when `asking` says the person answers later.
-fn projects_for(setup: &Setup, servers: &Servers, asking: Asking) -> anyhow::Result<Arc<Projects>> {
-    Ok(Arc::new(Projects::new(
-        home::folder()?,
-        setup.loaded.constraints.clone(),
-        setup.choices.clone(),
-        setup.started.clone(),
-        servers.names().into_iter().map(str::to_owned).collect(),
-        asking == Asking::Later,
-    )))
+/// Each project as this glave reads it, beside the `servers` it runs for the person's threads
+/// everywhere, offering the models of `models`, with `memory`; asked about from an app when
+/// `asking` says the person answers later.
+fn projects_for(
+    setup: &Setup,
+    servers: &Servers,
+    models: &Switch,
+    memory: Option<&crate::memory::Running>,
+    asking: Asking,
+) -> anyhow::Result<Arc<Projects>> {
+    let own = crate::projects::Own {
+        loaded: setup.loaded.clone(),
+        choices: setup.choices.clone(),
+        taken: servers.names().into_iter().map(str::to_owned).collect(),
+        models: models.clone(),
+        memory: memory.map(|memory| Arc::clone(&memory.memory)),
+    };
+    let later = asking == Asking::Later;
+    Ok(Arc::new(Projects::new(home::folder()?, own, later)))
 }
 
 /// How the harness runs: the default model, the instructions a thread opens with when it has
-/// no folder of its own here (a worker's), from `opening`'s parts, and the choices.
+/// no folder of its own here (a worker's, from `opening`), and the choices.
 fn settings_for(
     args: &Args,
     choices: &Choices,
     lined: &Lined,
     identity: identity::Identity,
-    opening: [Option<String>; 2],
+    opening: Option<String>,
 ) -> anyhow::Result<Settings> {
     let (model, named) = lined.built.models.default.clone().unwrap_or_default();
     let mut settings = Settings::new(model, named);
-    settings.instructions = opening
-        .into_iter()
-        .flatten()
-        .reduce(|all, part| format!("{all}\n\n{part}"));
+    settings.instructions = opening;
     settings.approval = choices.approval.value;
     settings.max_steps = args.max_steps;
     settings.subagents = true; // As Claude Code, Codex and OpenCode offer it.
-    // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt ends with its answer.
-    let one_shot = args.action == Action::Run && !args.prompt.is_empty();
-    settings.titles = choices.titles.value && !one_shot;
+    // As Claude.ai, ChatGPT and OpenCode title chats; a one-shot prompt turns them off (its
+    // flags, `setup.rs`).
+    settings.titles = choices.titles.value;
     settings.judge = choices.judge.value.clone();
     (settings.person, settings.agent) = (Some(identity.person), Some(identity.agent));
     let window = config::context_window()?.unwrap_or(settings.compaction.window_tokens);
@@ -386,17 +381,11 @@ fn endpoint(choices: &Choices) -> anyhow::Result<(Option<Remote>, Option<Endpoin
 }
 
 /// `web_fetch`, as `[web]` sets it up; nothing when it is off.
-fn web(choices: &Choices) -> anyhow::Result<Vec<Arc<dyn ToolSource>>> {
-    let settings = WebSettings {
-        policy: choices.web.value.policy()?,
-        limits: glave_web::Limits::default(),
-    };
-    let web = Web::new(settings).context("could not set up web_fetch")?;
-    Ok(if web.offers_any() {
-        vec![Arc::new(web)]
-    } else {
-        Vec::new()
-    })
+fn web(choices: &Choices) -> anyhow::Result<Option<Arc<dyn ToolSource>>> {
+    let web = crate::projects::web_fetch(&choices.web.value)?;
+    Ok(web
+        .offers_any()
+        .then(|| Arc::new(web) as Arc<dyn ToolSource>))
 }
 
 /// The data store the setup's choices name, once this machine's worktrees have had their
@@ -558,12 +547,15 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         choices,
         workers: _,
         memory: _,
-        projects: _,
+        projects,
         _telemetry: _,
     } = wired;
     let Some(endpoint) = endpoint else {
         anyhow::bail!(config::NO_MODEL);
     };
+    // The terminal's threads are the folder's project's, so it shows what that chooses.
+    let project = projects.settled(root).await;
+    let model = project.model.unwrap_or_else(|| endpoint.model.clone());
     crate::tasks::at_start(server, args).await;
     let here = Session::Here(server);
     let (thread, note) = pick_thread(here, Some(*space), args.resume, None, None, None).await?;
@@ -581,7 +573,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         model: None,
         approval: None,
     };
-    let mut printer = Printer::new(&endpoint.model, protections(choices));
+    let mut printer = Printer::new(&model, protections(choices, project.protections));
     let code = if let Some(objective) = &args.goal {
         let goal = Goal {
             objective: objective.clone(),
@@ -598,7 +590,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
             note = format!("{note} · MCP: {}", names.join(", "));
         }
         let folder = root.display().to_string();
-        printer.banner(&endpoint.model, &endpoint.provider.provider, &folder, &note);
+        printer.banner(&model, &endpoint.provider.provider, &folder, &note);
         converse(&client, &mut printer).await
     } else {
         client.turn(&args.prompt, &mut printer).await
@@ -760,17 +752,21 @@ fn named(files: &[PathBuf]) -> Option<String> {
     (!names.is_empty()).then(|| names.join(", "))
 }
 
-/// The protections commands run under, for the banner and receipts: `sandbox: project`.
-fn protections(choices: &Choices) -> String {
-    let approval = format!("approval: {}", choices.approval.value.name());
-    match choices.sandbox.value {
-        Some(level) => {
-            let network = if choices.network.value {
-                " + network"
-            } else {
-                ""
-            };
-            format!("{approval} · sandbox: {}{network}", level.name())
+/// The protections commands run under, as the folder's project changes them, for the banner
+/// and receipts: `approval: auto · sandbox: project`.
+fn protections(choices: &Choices, project: Protections) -> String {
+    let approval = project.mode(None, choices.approval.value);
+    let approval = format!("approval: {}", approval.name());
+    let own = choices.sandbox.value.map(|level| Sandbox {
+        level,
+        network: choices.network.value,
+        home: None,
+        glave_home: None,
+    });
+    match project.sandbox(own.as_ref()) {
+        Some(sandbox) => {
+            let network = if sandbox.network { " + network" } else { "" };
+            format!("{approval} · sandbox: {}{network}", sandbox.level.name())
         }
         None => approval,
     }

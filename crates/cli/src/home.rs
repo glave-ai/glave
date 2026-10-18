@@ -15,6 +15,14 @@ pub fn folder() -> anyhow::Result<PathBuf> {
     }
 }
 
+/// The person's home folder, where their own MCP servers start: `$HOME`, else glave's folder.
+pub fn person() -> anyhow::Result<PathBuf> {
+    match std::env::var_os("HOME") {
+        Some(home) => Ok(PathBuf::from(home)),
+        None => folder(),
+    }
+}
+
 /// Where new projects' folders are made (`specs/storage.md`, "Spaces"): `~/glave`, where the
 /// person finds and opens them; beside a folder `GLAVE_HOME` names instead, as
 /// `<that folder>-projects`, so a separate home keeps its own. Never inside glave's folder.

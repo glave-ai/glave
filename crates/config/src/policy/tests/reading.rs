@@ -88,6 +88,25 @@ fn files_are_read_from_their_places_and_the_project_s_counts_once_trusted() {
         loaded.configs,
         [locations.project.clone(), locations.person.clone()]
     );
+    // Another project's settings take the first one's place among the same levels.
+    let other = dir.join("other/.glave/config.toml");
+    let model = Some("theirs".to_owned());
+    let elsewhere = loaded.with_project(
+        &other,
+        ConfigFile {
+            model,
+            ..ConfigFile::default()
+        },
+    );
+    let choices = elsewhere.settle().unwrap();
+    let model = choices.model.map(|model| (model.value, model.from));
+    assert_eq!(model, Some(("theirs".into(), Source::File(other.clone()))));
+    assert_eq!(
+        choices.approval.value,
+        ApprovalMode::Ask,
+        "none of the first's"
+    );
+    assert_eq!(elsewhere.configs, [other, locations.person.clone()]);
     std::fs::write(home.join("config.toml"), "aproval = \"ask\"\n").unwrap();
     let typo = load_all(&locations, None);
     assert!(format!("{:#}", typo.unwrap_err()).contains("aproval"));

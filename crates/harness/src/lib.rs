@@ -67,7 +67,7 @@ pub use inbox::{Inbox, MAX_QUEUED, NotQueued, Queued};
 pub use instructions::{AGENTS_MD, Instructions, agents_md};
 pub use judge::{Judge, JudgeCase, Ruling, judge};
 pub use memory::{MemoryVerb, REMEMBER_CAUTION};
-pub use projects::{Brought, Loosened, Projects};
+pub use projects::{Brought, Projects, Protections, Settled};
 pub use prompt::system_prompt;
 pub use question::{Choice, Question, QuestionRequest};
 pub use removed::{last_active, owner_label, owner_of, record_removed};
