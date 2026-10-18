@@ -54,17 +54,23 @@
           {{ copy.latest }}
         </button>
       }
-      <glz-composer
-        testId="thread-composer"
-        [placeholder]="copy.placeholder"
-        [busy]="service.busy()"
-        [(value)]="draft"
-        (send)="send($event)"
-        (stop)="stop()"
-      >
-        <app-approval-mode glzComposerStatus [current]="mode()" [(value)]="pickedMode" />
-        <app-model-picker glzComposerStatus [current]="service.chosen()" [(value)]="picked" />
-      </glz-composer>
+      @if (gone(); as gone) {
+        <app-folder-gone testId="thread-gone" [space]="gone.space" [message]="gone.message" />
+      }
+      <!-- Hidden rather than removed while the folder is gone, so the draft waits for it. -->
+      <div [hidden]="folderGone()">
+        <glz-composer
+          testId="thread-composer"
+          [placeholder]="copy.placeholder"
+          [busy]="service.busy()"
+          [(value)]="draft"
+          (send)="send($event)"
+          (stop)="stop()"
+        >
+          <app-approval-mode glzComposerStatus [current]="mode()" [(value)]="pickedMode" />
+          <app-model-picker glzComposerStatus [current]="service.chosen()" [(value)]="picked" />
+        </glz-composer>
+      </div>
     </div>
   </div>
   <app-tools-panel glzPanel />

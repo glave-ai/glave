@@ -47,13 +47,19 @@ where
         self.opened(caller, scope, thread).await
     }
 
-    /// Answers `thread/get`.
+    /// Answers `thread/get`: also for a thread whose project's folder isn't there anymore,
+    /// which is read from the log rather than opened.
     pub(crate) async fn get_thread(
         &self,
         caller: &Caller,
         thread: ThreadId,
     ) -> Result<Reply, ApiError> {
-        self.load(thread).await?;
+        match self.load(thread).await {
+            Err(refused) if crate::gone::is_gone(&refused) => {
+                self.ensure_not_deleted(thread).await?;
+            }
+            loaded => loaded?,
+        }
         let scope = self.scope_of(thread).await?;
         self.opened(caller, scope, thread).await
     }
@@ -85,20 +91,24 @@ where
             self.stop_task_if_any(caller, thread).await;
         }
         let (finish, mut done) = watch::channel(None);
-        let caller = caller.clone();
-        self.occupy_for(
-            thread,
-            finish,
-            Use::Manage,
-            move |inner, mut held, _| async move {
-                let changed = inner
-                    .harness
-                    .change_standing(&mut held, &caller, change)
-                    .await;
-                (held, changed)
-            },
-        )
-        .await?;
+        let by = caller.clone();
+        let occupied = self
+            .occupy_for(
+                thread,
+                finish,
+                Use::Manage,
+                move |inner, mut held, _| async move {
+                    let changed = inner.harness.change_standing(&mut held, &by, change).await;
+                    (held, changed)
+                },
+            )
+            .await;
+        match occupied {
+            Err(refused) if crate::gone::is_gone(&refused) => {
+                return self.change_gone(caller, thread, change).await;
+            }
+            occupied => occupied?,
+        }
         let ended = finished(&mut done)
             .await
             .ok_or_else(|| ApiError::new(code::INTERNAL, "the change stopped"))?;

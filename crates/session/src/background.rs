@@ -30,9 +30,17 @@ where
         }
     }
 
-    /// Answers `command/list`.
+    /// Answers `command/list`: none for a thread whose project's folder isn't there anymore,
+    /// where nothing runs.
     pub(crate) async fn list_commands(&self, thread: ThreadId) -> Result<Reply, ApiError> {
-        let commands = self.commands_of(thread).await?;
+        let commands = match self.commands_of(thread).await {
+            Err(refused) if crate::gone::is_gone(&refused) => {
+                return Ok(Reply::Commands {
+                    commands: Vec::new(),
+                });
+            }
+            commands => commands?,
+        };
         let running = commands.running_now().await;
         self.record_commands(thread).await;
         Ok(Reply::Commands { commands: running })

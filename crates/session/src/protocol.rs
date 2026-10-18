@@ -25,7 +25,7 @@ pub use glave_event::{Forge, ProviderKind};
 pub use live::Update;
 pub use models::ModelInfo;
 pub use providers::{ProviderInfo, hint};
-pub use spaces::{NewFolder, ProjectFolder};
+pub use spaces::{GoneFolder, NewFolder, ProjectFolder};
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
 
@@ -238,6 +238,18 @@ methods! {
     } -> [Space],
     /// Renames a space: its owner only.
     "space/rename" => SpaceRename { space: SpaceId, name: String } -> [Space],
+    /// Gives a project the folder already on this computer at `path`, as its folder's new
+    /// place: its threads work there from now on. Its owner only, and only the person on this
+    /// computer.
+    "space/folder/set" => SpaceFolderSet {
+        space: SpaceId,
+        /// The folder's full path.
+        path: String,
+    } -> [Space],
+    /// Removes a project: its threads go to the archive, their history kept, and it is listed
+    /// no more until it is given a folder again. Its owner only, and only the person on this
+    /// computer.
+    "space/remove" => SpaceRemove { space: SpaceId } -> [Done],
     /// The folders inside a folder on this computer, by name, to choose a project's folder
     /// from: the home folder when `path` is absent. Only the person on this computer.
     "folder/list" => FolderList {
@@ -587,7 +599,12 @@ pub enum Reply {
         folder: Option<ProjectFolder>,
     },
     #[schemars(title = "Spaces")]
-    Spaces { spaces: Vec<Space> },
+    Spaces {
+        spaces: Vec<Space>,
+        /// The projects among them whose folder isn't there anymore.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        gone: Vec<GoneFolder>,
+    },
     /// The folders inside the folder at `path`, by name; hidden ones left out.
     #[schemars(title = "Folders")]
     Folders {

@@ -395,6 +395,25 @@ describe('ThreadComponent', () => {
     expect(panel?.inert).toBe(true);
   });
 
+  it('says in the composer’s place, in the server’s words, that the project’s folder is gone', async () => {
+    const gone = "This project's folder isn't there anymore.";
+    const fake = session(ANSWERED).answer('space/list', {
+      spaces: [space('p1', 'glave')],
+      gone: [{ space: 'p1', message: gone }],
+    });
+    const { root } = await open(fake);
+    expect(root.querySelector('[data-testid="thread-gone-message"]')?.textContent.trim()).toBe(
+      gone,
+    );
+    expect(root.querySelector('[data-testid="thread-gone-find"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="thread-gone-remove"]')).not.toBeNull();
+    expect(
+      root.querySelector('[data-testid="thread-composer"]')?.closest('[hidden]'),
+    ).not.toBeNull();
+    expect(root.querySelector('[data-testid="thread-error"]')).toBeNull();
+    await expectAccessible(root);
+  });
+
   it('renames the thread through the dialog', async () => {
     const fake = session([]);
     const { root, fixture } = await open(fake);

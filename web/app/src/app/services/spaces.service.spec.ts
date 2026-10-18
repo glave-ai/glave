@@ -144,6 +144,48 @@ describe('SpacesService', () => {
     expect(fake.paramsOf('space/list')).toHaveLength(0);
   });
 
+  it('knows which projects lost their folder, in the server’s words, until one is found', async () => {
+    const said = "This project's folder isn't there anymore.";
+    let gone = true;
+    const fake = new FakeSession()
+      .answer('space/list', () => ({
+        spaces: [space('p1', 'playground'), space('p2', 'glave')],
+        gone: gone ? [{ space: 'p1', message: said }] : [],
+      }))
+      .answer('thread/list', { threads: [] })
+      .answer('space/folder/set', () => {
+        gone = false;
+        return { space: space('p1', 'playground') };
+      });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const spaces = TestBed.inject(SpacesService);
+    await spaces.refresh();
+    expect(spaces.gone('p1')).toBe(said);
+    expect(spaces.gone('p2')).toBeNull();
+    await spaces.findFolder('p1', '/Users/ana/code/playground');
+    expect(fake.paramsOf('space/folder/set')).toEqual([
+      { space: 'p1', path: '/Users/ana/code/playground' },
+    ]);
+    expect(spaces.gone('p1')).toBeNull();
+  });
+
+  it('removes a project, then lists it no more', async () => {
+    let listed = [space('p1', 'playground'), space('me', 'Personal', 'personal')];
+    const fake = new FakeSession()
+      .answer('space/list', () => ({ spaces: listed }))
+      .answer('thread/list', { threads: [] })
+      .answer('space/remove', () => {
+        listed = listed.filter((each) => each.id !== 'p1');
+        return {};
+      });
+    TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
+    const spaces = TestBed.inject(SpacesService);
+    await spaces.refresh();
+    await spaces.remove('p1');
+    expect(fake.paramsOf('space/remove')).toEqual([{ space: 'p1' }]);
+    expect(spaces.spaces().map((entry) => entry.space.name)).toEqual(['Personal']);
+  });
+
   it('polls only while the tab is shown', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);

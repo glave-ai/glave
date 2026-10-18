@@ -124,6 +124,11 @@ export function folderCount(count: number): string {
   return count === 1 ? '1 folder' : `${String(count)} folders`;
 }
 
+/** Whether the server refused because the project's folder isn't there anymore. */
+export function folderGone(error: unknown): boolean {
+  return error instanceof ApiError && error.code === ErrorCode.NO_FOLDER;
+}
+
 /**
  * What to tell the person when a project could not be made or a folder listed: the server's
  * own words where it wrote them for people (a refused clone says what git said), else the
@@ -137,6 +142,8 @@ export function projectProblem(error: unknown): string {
     case ErrorCode.HOST:
     case ErrorCode.INVALID_PARAMS:
     case ErrorCode.NOT_ALLOWED:
+    case ErrorCode.NO_FOLDER:
+    case ErrorCode.TURN_RUNNING:
       return sentence(error.message);
     default:
       return SOMETHING_WRONG;

@@ -328,7 +328,7 @@ where
             self.allowed_mode(mode)?;
         }
         let home = space == self.inner.home.space;
-        let folder = self.folder_here(space).await?;
+        let folder = self.folder_found(space).await?;
         // The project's own choice, for the person here, is nearer than the server's.
         let copies = match &folder {
             Some(folder) if self.is_theirs(caller) => self
