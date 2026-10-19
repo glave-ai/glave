@@ -8,7 +8,7 @@ use crate::store::{StoreError, describe};
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a database one of them made is refused.
-pub(crate) const VERSION: i32 = 9;
+pub(crate) const VERSION: i32 = 10;
 
 /// Every table, made in one transaction in a new database.
 const SCHEMA: &str = "
@@ -33,6 +33,9 @@ const SCHEMA: &str = "
 
     -- Threads found by id alone (`EventLog::locate`).
     CREATE INDEX events_by_thread ON events (thread);
+
+    -- A thread's latest event of a type, found without reading the rest (`EventLog::latest_of`).
+    CREATE INDEX events_by_type ON events (org, project, thread, type, seq);
 
     -- Blobs, sealed, stored under a keyed name derived from their hash, with the threads that
     -- use each.
