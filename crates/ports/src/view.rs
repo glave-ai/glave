@@ -163,22 +163,15 @@ impl ThreadView {
         match decoded.body {
             Body::TurnEnded(ended) => self.outcome = Some(ended.outcome),
             Body::ModelResponded(responded) => {
-                self.tokens = add(self.tokens, responded.usage.counts());
+                self.tokens += responded.usage.counts();
                 let cost = responded.cost.map(|cost| cost.amount);
                 // Without a cost and not unpriced, no response has been counted yet.
                 self.cost = match (self.unpriced, self.cost, cost) {
                     (false, None, Some(cost)) => Some(cost),
-                    (false, Some(sum), Some(cost)) if sum.currency == cost.currency => {
-                        Some(Money {
-                            micros: sum.micros.saturating_add(cost.micros),
-                            currency: sum.currency,
-                        })
-                    }
-                    _ => {
-                        self.unpriced = true;
-                        None
-                    }
+                    (false, Some(sum), Some(cost)) => sum.checked_add(cost),
+                    _ => None,
                 };
+                self.unpriced |= self.cost.is_none();
             }
             _ => {}
         }
@@ -187,16 +180,6 @@ impl ThreadView {
     /// Where this view sits in a listing.
     pub fn cursor(&self) -> ThreadCursor {
         ThreadCursor(self.position)
-    }
-}
-
-fn add(a: TokenCounts, b: TokenCounts) -> TokenCounts {
-    TokenCounts {
-        input: a.input.saturating_add(b.input),
-        cache_read: a.cache_read.saturating_add(b.cache_read),
-        cache_write: a.cache_write.saturating_add(b.cache_write),
-        output: a.output.saturating_add(b.output),
-        reasoning: a.reasoning.saturating_add(b.reasoning),
     }
 }
 

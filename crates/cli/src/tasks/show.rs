@@ -1,6 +1,6 @@
 //! How tasks and schedules read in the terminal.
 
-use glave_event::{Money, Outcome, When};
+use glave_event::{Outcome, When};
 use glave_session::protocol::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 
 /// One task: status, kind, elapsed time, tokens, cost, model, thread and title.
@@ -23,7 +23,8 @@ pub fn task_line(task: &TaskInfo) -> String {
         "{status:<13} {kind}  {:>7}  {:>6}{budget} tokens  {}  {}  {}  {}",
         elapsed(task.elapsed_ms),
         short(tokens),
-        task.cost.map_or_else(|| "$?".to_owned(), dollars),
+        task.cost
+            .map_or_else(|| "$?".to_owned(), |cost| format!("{cost:.2}")),
         task.model,
         task.thread,
         task.title
@@ -79,11 +80,6 @@ fn short(tokens: u64) -> String {
     }
 }
 
-fn dollars(cost: Money) -> String {
-    let cents = cost.micros / 10_000;
-    format!("${}.{:02}", cents / 100, cents % 100)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,10 +92,5 @@ mod tests {
         assert_eq!(short(950), "950");
         assert_eq!(short(12_400), "12.4k");
         assert_eq!(short(3_100_000), "3.1M");
-        let cost = Money {
-            micros: 1_234_567,
-            currency: glave_event::Currency::USD,
-        };
-        assert_eq!(dollars(cost), "$1.23");
     }
 }

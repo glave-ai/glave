@@ -186,23 +186,6 @@ fn an_error_mid_stream_fails_the_request() {
     assert!(matches!(completion, Err(ProviderError::NoOutput(_))));
 }
 
-#[test]
-fn decimals_convert_to_micros_exactly() {
-    for (text, micros) in [
-        ("0.0042", Some(4_200)),
-        ("1", Some(1_000_000)),
-        ("12.5", Some(12_500_000)),
-        ("0.0000005", Some(1)),
-        ("0.0000004", Some(0)),
-        ("-0.25", Some(-250_000)),
-        ("1e-5", None),
-        ("", None),
-        (".5", None),
-    ] {
-        assert_eq!(decimal_to_micros(text), micros, "{text}");
-    }
-}
-
 /// OpenRouter's recorded shape: a role-only chunk, then `finish_reason: "error"` and no usage.
 #[test]
 fn an_error_finish_before_any_output_may_be_tried_again() {

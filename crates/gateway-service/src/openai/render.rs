@@ -222,7 +222,7 @@ fn usage(completion: &Completion) -> Usage {
         .cost
         .as_ref()
         .filter(|cost| cost.amount.currency == Currency::USD)
-        .and_then(|cost| decimal(cost.amount.micros));
+        .and_then(|cost| RawValue::from_string(format!("{:.6}", cost.amount.decimal())).ok());
     Usage {
         prompt_tokens: input,
         completion_tokens: output,
@@ -235,25 +235,5 @@ fn usage(completion: &Completion) -> Usage {
             reasoning_tokens: reasoning,
         },
         cost,
-    }
-}
-
-/// Millionths as an exact decimal: 4200 is `0.0042`.
-fn decimal(micros: i64) -> Option<Box<RawValue>> {
-    let sign = if micros < 0 { "-" } else { "" };
-    let micros = micros.unsigned_abs();
-    let text = format!("{sign}{}.{:06}", micros / 1_000_000, micros % 1_000_000);
-    RawValue::from_string(text).ok()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn costs_are_exact_decimals() {
-        assert_eq!(decimal(4_200).unwrap().get(), "0.004200");
-        assert_eq!(decimal(12_345_678).unwrap().get(), "12.345678");
-        assert_eq!(decimal(-1).unwrap().get(), "-0.000001");
     }
 }

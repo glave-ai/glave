@@ -3,9 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use glave_event::{
-    Arguments, Cost, Currency, ModelRef, Money, Part, StopReason, TokenCounts, Usage,
-};
+use glave_event::{Arguments, Cost, ModelRef, Money, Part, StopReason, TokenCounts, Usage};
 use glave_ports::{Completion, Delta, ProviderError, RequestedCall};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
@@ -240,41 +238,12 @@ fn usage_and_cost(
         .map_err(|e| ProviderError::Protocol(e.to_string()))?;
     let cost = wire
         .cost
-        .and_then(|cost| decimal_to_micros(cost.get()))
-        .map(|micros| Cost {
-            amount: Money {
-                micros,
-                currency: Currency::USD,
-            },
+        .and_then(|cost| Money::parse_dollars(cost.get()).ok())
+        .map(|amount| Cost {
+            amount,
             price_list: format!("{provider}:reported"),
         });
     Ok((usage, cost))
-}
-
-/// Converts a plain decimal such as `0.0042` to millionths exactly, rounding half up at the
-/// seventh decimal place. Exponent notation is not accepted.
-fn decimal_to_micros(text: &str) -> Option<i64> {
-    let (negative, digits) = match text.strip_prefix('-') {
-        Some(rest) => (true, rest),
-        None => (false, text),
-    };
-    let (whole, fraction) = digits.split_once('.').unwrap_or((digits, ""));
-    let all_digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
-    if whole.is_empty() || !all_digits(whole) || !all_digits(fraction) {
-        return None;
-    }
-    let mut micros = whole.parse::<i64>().ok()?.checked_mul(1_000_000)?;
-    let mut fraction = fraction.bytes().map(|b| i64::from(b - b'0'));
-    let mut scale = 100_000;
-    for _ in 0..6 {
-        let digit = fraction.next().unwrap_or(0);
-        micros = micros.checked_add(digit.checked_mul(scale)?)?;
-        scale /= 10;
-    }
-    if fraction.next().is_some_and(|digit| digit >= 5) {
-        micros = micros.checked_add(1)?;
-    }
-    Some(if negative { -micros } else { micros })
 }
 
 #[cfg(test)]
