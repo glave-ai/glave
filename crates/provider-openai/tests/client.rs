@@ -73,21 +73,6 @@ mod over_http {
     }
 
     #[test]
-    fn a_server_that_sends_nothing_times_out() {
-        let server = FakeServer::start(vec![Reply::Stall]).unwrap();
-        let quick = OpenAiCompatible::new(Config {
-            base_url: server.url().to_owned(),
-            auth: glave_ports::auth::Auth::None,
-            provider: "fake".into(),
-            idle_timeout: std::time::Duration::from_millis(200),
-        })
-        .unwrap();
-        let error = block_on!(quick.complete(&request(), &mut |_| {})).unwrap_err();
-        assert_eq!(error, ProviderError::Timeout { seconds: 0 });
-        assert!(error.is_transient(), "a silence is worth one more try");
-    }
-
-    #[test]
     fn anthropic_models_through_openrouter_ask_for_caching() {
         let server = FakeServer::start(vec![Reply::text("ok"), Reply::text("ok")]).unwrap();
         let openrouter = OpenAiCompatible::new(Config {
@@ -274,26 +259,19 @@ mod over_http {
     }
 
     #[test]
-    fn a_key_the_server_repeats_never_shows_in_the_error() {
+    fn a_key_the_server_repeats_never_shows_in_a_listing_s_error() {
         let key = fake_secret("sk-");
         let said = format!(r#"{{"error":{{"message":"Incorrect API key provided: {key}."}}}}"#);
-        let server = FakeServer::start(vec![
-            Reply::Status(401, said.clone()),
-            Reply::Status(401, said),
-        ])
-        .unwrap();
+        let server = FakeServer::start(vec![Reply::Status(401, said)]).unwrap();
         let provider = provider(server.url(), Some(&key));
-        let asked = ask(&provider).0.unwrap_err();
-        let listed = block_on!(provider.get("models")).unwrap_err();
-        for error in [asked, listed] {
-            assert!(!format!("{error} {error:?}").contains(&key), "{error:?}");
-            assert!(
-                error
-                    .to_string()
-                    .contains("Incorrect API key provided: [redacted]."),
-                "{error}"
-            );
-        }
+        let error = block_on!(provider.get("models")).unwrap_err();
+        assert!(!format!("{error} {error:?}").contains(&key), "{error:?}");
+        assert!(
+            error
+                .to_string()
+                .contains("Incorrect API key provided: [redacted]."),
+            "{error}"
+        );
     }
 
     #[test]
@@ -356,5 +334,90 @@ mod over_http {
         let bearer = format!("Bearer {key}");
         assert_eq!(received[0].authorization.as_deref(), Some(bearer.as_str()));
         assert!(!format!("{refused:?}").contains(&key));
+    }
+}
+
+#[cfg(test)]
+mod conformance {
+    use glave_ports::conformance::{Script, model_provider};
+    use glave_ports::{auth::Auth, block_on};
+    use glave_provider_openai::fake::{FakeServer, Reply};
+    use glave_provider_openai::{Config, IDLE_TIMEOUT, OpenAiCompatible};
+    use serde_json::{Value, json};
+
+    fn delta(delta: &Value) -> Value {
+        json!({"id": "gen-fake", "model": "fake-model", "choices": [{"index": 0, "delta": delta}]})
+    }
+
+    fn text(pieces: &[&str]) -> Vec<Value> {
+        pieces
+            .iter()
+            .map(|piece| delta(&json!({"content": piece})))
+            .collect()
+    }
+
+    fn finish(usage: bool) -> Value {
+        let mut last = json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]});
+        if usage {
+            last["usage"] = json!({"prompt_tokens": 100, "completion_tokens": 10});
+        }
+        last
+    }
+
+    fn mystery() -> Value {
+        json!({"error": {"message": "something nobody named", "code": "mystery"}})
+    }
+
+    /// The suite's scripts in OpenAI's chat completions stream.
+    fn reply(script: Script, key: &str) -> Reply {
+        match script {
+            Script::Answer {
+                reasoning,
+                text: said,
+            } => {
+                let mut chunks: Vec<Value> = reasoning
+                    .iter()
+                    .map(|piece| delta(&json!({"reasoning_content": piece})))
+                    .collect();
+                chunks.extend(text(said));
+                chunks.push(finish(true));
+                Reply::Stream(chunks)
+            }
+            Script::Unmetered { text: said } => {
+                let mut chunks = text(said);
+                chunks.push(finish(false));
+                Reply::Stream(chunks)
+            }
+            Script::ErrorFirst => {
+                Reply::Stream(vec![delta(&json!({"role": "assistant"})), mystery()])
+            }
+            Script::ErrorAfter { text: said } => {
+                let mut chunks = text(&[said]);
+                chunks.push(mystery());
+                Reply::Stream(chunks)
+            }
+            Script::Silence => Reply::Stall,
+            Script::Refusal => Reply::Status(
+                401,
+                json!({"error": {"message": format!("Incorrect API key provided: {key}.")}})
+                    .to_string(),
+            ),
+        }
+    }
+
+    #[test]
+    fn the_provider_passes_the_model_provider_suite() {
+        let verdict = block_on!(model_provider(|script, key| {
+            let server = FakeServer::start(vec![reply(script, key)]).map_err(|e| e.to_string())?;
+            let provider = OpenAiCompatible::new(Config {
+                base_url: server.url().to_owned(),
+                auth: Auth::bearer(Some(key.to_owned())),
+                provider: "fake".into(),
+                idle_timeout: IDLE_TIMEOUT,
+            })
+            .map_err(|e| e.to_string())?;
+            Ok((provider, server))
+        }));
+        assert_eq!(verdict, Ok(()));
     }
 }

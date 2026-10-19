@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::io::{BufRead as _, BufReader, Read as _, Write as IoWrite};
-use std::net::{TcpListener, TcpStream};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
@@ -97,6 +97,9 @@ pub struct FakeServer {
     url: String,
     received: Log,
     stop: Arc<AtomicBool>,
+    /// Every connection taken, closed when the server stops, so a client still waiting
+    /// on one, as it waits on a stall, is let go.
+    open: Shared<Vec<TcpStream>>,
     address: std::net::SocketAddr,
     thread: Option<JoinHandle<()>>,
 }
@@ -110,17 +113,23 @@ impl FakeServer {
         let replies: Shared<VecDeque<Reply>> = Arc::new(Mutex::new(replies.into()));
         let received: Log = Arc::new((Mutex::new(Vec::new()), Condvar::new()));
         let stop = Arc::new(AtomicBool::new(false));
+        let open: Shared<Vec<TcpStream>> = Arc::default();
         let thread = {
             let (replies, received, stop) = (replies, Arc::clone(&received), Arc::clone(&stop));
+            let taken = Arc::clone(&open);
             std::thread::spawn(move || {
                 for stream in listener.incoming() {
+                    let Ok(stream) = stream else { continue };
+                    let Ok(mut taken) = taken.lock() else { break };
                     if stop.load(Ordering::SeqCst) {
                         break;
                     }
-                    if let Ok(stream) = stream {
-                        // A broken exchange only fails the test that caused it.
-                        let _ = serve(stream, &replies, &received);
+                    if let Ok(held) = stream.try_clone() {
+                        taken.push(held);
                     }
+                    drop(taken);
+                    // A broken exchange only fails the test that caused it.
+                    let _ = serve(stream, &replies, &received);
                 }
             })
         };
@@ -128,6 +137,7 @@ impl FakeServer {
             url: format!("http://{address}"),
             received,
             stop,
+            open,
             address,
             thread: Some(thread),
         })
@@ -162,6 +172,13 @@ impl FakeServer {
 impl Drop for FakeServer {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        // The flag is set before the lock is taken, so a connection is either closed here or
+        // never served.
+        if let Ok(open) = self.open.lock() {
+            for stream in open.iter() {
+                let _ = stream.shutdown(Shutdown::Both);
+            }
+        }
         // Wake the accept loop so it sees the flag.
         let _ = TcpStream::connect(self.address);
         if let Some(thread) = self.thread.take() {
