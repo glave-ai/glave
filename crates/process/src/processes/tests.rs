@@ -1,6 +1,6 @@
 use std::io::{BufRead as _, BufReader};
 use std::os::unix::process::CommandExt as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -11,10 +11,8 @@ use super::*;
 use crate::ledger::{Process, Record};
 use crate::start::{self, Start};
 
-fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-process-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
+fn folder(name: &str) -> glave_ports::testing::TempDir {
+    glave_ports::testing::TempDir::new(&format!("process-{name}")).unwrap()
 }
 
 fn entries(folder: &Path) -> usize {

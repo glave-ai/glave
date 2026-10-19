@@ -125,12 +125,11 @@ fn header(auth: &Auth, name: &str) -> Result<String, AuthError> {
 }
 
 /// A pod's folder, for the token files Kubernetes would project.
-struct Pod(std::path::PathBuf);
+struct Pod(glave_ports::testing::TempDir);
 
 impl Pod {
     fn new(name: &str) -> Self {
-        let folder = std::env::temp_dir().join(format!("glave-aws-{name}-{}", std::process::id()));
-        std::fs::create_dir_all(&folder).unwrap();
+        let folder = glave_ports::testing::TempDir::new(&format!("aws-{name}")).unwrap();
         Self(folder)
     }
 

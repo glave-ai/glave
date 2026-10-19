@@ -12,6 +12,7 @@ use std::sync::Arc;
 use glave_event::{Opened, Outcome};
 use glave_harness::ApprovalMode;
 use glave_ports::InMemoryLog;
+use glave_ports::testing::TempDir;
 use glave_session::Answering;
 use glave_session::protocol::{Notification, Reply, Request, TaskStatus, code};
 use serde_json::json;
@@ -20,7 +21,7 @@ use tokio::sync::Notify;
 use crate::support::*;
 
 /// `setup` on a repository of its own, its tasks working on worktrees of it.
-async fn in_repository(name: &str, setup: Setup) -> (Tested, Seen, std::path::PathBuf) {
+async fn in_repository(name: &str, setup: Setup) -> (Tested, Seen, std::path::PathBuf, TempDir) {
     setup.build_in_repository(name, InMemoryLog::new()).await
 }
 
@@ -56,7 +57,7 @@ fn a_background_turn_runs_on_a_worktree_with_no_one_attached_and_can_be_read_aft
             ),
             costing(answer(Some("Tidied."), None), 1_200, 50, 3_000),
         ]);
-        let (server, _, repo) = in_repository("task-runs", setup).await;
+        let (server, _, repo, _dir) = in_repository("task-runs", setup).await;
         let thread = task_thread(&server).await;
         let mut watching = server.watch(thread);
         let task = background(&server, thread, None).await;
@@ -126,7 +127,7 @@ fn a_task_in_each_of_two_projects_works_on_a_worktree_of_its_own_project() {
             write("two"),
             answer(Some("Two."), None),
         ]);
-        let (server, _, repo) = in_repository("task-projects", setup).await;
+        let (server, _, repo, _dir) = in_repository("task-projects", setup).await;
         let others = repo.with_extension("others");
         let mut ran = Vec::new();
         for name in ["one", "two"] {
@@ -232,7 +233,7 @@ fn approvals_in_a_task_are_answered_no_one_there_and_the_model_is_sent_the_same(
         // Asks for every command, with a client that could answer.
         let mut setup = Setup::new(go());
         setup.settings.approval = ApprovalMode::Ask;
-        let (server, seen, repo) = in_repository("task-unattended", setup).await;
+        let (server, seen, repo, _dir) = in_repository("task-unattended", setup).await;
         let thread = task_thread(&server).await;
         background(&server, thread, None).await;
         settle(&server).await;
@@ -289,7 +290,7 @@ fn stopping_a_task_cancels_it_cleanly() {
             answer(Some("again"), None),
         ]);
         setup.gate = Some(Arc::new(Notify::new()));
-        let (server, _, _) = in_repository("task-stop", setup).await;
+        let (server, _, _, _dir) = in_repository("task-stop", setup).await;
         let thread = task_thread(&server).await;
         background(&server, thread, None).await;
         assert_eq!(tasks(&server).await[0].status, TaskStatus::Running);
@@ -309,7 +310,7 @@ fn a_task_a_stop_cuts_short_is_recorded_interrupted() {
     block_on!(async {
         let mut setup = Setup::new(vec![answer(Some("never"), None)]);
         setup.gate = Some(Arc::new(Notify::new()));
-        let (server, _, _) = in_repository("task-interrupted", setup).await;
+        let (server, _, _, _dir) = in_repository("task-interrupted", setup).await;
         let thread = task_thread(&server).await;
         background(&server, thread, None).await;
         server.stop(std::time::Duration::ZERO).await;
@@ -322,7 +323,7 @@ fn archiving_a_task_s_thread_stops_the_task() {
     block_on!(async {
         let mut setup = Setup::new(vec![answer(Some("never"), None)]);
         setup.gate = Some(Arc::new(Notify::new()));
-        let (server, _, _) = in_repository("task-archive", setup).await;
+        let (server, _, _, _dir) = in_repository("task-archive", setup).await;
         let thread = task_thread(&server).await;
         background(&server, thread, None).await;
         server
@@ -353,7 +354,7 @@ fn a_turn_stops_at_its_budget() {
             answer(Some("never sent"), None),
         ]);
         setup.gate = Some(Arc::clone(&gate));
-        let (server, _, _) = in_repository("task-budget", setup).await;
+        let (server, _, _, _dir) = in_repository("task-budget", setup).await;
         let thread = task_thread(&server).await;
         let task = background(&server, thread, Some(1_000)).await;
         assert_eq!(task.budget, Some(1_000));
@@ -384,7 +385,7 @@ fn policy_limits_how_many_tasks_run_at_once() {
         let mut setup = Setup::new(vec![answer(Some("a"), None), answer(Some("b"), None)]);
         setup.gate = Some(Arc::new(Notify::new()));
         setup.limits.max_running = Some(1);
-        let (server, _, _) = in_repository("task-limit", setup).await;
+        let (server, _, _, _dir) = in_repository("task-limit", setup).await;
         let first = task_thread(&server).await;
         let second = task_thread(&server).await;
         background(&server, first, None).await;
@@ -417,7 +418,7 @@ fn a_background_goal_runs_to_its_end() {
             answer(None, Some(("update_goal", json!({"status": "complete"})))),
             answer(Some("Done."), None),
         ]);
-        let (server, _, _) = in_repository("task-goal", setup).await;
+        let (server, _, _, _dir) = in_repository("task-goal", setup).await;
         let thread = task_thread(&server).await;
         let started = server
             .request(Request::GoalStart {
@@ -451,7 +452,7 @@ fn recovering_tasks_covers_every_project() {
         // without ending them.
         let mut first = Setup::new(vec![answer(Some("a"), None), answer(Some("b"), None)]);
         first.gate = Some(Arc::new(Notify::new()));
-        let (gone, _, repo) = first.build_in_repository("task-recover", log.clone()).await;
+        let (gone, _, repo, _dir) = first.build_in_repository("task-recover", log.clone()).await;
         let other = make_project(
             &gone,
             "other",

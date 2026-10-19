@@ -11,7 +11,7 @@ use glave_config::policy::{self, ConfigFile, Constraints, ModelEntry, Source};
 use glave_harness::{ApprovalMode, Judge, Protections};
 use glave_ports::block_on;
 use glave_ports::computer::SandboxLevel;
-use glave_ports::testing::ManualClock;
+use glave_ports::testing::{ManualClock, TempDir};
 
 use super::servers::Kept;
 use super::*;
@@ -20,14 +20,13 @@ use crate::model::Model;
 use glave_harness::ProjectFolders as _;
 
 /// A home folder and a project in it whose `.mcp.json` has `servers` and whose config is
-/// `config`, both fresh for the test `name`.
-fn place(name: &str, servers: &str, config: &str) -> (PathBuf, PathBuf) {
-    let dir = std::env::temp_dir().join(format!("glave-projects-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+/// `config`, both fresh for the test `name`, in a folder removed when the first drops.
+fn place(name: &str, servers: &str, config: &str) -> (TempDir, PathBuf, PathBuf) {
+    let dir = TempDir::new(&format!("projects-{name}")).unwrap();
     std::fs::create_dir_all(dir.join("home")).unwrap();
-    let dir = std::fs::canonicalize(dir).unwrap();
     let project = another(&dir, "project", servers, config);
-    (dir.join("home"), project)
+    let home = dir.join("home");
+    (dir, home, project)
 }
 
 /// Another project beside it, called `name`.
@@ -148,7 +147,7 @@ fn servers_put_away_close_only_once_no_turn_holds_them() {
 
 #[test]
 fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
-    let (home, project) = place("asked", DOCS, GUARD);
+    let (_dir, home, project) = place("asked", DOCS, GUARD);
     block_on!(async {
         let projects = projects(&home, Vec::new(), &[]).await;
         let ask = projects.ask(&project).await.unwrap().unwrap();
@@ -235,7 +234,7 @@ const CHOOSES: &str = "model = \"alpha\"\njudge_model = \"alpha-judge\"\napprova
 
 #[test]
 fn each_project_s_settings_reach_its_own_threads_alone() {
-    let (home, alpha) = place("settled", "", CHOOSES);
+    let (_dir, home, alpha) = place("settled", "", CHOOSES);
     let beta = another(home.parent().unwrap(), "beta", "", "model = \"beta\"\n");
     block_on!(async {
         let projects = projects(&home, Vec::new(), &["alpha", "alpha-judge", "beta"]).await;
@@ -291,7 +290,7 @@ fn each_project_s_settings_reach_its_own_threads_alone() {
 
 #[test]
 fn a_model_glave_does_not_offer_is_set_aside_with_a_sentence() {
-    let (home, project) = place("aside", "", "model = \"elsewhere\"\n");
+    let (_dir, home, project) = place("aside", "", "model = \"elsewhere\"\n");
     block_on!(async {
         let projects = projects(&home, Vec::new(), &[]).await;
         assert_eq!(projects.settled(&project).await.model, None, "the default");
@@ -306,7 +305,7 @@ fn a_model_glave_does_not_offer_is_set_aside_with_a_sentence() {
 
 #[test]
 fn a_project_s_server_gives_way_to_the_person_s_own_of_the_same_name() {
-    let (home, project) = place("taken", DOCS, "");
+    let (_dir, home, project) = place("taken", DOCS, "");
     block_on!(async {
         let projects = projects(&home, vec!["docs".into()], &[]).await;
         let ask = projects.ask(&project).await.unwrap().unwrap();
@@ -325,7 +324,7 @@ fn a_project_s_server_gives_way_to_the_person_s_own_of_the_same_name() {
 
 #[test]
 fn an_idle_project_s_servers_close_and_start_again_when_needed() {
-    let (home, project) = place("idle", DOCS, "");
+    let (_dir, home, project) = place("idle", DOCS, "");
     block_on!(async {
         let clock = ManualClock::at_millis(NOW);
         let projects = timed(&home, Vec::new(), &[], clock.clone()).await;

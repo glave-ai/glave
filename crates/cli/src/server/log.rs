@@ -53,9 +53,7 @@ mod tests {
 
     #[test]
     fn the_log_is_moved_aside_once_over_the_cap_and_one_older_file_is_kept() {
-        let dir = std::env::temp_dir().join(format!("glave-log-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = glave_ports::testing::TempDir::new("log").unwrap();
         let log = dir.join("server.log");
         assert!(rotate(&log, 8).unwrap().is_none(), "no log yet");
         std::fs::write(&log, "12345678").unwrap();

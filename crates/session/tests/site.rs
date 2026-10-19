@@ -206,7 +206,7 @@ fn nothing_outside_the_app_or_but_the_index_page_is_served() {
 #[test]
 fn an_app_without_its_page_is_refused() {
     let dir = folder("http-site-empty");
-    let refused = Site::folder(&dir).unwrap_err();
+    let refused = Site::folder(dir.path()).unwrap_err();
     assert!(refused.to_string().contains("npm run build"));
     assert!(Site::folder(dir.join("missing")).is_err());
     let refused = Site::built_in(&[("main-ABCD1234.js", b"console.log(1)")]).unwrap_err();

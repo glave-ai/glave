@@ -2,10 +2,11 @@
 //! about what changes, off with no one to ask, and policy that trusts or forbids.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use glave_harness::ApprovalMode;
 use glave_ports::block_on;
+use glave_ports::testing::TempDir;
 
 use super::*;
 use crate::policy::tests::constraints;
@@ -17,11 +18,8 @@ async fn no_one(_question: String) -> std::io::Result<Option<String>> {
     Ok(None)
 }
 
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-trust-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn scratch(name: &str) -> TempDir {
+    TempDir::new(&format!("trust-{name}")).unwrap()
 }
 
 /// A repository at `dir` whose `.mcp.json` has `servers`, and whose config is `config`.
@@ -95,7 +93,8 @@ fn a_project_cannot_let_web_fetch_reach_private_addresses_without_trust() {
     assert!(outcome.withheld[0].contains("[web] private_addresses = true"));
     let trusted = assessment.apply(Answer::Yes).config.unwrap().web.unwrap();
     assert_eq!(trusted.private_addresses, Some(true));
-    let narrowing = repository(&scratch("web-off"), "", Some("[web]\nfetch = false\n"));
+    let web_off = scratch("web-off");
+    let narrowing = repository(&web_off, "", Some("[web]\nfetch = false\n"));
     let assessment = assess(narrowing, &Record::default(), &Constraints::default());
     assert_eq!(assessment.items.len(), 0, "turning fetch off never asks");
 }
@@ -118,7 +117,8 @@ fn a_project_cannot_pick_its_own_judge_without_trust_but_may_turn_it_off() {
     assert!(explained.rows[0][0].contains("judge_model"));
     let trusted = assessment.apply(Answer::Yes).config.unwrap();
     assert_eq!(trusted.judge_model.as_deref(), Some("lenient"));
-    let off = repository(&scratch("judge-off"), "", Some("judge_model = \"off\"\n"));
+    let judge_off = scratch("judge-off");
+    let off = repository(&judge_off, "", Some("judge_model = \"off\"\n"));
     let assessment = assess(off, &Record::default(), &rules);
     assert_eq!(assessment.items.len(), 0, "never asks");
     let config = assessment.apply(Answer::NoOne).config.unwrap();

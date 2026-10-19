@@ -1,25 +1,20 @@
 //! The eval runner against a fake model server: a task folder is copied, its turns sent through
 //! the in-process harness, and the attempt graded by its checks and its test script.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use glave_eval::{Plan, Setup, attempt, load};
 use glave_ports::block_on;
-use glave_ports::testing::FAKE_SECRET;
+use glave_ports::testing::{FAKE_SECRET, TempDir};
 use glave_provider_openai::Config;
 use glave_provider_openai::fake::{FakeServer, Reply};
 use serde_json::json;
 
 const KEY: &str = FAKE_SECRET;
 
-fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir()
-        .join(format!("glave-eval-attempt-{}", std::process::id()))
-        .join(name);
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn folder(name: &str) -> TempDir {
+    TempDir::new(&format!("eval-attempt-{name}")).unwrap()
 }
 
 /// A task that asks for a file to be written, graded by a test script and checks.

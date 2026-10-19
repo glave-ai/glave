@@ -61,8 +61,7 @@ fn secrets_compare_whole() {
 /// and starts a renewed one's lifetime when it first reads it.
 #[test]
 fn a_token_file_is_read_again_and_a_renewed_token_starts_fresh() {
-    let dir = std::env::temp_dir().join(format!("glave-tokens-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = glave_ports::testing::TempDir::new("tokens").unwrap();
     let path = dir.join("token");
     let lifetime = Duration::from_mins(10);
     let first = Token::mint(at(0), lifetime).unwrap();

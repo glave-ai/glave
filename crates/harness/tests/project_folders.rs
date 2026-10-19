@@ -123,7 +123,7 @@ fn tool_names(seen: &Seen, request: usize) -> Vec<String> {
 #[test]
 fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
     let dir = folder("projects-on");
-    let project_dir = std::fs::canonicalize(folder("projects-on-project")).unwrap();
+    let project_dir = folder("projects-on-project");
     let project = Project::new(Protections {
         approval: Some(ApprovalMode::Auto),
         unconfined: false,
@@ -207,7 +207,7 @@ fn a_project_s_tools_hooks_and_mode_are_on_from_the_turn_after_it_is_trusted() {
 #[test]
 fn another_person_s_thread_gets_nothing_the_project_brings() {
     let dir = folder("projects-another");
-    let project_dir = std::fs::canonicalize(folder("projects-another-project")).unwrap();
+    let project_dir = folder("projects-another-project");
     let project = Project::new(Protections {
         approval: Some(ApprovalMode::Auto),
         unconfined: false,
@@ -320,7 +320,7 @@ fn returned(recorded: &[glave_event::Event]) -> Vec<String> {
 #[test]
 fn a_project_s_model_judge_titles_and_web_reach_its_threads_alone() {
     let dir = folder("projects-choosing");
-    let project_dir = std::fs::canonicalize(folder("projects-choosing-project")).unwrap();
+    let project_dir = folder("projects-choosing-project");
     block_on!(async {
         let fetch = || vec![("web_fetch", json!({"url": "https://example.com"}))];
         let push = vec![("bash", json!({"command": "git push origin main"}))];
@@ -404,12 +404,8 @@ fn a_project_that_turned_the_sandbox_off_runs_its_commands_without_it_once_trust
         return;
     }
     // Outside the system temp folder, which the sandbox lets commands write.
-    let base = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/sandbox-tests")
-        .join(format!("projects-unconfined-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&base);
+    let base = glave_ports::testing::TempDir::outside_temp("projects-unconfined").unwrap();
     std::fs::create_dir_all(base.join("project")).unwrap();
-    let base = std::fs::canonicalize(base).unwrap();
     let project_dir = base.join("project");
     let project = Project::new(Protections {
         approval: Some(ApprovalMode::Auto),
@@ -420,7 +416,7 @@ fn a_project_that_turned_the_sandbox_off_runs_its_commands_without_it_once_trust
         let sandbox = Sandbox {
             level: SandboxLevel::Project,
             network: false,
-            home: Some(base.clone()),
+            home: Some(base.to_path_buf()),
             glave_home: Some(base.join(".glave")),
         };
         let workspace = workspace(&project_dir)

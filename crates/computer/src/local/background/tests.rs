@@ -1,17 +1,14 @@
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 use glave_ports::computer::{Command, Computers, Ending, Output, WorkspaceInfo};
+use glave_ports::testing::TempDir;
 use glave_ports::{BoxFuture, NeverCancelled, block_on};
 
 use super::Backgrounds;
 use crate::LocalComputers;
 
-fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-background-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn folder(name: &str) -> TempDir {
+    TempDir::new(&format!("background-{name}")).unwrap()
 }
 
 fn environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {

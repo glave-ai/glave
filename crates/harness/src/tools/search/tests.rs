@@ -1,12 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use glave_ports::block_on;
+use glave_ports::testing::TempDir;
 
 use super::*;
 
-fn project(name: &str, files: &[(&str, &[u8])]) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-search-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+fn project(name: &str, files: &[(&str, &[u8])]) -> TempDir {
+    let dir = TempDir::new(&format!("search-{name}")).unwrap();
     for (path, contents) in files {
         let path = dir.join(path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

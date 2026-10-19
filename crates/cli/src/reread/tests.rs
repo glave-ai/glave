@@ -1,22 +1,21 @@
 //! A server's settings read again under a policy that changed while it ran: a constraint added
 //! narrows the next turn even when the person's file loosens what it constrains.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use glave_config::policy::Locations;
 use glave_harness::ApprovalMode;
 use glave_ports::block_on;
 use glave_ports::computer::SandboxLevel;
+use glave_ports::testing::TempDir;
 
 use super::*;
 
 /// The person's file and the organization's policy, fresh for the test `name`.
-fn place(name: &str) -> (PathBuf, Locations) {
-    let dir = std::env::temp_dir().join(format!("glave-reread-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+fn place(name: &str) -> (TempDir, Locations) {
+    let dir = TempDir::new(&format!("reread-{name}")).unwrap();
     let locations = Locations {
-        root: dir.clone(),
+        root: dir.to_path_buf(),
         person: dir.join("config.toml"),
         project: dir.join("none.toml"),
         policies: vec![dir.join("policy.toml")],

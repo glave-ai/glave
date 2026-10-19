@@ -238,9 +238,7 @@ mod tests {
 
     #[test]
     fn secret_files_need_approval_even_behind_a_symlink() {
-        let dir = std::env::temp_dir().join(format!("glave-secret-read-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = glave_ports::testing::TempDir::new("secret-read").unwrap();
         std::fs::write(dir.join(".env"), "TOKEN=x\n").unwrap();
         std::fs::write(dir.join("README.md"), "hi\n").unwrap();
         #[cfg(unix)]

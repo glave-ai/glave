@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn only_the_newest_runs_are_kept() {
-        let base = std::env::temp_dir().join(format!("glave-eval-prune-{}", std::process::id()));
+        let base = glave_ports::testing::TempDir::new("eval-prune").unwrap();
         for day in 10..22 {
             std::fs::create_dir_all(base.join(format!("202610{day}-120000"))).unwrap();
         }

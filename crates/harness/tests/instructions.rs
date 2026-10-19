@@ -194,7 +194,6 @@ impl ProjectFolders for Told {
 fn a_thread_in_a_folder_opens_with_that_folder_s_instructions_and_keeps_them() {
     let dir = folder("rules-folder");
     let other = folder("rules-folder-other");
-    let other = std::fs::canonicalize(other).unwrap();
     block_on!(async {
         let answers = vec![
             answer(Some("Hi."), vec![], StopReason::EndTurn),

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use glave_ports::auth::{Auth, Outgoing};
 use glave_ports::block_on;
-use glave_ports::testing::{FakeHttp, ManualClock, Received};
+use glave_ports::testing::{FakeHttp, ManualClock, Received, TempDir};
 
 use super::*;
 
@@ -25,15 +25,13 @@ const REQUEST: Outgoing<'static> = Outgoing {
 };
 
 struct Pod {
-    folder: PathBuf,
+    folder: TempDir,
     clock: ManualClock,
 }
 
 impl Pod {
     fn new(name: &str) -> Self {
-        let folder =
-            std::env::temp_dir().join(format!("glave-azure-{name}-{}", std::process::id()));
-        std::fs::create_dir_all(&folder).unwrap();
+        let folder = TempDir::new(&format!("azure-{name}")).unwrap();
         std::fs::write(folder.join("token"), "cluster-jwt-1\n").unwrap();
         Self {
             folder,

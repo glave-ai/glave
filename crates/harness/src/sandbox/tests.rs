@@ -2,7 +2,7 @@
 //! available (macOS, and Linux with bubblewrap); elsewhere preparing it must fail, never run
 //! unconfined.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use glave_event::Arguments;
 use glave_ports::block_on;
@@ -26,13 +26,10 @@ fn enforced() -> bool {
 }
 
 /// A scratch folder outside the system temp folder, which the sandbox lets commands write.
-fn scratch(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/sandbox-tests")
-        .join(format!("{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+fn scratch(name: &str) -> glave_ports::testing::TempDir {
+    let dir = glave_ports::testing::TempDir::outside_temp(name).unwrap();
     std::fs::create_dir_all(dir.join("project")).unwrap();
-    std::fs::canonicalize(dir).unwrap()
+    dir
 }
 
 fn sandbox(level: SandboxLevel, network: bool, home: &Path) -> Sandbox {

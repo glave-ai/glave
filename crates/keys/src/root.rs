@@ -183,21 +183,20 @@ fn read(path: &Path) -> std::io::Result<zeroize::Zeroizing<Vec<u8>>> {
 
 #[cfg(test)]
 mod tests {
+    use glave_ports::testing::TempDir;
     use glave_ports::{block_on, file};
     use uuid::Uuid;
 
     use super::*;
 
-    fn folder(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("glave-keys-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn folder(name: &str) -> TempDir {
+        TempDir::new(&format!("keys-{name}")).unwrap()
     }
 
     #[test]
     fn a_key_file_keeps_its_key_across_opens() {
-        let path = folder("reopen").join("root.key");
+        let dir = folder("reopen");
+        let path = dir.join("root.key");
         let org = OrgId::from_uuid(Uuid::from_u128(1));
         let key = KeyMaterial::random().unwrap();
         let first = KeyFileRoot::open_or_create(&path).unwrap();
@@ -222,7 +221,8 @@ mod tests {
     #[test]
     fn a_key_file_others_can_read_is_refused() {
         use std::os::unix::fs::PermissionsExt as _;
-        let path = folder("open").join("root.key");
+        let dir = folder("open");
+        let path = dir.join("root.key");
         drop(KeyFileRoot::open_or_create(&path).unwrap());
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         let refused = KeyFileRoot::open_or_create(&path);
@@ -234,7 +234,8 @@ mod tests {
         let org = OrgId::from_uuid(Uuid::from_u128(1));
         let key = KeyMaterial::random().unwrap();
         // Stopped before it was put in place: there is no key file yet, and a whole one is made.
-        let path = folder("stopped-written").join("root.key");
+        let dir = folder("stopped-written");
+        let path = dir.join("root.key");
         file::create_until(&path, key.bytes(), file::Stop::Written).unwrap();
         let made = KeyFileRoot::open_or_create(&path).unwrap();
         assert_eq!(std::fs::read(&path).unwrap().len(), 32);
@@ -242,7 +243,8 @@ mod tests {
         let again = KeyFileRoot::open_or_create(&path).unwrap();
         assert!(block_on!(again.unwrap(org, &wrapped)).is_ok());
         // Stopped once in place, its folder not yet flushed: the whole key is there.
-        let path = folder("stopped-placed").join("root.key");
+        let dir = folder("stopped-placed");
+        let path = dir.join("root.key");
         file::create_until(&path, key.bytes(), file::Stop::Placed).unwrap();
         let opened = KeyFileRoot::open_or_create(&path).unwrap();
         let wrapped = block_on!(opened.wrap(org, &key)).unwrap();

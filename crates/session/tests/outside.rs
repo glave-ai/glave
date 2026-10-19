@@ -11,6 +11,7 @@ use glave_event::{
 };
 use glave_harness::{Change, change_standing, record_removed};
 use glave_ports::EventLog;
+use glave_ports::testing::TempDir;
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, code};
 use glave_store_sqlite::{SqliteLog, Store};
@@ -19,9 +20,11 @@ use serde_json::json;
 
 use crate::support::*;
 
-/// A store of its own in `name`, outside any workspace, so its files are never listed.
-async fn store(name: &str) -> Store {
-    sqlite(&folder(name).join("glave.db")).await
+/// A store of its own in `name`, outside any workspace, so its files are never listed, and
+/// its folder, removed when that drops.
+async fn store(name: &str) -> (Store, TempDir) {
+    let dir = folder(name);
+    (sqlite(&dir.join("glave.db")).await, dir)
 }
 
 fn at(second: i64) -> Timestamp {
@@ -57,7 +60,7 @@ fn glaves_own_records_are_taken_in_and_the_model_is_sent_the_same() {
     let dir = folder("outside-same");
     block_on!(async {
         let run = |outside: bool| {
-            let dir = dir.clone();
+            let dir = dir.to_path_buf();
             async move {
                 let answers = vec![
                     answer(None, Some(("glob", json!({"pattern": "*"})))),
@@ -65,7 +68,7 @@ fn glaves_own_records_are_taken_in_and_the_model_is_sent_the_same() {
                     answer(None, Some(("glob", json!({"pattern": "*"})))),
                     answer(Some("Two."), None),
                 ];
-                let store = store(if outside { "outside-a" } else { "outside-b" }).await;
+                let (store, _db) = store(if outside { "outside-a" } else { "outside-b" }).await;
                 let (server, seen) = Setup::asking(answers, Answering::NoOne)
                     .build_on(&dir, store.log())
                     .await;
@@ -101,7 +104,7 @@ fn glaves_own_records_are_taken_in_and_the_model_is_sent_the_same() {
 fn a_message_from_outside_is_still_a_conflict() {
     let dir = folder("outside-message");
     block_on!(async {
-        let store = store("outside-message-db").await;
+        let (store, _db) = store("outside-message-db").await;
         let answers = vec![answer(Some("One."), None), answer(Some("Two."), None)];
         let (server, _) = Setup::asking(answers, Answering::NoOne)
             .build_on(&dir, store.log())
@@ -138,7 +141,7 @@ fn a_message_from_outside_is_still_a_conflict() {
 fn an_archive_from_outside_stops_the_next_turn_until_unarchived() {
     let dir = folder("outside-archive");
     block_on!(async {
-        let store = store("outside-archive-db").await;
+        let (store, _db) = store("outside-archive-db").await;
         let answers = vec![answer(Some("One."), None), answer(Some("Two."), None)];
         let (server, _) = Setup::asking(answers, Answering::NoOne)
             .build_on(&dir, store.log())
@@ -176,7 +179,7 @@ fn an_archive_from_outside_stops_the_next_turn_until_unarchived() {
 fn a_delete_from_outside_makes_the_thread_gone() {
     let dir = folder("outside-delete");
     block_on!(async {
-        let store = store("outside-delete-db").await;
+        let (store, _db) = store("outside-delete-db").await;
         let answers = vec![answer(Some("One."), None)];
         let (server, _) = Setup::asking(answers, Answering::NoOne)
             .build_on(&dir, store.log())
@@ -226,7 +229,7 @@ fn a_worktree_removed_from_outside_is_opened_again_for_the_next_turn() {
              git add a.txt && git -c user.name=t -c user.email=t@example.com commit -q -m one",
         );
         let repo = dir.join("app");
-        let store = store("outside-worktree-db").await;
+        let (store, _db) = store("outside-worktree-db").await;
         let answers = vec![
             answer(Some("One."), None),
             answer(None, Some(("glob", json!({"pattern": "*"})))),

@@ -9,7 +9,7 @@ use glave_eval::{load_all, oracle};
 fn every_grader_fails_the_task_and_passes_its_solution() {
     let tasks = load_all(Path::new("../../evals/tasks")).unwrap();
     let base: Vec<_> = std::env::vars_os().collect();
-    let root = std::env::temp_dir().join(format!("glave-eval-oracle-{}", std::process::id()));
+    let root = glave_ports::testing::TempDir::new("eval-oracle").unwrap();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

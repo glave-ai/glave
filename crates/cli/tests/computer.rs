@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 use glave_computer::RemoteComputers;
 use glave_ports::computer::{Command, Computers, Ending, Environment, Output, Sources};
-use glave_ports::testing::FAKE_SECRET;
+use glave_ports::testing::{FAKE_SECRET, TempDir};
 use glave_ports::{BoxFuture, NeverCancelled, block_on, conformance};
 
 #[derive(Default)]
@@ -22,8 +22,7 @@ impl Output for Collect {
 
 #[test]
 fn the_binary_serves_a_computer_that_passes_the_suite() {
-    let dir = std::env::temp_dir().join(format!("glave-e2e-computer-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = TempDir::new("e2e-computer").unwrap();
     let work = dir.join("work");
     std::fs::create_dir_all(&work).unwrap();
     block_on!(async {

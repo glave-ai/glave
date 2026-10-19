@@ -1,16 +1,12 @@
 use super::*;
+use glave_ports::testing::TempDir;
 use glave_ports::{ToolSource, block_on, conformance};
 use serde_json::json;
 
 use crate::cancel::Cancel;
 
-fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir()
-        .join(format!("glave-skills-{}", std::process::id()))
-        .join(name);
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::canonicalize(dir).unwrap()
+fn folder(name: &str) -> TempDir {
+    TempDir::new(&format!("skills-{name}")).unwrap()
 }
 
 /// Writes `<skills>/<name>/SKILL.md` with this frontmatter and body.
@@ -50,13 +46,13 @@ fn the_nearest_project_folder_wins_then_the_persons_and_the_list_is_sorted() {
     simple(&top.join(".agents/skills"), "zebra", "From the repository.");
     simple(&personal, "deploy", "Mine.");
     simple(&personal, "alpha", "Only mine.");
-    let folders = skill_folders(&inner, std::slice::from_ref(&personal));
+    let folders = skill_folders(&inner, &[personal.to_path_buf()]);
     assert_eq!(
         folders.first(),
         Some(&inner.join(".glave/skills")),
         "{folders:?}"
     );
-    assert_eq!(folders.last(), Some(&personal));
+    assert_eq!(folders.last(), Some(&personal.to_path_buf()));
     let found = block_on!(find_skills(&folders));
     assert_eq!(names(&found), ["alpha", "deploy", "zebra"]);
     let deploy = found.skills.get(1).unwrap();
@@ -112,7 +108,7 @@ fn skills_that_break_the_format_are_skipped_with_the_file_named() {
     let wordy = format!("description: {}", "y".repeat(MAX_DESCRIPTION + 1));
     skill(&skills, "wordy", &wordy, "");
     std::fs::create_dir_all(skills.join("not-a-skill")).unwrap();
-    let found = block_on!(find_skills(std::slice::from_ref(&skills)));
+    let found = block_on!(find_skills(&[skills.to_path_buf()]));
     assert!(found.skills.is_empty(), "{:?}", found.skills);
     assert_eq!(
         found.warnings.len(),
@@ -150,7 +146,7 @@ fn a_name_may_be_left_to_the_folder_and_a_skill_may_ask_not_to_be_offered() {
         "description: Only when asked.\ndisable-model-invocation: true",
         "",
     );
-    let found = block_on!(find_skills(std::slice::from_ref(&skills)));
+    let found = block_on!(find_skills(&[skills.to_path_buf()]));
     assert_eq!(names(&found), ["from-folder"]);
     assert!(found.warnings.is_empty(), "{:?}", found.warnings);
 }
@@ -161,7 +157,7 @@ fn past_the_caps_the_rest_are_left_out_with_a_warning() {
     for index in 0..MAX_SKILLS.saturating_add(5) {
         simple(&many, &format!("s{index:03}"), "Short.");
     }
-    let found = block_on!(find_skills(std::slice::from_ref(&many)));
+    let found = block_on!(find_skills(&[many.to_path_buf()]));
     assert_eq!(found.skills.len(), MAX_SKILLS);
     assert_eq!(names(&found).last(), Some(&"s099"), "kept in folder order");
     assert!(found.warnings.iter().any(|w| w.contains("left out s100")));
@@ -170,7 +166,7 @@ fn past_the_caps_the_rest_are_left_out_with_a_warning() {
     for index in 0..10 {
         simple(&wordy, &format!("w{index}"), &"d".repeat(1000));
     }
-    let found = block_on!(find_skills(std::slice::from_ref(&wordy)));
+    let found = block_on!(find_skills(&[wordy.to_path_buf()]));
     let listed: usize = found.skills.iter().map(Skill::listed).sum();
     assert!(listed <= MAX_LISTED, "{listed}");
     assert_eq!(found.skills.len(), 7);
@@ -182,13 +178,13 @@ fn finding_twice_gives_the_same_list_in_the_same_order() {
     for name in ["c", "a", "b"] {
         simple(&skills, name, "Same.");
     }
-    let first = block_on!(find_skills(std::slice::from_ref(&skills)));
+    let first = block_on!(find_skills(&[skills.to_path_buf()]));
     assert_eq!(names(&first), ["a", "b", "c"]);
     let offered = |found: Found| {
         let source = Skills::offer(found.skills).unwrap();
         block_on!(source.tools()).unwrap()
     };
-    let again = block_on!(find_skills(std::slice::from_ref(&skills)));
+    let again = block_on!(find_skills(&[skills.to_path_buf()]));
     assert_eq!(offered(first), offered(again));
 }
 
@@ -223,7 +219,7 @@ fn the_tool_lists_the_skills_and_loads_a_body_with_its_folder() {
         "# Release notes\n\nRun scripts/notes.sh.\n",
     );
     simple(&skills, "other", "Something else.");
-    let found = block_on!(find_skills(std::slice::from_ref(&skills)));
+    let found = block_on!(find_skills(&[skills.to_path_buf()]));
     let source = Skills::offer(found.skills).unwrap();
     let tools = block_on!(source.tools()).unwrap();
     let spec = &tools.first().unwrap().spec;
@@ -254,7 +250,7 @@ fn the_tool_lists_the_skills_and_loads_a_body_with_its_folder() {
 fn the_skill_tool_passes_the_tool_source_conformance_suite() {
     let skills = folder("conformance");
     simple(&skills, "one", "The one.");
-    let found = block_on!(find_skills(std::slice::from_ref(&skills)));
+    let found = block_on!(find_skills(&[skills.to_path_buf()]));
     let source = Skills::offer(found.skills).unwrap();
     assert_eq!(block_on!(conformance::tool_source(&source)), Ok(()));
 }

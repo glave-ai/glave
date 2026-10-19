@@ -174,7 +174,8 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Property tests (`proptest`) for parsers and state machines. Snapshot tests (`insta`) for stable formats such as receipts and events.
 - Tests are deterministic: no sleeps, no real clocks (inject a clock), no network in unit tests.
 - Run tests with `cargo nextest`. Measure coverage; don't chase a percentage.
-- Fakes live in one place: `glave-ports` ships the test doubles for its ports (clock, entropy, cancellation, `block_on`, fake secrets) behind the `conformance` feature. Never write a second copy in a crate.
+- Fakes live in one place: `glave-ports` ships the test doubles for its ports (clock, entropy, cancellation, `block_on`, fake secrets, temp folders) behind the `conformance` feature. Never write a second copy in a crate.
+- Every test removes what it makes: its folders are `glave_ports::testing::TempDir`s (`outside_temp` for the sandbox's tests), removed with what they hold when dropped, and a server it starts in the background is stopped by a guard when it drops.
 - No secret-shaped string in the source: a test that needs a provider's shape makes one at run time (`fake_secret("ghp_")`), any other uses `FAKE_SECRET`, and no assertion message or log line prints a secret.
 - A scenario is tested once: in the conformance suite when there is one, otherwise beside the code it tests.
 

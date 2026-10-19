@@ -48,7 +48,7 @@ pub(crate) async fn glob(workspace: &Workspace, args: GlobArgs) -> ToolOutcome {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::time::{Duration, SystemTime};
 
     use glave_ports::block_on;
@@ -64,9 +64,8 @@ mod tests {
     }
 
     /// Writes `files` with modification times one minute apart, oldest first.
-    fn project(name: &str, files: &[&str]) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("glave-glob-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+    fn project(name: &str, files: &[&str]) -> glave_ports::testing::TempDir {
+        let dir = glave_ports::testing::TempDir::new(&format!("glob-{name}")).unwrap();
         let base = SystemTime::UNIX_EPOCH + Duration::from_hours(500_000);
         for (minute, path) in (0_u64..).zip(files) {
             let path = dir.join(path);

@@ -1,10 +1,10 @@
 use glave_ports::block_on;
+use glave_ports::testing::TempDir;
 
 use super::*;
 
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-ws-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+fn scratch(name: &str) -> TempDir {
+    let dir = TempDir::new(&format!("ws-{name}")).unwrap();
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
     dir
@@ -59,8 +59,7 @@ fn symlinks_cannot_escape() {
 #[test]
 fn dangling_symlinks_are_refused() {
     let dir = scratch("dangling");
-    let outside = std::env::temp_dir().join(format!("glave-ws-escape-{}", std::process::id()));
-    let _ = std::fs::remove_file(&outside);
+    let outside = dir.with_extension("escape");
     std::os::unix::fs::symlink(&outside, dir.join("escape")).unwrap();
     block_on!(async {
         let ws = Workspace::open(&dir, std::env::vars_os()).await.unwrap();
@@ -134,7 +133,7 @@ fn a_folder_swapped_for_a_link_between_check_and_write_writes_nothing_protected(
     std::fs::create_dir_all(dir.join("docs")).unwrap();
     let stop = Arc::new(AtomicBool::new(false));
     let swapper = {
-        let (dir, stop) = (dir.clone(), Arc::clone(&stop));
+        let (dir, stop) = (dir.to_path_buf(), Arc::clone(&stop));
         std::thread::spawn(move || swap_for_links(&dir, &[".git/hooks", ".glave"], &stop))
     };
     let mut refusals = Vec::new();
