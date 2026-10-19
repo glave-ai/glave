@@ -129,7 +129,7 @@ pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
     let policies = policy::policies(&Locations::here(&home, &folder)).await?;
     let constraints = policy::Constraints::of(&policies);
     let store = Data::here().await?;
-    let person = crate::identity::load_or_make(&home, &store).await?.person;
+    let person = crate::identity::load_or_make(&store).await?.person;
     let trust = Trust::open(&store, person, &home).await?;
     let outcome = resolve(&folder, &constraints, Asking::Explaining, &trust).await?;
     let mut loaded = read(args, &folder, Some(&outcome)).await?;

@@ -8,17 +8,13 @@
 use std::io::ErrorKind;
 use std::path::Path;
 
-use anyhow::{Context as _, bail};
+use anyhow::Context as _;
 use glave_event::PrincipalId;
 use glave_ports::computer::ComputerId;
 use glave_ports::{Clock as _, Entropy as _, OsEntropy, SystemClock};
 use uuid::Uuid;
 
 use crate::data::Data;
-
-/// The file glave's folder kept the identity in before the store did; moved into the store at
-/// the first start that finds it, then deleted.
-const FILE: &str = "identity";
 
 /// The file holding this computer's id, in glave's folder.
 const COMPUTER: &str = "computer";
@@ -29,38 +25,9 @@ pub struct Identity {
     pub agent: PrincipalId,
 }
 
-/// Your identity from the store, made and kept there the first time: from the file an earlier
-/// glave kept in `home`, when there is one, which is deleted once the store holds it.
-pub async fn load_or_make(home: &Path, store: &Data) -> anyhow::Result<Identity> {
-    let path = home.join(FILE);
-    let earlier = match tokio::fs::read_to_string(&path).await {
-        Ok(text) => Some(parse(&text).with_context(|| {
-            format!(
-                "{} is damaged; move it aside to start a new identity",
-                path.display()
-            )
-        })?),
-        Err(err) if err.kind() == ErrorKind::NotFound => None,
-        Err(err) => return Err(err).with_context(|| format!("could not read {}", path.display())),
-    };
-    let new = match earlier {
-        Some(identity) => identity,
-        None => Identity {
-            person: make()?,
-            agent: make()?,
-        },
-    };
-    let (person, agent) = store.identity((new.person, new.agent)).await?;
-    if earlier.is_some() {
-        // The store holds it now; a crash before this reads the file again, to the same end.
-        match tokio::fs::remove_file(&path).await {
-            Ok(()) => {}
-            Err(err) if err.kind() == ErrorKind::NotFound => {}
-            Err(err) => {
-                return Err(err).with_context(|| format!("could not remove {}", path.display()));
-            }
-        }
-    }
+/// Your identity from the store, made and kept there the first time.
+pub async fn load_or_make(store: &Data) -> anyhow::Result<Identity> {
+    let (person, agent) = store.identity((make()?, make()?)).await?;
     Ok(Identity { person, agent })
 }
 
@@ -106,41 +73,9 @@ fn make() -> anyhow::Result<PrincipalId> {
     Ok(PrincipalId::new(SystemClock.now(), OsEntropy.bytes()?)?)
 }
 
-fn parse(text: &str) -> anyhow::Result<Identity> {
-    let mut person = None;
-    let mut agent = None;
-    for line in text.lines().filter(|line| !line.trim().is_empty()) {
-        let Some((key, value)) = line.split_once(' ') else {
-            bail!("expected `name id`, got {line:?}");
-        };
-        let id = PrincipalId::try_from(Uuid::parse_str(value.trim())?)?;
-        match key {
-            "person" => person = Some(id),
-            "agent" => agent = Some(id),
-            other => bail!("unknown entry {other:?}"),
-        }
-    }
-    match (person, agent) {
-        (Some(person), Some(agent)) => Ok(Identity { person, agent }),
-        _ => bail!("needs both a person and an agent"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn identity() -> Identity {
-        Identity {
-            person: make().unwrap(),
-            agent: make().unwrap(),
-        }
-    }
-
-    /// The identity file as an earlier glave wrote it.
-    fn written(identity: &Identity) -> String {
-        format!("person {}\nagent {}\n", identity.person, identity.agent)
-    }
 
     fn store() -> Data {
         let root = glave_keys::InMemoryRoot::new().unwrap();
@@ -148,70 +83,13 @@ mod tests {
         Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap())
     }
 
-    fn home(name: &str) -> std::path::PathBuf {
-        let home =
-            std::env::temp_dir().join(format!("glave-identity-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&home);
-        std::fs::create_dir_all(&home).unwrap();
-        home
-    }
-
     #[test]
-    fn an_earlier_identity_file_reads_back_and_a_damaged_one_is_refused() {
-        let identity = identity();
-        assert_eq!(parse(&written(&identity)).unwrap(), identity);
-        assert!(parse("person not-a-uuid\n").is_err());
-        assert!(parse(&format!("person {}\n", identity.person)).is_err());
-    }
-
-    #[test]
-    fn a_new_identity_is_kept_in_the_store_and_no_file_is_written() {
-        let home = home("new");
+    fn a_new_identity_is_kept_in_the_store() {
         let store = store();
         glave_ports::block_on!(async {
-            let made = load_or_make(&home, &store).await.unwrap();
-            assert_eq!(load_or_make(&home, &store).await.unwrap(), made);
+            let made = load_or_make(&store).await.unwrap();
+            assert_eq!(load_or_make(&store).await.unwrap(), made);
         });
-        assert!(!home.join(FILE).exists());
-        let _ = std::fs::remove_dir_all(&home);
-    }
-
-    #[test]
-    fn an_identity_file_moves_into_the_store_once_and_is_never_read_again() {
-        let home = home("moved");
-        let store = store();
-        let earlier = identity();
-        std::fs::write(home.join(FILE), written(&earlier)).unwrap();
-        glave_ports::block_on!(async {
-            assert_eq!(load_or_make(&home, &store).await.unwrap(), earlier);
-            assert!(
-                !home.join(FILE).exists(),
-                "the file goes once the store holds it"
-            );
-            assert_eq!(load_or_make(&home, &store).await.unwrap(), earlier);
-        });
-        let _ = std::fs::remove_dir_all(&home);
-    }
-
-    #[test]
-    fn a_move_stopped_before_the_file_was_deleted_ends_the_same_at_the_next_start() {
-        let home = home("stopped");
-        let store = store();
-        let earlier = identity();
-        std::fs::write(home.join(FILE), written(&earlier)).unwrap();
-        glave_ports::block_on!(async {
-            // The store took it, and glave stopped before deleting the file.
-            store
-                .identity((earlier.person, earlier.agent))
-                .await
-                .unwrap();
-            assert_eq!(load_or_make(&home, &store).await.unwrap(), earlier);
-            assert!(!home.join(FILE).exists());
-            // A file that turns up later never replaces what the store holds.
-            std::fs::write(home.join(FILE), written(&identity())).unwrap();
-            assert_eq!(load_or_make(&home, &store).await.unwrap(), earlier);
-        });
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]

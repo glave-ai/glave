@@ -20,7 +20,7 @@ use glave_event::Secret;
 use glave_ports::SystemClock;
 use glave_session::http::{Files, Site};
 use glave_session::protocol::{Reply, Request};
-use glave_session::signin::{Browsers, Earlier, LOCAL_BYTES, LocalToken, SignIn, Trust};
+use glave_session::signin::{Browsers, LOCAL_BYTES, LocalToken, SignIn, Trust};
 use tokio::net::TcpListener;
 
 use crate::args::Args;
@@ -30,9 +30,6 @@ use crate::system::random_uuid;
 
 /// The file the local token is kept in, in glave's folder.
 pub const TOKEN_FILE: &str = "serve.token";
-
-/// The file an earlier glave kept browser sessions in, in its folder: moved into the store.
-const BROWSERS_FILE: &str = "browsers.json";
 
 /// The folder beside the binary a built web app may be in.
 const WEB_FOLDER: &str = "web";
@@ -138,8 +135,6 @@ fn site(args: &Args) -> anyhow::Result<Option<Site>> {
 
 /// The browsers a server signs in, when it serves over HTTP: kept in the store, in the
 /// browsers ledger of `person`'s personal project, so a browser's session outlives a restart.
-/// What an earlier glave kept in `browsers.json` is moved in first, its server's id with it,
-/// and the file deleted.
 pub async fn browsers(
     args: &Args,
     store: &Data,
@@ -148,33 +143,16 @@ pub async fn browsers(
     if args.http.is_none() {
         return Ok(None);
     }
-    let path = crate::home::folder()?.join(BROWSERS_FILE);
-    open_browsers(store, person, &path)
+    open_browsers(store, person)
         .await
         .map(|browsers| Some(Arc::new(browsers)))
 }
 
-/// The browsers of `person` in `store`, with what an earlier glave kept at `path` moved in.
-async fn open_browsers(store: &Data, person: PrincipalId, path: &Path) -> anyhow::Result<Browsers> {
-    let earlier = Earlier::read(path)?;
-    let offered = earlier
-        .as_ref()
-        .and_then(|earlier| uuid::Uuid::parse_str(&earlier.server).ok())
-        .unwrap_or_else(random_uuid);
-    let server = store.server(offered).await?.to_string();
+/// The browsers of `person` in `store`, signed in by the server whose id the store keeps.
+async fn open_browsers(store: &Data, person: PrincipalId) -> anyhow::Result<Browsers> {
+    let server = store.server(random_uuid()).await?.to_string();
     let scope = crate::projects::personal(store, person).await?;
-    let browsers = Browsers::open(store.log(), scope, server, Box::new(SystemClock)).await?;
-    if let Some(earlier) = earlier {
-        browsers.take_in(&earlier).await?;
-    }
-    match std::fs::remove_file(path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            return Err(error).with_context(|| format!("could not remove {}", path.display()));
-        }
-    }
-    Ok(browsers)
+    Ok(Browsers::open(store.log(), scope, server, Box::new(SystemClock)).await?)
 }
 
 /// A new one-time code for a sign-in link, from `server`.
@@ -216,35 +194,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_earlier_browsers_file_moves_into_the_store_once_and_is_never_read_again() {
-        let dir =
-            std::env::temp_dir().join(format!("glave-serving-browsers-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(BROWSERS_FILE);
-        let token = format!("glave_session_{}", "cd".repeat(32));
-        let digest = glave_ports::digest(token.as_bytes());
-        let hash = digest.as_str();
-        let used = jiff::Timestamp::now();
-        let file = format!(
-            r#"{{"version":1,"server":"0192f5c0-0000-7000-8000-000000000009","sessions":[
-                {{"id":"0192f5c6-0000-7000-8000-000000000001","hash":"{hash}","used":"{used}"}}]}}"#
-        );
-        std::fs::write(&path, file).unwrap();
+    fn the_server_and_its_sessions_are_kept_in_the_store_across_opens() {
         glave_ports::block_on!(async {
             let root = glave_keys::InMemoryRoot::new().unwrap();
             let keys = glave_keys::KeySettings::new(Arc::new(root));
             let store = Data::Sqlite(glave_store_sqlite::Store::open_in_memory(keys).unwrap());
-            let person = PrincipalId::new(used, [1; 10]).unwrap();
-            let moved = open_browsers(&store, person, &path).await.unwrap();
-            assert_eq!(moved.server(), "0192f5c0-0000-7000-8000-000000000009");
-            assert!(moved.verify(&token).await.is_ok(), "its session goes on");
-            assert!(!path.exists(), "the file goes once the store holds it");
-            let again = open_browsers(&store, person, &path).await.unwrap();
-            assert_eq!(again.server(), moved.server());
-            assert!(again.verify(&token).await.is_ok());
+            let person = PrincipalId::new(jiff::Timestamp::now(), [1; 10]).unwrap();
+            let first = open_browsers(&store, person).await.unwrap();
+            let code = first.link().unwrap();
+            let session = first.redeem(code.expose()).await.unwrap();
+            let again = open_browsers(&store, person).await.unwrap();
+            assert_eq!(again.server(), first.server());
+            assert!(again.verify(session.token.expose()).await.is_ok());
         });
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

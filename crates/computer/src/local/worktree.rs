@@ -23,7 +23,7 @@ pub(crate) struct Made {
     pub(crate) common: PathBuf,
 }
 
-/// The version of a record's format. A record written before records had one is version 1.
+/// The version of a record's format.
 const VERSION: u32 = 1;
 
 /// What glave keeps beside each worktree, as `<folder>.json`: whose it is, and whether a
@@ -49,17 +49,12 @@ struct Written<'a> {
     record: &'a Record,
 }
 
-/// A record as read: version 1 when it names none.
+/// A record as read.
 #[derive(Deserialize)]
 struct Stored {
-    #[serde(default = "first")]
     version: u32,
     #[serde(flatten)]
     record: Record,
-}
-
-const fn first() -> u32 {
-    1
 }
 
 /// Where the record for the worktree at `dest` is kept: beside it, never inside it.

@@ -166,16 +166,7 @@ mod postgres {
             return;
         };
         let (schema, store) = scratch(&url, "identity");
-        // The first home has the file an earlier glave kept; the second has none.
         let first_home = place("postgres-identity-first");
-        let person = "01890a5d-ac96-774b-bcce-b302099a8057";
-        let agent = "01890a5d-ac96-774b-bcce-b302099a8058";
-        std::fs::create_dir_all(&first_home.home).unwrap();
-        std::fs::write(
-            first_home.home.join("identity"),
-            format!("person {person}\nagent {agent}\n"),
-        )
-        .unwrap();
         let second_home = place("postgres-identity-second");
         let server = FakeServer::start(vec![Reply::text("One."), Reply::text("Two.")]).unwrap();
         let run = |place: &Place| {
@@ -196,16 +187,11 @@ mod postgres {
         std::fs::copy(first_home.home.join("root.key"), &root).unwrap();
         set_private(&root);
         run(&second_home);
-        let kept: String = first(
-            &url,
-            &format!("SELECT value FROM {schema}.glave_settings WHERE key = 'person'"),
-        );
         let people = count(
             &url,
             &format!("SELECT count(*) FROM {schema}.glave_settings WHERE key = 'person'"),
         );
         execute(&url, &format!("DROP SCHEMA {schema} CASCADE;"));
-        assert_eq!(kept, person, "the earlier file's person is the database's");
-        assert_eq!(people, 1);
+        assert_eq!(people, 1, "both homes are the database's one person");
     }
 }

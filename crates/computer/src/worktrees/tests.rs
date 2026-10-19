@@ -365,8 +365,7 @@ fn a_folder_outside_a_repository_is_refused_clearly() {
 }
 
 /// A record torn by a crash is read as none (the worktree is still found by its git link), and
-/// the next write puts a whole one in its place; a record from before records had a version
-/// reads as version 1.
+/// the next write puts a whole one in its place; so is a record with no version.
 #[test]
 fn a_torn_record_is_read_as_none_and_written_whole_again() {
     let (repo, base) = repository("torn");
@@ -396,7 +395,7 @@ fn a_torn_record_is_read_as_none_and_written_whole_again() {
         let unversioned = text.replace("\"version\": 1,", "");
         std::fs::write(&record, unversioned).unwrap();
         let kept = list(&base, &env).await.unwrap();
-        assert_eq!(kept[0].owner.as_deref(), Some("thread-1"));
+        assert_eq!(kept[0].owner, None, "read as none");
     });
 }
 
