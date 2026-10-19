@@ -5,6 +5,7 @@
 #[path = "support/kit.rs"]
 mod support;
 
+mod conformance;
 mod loading;
 mod recall;
 mod safety;
