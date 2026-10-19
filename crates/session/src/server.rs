@@ -17,7 +17,8 @@ use glave_ports::computer::{ComputerError, Environment};
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{
-    BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, Projects, Scope, ToolSource,
+    BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, OsEntropy, Projects, Scope,
+    SystemClock, ToolSource,
 };
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
@@ -96,6 +97,49 @@ pub struct Wiring<P, L, B> {
     /// The browsers signed in on this computer, by links' one-time codes; none where no
     /// browser is signed in that way, as over stdio.
     pub browsers: Option<Arc<Browsers>>,
+}
+
+impl<P, L, B> Wiring<P, L, B> {
+    /// A server's wiring with what it cannot do without: its models, its store's log, blobs
+    /// and projects, and the workspace on the computer its threads work on. Everything else
+    /// starts off or empty: the system clock and the operating system's randomness; no
+    /// `web_fetch`, other tools, hooks, workers, memory, model accounts, git hosts, rereading,
+    /// project folders, trust or browsers; no limit on tasks; only the settings' own model and
+    /// mode; threads in their project's folder rather than a worktree. An embedder names only
+    /// what it changes: `Wiring { hooks, ..Wiring::new(...) }`.
+    pub fn new(
+        provider: P,
+        log: L,
+        blobs: B,
+        workspace: Workspace,
+        projects: Arc<dyn Projects>,
+    ) -> Self {
+        Self {
+            provider,
+            log,
+            blobs,
+            clock: Box::new(SystemClock),
+            entropy: Box::new(OsEntropy),
+            workspace,
+            web: None,
+            tools: Vec::new(),
+            own: Vec::new(),
+            worktree: false,
+            hooks: Hooks::default(),
+            workers: None,
+            tasks: TaskLimits::default(),
+            memory: None,
+            projects,
+            models: Vec::new(),
+            modes: Vec::new(),
+            providers: None,
+            rereads: None,
+            git_hosts: None,
+            project_folders: None,
+            trust: None,
+            browsers: None,
+        }
+    }
 }
 
 /// Threads on workers: where workers come from, and the environment each is made from.
