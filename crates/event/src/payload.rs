@@ -2,6 +2,7 @@
 //! decoder, which upgrades older versions on read.
 
 pub(crate) mod approval;
+pub(crate) mod browser;
 pub(crate) mod chosen;
 pub(crate) mod command;
 pub(crate) mod credential;
@@ -24,6 +25,7 @@ pub(crate) mod turn;
 pub(crate) mod workspace;
 
 pub use approval::{ApprovalDecided, ApprovalRequested, OutsideSandbox, Verdict};
+pub use browser::{BrowserSignedIn, BrowserSignedOut, BrowserUsed};
 pub use chosen::{ApprovalMode, ApprovalModeChosen, ModelChosen};
 pub use command::{CommandEnded, CommandEnding, CommandStarted};
 pub use credential::{CredentialConnected, CredentialRemoved, Forge, Renewal};

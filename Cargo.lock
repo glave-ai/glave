@@ -1546,7 +1546,9 @@ version = "0.0.0"
 dependencies = [
  "getrandom 0.4.3",
  "glave-event",
+ "glave-keys",
  "glave-ports",
+ "glave-store-sqlite",
  "jiff",
  "jsonwebtoken",
  "reqwest",
@@ -1554,7 +1556,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
- "tokio",
  "uuid",
 ]
 
@@ -1715,6 +1716,7 @@ version = "0.0.0"
 dependencies = [
  "deadpool-postgres",
  "glave-event",
+ "glave-identity",
  "glave-keys",
  "glave-ports",
  "jiff",

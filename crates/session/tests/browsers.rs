@@ -18,9 +18,13 @@ use crate::support::issuer::{AUDIENCE, Issuer, NOW, Signer, fixed_clock};
 use crate::support::web::{Served, Web, serve_with};
 use crate::support::*;
 
-/// The browsers of the glave whose folder is `dir`, as it opens them at each start.
-fn browsers(dir: &Path, clock: &ManualClock) -> Arc<Browsers> {
-    Arc::new(Browsers::open(dir.join("browsers.json"), Box::new(clock.clone())).unwrap())
+/// The browsers of the glave whose folder is `dir`, as it opens them at each start: on the
+/// store in that folder, the server named after the folder.
+async fn browsers(dir: &Path, clock: &ManualClock) -> Arc<Browsers> {
+    let store = sqlite(&dir.join("browsers.db")).await;
+    let server = dir.file_name().unwrap().to_string_lossy().into_owned();
+    let opened = Browsers::open(store.log(), scope(), server, Box::new(clock.clone()));
+    Arc::new(opened.await.unwrap())
 }
 
 /// A server signing browsers in with `browsers`, and programs here with `token`.
@@ -56,7 +60,7 @@ fn a_link_signs_one_browser_in_once_for_a_session_that_outlives_a_restart() {
         let dir = folder("browsers-link");
         let clock = fixed_clock();
         let token = LocalToken::new([3; 32]);
-        let served = serve(&dir, browsers(&dir, &clock), &token).await;
+        let served = serve(&dir, browsers(&dir, &clock).await, &token).await;
         let mut anyone = Web::new(&served, None);
         let discovered = anyone.call(&Request::Discover {}).await;
         let id = discovered["result"]["id"].clone();
@@ -87,7 +91,7 @@ fn a_link_signs_one_browser_in_once_for_a_session_that_outlives_a_restart() {
 
         // A restart: a new token, the same folder, the same server and session.
         let token = LocalToken::new([4; 32]);
-        let served = serve(&dir, browsers(&dir, &clock), &token).await;
+        let served = serve(&dir, browsers(&dir, &clock).await, &token).await;
         let rediscovered = Web::new(&served, None).call(&Request::Discover {}).await;
         assert_eq!(rediscovered["result"]["id"], id);
         let mut browser = Web::new(&served, Some(session.clone()));
@@ -100,10 +104,11 @@ fn a_link_signs_one_browser_in_once_for_a_session_that_outlives_a_restart() {
             json!(code::NO_SIGN_IN),
             "signed out"
         );
+        let kept = std::fs::read(dir.join("browsers.db")).unwrap();
         assert!(
-            !std::fs::read_to_string(dir.join("browsers.json"))
-                .unwrap()
-                .contains(&session),
+            !kept
+                .windows(session.len())
+                .any(|window| window == session.as_bytes()),
             "only its hash is kept"
         );
         served.close().await;
@@ -115,7 +120,7 @@ fn signing_other_browsers_out_keeps_this_one() {
     block_on!(async {
         let dir = folder("browsers-others");
         let token = LocalToken::new([5; 32]);
-        let served = serve(&dir, browsers(&dir, &fixed_clock()), &token).await;
+        let served = serve(&dir, browsers(&dir, &fixed_clock()).await, &token).await;
         let mut sessions = Vec::new();
         for _ in 0..2 {
             let code = link(&served, &token).await;
@@ -140,8 +145,8 @@ fn a_session_is_one_servers_and_this_computers_alone() {
     block_on!(async {
         let token = LocalToken::new([6; 32]);
         let (ours, theirs) = (folder("browsers-ours"), folder("browsers-theirs"));
-        let served = serve(&ours, browsers(&ours, &fixed_clock()), &token).await;
-        let other = serve(&theirs, browsers(&theirs, &fixed_clock()), &token).await;
+        let served = serve(&ours, browsers(&ours, &fixed_clock()).await, &token).await;
+        let other = serve(&theirs, browsers(&theirs, &fixed_clock()).await, &token).await;
         let code = link(&served, &token).await;
         let session = Web::new(&served, None).call(&redeem(&code)).await["result"]["session"]
             .as_str()
@@ -160,7 +165,7 @@ fn a_session_is_one_servers_and_this_computers_alone() {
             .await;
         assert_eq!(elsewhere["error"]["code"], json!(code::NO_SIGN_IN));
 
-        let browsers = browsers(&ours, &fixed_clock());
+        let browsers = browsers(&ours, &fixed_clock()).await;
         let signin = SignIn::local(token.clone(), Box::new(fixed_clock())).with_browsers(browsers);
         let there = "192.168.1.20".parse().unwrap();
         assert!(signin.verify_from(&session, there).await.is_err());
@@ -180,7 +185,7 @@ fn a_foreign_host_or_origin_is_refused() {
     block_on!(async {
         let dir = folder("browsers-hosts");
         let token = LocalToken::new([7; 32]);
-        let served = serve(&dir, browsers(&dir, &fixed_clock()), &token).await;
+        let served = serve(&dir, browsers(&dir, &fixed_clock()).await, &token).await;
         let http = reqwest::Client::new();
         let discover = json!({"jsonrpc": "2.0", "id": 1, "method": "server/discover"});
         let port = served.address.port();
@@ -228,7 +233,7 @@ fn nobody_a_provider_signs_in_gets_a_session_so_theirs_ends_with_the_provider() 
         let dir = folder("browsers-oidc");
         let clock = fixed_clock();
         let mut setup = Setup::asking(Vec::new(), Answering::Clients);
-        setup.browsers = Some(browsers(&dir, &clock));
+        setup.browsers = Some(browsers(&dir, &clock).await);
         let (built, _) = setup.build(&dir).await;
         let trust = Trust {
             issuers: vec![issuer.url.clone()],

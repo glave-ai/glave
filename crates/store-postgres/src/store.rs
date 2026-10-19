@@ -104,24 +104,35 @@ impl Store {
 
     /// The organization this database holds, made with the id `new` the first time.
     pub async fn org(&self, new: Uuid) -> Result<OrgId, StoreError> {
+        self.kept_once("org", new).await.map(OrgId::from_uuid)
+    }
+
+    /// The person's server's id, which browsers check before they present a session, made
+    /// with the id `new` the first time: every server on this database is the same one to a
+    /// browser.
+    pub async fn server(&self, new: Uuid) -> Result<Uuid, StoreError> {
+        self.kept_once("server", new).await
+    }
+
+    /// The id kept under `key`, kept as `new` the first time.
+    async fn kept_once(&self, key: &str, new: Uuid) -> Result<Uuid, StoreError> {
         let client = connection(&self.pool).await?;
         let failed = |e: tokio_postgres::Error| StoreError::Storage(describe(&e));
         client
             .execute(
-                "INSERT INTO glave_settings (key, value) VALUES ('org', $1) ON CONFLICT DO NOTHING",
-                &[&new.to_string()],
+                "INSERT INTO glave_settings (key, value) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                &[&key, &new.to_string()],
             )
             .await
             .map_err(failed)?;
-        let org: String = client
-            .query_one("SELECT value FROM glave_settings WHERE key = 'org'", &[])
+        let kept: String = client
+            .query_one("SELECT value FROM glave_settings WHERE key = $1", &[&key])
             .await
             .map_err(failed)?
             .try_get(0)
             .map_err(failed)?;
-        Uuid::parse_str(&org)
-            .map(OrgId::from_uuid)
-            .map_err(|e| StoreError::Storage(format!("bad organization id {org:?}: {e}")))
+        Uuid::parse_str(&kept)
+            .map_err(|e| StoreError::Storage(format!("bad {key} id {kept:?}: {e}")))
     }
 
     /// The local person and their agent, `(person, agent)`, kept as `new` the first time, both

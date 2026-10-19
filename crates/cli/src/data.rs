@@ -125,6 +125,14 @@ impl Data {
         })
     }
 
+    /// The person's server's id, which browsers check, made with the id `new` the first time.
+    pub async fn server(&self, new: uuid::Uuid) -> anyhow::Result<uuid::Uuid> {
+        Ok(match self {
+            Self::Sqlite(store) => store.server(new).await?,
+            Self::Postgres(store) => store.server(new).await?,
+        })
+    }
+
     /// The local person and their agent, kept as `new` the first time.
     pub async fn identity(
         &self,

@@ -10,8 +10,7 @@ use glave_event::{
     At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, TaskEnded,
     TaskStarted, ThreadId, decode, encode,
 };
-use glave_ports::{BlobStore, Caller, EventLog, LogError, ModelProvider, SpaceId};
-use jiff::Timestamp;
+use glave_ports::{BlobStore, Caller, EventLog, LogError, ModelProvider, SpaceId, reserved_ledger};
 
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
@@ -29,40 +28,31 @@ const ATTEMPTS: usize = 8;
 /// `00000000-0000-7000-8000-000000000000`. No thread can have it: a thread's id carries the
 /// time it started.
 pub(crate) fn ledger_id() -> Option<ThreadId> {
-    ThreadId::new(Timestamp::UNIX_EPOCH, [0; 10]).ok()
+    reserved_ledger(0)
 }
 
 /// The accounts ledger's reserved id, `00000000-0000-7000-8000-000000000002`: the model
 /// accounts (`provider.connected`, `provider.removed`) and git hosts (`credential.connected`,
 /// `credential.removed`) a person connected, in their personal space.
 pub fn accounts_ledger() -> Option<ThreadId> {
-    reserved(2)
+    reserved_ledger(2)
 }
 
 /// The space ledger's reserved id, `00000000-0000-7000-8000-000000000003`: a space's own
 /// settings, today a project's folder (`space.folder.set`).
 pub fn space_ledger() -> Option<ThreadId> {
-    reserved(3)
+    reserved_ledger(3)
 }
 
 /// The trust ledger's reserved id, `00000000-0000-7000-8000-000000000004`: what a person
 /// decided about the projects that ask to be trusted (`trust.decided`), in their personal
 /// space.
 pub fn trust_ledger() -> Option<ThreadId> {
-    reserved(4)
+    reserved_ledger(4)
 }
 
-/// The reserved id ending in `last`: a UUID v7 at time zero, nothing random but its last byte.
-fn reserved(last: u8) -> Option<ThreadId> {
-    let mut random = [0u8; 10];
-    if let Some(end) = random.last_mut() {
-        *end = last;
-    }
-    ThreadId::new(Timestamp::UNIX_EPOCH, random).ok()
-}
-
-/// Whether `thread` is one of the space's ledgers (tasks, memory, accounts, trust, or the
-/// space's own) rather than a thread.
+/// Whether `thread` is one of the space's ledgers (tasks, memory, accounts, trust, browsers,
+/// or the space's own) rather than a thread.
 pub fn is_ledger(thread: ThreadId) -> bool {
     [
         ledger_id(),
@@ -70,6 +60,7 @@ pub fn is_ledger(thread: ThreadId) -> bool {
         accounts_ledger(),
         space_ledger(),
         trust_ledger(),
+        glave_identity::signin::browsers_ledger(),
     ]
     .contains(&Some(thread))
 }

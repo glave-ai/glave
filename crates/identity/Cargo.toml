@@ -12,7 +12,7 @@ publish.workspace = true
 glave-event.workspace = true
 # The clock tokens' lifetimes are checked against.
 glave-ports.workspace = true
-# Random codes, browser sessions and the server's id.
+# Random codes and browser sessions.
 getrandom.workspace = true
 jiff.workspace = true
 # Verifying sign-in tokens against the identity provider's keys.
@@ -23,13 +23,14 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
-# Writing browser sessions to their file off the runtime's threads.
-tokio = { workspace = true, features = ["rt"] }
-# The server's and each browser session's id: UUID v7.
+# Each browser session's id: UUID v7.
 uuid.workspace = true
 
 [dev-dependencies]
+# A real store for the browsers ledger, in memory.
+glave-keys.workspace = true
 glave-ports = { workspace = true, features = ["conformance"] }
+glave-store-sqlite.workspace = true
 
 [lints]
 workspace = true

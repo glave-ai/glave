@@ -28,6 +28,8 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+# Browser sessions kept on this store, by two servers at once.
+glave-identity.workspace = true
 glave-keys = { workspace = true, features = ["conformance"] }
 glave-ports = { workspace = true, features = ["conformance"] }
 tokio = { workspace = true, features = ["rt"] }

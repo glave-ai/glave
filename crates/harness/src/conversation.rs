@@ -88,6 +88,9 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::SpaceFolderSet(_)
         | Body::SpaceRemoved(_)
         | Body::TrustDecided(_)
+        | Body::BrowserSignedIn(_)
+        | Body::BrowserUsed(_)
+        | Body::BrowserSignedOut(_)
         | Body::Unknown(_) => {}
     }
 }
