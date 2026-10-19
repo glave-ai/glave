@@ -14,11 +14,7 @@ use tokio::sync::watch;
 use crate::held::{Slot, Use, finished};
 use crate::modes::Choice;
 use crate::protocol::{ApiError, Reply, Show, ThreadSummary, code};
-use crate::server::{MAX_PAGE, Server, api, no_thread};
-
-fn failed(error: &impl std::fmt::Display) -> ApiError {
-    ApiError::new(code::INTERNAL, error.to_string())
-}
+use crate::server::{MAX_PAGE, Server, no_thread};
 
 impl<P, L, B> Server<P, L, B>
 where
@@ -108,7 +104,7 @@ where
         let ended = finished(&mut done)
             .await
             .ok_or_else(|| ApiError::new(code::INTERNAL, "the change stopped"))?;
-        ended.as_ref().as_ref().map_err(api)?;
+        ended.as_ref().as_ref().map_err(ApiError::from)?;
         Ok(Reply::Done {})
     }
 
@@ -134,7 +130,7 @@ where
         let ended = finished(&mut done)
             .await
             .ok_or_else(|| ApiError::new(code::INTERNAL, "the rename stopped"))?;
-        ended.as_ref().as_ref().map_err(api)?;
+        ended.as_ref().as_ref().map_err(ApiError::from)?;
         let scope = self.scope_of(thread).await?;
         let summary = self.summary(scope, thread).await?;
         let ask = self
@@ -178,8 +174,7 @@ where
             .harness
             .log()
             .thread_views(&scope, &query)
-            .await
-            .map_err(|e| failed(&e))?;
+            .await?;
         let next = (views.len() > limit)
             .then(|| {
                 views.truncate(limit);
@@ -209,16 +204,11 @@ where
         thread: ThreadId,
     ) -> Result<ThreadSummary, ApiError> {
         let log = self.inner.harness.log();
-        let view = match log
-            .thread_view(&scope, thread)
-            .await
-            .map_err(|e| failed(&e))?
-        {
+        let view = match log.thread_view(&scope, thread).await? {
             Some(view) => view,
             None => log
                 .rebuild_thread_view(&scope, thread)
-                .await
-                .map_err(|e| failed(&e))?
+                .await?
                 .ok_or_else(|| no_thread(thread))?,
         };
         let protections = self.project_settled(scope.project()).await.protections;
@@ -248,8 +238,7 @@ where
                     .harness
                     .log()
                     .read(&scope, view.thread, before, 1)
-                    .await
-                    .map_err(|e| failed(&e))?;
+                    .await?;
                 read.first().and_then(title_of)
             }
             None => None,
@@ -285,7 +274,7 @@ where
         let scope = self.scope_of(thread).await?;
         standing_of(self.inner.harness.log(), &scope, thread)
             .await
-            .map_err(|error| api(&error))
+            .map_err(|error| ApiError::from(&error))
     }
 
     /// Refuses with "no such thread" when `thread` is deleted.

@@ -116,13 +116,7 @@ where
     /// whose trust turns on what a project brings.
     async fn project_model(&self, thread: ThreadId) -> Result<Option<String>, ApiError> {
         let scope = self.scope_of(thread).await?;
-        let view = self
-            .inner
-            .harness
-            .log()
-            .thread_view(&scope, thread)
-            .await
-            .map_err(|error| ApiError::new(code::INTERNAL, error.to_string()))?;
+        let view = self.inner.harness.log().thread_view(&scope, thread).await?;
         let whose = view.and_then(|view| view.for_).and_then(|whose| whose.id);
         if whose.is_some_and(|person| Some(person) != self.person()) {
             return Ok(None);

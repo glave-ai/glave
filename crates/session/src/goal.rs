@@ -11,7 +11,7 @@ use tokio::sync::watch;
 
 use crate::held::{Slot, Use, finished};
 use crate::protocol::{ApiError, Reply, code};
-use crate::server::{Server, api};
+use crate::server::Server;
 use crate::turn::{TurnStream, publish};
 
 impl<P, L, B> Server<P, L, B>
@@ -97,7 +97,7 @@ where
         let ended = finished(&mut done)
             .await
             .ok_or_else(|| ApiError::new(code::INTERNAL, "stopping the goal stopped"))?;
-        ended.as_ref().as_ref().map_err(api)?;
+        ended.as_ref().as_ref().map_err(ApiError::from)?;
         Ok(Reply::Done {})
     }
 
@@ -108,7 +108,7 @@ where
             .harness
             .goal(scope, thread)
             .await
-            .map_err(|error| api(&error))
+            .map_err(|error| ApiError::from(&error))
     }
 }
 

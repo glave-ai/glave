@@ -10,10 +10,10 @@ use glave_event::{
     At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, TaskEnded,
     TaskStarted, ThreadId, decode, encode,
 };
-use glave_ports::stream::{Reserved, StreamError, append_retrying, catch_up};
+use glave_ports::stream::{Reserved, append_retrying, catch_up};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
 
-use crate::protocol::{ApiError, code};
+use crate::protocol::ApiError;
 use crate::server::Server;
 
 /// Finished tasks kept in memory for `tasks/list`, newest last, in each project.
@@ -156,13 +156,12 @@ where
             let now = this.inner.harness.clock().now();
             let next = this.ledgers().get(&project).map_or(1, Ledger::next_seq);
             let header = Header {
-                id: EventId::new(now, this.inner.harness.entropy().bytes()?)
-                    .map_err(|e| internal(&e.to_string()))?,
+                id: EventId::new(now, this.inner.harness.entropy().bytes()?)?,
                 thread: ledger,
-                seq: Seq::new(next).map_err(|e| internal(&e.to_string()))?,
+                seq: Seq::new(next)?,
                 at: At::from(now),
             };
-            let raw = encode(header, payload).map_err(|e| internal(&e.to_string()))?;
+            let raw = encode(header, payload)?;
             Ok::<_, ApiError>(Some((vec![raw], ())))
         })
         .await?;
@@ -195,15 +194,5 @@ where
             .ledgers
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-}
-
-fn internal(message: &str) -> ApiError {
-    ApiError::new(code::INTERNAL, message)
-}
-
-impl From<StreamError> for ApiError {
-    fn from(error: StreamError) -> Self {
-        internal(&error.to_string())
     }
 }

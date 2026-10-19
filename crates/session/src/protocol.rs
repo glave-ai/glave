@@ -776,9 +776,3 @@ impl std::fmt::Display for ApiError {
 }
 
 impl std::error::Error for ApiError {}
-
-impl From<glave_ports::EntropyError> for ApiError {
-    fn from(error: glave_ports::EntropyError) -> Self {
-        Self::new(code::INTERNAL, error.to_string())
-    }
-}

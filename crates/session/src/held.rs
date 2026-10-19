@@ -11,7 +11,7 @@ use jiff::Timestamp;
 use tokio::sync::watch;
 
 use crate::protocol::{ApiError, Status, code};
-use crate::server::{Inner, Server, api, no_thread};
+use crate::server::{Inner, Server, no_thread};
 use crate::turn::publish;
 
 /// Threads kept in memory while idle, the least recently used let go first; more are rebuilt
@@ -71,7 +71,7 @@ where
             .harness
             .resume_thread_in(scope, thread, folder.as_deref())
             .await
-            .map_err(|error| api(&error))?;
+            .map_err(|error| ApiError::from(&error))?;
         if resumed.standing() == Standing::Deleted {
             return Err(no_thread(thread));
         }
@@ -173,7 +173,7 @@ where
                             if held.standing() == Standing::Archived) =>
                 {
                     threads.insert(thread, slot);
-                    return Err(api(&HarnessError::Archived(thread)));
+                    return Err(ApiError::from(&HarnessError::Archived(thread)));
                 }
                 Some(Slot::Idle { thread: held, .. }) => {
                     // A turn takes messages from now until it has made its last call.

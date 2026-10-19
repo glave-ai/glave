@@ -9,6 +9,7 @@ pub mod client;
 mod credentials;
 mod cron;
 mod dispatch;
+mod errors;
 mod folders;
 mod goal;
 mod gone;

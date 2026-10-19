@@ -133,7 +133,7 @@ fn a_message_from_outside_is_still_a_conflict() {
 
         let refused = turn(&server, thread, "go").await.unwrap_err();
         assert_eq!(refused.code, code::INTERNAL);
-        assert!(refused.message.contains("already has event"), "{refused:?}");
+        assert!(refused.message.contains("changed elsewhere"), "{refused:?}");
     });
 }
 

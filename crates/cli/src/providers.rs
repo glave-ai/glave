@@ -68,11 +68,15 @@ impl ModelAccounts {
 
     /// Builds the models of the accounts kept now, and sends calls to them.
     async fn rebuilt(&self) -> Result<Models, ApiError> {
-        let accounts = self.ledger.accounts().await.map_err(|e| failed(&e))?;
+        let accounts = self
+            .ledger
+            .accounts()
+            .await
+            .map_err(|e| ApiError::internal(&e))?;
         let built = self
             .lineup()
             .build(&accounts.providers)
-            .map_err(|e| failed(&e))?;
+            .map_err(|e| ApiError::internal(&e))?;
         self.switch.set(built.gateway);
         Ok(built.models)
     }
@@ -83,7 +87,7 @@ impl ModelAccounts {
         let mut account = ProviderConnected {
             provider: random()
                 .and_then(|random| Ok(ProviderId::new(jiff::Timestamp::now(), random)?))
-                .map_err(|e| failed(&e))?,
+                .map_err(|e| ApiError::internal(&e))?,
             kind: new.kind,
             url,
             key,
@@ -109,7 +113,7 @@ impl ModelAccounts {
             .ledger
             .accounts()
             .await
-            .map_err(|e| failed(&e))?
+            .map_err(|e| ApiError::internal(&e))?
             .providers;
         accounts.push(account.clone());
         self.lineup().build(&accounts).map_err(|e| {
@@ -121,7 +125,7 @@ impl ModelAccounts {
         self.ledger
             .keep_provider(&account)
             .await
-            .map_err(|e| failed(&e))?;
+            .map_err(|e| ApiError::internal(&e))?;
         Ok((info(&account), self.rebuilt().await?))
     }
 }
@@ -133,7 +137,11 @@ impl Providers for ModelAccounts {
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<ProviderInfo>, ApiError>> {
         Box::pin(async move {
-            let accounts = self.ledger.accounts().await.map_err(|e| failed(&e))?;
+            let accounts = self
+                .ledger
+                .accounts()
+                .await
+                .map_err(|e| ApiError::internal(&e))?;
             Ok(accounts.providers.iter().map(info).collect())
         })
     }
@@ -141,7 +149,7 @@ impl Providers for ModelAccounts {
     fn remove(&self, provider: ProviderId) -> BoxFuture<'_, Result<Models, ApiError>> {
         Box::pin(async move {
             let removed = self.ledger.remove_provider(provider).await;
-            if !removed.map_err(|e| failed(&e))? {
+            if !removed.map_err(|e| ApiError::internal(&e))? {
                 return Err(ApiError::new(
                     code::NO_PROVIDER,
                     format!("no model account {provider} here"),
@@ -291,9 +299,4 @@ fn refused(account: &ProviderConnected, error: &ProviderError) -> ApiError {
         _ => format!("{service} did not answer as glave expected: try again shortly"),
     };
     provider_failed(failure, message)
-}
-
-/// A failure of glave's own, such as the store's.
-fn failed(error: &anyhow::Error) -> ApiError {
-    ApiError::new(code::INTERNAL, format!("{error:#}"))
 }

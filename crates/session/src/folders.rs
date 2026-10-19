@@ -37,10 +37,6 @@ pub(crate) struct ProjectLedger {
     last: Option<Seq>,
 }
 
-fn internal(error: &impl std::fmt::Display) -> ApiError {
-    ApiError::new(code::INTERNAL, error.to_string())
-}
-
 /// Refused: folders are on the computer glave runs on, so only the person there reaches them.
 pub(crate) fn only_here(message: &str) -> ApiError {
     ApiError::new(code::NOT_ALLOWED, message)
@@ -173,16 +169,17 @@ where
             };
             let now = this.inner.harness.clock().now();
             let header = Header {
-                id: EventId::new(now, this.inner.harness.entropy().bytes()?)
-                    .map_err(|error| internal(&error))?,
+                id: EventId::new(now, this.inner.harness.entropy().bytes()?)?,
                 thread: ledger,
                 seq: current
                     .last
                     .map_or(Some(Seq::FIRST), Seq::next)
-                    .ok_or_else(|| internal(&format!("the ledger of project {project} is full")))?,
+                    .ok_or_else(|| {
+                        ApiError::internal(&format!("the ledger of project {project} is full"))
+                    })?,
                 at: At::from(now),
             };
-            let raw = encode(header, &payload).map_err(|error| internal(&error))?;
+            let raw = encode(header, &payload)?;
             Ok::<_, ApiError>(Some((vec![raw], ())))
         })
         .await?;
@@ -220,8 +217,7 @@ where
                 None => ThreadId::new(
                     self.inner.harness.clock().now(),
                     self.inner.harness.entropy().bytes()?,
-                )
-                .map_err(|error| internal(&error))?
+                )?
                 .as_uuid(),
             };
             Ok(Some(ProjectFolderSet {
@@ -259,8 +255,7 @@ where
             .inner
             .projects
             .folder(self.inner.home.org(), &keys, &new)
-            .await
-            .map_err(|error| crate::projects::failed(&error))?;
+            .await?;
         if project.kind != ProjectKind::Project || !project.admits(&person) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
@@ -311,7 +306,12 @@ where
                 let root = workspace
                     .new_project(&folder_name(name), None)
                     .await
-                    .map_err(|error| internal(&format!("could not make the folder: {error}")))?;
+                    .map_err(|error| {
+                        ApiError::new(
+                            code::INTERNAL,
+                            format!("could not make the folder: {error}"),
+                        )
+                    })?;
                 Ok((root, FolderSource::Local))
             }
         }
@@ -376,7 +376,10 @@ fn no_folder(path: &str, error: &ComputerError) -> ApiError {
             format!("there is no folder at {path}"),
         ),
         ComputerError::Refused(message) => ApiError::new(code::INVALID_PARAMS, message.clone()),
-        _ => internal(error),
+        _ => ApiError::new(
+            code::INTERNAL,
+            format!("could not open the folder at {path}: {}", error.message()),
+        ),
     }
 }
 

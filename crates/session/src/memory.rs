@@ -3,7 +3,7 @@
 //! or the server's own. The caller decides what may be seen and changed: a project's members may
 //! change its memory, and only the person their own.
 
-use glave_ports::memories::{Access, Control, MemoryError};
+use glave_ports::memories::{Access, Control};
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId};
 
 use crate::protocol::{ApiError, Reply, code};
@@ -36,20 +36,9 @@ where
         };
         match memory.control(&access, control).await {
             Ok(memories) => Ok(Reply::Memories { memories }),
-            Err(error) => Err(refused(&error)),
+            Err(error) => Err(error.into()),
         }
     }
-}
-
-fn refused(error: &MemoryError) -> ApiError {
-    let code = match error {
-        MemoryError::NotFound(_) => code::NO_MEMORY,
-        MemoryError::Refused(_) => code::NOT_ALLOWED,
-        MemoryError::Invalid(_) => code::INVALID_PARAMS,
-        MemoryError::Off(_) => code::MEMORY_OFF,
-        MemoryError::Storage(_) => code::INTERNAL,
-    };
-    ApiError::new(code, error.to_string())
 }
 
 /// What `memory/forget` forgets: one memory, or with `all`, every memory of a scope.
