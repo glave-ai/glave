@@ -143,6 +143,38 @@ mod web {
     }
 
     #[test]
+    fn torn_token_and_address_files_are_written_anew_at_start_and_work() {
+        let place = place("serve-torn");
+        std::fs::create_dir_all(&place.home).unwrap();
+        // Parts of each, as a crash while writing them would leave.
+        std::fs::write(place.home.join("serve.token"), "glave_loc").unwrap();
+        std::fs::write(place.home.join("serve.url"), "http://127.0").unwrap();
+        let model = FakeServer::start(vec![]).unwrap();
+        let (_served, url) = serve_http(&place, &model, &[]);
+        let token = std::fs::read_to_string(place.home.join("serve.token")).unwrap();
+        assert_eq!(token.len(), "glave_local_".len() + 64, "{token}");
+        let kept = std::fs::read_to_string(place.home.join("serve.url")).unwrap();
+        assert_eq!(kept, url);
+        block_on!(async {
+            let client = reqwest::Client::new();
+            let ask = |token: String| {
+                client
+                    .post(format!("{kept}/"))
+                    .bearer_auth(token)
+                    .header("content-type", "application/json")
+                    .body(r#"{"jsonrpc":"2.0","id":1,"method":"thread/list","params":{}}"#)
+                    .send()
+            };
+            let answered = ask(token).await.unwrap();
+            assert_eq!(answered.status(), 200);
+            let body = answered.text().await.unwrap();
+            assert!(body.contains(r#""result""#), "{body}");
+            let refused = ask("glave_loc".into()).await.unwrap();
+            assert_eq!(refused.status(), 401, "the torn token signs nothing in");
+        });
+    }
+
+    #[test]
     fn a_web_folder_is_served_rather_than_the_app_built_in() {
         let place = place("serve-web-folder");
         let folder = place.project.join("../browser");

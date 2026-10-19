@@ -202,6 +202,34 @@ fn the_check_runs_at_most_once_a_day() {
 }
 
 #[test]
+fn a_torn_check_stamp_is_checked_again_and_written_whole() {
+    let (home, _repo) = place("torn-stamp");
+    std::fs::create_dir_all(home.join(FOLDER)).unwrap();
+    let log = InMemoryLog::new();
+    let env = environment();
+    let entropy = CountingEntropy::starting_at(100);
+    let cleanup = Cleanup {
+        log: &log,
+        environment: &env,
+        trash: None,
+        now: day(10),
+        entropy: &entropy,
+    };
+    // Half of a stamp, as a crash while writing it would leave.
+    let whole = day(9).to_string();
+    std::fs::write(home.join(SWEPT), whole.get(..10).unwrap()).unwrap();
+    block_on!(async {
+        assert_eq!(check_if_due(&home, &cleanup).await, Vec::<String>::new());
+    });
+    let stamp = std::fs::read_to_string(home.join(SWEPT)).unwrap();
+    assert_eq!(
+        stamp,
+        day(10).to_string(),
+        "the check ran and wrote its stamp anew"
+    );
+}
+
+#[test]
 fn a_gone_repositorys_worktree_goes_to_the_trash_and_is_recorded() {
     let (home, repo) = place("gone");
     let log = InMemoryLog::new();

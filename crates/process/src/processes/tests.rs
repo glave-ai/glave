@@ -153,6 +153,28 @@ fn what_a_glave_that_is_gone_left_is_stopped_at_the_next_start() {
 }
 
 #[test]
+fn an_entry_that_cannot_be_read_is_skipped_and_the_others_are_still_stopped() {
+    let run = folder("garbage");
+    let ledger = run.join("processes");
+    let left = Orphan::start();
+    let process = Process {
+        pid: left.pid,
+        start: left.start_time(),
+    };
+    plant(&ledger, process, gone_glave());
+    std::fs::write(ledger.join("1.json"), b"{\"version\": 1, \"proc").unwrap();
+    std::fs::write(ledger.join("2.json"), b"\x00\xff not an entry").unwrap();
+    let stopped = glave_ports::block_on!(Processes::recorded(&run).reap()).unwrap();
+    assert_eq!(stopped, 1);
+    assert!(
+        left.ended(),
+        "the process recorded beside them is still found by its pid and stopped"
+    );
+    assert_eq!(entries(&ledger), 2, "what cannot be read is left as it is");
+    let _ = std::fs::remove_dir_all(run);
+}
+
+#[test]
 fn a_reused_pid_is_never_killed() {
     let run = folder("reused");
     let ledger = run.join("processes");

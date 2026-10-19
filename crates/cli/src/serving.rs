@@ -159,9 +159,10 @@ fn random() -> anyhow::Result<[u8; LOCAL_BYTES]> {
     Ok(bytes)
 }
 
-/// Writes `contents` to `path`, readable and writable only by you, replacing any earlier one.
+/// Writes `contents` to `path`, readable and writable only by you, replacing any earlier one
+/// whole.
 pub fn keep(path: &Path, contents: &str) -> anyhow::Result<()> {
-    glave_session::signin::keep(path, contents)
+    glave_ports::file::replace(path, contents.as_bytes())
         .with_context(|| format!("could not write {}", path.display()))
 }
 

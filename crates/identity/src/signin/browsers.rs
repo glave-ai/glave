@@ -11,11 +11,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use glave_event::Secret;
 use glave_ports::Clock;
+use glave_ports::file::replace;
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::local::{digest, hex, keep, same};
+use super::local::{digest, hex, same};
 
 /// What every browser session's token starts with.
 pub(crate) const SESSION_PREFIX: &str = "glave_session_";
@@ -118,7 +119,7 @@ impl Browsers {
                 server: new_id(clock.now())?,
                 sessions: Vec::new(),
             };
-            keep(&path, &contents(&fresh)).map_err(|e| kept_error(&path, &e))?;
+            replace(&path, contents(&fresh).as_bytes()).map_err(|e| kept_error(&path, &e))?;
             fresh
         };
         Ok(Self {
@@ -253,7 +254,7 @@ impl Browsers {
             if generation <= *last {
                 return Ok(());
             }
-            keep(&path, &text).map_err(|e| kept_error(&path, &e))?;
+            replace(&path, text.as_bytes()).map_err(|e| kept_error(&path, &e))?;
             *last = generation;
             Ok(())
         })

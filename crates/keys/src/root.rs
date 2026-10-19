@@ -183,7 +183,7 @@ fn read(path: &Path) -> std::io::Result<zeroize::Zeroizing<Vec<u8>>> {
 
 #[cfg(test)]
 mod tests {
-    use glave_ports::block_on;
+    use glave_ports::{block_on, file};
     use uuid::Uuid;
 
     use super::*;
@@ -227,6 +227,27 @@ mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
         let refused = KeyFileRoot::open_or_create(&path);
         assert!(matches!(refused, Err(KeyError::Root(message)) if message.contains("0600")));
+    }
+
+    #[test]
+    fn a_key_file_whose_creation_stopped_at_any_step_opens_cleanly() {
+        let org = OrgId::from_uuid(Uuid::from_u128(1));
+        let key = KeyMaterial::random().unwrap();
+        // Stopped before it was put in place: there is no key file yet, and a whole one is made.
+        let path = folder("stopped-written").join("root.key");
+        file::create_until(&path, key.bytes(), file::Stop::Written).unwrap();
+        let made = KeyFileRoot::open_or_create(&path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap().len(), 32);
+        let wrapped = block_on!(made.wrap(org, &key)).unwrap();
+        let again = KeyFileRoot::open_or_create(&path).unwrap();
+        assert!(block_on!(again.unwrap(org, &wrapped)).is_ok());
+        // Stopped once in place, its folder not yet flushed: the whole key is there.
+        let path = folder("stopped-placed").join("root.key");
+        file::create_until(&path, key.bytes(), file::Stop::Placed).unwrap();
+        let opened = KeyFileRoot::open_or_create(&path).unwrap();
+        let wrapped = block_on!(opened.wrap(org, &key)).unwrap();
+        let planted = LocalRoot::new(KeyMaterial::from_bytes(key.bytes()).unwrap());
+        assert_eq!(planted.unwrap(org, &wrapped).unwrap().bytes(), key.bytes());
     }
 
     #[test]
