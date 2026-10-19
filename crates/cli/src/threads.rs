@@ -13,7 +13,7 @@ use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::reach::Reached;
-use crate::{home, worktrees};
+use crate::worktrees;
 
 pub const USAGE: &str = "\
 glave threads: the threads in this folder
@@ -156,9 +156,8 @@ async fn released(thread: ThreadId) -> anyhow::Result<Vec<String>> {
 
 /// `command` made straight in the log.
 async fn in_the_log(command: Command) -> anyhow::Result<()> {
-    let home = home::folder()?;
     let store = crate::data::Data::here().await?;
-    let person = crate::identity::load_or_make(&home, &store).await?.person;
+    let person = crate::identity::load_or_make(&store).await?.person;
     let scope = crate::projects::here(&store, &std::env::current_dir()?, person).await?;
     let log = store.log();
     match command {

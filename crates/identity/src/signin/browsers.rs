@@ -8,7 +8,6 @@
 //! kept signs anyone in; every server on one store signs in the same browsers. The server's
 //! id, which a browser checks before it presents its session, is the caller's to keep.
 
-mod earlier;
 mod ledger;
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -24,8 +23,6 @@ use uuid::Uuid;
 
 use self::ledger::{Ledger, Stream};
 use super::local::{digest, hex, same};
-
-pub use self::earlier::Earlier;
 
 /// What every browser session's token starts with.
 pub(crate) const SESSION_PREFIX: &str = "glave_session_";
@@ -228,19 +225,6 @@ impl Browsers {
             (!others.is_empty())
                 .then_some(Change::SignedOut(others))
                 .into_iter()
-                .collect()
-        })
-        .await
-    }
-
-    /// Keeps the sessions an earlier glave kept in a file, unless the ledger knows them
-    /// already, as used now; those whose lifetime ended are left out.
-    pub async fn take_in(&self, earlier: &Earlier) -> Result<(), BrowserError> {
-        self.change(|state, now| {
-            earlier
-                .live(now)
-                .filter(|(id, _)| !state.sessions.iter().any(|kept| kept.id == *id))
-                .map(|(id, hash)| Change::SignedIn(id, hash.to_owned()))
                 .collect()
         })
         .await

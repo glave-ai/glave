@@ -16,9 +16,9 @@ use glave_session::protocol::{ApiError, Reply, Request, code};
 
 use crate::args::Args;
 use crate::data::{Data, DataLog};
+use crate::identity;
 use crate::reach::Reached;
 use crate::setup::Setup;
-use crate::{home, identity};
 use glave_config::policy::MemorySettings;
 
 pub const USAGE: &str = "\
@@ -293,9 +293,8 @@ async fn in_the_store(command: Command) -> anyhow::Result<()> {
     let setup = Setup::load(&Args::default(), &folder).await?;
     let settings =
         glave_config::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
-    let home = home::folder()?;
     let store = Data::chosen(&setup.choices).await?;
-    let person = identity::load_or_make(&home, &store).await?.person;
+    let person = identity::load_or_make(&store).await?.person;
     let scope = crate::projects::here(&store, &folder, person).await?;
     let on = MemorySettings {
         on: true,
