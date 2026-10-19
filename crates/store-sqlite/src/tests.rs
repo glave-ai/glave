@@ -84,6 +84,7 @@ fn record(n: u128, owner: &glave_event::Principal) -> glave_ports::Project {
         members: Vec::new(),
         created_at: at,
         updated_at: at,
+        revision: 0,
     }
 }
 

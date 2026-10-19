@@ -8,7 +8,7 @@ use crate::store::StoreError;
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a file one of them made is refused.
-pub(crate) const VERSION: u32 = 8;
+pub(crate) const VERSION: u32 = 9;
 
 /// Every table, made in one transaction in a new file.
 const SCHEMA: &str = "
@@ -83,6 +83,8 @@ const SCHEMA: &str = "
         owner       TEXT NOT NULL,
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL,
+        -- Updates so far: each names the one it read, so none is lost (`Projects::update`).
+        revision    INTEGER NOT NULL,
         PRIMARY KEY (org, id)
     ) STRICT;
 

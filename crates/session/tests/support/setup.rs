@@ -216,6 +216,7 @@ impl Setup {
             members: Vec::new(),
             created_at: at,
             updated_at: at,
+            revision: 0,
         };
         // A second server on another's projects finds it there already.
         if server

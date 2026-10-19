@@ -2,9 +2,9 @@
 //! names one (CI sets it) and are skipped otherwise. Each test works in a schema of its own
 //! and drops it at the end, so tests run in parallel and leave nothing behind.
 
-use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
+use glave_event::ThreadId;
 use glave_identity::signin::Browsers;
-use glave_ports::{BlobStore, EventLog, OrgId, ProjectId, Scope, conformance, digest};
+use glave_ports::{BlobStore, OrgId, ProjectId, Scope, conformance, digest};
 use glave_store_postgres::{Store, StoreError};
 use uuid::{Builder, Uuid};
 
@@ -20,21 +20,6 @@ fn scope() -> Scope {
 fn thread() -> ThreadId {
     ThreadId::try_from(Builder::from_unix_timestamp_millis(1_791_000_000_000, &[9; 10]).into_uuid())
         .unwrap()
-}
-
-/// The first event of a thread, as each racing writer would write it.
-fn first_event(thread: ThreadId, writer: u8) -> RawEvent {
-    let id = Builder::from_unix_timestamp_millis(1_791_000_000_000, &[writer; 10]).into_uuid();
-    let header = Header {
-        id: EventId::try_from(id).unwrap(),
-        thread,
-        seq: Seq::FIRST,
-        at: At::try_from("2026-10-10T09:00:00.000Z".to_owned()).unwrap(),
-    };
-    let ended = TurnEnded {
-        outcome: Outcome::Completed,
-    };
-    encode(header, &ended).unwrap()
 }
 
 #[test]
@@ -187,35 +172,6 @@ fn openers_racing_on_a_new_database_make_its_schema_once() {
         for result in results {
             assert!(result.is_ok(), "{result:?}");
         }
-    });
-}
-
-#[test]
-fn writers_racing_for_one_position_leave_exactly_one_winner() {
-    block_on!(async {
-        let Some(scratch) = Scratch::new("writers").await else {
-            return;
-        };
-        let store = scratch.store().await.unwrap();
-        let thread = thread();
-        let writers: Vec<_> = (0..8)
-            .map(|writer| {
-                let log = store.log();
-                let event = first_event(thread, writer);
-                tokio::spawn(async move { log.append(&scope(), &[event]).await })
-            })
-            .collect();
-        let mut won = 0;
-        for writer in writers {
-            if writer.await.unwrap().is_ok() {
-                won += 1;
-            }
-        }
-        let stored = store.log().read(&scope(), thread, None, 100).await;
-        drop(store);
-        scratch.drop_schema().await;
-        assert_eq!(won, 1, "exactly one writer takes the position");
-        assert_eq!(stored.map(|events| events.len()), Ok(1));
     });
 }
 

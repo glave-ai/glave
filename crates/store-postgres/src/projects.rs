@@ -40,8 +40,8 @@ fn principal_text(principal: &Principal) -> Result<String, ProjectError> {
     serde_json::to_string(principal).map_err(|e| ProjectError::Storage(e.to_string()))
 }
 
-const SELECT: &str =
-    "SELECT id, kind, name, owner, created_at, updated_at FROM project_records WHERE org = $1";
+const SELECT: &str = "SELECT id, kind, name, owner, created_at, updated_at, revision
+    FROM project_records WHERE org = $1";
 
 /// The whole project `row` stands for, with its members.
 async fn assemble<C: GenericClient>(
@@ -54,6 +54,7 @@ async fn assemble<C: GenericClient>(
     let owner: String = row.try_get(3).map_err(corrupt)?;
     let created: Timestamp = row.try_get(4).map_err(corrupt)?;
     let updated: Timestamp = row.try_get(5).map_err(corrupt)?;
+    let revision: i64 = row.try_get(6).map_err(corrupt)?;
     let members = client
         .query(
             "SELECT member FROM project_members WHERE org = $1 AND project = $2 ORDER BY position",
@@ -75,6 +76,7 @@ async fn assemble<C: GenericClient>(
         members,
         created_at: At::from(created),
         updated_at: At::from(updated),
+        revision: u64::try_from(revision).map_err(corrupt)?,
     })
 }
 
@@ -167,6 +169,7 @@ async fn insert<C: GenericClient>(
     Project::check_name(&project.name)?;
     let owner = principal_text(&project.owner)?;
     let mut project = project.clone();
+    project.revision = 0;
     if project.kind == ProjectKind::Project {
         hold_names(client, org, &owner).await?;
         let taken: Vec<String> = projects_of(client, org, &owner)
@@ -179,8 +182,8 @@ async fn insert<C: GenericClient>(
     let project = &project;
     let inserted = client
         .execute(
-            "INSERT INTO project_records (org, id, kind, name, owner, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+            "INSERT INTO project_records (org, id, kind, name, owner, created_at, updated_at, revision)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 0) ON CONFLICT DO NOTHING",
             &[
                 &org,
                 &project.id.as_uuid(),
@@ -376,9 +379,11 @@ impl Projects for PostgresProjects {
         &'a self,
         org: OrgId,
         project: &'a Project,
-    ) -> BoxFuture<'a, Result<(), ProjectError>> {
+    ) -> BoxFuture<'a, Result<Project, ProjectError>> {
         Box::pin(async move {
             Project::check_name(&project.name)?;
+            let revision =
+                i64::try_from(project.revision).map_err(|_| ProjectError::Changed(project.id))?;
             let org = org.as_uuid();
             let mut client = connection(&self.pool).await.map_err(unavailable)?;
             let transaction = client
@@ -387,7 +392,7 @@ impl Projects for PostgresProjects {
                 .map_err(database(ProjectError::Storage))?;
             let stored = transaction
                 .query_opt(
-                    "SELECT kind, owner FROM project_records WHERE org = $1 AND id = $2",
+                    "SELECT kind, owner, revision FROM project_records WHERE org = $1 AND id = $2",
                     &[&org, &project.id.as_uuid()],
                 )
                 .await
@@ -395,6 +400,9 @@ impl Projects for PostgresProjects {
                 .ok_or(ProjectError::NotFound(project.id))?;
             let kind: String = stored.try_get(0).map_err(corrupt)?;
             let owner: String = stored.try_get(1).map_err(corrupt)?;
+            if stored.try_get::<_, i64>(2).map_err(corrupt)? != revision {
+                return Err(ProjectError::Changed(project.id));
+            }
             if kind == ProjectKind::Project.as_str() {
                 hold_names(&transaction, org, &owner).await?;
                 let taken = projects_of(&transaction, org, &owner).await?;
@@ -402,25 +410,31 @@ impl Projects for PostgresProjects {
             }
             let changed = transaction
                 .execute(
-                    "UPDATE project_records SET name = $3, updated_at = $4
-                     WHERE org = $1 AND id = $2",
+                    "UPDATE project_records SET name = $3, updated_at = $4, revision = revision + 1
+                     WHERE org = $1 AND id = $2 AND revision = $5",
                     &[
                         &org,
                         &project.id.as_uuid(),
                         &project.name,
                         &project.updated_at.timestamp(),
+                        &revision,
                     ],
                 )
                 .await
                 .map_err(database(ProjectError::Storage))?;
+            // Another update took the row first, between the read and this write.
             if changed == 0 {
-                return Err(ProjectError::NotFound(project.id));
+                return Err(ProjectError::Changed(project.id));
             }
             write_members(&transaction, org, project).await?;
+            let kept = get_now(&transaction, org, project.id.as_uuid())
+                .await?
+                .ok_or(ProjectError::NotFound(project.id))?;
             transaction
                 .commit()
                 .await
-                .map_err(database(ProjectError::Storage))
+                .map_err(database(ProjectError::Storage))?;
+            Ok(kept)
         })
     }
 
