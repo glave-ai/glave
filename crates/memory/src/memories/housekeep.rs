@@ -5,7 +5,7 @@
 
 use glave_event::{At, MemoryId, Principal};
 use glave_ports::memories::MemoryError;
-use glave_ports::{EventLog, Scope};
+use glave_ports::{Erasable, EventLog, Scope};
 use jiff::SignedDuration;
 
 use super::Memories;
@@ -80,22 +80,15 @@ impl<L: EventLog + 'static> Memories<L> {
                 .await?;
             for memory in &due {
                 self.inner
-                    .shredder
-                    .destroy(*scope, *memory)
-                    .await
-                    .map_err(MemoryError::Storage)?;
+                    .eraser
+                    .destroy(*scope, Erasable::Memory(*memory))
+                    .await?;
                 done.erased = done.erased.saturating_add(1);
             }
             if !due.is_empty() {
                 self.drop_book(*scope);
             }
-            if self
-                .inner
-                .shredder
-                .rotate(*scope)
-                .await
-                .map_err(MemoryError::Storage)?
-            {
+            if self.inner.eraser.rotate(*scope).await? {
                 done.rotated = done.rotated.saturating_add(1);
             }
         }

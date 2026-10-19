@@ -20,7 +20,6 @@ use glave_process::Processes;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring};
 
-use crate::accounts::Ledger;
 use crate::args::{self, Action, Args, USAGE};
 use crate::client::{Client, Glave, Session};
 use crate::config::{self, Endpoint};
@@ -399,7 +398,7 @@ async fn line_up(
     let ledger = if through_gateway || !args.issuers.is_empty() {
         None
     } else {
-        Some(Ledger::open(store, person).await?)
+        Some(crate::accounts::open(store, person).await?)
     };
     let accounts = match &ledger {
         Some(ledger) => ledger.accounts().await?.providers,
