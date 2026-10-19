@@ -133,7 +133,7 @@ where
     /// the thread the model and approval mode the message names, when it does: this turn and
     /// the thread's later ones go to it and ask that much. While a turn runs there, a message
     /// that may be queued is queued to it instead, for the model's next call. With `key`, a
-    /// turn already started in `thread` with the same key is followed instead of starting
+    /// turn `caller` already started in `thread` with the same key is followed instead of starting
     /// another. The model the turn would go to must be one this server runs (`-32021`), and its
     /// mode one the policy leaves (`-32012`).
     pub(crate) async fn start_turn_with(
@@ -153,7 +153,7 @@ where
         self.check_approval(thread, choice.approval).await?;
         let (finish, done) = watch::channel(None);
         if let Some(key) = key
-            && let Some(started) = self.inner.keyed.claim(thread, key, &done)
+            && let Some(started) = self.inner.keyed.claim(caller.person, thread, key, &done)
         {
             let notes = started.borrow().is_none().then(|| self.watch(thread));
             return Ok(Sent::Started(TurnStream::new(model, notes, started)));
@@ -187,7 +187,9 @@ where
         if !matches!(sent, Ok(Sent::Started(_)))
             && let Some(key) = key
         {
-            self.inner.keyed.release(thread, key, &finish.subscribe());
+            self.inner
+                .keyed
+                .release(caller.person, thread, key, &finish.subscribe());
         }
         sent
     }
