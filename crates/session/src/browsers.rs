@@ -5,7 +5,7 @@
 //! sign-in through a provider ends when the provider stops renewing it.
 
 use glave_event::AuthMethod;
-use glave_identity::signin::{BrowserError, Browsers};
+use glave_identity::signin::Browsers;
 use glave_ports::{BlobStore, Caller, EventLog, ModelProvider};
 
 use crate::protocol::{ApiError, Reply, code};
@@ -40,14 +40,14 @@ where
                 "only glave on this computer makes sign-in links",
             ));
         }
-        let code = browsers.link().map_err(|e| failed(&e))?;
+        let code = browsers.link()?;
         Ok(Reply::Link { code })
     }
 
     /// Answers `signin/redeem`: `code`, once, for a session with this server.
     pub(crate) async fn redeem(&self, code: &str) -> Result<Reply, ApiError> {
         let browsers = self.browsers()?;
-        let session = browsers.redeem(code).await.map_err(|e| failed(&e))?;
+        let session = browsers.redeem(code).await?;
         Ok(Reply::Browser {
             session: session.token,
             server: browsers.server(),
@@ -63,7 +63,7 @@ where
                 "this is not a browser's sign-in, so there is none to end",
             )
         })?;
-        browsers.end(session).await.map_err(|e| failed(&e))?;
+        browsers.end(session).await?;
         Ok(Reply::Done {})
     }
 
@@ -77,10 +77,7 @@ where
                 "only the person on this computer signs its browsers out",
             ));
         }
-        browsers
-            .end_others(session_of(caller))
-            .await
-            .map_err(|e| failed(&e))?;
+        browsers.end_others(session_of(caller)).await?;
         Ok(Reply::Done {})
     }
 
@@ -101,20 +98,4 @@ fn session_of(caller: &Caller) -> Option<&str> {
         .as_ref()
         .filter(|auth| auth.method == AuthMethod::Local)
         .and_then(|auth| auth.session.as_deref())
-}
-
-fn failed(error: &BrowserError) -> ApiError {
-    match error {
-        BrowserError::Code | BrowserError::Ended => {
-            ApiError::new(code::NO_SIGN_IN, error.to_string())
-        }
-        // Where and why go to the server's log; the person is told what to do.
-        BrowserError::Keep { .. } | BrowserError::Random(_) => {
-            tracing::warn!(%error, "could not sign a browser in");
-            ApiError::new(
-                code::INTERNAL,
-                "glave could not keep this browser's sign-in: try again",
-            )
-        }
-    }
 }

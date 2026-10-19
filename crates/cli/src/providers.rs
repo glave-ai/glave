@@ -73,7 +73,7 @@ impl ModelAccounts {
         let built = self
             .lineup()
             .build(&accounts.providers)
-            .map_err(|e| failed(&e))?;
+            .map_err(|e| ApiError::internal(&e))?;
         self.switch.set(built.gateway);
         Ok(built.models)
     }
@@ -84,7 +84,7 @@ impl ModelAccounts {
         let mut account = ProviderConnected {
             provider: random()
                 .and_then(|random| Ok(ProviderId::new(jiff::Timestamp::now(), random)?))
-                .map_err(|e| failed(&e))?,
+                .map_err(|e| ApiError::internal(&e))?,
             kind: new.kind,
             url,
             key,
@@ -283,9 +283,4 @@ fn refused(account: &ProviderConnected, error: &ProviderError) -> ApiError {
         _ => format!("{service} did not answer as glave expected: try again shortly"),
     };
     provider_failed(failure, message)
-}
-
-/// A failure of glave's own, such as the store's.
-fn failed(error: &anyhow::Error) -> ApiError {
-    ApiError::new(code::INTERNAL, format!("{error:#}"))
 }

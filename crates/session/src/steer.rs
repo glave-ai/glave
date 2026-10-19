@@ -84,8 +84,7 @@ where
             ));
         }
         let harness = &self.inner.harness;
-        let id = EventId::new(harness.clock().now(), harness.entropy().bytes()?)
-            .map_err(|error| ApiError::new(code::INTERNAL, error.to_string()))?;
+        let id = EventId::new(harness.clock().now(), harness.entropy().bytes()?)?;
         let queued = Queued {
             id,
             text: prompt.to_owned(),

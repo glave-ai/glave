@@ -17,8 +17,6 @@ use glave_ports::{Clock, Entropy, EntropyError, Erasable, EraseError, Eraser, Ev
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::protocol::{ApiError, code};
-
 /// The renewals remembered, so a client naming a credential since renewed still names it.
 const RENAMED: usize = 64;
 
@@ -47,12 +45,6 @@ impl From<InvalidValue> for AccountsError {
 impl From<EncodeError> for AccountsError {
     fn from(error: EncodeError) -> Self {
         Self::Event(error.to_string())
-    }
-}
-
-impl From<AccountsError> for ApiError {
-    fn from(error: AccountsError) -> Self {
-        Self::new(code::INTERNAL, error.to_string())
     }
 }
 

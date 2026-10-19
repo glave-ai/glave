@@ -18,7 +18,7 @@ use crate::hub::Hub;
 use crate::keyed::Done;
 use crate::modes::Choice;
 use crate::protocol::{ApiError, IdempotencyKey, Notification, TurnResult, Update, code};
-use crate::server::{Ended, Inner, Server, api};
+use crate::server::{Ended, Inner, Server};
 use crate::steer::{Message, Queue, Sent};
 
 /// One thing a running turn sends.
@@ -117,7 +117,7 @@ async fn ending(done: &mut Done) -> Result<TurnResult, ApiError> {
     match finished(done).await {
         Some(ended) => match ended.as_ref() {
             Ok(summary) => Ok(TurnResult::from(summary.clone())),
-            Err(error) => Err(api(error)),
+            Err(error) => Err(ApiError::from(error)),
         },
         None => Err(ApiError::new(code::INTERNAL, "the turn stopped")),
     }

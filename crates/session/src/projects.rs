@@ -45,17 +45,7 @@ impl Places {
     }
 }
 
-pub(crate) fn failed(error: &ProjectError) -> ApiError {
-    match error {
-        ProjectError::NotFound(project) => no_project(*project),
-        ProjectError::Conflict(_) | ProjectError::Invalid(_) => {
-            ApiError::new(code::INVALID_PARAMS, error.to_string())
-        }
-        ProjectError::Storage(_) => ApiError::new(code::INTERNAL, error.to_string()),
-    }
-}
-
-fn no_project(project: ProjectId) -> ApiError {
+pub(crate) fn no_project(project: ProjectId) -> ApiError {
     ApiError::new(code::NO_PROJECT, format!("no project {project} here"))
 }
 
@@ -77,13 +67,7 @@ where
     /// the store has no record of it yet.
     pub async fn home_project(&self) -> Result<Project, ApiError> {
         let home = self.inner.home;
-        if let Some(project) = self
-            .inner
-            .projects
-            .get(home.org(), home.project())
-            .await
-            .map_err(|e| failed(&e))?
-        {
+        if let Some(project) = self.inner.projects.get(home.org(), home.project()).await? {
             return Ok(project);
         }
         let now = At::from(self.inner.harness.clock().now());
@@ -103,10 +87,9 @@ where
                 .inner
                 .projects
                 .get(home.org(), home.project())
-                .await
-                .map_err(|e| failed(&e))?
+                .await?
                 .ok_or_else(|| no_project(home.project())),
-            Err(error) => Err(failed(&error)),
+            Err(error) => Err(error.into()),
         }
     }
 
@@ -118,8 +101,7 @@ where
         self.inner
             .projects
             .get(self.inner.home.org(), project)
-            .await
-            .map_err(|e| failed(&e))?
+            .await?
             .ok_or_else(|| no_project(project))
     }
 
@@ -154,8 +136,7 @@ where
         caller: &Caller,
     ) -> Result<(Project, Scope), ApiError> {
         let now = self.inner.harness.clock().now();
-        let id = ThreadId::new(now, self.inner.harness.entropy().bytes()?)
-            .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
+        let id = ThreadId::new(now, self.inner.harness.entropy().bytes()?)?;
         let new = Project {
             id: ProjectId::from_uuid(id.as_uuid()),
             kind: ProjectKind::Personal,
@@ -169,8 +150,7 @@ where
             .inner
             .projects
             .personal(self.inner.home.org(), &new)
-            .await
-            .map_err(|e| failed(&e))?;
+            .await?;
         let person = self.person_of(caller)?;
         let scope = Scope::of_member(self.inner.home.org(), &kept, person)
             .ok_or_else(|| no_project(kept.id))?;
@@ -201,8 +181,7 @@ where
             .inner
             .projects
             .list(self.inner.home.org(), &person, MOST_PROJECTS)
-            .await
-            .map_err(|e| failed(&e))?;
+            .await?;
         Ok(projects.into_iter().map(|project| project.id).collect())
     }
 
@@ -223,8 +202,7 @@ where
             .harness
             .log()
             .locate(thread)
-            .await
-            .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?
+            .await?
             .filter(|located| located.org == self.inner.home.org())
             .ok_or_else(|| no_thread(thread))?;
         self.places().insert(thread, located.project);
@@ -283,8 +261,7 @@ where
             .inner
             .projects
             .list(self.inner.home.org(), &person, limit)
-            .await
-            .map_err(|e| failed(&e))?;
+            .await?;
         let (projects, gone) = self.listed(projects).await?;
         Ok(Reply::Projects { projects, gone })
     }
@@ -298,10 +275,9 @@ where
         members: Vec<Principal>,
         folder: Option<NewFolder>,
     ) -> Result<Reply, ApiError> {
-        Project::check_name(&name).map_err(|e| failed(&e))?;
+        Project::check_name(&name)?;
         let now = self.inner.harness.clock().now();
-        let id = ThreadId::new(now, self.inner.harness.entropy().bytes()?)
-            .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
+        let id = ThreadId::new(now, self.inner.harness.entropy().bytes()?)?;
         let project = Project {
             id: ProjectId::from_uuid(id.as_uuid()),
             kind: ProjectKind::Project,
@@ -318,8 +294,7 @@ where
             .inner
             .projects
             .create(self.inner.home.org(), &project)
-            .await
-            .map_err(|e| failed(&e))?;
+            .await?;
         Ok(Reply::Project {
             project,
             folder: None,
@@ -356,8 +331,7 @@ where
         self.inner
             .projects
             .update(self.inner.home.org(), &found)
-            .await
-            .map_err(|e| failed(&e))?;
+            .await?;
         let folder = self.folder_of(project).await?;
         Ok(Reply::Project {
             project: found,

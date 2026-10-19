@@ -29,7 +29,7 @@ use crate::keyed::Keyed;
 use crate::ledger::Ledgers;
 use crate::modes::Choice;
 use crate::projects::Places;
-use crate::protocol::{ApiError, ApprovalMode, ErrorData, ModelInfo, Notification, Reply, code};
+use crate::protocol::{ApiError, ApprovalMode, ModelInfo, Notification, Reply, code};
 use crate::providers::Providers;
 use crate::reread::Rereads;
 use crate::tasks::{TaskLimits, Tasks};
@@ -353,11 +353,11 @@ where
                 HarnessError::Workspace(ComputerError::Refused(_)) if copy => {
                     crate::tasks::no_copy()
                 }
-                error => api(&error),
+                error => ApiError::from(&error),
             })?;
         crate::modes::record(&self.inner.harness, &mut thread, caller, choice)
             .await
-            .map_err(|error| api(&error))?;
+            .map_err(|error| ApiError::from(&error))?;
         let id = thread.id;
         self.place(id, scope);
         self.keep(id, thread);
@@ -372,21 +372,14 @@ where
         thread: ThreadId,
         kind: &str,
     ) -> Result<Option<Body>, ApiError> {
-        let failed =
-            |error: &dyn std::fmt::Display| ApiError::new(code::INTERNAL, error.to_string());
         let latest = self
             .inner
             .harness
             .log()
             .latest_of(scope, thread, &[kind])
-            .await
-            .map_err(|error| failed(&error))?;
+            .await?;
         latest
-            .map(|raw| {
-                decode(raw)
-                    .map(|event| event.body)
-                    .map_err(|error| failed(&error))
-            })
+            .map(|raw| decode(raw).map(|event| event.body).map_err(ApiError::from))
             .transpose()
     }
 
@@ -407,8 +400,7 @@ where
             .harness
             .log()
             .read(&scope, thread, after, limit)
-            .await
-            .map_err(|err| ApiError::new(code::INTERNAL, err.to_string()))?;
+            .await?;
         if events.is_empty() && after.is_none() {
             return Err(no_thread(thread));
         }
@@ -454,32 +446,11 @@ where
         let ended = finished(&mut done)
             .await
             .ok_or_else(|| ApiError::new(code::INTERNAL, "the compaction stopped"))?;
-        let compacted = ended.as_ref().as_ref().map_err(api)?;
+        let compacted = ended.as_ref().as_ref().map_err(ApiError::from)?;
         Ok(Reply::Compacted {
             before_tokens: compacted.before_tokens,
             after_tokens: compacted.after_tokens,
         })
-    }
-}
-
-/// A harness failure as the API reports it.
-pub(crate) fn api(error: &HarnessError) -> ApiError {
-    match error {
-        HarnessError::Provider(failed) => ApiError {
-            code: code::PROVIDER,
-            message: error.to_string(),
-            data: Some(ErrorData {
-                failure: failed.failure(),
-            }),
-        },
-        HarnessError::NotFound(thread) => no_thread(*thread),
-        HarnessError::Archived(_) => ApiError::new(code::ARCHIVED, error.to_string()),
-        HarnessError::Cancelled => ApiError::new(code::CANCELLED, "cancelled"),
-        HarnessError::NoGoal(_) => ApiError::new(code::NO_GOAL, error.to_string()),
-        HarnessError::Workspace(_) => ApiError::new(code::WORKSPACE, error.to_string()),
-        HarnessError::PromptBlocked(_) => ApiError::new(code::PROMPT_BLOCKED, error.to_string()),
-        HarnessError::Invalid(_) => ApiError::new(code::INVALID_PARAMS, error.to_string()),
-        _ => ApiError::new(code::INTERNAL, error.to_string()),
     }
 }
 

@@ -88,7 +88,7 @@ impl Hosts {
     /// Keeps `credential`, replacing any for the same host, and offers it to commands.
     async fn keep(&self, credential: CredentialConnected) -> Result<CredentialInfo, ApiError> {
         self.ledger.keep_credential(&credential).await?;
-        self.kept().await.map_err(|e| failed(&e))?;
+        self.kept().await.map_err(|e| ApiError::internal(&e))?;
         Ok(self.described(&credential).await)
     }
 
@@ -102,7 +102,7 @@ impl Hosts {
         grant: Grant,
     ) -> Result<CredentialConnected, ApiError> {
         Ok(CredentialConnected {
-            credential: new_id().map_err(|e| failed(&e))?,
+            credential: new_id().map_err(|e| ApiError::internal(&e))?,
             forge: checked.forge,
             url,
             username,
@@ -183,7 +183,7 @@ impl GitHosts for Hosts {
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<CredentialInfo>, ApiError>> {
         Box::pin(async move {
-            let kept = self.kept().await.map_err(|e| failed(&e))?;
+            let kept = self.kept().await.map_err(|e| ApiError::internal(&e))?;
             let mut described = Vec::with_capacity(kept.len());
             for credential in &kept {
                 described.push(self.described(credential).await);
@@ -201,7 +201,7 @@ impl GitHosts for Hosts {
                 ));
             }
             // Read again, so its token is destroyed now and commands no longer ask for it.
-            self.kept().await.map_err(|e| failed(&e))?;
+            self.kept().await.map_err(|e| ApiError::internal(&e))?;
             Ok(())
         })
     }
@@ -224,7 +224,7 @@ impl GitHosts for Hosts {
                         flow
                     })
                 })
-                .map_err(|e| failed(&e))?;
+                .map_err(|e| ApiError::internal(&e))?;
             github.start(&self.http, &self.flows, flow).await
         })
     }
@@ -281,11 +281,6 @@ fn no_device() -> ApiError {
         code::NOT_AVAILABLE,
         "signing in to GitHub in the browser is not set up here: connect it with a token instead",
     )
-}
-
-/// A failure of glave's own, such as the store's.
-fn failed(error: &anyhow::Error) -> ApiError {
-    ApiError::new(code::INTERNAL, format!("{error:#}"))
 }
 
 #[cfg(test)]

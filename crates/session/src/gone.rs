@@ -112,7 +112,7 @@ where
             }
             // No key was known: the project keeps its folder in its ledger alone.
             Ok(_) | Err(ProjectError::Conflict(_)) => {}
-            Err(error) => return Err(crate::projects::failed(&error)),
+            Err(error) => return Err(error.into()),
         }
         let person = Principal::person(self.person_of(caller)?);
         let folder = self.set_folder(project, source, root, Some(person)).await?;
@@ -151,7 +151,7 @@ where
             let log = self.inner.harness.log();
             change_standing(log, &scope, thread, now, random, Change::Archive)
                 .await
-                .map_err(|error| crate::server::api(&error))?;
+                .map_err(|error| ApiError::from(&error))?;
         }
         let by = Some(Principal::person(self.person_of(caller)?));
         self.write_project_ledger(project, |current| {
@@ -185,7 +185,7 @@ where
             change,
         )
         .await
-        .map_err(|error| crate::server::api(&error))?;
+        .map_err(|error| ApiError::from(&error))?;
         Ok(Reply::Done {})
     }
 
@@ -234,8 +234,7 @@ where
                 .harness
                 .log()
                 .thread_views(&scope, &query)
-                .await
-                .map_err(|error| ApiError::new(code::INTERNAL, error.to_string()))?;
+                .await?;
             let full = views.len() == MAX_PAGE;
             after = views.last().map(glave_ports::ThreadView::cursor);
             threads.extend(
