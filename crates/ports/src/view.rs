@@ -3,9 +3,6 @@
 //! holds no content: a thread's title is read from the event that gives it (`title_seq`),
 //! sealed like every other payload, so erasing the content erases the title too.
 
-use std::fmt;
-use std::str::FromStr;
-
 use glave_event::{
     At, Body, Money, Origin, Outcome, Part, Principal, RawEvent, Role, Seq, ThreadId, TokenCounts,
     decode,
@@ -84,10 +81,6 @@ pub struct ThreadView {
     /// True once a call reported no cost, or one in another currency: the cost is unknown.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unpriced: bool,
-    /// Where its latest event sits in the store's order of writes, which lists follow, most
-    /// recent first. Set by the store, not folded, and kept beside the view rather than in it.
-    #[serde(skip)]
-    pub position: i64,
 }
 
 impl ThreadView {
@@ -132,7 +125,6 @@ impl ThreadView {
             tokens: TokenCounts::default(),
             cost: None,
             unpriced: false,
-            position: 0,
         })
     }
 
@@ -177,9 +169,12 @@ impl ThreadView {
         }
     }
 
-    /// Where this view sits in a listing.
+    /// Where this view sits in a listing: its own sort key, nothing about any other thread.
     pub fn cursor(&self) -> ThreadCursor {
-        ThreadCursor(self.position)
+        ThreadCursor {
+            updated_at: self.updated_at,
+            thread: self.thread,
+        }
     }
 }
 
@@ -216,25 +211,13 @@ pub fn title_from(text: &str) -> Option<String> {
     Some(short)
 }
 
-/// A place in a listing, most recently written first: the views after it were last written
-/// before the view it names. Written as the view's position.
+/// A place in a listing, most recently updated first: the views after it were updated before
+/// the view it names, or at the same instant with a lower id. It is that view's own sort key,
+/// so it says nothing about any other thread, in its scope or out of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ThreadCursor(pub i64);
-
-impl fmt::Display for ThreadCursor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl FromStr for ThreadCursor {
-    type Err = String;
-
-    fn from_str(text: &str) -> Result<Self, Self::Err> {
-        text.parse()
-            .map(Self)
-            .map_err(|_| format!("{text:?} is not a thread list cursor"))
-    }
+pub struct ThreadCursor {
+    pub updated_at: At,
+    pub thread: ThreadId,
 }
 
 /// Which views to list: one standing, most recently written first, after a cursor.

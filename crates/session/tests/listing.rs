@@ -1,30 +1,34 @@
-//! Listing threads through the session API: pages from the threads view, most recently written
+//! Listing threads through the session API: pages from the threads view, most recently updated
 //! first, with titles from the person's first message or a rename, and what each thread's
 //! turns used; and renaming, which changes nothing the model is sent.
 
 use glave_event::{Outcome, ThreadId};
-use glave_ports::Standing;
+use glave_ports::{EventLog, OrgId, ProjectId, Scope, Standing};
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, Status, ThreadSummary, code};
 use serde_json::json;
 
 use crate::support::*;
 
-async fn page(
-    server: &Tested,
+async fn page<L: EventLog + 'static>(
+    server: &Tested<L>,
     limit: usize,
     cursor: Option<String>,
 ) -> (Vec<ThreadSummary>, Option<String>) {
-    let request = Request::ThreadList {
+    let Reply::Threads { threads, next } = server.request(list(limit, cursor)).await.unwrap()
+    else {
+        panic!("threads")
+    };
+    (threads, next)
+}
+
+fn list(limit: usize, cursor: Option<String>) -> Request {
+    Request::ThreadList {
         project: Some(scope().project()),
         limit: Some(limit),
         show: None,
         cursor,
-    };
-    let Reply::Threads { threads, next } = server.request(request).await.unwrap() else {
-        panic!("threads")
-    };
-    (threads, next)
+    }
 }
 
 fn ids(threads: &[ThreadSummary]) -> Vec<ThreadId> {
@@ -71,6 +75,82 @@ fn lists_come_a_page_at_a_time_with_titles_and_usage() {
         };
         let refused = server.request(bad).await.unwrap_err();
         assert_eq!(refused.code, code::INVALID_PARAMS);
+    });
+}
+
+/// Our threads, paged two at a time, on a store another organization shares: each page's
+/// cursor, and every thread listed. With `busy`, the other organization writes between each
+/// of our threads.
+async fn our_pages(name: &str, busy: bool) -> (Vec<String>, Vec<ThreadId>, Vec<ThreadId>) {
+    let dir = folder(name);
+    let database = dir.join("glave.db");
+    let store = sqlite(&database).await;
+    let (ours, _) = Setup::new(Vec::new()).build_on(&dir, store.log()).await;
+    let mut theirs = Setup::new(Vec::new());
+    theirs.seed = 2;
+    theirs.home = Scope::glaves_own(
+        OrgId::from_uuid(uuid::Uuid::from_u128(3)),
+        ProjectId::from_uuid(uuid::Uuid::from_u128(4)),
+    );
+    let elsewhere = theirs.home.project();
+    let (theirs, _) = theirs.build_on(&dir, store.log()).await;
+    let mut started = Vec::new();
+    for _ in 0..5 {
+        started.push(start(&ours, false).await);
+        for _ in 0..u8::from(busy) * 7 {
+            let theirs_too = Request::ThreadStart {
+                project: Some(elsewhere),
+                background: false,
+                worktree: None,
+                computer: None,
+                model: None,
+                approval: None,
+            };
+            theirs.request(theirs_too).await.unwrap();
+        }
+    }
+    let (mut cursors, mut listed, mut cursor) = (Vec::new(), Vec::new(), None);
+    loop {
+        let (threads, next) = page(&ours, 2, cursor).await;
+        listed.extend(ids(&threads));
+        let Some(next) = next else { break };
+        cursors.push(next.clone());
+        cursor = Some(next);
+    }
+    // Their cursor is refused on our list, as one that does not read is.
+    let request = Request::ThreadList {
+        project: Some(elsewhere),
+        limit: Some(1),
+        show: None,
+        cursor: None,
+    };
+    if let Reply::Threads {
+        next: Some(foreign),
+        ..
+    } = theirs.request(request).await.unwrap()
+    {
+        let refused = ours.request(list(2, Some(foreign))).await.unwrap_err();
+        assert_eq!(refused.code, code::INVALID_PARAMS);
+    }
+    ours.shutdown().await;
+    theirs.shutdown().await;
+    (cursors, listed, started)
+}
+
+#[test]
+fn a_cursor_says_nothing_of_anyone_elses_activity_and_pages_list_each_thread_once() {
+    block_on!(async {
+        let (alone, listed, started) = our_pages("cursors-alone", false).await;
+        let (beside, listed_beside, _) = our_pages("cursors-beside", true).await;
+        assert_eq!(
+            alone, beside,
+            "the other organization's writes show in no cursor"
+        );
+        assert_eq!(listed, listed_beside);
+        let mut newest_first = started;
+        newest_first.reverse();
+        assert_eq!(listed, newest_first, "every thread once, most recent first");
+        assert_eq!(alone.len(), 2);
     });
 }
 

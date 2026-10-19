@@ -120,11 +120,27 @@ fn folding_is_idempotent_and_needs_a_start() {
 }
 
 #[test]
-fn cursors_round_trip_as_text() {
-    let mut view = ThreadView::fold(None, &[started()]).unwrap();
-    view.position = 42;
+fn a_cursor_is_the_views_own_sort_key_ties_broken_by_id() {
+    let view = ThreadView::fold(None, &[started()]).unwrap();
     let cursor = view.cursor();
-    assert_eq!(cursor.to_string(), "42");
-    assert_eq!("42".parse::<ThreadCursor>(), Ok(cursor));
-    assert!("nonsense".parse::<ThreadCursor>().is_err());
+    assert_eq!(
+        (cursor.updated_at, cursor.thread),
+        (view.updated_at, view.thread)
+    );
+    let query = |after| ThreadQuery {
+        standing: Standing::Active,
+        limit: 10,
+        after: Some(after),
+    };
+    assert!(
+        !query(cursor).admits(&view),
+        "a page starts after its cursor"
+    );
+    let mut later = cursor;
+    let far = jiff::Timestamp::from_second(4_000_000_000).unwrap();
+    later.thread = ThreadId::new(far, [0xff; 10]).unwrap();
+    assert!(
+        query(later).admits(&view),
+        "at the same instant, a lower id comes after"
+    );
 }

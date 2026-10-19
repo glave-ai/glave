@@ -8,11 +8,11 @@ use crate::store::{StoreError, describe};
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a database one of them made is refused.
-pub(crate) const VERSION: i32 = 7;
+pub(crate) const VERSION: i32 = 8;
 
 /// Every table, made in one transaction in a new database.
 const SCHEMA: &str = "
-    -- The event log. `pos` is the write order across threads, so listings can put the most
+    -- The event log. `pos` is the write order across threads, so searches can put the most
     -- recent first. `data` is the payload sealed under the data key `key_id` names. One event
     -- per position: a second writer fails on the key instead of scrambling a thread.
     CREATE TABLE events (
@@ -103,19 +103,20 @@ const SCHEMA: &str = "
     );
 
     -- The threads view: one row per thread, folded from its events as they are appended
-    -- (`glave_ports::ThreadView`, as JSON), listed by standing, most recently written first.
-    -- Content-free. `position` is the `pos` of the thread's latest event: the order of writes.
+    -- (`glave_ports::ThreadView`, as JSON), listed by standing, most recently updated first.
+    -- Content-free. `updated` is when its latest event was recorded, in milliseconds; a page
+    -- starts after the last row's own `(updated, thread)`, never a position across the store.
     CREATE TABLE threads (
         org       uuid   NOT NULL,
         project   uuid   NOT NULL,
         thread    uuid   NOT NULL,
         standing  text   NOT NULL,
-        position  bigint NOT NULL,
+        updated   bigint NOT NULL,
         view      text   NOT NULL,
         PRIMARY KEY (org, project, thread)
     );
 
-    CREATE INDEX threads_by_position ON threads (org, project, standing, position DESC);
+    CREATE INDEX threads_by_update ON threads (org, project, standing, updated DESC, thread DESC);
 
     -- The organization, the server, the local person and their agent, and which fold built
     -- the threads view.

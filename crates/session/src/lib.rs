@@ -9,6 +9,7 @@ mod browsers;
 pub mod client;
 mod credentials;
 mod cron;
+mod cursor;
 mod dispatch;
 mod folders;
 mod goal;
