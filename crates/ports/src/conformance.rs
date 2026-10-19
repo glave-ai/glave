@@ -4,6 +4,7 @@
 
 mod computers;
 mod memory;
+mod model;
 mod projects;
 mod search;
 mod threads;
@@ -13,6 +14,7 @@ pub use computers::{
     confinement_paths, confinement_targets, confinement_untouched,
 };
 pub use memory::{MemoryPlaces, memory_scopes};
+pub use model::{Script, model_provider};
 pub use projects::projects;
 pub use search::search;
 pub use threads::thread_views;

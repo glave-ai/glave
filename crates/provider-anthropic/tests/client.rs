@@ -52,26 +52,19 @@ mod over_http {
     }
 
     #[test]
-    fn a_key_the_server_repeats_never_shows_in_the_error() {
+    fn a_key_the_server_repeats_never_shows_in_a_listing_s_error() {
         let key = fake_secret("sk-ant-");
         let said = format!(
             r#"{{"type":"error","error":{{"type":"authentication_error","message":"invalid x-api-key: {key}"}}}}"#
         );
-        let server = FakeServer::start(vec![
-            Reply::Status(401, said.clone()),
-            Reply::Status(401, said),
-        ])
-        .unwrap();
+        let server = FakeServer::start(vec![Reply::Status(401, said)]).unwrap();
         let provider = provider(server.url(), Some(&key));
-        let asked = ask(&provider).0.unwrap_err();
-        let listed = block_on!(provider.get("models")).unwrap_err();
-        for error in [asked, listed] {
-            assert!(!format!("{error} {error:?}").contains(&key), "{error:?}");
-            assert!(
-                error.to_string().contains("invalid x-api-key: [redacted]"),
-                "{error}"
-            );
-        }
+        let error = block_on!(provider.get("models")).unwrap_err();
+        assert!(!format!("{error} {error:?}").contains(&key), "{error:?}");
+        assert!(
+            error.to_string().contains("invalid x-api-key: [redacted]"),
+            "{error}"
+        );
     }
 
     #[test]
@@ -214,22 +207,6 @@ mod over_http {
     }
 
     #[test]
-    fn a_server_that_sends_nothing_times_out() {
-        let server = FakeServer::start(vec![Reply::Stall]).unwrap();
-        let quick = Anthropic::new(Config {
-            base_url: server.url().to_owned(),
-            api: Api::Messages,
-            auth: glave_ports::auth::Auth::None,
-            provider: "anthropic".into(),
-            idle_timeout: std::time::Duration::from_millis(200),
-        })
-        .unwrap();
-        let error = block_on!(quick.complete(&request(), &mut |_| {})).unwrap_err();
-        assert_eq!(error, ProviderError::Timeout { seconds: 0 });
-        assert!(error.is_transient(), "a silence is worth one more try");
-    }
-
-    #[test]
     fn a_stream_that_never_stops_is_not_a_finished_answer() {
         let server = FakeServer::start(vec![Reply::Stream(vec![
             json!({"type": "message_start", "message": {"id": "msg_1", "model": "fake-model", "usage": {"input_tokens": 5, "output_tokens": 1}}}),
@@ -262,5 +239,107 @@ mod over_http {
         assert_eq!(received[0].path, "/v1/models?limit=1000");
         assert_eq!(received[0].api_key.as_deref(), Some(key.as_str()));
         assert_eq!(received[0].version.as_deref(), Some("2023-06-01"));
+    }
+}
+
+#[cfg(test)]
+mod conformance {
+    use glave_ports::auth::{Auth, KeyHeader};
+    use glave_ports::block_on;
+    use glave_ports::conformance::{Script, model_provider};
+    use glave_provider_anthropic::fake::{FakeServer, Reply};
+    use glave_provider_anthropic::{Anthropic, Api, Config, IDLE_TIMEOUT};
+    use serde_json::{Value, json};
+
+    fn start(usage: bool) -> Value {
+        let mut message = json!({"id": "msg_fake", "type": "message", "role": "assistant",
+            "model": "fake-model", "content": [], "stop_reason": null});
+        if usage {
+            message["usage"] = json!({"input_tokens": 100, "output_tokens": 1});
+        }
+        json!({"type": "message_start", "message": message})
+    }
+
+    fn begin(index: u32, block: &Value) -> Value {
+        json!({"type": "content_block_start", "index": index, "content_block": block})
+    }
+
+    /// The block at `index` grown by `pieces`, each a delta of `kind` under `field`.
+    fn deltas(index: u32, kind: &str, field: &str, pieces: &[&str]) -> Vec<Value> {
+        let delta = |piece| json!({"type": "content_block_delta", "index": index, "delta": {"type": kind, field: piece}});
+        pieces.iter().map(delta).collect()
+    }
+
+    fn text(index: u32, pieces: &[&str]) -> Vec<Value> {
+        let mut events = vec![begin(index, &json!({"type": "text", "text": ""}))];
+        events.extend(deltas(index, "text_delta", "text", pieces));
+        events
+    }
+
+    fn end(usage: bool) -> Vec<Value> {
+        let mut delta = json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}});
+        if usage {
+            delta["usage"] = json!({"output_tokens": 10});
+        }
+        vec![delta, json!({"type": "message_stop"})]
+    }
+
+    fn mystery() -> Value {
+        json!({"type": "error", "error": {"type": "mystery_error", "message": "something nobody named"}})
+    }
+
+    /// The suite's scripts in the Messages API's event stream.
+    fn reply(script: Script, key: &str) -> Reply {
+        let events = match script {
+            Script::Answer {
+                reasoning,
+                text: said,
+            } => {
+                let thinking = json!({"type": "thinking", "thinking": "", "signature": ""});
+                let mut events = vec![start(true), begin(0, &thinking)];
+                events.extend(deltas(0, "thinking_delta", "thinking", reasoning));
+                events.extend(deltas(0, "signature_delta", "signature", &["c2ln"]));
+                events.extend(text(1, said));
+                events.extend(end(true));
+                events
+            }
+            Script::Unmetered { text: said } => {
+                let mut events = vec![start(false)];
+                events.extend(text(0, said));
+                events.extend(end(false));
+                events
+            }
+            Script::ErrorFirst => vec![start(true), mystery()],
+            Script::ErrorAfter { text: said } => {
+                let mut events = vec![start(true)];
+                events.extend(text(0, &[said]));
+                events.push(mystery());
+                events
+            }
+            Script::Silence => return Reply::Stall,
+            Script::Refusal => {
+                let message = format!("invalid x-api-key: {key}");
+                let body = json!({"type": "error", "error": {"type": "authentication_error", "message": message}});
+                return Reply::Status(401, body.to_string());
+            }
+        };
+        Reply::Stream(events)
+    }
+
+    #[test]
+    fn the_provider_passes_the_model_provider_suite() {
+        let verdict = block_on!(model_provider(|script, key| {
+            let server = FakeServer::start(vec![reply(script, key)]).map_err(|e| e.to_string())?;
+            let provider = Anthropic::new(Config {
+                base_url: server.url().to_owned(),
+                api: Api::Messages,
+                auth: Auth::key(KeyHeader::XApiKey, key),
+                provider: "anthropic".into(),
+                idle_timeout: IDLE_TIMEOUT,
+            })
+            .map_err(|e| e.to_string())?;
+            Ok((provider, server))
+        }));
+        assert_eq!(verdict, Ok(()));
     }
 }
