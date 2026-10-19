@@ -183,7 +183,7 @@ where
         let scope = self.scope_of(thread).await?;
         let host = self.inner.trust.as_ref().ok_or_else(nothing_waits)?;
         let folder = self
-            .folder_here(scope.project)
+            .folder_here(scope.project())
             .await?
             .ok_or_else(nothing_waits)?;
         let folder = Path::new(&folder);

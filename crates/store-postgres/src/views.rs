@@ -77,8 +77,8 @@ async fn stored<C: GenericClient + Sync>(
         .query_opt(
             sql,
             &[
-                &scope.org.as_uuid(),
-                &scope.project.as_uuid(),
+                &scope.org().as_uuid(),
+                &scope.project().as_uuid(),
                 &thread.as_uuid(),
             ],
         )
@@ -102,8 +102,8 @@ async fn write<C: GenericClient + Sync>(
                  standing = excluded.standing, position = excluded.position,
                  view = excluded.view",
             &[
-                &scope.org.as_uuid(),
-                &scope.project.as_uuid(),
+                &scope.org().as_uuid(),
+                &scope.project().as_uuid(),
                 &view.thread.as_uuid(),
                 &view.standing.as_str(),
                 &view.position,
@@ -137,8 +137,8 @@ pub(crate) async fn page(
         .query(
             &statement,
             &[
-                &scope.org.as_uuid(),
-                &scope.project.as_uuid(),
+                &scope.org().as_uuid(),
+                &scope.project().as_uuid(),
                 &query.standing.as_str(),
                 &query.after.map(|after| after.0),
                 &i64::try_from(query.limit).unwrap_or(i64::MAX),
@@ -184,8 +184,8 @@ pub(crate) async fn rebuild(
                 "SELECT MAX(seq), MAX(pos) FROM events
                  WHERE org = $1 AND project = $2 AND thread = $3",
                 &[
-                    &scope.org.as_uuid(),
-                    &scope.project.as_uuid(),
+                    &scope.org().as_uuid(),
+                    &scope.project().as_uuid(),
                     &thread.as_uuid(),
                 ],
             )
@@ -210,8 +210,8 @@ pub(crate) async fn rebuild(
                     .execute(
                         "DELETE FROM threads WHERE org = $1 AND project = $2 AND thread = $3",
                         &[
-                            &scope.org.as_uuid(),
-                            &scope.project.as_uuid(),
+                            &scope.org().as_uuid(),
+                            &scope.project().as_uuid(),
                             &thread.as_uuid(),
                         ],
                     )
@@ -244,10 +244,8 @@ pub(crate) async fn rebuild_all(log: &PostgresLog, pool: &Pool) -> Result<(), St
             let org: Uuid = row.try_get(0).ok()?;
             let project: Uuid = row.try_get(1).ok()?;
             let thread: Uuid = row.try_get(2).ok()?;
-            let scope = Scope {
-                org: OrgId::from_uuid(org),
-                project: ProjectId::from_uuid(project),
-            };
+            // Glave's own: views rebuilt in the scope each thread is stored in.
+            let scope = Scope::glaves_own(OrgId::from_uuid(org), ProjectId::from_uuid(project));
             Some((scope, ThreadId::try_from(thread).ok()?))
         })();
         if let Some((scope, thread)) = found {

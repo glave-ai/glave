@@ -157,7 +157,7 @@ impl<S: KeyStorage> Keys<S> {
             name: self.project_key_at(scope, record, live.version).await?.name,
         };
         let version = record.next_version();
-        let org_key = self.org_key(scope.org).await?;
+        let org_key = self.org_key(scope.org()).await?;
         let mut rewrapped = Vec::with_capacity(record.data.len());
         for entry in &record.data {
             if entry.wrapped.is_none() {

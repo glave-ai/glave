@@ -16,8 +16,8 @@ const PAGE: usize = 1_000;
 pub fn owner_label(scope: Scope, thread: ThreadId) -> String {
     format!(
         "{}/{}/{}",
-        scope.org.as_uuid(),
-        scope.project.as_uuid(),
+        scope.org().as_uuid(),
+        scope.project().as_uuid(),
         thread.as_uuid()
     )
 }
@@ -30,10 +30,8 @@ pub fn owner_of(label: &str) -> Option<(Scope, ThreadId)> {
     else {
         return None;
     };
-    let scope = Scope {
-        org: OrgId::from_uuid(org),
-        project: ProjectId::from_uuid(project),
-    };
+    // Glave's own: a worktree's label names the thread that owns it, for cleanup.
+    let scope = Scope::glaves_own(OrgId::from_uuid(org), ProjectId::from_uuid(project));
     Some((scope, ThreadId::try_from(thread).ok()?))
 }
 

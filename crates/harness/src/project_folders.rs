@@ -149,7 +149,7 @@ where
         thread.defaults = self.defaults();
         let brought = match (&self.project_folders, &thread.project) {
             (Some(host), Some(project)) if self.trusting(thread.for_) => {
-                host.brought(project, thread.scope.project).await
+                host.brought(project, thread.scope.project()).await
             }
             _ => Brought::default(),
         };

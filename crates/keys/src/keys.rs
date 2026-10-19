@@ -219,8 +219,8 @@ pub fn erased_payload(key_id: &str, error: &KeyError) -> Option<Vec<u8>> {
 fn event_aad(scope: &Scope, fields: &EventFields<'_>, key_id: &str) -> Vec<u8> {
     associated(&[
         fields.glave.to_string().as_bytes(),
-        scope.org.to_string().as_bytes(),
-        scope.project.to_string().as_bytes(),
+        scope.org().to_string().as_bytes(),
+        scope.project().to_string().as_bytes(),
         fields.thread.to_string().as_bytes(),
         fields.seq.get().to_string().as_bytes(),
         fields.kind.as_bytes(),
@@ -233,8 +233,8 @@ fn event_aad(scope: &Scope, fields: &EventFields<'_>, key_id: &str) -> Vec<u8> {
 fn blob_aad(scope: &Scope, name: &str, key_id: &str) -> Vec<u8> {
     associated(&[
         b"glave/blob/v1",
-        scope.org.to_string().as_bytes(),
-        scope.project.to_string().as_bytes(),
+        scope.org().to_string().as_bytes(),
+        scope.project().to_string().as_bytes(),
         name.as_bytes(),
         key_id.as_bytes(),
     ])
@@ -242,7 +242,7 @@ fn blob_aad(scope: &Scope, name: &str, key_id: &str) -> Vec<u8> {
 
 /// A data key named for another project never opens content in this one.
 pub(crate) fn check_project(scope: &Scope, id: &KeyId) -> Result<(), KeyError> {
-    if id.project == scope.project {
+    if id.project == scope.project() {
         Ok(())
     } else {
         Err(KeyError::Tampered(id.to_string()))

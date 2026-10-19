@@ -35,10 +35,10 @@ fn uuid_v7(n: u64) -> Uuid {
 }
 
 fn scope(n: u64) -> Scope {
-    Scope {
-        org: OrgId::from_uuid(uuid_v7(9_000)),
-        project: ProjectId::from_uuid(uuid_v7(9_100 + n)),
-    }
+    Scope::glaves_own(
+        OrgId::from_uuid(uuid_v7(9_000)),
+        ProjectId::from_uuid(uuid_v7(9_100 + n)),
+    )
 }
 
 /// An event of thread `thread`, at position `seq`, in `month` (`YYYY-MM`) of 2026.
@@ -232,7 +232,7 @@ async fn sealing<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     let sealed = keys.seal_event(&here, &event).await.map_err(text)?;
     let id: KeyId = sealed.key_id.parse().map_err(text)?;
     ensure(
-        id.project == here.project && id.period.to_string() == "2026-10" && id.n == 1,
+        id.project == here.project() && id.period.to_string() == "2026-10" && id.n == 1,
         "the first key of a project and month is v1/<project>/<month>/1",
     )?;
     ensure(
@@ -278,10 +278,7 @@ async fn sealing<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
             "a payload moved to another row must not open",
         )?;
     }
-    let elsewhere = Scope {
-        org: here.org,
-        project: scope(2).project,
-    };
+    let elsewhere = Scope::glaves_own(here.org(), scope(2).project());
     let crossed = keys
         .open_event(&elsewhere, &fields, &sealed.key_id, &sealed.bytes)
         .await;
@@ -381,10 +378,7 @@ async fn blobs<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         .await
         .map_err(text)?;
     ensure(opened == b"blob", "a sealed blob must open")?;
-    let other = Scope {
-        org: here.org,
-        project: scope(6).project,
-    };
+    let other = Scope::glaves_own(here.org(), scope(6).project());
     keys.seal_blob(&other, &sha, b"blob").await.map_err(text)?;
     ensure(
         keys.blob_name(&other, &sha).await.map_err(text)? != Some(name.clone()),

@@ -69,18 +69,12 @@ pub struct World<L: EventLog + 'static> {
 /// The organization, server project and the person on the computer of organization `n`.
 fn home(n: u128) -> (Scope, PrincipalId, Scope) {
     let org = OrgId::from_uuid(uuid::Uuid::from_u128(n));
-    let scope = Scope {
-        org,
-        project: ProjectId::from_uuid(uuid::Uuid::from_u128(0x10 + n)),
-    };
+    let scope = Scope::glaves_own(org, ProjectId::from_uuid(uuid::Uuid::from_u128(0x10 + n)));
     let local = PrincipalId::try_from(uuid::Uuid::from_u128(
         0x0192_f5c0_0000_7000_8000_0000_0000_0100 + n,
     ))
     .unwrap();
-    let personal = Scope {
-        org,
-        project: ProjectId::from_uuid(uuid::Uuid::from_u128(0x20 + n)),
-    };
+    let personal = Scope::glaves_own(org, ProjectId::from_uuid(uuid::Uuid::from_u128(0x20 + n)));
     (scope, local, personal)
 }
 

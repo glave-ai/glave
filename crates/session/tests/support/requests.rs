@@ -38,7 +38,7 @@ pub async fn start_for_tasks<L: EventLog + 'static>(
     project: Option<ProjectId>,
 ) -> Result<ThreadId, ApiError> {
     let started = Request::ThreadStart {
-        project: project.or(Some(scope().project)),
+        project: project.or(Some(scope().project())),
         background: true,
         worktree: None,
         computer: None,
@@ -69,7 +69,7 @@ pub async fn opened<L: EventLog + 'static>(
 /// Starts a thread, in a worktree of its own when `worktree`.
 pub async fn start<L: EventLog + 'static>(server: &Tested<L>, worktree: bool) -> ThreadId {
     let started = Request::ThreadStart {
-        project: Some(scope().project),
+        project: Some(scope().project()),
         background: false,
         worktree: worktree.then_some(true),
         computer: None,

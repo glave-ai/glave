@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{Body, PrincipalKind, RawEvent, Seq, ThreadId, decode};
-use glave_ports::{Completion, EventLog, LogError, Scope};
+use glave_ports::{Completion, EventLog, Located, LogError, Scope};
 use glave_session::protocol::{Reply, Request, ThreadSummary};
 use serde_json::Value;
 use tokio::sync::Notify;
@@ -294,7 +294,7 @@ impl EventLog for Paused {
     fn locate(
         &self,
         thread: ThreadId,
-    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+    ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
         self.inner.locate(thread)
     }
 

@@ -378,10 +378,10 @@ fn resuming_a_thread_that_does_not_exist_is_an_error() {
     block_on!(async {
         let harness = harness(&dir, vec![], AllowAll).await;
         let thread = harness.start_thread(scope()).await.unwrap();
-        let elsewhere = Scope {
-            org: OrgId::from_uuid(uuid_like(9)),
-            project: ProjectId::from_uuid(uuid_like(9)),
-        };
+        let elsewhere = Scope::glaves_own(
+            OrgId::from_uuid(uuid_like(9)),
+            ProjectId::from_uuid(uuid_like(9)),
+        );
         assert!(harness.resume_thread(elsewhere, thread.id).await.is_err());
     });
 }

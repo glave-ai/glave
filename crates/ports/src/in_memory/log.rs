@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use glave_event::{RawEvent, Seq, ThreadId};
 
 use crate::log::{EventLog, LogError, check_append};
-use crate::scope::Scope;
+use crate::scope::{Located, Scope};
 use crate::search::{Found, indexed, query_terms};
 use crate::view::{ThreadQuery, ThreadView};
 
@@ -226,7 +226,7 @@ impl EventLog for InMemoryLog {
     fn locate(
         &self,
         thread: ThreadId,
-    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+    ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
         let found = self
             .threads
             .lock()
@@ -237,6 +237,10 @@ impl EventLog for InMemoryLog {
                     .filter(|(_, id)| *id == thread)
                     .map(|(scope, _)| *scope)
                     .min()
+                    .map(|scope| Located {
+                        org: scope.org(),
+                        project: scope.project(),
+                    })
             });
         ready(found)
     }

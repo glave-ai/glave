@@ -489,13 +489,13 @@ fn the_folder_glave_runs_in_becomes_its_project_s_folder_from_its_repository() {
     block_on!(async {
         let server = Setup::new(Vec::new()).build(&dir).await.0;
         server
-            .keep_folder(scope().project, &repo.to_string_lossy())
+            .keep_folder(scope().project(), &repo.to_string_lossy())
             .await
             .unwrap();
         let (_, folder) = made(
             server
                 .request(Request::ProjectGet {
-                    project: scope().project,
+                    project: scope().project(),
                 })
                 .await
                 .unwrap(),
@@ -532,10 +532,7 @@ fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
             },
             by: None,
         };
-        let scope = glave_ports::Scope {
-            org: scope().org,
-            project: project.id,
-        };
+        let scope = glave_ports::Scope::glaves_own(scope().org(), project.id);
         let raw = encode(header, &set).unwrap();
         log.append(&scope, &[raw]).await.unwrap();
         let refused = server

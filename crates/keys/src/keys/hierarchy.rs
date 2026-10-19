@@ -86,8 +86,8 @@ impl ProjectKey {
 fn project_aad(scope: &Scope, version: u32) -> Vec<u8> {
     associated(&[
         b"glave/project-key/v1",
-        scope.org.to_string().as_bytes(),
-        scope.project.to_string().as_bytes(),
+        scope.org().to_string().as_bytes(),
+        scope.project().to_string().as_bytes(),
         version.to_string().as_bytes(),
     ])
 }
@@ -95,7 +95,7 @@ fn project_aad(scope: &Scope, version: u32) -> Vec<u8> {
 fn data_aad(scope: &Scope, id: &KeyId, project_version: u32) -> Vec<u8> {
     associated(&[
         b"glave/data-key/v1",
-        scope.org.to_string().as_bytes(),
+        scope.org().to_string().as_bytes(),
         id.to_string().as_bytes(),
         project_version.to_string().as_bytes(),
     ])
@@ -141,7 +141,7 @@ pub(super) fn unwrap_data(
 
 pub(super) fn key_id(scope: &Scope, entry: &DataKey) -> KeyId {
     KeyId {
-        project: scope.project,
+        project: scope.project(),
         period: entry.period(),
         n: entry.n,
     }
@@ -189,14 +189,14 @@ impl<S: KeyStorage> Keys<S> {
         if let Some(Value::Project(key)) = self.cache.get(&Slot::Project(*scope, version)) {
             return Ok(key);
         }
-        let name = format!("v1/{}/project/{version}", scope.project);
+        let name = format!("v1/{}/project/{version}", scope.project());
         let wrapped = record
             .version(version)
             .ok_or_else(|| KeyError::Unknown(name.clone()))?
             .wrapped
             .as_deref()
             .ok_or_else(|| KeyError::Destroyed(name.clone()))?;
-        let org_key = self.org_key(scope.org).await?;
+        let org_key = self.org_key(scope.org()).await?;
         let bytes = Zeroizing::new(open(
             &org_key,
             &project_aad(scope, version),
@@ -274,7 +274,7 @@ impl<S: KeyStorage> Keys<S> {
             } else {
                 let version = record.next_version();
                 let project = ProjectKey::fresh()?;
-                let org_key = self.org_key(scope.org).await?;
+                let org_key = self.org_key(scope.org()).await?;
                 record.versions.push(ProjectVersion {
                     version,
                     wrapped: Some(wrap_project(&org_key, scope, version, &project)?),
@@ -287,7 +287,7 @@ impl<S: KeyStorage> Keys<S> {
                 (id, unwrap_data(&project, scope, &id, entry)?)
             } else {
                 let id = KeyId {
-                    project: scope.project,
+                    project: scope.project(),
                     period,
                     n: record.next_n(period),
                 };

@@ -65,7 +65,7 @@ where
             None => {}
         }
         let scope = self.scope_of(thread).await?;
-        let folder = self.folder_now(scope.project).await?;
+        let folder = self.folder_now(scope.project()).await?;
         let resumed = self
             .inner
             .harness
@@ -154,7 +154,7 @@ where
         // Nothing but changing whether it is shown runs where its project's folder was.
         if purpose != Use::Manage {
             let scope = self.scope_of(thread).await?;
-            self.folder_now(scope.project).await?;
+            self.folder_now(scope.project()).await?;
         }
         self.load(thread).await?;
         let cancel = Cancel::new();

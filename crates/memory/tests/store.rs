@@ -389,11 +389,11 @@ fn a_project_s_setting_follows_its_project_s_settings_while_memory_runs() {
         let memories = kit.memories(rules(), 1);
         let mine = writer(shared());
         let save = || memories.remember(&mine, "A fact", MemoryScope::Project, None, false);
-        memories.set_project(shared().project, ProjectMemory::Off);
+        memories.set_project(shared().project(), ProjectMemory::Off);
         assert!(matches!(save().await, Err(MemoryError::Off(_))));
-        memories.set_project(shared().project, ProjectMemory::Shared);
+        memories.set_project(shared().project(), ProjectMemory::Shared);
         assert!(
-            !memories.rules().projects.contains_key(&shared().project),
+            !memories.rules().projects.contains_key(&shared().project()),
             "the default again"
         );
         saved(save().await.unwrap());

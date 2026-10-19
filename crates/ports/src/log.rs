@@ -5,7 +5,7 @@ use std::future::Future;
 use glave_event::{RawEvent, Seq, ThreadId};
 use thiserror::Error;
 
-use crate::scope::Scope;
+use crate::scope::{Located, Scope};
 use crate::search::Found;
 use crate::view::{ThreadQuery, ThreadView};
 
@@ -62,7 +62,7 @@ pub trait EventLog: Send + Sync {
     fn locate(
         &self,
         thread: ThreadId,
-    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send;
+    ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send;
 
     /// A page of the threads view in `scope` (`specs/events.md`, "Storage"): the views of one
     /// standing, most recently updated first, after `query.after`, at most `query.limit`. Its

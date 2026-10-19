@@ -215,7 +215,7 @@ fn folders_get_their_own_projects_in_one_organization() {
             .await
             .unwrap();
         assert_ne!(a.id, b.id, "each folder is its own project");
-        let scope = glave_ports::Scope { org, project: a.id };
+        let scope = glave_ports::Scope::glaves_own(org, a.id);
         let query = ThreadQuery {
             standing: Standing::Active,
             limit: 10,

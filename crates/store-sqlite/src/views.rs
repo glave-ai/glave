@@ -61,8 +61,8 @@ fn stored(
         )?
         .query_row(
             params![
-                scope.org.to_string(),
-                scope.project.to_string(),
+                scope.org().to_string(),
+                scope.project().to_string(),
                 thread.to_string()
             ],
             |row| Ok((row.get(0)?, row.get(1)?)),
@@ -84,8 +84,8 @@ fn write(connection: &Connection, scope: &Scope, view: &ThreadView) -> rusqlite:
                  view = excluded.view",
         )?
         .execute(params![
-            scope.org.to_string(),
-            scope.project.to_string(),
+            scope.org().to_string(),
+            scope.project().to_string(),
             view.thread.to_string(),
             view.standing.as_str(),
             view.position,
@@ -109,8 +109,8 @@ pub(crate) async fn page(
         )?;
         let rows = statement.query_map(
             params![
-                scope.org.to_string(),
-                scope.project.to_string(),
+                scope.org().to_string(),
+                scope.project().to_string(),
                 query.standing.as_str(),
                 query.after.map(|after| after.0),
                 i64::try_from(query.limit).unwrap_or(i64::MAX),
@@ -161,8 +161,8 @@ pub(crate) async fn rebuild(
                 "SELECT MAX(seq), MAX(rowid) FROM events
                  WHERE org = ?1 AND project = ?2 AND thread = ?3",
                 params![
-                    scope.org.to_string(),
-                    scope.project.to_string(),
+                    scope.org().to_string(),
+                    scope.project().to_string(),
                     thread.to_string()
                 ],
                 |row| Ok((row.get(0)?, row.get(1)?)),
@@ -183,8 +183,8 @@ pub(crate) async fn rebuild(
                     transaction.execute(
                         "DELETE FROM threads WHERE org = ?1 AND project = ?2 AND thread = ?3",
                         params![
-                            scope.org.to_string(),
-                            scope.project.to_string(),
+                            scope.org().to_string(),
+                            scope.project().to_string(),
                             thread.to_string()
                         ],
                     )?;
@@ -223,10 +223,11 @@ pub(crate) async fn rebuild_all(log: &SqliteLog, connection: &Shared) -> Result<
     .await?;
     for (org, project, thread) in threads {
         let parsed = (|| {
-            let scope = Scope {
-                org: OrgId::from_uuid(Uuid::parse_str(&org).ok()?),
-                project: ProjectId::from_uuid(Uuid::parse_str(&project).ok()?),
-            };
+            // Glave's own: views rebuilt in the scope each thread is stored in.
+            let scope = Scope::glaves_own(
+                OrgId::from_uuid(Uuid::parse_str(&org).ok()?),
+                ProjectId::from_uuid(Uuid::parse_str(&project).ok()?),
+            );
             let thread = ThreadId::try_from(Uuid::parse_str(&thread).ok()?).ok()?;
             Some((scope, thread))
         })();

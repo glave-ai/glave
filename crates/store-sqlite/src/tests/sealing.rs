@@ -9,10 +9,10 @@ use rusqlite::{Connection, params};
 use super::*;
 
 fn scope(n: u128) -> Scope {
-    Scope {
-        org: OrgId::from_uuid(Uuid::from_u128(1)),
-        project: ProjectId::from_uuid(Uuid::from_u128(100 + n)),
-    }
+    Scope::glaves_own(
+        OrgId::from_uuid(Uuid::from_u128(1)),
+        ProjectId::from_uuid(Uuid::from_u128(100 + n)),
+    )
 }
 
 /// A store on a fresh file, and a second, raw connection to the same file.
@@ -46,7 +46,7 @@ fn stored(raw: &Connection, scope: &Scope, event: &RawEvent) -> (Vec<u8>, Option
     raw.query_row(
         "SELECT data, key_id FROM events WHERE project = ?1 AND thread = ?2 AND seq = ?3",
         params![
-            scope.project.to_string(),
+            scope.project().to_string(),
             event.thread.to_string(),
             i64::try_from(event.seq.get()).unwrap()
         ],
@@ -61,7 +61,7 @@ fn overwrite(raw: &Connection, scope: &Scope, event: &RawEvent, row: &(Vec<u8>, 
         params![
             row.0,
             row.1,
-            scope.project.to_string(),
+            scope.project().to_string(),
             event.thread.to_string(),
             i64::try_from(event.seq.get()).unwrap()
         ],
@@ -88,7 +88,7 @@ fn payloads_are_sealed_in_the_file_and_read_back_as_written() {
     let key_id: KeyId = key_id.expect("a new row is sealed").parse().unwrap();
     assert_eq!(
         (key_id.project, key_id.period.to_string()),
-        (here.project, "2026-10".into())
+        (here.project(), "2026-10".into())
     );
     assert!(!String::from_utf8_lossy(&data).contains("completed"));
     drop(store);

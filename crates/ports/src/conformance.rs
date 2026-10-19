@@ -20,7 +20,7 @@ use uuid::{Builder, Uuid};
 
 use crate::blob::{BlobStore, digest};
 use crate::log::{EventLog, LogError};
-use crate::scope::{OrgId, ProjectId, Scope};
+use crate::scope::{Located, OrgId, ProjectId, Scope};
 use crate::tools::NeverCancelled;
 
 type Verdict = Result<(), String>;
@@ -42,10 +42,10 @@ fn uuid_v7(n: u64) -> Uuid {
 }
 
 fn scope(n: u64) -> Scope {
-    Scope {
-        org: OrgId::from_uuid(uuid_v7(1_000 + n)),
-        project: ProjectId::from_uuid(uuid_v7(2_000 + n)),
-    }
+    Scope::glaves_own(
+        OrgId::from_uuid(uuid_v7(1_000 + n)),
+        ProjectId::from_uuid(uuid_v7(2_000 + n)),
+    )
 }
 
 fn thread(n: u64) -> Result<ThreadId, String> {
@@ -185,7 +185,11 @@ async fn latest_of_types<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verd
 async fn locating<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verdict {
     let located = log.locate(t).await.map_err(|e| e.to_string())?;
     ensure(
-        located == Some(here),
+        located
+            == Some(Located {
+                org: here.org(),
+                project: here.project(),
+            }),
         "locate must name the scope a thread is stored in",
     )?;
     let nowhere = log.locate(thread(9)?).await.map_err(|e| e.to_string())?;

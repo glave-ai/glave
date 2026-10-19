@@ -48,10 +48,10 @@ fn place(name: &str) -> (PathBuf, PathBuf) {
 }
 
 fn scope() -> Scope {
-    Scope {
-        org: OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        project: ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
-    }
+    Scope::glaves_own(
+        OrgId::from_uuid(uuid::Uuid::from_u128(1)),
+        ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
+    )
 }
 
 fn day(n: i64) -> Timestamp {

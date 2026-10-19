@@ -12,10 +12,10 @@ use uuid::Uuid;
 use crate::support::{Scratch, block_on};
 
 fn scope(n: u128) -> Scope {
-    Scope {
-        org: OrgId::from_uuid(Uuid::from_u128(1)),
-        project: ProjectId::from_uuid(Uuid::from_u128(100 + n)),
-    }
+    Scope::glaves_own(
+        OrgId::from_uuid(Uuid::from_u128(1)),
+        ProjectId::from_uuid(Uuid::from_u128(100 + n)),
+    )
 }
 
 fn lines(events: &[RawEvent]) -> Vec<String> {
@@ -43,7 +43,7 @@ async fn stored(scratch: &Scratch, scope: &Scope, event: &RawEvent) -> (Vec<u8>,
                     scratch.schema
                 ),
                 &[
-                    &scope.project.as_uuid(),
+                    &scope.project().as_uuid(),
                     &event.thread.as_uuid(),
                     &i64::try_from(event.seq.get()).unwrap(),
                 ],
@@ -70,7 +70,7 @@ async fn overwrite(
             &[
                 &row.0,
                 &row.1,
-                &scope.project.as_uuid(),
+                &scope.project().as_uuid(),
                 &event.thread.as_uuid(),
                 &i64::try_from(event.seq.get()).unwrap(),
             ],

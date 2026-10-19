@@ -9,7 +9,7 @@ use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName
 use glave_keys::{EventFields, erased_payload};
 use glave_ports::search::{Found, indexed, query_terms};
 use glave_ports::{
-    EventLog, LogError, OrgId, ProjectId, Scope, ThreadQuery, ThreadView, check_append,
+    EventLog, Located, LogError, OrgId, ProjectId, Scope, ThreadQuery, ThreadView, check_append,
 };
 use jiff::Timestamp;
 use serde_json::value::RawValue;
@@ -72,8 +72,8 @@ impl EventLog for PostgresLog {
                     return Ok(());
                 };
                 let (org, project, thread) = (
-                    scope.org.as_uuid(),
-                    scope.project.as_uuid(),
+                    scope.org().as_uuid(),
+                    scope.project().as_uuid(),
                     first.thread.as_uuid(),
                 );
                 let columns = Columns::of(&keys, &scope, &events).await?;
@@ -171,8 +171,8 @@ impl EventLog for PostgresLog {
                 .query(
                     &statement,
                     &[
-                        &scope.org.as_uuid(),
-                        &scope.project.as_uuid(),
+                        &scope.org().as_uuid(),
+                        &scope.project().as_uuid(),
                         &query,
                         &limit,
                     ],
@@ -245,8 +245,8 @@ impl EventLog for PostgresLog {
                 .query(
                     &statement,
                     &[
-                        &scope.org.as_uuid(),
-                        &scope.project.as_uuid(),
+                        &scope.org().as_uuid(),
+                        &scope.project().as_uuid(),
                         &thread.as_uuid(),
                         &after,
                         &limit,
@@ -265,7 +265,7 @@ impl EventLog for PostgresLog {
     fn locate(
         &self,
         thread: ThreadId,
-    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+    ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
         let pool = self.pool.clone();
         async move {
             let client = connection(&pool).await.map_err(storage)?;
@@ -283,7 +283,7 @@ impl EventLog for PostgresLog {
             row.map(|row| {
                 let org: Uuid = row.try_get(0).map_err(LogError::corrupt)?;
                 let project: Uuid = row.try_get(1).map_err(LogError::corrupt)?;
-                Ok(Scope {
+                Ok(Located {
                     org: OrgId::from_uuid(org),
                     project: ProjectId::from_uuid(project),
                 })

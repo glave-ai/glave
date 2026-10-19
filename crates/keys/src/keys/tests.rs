@@ -28,10 +28,10 @@ fn the_suite_passes_with_no_cache_so_every_key_is_unwrapped_from_storage() {
 #[test]
 fn blobs_are_sealed_under_the_clocks_month() {
     let keys = keys(16);
-    let scope = Scope {
-        org: glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        project: glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
-    };
+    let scope = Scope::glaves_own(
+        glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
+        glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
+    );
     let sha = glave_ports::digest(b"x");
     let (_, sealed) = block_on!(keys.seal_blob(&scope, &sha, b"x")).unwrap();
     let id: KeyId = sealed.key_id.parse().unwrap();
@@ -41,10 +41,10 @@ fn blobs_are_sealed_under_the_clocks_month() {
 #[test]
 fn another_root_cannot_open_what_this_one_sealed() {
     let storage = InMemoryKeyStorage::new();
-    let scope = Scope {
-        org: glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        project: glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
-    };
+    let scope = Scope::glaves_own(
+        glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
+        glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
+    );
     let event = conformance::event(1, 1, "2026-10").unwrap();
     let first = Keys::new(
         KeySettings::new(Arc::new(InMemoryRoot::new().unwrap())),
@@ -67,9 +67,11 @@ fn another_root_cannot_open_what_this_one_sealed() {
 #[test]
 fn search_terms_are_keyed_per_project_and_stable() {
     let keys = keys(16);
-    let scope = |project| Scope {
-        org: glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        project: glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(project)),
+    let scope = |project| {
+        Scope::glaves_own(
+            glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
+            glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(project)),
+        )
     };
     let words = vec!["deploy".to_owned(), "render".to_owned()];
     assert_eq!(

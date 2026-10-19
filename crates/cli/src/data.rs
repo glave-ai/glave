@@ -10,7 +10,8 @@ use glave_event::{BlobRef, PrincipalId, RawEvent, Seq, Sha256, ThreadId};
 use glave_memory::Shredder;
 use glave_ports::search::Found;
 use glave_ports::{
-    BlobError, BlobStore, EventLog, LogError, OrgId, Projects, Scope, ThreadQuery, ThreadView,
+    BlobError, BlobStore, EventLog, Located, LogError, OrgId, Projects, Scope, ThreadQuery,
+    ThreadView,
 };
 use glave_store_postgres as postgres;
 use glave_store_sqlite as sqlite;
@@ -192,7 +193,7 @@ impl EventLog for DataLog {
         }
     }
 
-    async fn locate(&self, thread: ThreadId) -> Result<Option<Scope>, LogError> {
+    async fn locate(&self, thread: ThreadId) -> Result<Option<Located>, LogError> {
         match self {
             Self::Sqlite(log) => log.locate(thread).await,
             Self::Postgres(log) => log.locate(thread).await,

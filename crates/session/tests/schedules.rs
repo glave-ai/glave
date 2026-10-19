@@ -44,7 +44,7 @@ async fn create<L: EventLog + 'static>(
     when: When,
     budget: u64,
 ) -> Result<ScheduleInfo, i64> {
-    create_in(server, Some(scope().project), when, budget).await
+    create_in(server, Some(scope().project()), when, budget).await
 }
 
 async fn create_in<L: EventLog + 'static>(
@@ -266,7 +266,7 @@ fn the_task_ledger_is_never_listed_or_read_as_a_thread() {
         create(&server, cron("0 9 * * *"), 10).await.unwrap();
         let Reply::Threads { threads, .. } = server
             .request(Request::ThreadList {
-                project: Some(scope().project),
+                project: Some(scope().project()),
                 limit: None,
                 show: None,
                 cursor: None,

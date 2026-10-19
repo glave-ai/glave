@@ -4,7 +4,7 @@
 //! change its memory, and only the person their own.
 
 use glave_ports::memories::{Access, Control, MemoryError};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId};
 
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
@@ -28,13 +28,11 @@ where
             .harness
             .memory()
             .ok_or_else(|| ApiError::new(code::MEMORY_OFF, "memory is off for this server"))?;
-        let home = self.inner.home;
+        let project = project.unwrap_or(self.inner.home.project());
+        let (_, scope) = self.authorized(caller, project).await?;
         let access = Access {
             person: caller.person,
-            scope: Scope {
-                org: home.org,
-                project: project.unwrap_or(home.project),
-            },
+            scope,
         };
         match memory.control(&access, control).await {
             Ok(memories) => Ok(Reply::Memories { memories }),

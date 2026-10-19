@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use glave_event::{At, Fired, ScheduleCreated, ScheduleDeleted, ScheduleId, ThreadId, When};
 use glave_harness::Goal;
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
 use jiff::Timestamp;
 
 use crate::cron::Cron;
@@ -62,7 +62,7 @@ where
                 "a schedule needs a prompt",
             ));
         }
-        let project = self.project_for(caller, new.project).await?.id;
+        let project = self.project_for(caller, new.project).await?.0.id;
         if let Some(max) = self.inner.limits.max_schedules {
             let projects = self.read_ledgers_of(caller).await?;
             let now = self.inner.harness.clock().now();
@@ -263,7 +263,14 @@ where
     ) -> Result<ThreadId, ApiError> {
         let caller = Caller::default();
         let thread = self
-            .new_thread(&caller, project, None, true, &Choice::default())
+            .new_thread(
+                &caller,
+                // Glave's own: a schedule's run, in its project.
+                Scope::glaves_own(self.inner.home.org(), project),
+                None,
+                true,
+                &Choice::default(),
+            )
             .await?;
         let work = if schedule.goal {
             Work::Goal(Some(Goal {
