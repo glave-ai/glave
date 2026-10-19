@@ -3,7 +3,6 @@
 //! person can read. It is accepted only from a loopback address, and it is the local person.
 
 use std::fmt;
-use std::net::IpAddr;
 
 use sha2::{Digest as _, Sha256};
 
@@ -66,16 +65,6 @@ pub(super) fn same(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |differ, (x, y)| differ | (x ^ y)) == 0
 }
 
-/// Whether `peer` is this computer: `127.0.0.0/8`, `::1`, or `127.0.0.0/8` mapped into IPv6.
-pub fn is_loopback(peer: IpAddr) -> bool {
-    match peer {
-        IpAddr::V4(v4) => v4.is_loopback(),
-        IpAddr::V6(v6) => v6
-            .to_ipv4_mapped()
-            .map_or_else(|| v6.is_loopback(), |v4| v4.is_loopback()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,21 +82,5 @@ mod tests {
     fn digests_are_compared_whole() {
         assert!(same(&digest("a"), &digest("a")));
         assert!(!same(&digest("a"), &digest("b")));
-    }
-
-    #[test]
-    fn loopback_is_this_computer_only() {
-        for here in ["127.0.0.1", "127.1.2.3", "::1", "::ffff:127.0.0.1"] {
-            assert!(is_loopback(here.parse().unwrap()), "{here}");
-        }
-        for there in [
-            "10.0.0.1",
-            "192.168.1.2",
-            "::ffff:10.0.0.1",
-            "2001:db8::1",
-            "0.0.0.0",
-        ] {
-            assert!(!is_loopback(there.parse().unwrap()), "{there}");
-        }
     }
 }

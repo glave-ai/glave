@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use glave_ports::auth::{Auth, Outgoing, redact_credentials};
+use glave_ports::host::is_this_computer;
 use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError};
 use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 
@@ -46,10 +47,8 @@ impl Config {
         let provider = match host.as_str() {
             "openrouter.ai" => "openrouter".to_owned(),
             "api.openai.com" => "openai".to_owned(),
-            "localhost" | "127.0.0.1" | "[::1]" if base_url.contains(":11434") => {
-                "ollama".to_owned()
-            }
-            "localhost" | "127.0.0.1" | "[::1]" => "local".to_owned(),
+            here if is_this_computer(here) && base_url.contains(":11434") => "ollama".to_owned(),
+            here if is_this_computer(here) => "local".to_owned(),
             _ => host,
         };
         Some(Self {
@@ -67,8 +66,7 @@ impl Config {
 
     /// Whether the model runs on this computer, where a missing cost means $0.
     pub fn is_local(&self) -> bool {
-        host_of(&self.base_url)
-            .is_some_and(|host| matches!(host.as_str(), "localhost" | "127.0.0.1" | "[::1]"))
+        host_of(&self.base_url).is_some_and(|host| is_this_computer(&host))
     }
 }
 

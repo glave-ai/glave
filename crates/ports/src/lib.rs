@@ -17,6 +17,7 @@ pub mod conformance;
 mod env;
 mod failure;
 pub mod file;
+pub mod host;
 mod in_memory;
 mod log;
 pub mod memories;

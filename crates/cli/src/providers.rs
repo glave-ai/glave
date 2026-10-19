@@ -10,6 +10,7 @@ mod lineup;
 use std::sync::{Mutex, PoisonError};
 
 use glave_event::{Principal, ProviderConnected, ProviderId, ProviderKind, Secret};
+use glave_ports::auth::safe_to_send;
 use glave_ports::{BoxFuture, Failure, ProviderError};
 use glave_provider_openai::Config;
 use glave_session::protocol::{ApiError, ErrorData, ProviderInfo, code, hint};
@@ -217,10 +218,10 @@ fn checked_url(kind: ProviderKind, url: Option<String>) -> Result<Option<String>
             "give the server's address, such as http://localhost:11434/v1",
         )),
         (ProviderKind::Compatible, Some(url)) => {
-            let config = Config::for_url(url.clone(), None)
+            Config::for_url(url.clone(), None)
                 .filter(|_| !url.contains(['@', '?', '#', ' ']))
                 .ok_or_else(|| invalid(NOT_AN_ADDRESS))?;
-            if url.starts_with("http://") && !config.is_local() {
+            if !safe_to_send(&url, &[]) {
                 return Err(invalid(
                     "use an https address, or http only for a server on this computer",
                 ));

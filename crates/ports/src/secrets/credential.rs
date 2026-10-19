@@ -2,38 +2,70 @@
 //! secrets reuses, such as memory (`specs/memory.md`, "Never secrets"). It reads only the text
 //! it is given and errs toward refusing: a false alarm costs a rephrasing, a miss keeps a key.
 
-/// Prefixes that providers put on their keys and tokens, and how many characters at least
-/// follow each in a real one.
-const PREFIXES: &[(&str, usize)] = &[
-    ("sk-ant-", 20),
-    ("sk-proj-", 20),
-    ("sk-or-", 20),
-    ("sk-", 20),
-    ("sk_live_", 16),
-    ("sk_test_", 16),
-    ("rk_live_", 16),
-    ("pk_live_", 16),
-    ("ghp_", 30),
-    ("gho_", 30),
-    ("ghu_", 30),
-    ("ghs_", 30),
-    ("ghr_", 30),
-    ("github_pat_", 30),
-    ("glpat-", 16),
-    ("xoxb-", 16),
-    ("xoxp-", 16),
-    ("xoxa-", 16),
-    ("xapp-", 16),
-    ("AKIA", 16),
-    ("ASIA", 16),
-    ("AIza", 30),
-    ("hf_", 30),
-    ("npm_", 30),
-    ("pypi-", 30),
-    ("SG.", 30),
-    ("dop_v1_", 30),
-    ("shpat_", 20),
-    ("sq0atp-", 20),
+/// A prefix a provider puts on its keys or tokens, and how much follows it in a real one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TokenPrefix {
+    pub prefix: &'static str,
+    /// Characters at least after it in a real one, as a word of text holds it (`.` too): what
+    /// [`looks_like_credential`] refuses.
+    pub least: usize,
+    /// Token characters (letters, digits, `_`, `-`) at least after it that make a secret's
+    /// shape in a source file: any at all where the prefix alone marks one, as for the
+    /// families tests fake, gitleaks' lengths for the rest.
+    pub in_source: usize,
+}
+
+impl TokenPrefix {
+    const fn new(prefix: &'static str, least: usize, in_source: usize) -> Self {
+        Self {
+            prefix,
+            least,
+            in_source,
+        }
+    }
+}
+
+/// The prefixes providers put on their keys and tokens: the one list both glave's own check
+/// and the repository's secret scan (`cargo xtask secrets`) read.
+pub const TOKEN_PREFIXES: &[TokenPrefix] = &[
+    // OpenAI, Anthropic and OpenRouter.
+    TokenPrefix::new("sk-ant-", 20, 1),
+    TokenPrefix::new("sk-proj-", 20, 1),
+    TokenPrefix::new("sk-or-", 20, 1),
+    TokenPrefix::new("sk-", 20, 1),
+    // Stripe.
+    TokenPrefix::new("sk_live_", 16, 1),
+    TokenPrefix::new("sk_test_", 16, 1),
+    TokenPrefix::new("rk_live_", 16, 1),
+    TokenPrefix::new("rk_test_", 16, 1),
+    TokenPrefix::new("pk_live_", 16, 1),
+    // GitHub and GitLab.
+    TokenPrefix::new("ghp_", 30, 1),
+    TokenPrefix::new("gho_", 30, 1),
+    TokenPrefix::new("ghu_", 30, 1),
+    TokenPrefix::new("ghs_", 30, 1),
+    TokenPrefix::new("ghr_", 30, 1),
+    TokenPrefix::new("github_pat_", 30, 1),
+    TokenPrefix::new("glpat-", 16, 1),
+    // Slack.
+    TokenPrefix::new("xoxa-", 16, 1),
+    TokenPrefix::new("xoxb-", 16, 1),
+    TokenPrefix::new("xoxp-", 16, 1),
+    TokenPrefix::new("xoxr-", 16, 1),
+    TokenPrefix::new("xoxs-", 16, 1),
+    TokenPrefix::new("xapp-", 16, 1),
+    // AWS key ids, then Google API keys, Hugging Face, npm, PyPI, SendGrid, DigitalOcean,
+    // Shopify and Square.
+    TokenPrefix::new("AKIA", 16, 16),
+    TokenPrefix::new("ASIA", 16, 16),
+    TokenPrefix::new("AIza", 30, 35),
+    TokenPrefix::new("hf_", 30, 34),
+    TokenPrefix::new("npm_", 30, 36),
+    TokenPrefix::new("pypi-", 30, 50),
+    TokenPrefix::new("SG.", 30, 22),
+    TokenPrefix::new("dop_v1_", 30, 64),
+    TokenPrefix::new("shpat_", 20, 32),
+    TokenPrefix::new("sq0atp-", 20, 22),
 ];
 
 /// Labels after which a value is a password or key.
@@ -88,9 +120,9 @@ fn words(text: &str) -> impl Iterator<Item = &str> {
 }
 
 fn has_known_prefix(word: &str) -> bool {
-    PREFIXES.iter().any(|(prefix, rest)| {
-        word.strip_prefix(prefix).is_some_and(|tail| {
-            tail.len() >= *rest
+    TOKEN_PREFIXES.iter().any(|known| {
+        word.strip_prefix(known.prefix).is_some_and(|tail| {
+            tail.len() >= known.least
                 && tail
                     .chars()
                     .all(|c| c.is_ascii_alphanumeric() || "_-".contains(c))
