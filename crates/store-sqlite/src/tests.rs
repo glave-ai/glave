@@ -95,6 +95,37 @@ fn ada() -> glave_event::Principal {
     )
 }
 
+fn principal(n: u8) -> glave_event::PrincipalId {
+    glave_event::PrincipalId::try_from(
+        uuid::Builder::from_unix_timestamp_millis(1, &[n; 10]).into_uuid(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn the_identity_is_kept_the_first_time_and_survives_reopening() {
+    let path = temp_db("identity");
+    block_on!(async {
+        let store = Store::open(&path, file_keys(&path)).await.unwrap();
+        let first = (principal(1), principal(2));
+        assert_eq!(store.identity(first).await.unwrap(), first);
+        assert_eq!(
+            store.identity((principal(3), principal(4))).await.unwrap(),
+            first,
+            "a second identity never replaces the first"
+        );
+        drop(store);
+        let reopened = Store::open(&path, file_keys(&path)).await.unwrap();
+        assert_eq!(
+            reopened
+                .identity((principal(5), principal(6)))
+                .await
+                .unwrap(),
+            first
+        );
+    });
+}
+
 #[test]
 fn events_and_spaces_survive_closing_and_reopening() {
     let path = temp_db("reopen");

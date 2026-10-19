@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use deadpool_postgres::{Manager, ManagerConfig, Object, Pool, RecyclingMethod};
+use glave_event::PrincipalId;
 use glave_keys::{KeySettings, Keys};
 use glave_ports::OrgId;
 use thiserror::Error;
@@ -122,6 +123,52 @@ impl Store {
             .map(OrgId::from_uuid)
             .map_err(|e| StoreError::Storage(format!("bad organization id {org:?}: {e}")))
     }
+
+    /// The local person and their agent, `(person, agent)`, kept as `new` the first time, both
+    /// in one statement, so no crash keeps one without the other, and every server on this
+    /// database sees the same two.
+    pub async fn identity(
+        &self,
+        new: (PrincipalId, PrincipalId),
+    ) -> Result<(PrincipalId, PrincipalId), StoreError> {
+        let client = connection(&self.pool).await?;
+        let failed = |e: tokio_postgres::Error| StoreError::Storage(describe(&e));
+        client
+            .execute(
+                "INSERT INTO glave_settings (key, value) VALUES ('person', $1), ('agent', $2)
+                 ON CONFLICT DO NOTHING",
+                &[&new.0.to_string(), &new.1.to_string()],
+            )
+            .await
+            .map_err(failed)?;
+        let rows = client
+            .query(
+                "SELECT value FROM glave_settings WHERE key IN ('person', 'agent')
+                 ORDER BY key DESC",
+                &[],
+            )
+            .await
+            .map_err(failed)?;
+        let kept = rows
+            .iter()
+            .map(|row| row.try_get::<_, String>(0))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(failed)?;
+        match kept.as_slice() {
+            [person, agent] => Ok((principal(person)?, principal(agent)?)),
+            _ => Err(StoreError::Storage(
+                "the local person and their agent are not both kept".into(),
+            )),
+        }
+    }
+}
+
+/// The principal id kept as `text`.
+fn principal(text: &str) -> Result<PrincipalId, StoreError> {
+    Uuid::parse_str(text)
+        .ok()
+        .and_then(|uuid| PrincipalId::try_from(uuid).ok())
+        .ok_or_else(|| StoreError::Storage(format!("bad principal id {text:?}")))
 }
 
 /// Borrows a connection from the pool.

@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use glave_event::Principal;
+use glave_event::{Principal, PrincipalId};
 use glave_keys::{KeySettings, Keys};
 use glave_ports::OrgId;
 use rusqlite::{Connection, params};
@@ -129,11 +129,45 @@ impl Store {
             .map_err(|e| StoreError::Storage(format!("bad organization id {org:?}: {e}")))
     }
 
+    /// The local person and their agent, `(person, agent)`, kept as `new` the first time, both
+    /// in one statement, so no crash keeps one without the other.
+    pub async fn identity(
+        &self,
+        new: (PrincipalId, PrincipalId),
+    ) -> Result<(PrincipalId, PrincipalId), StoreError> {
+        let kept: Vec<(String, String)> = run(&self.connection, move |connection| {
+            connection.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES ('person', ?1), ('agent', ?2)",
+                params![new.0.to_string(), new.1.to_string()],
+            )?;
+            let mut select = connection.prepare(
+                "SELECT key, value FROM settings WHERE key IN ('person', 'agent') ORDER BY key DESC",
+            )?;
+            let rows = select.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            rows.collect()
+        })
+        .await?;
+        match kept.as_slice() {
+            [(_, person), (_, agent)] => Ok((principal(person)?, principal(agent)?)),
+            _ => Err(StoreError::Storage(
+                "the local person and their agent are not both kept".into(),
+            )),
+        }
+    }
+
     /// Gives every space made before spaces were records to `owner`, the local person: on a
     /// person's own computer, every such space was theirs. How many it gave.
     pub async fn claim_spaces(&self, owner: &Principal) -> Result<usize, StoreError> {
         crate::spaces::claim(&self.connection, owner).await
     }
+}
+
+/// The principal id kept as `text`.
+fn principal(text: &str) -> Result<PrincipalId, StoreError> {
+    Uuid::parse_str(text)
+        .ok()
+        .and_then(|uuid| PrincipalId::try_from(uuid).ok())
+        .ok_or_else(|| StoreError::Storage(format!("bad principal id {text:?}")))
 }
 
 /// Runs database work on the blocking pool, so the async runtime never waits on disk.

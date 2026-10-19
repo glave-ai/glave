@@ -149,7 +149,7 @@ A principal is anyone or anything that can act, written as a reference:
 
 | `kind` | Is | `id` |
 | --- | --- | --- |
-| `person` | a human | their person ID: created on first run for a local person; from sign-in for an organization |
+| `person` | a human | their person ID: created on first run for a local person and kept in the data store; from sign-in for an organization |
 | `agent` | an agent profile acting: the default agent, a subagent type, a named assistant | the profile's ID |
 | `group` | a team acting as one | the group's ID |
 | `glave` | glave itself, deciding on its own (a timeout, a cancellation, a rule) | none |

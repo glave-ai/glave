@@ -227,6 +227,59 @@ mod postgres {
     }
 
     #[test]
+    fn servers_on_one_database_racing_to_make_the_identity_all_get_the_first() {
+        block_on!(async {
+            let Some(scratch) = Scratch::new("identity").await else {
+                return;
+            };
+            let principal = |n: u8| {
+                glave_event::PrincipalId::try_from(
+                    uuid::Builder::from_unix_timestamp_millis(1, &[n; 10]).into_uuid(),
+                )
+                .unwrap()
+            };
+            let mut servers = Vec::new();
+            for _ in 0..4 {
+                servers.push(scratch.store().await.unwrap());
+            }
+            let racing: Vec<_> = servers
+                .iter()
+                .zip(0u8..)
+                .map(|(store, n)| {
+                    let store = store.clone();
+                    let new = (principal(2 * n + 1), principal(2 * n + 2));
+                    tokio::spawn(async move { store.identity(new).await })
+                })
+                .collect();
+            let mut seen = Vec::new();
+            for server in racing {
+                seen.push(server.await.unwrap().unwrap());
+            }
+            let rows = scratch
+                .admin
+                .query(
+                    &format!(
+                        "SELECT key FROM {}.glave_settings WHERE key IN ('person', 'agent')",
+                        scratch.schema
+                    ),
+                    &[],
+                )
+                .await
+                .unwrap()
+                .len();
+            drop(servers);
+            scratch.drop_schema().await;
+            let first = seen[0];
+            assert!(seen.iter().all(|identity| *identity == first), "{seen:?}");
+            assert_ne!(
+                first.0, first.1,
+                "the person and the agent are kept as a pair"
+            );
+            assert_eq!(rows, 2, "one person and one agent");
+        });
+    }
+
+    #[test]
     fn a_newer_schema_is_refused() {
         block_on!(async {
             let Some(scratch) = Scratch::new("newer").await else {
