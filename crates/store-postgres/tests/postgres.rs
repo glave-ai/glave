@@ -174,7 +174,7 @@ mod postgres {
                 .get::<_, i64>(0);
             scratch.drop_schema().await;
             assert_eq!(kept, Ok(Some(b"kept".to_vec())));
-            assert_eq!(versions, 5, "each migration is recorded once");
+            assert_eq!(versions, 6, "each migration is recorded once");
         });
     }
 
