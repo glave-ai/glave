@@ -97,7 +97,7 @@ cargo build --release -p glave --features web   # the binary as it ships, the we
 
 ## Definition of done
 
-`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), the dependency rule (`cargo xtask deps`), clippy with `-D warnings`, all tests, `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
+`cargo xtask ci` passes: format, no secret-shaped literals (`cargo xtask secrets`), the dependency rule (`cargo xtask deps`), clippy with `-D warnings`, all tests, with nothing left behind (no process they started still running, no `glave-*` entry in their temp folder but what glave keeps there), `cargo deny`, no unused dependencies (`cargo machete`), file sizes. New behavior has tests. User-visible numbers stay within budget. The change is small, focused and reviewed through a pull request.
 
 ## Quality
 
