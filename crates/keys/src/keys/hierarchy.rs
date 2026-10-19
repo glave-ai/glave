@@ -85,7 +85,7 @@ impl ProjectKey {
 
 fn project_aad(scope: &Scope, version: u32) -> Vec<u8> {
     associated(&[
-        b"glave/space-key/v1",
+        b"glave/project-key/v1",
         scope.org.to_string().as_bytes(),
         scope.project.to_string().as_bytes(),
         version.to_string().as_bytes(),
@@ -189,7 +189,7 @@ impl<S: KeyStorage> Keys<S> {
         if let Some(Value::Project(key)) = self.cache.get(&Slot::Project(*scope, version)) {
             return Ok(key);
         }
-        let name = format!("v1/{}/space/{version}", scope.project);
+        let name = format!("v1/{}/project/{version}", scope.project);
         let wrapped = record
             .version(version)
             .ok_or_else(|| KeyError::Unknown(name.clone()))?

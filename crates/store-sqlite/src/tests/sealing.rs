@@ -1,9 +1,9 @@
-//! Sealing at rest: what lands in the file, tampering, rows from before sealing, erasure.
+//! Sealing at rest: what lands in the file, tampering, erasure.
 
 use glave_event::RawEvent;
 use glave_keys::KeyId;
 use glave_keys::conformance::event;
-use glave_ports::{BlobStore, LogError, OrgId, ProjectId, Scope, digest};
+use glave_ports::{BlobStore, LogError, OrgId, ProjectId, Scope};
 use rusqlite::{Connection, params};
 
 use super::*;
@@ -117,66 +117,6 @@ fn a_sealed_payload_moved_to_another_row_thread_or_project_does_not_open() {
         overwrite(&raw, &scope, target, &original);
         assert!(read_all(&store, &scope, target).is_ok());
     }
-}
-
-#[test]
-fn rows_written_before_sealing_still_read_after_the_migration() {
-    let path = temp_db("unsealed");
-    let here = scope(1);
-    let old = event(1, 1, "2026-09").unwrap();
-    let sha = digest(b"old blob");
-    {
-        // A database as the first schema left it, with a row and a blob stored as written.
-        let raw = Connection::open(&path).unwrap();
-        raw.execute_batch(crate::schema::MIGRATIONS[0]).unwrap();
-        raw.pragma_update(None, "user_version", 1).unwrap();
-        raw.execute(
-            "INSERT INTO events (org, space, thread, seq, id, at, type, v, glave, data)
-             VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                here.org.to_string(),
-                here.project.to_string(),
-                old.thread.to_string(),
-                old.id.to_string(),
-                old.at.to_string(),
-                old.kind.as_str(),
-                old.v.get(),
-                old.glave,
-                old.data.get().as_bytes()
-            ],
-        )
-        .unwrap();
-        raw.execute(
-            "INSERT INTO blobs (org, space, sha256, media_type, bytes)
-             VALUES (?1, ?2, ?3, 'text/plain', ?4)",
-            params![
-                here.org.to_string(),
-                here.project.to_string(),
-                sha.as_str(),
-                b"old blob".as_slice()
-            ],
-        )
-        .unwrap();
-    }
-    let store = block_on!(Store::open(&path, file_keys(&path))).unwrap();
-    let raw = Connection::open(&path).unwrap();
-    let new = event(1, 2, "2026-10").unwrap();
-    block_on!(store.log().append(&here, std::slice::from_ref(&new))).unwrap();
-    assert_eq!(
-        stored(&raw, &here, &old).1,
-        None,
-        "old rows stay as written"
-    );
-    assert!(
-        stored(&raw, &here, &new).1.is_some(),
-        "new writes are sealed"
-    );
-    assert_eq!(
-        lines(&read_all(&store, &here, &old).unwrap()),
-        lines(&[old, new])
-    );
-    let blob = block_on!(store.blobs().get(&here, &sha)).unwrap();
-    assert_eq!(blob.as_deref(), Some(b"old blob".as_slice()));
 }
 
 #[test]

@@ -157,142 +157,46 @@ fn the_projects_pass_the_projects_conformance_suite() {
     assert_eq!(block_on!(conformance::projects(&store.projects())), Ok(()));
 }
 
+/// A file another version of glave wrote, older or newer, is refused with what to do, and left
+/// as it was: until glave 0.1 there is one schema and no migration.
 #[test]
-fn projects_from_before_records_become_records_and_are_claimed() {
-    let path = temp_db("projects-migration");
-    let person = "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10";
-    {
-        let mut connection = rusqlite::Connection::open(&path).unwrap();
-        let transaction = connection.transaction().unwrap();
-        for sql in schema::MIGRATIONS.iter().take(2) {
-            transaction.execute_batch(sql).unwrap();
+fn a_file_of_another_schema_is_refused_and_left_as_it_was() {
+    for found in [6, schema::VERSION + 1] {
+        let path = temp_db(&format!("schema-{found}"));
+        {
+            let connection = rusqlite::Connection::open(&path).unwrap();
+            connection
+                .pragma_update(None, "user_version", found)
+                .unwrap();
         }
-        transaction.pragma_update(None, "user_version", 2).unwrap();
-        transaction
-            .execute_batch(&format!(
-                "INSERT INTO settings (key, value) VALUES ('org', '00000000-0000-0000-0000-000000000001');
-                 INSERT INTO spaces (path, id) VALUES
-                     ('/work/app', '00000000-0000-0000-0000-000000000002'),
-                     ('glave:personal/{person}', '00000000-0000-0000-0000-000000000003');"
-            ))
-            .unwrap();
-        transaction.commit().unwrap();
-    }
-    block_on!(async {
-        let store = Store::open(&path, keys()).await.unwrap();
-        let org = store.org(Uuid::max()).await.unwrap();
-        let projects = store.projects();
-        let app = glave_ports::ProjectId::from_uuid(Uuid::from_u128(2));
-        let before = projects.get(org, app).await.unwrap().unwrap();
-        assert_eq!(before.name, "app");
-        assert_eq!(before.kind, glave_ports::ProjectKind::Project);
-        assert!(!before.admits(&ada()), "no one's until claimed");
-        assert_eq!(store.claim_projects(&ada()).await.unwrap(), 1);
-        let found = projects
-            .folder(
-                org,
-                &[glave_ports::FolderKey::Path("/work/app".into())],
-                &record(9, &ada()),
-            )
-            .await
-            .unwrap();
-        assert_eq!(found.id, app, "the folder still leads to its project");
-        assert!(found.admits(&ada()));
-        let mut inbox = record(10, &ada());
-        inbox.kind = glave_ports::ProjectKind::Personal;
-        let personal = projects.personal(org, &inbox).await.unwrap();
-        assert_eq!(
-            personal.id,
-            glave_ports::ProjectId::from_uuid(Uuid::from_u128(3)),
-            "the stand-in personal project is the person's personal project, memories and all"
+        let result = block_on!(Store::open(&path, keys()));
+        assert!(
+            matches!(&result, Err(StoreError::Schema(message))
+                if message.contains("Remove glave's data folder")),
+            "schema {found}: {:?}",
+            result.err()
         );
-        assert_eq!(personal.name, "Chats");
-    });
+        let raw = rusqlite::Connection::open(&path).unwrap();
+        let version: u32 = raw
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, found, "the file is not changed");
+    }
 }
 
 #[test]
-fn a_database_at_schema_4_gains_the_search_index_and_searches_new_events() {
-    let path = temp_db("search-migration");
-    {
-        let mut connection = rusqlite::Connection::open(&path).unwrap();
-        let transaction = connection.transaction().unwrap();
-        for sql in schema::MIGRATIONS.iter().take(4) {
-            transaction.execute_batch(sql).unwrap();
-        }
-        transaction.pragma_update(None, "user_version", 4).unwrap();
-        transaction.commit().unwrap();
-    }
+fn a_new_file_gets_the_schema_and_opens_again() {
+    let path = temp_db("fresh");
     block_on!(async {
-        let store = Store::open(&path, file_keys(&path)).await.unwrap();
-        assert_eq!(conformance::search(&store.log()).await, Ok(()));
+        drop(Store::open(&path, file_keys(&path)).await.unwrap());
+        let again = Store::open(&path, file_keys(&path)).await.unwrap();
+        assert_eq!(conformance::search(&again.log()).await, Ok(()));
     });
     let raw = rusqlite::Connection::open(&path).unwrap();
     let version: u32 = raw
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, schema::current());
-}
-
-/// What a database at schema 5 kept under spaces' names reads the same under projects': its
-/// records, members and folders through the store, and its search index row for row.
-#[test]
-fn a_database_at_schema_5_keeps_its_rows_under_projects_names() {
-    let path = temp_db("projects-rename");
-    let owner = projects::principal_text(&ada()).unwrap();
-    let org = "00000000-0000-0000-0000-000000000001";
-    let app = "00000000-0000-0000-0000-000000000002";
-    {
-        let mut connection = rusqlite::Connection::open(&path).unwrap();
-        let transaction = connection.transaction().unwrap();
-        for sql in schema::MIGRATIONS.iter().take(5) {
-            transaction.execute_batch(sql).unwrap();
-        }
-        transaction.pragma_update(None, "user_version", 5).unwrap();
-        transaction
-            .execute_batch(&format!(
-                "INSERT INTO settings (key, value) VALUES ('org', '{org}');
-                 INSERT INTO space_records VALUES
-                     ('{org}', '{app}', 'project', 'app', '{owner}', '2026-10-01T00:00:00.000Z',
-                      '2026-10-01T00:00:00.000Z');
-                 INSERT INTO space_members VALUES ('{org}', '{app}', 0, '{owner}');
-                 INSERT INTO space_folders VALUES ('{org}', 'path:/work/app', '{app}');
-                 INSERT INTO event_search (terms, org, space, thread, seq)
-                     VALUES ('f00d', '{org}', '{app}', 't', 1);"
-            ))
-            .unwrap();
-        transaction.commit().unwrap();
-    }
-    block_on!(async {
-        let store = Store::open(&path, keys()).await.unwrap();
-        let org = store.org(Uuid::max()).await.unwrap();
-        let id = glave_ports::ProjectId::from_uuid(Uuid::from_u128(2));
-        let kept = store.projects().get(org, id).await.unwrap().unwrap();
-        assert_eq!((kept.name.as_str(), kept.members.len()), ("app", 1));
-        let key = [glave_ports::FolderKey::Path("/work/app".into())];
-        let projects = store.projects();
-        let found = projects.folder(org, &key, &record(9, &ada())).await;
-        assert_eq!(found.unwrap().id, id, "the folder still leads to it");
-    });
-    let raw = rusqlite::Connection::open(&path).unwrap();
-    let searched: String = raw
-        .query_row(
-            "SELECT project FROM event_search WHERE event_search MATCH 'f00d'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(searched, app, "the search index kept its rows");
-}
-
-#[test]
-fn a_newer_schema_is_refused() {
-    let path = temp_db("newer");
-    {
-        let connection = rusqlite::Connection::open(&path).unwrap();
-        connection.pragma_update(None, "user_version", 999).unwrap();
-    }
-    let result = block_on!(Store::open(&path, keys()));
-    assert!(matches!(result, Err(StoreError::Schema(message)) if message.contains("newer glave")));
+    assert_eq!(version, schema::VERSION);
 }
 
 #[test]
@@ -353,7 +257,7 @@ fn views_rebuilt_from_the_log_equal_the_kept_ones() {
         let kept = views(&path);
         assert_eq!(kept.len(), 4);
 
-        // As after the upgrade that made the table: no views, and no version recorded.
+        // As if no fold had built them: no views, and no version recorded.
         let connection = rusqlite::Connection::open(&path).unwrap();
         connection
             .execute_batch("DELETE FROM threads; DELETE FROM settings WHERE key = 'threads_view';")

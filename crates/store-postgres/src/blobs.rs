@@ -106,41 +106,28 @@ impl BlobStore for PostgresBlobs {
             let client = connection(&this.pool)
                 .await
                 .map_err(|e| BlobError::Storage(e.to_string()))?;
+            // A project with no key yet (or an erased one) has nothing that can be found.
+            let Some(name) = name else {
+                return Ok(None);
+            };
             let (org, project) = (scope.org.as_uuid(), scope.project.as_uuid());
-            if let Some(name) = name {
-                let row = client
-                    .query_opt(
-                        "SELECT bytes, key_id FROM blobs
-                         WHERE org = $1 AND project = $2 AND name = $3 AND key_id IS NOT NULL",
-                        &[&org, &project, &name],
-                    )
-                    .await
-                    .map_err(database(BlobError::Storage))?;
-                if let Some(row) = row {
-                    let bytes: Vec<u8> = row.try_get(0).map_err(database(BlobError::Storage))?;
-                    let key_id: String = row.try_get(1).map_err(database(BlobError::Storage))?;
-                    return this
-                        .keys
-                        .open_blob(&scope, &name, &key_id, &bytes)
-                        .await
-                        .map(Some)
-                        .map_err(|e| {
-                            BlobError::Storage(format!("a blob could not be opened: {e}"))
-                        });
-                }
-            }
-            // Written before sealing: stored as written, under its hash.
             let row = client
                 .query_opt(
-                    "SELECT bytes FROM blobs
-                     WHERE org = $1 AND project = $2 AND name = $3 AND key_id IS NULL",
-                    &[&org, &project, &sha256.as_str()],
+                    "SELECT bytes, key_id FROM blobs WHERE org = $1 AND project = $2 AND name = $3",
+                    &[&org, &project, &name],
                 )
                 .await
                 .map_err(database(BlobError::Storage))?;
-            row.map(|row| row.try_get(0))
-                .transpose()
-                .map_err(database(BlobError::Storage))
+            let Some(row) = row else {
+                return Ok(None);
+            };
+            let bytes: Vec<u8> = row.try_get(0).map_err(database(BlobError::Storage))?;
+            let key_id: String = row.try_get(1).map_err(database(BlobError::Storage))?;
+            this.keys
+                .open_blob(&scope, &name, &key_id, &bytes)
+                .await
+                .map(Some)
+                .map_err(|e| BlobError::Storage(format!("a blob could not be opened: {e}")))
         }
     }
 }

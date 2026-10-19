@@ -2,9 +2,8 @@
 //! the projects, with the folders that lead to them.
 //!
 //! Every call runs off the async runtime. Appends are transactions that enforce the log's
-//! gap-free numbering; the schema migrates forward on open and refuses a newer one. Event
-//! payloads and blobs are sealed on write and opened on read (`specs/storage.md`); rows
-//! written before sealing still read as they were stored.
+//! gap-free numbering; a new file gets the one schema, and a file of another schema is refused.
+//! Event payloads and blobs are sealed on write and opened on read (`specs/storage.md`).
 
 mod blobs;
 mod keys;

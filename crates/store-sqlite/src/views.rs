@@ -238,7 +238,7 @@ pub(crate) async fn rebuild_all(log: &SqliteLog, connection: &Shared) -> Result<
 }
 
 /// Rebuilds every view when the stored ones were built by an older fold (or none was built
-/// yet, as right after the upgrade that made the table), then records the version.
+/// yet, as in a new database), then records the version.
 pub(crate) async fn refresh(log: &SqliteLog, connection: &Shared) -> Result<(), StoreError> {
     let built: Option<String> = run(connection, |connection| {
         connection

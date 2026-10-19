@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use glave_event::{BlobRef, Principal, PrincipalId, RawEvent, Seq, Sha256, ThreadId};
+use glave_event::{BlobRef, PrincipalId, RawEvent, Seq, Sha256, ThreadId};
 use glave_memory::Shredder;
 use glave_ports::search::Found;
 use glave_ports::{
@@ -142,15 +142,6 @@ impl Data {
             Self::Sqlite(store) => store.identity(new).await?,
             Self::Postgres(store) => store.identity(new).await?,
         })
-    }
-
-    /// Gives every project made before projects were records to `owner`, on a person's own
-    /// computer. A Postgres store was never without records, so there is nothing to give.
-    pub async fn claim_projects(&self, owner: &Principal) -> anyhow::Result<()> {
-        if let Self::Sqlite(store) = self {
-            store.claim_projects(owner).await?;
-        }
-        Ok(())
     }
 }
 

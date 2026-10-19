@@ -1,6 +1,6 @@
 [package]
 name = "glave-keys"
-description = "glave's keys: the root, organization, space and data keys, sealing content at rest, and erasing it by destroying keys"
+description = "glave's keys: the root, organization, project and data keys, sealing content at rest, and erasing it by destroying keys"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

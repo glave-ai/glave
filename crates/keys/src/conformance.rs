@@ -93,7 +93,7 @@ async fn memory_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     let id: KeyId = one.key_id.parse().map_err(text)?;
     ensure(
         matches!(id.period, Period::Memory(memory) if memory == uuid_v7(7_001)),
-        "a memory's text is sealed under v1/<space>/memory/<memory>/<n>",
+        "a memory's text is sealed under v1/<project>/memory/<memory>/<n>",
     )?;
     ensure(
         one.key_id != two.key_id && plain.key_id.ends_with("/2026-10/1"),
@@ -175,7 +175,7 @@ async fn account_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         let id: KeyId = sealed.key_id.parse().map_err(text)?;
         ensure(
             matches!(id.period, Period::Account(own) if own == uuid_v7(n)),
-            "an account is sealed under v1/<space>/provider/<account>/<n>",
+            "an account is sealed under v1/<project>/provider/<account>/<n>",
         )?;
         ensure(
             !sealed
@@ -233,7 +233,7 @@ async fn sealing<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     let id: KeyId = sealed.key_id.parse().map_err(text)?;
     ensure(
         id.project == here.project && id.period.to_string() == "2026-10" && id.n == 1,
-        "the first key of a space and month is v1/<space>/<month>/1",
+        "the first key of a project and month is v1/<project>/<month>/1",
     )?;
     ensure(
         !sealed.bytes.windows(9).any(|window| window == b"completed"),

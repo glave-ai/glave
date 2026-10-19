@@ -1,10 +1,10 @@
-//! The database file: opening and migrating it, the local organization, and running work off
+//! The database file: opening or making it, the local organization, and running work off
 //! the async runtime.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use glave_event::{Principal, PrincipalId};
+use glave_event::PrincipalId;
 use glave_keys::{KeySettings, Keys};
 use glave_ports::OrgId;
 use rusqlite::{Connection, params};
@@ -47,7 +47,8 @@ pub struct Store {
 }
 
 impl Store {
-    /// Opens (creating if needed) the database at `path` and brings its schema up to date.
+    /// Opens the database at `path`, making it the first time; one another version of glave
+    /// wrote is refused.
     /// Content is sealed under keys that `keys.root` wraps.
     /// The threads view is filled from the log the first time, and again whenever this build
     /// folds threads differently from the one that filled it.
@@ -83,7 +84,7 @@ impl Store {
                  PRAGMA secure_delete = ON;",
             )
             .map_err(|e| StoreError::Open(e.to_string()))?;
-        schema::migrate(&mut connection)?;
+        schema::prepare(&mut connection)?;
         let connection = Arc::new(Mutex::new(connection));
         let keys = Arc::new(Keys::new(keys, SqliteKeys::new(Arc::clone(&connection))));
         Ok(Self { connection, keys })
@@ -163,12 +164,6 @@ impl Store {
                 "the local person and their agent are not both kept".into(),
             )),
         }
-    }
-
-    /// Gives every project made before projects were records to `owner`, the local person: on a
-    /// person's own computer, every such project was theirs. How many it gave.
-    pub async fn claim_projects(&self, owner: &Principal) -> Result<usize, StoreError> {
-        crate::projects::claim(&self.connection, owner).await
     }
 }
 
