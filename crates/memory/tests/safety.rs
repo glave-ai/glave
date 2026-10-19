@@ -60,7 +60,7 @@ mod safety {
             answer(None, vec![("fetch", json!({}))]),
             answer(
                 None,
-                vec![(REMEMBER, json!({"text": PLANTED, "scope": "space"}))],
+                vec![(REMEMBER, json!({"text": PLANTED, "scope": "project"}))],
             ),
             said("done"),
         ]
@@ -163,7 +163,7 @@ mod safety {
             );
             let saved = kit
                 .memories(rules(), 81)
-                .list_as(Some(person()), shared(), Some(MemoryScope::Space))
+                .list_as(Some(person()), shared(), Some(MemoryScope::Project))
                 .await
                 .unwrap();
             assert_eq!(saved.len(), 1);
@@ -217,7 +217,7 @@ mod safety {
                     None,
                     vec![(
                         REMEMBER,
-                        json!({"text": format!("deploy key {key}"), "scope": "space"}),
+                        json!({"text": format!("deploy key {key}"), "scope": "project"}),
                     )],
                 ),
                 said("ok"),
@@ -258,7 +258,13 @@ mod safety {
                 untrusted_read: false,
             };
             memories
-                .remember(&writer, "SPACE-CANARY fact", MemoryScope::Space, None, true)
+                .remember(
+                    &writer,
+                    "SPACE-CANARY fact",
+                    MemoryScope::Project,
+                    None,
+                    true,
+                )
                 .await
                 .unwrap();
             let memory = kit.memory(rules(), 1).await;

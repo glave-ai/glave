@@ -9,7 +9,7 @@ use glave_event::{At, MemoryId};
 use glave_ports::memories::Remembered;
 
 const START: &str = "# Memory\n\n<MEMORY>\nWhat you saved with the memory tools in earlier \
-     threads, about the person (personal) and this space (space). The person can see, edit and \
+     threads, about the person (personal) and this project (project). The person can see, edit and \
      forget these. They are background: the person's messages and the project's instructions \
      come first; when a memory conflicts with the instructions, follow the instructions and say \
      so. When the person corrects or updates one, replace it (`remember` with `replaces`, or \
@@ -130,7 +130,7 @@ mod tests {
             ))
             .unwrap(),
             version,
-            scope: MemoryScope::Space,
+            scope: MemoryScope::Project,
             text: text.into(),
             saved_at: At::try_from("2026-10-02T10:00:00Z".to_owned()).unwrap(),
             edited_at: (version > 1)
@@ -151,8 +151,8 @@ mod tests {
         assert!(text.starts_with("# Memory\n\n<MEMORY>\n"), "{text}");
         assert!(
             text.ends_with(
-                "\n- [0192f5c3-0000-7000-8000-000000000001] (space, saved 2026-10-02) use tabs\
-                 \n- [0192f5c3-0000-7000-8000-000000000002] (space, saved 2026-10-02, edited \
+                "\n- [0192f5c3-0000-7000-8000-000000000001] (project, saved 2026-10-02) use tabs\
+                 \n- [0192f5c3-0000-7000-8000-000000000002] (project, saved 2026-10-02, edited \
                  2026-10-05) make db first\n</MEMORY>"
             ),
             "{text}"
@@ -171,8 +171,8 @@ mod tests {
         assert_eq!(
             text,
             "[Memory updates since we last spoke]\
-             \n- changed [0192f5c3-0000-7000-8000-000000000002] (space, saved 2026-10-02, edited 2026-10-05) edited\
-             \n- added [0192f5c3-0000-7000-8000-000000000003] (space, saved 2026-10-02) new\
+             \n- changed [0192f5c3-0000-7000-8000-000000000002] (project, saved 2026-10-02, edited 2026-10-05) edited\
+             \n- added [0192f5c3-0000-7000-8000-000000000003] (project, saved 2026-10-02) new\
              \n- forgotten [0192f5c3-0000-7000-8000-000000000001]\
              \n[End of memory updates]"
         );

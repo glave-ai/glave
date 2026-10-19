@@ -40,7 +40,7 @@ Memory is an MCP server. Glave, as the MCP client, calls its tools and reads its
 
 | | Name | Arguments | Does |
 | --- | --- | --- | --- |
-| Tool | `remember` | `text`; `scope` (`personal` or `space`); optional `replaces` (a memory's id); optional `force` (save despite a near duplicate) | Saves a memory, or replaces one. Its result names the memory |
+| Tool | `remember` | `text`; `scope` (`personal` or `project`); optional `replaces` (a memory's id); optional `force` (save despite a near duplicate) | Saves a memory, or replaces one. Its result names the memory |
 | Tool | `edit` | `memory`; `text` | Changes a memory's text |
 | Tool | `forget` | `memory` | Forgets a memory |
 | Tool | `recall` | `query`; optional `limit` | Searches memories and past conversations by keyword ("Recall") |
@@ -59,7 +59,7 @@ One short statement worth knowing in a later thread: "Ada prefers short answers 
 | --- | --- |
 | `memory` | UUID v7 |
 | `text` | The statement. At most 500 characters |
-| `scope` | `personal` or `space` |
+| `scope` | `personal` or `project` |
 | `source` | The thread and `seq` it was saved in, when saved in a thread |
 | `by` | Who saved or last changed it: a principal (`events.md`), or `glave` for tidy-up and retention |
 | `untrusted_read` | True when saved in a thread that had read untrusted content or a secrets file |

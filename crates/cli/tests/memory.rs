@@ -97,7 +97,7 @@ mod memory {
             home: place.home.clone(),
         };
         std::fs::create_dir_all(&other.project).unwrap();
-        let save = json!({"text": "this project ships on Fridays", "scope": "space"});
+        let save = json!({"text": "this project ships on Fridays", "scope": "project"});
         let model = FakeServer::start(vec![
             Reply::tool_call("call_a", "mcp__memory__remember", &save),
             Reply::text("Noted."),

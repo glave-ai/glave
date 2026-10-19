@@ -67,7 +67,7 @@ fn the_person_lists_saves_edits_moves_and_forgets_their_memory() {
         // Over JSON, as any transport carries it.
         let save: Request = serde_json::from_value(serde_json::json!({
             "method": "memory/save",
-            "params": {"text": "Ada prefers short answers", "scope": "space"}
+            "params": {"text": "Ada prefers short answers", "scope": "project"}
         }))
         .unwrap();
         let saved = listed(server.request(save).await.unwrap());
@@ -145,7 +145,7 @@ fn a_request_that_names_a_project_acts_in_that_project_s_memory() {
         };
         let save = Request::MemorySave {
             text: "the other project ships on Fridays".into(),
-            scope: MemoryScope::Space,
+            scope: MemoryScope::Project,
             project: Some(other.id),
         };
         assert_eq!(listed(server.request(save).await.unwrap()).len(), 1);

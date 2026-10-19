@@ -68,7 +68,7 @@ mod store {
                     .remember(
                         &mine,
                         "Tests need make db first",
-                        MemoryScope::Space,
+                        MemoryScope::Project,
                         None,
                         false,
                     )
@@ -80,7 +80,7 @@ mod store {
                     .remember(
                         &writer(isolated()),
                         "The client is BLUEHERON",
-                        MemoryScope::Space,
+                        MemoryScope::Project,
                         None,
                         false,
                     )
@@ -97,7 +97,7 @@ mod store {
             assert_eq!(
                 texts(memories.list(&on(isolated())).await.unwrap()),
                 ["The client is BLUEHERON"],
-                "personal memory never enters an isolated space"
+                "personal memory never enters an isolated project"
             );
             assert_eq!(memories.list(&on(off())).await.unwrap().len(), 0);
             let refused = memories
@@ -122,7 +122,7 @@ mod store {
             assert_eq!(
                 texts(elsewhere),
                 ["Ada prefers short answers"],
-                "another space reads the person's memory, never this space's"
+                "another project reads the person's memory, never this project's"
             );
         });
     }
@@ -134,7 +134,7 @@ mod store {
             let memories = kit.memories(rules(), 1);
             let text = format!("use {} for the deploy", fake_secret("sk-proj-"));
             let refused = memories
-                .remember(&writer(shared()), &text, MemoryScope::Space, None, true)
+                .remember(&writer(shared()), &text, MemoryScope::Project, None, true)
                 .await;
             let Err(MemoryError::Invalid(why)) = refused else {
                 panic!("{refused:?}");
@@ -161,7 +161,7 @@ mod store {
                     .remember(
                         &mine,
                         "Use tabs, not spaces, in this project's Python",
-                        MemoryScope::Space,
+                        MemoryScope::Project,
                         None,
                         false,
                     )
@@ -172,7 +172,7 @@ mod store {
                 .remember(
                     &mine,
                     "This project's Python uses tabs instead of spaces",
-                    MemoryScope::Space,
+                    MemoryScope::Project,
                     None,
                     false,
                 )
@@ -183,7 +183,7 @@ mod store {
                 .remember(
                     &mine,
                     "Python here uses tabs, never spaces",
-                    MemoryScope::Space,
+                    MemoryScope::Project,
                     Some(first.memory),
                     false,
                 )
@@ -204,7 +204,7 @@ mod store {
                     .remember(
                         &mine,
                         "Python here uses tabs; never spaces",
-                        MemoryScope::Space,
+                        MemoryScope::Project,
                         None,
                         true,
                     )
@@ -228,7 +228,7 @@ mod store {
                     "lorem ipsum dolor ".repeat(6 + n % 3)
                 );
                 match memories
-                    .remember(&mine, &text, MemoryScope::Space, None, true)
+                    .remember(&mine, &text, MemoryScope::Project, None, true)
                     .await
                 {
                     Ok(_) => {}
@@ -257,7 +257,7 @@ mod store {
                     .remember(
                         &mine,
                         "We deploy with Render",
-                        MemoryScope::Space,
+                        MemoryScope::Project,
                         None,
                         false,
                     )
@@ -269,7 +269,7 @@ mod store {
                     .remember(
                         &mine,
                         "The code word is marigold",
-                        MemoryScope::Space,
+                        MemoryScope::Project,
                         None,
                         false,
                     )
@@ -319,7 +319,7 @@ mod store {
             assert_eq!(live, std::slice::from_ref(&kept));
             assert!(kit.store.keys().rotation_due(&shared()).await.unwrap());
             let done = memories.housekeep(&[shared(), inbox()]).await.unwrap();
-            assert_eq!(done.rotated, 1, "housekeeping rotates the space key");
+            assert_eq!(done.rotated, 1, "housekeeping rotates the project key");
             assert!(!kit.store.keys().rotation_due(&shared()).await.unwrap());
             // A fresh process reads the same: the memory is gone, the other kept.
             let again = kit.memories(rules(), 2);
@@ -337,7 +337,7 @@ mod store {
             let mine = writer(shared());
             let old = saved(
                 memories
-                    .remember(&mine, "An old fact", MemoryScope::Space, None, false)
+                    .remember(&mine, "An old fact", MemoryScope::Project, None, false)
                     .await
                     .unwrap(),
             );
@@ -367,7 +367,7 @@ mod store {
                     .remember(
                         &mine,
                         "Ada likes short answers",
-                        MemoryScope::Space,
+                        MemoryScope::Project,
                         None,
                         false,
                     )
@@ -381,7 +381,11 @@ mod store {
             assert_eq!(moved.scope, MemoryScope::Personal);
             assert_ne!(moved.memory, project.memory);
             let elsewhere = memories.list(&on(scope(1, 5))).await.unwrap();
-            assert_eq!(elsewhere, [moved], "personal now, so read in another space");
+            assert_eq!(
+                elsewhere,
+                [moved],
+                "personal now, so read in another project"
+            );
         });
     }
 
@@ -391,7 +395,7 @@ mod store {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 1);
             let mine = writer(shared());
-            let save = || memories.remember(&mine, "A fact", MemoryScope::Space, None, false);
+            let save = || memories.remember(&mine, "A fact", MemoryScope::Project, None, false);
             memories.set_project(shared().project, ProjectMemory::Off);
             assert!(matches!(save().await, Err(MemoryError::Off(_))));
             memories.set_project(shared().project, ProjectMemory::Shared);

@@ -467,16 +467,16 @@
       "type": "string"
     },
     "MemoryScope": {
-      "description": "Where a memory belongs: to the person, or to the space it was saved in.",
+      "description": "Where a memory belongs: to the person, or to the project it was saved in.",
       "oneOf": [
         {
           "const": "personal",
-          "description": "About the person: read in their threads, in spaces that allow it.",
+          "description": "About the person: read in their threads, in projects that allow it.",
           "type": "string"
         },
         {
-          "const": "space",
-          "description": "About the space's work: read by every member and agent working in it.",
+          "const": "project",
+          "description": "About the project's work: read by every member and agent working in it.",
           "type": "string"
         }
       ]

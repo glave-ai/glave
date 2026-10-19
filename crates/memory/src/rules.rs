@@ -83,12 +83,12 @@ impl Rules {
         let mut readable = Vec::new();
         match self.setting(scope.project) {
             ProjectMemory::Off => {}
-            ProjectMemory::Isolated => readable.push((MemoryScope::Space, scope)),
+            ProjectMemory::Isolated => readable.push((MemoryScope::Project, scope)),
             ProjectMemory::Shared => {
                 if let Some(personal) = self.personal_for(person, scope) {
                     readable.push((MemoryScope::Personal, personal));
                 }
-                readable.push((MemoryScope::Space, scope));
+                readable.push((MemoryScope::Project, scope));
             }
         }
         readable
@@ -105,19 +105,19 @@ impl Rules {
         let setting = self.setting(scope.project);
         match (which, setting) {
             (_, ProjectMemory::Off) => {
-                Err(MemoryError::Off("memory is off in this space".to_owned()))
+                Err(MemoryError::Off("memory is off in this project".to_owned()))
             }
-            (MemoryScope::Space, _) => Ok(scope),
+            (MemoryScope::Project, _) => Ok(scope),
             (MemoryScope::Personal, ProjectMemory::Isolated) => Err(MemoryError::Refused(
-                "this space is isolated: personal memory is neither read nor written here; \
-                 save it to the space instead"
+                "this project is isolated: personal memory is neither read nor written here; \
+                 save it to the project instead"
                     .to_owned(),
             )),
             (MemoryScope::Personal, ProjectMemory::Shared) => {
                 self.personal_for(person, scope).ok_or_else(|| {
                     MemoryError::Refused(
                         "personal memory is off, or belongs to someone else, here; save it to \
-                         the space instead"
+                         the project instead"
                             .to_owned(),
                     )
                 })
@@ -171,7 +171,7 @@ mod tests {
             rules.readable(Some(person(1)), scope(1, 2)),
             [
                 (MemoryScope::Personal, scope(1, 100)),
-                (MemoryScope::Space, scope(1, 2))
+                (MemoryScope::Project, scope(1, 2))
             ]
         );
         assert_eq!(
@@ -185,7 +185,7 @@ mod tests {
         let rules = rules();
         assert_eq!(
             rules.readable(Some(person(1)), scope(1, 3)),
-            [(MemoryScope::Space, scope(1, 3))]
+            [(MemoryScope::Project, scope(1, 3))]
         );
         assert!(matches!(
             rules.place(Some(person(1)), scope(1, 3), MemoryScope::Personal),
@@ -197,15 +197,19 @@ mod tests {
     fn off_reads_nothing_and_nothing_crosses_organizations_or_people() {
         let rules = rules();
         assert_eq!(rules.readable(Some(person(1)), scope(1, 4)).len(), 0);
-        assert!(rules.place(None, scope(1, 4), MemoryScope::Space).is_err());
+        assert!(
+            rules
+                .place(None, scope(1, 4), MemoryScope::Project)
+                .is_err()
+        );
         assert_eq!(
             rules.readable(Some(person(1)), scope(2, 2)),
-            [(MemoryScope::Space, scope(2, 2))],
+            [(MemoryScope::Project, scope(2, 2))],
             "another organization never reads this person's memory"
         );
         assert_eq!(
             rules.readable(Some(person(2)), scope(1, 2)),
-            [(MemoryScope::Space, scope(1, 2))],
+            [(MemoryScope::Project, scope(1, 2))],
             "another person never reads it"
         );
     }

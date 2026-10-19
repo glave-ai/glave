@@ -25,11 +25,11 @@ pub const USAGE: &str = "\
 glave memory: what glave remembers here, for later threads
 
 Usage:
-  glave memory                               list your memories and this space's
+  glave memory                               list your memories and this project's
   glave memory edit <id> <text>              change a memory's text
-  glave memory move <id> personal|space      save it in the other place, forgetting it here
+  glave memory move <id> personal|project      save it in the other place, forgetting it here
   glave memory forget <id>                   forget a memory: its key is destroyed at once
-  glave memory forget --all [--space | --personal]
+  glave memory forget --all [--project | --personal]
                                              forget every memory of both, or one, of them
 
 Memory is on when `memory = \"on\"` is in your config.toml (glave policy explain shows it).
@@ -137,10 +137,10 @@ fn parse(words: &[String]) -> Result<Command, String> {
         },
         ["move", memory, scope] => Control::Move {
             memory: id(memory)?,
-            scope: MemoryScope::named(scope).ok_or("move to personal or space")?,
+            scope: MemoryScope::named(scope).ok_or("move to personal or project")?,
         },
-        ["forget", "--all", "--space"] => Control::ForgetAll {
-            scope: MemoryScope::Space,
+        ["forget", "--all", "--project"] => Control::ForgetAll {
+            scope: MemoryScope::Project,
         },
         ["forget", "--all", "--personal"] => Control::ForgetAll {
             scope: MemoryScope::Personal,
@@ -148,7 +148,7 @@ fn parse(words: &[String]) -> Result<Command, String> {
         ["forget", "--all"] => {
             return Ok(Command::Run(vec![
                 Control::ForgetAll {
-                    scope: MemoryScope::Space,
+                    scope: MemoryScope::Project,
                 },
                 Control::ForgetAll {
                     scope: MemoryScope::Personal,
