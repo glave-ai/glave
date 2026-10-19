@@ -16,7 +16,7 @@ mod payload;
 mod secret;
 
 pub use blob::{BlobRef, Sha256};
-pub use codec::{Body, Event, KNOWN_VERSIONS, Payload, Unknown, decode, encode};
+pub use codec::{Body, Event, KNOWN_VERSIONS, Payload, RENAMED_TYPES, Unknown, decode, encode};
 pub use envelope::{At, Header, PayloadVersion, RawEvent, Seq, TypeName};
 pub use error::{DecodeError, EncodeError, InvalidValue};
 pub use id::{
@@ -40,7 +40,7 @@ pub use payload::{
     TaskEnded, TaskStarted, When, WorkspaceBound, WorkspaceRemoved, sealed_under_memory,
 };
 pub use payload::{
-    CredentialConnected, CredentialRemoved, Forge, ProviderConnected, ProviderKind,
-    ProviderRemoved, Renewal, SpaceFolderSet, SpaceRemoved, sealed_under_account,
+    CredentialConnected, CredentialRemoved, Forge, ProjectFolderSet, ProjectRemoved,
+    ProviderConnected, ProviderKind, ProviderRemoved, Renewal, sealed_under_account,
 };
 pub use secret::{Secret, serialize_exposed};

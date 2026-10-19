@@ -1,9 +1,10 @@
-//! The space ledger's records (`specs/storage.md`, "Spaces"). `space.folder.set`: one of a
+//! The project ledger's records (`specs/storage.md`, "Projects"). `project.folder.set`: one of a
 //! project's folders, where its threads work; for each folder, the latest one holds. Where the
 //! folder's files come from is kept apart from where they are checked out, so the project can
 //! be checked out again, on another computer or after one is reset, from its source alone.
-//! `space.removed`: the project was put away, its threads archived; a folder set after it
-//! brings it back.
+//! `project.removed`: the project was put away, its threads archived; a folder set after it
+//! brings it back. Both were written as `space.folder.set` and `space.removed` before spaces
+//! were projects (#435); those are read as these, and written again under the new names.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -12,13 +13,17 @@ use uuid::Uuid;
 use crate::codec::{Payload, parse};
 use crate::payload::principal::Principal;
 
-pub(crate) const FOLDER_SET: &str = "space.folder.set";
-pub(crate) const REMOVED: &str = "space.removed";
+pub(crate) const FOLDER_SET: &str = "project.folder.set";
+pub(crate) const REMOVED: &str = "project.removed";
+
+/// What each type was called before spaces were projects, and is still read as.
+pub(crate) const FOLDER_SET_BEFORE: &str = "space.folder.set";
+pub(crate) const REMOVED_BEFORE: &str = "space.removed";
 
 /// A project's folder was set: added, or its source or checkout changed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SpaceFolderSet {
+pub struct ProjectFolderSet {
     /// Which of the project's folders this is: a UUID v7 chosen when it was first set, which
     /// every later record of the same folder names.
     pub folder: Uuid,
@@ -26,7 +31,7 @@ pub struct SpaceFolderSet {
     pub source: FolderSource,
     /// Where it is checked out.
     pub checkout: Checkout,
-    /// Who set it. Absent: the space's person.
+    /// Who set it. Absent: the project's person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
 }
@@ -55,13 +60,13 @@ pub struct Checkout {
 /// for it again.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SpaceRemoved {
-    /// Who removed it. Absent: the space's person.
+pub struct ProjectRemoved {
+    /// Who removed it. Absent: the project's person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
 }
 
-impl Payload for SpaceRemoved {
+impl Payload for ProjectRemoved {
     const TYPE: &'static str = REMOVED;
     const VERSION: u32 = 1;
 }
@@ -69,11 +74,11 @@ impl Payload for SpaceRemoved {
 pub(crate) fn decode_removed(
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<SpaceRemoved>> {
+) -> Option<serde_json::Result<ProjectRemoved>> {
     (version == 1).then(|| parse(data))
 }
 
-impl Payload for SpaceFolderSet {
+impl Payload for ProjectFolderSet {
     const TYPE: &'static str = FOLDER_SET;
     const VERSION: u32 = 1;
 }
@@ -81,6 +86,6 @@ impl Payload for SpaceFolderSet {
 pub(crate) fn decode_folder_set(
     version: u32,
     data: &RawValue,
-) -> Option<serde_json::Result<SpaceFolderSet>> {
+) -> Option<serde_json::Result<ProjectFolderSet>> {
     (version == 1).then(|| parse(data))
 }

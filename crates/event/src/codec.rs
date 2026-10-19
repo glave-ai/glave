@@ -12,11 +12,11 @@ use crate::payload::{
     BrowserUsed, CommandEnded, CommandStarted, CredentialConnected, CredentialRemoved,
     GatewayToolCalled, GoalEnded, GoalResumed, GoalSet, HookRan, MemoryEdited, MemoryForgotten,
     MemoryRestored, MemorySaved, MemoryTidied, MessageAdded, ModelChosen, ModelResponded,
-    ProviderConnected, ProviderRemoved, ScheduleCreated, ScheduleDeleted, SpaceFolderSet,
-    SpaceRemoved, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted,
+    ProjectFolderSet, ProjectRemoved, ProviderConnected, ProviderRemoved, ScheduleCreated,
+    ScheduleDeleted, TaskEnded, TaskStarted, ThreadArchived, ThreadCompacted, ThreadDeleted,
     ThreadRenamed, ThreadStarted, ThreadUnarchived, ToolCallCompleted, ToolCallRequested,
     TrustDecided, TurnEnded, TurnStarted, WorkspaceBound, WorkspaceRemoved, approval, browser,
-    chosen, command, credential, gateway, goal, hook, memory, message, model, provider, space,
+    chosen, command, credential, gateway, goal, hook, memory, message, model, project, provider,
     standing, task, thread, tool, trust, turn, workspace,
 };
 
@@ -84,12 +84,21 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (provider::REMOVED, 1),
     (credential::CONNECTED, 1),
     (credential::REMOVED, 1),
-    (space::FOLDER_SET, 1),
-    (space::REMOVED, 1),
+    (project::FOLDER_SET, 1),
+    (project::REMOVED, 1),
+    (project::FOLDER_SET_BEFORE, 1),
+    (project::REMOVED_BEFORE, 1),
     (trust::DECIDED, 1),
     (browser::SIGNED_IN, 1),
     (browser::USED, 1),
     (browser::SIGNED_OUT, 1),
+];
+
+/// The types read under an old name and written under a new one, as (old, new): their events
+/// in a log decode as the new type, and encode again under its name.
+pub const RENAMED_TYPES: &[(&str, &str)] = &[
+    (project::FOLDER_SET_BEFORE, project::FOLDER_SET),
+    (project::REMOVED_BEFORE, project::REMOVED),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -140,8 +149,8 @@ pub enum Body {
     ProviderRemoved(ProviderRemoved),
     CredentialConnected(CredentialConnected),
     CredentialRemoved(CredentialRemoved),
-    SpaceFolderSet(SpaceFolderSet),
-    SpaceRemoved(SpaceRemoved),
+    ProjectFolderSet(ProjectFolderSet),
+    ProjectRemoved(ProjectRemoved),
     TrustDecided(TrustDecided),
     BrowserSignedIn(BrowserSignedIn),
     BrowserUsed(BrowserUsed),
@@ -311,8 +320,8 @@ impl Event {
             Body::ProviderRemoved(payload) => encode(header, payload),
             Body::CredentialConnected(payload) => encode(header, payload),
             Body::CredentialRemoved(payload) => encode(header, payload),
-            Body::SpaceFolderSet(payload) => encode(header, payload),
-            Body::SpaceRemoved(payload) => encode(header, payload),
+            Body::ProjectFolderSet(payload) => encode(header, payload),
+            Body::ProjectRemoved(payload) => encode(header, payload),
             Body::TrustDecided(payload) => encode(header, payload),
             Body::BrowserSignedIn(payload) => encode(header, payload),
             Body::BrowserUsed(payload) => encode(header, payload),
@@ -332,7 +341,7 @@ impl Event {
 }
 
 /// Decodes commands in the background, the choices made for a thread, and the memory, accounts
-/// and space ledgers' types;
+/// and project ledgers' types;
 /// `None` for any type that is not one of them.
 fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json::Result<Body>> {
     match kind {
@@ -365,10 +374,12 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         credential::REMOVED => {
             credential::decode_removed(version, data).map(|r| r.map(Body::CredentialRemoved))
         }
-        space::FOLDER_SET => {
-            space::decode_folder_set(version, data).map(|r| r.map(Body::SpaceFolderSet))
+        project::FOLDER_SET | project::FOLDER_SET_BEFORE => {
+            project::decode_folder_set(version, data).map(|r| r.map(Body::ProjectFolderSet))
         }
-        space::REMOVED => space::decode_removed(version, data).map(|r| r.map(Body::SpaceRemoved)),
+        project::REMOVED | project::REMOVED_BEFORE => {
+            project::decode_removed(version, data).map(|r| r.map(Body::ProjectRemoved))
+        }
         trust::DECIDED => trust::decode_decided(version, data).map(|r| r.map(Body::TrustDecided)),
         browser::SIGNED_IN => {
             browser::decode_signed_in(version, data).map(|r| r.map(Body::BrowserSignedIn))
