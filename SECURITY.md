@@ -15,7 +15,7 @@ Anything that lets an agent, a prompt injection, a malicious repository or anoth
 - escape the sandbox, or read or write outside what it should;
 - obtain a credential, token or key;
 - act without the approval glave should have asked for;
-- reach data across a space, project or person it shouldn't.
+- reach data across a project or person it shouldn't.
 
 ## Supported versions
 

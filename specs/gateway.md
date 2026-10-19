@@ -57,7 +57,7 @@ A **route** names a purpose and maps it to an ordered list of **targets** (provi
 
 ## Budgets
 
-- Stacked: organization ⊇ space ⊇ person ⊇ thread ⊇ worker, matching "a worker's budget is within its parent's".
+- Stacked: organization ⊇ project ⊇ person ⊇ thread ⊇ worker, matching "a worker's budget is within its parent's".
 - **Reserve, then settle.** Before sending, reserve the worst case (input tokens plus the output limit, at the target's price); when the call ends, settle to the actual cost. Parallel calls can therefore never overshoot a limit.
 - A call that would exceed a budget is refused before it is sent, as a typed error naming the budget.
 

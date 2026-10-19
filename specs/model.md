@@ -18,7 +18,7 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 - **One rule at every level** (`policy.md`): choices, the nearest wins; constraints, they only narrow. A level grants only what it was given.
 - **No project needs a team.** Anyone can make one, private to them at first. The organization always owns its data, so when a person leaves, the projects they managed pass to an admin, and nothing is lost or orphaned.
-- **Words:** people see Chats and projects. "Space" stays the code's word for either: a project space, or a person's personal space (`storage.md`).
+- **Words:** people see Chats and projects, and the code says the same: Chats is the person's project of kind `personal` (`storage.md`). Spaces became projects on 2026-10-19 (#435); only stored names that sealed content depends on keep the old word.
 - **A laptop is an organization of one:** no teams, one person. The organization's screens are that person's Settings, and the word "organization" never appears there (AGENTS.md, "Keeping principle 4").
 
 ## Two roles: the server and the computer
@@ -76,8 +76,8 @@ Decided, mostly not built. "Where the code disagrees" lists what changes, in the
 
 ## Where the code disagrees
 
-1. **A server still keeps a little of the folder it started in:** its skills and commands reach every thread, `memory/*` acts in its space when a request names none, and only its threads go to workers (`session.md`, "Where a thread works"). Otherwise every project owns its folder, and its settings, servers and hooks reach its threads alone; a request that names no space acts in the caller's Chats.
-2. **`glave app` serves in the folder it starts in,** so that folder becomes a project, and a folder no key leads to becomes a project without asking (`storage.md`, "Spaces"). The CLI becomes a client of the person's server, and a new folder asks once. `glave` alone starts a chat in the terminal, one turn per line; it opens the browser instead.
+1. **A server still keeps a little of the folder it started in:** its skills and commands reach every thread, `memory/*` acts in its project when a request names none, and only its threads go to workers (`session.md`, "Where a thread works"). Otherwise every project owns its folder, and its settings, servers and hooks reach its threads alone; a request that names no project acts in the caller's Chats.
+2. **`glave app` serves in the folder it starts in,** so that folder becomes a project, and a folder no key leads to becomes a project without asking (`storage.md`, "Projects"). The CLI becomes a client of the person's server, and a new folder asks once. `glave` alone starts a chat in the terminal, one turn per line; it opens the browser instead.
 3. **Settled** (`one-server.md`, 2c): tasks and schedules run in the person's server, and the CLI's commands for tasks, schedules, threads, memory and git hosts are its clients.
 4. **Settings are read from files and environment variables,** model accounts are refused on an organization's server, and there is one cloud provider at a time (`policy.md`, `session.md` "Model accounts", `gateway.md`). Settings become data (#222, #289, #290).
 5. **The gateway service is configured from its own environment** (`gateway.md`, "Surfaces"). It becomes a role of the server, reading the same data.

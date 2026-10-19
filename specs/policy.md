@@ -46,10 +46,10 @@ Hooks (issue #46; `approvals.md`, "Hooks"):
 
 Memory (issue #93; `memory.md`):
 
-- `memory = "on"` or `"off"` in `config.toml` (default `on`, `memory.md`) is the person's own choice: a project's file cannot set it. `project_memory` (`shared`, the default, `isolated` or `off`) (read as `space_memory` too, and `[memory]`'s `projects` as `spaces`, from before spaces were projects) is the space's setting, which a project's file may choose without trust, since it can only narrow.
-- `[memory]` in a policy (`enabled`, `personal`, `projects`, `retention_days`) only narrows: `enabled = false` turns memory off (an explicit `memory = "on"` is then an error naming the rule), `personal = false` leaves spaces only `isolated` or `off` (glave's default `shared` gives way to `isolated`), `spaces` lists the settings allowed, and the smallest `retention_days` holds. `glave policy explain` shows `memory` and `project_memory` with their sources.
+- `memory = "on"` or `"off"` in `config.toml` (default `on`, `memory.md`) is the person's own choice: a project's file cannot set it. `project_memory` (`shared`, the default, `isolated` or `off`) (read as `space_memory` too, and `[memory]`'s `projects` as `spaces`, from before spaces were projects) is the project's setting, which a project's file may choose without trust, since it can only narrow.
+- `[memory]` in a policy (`enabled`, `personal`, `projects`, `retention_days`) only narrows: `enabled = false` turns memory off (an explicit `memory = "on"` is then an error naming the rule), `personal = false` leaves projects only `isolated` or `off` (glave's default `shared` gives way to `isolated`), `spaces` lists the settings allowed, and the smallest `retention_days` holds. `glave policy explain` shows `memory` and `project_memory` with their sources.
 
-Not built yet: a command to change a decision; signed bundles from an organization's server, macOS managed preferences and Group Policy; a space's own policy; recording policy changes as events (the admin console); and recording the policy version in each turn's configuration.
+Not built yet: a command to change a decision; signed bundles from an organization's server, macOS managed preferences and Group Policy; a project's own policy; recording policy changes as events (the admin console); and recording the policy version in each turn's configuration.
 
 ## Two kinds of setting, two rules
 
@@ -72,7 +72,7 @@ A "requirement" (the sandbox must be on) is a constraint that allows one value. 
 **Constraints**, all of which apply at once:
 
 1. the organization's policy: served by the organization's glave server as a signed, versioned bundle, or installed by device management at `/etc/glave/policy.toml` (macOS: managed preferences; Windows: Group Policy);
-2. a space's own policy, which may only narrow the organization's (a client's sealed space, say);
+2. a project's own policy, which may only narrow the organization's (a client's sealed project, say);
 3. none at all for a person on their own computer, whose personal organization allows everything.
 
 A consumer never sees a policy. They set at most a few choices.
@@ -225,7 +225,7 @@ A laptop's own config can never loosen a constraint, because the constraint arri
 ## Project trust
 
 - A project's `.glave/config.toml` and its `.mcp.json` can run commands (MCP servers and hooks). So they are honoured only after the person trusts the project once. glave asks at most once per project, and only when the project brings something that runs commands.
-- Trust decisions are kept in the store, in the trust ledger in the person's personal space (`events.md`, "The trust ledger"), one `trust.decided` per decision about a project, keyed by its canonical root path; the latest about a project holds, so every server on one store reads the same. A clone that moved is recognised by its `origin` remote, read from the repository's config file without running anything. Each item records the exact definition that was answered, so trust is of the content:
+- Trust decisions are kept in the store, in the trust ledger in the person's personal project (`events.md`, "The trust ledger"), one `trust.decided` per decision about a project, keyed by its canonical root path; the latest about a project holds, so every server on one store reads the same. A clone that moved is recognised by its `origin` remote, read from the repository's config file without running anything. Each item records the exact definition that was answered, so trust is of the content:
 
   ```json
   {"path": "/Users/ada/code/app", "remote": "git@example.com:acme/app.git",

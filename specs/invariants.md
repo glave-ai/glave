@@ -37,8 +37,8 @@ Tests are named by file and function. A conformance suite is a function in `crat
    - *Not yet:* `thread/get` loads the thread, and loading repairs open turns by appending to them (#410, with PR 5 of `one-server.md`).
    - *Proved by:* no test yet; one needs two servers on one store.
 6. **Scope is enforced by the store on every query.** Only `locate` takes a bare thread id.
-   - *Holds* for the log, blobs, views and search. Spaces are asked by organization, and membership is checked by the session.
-   - *Proved by:* `conformance::event_log` ("another scope must not see this thread"); `conformance::blob_store`; `conformance::thread_views` ("views must not cross scopes"); `conformance::search` ("a search must stay inside its scope"); `crates/session/tests/spaces.rs` `one_person_can_neither_read_nor_answer_anothers_threads`.
+   - *Holds* for the log, blobs, views and search. Projects are asked by organization, and membership is checked by the session.
+   - *Proved by:* `conformance::event_log` ("another scope must not see this thread"); `conformance::blob_store`; `conformance::thread_views` ("views must not cross scopes"); `conformance::search` ("a search must stay inside its scope"); `crates/session/tests/many_projects.rs` `one_person_can_neither_read_nor_answer_anothers_threads`.
 7. **In-process and remote are one code path**: the same scenarios on every transport, the same suite on every computer.
    - *Partly.* It holds for the session API on all four transports and for local and remote computers; workers (`WorkerComputers`) do not run the computers suite (#405).
    - *Proved by:* `crates/session/tests/conformance.rs` (in-process, stdio, Unix socket, HTTP and SSE); `conformance::computers`, run by `crates/computer/src/local/tests.rs` `this_machine_passes_the_computers_suite`, `crates/computer/tests/remote.rs` `a_computer_across_a_pipe_passes_the_suite`, `a_computer_over_tcp_passes_the_suite_once_signed_in`, `a_computer_over_tls_passes_the_suite_with_its_certificate_pinned`, and `crates/cli/tests/computer.rs` `the_binary_serves_a_computer_that_passes_the_suite`.
@@ -47,7 +47,7 @@ Tests are named by file and function. A conformance suite is a function in `crat
    - *Proved by:* `crates/cli/tests/telemetry.rs` `the_log_has_spans_and_metrics_and_never_content`, `a_collector_gets_spans_and_metrics_and_never_content`; `crates/session/tests/http.rs` `the_signed_in_caller_is_recorded_and_the_token_never_is`; `crates/session/tests/credentials.rs` `a_token_never_shows_in_a_request_s_debug`; `crates/session/tests/providers.rs` `a_key_never_shows_in_a_request_s_debug`; `crates/computer/src/local/confinement_tests.rs` `commands_never_see_secret_variables`; `crates/computer/tests/remote.rs` `a_computer_across_a_pipe_keeps_secret_variables_from_commands`, `a_computer_over_tcp_keeps_secret_variables_from_commands`; `cargo xtask secrets`.
 9. **Content at rest is sealed,** bound to its row by associated data, so a sealed payload moved to another row does not open.
    - *Holds* in both stores, tested per store rather than in the ports suite, so a third store is held to nothing (#405).
-   - *Proved by:* `crates/store-sqlite/src/tests/sealing.rs` `payloads_are_sealed_in_the_file_and_read_back_as_written`, `a_sealed_payload_moved_to_another_row_thread_or_space_does_not_open`; `crates/store-postgres/tests/sealing.rs` `payloads_are_sealed_and_a_moved_payload_does_not_open`; `glave_keys::conformance::keys`, run by `crates/keys/src/keys/tests.rs` `in_memory_keys_pass_the_conformance_suite` and both stores.
+   - *Proved by:* `crates/store-sqlite/src/tests/sealing.rs` `payloads_are_sealed_in_the_file_and_read_back_as_written`, `a_sealed_payload_moved_to_another_row_thread_or_project_does_not_open`; `crates/store-postgres/tests/sealing.rs` `payloads_are_sealed_and_a_moved_payload_does_not_open`; `glave_keys::conformance::keys`, run by `crates/keys/src/keys/tests.rs` `in_memory_keys_pass_the_conformance_suite` and both stores.
 10. **Ledgers are glave's own streams**: never listed or read as threads; any process may append to one, and a conflict retries.
     - *Holds.*
     - *Proved by:* `crates/session/tests/schedules.rs` `the_task_ledger_is_never_listed_or_read_as_a_thread`; `conformance::thread_views` ("a stream without thread.started must have no view").
@@ -59,7 +59,7 @@ Tests are named by file and function. A conformance suite is a function in `crat
     - *Proved by:* no test yet; PR 5 adds them to the conformance suite.
 13. **One firer per schedule and one recoverer per task.**
     - *Partly:* only per `GLAVE_HOME`, by `server.lock`. Two servers on one store both fire every schedule, and each interrupts the other's running tasks (#410).
-    - *Proved by:* `crates/session/tests/tasks.rs` `recovering_tasks_covers_every_space` (one process).
+    - *Proved by:* `crates/session/tests/tasks.rs` `recovering_tasks_covers_every_project` (one process).
 14. **Every spawned task and process has an owner** that awaits or stops it.
     - *Holds* for every `tokio::spawn` read in the pass, and for every process, which starts only through glave-process.
     - *Proved by:* `cargo xtask spawns` for processes; nothing checks tasks.

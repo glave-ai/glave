@@ -25,8 +25,8 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 | Organization | The tenant: one on a laptop (never shown), one in a company, many on Glave Cloud. Holds providers, catalogs, policy, the theme, the budget (`specs/model.md`) |
 | Team | A flat group of people, granted models, connections and budgets |
 | Person | Someone who signs in: their Chats, their computer, their own sign-ins and choices |
-| Space | The scope boundary in code: a project (folders, instructions, members) or a person's Chats. Holds memory, history, files, members, policy, budget, default environment |
-| Thread | A conversation or task in a space. Workers fork from a parent with permissions and budget ⊆ the parent's |
+| Project | The scope boundary: a project (folders, instructions, members), or a person's Chats, their project of kind `personal`. Holds memory, history, files, members, policy, budget, default environment |
+| Thread | A conversation or task in a project. Workers fork from a parent with permissions and budget ⊆ the parent's |
 | Environment | A reusable template for where work runs: computer type, image, setup, network, credentials, limits |
 | Computer | A person's one machine (laptop, server or cloud machine) where the agent works, its reach drawn by the operating system's sandbox: secrets hidden, the machine readable, the project writable. Fresh per-task workers are an upgrade |
 | Harness | The agent loop: context, tool calls, approvals, receipts, threads, scheduling |
@@ -50,7 +50,7 @@ crates/aws/         glave-aws: Amazon Bedrock's OpenAI-compatible endpoints and 
 crates/google/      glave-google: Google Vertex AI's endpoints, and Application Default Credentials as a refreshing bearer token (the GKE metadata server, service account keys, gcloud's user credentials, workload identity federation), hand-rolled
 crates/gateway/     glave-gateway: the in-process gateway (specs/gateway.md): routes by purpose, safe fallback, budgets, metering
 crates/gateway-service/  glave-gateway-service: the gateway as a service (`glave gateway serve`): OpenAI and Anthropic surfaces, OIDC sign-in (glave-identity), per-caller policy, budgets and metering, the MCP tool catalog at /mcp
-crates/keys/        glave-keys: the key hierarchy (root, organization, space, data keys), sealing at rest, erasure; roots in the OS keychain (`keychain`) or a key file
+crates/keys/        glave-keys: the key hierarchy (root, organization, project, data keys), sealing at rest, erasure; roots in the OS keychain (`keychain`) or a key file
 crates/store-sqlite/  glave-store-sqlite: the event log, blob store and wrapped keys on one local SQLite file, content sealed
 crates/store-postgres/  glave-store-postgres: the event log, blob store and wrapped keys on Postgres, an organization's one data store (`[store] url`), TLS off this computer, content sealed
 crates/process/     glave-process: every operating-system process glave starts, through one place (`cargo xtask spawns` checks): its own process group, a ledger under GLAVE_HOME/run while it runs, and what a glave that ended left stopped at the next start
@@ -122,7 +122,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
   - what this tab remembers: drafts, panes, scroll.
 
   A click may show its result at once; the server's answer is what stays. No item names a pane, a fold or a place on screen: every item prints as one line of plain text, which the CLI proves.
-- **One space shows no spaces.** With a single space, the UI shows no space grouping, members or moving between projects.
+- **One project shows no projects.** With only the person's Chats, the UI shows no project grouping, members or moving between projects.
 - **Plain words.** No user-visible text names a file, flag, command or error code unless the person typed it. Every error a client can show has a message a person can act on.
 - **The consumer journey test** (`web/e2e/consumer.e2e.ts`, planned in #251) runs against a real server with a fresh home: add a model, chat, approve a command, connect GitHub. It fails if an admin word appears (policy, organization, member, group, admin, SSO, `config.toml`).
 - **Startup and size are measured** on every pull request, in the merge queue and after every merge to `main` (`budgets.yml`). A cloud or server dependency moves behind a Cargo feature only for a real reason (a security or licence problem, or a size that hurts people), not to meet a number: one build serves every deployment.
@@ -145,7 +145,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - No global state or singletons. Pass dependencies in explicitly.
 
 **Types**
-- Make illegal states unrepresentable: newtypes for IDs (`SpaceId`, `EventId`), enums over flags, validated constructors.
+- Make illegal states unrepresentable: newtypes for IDs (`ProjectId`, `EventId`), enums over flags, validated constructors.
 - IDs are UUID v7 (time-ordered).
 - Everything persisted or sent over the wire carries a schema version. Migrations can be replayed.
 
@@ -200,7 +200,7 @@ One exception: the owner raised the release binary from 30 to 40 MB on 2026-10-1
 
 - No secrets in clients, logs, responses or the repository. Dev secrets come from the environment and go only to server logs, behind a dev flag.
 - No prompt or message content in logs by default. Usage events are content-free.
-- Data at rest is encrypted: the whole local database (key in the OS keychain); per-space keys via a KMS plug for organizations. Deleting a space's key erases it.
+- Data at rest is encrypted: the whole local database (key in the OS keychain); per-space keys via a KMS plug for organizations. Deleting a project's key erases it.
 - Scope is enforced by the data store on every query, never by the model.
 - Content from the web is labeled untrusted. Risky actions after reading it need approval.
 
