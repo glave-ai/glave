@@ -10,7 +10,7 @@ use rusqlite::{
 };
 use uuid::Uuid;
 
-use crate::store::{Shared, StoreError, run};
+use crate::store::{Shared, run};
 
 /// The projects in the local database.
 #[derive(Clone)]
@@ -111,12 +111,7 @@ fn assemble(connection: &Connection, org: &str, row: Row) -> Result<Project, Fai
         kind: ProjectKind::named(&row.kind)
             .ok_or_else(|| corrupt(format!("unknown kind {:?}", row.kind)))?,
         name: row.name,
-        // A project made before records has no owner until the local person claims it: no one's.
-        owner: if row.owner.is_empty() {
-            Principal::glave()
-        } else {
-            serde_json::from_str(&row.owner).map_err(corrupt)?
-        },
+        owner: serde_json::from_str(&row.owner).map_err(corrupt)?,
         members,
         created_at: At::try_from(row.created_at).map_err(corrupt)?,
         updated_at: At::try_from(row.updated_at).map_err(corrupt)?,
@@ -409,17 +404,4 @@ impl Projects for SqliteProjects {
         let (keys, new) = (keys.to_vec(), new.clone());
         Box::pin(self.with(move |connection| folder_now(connection, &org.to_string(), &keys, &new)))
     }
-}
-
-/// Gives every project made before records (no owner yet) to `owner`: on a person's own computer,
-/// every such project was theirs.
-pub(crate) async fn claim(connection: &Shared, owner: &Principal) -> Result<usize, StoreError> {
-    let owner = principal_text(owner).map_err(|e| StoreError::Storage(e.to_string()))?;
-    run(connection, move |connection| {
-        connection.execute(
-            "UPDATE project_records SET owner = ?1 WHERE owner = ''",
-            params![owner],
-        )
-    })
-    .await
 }

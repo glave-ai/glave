@@ -65,7 +65,7 @@ Tests are named by file and function. A conformance suite is a function in `crat
     - *Proved by:* `cargo xtask spawns` for processes; nothing checks tasks.
 15. **Everything persisted or sent carries a version.**
     - *Partly:* events, the session protocol, the computer protocol, the process ledger and worktree records do (a worktree record with no version is read as version 1, and one of a newer version is refused). The `computer` file is one id, created once, with no version.
-    - *Proved by:* `crates/event/tests/fixtures.rs` `every_known_version_has_a_fixture_that_decodes`, `latest_versions_encode_to_exactly_the_saved_bytes`, `every_fixture_is_a_known_version`; `crates/store-sqlite/src/tests.rs` `a_newer_schema_is_refused`; `crates/computer/src/worktrees/tests.rs` `a_record_of_a_newer_version_is_refused_plainly`.
+    - *Proved by:* `crates/event/tests/fixtures.rs` `every_known_version_has_a_fixture_that_decodes`, `latest_versions_encode_to_exactly_the_saved_bytes`, `every_fixture_is_a_known_version`; `crates/store-sqlite/src/tests.rs` `a_file_of_another_schema_is_refused_and_left_as_it_was`; `crates/computer/src/worktrees/tests.rs` `a_record_of_a_newer_version_is_refused_plainly`.
 16. **Time and randomness are injected.**
     - *Partly:* library code in glave-computer and glave-process still reads the real clock (a lint in #366). Randomness that fails is an error, never a weaker id.
     - *Proved by:* nothing enforces injection; tests use `glave_ports::testing::ManualClock`. `crates/harness/tests/turn.rs` `a_random_source_that_fails_makes_no_thread`.

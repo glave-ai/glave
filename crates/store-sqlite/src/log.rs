@@ -1,5 +1,5 @@
 //! The event log on SQLite: one row per event, the envelope as readable columns, the payload
-//! sealed under its project's data key (or, in rows written before sealing, as written).
+//! sealed under its project's data key.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -401,7 +401,7 @@ struct Row {
     kind: String,
     v: i64,
     data: Vec<u8>,
-    key_id: Option<String>,
+    key_id: String,
 }
 
 impl Row {
@@ -413,23 +413,20 @@ impl Row {
         let kind = TypeName::new(self.kind).map_err(LogError::corrupt)?;
         let v = PayloadVersion::new(u32::try_from(self.v).map_err(LogError::corrupt)?)
             .map_err(LogError::corrupt)?;
-        let data = match self.key_id {
-            // Written before sealing: stored as written.
-            None => self.data,
-            Some(key_id) => {
-                let fields = EventFields {
-                    glave,
-                    thread,
-                    seq,
-                    kind: kind.as_str(),
-                    v: v.get(),
-                };
-                match keys.open_event(scope, &fields, &key_id, &self.data).await {
-                    Ok(opened) => opened,
-                    Err(error) => erased_payload(&key_id, &error)
-                        .ok_or_else(|| LogError::opening(seq, &error))?,
-                }
-            }
+        let fields = EventFields {
+            glave,
+            thread,
+            seq,
+            kind: kind.as_str(),
+            v: v.get(),
+        };
+        let data = match keys
+            .open_event(scope, &fields, &self.key_id, &self.data)
+            .await
+        {
+            Ok(opened) => opened,
+            Err(error) => erased_payload(&self.key_id, &error)
+                .ok_or_else(|| LogError::opening(seq, &error))?,
         };
         let data = String::from_utf8(data).map_err(LogError::corrupt)?;
         Ok(RawEvent {

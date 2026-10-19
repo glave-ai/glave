@@ -148,6 +148,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - Make illegal states unrepresentable: newtypes for IDs (`ProjectId`, `EventId`), enums over flags, validated constructors.
 - IDs are UUID v7 (time-ordered).
 - Everything persisted or sent over the wire carries a schema version. Migrations can be replayed.
+- Until glave 0.1 ships there is no compatibility: formats change in place, each store has one schema, and people remove their data. From 0.1 on, versions, migrations and upgrade-on-read apply.
 
 **Async and concurrency**
 - tokio. Never block inside async code; use `spawn_blocking` for blocking work.

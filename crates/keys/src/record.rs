@@ -36,8 +36,6 @@ pub(crate) struct DataKey {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) provider: Option<Uuid>,
     pub(crate) n: u32,
-    /// Kept under its name from before spaces were projects: records are sealed as written.
-    #[serde(rename = "space_version")]
     pub(crate) project_version: u32,
     pub(crate) wrapped: Option<Vec<u8>>,
 }
@@ -196,7 +194,7 @@ mod tests {
             record.rotation_due(),
             "destroyed under the live project key"
         );
-        let old = br#"{"glave_keys":1,"versions":[],"data":[{"month":"2026-09","n":1,"space_version":1,"wrapped":null}]}"#;
+        let old = br#"{"glave_keys":1,"versions":[],"data":[{"month":"2026-09","n":1,"project_version":1,"wrapped":null}]}"#;
         let decoded = ProjectRecord::decode(old).unwrap();
         assert!(
             decoded

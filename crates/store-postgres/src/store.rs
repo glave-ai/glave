@@ -71,7 +71,7 @@ impl Store {
             .get()
             .await
             .map_err(|e| StoreError::Connect(e.to_string()))?;
-        schema::migrate(&mut client).await?;
+        schema::prepare(&mut client).await?;
         drop(client);
         let keys = Arc::new(Keys::new(keys, PostgresKeys::new(pool.clone())));
         let store = Self { pool, keys };

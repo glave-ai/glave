@@ -258,7 +258,7 @@ pub(crate) async fn rebuild_all(log: &PostgresLog, pool: &Pool) -> Result<(), St
 }
 
 /// Rebuilds every view when the stored ones were built by an older fold (or none was built
-/// yet, as right after the upgrade that made the table), then records the version.
+/// yet, as in a new database), then records the version.
 pub(crate) async fn refresh(log: &PostgresLog, pool: &Pool) -> Result<(), StoreError> {
     let client = connection(pool).await?;
     let built = client

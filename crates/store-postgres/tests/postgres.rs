@@ -98,7 +98,7 @@ mod postgres {
             let store = scratch.store().await.unwrap();
             let verdict = conformance::thread_views(&store.log()).await;
             let kept = rows(&scratch).await;
-            // As after the upgrade that made the table: no views, and no version recorded.
+            // As if no fold had built them: no views, and no version recorded.
             scratch
                 .admin
                 .batch_execute(&format!(
@@ -147,7 +147,7 @@ mod postgres {
     }
 
     #[test]
-    fn data_survives_reconnecting_and_migrations_run_once() {
+    fn data_survives_reconnecting_and_the_schema_is_recorded_once() {
         block_on!(async {
             let Some(scratch) = Scratch::new("reconnect").await else {
                 return;
@@ -174,12 +174,12 @@ mod postgres {
                 .get::<_, i64>(0);
             scratch.drop_schema().await;
             assert_eq!(kept, Ok(Some(b"kept".to_vec())));
-            assert_eq!(versions, 6, "each migration is recorded once");
+            assert_eq!(versions, 1, "the schema is recorded once");
         });
     }
 
     #[test]
-    fn openers_racing_on_a_new_database_migrate_it_once() {
+    fn openers_racing_on_a_new_database_make_its_schema_once() {
         block_on!(async {
             let Some(scratch) = Scratch::new("race").await else {
                 return;
@@ -311,30 +311,37 @@ mod postgres {
         });
     }
 
+    /// A database another version of glave set up, older or newer, is refused with what to
+    /// do: until glave 0.1 there is one schema and no migration.
     #[test]
-    fn a_newer_schema_is_refused() {
+    fn a_database_of_another_schema_is_refused() {
         block_on!(async {
-            let Some(scratch) = Scratch::new("newer").await else {
+            let Some(scratch) = Scratch::new("other").await else {
                 return;
             };
             drop(scratch.store().await.unwrap());
-            scratch
-                .admin
-                .execute(
-                    &format!(
-                        "INSERT INTO {}.glave_migrations (version) VALUES (999)",
-                        scratch.schema
-                    ),
-                    &[],
-                )
-                .await
-                .unwrap();
-            let result = scratch.store().await.map(drop);
+            let mut results = Vec::new();
+            for found in [6, 999] {
+                scratch
+                    .admin
+                    .execute(
+                        &format!(
+                            "UPDATE {}.glave_migrations SET version = $1",
+                            scratch.schema
+                        ),
+                        &[&found],
+                    )
+                    .await
+                    .unwrap();
+                results.push(scratch.store().await.map(drop));
+            }
             scratch.drop_schema().await;
-            assert!(
-                matches!(&result, Err(StoreError::Schema(message)) if message.contains("newer glave")),
-                "{result:?}"
-            );
+            for result in results {
+                assert!(
+                    matches!(&result, Err(StoreError::Schema(message)) if message.contains("Empty it")),
+                    "{result:?}"
+                );
+            }
         });
     }
 }

@@ -86,48 +86,31 @@ impl BlobStore for SqliteBlobs {
                 .blob_name(&scope, &sha256)
                 .await
                 .map_err(|e| BlobError::Storage(e.to_string()))?;
+            // A project with no key yet (or an erased one) has nothing that can be found.
+            let Some(name) = name else {
+                return Ok(None);
+            };
             let lookup = name.clone();
-            let row: Option<(Vec<u8>, Option<String>)> = run(&this.connection, move |connection| {
-                let (org, project) = (scope.org.to_string(), scope.project.to_string());
-                let sealed = match lookup {
-                    Some(name) => connection
-                        .query_row(
-                            "SELECT bytes, key_id FROM blobs
-                             WHERE org = ?1 AND project = ?2 AND name = ?3 AND key_id IS NOT NULL",
-                            params![org, project, name],
-                            |row| Ok((row.get(0)?, row.get(1)?)),
-                        )
-                        .optional()?,
-                    None => None,
-                };
-                if sealed.is_some() {
-                    return Ok(sealed);
-                }
-                // Written before sealing: stored as written, under its hash.
+            let row: Option<(Vec<u8>, String)> = run(&this.connection, move |connection| {
                 connection
                     .query_row(
-                        "SELECT bytes, NULL FROM blobs
-                         WHERE org = ?1 AND project = ?2 AND name = ?3 AND key_id IS NULL",
-                        params![org, project, sha256.as_str()],
+                        "SELECT bytes, key_id FROM blobs
+                         WHERE org = ?1 AND project = ?2 AND name = ?3",
+                        params![scope.org.to_string(), scope.project.to_string(), lookup],
                         |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .optional()
             })
             .await
             .map_err(|e| BlobError::Storage(e.to_string()))?;
-            match (row, name) {
-                (None, _) => Ok(None),
-                (Some((bytes, None)), _) => Ok(Some(bytes)),
-                (Some((bytes, Some(key_id))), Some(name)) => this
-                    .keys
-                    .open_blob(&scope, &name, &key_id, &bytes)
-                    .await
-                    .map(Some)
-                    .map_err(|e| BlobError::Storage(format!("a blob could not be opened: {e}"))),
-                (Some(_), None) => Err(BlobError::Storage(
-                    "a sealed blob was found without its project key".into(),
-                )),
-            }
+            let Some((bytes, key_id)) = row else {
+                return Ok(None);
+            };
+            this.keys
+                .open_blob(&scope, &name, &key_id, &bytes)
+                .await
+                .map(Some)
+                .map_err(|e| BlobError::Storage(format!("a blob could not be opened: {e}")))
         }
     }
 }

@@ -1,5 +1,5 @@
 //! Sealing at rest on Postgres: the keys conformance suite, what lands in the table,
-//! tampering, rows from before sealing, and erasure. Skipped without
+//! tampering, and erasure. Skipped without
 //! `GLAVE_TEST_POSTGRES_URL`, like the other Postgres tests.
 
 #[cfg(test)]
@@ -11,7 +11,7 @@ mod sealing {
     use glave_event::RawEvent;
     use glave_keys::KeyId;
     use glave_keys::conformance::event;
-    use glave_ports::{BlobStore, EventLog, LogError, OrgId, ProjectId, Scope, digest};
+    use glave_ports::{BlobStore, EventLog, LogError, OrgId, ProjectId, Scope};
     use glave_store_postgres::Store;
     use uuid::Uuid;
 
@@ -138,74 +138,6 @@ mod sealing {
             assert!(!clear, "the payload is not stored in the clear");
             assert_eq!(moved, [true, true, true], "moved payloads must not open");
             assert_eq!(back.unwrap(), lines(&a));
-        });
-    }
-
-    #[test]
-    fn rows_written_before_sealing_still_read() {
-        block_on!(async {
-            let Some(scratch) = Scratch::new("unsealed").await else {
-                return;
-            };
-            let store = scratch.store().await.unwrap();
-            let here = scope(1);
-            let old = event(1, 1, "2026-09").unwrap();
-            scratch
-                .admin
-                .execute(
-                    &format!(
-                        "INSERT INTO {}.events (org, project, thread, seq, id, at, type, v, glave, data)
-                         VALUES ($1, $2, $3, 1, $4, $5, $6, $7, $8, $9)",
-                        scratch.schema
-                    ),
-                    &[
-                        &here.org.as_uuid(),
-                        &here.project.as_uuid(),
-                        &old.thread.as_uuid(),
-                        &old.id.as_uuid(),
-                        &old.at.timestamp(),
-                        &old.kind.as_str(),
-                        &i64::from(old.v.get()),
-                        &i64::from(old.glave),
-                        &old.data.get().as_bytes(),
-                    ],
-                )
-                .await
-                .unwrap();
-            let sha = digest(b"old blob");
-            scratch
-                .admin
-                .execute(
-                    &format!(
-                        "INSERT INTO {}.blobs (org, project, name, media_type, bytes)
-                         VALUES ($1, $2, $3, 'text/plain', $4)",
-                        scratch.schema
-                    ),
-                    &[
-                        &here.org.as_uuid(),
-                        &here.project.as_uuid(),
-                        &sha.as_str(),
-                        &b"old blob".as_slice(),
-                    ],
-                )
-                .await
-                .unwrap();
-            let new = event(1, 2, "2026-10").unwrap();
-            store
-                .log()
-                .append(&here, std::slice::from_ref(&new))
-                .await
-                .unwrap();
-            let sealed = stored(&scratch, &here, &new).await.1;
-            let read = read_all(&store, &here, &old)
-                .await
-                .map(|events| lines(&events));
-            let blob = store.blobs().get(&here, &sha).await;
-            drop(store);
-            scratch.drop_schema().await;
-            assert!(sealed.is_some(), "new writes are sealed");
-            assert_eq!(read.unwrap(), lines(&[old, new]));
-            assert_eq!(blob, Ok(Some(b"old blob".to_vec())));
         });
     }
 

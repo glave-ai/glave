@@ -2,10 +2,9 @@
 //! organization's one data store, the counterpart of the local SQLite file.
 //!
 //! Every call borrows a connection from a bounded pool and never blocks the async runtime.
-//! Appends are transactions that enforce the log's gap-free numbering; the schema migrates
-//! forward on open and refuses a newer one. Every query is bound to a scope. Event payloads
-//! and blobs are sealed on write and opened on read (`specs/storage.md`); rows written before
-//! sealing still read as they were stored.
+//! Appends are transactions that enforce the log's gap-free numbering; a new database gets the
+//! one schema, and a database of another schema is refused. Every query is bound to a scope.
+//! Event payloads and blobs are sealed on write and opened on read (`specs/storage.md`).
 
 mod blobs;
 mod keys;

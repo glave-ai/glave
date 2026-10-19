@@ -1,5 +1,5 @@
 //! The event log on Postgres: one row per event, the envelope as readable columns, the
-//! payload sealed under its project's data key (or, in rows written before sealing, as written).
+//! payload sealed under its project's data key.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -364,30 +364,24 @@ async fn event(keys: &PostgresKeyring, scope: &Scope, row: &Row) -> Result<RawEv
     let kind: String = row.try_get("type").map_err(LogError::corrupt)?;
     let v: i64 = row.try_get("v").map_err(LogError::corrupt)?;
     let data: Vec<u8> = row.try_get("data").map_err(LogError::corrupt)?;
-    let key_id: Option<String> = row.try_get("key_id").map_err(LogError::corrupt)?;
+    let key_id: String = row.try_get("key_id").map_err(LogError::corrupt)?;
     let glave = u32::try_from(glave).map_err(LogError::corrupt)?;
     let thread = ThreadId::try_from(thread).map_err(LogError::corrupt)?;
     let seq = stored_seq(u64::try_from(seq).map_err(LogError::corrupt)?)?;
     let kind = TypeName::new(kind).map_err(LogError::corrupt)?;
     let v = PayloadVersion::new(u32::try_from(v).map_err(LogError::corrupt)?)
         .map_err(LogError::corrupt)?;
-    let data = match key_id {
-        // Written before sealing: stored as written.
-        None => data,
-        Some(key_id) => {
-            let fields = EventFields {
-                glave,
-                thread,
-                seq,
-                kind: kind.as_str(),
-                v: v.get(),
-            };
-            match keys.open_event(scope, &fields, &key_id, &data).await {
-                Ok(opened) => opened,
-                Err(error) => {
-                    erased_payload(&key_id, &error).ok_or_else(|| LogError::opening(seq, &error))?
-                }
-            }
+    let fields = EventFields {
+        glave,
+        thread,
+        seq,
+        kind: kind.as_str(),
+        v: v.get(),
+    };
+    let data = match keys.open_event(scope, &fields, &key_id, &data).await {
+        Ok(opened) => opened,
+        Err(error) => {
+            erased_payload(&key_id, &error).ok_or_else(|| LogError::opening(seq, &error))?
         }
     };
     let data = String::from_utf8(data).map_err(LogError::corrupt)?;

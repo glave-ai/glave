@@ -30,12 +30,10 @@ fn new_project(kind: ProjectKind, name: String, owner: Principal) -> Project {
 }
 
 /// The scope of the project `folder` leads to, for `person`: found by its path, else by
-/// the repository's `origin` remote, else made as theirs. Projects made before projects were
-/// records become theirs first.
+/// the repository's `origin` remote, else made as theirs.
 pub async fn here(store: &Data, folder: &Path, person: PrincipalId) -> anyhow::Result<Scope> {
     let org = org(store).await?;
     let owner = Principal::person(person);
-    store.claim_projects(&owner).await?;
     let canonical = tokio::fs::canonicalize(folder)
         .await
         .unwrap_or_else(|_| folder.to_owned());
