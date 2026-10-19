@@ -19,6 +19,8 @@ use glave_gateway::{Budget, Caller, Gateway, Limit};
 use glave_ports::{Clock, Entropy};
 use glave_ports::{EventLog, LogError, Scope};
 
+use crate::errors::{Kind, Refusal};
+
 /// Events read per page.
 const PAGE: usize = 500;
 /// Appends tried before giving up on a stream other writers keep moving.
@@ -131,14 +133,15 @@ impl<L: EventLog> Meter<L> {
     }
 
     /// A fresh id for an answer, in hex.
-    pub(crate) fn fresh_id(&self) -> String {
-        self.entropy
+    pub(crate) fn fresh_id(&self) -> Result<String, Refusal> {
+        let random = self
+            .entropy
             .bytes()
-            .iter()
-            .fold(String::new(), |mut id, byte| {
-                let _ = write!(id, "{byte:02x}");
-                id
-            })
+            .map_err(|error| Refusal::new(Kind::Internal, error.to_string()))?;
+        Ok(random.iter().fold(String::new(), |mut id, byte| {
+            let _ = write!(id, "{byte:02x}");
+            id
+        }))
     }
 
     fn streams(&self) -> MutexGuard<'_, HashMap<PrincipalId, Stream>> {
@@ -224,7 +227,8 @@ impl<L: EventLog> Meter<L> {
             let now = self.clock.now();
             let seq = Seq::new(self.stream(person).next_seq()).map_err(|e| e.to_string())?;
             let header = Header {
-                id: EventId::new(now, self.entropy.bytes()).map_err(|e| e.to_string())?,
+                id: EventId::new(now, self.entropy.bytes().map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?,
                 thread,
                 seq,
                 at: At::from(now),

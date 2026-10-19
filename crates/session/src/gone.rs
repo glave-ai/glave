@@ -145,7 +145,7 @@ where
         let scope = self.scope_in(space);
         for thread in threads {
             let now = self.inner.harness.clock().now();
-            let random = self.inner.harness.entropy().bytes();
+            let random = self.inner.harness.entropy().bytes()?;
             let log = self.inner.harness.log();
             change_standing(log, &scope, thread, now, random, Change::Archive)
                 .await
@@ -173,7 +173,7 @@ where
         }
         let scope = self.scope_of(thread).await?;
         let now = self.inner.harness.clock().now();
-        let random = self.inner.harness.entropy().bytes();
+        let random = self.inner.harness.entropy().bytes()?;
         change_standing(
             self.inner.harness.log(),
             &scope,

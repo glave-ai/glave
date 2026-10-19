@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
 use jiff::Timestamp;
 
-use crate::env::{Clock, Entropy};
+use crate::env::{Clock, Entropy, EntropyError};
 use crate::tools::{BoxFuture, Cancellation};
 
 pub use git::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials};
@@ -112,13 +112,23 @@ impl CountingEntropy {
 }
 
 impl Entropy for CountingEntropy {
-    fn bytes(&self) -> [u8; 10] {
+    fn bytes(&self) -> Result<[u8; 10], EntropyError> {
         let mut bytes = [0; 10];
         let n = self.0.fetch_add(1, Ordering::SeqCst).to_be_bytes();
         for (slot, byte) in bytes.iter_mut().zip(n) {
             *slot = byte;
         }
-        bytes
+        Ok(bytes)
+    }
+}
+
+/// A random source that always fails, as a broken operating system's would.
+#[derive(Debug)]
+pub struct FailingEntropy;
+
+impl Entropy for FailingEntropy {
+    fn bytes(&self) -> Result<[u8; 10], EntropyError> {
+        Err(EntropyError("the test's source is broken".into()))
     }
 }
 

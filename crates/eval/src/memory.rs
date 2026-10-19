@@ -275,11 +275,13 @@ impl glave_ports::Clock for Fixed {
 async fn write_past(store: &Store, scope: Scope, messages: &[String]) -> Result<(), EvalError> {
     let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("past thread: {error}"));
     let now = SystemClock.now();
-    let thread = ThreadId::new(now, OsEntropy.bytes()).map_err(|e| fail(&e))?;
+    let thread =
+        ThreadId::new(now, OsEntropy.bytes().map_err(|e| fail(&e))?).map_err(|e| fail(&e))?;
     let mut events = Vec::new();
     for (seq, text) in (1_u64..).zip(messages) {
         let header = Header {
-            id: EventId::new(now, OsEntropy.bytes()).map_err(|e| fail(&e))?,
+            id: EventId::new(now, OsEntropy.bytes().map_err(|e| fail(&e))?)
+                .map_err(|e| fail(&e))?,
             thread,
             seq: Seq::new(seq).map_err(|e| fail(&e))?,
             at: now.into(),

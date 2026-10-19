@@ -102,7 +102,12 @@ impl<L: EventLog> Cleanup<'_, L> {
             trash: trash.map(|path| path.to_string_lossy().into_owned()),
             lost: None,
         };
-        let random = self.entropy.bytes();
+        let random = match self.entropy.bytes() {
+            Ok(random) => random,
+            Err(error) => {
+                return format!("{line}, but it could not be recorded on its thread: {error}");
+            }
+        };
         match record_removed(self.log, &scope, thread, self.now, random, &removed).await {
             Ok(()) => line,
             Err(error) => format!("{line}, but it could not be recorded on its thread: {error}"),

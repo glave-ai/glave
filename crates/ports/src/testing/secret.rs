@@ -14,7 +14,9 @@ pub const FAKE_SECRET: &str = "fake-secret-for-tests";
 /// A fake secret in a provider's shape: `prefix` (`sk-ant-`, `ghp_`, `AKIA`) and 40 random
 /// letters and digits, new at each call. Where a test needs the same one twice, it binds it once.
 pub fn fake_secret(prefix: &str) -> String {
+    // A source that fails ends the body early: a test's secret is shorter, never made up.
     let body: String = std::iter::repeat_with(|| OsEntropy.bytes())
+        .map_while(Result::ok)
         .flatten()
         .map(letter_or_digit)
         .take(BODY)

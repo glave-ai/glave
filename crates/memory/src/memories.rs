@@ -186,7 +186,8 @@ impl<L: EventLog + 'static> Memories<L> {
             let next = self.with_book(scope, Book::next_seq).await?;
             let now = self.inner.clock.now();
             let header = Header {
-                id: EventId::new(now, self.inner.entropy.bytes()).map_err(invalid)?,
+                id: EventId::new(now, self.inner.entropy.bytes().map_err(invalid)?)
+                    .map_err(invalid)?,
                 thread: ledger,
                 seq: Seq::new(next).map_err(invalid)?,
                 at: At::from(now),

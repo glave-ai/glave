@@ -32,7 +32,7 @@ mod view;
 
 pub use blob::{BlobError, BlobStore, digest};
 pub use caller::Caller;
-pub use env::{Clock, Entropy, OsEntropy, SystemClock};
+pub use env::{Clock, Entropy, EntropyError, OsEntropy, SystemClock};
 pub use failure::Failure;
 pub use in_memory::{InMemoryBlobs, InMemoryLog, InMemorySpaces, InMemoryTools};
 pub use log::{EventLog, LogError, check_append};

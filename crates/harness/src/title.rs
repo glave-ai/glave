@@ -196,7 +196,7 @@ where
     ) -> Result<RawEvent, HarnessError> {
         let now = self.clock.now();
         let header = Header {
-            id: EventId::new(now, self.entropy.bytes())?,
+            id: EventId::new(now, self.entropy.bytes()?)?,
             thread,
             seq,
             at: At::from(now),

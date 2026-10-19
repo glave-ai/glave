@@ -171,7 +171,7 @@ async fn chat<L: EventLog + 'static>(
     )?;
     let mut request = parsed.request;
     request.purpose = purpose;
-    let id = format!("chatcmpl-{}", service.meter.fresh_id());
+    let id = format!("chatcmpl-{}", service.meter.fresh_id()?);
     let created = service.meter.now().as_second();
     if !parsed.stream {
         let completion = whole(service, verified.person, targets, request).await?;
@@ -199,7 +199,7 @@ async fn messages<L: EventLog + 'static>(
     )?;
     let mut request = parsed.request;
     request.purpose = purpose;
-    let id = format!("msg_{}", service.meter.fresh_id());
+    let id = format!("msg_{}", service.meter.fresh_id()?);
     if !parsed.stream {
         let completion = whole(service, verified.person, targets, request).await?;
         let message = anthropic::whole(&id, &completion);

@@ -207,7 +207,7 @@ where
             let next = self.ledgers().get(&space).map_or(1, Ledger::next_seq);
             let seq = Seq::new(next).map_err(|e| internal(&e.to_string()))?;
             let header = Header {
-                id: EventId::new(now, self.inner.harness.entropy().bytes())
+                id: EventId::new(now, self.inner.harness.entropy().bytes()?)
                     .map_err(|e| internal(&e.to_string()))?,
                 thread: ledger,
                 seq,

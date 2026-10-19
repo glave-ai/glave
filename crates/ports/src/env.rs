@@ -12,8 +12,14 @@ pub trait Clock: Send + Sync {
 
 /// Random bytes for the random part of new ids.
 pub trait Entropy: Send + Sync {
-    fn bytes(&self) -> [u8; 10];
+    /// Ten random bytes, or why there are none: an id is never made weaker than it should be.
+    fn bytes(&self) -> Result<[u8; 10], EntropyError>;
 }
+
+/// The random source gave no bytes, so nothing that needed them was made.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("this computer's random source failed ({0}), so nothing was made; try again")]
+pub struct EntropyError(pub String);
 
 impl<T: Clock + ?Sized> Clock for Arc<T> {
     fn now(&self) -> Timestamp {
@@ -22,7 +28,7 @@ impl<T: Clock + ?Sized> Clock for Arc<T> {
 }
 
 impl<T: Entropy + ?Sized> Entropy for Arc<T> {
-    fn bytes(&self) -> [u8; 10] {
+    fn bytes(&self) -> Result<[u8; 10], EntropyError> {
         (**self).bytes()
     }
 }
@@ -37,15 +43,14 @@ impl Clock for SystemClock {
 }
 
 /// The operating system's random source. Where it fails, which it does not on any system glave
-/// runs on, the bytes stay zero: an id then differs only by its time, and sealing, which reads
-/// the same source, fails loudly.
+/// runs on, it says so, as sealing, which reads the same source, does.
 pub struct OsEntropy;
 
 impl Entropy for OsEntropy {
-    fn bytes(&self) -> [u8; 10] {
+    fn bytes(&self) -> Result<[u8; 10], EntropyError> {
         let mut bytes = [0u8; 10];
-        let _ = getrandom::fill(&mut bytes);
-        bytes
+        getrandom::fill(&mut bytes).map_err(|error| EntropyError(error.to_string()))?;
+        Ok(bytes)
     }
 }
 
@@ -55,6 +60,6 @@ mod tests {
 
     #[test]
     fn os_entropy_gives_new_bytes_each_time() {
-        assert_ne!(OsEntropy.bytes(), OsEntropy.bytes());
+        assert_ne!(OsEntropy.bytes().unwrap(), OsEntropy.bytes().unwrap());
     }
 }
