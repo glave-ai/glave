@@ -1,6 +1,6 @@
 //! Schedules through the session API, on a clock the test moves: one-off and cron schedules
 //! fire at the right times and once each, each run in a new thread on a worktree of its own;
-//! schedules in two spaces both fire, and one in a folder that is no repository is skipped;
+//! schedules in two projects both fire, and one in a folder that is no repository is skipped;
 //! missed runs fire once, never a burst, including in a fresh server; deleting a schedule
 //! stops its runs; every run has a budget; and policy limits how many schedules are kept.
 
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use glave_event::{At, Opened, ScheduleId, When};
 use glave_ports::testing::ManualClock;
-use glave_ports::{EventLog, InMemoryLog, SpaceId};
+use glave_ports::{EventLog, InMemoryLog, ProjectId};
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
 use jiff::Timestamp;
 
@@ -44,17 +44,17 @@ async fn create<L: EventLog + 'static>(
     when: When,
     budget: u64,
 ) -> Result<ScheduleInfo, i64> {
-    create_in(server, Some(scope().space), when, budget).await
+    create_in(server, Some(scope().project), when, budget).await
 }
 
 async fn create_in<L: EventLog + 'static>(
     server: &Tested<L>,
-    space: Option<SpaceId>,
+    project: Option<ProjectId>,
     when: When,
     budget: u64,
 ) -> Result<ScheduleInfo, i64> {
     let request = Request::ScheduleCreate {
-        space,
+        project,
         when,
         prompt: "check the build".into(),
         goal: false,
@@ -159,21 +159,21 @@ fn a_one_off_schedule_fires_once_at_its_time() {
 }
 
 #[test]
-fn schedules_in_two_spaces_fire_on_worktrees_and_one_with_no_copy_to_work_on_is_skipped() {
+fn schedules_in_two_projects_fire_on_worktrees_and_one_with_no_copy_to_work_on_is_skipped() {
     block_on!(async {
-        let (server, now, repo) = on_repository("schedule-spaces").await;
+        let (server, now, repo) = on_repository("schedule-projects").await;
         let others = repo.with_extension("others");
-        let one = project(&server, "one", &repository(&others, "one")).await;
-        let two = project(&server, "two", &repository(&others, "two")).await;
+        let one = make_project(&server, "one", &repository(&others, "one")).await;
+        let two = make_project(&server, "two", &repository(&others, "two")).await;
         let plain = others.join("plain");
         std::fs::create_dir_all(&plain).unwrap();
-        let none = project(&server, "plain", &plain).await;
-        for space in [none, two, one] {
-            create_in(&server, Some(space), cron("0 11 * * *"), 1_000)
+        let none = make_project(&server, "plain", &plain).await;
+        for project in [none, two, one] {
+            create_in(&server, Some(project), cron("0 11 * * *"), 1_000)
                 .await
                 .unwrap();
         }
-        assert_eq!(list(&server).await.len(), 3, "every space's");
+        assert_eq!(list(&server).await.len(), 3, "every project's");
         set(&now, "2026-10-10T11:00:00Z");
         let fired = server.tick().await.unwrap();
         settle(&server).await;
@@ -186,7 +186,7 @@ fn schedules_in_two_spaces_fire_on_worktrees_and_one_with_no_copy_to_work_on_is_
             else {
                 panic!("a thread");
             };
-            ran_in.push(summary.space);
+            ran_in.push(summary.project);
             let (opened, _) = opened(&server, *thread).await;
             assert!(matches!(opened, Opened::Worktree { .. }), "{opened:?}");
         }
@@ -266,7 +266,7 @@ fn the_task_ledger_is_never_listed_or_read_as_a_thread() {
         create(&server, cron("0 9 * * *"), 10).await.unwrap();
         let Reply::Threads { threads, .. } = server
             .request(Request::ThreadList {
-                space: Some(scope().space),
+                project: Some(scope().project),
                 limit: None,
                 show: None,
                 cursor: None,

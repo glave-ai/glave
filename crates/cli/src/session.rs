@@ -15,7 +15,7 @@ use glave_harness::{
 };
 use glave_memory::Tidier;
 use glave_ports::computer::{GitCredentials, Sandbox};
-use glave_ports::{OsEntropy, SpaceId, SystemClock};
+use glave_ports::{OsEntropy, ProjectId, SystemClock};
 use glave_process::Processes;
 use glave_session::protocol::{Reply, Request};
 use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring};
@@ -118,7 +118,7 @@ pub struct Wired {
     /// The default model's endpoint; none while no model is set up.
     endpoint: Option<Endpoint>,
     /// The project of the folder glave runs in, where the terminal's threads are.
-    space: SpaceId,
+    project: ProjectId,
     root: PathBuf,
     /// The instruction files the model is given, for the banner.
     files: Vec<PathBuf>,
@@ -187,7 +187,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let servers = mcp_servers(&setup, remote.as_ref(), &processes).await?;
     let (on_workers, workers) =
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder).await?;
-    let scope = crate::spaces::here(&store, &root, identity.person).await?;
+    let scope = crate::projects::here(&store, &root, identity.person).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
     let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asked)?;
     for line in [told, projects.set_aside(&folder).await].concat() {
@@ -216,18 +216,18 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         workers: on_workers,
         tasks: task_limits(&setup.loaded.constraints),
         memory: memory.as_ref().map(crate::memory::Running::handle),
-        spaces: store.spaces(),
+        projects: store.projects(),
         project_folders: Some(Arc::clone(&projects) as Arc<dyn glave_harness::ProjectFolders>),
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
         browsers: crate::serving::browsers(args, &store, identity.person).await?,
     };
     let server = Server::new(wiring, settings, scope, answering);
-    keep_here(&server, scope.space, &root).await?;
+    keep_here(&server, scope.project, &root).await?;
     Ok(Wired {
         server,
         servers,
         endpoint: lined.built.endpoint,
-        space: scope.space,
+        project: scope.project,
         root,
         files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
         choices: setup.choices,
@@ -239,11 +239,11 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     })
 }
 
-/// Keeps `root`, the folder glave runs in, as the folder of its project, `space`: where its
+/// Keeps `root`, the folder glave runs in, as the folder of its project, `project`: where its
 /// threads work.
-async fn keep_here(server: &Glave, space: SpaceId, root: &Path) -> anyhow::Result<()> {
+async fn keep_here(server: &Glave, project: ProjectId, root: &Path) -> anyhow::Result<()> {
     server
-        .keep_folder(space, &root.to_string_lossy())
+        .keep_folder(project, &root.to_string_lossy())
         .await
         .with_context(|| format!("could not keep {} as its project's folder", root.display()))
 }
@@ -484,7 +484,7 @@ impl Wired {
         self.servers.close().await;
         self.projects.close().await;
         if let Some(memory) = &self.memory {
-            // The session's forgets batched into a space-key rotation.
+            // The session's forgets batched into a project-key rotation.
             memory.housekeep().await;
             memory.memory.close().await;
         }
@@ -524,7 +524,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         server,
         servers,
         endpoint,
-        space,
+        project,
         root,
         files,
         choices,
@@ -538,10 +538,10 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         anyhow::bail!(config::NO_MODEL);
     };
     // The terminal's threads are the folder's project's, so it shows what that chooses.
-    let project = projects.settled(root).await;
-    let model = project.model.unwrap_or_else(|| endpoint.model.clone());
+    let settled = projects.settled(root).await;
+    let model = settled.model.unwrap_or_else(|| endpoint.model.clone());
     let here = Session::Here(server);
-    let (thread, note) = pick_thread(here, Some(*space), args.resume, None, None, None).await?;
+    let (thread, note) = pick_thread(here, Some(*project), args.resume, None, None, None).await?;
     if let Some(working) = crate::worktrees::note(server, thread).await {
         eprintln!("glave: {working}");
     }
@@ -556,7 +556,7 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
         model: None,
         approval: None,
     };
-    let mut printer = Printer::new(&model, protections(choices, project.protections));
+    let mut printer = Printer::new(&model, protections(choices, settled.protections));
     let code = if let Some(objective) = &args.goal {
         let goal = Goal {
             objective: objective.clone(),
@@ -584,12 +584,12 @@ async fn session(args: &Args, wired: &Wired, asks: bool) -> anyhow::Result<ExitC
     Ok(code)
 }
 
-/// The thread to use in `space` (the caller's Chats when none): the newest one there with
+/// The thread to use in `project` (the caller's Chats when none): the newest one there with
 /// `--continue`, otherwise a new one, in a worktree of its own when `worktree` says so (the
 /// server's choice when it says nothing), choosing `model` and `approval` when they are given.
 pub async fn pick_thread(
     server: Session<'_>,
-    space: Option<SpaceId>,
+    project: Option<ProjectId>,
     resume: bool,
     worktree: Option<bool>,
     model: Option<String>,
@@ -598,7 +598,7 @@ pub async fn pick_thread(
     if resume {
         let latest = match server
             .request(Request::ThreadList {
-                space,
+                project,
                 limit: Some(1),
                 show: None,
                 cursor: None,
@@ -621,7 +621,7 @@ pub async fn pick_thread(
     };
     match server
         .request(Request::ThreadStart {
-            space,
+            project,
             background: false,
             worktree,
             computer: None,
@@ -674,7 +674,7 @@ async fn show_memory(server: Session<'_>) {
     match server
         .request(Request::MemoryList {
             scope: None,
-            space: None,
+            project: None,
         })
         .await
     {

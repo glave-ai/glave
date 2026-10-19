@@ -16,13 +16,13 @@ use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
 use glave_ports::memories::Memory;
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
-    Completion, EventLog, InMemoryBlobs, InMemoryLog, InMemorySpaces, LogError, OrgId, Scope,
-    Space, SpaceId, SpaceKind, Spaces,
+    Completion, EventLog, InMemoryBlobs, InMemoryLog, InMemoryProjects, LogError, OrgId, Project,
+    ProjectId, ProjectKind, Projects, Scope,
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
 use glave_session::{
-    Answering, GitHosts, ProjectTrust, Providers, Server, TaskLimits, Wiring, space_ledger,
+    Answering, GitHosts, ProjectTrust, Providers, Server, TaskLimits, Wiring, project_ledger,
 };
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
@@ -49,11 +49,11 @@ pub async fn sqlite(database: &Path) -> Store {
         .unwrap()
 }
 
-/// The organization and space every test server serves.
+/// The organization and project every test server serves.
 pub fn scope() -> Scope {
     Scope {
         org: OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        space: SpaceId::from_uuid(uuid::Uuid::from_u128(2)),
+        project: ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
     }
 }
 
@@ -82,7 +82,7 @@ pub struct Setup {
     /// Where accounts with hosts are kept; with none, connecting one is refused.
     pub hosts: Option<Arc<dyn GitHosts>>,
     /// Where new projects' folders are made; with none, making one is refused.
-    pub projects: Option<PathBuf>,
+    pub project_base: Option<PathBuf>,
     /// Where threads in a folder of their own read their opening instructions, and what their
     /// project turns on.
     pub project_folders: Option<Arc<dyn ProjectFolders>>,
@@ -90,8 +90,8 @@ pub struct Setup {
     pub trust: Option<Arc<dyn ProjectTrust>>,
     /// Where commands' git, and a new project's clone, ask for credentials.
     pub credentials: Option<Arc<dyn GitCredentials>>,
-    /// The spaces another server keeps, to share its store; spaces of its own when none.
-    pub spaces: Option<Arc<dyn Spaces>>,
+    /// The projects another server keeps, to share its store; projects of its own when none.
+    pub projects: Option<Arc<dyn Projects>>,
     /// The browsers it signs in; with none, it signs in none.
     pub browsers: Option<Arc<Browsers>>,
 }
@@ -113,11 +113,11 @@ impl Setup {
             worktrees: None,
             providers: None,
             hosts: None,
-            projects: None,
+            project_base: None,
             project_folders: None,
             trust: None,
             credentials: None,
-            spaces: None,
+            projects: None,
             browsers: None,
         }
     }
@@ -135,7 +135,7 @@ impl Setup {
         self.build_on(dir, InMemoryLog::new()).await
     }
 
-    /// The server on `log`, its own space a project whose folder is a repository made in the
+    /// The server on `log`, its own project a project whose folder is a repository made in the
     /// fresh folder `name`, with worktrees kept beside it, so its tasks work on copies of it;
     /// and that repository.
     pub async fn build_in_repository<L: EventLog + 'static>(
@@ -150,8 +150,8 @@ impl Setup {
         (server, seen, repo)
     }
 
-    /// The server on `log`, its own space a project whose folder is `dir`, and every request
-    /// its model receives. Threads in spaces with no folder get scratch folders beside `dir`.
+    /// The server on `log`, its own project a project whose folder is `dir`, and every request
+    /// its model receives. Threads in projects with no folder get scratch folders beside `dir`.
     pub async fn build_on<L: EventLog + 'static>(self, dir: &Path, log: L) -> (Tested<L>, Seen) {
         let (provider, seen) = Script::new(self.answers, self.gate);
         let computers = LocalComputers::for_here(std::env::vars_os())
@@ -160,7 +160,7 @@ impl Setup {
             Some(base) => computers.with_worktrees(base),
             None => computers,
         };
-        let computers = match &self.projects {
+        let computers = match &self.project_base {
             Some(base) => computers.with_projects(base),
             None => computers,
         };
@@ -188,9 +188,9 @@ impl Setup {
             workers: None,
             tasks: self.limits,
             memory: self.memory,
-            spaces: self
-                .spaces
-                .unwrap_or_else(|| Arc::new(InMemorySpaces::new()) as Arc<dyn Spaces>),
+            projects: self
+                .projects
+                .unwrap_or_else(|| Arc::new(InMemoryProjects::new()) as Arc<dyn Projects>),
             models: self.models,
             modes: self.modes,
             providers: self.providers,
@@ -201,40 +201,40 @@ impl Setup {
             browsers: self.browsers,
         };
         let server = Server::new(wiring, self.settings, scope(), self.answering);
-        // The server's own space, kept as its person's project at a fixed time without reading
+        // The server's own project, kept as its person's project at a fixed time without reading
         // the clock, so nothing a test checks depends on when it was first asked for.
         let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
-        let home = Space {
-            id: scope().space,
-            kind: SpaceKind::Project,
+        let home = Project {
+            id: scope().project,
+            kind: ProjectKind::Project,
             name: "test".into(),
             owner: Principal::person(server.person().unwrap()),
             members: Vec::new(),
             created_at: at,
             updated_at: at,
         };
-        // A second server on another's spaces finds it there already.
+        // A second server on another's projects finds it there already.
         if server
-            .spaces()
+            .projects()
             .get(scope().org, home.id)
             .await
             .unwrap()
             .is_none()
         {
-            server.spaces().create(scope().org, &home).await.unwrap();
+            server.projects().create(scope().org, &home).await.unwrap();
         }
         (server, seen)
     }
 }
 
 /// Keeps the folder `info` opened as the server's own project's, as glave keeps the folder it
-/// runs in: at a fixed time with fixed ids, for the same reason as the space itself. A second
+/// runs in: at a fixed time with fixed ids, for the same reason as the project itself. A second
 /// server on a shared log finds it there already.
 async fn keep_folder<L: EventLog>(log: &L, info: &WorkspaceInfo) {
     let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
     let header = Header {
         id: EventId::new(at.timestamp(), [9; 10]).unwrap(),
-        thread: space_ledger().unwrap(),
+        thread: project_ledger().unwrap(),
         seq: Seq::FIRST,
         at,
     };

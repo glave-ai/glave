@@ -20,9 +20,9 @@ import { PageHeaderComponent } from '../page-header/page-header.component';
 const COPY = {
   heading: 'Memory',
   intro:
-    'What glave keeps between threads: about you, and about this space. Edit or forget any of it.',
+    'What glave keeps between threads: about you, and about this project. Edit or forget any of it.',
   personal: 'about you',
-  space: 'this space',
+  project: 'this project',
   edit: 'Edit',
   forget: 'Forget',
   editHeading: 'Edit the memory',
@@ -83,7 +83,7 @@ export class MemoryComponent {
       memory,
       id: memory.memory,
       text: memory.text,
-      scope: memory.scope === 'personal' ? COPY.personal : COPY.space,
+      scope: memory.scope === 'personal' ? COPY.personal : COPY.project,
       untrusted: memory.untrusted_read === true,
       editLabel: `${COPY.edit}: ${memory.text}`,
       forgetLabel: `${COPY.forget}: ${memory.text}`,

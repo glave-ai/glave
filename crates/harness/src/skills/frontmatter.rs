@@ -119,7 +119,7 @@ fn value(rest: &str, nested: &[&str]) -> Result<Value, String> {
             quoted(rest, quote).map(Value::Text)
         }
         Some(_) => {
-            // A plain value may carry on over more indented lines, joined by spaces.
+            // A plain value may carry on over more indented lines, joined by projects.
             let mut text = rest.to_owned();
             for line in nested.iter().map(|line| without_comment(line.trim())) {
                 if !line.is_empty() {

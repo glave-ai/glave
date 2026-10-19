@@ -1,5 +1,5 @@
 //! `recall` on a sealed store: memories and past conversations found by keyword, scoped
-//! exactly as memory is (the person's and this space's in a shared space, this space's only in
+//! exactly as memory is (the person's and this project's in a shared project, this project's only in
 //! an isolated one, never another organization's), labelled with their source, the asking
 //! thread left out, untrusted output marked so and counted as untrusted content read.
 
@@ -155,7 +155,7 @@ mod recall {
     }
 
     #[test]
-    fn a_shared_space_finds_memories_its_threads_and_the_persons_never_another_space() {
+    fn a_shared_project_finds_memories_its_threads_and_the_persons_never_another_project() {
         block_on!(async {
             let kit = Kit::new();
             world(&kit).await;

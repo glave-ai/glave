@@ -20,7 +20,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
     await fakeApi(page);
     await page.goto(`/${SIGNED_IN}`);
-    const project = byTestId(page, 'nav-space').filter({ hasText: 'glave' });
+    const project = byTestId(page, 'nav-project').filter({ hasText: 'glave' });
     await expect(project.getByTestId('nav-thread').first()).toContainText(
       'Review the release notes',
     );
@@ -242,10 +242,10 @@ test('New chat starts its thread in Chats, not in the project listed first', asy
   await prompt.press('Enter');
   await expect(page).toHaveURL(new RegExp(`/t/${NEW_THREAD}$`, 'u'));
   const start = api.requests.find((request) => request.method === 'thread/start');
-  expect(start?.params['space']).toBe(PERSONAL.id);
+  expect(start?.params['project']).toBe(PERSONAL.id);
   const chats = byTestId(page, 'nav-chats');
   await expect(chats.getByTestId('nav-thread').first()).toHaveText('New chat');
-  const project = byTestId(page, 'nav-space').filter({ hasText: 'glave' });
+  const project = byTestId(page, 'nav-project').filter({ hasText: 'glave' });
   await expect(project.getByTestId('nav-thread')).toHaveCount(4);
 });
 

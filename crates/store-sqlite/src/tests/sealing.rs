@@ -3,7 +3,7 @@
 use glave_event::RawEvent;
 use glave_keys::KeyId;
 use glave_keys::conformance::event;
-use glave_ports::{BlobStore, LogError, OrgId, Scope, SpaceId, digest};
+use glave_ports::{BlobStore, LogError, OrgId, ProjectId, Scope, digest};
 use rusqlite::{Connection, params};
 
 use super::*;
@@ -11,7 +11,7 @@ use super::*;
 fn scope(n: u128) -> Scope {
     Scope {
         org: OrgId::from_uuid(Uuid::from_u128(1)),
-        space: SpaceId::from_uuid(Uuid::from_u128(100 + n)),
+        project: ProjectId::from_uuid(Uuid::from_u128(100 + n)),
     }
 }
 
@@ -44,9 +44,9 @@ fn read_all(store: &Store, scope: &Scope, thread: &RawEvent) -> Result<Vec<RawEv
 /// The stored `data` and `key_id` of one event.
 fn stored(raw: &Connection, scope: &Scope, event: &RawEvent) -> (Vec<u8>, Option<String>) {
     raw.query_row(
-        "SELECT data, key_id FROM events WHERE space = ?1 AND thread = ?2 AND seq = ?3",
+        "SELECT data, key_id FROM events WHERE project = ?1 AND thread = ?2 AND seq = ?3",
         params![
-            scope.space.to_string(),
+            scope.project.to_string(),
             event.thread.to_string(),
             i64::try_from(event.seq.get()).unwrap()
         ],
@@ -57,11 +57,11 @@ fn stored(raw: &Connection, scope: &Scope, event: &RawEvent) -> (Vec<u8>, Option
 
 fn overwrite(raw: &Connection, scope: &Scope, event: &RawEvent, row: &(Vec<u8>, Option<String>)) {
     raw.execute(
-        "UPDATE events SET data = ?1, key_id = ?2 WHERE space = ?3 AND thread = ?4 AND seq = ?5",
+        "UPDATE events SET data = ?1, key_id = ?2 WHERE project = ?3 AND thread = ?4 AND seq = ?5",
         params![
             row.0,
             row.1,
-            scope.space.to_string(),
+            scope.project.to_string(),
             event.thread.to_string(),
             i64::try_from(event.seq.get()).unwrap()
         ],
@@ -87,8 +87,8 @@ fn payloads_are_sealed_in_the_file_and_read_back_as_written() {
     let (data, key_id) = stored(&raw, &here, &written[0]);
     let key_id: KeyId = key_id.expect("a new row is sealed").parse().unwrap();
     assert_eq!(
-        (key_id.space, key_id.period.to_string()),
-        (here.space, "2026-10".into())
+        (key_id.project, key_id.period.to_string()),
+        (here.project, "2026-10".into())
     );
     assert!(!String::from_utf8_lossy(&data).contains("completed"));
     drop(store);
@@ -100,7 +100,7 @@ fn payloads_are_sealed_in_the_file_and_read_back_as_written() {
 }
 
 #[test]
-fn a_sealed_payload_moved_to_another_row_thread_or_space_does_not_open() {
+fn a_sealed_payload_moved_to_another_row_thread_or_project_does_not_open() {
     let (_, store, raw) = on_disk("moved");
     let (here, there) = (scope(1), scope(2));
     let a = events(1, &[(1, "2026-10"), (2, "2026-10")]);
@@ -135,7 +135,7 @@ fn rows_written_before_sealing_still_read_after_the_migration() {
              VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 here.org.to_string(),
-                here.space.to_string(),
+                here.project.to_string(),
                 old.thread.to_string(),
                 old.id.to_string(),
                 old.at.to_string(),
@@ -151,7 +151,7 @@ fn rows_written_before_sealing_still_read_after_the_migration() {
              VALUES (?1, ?2, ?3, 'text/plain', ?4)",
             params![
                 here.org.to_string(),
-                here.space.to_string(),
+                here.project.to_string(),
                 sha.as_str(),
                 b"old blob".as_slice()
             ],
@@ -180,8 +180,8 @@ fn rows_written_before_sealing_still_read_after_the_migration() {
 }
 
 #[test]
-fn erasing_a_space_makes_its_events_and_blobs_unreadable() {
-    let (_, store, _raw) = on_disk("erase-space");
+fn erasing_a_project_makes_its_events_and_blobs_unreadable() {
+    let (_, store, _raw) = on_disk("erase-project");
     let (here, other) = (scope(1), scope(2));
     let written = events(1, &[(1, "2026-10")]);
     block_on!(store.log().append(&here, &written)).unwrap();
@@ -192,7 +192,7 @@ fn erasing_a_space_makes_its_events_and_blobs_unreadable() {
             .put(&here, written[0].thread, b"x".to_vec(), "t/p"),
     )
     .unwrap();
-    block_on!(store.keys().erase_space(&here)).unwrap();
+    block_on!(store.keys().erase_project(&here)).unwrap();
     let read = read_all(&store, &here, &written[0]);
     assert!(
         matches!(&read, Err(LogError::Storage(message)) if message.contains("destroyed")),

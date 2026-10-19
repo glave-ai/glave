@@ -29,7 +29,7 @@ const UNDO_DAYS: i64 = 30;
 pub struct Writer {
     /// The person it is for: their personal memory is theirs alone.
     pub person: Option<PrincipalId>,
-    /// The space it is changed from.
+    /// The project it is changed from.
     pub scope: Scope,
     /// Who is recorded as changing it.
     pub by: Principal,

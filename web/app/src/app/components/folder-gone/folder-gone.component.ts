@@ -3,7 +3,7 @@ import { GlzButtonComponent, GlzConfirmDialogComponent, GlzDialogComponent } fro
 
 import { projectProblem } from '../../lib/projects';
 import { SessionService } from '../../services/session.service';
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { FolderPickerComponent } from '../folder-picker/folder-picker.component';
 
 const COPY = {
@@ -37,13 +37,13 @@ const COPY = {
 export class FolderGoneComponent {
   /** The test hook; its parts get `<testId>-<part>`. */
   readonly testId = input.required<string>();
-  /** The project, by its space's id. */
-  readonly space = input.required<string>();
+  /** The project, by its project's id. */
+  readonly project = input.required<string>();
   /** What the server says of it. */
   readonly message = input.required<string>();
 
   protected readonly copy = COPY;
-  private readonly spaces = inject(SpacesService);
+  private readonly projects = inject(ProjectsService);
   /** Whether the person here may act: only they reach this computer's folders. */
   protected readonly local = inject(SessionService).local;
   protected readonly ids = computed(() => {
@@ -74,12 +74,12 @@ export class FolderGoneComponent {
 
   protected async picked(path: string): Promise<void> {
     this.picking.set(false);
-    await this.act(() => this.spaces.findFolder(this.space(), path));
+    await this.act(() => this.projects.findFolder(this.project(), path));
   }
 
   protected async decided(remove: boolean): Promise<void> {
     if (remove) {
-      await this.act(() => this.spaces.remove(this.space()));
+      await this.act(() => this.projects.remove(this.project()));
     }
   }
 

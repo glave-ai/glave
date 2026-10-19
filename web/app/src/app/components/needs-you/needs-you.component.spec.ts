@@ -2,9 +2,9 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { space, thread } from '../../testing/fixtures';
+import { record, thread } from '../../testing/fixtures';
 import { NeedsYouComponent } from './needs-you.component';
 
 async function render(waiting: boolean): Promise<{
@@ -13,16 +13,18 @@ async function render(waiting: boolean): Promise<{
 }> {
   const status = waiting ? 'waiting' : 'idle';
   const fake = new FakeSession()
-    .answer('space/list', { spaces: [space('p1', 'glave'), space('me', 'Personal', 'personal')] })
+    .answer('project/list', {
+      projects: [record('p1', 'glave'), record('me', 'Personal', 'personal')],
+    })
     .answer('thread/list', (params) =>
-      (params as { space: string }).space === 'p1'
-        ? { threads: [thread('t1', 'Push the branch', { space: 'p1', status })] }
-        : { threads: [thread('t2', 'Trip to Lisbon', { space: 'me', status })] },
+      (params as { project: string }).project === 'p1'
+        ? { threads: [thread('t1', 'Push the branch', { project: 'p1', status })] }
+        : { threads: [thread('t2', 'Trip to Lisbon', { project: 'me', status })] },
     );
   TestBed.configureTestingModule({
     providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeSession(fake)],
   });
-  await TestBed.inject(SpacesService).refresh();
+  await TestBed.inject(ProjectsService).refresh();
   const fixture = TestBed.createComponent(NeedsYouComponent);
   await fixture.whenStable();
   return { root: fixture.nativeElement as HTMLElement, fixture };

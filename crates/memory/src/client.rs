@@ -290,7 +290,7 @@ fn change(tool: &str, structured: &serde_json::Value) -> Option<MemoryChange> {
 
 impl<L: EventLog + 'static> Memory for GlaveMemory<L> {
     fn active(&self, on: &MemoryContext) -> bool {
-        self.memories.rules().setting(on.scope.space) != SpaceMemory::Off
+        self.memories.rules().setting(on.scope.project) != SpaceMemory::Off
     }
 
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {

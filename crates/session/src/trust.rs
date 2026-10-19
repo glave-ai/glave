@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::{MutexGuard, PoisonError};
 
 use glave_event::ThreadId;
-use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, SpaceId};
+use glave_ports::{BlobStore, BoxFuture, Caller, EventLog, ModelProvider, ProjectId};
 
 use crate::protocol::{ApiError, Reply, Status, ThreadSummary, TrustAsk, TrustChoice, code};
 use crate::providers::local;
@@ -105,14 +105,14 @@ where
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// What the project of `space` asks `caller` to trust now: only for the person on this
+    /// What the project of `project` asks `caller` to trust now: only for the person on this
     /// computer, where someone answers, in a project with a folder here.
-    pub(crate) async fn trust_in(&self, caller: &Caller, space: SpaceId) -> Option<TrustAsk> {
+    pub(crate) async fn trust_in(&self, caller: &Caller, project: ProjectId) -> Option<TrustAsk> {
         let host = self.inner.trust.as_ref()?;
         if !local(caller) || !self.inner.approvals.clients_answer() {
             return None;
         }
-        let folder = self.folder_here(space).await.ok().flatten()?;
+        let folder = self.folder_here(project).await.ok().flatten()?;
         match host.ask(Path::new(&folder)).await {
             Ok(ask) => ask,
             Err(error) => {
@@ -122,18 +122,18 @@ where
         }
     }
 
-    /// What a page of `threads` in `space` shows `caller` of its project's ask: read only when
+    /// What a page of `threads` in `project` shows `caller` of its project's ask: read only when
     /// one of them was opened or started since an ask.
     pub(crate) async fn trust_on_page(
         &self,
         caller: &Caller,
-        space: SpaceId,
+        project: ProjectId,
         threads: impl Iterator<Item = ThreadId>,
     ) -> Option<TrustAsk> {
         if !self.asks().any_raised(threads) {
             return None;
         }
-        self.trust_in(caller, space).await
+        self.trust_in(caller, project).await
     }
 
     /// `summary` with its project's ask `ask`, when it shows it, and waiting while it does.
@@ -183,7 +183,7 @@ where
         let scope = self.scope_of(thread).await?;
         let host = self.inner.trust.as_ref().ok_or_else(nothing_waits)?;
         let folder = self
-            .folder_here(scope.space)
+            .folder_here(scope.project)
             .await?
             .ok_or_else(nothing_waits)?;
         let folder = Path::new(&folder);

@@ -14,7 +14,7 @@ pub use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
     Completion, Delta, EventLog, InMemoryBlobs, InMemoryLog, ModelProvider, ModelRequest, OrgId,
-    ProviderError, RequestedCall, Scope, SpaceId,
+    ProjectId, ProviderError, RequestedCall, Scope,
 };
 
 pub struct Script {
@@ -93,7 +93,7 @@ pub fn folder(name: &str) -> PathBuf {
 pub fn scope() -> Scope {
     Scope {
         org: OrgId::from_uuid(uuid_like(1)),
-        space: SpaceId::from_uuid(uuid_like(2)),
+        project: ProjectId::from_uuid(uuid_like(2)),
     }
 }
 

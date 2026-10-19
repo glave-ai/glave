@@ -1,14 +1,14 @@
 //! A project whose folder isn't there anymore: the server says so as a fact, in plain words,
 //! when the project is listed and before anything would run there, and starts nothing and
-//! makes nothing in its place; the person on this computer finds it (`space/folder/set`),
+//! makes nothing in its place; the person on this computer finds it (`project/folder/set`),
 //! after which its threads work in the folder's new place, or removes the project
-//! (`space/remove`), its threads archived and it listed no more.
+//! (`project/remove`), its threads archived and it listed no more.
 
 use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Auth, AuthMethod, Body, Opened, ThreadId, decode};
-use glave_ports::{Caller, EventLog, SpaceId};
+use glave_ports::{Caller, EventLog, ProjectId};
 use glave_session::protocol::{GoneFolder, Reply, Request, Show, code};
 use glave_session::signin::person;
 use serde_json::json;
@@ -46,9 +46,9 @@ fn elsewhere() -> Caller {
     }
 }
 
-fn start_request(space: SpaceId, worktree: Option<bool>) -> Request {
+fn start_request(project: ProjectId, worktree: Option<bool>) -> Request {
     Request::ThreadStart {
-        space: Some(space),
+        project: Some(project),
         worktree,
         background: false,
         computer: None,
@@ -59,11 +59,11 @@ fn start_request(space: SpaceId, worktree: Option<bool>) -> Request {
 
 async fn start_in<L: EventLog + 'static>(
     server: &Tested<L>,
-    space: SpaceId,
+    project: ProjectId,
     worktree: Option<bool>,
 ) -> ThreadId {
     match server
-        .request(start_request(space, worktree))
+        .request(start_request(project, worktree))
         .await
         .unwrap()
     {
@@ -72,25 +72,27 @@ async fn start_in<L: EventLog + 'static>(
     }
 }
 
-/// The spaces `space/list` shows, by name, and the projects it says have lost their folder.
+/// The projects `project/list` shows, by name, and the projects it says have lost their folder.
 async fn listed<L: EventLog + 'static>(server: &Tested<L>) -> (Vec<String>, Vec<GoneFolder>) {
     match server
-        .request(Request::SpaceList { limit: None })
+        .request(Request::ProjectList { limit: None })
         .await
         .unwrap()
     {
-        Reply::Spaces { spaces, gone } => (spaces.into_iter().map(|s| s.name).collect(), gone),
-        other => panic!("spaces, not {other:?}"),
+        Reply::Projects { projects, gone } => {
+            (projects.into_iter().map(|s| s.name).collect(), gone)
+        }
+        other => panic!("projects, not {other:?}"),
     }
 }
 
 async fn threads<L: EventLog + 'static>(
     server: &Tested<L>,
-    space: SpaceId,
+    project: ProjectId,
     show: Show,
 ) -> Vec<ThreadId> {
     let listed = Request::ThreadList {
-        space: Some(space),
+        project: Some(project),
         limit: None,
         show: Some(show),
         cursor: None,
@@ -132,9 +134,9 @@ async fn last_bound<L: EventLog + 'static>(
         .unwrap()
 }
 
-fn find(space: SpaceId, path: &Path) -> Request {
-    Request::SpaceFolderSet {
-        space,
+fn find(project: ProjectId, path: &Path) -> Request {
+    Request::ProjectFolderSet {
+        project,
         path: path.to_string_lossy().into_owned(),
     }
 }
@@ -148,15 +150,15 @@ fn a_project_whose_folder_is_gone_says_so_plainly_and_nothing_runs_or_is_made_th
         let (server, _) = Setup::new(vec![answer(Some("Planted."), None)])
             .build_on(&dir, log.clone())
             .await;
-        let space = project(&server, "Garden", &garden).await;
-        let thread = start_in(&server, space, None).await;
+        let project = make_project(&server, "Garden", &garden).await;
+        let thread = start_in(&server, project, None).await;
         turn(&server, thread, "plant").await.unwrap();
         std::fs::remove_dir_all(&garden).unwrap();
 
         let (names, gone) = listed(&server).await;
         assert!(names.contains(&"Garden".to_owned()), "{names:?}");
         let said = GoneFolder {
-            space,
+            project,
             message: GONE.into(),
         };
         assert_eq!(gone, [said]);
@@ -167,7 +169,7 @@ fn a_project_whose_folder_is_gone_says_so_plainly_and_nothing_runs_or_is_made_th
             (code::NO_FOLDER, GONE)
         );
         let refused = server
-            .request(start_request(space, None))
+            .request(start_request(project, None))
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::NO_FOLDER);
@@ -177,7 +179,7 @@ fn a_project_whose_folder_is_gone_says_so_plainly_and_nothing_runs_or_is_made_th
         let mut setup = Setup::new(Vec::new());
         setup.seed = 2;
         setup.settings.person = server.person();
-        setup.spaces = Some(Arc::clone(server.spaces()));
+        setup.projects = Some(Arc::clone(server.projects()));
         let (fresh, _) = setup.build_on(&dir, log).await;
         let got = fresh.request(Request::ThreadGet { thread }).await;
         assert!(matches!(got, Ok(Reply::Thread { .. })), "{got:?}");
@@ -188,7 +190,7 @@ fn a_project_whose_folder_is_gone_says_so_plainly_and_nothing_runs_or_is_made_th
         // Archiving it still works, straight in the log.
         let archived = fresh.request(Request::ThreadArchive { thread }).await;
         assert!(matches!(archived, Ok(Reply::Done {})), "{archived:?}");
-        assert_eq!(threads(&fresh, space, Show::Archived).await, [thread]);
+        assert_eq!(threads(&fresh, project, Show::Archived).await, [thread]);
     });
 }
 
@@ -209,27 +211,28 @@ fn finding_the_folder_again_moves_its_threads_there_and_the_next_turn_runs() {
             answer(Some("Planned."), None),
         ];
         let (server, _) = Setup::new(answers).build(&dir).await;
-        let space = project(&server, "Garden", &garden).await;
-        project(&server, "Other", &other).await;
-        let thread = start_in(&server, space, None).await;
+        let project = make_project(&server, "Garden", &garden).await;
+        make_project(&server, "Other", &other).await;
+        let thread = start_in(&server, project, None).await;
         turn(&server, thread, "plant").await.unwrap();
 
         // While the folder is where it was, there is nothing to find.
-        let refused = server.request(find(space, &other)).await.unwrap_err();
+        let refused = server.request(find(project, &other)).await.unwrap_err();
         assert_eq!(refused.code, code::INVALID_PARAMS);
         std::fs::rename(&garden, &moved).unwrap();
 
         // Only the person on this computer gives a folder, and never another project's.
         let refused = server
-            .request_as(&elsewhere(), find(space, &moved))
+            .request_as(&elsewhere(), find(project, &moved))
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED);
-        let refused = server.request(find(space, &other)).await.unwrap_err();
+        let refused = server.request(find(project, &other)).await.unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
 
-        let Reply::Space { folder, .. } = server.request(find(space, &moved)).await.unwrap() else {
-            panic!("a space")
+        let Reply::Project { folder, .. } = server.request(find(project, &moved)).await.unwrap()
+        else {
+            panic!("a project")
         };
         assert_eq!(folder.unwrap().checkout.path, canonical(&moved));
         assert_eq!(listed(&server).await.1, [], "nothing is gone now");
@@ -246,7 +249,7 @@ fn finding_the_folder_again_moves_its_threads_there_and_the_next_turn_runs() {
             "the thread works where the folder is now"
         );
         // The folder's new place leads to the project, as glave run there finds it.
-        assert_eq!(project(&server, "Again", &moved).await, space);
+        assert_eq!(make_project(&server, "Again", &moved).await, project);
     });
 }
 
@@ -260,13 +263,13 @@ fn a_thread_on_a_copy_of_a_project_that_moved_says_to_start_a_new_one() {
         let mut setup = Setup::new(Vec::new());
         setup.worktrees = Some(dir.with_extension("worktrees"));
         let server = setup.build(&dir).await.0;
-        let space = project(&server, "App", &repo).await;
-        let thread = start_in(&server, space, Some(true)).await;
+        let project = make_project(&server, "App", &repo).await;
+        let thread = start_in(&server, project, Some(true)).await;
         std::fs::rename(&repo, &moved).unwrap();
         let refused = turn(&server, thread, "go").await.unwrap_err();
         assert_eq!(refused.code, code::NO_FOLDER);
 
-        server.request(find(space, &moved)).await.unwrap();
+        server.request(find(project, &moved)).await.unwrap();
         let refused = turn(&server, thread, "go").await.unwrap_err();
         assert_eq!(refused.code, code::WORKSPACE);
         assert!(
@@ -285,23 +288,23 @@ fn removing_a_project_archives_its_threads_and_lists_it_no_more() {
         let (server, _) = Setup::new(vec![answer(Some("Planted."), None)])
             .build(&dir)
             .await;
-        let space = project(&server, "Garden", &garden).await;
-        let first = start_in(&server, space, None).await;
+        let project = make_project(&server, "Garden", &garden).await;
+        let first = start_in(&server, project, None).await;
         turn(&server, first, "plant").await.unwrap();
-        let second = start_in(&server, space, None).await;
+        let second = start_in(&server, project, None).await;
         std::fs::remove_dir_all(&garden).unwrap();
 
         let refused = server
-            .request_as(&elsewhere(), Request::SpaceRemove { space })
+            .request_as(&elsewhere(), Request::ProjectRemove { project })
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::NOT_ALLOWED);
-        let removed = server.request(Request::SpaceRemove { space }).await;
+        let removed = server.request(Request::ProjectRemove { project }).await;
         assert!(matches!(removed, Ok(Reply::Done {})), "{removed:?}");
-        assert_eq!(threads(&server, space, Show::Active).await, []);
+        assert_eq!(threads(&server, project, Show::Active).await, []);
         let mut both = vec![first, second];
         both.sort();
-        assert_eq!(threads(&server, space, Show::Archived).await, both);
+        assert_eq!(threads(&server, project, Show::Archived).await, both);
         let (names, gone) = listed(&server).await;
         assert!(!names.contains(&"Garden".to_owned()), "{names:?}");
         assert_eq!(gone, []);
@@ -314,7 +317,7 @@ fn removing_a_project_archives_its_threads_and_lists_it_no_more() {
 
         // Giving the project a folder again brings it back.
         std::fs::create_dir_all(&garden).unwrap();
-        assert_eq!(project(&server, "Garden", &garden).await, space);
+        assert_eq!(make_project(&server, "Garden", &garden).await, project);
         assert!(listed(&server).await.0.contains(&"Garden".to_owned()));
     });
 }

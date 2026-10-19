@@ -1,7 +1,7 @@
 //! The session server: threads and turns behind the methods of `specs/session.md`. It keeps a
 //! thread in memory while it is used, and rebuilds any thread from the log on demand, so a
-//! fresh server answers for every thread the log holds, in every space of its organization,
-//! to the callers who work in that space.
+//! fresh server answers for every thread the log holds, in every project of its organization,
+//! to the callers who work in that project.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,7 +16,8 @@ use glave_identity::signin::Browsers;
 use glave_ports::computer::{ComputerError, Environment};
 use glave_ports::memories::Memory;
 use glave_ports::{
-    BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, Scope, SpaceId, Spaces, ToolSource,
+    BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, ProjectId, Projects, Scope,
+    ToolSource,
 };
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
@@ -28,10 +29,10 @@ use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
 use crate::ledger::{Ledgers, is_ledger};
 use crate::modes::Choice;
+use crate::projects::Places;
 use crate::protocol::{ApiError, ApprovalMode, ErrorData, ModelInfo, Notification, Reply, code};
 use crate::providers::Providers;
 use crate::reread::Rereads;
-use crate::spaces::Places;
 use crate::tasks::{TaskLimits, Tasks};
 use crate::trust::{Asks, ProjectTrust};
 
@@ -59,15 +60,15 @@ pub struct Wiring<P, L, B> {
     pub worktree: bool,
     /// Commands run at points of every turn of the person the server works for.
     pub hooks: Hooks,
-    /// When set, every new thread in the server's own space works on a worker of its own
+    /// When set, every new thread in the server's own project works on a worker of its own
     /// (`--on cloud`) unless `thread/start` asks for a worktree; none by default.
     pub workers: Option<OnWorkers>,
     /// What one person may run at once and keep scheduled.
     pub tasks: TaskLimits,
     /// What threads remember from one to the next (`specs/memory.md`); none when memory is off.
     pub memory: Option<Arc<dyn Memory>>,
-    /// The spaces of the server's organization: who owns each and who works in it.
-    pub spaces: Arc<dyn Spaces>,
+    /// The projects of the server's organization: who owns each and who works in it.
+    pub projects: Arc<dyn Projects>,
     /// The models threads may choose besides the settings' own, the default (`model/list`).
     /// The provider must serve each by its id: the gateway's choices.
     pub models: Vec<ModelInfo>,
@@ -103,7 +104,7 @@ pub struct OnWorkers {
     pub environment: Environment,
 }
 
-/// A session server for the spaces of one organization, its own first, whose threads work in
+/// A session server for the projects of one organization, its own first, whose threads work in
 /// their projects' folders on the computer its workspace is on. Clones share it.
 pub struct Server<P, L, B> {
     pub(crate) inner: Arc<Inner<P, L, B>>,
@@ -121,11 +122,11 @@ pub(crate) type Glave<P, L, B> = Harness<P, Observed<L>, B, Approvals>;
 
 pub(crate) struct Inner<P, L, B> {
     pub(crate) harness: Glave<P, L, B>,
-    /// The server's own space: where a request that names none acts, and whose memory this
+    /// The server's own project: where a request that names none acts, and whose memory this
     /// is.
     pub(crate) home: Scope,
-    pub(crate) spaces: Arc<dyn Spaces>,
-    /// The spaces of threads looked up.
+    pub(crate) projects: Arc<dyn Projects>,
+    /// The projects of threads looked up.
     pub(crate) places: Mutex<Places>,
     /// Whether new threads in a project's folder get a worktree when `thread/start` does not
     /// say: the person's choice, which follows their settings.
@@ -144,10 +145,10 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) git_hosts: Option<Arc<dyn GitHosts>>,
     /// The modes a thread may choose, cautious first, as the policy now leaves them.
     pub(crate) modes: RwLock<Vec<ApprovalMode>>,
-    /// The space's own person, whom the log leaves implied.
+    /// The project's own person, whom the log leaves implied.
     pub(crate) person: Option<PrincipalId>,
     pub(crate) limits: TaskLimits,
-    /// What each space's task ledger says, as far as this server has read it.
+    /// What each project's task ledger says, as far as this server has read it.
     pub(crate) ledgers: Mutex<Ledgers>,
     /// Tasks running in this server.
     pub(crate) running: Mutex<Tasks>,
@@ -173,7 +174,7 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// A server whose own space is `home`, its threads working on the computer
+    /// A server whose own project is `home`, its threads working on the computer
     /// `wiring.workspace` is on: in their projects' folders, or scratch folders.
     pub fn new(
         wiring: Wiring<P, L, B>,
@@ -219,7 +220,7 @@ where
                 ledgers: Mutex::new(Ledgers::new()),
                 running: Mutex::new(Tasks::new()),
                 home,
-                spaces: wiring.spaces,
+                projects: wiring.projects,
                 places: Mutex::new(Places::default()),
                 worktree: AtomicBool::new(wiring.worktree),
                 hub,
@@ -248,9 +249,9 @@ where
             .is_none_or(|person| Some(person) == self.person())
     }
 
-    /// The spaces this server serves, for a host to manage.
-    pub fn spaces(&self) -> &Arc<dyn Spaces> {
-        &self.inner.spaces
+    /// The projects this server serves, for a host to manage.
+    pub fn projects(&self) -> &Arc<dyn Projects> {
+        &self.inner.projects
     }
 
     /// Everything `thread` publishes from now on: its events as they are stored, and progress.
@@ -288,10 +289,10 @@ where
         released
     }
 
-    /// Starts a thread for `caller` in `space`. In a project with a folder, the thread works
+    /// Starts a thread for `caller` in `project`. In a project with a folder, the thread works
     /// in a worktree of it where `worktree` says (the server's choice when it does not), else
     /// in the folder itself; a task's thread (`background`) always works on a copy, never in
-    /// the folder. In the server's own space, every thread works on a worker instead when the
+    /// the folder. In the server's own project, every thread works on a worker instead when the
     /// server puts them there, which clones the repository the server's workers are set up
     /// with. With no folder (a person's Chats, or a project without one), the thread gets a
     /// scratch folder of its own. With a model or an approval mode in `choice`, its turns go
@@ -299,7 +300,7 @@ where
     pub(crate) async fn new_thread(
         &self,
         caller: &Caller,
-        space: SpaceId,
+        project: ProjectId,
         worktree: Option<bool>,
         background: bool,
         choice: &Choice,
@@ -312,9 +313,9 @@ where
         if let Some(mode) = choice.approval {
             self.allowed_mode(mode)?;
         }
-        let home = space == self.inner.home.space;
+        let home = project == self.inner.home.project;
         let own = self.inner.worktree.load(Ordering::Relaxed);
-        let folder = self.folder_found(space).await?;
+        let folder = self.folder_found(project).await?;
         // The project's own choice, for the person here, is nearer than the server's.
         let copies = match &folder {
             Some(folder) if self.is_theirs(caller) => self
@@ -342,7 +343,7 @@ where
             (Some(folder), _, _) => Place::Folder(folder),
         };
         let copy = background && matches!(place, Place::Worktree(_));
-        let scope = self.scope_in(space);
+        let scope = self.scope_in(project);
         let mut thread = self
             .inner
             .harness
@@ -483,7 +484,10 @@ pub(crate) fn api(error: &HarnessError) -> ApiError {
 }
 
 pub(crate) fn no_thread(thread: ThreadId) -> ApiError {
-    ApiError::new(code::NO_THREAD, format!("no thread {thread} in this space"))
+    ApiError::new(
+        code::NO_THREAD,
+        format!("no thread {thread} in this project"),
+    )
 }
 
 /// A finished turn's summary, for callers that only need the result.

@@ -1,6 +1,6 @@
-//! The spaces port: each space as a record (a project, or a person's own), who owns it and who
-//! else works in it, and which folders lead to it (`specs/storage.md`, "Spaces"). A folder is
-//! an index into spaces, never a space's identity: a moved or re-cloned project finds its space
+//! The projects port: each project as a record (a project, or a person's own), who owns it and who
+//! else works in it, and which folders lead to it (`specs/storage.md`, "Projects"). A folder is
+//! an index into projects, never a project's identity: a moved or re-cloned project finds its project
 //! again by its `origin` remote.
 
 use std::fmt;
@@ -9,24 +9,24 @@ use glave_event::{At, Principal, PrincipalId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::scope::{OrgId, SpaceId};
+use crate::scope::{OrgId, ProjectId};
 use crate::tools::BoxFuture;
 
-/// The longest name a space may have, in characters.
+/// The longest name a project may have, in characters.
 pub const MAX_NAME: usize = 200;
 
-/// What a space is.
+/// What a project is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum SpaceKind {
+pub enum ProjectKind {
     /// A project: the work of its owner and members, usually tied to folders.
     Project,
-    /// A person's own space: their one-off chats and their personal memory. Each
+    /// A person's own project: their one-off chats and their personal memory. Each
     /// person has exactly one in each organization.
     Personal,
 }
 
-impl SpaceKind {
+impl ProjectKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Project => "project",
@@ -43,11 +43,11 @@ impl SpaceKind {
     }
 }
 
-/// A space, as its record keeps it.
+/// A project, as its record keeps it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct Space {
-    pub id: SpaceId,
-    pub kind: SpaceKind,
+pub struct Project {
+    pub id: ProjectId,
+    pub kind: ProjectKind,
     pub name: String,
     /// Whose it is: a person, or later a team or an agent.
     pub owner: Principal,
@@ -58,21 +58,21 @@ pub struct Space {
     pub updated_at: At,
 }
 
-impl Space {
-    /// Whether `principal` works in this space: its owner or one of its members.
+impl Project {
+    /// Whether `principal` works in this project: its owner or one of its members.
     pub fn admits(&self, principal: &Principal) -> bool {
         self.owner == *principal || self.members.contains(principal)
     }
 
-    /// Whether the person `person` works in this space.
+    /// Whether the person `person` works in this project.
     pub fn admits_person(&self, person: PrincipalId) -> bool {
         self.admits(&Principal::person(person))
     }
 
     /// Refuses a name no one could read: empty, or longer than [`MAX_NAME`] characters.
-    pub fn check_name(name: &str) -> Result<(), SpaceError> {
+    pub fn check_name(name: &str) -> Result<(), ProjectError> {
         if name.trim().is_empty() || name.chars().count() > MAX_NAME {
-            return Err(SpaceError::Invalid(format!(
+            return Err(ProjectError::Invalid(format!(
                 "a space's name is 1 to {MAX_NAME} characters, not only spaces"
             )));
         }
@@ -105,18 +105,18 @@ impl Space {
             .unwrap_or_else(|| wanted.to_owned())
     }
 
-    /// Refuses `name` for the project `space` when another of its owner's projects, called
+    /// Refuses `name` for the project `project` when another of its owner's projects, called
     /// `taken`, has it already.
     pub fn check_free(
-        space: SpaceId,
+        project: ProjectId,
         name: &str,
-        taken: &[(SpaceId, String)],
-    ) -> Result<(), SpaceError> {
+        taken: &[(ProjectId, String)],
+    ) -> Result<(), ProjectError> {
         match taken
             .iter()
-            .find(|(other, called)| *other != space && Self::same_name(name, called))
+            .find(|(other, called)| *other != project && Self::same_name(name, called))
         {
-            Some((_, called)) => Err(SpaceError::Conflict(format!(
+            Some((_, called)) => Err(ProjectError::Conflict(format!(
                 "there is a project called {called:?} already; choose another name"
             ))),
             None => Ok(()),
@@ -124,8 +124,8 @@ impl Space {
     }
 }
 
-/// What leads from a folder to its space: its canonical path, or, for a git repository, its
-/// `origin` remote, so another checkout or a clone that moved finds the same space.
+/// What leads from a folder to its project: its canonical path, or, for a git repository, its
+/// `origin` remote, so another checkout or a clone that moved finds the same project.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FolderKey {
     Path(String),
@@ -165,68 +165,76 @@ impl fmt::Display for FolderKey {
     }
 }
 
-/// Why a spaces call failed.
+/// Why a projects call failed.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum SpaceError {
-    #[error("no space {0} here")]
-    NotFound(SpaceId),
-    /// The space exists already, or the person already has a personal space.
+pub enum ProjectError {
+    #[error("no project {0} here")]
+    NotFound(ProjectId),
+    /// The project exists already, or the person already has a personal project.
     #[error("{0}")]
     Conflict(String),
     #[error("{0}")]
     Invalid(String),
-    #[error("space storage failed: {0}")]
+    #[error("project storage failed: {0}")]
     Storage(String),
 }
 
-/// Where spaces are kept: the data store, which scopes every call by organization. Shaped as
+/// Where projects are kept: the data store, which scopes every call by organization. Shaped as
 /// if across a network: whole records in and out.
 ///
 /// A project's name is unique among its owner's projects, ignoring case: a new one whose name
-/// is taken gets the next free one ([`Space::free_name`]), and renaming one to a taken name is
+/// is taken gets the next free one ([`Project::free_name`]), and renaming one to a taken name is
 /// refused. Different owners' projects may share a name.
-pub trait Spaces: Send + Sync {
-    /// Keeps a new space, and answers it as kept: a project under the next free name when its
+pub trait Projects: Send + Sync {
+    /// Keeps a new project, and answers it as kept: a project under the next free name when its
     /// owner has one called the same. Refused when its id is taken, when its name is not
-    /// readable, or when it is a personal space and its owner has one.
+    /// readable, or when it is a personal project and its owner has one.
     fn create<'a>(
         &'a self,
         org: OrgId,
-        space: &'a Space,
-    ) -> BoxFuture<'a, Result<Space, SpaceError>>;
+        project: &'a Project,
+    ) -> BoxFuture<'a, Result<Project, ProjectError>>;
 
-    /// The space `space`, if the organization has it.
-    fn get(&self, org: OrgId, space: SpaceId) -> BoxFuture<'_, Result<Option<Space>, SpaceError>>;
+    /// The project `project`, if the organization has it.
+    fn get(
+        &self,
+        org: OrgId,
+        project: ProjectId,
+    ) -> BoxFuture<'_, Result<Option<Project>, ProjectError>>;
 
-    /// The spaces `member` owns or is a member of, in id order (oldest first, for UUID v7
+    /// The projects `member` owns or is a member of, in id order (oldest first, for UUID v7
     /// ids), at most `limit`.
     fn list<'a>(
         &'a self,
         org: OrgId,
         member: &'a Principal,
         limit: usize,
-    ) -> BoxFuture<'a, Result<Vec<Space>, SpaceError>>;
+    ) -> BoxFuture<'a, Result<Vec<Project>, ProjectError>>;
 
-    /// Replaces the space's name, members and `updated_at` with `space`'s. Its kind, owner and
+    /// Replaces the project's name, members and `updated_at` with `project`'s. Its kind, owner and
     /// creation never change. A project's name another of its owner's projects has is refused
-    /// with [`SpaceError::Conflict`].
-    fn update<'a>(&'a self, org: OrgId, space: &'a Space) -> BoxFuture<'a, Result<(), SpaceError>>;
+    /// with [`ProjectError::Conflict`].
+    fn update<'a>(
+        &'a self,
+        org: OrgId,
+        project: &'a Project,
+    ) -> BoxFuture<'a, Result<(), ProjectError>>;
 
-    /// The personal space of `new.owner`: the one they have, or `new`, kept now. Two callers at
+    /// The personal project of `new.owner`: the one they have, or `new`, kept now. Two callers at
     /// once get the same one.
     fn personal<'a>(
         &'a self,
         org: OrgId,
-        new: &'a Space,
-    ) -> BoxFuture<'a, Result<Space, SpaceError>>;
+        new: &'a Project,
+    ) -> BoxFuture<'a, Result<Project, ProjectError>>;
 
-    /// The space a folder leads to: the one the first of `keys` that is known leads to, or
+    /// The project a folder leads to: the one the first of `keys` that is known leads to, or
     /// `new`, kept now as `create` keeps it. Every key in `keys` then leads to it, unless it
     /// already led elsewhere.
     fn folder<'a>(
         &'a self,
         org: OrgId,
         keys: &'a [FolderKey],
-        new: &'a Space,
-    ) -> BoxFuture<'a, Result<Space, SpaceError>>;
+        new: &'a Project,
+    ) -> BoxFuture<'a, Result<Project, ProjectError>>;
 }

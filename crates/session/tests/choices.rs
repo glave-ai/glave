@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use glave_event::{Opened, Principal, ThreadId};
 use glave_harness::{Brought, ProjectFolders, Settled};
-use glave_ports::{BoxFuture, Caller, InMemoryLog, SpaceId};
+use glave_ports::{BoxFuture, Caller, InMemoryLog, ProjectId};
 use glave_session::protocol::{ModelInfo, Reply, Request};
 use glave_session::signin::person;
 
@@ -40,7 +40,7 @@ impl ProjectFolders for Chooses {
         Box::pin(async { Self::settled() })
     }
 
-    fn brought<'a>(&'a self, _project: &'a Path, _space: SpaceId) -> BoxFuture<'a, Brought> {
+    fn brought<'a>(&'a self, _project: &'a Path, _id: ProjectId) -> BoxFuture<'a, Brought> {
         Box::pin(async {
             Brought {
                 settled: Self::settled(),
@@ -50,10 +50,10 @@ impl ProjectFolders for Chooses {
     }
 }
 
-/// Starts a thread for `caller` in `space`.
-async fn start_as(server: &Tested, caller: &Caller, space: SpaceId) -> ThreadId {
+/// Starts a thread for `caller` in `project`.
+async fn start_as(server: &Tested, caller: &Caller, project: ProjectId) -> ThreadId {
     let started = Request::ThreadStart {
-        space: Some(space),
+        project: Some(project),
         worktree: None,
         background: false,
         computer: None,
@@ -83,12 +83,12 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
             .build_in_repository("choices-project", InMemoryLog::new())
             .await;
         let grace = person("https://id.example.com", "grace").unwrap();
-        let mut home = server.home_space().await.unwrap();
+        let mut home = server.home_project().await.unwrap();
         home.members.push(Principal::person(grace));
-        server.spaces().update(scope().org, &home).await.unwrap();
+        server.projects().update(scope().org, &home).await.unwrap();
 
         let here = Caller::default();
-        let ours = start_as(&server, &here, scope().space).await;
+        let ours = start_as(&server, &here, scope().project).await;
         let (place, _) = opened(&server, ours).await;
         assert!(
             matches!(place, Opened::Worktree { .. }),
@@ -101,7 +101,7 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
             person: Some(grace),
             ..Caller::default()
         };
-        let theirs = start_as(&server, &elsewhere, scope().space).await;
+        let theirs = start_as(&server, &elsewhere, scope().project).await;
         let (place, _) = opened(&server, theirs).await;
         assert!(
             matches!(place, Opened::Folder { .. }),

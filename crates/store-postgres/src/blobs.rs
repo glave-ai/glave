@@ -42,7 +42,7 @@ impl BlobStore for PostgresBlobs {
                 .seal_blob(&scope, &sha256, &bytes)
                 .await
                 .map_err(|e| BlobError::Storage(format!("could not seal a blob: {e}")))?;
-            let (org, space) = (scope.org.as_uuid(), scope.space.as_uuid());
+            let (org, project) = (scope.org.as_uuid(), scope.project.as_uuid());
             let mut client = connection(&this.pool)
                 .await
                 .map_err(|e| BlobError::Storage(e.to_string()))?;
@@ -53,14 +53,14 @@ impl BlobStore for PostgresBlobs {
             // Storing it again re-seals it under this month's key.
             transaction
                 .execute(
-                    "INSERT INTO blobs (org, space, name, media_type, bytes, key_id)
+                    "INSERT INTO blobs (org, project, name, media_type, bytes, key_id)
                      VALUES ($1, $2, $3, $4, $5, $6)
-                     ON CONFLICT (org, space, name) DO UPDATE
+                     ON CONFLICT (org, project, name) DO UPDATE
                      SET media_type = excluded.media_type, bytes = excluded.bytes,
                          key_id = excluded.key_id",
                     &[
                         &org,
-                        &space,
+                        &project,
                         &name,
                         &media_type,
                         &sealed.bytes,
@@ -71,9 +71,9 @@ impl BlobStore for PostgresBlobs {
                 .map_err(database(BlobError::Storage))?;
             transaction
                 .execute(
-                    "INSERT INTO blob_threads (org, space, name, thread)
+                    "INSERT INTO blob_threads (org, project, name, thread)
                      VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-                    &[&org, &space, &name, &thread.as_uuid()],
+                    &[&org, &project, &name, &thread.as_uuid()],
                 )
                 .await
                 .map_err(database(BlobError::Storage))?;
@@ -106,13 +106,13 @@ impl BlobStore for PostgresBlobs {
             let client = connection(&this.pool)
                 .await
                 .map_err(|e| BlobError::Storage(e.to_string()))?;
-            let (org, space) = (scope.org.as_uuid(), scope.space.as_uuid());
+            let (org, project) = (scope.org.as_uuid(), scope.project.as_uuid());
             if let Some(name) = name {
                 let row = client
                     .query_opt(
                         "SELECT bytes, key_id FROM blobs
-                         WHERE org = $1 AND space = $2 AND name = $3 AND key_id IS NOT NULL",
-                        &[&org, &space, &name],
+                         WHERE org = $1 AND project = $2 AND name = $3 AND key_id IS NOT NULL",
+                        &[&org, &project, &name],
                     )
                     .await
                     .map_err(database(BlobError::Storage))?;
@@ -133,8 +133,8 @@ impl BlobStore for PostgresBlobs {
             let row = client
                 .query_opt(
                     "SELECT bytes FROM blobs
-                     WHERE org = $1 AND space = $2 AND name = $3 AND key_id IS NULL",
-                    &[&org, &space, &sha256.as_str()],
+                     WHERE org = $1 AND project = $2 AND name = $3 AND key_id IS NULL",
+                    &[&org, &project, &sha256.as_str()],
                 )
                 .await
                 .map_err(database(BlobError::Storage))?;

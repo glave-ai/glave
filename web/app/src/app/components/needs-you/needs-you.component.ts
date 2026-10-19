@@ -9,7 +9,7 @@ import {
 import { Inbox } from 'lucide';
 
 import { waitingThreads } from '../../lib/nav';
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 
 const COPY = {
   label: 'Needs you',
@@ -39,8 +39,8 @@ export class NeedsYouComponent {
 
   protected readonly copy = COPY;
   protected readonly icon = Inbox;
-  private readonly spaces = inject(SpacesService);
-  protected readonly threads = computed(() => waitingThreads(this.spaces.spaces()));
+  private readonly projects = inject(ProjectsService);
+  protected readonly threads = computed(() => waitingThreads(this.projects.projects()));
   protected readonly count = computed(() => this.threads().length);
 
   protected followed(): void {

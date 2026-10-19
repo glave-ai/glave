@@ -13,8 +13,8 @@ use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory};
 pub use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
-    Completion, Delta, ModelProvider, ModelRequest, OrgId, ProviderError, RequestedCall, Scope,
-    SpaceId,
+    Completion, Delta, ModelProvider, ModelRequest, OrgId, ProjectId, ProviderError, RequestedCall,
+    Scope,
 };
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 use jiff::Timestamp;
@@ -26,10 +26,10 @@ pub fn uuid(n: u128) -> uuid::Uuid {
     uuid::Uuid::from_u128(0x0192_f5c0_0000_7000_8000_0000_0000_0000 | n)
 }
 
-pub fn scope(org: u128, space: u128) -> Scope {
+pub fn scope(org: u128, project: u128) -> Scope {
     Scope {
         org: OrgId::from_uuid(uuid(org)),
-        space: SpaceId::from_uuid(uuid(space)),
+        project: ProjectId::from_uuid(uuid(project)),
     }
 }
 
@@ -41,12 +41,12 @@ pub fn agent() -> PrincipalId {
     PrincipalId::try_from(uuid(51)).unwrap()
 }
 
-/// The person's personal space, where their personal memory lives.
+/// The person's personal project, where their personal memory lives.
 pub fn inbox() -> Scope {
     scope(1, 100)
 }
 
-/// A shared project space, an isolated one, and one where memory is off.
+/// A shared project, an isolated one, and one where memory is off.
 pub fn shared() -> Scope {
     scope(1, 2)
 }
@@ -65,8 +65,10 @@ pub fn rules() -> Rules {
         }),
         ..Rules::default()
     };
-    rules.spaces.insert(isolated().space, SpaceMemory::Isolated);
-    rules.spaces.insert(off().space, SpaceMemory::Off);
+    rules
+        .projects
+        .insert(isolated().project, SpaceMemory::Isolated);
+    rules.projects.insert(off().project, SpaceMemory::Off);
     rules
 }
 

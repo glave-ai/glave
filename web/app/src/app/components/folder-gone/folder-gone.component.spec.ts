@@ -33,7 +33,7 @@ async function render(fake: FakeSession, local = true): Promise<Rendered> {
   });
   const fixture = TestBed.createComponent(FolderGoneComponent);
   fixture.componentRef.setInput('testId', 'gone');
-  fixture.componentRef.setInput('space', 'p1');
+  fixture.componentRef.setInput('project', 'p1');
   fixture.componentRef.setInput('message', GONE);
   await settle(fixture);
   return { fixture, root: fixture.nativeElement as HTMLElement };
@@ -52,7 +52,7 @@ describe('FolderGoneComponent', () => {
   it('gives the project the folder picked as its new place', async () => {
     const fake = new FakeSession()
       .answer('folder/list', { path: '/Users/ana', parent: '/Users', folders: [] })
-      .answer('space/list', { spaces: [] });
+      .answer('project/list', { projects: [] });
     const { root, fixture } = await render(fake);
     byTestId<HTMLButtonElement>(root, 'gone-find')?.click();
     await settle(fixture);
@@ -62,29 +62,29 @@ describe('FolderGoneComponent', () => {
     await expectAccessible(root);
     byTestId<HTMLButtonElement>(root, 'folder-picker-use')?.click();
     await settle(fixture);
-    expect(fake.paramsOf('space/folder/set')).toEqual([{ space: 'p1', path: '/Users/ana' }]);
-    expect(fake.paramsOf('space/list')).toHaveLength(1);
+    expect(fake.paramsOf('project/folder/set')).toEqual([{ project: 'p1', path: '/Users/ana' }]);
+    expect(fake.paramsOf('project/list')).toHaveLength(1);
   });
 
   it('removes the project once the person confirms', async () => {
-    const fake = new FakeSession().answer('space/list', { spaces: [] });
+    const fake = new FakeSession().answer('project/list', { projects: [] });
     const { root, fixture } = await render(fake);
     byTestId<HTMLButtonElement>(root, 'gone-remove')?.click();
     await settle(fixture);
     expect(byTestId(root, 'gone-confirm')?.textContent).toContain('Its threads go to the archive');
     byTestId<HTMLButtonElement>(root, 'gone-confirm-cancel')?.click();
     await settle(fixture);
-    expect(fake.paramsOf('space/remove')).toEqual([]);
+    expect(fake.paramsOf('project/remove')).toEqual([]);
     byTestId<HTMLButtonElement>(root, 'gone-remove')?.click();
     await settle(fixture);
     byTestId<HTMLButtonElement>(root, 'gone-confirm-ok')?.click();
     await settle(fixture);
-    expect(fake.paramsOf('space/remove')).toEqual([{ space: 'p1' }]);
+    expect(fake.paramsOf('project/remove')).toEqual([{ project: 'p1' }]);
   });
 
   it('shows what the server refused, in its words', async () => {
     const fake = new FakeSession().answer(
-      'space/remove',
+      'project/remove',
       new ApiError({
         code: ErrorCode.NOT_ALLOWED,
         message: 'only its owner removes a project',

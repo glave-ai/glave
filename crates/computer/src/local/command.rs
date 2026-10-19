@@ -56,7 +56,7 @@ const CACHES: &[(&str, &str)] = &[
 ];
 
 /// Maven has no variable for its repository, only a property, passed through `MAVEN_OPTS`,
-/// which is split at spaces: a cache folder with a space in its path is left out.
+/// which is split at projects: a cache folder with a project in its path is left out.
 fn maven_opts(environment: &[(OsString, OsString)], caches: &Path) -> Option<OsString> {
     let repository = caches.join("maven");
     let repository = repository

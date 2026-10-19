@@ -1,8 +1,8 @@
 //! Projects' folders (`specs/session.md`, "Where a thread works"; `specs/storage.md`,
-//! "Spaces"): where a project's files come from (a repository, or a folder of the person's)
-//! and where they are checked out (a computer, and the path there), kept in the space ledger
-//! as `space.folder.set`, the latest one counting. A project gets its folder from
-//! `space/create` (a folder already here, a repository cloned here, or a new one) or from
+//! "Projects"): where a project's files come from (a repository, or a folder of the person's)
+//! and where they are checked out (a computer, and the path there), kept in the project ledger
+//! as `project.folder.set`, the latest one counting. A project gets its folder from
+//! `project/create` (a folder already here, a repository cloned here, or a new one) or from
 //! glave run in a folder, and its threads work there. `folder/list` shows the person on this
 //! computer the folders to pick one from.
 
@@ -15,11 +15,11 @@ use glave_event::{
 use glave_harness::Looked;
 use glave_ports::computer::{ComputerError, CredentialHost, Forge};
 use glave_ports::{
-    BlobStore, Caller, EventLog, FolderKey, LogError, ModelProvider, Scope, Space, SpaceId,
-    SpaceKind,
+    BlobStore, Caller, EventLog, FolderKey, LogError, ModelProvider, Project, ProjectId,
+    ProjectKind, Scope,
 };
 
-use crate::ledger::space_ledger;
+use crate::ledger::project_ledger;
 use crate::protocol::{ApiError, NewFolder, ProjectFolder, Reply, code};
 use crate::providers::local;
 use crate::server::Server;
@@ -31,10 +31,10 @@ const ATTEMPTS: usize = 8;
 /// The longest name glave gives a new project's folder.
 const FOLDER_NAME: usize = 64;
 
-/// What a space's ledger says, as far as it was read.
+/// What a project's ledger says, as far as it was read.
 #[derive(Debug, Default)]
-pub(crate) struct SpaceLedger {
-    /// The latest record of the space's first folder.
+pub(crate) struct ProjectLedger {
+    /// The latest record of the project's first folder.
     folder: Option<SpaceFolderSet>,
     /// Whether the project was removed, and given no folder since.
     pub(crate) removed: bool,
@@ -57,13 +57,13 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// The folder of the space `space`, if it has one: its first, while a project has one.
+    /// The folder of the project `project`, if it has one: its first, while a project has one.
     pub(crate) async fn folder_of(
         &self,
-        space: SpaceId,
+        project: ProjectId,
     ) -> Result<Option<ProjectFolder>, ApiError> {
         Ok(self
-            .read_space_ledger(space)
+            .read_project_ledger(project)
             .await?
             .folder
             .map(|set| ProjectFolder {
@@ -72,15 +72,15 @@ where
             }))
     }
 
-    /// Whether the project `space` was removed, and not given a folder since.
-    pub(crate) async fn removed(&self, space: SpaceId) -> Result<bool, ApiError> {
-        Ok(self.read_space_ledger(space).await?.removed)
+    /// Whether the project `project` was removed, and not given a folder since.
+    pub(crate) async fn removed(&self, project: ProjectId) -> Result<bool, ApiError> {
+        Ok(self.read_project_ledger(project).await?.removed)
     }
 
-    /// The path of the space's folder on the computer this server's threads work on, if it
+    /// The path of the project's folder on the computer this server's threads work on, if it
     /// has a folder; refused when the folder is checked out on another computer.
-    pub(crate) async fn folder_here(&self, space: SpaceId) -> Result<Option<String>, ApiError> {
-        let Some(folder) = self.folder_of(space).await? else {
+    pub(crate) async fn folder_here(&self, project: ProjectId) -> Result<Option<String>, ApiError> {
+        let Some(folder) = self.folder_of(project).await? else {
             return Ok(None);
         };
         if folder.checkout.computer != self.computer() {
@@ -93,10 +93,13 @@ where
         Ok(Some(folder.checkout.path))
     }
 
-    /// The path of the space's folder here, as [`Server::folder_here`] finds it, once glave
+    /// The path of the project's folder here, as [`Server::folder_here`] finds it, once glave
     /// has looked that it is there: refused with `-32029` when it isn't anymore.
-    pub(crate) async fn folder_found(&self, space: SpaceId) -> Result<Option<String>, ApiError> {
-        let Some(path) = self.folder_here(space).await? else {
+    pub(crate) async fn folder_found(
+        &self,
+        project: ProjectId,
+    ) -> Result<Option<String>, ApiError> {
+        let Some(path) = self.folder_here(project).await? else {
             return Ok(None);
         };
         match self.inner.harness.workspace().look(&path).await {
@@ -105,10 +108,10 @@ where
         }
     }
 
-    /// Makes the folder at `path` on this server's computer the folder of the project `space`,
+    /// Makes the folder at `path` on this server's computer the folder of the project `project`,
     /// unless it already is: what glave run in a folder does for that folder's project, so the
     /// folder a person last opened a project from is where its threads work.
-    pub async fn keep_folder(&self, space: SpaceId, path: &str) -> Result<(), ApiError> {
+    pub async fn keep_folder(&self, project: ProjectId, path: &str) -> Result<(), ApiError> {
         let looked = self
             .inner
             .harness
@@ -117,7 +120,7 @@ where
             .await
             .map_err(|error| no_folder(path, &error))?;
         let source = source_of(&looked);
-        self.set_folder(space, source, looked.root, None)
+        self.set_folder(project, source, looked.root, None)
             .await
             .map(|_| ())
     }
@@ -127,12 +130,12 @@ where
         self.inner.harness.workspace().info().computer.as_uuid()
     }
 
-    /// What the space's ledger says: its first folder's latest record, whether the project was
+    /// What the project's ledger says: its first folder's latest record, whether the project was
     /// removed since, and the `seq` of the ledger's last event.
-    async fn read_space_ledger(&self, space: SpaceId) -> Result<SpaceLedger, ApiError> {
-        let ledger = space_ledger().ok_or_else(|| internal(&"the space ledger has no id"))?;
-        let scope = self.scope_in(space);
-        let mut read = SpaceLedger::default();
+    async fn read_project_ledger(&self, project: ProjectId) -> Result<ProjectLedger, ApiError> {
+        let ledger = project_ledger().ok_or_else(|| internal(&"the project ledger has no id"))?;
+        let scope = self.scope_in(project);
+        let mut read = ProjectLedger::default();
         loop {
             let page = self
                 .inner
@@ -164,17 +167,17 @@ where
         }
     }
 
-    /// Appends to the space's ledger what `next` makes of it as it stands, unless it makes
+    /// Appends to the project's ledger what `next` makes of it as it stands, unless it makes
     /// nothing, after anything others wrote to it meanwhile.
-    pub(crate) async fn write_space_ledger<T: Payload>(
+    pub(crate) async fn write_project_ledger<T: Payload>(
         &self,
-        space: SpaceId,
-        next: impl Fn(&SpaceLedger) -> Result<Option<T>, ApiError>,
+        project: ProjectId,
+        next: impl Fn(&ProjectLedger) -> Result<Option<T>, ApiError>,
     ) -> Result<(), ApiError> {
-        let ledger = space_ledger().ok_or_else(|| internal(&"the space ledger has no id"))?;
-        let scope = self.scope_in(space);
+        let ledger = project_ledger().ok_or_else(|| internal(&"the project ledger has no id"))?;
+        let scope = self.scope_in(project);
         for _ in 0..ATTEMPTS {
-            let current = self.read_space_ledger(space).await?;
+            let current = self.read_project_ledger(project).await?;
             let Some(payload) = next(&current)? else {
                 return Ok(());
             };
@@ -186,7 +189,7 @@ where
                 seq: current
                     .last
                     .map_or(Some(Seq::FIRST), Seq::next)
-                    .ok_or_else(|| internal(&format!("the ledger of space {space} is full")))?,
+                    .ok_or_else(|| internal(&format!("the ledger of project {project} is full")))?,
                 at: At::from(now),
             };
             let raw = encode(header, &payload).map_err(|error| internal(&error))?;
@@ -205,12 +208,12 @@ where
         Err(internal(&"the project's settings kept changing; try again"))
     }
 
-    /// Records the space's folder as coming from `source` and checked out at `path` on this
-    /// server's computer, set by `by` (absent: the space's person), unless it already is and
+    /// Records the project's folder as coming from `source` and checked out at `path` on this
+    /// server's computer, set by `by` (absent: the project's person), unless it already is and
     /// the project was not removed since.
     pub(crate) async fn set_folder(
         &self,
-        space: SpaceId,
+        project: ProjectId,
         source: FolderSource,
         path: String,
         by: Option<Principal>,
@@ -222,7 +225,7 @@ where
                 path,
             },
         };
-        self.write_space_ledger(space, |current| {
+        self.write_project_ledger(project, |current| {
             if !current.removed
                 && current
                     .folder
@@ -251,12 +254,12 @@ where
         Ok(kept)
     }
 
-    /// Answers `space/create` with a folder: the project its folder leads to, made now unless
+    /// Answers `project/create` with a folder: the project its folder leads to, made now unless
     /// the folder already led to one the caller works in, with the folder as its own.
-    pub(crate) async fn create_project(
+    pub(crate) async fn create_with_folder(
         &self,
         caller: &Caller,
-        new: Space,
+        new: Project,
         folder: NewFolder,
     ) -> Result<Reply, ApiError> {
         if !local(caller) {
@@ -271,23 +274,23 @@ where
         if let FolderSource::Repository { url } = &source {
             keys.push(FolderKey::Remote(url.clone()));
         }
-        let space = self
+        let project = self
             .inner
-            .spaces
+            .projects
             .folder(self.inner.home.org, &keys, &new)
             .await
-            .map_err(|error| crate::spaces::failed(&error))?;
-        if space.kind != SpaceKind::Project || !space.admits(&person) {
+            .map_err(|error| crate::projects::failed(&error))?;
+        if project.kind != ProjectKind::Project || !project.admits(&person) {
             return Err(ApiError::new(
                 code::NOT_ALLOWED,
                 format!("{root} belongs to a project you do not work in"),
             ));
         }
         let folder = self
-            .set_folder(space.id, source, root, Some(person))
+            .set_folder(project.id, source, root, Some(person))
             .await?;
-        Ok(Reply::Space {
-            space,
+        Ok(Reply::Project {
+            project,
             folder: Some(folder),
         })
     }
@@ -374,11 +377,11 @@ where
         })
     }
 
-    /// The scope of `space` in this server's organization.
-    pub(crate) fn scope_in(&self, space: SpaceId) -> Scope {
+    /// The scope of `project` in this server's organization.
+    pub(crate) fn scope_in(&self, project: ProjectId) -> Scope {
         Scope {
             org: self.inner.home.org,
-            space,
+            project,
         }
     }
 }
@@ -443,7 +446,7 @@ fn repository(url: &str) -> Result<String, ApiError> {
     Ok(url.to_owned())
 }
 
-/// A folder's name for the project `name`: its letters and digits, with `-` for spaces and
+/// A folder's name for the project `name`: its letters and digits, with `-` for projects and
 /// other marks, at most [`FOLDER_NAME`] characters; `project` when nothing is left.
 fn folder_name(name: &str) -> String {
     let mut folder = String::new();

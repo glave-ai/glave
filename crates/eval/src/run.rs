@@ -320,8 +320,8 @@ async fn converse(
         ));
     }
     let mut lines = String::new();
-    for (index, (space, turns)) in threads.iter().enumerate() {
-        let scope = crate::memory::space(space.as_deref());
+    for (index, (project, turns)) in threads.iter().enumerate() {
+        let scope = crate::memory::project(project.as_deref());
         let goal = task.goal.as_ref().filter(|_| index == 0);
         let steer = task.steer.as_ref().filter(|_| index == 0);
         let Some(thread) = conversation.thread(scope, turns, goal, steer).await? else {

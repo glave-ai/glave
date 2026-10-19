@@ -1,4 +1,4 @@
-//! Projects own their folders: `space/create` makes a project from a folder already here, a
+//! Projects own their folders: `project/create` makes a project from a folder already here, a
 //! repository cloned with the git host connected for it, or a new empty repository; a thread
 //! in it works in its folder, or a worktree of it when asked, opening with what the folder's
 //! instructions say; a person's Chats get scratch folders; project names stay apart per owner;
@@ -14,7 +14,7 @@ use glave_event::{
 use glave_harness::ProjectFolders;
 use glave_ports::computer::{CredentialHost, Forge, GitCredential};
 use glave_ports::testing::{FakeGitHost, FixedGitCredentials, fake_secret};
-use glave_ports::{BoxFuture, Caller, EventLog, SpaceId};
+use glave_ports::{BoxFuture, Caller, EventLog, ProjectId};
 use glave_session::Answering;
 use glave_session::protocol::{Meta, NewFolder, ProjectFolder, Reply, Request, code};
 use glave_session::signin::person;
@@ -30,25 +30,25 @@ fn canonical(path: &Path) -> String {
 }
 
 fn create(name: &str, folder: Option<NewFolder>) -> Request {
-    Request::SpaceCreate {
+    Request::ProjectCreate {
         name: name.into(),
         members: Vec::new(),
         folder,
     }
 }
 
-/// The space and folder a `space/*` request answered with.
-fn made(reply: Reply) -> (glave_ports::Space, Option<ProjectFolder>) {
+/// The project and folder a `project/*` request answered with.
+fn made(reply: Reply) -> (glave_ports::Project, Option<ProjectFolder>) {
     match reply {
-        Reply::Space { space, folder } => (space, folder),
-        other => panic!("a space, not {other:?}"),
+        Reply::Project { project, folder } => (project, folder),
+        other => panic!("a project, not {other:?}"),
     }
 }
 
-/// Starts a thread in `space`, in a worktree of its own when `worktree` says.
-async fn start_in(server: &Tested, space: SpaceId, worktree: Option<bool>) -> ThreadId {
+/// Starts a thread in `project`, in a worktree of its own when `worktree` says.
+async fn start_in(server: &Tested, project: ProjectId, worktree: Option<bool>) -> ThreadId {
     let started = Request::ThreadStart {
-        space: Some(space),
+        project: Some(project),
         worktree,
         background: false,
         computer: None,
@@ -78,7 +78,7 @@ fn a_project_made_from_a_folder_here_works_in_it_and_the_folder_leads_back_to_it
         let server = Setup::new(answers).build(&dir).await.0;
         let path = garden.to_string_lossy().into_owned();
         let asked = NewFolder::Path { path: path.clone() };
-        let (space, folder) = made(server.request(create("Garden", Some(asked))).await.unwrap());
+        let (project, folder) = made(server.request(create("Garden", Some(asked))).await.unwrap());
         let folder = folder.unwrap();
         assert_eq!(
             folder.source,
@@ -86,7 +86,7 @@ fn a_project_made_from_a_folder_here_works_in_it_and_the_folder_leads_back_to_it
             "no repository it comes from"
         );
         assert_eq!(folder.checkout.path, canonical(&garden));
-        let thread = start_in(&server, space.id, None).await;
+        let thread = start_in(&server, project.id, None).await;
         let (place, root) = opened(&server, thread).await;
         assert!(matches!(place, Opened::Folder { .. }), "{place:?}");
         assert_eq!(root, canonical(&garden), "in the folder itself");
@@ -98,10 +98,12 @@ fn a_project_made_from_a_folder_here_works_in_it_and_the_folder_leads_back_to_it
         // The same folder again is the same project, as glave run there finds it.
         let again = NewFolder::Path { path };
         let (same, _) = made(server.request(create("Other", Some(again))).await.unwrap());
-        assert_eq!((same.id, same.name), (space.id, "Garden".to_owned()));
+        assert_eq!((same.id, same.name), (project.id, "Garden".to_owned()));
         let (_, got) = made(
             server
-                .request(Request::SpaceGet { space: space.id })
+                .request(Request::ProjectGet {
+                    project: project.id,
+                })
                 .await
                 .unwrap(),
         );
@@ -127,13 +129,13 @@ fn a_thread_in_a_project_works_in_a_worktree_of_its_folder_when_asked() {
         setup.worktrees = Some(dir.with_extension("worktrees"));
         let server = setup.build(&dir).await.0;
         let path = repo.to_string_lossy().into_owned();
-        let (space, _) = made(
+        let (project, _) = made(
             server
                 .request(create("App", Some(NewFolder::Path { path })))
                 .await
                 .unwrap(),
         );
-        let thread = start_in(&server, space.id, Some(true)).await;
+        let thread = start_in(&server, project.id, Some(true)).await;
         let (place, root) = opened(&server, thread).await;
         let Opened::Worktree { repository, branch } = place else {
             panic!("a worktree, not {place:?}")
@@ -145,7 +147,7 @@ fn a_thread_in_a_project_works_in_a_worktree_of_its_folder_when_asked() {
             !root.starts_with(&canonical(&repo)),
             "outside the repository"
         );
-        let in_place = start_in(&server, space.id, None).await;
+        let in_place = start_in(&server, project.id, None).await;
         let (place, root) = opened(&server, in_place).await;
         assert!(
             matches!(place, Opened::Folder { .. }),
@@ -162,7 +164,7 @@ fn an_empty_project_is_a_new_repository_named_after_it_and_names_stay_apart() {
     let _ = std::fs::remove_dir_all(&projects);
     block_on!(async {
         let mut setup = Setup::new(Vec::new());
-        setup.projects = Some(projects.clone());
+        setup.project_base = Some(projects.clone());
         let server = setup.build(&dir).await.0;
         let (first, folder) = made(
             server
@@ -191,8 +193,8 @@ fn an_empty_project_is_a_new_repository_named_after_it_and_names_stay_apart() {
         assert!(path.join(".git").is_dir(), "a new repository of its own");
         assert_eq!(path.parent().unwrap(), Path::new(&canonical(&projects)));
         let renamed = server
-            .request(Request::SpaceRename {
-                space: second.id,
+            .request(Request::ProjectRename {
+                project: second.id,
                 name: "MY APP".into(),
             })
             .await
@@ -230,7 +232,7 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
     block_on!(async {
         // Without the host connected, the host refuses and nothing is left behind.
         let mut setup = Setup::new(Vec::new());
-        setup.projects = Some(projects.clone());
+        setup.project_base = Some(projects.clone());
         let server = setup.build(&dir).await.0;
         let refused = server
             .request(create(
@@ -251,11 +253,11 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
         }];
         let fixed = Arc::new(FixedGitCredentials::new(hosts, credential));
         let mut setup = Setup::new(Vec::new());
-        setup.projects = Some(projects.clone());
+        setup.project_base = Some(projects.clone());
         setup.credentials = Some(fixed.clone());
         let server = setup.build(&folder("projects-clone-again")).await.0;
         let asked = NewFolder::Repository { url: url.clone() };
-        let (space, folder) = made(server.request(create("App", Some(asked))).await.unwrap());
+        let (project, folder) = made(server.request(create("App", Some(asked))).await.unwrap());
         let folder = folder.unwrap();
         assert_eq!(folder.source, FolderSource::Repository { url });
         let clone = PathBuf::from(&folder.checkout.path);
@@ -273,7 +275,7 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
             !config.contains(&token),
             "the token is never kept in the clone"
         );
-        let thread = start_in(&server, space.id, None).await;
+        let thread = start_in(&server, project.id, None).await;
         assert_eq!(opened(&server, thread).await.1, folder.checkout.path);
     });
 }
@@ -307,13 +309,13 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
         setup.project_folders = Some(Arc::new(Told));
         let (server, seen) = setup.build(&dir).await;
         let path = other.to_string_lossy().into_owned();
-        let (space, _) = made(
+        let (project, _) = made(
             server
                 .request(create("Other", Some(NewFolder::Path { path })))
                 .await
                 .unwrap(),
         );
-        let thread = start_in(&server, space.id, None).await;
+        let thread = start_in(&server, project.id, None).await;
         turn(&server, thread, "go").await.unwrap();
         let grace = Caller {
             person: Some(person("https://id.example.com", "grace").unwrap()),
@@ -324,7 +326,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
             .request_as(
                 &grace,
                 Request::ThreadStart {
-                    space: None,
+                    project: None,
                     worktree: None,
                     background: false,
                     computer: None,
@@ -447,7 +449,7 @@ fn a_caller_signed_in_elsewhere_gives_no_folder_and_sees_none() {
             assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
         }
         // Without a folder, they may make a project; its threads get scratch folders.
-        let (space, folder) = made(
+        let (project, folder) = made(
             server
                 .request_as(&elsewhere, create("Theirs", None))
                 .await
@@ -458,7 +460,7 @@ fn a_caller_signed_in_elsewhere_gives_no_folder_and_sees_none() {
             .request_as(
                 &elsewhere,
                 Request::ThreadStart {
-                    space: Some(space.id),
+                    project: Some(project.id),
                     worktree: Some(true),
                     background: false,
                     computer: None,
@@ -487,13 +489,13 @@ fn the_folder_glave_runs_in_becomes_its_project_s_folder_from_its_repository() {
     block_on!(async {
         let server = Setup::new(Vec::new()).build(&dir).await.0;
         server
-            .keep_folder(scope().space, &repo.to_string_lossy())
+            .keep_folder(scope().project, &repo.to_string_lossy())
             .await
             .unwrap();
         let (_, folder) = made(
             server
-                .request(Request::SpaceGet {
-                    space: scope().space,
+                .request(Request::ProjectGet {
+                    project: scope().project,
                 })
                 .await
                 .unwrap(),
@@ -513,11 +515,11 @@ fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
     block_on!(async {
         let log = Shared::default();
         let server = Setup::new(Vec::new()).build_on(&dir, log.clone()).await.0;
-        let (space, _) = made(server.request(create("Far", None)).await.unwrap());
+        let (project, _) = made(server.request(create("Far", None)).await.unwrap());
         let at = At::try_from("2026-10-02T00:00:00.000Z".to_owned()).unwrap();
         let header = Header {
             id: EventId::new(at.timestamp(), [8; 10]).unwrap(),
-            thread: glave_session::space_ledger().unwrap(),
+            thread: glave_session::project_ledger().unwrap(),
             seq: Seq::FIRST,
             at,
         };
@@ -532,14 +534,14 @@ fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
         };
         let scope = glave_ports::Scope {
             org: scope().org,
-            space: space.id,
+            project: project.id,
         };
         log.append(&scope, &[encode(header, &set).unwrap()])
             .await
             .unwrap();
         let refused = server
             .request(Request::ThreadStart {
-                space: Some(space.id),
+                project: Some(project.id),
                 worktree: None,
                 background: false,
                 computer: None,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use glave_ports::testing::ManualClock;
-use glave_ports::{OrgId, SpaceId, block_on};
+use glave_ports::{OrgId, ProjectId, block_on};
 use glave_store_sqlite::{SqliteLog, Store};
 
 use super::*;
@@ -17,7 +17,7 @@ fn store() -> Store {
 fn scope() -> Scope {
     Scope {
         org: OrgId::from_uuid(Uuid::from_u128(1)),
-        space: SpaceId::from_uuid(Uuid::from_u128(2)),
+        project: ProjectId::from_uuid(Uuid::from_u128(2)),
     }
 }
 

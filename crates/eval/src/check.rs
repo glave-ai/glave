@@ -40,9 +40,9 @@ pub enum Check {
     Recorded(String),
     /// The task's goal ended for one of these reasons, such as `met`.
     GoalEnded(Vec<GoalReason>),
-    /// A memory in force, in any space, holds this text, ignoring case.
+    /// A memory in force, in any project, holds this text, ignoring case.
     MemoryHolds(String),
-    /// No memory in force, in any space, holds any of these, ignoring case.
+    /// No memory in force, in any project, holds any of these, ignoring case.
     MemoryLacks(Vec<String>),
     /// A memory was forgotten, and no forgotten memory can be opened any more.
     MemoryForgotten,
@@ -533,8 +533,8 @@ mod tests {
         );
     }
 
-    /// The memory-recall task's checks: the fact from this space's past thread, found by
-    /// `recall`, passes; the other space's, or an answer without recall, fails.
+    /// The memory-recall task's checks: the fact from this project's past thread, found by
+    /// `recall`, passes; the other project's, or an answer without recall, fails.
     #[test]
     fn the_recall_checks_need_the_fact_found_by_recall_and_nothing_from_elsewhere() {
         let task = crate::task::load(Path::new("../../evals/tasks/memory-recall")).unwrap();

@@ -1,4 +1,4 @@
-//! The memories of one space, as its memory ledger says so far: each memory's versions, who
+//! The memories of one project, as its memory ledger says so far: each memory's versions, who
 //! changed it, and whether it is forgotten. A view built from the events alone, never stored.
 //! A forgotten memory's text leaves the view the moment its key is destroyed: its events read
 //! as erased from then on, and a cached copy is dropped when the forget is read.
@@ -86,7 +86,7 @@ impl Entry {
     }
 }
 
-/// What one space's memory ledger says.
+/// What one project's memory ledger says.
 #[derive(Debug, Default)]
 pub(crate) struct Book {
     /// The `seq` the next event will take.

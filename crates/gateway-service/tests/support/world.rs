@@ -14,7 +14,7 @@ use glave_mcp::{Limits, McpServer, ServerConfig};
 use glave_ports::Caller;
 pub use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, FAKE_SECRET};
-use glave_ports::{EventLog, InMemoryLog, LogError, OrgId, Purpose, Scope, SpaceId};
+use glave_ports::{EventLog, InMemoryLog, LogError, OrgId, ProjectId, Purpose, Scope};
 use glave_provider_openai::fake::{FakeServer, Reply};
 use glave_provider_openai::{Config, OpenAiCompatible};
 use tokio::sync::oneshot;
@@ -165,7 +165,7 @@ impl World {
         let upstream = FakeServer::start(replies).unwrap();
         let scope = Scope {
             org: OrgId::from_uuid(uuid(1)),
-            space: SpaceId::from_uuid(uuid(2)),
+            project: ProjectId::from_uuid(uuid(2)),
         };
         let mut world = Self {
             url: String::new(),

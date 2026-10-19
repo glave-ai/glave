@@ -138,7 +138,7 @@ where
     A: Approver,
 {
     /// Memory for `thread`, and who and where it is for, when the thread reads it: never in a
-    /// subagent's thread (the parent briefs it), never where the space's setting is off.
+    /// subagent's thread (the parent briefs it), never where the project's setting is off.
     pub(crate) fn memory_for(&self, thread: &Thread) -> Option<(Arc<dyn Memory>, MemoryContext)> {
         let memory = self.memory.as_ref()?;
         if thread.delegated() {

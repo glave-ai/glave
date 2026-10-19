@@ -30,7 +30,7 @@ fn blobs_are_sealed_under_the_clocks_month() {
     let keys = keys(16);
     let scope = Scope {
         org: glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        space: glave_ports::SpaceId::from_uuid(uuid::Uuid::from_u128(2)),
+        project: glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
     };
     let sha = glave_ports::digest(b"x");
     let (_, sealed) = block_on!(keys.seal_blob(&scope, &sha, b"x")).unwrap();
@@ -43,7 +43,7 @@ fn another_root_cannot_open_what_this_one_sealed() {
     let storage = InMemoryKeyStorage::new();
     let scope = Scope {
         org: glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        space: glave_ports::SpaceId::from_uuid(uuid::Uuid::from_u128(2)),
+        project: glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
     };
     let event = conformance::event(1, 1, "2026-10").unwrap();
     let first = Keys::new(
@@ -65,17 +65,17 @@ fn another_root_cannot_open_what_this_one_sealed() {
 }
 
 #[test]
-fn search_terms_are_keyed_per_space_and_stable() {
+fn search_terms_are_keyed_per_project_and_stable() {
     let keys = keys(16);
-    let scope = |space| Scope {
+    let scope = |project| Scope {
         org: glave_ports::OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        space: glave_ports::SpaceId::from_uuid(uuid::Uuid::from_u128(space)),
+        project: glave_ports::ProjectId::from_uuid(uuid::Uuid::from_u128(project)),
     };
     let words = vec!["deploy".to_owned(), "render".to_owned()];
     assert_eq!(
         block_on!(keys.search_terms(&scope(2), &words)).unwrap(),
         None,
-        "a space with no key finds nothing"
+        "a project with no key finds nothing"
     );
     let event = conformance::event(1, 1, "2026-10").unwrap();
     block_on!(keys.seal_event(&scope(2), &event)).unwrap();
@@ -98,5 +98,5 @@ fn search_terms_are_keyed_per_space_and_stable() {
     let there = block_on!(keys.search_terms(&scope(3), &words))
         .unwrap()
         .unwrap();
-    assert_ne!(there, here, "another space's words never match");
+    assert_ne!(there, here, "another project's words never match");
 }

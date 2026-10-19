@@ -1,6 +1,6 @@
 //! The data store (AGENTS.md, "One of each"): the local SQLite file in glave's folder by
 //! default, or the Postgres database `[store] url` (or GLAVE_STORE_URL) names, for a server an
-//! organization runs. Either way the event log, the blobs, the spaces and their keys come from
+//! organization runs. Either way the event log, the blobs, the projects and their keys come from
 //! the one store, through the same ports.
 
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use glave_event::{BlobRef, Principal, PrincipalId, RawEvent, Seq, Sha256, Thread
 use glave_memory::Shredder;
 use glave_ports::search::Found;
 use glave_ports::{
-    BlobError, BlobStore, EventLog, LogError, OrgId, Scope, Spaces, ThreadQuery, ThreadView,
+    BlobError, BlobStore, EventLog, LogError, OrgId, Projects, Scope, ThreadQuery, ThreadView,
 };
 use glave_store_postgres as postgres;
 use glave_store_sqlite as sqlite;
@@ -83,10 +83,10 @@ impl Data {
         }
     }
 
-    pub fn spaces(&self) -> Arc<dyn Spaces> {
+    pub fn projects(&self) -> Arc<dyn Projects> {
         match self {
-            Self::Sqlite(store) => Arc::new(store.spaces()),
-            Self::Postgres(store) => Arc::new(store.spaces()),
+            Self::Sqlite(store) => Arc::new(store.projects()),
+            Self::Postgres(store) => Arc::new(store.projects()),
         }
     }
 
@@ -99,19 +99,19 @@ impl Data {
     }
 
     /// Erases the account `account` kept in `scope`, a model account or a git host: destroys
-    /// the key it was sealed under, then rotates the space key, so no backup can unwrap it
+    /// the key it was sealed under, then rotates the project key, so no backup can unwrap it
     /// either.
     pub async fn erase_account(&self, scope: &Scope, account: uuid::Uuid) -> anyhow::Result<()> {
         match self {
             Self::Sqlite(store) => {
                 let keys = store.keyring();
                 keys.destroy_account_key(scope, account).await?;
-                keys.rotate_space_key(scope).await?;
+                keys.rotate_project_key(scope).await?;
             }
             Self::Postgres(store) => {
                 let keys = store.keyring();
                 keys.destroy_account_key(scope, account).await?;
-                keys.rotate_space_key(scope).await?;
+                keys.rotate_project_key(scope).await?;
             }
         }
         Ok(())
@@ -144,11 +144,11 @@ impl Data {
         })
     }
 
-    /// Gives every space made before spaces were records to `owner`, on a person's own
+    /// Gives every project made before projects were records to `owner`, on a person's own
     /// computer. A Postgres store was never without records, so there is nothing to give.
-    pub async fn claim_spaces(&self, owner: &Principal) -> anyhow::Result<()> {
+    pub async fn claim_projects(&self, owner: &Principal) -> anyhow::Result<()> {
         if let Self::Sqlite(store) = self {
-            store.claim_spaces(owner).await?;
+            store.claim_projects(owner).await?;
         }
         Ok(())
     }

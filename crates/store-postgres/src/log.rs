@@ -1,5 +1,5 @@
 //! The event log on Postgres: one row per event, the envelope as readable columns, the
-//! payload sealed under its space's data key (or, in rows written before sealing, as written).
+//! payload sealed under its project's data key (or, in rows written before sealing, as written).
 
 use std::future::Future;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName
 use glave_keys::{EventFields, erased_payload};
 use glave_ports::search::{Found, indexed, query_terms};
 use glave_ports::{
-    EventLog, LogError, OrgId, Scope, SpaceId, ThreadQuery, ThreadView, check_append,
+    EventLog, LogError, OrgId, ProjectId, Scope, ThreadQuery, ThreadView, check_append,
 };
 use jiff::Timestamp;
 use serde_json::value::RawValue;
@@ -34,7 +34,7 @@ impl PostgresLog {
 
 /// The whole batch in one statement: each column travels as one array.
 const INSERT: &str = "
-    INSERT INTO events (org, space, thread, seq, id, at, type, v, glave, data, key_id)
+    INSERT INTO events (org, project, thread, seq, id, at, type, v, glave, data, key_id)
     SELECT $1, $2, $3, seq, id, at, type, v, glave, data, key_id
     FROM UNNEST($4::bigint[], $5::uuid[], $6::timestamptz[], $7::text[], $8::bigint[],
                 $9::bigint[], $10::bytea[], $11::text[])
@@ -43,7 +43,7 @@ const INSERT: &str = "
 
 /// The batch's searchable events into the index, each word exactly as hashed.
 const INDEX: &str = "
-    INSERT INTO event_search (org, space, thread, seq, terms)
+    INSERT INTO event_search (org, project, thread, seq, terms)
     SELECT $1, $2, $3, seq, array_to_tsvector(string_to_array(words, ' '))
     FROM UNNEST($4::bigint[], $5::text[]) AS batch (seq, words)
     WHERE words IS NOT NULL";
@@ -51,7 +51,7 @@ const INDEX: &str = "
 /// The events matching any hashed word, best match first, then newest first.
 const SEARCH: &str = "
     SELECT thread, seq FROM event_search
-    WHERE org = $1 AND space = $2 AND terms @@ $3::text::tsquery
+    WHERE org = $1 AND project = $2 AND terms @@ $3::text::tsquery
     ORDER BY ts_rank(terms, $3::text::tsquery) DESC, pos DESC
     LIMIT $4";
 
@@ -71,9 +71,9 @@ impl EventLog for PostgresLog {
                 let Some(first) = events.first() else {
                     return Ok(());
                 };
-                let (org, space, thread) = (
+                let (org, project, thread) = (
                     scope.org.as_uuid(),
-                    scope.space.as_uuid(),
+                    scope.project.as_uuid(),
                     first.thread.as_uuid(),
                 );
                 let columns = Columns::of(&keys, &scope, &events).await?;
@@ -81,8 +81,8 @@ impl EventLog for PostgresLog {
                 let transaction = client.transaction().await.map_err(database)?;
                 let last: Option<i64> = transaction
                     .query_one(
-                        "SELECT MAX(seq) FROM events WHERE org = $1 AND space = $2 AND thread = $3",
-                        &[&org, &space, &thread],
+                        "SELECT MAX(seq) FROM events WHERE org = $1 AND project = $2 AND thread = $3",
+                        &[&org, &project, &thread],
                     )
                     .await
                     .map_err(database)?
@@ -102,7 +102,7 @@ impl EventLog for PostgresLog {
                         &insert,
                         &[
                             &org,
-                            &space,
+                            &project,
                             &thread,
                             &columns.seq,
                             &columns.id,
@@ -121,7 +121,7 @@ impl EventLog for PostgresLog {
                     transaction
                         .execute(
                             &index,
-                            &[&org, &space, &thread, &columns.seq, &columns.words],
+                            &[&org, &project, &thread, &columns.seq, &columns.words],
                         )
                         .await
                         .map_err(database)?;
@@ -170,7 +170,12 @@ impl EventLog for PostgresLog {
             let rows = client
                 .query(
                     &statement,
-                    &[&scope.org.as_uuid(), &scope.space.as_uuid(), &query, &limit],
+                    &[
+                        &scope.org.as_uuid(),
+                        &scope.project.as_uuid(),
+                        &query,
+                        &limit,
+                    ],
                 )
                 .await
                 .map_err(database)?;
@@ -231,7 +236,7 @@ impl EventLog for PostgresLog {
             let statement = client
                 .prepare_cached(
                     "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
-                     WHERE org = $1 AND space = $2 AND thread = $3 AND seq > $4
+                     WHERE org = $1 AND project = $2 AND thread = $3 AND seq > $4
                      ORDER BY seq LIMIT $5",
                 )
                 .await
@@ -241,7 +246,7 @@ impl EventLog for PostgresLog {
                     &statement,
                     &[
                         &scope.org.as_uuid(),
-                        &scope.space.as_uuid(),
+                        &scope.project.as_uuid(),
                         &thread.as_uuid(),
                         &after,
                         &limit,
@@ -266,8 +271,8 @@ impl EventLog for PostgresLog {
             let client = connection(&pool).await.map_err(storage)?;
             let statement = client
                 .prepare_cached(
-                    "SELECT org, space FROM events WHERE thread = $1
-                     ORDER BY org, space LIMIT 1",
+                    "SELECT org, project FROM events WHERE thread = $1
+                     ORDER BY org, project LIMIT 1",
                 )
                 .await
                 .map_err(database)?;
@@ -277,10 +282,10 @@ impl EventLog for PostgresLog {
                 .map_err(database)?;
             row.map(|row| {
                 let org: Uuid = row.try_get(0).map_err(LogError::corrupt)?;
-                let space: Uuid = row.try_get(1).map_err(LogError::corrupt)?;
+                let project: Uuid = row.try_get(1).map_err(LogError::corrupt)?;
                 Ok(Scope {
                     org: OrgId::from_uuid(org),
-                    space: SpaceId::from_uuid(space),
+                    project: ProjectId::from_uuid(project),
                 })
             })
             .transpose()

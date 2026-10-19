@@ -25,7 +25,12 @@
     (input)="search($event)"
   />
 </label>
-<app-spaces-nav class="threads" [current]="current()" [query]="query()" (navigated)="followed()" />
+<app-projects-nav
+  class="threads"
+  [current]="current()"
+  [query]="query()"
+  (navigated)="followed()"
+/>
 <div class="foot">
   @if (tasksLive()) {
     <a

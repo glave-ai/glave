@@ -38,7 +38,7 @@ pub fn person() -> anyhow::Result<PathBuf> {
     }
 }
 
-/// Where new projects' folders are made (`specs/storage.md`, "Spaces"): `~/glave`, where the
+/// Where new projects' folders are made (`specs/storage.md`, "Projects"): `~/glave`, where the
 /// person finds and opens them; beside a folder `GLAVE_HOME` names instead, as
 /// `<that folder>-projects`, so a separate home keeps its own. Never inside glave's folder.
 pub fn projects() -> anyhow::Result<PathBuf> {

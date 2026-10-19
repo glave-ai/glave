@@ -287,7 +287,7 @@ mod tests {
         assert_eq!(
             request,
             Request::ThreadStart {
-                space: None,
+                project: None,
                 worktree: None,
                 background: false,
                 computer: None,
@@ -301,7 +301,7 @@ mod tests {
         assert_eq!(
             request,
             Request::ThreadStart {
-                space: None,
+                project: None,
                 worktree: Some(true),
                 background: false,
                 computer: None,

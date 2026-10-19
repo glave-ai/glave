@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use glave_event::ApprovalMode;
 use glave_ports::computer::{Sandbox, SandboxLevel};
-use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, SpaceId, ToolSource};
+use glave_ports::{BlobStore, BoxFuture, EventLog, ModelProvider, ProjectId, ToolSource};
 
 use crate::approval::Approver;
 use crate::harness::{Harness, HarnessError, Thread};
@@ -43,11 +43,11 @@ pub trait ProjectFolders: Send + Sync {
         Box::pin(async { Settled::default() })
     }
 
-    /// What the project whose folder is `project`, the space `space`'s, chooses and turns on
+    /// What the project whose folder is `project`, the project `id`, chooses and turns on
     /// for its threads now: its choices, its trusted tools (started the first time they are
     /// asked for) and its trusted hooks. Nothing by default.
-    fn brought<'a>(&'a self, project: &'a Path, space: SpaceId) -> BoxFuture<'a, Brought> {
-        let _ = (project, space);
+    fn brought<'a>(&'a self, project: &'a Path, id: ProjectId) -> BoxFuture<'a, Brought> {
+        let _ = (project, id);
         Box::pin(async { Brought::default() })
     }
 }
@@ -149,7 +149,7 @@ where
         thread.defaults = self.defaults();
         let brought = match (&self.project_folders, &thread.project) {
             (Some(host), Some(project)) if self.trusting(thread.for_) => {
-                host.brought(project, thread.scope.space).await
+                host.brought(project, thread.scope.project).await
             }
             _ => Brought::default(),
         };

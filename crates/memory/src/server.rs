@@ -2,7 +2,7 @@
 //! `remember`, `edit`, `forget` and `recall`, and the resource `glave://memory` with each memory's past
 //! versions at `glave://memory/{memory}/{version}`. Who and where a request is for comes in its
 //! `_meta` (`glave/context`), which glave sets from the session and the thread; the model's
-//! arguments never name a space. The server runs in-process, reached only by glave itself.
+//! arguments never name a project. The server runs in-process, reached only by glave itself.
 
 use std::sync::Arc;
 

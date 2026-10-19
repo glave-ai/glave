@@ -109,7 +109,7 @@ async fn through(server: &mut Reached, command: Command) -> anyhow::Result<()> {
                 Standing::Deleted => Show::Deleted,
             };
             let listed = Request::ThreadList {
-                space: Some(server.project(&std::env::current_dir()?).await?),
+                project: Some(server.project(&std::env::current_dir()?).await?),
                 limit: Some(MOST_LISTED),
                 show: Some(show),
                 cursor: None,
@@ -159,7 +159,7 @@ async fn in_the_log(command: Command) -> anyhow::Result<()> {
     let home = home::folder()?;
     let store = crate::data::Data::here().await?;
     let person = crate::identity::load_or_make(&home, &store).await?.person;
-    let scope = crate::spaces::here(&store, &std::env::current_dir()?, person).await?;
+    let scope = crate::projects::here(&store, &std::env::current_dir()?, person).await?;
     let log = store.log();
     match command {
         Command::List(standing) => {

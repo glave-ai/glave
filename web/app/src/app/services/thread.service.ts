@@ -20,7 +20,7 @@ import { type Waiting, named, notRead, together } from '../lib/queued';
 import { onApple } from '../lib/shortcuts';
 import { threadTurns } from '../lib/turns';
 import { SessionService } from './session.service';
-import { SpacesService } from './spaces.service';
+import { ProjectsService } from './projects.service';
 
 /**
  * One open thread: its events, read from the log and followed live while a turn runs; the
@@ -32,7 +32,7 @@ import { SpacesService } from './spaces.service';
 @Service({ autoProvided: false })
 export class ThreadService {
   private readonly session = inject(SessionService);
-  private readonly spaces = inject(SpacesService);
+  private readonly projects = inject(ProjectsService);
   private readonly id = signal<ThreadId | null>(null);
   private readonly events = signal<readonly RawEvent[]>([]);
   private readonly draft = signal<Draft>(NO_DRAFT);
@@ -125,7 +125,7 @@ export class ThreadService {
       await this.readAsk(thread);
     } finally {
       this.deciding.set(false);
-      void this.spaces.refresh();
+      void this.projects.refresh();
     }
   }
 
@@ -178,7 +178,7 @@ export class ThreadService {
     try {
       await this.session.call('thread/rename', { thread, title });
       this.failed.set(null);
-      await this.spaces.refresh();
+      await this.projects.refresh();
     } catch (error: unknown) {
       this.failed.set(error instanceof Error ? error.message : String(error));
     }
@@ -240,7 +240,7 @@ export class ThreadService {
     } catch (error: unknown) {
       if (folderGone(error)) {
         // The project's folder went since the lists were read: they say so in its place.
-        void this.spaces.refresh();
+        void this.projects.refresh();
       } else if (!controller.signal.aborted) {
         const said = error instanceof Error ? error.message : String(error);
         this.failed.set(said);
@@ -301,7 +301,7 @@ export class ThreadService {
    */
   private settle(thread: ThreadId): void {
     this.draft.set(NO_DRAFT);
-    void this.spaces.refresh();
+    void this.projects.refresh();
     const unread = [...this.givenBack, ...this.queued().map((message) => message.text)];
     this.givenBack = [];
     this.waiting.set([]);
@@ -350,7 +350,7 @@ export class ThreadService {
       const ask = summary.trust ?? null;
       this.asked.set(ask);
       if (ask !== null) {
-        void this.spaces.refresh();
+        void this.projects.refresh();
       }
     } catch (error: unknown) {
       this.failed.set(error instanceof Error ? error.message : String(error));

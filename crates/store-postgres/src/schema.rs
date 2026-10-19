@@ -141,6 +141,32 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX event_search_terms ON event_search USING gin (terms);
     ",
+    // 6: spaces are projects (#435): every `space` column is `project`, and the tables and
+    // indexes named for spaces are named for projects.
+    "
+    ALTER TABLE events RENAME COLUMN space TO project;
+    ALTER TABLE blobs RENAME COLUMN space TO project;
+    ALTER TABLE blob_threads RENAME COLUMN space TO project;
+    ALTER TABLE threads RENAME COLUMN space TO project;
+    ALTER TABLE event_search RENAME COLUMN space TO project;
+
+    ALTER TABLE space_keys RENAME COLUMN space TO project;
+    ALTER TABLE space_keys RENAME TO project_keys;
+    ALTER INDEX space_keys_pkey RENAME TO project_keys_pkey;
+
+    ALTER TABLE space_records RENAME TO project_records;
+    ALTER INDEX space_records_pkey RENAME TO project_records_pkey;
+    ALTER INDEX one_personal_space RENAME TO one_personal_project;
+
+    ALTER TABLE space_members RENAME COLUMN space TO project;
+    ALTER TABLE space_members RENAME TO project_members;
+    ALTER INDEX space_members_pkey RENAME TO project_members_pkey;
+    ALTER INDEX space_members_by_member RENAME TO project_members_by_member;
+
+    ALTER TABLE space_folders RENAME COLUMN space TO project;
+    ALTER TABLE space_folders RENAME TO project_folders;
+    ALTER INDEX space_folders_pkey RENAME TO project_folders_pkey;
+    ",
 ];
 
 /// The schema version this build writes.

@@ -4,10 +4,10 @@ import { provideRouter } from '@angular/router';
 import { expectAccessible } from '@glave/glaze/testing';
 import { of } from 'rxjs';
 
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { FakeSession, FakeTurn, provideFakeSession } from '../../testing/fake-session';
-import { MODELS, SERVER, event, space, thread } from '../../testing/fixtures';
+import { MODELS, SERVER, event, record, thread } from '../../testing/fixtures';
 import { ThreadComponent } from './thread.component';
 
 const HISTORY = [
@@ -38,7 +38,7 @@ function session(events: readonly unknown[]): FakeSession {
     .answer('server/discover', SERVER)
     .answer('schedule/list', { schedules: [] })
     .answer('tasks/list', { tasks: [] })
-    .answer('space/list', { spaces: [space('p1', 'glave')] })
+    .answer('project/list', { projects: [record('p1', 'glave')] })
     .answer('thread/list', { threads: [thread('thread-1', 'Tidy the repo')] });
 }
 
@@ -61,7 +61,7 @@ async function open(
       { provide: BreakpointObserver, useValue: breakpoints },
     ],
   });
-  await TestBed.inject(SpacesService).refresh();
+  await TestBed.inject(ProjectsService).refresh();
   const fixture = TestBed.createComponent(ThreadComponent);
   fixture.componentRef.setInput('thread', 'thread-1');
   await fixture.whenStable();
@@ -420,9 +420,9 @@ describe('ThreadComponent', () => {
 
   it('says in the composer’s place, in the server’s words, that the project’s folder is gone', async () => {
     const gone = "This project's folder isn't there anymore.";
-    const fake = session(ANSWERED).answer('space/list', {
-      spaces: [space('p1', 'glave')],
-      gone: [{ space: 'p1', message: gone }],
+    const fake = session(ANSWERED).answer('project/list', {
+      projects: [record('p1', 'glave')],
+      gone: [{ project: 'p1', message: gone }],
     });
     const { root } = await open(fake);
     expect(root.querySelector('[data-testid="thread-gone-message"]')?.textContent.trim()).toBe(

@@ -16,7 +16,7 @@ fn a_thread_on_a_computer_of_one_s_own_is_not_available_yet() {
         let laptop = ComputerId::from_uuid(uuid::Uuid::nil());
         let refused = server
             .request(Request::ThreadStart {
-                space: Some(scope().space),
+                project: Some(scope().project),
                 worktree: None,
                 background: false,
                 computer: Some(laptop),
@@ -29,7 +29,7 @@ fn a_thread_on_a_computer_of_one_s_own_is_not_available_yet() {
         assert!(refused.message.contains("not available yet"), "{refused}");
         let listed = server
             .request(Request::ThreadList {
-                space: Some(scope().space),
+                project: Some(scope().project),
                 limit: None,
                 show: Some(Show::Active),
                 cursor: None,

@@ -294,7 +294,7 @@ fn asked(note: &Notification) -> Option<glave_event::CallId> {
 async fn thread_of(client: &mut impl Client) -> ThreadId {
     let reply = client
         .call(Request::ThreadStart {
-            space: Some(scope().space),
+            project: Some(scope().project),
             background: false,
             worktree: None,
             computer: None,
@@ -388,7 +388,7 @@ fn a_turn_streams_its_events_and_progress_and_they_are_in_the_log() {
                 assert!(logged.ends_with(&streamed), "{logged:?}");
                 let listed = client
                     .call(Request::ThreadList {
-                        space: Some(scope().space),
+                        project: Some(scope().project),
                         limit: None,
                         show: None,
                         cursor: None,
@@ -548,7 +548,7 @@ fn models_are_listed_and_one_the_server_does_not_run_is_refused() {
             );
             let refused = client
                 .call(Request::ThreadStart {
-                    space: Some(scope().space),
+                    project: Some(scope().project),
                     background: false,
                     worktree: None,
                     computer: None,
@@ -573,7 +573,7 @@ fn a_thread_chooses_its_approval_mode_and_its_summary_shows_it() {
             assert_eq!(info["approvals"], json!(["ask", "auto"]));
             let started = client
                 .call(Request::ThreadStart {
-                    space: Some(scope().space),
+                    project: Some(scope().project),
                     background: false,
                     worktree: None,
                     computer: None,
@@ -589,12 +589,12 @@ fn a_thread_chooses_its_approval_mode_and_its_summary_shows_it() {
 }
 
 #[test]
-fn a_background_turn_in_another_space_answers_at_once_and_its_task_is_listed_when_done() {
+fn a_background_turn_in_another_project_answers_at_once_and_its_task_is_listed_when_done() {
     block_on!(async {
         over_each_transport!("task", vec![answer(Some("Done."), None)], |client, dir| {
             // A project with no folder, whose threads work in scratch folders of their own.
             let made = client
-                .call(Request::SpaceCreate {
+                .call(Request::ProjectCreate {
                     name: "Notes".into(),
                     members: Vec::new(),
                     folder: None,
@@ -603,7 +603,7 @@ fn a_background_turn_in_another_space_answers_at_once_and_its_task_is_listed_whe
                 .unwrap();
             let reply = client
                 .call(Request::ThreadStart {
-                    space: serde_json::from_value(made["space"]["id"].clone()).unwrap(),
+                    project: serde_json::from_value(made["project"]["id"].clone()).unwrap(),
                     background: true,
                     worktree: None,
                     computer: None,

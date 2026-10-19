@@ -43,7 +43,7 @@ person each day (UTC), and [mcp] catalog names the servers of mcp.json in GLAVE_
 (every one when it names none), their ${VAR}s filled from the gateway's environment. Every call
 is recorded, content-free, in the caller's stream in GLAVE_HOME's database.";
 
-/// The space the gateway records calls in, apart from every project's.
+/// The project the gateway records calls in, apart from every project's.
 const SCOPE: &str = "glave:gateway";
 
 /// How to serve.
@@ -197,7 +197,7 @@ async fn run(options: Options) -> anyhow::Result<()> {
             .map(|key| key.expose().to_owned()),
     );
     let store = crate::data::Data::open(None).await?;
-    let scope = crate::spaces::named(&store, SCOPE).await?;
+    let scope = crate::projects::named(&store, SCOPE).await?;
     let trust = Trust {
         issuers: options.issuers,
         audience: options.audience,

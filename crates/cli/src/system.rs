@@ -1,13 +1,13 @@
 //! The operating system's randomness for this run's local ids.
 
-/// A random UUID v4, for this run's local organization and space.
+/// A random UUID v4, for this run's local organization and project.
 pub fn random_uuid() -> uuid::Uuid {
     let mut bytes = [0u8; 16];
     let _ = getrandom::fill(&mut bytes);
     uuid::Builder::from_random_bytes(bytes).into_uuid()
 }
 
-/// A new UUID v7, time-ordered, for an id glave makes here, such as a new space's.
+/// A new UUID v7, time-ordered, for an id glave makes here, such as a new project's.
 pub fn new_uuid_v7() -> uuid::Uuid {
     let mut random = [0u8; 10];
     let _ = getrandom::fill(&mut random);

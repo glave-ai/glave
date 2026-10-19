@@ -9,15 +9,15 @@ use glave_ports::{OrgId, Scope};
 
 use crate::error::KeyError;
 
-/// A space's wrapped keys as stored: one record, replaced whole, and its revision, which
+/// A project's wrapped keys as stored: one record, replaced whole, and its revision, which
 /// increases by one on every save.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StoredSpace {
+pub struct StoredProject {
     pub revision: u64,
     pub record: Vec<u8>,
 }
 
-/// Keeps wrapped keys for [`crate::Keys`]. Shaped as if across a network: a space's keys are
+/// Keeps wrapped keys for [`crate::Keys`]. Shaped as if across a network: a project's keys are
 /// read and written as one record, and every write is a compare-and-swap on its revision, so
 /// rotations are atomic and concurrent writers cannot lose each other's keys.
 pub trait KeyStorage: Send + Sync {
@@ -34,15 +34,15 @@ pub trait KeyStorage: Send + Sync {
     ) -> impl Future<Output = Result<Vec<u8>, KeyError>> + Send;
 
     /// The record of `scope`'s keys, if it has any.
-    fn space(
+    fn project(
         &self,
         scope: &Scope,
-    ) -> impl Future<Output = Result<Option<StoredSpace>, KeyError>> + Send;
+    ) -> impl Future<Output = Result<Option<StoredProject>, KeyError>> + Send;
 
-    /// Saves `record` for `scope` if its revision is still `expected` (`None`: the space has
+    /// Saves `record` for `scope` if its revision is still `expected` (`None`: the project has
     /// no record yet). Returns whether it was saved; a saved record's revision is one more
     /// than `expected` (or 1).
-    fn save_space(
+    fn save_project(
         &self,
         scope: &Scope,
         expected: Option<u64>,
@@ -54,7 +54,7 @@ pub trait KeyStorage: Send + Sync {
 #[derive(Debug, Default)]
 pub struct InMemoryKeyStorage {
     orgs: Mutex<BTreeMap<OrgId, Vec<u8>>>,
-    spaces: Mutex<BTreeMap<Scope, StoredSpace>>,
+    projects: Mutex<BTreeMap<Scope, StoredProject>>,
 }
 
 impl InMemoryKeyStorage {
@@ -77,14 +77,14 @@ impl InMemoryKeyStorage {
         expected: Option<u64>,
         record: Vec<u8>,
     ) -> Result<bool, KeyError> {
-        let mut spaces = self.spaces.lock().map_err(Self::poisoned)?;
-        let found = spaces.get(scope).map(|stored| stored.revision);
+        let mut projects = self.projects.lock().map_err(Self::poisoned)?;
+        let found = projects.get(scope).map(|stored| stored.revision);
         if found != expected {
             return Ok(false);
         }
         let revision = expected.map_or(Some(1), |r| r.checked_add(1));
         let revision = revision.ok_or_else(|| KeyError::Storage("revision overflow".into()))?;
-        spaces.insert(*scope, StoredSpace { revision, record });
+        projects.insert(*scope, StoredProject { revision, record });
         Ok(true)
     }
 }
@@ -110,19 +110,19 @@ impl KeyStorage for InMemoryKeyStorage {
         ready(self.add_org_now(org, wrapped))
     }
 
-    fn space(
+    fn project(
         &self,
         scope: &Scope,
-    ) -> impl Future<Output = Result<Option<StoredSpace>, KeyError>> + Send {
+    ) -> impl Future<Output = Result<Option<StoredProject>, KeyError>> + Send {
         ready(
-            self.spaces
+            self.projects
                 .lock()
                 .map_err(Self::poisoned)
-                .map(|spaces| spaces.get(scope).cloned()),
+                .map(|projects| projects.get(scope).cloned()),
         )
     }
 
-    fn save_space(
+    fn save_project(
         &self,
         scope: &Scope,
         expected: Option<u64>,

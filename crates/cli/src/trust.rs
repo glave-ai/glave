@@ -1,4 +1,4 @@
-//! Where a person's project trust is kept: the trust ledger in their personal space, glave's
+//! Where a person's project trust is kept: the trust ledger in their personal project, glave's
 //! own stream under a reserved id, each `trust.decided` replacing what was decided before about
 //! its project. Every server on one store reads the same decisions. A `trust.toml` an earlier
 //! glave kept in its folder is moved in the first time the ledger is opened, then deleted:
@@ -34,10 +34,10 @@ pub struct Trust {
 }
 
 impl Trust {
-    /// The trust ledger of `person`, in their personal space in `store`, with what `home`'s
+    /// The trust ledger of `person`, in their personal project in `store`, with what `home`'s
     /// earlier `trust.toml` held moved in.
     pub async fn open(store: &Data, person: PrincipalId, home: &Path) -> anyhow::Result<Self> {
-        let scope = crate::spaces::personal(store, person).await?;
+        let scope = crate::projects::personal(store, person).await?;
         let trust = Self {
             log: store.log(),
             scope,

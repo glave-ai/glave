@@ -1,11 +1,11 @@
-//! The spaces on this computer (`specs/storage.md`, "Spaces"): the space a folder leads to,
+//! The projects on this computer (`specs/storage.md`, "Projects"): the project a folder leads to,
 //! found by its canonical path or, for a clone that moved or another checkout, by its `origin`
-//! remote; and the person's personal space, where one-off chats and personal memory live.
+//! remote; and the person's personal project, where one-off chats and personal memory live.
 
 use std::path::Path;
 
 use glave_event::{At, Principal, PrincipalId};
-use glave_ports::{FolderKey, OrgId, Scope, Space, SpaceId, SpaceKind};
+use glave_ports::{FolderKey, OrgId, Project, ProjectId, ProjectKind, Scope};
 
 use crate::data::Data;
 use crate::system::new_uuid_v7;
@@ -15,11 +15,11 @@ async fn org(store: &Data) -> anyhow::Result<OrgId> {
     store.org().await
 }
 
-/// A new space record, owned by `owner`, made now.
-fn new_space(kind: SpaceKind, name: String, owner: Principal) -> Space {
+/// A new project record, owned by `owner`, made now.
+fn new_project(kind: ProjectKind, name: String, owner: Principal) -> Project {
     let now = At::from(jiff::Timestamp::now());
-    Space {
-        id: SpaceId::from_uuid(new_uuid_v7()),
+    Project {
+        id: ProjectId::from_uuid(new_uuid_v7()),
         kind,
         name,
         owner,
@@ -29,13 +29,13 @@ fn new_space(kind: SpaceKind, name: String, owner: Principal) -> Space {
     }
 }
 
-/// The scope of the project space `folder` leads to, for `person`: found by its path, else by
-/// the repository's `origin` remote, else made as theirs. Spaces made before spaces were
+/// The scope of the project `folder` leads to, for `person`: found by its path, else by
+/// the repository's `origin` remote, else made as theirs. Projects made before projects were
 /// records become theirs first.
 pub async fn here(store: &Data, folder: &Path, person: PrincipalId) -> anyhow::Result<Scope> {
     let org = org(store).await?;
     let owner = Principal::person(person);
-    store.claim_spaces(&owner).await?;
+    store.claim_projects(&owner).await?;
     let canonical = tokio::fs::canonicalize(folder)
         .await
         .unwrap_or_else(|_| folder.to_owned());
@@ -47,26 +47,26 @@ pub async fn here(store: &Data, folder: &Path, person: PrincipalId) -> anyhow::R
         || canonical.to_string_lossy().into_owned(),
         |name| name.to_string_lossy().into_owned(),
     );
-    let new = new_space(SpaceKind::Project, name, owner);
-    let space = store.spaces().folder(org, &keys, &new).await?;
+    let new = new_project(ProjectKind::Project, name, owner);
+    let project = store.projects().folder(org, &keys, &new).await?;
     Ok(Scope {
         org,
-        space: space.id,
+        project: project.id,
     })
 }
 
-/// The scope of `person`'s personal space, made the first time.
+/// The scope of `person`'s personal project, made the first time.
 pub async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope> {
     let org = org(store).await?;
-    let new = new_space(
-        SpaceKind::Personal,
+    let new = new_project(
+        ProjectKind::Personal,
         glave_session::PERSONAL_NAME.to_owned(),
         Principal::person(person),
     );
-    let space = store.spaces().personal(org, &new).await?;
+    let project = store.projects().personal(org, &new).await?;
     Ok(Scope {
         org,
-        space: space.id,
+        project: project.id,
     })
 }
 
@@ -74,11 +74,11 @@ pub async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope
 /// person works in.
 pub async fn named(store: &Data, name: &str) -> anyhow::Result<Scope> {
     let org = org(store).await?;
-    let new = new_space(SpaceKind::Project, name.to_owned(), Principal::glave());
+    let new = new_project(ProjectKind::Project, name.to_owned(), Principal::glave());
     let keys = [FolderKey::Path(name.to_owned())];
-    let space = store.spaces().folder(org, &keys, &new).await?;
+    let project = store.projects().folder(org, &keys, &new).await?;
     Ok(Scope {
         org,
-        space: space.id,
+        project: project.id,
     })
 }

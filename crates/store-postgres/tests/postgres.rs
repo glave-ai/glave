@@ -10,7 +10,7 @@ mod support;
 mod postgres {
     use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
     use glave_identity::signin::Browsers;
-    use glave_ports::{BlobStore, EventLog, OrgId, Scope, SpaceId, conformance, digest};
+    use glave_ports::{BlobStore, EventLog, OrgId, ProjectId, Scope, conformance, digest};
     use glave_store_postgres::{Store, StoreError};
     use uuid::{Builder, Uuid};
 
@@ -19,7 +19,7 @@ mod postgres {
     fn scope() -> Scope {
         Scope {
             org: OrgId::from_uuid(Uuid::from_u128(1)),
-            space: SpaceId::from_uuid(Uuid::from_u128(2)),
+            project: ProjectId::from_uuid(Uuid::from_u128(2)),
         }
     }
 
@@ -46,13 +46,13 @@ mod postgres {
     }
 
     #[test]
-    fn the_spaces_pass_the_spaces_conformance_suite() {
+    fn the_projects_pass_the_projects_conformance_suite() {
         block_on!(async {
-            let Some(scratch) = Scratch::new("spaces").await else {
+            let Some(scratch) = Scratch::new("projects").await else {
                 return;
             };
             let store = scratch.store().await.unwrap();
-            let verdict = conformance::spaces(&store.spaces()).await;
+            let verdict = conformance::projects(&store.projects()).await;
             drop(store);
             scratch.drop_schema().await;
             assert_eq!(verdict, Ok(()));

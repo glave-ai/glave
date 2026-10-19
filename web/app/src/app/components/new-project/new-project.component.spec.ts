@@ -1,13 +1,13 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { ApiError, type CredentialInfo, ErrorCode, type Space } from '@glave/client';
+import { ApiError, type CredentialInfo, ErrorCode, type Project } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import type { Mock } from 'vitest';
 
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { ELSEWHERE, FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { space } from '../../testing/fixtures';
+import { record } from '../../testing/fixtures';
 import { NewProjectComponent } from './new-project.component';
 
 /** Lets the component's calls answer and the page settle. */
@@ -22,7 +22,7 @@ interface Options {
   /** Whether the session is with a glave on this computer. */
   readonly local?: boolean;
   readonly accounts?: readonly CredentialInfo[];
-  /** How `space/create` answers; by default it makes the project asked for, as `p9`. */
+  /** How `project/create` answers; by default it makes the project asked for, as `p9`. */
   readonly create?: (params: unknown) => unknown;
 }
 
@@ -36,7 +36,7 @@ interface Rendered {
 }
 
 async function render(options: Options = {}): Promise<Rendered> {
-  const made: Space[] = [];
+  const made: Project[] = [];
   const fake = new FakeSession()
     .answer('folder/list', (params) => {
       const path = (params as { path?: string }).path ?? '/Users/ana';
@@ -48,15 +48,15 @@ async function render(options: Options = {}): Promise<Rendered> {
       return { path, parent: '/Users', folders: folders[path] ?? [] };
     })
     .answer('credential/list', { credentials: options.accounts ?? [], device: false })
-    .answer('space/list', () => ({ spaces: made }))
+    .answer('project/list', () => ({ projects: made }))
     .answer('thread/list', { threads: [] })
     .answer(
-      'space/create',
+      'project/create',
       options.create ??
         ((params) => {
-          const project = space('p9', (params as { name: string }).name);
+          const project = record('p9', (params as { name: string }).name);
           made.push(project);
-          return { space: project };
+          return { project: project };
         }),
     );
   const announce = vi.fn<(message: string) => Promise<void>>(() => Promise.resolve());
@@ -138,12 +138,12 @@ describe('NewProjectComponent', () => {
     await expectAccessible(root);
     create(root).click();
     await settle(fixture);
-    expect(fake.paramsOf('space/create')).toEqual([
+    expect(fake.paramsOf('project/create')).toEqual([
       { name: 'app', folder: { kind: 'path', path: '/Users/ana/code/app' } },
     ]);
     expect(fixture.componentInstance.open()).toBe(false);
-    expect(TestBed.inject(Router).url).toBe('/?space=p9');
-    expect(TestBed.inject(SpacesService).spaces()[0]?.space.name).toBe('app');
+    expect(TestBed.inject(Router).url).toBe('/?project=p9');
+    expect(TestBed.inject(ProjectsService).projects()[0]?.project.name).toBe('app');
     expect(announce).toHaveBeenLastCalledWith('Created the project app');
     expect(navigated()).toBe(1);
   });
@@ -195,7 +195,7 @@ describe('NewProjectComponent', () => {
     await settle(fixture);
     find<HTMLFormElement>(root, 'new-project-form').requestSubmit();
     await settle(fixture);
-    expect(fake.paramsOf('space/create')).toEqual([
+    expect(fake.paramsOf('project/create')).toEqual([
       { name: 'Website', folder: { kind: 'path', path: '/Users/ana/code' } },
     ]);
   });
@@ -222,7 +222,7 @@ describe('NewProjectComponent', () => {
     await expectAccessible(root);
     create(root).click();
     await settle(fixture);
-    expect(fake.paramsOf('space/create')).toEqual([
+    expect(fake.paramsOf('project/create')).toEqual([
       { name: 'secret', folder: { kind: 'repository', url: 'https://github.com/acme/secret.git' } },
     ]);
     expect(find(root, 'new-project-cloning').textContent).toContain('Cloning the repository.');
@@ -234,7 +234,7 @@ describe('NewProjectComponent', () => {
     expect(find<HTMLInputElement>(root, 'new-project-url').disabled).toBe(true);
     // Pressing it again while it clones asks nothing more.
     create(root).click();
-    expect(fake.paramsOf('space/create')).toHaveLength(1);
+    expect(fake.paramsOf('project/create')).toHaveLength(1);
     await expectAccessible(root);
     refuse(
       new ApiError({
@@ -312,7 +312,7 @@ describe('NewProjectComponent', () => {
     await settle(fixture);
     create(root).click();
     await settle(fixture);
-    expect(fake.paramsOf('space/create')).toEqual([{ name: 'Ideas', folder: { kind: 'empty' } }]);
+    expect(fake.paramsOf('project/create')).toEqual([{ name: 'Ideas', folder: { kind: 'empty' } }]);
   });
 
   it('offers someone not on this computer a project by name alone', async () => {
@@ -329,8 +329,8 @@ describe('NewProjectComponent', () => {
     await settle(fixture);
     create(root).click();
     await settle(fixture);
-    expect(fake.paramsOf('space/create')).toEqual([{ name: 'Garden' }]);
-    expect(TestBed.inject(Router).url).toBe('/?space=p9');
+    expect(fake.paramsOf('project/create')).toEqual([{ name: 'Garden' }]);
+    expect(TestBed.inject(Router).url).toBe('/?project=p9');
   });
 
   it('starts afresh each time it opens', async () => {

@@ -3,9 +3,9 @@ import { provideRouter } from '@angular/router';
 import type { TaskInfo } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { space, task, thread } from '../../testing/fixtures';
+import { record, task, thread } from '../../testing/fixtures';
 import { SideNavComponent } from './side-nav.component';
 
 async function render(tasks: readonly TaskInfo[] = []): Promise<{
@@ -13,14 +13,14 @@ async function render(tasks: readonly TaskInfo[] = []): Promise<{
   readonly fixture: ReturnType<typeof TestBed.createComponent<SideNavComponent>>;
 }> {
   const fake = new FakeSession()
-    .answer('space/list', { spaces: [space('p1', 'glave')] })
+    .answer('project/list', { projects: [record('p1', 'glave')] })
     .answer('thread/list', { threads: [thread('t1', 'Plan the launch'), thread('t2', 'Fix CI')] })
     .answer('tasks/list', { tasks })
     .answer('schedule/list', { schedules: [] });
   TestBed.configureTestingModule({
     providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeSession(fake)],
   });
-  await TestBed.inject(SpacesService).refresh();
+  await TestBed.inject(ProjectsService).refresh();
   const fixture = TestBed.createComponent(SideNavComponent);
   fixture.componentRef.setInput('page', 'tasks');
   await fixture.whenStable();

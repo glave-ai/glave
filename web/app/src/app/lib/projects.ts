@@ -1,4 +1,4 @@
-import { ApiError, ErrorCode, type SpaceCreateParams } from '@glave/client';
+import { ApiError, ErrorCode, type ProjectCreateParams } from '@glave/client';
 
 import { SOMETHING_WRONG, sentence } from './text';
 
@@ -13,7 +13,7 @@ export function isProjectStart(value: unknown): value is ProjectStart {
   return value === 'folder' || value === 'repository' || value === 'empty';
 }
 
-/** The longest name `space/create` takes. */
+/** The longest name `project/create` takes. */
 export const NAME_LIMIT = 200;
 
 /** What the person has asked for so far in New project. */
@@ -103,8 +103,8 @@ export function fallbackName(draft: Omit<ProjectDraft, 'name'>): string {
   }
 }
 
-/** What `space/create` is asked for the draft, or `null` while it lacks something it needs. */
-export function createParams(draft: ProjectDraft): SpaceCreateParams | null {
+/** What `project/create` is asked for the draft, or `null` while it lacks something it needs. */
+export function createParams(draft: ProjectDraft): ProjectCreateParams | null {
   const typed = draft.name.trim();
   const name = typed === '' ? fallbackName(draft) : typed;
   if (name === '') {

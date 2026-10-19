@@ -148,7 +148,7 @@ export type GoalReason = "met" | "paused" | "stopped" | "budget" | "stalled";
  */
 export type GoneFolder = {
   readonly message: string;
-  readonly space: SpaceId;
+  readonly project: ProjectId;
 };
 
 /** A client's name for one attempt at a turn: 1 to 255 bytes of text. */
@@ -248,11 +248,30 @@ export type PrincipalId = string;
 /** What kind of principal acts. */
 export type PrincipalKind = string;
 
+/** A project, as its record keeps it. */
+export type Project = {
+  readonly created_at: At;
+  readonly id: ProjectId;
+  readonly kind: ProjectKind;
+  /** Who else works in it. */
+  readonly members?: readonly (Principal)[];
+  readonly name: string;
+  /** Whose it is: a person, or later a team or an agent. */
+  readonly owner: Principal;
+  readonly updated_at: At;
+};
+
 /** A project's folder: where its files come from, and where they are checked out. */
 export type ProjectFolder = {
   readonly checkout: Checkout;
   readonly source: FolderSource;
 };
+
+/** Identifies a project: the boundary for memory, history, files, members and policy. */
+export type ProjectId = string;
+
+/** What a project is. */
+export type ProjectKind = "project" | "personal";
 
 /** Identifies one model account a person connected (`provider.connected`). */
 export type ProviderId = string;
@@ -391,25 +410,6 @@ export type ServerInfo = {
 /** Which threads `thread/list` shows. */
 export type Show = "archived" | "active" | "deleted";
 
-/** A space, as its record keeps it. */
-export type Space = {
-  readonly created_at: At;
-  readonly id: SpaceId;
-  readonly kind: SpaceKind;
-  /** Who else works in it. */
-  readonly members?: readonly (Principal)[];
-  readonly name: string;
-  /** Whose it is: a person, or later a team or an agent. */
-  readonly owner: Principal;
-  readonly updated_at: At;
-};
-
-/** Identifies a space: the boundary for memory, history, files, members and policy. */
-export type SpaceId = string;
-
-/** What a space is. */
-export type SpaceKind = "project" | "personal";
-
 /**
  * Whether a thread is shown: the latest `thread.archived`, `thread.unarchived` or
  * `thread.deleted` decides.
@@ -431,10 +431,10 @@ export type TaskInfo = {
   readonly model: string;
   /** How it ended, once it has. */
   readonly outcome?: Outcome | null;
+  /** The project its thread is in. */
+  readonly project: ProjectId;
   /** The schedule that started it, if one did. */
   readonly schedule?: ScheduleId | null;
-  /** The space its thread is in. */
-  readonly space: SpaceId;
   readonly started_at: At;
   readonly status: TaskStatus;
   readonly thread: ThreadId;
@@ -472,7 +472,7 @@ export type ThreadSummary = {
   readonly outcome?: Outcome | null;
   /** The thread whose call started this one, for a subagent's. */
   readonly parent?: ThreadId | null;
-  readonly space: SpaceId;
+  readonly project: ProjectId;
   readonly standing: Standing;
   readonly status: Status;
   /** The title the person gave it, else the first line of their first message. */
@@ -745,8 +745,8 @@ export type GoalStopResult = Readonly<Record<string, never>>;
 
 export type MemoryEditParams = {
   readonly memory: MemoryId;
-  /** The space whose memory, beside the person's own: the server's own when absent. */
-  readonly space?: SpaceId | null;
+  /** The project whose memory, beside the person's own: the server's own when absent. */
+  readonly project?: ProjectId | null;
   readonly text: string;
 };
 
@@ -758,9 +758,9 @@ export type MemoryEditResult = {
 export type MemoryForgetParams = {
   readonly all?: boolean;
   readonly memory?: MemoryId | null;
+  /** The project whose memory, beside the person's own: the server's own when absent. */
+  readonly project?: ProjectId | null;
   readonly scope?: MemoryScope | null;
-  /** The space whose memory, beside the person's own: the server's own when absent. */
-  readonly space?: SpaceId | null;
 };
 
 /** Memories listed, or the ones a change touched. */
@@ -769,9 +769,9 @@ export type MemoryForgetResult = {
 };
 
 export type MemoryListParams = {
+  /** The project whose memory, beside the person's own: the server's own when absent. */
+  readonly project?: ProjectId | null;
   readonly scope?: MemoryScope | null;
-  /** The space whose memory, beside the person's own: the server's own when absent. */
-  readonly space?: SpaceId | null;
 };
 
 /** Memories listed, or the ones a change touched. */
@@ -781,9 +781,9 @@ export type MemoryListResult = {
 
 export type MemoryMoveParams = {
   readonly memory: MemoryId;
+  /** The project whose memory, beside the person's own: the server's own when absent. */
+  readonly project?: ProjectId | null;
   readonly scope: MemoryScope;
-  /** The space whose memory, beside the person's own: the server's own when absent. */
-  readonly space?: SpaceId | null;
 };
 
 /** Memories listed, or the ones a change touched. */
@@ -793,8 +793,8 @@ export type MemoryMoveResult = {
 
 export type MemoryRestoreParams = {
   readonly memory: MemoryId;
-  /** The space whose memory, beside the person's own: the server's own when absent. */
-  readonly space?: SpaceId | null;
+  /** The project whose memory, beside the person's own: the server's own when absent. */
+  readonly project?: ProjectId | null;
 };
 
 /** Memories listed, or the ones a change touched. */
@@ -803,9 +803,9 @@ export type MemoryRestoreResult = {
 };
 
 export type MemorySaveParams = {
+  /** The project whose memory, beside the person's own: the server's own when absent. */
+  readonly project?: ProjectId | null;
   readonly scope: MemoryScope;
-  /** The space whose memory, beside the person's own: the server's own when absent. */
-  readonly space?: SpaceId | null;
   readonly text: string;
 };
 
@@ -819,6 +819,71 @@ export type ModelListParams = Readonly<Record<string, never>>;
 /** The models a thread may be sent to, the default first. */
 export type ModelListResult = {
   readonly models: readonly (ModelInfo)[];
+};
+
+export type ProjectCreateParams = {
+  readonly folder?: NewFolder | null;
+  readonly members?: readonly (Principal)[];
+  readonly name: string;
+};
+
+/** A project: one asked for, made or renamed, with its folder when it has one. */
+export type ProjectCreateResult = {
+  /** Where its threads work. */
+  readonly folder?: ProjectFolder | null;
+  readonly project: Project;
+};
+
+export type ProjectFolderSetParams = {
+  /** The folder's full path. */
+  readonly path: string;
+  readonly project: ProjectId;
+};
+
+/** A project: one asked for, made or renamed, with its folder when it has one. */
+export type ProjectFolderSetResult = {
+  /** Where its threads work. */
+  readonly folder?: ProjectFolder | null;
+  readonly project: Project;
+};
+
+export type ProjectGetParams = {
+  readonly project: ProjectId;
+};
+
+/** A project: one asked for, made or renamed, with its folder when it has one. */
+export type ProjectGetResult = {
+  /** Where its threads work. */
+  readonly folder?: ProjectFolder | null;
+  readonly project: Project;
+};
+
+export type ProjectListParams = {
+  readonly limit?: number | null;
+};
+
+export type ProjectListResult = {
+  /** The projects among them whose folder isn't there anymore. */
+  readonly gone?: readonly (GoneFolder)[];
+  readonly projects: readonly (Project)[];
+};
+
+export type ProjectRemoveParams = {
+  readonly project: ProjectId;
+};
+
+export type ProjectRemoveResult = Readonly<Record<string, never>>;
+
+export type ProjectRenameParams = {
+  readonly name: string;
+  readonly project: ProjectId;
+};
+
+/** A project: one asked for, made or renamed, with its folder when it has one. */
+export type ProjectRenameResult = {
+  /** Where its threads work. */
+  readonly folder?: ProjectFolder | null;
+  readonly project: Project;
 };
 
 export type ProviderConnectParams = {
@@ -858,9 +923,9 @@ export type ScheduleCreateParams = {
   /** Tokens each run may use. Required: no schedule runs unbounded. */
   readonly budget: number;
   readonly goal?: boolean;
+  /** The project its runs are in, by default as `thread/start` picks one. */
+  readonly project?: ProjectId | null;
   readonly prompt: string;
-  /** The space its runs are in, by default as `thread/start` picks one. */
-  readonly space?: SpaceId | null;
   readonly when: When;
 };
 
@@ -909,71 +974,6 @@ export type SigninRedeemResult = {
   readonly server: string;
   /** The bearer token the browser signs in with, kept in the tab. */
   readonly session: Secret;
-};
-
-export type SpaceCreateParams = {
-  readonly folder?: NewFolder | null;
-  readonly members?: readonly (Principal)[];
-  readonly name: string;
-};
-
-/** A space: one asked for, made or renamed, with its folder when it has one. */
-export type SpaceCreateResult = {
-  /** Where its threads work. */
-  readonly folder?: ProjectFolder | null;
-  readonly space: Space;
-};
-
-export type SpaceFolderSetParams = {
-  /** The folder's full path. */
-  readonly path: string;
-  readonly space: SpaceId;
-};
-
-/** A space: one asked for, made or renamed, with its folder when it has one. */
-export type SpaceFolderSetResult = {
-  /** Where its threads work. */
-  readonly folder?: ProjectFolder | null;
-  readonly space: Space;
-};
-
-export type SpaceGetParams = {
-  readonly space: SpaceId;
-};
-
-/** A space: one asked for, made or renamed, with its folder when it has one. */
-export type SpaceGetResult = {
-  /** Where its threads work. */
-  readonly folder?: ProjectFolder | null;
-  readonly space: Space;
-};
-
-export type SpaceListParams = {
-  readonly limit?: number | null;
-};
-
-export type SpaceListResult = {
-  /** The projects among them whose folder isn't there anymore. */
-  readonly gone?: readonly (GoneFolder)[];
-  readonly spaces: readonly (Space)[];
-};
-
-export type SpaceRemoveParams = {
-  readonly space: SpaceId;
-};
-
-export type SpaceRemoveResult = Readonly<Record<string, never>>;
-
-export type SpaceRenameParams = {
-  readonly name: string;
-  readonly space: SpaceId;
-};
-
-/** A space: one asked for, made or renamed, with its folder when it has one. */
-export type SpaceRenameResult = {
-  /** Where its threads work. */
-  readonly folder?: ProjectFolder | null;
-  readonly space: Space;
 };
 
 export type TasksListParams = {
@@ -1034,10 +1034,10 @@ export type ThreadListParams = {
   /** Where the page starts: the `next` of the page before. */
   readonly cursor?: string | null;
   readonly limit?: number | null;
+  /** The project whose threads to list, by default as `thread/start` picks one. */
+  readonly project?: ProjectId | null;
   /** Which threads: the active ones by default. */
   readonly show?: Show | null;
-  /** The space whose threads to list, by default as `thread/start` picks one. */
-  readonly space?: SpaceId | null;
 };
 
 export type ThreadListResult = {
@@ -1078,10 +1078,10 @@ export type ThreadStartParams = {
    */
   readonly model?: string | null;
   /**
-   * The space the thread is in: by default the server's own, for a caller who works in
-   * it, else the caller's personal space.
+   * The project the thread is in: by default the server's own, for a caller who works in
+   * it, else the caller's personal project.
    */
-  readonly space?: SpaceId | null;
+  readonly project?: ProjectId | null;
   /**
    * Whether the thread works in a worktree of its own rather than in the folder itself;
    * the server's default (`worktree` in `config.toml`) when absent.
@@ -1167,6 +1167,12 @@ export interface Methods {
   readonly "memory/restore": { readonly params: MemoryRestoreParams; readonly result: MemoryRestoreResult };
   readonly "memory/save": { readonly params: MemorySaveParams; readonly result: MemorySaveResult };
   readonly "model/list": { readonly params: ModelListParams; readonly result: ModelListResult };
+  readonly "project/create": { readonly params: ProjectCreateParams; readonly result: ProjectCreateResult };
+  readonly "project/folder/set": { readonly params: ProjectFolderSetParams; readonly result: ProjectFolderSetResult };
+  readonly "project/get": { readonly params: ProjectGetParams; readonly result: ProjectGetResult };
+  readonly "project/list": { readonly params: ProjectListParams; readonly result: ProjectListResult };
+  readonly "project/remove": { readonly params: ProjectRemoveParams; readonly result: ProjectRemoveResult };
+  readonly "project/rename": { readonly params: ProjectRenameParams; readonly result: ProjectRenameResult };
   readonly "provider/connect": { readonly params: ProviderConnectParams; readonly result: ProviderConnectResult };
   readonly "provider/list": { readonly params: ProviderListParams; readonly result: ProviderListResult };
   readonly "provider/remove": { readonly params: ProviderRemoveParams; readonly result: ProviderRemoveResult };
@@ -1179,12 +1185,6 @@ export interface Methods {
   readonly "signin/end_others": { readonly params: SigninEndOthersParams; readonly result: SigninEndOthersResult };
   readonly "signin/link": { readonly params: SigninLinkParams; readonly result: SigninLinkResult };
   readonly "signin/redeem": { readonly params: SigninRedeemParams; readonly result: SigninRedeemResult };
-  readonly "space/create": { readonly params: SpaceCreateParams; readonly result: SpaceCreateResult };
-  readonly "space/folder/set": { readonly params: SpaceFolderSetParams; readonly result: SpaceFolderSetResult };
-  readonly "space/get": { readonly params: SpaceGetParams; readonly result: SpaceGetResult };
-  readonly "space/list": { readonly params: SpaceListParams; readonly result: SpaceListResult };
-  readonly "space/remove": { readonly params: SpaceRemoveParams; readonly result: SpaceRemoveResult };
-  readonly "space/rename": { readonly params: SpaceRenameParams; readonly result: SpaceRenameResult };
   readonly "tasks/list": { readonly params: TasksListParams; readonly result: TasksListResult };
   readonly "tasks/stop": { readonly params: TasksStopParams; readonly result: TasksStopResult };
   readonly "thread/archive": { readonly params: ThreadArchiveParams; readonly result: ThreadArchiveResult };
@@ -1257,7 +1257,7 @@ export const ErrorCode = {
   NO_COMMAND: -32027,
   /** No such git host, or sign-in, here */
   NO_CREDENTIAL: -32024,
-  /** The project's folder isn't there anymore: give it its new place (`space/folder/set`) or remove the project (`space/remove`) */
+  /** The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`) */
   NO_FOLDER: -32029,
   /** The thread has no active goal (or, to resume, no paused one) */
   NO_GOAL: -32007,
@@ -1267,6 +1267,8 @@ export const ErrorCode = {
   NO_METHOD: -32601,
   /** No such model here, or not one this server may run */
   NO_MODEL: -32021,
+  /** No such project */
+  NO_PROJECT: -32019,
   /** No such model account here */
   NO_PROVIDER: -32023,
   /** No such question is waiting */
@@ -1275,8 +1277,6 @@ export const ErrorCode = {
   NO_SCHEDULE: -32016,
   /** No valid sign-in (network transports) */
   NO_SIGN_IN: -32013,
-  /** No such space */
-  NO_SPACE: -32019,
   /** No such thread */
   NO_THREAD: -32001,
   /** No such ask waits: the project changed since, or asks nothing now */

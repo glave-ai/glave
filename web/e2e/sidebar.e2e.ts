@@ -86,7 +86,7 @@ test('projects come first, then Chats; each list by recent activity, what waits 
   expect(projects?.y ?? Infinity).toBeLessThan(chats?.y ?? 0);
   // A project's name heads its threads at their left edge; a thread another started is
   // indented under it.
-  const heading = await byTestId(page, 'nav-space-toggle').boundingBox();
+  const heading = await byTestId(page, 'nav-project-toggle').boundingBox();
   const parent = byTestId(page, 'nav-thread').filter({ hasText: 'Make the tests pass' });
   const child = byTestId(page, 'nav-children').getByTestId('nav-thread');
   await expect(child).toHaveText('Check the parser’s edge cases');
@@ -117,8 +117,8 @@ test('a list sorts by name from its ⋯, remembered in this browser', async ({ p
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
   await expect(shown(page)).toHaveText([...BY_ACTIVITY, 'Dinner ideas for Saturday']);
-  await byTestId(page, 'nav-space-toggle').hover();
-  await sortBy(page, 'nav-space-more', 'Name');
+  await byTestId(page, 'nav-project-toggle').hover();
+  await sortBy(page, 'nav-project-more', 'Name');
   const byName = [
     'Review the release notes needs you',
     'Make the tests pass',
@@ -129,20 +129,19 @@ test('a list sorts by name from its ⋯, remembered in this browser', async ({ p
   await expect(shown(page)).toHaveText(byName);
   await page.reload();
   await expect(shown(page)).toHaveText(byName);
-  await byTestId(page, 'nav-space-more-trigger').click();
-  await expect(byTestId(page, 'nav-space-more-choice').filter({ hasText: 'Name' })).toHaveAttribute(
-    'aria-checked',
-    'true',
-  );
+  await byTestId(page, 'nav-project-more-trigger').click();
+  await expect(
+    byTestId(page, 'nav-project-more-choice').filter({ hasText: 'Name' }),
+  ).toHaveAttribute('aria-checked', 'true');
   await page.keyboard.press('Escape');
-  await expect(byTestId(page, 'nav-space-more-choice')).toHaveCount(0);
+  await expect(byTestId(page, 'nav-project-more-choice')).toHaveCount(0);
 });
 
 test('a heading opens and closes by click and by keyboard, remembered', async ({ page }) => {
   await fakeApi(page);
   await page.goto(`/${SIGNED_IN}`);
-  const toggle = byTestId(page, 'nav-space-toggle');
-  const caret = byTestId(page, 'nav-space-caret');
+  const toggle = byTestId(page, 'nav-project-toggle');
+  const caret = byTestId(page, 'nav-project-caret');
   await expect(toggle).toHaveText('glave');
   await page.mouse.move(0, 0);
   await expect.poll(() => shownOpacity(caret)).toBe(0);
@@ -152,7 +151,7 @@ test('a heading opens and closes by click and by keyboard, remembered', async ({
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(shown(page)).toHaveText(['Dinner ideas for Saturday']);
   // Closed, glave still says a thread in it needs the person.
-  await expect(byTestId(page, 'nav-space-end')).toHaveText('needs you');
+  await expect(byTestId(page, 'nav-project-end')).toHaveText('needs you');
   await expect(toggle).toHaveAccessibleDescription('needs you');
   await page.reload();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -163,7 +162,7 @@ test('a heading opens and closes by click and by keyboard, remembered', async ({
   await expect.poll(() => shownOpacity(caret)).toBe(1);
   await page.keyboard.press('Enter');
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(byTestId(page, 'nav-space-end')).toHaveText('');
+  await expect(byTestId(page, 'nav-project-end')).toHaveText('');
   await page.keyboard.press('Space');
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await page.keyboard.press('Space');
@@ -186,8 +185,8 @@ test('each + starts in its own place: a project, a thread in the project, a chat
   await page.keyboard.press('Escape');
   await expect(byTestId(page, 'new-project')).toBeHidden();
 
-  await byTestId(page, 'nav-space-toggle').hover();
-  await byTestId(page, 'nav-space-new').click();
+  await byTestId(page, 'nav-project-toggle').hover();
+  await byTestId(page, 'nav-project-new').click();
   await expect(byTestId(page, 'home-where-trigger')).toContainText('glave');
   await byTestId(page, 'home-composer-input').fill('Plan the launch');
   await byTestId(page, 'home-composer-input').press('Enter');
@@ -200,7 +199,7 @@ test('each + starts in its own place: a project, a thread in the project, a chat
   await byTestId(page, 'home-composer-input').press('Enter');
   await expect(page).toHaveURL(new RegExp(`/t/${NEW_THREAD}$`, 'u'));
   const started = api.requests.filter(({ method }) => method === 'thread/start');
-  expect(started.map(({ params }) => params['space'])).toEqual([PROJECT.id, PERSONAL.id]);
+  expect(started.map(({ params }) => params['project'])).toEqual([PROJECT.id, PERSONAL.id]);
 });
 
 for (const colorScheme of ['light', 'dark'] as const) {
@@ -225,11 +224,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
     expect((await markerOf(other)).width).toBe('auto');
     await expectAccessible(page);
     // A closed project with its dot, and its menu open.
-    await byTestId(page, 'nav-space-toggle').click();
-    await expect(byTestId(page, 'nav-space-end')).toHaveText('needs you');
-    await byTestId(page, 'nav-space-toggle').hover();
-    await byTestId(page, 'nav-space-more-trigger').click();
-    await expect(byTestId(page, 'nav-space-more-action')).toHaveText('Rename');
+    await byTestId(page, 'nav-project-toggle').click();
+    await expect(byTestId(page, 'nav-project-end')).toHaveText('needs you');
+    await byTestId(page, 'nav-project-toggle').hover();
+    await byTestId(page, 'nav-project-more-trigger').click();
+    await expect(byTestId(page, 'nav-project-more-action')).toHaveText('Rename');
     await expectAccessible(page);
   });
 }

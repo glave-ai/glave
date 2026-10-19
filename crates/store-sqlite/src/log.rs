@@ -1,5 +1,5 @@
 //! The event log on SQLite: one row per event, the envelope as readable columns, the payload
-//! sealed under its space's data key (or, in rows written before sealing, as written).
+//! sealed under its project's data key (or, in rows written before sealing, as written).
 
 use std::future::Future;
 use std::sync::Arc;
@@ -8,7 +8,7 @@ use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName
 use glave_keys::{EventFields, Sealed, erased_payload};
 use glave_ports::search::{Found, indexed, query_terms};
 use glave_ports::{
-    EventLog, LogError, OrgId, Scope, SpaceId, ThreadQuery, ThreadView, check_append,
+    EventLog, LogError, OrgId, ProjectId, Scope, ThreadQuery, ThreadView, check_append,
 };
 use rusqlite::{Connection, ErrorCode, OptionalExtension as _, TransactionBehavior, params};
 use serde_json::value::RawValue;
@@ -99,13 +99,13 @@ impl EventLog for SqliteLog {
             let rows = run(&this.connection, move |connection| {
                 let mut statement = connection.prepare_cached(
                     "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
-                     WHERE org = ?1 AND space = ?2 AND thread = ?3 AND seq > ?4
+                     WHERE org = ?1 AND project = ?2 AND thread = ?3 AND seq > ?4
                      ORDER BY seq LIMIT ?5",
                 )?;
                 let rows = statement.query_map(
                     params![
                         scope.org.to_string(),
-                        scope.space.to_string(),
+                        scope.project.to_string(),
                         thread.to_string(),
                         after,
                         limit
@@ -151,14 +151,14 @@ impl EventLog for SqliteLog {
             let rows = run(&this.connection, move |connection| {
                 let mut statement = connection.prepare_cached(
                     "SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
-                     WHERE org = ?1 AND space = ?2 AND thread = ?3
+                     WHERE org = ?1 AND project = ?2 AND thread = ?3
                        AND type IN (SELECT value FROM json_each(?4))
                      ORDER BY seq DESC LIMIT 1",
                 )?;
                 let rows = statement.query_map(
                     params![
                         scope.org.to_string(),
-                        scope.space.to_string(),
+                        scope.project.to_string(),
                         thread.to_string(),
                         kinds
                     ],
@@ -218,14 +218,14 @@ impl EventLog for SqliteLog {
             let rows = run(&this.connection, move |connection| {
                 let mut statement = connection.prepare_cached(
                     "SELECT thread, seq FROM event_search
-                     WHERE event_search MATCH ?1 AND org = ?2 AND space = ?3
+                     WHERE event_search MATCH ?1 AND org = ?2 AND project = ?3
                      ORDER BY bm25(event_search), rowid DESC LIMIT ?4",
                 )?;
                 let rows = statement.query_map(
                     params![
                         expression,
                         scope.org.to_string(),
-                        scope.space.to_string(),
+                        scope.project.to_string(),
                         limit
                     ],
                     |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
@@ -282,7 +282,7 @@ impl EventLog for SqliteLog {
         async move {
             let found = run(&connection, move |connection| {
                 let mut statement = connection.prepare_cached(
-                    "SELECT org, space FROM events WHERE thread = ?1 ORDER BY org, space LIMIT 1",
+                    "SELECT org, project FROM events WHERE thread = ?1 ORDER BY org, project LIMIT 1",
                 )?;
                 statement
                     .query_row(params![thread.to_string()], |row| {
@@ -293,10 +293,10 @@ impl EventLog for SqliteLog {
             .await
             .map_err(|e| LogError::Storage(e.to_string()))?;
             found
-                .map(|(org, space)| {
+                .map(|(org, project)| {
                     Ok(Scope {
                         org: OrgId::from_uuid(parse_uuid(&org)?),
-                        space: SpaceId::from_uuid(parse_uuid(&space)?),
+                        project: ProjectId::from_uuid(parse_uuid(&project)?),
                     })
                 })
                 .transpose()
@@ -331,15 +331,15 @@ fn append_now(
     let Some(first) = events.first() else {
         return Ok(());
     };
-    let (org, space, thread) = (
+    let (org, project, thread) = (
         scope.org.to_string(),
-        scope.space.to_string(),
+        scope.project.to_string(),
         first.thread.to_string(),
     );
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let last: Option<i64> = transaction.query_row(
-        "SELECT MAX(seq) FROM events WHERE org = ?1 AND space = ?2 AND thread = ?3",
-        params![org, space, thread],
+        "SELECT MAX(seq) FROM events WHERE org = ?1 AND project = ?2 AND thread = ?3",
+        params![org, project, thread],
         |row| row.get(0),
     )?;
     let last = match last.map(|seq| u64::try_from(seq).map(Seq::new)) {
@@ -354,7 +354,7 @@ fn append_now(
     check_append(last, events).map_err(AppendFailure::Rule)?;
     {
         let mut insert = transaction.prepare_cached(
-            "INSERT INTO events (org, space, thread, seq, id, at, type, v, glave, data, key_id)
+            "INSERT INTO events (org, project, thread, seq, id, at, type, v, glave, data, key_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         )?;
         for (event, sealed) in events.iter().zip(sealed) {
@@ -363,7 +363,7 @@ fn append_now(
             })?;
             insert.execute(params![
                 org,
-                space,
+                project,
                 event.thread.to_string(),
                 seq,
                 event.id.to_string(),
@@ -376,12 +376,12 @@ fn append_now(
             ])?;
         }
         let mut index = transaction.prepare_cached(
-            "INSERT INTO event_search (terms, org, space, thread, seq) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO event_search (terms, org, project, thread, seq) VALUES (?1, ?2, ?3, ?4, ?5)",
         )?;
         for (event, words) in events.iter().zip(words) {
             if let Some(words) = words {
                 let seq = i64::try_from(event.seq.get()).unwrap_or(i64::MAX);
-                index.execute(params![words, org, space, event.thread.to_string(), seq])?;
+                index.execute(params![words, org, project, event.thread.to_string(), seq])?;
             }
         }
     }

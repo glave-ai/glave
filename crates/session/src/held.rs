@@ -65,7 +65,7 @@ where
             None => {}
         }
         let scope = self.scope_of(thread).await?;
-        let folder = self.folder_now(scope.space).await?;
+        let folder = self.folder_now(scope.project).await?;
         let resumed = self
             .inner
             .harness
@@ -81,10 +81,13 @@ where
         Ok(())
     }
 
-    /// The folder of the project `space` on this computer, where its threads work: refused
+    /// The folder of the project `project` on this computer, where its threads work: refused
     /// with `-32029` when it isn't there anymore; none when it has none here.
-    async fn folder_now(&self, space: glave_ports::SpaceId) -> Result<Option<String>, ApiError> {
-        match self.folder_found(space).await {
+    async fn folder_now(
+        &self,
+        project: glave_ports::ProjectId,
+    ) -> Result<Option<String>, ApiError> {
+        match self.folder_found(project).await {
             Err(refused) if crate::gone::is_gone(&refused) => Err(refused),
             found => Ok(found.ok().flatten()),
         }
@@ -151,7 +154,7 @@ where
         // Nothing but changing whether it is shown runs where its project's folder was.
         if purpose != Use::Manage {
             let scope = self.scope_of(thread).await?;
-            self.folder_now(scope.space).await?;
+            self.folder_now(scope.project).await?;
         }
         self.load(thread).await?;
         let cancel = Cancel::new();

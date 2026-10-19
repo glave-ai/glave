@@ -1,15 +1,15 @@
-//! A project whose folder isn't there anymore (`specs/session.md`, "Spaces and who may do
+//! A project whose folder isn't there anymore (`specs/session.md`, "Projects and who may do
 //! what"). The server notices when the project is listed and before anything would run in it,
-//! and says so as a fact with its sentence: `space/list`'s `gone`, and `-32029` for what would
+//! and says so as a fact with its sentence: `project/list`'s `gone`, and `-32029` for what would
 //! run there, so nothing starts and nothing is made in the folder's place. The person on this
-//! computer mends it: `space/folder/set` gives the project its folder's new place, where its
-//! threads work from then on; `space/remove` archives its threads and lists it no more.
+//! computer mends it: `project/folder/set` gives the project its folder's new place, where its
+//! threads work from then on; `project/remove` archives its threads and lists it no more.
 
 use glave_event::{Principal, SpaceRemoved, ThreadId};
 use glave_harness::{Change, change_standing};
 use glave_ports::{
-    BlobStore, Caller, EventLog, FolderKey, ModelProvider, Space, SpaceError, SpaceId, SpaceKind,
-    Standing, ThreadQuery,
+    BlobStore, Caller, EventLog, FolderKey, ModelProvider, Project, ProjectError, ProjectId,
+    ProjectKind, Standing, ThreadQuery,
 };
 
 use crate::folders::only_here;
@@ -37,48 +37,48 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Of `spaces`, those `space/list` shows (a removed project is not one), and the projects
+    /// Of `projects`, those `project/list` shows (a removed project is not one), and the projects
     /// among them whose folder isn't there anymore.
     pub(crate) async fn listed(
         &self,
-        spaces: Vec<Space>,
-    ) -> Result<(Vec<Space>, Vec<GoneFolder>), ApiError> {
-        let (mut shown, mut gone) = (Vec::with_capacity(spaces.len()), Vec::new());
-        for space in spaces {
-            if space.kind == SpaceKind::Project {
-                if self.removed(space.id).await? {
+        projects: Vec<Project>,
+    ) -> Result<(Vec<Project>, Vec<GoneFolder>), ApiError> {
+        let (mut shown, mut gone) = (Vec::with_capacity(projects.len()), Vec::new());
+        for project in projects {
+            if project.kind == ProjectKind::Project {
+                if self.removed(project.id).await? {
                     continue;
                 }
                 if self
-                    .folder_found(space.id)
+                    .folder_found(project.id)
                     .await
                     .is_err_and(|e| is_gone(&e))
                 {
                     gone.push(GoneFolder {
-                        space: space.id,
+                        project: project.id,
                         message: GONE.to_owned(),
                     });
                 }
             }
-            shown.push(space);
+            shown.push(project);
         }
         Ok((shown, gone))
     }
 
-    /// Answers `space/folder/set`: the folder at `path` on this computer becomes the folder of
-    /// the project `space`, whose own isn't there anymore, and leads to it. Threads held idle
+    /// Answers `project/folder/set`: the folder at `path` on this computer becomes the folder of
+    /// the project `project`, whose own isn't there anymore, and leads to it. Threads held idle
     /// in it are let go of, so each works where the folder is now the next time it is opened.
     pub(crate) async fn move_folder(
         &self,
         caller: &Caller,
-        space: SpaceId,
+        project: ProjectId,
         path: String,
     ) -> Result<Reply, ApiError> {
         let found = self
-            .owned_here(caller, space, "gives a project its folder")
+            .owned_here(caller, project, "gives a project its folder")
             .await?;
-        let was = match self.folder_found(space).await {
-            Err(error) if is_gone(&error) => self.folder_of(space).await?,
+        let was = match self.folder_found(project).await {
+            Err(error) if is_gone(&error) => self.folder_of(project).await?,
             Err(error) => return Err(error),
             Ok(_) => {
                 return Err(ApiError::new(
@@ -100,38 +100,39 @@ where
         }
         match self
             .inner
-            .spaces
+            .projects
             .folder(self.inner.home.org, &keys, &found)
             .await
         {
-            Ok(led) if led.id != space => {
+            Ok(led) if led.id != project => {
                 return Err(ApiError::new(
                     code::NOT_ALLOWED,
                     "that folder is already another project's",
                 ));
             }
             // No key was known: the project keeps its folder in its ledger alone.
-            Ok(_) | Err(SpaceError::Conflict(_)) => {}
-            Err(error) => return Err(crate::spaces::failed(&error)),
+            Ok(_) | Err(ProjectError::Conflict(_)) => {}
+            Err(error) => return Err(crate::projects::failed(&error)),
         }
         let person = Principal::person(self.person_of(caller)?);
-        let folder = self.set_folder(space, source, root, Some(person)).await?;
-        self.let_go_in(space);
-        Ok(Reply::Space {
-            space: found,
+        let folder = self.set_folder(project, source, root, Some(person)).await?;
+        self.let_go_in(project);
+        Ok(Reply::Project {
+            project: found,
             folder: Some(folder),
         })
     }
 
-    /// Answers `space/remove`: every thread of the project `space` goes to the archive, their
+    /// Answers `project/remove`: every thread of the project `project` goes to the archive, their
     /// history kept, then the project is recorded removed. Refused while a turn runs in it.
-    pub(crate) async fn remove_space(
+    pub(crate) async fn remove_project(
         &self,
         caller: &Caller,
-        space: SpaceId,
+        project: ProjectId,
     ) -> Result<Reply, ApiError> {
-        self.owned_here(caller, space, "removes a project").await?;
-        let threads = self.active_threads(space).await?;
+        self.owned_here(caller, project, "removes a project")
+            .await?;
+        let threads = self.active_threads(project).await?;
         if threads
             .iter()
             .any(|thread| matches!(self.lock().get(thread), Some(Slot::Busy { .. })))
@@ -141,8 +142,8 @@ where
                 "something is running in this project: stop it first, then remove the project",
             ));
         }
-        self.let_go_in(space);
-        let scope = self.scope_in(space);
+        self.let_go_in(project);
+        let scope = self.scope_in(project);
         for thread in threads {
             let now = self.inner.harness.clock().now();
             let random = self.inner.harness.entropy().bytes()?;
@@ -152,7 +153,7 @@ where
                 .map_err(|error| crate::server::api(&error))?;
         }
         let by = Some(Principal::person(self.person_of(caller)?));
-        self.write_space_ledger(space, |current| {
+        self.write_project_ledger(project, |current| {
             Ok((!current.removed).then(|| SpaceRemoved { by: by.clone() }))
         })
         .await?;
@@ -187,21 +188,21 @@ where
         Ok(Reply::Done {})
     }
 
-    /// The project `space`, for `caller` on this computer, who owns it; refused otherwise, as
+    /// The project `project`, for `caller` on this computer, who owns it; refused otherwise, as
     /// only the person on this computer `does` what this is.
     async fn owned_here(
         &self,
         caller: &Caller,
-        space: SpaceId,
+        project: ProjectId,
         does: &str,
-    ) -> Result<Space, ApiError> {
+    ) -> Result<Project, ApiError> {
         if !local(caller) {
             return Err(only_here(&format!(
                 "only the person on the computer glave runs on {does}"
             )));
         }
-        let found = self.member_of(caller, space).await?;
-        if found.kind != SpaceKind::Project {
+        let found = self.member_of(caller, project).await?;
+        if found.kind != ProjectKind::Project {
             return Err(ApiError::new(
                 code::INVALID_PARAMS,
                 "only a project has a folder, and can be removed",
@@ -216,9 +217,9 @@ where
         Ok(found)
     }
 
-    /// Every thread of `space` that is neither archived nor deleted.
-    async fn active_threads(&self, space: SpaceId) -> Result<Vec<ThreadId>, ApiError> {
-        let scope = self.scope_in(space);
+    /// Every thread of `project` that is neither archived nor deleted.
+    async fn active_threads(&self, project: ProjectId) -> Result<Vec<ThreadId>, ApiError> {
+        let scope = self.scope_in(project);
         let (mut threads, mut after) = (Vec::new(), None);
         loop {
             let query = ThreadQuery {
@@ -247,11 +248,11 @@ where
         }
     }
 
-    /// Lets go of every thread of `space` held idle, so each is read again from the log, and
+    /// Lets go of every thread of `project` held idle, so each is read again from the log, and
     /// opened where its project's folder is now, the next time it is used.
-    fn let_go_in(&self, space: SpaceId) {
+    fn let_go_in(&self, project: ProjectId) {
         self.lock().retain(|_, slot| match slot {
-            Slot::Idle { thread: held, .. } => held.scope.space != space,
+            Slot::Idle { thread: held, .. } => held.scope.project != project,
             Slot::Busy { .. } => true,
         });
     }

@@ -29,7 +29,7 @@ pub enum Place {
     /// [`crate::Workers`]), with the project's repository cloned into it.
     Worker(Environment),
     /// A folder of its own, made empty on the harness's computer, in the same sandbox: for a
-    /// thread with no project folder, such as a one-off chat in a person's own space.
+    /// thread with no project folder, such as a one-off chat in a person's own project.
     Scratch,
     /// A computer that is already running and dialled in, such as a person's own laptop
     /// serving a server elsewhere. Not available yet: starting a thread there is refused until

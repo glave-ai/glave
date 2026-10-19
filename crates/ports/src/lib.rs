@@ -21,10 +21,10 @@ mod in_memory;
 mod log;
 pub mod memories;
 mod model;
+mod projects;
 mod scope;
 pub mod search;
 pub mod secrets;
-mod spaces;
 mod sse;
 #[cfg(any(test, feature = "conformance"))]
 pub mod testing;
@@ -35,14 +35,16 @@ pub use blob::{BlobError, BlobStore, digest};
 pub use caller::Caller;
 pub use env::{Clock, Entropy, EntropyError, OsEntropy, SystemClock};
 pub use failure::Failure;
-pub use in_memory::{InMemoryBlobs, InMemoryLog, InMemorySpaces, InMemoryTools};
+pub use in_memory::{InMemoryBlobs, InMemoryLog, InMemoryProjects, InMemoryTools};
 pub use log::{EventLog, LogError, check_append, reserved_ledger};
 pub use model::{
     Completion, Delta, Message, ModelProvider, ModelRequest, ProviderError, Purpose, RequestedCall,
     Served, ToolCall, ToolChoice, ToolSpec,
 };
-pub use scope::{OrgId, Scope, SpaceId};
-pub use spaces::{FolderKey, MAX_NAME, Space, SpaceError, SpaceKind, Spaces, origin_remote};
+pub use projects::{
+    FolderKey, MAX_NAME, Project, ProjectError, ProjectKind, Projects, origin_remote,
+};
+pub use scope::{OrgId, ProjectId, Scope};
 pub use sse::{SseDecoder, SseError};
 pub use tools::{
     Assessment, BoxFuture, Cancellation, Effect, NeverCancelled, ToolError, ToolInfo, ToolOutput,

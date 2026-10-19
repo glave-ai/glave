@@ -1,6 +1,6 @@
 //! The memory store on a sealed SQLite store: scopes enforced on every read and write, the
 //! credential, duplicate and budget checks, forgetting that destroys the key, restoring glave's
-//! changes, and housekeeping that rotates the space key.
+//! changes, and housekeeping that rotates the project key.
 
 #[cfg(test)]
 #[path = "support/kit.rs"]
@@ -46,7 +46,7 @@ mod store {
     }
 
     #[test]
-    fn a_shared_space_reads_personal_and_space_memory_and_an_isolated_one_only_its_own() {
+    fn a_shared_project_reads_personal_and_project_memory_and_an_isolated_one_only_its_own() {
         block_on!(async {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 1);
@@ -362,7 +362,7 @@ mod store {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 1);
             let mine = writer(shared());
-            let space = saved(
+            let project = saved(
                 memories
                     .remember(
                         &mine,
@@ -375,28 +375,28 @@ mod store {
                     .unwrap(),
             );
             let moved = memories
-                .move_to(&mine, space.memory, MemoryScope::Personal)
+                .move_to(&mine, project.memory, MemoryScope::Personal)
                 .await
                 .unwrap();
             assert_eq!(moved.scope, MemoryScope::Personal);
-            assert_ne!(moved.memory, space.memory);
+            assert_ne!(moved.memory, project.memory);
             let elsewhere = memories.list(&on(scope(1, 5))).await.unwrap();
             assert_eq!(elsewhere, [moved], "personal now, so read in another space");
         });
     }
 
     #[test]
-    fn a_space_s_setting_follows_its_project_s_settings_while_memory_runs() {
+    fn a_project_s_setting_follows_its_project_s_settings_while_memory_runs() {
         block_on!(async {
             let kit = Kit::new();
             let memories = kit.memories(rules(), 1);
             let mine = writer(shared());
             let save = || memories.remember(&mine, "A fact", MemoryScope::Space, None, false);
-            memories.set_space(shared().space, SpaceMemory::Off);
+            memories.set_project(shared().project, SpaceMemory::Off);
             assert!(matches!(save().await, Err(MemoryError::Off(_))));
-            memories.set_space(shared().space, SpaceMemory::Shared);
+            memories.set_project(shared().project, SpaceMemory::Shared);
             assert!(
-                !memories.rules().spaces.contains_key(&shared().space),
+                !memories.rules().projects.contains_key(&shared().project),
                 "the default again"
             );
             saved(save().await.unwrap());

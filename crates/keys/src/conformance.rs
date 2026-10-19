@@ -8,7 +8,7 @@ use glave_event::{
     Seq, ThreadId, TurnEnded, encode,
 };
 use glave_ports::testing::FAKE_SECRET;
-use glave_ports::{OrgId, Scope, SpaceId};
+use glave_ports::{OrgId, ProjectId, Scope};
 use uuid::{Builder, Uuid};
 
 use crate::error::KeyError;
@@ -37,7 +37,7 @@ fn uuid_v7(n: u64) -> Uuid {
 fn scope(n: u64) -> Scope {
     Scope {
         org: OrgId::from_uuid(uuid_v7(9_000)),
-        space: SpaceId::from_uuid(uuid_v7(9_100 + n)),
+        project: ProjectId::from_uuid(uuid_v7(9_100 + n)),
     }
 }
 
@@ -78,7 +78,7 @@ pub fn memory_event(memory: u64, seq: u64) -> Result<RawEvent, String> {
 }
 
 /// Each memory is sealed under a key of its own; destroying it erases that memory alone, and
-/// rotating the space key afterwards keeps every other key readable.
+/// rotating the project key afterwards keeps every other key readable.
 async fn memory_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     let here = scope(8);
     let (first, second) = (memory_event(1, 1)?, memory_event(2, 2)?);
@@ -114,7 +114,7 @@ async fn memory_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         "a destroyed memory key leaves a rotation due",
     )?;
     ensure(
-        keys.rotate_space_key(&here).await.map_err(text)?,
+        keys.rotate_project_key(&here).await.map_err(text)?,
         "a due rotation rotates",
     )?;
     ensure(
@@ -127,13 +127,13 @@ async fn memory_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         "other memories and months still open after the rotation",
     )?;
     ensure(
-        !keys.rotate_space_key(&here).await.map_err(text)?,
+        !keys.rotate_project_key(&here).await.map_err(text)?,
         "nothing to rotate when nothing was destroyed since",
     )
 }
 
 /// Each account, a model account or a git host, is sealed under a key of its own; removing it
-/// destroys that key, so the account no longer opens, and what else the space holds still
+/// destroys that key, so the account no longer opens, and what else the project holds still
 /// does.
 async fn account_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     let here = scope(9);
@@ -218,7 +218,7 @@ fn text(error: impl std::fmt::Display) -> String {
 /// through erasure, and make erased content unreadable.
 pub async fn keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     sealing(keys).await?;
-    erasing_a_space(keys).await?;
+    erasing_a_project(keys).await?;
     destroying_a_data_key(keys).await?;
     blobs(keys).await?;
     memory_keys(keys).await?;
@@ -232,7 +232,7 @@ async fn sealing<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     let sealed = keys.seal_event(&here, &event).await.map_err(text)?;
     let id: KeyId = sealed.key_id.parse().map_err(text)?;
     ensure(
-        id.space == here.space && id.period.to_string() == "2026-10" && id.n == 1,
+        id.project == here.project && id.period.to_string() == "2026-10" && id.n == 1,
         "the first key of a space and month is v1/<space>/<month>/1",
     )?;
     ensure(
@@ -280,35 +280,35 @@ async fn sealing<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     }
     let elsewhere = Scope {
         org: here.org,
-        space: scope(2).space,
+        project: scope(2).project,
     };
     let crossed = keys
         .open_event(&elsewhere, &fields, &sealed.key_id, &sealed.bytes)
         .await;
     ensure(
         crossed.is_err(),
-        "a payload moved to another space must not open",
+        "a payload moved to another project must not open",
     )
 }
 
-async fn erasing_a_space<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
+async fn erasing_a_project<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     let here = scope(3);
     let event = event(1, 1, "2026-10")?;
     let sealed = keys.seal_event(&here, &event).await.map_err(text)?;
-    keys.erase_space(&here).await.map_err(text)?;
+    keys.erase_project(&here).await.map_err(text)?;
     let fields = EventFields::from(&event);
     let opened = keys
         .open_event(&here, &fields, &sealed.key_id, &sealed.bytes)
         .await;
     ensure(
         matches!(opened, Err(KeyError::Destroyed(_))),
-        "content of an erased space must not open",
+        "content of an erased project must not open",
     )?;
     let after = keys.seal_event(&here, &event).await.map_err(text)?;
     let id: KeyId = after.key_id.parse().map_err(text)?;
     ensure(
         id.n == 2,
-        "after erasure a space gets new keys, never reusing a number",
+        "after erasure a project gets new keys, never reusing a number",
     )?;
     let reopened = keys
         .open_event(&here, &fields, &after.key_id, &after.bytes)
@@ -322,7 +322,7 @@ async fn destroying_a_data_key<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     let november = event(1, 2, "2026-11")?;
     let gone = keys.seal_event(&here, &october).await.map_err(text)?;
     let kept = keys.seal_event(&here, &november).await.map_err(text)?;
-    let before = keys.storage().space(&here).await.map_err(text)?;
+    let before = keys.storage().project(&here).await.map_err(text)?;
     keys.destroy_data_key(&here, gone.key_id.parse().map_err(text)?)
         .await
         .map_err(text)?;
@@ -351,7 +351,7 @@ async fn destroying_a_data_key<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         survived == november.data.get().as_bytes(),
         "a surviving payload must open unchanged",
     )?;
-    let after = keys.storage().space(&here).await.map_err(text)?;
+    let after = keys.storage().project(&here).await.map_err(text)?;
     ensure(
         after.map(|s| s.revision) > before.map(|s| s.revision),
         "destroying a data key must save a new record",
@@ -369,7 +369,7 @@ async fn blobs<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     let sha = glave_ports::digest(b"blob");
     ensure(
         keys.blob_name(&here, &sha).await.map_err(text)?.is_none(),
-        "a space without keys has no blob names",
+        "a project without keys has no blob names",
     )?;
     let (name, sealed) = keys.seal_blob(&here, &sha, b"blob").await.map_err(text)?;
     ensure(
@@ -383,12 +383,12 @@ async fn blobs<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     ensure(opened == b"blob", "a sealed blob must open")?;
     let other = Scope {
         org: here.org,
-        space: scope(6).space,
+        project: scope(6).project,
     };
     keys.seal_blob(&other, &sha, b"blob").await.map_err(text)?;
     ensure(
         keys.blob_name(&other, &sha).await.map_err(text)? != Some(name.clone()),
-        "the same blob is named differently in another space",
+        "the same blob is named differently in another project",
     )?;
     keys.destroy_data_key(
         &here,
@@ -415,7 +415,7 @@ async fn blobs<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
     keys.destroy_data_key(&here, old).await.map_err(text)?;
     ensure(
         keys.blob_name(&here, &sha).await.map_err(text)? == Some(name),
-        "blob names must survive a space-key rotation",
+        "blob names must survive a project-key rotation",
     )
 }
 
@@ -423,33 +423,33 @@ async fn compare_and_swap<S: KeyStorage>(storage: &S) -> Verdict {
     let here = scope(7);
     ensure(
         storage
-            .save_space(&here, None, b"one".to_vec())
+            .save_project(&here, None, b"one".to_vec())
             .await
             .map_err(text)?,
-        "the first save of a space must succeed",
+        "the first save of a project must succeed",
     )?;
     ensure(
         !storage
-            .save_space(&here, None, b"two".to_vec())
+            .save_project(&here, None, b"two".to_vec())
             .await
             .map_err(text)?,
         "a save expecting no record must fail when one exists",
     )?;
     ensure(
         !storage
-            .save_space(&here, Some(7), b"two".to_vec())
+            .save_project(&here, Some(7), b"two".to_vec())
             .await
             .map_err(text)?,
         "a save expecting the wrong revision must fail",
     )?;
     ensure(
         storage
-            .save_space(&here, Some(1), b"two".to_vec())
+            .save_project(&here, Some(1), b"two".to_vec())
             .await
             .map_err(text)?,
         "a save expecting the current revision must succeed",
     )?;
-    let stored = storage.space(&here).await.map_err(text)?;
+    let stored = storage.project(&here).await.map_err(text)?;
     ensure(
         stored.as_ref().map(|s| (s.revision, s.record.as_slice())) == Some((2, b"two".as_slice())),
         "a saved record must read back with its revision",

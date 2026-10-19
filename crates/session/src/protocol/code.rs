@@ -35,7 +35,7 @@ codes! {
     NO_SCHEDULE = -32016, "No such schedule";
     NO_MEMORY = -32017, "No such memory here";
     MEMORY_OFF = -32018, "Memory is off for this server";
-    NO_SPACE = -32019, "No such space";
+    NO_PROJECT = -32019, "No such project";
     PROVIDER = -32020, "The model provider failed";
     NO_MODEL = -32021, "No such model here, or not one this server may run";
     NOT_AVAILABLE = -32022, "Not available yet, such as a thread on a computer of the person's own";
@@ -45,5 +45,5 @@ codes! {
     NO_TRUST = -32026, "No such ask waits: the project changed since, or asks nothing now";
     NO_COMMAND = -32027, "No such command is running in the background in this thread";
     QUEUE_FULL = -32028, "As many messages wait for the running turn as it takes";
-    NO_FOLDER = -32029, "The project's folder isn't there anymore: give it its new place (`space/folder/set`) or remove the project (`space/remove`)";
+    NO_FOLDER = -32029, "The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`)";
 }

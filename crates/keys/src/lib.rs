@@ -1,7 +1,7 @@
 //! glave's keys: content at rest is sealed, and erased by destroying the keys that sealed it.
 //!
 //! The hierarchy (`specs/storage.md`, "Keys"): a root wraps each organization's key, the
-//! organization key wraps its spaces' keys, and a space key wraps one data key per month,
+//! organization key wraps its projects' keys, and a project key wraps one data key per month,
 //! which seals the content. The data store keeps only wrapped keys, through [`KeyStorage`];
 //! [`Keys`] unwraps them on demand and caches the results in memory, up to a fixed count.
 //!
@@ -29,4 +29,4 @@ pub use keychain::KeychainRoot;
 pub use keys::{EventFields, KeySettings, Keys, Sealed, erased_payload};
 pub use material::KeyMaterial;
 pub use root::{InMemoryRoot, KeyFileRoot, Root};
-pub use storage::{InMemoryKeyStorage, KeyStorage, StoredSpace};
+pub use storage::{InMemoryKeyStorage, KeyStorage, StoredProject};

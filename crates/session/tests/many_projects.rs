@@ -1,11 +1,11 @@
-//! Spaces over the session API: a server serves many spaces, a thread is for whoever started
-//! it, a caller who does not work in a thread's space can neither read nor answer it, a one-off
-//! chat lands in the caller's personal space with a scratch folder of its own, as does every
-//! request that names no space whatever folder the server started in, and a local turn sends
+//! Projects over the session API: a server serves many projects, a thread is for whoever started
+//! it, a caller who does not work in a thread's project can neither read nor answer it, a one-off
+//! chat lands in the caller's personal project with a scratch folder of its own, as does every
+//! request that names no project whatever folder the server started in, and a local turn sends
 //! the model exactly what it always did.
 
 use glave_event::{CallId, Opened, Principal, ThreadId};
-use glave_ports::{Caller, SpaceId, SpaceKind};
+use glave_ports::{Caller, ProjectId, ProjectKind};
 use glave_session::Answering;
 use glave_session::protocol::{Answer, Meta, Reply, Request, code};
 use glave_session::signin::person;
@@ -16,12 +16,12 @@ use crate::support::web::{Web, serve_http};
 use crate::support::*;
 
 /// The requests a local turn sends, with the test's folder as `<folder>`: pinned from
-/// before spaces were records, so serving many spaces changes nothing the model sees.
+/// before projects were records, so serving many projects changes nothing the model sees.
 const LOCAL_TURN: &str = include_str!("fixtures/local_turn_requests.json");
 
 #[test]
-fn an_ordinary_local_turn_sends_the_model_exactly_what_it_did_before_spaces() {
-    let dir = folder("spaces-local-turn");
+fn an_ordinary_local_turn_sends_the_model_exactly_what_it_did_before_projects() {
+    let dir = folder("projects-local-turn");
     std::fs::write(dir.join("notes.txt"), "a line\n").unwrap();
     block_on!(async {
         let answers = vec![
@@ -47,9 +47,9 @@ fn refused(answer: &Value) -> Option<i64> {
     answer["error"]["code"].as_i64()
 }
 
-fn listing(space: Option<SpaceId>) -> Request {
+fn listing(project: Option<ProjectId>) -> Request {
     Request::ThreadList {
-        space,
+        project,
         limit: None,
         show: None,
         cursor: None,
@@ -64,7 +64,7 @@ fn events_of(thread: ThreadId) -> Request {
     }
 }
 
-/// Every request that reads, answers or changes `thread`, or the server's own space.
+/// Every request that reads, answers or changes `thread`, or the server's own project.
 fn on_a_thread(thread: ThreadId) -> Vec<Request> {
     let call = CallId::new("call_1").unwrap();
     vec![
@@ -118,17 +118,17 @@ async fn turn_over(web: &mut Web, thread: ThreadId, prompt: &str) -> Value {
 
 #[test]
 fn one_person_can_neither_read_nor_answer_anothers_threads() {
-    let dir = folder("spaces-strangers");
+    let dir = folder("projects-strangers");
     block_on!(async {
         let issuer = Issuer::start().await;
         let signer = Signer::es256("key-1");
         issuer.publish(&signer);
         let served = serve_http(server(&dir, Vec::new(), Answering::Clients).await, &issuer).await;
-        // ada works in the server's own space; grace does not.
+        // ada works in the server's own project; grace does not.
         let mut ada = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
         let mut grace = Web::new(&served, Some(signer.sign(&issuer.claims("grace"))));
         let start = Request::ThreadStart {
-            space: None,
+            project: None,
             worktree: None,
             background: false,
             computer: None,
@@ -146,16 +146,16 @@ fn one_person_can_neither_read_nor_answer_anothers_threads() {
                 attempt.method()
             );
         }
-        let home = SpaceId::from_uuid(uuid::Uuid::from_u128(2));
+        let home = ProjectId::from_uuid(uuid::Uuid::from_u128(2));
         let listed = grace.call(&listing(Some(home))).await;
         assert_eq!(refused(&listed), Some(code::NOT_ALLOWED), "{listed}");
-        // Her own listing is of her own space, without ada's thread.
+        // Her own listing is of her own project, without ada's thread.
         let hers = grace.call(&listing(None)).await;
         assert_eq!(hers["result"]["threads"], json!([]), "{hers}");
         // So are her tasks and schedules: none of ada's, which she cannot delete.
         let schedule = ada
             .call(&Request::ScheduleCreate {
-                space: None,
+                project: None,
                 when: glave_event::When::Cron("0 9 * * *".into()),
                 prompt: "triage".into(),
                 goal: false,
@@ -187,8 +187,8 @@ fn one_person_can_neither_read_nor_answer_anothers_threads() {
 }
 
 #[test]
-fn a_one_off_chat_lands_in_the_callers_personal_space_with_a_scratch_folder() {
-    let dir = folder("spaces-personal");
+fn a_one_off_chat_lands_in_the_callers_personal_project_with_a_scratch_folder() {
+    let dir = folder("projects-personal");
     block_on!(async {
         let issuer = Issuer::start().await;
         let signer = Signer::es256("key-1");
@@ -206,15 +206,15 @@ fn a_one_off_chat_lands_in_the_callers_personal_space_with_a_scratch_folder() {
         let served = serve_http(tested, &issuer).await;
         let mut grace = Web::new(&served, Some(signer.sign(&issuer.claims("grace"))));
         let mut ada = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
-        let spaces = grace.call(&Request::SpaceList { limit: None }).await;
+        let projects = grace.call(&Request::ProjectList { limit: None }).await;
         assert_eq!(
-            spaces["result"]["spaces"],
+            projects["result"]["projects"],
             json!([]),
             "none until she starts"
         );
         let started = grace
             .call(&Request::ThreadStart {
-                space: None,
+                project: None,
                 worktree: None,
                 background: false,
                 computer: None,
@@ -224,9 +224,9 @@ fn a_one_off_chat_lands_in_the_callers_personal_space_with_a_scratch_folder() {
             .await;
         let id = started["result"]["thread"]["id"].clone();
         let thread = serde_json::from_value(id.clone()).unwrap();
-        let spaces = grace.call(&Request::SpaceList { limit: None }).await;
-        let listed = spaces["result"]["spaces"].as_array().unwrap().clone();
-        assert_eq!(listed.len(), 1, "{spaces}");
+        let projects = grace.call(&Request::ProjectList { limit: None }).await;
+        let listed = projects["result"]["projects"].as_array().unwrap().clone();
+        assert_eq!(listed.len(), 1, "{projects}");
         assert_eq!(listed[0]["kind"], "personal");
         assert_eq!(listed[0]["name"], glave_session::PERSONAL_NAME);
         let grace_person = person(&issuer.url, "grace").unwrap();
@@ -252,7 +252,7 @@ fn a_one_off_chat_lands_in_the_callers_personal_space_with_a_scratch_folder() {
             !dir.join("note.md").exists(),
             "never in the server's folder"
         );
-        // ada works in the server's own space, not in grace's.
+        // ada works in the server's own project, not in grace's.
         let peek = ada.call(&Request::ThreadGet { thread }).await;
         assert_eq!(refused(&peek), Some(code::NOT_ALLOWED), "{peek}");
         served.close().await;
@@ -268,16 +268,23 @@ fn someone(name: &str) -> Caller {
     }
 }
 
+fn rename(project: ProjectId, name: &str) -> Request {
+    Request::ProjectRename {
+        project,
+        name: name.into(),
+    }
+}
+
 #[test]
-fn spaces_are_made_shared_and_renamed_only_by_their_owner() {
-    let dir = folder("spaces-made");
+fn projects_are_made_shared_and_renamed_only_by_their_owner() {
+    let dir = folder("projects-made");
     block_on!(async {
         let server = server(&dir, Vec::new(), Answering::Clients).await;
         let (grace, linus) = (someone("grace"), someone("linus"));
         let made = server
             .request_as(
                 &grace,
-                Request::SpaceCreate {
+                Request::ProjectCreate {
                     name: "Garden".into(),
                     members: vec![Principal::person(linus.person.unwrap())],
                     folder: None,
@@ -285,23 +292,23 @@ fn spaces_are_made_shared_and_renamed_only_by_their_owner() {
             )
             .await
             .unwrap();
-        let Reply::Space { space, .. } = made else {
-            panic!("a space, not {made:?}");
+        let Reply::Project { project, .. } = made else {
+            panic!("a project, not {made:?}");
         };
-        let Reply::Spaces { spaces, .. } = server
-            .request_as(&linus, Request::SpaceList { limit: None })
+        let Reply::Projects { projects, .. } = server
+            .request_as(&linus, Request::ProjectList { limit: None })
             .await
             .unwrap()
         else {
-            panic!("spaces");
+            panic!("projects");
         };
-        assert_eq!(spaces, std::slice::from_ref(&space), "a member sees it");
+        assert_eq!(projects, std::slice::from_ref(&project), "a member sees it");
         // linus may start a thread there, which is his.
         let started = server
             .request_as(
                 &linus,
                 Request::ThreadStart {
-                    space: Some(space.id),
+                    project: Some(project.id),
                     worktree: None,
                     background: false,
                     computer: None,
@@ -313,38 +320,33 @@ fn spaces_are_made_shared_and_renamed_only_by_their_owner() {
             .unwrap();
         assert!(matches!(started, Reply::Thread { .. }));
         let renamed = server
-            .request_as(
-                &linus,
-                Request::SpaceRename {
-                    space: space.id,
-                    name: "Mine now".into(),
-                },
-            )
+            .request_as(&linus, rename(project.id, "Mine now"))
             .await;
         assert_eq!(renamed.unwrap_err().code, code::NOT_ALLOWED);
         let renamed = server
-            .request_as(
-                &grace,
-                Request::SpaceRename {
-                    space: space.id,
-                    name: "Allotment".into(),
-                },
-            )
+            .request_as(&grace, rename(project.id, "Allotment"))
             .await
             .unwrap();
-        let Reply::Space { space: renamed, .. } = renamed else {
-            panic!("a space");
+        let Reply::Project {
+            project: renamed, ..
+        } = renamed
+        else {
+            panic!("a project");
         };
         assert_eq!(renamed.name, "Allotment");
-        // The local person works in neither grace's space nor her memory's.
-        let local = server.request(Request::SpaceGet { space: space.id }).await;
+        // The local person works in neither grace's project nor her memory's.
+        let local = server
+            .request(Request::ProjectGet {
+                project: project.id,
+            })
+            .await;
         assert_eq!(local.unwrap_err().code, code::NOT_ALLOWED);
         let memory = server
             .request_as(
                 &grace,
                 Request::MemoryList {
                     scope: None,
-                    space: None,
+                    project: None,
                 },
             )
             .await;
@@ -353,14 +355,14 @@ fn spaces_are_made_shared_and_renamed_only_by_their_owner() {
 }
 
 #[test]
-fn a_request_that_names_no_space_acts_in_the_person_s_chats_whatever_folder_the_server_started_in()
-{
-    let dir = folder("spaces-chats");
+fn a_request_that_names_no_project_acts_in_the_person_s_chats_whatever_folder_the_server_started_in()
+ {
+    let dir = folder("projects-chats");
     block_on!(async {
         let server = server(&dir, vec![answer(Some("Hi."), None)], Answering::NoOne).await;
         let started = server
             .request(Request::ThreadStart {
-                space: None,
+                project: None,
                 worktree: None,
                 background: false,
                 computer: None,
@@ -372,14 +374,14 @@ fn a_request_that_names_no_space_acts_in_the_person_s_chats_whatever_folder_the_
         let Reply::Thread { thread } = started else {
             panic!("a thread");
         };
-        assert_ne!(thread.space, scope().space, "not the folder's project");
-        let got = server.request(Request::SpaceGet {
-            space: thread.space,
+        assert_ne!(thread.project, scope().project, "not the folder's project");
+        let got = server.request(Request::ProjectGet {
+            project: thread.project,
         });
-        let Reply::Space { space, folder } = got.await.unwrap() else {
-            panic!("a space");
+        let Reply::Project { project, folder } = got.await.unwrap() else {
+            panic!("a project");
         };
-        assert_eq!((space.kind, folder), (SpaceKind::Personal, None));
+        assert_eq!((project.kind, folder), (ProjectKind::Personal, None));
         let (place, _) = opened(&server, thread.id).await;
         assert!(matches!(place, Opened::Scratch { .. }), "{place:?}");
         let ids = |reply: Reply| match reply {
@@ -388,7 +390,10 @@ fn a_request_that_names_no_space_acts_in_the_person_s_chats_whatever_folder_the_
         };
         let chats = server.request(listing(None)).await.unwrap();
         assert_eq!(ids(chats), [thread.id]);
-        let project = server.request(listing(Some(scope().space))).await.unwrap();
+        let project = server
+            .request(listing(Some(scope().project)))
+            .await
+            .unwrap();
         assert_eq!(ids(project), Vec::new());
     });
 }

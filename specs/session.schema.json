@@ -447,12 +447,12 @@
         "message": {
           "type": "string"
         },
-        "space": {
-          "$ref": "#/$defs/SpaceId"
+        "project": {
+          "$ref": "#/$defs/ProjectId"
         }
       },
       "required": [
-        "space",
+        "project",
         "message"
       ],
       "type": "object"
@@ -706,6 +706,46 @@
       "description": "What kind of principal acts.",
       "type": "string"
     },
+    "Project": {
+      "description": "A project, as its record keeps it.",
+      "properties": {
+        "created_at": {
+          "$ref": "#/$defs/At"
+        },
+        "id": {
+          "$ref": "#/$defs/ProjectId"
+        },
+        "kind": {
+          "$ref": "#/$defs/ProjectKind"
+        },
+        "members": {
+          "description": "Who else works in it.",
+          "items": {
+            "$ref": "#/$defs/Principal"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "owner": {
+          "$ref": "#/$defs/Principal",
+          "description": "Whose it is: a person, or later a team or an agent."
+        },
+        "updated_at": {
+          "$ref": "#/$defs/At"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "owner",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
     "ProjectFolder": {
       "description": "A project's folder: where its files come from, and where they are checked out.",
       "properties": {
@@ -721,6 +761,26 @@
         "checkout"
       ],
       "type": "object"
+    },
+    "ProjectId": {
+      "description": "Identifies a project: the boundary for memory, history, files, members and policy.",
+      "format": "uuid",
+      "type": "string"
+    },
+    "ProjectKind": {
+      "description": "What a project is.",
+      "oneOf": [
+        {
+          "const": "project",
+          "description": "A project: the work of its owner and members, usually tied to folders.",
+          "type": "string"
+        },
+        {
+          "const": "personal",
+          "description": "A person's own project: their one-off chats and their personal memory. Each\nperson has exactly one in each organization.",
+          "type": "string"
+        }
+      ]
     },
     "ProviderId": {
       "description": "Identifies one model account a person connected (`provider.connected`).",
@@ -1089,66 +1149,6 @@
         }
       ]
     },
-    "Space": {
-      "description": "A space, as its record keeps it.",
-      "properties": {
-        "created_at": {
-          "$ref": "#/$defs/At"
-        },
-        "id": {
-          "$ref": "#/$defs/SpaceId"
-        },
-        "kind": {
-          "$ref": "#/$defs/SpaceKind"
-        },
-        "members": {
-          "description": "Who else works in it.",
-          "items": {
-            "$ref": "#/$defs/Principal"
-          },
-          "type": "array"
-        },
-        "name": {
-          "type": "string"
-        },
-        "owner": {
-          "$ref": "#/$defs/Principal",
-          "description": "Whose it is: a person, or later a team or an agent."
-        },
-        "updated_at": {
-          "$ref": "#/$defs/At"
-        }
-      },
-      "required": [
-        "id",
-        "kind",
-        "name",
-        "owner",
-        "created_at",
-        "updated_at"
-      ],
-      "type": "object"
-    },
-    "SpaceId": {
-      "description": "Identifies a space: the boundary for memory, history, files, members and policy.",
-      "format": "uuid",
-      "type": "string"
-    },
-    "SpaceKind": {
-      "description": "What a space is.",
-      "oneOf": [
-        {
-          "const": "project",
-          "description": "A project: the work of its owner and members, usually tied to folders.",
-          "type": "string"
-        },
-        {
-          "const": "personal",
-          "description": "A person's own space: their one-off chats and their personal memory. Each\nperson has exactly one in each organization.",
-          "type": "string"
-        }
-      ]
-    },
     "Standing": {
       "description": "Whether a thread is shown: the latest `thread.archived`, `thread.unarchived` or\n`thread.deleted` decides.",
       "oneOf": [
@@ -1232,6 +1232,10 @@
           ],
           "description": "How it ended, once it has."
         },
+        "project": {
+          "$ref": "#/$defs/ProjectId",
+          "description": "The project its thread is in."
+        },
         "schedule": {
           "anyOf": [
             {
@@ -1242,10 +1246,6 @@
             }
           ],
           "description": "The schedule that started it, if one did."
-        },
-        "space": {
-          "$ref": "#/$defs/SpaceId",
-          "description": "The space its thread is in."
         },
         "started_at": {
           "$ref": "#/$defs/At"
@@ -1267,7 +1267,7 @@
       },
       "required": [
         "thread",
-        "space",
+        "project",
         "kind",
         "title",
         "model",
@@ -1370,8 +1370,8 @@
           ],
           "description": "The thread whose call started this one, for a subagent's."
         },
-        "space": {
-          "$ref": "#/$defs/SpaceId"
+        "project": {
+          "$ref": "#/$defs/ProjectId"
         },
         "standing": {
           "$ref": "#/$defs/Standing"
@@ -1412,7 +1412,7 @@
       },
       "required": [
         "id",
-        "space",
+        "project",
         "status",
         "standing",
         "approval",
@@ -1983,7 +1983,7 @@
     },
     "NO_FOLDER": {
       "code": -32029,
-      "message": "The project's folder isn't there anymore: give it its new place (`space/folder/set`) or remove the project (`space/remove`)"
+      "message": "The project's folder isn't there anymore: give it its new place (`project/folder/set`) or remove the project (`project/remove`)"
     },
     "NO_GOAL": {
       "code": -32007,
@@ -2001,6 +2001,10 @@
       "code": -32021,
       "message": "No such model here, or not one this server may run"
     },
+    "NO_PROJECT": {
+      "code": -32019,
+      "message": "No such project"
+    },
     "NO_PROVIDER": {
       "code": -32023,
       "message": "No such model account here"
@@ -2016,10 +2020,6 @@
     "NO_SIGN_IN": {
       "code": -32013,
       "message": "No valid sign-in (network transports)"
-    },
-    "NO_SPACE": {
-      "code": -32019,
-      "message": "No such space"
     },
     "NO_THREAD": {
       "code": -32001,
@@ -2435,16 +2435,16 @@
           "memory": {
             "$ref": "#/$defs/MemoryId"
           },
-          "space": {
+          "project": {
             "anyOf": [
               {
-                "$ref": "#/$defs/SpaceId"
+                "$ref": "#/$defs/ProjectId"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The space whose memory, beside the person's own: the server's own when absent."
+            "description": "The project whose memory, beside the person's own: the server's own when absent."
           },
           "text": {
             "type": "string"
@@ -2489,6 +2489,17 @@
               }
             ]
           },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project whose memory, beside the person's own: the server's own when absent."
+          },
           "scope": {
             "anyOf": [
               {
@@ -2498,17 +2509,6 @@
                 "type": "null"
               }
             ]
-          },
-          "space": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/SpaceId"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The space whose memory, beside the person's own: the server's own when absent."
           }
         },
         "type": "object"
@@ -2533,6 +2533,17 @@
     "memory/list": {
       "params": {
         "properties": {
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project whose memory, beside the person's own: the server's own when absent."
+          },
           "scope": {
             "anyOf": [
               {
@@ -2542,17 +2553,6 @@
                 "type": "null"
               }
             ]
-          },
-          "space": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/SpaceId"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The space whose memory, beside the person's own: the server's own when absent."
           }
         },
         "type": "object"
@@ -2580,19 +2580,19 @@
           "memory": {
             "$ref": "#/$defs/MemoryId"
           },
-          "scope": {
-            "$ref": "#/$defs/MemoryScope"
-          },
-          "space": {
+          "project": {
             "anyOf": [
               {
-                "$ref": "#/$defs/SpaceId"
+                "$ref": "#/$defs/ProjectId"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The space whose memory, beside the person's own: the server's own when absent."
+            "description": "The project whose memory, beside the person's own: the server's own when absent."
+          },
+          "scope": {
+            "$ref": "#/$defs/MemoryScope"
           }
         },
         "required": [
@@ -2624,16 +2624,16 @@
           "memory": {
             "$ref": "#/$defs/MemoryId"
           },
-          "space": {
+          "project": {
             "anyOf": [
               {
-                "$ref": "#/$defs/SpaceId"
+                "$ref": "#/$defs/ProjectId"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The space whose memory, beside the person's own: the server's own when absent."
+            "description": "The project whose memory, beside the person's own: the server's own when absent."
           }
         },
         "required": [
@@ -2661,19 +2661,19 @@
     "memory/save": {
       "params": {
         "properties": {
-          "scope": {
-            "$ref": "#/$defs/MemoryScope"
-          },
-          "space": {
+          "project": {
             "anyOf": [
               {
-                "$ref": "#/$defs/SpaceId"
+                "$ref": "#/$defs/ProjectId"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The space whose memory, beside the person's own: the server's own when absent."
+            "description": "The project whose memory, beside the person's own: the server's own when absent."
+          },
+          "scope": {
+            "$ref": "#/$defs/MemoryScope"
           },
           "text": {
             "type": "string"
@@ -2718,6 +2718,233 @@
         },
         "required": [
           "models"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "project/create": {
+      "params": {
+        "properties": {
+          "folder": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/NewFolder"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "members": {
+            "items": {
+              "$ref": "#/$defs/Principal"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A project: one asked for, made or renamed, with its folder when it has one.",
+        "properties": {
+          "folder": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectFolder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where its threads work."
+          },
+          "project": {
+            "$ref": "#/$defs/Project"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "project/folder/set": {
+      "params": {
+        "properties": {
+          "path": {
+            "description": "The folder's full path.",
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/$defs/ProjectId"
+          }
+        },
+        "required": [
+          "project",
+          "path"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A project: one asked for, made or renamed, with its folder when it has one.",
+        "properties": {
+          "folder": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectFolder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where its threads work."
+          },
+          "project": {
+            "$ref": "#/$defs/Project"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "project/get": {
+      "params": {
+        "properties": {
+          "project": {
+            "$ref": "#/$defs/ProjectId"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A project: one asked for, made or renamed, with its folder when it has one.",
+        "properties": {
+          "folder": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectFolder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where its threads work."
+          },
+          "project": {
+            "$ref": "#/$defs/Project"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "project/list": {
+      "params": {
+        "properties": {
+          "limit": {
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "gone": {
+            "description": "The projects among them whose folder isn't there anymore.",
+            "items": {
+              "$ref": "#/$defs/GoneFolder"
+            },
+            "type": "array"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/$defs/Project"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
+    "project/remove": {
+      "params": {
+        "properties": {
+          "project": {
+            "$ref": "#/$defs/ProjectId"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "type": "object"
+      },
+      "streams": false
+    },
+    "project/rename": {
+      "params": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "project": {
+            "$ref": "#/$defs/ProjectId"
+          }
+        },
+        "required": [
+          "project",
+          "name"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "description": "A project: one asked for, made or renamed, with its folder when it has one.",
+        "properties": {
+          "folder": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectFolder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where its threads work."
+          },
+          "project": {
+            "$ref": "#/$defs/Project"
+          }
+        },
+        "required": [
+          "project"
         ],
         "type": "object"
       },
@@ -2838,19 +3065,19 @@
           "goal": {
             "type": "boolean"
           },
-          "prompt": {
-            "type": "string"
-          },
-          "space": {
+          "project": {
             "anyOf": [
               {
-                "$ref": "#/$defs/SpaceId"
+                "$ref": "#/$defs/ProjectId"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The space its runs are in, by default as `thread/start` picks one."
+            "description": "The project its runs are in, by default as `thread/start` picks one."
+          },
+          "prompt": {
+            "type": "string"
           },
           "when": {
             "$ref": "#/$defs/When"
@@ -2985,233 +3212,6 @@
         "required": [
           "session",
           "server"
-        ],
-        "type": "object"
-      },
-      "streams": false
-    },
-    "space/create": {
-      "params": {
-        "properties": {
-          "folder": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/NewFolder"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "members": {
-            "items": {
-              "$ref": "#/$defs/Principal"
-            },
-            "type": "array"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "description": "A space: one asked for, made or renamed, with its folder when it has one.",
-        "properties": {
-          "folder": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ProjectFolder"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Where its threads work."
-          },
-          "space": {
-            "$ref": "#/$defs/Space"
-          }
-        },
-        "required": [
-          "space"
-        ],
-        "type": "object"
-      },
-      "streams": false
-    },
-    "space/folder/set": {
-      "params": {
-        "properties": {
-          "path": {
-            "description": "The folder's full path.",
-            "type": "string"
-          },
-          "space": {
-            "$ref": "#/$defs/SpaceId"
-          }
-        },
-        "required": [
-          "space",
-          "path"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "description": "A space: one asked for, made or renamed, with its folder when it has one.",
-        "properties": {
-          "folder": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ProjectFolder"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Where its threads work."
-          },
-          "space": {
-            "$ref": "#/$defs/Space"
-          }
-        },
-        "required": [
-          "space"
-        ],
-        "type": "object"
-      },
-      "streams": false
-    },
-    "space/get": {
-      "params": {
-        "properties": {
-          "space": {
-            "$ref": "#/$defs/SpaceId"
-          }
-        },
-        "required": [
-          "space"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "description": "A space: one asked for, made or renamed, with its folder when it has one.",
-        "properties": {
-          "folder": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ProjectFolder"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Where its threads work."
-          },
-          "space": {
-            "$ref": "#/$defs/Space"
-          }
-        },
-        "required": [
-          "space"
-        ],
-        "type": "object"
-      },
-      "streams": false
-    },
-    "space/list": {
-      "params": {
-        "properties": {
-          "limit": {
-            "format": "uint",
-            "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
-          }
-        },
-        "type": "object"
-      },
-      "result": {
-        "properties": {
-          "gone": {
-            "description": "The projects among them whose folder isn't there anymore.",
-            "items": {
-              "$ref": "#/$defs/GoneFolder"
-            },
-            "type": "array"
-          },
-          "spaces": {
-            "items": {
-              "$ref": "#/$defs/Space"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "spaces"
-        ],
-        "type": "object"
-      },
-      "streams": false
-    },
-    "space/remove": {
-      "params": {
-        "properties": {
-          "space": {
-            "$ref": "#/$defs/SpaceId"
-          }
-        },
-        "required": [
-          "space"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "type": "object"
-      },
-      "streams": false
-    },
-    "space/rename": {
-      "params": {
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "space": {
-            "$ref": "#/$defs/SpaceId"
-          }
-        },
-        "required": [
-          "space",
-          "name"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "description": "A space: one asked for, made or renamed, with its folder when it has one.",
-        "properties": {
-          "folder": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/ProjectFolder"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Where its threads work."
-          },
-          "space": {
-            "$ref": "#/$defs/Space"
-          }
-        },
-        "required": [
-          "space"
         ],
         "type": "object"
       },
@@ -3430,6 +3430,17 @@
               "null"
             ]
           },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ProjectId"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project whose threads to list, by default as `thread/start` picks one."
+          },
           "show": {
             "anyOf": [
               {
@@ -3440,17 +3451,6 @@
               }
             ],
             "description": "Which threads: the active ones by default."
-          },
-          "space": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/SpaceId"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "The space whose threads to list, by default as `thread/start` picks one."
           }
         },
         "type": "object"
@@ -3543,16 +3543,16 @@
               "null"
             ]
           },
-          "space": {
+          "project": {
             "anyOf": [
               {
-                "$ref": "#/$defs/SpaceId"
+                "$ref": "#/$defs/ProjectId"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "The space the thread is in: by default the server's own, for a caller who works in\nit, else the caller's personal space."
+            "description": "The project the thread is in: by default the server's own, for a caller who works in\nit, else the caller's personal project."
           },
           "worktree": {
             "description": "Whether the thread works in a worktree of its own rather than in the folder itself;\nthe server's default (`worktree` in `config.toml`) when absent.",

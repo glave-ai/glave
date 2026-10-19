@@ -1,7 +1,7 @@
 //! `recall` (`specs/memory.md`, "Recall"): memories and past conversations found by keyword.
 //! Memories are matched here, from the view the ledger already gives; conversations through the
 //! store's own full-text index (`EventLog::search`). Both are scoped exactly as memory is: the
-//! person's and this space's in a shared space, this space's only in an isolated one, nothing
+//! person's and this project's in a shared project, this project's only in an isolated one, nothing
 //! when memory is off, never another organization's. A hit from untrusted tool output says so.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -88,7 +88,7 @@ impl<L: EventLog + 'static> Memories<L> {
         let mut hidden = Hidden::new(hidden);
         let mut hits: Vec<Recalled> = memories.into_iter().map(|(_, hit)| hit).collect();
         hits.truncate(limit);
-        // This space's conversations, then the person's own.
+        // This project's conversations, then the person's own.
         for (_, ledger) in readable.iter().rev() {
             if hits.len() >= limit {
                 break;

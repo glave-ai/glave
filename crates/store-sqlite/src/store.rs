@@ -14,8 +14,8 @@ use uuid::Uuid;
 use crate::blobs::SqliteBlobs;
 use crate::keys::SqliteKeys;
 use crate::log::SqliteLog;
+use crate::projects::SqliteProjects;
 use crate::schema;
-use crate::spaces::SqliteSpaces;
 
 /// Why the store could not open or answer.
 #[derive(Debug, Error)]
@@ -39,7 +39,7 @@ pub(crate) type Shared = Arc<Mutex<Connection>>;
 /// The keys of the local database.
 pub type SqliteKeyring = Keys<SqliteKeys>;
 
-/// One local database: the event log, the blobs, their keys, and which space each folder is.
+/// One local database: the event log, the blobs, their keys, and which project each folder is.
 #[derive(Clone)]
 pub struct Store {
     connection: Shared,
@@ -107,9 +107,9 @@ impl Store {
         Arc::clone(&self.keys)
     }
 
-    /// The spaces: their records, members, and the folders that lead to them.
-    pub fn spaces(&self) -> SqliteSpaces {
-        SqliteSpaces::new(Arc::clone(&self.connection))
+    /// The projects: their records, members, and the folders that lead to them.
+    pub fn projects(&self) -> SqliteProjects {
+        SqliteProjects::new(Arc::clone(&self.connection))
     }
 
     /// The one organization on this computer, made with the id `new` the first time.
@@ -165,10 +165,10 @@ impl Store {
         }
     }
 
-    /// Gives every space made before spaces were records to `owner`, the local person: on a
-    /// person's own computer, every such space was theirs. How many it gave.
-    pub async fn claim_spaces(&self, owner: &Principal) -> Result<usize, StoreError> {
-        crate::spaces::claim(&self.connection, owner).await
+    /// Gives every project made before projects were records to `owner`, the local person: on a
+    /// person's own computer, every such project was theirs. How many it gave.
+    pub async fn claim_projects(&self, owner: &Principal) -> Result<usize, StoreError> {
+        crate::projects::claim(&self.connection, owner).await
     }
 }
 

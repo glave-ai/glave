@@ -57,7 +57,7 @@ pub trait EventLog: Send + Sync {
 
     /// The scope `thread` is stored in, when any event of it is: the one lookup that takes a
     /// bare thread id (`specs/storage.md`, "Scope"). It answers only "which scope"; every read
-    /// that follows is scoped as usual. The ledgers' reserved ids are in every space, so it is
+    /// that follows is scoped as usual. The ledgers' reserved ids are in every project, so it is
     /// asked only of threads.
     fn locate(
         &self,
