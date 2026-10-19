@@ -10,8 +10,9 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use glave_config::policy::{self, Choices, Source, WebFile};
 use glave_config::trust::{self, Outcome};
-use glave_harness::{Judge, Settled};
+use glave_harness::Settled;
 use glave_ports::ToolSource;
+use glave_ports::settings::Judge;
 use glave_web::{Web, WebSettings};
 
 use super::ProjectFolders;

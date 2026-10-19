@@ -4,10 +4,12 @@
 //! starts the next turn; a stopped turn reads nothing more and gives back what waited; a hook
 //! can stop a message as it can a prompt; and the log alone rebuilds what the model saw.
 
-use glave_event::StopReason;
-use glave_event::{Body, Event, EventId, HookPoint, Outcome, Part, PrincipalKind, Role};
-use glave_harness::{AllowAll, Cancel, Hook, Hooks, Inbox, Live, NotQueued, Queued, conversation};
+use glave_event::{
+    Body, Event, EventId, HookPoint, Outcome, Part, PrincipalKind, Role, StopReason,
+};
+use glave_harness::{AllowAll, Cancel, Inbox, Live, NotQueued, Queued, conversation};
 use glave_ports::Caller;
+use glave_ports::settings::{Hook, Hooks};
 use glave_ports::{InMemoryLog, Message, ModelRequest};
 use serde_json::json;
 

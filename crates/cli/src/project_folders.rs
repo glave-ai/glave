@@ -17,11 +17,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::Duration;
 
-use glave_config::policy::memory_settings;
-use glave_config::policy::{Choices, Loaded, Locations};
+use glave_config::policy::{Choices, Loaded, Locations, memory_settings};
 use glave_config::trust::{self, Answer, Outcome, Project};
-use glave_harness::{AGENTS_MD, Brought, Hooks, Settled, agents_md};
-use glave_memory::{GlaveMemory, Personal, ProjectMemory};
+use glave_harness::{AGENTS_MD, Brought, Settled, agents_md};
+use glave_memory::{GlaveMemory, Personal};
+use glave_ports::memories::ProjectMemory;
+use glave_ports::settings::Hooks;
 use glave_ports::{BoxFuture, Clock, ProjectId, ToolSource};
 use glave_process::Processes;
 use glave_session::ProjectTrust;

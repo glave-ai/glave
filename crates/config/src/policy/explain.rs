@@ -42,7 +42,7 @@ pub fn explain(loaded: &Loaded, provider: Option<&str>) -> (String, bool) {
                 .as_deref()
                 .map(|matcher| format!(" (for tools matching {matcher})"))
                 .unwrap_or_default();
-            let point = glave_harness::point_name(hook.point);
+            let point = glave_ports::settings::point_name(hook.point);
             let _ = writeln!(out, "  {point}  {}{matcher}", hook.command);
         }
         if let Some(rule) = loaded.constraints.own_hooks_forbidden() {

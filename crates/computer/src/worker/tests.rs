@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::UNIX_EPOCH;
 
 use glave_ports::block_on;
-use glave_ports::computer::{Bytes, Glob, Image, Network, Save};
+use glave_ports::computer::{Bytes, Glob, Image, Isolation, Network, Save};
 use glave_ports::testing::TempDir;
 use tokio::io::BufReader;
 use tokio::net::TcpListener;

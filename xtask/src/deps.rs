@@ -62,9 +62,11 @@ const LAYERS: &[(&str, Layer)] = &[
     ("glave-store-sqlite", Adapter),
     // The event log, blob store and key storage on Postgres.
     ("glave-store-postgres", Adapter),
-    // Config and policy files made into each domain crate's own settings, for the binary.
-    ("glave-config", Binary),
-    // The session API: the harness served in-process, over stdio and over HTTP.
+    // Config and policy files made into the settings the domain crates read, which live in the
+    // ports crate.
+    ("glave-config", Domain),
+    // The session API: the harness served in-process, over stdio and over HTTP. It serves the
+    // harness and verifies callers with glave-identity, so it is wired from both, as the binary is.
     ("glave-session", Binary),
     // The gateway served over HTTP, with sign-in.
     ("glave-gateway-service", Binary),

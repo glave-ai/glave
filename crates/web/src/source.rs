@@ -6,6 +6,7 @@ use std::fmt::Write as _;
 use std::future::ready;
 
 use glave_event::Arguments;
+use glave_ports::settings::WebPolicy;
 use glave_ports::{
     BoxFuture, Cancellation, Effect, ToolError, ToolInfo, ToolOutput, ToolSource, ToolSpec,
     unless_cancelled,
@@ -13,7 +14,6 @@ use glave_ports::{
 use serde_json::json;
 
 use crate::fetch::{FetchError, Fetcher, Limits, Page};
-use crate::policy::WebPolicy;
 
 pub const WEB_FETCH: &str = "web_fetch";
 

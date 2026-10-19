@@ -188,7 +188,7 @@ impl Setup {
             tools: Vec::new(),
             own: Vec::new(),
             worktree: false,
-            hooks: glave_harness::Hooks::default(),
+            hooks: glave_ports::settings::Hooks::default(),
             workers: None,
             tasks: self.limits,
             memory: self.memory,

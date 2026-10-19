@@ -52,7 +52,7 @@ impl Approver for Person {
 
 fn judged() -> Settings {
     let mut settings = settings();
-    settings.judge = glave_harness::Judge::Main;
+    settings.judge = glave_ports::settings::Judge::Main;
     settings
 }
 

@@ -7,11 +7,10 @@ use std::fmt;
 use std::net::SocketAddr;
 
 use glave_ports::BoxFuture;
-use glave_ports::computer::ComputerError;
+use glave_ports::computer::{ComputerError, Isolation};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::JoinHandle;
 
-use super::limits::Isolation;
 use crate::tls::{Fingerprint, Identity};
 use crate::token::Token;
 

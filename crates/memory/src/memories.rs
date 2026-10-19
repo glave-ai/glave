@@ -11,12 +11,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
 use glave_event::{At, EventId, Header, MemoryId, MemoryScope, Payload, PrincipalId, Seq, encode};
-use glave_ports::memories::{MemoryContext, MemoryError, Remembered, Shown};
+use glave_ports::memories::{MemoryContext, MemoryError, ProjectMemory, Remembered, Shown};
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
 use glave_ports::{Clock, Entropy, Eraser, EventLog, ProjectId, Scope};
 
 use crate::book::{Book, Entry};
-use crate::rules::{Personal, ProjectMemory, Rules};
+use crate::rules::{Personal, Rules};
 
 pub use housekeep::Housekept;
 pub(crate) use recall::DEFAULT_HITS;

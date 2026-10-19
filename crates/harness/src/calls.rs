@@ -4,6 +4,7 @@
 use glave_event::{
     ApprovalDecided, ApprovalMode, ApprovalRequested, CallId, Principal, ToolCallCompleted, Verdict,
 };
+use glave_ports::settings::Judge;
 use glave_ports::{
     Assessment, BlobStore, Effect, EventLog, Message, ModelProvider, ToolCall, ToolOutput,
 };
@@ -14,7 +15,7 @@ use crate::cancel::Cancel;
 use crate::compaction::responded;
 use crate::harness::{Harness, HarnessError, Thread};
 use crate::hooks::ToolHook;
-use crate::judge::{Judge, JudgeCase, Ruling, judge};
+use crate::judge::{JudgeCase, Ruling, judge};
 use crate::question::{self, QuestionRequest};
 use crate::sandbox;
 use crate::turn::{Live, Step, TurnSummary, absorb, tally};

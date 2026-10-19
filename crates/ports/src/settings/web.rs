@@ -148,7 +148,7 @@ impl WebPolicy {
 }
 
 /// A host as patterns see it: lowercase, without a final dot or IPv6 brackets.
-pub(crate) fn normal(host: &str) -> String {
+fn normal(host: &str) -> String {
     host.trim_end_matches('.')
         .trim_start_matches('[')
         .trim_end_matches(']')

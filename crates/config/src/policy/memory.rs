@@ -4,7 +4,7 @@
 //! constraints, which only narrow.
 
 use crate::error::refuse;
-use glave_memory::ProjectMemory;
+use glave_ports::memories::ProjectMemory;
 use serde::Deserialize;
 
 use crate::policy::choices::{Choices, Source};

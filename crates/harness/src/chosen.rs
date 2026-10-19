@@ -132,7 +132,7 @@ where
 
     /// How much `thread`'s turns ask before acting: its own choice, else its project's, else
     /// the harness's mode; never auto where its project runs commands unconfined without auto
-    /// chosen ([`crate::Protections::mode`]).
+    /// chosen ([`glave_ports::settings::Protections::mode`]).
     pub fn approval_for(&self, thread: &Thread) -> ApprovalMode {
         thread
             .brought

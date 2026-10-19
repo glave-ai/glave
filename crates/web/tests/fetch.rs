@@ -8,9 +8,10 @@ mod fetch {
     use std::time::Duration;
 
     use glave_event::{Arguments, Part};
+    use glave_ports::settings::{Domain, WebPolicy};
     use glave_ports::{NeverCancelled, ToolOutput, ToolSource, block_on};
     use glave_web::pages::{Pages, Reply};
-    use glave_web::{Domain, FetchError, Fetcher, Limits, WEB_FETCH, Web, WebPolicy, WebSettings};
+    use glave_web::{FetchError, Fetcher, Limits, WEB_FETCH, Web, WebSettings};
     use reqwest::Url;
 
     /// The policy tests run under: every host, and the local server's address named exactly, so

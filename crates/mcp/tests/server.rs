@@ -6,8 +6,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use glave_event::{Arguments, Part};
-use glave_mcp::{Limits, McpError, McpServer, ServerConfig};
+use glave_mcp::{Limits, McpError, McpServer};
 use glave_ports::block_on;
+use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::testing::AlreadyCancelled;
 use glave_ports::{Effect, NeverCancelled, ToolOutput, ToolSource as _, conformance};
 use serde_json::json;

@@ -13,7 +13,9 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use glave_ports::block_on;
-use glave_ports::computer::{Command, Computers, Ending, Environment, Image, Network, Sources};
+use glave_ports::computer::{
+    Command, Computers, Ending, Environment, Image, Limits, Network, Sources,
+};
 use k8s_openapi::api::core::v1::{Pod, Secret};
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use kube::Api;
@@ -25,7 +27,7 @@ use super::super::backend::{Backend, Link, Spec};
 use super::{Kubernetes, KubernetesSettings};
 use crate::tls::Identity;
 use crate::token::Token;
-use crate::{CancelSwitch, Limits, WorkerComputers, WorkerCredentials};
+use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
 
 /// alpine 3.21, by the digest of its multi-platform index.
 const IMAGE: &str =
@@ -271,7 +273,7 @@ fn a_runtime_class_is_required_of_the_cluster_and_nothing_is_left_when_it_is_mis
         let Some(cluster) = cluster(Some("glave-test-missing"), "missing").await else {
             return;
         };
-        assert_eq!(cluster.isolation(), crate::Isolation::Vm);
+        assert_eq!(cluster.isolation(), glave_ports::computer::Isolation::Vm);
         let refused = cluster.start(&spec(true)).await;
         let message = refused.unwrap_err().message().to_owned();
         assert!(message.contains("glave-test-missing"), "{message}");

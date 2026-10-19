@@ -2,11 +2,9 @@
 
 use thiserror::Error;
 
-/// Why a server could not be configured or started.
+/// Why a server could not be started.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum McpError {
-    #[error("MCP settings: {0}")]
-    Config(String),
     #[error("MCP server {server:?} did not start: {message}")]
     Start { server: String, message: String },
 }

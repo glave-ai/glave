@@ -4,8 +4,7 @@
 
 use std::path::PathBuf;
 
-use glave_computer::{Isolation, Limits};
-use glave_ports::computer::Network;
+use glave_ports::computer::{Isolation, Limits, Network};
 use serde::Deserialize;
 
 /// Where new threads work.

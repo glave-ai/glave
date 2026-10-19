@@ -318,7 +318,7 @@ fn memory_named(glave: &Glave) -> Result<(), String> {
             .filter_map(|thread| thread.project_memory.as_ref()),
     );
     for name in settings {
-        if glave_memory::ProjectMemory::named(name).is_none() {
+        if glave_ports::memories::ProjectMemory::named(name).is_none() {
             return Err(format!(
                 "project_memory is shared, isolated or off, not {name:?}"
             ));

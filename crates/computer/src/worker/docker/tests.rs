@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use glave_ports::block_on;
-use glave_ports::computer::{Command, Computers, Ending, Environment, Image, Sources};
+use glave_ports::computer::{Command, Computers, Ending, Environment, Image, Limits, Sources};
 use http::Method;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
@@ -21,7 +21,7 @@ use super::super::backend::{Backend, Link, Spec};
 use super::{Docker, DockerSettings};
 use crate::tls::Identity;
 use crate::token::Token;
-use crate::{CancelSwitch, Limits, WorkerComputers, WorkerCredentials};
+use crate::{CancelSwitch, WorkerComputers, WorkerCredentials};
 
 /// alpine 3.21, by the digest of its multi-platform index.
 const IMAGE: &str =

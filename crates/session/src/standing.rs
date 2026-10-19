@@ -4,7 +4,8 @@
 //! server that holds the thread, so it never conflicts with a thread open in that server.
 
 use glave_event::{Seq, ThreadId};
-use glave_harness::{Change, Protections, standing_of};
+use glave_harness::{Change, standing_of};
+use glave_ports::settings::Protections;
 use glave_ports::{
     BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, Standing, ThreadCursor,
     ThreadQuery, ThreadView, title_of,

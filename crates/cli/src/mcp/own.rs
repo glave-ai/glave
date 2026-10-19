@@ -9,8 +9,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use anyhow::Context as _;
 use glave_config::policy::{Chosen, Constraints, check_own_servers};
-use glave_mcp::{Limits, McpServer, ServerConfig};
+use glave_mcp::{Limits, McpServer};
 use glave_ports::ToolSource;
+use glave_ports::settings::mcp::ServerConfig;
 use glave_process::Processes;
 
 use super::{FILE, environment, mine_untrusted, turned_on};
@@ -44,7 +45,7 @@ pub async fn wanted(
     if text.is_empty() {
         return Ok(Vec::new());
     }
-    let own = glave_mcp::parse(&text, &environment())
+    let own = glave_ports::settings::mcp::parse(&text, &environment())
         .with_context(|| format!("in {}", path.display()))?;
     let mine: Vec<String> = own.keys().cloned().collect();
     let configs = turned_on(own, chosen, &path)?;
@@ -59,7 +60,8 @@ pub async fn wanted(
         .map(String::as_str)
         .collect();
     check_own_servers(&on, constraints)?;
-    let marks = glave_mcp::marks(&text).with_context(|| format!("in {}", path.display()))?;
+    let marks = glave_ports::settings::mcp::marks(&text)
+        .with_context(|| format!("in {}", path.display()))?;
     Ok(configs
         .into_iter()
         .map(|(name, config)| {

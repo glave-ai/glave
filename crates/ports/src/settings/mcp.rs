@@ -5,8 +5,12 @@
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
+use thiserror::Error;
 
-use crate::McpError;
+/// Why a `.mcp.json` file's text cannot be read as servers.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("MCP settings: {0}")]
+pub struct McpSettingsError(pub String);
 
 /// How to reach one server.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,9 +55,9 @@ struct Raw {
 /// The servers in a `.mcp.json` file's text that say `"untrusted"`, with what they say:
 /// `true` when what their tools return comes from outside and no one vouches for it, as with
 /// a web page; `false` when the file's author vouches for it.
-pub fn marks(text: &str) -> Result<BTreeMap<String, bool>, McpError> {
+pub fn marks(text: &str) -> Result<BTreeMap<String, bool>, McpSettingsError> {
     let settings: File =
-        serde_json::from_str(text).map_err(|err| McpError::Config(err.to_string()))?;
+        serde_json::from_str(text).map_err(|err| McpSettingsError(err.to_string()))?;
     Ok(settings
         .servers
         .into_iter()
@@ -72,13 +76,13 @@ impl ServerConfig {
 pub fn parse(
     text: &str,
     environment: &BTreeMap<String, String>,
-) -> Result<BTreeMap<String, ServerConfig>, McpError> {
+) -> Result<BTreeMap<String, ServerConfig>, McpSettingsError> {
     let settings: File =
-        serde_json::from_str(text).map_err(|err| McpError::Config(err.to_string()))?;
+        serde_json::from_str(text).map_err(|err| McpSettingsError(err.to_string()))?;
     let fill = |text: &str| expand(text, environment);
     let mut servers = BTreeMap::new();
     for (name, raw) in settings.servers {
-        let bad = |message: &str| McpError::Config(format!("server {name:?}: {message}"));
+        let bad = |message: &str| McpSettingsError(format!("server {name:?}: {message}"));
         let config = match (raw.kind.as_deref(), raw.command, raw.url) {
             (None | Some("stdio"), Some(command), None) => ServerConfig::Stdio {
                 command: fill(&command),

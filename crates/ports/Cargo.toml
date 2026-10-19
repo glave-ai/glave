@@ -19,6 +19,8 @@ getrandom.workspace = true
 glave-event.workspace = true
 # The clock's time.
 jiff.workspace = true
+# Hook matchers are regular expressions over tool names, as Claude Code and Codex write them.
+regex.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

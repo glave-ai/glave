@@ -20,8 +20,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime};
 
 use glave_ports::computer::{
-    Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment, Output,
-    Sources, WorkspaceId, WorkspaceInfo,
+    Command, ComputerError, ComputerId, ComputerInfo, Computers, Ending, Environment, Limits,
+    Output, Sources, WorkspaceId, WorkspaceInfo,
 };
 use glave_ports::{BoxFuture, Cancellation, NeverCancelled};
 use tokio::task::JoinHandle;
@@ -36,7 +36,6 @@ pub use credentials::{WorkerCredentials, https_url};
 pub use docker::{Docker, DockerSettings};
 #[cfg(feature = "kubernetes")]
 pub use kubernetes::{Kubernetes, KubernetesSettings};
-pub use limits::{Isolation, Limits};
 
 /// How long a worker's token opens connections: long enough for it to start.
 const TOKEN_LIFETIME: Duration = Duration::from_mins(10);

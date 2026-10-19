@@ -6,7 +6,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use glave_harness::{ApprovalMode, Hook, HookPoint, point_name};
+use glave_event::{ApprovalMode, HookPoint};
+use glave_ports::settings::{Hook, point_name};
 use serde_json::Value;
 
 use crate::policy::{self, ConfigFile, HooksFile, SandboxChoice, WebFile};
@@ -272,7 +273,7 @@ fn servers(
     environment: &BTreeMap<String, String>,
     path: &Path,
 ) -> crate::Result<BTreeMap<String, Item>> {
-    glave_mcp::parse(text, environment)
+    glave_ports::settings::mcp::parse(text, environment)
         .map_err(|error| crate::Error::within(format!("in {}", path.display()), error))?;
     let file: Value = serde_json::from_str(text).map_err(|error| {
         crate::Error::within(format!("{} is not valid JSON", path.display()), error)

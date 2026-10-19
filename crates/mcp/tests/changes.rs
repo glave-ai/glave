@@ -7,7 +7,8 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use glave_event::{Arguments, Part};
-use glave_mcp::{Limits, McpServer, ServerConfig};
+use glave_mcp::{Limits, McpServer};
+use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::testing::Running;
 use glave_ports::{NeverCancelled, ToolSource as _, block_on};
 

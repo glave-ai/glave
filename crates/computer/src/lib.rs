@@ -26,9 +26,7 @@ pub use remote::RemoteComputers;
 pub use serve::{serve, serve_tcp, serve_tls};
 pub use tls::{Fingerprint, Identity, connect_tls};
 pub use token::{MIN_SECRET, Token, Tokens};
-pub use worker::{
-    Clock, Docker, DockerSettings, Isolation, Limits, WorkerComputers, WorkerCredentials, https_url,
-};
+pub use worker::{Clock, Docker, DockerSettings, WorkerComputers, WorkerCredentials, https_url};
 #[cfg(feature = "kubernetes")]
 pub use worker::{Kubernetes, KubernetesSettings};
 pub use worktrees::{Condition, Kept, Released, Trash};

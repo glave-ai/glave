@@ -2,11 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use glave_harness::ApprovalMode;
+use glave_event::ApprovalMode;
 use glave_ports::computer::SandboxLevel;
+use glave_ports::settings::Judge;
 
 use super::*;
-use crate::policy::choices::Judge;
 use crate::policy::files::{PolicyFile, SandboxChoice};
 
 const ORG: &str = "/etc/glave/policy.toml";

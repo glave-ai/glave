@@ -8,9 +8,10 @@
 use std::path::{Path, PathBuf};
 
 use glave_config::policy::{self, ConfigFile, Constraints, ModelEntry, Source};
-use glave_harness::{ApprovalMode, Judge, Protections};
+use glave_harness::ApprovalMode;
 use glave_ports::block_on;
 use glave_ports::computer::SandboxLevel;
+use glave_ports::settings::{Judge, Protections};
 use glave_ports::testing::{ManualClock, TempDir};
 
 use super::servers::Kept;

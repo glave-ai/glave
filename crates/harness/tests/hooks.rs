@@ -5,7 +5,8 @@
 use std::path::Path;
 
 use glave_event::{Body, Event, HookPoint, HookRan, HookResult, Part, StopReason};
-use glave_harness::{Cancel, HarnessError, Hook, Hooks, NoOneToAsk};
+use glave_harness::{Cancel, HarnessError, NoOneToAsk};
+use glave_ports::settings::{Hook, Hooks};
 use glave_ports::{InMemoryLog, Message, ModelRequest};
 use serde_json::{Value, json};
 

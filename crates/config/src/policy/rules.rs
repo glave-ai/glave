@@ -5,8 +5,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use glave_event::Money;
-use glave_harness::ApprovalMode;
+use glave_event::{ApprovalMode, Money};
 use globset::Glob;
 
 use crate::policy::files::{JudgeRule, PolicyFile, TaskRules};
@@ -367,7 +366,7 @@ impl Constraints {
     }
 
     /// The limits every `[workers]` rule sets at once.
-    pub fn worker_limits(&self) -> glave_computer::Limits {
+    pub fn worker_limits(&self) -> glave_ports::computer::Limits {
         limits(self.rules.iter().filter_map(|rule| match &rule.kind {
             Kind::Workers(rules) => Some(rules),
             _ => None,

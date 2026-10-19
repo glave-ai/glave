@@ -7,8 +7,9 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use glave_event::{Arguments, Part};
-use glave_mcp::{Limits, McpError, McpServer, ServerConfig};
+use glave_mcp::{Limits, McpError, McpServer};
 use glave_ports::block_on;
+use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::testing::{AlreadyCancelled, FAKE_SECRET, Running};
 use glave_ports::{NeverCancelled, ToolOutput, ToolSource as _, conformance};
 use serde_json::json;

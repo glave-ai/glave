@@ -8,6 +8,7 @@ pub(crate) mod bytes;
 mod credential;
 mod environment;
 mod finding;
+mod limits;
 mod sandbox;
 mod types;
 
@@ -21,6 +22,7 @@ pub use credential::{CredentialAsk, CredentialHost, ForgeTool, GitCredential, Gi
 pub use environment::{Environment, Image, Network, Size};
 pub use finding::{Glob, Globbed, Match, Search, Searched, Stat, looks_binary};
 pub use glave_event::Forge;
+pub use limits::{Isolation, Limits};
 pub use sandbox::{
     PROTECTED, Sandbox, SandboxLevel, is_protected, is_protected_refusal, refuse_protected,
 };

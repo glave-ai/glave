@@ -28,6 +28,7 @@ mod remove;
 mod scope;
 pub mod search;
 pub mod secrets;
+pub mod settings;
 mod sse;
 pub mod stream;
 #[cfg(any(test, feature = "conformance"))]

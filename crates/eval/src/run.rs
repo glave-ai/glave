@@ -14,11 +14,12 @@ use glave_harness::{
 };
 use glave_memory::Tidier;
 use glave_ports::computer::Sandbox;
+use glave_ports::settings::{Domain, WebPolicy};
 use glave_ports::{Caller, EventLog, OsEntropy, SystemClock, ToolSource};
 use glave_provider_openai::{Config, OpenAiCompatible};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog};
 use glave_web::pages::Pages;
-use glave_web::{Domain, Limits, Web, WebPolicy, WebSettings};
+use glave_web::{Limits, Web, WebSettings};
 use serde::{Deserialize, Serialize};
 
 use crate::check::{Context, ended};
@@ -238,7 +239,7 @@ async fn wire(
     settings.subagents = setup.subagents;
     settings.person = Some(crate::memory::person()?);
     // As the CLI runs it: the model under test also judges flagged actions in auto mode.
-    settings.judge = glave_harness::Judge::Main;
+    settings.judge = glave_ports::settings::Judge::Main;
     // The harness has no cap of its own, so an attempt gets one and its cost stays bounded.
     settings.max_steps = Some(task.max_steps.unwrap_or(MAX_STEPS));
     if let Some(tokens) = task.context_window {

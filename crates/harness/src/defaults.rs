@@ -7,12 +7,11 @@ use std::sync::{Arc, PoisonError};
 
 use glave_event::ApprovalMode;
 use glave_ports::computer::Sandbox;
+use glave_ports::settings::{Hooks, Judge};
 use glave_ports::{BlobStore, EventLog, ModelProvider, ToolSource};
 
 use crate::approval::Approver;
 use crate::harness::Harness;
-use crate::hooks::Hooks;
-use crate::judge::Judge;
 
 /// The person's choices every thread runs with unless it, or its project, chooses otherwise.
 #[derive(Clone)]
