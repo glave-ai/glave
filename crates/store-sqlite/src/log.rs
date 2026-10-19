@@ -385,8 +385,7 @@ fn append_now(
             }
         }
     }
-    let position = transaction.last_insert_rowid();
-    crate::views::fold_in(&transaction, scope, events, position)?;
+    crate::views::fold_in(&transaction, scope, events)?;
     transaction.commit()?;
     Ok(())
 }

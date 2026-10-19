@@ -38,8 +38,7 @@ const INSERT: &str = "
     SELECT $1, $2, $3, seq, id, at, type, v, glave, data, key_id
     FROM UNNEST($4::bigint[], $5::uuid[], $6::timestamptz[], $7::text[], $8::bigint[],
                 $9::bigint[], $10::bytea[], $11::text[])
-        AS batch (seq, id, at, type, v, glave, data, key_id)
-    RETURNING pos";
+        AS batch (seq, id, at, type, v, glave, data, key_id)";
 
 /// The batch's searchable events into the index, each word exactly as hashed.
 const INDEX: &str = "
@@ -97,8 +96,8 @@ impl EventLog for PostgresLog {
                     .transpose()?;
                 check_append(last, &events)?;
                 let insert = transaction.prepare_cached(INSERT).await.map_err(database)?;
-                let inserted = transaction
-                    .query(
+                transaction
+                    .execute(
                         &insert,
                         &[
                             &org,
@@ -126,11 +125,7 @@ impl EventLog for PostgresLog {
                         .await
                         .map_err(database)?;
                 }
-                let mut position = 0_i64;
-                for row in &inserted {
-                    position = position.max(row.try_get::<_, i64>(0).map_err(LogError::corrupt)?);
-                }
-                crate::views::fold_in(&transaction, &scope, &events, position).await?;
+                crate::views::fold_in(&transaction, &scope, &events).await?;
                 transaction.commit().await.map_err(database)
             },
             span,

@@ -25,8 +25,6 @@ pub struct InMemoryLog {
 #[derive(Debug, Default)]
 struct Thread {
     events: Vec<RawEvent>,
-    /// When the thread was last written, as a count of appends across the log.
-    written: u64,
     /// Its row of the threads view, folded as events are appended.
     view: Option<ThreadView>,
 }
@@ -44,20 +42,10 @@ impl InMemoryLog {
             .threads
             .lock()
             .map_err(|_| LogError::Storage("the in-memory log's lock is poisoned".into()))?;
-        let clock = threads
-            .values()
-            .map(|thread| thread.written)
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1);
         let thread = threads.entry((*scope, first.thread)).or_default();
         check_append(thread.events.last().map(|event| event.seq), events)?;
         thread.events.extend(events.iter().cloned());
-        thread.written = clock;
-        thread.view = ThreadView::fold(thread.view.take(), events).map(|mut view| {
-            view.position = i64::try_from(clock).unwrap_or(i64::MAX);
-            view
-        });
+        thread.view = ThreadView::fold(thread.view.take(), events);
         drop(threads);
         let mut index = self
             .index
@@ -162,11 +150,7 @@ impl InMemoryLog {
         let Some(stored) = threads.get_mut(&(*scope, thread)) else {
             return Ok(None);
         };
-        let position = i64::try_from(stored.written).unwrap_or(i64::MAX);
-        stored.view = ThreadView::fold(None, &stored.events).map(|mut view| {
-            view.position = position;
-            view
-        });
+        stored.view = ThreadView::fold(None, &stored.events);
         Ok(stored.view.clone())
     }
 }

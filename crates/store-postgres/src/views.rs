@@ -34,7 +34,6 @@ pub(crate) async fn fold_in(
     transaction: &Transaction<'_>,
     scope: &Scope,
     events: &[RawEvent],
-    position: i64,
 ) -> Result<(), LogError> {
     let Some(first) = events.first() else {
         return Ok(());
@@ -44,20 +43,15 @@ pub(crate) async fn fold_in(
         return Ok(());
     }
     match ThreadView::fold(before, events) {
-        Some(mut view) => {
-            view.position = position;
-            write(&**transaction, scope, &view).await
-        }
+        Some(view) => write(&**transaction, scope, &view).await,
         None => Ok(()),
     }
 }
 
-/// A stored row as a view: its JSON, and its position beside it.
+/// A stored row as a view.
 fn read_row(row: &tokio_postgres::Row) -> Option<ThreadView> {
     let json: String = row.try_get(0).ok()?;
-    let mut view: ThreadView = serde_json::from_str(&json).ok()?;
-    view.position = row.try_get(1).ok()?;
-    Some(view)
+    serde_json::from_str(&json).ok()
 }
 
 /// The stored view of `thread`; with `lock`, its row is held until the transaction ends.
@@ -68,10 +62,9 @@ async fn stored<C: GenericClient + Sync>(
     lock: bool,
 ) -> Result<Option<ThreadView>, LogError> {
     let sql = if lock {
-        "SELECT view, position FROM threads WHERE org = $1 AND project = $2 AND thread = $3
-         FOR UPDATE"
+        "SELECT view FROM threads WHERE org = $1 AND project = $2 AND thread = $3 FOR UPDATE"
     } else {
-        "SELECT view, position FROM threads WHERE org = $1 AND project = $2 AND thread = $3"
+        "SELECT view FROM threads WHERE org = $1 AND project = $2 AND thread = $3"
     };
     let row = client
         .query_opt(
@@ -96,17 +89,17 @@ async fn write<C: GenericClient + Sync>(
     let json = serde_json::to_string(view).map_err(corrupt)?;
     client
         .execute(
-            "INSERT INTO threads (org, project, thread, standing, position, view)
+            "INSERT INTO threads (org, project, thread, standing, updated, view)
              VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT (org, project, thread) DO UPDATE SET
-                 standing = excluded.standing, position = excluded.position,
+                 standing = excluded.standing, updated = excluded.updated,
                  view = excluded.view",
             &[
                 &scope.org().as_uuid(),
                 &scope.project().as_uuid(),
                 &view.thread.as_uuid(),
                 &view.standing.as_str(),
-                &view.position,
+                &view.updated_at.timestamp().as_millisecond(),
                 &json,
             ],
         )
@@ -115,7 +108,7 @@ async fn write<C: GenericClient + Sync>(
     Ok(())
 }
 
-/// A page of views, most recently written first, through the `threads_by_position` index.
+/// A page of views, most recently updated first, through the `threads_by_update` index.
 pub(crate) async fn page(
     pool: &Pool,
     scope: &Scope,
@@ -126,10 +119,10 @@ pub(crate) async fn page(
         .map_err(|e| LogError::Storage(e.to_string()))?;
     let statement = client
         .prepare_cached(
-            "SELECT view, position FROM threads
+            "SELECT view FROM threads
              WHERE org = $1 AND project = $2 AND standing = $3
-               AND ($4::bigint IS NULL OR position < $4::bigint)
-             ORDER BY position DESC LIMIT $5",
+               AND ($4::bigint IS NULL OR (updated, thread) < ($4::bigint, $5::uuid))
+             ORDER BY updated DESC, thread DESC LIMIT $6",
         )
         .await
         .map_err(|e| failed(&e))?;
@@ -140,7 +133,10 @@ pub(crate) async fn page(
                 &scope.org().as_uuid(),
                 &scope.project().as_uuid(),
                 &query.standing.as_str(),
-                &query.after.map(|after| after.0),
+                &query
+                    .after
+                    .map(|after| after.updated_at.timestamp().as_millisecond()),
+                &query.after.map(|after| after.thread.as_uuid()),
                 &i64::try_from(query.limit).unwrap_or(i64::MAX),
             ],
         )
@@ -181,8 +177,7 @@ pub(crate) async fn rebuild(
         stored(&*transaction, scope, thread, true).await?;
         let row = transaction
             .query_one(
-                "SELECT MAX(seq), MAX(pos) FROM events
-                 WHERE org = $1 AND project = $2 AND thread = $3",
+                "SELECT MAX(seq) FROM events WHERE org = $1 AND project = $2 AND thread = $3",
                 &[
                     &scope.org().as_uuid(),
                     &scope.project().as_uuid(),
@@ -192,18 +187,13 @@ pub(crate) async fn rebuild(
             .await
             .map_err(|e| failed(&e))?;
         let last: Option<i64> = row.try_get(0).map_err(corrupt)?;
-        let position: Option<i64> = row.try_get(1).map_err(corrupt)?;
         let folded_last = folded
             .as_ref()
             .and_then(|view| i64::try_from(view.last_seq.get()).ok());
         if folded.is_some() && last != folded_last {
             continue;
         }
-        let view = folded.map(|mut view| {
-            view.position = position.unwrap_or_default();
-            view
-        });
-        match &view {
+        match &folded {
             Some(view) => write(&*transaction, scope, view).await?,
             None => {
                 transaction
@@ -220,7 +210,7 @@ pub(crate) async fn rebuild(
             }
         }
         transaction.commit().await.map_err(|e| failed(&e))?;
-        return Ok(view);
+        return Ok(folded);
     }
     Err(LogError::Storage(format!(
         "thread {thread} kept changing while its view was rebuilt"

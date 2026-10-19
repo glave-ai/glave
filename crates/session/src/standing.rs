@@ -6,8 +6,8 @@
 use glave_event::{Seq, ThreadId};
 use glave_harness::{Change, Protections, standing_of};
 use glave_ports::{
-    BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, Standing, ThreadCursor,
-    ThreadQuery, ThreadView, title_of,
+    BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, Standing, ThreadQuery,
+    ThreadView, title_of,
 };
 use tokio::sync::watch;
 
@@ -155,16 +155,16 @@ where
         let (_, scope) = self.project_for(caller, project).await?;
         let project = scope.project();
         let limit = limit.unwrap_or(20).clamp(1, MAX_PAGE);
+        let standing = match show.unwrap_or_default() {
+            Show::Active => Standing::Active,
+            Show::Archived => Standing::Archived,
+            Show::Deleted => Standing::Deleted,
+        };
         let after = cursor
-            .map(|cursor| cursor.parse::<ThreadCursor>())
-            .transpose()
-            .map_err(|error| ApiError::new(code::INVALID_PARAMS, error))?;
+            .map(|cursor| crate::cursor::read(&cursor, project, standing))
+            .transpose()?;
         let query = ThreadQuery {
-            standing: match show.unwrap_or_default() {
-                Show::Active => Standing::Active,
-                Show::Archived => Standing::Archived,
-                Show::Deleted => Standing::Deleted,
-            },
+            standing,
             // One more than asked shows whether another page follows.
             limit: limit.saturating_add(1),
             after,
@@ -178,7 +178,8 @@ where
         let next = (views.len() > limit)
             .then(|| {
                 views.truncate(limit);
-                views.last().map(|view| view.cursor().to_string())
+                let last = views.last()?;
+                Some(crate::cursor::write(project, standing, last.cursor()))
             })
             .flatten();
         let protections = self.project_settled(project).await.protections;

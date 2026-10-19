@@ -8,7 +8,7 @@ use crate::store::StoreError;
 
 /// The schema this build makes and reads. Bumped whenever [`SCHEMA`] changes. It starts past
 /// every version the migrations it replaced wrote, so a file one of them made is refused.
-pub(crate) const VERSION: u32 = 7;
+pub(crate) const VERSION: u32 = 8;
 
 /// Every table, made in one transaction in a new file.
 const SCHEMA: &str = "
@@ -107,19 +107,20 @@ const SCHEMA: &str = "
     ) STRICT;
 
     -- The threads view: one row per thread, folded from its events as they are appended
-    -- (`glave_ports::ThreadView`, as JSON), listed by standing, most recently written first.
-    -- Content-free. `position` is the rowid of the thread's latest event: the order of writes.
+    -- (`glave_ports::ThreadView`, as JSON), listed by standing, most recently updated first.
+    -- Content-free. `updated` is when its latest event was recorded, in milliseconds; a page
+    -- starts after the last row's own `(updated, thread)`, never a position across the store.
     CREATE TABLE threads (
         org       TEXT    NOT NULL,
         project   TEXT    NOT NULL,
         thread    TEXT    NOT NULL,
         standing  TEXT    NOT NULL,
-        position  INTEGER NOT NULL,
+        updated   INTEGER NOT NULL,
         view      TEXT    NOT NULL,
         PRIMARY KEY (org, project, thread)
     ) STRICT;
 
-    CREATE INDEX threads_by_position ON threads (org, project, standing, position DESC);
+    CREATE INDEX threads_by_update ON threads (org, project, standing, updated DESC, thread DESC);
 
     -- Keyword search over conversations (`specs/memory.md`, \"Recall\"): the words of each
     -- message and tool output, as keyed hashes under its project key (`Keys::search_terms`),

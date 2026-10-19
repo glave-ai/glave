@@ -19,6 +19,8 @@ path = "tests/main.rs"
 otel = ["dep:opentelemetry", "dep:tracing-opentelemetry"]
 
 [dependencies]
+# thread/list's cursors, opaque to clients (cursor.rs).
+base64.workspace = true
 glave-event.workspace = true
 glave-harness.workspace = true
 # Sign-in on network transports, and who is calling.

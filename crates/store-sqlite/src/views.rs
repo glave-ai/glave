@@ -18,14 +18,12 @@ const VERSION_SETTING: &str = "threads_view";
 /// How many times a rebuild tries again when the thread was appended to meanwhile.
 const REBUILD_TRIES: usize = 3;
 
-/// Folds `events`, just appended to one thread inside `transaction` with the last at row
-/// `position`, into its view. A thread with no view yet is given one only from its first
+/// Folds `events`, just appended to one thread inside `transaction`, into its view. A thread with no view yet is given one only from its first
 /// event, so a view is never folded from part of a thread; a rebuild makes the rest.
 pub(crate) fn fold_in(
     transaction: &Transaction<'_>,
     scope: &Scope,
     events: &[RawEvent],
-    position: i64,
 ) -> rusqlite::Result<()> {
     let Some(first) = events.first() else {
         return Ok(());
@@ -35,19 +33,14 @@ pub(crate) fn fold_in(
         return Ok(());
     }
     match ThreadView::fold(before, events) {
-        Some(mut view) => {
-            view.position = position;
-            write(transaction, scope, &view)
-        }
+        Some(view) => write(transaction, scope, &view),
         None => Ok(()),
     }
 }
 
-/// A stored row as a view: its JSON, and its position beside it.
-fn read_row(json: &str, position: i64) -> Option<ThreadView> {
-    let mut view: ThreadView = serde_json::from_str(json).ok()?;
-    view.position = position;
-    Some(view)
+/// A stored row as a view.
+fn read_row(json: &str) -> Option<ThreadView> {
+    serde_json::from_str(json).ok()
 }
 
 fn stored(
@@ -55,21 +48,19 @@ fn stored(
     scope: &Scope,
     thread: ThreadId,
 ) -> rusqlite::Result<Option<ThreadView>> {
-    let row: Option<(String, i64)> = connection
-        .prepare_cached(
-            "SELECT view, position FROM threads WHERE org = ?1 AND project = ?2 AND thread = ?3",
-        )?
+    let row: Option<String> = connection
+        .prepare_cached("SELECT view FROM threads WHERE org = ?1 AND project = ?2 AND thread = ?3")?
         .query_row(
             params![
                 scope.org().to_string(),
                 scope.project().to_string(),
                 thread.to_string()
             ],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| row.get(0),
         )
         .optional()?;
     // A view that no longer reads is missing: the next rebuild makes it again.
-    Ok(row.and_then(|(json, position)| read_row(&json, position)))
+    Ok(row.and_then(|json| read_row(&json)))
 }
 
 fn write(connection: &Connection, scope: &Scope, view: &ThreadView) -> rusqlite::Result<()> {
@@ -77,10 +68,10 @@ fn write(connection: &Connection, scope: &Scope, view: &ThreadView) -> rusqlite:
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     connection
         .prepare_cached(
-            "INSERT INTO threads (org, project, thread, standing, position, view)
+            "INSERT INTO threads (org, project, thread, standing, updated, view)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT (org, project, thread) DO UPDATE SET
-                 standing = excluded.standing, position = excluded.position,
+                 standing = excluded.standing, updated = excluded.updated,
                  view = excluded.view",
         )?
         .execute(params![
@@ -88,13 +79,13 @@ fn write(connection: &Connection, scope: &Scope, view: &ThreadView) -> rusqlite:
             scope.project().to_string(),
             view.thread.to_string(),
             view.standing.as_str(),
-            view.position,
+            view.updated_at.timestamp().as_millisecond(),
             json,
         ])?;
     Ok(())
 }
 
-/// A page of views, most recently written first, through the `threads_by_position` index.
+/// A page of views, most recently updated first, through the `threads_by_update` index.
 pub(crate) async fn page(
     connection: &Shared,
     scope: &Scope,
@@ -103,27 +94,31 @@ pub(crate) async fn page(
     let (scope, query) = (*scope, *query);
     let rows = run(connection, move |connection| {
         let mut statement = connection.prepare_cached(
-            "SELECT view, position FROM threads
-             WHERE org = ?1 AND project = ?2 AND standing = ?3 AND (?4 IS NULL OR position < ?4)
-             ORDER BY position DESC LIMIT ?5",
+            "SELECT view FROM threads
+             WHERE org = ?1 AND project = ?2 AND standing = ?3
+               AND (?4 IS NULL OR (updated, thread) < (?4, ?5))
+             ORDER BY updated DESC, thread DESC LIMIT ?6",
         )?;
         let rows = statement.query_map(
             params![
                 scope.org().to_string(),
                 scope.project().to_string(),
                 query.standing.as_str(),
-                query.after.map(|after| after.0),
+                query
+                    .after
+                    .map(|after| after.updated_at.timestamp().as_millisecond()),
+                query.after.map(|after| after.thread.to_string()),
                 i64::try_from(query.limit).unwrap_or(i64::MAX),
             ],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            |row| row.get::<_, String>(0),
         )?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
     })
     .await
     .map_err(|e| LogError::Storage(e.to_string()))?;
     rows.iter()
-        .map(|(json, position)| {
-            read_row(json, *position)
+        .map(|json| {
+            read_row(json)
                 .ok_or_else(|| LogError::Storage("a stored thread view is corrupt".into()))
         })
         .collect()
@@ -157,15 +152,14 @@ pub(crate) async fn rebuild(
         // `None` when the thread was appended to meanwhile; else the view stored.
         let stored = run(connection, move |connection| {
             let transaction = connection.transaction()?;
-            let (last, position): (Option<i64>, Option<i64>) = transaction.query_row(
-                "SELECT MAX(seq), MAX(rowid) FROM events
-                 WHERE org = ?1 AND project = ?2 AND thread = ?3",
+            let last: Option<i64> = transaction.query_row(
+                "SELECT MAX(seq) FROM events WHERE org = ?1 AND project = ?2 AND thread = ?3",
                 params![
                     scope.org().to_string(),
                     scope.project().to_string(),
                     thread.to_string()
                 ],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| row.get(0),
             )?;
             let folded_last = folded
                 .as_ref()
@@ -173,10 +167,6 @@ pub(crate) async fn rebuild(
             if folded.is_some() && last != folded_last {
                 return Ok(None);
             }
-            let folded = folded.map(|mut view| {
-                view.position = position.unwrap_or_default();
-                view
-            });
             match &folded {
                 Some(view) => write(&transaction, &scope, view)?,
                 None => {
