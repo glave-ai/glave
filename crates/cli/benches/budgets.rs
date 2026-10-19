@@ -3,10 +3,8 @@
 //! Fails when any measurement is over its budget. Run it through `cargo xtask bench`, alone
 //! on an idle machine, since these are wall-clock numbers.
 
-use std::future::{Future, ready};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, bail};
@@ -14,10 +12,8 @@ use glave_computer::LocalComputers;
 use glave_event::{Arguments, ModelRef, Part, StopReason, TokenCounts, Usage};
 use glave_harness::{AllowAll, Cancel, Harness, Parts, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
-use glave_ports::{
-    Completion, Delta, ModelProvider, ModelRequest, OsEntropy, ProviderError, RequestedCall,
-    SystemClock,
-};
+use glave_ports::testing::ScriptedModel;
+use glave_ports::{Completion, OsEntropy, RequestedCall, SystemClock};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 
 /// Events in the resumed thread.
@@ -158,14 +154,14 @@ async fn threads(dir: &Path) -> anyhow::Result<(Duration, Duration)> {
     Ok((recorded, median(resumes)))
 }
 
-type Benched = Harness<Scripted, SqliteLog, SqliteBlobs, AllowAll>;
+type Benched = Harness<ScriptedModel, SqliteLog, SqliteBlobs, AllowAll>;
 
 async fn harness_on(store: &Store, project: &Path) -> anyhow::Result<Benched> {
     let mut settings = Settings::new("bench-model", "bench");
     // A thread this long would be compacted; the benchmark measures the full log instead.
     settings.compaction.window_tokens = u64::MAX / 100;
     let parts = Parts {
-        provider: Scripted(AtomicU64::new(0)),
+        provider: scripted()?,
         log: store.log(),
         blobs: store.blobs(),
         approver: AllowAll,
@@ -180,64 +176,47 @@ async fn harness_on(store: &Store, project: &Path) -> anyhow::Result<Benched> {
 }
 
 /// A model that reads the notes, then answers, turn after turn.
-struct Scripted(AtomicU64);
-
-impl ModelProvider for Scripted {
-    fn complete(
-        &self,
-        _request: &ModelRequest,
-        _on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
-        let call = self.0.fetch_add(1, Ordering::Relaxed);
-        let reads = call.is_multiple_of(2);
-        let mut arguments = serde_json::Map::new();
-        arguments.insert("path".into(), "README.md".into());
-        let completion = Usage::new(
-            TokenCounts {
-                input: 2_000,
-                cache_read: 1_500,
-                cache_write: 0,
-                output: 60,
-                reasoning: 0,
-            },
-            false,
-            None,
-        )
-        .map(|usage| Completion {
-            model: ModelRef {
-                provider: "bench".into(),
-                name: "bench-model".into(),
-            },
-            response_id: None,
-            parts: if reads {
-                Vec::new()
-            } else {
-                vec![Part::Text {
-                    text: "The notes repeat one line, eighty times over.".into(),
-                }]
-            },
-            tool_calls: if reads {
-                vec![RequestedCall {
-                    provider_call_id: Some(format!("call_{call}")),
-                    tool: "read".into(),
-                    arguments: Arguments::Json(arguments),
-                }]
-            } else {
-                Vec::new()
-            },
-            stop: if reads {
-                StopReason::ToolUse
-            } else {
-                StopReason::EndTurn
-            },
-            provider_stop: None,
-            usage,
-            cost: None,
-            served: None,
-        })
-        .map_err(|err| ProviderError::Protocol(err.to_string()));
-        ready(completion)
-    }
+fn scripted() -> anyhow::Result<ScriptedModel> {
+    let usage = Usage::new(
+        TokenCounts {
+            input: 2_000,
+            cache_read: 1_500,
+            cache_write: 0,
+            output: 60,
+            reasoning: 0,
+        },
+        false,
+        None,
+    )?;
+    let completion = |parts, tool_calls, stop| Completion {
+        model: ModelRef {
+            provider: "bench".into(),
+            name: "bench-model".into(),
+        },
+        response_id: None,
+        parts,
+        tool_calls,
+        stop,
+        provider_stop: None,
+        usage: usage.clone(),
+        cost: None,
+        served: None,
+    };
+    let mut arguments = serde_json::Map::new();
+    arguments.insert("path".into(), "README.md".into());
+    let read = RequestedCall {
+        provider_call_id: Some("call_read".into()),
+        tool: "read".into(),
+        arguments: Arguments::Json(arguments),
+    };
+    let said = Part::Text {
+        text: "The notes repeat one line, eighty times over.".into(),
+    };
+    Ok(ScriptedModel::cycling(vec![
+        completion(Vec::new(), vec![read], StopReason::ToolUse),
+        completion(vec![said], Vec::new(), StopReason::EndTurn),
+    ])
+    .unrecorded())
 }
 
 fn uuid(n: u8) -> uuid::Uuid {

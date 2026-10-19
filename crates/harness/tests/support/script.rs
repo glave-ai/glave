@@ -1,10 +1,8 @@
-//! Shared helpers for the harness's integration tests: a scripted model, a ticking clock,
-//! counting entropy, and a harness wired to them over a real temporary folder.
+//! Shared helpers for the harness's integration tests: scripted answers, and a harness wired
+//! to the scripted model, a ticking clock and counting entropy over a real temporary folder.
 
-use std::collections::VecDeque;
 use std::future::{Future, ready};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 use glave_event::{
     Arguments, Body, Event, ModelRef, Part, RawEvent, StopReason, TokenCounts, Usage, decode,
@@ -12,31 +10,10 @@ use glave_event::{
 use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
 pub use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, ManualClock};
+pub use glave_ports::testing::{ScriptedModel, Seen};
 use glave_ports::{
-    Completion, Delta, EventLog, InMemoryBlobs, InMemoryLog, ModelProvider, ModelRequest, OrgId,
-    ProjectId, ProviderError, RequestedCall, Scope,
+    Completion, EventLog, InMemoryBlobs, InMemoryLog, OrgId, ProjectId, RequestedCall, Scope,
 };
-
-pub struct Script {
-    pub answers: Mutex<VecDeque<Completion>>,
-    pub seen: Arc<Mutex<Vec<ModelRequest>>>,
-}
-
-impl ModelProvider for Script {
-    fn complete(
-        &self,
-        request: &ModelRequest,
-        on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
-        self.seen.lock().unwrap().push(request.clone());
-        let next = self.answers.lock().unwrap().pop_front();
-        if let Some(Part::Text { text }) = next.as_ref().and_then(|c| c.parts.first()) {
-            on_delta(Delta::Text(text.clone()));
-        }
-        // Not a transient error, so a test that runs out never waits through retries.
-        ready(next.ok_or_else(|| ProviderError::Protocol("script exhausted".into())))
-    }
-}
 
 pub struct Refuse;
 impl Approver for Refuse {
@@ -105,7 +82,7 @@ pub async fn harness<A: Approver>(
     dir: &std::path::Path,
     answers: Vec<Completion>,
     approver: A,
-) -> Harness<Script, InMemoryLog, InMemoryBlobs, A> {
+) -> Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A> {
     harness_on(dir, answers, approver, InMemoryLog::new(), 1, settings()).await
 }
 
@@ -125,7 +102,7 @@ pub async fn asking_harness<A: Approver>(
     dir: &std::path::Path,
     answers: Vec<Completion>,
     approver: A,
-) -> Harness<Script, InMemoryLog, InMemoryBlobs, A> {
+) -> Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, A> {
     harness_on(dir, answers, approver, InMemoryLog::new(), 1, asking()).await
 }
 
@@ -137,14 +114,11 @@ pub async fn harness_on<L: EventLog, A: Approver>(
     log: L,
     seed: u64,
     settings: Settings,
-) -> Harness<Script, L, InMemoryBlobs, A> {
+) -> Harness<ScriptedModel, L, InMemoryBlobs, A> {
     harness_seeing(dir, answers, approver, log, seed, settings)
         .await
         .0
 }
-
-/// Every request the scripted model received, in order.
-pub type Seen = Arc<Mutex<Vec<ModelRequest>>>;
 
 /// Like `harness_on`, also returning what the model is sent.
 pub async fn harness_seeing<L: EventLog, A: Approver>(
@@ -154,7 +128,7 @@ pub async fn harness_seeing<L: EventLog, A: Approver>(
     log: L,
     seed: u64,
     settings: Settings,
-) -> (Harness<Script, L, InMemoryBlobs, A>, Seen) {
+) -> (Harness<ScriptedModel, L, InMemoryBlobs, A>, Seen) {
     harness_with(workspace(dir).await, answers, approver, log, seed, settings)
 }
 
@@ -166,12 +140,9 @@ pub fn harness_with<L: EventLog, A: Approver>(
     log: L,
     seed: u64,
     settings: Settings,
-) -> (Harness<Script, L, InMemoryBlobs, A>, Seen) {
-    let requests: Seen = Arc::new(Mutex::new(Vec::new()));
-    let script = Script {
-        answers: Mutex::new(answers.into()),
-        seen: Arc::clone(&requests),
-    };
+) -> (Harness<ScriptedModel, L, InMemoryBlobs, A>, Seen) {
+    let script = ScriptedModel::new(answers);
+    let requests = script.seen();
     let parts = Parts {
         provider: script,
         log,

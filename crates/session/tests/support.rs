@@ -1,4 +1,4 @@
-//! What the session tests share: a scripted model, a server built from a `Setup`, the requests
+//! What the session tests share: scripted answers, a server built from a `Setup`, the requests
 //! most tests make, a fake identity provider, and a client of the HTTP transport.
 
 mod git;

@@ -2,50 +2,14 @@
 //! again and the person sees each retry; failures that will not pass end the turn at once; and
 //! a cancel during the wait between tries ends it cleanly.
 
-use std::collections::VecDeque;
-use std::future::{Future, ready};
-use std::sync::Mutex;
 use std::time::Duration;
 
 use glave_event::{Outcome, StopReason};
 use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Live, Parts, Retries};
 use glave_ports::testing::{CountingEntropy, ManualClock};
-use glave_ports::{
-    Completion, Delta, InMemoryBlobs, InMemoryLog, ModelProvider, ModelRequest, ProviderError,
-};
+use glave_ports::{InMemoryBlobs, InMemoryLog, ProviderError};
 
 use crate::support::*;
-
-/// A model that fails with each of `failures` in turn, then answers.
-struct Flaky {
-    failures: Mutex<VecDeque<ProviderError>>,
-}
-
-impl ModelProvider for Flaky {
-    fn complete(
-        &self,
-        _request: &ModelRequest,
-        _on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
-        ready(match self.failures.lock().unwrap().pop_front() {
-            Some(failure) => Err(failure),
-            None => Ok(answer(Some("Answered."), vec![], StopReason::EndTurn)),
-        })
-    }
-}
-
-/// A model whose answer streams some text and then ends in an error.
-struct Broken;
-
-impl ModelProvider for Broken {
-    fn complete(
-        &self,
-        _request: &ModelRequest,
-        _on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
-        ready(Ok(answer(Some("Half an ans"), vec![], StopReason::Error)))
-    }
-}
 
 fn unavailable() -> ProviderError {
     ProviderError::Http {
@@ -57,16 +21,21 @@ fn unavailable() -> ProviderError {
 async fn harness(
     failures: Vec<ProviderError>,
     first_wait: Duration,
-) -> Harness<Flaky, InMemoryLog, InMemoryBlobs, AllowAll> {
+) -> Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, AllowAll> {
     let mut settings = settings();
     settings.retries = Retries {
         attempts: 4,
         first_wait,
     };
     let parts = Parts {
-        provider: Flaky {
-            failures: Mutex::new(failures.into()),
-        },
+        // Fails with each of `failures` in turn, then answers.
+        provider: ScriptedModel::answering(
+            failures
+                .into_iter()
+                .map(Err)
+                .chain([Ok(answer(Some("Answered."), vec![], StopReason::EndTurn))])
+                .collect(),
+        ),
         log: InMemoryLog::new(),
         blobs: InMemoryBlobs::new(),
         approver: AllowAll,
@@ -176,7 +145,12 @@ fn a_response_that_errors_after_output_is_not_tried_again() {
             first_wait: Duration::ZERO,
         };
         let parts = Parts {
-            provider: Broken,
+            // Its answer streams some text and then ends in an error.
+            provider: ScriptedModel::cycling(vec![answer(
+                Some("Half an ans"),
+                vec![],
+                StopReason::Error,
+            )]),
             log: InMemoryLog::new(),
             blobs: InMemoryBlobs::new(),
             approver: AllowAll,

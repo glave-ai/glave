@@ -68,7 +68,7 @@ async fn start_as(server: &Tested, caller: &Caller, project: ProjectId) -> Threa
 
 /// The model the request at `index` went to.
 fn sent_to(seen: &Seen, index: usize) -> serde_json::Value {
-    let sent: serde_json::Value = serde_json::from_str(&seen.lock().unwrap()[index]).unwrap();
+    let sent: serde_json::Value = serde_json::from_str(&json(seen)[index]).unwrap();
     sent["model"].clone()
 }
 

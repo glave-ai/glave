@@ -24,13 +24,13 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
-# The runtime tests run on (`testing`).
-tokio = { workspace = true, features = ["rt"], optional = true }
+# The runtime tests run on, and the gate a scripted model waits at (`testing`).
+tokio = { workspace = true, features = ["rt", "sync"], optional = true }
 uuid.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["rt", "sync"] }
 
 [lints]
 workspace = true

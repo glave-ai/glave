@@ -85,7 +85,7 @@ fn glaves_own_records_are_taken_in_and_the_model_is_sent_the_same() {
                 let next = turn(&server, thread, "go").await;
                 assert!(matches!(next, Ok(Reply::Turn { .. })), "{next:?}");
                 let ids = call_ids(events(&server, thread).await);
-                let seen = seen.lock().unwrap().clone();
+                let seen = json(&seen);
                 (seen, ids)
             }
         };

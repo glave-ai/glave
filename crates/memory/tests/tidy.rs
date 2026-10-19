@@ -3,62 +3,36 @@
 //! touched, proposals that would invent or lose a fact refused, every change by glave and
 //! undoable, and the question shown to the model at the start of a thread and after a resume.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use glave_event::{Body, MemoryId, MemoryScope, Principal, PrincipalKind, decode};
 use glave_harness::{AllowAll, Cancel};
 use glave_memory::{Remembering, Tidied, Tidier, Writer};
 use glave_ports::memories::{MemoryContext, memory_ledger};
-use glave_ports::{
-    Completion, Delta, EventLog, ModelProvider, ModelRequest, ProviderError, Purpose, Scope,
-    ToolChoice,
-};
+use glave_ports::testing::ScriptedModel;
+use glave_ports::{EventLog, Purpose, Scope, ToolChoice};
 
 use crate::support::*;
 
-/// A tidier that answers with scripted texts in turn (the last one again once they run
-/// out), and keeps what it was sent.
-struct Scripted {
-    answers: Mutex<Vec<String>>,
-    seen: Mutex<Vec<ModelRequest>>,
+/// A tidier that answers with `answer` every time, and keeps what it was sent.
+fn scripted(answer: &str) -> Tidier<ScriptedModel> {
+    answering(&[answer])
 }
 
-impl Scripted {
-    fn new(answer: &str) -> Tidier<Self> {
-        Self::answering(&[answer])
-    }
-
-    fn answering(answers: &[&str]) -> Tidier<Self> {
-        Tidier {
-            provider: Self {
-                answers: Mutex::new(answers.iter().rev().map(|a| (*a).to_owned()).collect()),
-                seen: Mutex::new(Vec::new()),
-            },
-            model: "small".to_owned(),
-        }
-    }
-
-    fn sent(&self) -> String {
-        let seen = self.seen.lock().unwrap();
-        format!("{:?}", seen.last().unwrap().messages)
+/// A tidier that answers with scripted texts in turn, and from the first again once they run
+/// out.
+fn answering(answers: &[&str]) -> Tidier<ScriptedModel> {
+    Tidier {
+        provider: ScriptedModel::cycling(answers.iter().map(|answer| said(answer)).collect()),
+        model: "small".to_owned(),
     }
 }
 
-impl ModelProvider for Scripted {
-    fn complete(
-        &self,
-        request: &ModelRequest,
-        _: &mut (dyn FnMut(Delta) + Send),
-    ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
-        self.seen.lock().unwrap().push(request.clone());
-        let mut answers = self.answers.lock().unwrap();
-        let answer = if answers.len() > 1 {
-            answers.pop().unwrap()
-        } else {
-            answers.last().cloned().unwrap()
-        };
-        std::future::ready(Ok(said(&answer)))
-    }
+/// The conversation last sent to `tidier`.
+fn sent(tidier: &Tidier<ScriptedModel>) -> String {
+    let seen = tidier.provider.seen();
+    let seen = seen.lock().unwrap();
+    format!("{:?}", seen.last().unwrap().messages)
 }
 
 fn writer(untrusted_read: bool) -> Writer {
@@ -133,7 +107,7 @@ fn duplicates_merge_the_newer_wins_and_untrusted_memories_are_never_touched() {
         let planted = seed(&kit, PLANTED, true).await;
         let render = seed(&kit, RENDER, false).await;
         // The list the model sees: 1 tabs, 2 Fly, 3 tabs again, 4 Render.
-        let script = Scripted::new(
+        let script = scripted(
             r#"{"merge": [{"memories": [1, 3], "text": "Use tabs, not spaces, for indentation in this project's Python code"},
                               {"memories": [4, 5], "text": "Before any build, run make setup"}],
                     "conflict": [{"memories": [2, 4], "clear": true}]}"#,
@@ -146,11 +120,11 @@ fn duplicates_merge_the_newer_wins_and_untrusted_memories_are_never_touched() {
         );
         assert_eq!(tidied.refused.len(), 1, "{tidied:?}");
 
-        let request = script.provider.seen.lock().unwrap()[0].clone();
+        let request = script.provider.seen().lock().unwrap()[0].clone();
         assert_eq!(request.purpose, Purpose::Summary);
         assert_eq!(request.tool_choice, ToolChoice::None);
         assert_eq!(request.tools.len(), 0);
-        let sent = script.provider.sent();
+        let sent = sent(&script);
         assert!(!sent.contains("make setup"), "never shown: {sent}");
         assert!(sent.contains("Merge only duplicates"), "{sent}");
 
@@ -197,7 +171,7 @@ fn an_unclear_contradiction_keeps_both_and_asks_until_one_changes() {
         let spaces = seed(&kit, "Ada likes spaces in Go", false).await;
         let memories = kit.memories(rules(), 1);
         assert!(memories.tidy_due(shared()).await.unwrap(), "never tidied");
-        let script = Scripted::new(r#"{"conflict": [{"memories": [1, 2], "clear": false}]}"#);
+        let script = scripted(r#"{"conflict": [{"memories": [1, 2], "clear": false}]}"#);
         let tidied = memories.tidy(shared(), &script).await.unwrap();
         assert_eq!(tidied.questions, 1);
         assert_eq!(live(&kit).await.len(), 2, "both kept");
@@ -205,10 +179,10 @@ fn an_unclear_contradiction_keeps_both_and_asks_until_one_changes() {
         assert!(!memories.tidy_due(shared()).await.unwrap(), "just tidied");
 
         // The next run never offers the pair again while it waits.
-        let again = Scripted::new("{}");
+        let again = scripted("{}");
         memories.tidy(shared(), &again).await.unwrap();
         assert!(
-            again.provider.seen.lock().unwrap().is_empty(),
+            again.provider.seen().lock().unwrap().is_empty(),
             "nothing else to tidy"
         );
 
@@ -241,10 +215,7 @@ fn proposals_that_invent_lose_or_misname_change_nothing() {
             r#"{"merge": [{"memories": [1], "text": "Use tabs"}]}"#,
             r#"{"conflict": [{"memories": [1, 2, 2], "clear": true}], "merge": [{"memories": [1, 2], "text": "x"}]}"#,
         ] {
-            let tidied: Tidied = memories
-                .tidy(shared(), &Scripted::new(answer))
-                .await
-                .unwrap();
+            let tidied: Tidied = memories.tidy(shared(), &scripted(answer)).await.unwrap();
             assert_eq!(
                 (tidied.merged, tidied.forgotten),
                 (0, 0),
@@ -253,17 +224,17 @@ fn proposals_that_invent_lose_or_misname_change_nothing() {
             assert!(!tidied.refused.is_empty(), "{answer}");
         }
         // An answer that cannot be read is asked for once more, then changes nothing.
-        let unreadable = Scripted::new("no idea");
+        let unreadable = scripted("no idea");
         let tidied = memories.tidy(shared(), &unreadable).await.unwrap();
         assert_eq!(
-            unreadable.provider.seen.lock().unwrap().len(),
+            unreadable.provider.seen().lock().unwrap().len(),
             2,
             "asked again once"
         );
         assert!(
-            unreadable.provider.sent().contains("JSON object only"),
+            sent(&unreadable).contains("JSON object only"),
             "{}",
-            unreadable.provider.sent()
+            sent(&unreadable)
         );
         assert!(
             tidied.refused.iter().any(|why| why.contains("no JSON")),
@@ -279,7 +250,7 @@ fn prose_first_then_json_after_the_reminder_is_carried_out() {
         let kit = Kit::new();
         seed(&kit, FLY, false).await;
         let render = seed(&kit, RENDER, false).await;
-        let script = Scripted::answering(&[
+        let script = answering(&[
             "Memories 1 and 2 disagree; the newer wins.",
             "```json\n{\"merge\": [], \"conflict\": [{\"memories\": [1, 2], \"clear\": true}]}\n```",
         ]);
@@ -288,7 +259,7 @@ fn prose_first_then_json_after_the_reminder_is_carried_out() {
         assert_eq!(tidied.forgotten, 1, "{tidied:?}");
         let now: Vec<_> = live(&kit).await.into_iter().map(|(id, _, _)| id).collect();
         assert_eq!(now, [render], "the more recent stays");
-        let first = format!("{:?}", script.provider.seen.lock().unwrap()[0].messages);
+        let first = format!("{:?}", script.provider.seen().lock().unwrap()[0].messages);
         assert!(
             first.contains("saved 2026-10-03 "),
             "times to the minute: {first}"
@@ -308,12 +279,12 @@ fn near_the_budget_tidy_up_compacts_and_runs_again_sooner() {
             seed(&kit, &text, false).await;
         }
         let memories = kit.memories(rules(), 1);
-        let script = Scripted::new("{}");
+        let script = scripted("{}");
         memories.tidy(shared(), &script).await.unwrap();
         assert!(
-            script.provider.sent().contains("near their size limit"),
+            sent(&script).contains("near their size limit"),
             "{}",
-            script.provider.sent()
+            sent(&script)
         );
         assert!(!memories.tidy_due(shared()).await.unwrap());
         kit.clock.advance_millis(2 * 3_600_000);
@@ -331,7 +302,7 @@ fn a_question_opens_the_next_thread_and_reads_the_same_after_a_resume() {
         let tabs = seed(&kit, "Ada likes tabs", false).await;
         let spaces = seed(&kit, "Ada likes spaces in Go", false).await;
         let memories = kit.memories(rules(), 1);
-        let script = Scripted::new(r#"{"conflict": [{"memories": [1, 2], "clear": false}]}"#);
+        let script = scripted(r#"{"conflict": [{"memories": [1, 2], "clear": false}]}"#);
         memories.tidy(shared(), &script).await.unwrap();
 
         let memory = kit.memory(rules(), 2).await;
@@ -378,7 +349,7 @@ fn a_tidier_in_the_background_tidies_after_a_save_when_due() {
         let kit = Kit::new();
         seed(&kit, TABS, false).await;
         let memory = kit.memory(rules(), 2).await;
-        memory.tidy_with(Scripted::new(
+        memory.tidy_with(scripted(
                 r#"{"merge": [{"memories": [1, 2], "text": "Use tabs, not spaces, for indentation in this project's Python code"}]}"#,
             ));
         let dir = folder("tidy-background");

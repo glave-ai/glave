@@ -1,10 +1,11 @@
 //! The test doubles every crate's tests share (AGENTS.md, "Testing"): the runtime they run
 //! on, a clock they move, randomness that counts, a cancellation already fired, a fake HTTP
-//! server, fake secrets, and programs they start, stopped when they end. Behind the
-//! `conformance` feature, so no production build carries them.
+//! server, fake secrets, a scripted model, and programs they start, stopped when they end.
+//! Behind the `conformance` feature, so no production build carries them.
 
 mod git;
 mod http;
+mod model;
 mod process;
 mod secret;
 
@@ -18,6 +19,7 @@ use crate::tools::{BoxFuture, Cancellation};
 
 pub use git::{FAKE_COMMIT, FakeGitHost, FixedGitCredentials};
 pub use http::{FakeHttp, Received};
+pub use model::{Answer, ScriptedModel, Seen};
 pub use process::Running;
 pub use secret::{FAKE_SECRET, fake_secret};
 

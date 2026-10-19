@@ -73,9 +73,8 @@ async fn turn_on(
 
 /// The model each request the provider received named, and the model its system prompt
 /// says is answering.
-fn sent(seen: &std::sync::Mutex<Vec<String>>) -> Vec<(String, bool)> {
-    seen.lock()
-        .unwrap()
+fn sent(seen: &Seen) -> Vec<(String, bool)> {
+    json(seen)
         .iter()
         .map(|json| {
             let request: Value = serde_json::from_str(json).unwrap();

@@ -367,7 +367,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
             )
             .await
             .unwrap();
-        let sent = seen.lock().unwrap().clone();
+        let sent = json(&seen);
         let folder = canonical(&other);
         assert!(
             sent[0].contains(&format!("Rules of {folder} at {folder}")),
