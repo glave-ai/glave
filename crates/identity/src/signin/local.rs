@@ -3,9 +3,7 @@
 //! person can read. It is accepted only from a loopback address, and it is the local person.
 
 use std::fmt;
-use std::io::Write as _;
 use std::net::IpAddr;
-use std::path::Path;
 
 use sha2::{Digest as _, Sha256};
 
@@ -68,26 +66,6 @@ pub(super) fn same(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |differ, (x, y)| differ | (x ^ y)) == 0
 }
 
-/// Writes `contents` to `path`, readable and writable only by the person, replacing what was
-/// there at once: written beside it, then renamed into place.
-pub fn keep(path: &Path, contents: &str) -> std::io::Result<()> {
-    let mut name = path.file_name().unwrap_or_default().to_owned();
-    name.push(".new");
-    let fresh = path.with_file_name(name);
-    let _ = std::fs::remove_file(&fresh);
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&fresh)?;
-    file.write_all(contents.as_bytes())?;
-    drop(file);
-    std::fs::rename(&fresh, path)
-}
-
 /// Whether `peer` is this computer: `127.0.0.0/8`, `::1`, or `127.0.0.0/8` mapped into IPv6.
 pub fn is_loopback(peer: IpAddr) -> bool {
     match peer {
@@ -109,24 +87,6 @@ mod tests {
         assert!(token.matches(token.reveal()));
         assert!(!token.matches("glave_local_"));
         assert!(!format!("{token:?}").contains("abab"));
-    }
-
-    #[test]
-    fn a_kept_file_is_private_and_replaced() {
-        let dir = std::env::temp_dir().join(format!("glave-keep-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("serve.token");
-        keep(&path, "first").unwrap();
-        keep(&path, "second").unwrap();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "second");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-            assert_eq!(mode & 0o777, 0o600);
-        }
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

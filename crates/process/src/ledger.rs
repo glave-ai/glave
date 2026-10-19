@@ -1,8 +1,8 @@
 //! The ledger: one small file per running process group glave started, in
 //! `GLAVE_HOME/run/processes`, named by the group's leader. Each says what the process is (its
 //! id and start), its group, its owner, and which glave started it (that glave's id and
-//! start). It is written whole to a file beside it and renamed into place, so a reader never
-//! sees half of one, and removed when the group is gone. Every glave on the computer shares
+//! start). It is written whole and put in place in one step (`glave_ports::file`), so a reader
+//! never sees half of one, and removed when the group is gone. Every glave on the computer shares
 //! the folder; each entry is only ever written by the glave that started it.
 
 use std::collections::HashSet;
@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Duration, SystemTime};
 
+use glave_ports::file::{self, WRITING};
 use serde::{Deserialize, Serialize};
 
 use crate::error::ProcessError;
@@ -21,8 +22,6 @@ use crate::start::{self, Start};
 pub(crate) const LIMIT: usize = 4096;
 /// The version of an entry's format.
 const VERSION: u32 = 1;
-/// The extension of an entry being written, before it is renamed into place.
-const WRITING: &str = "writing";
 /// How old a file being written must be before a reaper takes it for one a crash left.
 const ABANDONED: Duration = Duration::from_secs(60);
 
@@ -127,13 +126,7 @@ impl Ledger {
         };
         let text = serde_json::to_vec(&record).map_err(|error| self.failed(error.into()))?;
         let path = self.path(pid);
-        let writing = path.with_extension(WRITING);
-        std::fs::write(&writing, text)
-            .and_then(|()| std::fs::rename(&writing, &path))
-            .map_err(|error| {
-                let _ = std::fs::remove_file(&writing);
-                self.failed(error)
-            })?;
+        file::replace(&path, &text).map_err(|error| self.failed(error))?;
         Ok(Some(Entry { path }))
     }
 
@@ -154,8 +147,8 @@ impl Ledger {
             .collect())
     }
 
-    /// Every entry, read. One that cannot be read, from a format this glave does not know, is
-    /// left for the glave that wrote it.
+    /// Every entry, read. One that cannot be read, damaged or from a format this glave does
+    /// not know, is skipped and left for the glave that wrote it.
     pub(crate) fn records(&self) -> Result<Vec<(PathBuf, Record)>, ProcessError> {
         Ok(self
             .entries()?

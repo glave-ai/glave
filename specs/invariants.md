@@ -14,6 +14,7 @@ Every invariant below follows this rule (decided 2026-10-18).
 - **Work in flight runs under a lease recorded in the store:** a row with a holder and an expiry, on the database's clock, the same on SQLite and Postgres.
 - **LISTEN/NOTIFY only wakes.** Another process may be woken by it, but correctness never depends on it: the log is the truth.
 - **OS file locks only for machine resources,** such as `server.lock` for the socket and port.
+- **Files only for what cannot live in the store:** `root.key`, which unlocks it, and this machine's own state, never shared through an organization's database (`computer`, `run/processes/`, `serve.token`, `serve.url`, `open.html`, `worktrees-checked`, the locks). The write-once ones, `root.key` and `computer`, are created whole or not at all (`glave_ports::file`); the rest are written anew at each start or check, so a torn one is rewritten, and a process record that cannot be read is skipped. Proved by `crates/ports/src/file.rs` `a_create_stopped_at_any_step_leaves_no_file_or_a_whole_one`; `crates/keys/src/root.rs` `a_key_file_whose_creation_stopped_at_any_step_opens_cleanly`; `crates/cli/src/identity.rs` `a_computer_id_whose_creation_stopped_at_any_step_is_read_or_made_whole`; `crates/cli/tests/serve.rs` `torn_token_and_address_files_are_written_anew_at_start_and_work`; `crates/cli/src/worktrees/cleanup/tests.rs` `a_torn_check_stamp_is_checked_again_and_written_whole`; `crates/process/src/processes/tests.rs` `an_entry_that_cannot_be_read_is_skipped_and_the_others_are_still_stopped`.
 - **No deltas in the database.** Token-by-token deltas go to watchers live and are never stored; the events they add up to are.
 
 ## The invariants
@@ -63,7 +64,7 @@ Tests are named by file and function. A conformance suite is a function in `crat
     - *Holds* for every `tokio::spawn` read in the pass, and for every process, which starts only through glave-process.
     - *Proved by:* `cargo xtask spawns` for processes; nothing checks tasks.
 15. **Everything persisted or sent carries a version.**
-    - *Partly:* events, the session protocol, the computer protocol, the process ledger, `browsers.json` and `trust.toml` do; the `identity` and `computer` files and worktree records do not (#400).
+    - *Partly:* events, the session protocol, the computer protocol, the process ledger, `browsers.json` and `trust.toml` do; the `identity` file and worktree records do not, and move into the store (#411). The `computer` file is one id, created once, with no version.
     - *Proved by:* `crates/event/tests/fixtures.rs` `every_known_version_has_a_fixture_that_decodes`, `latest_versions_encode_to_exactly_the_saved_bytes`, `every_fixture_is_a_known_version`; `crates/store-sqlite/src/tests.rs` `a_newer_schema_is_refused`. No test for the files.
 16. **Time and randomness are injected.**
     - *Partly:* library code in glave-computer and glave-process still reads the real clock (a lint in #366). Randomness that fails is an error, never a weaker id.

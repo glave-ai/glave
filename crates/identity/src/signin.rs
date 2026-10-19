@@ -24,7 +24,7 @@ use thiserror::Error;
 use self::browsers::SESSION_PREFIX;
 pub use self::browsers::{BrowserError, Browsers, Session};
 use self::keys::Keys;
-pub use self::local::{LOCAL_BYTES, LOCAL_PREFIX, LocalToken, is_loopback, keep};
+pub use self::local::{LOCAL_BYTES, LOCAL_PREFIX, LocalToken, is_loopback};
 
 /// How far the clocks of the server and the identity provider may disagree, in seconds.
 const SKEW: f64 = 60.0;
