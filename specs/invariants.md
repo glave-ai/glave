@@ -31,8 +31,8 @@ Tests are named by file and function. A conformance suite is a function in `crat
    - *Not yet:* no lease exists, so only the store's check in 2 stands between two servers (#410).
    - *Proved by:* no test yet.
 4. **No side effect runs twice without the person**: an interrupted call is closed, never redone, and a retry with the same key never starts a second turn.
-   - *Partly.* It holds in one process. Across servers, loading a thread can close a turn another is running, and keys kept in memory let a retry start a second turn (#410).
-   - *Proved by:* `crates/harness/tests/turn.rs` `resuming_after_a_crash_closes_what_was_left_open`; `crates/session/tests/server.rs` `a_retry_with_the_same_key_follows_the_running_turn_instead_of_starting_one` (one process).
+   - *Partly.* It holds in one process, where each person's keys are kept in a pool of their own, so no one's flood of keys pushes out another's. Across servers, loading a thread can close a turn another is running, and keys kept in memory let a retry start a second turn (#410).
+   - *Proved by:* `crates/harness/tests/turn.rs` `resuming_after_a_crash_closes_what_was_left_open`; `crates/session/tests/server.rs` `a_retry_with_the_same_key_follows_the_running_turn_instead_of_starting_one` (one process); `crates/session/src/keyed.rs` `one_persons_flood_never_evicts_anothers_key`.
 5. **Reading never writes.**
    - *Not yet:* `thread/get` loads the thread, and loading repairs open turns by appending to them (#410, with PR 5 of `one-server.md`).
    - *Proved by:* no test yet; one needs two servers on one store.
