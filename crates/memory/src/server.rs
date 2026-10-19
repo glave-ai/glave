@@ -113,8 +113,8 @@ fn tools() -> Vec<Tool> {
             "text": {"type": "string", "description": "One short statement, at most 500 characters."},
             "scope": {
                 "type": "string",
-                "enum": ["personal", "space"],
-                "description": "personal: about the person, read in all their threads. space: about this space's work, read by everyone working in it."
+                "enum": ["personal", "project"],
+                "description": "personal: about the person, read in all their threads. project: about this project's work, read by everyone working in it."
             },
             "replaces": {"type": "string", "description": "The id of the memory this corrects or replaces. Leave it out for a new memory."},
             "force": {"type": "boolean", "description": "Save even though a similar memory exists."}
@@ -269,7 +269,7 @@ impl<L: EventLog + 'static> MemoryServer<L> {
             return failed("remember needs `text`.");
         };
         let Some(scope) = text_of(request, "scope").and_then(|s| MemoryScope::named(&s)) else {
-            return failed("remember needs `scope`: \"personal\" or \"space\".");
+            return failed("remember needs `scope`: \"personal\" or \"project\".");
         };
         let replaces = match memory_of(request, "replaces") {
             Ok(replaces) => replaces,

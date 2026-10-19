@@ -290,7 +290,7 @@ pub enum HarnessError {
     Event(String),
     #[error(transparent)]
     Entropy(#[from] EntropyError),
-    #[error("thread {0} has no events in this space")]
+    #[error("thread {0} has no events in this project")]
     NotFound(ThreadId),
     /// The thread was archived, from outside this harness, while it held the thread.
     #[error("thread {0} is archived; unarchive it first")]

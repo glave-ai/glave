@@ -157,8 +157,8 @@ export type IdempotencyKey = string;
 /** Identifies one memory: a short statement kept for later threads (`specs/memory.md`). */
 export type MemoryId = string;
 
-/** Where a memory belongs: to the person, or to the space it was saved in. */
-export type MemoryScope = "personal" | "space";
+/** Where a memory belongs: to the person, or to the project it was saved in. */
+export type MemoryScope = "personal" | "project";
 
 /** Where in a thread a memory was saved. */
 export type MemorySource = {

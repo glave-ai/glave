@@ -254,7 +254,7 @@ async fn seed(
             source: None,
             untrusted_read: seed.untrusted,
         };
-        let which = MemoryScope::named(&seed.scope).unwrap_or(MemoryScope::Space);
+        let which = MemoryScope::named(&seed.scope).unwrap_or(MemoryScope::Project);
         seeding
             .remember(&writer, &seed.text, which, None, true)
             .await

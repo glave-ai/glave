@@ -241,7 +241,7 @@ mod attempts {
             Reply::tool_call(
                 "call_m",
                 "mcp__memory__remember",
-                &json!({"text": "This project uses tabs", "scope": "space"}),
+                &json!({"text": "This project uses tabs", "scope": "project"}),
             ),
         );
         replies.push(Reply::text("Tabs."));

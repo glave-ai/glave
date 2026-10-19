@@ -68,7 +68,7 @@ pub fn memory_event(memory: u64, seq: u64) -> Result<RawEvent, String> {
     };
     let saved = MemorySaved {
         memory: MemoryId::try_from(uuid_v7(7_000 + memory)).map_err(|e| e.to_string())?,
-        scope: MemoryScope::Space,
+        scope: MemoryScope::Project,
         text: format!("remembered thing {memory}"),
         source: None,
         untrusted_read: false,

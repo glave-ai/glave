@@ -561,7 +561,7 @@ mod tests {
         assert!(judge("kestrel-42", "") > 0, "not found by recall");
         assert!(
             judge("kestrel-42 or heron-9", recalled) > 0,
-            "another space's fact"
+            "another project's fact"
         );
         assert!(judge("I don't know", recalled) > 0);
     }

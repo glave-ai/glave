@@ -85,7 +85,7 @@ mod recall {
             .remember(
                 &writer,
                 "The staging database is on host orca",
-                MemoryScope::Space,
+                MemoryScope::Project,
                 None,
                 true,
             )
@@ -179,7 +179,7 @@ mod recall {
                     "3#1 person",
                     "memory"
                 ],
-                "never the isolated space's, nor another organization's"
+                "never the isolated project's, nor another organization's"
             );
             assert!(hits.iter().all(|hit| !hit.text.contains("BLUEHERON")));
 
@@ -199,7 +199,7 @@ mod recall {
             assert_eq!(
                 sources(&isolated_hits),
                 ["4#1 person"],
-                "an isolated space reads only itself"
+                "an isolated project reads only itself"
             );
             let off_hits = memories
                 .recall(&on(off(), thread(9)), "orca", 10)

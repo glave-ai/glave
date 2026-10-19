@@ -50,7 +50,7 @@ mod loading {
         block_on!(async {
             let kit = Kit::new();
             seed(&kit, "Ada prefers short answers", MemoryScope::Personal).await;
-            seed(&kit, "Tests need make db first", MemoryScope::Space).await;
+            seed(&kit, "Tests need make db first", MemoryScope::Project).await;
             let memory = kit.memory(rules(), 1).await;
             let dir = folder("start");
             let answers = vec![said("hi"), said("ok")];
@@ -104,10 +104,10 @@ mod loading {
     fn returning_after_changes_gets_a_note_and_resuming_rebuilds_the_same_requests() {
         block_on!(async {
             let kit = Kit::new();
-            let kept = seed(&kit, "Tests need make db first", MemoryScope::Space).await;
+            let kept = seed(&kit, "Tests need make db first", MemoryScope::Project).await;
             let memory = kit.memory(rules(), 1).await;
             let dir = folder("note");
-            let save = json!({"text": "Use tabs in Python", "scope": "space"});
+            let save = json!({"text": "Use tabs in Python", "scope": "project"});
             let answers = vec![
                 answer(None, vec![(REMEMBER, save)]),
                 said("saved"),
@@ -125,7 +125,7 @@ mod loading {
                 .unwrap();
             assert!(shown.iter().any(|s| s.contains("Remembered")), "{shown:?}");
             // Meanwhile, from another thread or client:
-            let elsewhere = seed(&kit, "We deploy with Render", MemoryScope::Space).await;
+            let elsewhere = seed(&kit, "We deploy with Render", MemoryScope::Project).await;
             let memories = kit.memories(rules(), 91);
             memories.forget(&writer(), kept).await.unwrap();
             harness
@@ -198,7 +198,7 @@ mod loading {
     fn compaction_rebuilds_the_start_with_everything_known_and_folds_the_notes() {
         block_on!(async {
             let kit = Kit::new();
-            seed(&kit, "Tests need make db first", MemoryScope::Space).await;
+            seed(&kit, "Tests need make db first", MemoryScope::Project).await;
             let memory = kit.memory(rules(), 1).await;
             let dir = folder("compact");
             let answers = vec![
@@ -215,7 +215,7 @@ mod loading {
                 .run_turn(&mut thread, "first", &Cancel::new(), &mut |_| {})
                 .await
                 .unwrap();
-            seed(&kit, "We deploy with Render", MemoryScope::Space).await;
+            seed(&kit, "We deploy with Render", MemoryScope::Project).await;
             harness
                 .run_turn(&mut thread, "second", &Cancel::new(), &mut |_| {})
                 .await
@@ -329,9 +329,9 @@ mod loading {
             let kit = Kit::new();
             let memory = kit.memory(rules(), 1).await;
             let dir = folder("filled");
-            let empty = json!({"text": "Use tabs in Python", "scope": "space", "replaces": "", "force": false});
-            let none = json!({"text": "We deploy with Render", "scope": "space", "replaces": "none", "force": false});
-            let junk = json!({"text": "Tests need make db", "scope": "space", "replaces": "new", "force": false});
+            let empty = json!({"text": "Use tabs in Python", "scope": "project", "replaces": "", "force": false});
+            let none = json!({"text": "We deploy with Render", "scope": "project", "replaces": "none", "force": false});
+            let junk = json!({"text": "Tests need make db", "scope": "project", "replaces": "new", "force": false});
             let answers = vec![
                 answer(
                     None,

@@ -55,7 +55,7 @@ impl Action {
                 &glave_event::Arguments::Json(
                     [
                         ("text".to_owned(), serde_json::Value::from(text.as_str())),
-                        ("scope".to_owned(), serde_json::Value::from("space")),
+                        ("scope".to_owned(), serde_json::Value::from("project")),
                     ]
                     .into_iter()
                     .collect(),
