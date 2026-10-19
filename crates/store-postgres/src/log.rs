@@ -96,25 +96,28 @@ impl EventLog for PostgresLog {
                     .transpose()?;
                 check_append(last, &events)?;
                 let insert = transaction.prepare_cached(INSERT).await.map_err(database)?;
-                transaction
-                    .execute(
-                        &insert,
-                        &[
-                            &org,
-                            &project,
-                            &thread,
-                            &columns.seq,
-                            &columns.id,
-                            &columns.at,
-                            &columns.kind,
-                            &columns.v,
-                            &columns.glave,
-                            &columns.data,
-                            &columns.key_id,
-                        ],
-                    )
-                    .await
-                    .map_err(database)?;
+                let params: [&(dyn tokio_postgres::types::ToSql + Sync); 11] = [
+                    &org,
+                    &project,
+                    &thread,
+                    &columns.seq,
+                    &columns.id,
+                    &columns.at,
+                    &columns.kind,
+                    &columns.v,
+                    &columns.glave,
+                    &columns.data,
+                    &columns.key_id,
+                ];
+                if let Err(error) = transaction.execute(&insert, &params).await {
+                    let raced = error.code() == Some(&SqlState::UNIQUE_VIOLATION);
+                    transaction.rollback().await.map_err(database)?;
+                    return Err(if raced {
+                        taken(&client, (org, project), first).await
+                    } else {
+                        database(error)
+                    });
+                }
                 if columns.words.iter().any(Option::is_some) {
                     let index = transaction.prepare_cached(INDEX).await.map_err(database)?;
                     transaction
@@ -398,6 +401,32 @@ fn stored_seq(seq: u64) -> Result<Seq, LogError> {
 
 fn storage(error: impl std::fmt::Display) -> LogError {
     LogError::Storage(error.to_string())
+}
+
+/// What a writer that lost the race for `first`'s place is told: a conflict, as when it reads
+/// the place taken before writing, naming where the thread now ends.
+async fn taken(
+    client: &tokio_postgres::Client,
+    (org, project): (Uuid, Uuid),
+    first: &RawEvent,
+) -> LogError {
+    let last = client
+        .query_one(
+            "SELECT MAX(seq) FROM events WHERE org = $1 AND project = $2 AND thread = $3",
+            &[&org, &project, &first.thread.as_uuid()],
+        )
+        .await
+        .and_then(|row| row.try_get::<_, Option<i64>>(0));
+    match last {
+        Ok(last) => LogError::Conflict {
+            thread: first.thread,
+            expected: last
+                .and_then(|last| u64::try_from(last).ok())
+                .map_or(1, |last| last.saturating_add(1)),
+            found: first.seq.get(),
+        },
+        Err(error) => database(error),
+    }
 }
 
 /// A uniqueness violation means another writer took the position first.

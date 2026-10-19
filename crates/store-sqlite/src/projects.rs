@@ -79,9 +79,10 @@ struct Row {
     owner: String,
     created_at: String,
     updated_at: String,
+    revision: i64,
 }
 
-const COLUMNS: &str = "id, kind, name, owner, created_at, updated_at";
+const COLUMNS: &str = "id, kind, name, owner, created_at, updated_at, revision";
 
 fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
     Ok(Row {
@@ -91,6 +92,7 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
         owner: row.get(3)?,
         created_at: row.get(4)?,
         updated_at: row.get(5)?,
+        revision: row.get(6)?,
     })
 }
 
@@ -115,6 +117,7 @@ fn assemble(connection: &Connection, org: &str, row: Row) -> Result<Project, Fai
         members,
         created_at: At::try_from(row.created_at).map_err(corrupt)?,
         updated_at: At::try_from(row.updated_at).map_err(corrupt)?,
+        revision: u64::try_from(row.revision).map_err(corrupt)?,
     })
 }
 
@@ -184,6 +187,7 @@ fn insert(transaction: &Transaction<'_>, org: &str, project: &Project) -> Result
     Project::check_name(&project.name)?;
     let owner = principal_text(&project.owner)?;
     let mut project = project.clone();
+    project.revision = 0;
     if project.kind == ProjectKind::Project {
         let taken: Vec<String> = projects_of(transaction, org, &owner)?
             .into_iter()
@@ -193,8 +197,8 @@ fn insert(transaction: &Transaction<'_>, org: &str, project: &Project) -> Result
     }
     let project = &project;
     let inserted = transaction.execute(
-        "INSERT INTO project_records (org, id, kind, name, owner, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO project_records (org, id, kind, name, owner, created_at, updated_at, revision)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
         params![
             org,
             project.id.to_string(),
@@ -348,28 +352,32 @@ impl Projects for SqliteProjects {
         &'a self,
         org: OrgId,
         project: &'a Project,
-    ) -> BoxFuture<'a, Result<(), ProjectError>> {
+    ) -> BoxFuture<'a, Result<Project, ProjectError>> {
         let project = project.clone();
         Box::pin(self.with(move |connection| {
             Project::check_name(&project.name)?;
             let org = org.to_string();
             let transaction = writing(connection)?;
-            let stored: Option<(String, String)> = transaction
+            let stored: Option<(String, String, i64)> = transaction
                 .query_row(
-                    "SELECT kind, owner FROM project_records WHERE org = ?1 AND id = ?2",
+                    "SELECT kind, owner, revision FROM project_records WHERE org = ?1 AND id = ?2",
                     params![org, project.id.to_string()],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
                 .optional()?;
-            let Some((kind, owner)) = stored else {
+            let Some((kind, owner, revision)) = stored else {
                 return Err(ProjectError::NotFound(project.id).into());
             };
+            if u64::try_from(revision).ok() != Some(project.revision) {
+                return Err(ProjectError::Changed(project.id).into());
+            }
             if kind == ProjectKind::Project.as_str() {
                 let taken = projects_of(&transaction, &org, &owner)?;
                 Project::check_free(project.id, &project.name, &taken)?;
             }
             let changed = transaction.execute(
-                "UPDATE project_records SET name = ?3, updated_at = ?4 WHERE org = ?1 AND id = ?2",
+                "UPDATE project_records SET name = ?3, updated_at = ?4, revision = revision + 1
+                 WHERE org = ?1 AND id = ?2",
                 params![
                     org,
                     project.id.to_string(),
@@ -381,8 +389,10 @@ impl Projects for SqliteProjects {
                 return Err(ProjectError::NotFound(project.id).into());
             }
             write_members(&transaction, &org, &project)?;
+            let kept = get_now(&transaction, &org, &project.id.to_string())?
+                .ok_or(ProjectError::NotFound(project.id))?;
             transaction.commit()?;
-            Ok(())
+            Ok(kept)
         }))
     }
 

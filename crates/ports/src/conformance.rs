@@ -6,6 +6,7 @@ mod computers;
 mod memory;
 mod model;
 mod projects;
+mod racing;
 mod search;
 mod threads;
 
@@ -81,7 +82,8 @@ fn seqs(events: &[RawEvent]) -> Vec<u64> {
 }
 
 /// Every [`EventLog`] must number threads gap-free, reject conflicting or gapped appends
-/// all-or-nothing, read in pages, and keep scopes apart.
+/// all-or-nothing, let exactly one of writers racing for a place take it, read in pages, and
+/// keep scopes apart.
 pub async fn event_log<L: EventLog>(log: &L) -> Verdict {
     let here = scope(1);
     let elsewhere = scope(2);
@@ -161,7 +163,7 @@ pub async fn event_log<L: EventLog>(log: &L) -> Verdict {
         "writing another scope must not touch this one",
     )?;
 
-    Ok(())
+    racing::racing_appends(log).await
 }
 
 /// `latest_of` finds a thread's last event of the given types, and nothing when there is none.

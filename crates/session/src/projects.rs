@@ -45,6 +45,9 @@ impl Places {
     }
 }
 
+/// How many times a change to a project is made again when another came first.
+const UPDATE_TRIES: usize = 3;
+
 pub(crate) fn no_project(project: ProjectId) -> ApiError {
     ApiError::new(code::NO_PROJECT, format!("no project {project} here"))
 }
@@ -79,6 +82,7 @@ where
             members: Vec::new(),
             created_at: now,
             updated_at: now,
+            revision: 0,
         };
         match self.inner.projects.create(home.org(), &project).await {
             Ok(kept) => Ok(kept),
@@ -145,6 +149,7 @@ where
             members: Vec::new(),
             created_at: At::from(now),
             updated_at: At::from(now),
+            revision: 0,
         };
         let kept = self
             .inner
@@ -286,6 +291,7 @@ where
             members,
             created_at: At::from(now),
             updated_at: At::from(now),
+            revision: 0,
         };
         if let Some(folder) = folder {
             return self.create_with_folder(caller, project, folder).await;
@@ -319,22 +325,32 @@ where
         project: ProjectId,
         name: String,
     ) -> Result<Reply, ApiError> {
-        let mut found = self.member_of(caller, project).await?;
-        if found.owner != Principal::person(self.person_of(caller)?) {
-            return Err(ApiError::new(
-                code::NOT_ALLOWED,
-                format!("only its owner renames project {project}"),
-            ));
-        }
-        found.name = name;
-        found.updated_at = At::from(self.inner.harness.clock().now());
-        self.inner
-            .projects
-            .update(self.inner.home.org(), &found)
-            .await?;
+        let mut tries = 0;
+        let renamed = loop {
+            let mut found = self.member_of(caller, project).await?;
+            if found.owner != Principal::person(self.person_of(caller)?) {
+                return Err(ApiError::new(
+                    code::NOT_ALLOWED,
+                    format!("only its owner renames project {project}"),
+                ));
+            }
+            found.name.clone_from(&name);
+            found.updated_at = At::from(self.inner.harness.clock().now());
+            tries += 1;
+            // Changed by someone else since it was read: the name goes on what they left.
+            match self
+                .inner
+                .projects
+                .update(self.inner.home.org(), &found)
+                .await
+            {
+                Err(ProjectError::Changed(_)) if tries < UPDATE_TRIES => {}
+                updated => break updated?,
+            }
+        };
         let folder = self.folder_of(project).await?;
         Ok(Reply::Project {
-            project: found,
+            project: renamed,
             folder,
         })
     }

@@ -56,6 +56,11 @@ pub struct Project {
     pub members: Vec<Principal>,
     pub created_at: At,
     pub updated_at: At,
+    /// How many times the record was updated since it was kept. An update names the revision
+    /// it read and is refused when another came first, so no writer loses another's change.
+    /// The store's own count, never sent.
+    #[serde(skip)]
+    pub revision: u64,
 }
 
 impl Project {
@@ -175,6 +180,9 @@ pub enum ProjectError {
     Conflict(String),
     #[error("{0}")]
     Invalid(String),
+    /// Another update came first since the record was read: read it again.
+    #[error("project {0} was changed meanwhile")]
+    Changed(ProjectId),
     #[error("project storage failed: {0}")]
     Storage(String),
 }
@@ -186,8 +194,8 @@ pub enum ProjectError {
 /// is taken gets the next free one ([`Project::free_name`]), and renaming one to a taken name is
 /// refused. Different owners' projects may share a name.
 pub trait Projects: Send + Sync {
-    /// Keeps a new project, and answers it as kept: a project under the next free name when its
-    /// owner has one called the same. Refused when its id is taken, when its name is not
+    /// Keeps a new project, and answers it as kept, at revision 0: a project under the next free
+    /// name when its owner has one called the same. Refused when its id is taken, when its name is not
     /// readable, or when it is a personal project and its owner has one.
     fn create<'a>(
         &'a self,
@@ -211,14 +219,16 @@ pub trait Projects: Send + Sync {
         limit: usize,
     ) -> BoxFuture<'a, Result<Vec<Project>, ProjectError>>;
 
-    /// Replaces the project's name, members and `updated_at` with `project`'s. Its kind, owner and
-    /// creation never change. A project's name another of its owner's projects has is refused
-    /// with [`ProjectError::Conflict`].
+    /// Replaces the project's name, members and `updated_at` with `project`'s, if its revision
+    /// is still `project.revision`, and answers it as kept, its revision one more. Its kind,
+    /// owner and creation never change. Refused with [`ProjectError::Changed`] when another
+    /// update came first, and a name another of its owner's projects has with
+    /// [`ProjectError::Conflict`].
     fn update<'a>(
         &'a self,
         org: OrgId,
         project: &'a Project,
-    ) -> BoxFuture<'a, Result<(), ProjectError>>;
+    ) -> BoxFuture<'a, Result<Project, ProjectError>>;
 
     /// The personal project of `new.owner`: the one they have, or `new`, kept now. Two callers at
     /// once get the same one.

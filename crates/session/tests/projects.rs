@@ -6,15 +6,19 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{
-    At, Auth, AuthMethod, Body, Checkout, EventId, FolderSource, Header, Opened, ProjectFolderSet,
-    Seq, ThreadId, decode, encode,
+    At, Auth, AuthMethod, Body, Checkout, EventId, FolderSource, Header, Opened, Principal,
+    PrincipalId, ProjectFolderSet, Seq, ThreadId, decode, encode,
 };
 use glave_harness::ProjectFolders;
 use glave_ports::computer::{CredentialHost, Forge, GitCredential};
 use glave_ports::testing::{FakeGitHost, FixedGitCredentials, fake_secret};
-use glave_ports::{BoxFuture, Caller, EventLog, ProjectId};
+use glave_ports::{
+    BoxFuture, Caller, EventLog, FolderKey, InMemoryProjects, OrgId, Project, ProjectError,
+    ProjectId, Projects,
+};
 use glave_session::Answering;
 use glave_session::protocol::{Meta, NewFolder, ProjectFolder, Reply, Request, code};
 use glave_session::signin::person;
@@ -549,5 +553,100 @@ fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
             .unwrap_err();
         assert_eq!(refused.code, code::WORKSPACE);
         assert!(refused.message.contains("another computer"), "{refused}");
+    });
+}
+
+/// Projects where another change lands between the first update's read and its write, as
+/// another server's would: it adds a member.
+struct Meddled {
+    projects: InMemoryProjects,
+    landed: AtomicBool,
+    member: Principal,
+}
+
+impl Meddled {
+    async fn update_meddled(&self, org: OrgId, project: &Project) -> Result<Project, ProjectError> {
+        if !self.landed.swap(true, Ordering::SeqCst) {
+            let mut theirs = self.projects.get(org, project.id).await?.unwrap();
+            theirs.members.push(self.member.clone());
+            self.projects.update(org, &theirs).await?;
+        }
+        self.projects.update(org, project).await
+    }
+}
+
+impl Projects for Meddled {
+    fn create<'a>(
+        &'a self,
+        org: OrgId,
+        project: &'a Project,
+    ) -> BoxFuture<'a, Result<Project, ProjectError>> {
+        self.projects.create(org, project)
+    }
+
+    fn get(
+        &self,
+        org: OrgId,
+        project: ProjectId,
+    ) -> BoxFuture<'_, Result<Option<Project>, ProjectError>> {
+        self.projects.get(org, project)
+    }
+
+    fn list<'a>(
+        &'a self,
+        org: OrgId,
+        member: &'a Principal,
+        limit: usize,
+    ) -> BoxFuture<'a, Result<Vec<Project>, ProjectError>> {
+        self.projects.list(org, member, limit)
+    }
+
+    fn update<'a>(
+        &'a self,
+        org: OrgId,
+        project: &'a Project,
+    ) -> BoxFuture<'a, Result<Project, ProjectError>> {
+        Box::pin(self.update_meddled(org, project))
+    }
+
+    fn personal<'a>(
+        &'a self,
+        org: OrgId,
+        new: &'a Project,
+    ) -> BoxFuture<'a, Result<Project, ProjectError>> {
+        self.projects.personal(org, new)
+    }
+
+    fn folder<'a>(
+        &'a self,
+        org: OrgId,
+        keys: &'a [FolderKey],
+        new: &'a Project,
+    ) -> BoxFuture<'a, Result<Project, ProjectError>> {
+        self.projects.folder(org, keys, new)
+    }
+}
+
+#[test]
+fn a_rename_while_another_change_lands_keeps_both() {
+    let dir = folder("projects-meddled");
+    block_on!(async {
+        let member = PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]).unwrap();
+        let member = Principal::person(member);
+        let mut setup = Setup::new(Vec::new());
+        setup.projects = Some(Arc::new(Meddled {
+            projects: InMemoryProjects::new(),
+            landed: AtomicBool::new(false),
+            member: member.clone(),
+        }));
+        let server = setup.build(&dir).await.0;
+        let (project, _) = made(server.request(create("Garden", None)).await.unwrap());
+        let rename = Request::ProjectRename {
+            project: project.id,
+            name: "Orchard".into(),
+        };
+        let (renamed, _) = made(server.request(rename).await.unwrap());
+        assert_eq!(renamed.name, "Orchard");
+        assert_eq!(renamed.members, [member], "the other change stands");
     });
 }

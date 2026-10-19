@@ -55,13 +55,16 @@ impl InMemoryProjects {
             .collect())
     }
 
-    fn update_now(&self, org: OrgId, project: &Project) -> Result<(), ProjectError> {
+    fn update_now(&self, org: OrgId, project: &Project) -> Result<Project, ProjectError> {
         Project::check_name(&project.name)?;
         let mut held = self.held()?;
         let stored = held
             .projects
             .get(&(org, project.id))
             .ok_or(ProjectError::NotFound(project.id))?;
+        if stored.revision != project.revision {
+            return Err(ProjectError::Changed(project.id));
+        }
         if stored.kind == ProjectKind::Project {
             let taken = projects_of(&held, org, &stored.owner)
                 .map(|other| (other.id, other.name.clone()))
@@ -75,7 +78,8 @@ impl InMemoryProjects {
         kept.name.clone_from(&project.name);
         kept.members.clone_from(&project.members);
         kept.updated_at = project.updated_at;
-        Ok(())
+        kept.revision = kept.revision.saturating_add(1);
+        Ok(kept.clone())
     }
 
     fn personal_now(&self, org: OrgId, new: &Project) -> Result<Project, ProjectError> {
@@ -154,6 +158,7 @@ fn insert(held: &mut Held, org: OrgId, project: &Project) -> Result<Project, Pro
         ));
     }
     let mut kept = project.clone();
+    kept.revision = 0;
     if kept.kind == ProjectKind::Project {
         let taken: Vec<String> = projects_of(held, org, &kept.owner)
             .map(|other| other.name.clone())
@@ -197,7 +202,7 @@ impl Projects for InMemoryProjects {
         &'a self,
         org: OrgId,
         project: &'a Project,
-    ) -> BoxFuture<'a, Result<(), ProjectError>> {
+    ) -> BoxFuture<'a, Result<Project, ProjectError>> {
         Box::pin(std::future::ready(self.update_now(org, project)))
     }
 

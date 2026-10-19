@@ -1,10 +1,13 @@
 //! What every [`Projects`] must do: keep whole records apart by organization, refuse a taken id
 //! or a second personal project, keep each owner's project names apart, list a person's projects
-//! in id order, change only what may change, and lead every folder key to one project.
+//! in id order, change only what may change and never lose an update to another, and lead every
+//! folder key to one project; and all of it with writers racing each other.
 
 use glave_event::{At, Principal, PrincipalId};
 
 use super::{Verdict, ensure, uuid_v7};
+
+mod racing;
 use crate::projects::{FolderKey, Project, ProjectError, ProjectKind, Projects};
 use crate::scope::{OrgId, ProjectId};
 
@@ -18,7 +21,7 @@ fn at(text: &str) -> Result<At, String> {
     At::try_from(text.to_owned()).map_err(|e| e.to_string())
 }
 
-fn record(n: u64, kind: ProjectKind, owner: &Principal) -> Result<Project, String> {
+pub(super) fn record(n: u64, kind: ProjectKind, owner: &Principal) -> Result<Project, String> {
     let created = at("2026-10-11T09:00:00.000Z")?;
     Ok(Project {
         id: ProjectId::from_uuid(uuid_v7(5_000 + n)),
@@ -28,6 +31,7 @@ fn record(n: u64, kind: ProjectKind, owner: &Principal) -> Result<Project, Strin
         members: Vec::new(),
         created_at: created,
         updated_at: created,
+        revision: 0,
     })
 }
 
@@ -35,7 +39,7 @@ fn record(n: u64, kind: ProjectKind, owner: &Principal) -> Result<Project, Strin
     clippy::needless_pass_by_value,
     reason = "taken by value to pass straight to map_err"
 )]
-fn failed(error: ProjectError) -> String {
+pub(super) fn failed(error: ProjectError) -> String {
     error.to_string()
 }
 
@@ -87,7 +91,8 @@ pub async fn projects(store: &dyn Projects) -> Verdict {
     updating(store, org, &project, &linus).await?;
     personal(store, org, other_org, &ada).await?;
     folders(store, org, other_org, &ada).await?;
-    names(store, org, [&ada, &grace]).await
+    names(store, org, [&ada, &grace]).await?;
+    racing::racing(store, OrgId::from_uuid(uuid_v7(1_103)), &linus).await
 }
 
 /// One owner's projects never share a name, ignoring case: a new one takes the next free
@@ -145,9 +150,9 @@ async fn names(store: &dyn Projects, org: OrgId, [ada, grace]: [&Principal; 2]) 
     )?;
     let mut own = again.clone();
     own.name = "web 2".into();
-    store.update(org, &own).await.map_err(failed)?;
+    let kept = store.update(org, &own).await.map_err(failed)?;
     ensure(
-        store.get(org, again.id).await.map_err(failed)? == Some(own),
+        kept.name == own.name && store.get(org, again.id).await.map_err(failed)? == Some(kept),
         "a project may take its own name in another case",
     )
 }
@@ -202,10 +207,18 @@ async fn updating(
     tampered.kind = ProjectKind::Personal;
     tampered.owner = linus.clone();
     tampered.created_at = changed.updated_at;
-    store.update(org, &tampered).await.map_err(failed)?;
+    let kept = store.update(org, &tampered).await.map_err(failed)?;
+    changed.revision = 1;
     ensure(
-        store.get(org, project.id).await.map_err(failed)? == Some(changed.clone()),
-        "an update must change the name, members and updated_at, and nothing else",
+        kept == changed && store.get(org, project.id).await.map_err(failed)? == Some(kept),
+        "an update must change the name, members and updated_at, count a revision, and nothing else",
+    )?;
+    ensure(
+        matches!(
+            store.update(org, &tampered).await,
+            Err(ProjectError::Changed(_))
+        ),
+        "an update naming a revision another update came after must be refused",
     )?;
     ensure(
         store
