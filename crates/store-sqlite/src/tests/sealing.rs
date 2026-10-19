@@ -1,10 +1,13 @@
-//! Sealing at rest: what lands in the file, tampering, erasure.
+//! Sealing at rest: the at-rest suite on the file's own rows, the key file, erasure.
 
-use glave_event::RawEvent;
+use std::sync::Mutex;
+
+use glave_event::{RawEvent, Seq, ThreadId};
 use glave_keys::KeyId;
 use glave_keys::conformance::event;
+use glave_ports::conformance::{AtRest, KeptBlob, KeptPayload};
 use glave_ports::testing::TempDir;
-use glave_ports::{BlobStore, LogError, OrgId, ProjectId, Scope};
+use glave_ports::{BlobStore, BoxFuture, LogError, OrgId, ProjectId, Scope};
 use rusqlite::{Connection, params};
 
 use super::*;
@@ -16,13 +19,13 @@ fn scope(n: u128) -> Scope {
     )
 }
 
-/// A store on a fresh file, a second, raw connection to the same file, and its folder,
+/// A store on a fresh file, its rows read straight from the same file, and its folder,
 /// removed when that drops.
-fn on_disk(name: &str) -> (PathBuf, Store, Connection, TempDir) {
+fn on_disk(name: &str) -> (PathBuf, Store, Rows, TempDir) {
     let (dir, path) = temp_db(name);
     let store = block_on!(Store::open(&path, file_keys(&path))).unwrap();
     let raw = Connection::open(&path).unwrap();
-    (path, store, raw, dir)
+    (path, store, Rows(Mutex::new(raw)), dir)
 }
 
 fn events(thread: u64, seqs: &[(u64, &str)]) -> Vec<RawEvent> {
@@ -43,32 +46,111 @@ fn read_all(store: &Store, scope: &Scope, thread: &RawEvent) -> Result<Vec<RawEv
     block_on!(store.log().read(scope, thread.thread, None, 100))
 }
 
-/// The stored `data` and `key_id` of one event.
-fn stored(raw: &Connection, scope: &Scope, event: &RawEvent) -> (Vec<u8>, Option<String>) {
-    raw.query_row(
-        "SELECT data, key_id FROM events WHERE project = ?1 AND thread = ?2 AND seq = ?3",
-        params![
-            scope.project().to_string(),
-            event.thread.to_string(),
-            i64::try_from(event.seq.get()).unwrap()
-        ],
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    )
-    .unwrap()
+/// The file's rows, read and written around the store, as the at-rest suite asks.
+struct Rows(Mutex<Connection>);
+
+impl Rows {
+    fn payload_now(&self, scope: Scope, thread: ThreadId, seq: Seq) -> KeptPayload {
+        let found = self.0.lock().unwrap().query_row(
+            "SELECT data, key_id FROM events
+             WHERE org = ?1 AND project = ?2 AND thread = ?3 AND seq = ?4",
+            params![
+                scope.org().to_string(),
+                scope.project().to_string(),
+                thread.to_string(),
+                i64::try_from(seq.get()).unwrap()
+            ],
+            |row| {
+                Ok(KeptPayload {
+                    bytes: row.get(0)?,
+                    key_id: row.get(1)?,
+                })
+            },
+        );
+        found.unwrap()
+    }
+
+    fn overwrite_now(&self, scope: Scope, thread: ThreadId, seq: Seq, kept: &KeptPayload) {
+        let written = self.0.lock().unwrap().execute(
+            "UPDATE events SET data = ?1, key_id = ?2
+             WHERE org = ?3 AND project = ?4 AND thread = ?5 AND seq = ?6",
+            params![
+                kept.bytes,
+                kept.key_id,
+                scope.org().to_string(),
+                scope.project().to_string(),
+                thread.to_string(),
+                i64::try_from(seq.get()).unwrap()
+            ],
+        );
+        assert_eq!(written.unwrap(), 1, "one row");
+    }
+
+    fn blobs_now(&self, scope: Scope) -> Vec<KeptBlob> {
+        let raw = self.0.lock().unwrap();
+        let (org, project) = (scope.org().to_string(), scope.project().to_string());
+        let kept: Vec<(String, Vec<u8>)> = raw
+            .prepare("SELECT name, bytes FROM blobs WHERE org = ?1 AND project = ?2")
+            .unwrap()
+            .query_map(params![org, project], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let mut blobs = Vec::new();
+        for (name, bytes) in kept {
+            let threads: Vec<String> = raw
+                .prepare(
+                    "SELECT thread FROM blob_threads WHERE org = ?1 AND project = ?2 AND name = ?3",
+                )
+                .unwrap()
+                .query_map(params![org, project, name], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+            let threads = threads
+                .iter()
+                .map(|thread| ThreadId::try_from(Uuid::parse_str(thread).unwrap()).unwrap())
+                .collect();
+            blobs.push(KeptBlob {
+                name,
+                bytes,
+                threads,
+            });
+        }
+        blobs
+    }
+
+    /// The key that sealed `event`'s payload in `scope`.
+    fn key_of(&self, scope: &Scope, event: &RawEvent) -> KeyId {
+        let kept = self.payload_now(*scope, event.thread, event.seq);
+        kept.key_id.unwrap().parse().unwrap()
+    }
 }
 
-fn overwrite(raw: &Connection, scope: &Scope, event: &RawEvent, row: &(Vec<u8>, Option<String>)) {
-    raw.execute(
-        "UPDATE events SET data = ?1, key_id = ?2 WHERE project = ?3 AND thread = ?4 AND seq = ?5",
-        params![
-            row.0,
-            row.1,
-            scope.project().to_string(),
-            event.thread.to_string(),
-            i64::try_from(event.seq.get()).unwrap()
-        ],
-    )
-    .unwrap();
+impl AtRest for Rows {
+    fn payload(
+        &self,
+        scope: Scope,
+        thread: ThreadId,
+        seq: Seq,
+    ) -> BoxFuture<'_, Result<KeptPayload, String>> {
+        Box::pin(std::future::ready(Ok(self.payload_now(scope, thread, seq))))
+    }
+
+    fn overwrite(
+        &self,
+        scope: Scope,
+        thread: ThreadId,
+        seq: Seq,
+        kept: KeptPayload,
+    ) -> BoxFuture<'_, Result<(), String>> {
+        self.overwrite_now(scope, thread, seq, &kept);
+        Box::pin(std::future::ready(Ok(())))
+    }
+
+    fn blobs(&self, scope: Scope) -> BoxFuture<'_, Result<Vec<KeptBlob>, String>> {
+        Box::pin(std::future::ready(Ok(self.blobs_now(scope))))
+    }
 }
 
 #[test]
@@ -81,18 +163,23 @@ fn the_keys_pass_the_key_conformance_suite() {
 }
 
 #[test]
-fn payloads_are_sealed_in_the_file_and_read_back_as_written() {
-    let (path, store, raw, _dir) = on_disk("sealed");
+fn the_file_passes_the_at_rest_suite() {
+    let (_, store, rows, _dir) = on_disk("at-rest");
+    let verdict = block_on!(conformance::at_rest(&store.log(), &store.blobs(), &rows));
+    assert_eq!(verdict, Ok(()));
+}
+
+#[test]
+fn payloads_are_sealed_by_month_and_read_back_after_reopening() {
+    let (path, store, rows, _dir) = on_disk("sealed");
     let here = scope(1);
     let written = events(1, &[(1, "2026-10"), (2, "2026-10")]);
     block_on!(store.log().append(&here, &written)).unwrap();
-    let (data, key_id) = stored(&raw, &here, &written[0]);
-    let key_id: KeyId = key_id.expect("a new row is sealed").parse().unwrap();
+    let key_id = rows.key_of(&here, &written[0]);
     assert_eq!(
         (key_id.project, key_id.period.to_string()),
         (here.project(), "2026-10".into())
     );
-    assert!(!String::from_utf8_lossy(&data).contains("completed"));
     drop(store);
     let reopened = block_on!(Store::open(&path, file_keys(&path))).unwrap();
     assert_eq!(
@@ -102,28 +189,8 @@ fn payloads_are_sealed_in_the_file_and_read_back_as_written() {
 }
 
 #[test]
-fn a_sealed_payload_moved_to_another_row_thread_or_project_does_not_open() {
-    let (_, store, raw, _dir) = on_disk("moved");
-    let (here, there) = (scope(1), scope(2));
-    let a = events(1, &[(1, "2026-10"), (2, "2026-10")]);
-    let b = events(2, &[(1, "2026-10")]);
-    block_on!(store.log().append(&here, &a)).unwrap();
-    block_on!(store.log().append(&here, &b)).unwrap();
-    block_on!(store.log().append(&there, &a[..1])).unwrap();
-    let first = stored(&raw, &here, &a[0]);
-    for (scope, target) in [(here, &a[1]), (here, &b[0]), (there, &a[0])] {
-        let original = stored(&raw, &scope, target);
-        overwrite(&raw, &scope, target, &first);
-        let read = read_all(&store, &scope, target);
-        assert!(read.is_err(), "moved into {scope} {target:?}: {read:?}");
-        overwrite(&raw, &scope, target, &original);
-        assert!(read_all(&store, &scope, target).is_ok());
-    }
-}
-
-#[test]
 fn erasing_a_project_makes_its_events_and_blobs_unreadable() {
-    let (_, store, _raw, _dir) = on_disk("erase-project");
+    let (_, store, _rows, _dir) = on_disk("erase-project");
     let (here, other) = (scope(1), scope(2));
     let written = events(1, &[(1, "2026-10")]);
     block_on!(store.log().append(&here, &written)).unwrap();
@@ -150,11 +217,11 @@ fn erasing_a_project_makes_its_events_and_blobs_unreadable() {
 
 #[test]
 fn destroying_a_month_key_erases_that_month_and_keeps_the_rest() {
-    let (_, store, raw, _dir) = on_disk("erase-month");
+    let (_, store, rows, _dir) = on_disk("erase-month");
     let here = scope(1);
     let written = events(1, &[(1, "2026-10"), (2, "2026-11")]);
     block_on!(store.log().append(&here, &written)).unwrap();
-    let october: KeyId = stored(&raw, &here, &written[0]).1.unwrap().parse().unwrap();
+    let october = rows.key_of(&here, &written[0]);
     block_on!(store.keys().destroy_data_key(&here, october)).unwrap();
     assert!(read_all(&store, &here, &written[0]).is_err());
     let november = block_on!(
@@ -166,47 +233,8 @@ fn destroying_a_month_key_erases_that_month_and_keeps_the_rest() {
 }
 
 #[test]
-fn blobs_are_stored_under_a_keyed_name_with_the_threads_that_use_them() {
-    let (_, store, raw, _dir) = on_disk("blob-names");
-    let here = scope(1);
-    let [a, b] = [
-        event(1, 1, "2026-10").unwrap(),
-        event(2, 1, "2026-10").unwrap(),
-    ];
-    let reference = block_on!(
-        store
-            .blobs()
-            .put(&here, a.thread, b"shared".to_vec(), "t/p"),
-    )
-    .unwrap();
-    block_on!(
-        store
-            .blobs()
-            .put(&here, b.thread, b"shared".to_vec(), "t/p"),
-    )
-    .unwrap();
-    let (name, bytes): (String, Vec<u8>) = raw
-        .query_row("SELECT name, bytes FROM blobs", [], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })
-        .unwrap();
-    assert_ne!(name, reference.sha256.as_str(), "the hash is not stored");
-    assert!(!String::from_utf8_lossy(&bytes).contains("shared"));
-    let threads: i64 = raw
-        .query_row(
-            "SELECT COUNT(*) FROM blob_threads WHERE name = ?1",
-            params![name],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(threads, 2);
-    let got = block_on!(store.blobs().get(&here, &reference.sha256)).unwrap();
-    assert_eq!(got.as_deref(), Some(b"shared".as_slice()));
-}
-
-#[test]
 fn another_root_cannot_read_the_file() {
-    let (path, store, _raw, _dir) = on_disk("other-root");
+    let (path, store, _rows, _dir) = on_disk("other-root");
     let here = scope(1);
     let written = events(1, &[(1, "2026-10")]);
     block_on!(store.log().append(&here, &written)).unwrap();

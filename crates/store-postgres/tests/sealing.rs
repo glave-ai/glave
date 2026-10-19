@@ -1,11 +1,12 @@
-//! Sealing at rest on Postgres: the keys conformance suite, what lands in the table,
-//! tampering, and erasure. Skipped without
-//! `GLAVE_TEST_POSTGRES_URL`, like the other Postgres tests.
+//! Sealing at rest on Postgres: the keys conformance suite, the at-rest suite on the tables'
+//! own rows, and erasure. Skipped without `GLAVE_TEST_POSTGRES_URL`, like the other Postgres
+//! tests.
 
-use glave_event::RawEvent;
+use glave_event::{RawEvent, Seq, ThreadId};
 use glave_keys::KeyId;
 use glave_keys::conformance::event;
-use glave_ports::{BlobStore, EventLog, LogError, OrgId, ProjectId, Scope};
+use glave_ports::conformance::{AtRest, KeptBlob, KeptPayload};
+use glave_ports::{BlobStore, BoxFuture, EventLog, LogError, OrgId, ProjectId, Scope};
 use glave_store_postgres::Store;
 use uuid::Uuid;
 
@@ -33,50 +34,125 @@ async fn read_all(
     store.log().read(scope, event.thread, None, 100).await
 }
 
-/// The stored `data` and `key_id` of one event.
-async fn stored(scratch: &Scratch, scope: &Scope, event: &RawEvent) -> (Vec<u8>, Option<String>) {
-    let row = scratch
+/// The tables' rows, read and written around the store, as the at-rest suite asks.
+struct Rows<'a>(&'a Scratch);
+
+impl Rows<'_> {
+    async fn payload_now(&self, scope: Scope, thread: ThreadId, seq: Seq) -> KeptPayload {
+        let row = self
+            .0
             .admin
             .query_one(
                 &format!(
-                    "SELECT data, key_id FROM {}.events WHERE project = $1 AND thread = $2 AND seq = $3",
-                    scratch.schema
+                    "SELECT data, key_id FROM {}.events
+                     WHERE org = $1 AND project = $2 AND thread = $3 AND seq = $4",
+                    self.0.schema
                 ),
                 &[
+                    &scope.org().as_uuid(),
                     &scope.project().as_uuid(),
-                    &event.thread.as_uuid(),
-                    &i64::try_from(event.seq.get()).unwrap(),
+                    &thread.as_uuid(),
+                    &i64::try_from(seq.get()).unwrap(),
                 ],
             )
             .await
             .unwrap();
-    (row.get(0), row.get(1))
+        KeptPayload {
+            bytes: row.get(0),
+            key_id: row.get(1),
+        }
+    }
+
+    async fn overwrite_now(&self, scope: Scope, thread: ThreadId, seq: Seq, kept: KeptPayload) {
+        let written = self
+            .0
+            .admin
+            .execute(
+                &format!(
+                    "UPDATE {}.events SET data = $1, key_id = $2
+                     WHERE org = $3 AND project = $4 AND thread = $5 AND seq = $6",
+                    self.0.schema
+                ),
+                &[
+                    &kept.bytes,
+                    &kept.key_id,
+                    &scope.org().as_uuid(),
+                    &scope.project().as_uuid(),
+                    &thread.as_uuid(),
+                    &i64::try_from(seq.get()).unwrap(),
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(written, 1, "one row");
+    }
+
+    async fn blobs_now(&self, scope: Scope) -> Vec<KeptBlob> {
+        let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
+        let schema = &self.0.schema;
+        let rows = self
+            .0
+            .admin
+            .query(
+                &format!("SELECT name, bytes FROM {schema}.blobs WHERE org = $1 AND project = $2"),
+                &[&org, &project],
+            )
+            .await
+            .unwrap();
+        let mut blobs = Vec::new();
+        for row in rows {
+            let name: String = row.get(0);
+            let threads = self
+                .0
+                .admin
+                .query(
+                    &format!(
+                        "SELECT thread FROM {schema}.blob_threads
+                         WHERE org = $1 AND project = $2 AND name = $3"
+                    ),
+                    &[&org, &project, &name],
+                )
+                .await
+                .unwrap()
+                .iter()
+                .map(|thread| ThreadId::try_from(thread.get::<_, Uuid>(0)).unwrap())
+                .collect();
+            blobs.push(KeptBlob {
+                name,
+                bytes: row.get(1),
+                threads,
+            });
+        }
+        blobs
+    }
 }
 
-async fn overwrite(
-    scratch: &Scratch,
-    scope: &Scope,
-    event: &RawEvent,
-    row: &(Vec<u8>, Option<String>),
-) {
-    scratch
-        .admin
-        .execute(
-            &format!(
-                "UPDATE {}.events SET data = $1, key_id = $2
-                     WHERE project = $3 AND thread = $4 AND seq = $5",
-                scratch.schema
-            ),
-            &[
-                &row.0,
-                &row.1,
-                &scope.project().as_uuid(),
-                &event.thread.as_uuid(),
-                &i64::try_from(event.seq.get()).unwrap(),
-            ],
-        )
-        .await
-        .unwrap();
+impl AtRest for Rows<'_> {
+    fn payload(
+        &self,
+        scope: Scope,
+        thread: ThreadId,
+        seq: Seq,
+    ) -> BoxFuture<'_, Result<KeptPayload, String>> {
+        Box::pin(async move { Ok(self.payload_now(scope, thread, seq).await) })
+    }
+
+    fn overwrite(
+        &self,
+        scope: Scope,
+        thread: ThreadId,
+        seq: Seq,
+        kept: KeptPayload,
+    ) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async move {
+            self.overwrite_now(scope, thread, seq, kept).await;
+            Ok(())
+        })
+    }
+
+    fn blobs(&self, scope: Scope) -> BoxFuture<'_, Result<Vec<KeptBlob>, String>> {
+        Box::pin(async move { Ok(self.blobs_now(scope).await) })
+    }
 }
 
 #[test]
@@ -94,40 +170,17 @@ fn the_keys_pass_the_key_conformance_suite() {
 }
 
 #[test]
-fn payloads_are_sealed_and_a_moved_payload_does_not_open() {
+fn the_tables_pass_the_at_rest_suite() {
     block_on!(async {
-        let Some(scratch) = Scratch::new("moved").await else {
+        let Some(scratch) = Scratch::new("at_rest").await else {
             return;
         };
         let store = scratch.store().await.unwrap();
-        let (here, there) = (scope(1), scope(2));
-        let a = [
-            event(1, 1, "2026-10").unwrap(),
-            event(1, 2, "2026-10").unwrap(),
-        ];
-        let b = [event(2, 1, "2026-10").unwrap()];
-        store.log().append(&here, &a).await.unwrap();
-        store.log().append(&here, &b).await.unwrap();
-        store.log().append(&there, &a[..1]).await.unwrap();
-        let first = stored(&scratch, &here, &a[0]).await;
-        let sealed = first.1.clone().map(|id| id.parse::<KeyId>());
-        let clear = String::from_utf8_lossy(&first.0).contains("completed");
-        let mut moved = Vec::new();
-        for (scope, target) in [(here, &a[1]), (here, &b[0]), (there, &a[0])] {
-            let original = stored(&scratch, &scope, target).await;
-            overwrite(&scratch, &scope, target, &first).await;
-            moved.push(read_all(&store, &scope, target).await.is_err());
-            overwrite(&scratch, &scope, target, &original).await;
-        }
-        let back = read_all(&store, &here, &a[0])
-            .await
-            .map(|events| lines(&events));
+        let rows = Rows(&scratch);
+        let verdict = glave_ports::conformance::at_rest(&store.log(), &store.blobs(), &rows).await;
         drop(store);
         scratch.drop_schema().await;
-        assert!(matches!(sealed, Some(Ok(_))), "{sealed:?}");
-        assert!(!clear, "the payload is not stored in the clear");
-        assert_eq!(moved, [true, true, true], "moved payloads must not open");
-        assert_eq!(back.unwrap(), lines(&a));
+        assert_eq!(verdict, Ok(()));
     });
 }
 
@@ -150,12 +203,10 @@ fn erasure_makes_content_unreadable_and_keeps_the_rest() {
             .put(&here, written[0].thread, b"x".to_vec(), "t/p")
             .await
             .unwrap();
-        let october: KeyId = stored(&scratch, &other, &written[0])
-            .await
-            .1
-            .unwrap()
-            .parse()
-            .unwrap();
+        let kept = Rows(&scratch)
+            .payload_now(other, written[0].thread, written[0].seq)
+            .await;
+        let october: KeyId = kept.key_id.unwrap().parse().unwrap();
         store
             .keys()
             .destroy_data_key(&other, october)
