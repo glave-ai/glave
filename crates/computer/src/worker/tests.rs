@@ -118,7 +118,10 @@ impl Backend for InProcess {
             self.started.lock().unwrap().push(spec.clone());
             let name = format!("w{}", self.running());
             let environment = std::env::vars_os().filter(|(n, _)| n == "PATH" || n == "HOME");
-            let computers = Arc::new(LocalComputers::new(self.copies.join(&name), environment));
+            let computers = LocalComputers::new(self.copies.join(&name), environment)
+                .with_worktrees(self.copies.join(format!("{name}-worktrees")))
+                .with_projects(self.copies.join(format!("{name}-projects")));
+            let computers = Arc::new(computers);
             let (link, task) = if spec.network {
                 let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let inside = listener.local_addr().unwrap();
@@ -218,6 +221,29 @@ impl Output for Quiet {
     fn write<'a>(&'a self, _: &'a str) -> BoxFuture<'a, ()> {
         Box::pin(std::future::ready(()))
     }
+}
+
+#[test]
+fn workers_pass_the_computers_suite() {
+    let dir = scratch("suite");
+    let work = dir.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let backend = InProcess::new(&dir.join("copies"));
+    let workers = WorkerComputers::on(
+        Box::new(backend),
+        Limits::default(),
+        WorkerCredentials::None,
+    );
+    let image = Environment {
+        image: Image::Oci(IMAGE.into()),
+        ..Environment::host()
+    };
+    let verdict = block_on!(glave_ports::conformance::computers(
+        &workers,
+        &image,
+        &work.to_string_lossy()
+    ));
+    assert_eq!(verdict, Ok(()));
 }
 
 #[test]

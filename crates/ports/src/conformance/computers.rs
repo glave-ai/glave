@@ -22,12 +22,17 @@ use crate::computer::{
     Sources, State, WorkspaceId,
 };
 
-/// Runs the suite. `scratch` is an empty folder on the computers' machine, as that machine
-/// names it; the suite works only inside it, inside the workspaces it opens, and in the
-/// places the computers keep worktrees and new projects' folders.
-pub async fn computers<C: Computers>(computers: &C, scratch: &str) -> Verdict {
+/// Runs the suite on a computer made from `environment`: the host for this machine's
+/// computers, an image for workers. `scratch` is an empty folder on the computer, as it names
+/// it; the suite works only inside it, inside the workspaces it opens, and in the places the
+/// computer keeps worktrees and new projects' folders.
+pub async fn computers<C: Computers>(
+    computers: &C,
+    environment: &Environment,
+    scratch: &str,
+) -> Verdict {
     let made = computers
-        .create(&Environment::host())
+        .create(environment)
         .await
         .map_err(failed("create a host computer"))?;
     ensure(

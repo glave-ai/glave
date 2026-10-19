@@ -59,7 +59,8 @@ fn the_binary_serves_a_computer_that_passes_the_suite() {
 
         let suite = dir.join("suite");
         std::fs::create_dir_all(&suite).unwrap();
-        let verdict = conformance::computers(&remote, &suite.to_string_lossy()).await;
+        let verdict =
+            conformance::computers(&remote, &Environment::host(), &suite.to_string_lossy()).await;
         assert_eq!(verdict, Ok(()));
         drop(remote);
         let status = child.wait().await.unwrap();
