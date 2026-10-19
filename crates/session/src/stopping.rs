@@ -33,7 +33,7 @@ impl<P, L, B> Server<P, L, B> {
                     Slot::Busy {
                         cancel, finished, ..
                     } => Some((cancel.clone(), finished.clone())),
-                    Slot::Idle(_) => None,
+                    Slot::Idle { .. } => None,
                 })
                 .collect()
         };

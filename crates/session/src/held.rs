@@ -7,18 +7,27 @@ use std::sync::{Arc, PoisonError};
 use glave_event::ThreadId;
 use glave_harness::{Cancel, Commands, HarnessError, Inbox, Live, Thread};
 use glave_ports::{BlobStore, EventLog, ModelProvider, Standing};
+use jiff::Timestamp;
 use tokio::sync::watch;
 
 use crate::protocol::{ApiError, Status, code};
 use crate::server::{Inner, Server, api, no_thread};
 use crate::turn::publish;
 
-/// Threads kept in memory while idle; more are rebuilt from the log when asked for.
-const IDLE_THREADS: usize = 64;
+/// Threads kept in memory while idle, the least recently used let go first; more are rebuilt
+/// from the log when asked for.
+const IDLE_THREADS: usize = 256;
+
+/// How long a thread with no work stays in memory, as Codex unloads one: 30 minutes.
+const IDLE_MILLIS: i64 = 30 * 60 * 1_000;
 
 /// A thread the server holds: idle and ready, or busy with a turn or a compaction.
 pub(crate) enum Slot {
-    Idle(Box<Thread>),
+    Idle {
+        thread: Box<Thread>,
+        /// When it was last used: loaded, read, or left by its last work.
+        since: Timestamp,
+    },
     Busy {
         cancel: Cancel,
         finished: watch::Receiver<bool>,
@@ -43,11 +52,16 @@ where
         if crate::ledger::is_ledger(thread) {
             return Err(no_thread(thread));
         }
-        match self.lock().get(&thread) {
-            Some(Slot::Idle(held)) if held.standing() == Standing::Deleted => {
+        let now = self.inner.harness.clock().now();
+        match self.lock().get_mut(&thread) {
+            Some(Slot::Idle { thread: held, .. }) if held.standing() == Standing::Deleted => {
                 return Err(no_thread(thread));
             }
-            Some(_) => return Ok(()),
+            Some(Slot::Idle { since, .. }) => {
+                *since = now;
+                return Ok(());
+            }
+            Some(Slot::Busy { .. }) => return Ok(()),
             None => {}
         }
         let scope = self.scope_of(thread).await?;
@@ -76,18 +90,16 @@ where
         }
     }
 
-    /// Holds `thread` idle, letting go of others beyond the cap.
+    /// Holds `thread` idle, letting go of others idle too long or beyond the cap.
     pub(crate) fn keep(&self, id: ThreadId, thread: Thread) {
-        let mut threads = self.lock();
-        let idle: Vec<ThreadId> = threads
-            .iter()
-            .filter(|(other, slot)| **other != id && matches!(slot, Slot::Idle(_)))
-            .map(|(other, _)| *other)
-            .collect();
-        for other in idle.iter().skip(IDLE_THREADS.saturating_sub(1)) {
-            threads.remove(other);
-        }
-        threads.insert(id, Slot::Idle(Box::new(thread)));
+        let now = self.inner.harness.clock().now();
+        hold_idle(&mut self.lock(), id, Box::new(thread), now);
+    }
+
+    /// Lets go of the threads idle for 30 minutes, for a tick to call.
+    pub(crate) fn let_go_stale(&self) {
+        let now = self.inner.harness.clock().now();
+        let_go_idle(&mut self.lock(), IDLE_THREADS, now);
     }
 
     pub(crate) fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<ThreadId, Slot>> {
@@ -152,13 +164,15 @@ where
             }
             match threads.remove(&thread) {
                 // Turns and compactions do not run in an archived thread.
-                Some(Slot::Idle(held))
-                    if purpose != Use::Manage && held.standing() == Standing::Archived =>
+                Some(slot)
+                    if purpose != Use::Manage
+                        && matches!(&slot, Slot::Idle { thread: held, .. }
+                            if held.standing() == Standing::Archived) =>
                 {
-                    threads.insert(thread, Slot::Idle(held));
+                    threads.insert(thread, slot);
                     return Err(api(&HarnessError::Archived(thread)));
                 }
-                Some(Slot::Idle(held)) => {
+                Some(Slot::Idle { thread: held, .. }) => {
                     // A turn takes messages from now until it has made its last call.
                     let inbox = (purpose == Use::Steered).then(|| held.inbox().clone());
                     if let Some(inbox) = &inbox {
@@ -195,16 +209,8 @@ where
             } else {
                 Vec::new()
             };
-            // Archived or deleted from outside while held: the work stopped where it was, so
-            // the thread is read again from the log next time, which closes what it left open.
-            if matches!(
-                result,
-                Err(HarnessError::Archived(_) | HarnessError::NotFound(_))
-            ) {
-                threads.remove(&thread);
-            } else {
-                threads.insert(thread, Slot::Idle(Box::new(held)));
-            }
+            let now = inner.harness.clock().now();
+            leave(&mut threads, thread, held, &result, now);
             drop(threads);
             for queued in unread {
                 let id = queued.id;
@@ -223,6 +229,77 @@ where
         tasks.push(task);
         Ok(())
     }
+}
+
+/// After work on `id` ends at `now` with `result`: held idle again, or, archived or deleted
+/// from outside while held, let go, since the work stopped where it was and the thread is read
+/// again from the log next time, which closes what it left open.
+fn leave<R>(
+    threads: &mut HashMap<ThreadId, Slot>,
+    id: ThreadId,
+    held: Thread,
+    result: &Result<R, HarnessError>,
+    now: Timestamp,
+) {
+    if matches!(
+        result,
+        Err(HarnessError::Archived(_) | HarnessError::NotFound(_))
+    ) {
+        threads.remove(&id);
+    } else {
+        hold_idle(threads, id, Box::new(held), now);
+    }
+}
+
+/// Holds `thread` idle in `threads` as used at `now`, letting go of others idle too long or
+/// beyond the cap.
+fn hold_idle(
+    threads: &mut HashMap<ThreadId, Slot>,
+    id: ThreadId,
+    thread: Box<Thread>,
+    now: Timestamp,
+) {
+    threads.remove(&id);
+    let_go_idle(threads, IDLE_THREADS.saturating_sub(1), now);
+    threads.insert(id, Slot::Idle { thread, since: now });
+}
+
+/// Lets go of every idle thread in `threads` unused for 30 minutes at `now`, and of the least
+/// recently used beyond `room`. Busy threads stay.
+fn let_go_idle(threads: &mut HashMap<ThreadId, Slot>, room: usize, now: Timestamp) {
+    let idle = threads.iter().map(|(id, slot)| {
+        let since = match slot {
+            Slot::Idle { since, .. } => Some(*since),
+            Slot::Busy { .. } => None,
+        };
+        (*id, since)
+    });
+    for id in to_let_go(idle, room, now) {
+        threads.remove(&id);
+    }
+}
+
+/// Of the threads `held`, each with when it was last used if it is idle, those to let go at
+/// `now` to keep at most `room` idle: every one unused for 30 minutes, then the least
+/// recently used. A busy thread (no time) is never let go.
+fn to_let_go(
+    held: impl Iterator<Item = (ThreadId, Option<Timestamp>)>,
+    room: usize,
+    now: Timestamp,
+) -> Vec<ThreadId> {
+    let mut idle: Vec<(ThreadId, Timestamp)> = held
+        .filter_map(|(id, since)| since.map(|since| (id, since)))
+        .collect();
+    // The most recently used first.
+    idle.sort_by_key(|(_, since)| std::cmp::Reverse(*since));
+    let stale = |since: Timestamp| {
+        now.as_millisecond().saturating_sub(since.as_millisecond()) >= IDLE_MILLIS
+    };
+    idle.into_iter()
+        .enumerate()
+        .filter(|(kept, (_, since))| *kept >= room || stale(*since))
+        .map(|(_, (id, _))| id)
+        .collect()
 }
 
 /// What work on a thread is for.
@@ -260,5 +337,46 @@ pub(crate) async fn finished<R>(done: &mut watch::Receiver<Option<Arc<R>>>) -> O
         if done.changed().await.is_err() {
             return done.borrow().clone();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(minutes: i64) -> Timestamp {
+        Timestamp::from_millisecond(1_791_000_000_000 + minutes * 60_000).unwrap()
+    }
+
+    fn id(n: u8) -> ThreadId {
+        ThreadId::new(Timestamp::UNIX_EPOCH, [n; 10]).unwrap()
+    }
+
+    #[test]
+    fn the_least_recently_used_idle_thread_goes_first_and_a_busy_one_never() {
+        let held = [
+            (id(1), Some(at(3))),
+            (id(2), Some(at(1))),
+            (id(3), None),
+            (id(4), Some(at(2))),
+        ];
+        assert_eq!(to_let_go(held.into_iter(), 2, at(4)), [id(2)]);
+        assert_eq!(
+            to_let_go(held.into_iter(), 0, at(4)),
+            [id(1), id(4), id(2)],
+            "every idle one may go, the busy one never"
+        );
+        assert_eq!(to_let_go(held.into_iter(), 3, at(4)), []);
+    }
+
+    #[test]
+    fn a_thread_unused_for_30_minutes_is_let_go_and_a_busy_one_never() {
+        let held = [(id(1), Some(at(0))), (id(2), Some(at(1))), (id(3), None)];
+        assert_eq!(to_let_go(held.into_iter(), IDLE_THREADS, at(29)), []);
+        assert_eq!(to_let_go(held.into_iter(), IDLE_THREADS, at(30)), [id(1)]);
+        assert_eq!(
+            to_let_go(held.into_iter(), IDLE_THREADS, at(600)),
+            [id(2), id(1)]
+        );
     }
 }

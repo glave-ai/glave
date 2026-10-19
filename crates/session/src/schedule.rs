@@ -162,10 +162,13 @@ where
     }
 
     /// Starts a task for every schedule due by the clock's now, in every space whose tasks
-    /// this server runs, at most one each, and answers with their threads. A run the task
+    /// this server runs, at most one each, and answers with their threads, first letting go
+    /// of threads idle too long. A run the task
     /// limit holds back starts on a later tick; one that cannot start is skipped until the
     /// schedule's next time.
     pub async fn tick(&self) -> Result<Vec<ThreadId>, ApiError> {
+        // Threads idle for 30 minutes are let go even when nothing else happens.
+        self.let_go_stale();
         for space in self.task_spaces().await? {
             // A ledger that cannot be read now is read again on the next tick.
             if let Err(error) = self.catch_up(space).await {

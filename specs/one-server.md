@@ -85,7 +85,7 @@ The scheduler; task recovery when it starts; the daily worktree check (today at 
 
 ### Bounds
 
-- **Threads in memory**: a thread is unloaded after 30 minutes with no turn running, as Codex unloads one, and at most 256 are held, the least recently used let go first. Any thread is rebuilt from the log on demand (`session.md`, "Stateless hosting is real"); a waiting turn holds nothing in memory ("Durable turns").
+- **Threads in memory**: a thread is unloaded after 30 minutes with nothing using it (no work, no read), as Codex unloads one, checked as threads are held and at every scheduler tick; at most 256 idle are held, the least recently used let go first, and a busy one never. Any thread is rebuilt from the log on demand (`session.md`, "Stateless hosting is real"); a waiting turn holds nothing in memory ("Durable turns").
 - **Projects' tool servers**, **tasks** and **watches**: in their sections below.
 - **Connections**: 1,024 at once over HTTP, as today, and the same on the socket.
 

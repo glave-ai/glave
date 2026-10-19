@@ -251,7 +251,7 @@ where
     /// opened where its project's folder is now, the next time it is used.
     fn let_go_in(&self, space: SpaceId) {
         self.lock().retain(|_, slot| match slot {
-            Slot::Idle(held) => held.scope.space != space,
+            Slot::Idle { thread: held, .. } => held.scope.space != space,
             Slot::Busy { .. } => true,
         });
     }

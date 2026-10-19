@@ -262,28 +262,28 @@ where
     /// [`Server::shutdown`], when no turn runs): what each left behind, or why it could not be
     /// released.
     pub async fn release_workers(&self) -> Vec<(ThreadId, Result<ReleasedWorker, HarnessError>)> {
-        let idle: Vec<(ThreadId, Box<glave_harness::Thread>)> = {
+        let idle: Vec<(ThreadId, Box<glave_harness::Thread>, jiff::Timestamp)> = {
             let mut threads = self.lock();
             let ids: Vec<ThreadId> = threads
                 .iter()
-                .filter(|(_, slot)| matches!(slot, Slot::Idle(_)))
+                .filter(|(_, slot)| matches!(slot, Slot::Idle { .. }))
                 .map(|(id, _)| *id)
                 .collect();
             ids.into_iter()
                 .filter_map(|id| match threads.remove(&id) {
-                    Some(Slot::Idle(thread)) => Some((id, thread)),
+                    Some(Slot::Idle { thread, since }) => Some((id, thread, since)),
                     _ => None,
                 })
                 .collect()
         };
         let mut released = Vec::new();
-        for (id, mut thread) in idle {
+        for (id, mut thread, since) in idle {
             match self.inner.harness.release_worker(&mut thread).await {
                 Ok(Some(left)) => released.push((id, Ok(left))),
                 Ok(None) => {}
                 Err(error) => released.push((id, Err(error))),
             }
-            self.lock().insert(id, Slot::Idle(thread));
+            self.lock().insert(id, Slot::Idle { thread, since });
         }
         released
     }

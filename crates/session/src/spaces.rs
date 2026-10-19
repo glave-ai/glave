@@ -195,7 +195,7 @@ where
         if let Some(scope) = self.places().get(thread) {
             return Ok(scope);
         }
-        if let Some(Slot::Idle(held)) = self.lock().get(&thread) {
+        if let Some(Slot::Idle { thread: held, .. }) = self.lock().get(&thread) {
             return Ok(held.scope);
         }
         let scope = self
