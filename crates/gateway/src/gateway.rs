@@ -4,7 +4,7 @@
 use glave_ports::{Completion, Delta, Failure, ModelProvider, ModelRequest, ProviderError, Served};
 use tracing::Instrument as _;
 
-use crate::budget::{Budget, Budgets, Caller, Charge, Ledger, OverBudget};
+use crate::budget::{Budget, BudgetKey, Budgets, Charge, Ledger, OverBudget};
 use crate::estimate::Needs;
 use crate::plan::{candidates, prepare};
 use crate::routes::Routes;
@@ -61,7 +61,7 @@ impl Gateway {
     /// `targets` when given (tried in order, as a route's) or else on its purpose's route.
     pub async fn complete_for(
         &self,
-        caller: Caller,
+        caller: BudgetKey,
         targets: Option<&[Target]>,
         request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),
@@ -72,7 +72,7 @@ impl Gateway {
 
     async fn serve(
         &self,
-        caller: Option<Caller>,
+        caller: Option<BudgetKey>,
         targets: &[Target],
         request: &ModelRequest,
         on_delta: &mut (dyn FnMut(Delta) + Send),

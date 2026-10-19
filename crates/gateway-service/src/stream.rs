@@ -13,7 +13,7 @@ use std::task::{Context, Poll};
 
 use bytes::Bytes;
 use glave_event::{ModelResponded, PrincipalId};
-use glave_gateway::{Caller, Target};
+use glave_gateway::{BudgetKey, Target};
 use glave_ports::{Completion, Delta, EventLog, ModelRequest};
 use hyper::body::{Body, Frame, SizeHint};
 
@@ -72,7 +72,7 @@ where
                 pending.queue.extend(events);
             }
         };
-        let caller = Caller {
+        let caller = BudgetKey {
             person,
             period: day,
         };

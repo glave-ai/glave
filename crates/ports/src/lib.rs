@@ -18,6 +18,7 @@ mod env;
 mod erase;
 mod failure;
 pub mod file;
+pub mod host;
 mod in_memory;
 mod log;
 pub mod memories;

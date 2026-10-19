@@ -37,7 +37,8 @@ use crate::dispatch::Answered;
 use crate::protocol::{ApiError, Request, code};
 use crate::rpc::{Id, parse, respond};
 use crate::server::Server;
-use crate::signin::{SignIn, SignInError, is_loopback};
+use crate::signin::{SignIn, SignInError};
+use glave_ports::host::is_loopback;
 
 /// The largest request body accepted, in bytes.
 const MAX_BODY: usize = 16 * 1024 * 1024;

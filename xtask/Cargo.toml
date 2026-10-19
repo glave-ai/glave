@@ -8,6 +8,8 @@ license.workspace = true
 publish = false
 
 [dependencies]
+# The one list of the prefixes providers put on keys and tokens, which the secret scan reads.
+glave-ports.workspace = true
 # Reading the generated API schema to write the web client's types.
 serde_json.workspace = true
 

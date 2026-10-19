@@ -34,15 +34,16 @@ pub enum Limit {
 pub struct Budgets {
     pub organization: Option<Limit>,
     /// The person's: the one person of a gateway in glave, or each signed-in caller of a
-    /// gateway serving many, in each period (see [`Caller`]).
+    /// gateway serving many, in each period (see [`BudgetKey`]).
     pub person: Option<Limit>,
     /// Each thread's, its subagents' calls included.
     pub thread: Option<Limit>,
 }
 
-/// A signed-in caller of a gateway serving many people, in one period of their budget.
+/// The key of a signed-in caller's budget on a gateway serving many people: the person and
+/// one period of their budget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Caller {
+pub struct BudgetKey {
     pub person: PrincipalId,
     /// The period the person's budget runs for, numbered by whoever calls (a day since 1970,
     /// say): each new period starts from nothing.
@@ -56,7 +57,7 @@ pub enum Budget {
     /// The person of a gateway in glave.
     Person,
     /// A signed-in caller's person budget, in one period.
-    Caller(Caller),
+    Caller(BudgetKey),
     Thread(ThreadId),
 }
 
@@ -145,7 +146,7 @@ struct Account {
 struct Accounts {
     organization: Account,
     person: Account,
-    callers: BTreeMap<Caller, Account>,
+    callers: BTreeMap<BudgetKey, Account>,
     threads: BTreeMap<ThreadId, Account>,
 }
 
@@ -173,7 +174,7 @@ impl Ledger {
     }
 
     /// The budgets a call by `caller` for `threads` counts in, with their limits.
-    fn applying(&self, caller: Option<Caller>, threads: &[ThreadId]) -> Vec<(Budget, Limit)> {
+    fn applying(&self, caller: Option<BudgetKey>, threads: &[ThreadId]) -> Vec<(Budget, Limit)> {
         let mut budgets = Vec::new();
         if let Some(limit) = self.limits.organization {
             budgets.push((Budget::Organization, limit));
@@ -195,7 +196,7 @@ impl Ledger {
     /// Holds `worst` in every budget the call counts in, or refuses it, holding nothing.
     pub(crate) fn reserve(
         &self,
-        caller: Option<Caller>,
+        caller: Option<BudgetKey>,
         threads: &[ThreadId],
         worst: Charge,
     ) -> Result<Hold<'_>, OverBudget> {
