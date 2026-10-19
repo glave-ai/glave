@@ -1,1 +1,0 @@
-{"glave":1,"id":"0192f5c2-7000-7000-8000-00000000000c","thread":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10","seq":12,"at":"2026-10-17T14:02:00.000Z","type":"approval.requested","v":2,"data":{"call_id":"call_12","tool":"bash","summary":"bash: rm -rf ~/notes","secret":false,"caution":"It deletes /home/ana/notes, outside the project."}}

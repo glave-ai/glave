@@ -34,47 +34,16 @@ pub struct ModelResponded {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<Cost>,
     /// The gateway route the call was sent by: its purpose, such as `main`, `judge` or
-    /// `summary`. Absent when no gateway was in between. Since version 2.
+    /// `summary`. Absent when no gateway was in between.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route: Option<String>,
-    /// The gateway target that answered. Since version 2.
+    /// The gateway target that answered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
     /// True when the gateway left opaque reasoning out of the request because the target
-    /// that answered could not accept it. Since version 2.
+    /// that answered could not accept it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reasoning_stripped: bool,
-}
-
-/// Version 1, before responses named the gateway route and target that served them.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ModelRespondedV1 {
-    model: ModelRef,
-    #[serde(default)]
-    response_id: Option<String>,
-    stop: StopReason,
-    #[serde(default)]
-    provider_stop: Option<String>,
-    usage: Usage,
-    #[serde(default)]
-    cost: Option<Cost>,
-}
-
-impl From<ModelRespondedV1> for ModelResponded {
-    fn from(old: ModelRespondedV1) -> Self {
-        Self {
-            model: old.model,
-            response_id: old.response_id,
-            stop: old.stop,
-            provider_stop: old.provider_stop,
-            usage: old.usage,
-            cost: old.cost,
-            route: None,
-            target: None,
-            reasoning_stripped: false,
-        }
-    }
 }
 
 /// Why a model stopped, normalized across providers.
@@ -217,13 +186,12 @@ pub struct Cost {
 
 impl Payload for ModelResponded {
     const TYPE: &'static str = TYPE;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 1;
 }
 
 pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<ModelResponded>> {
     match version {
-        1 => Some(parse::<ModelRespondedV1>(data).map(ModelResponded::from)),
-        2 => Some(parse(data)),
+        1 => Some(parse(data)),
         _ => None,
     }
 }
@@ -254,24 +222,6 @@ mod tests {
         assert!(Usage::new(counts(100, 80, 30, 10, 0), false, None).is_err());
         assert!(Usage::new(counts(100, 0, 0, 10, 11), false, None).is_err());
         assert!(Usage::new(counts(u64::MAX, u64::MAX, 1, 0, 0), false, None).is_err());
-    }
-
-    const V1: &str = r#"{"model":{"provider":"p","name":"m"},"stop":"end_turn","usage":{"input":1,"cache_read":0,"cache_write":0,"output":1,"reasoning":0,"estimated":false}}"#;
-
-    #[test]
-    fn version_1_reads_as_served_by_no_gateway() {
-        let raw = RawValue::from_string(V1.to_owned()).unwrap();
-        let upgraded = decode(1, &raw).unwrap().unwrap();
-        assert_eq!(upgraded.route, None);
-        assert_eq!(upgraded.target, None);
-        assert!(!upgraded.reasoning_stripped);
-        let with_route = V1.replacen('{', r#"{"route":"main","#, 1);
-        let raw = RawValue::from_string(with_route).unwrap();
-        assert!(decode(1, &raw).unwrap().is_err(), "version 1 had no route");
-        assert_eq!(
-            decode(2, &raw).unwrap().unwrap().route.as_deref(),
-            Some("main")
-        );
     }
 
     #[test]

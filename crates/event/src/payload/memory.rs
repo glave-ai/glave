@@ -83,44 +83,6 @@ pub struct MemorySaved {
     pub by: Principal,
 }
 
-/// Version 1, before spaces were projects: a memory of the project was saved as `space`.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MemorySavedV1 {
-    memory: MemoryId,
-    scope: ScopeV1,
-    text: String,
-    #[serde(default)]
-    source: Option<MemorySource>,
-    #[serde(default)]
-    untrusted_read: bool,
-    by: Principal,
-}
-
-/// A scope as version 1 named it.
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum ScopeV1 {
-    Personal,
-    Space,
-}
-
-impl From<MemorySavedV1> for MemorySaved {
-    fn from(old: MemorySavedV1) -> Self {
-        Self {
-            memory: old.memory,
-            scope: match old.scope {
-                ScopeV1::Personal => MemoryScope::Personal,
-                ScopeV1::Space => MemoryScope::Project,
-            },
-            text: old.text,
-            source: old.source,
-            untrusted_read: old.untrusted_read,
-            by: old.by,
-        }
-    }
-}
-
 /// A memory's text changed. Tidy-up merges are edits too.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -139,31 +101,11 @@ pub struct MemoryForgotten {
     /// When its key is destroyed: at once when the person forgets, 30 days on when glave does.
     pub erase_at: At,
     /// Where it was saved, kept here because the saved event's text (and its source with it)
-    /// is erased: `recall` never returns that turn of the conversation again. Since version 2.
+    /// is erased: `recall` never returns that turn of the conversation again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<MemorySource>,
     /// Who forgot it.
     pub by: Principal,
-}
-
-/// Version 1, before a forget named where the memory was saved.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MemoryForgottenV1 {
-    memory: MemoryId,
-    erase_at: At,
-    by: Principal,
-}
-
-impl From<MemoryForgottenV1> for MemoryForgotten {
-    fn from(old: MemoryForgottenV1) -> Self {
-        Self {
-            memory: old.memory,
-            erase_at: old.erase_at,
-            source: None,
-            by: old.by,
-        }
-    }
 }
 
 /// A change glave made to a memory was undone.
@@ -193,7 +135,7 @@ pub struct MemoryTidied {
 
 impl Payload for MemorySaved {
     const TYPE: &'static str = SAVED;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 1;
 }
 
 impl Payload for MemoryEdited {
@@ -203,7 +145,7 @@ impl Payload for MemoryEdited {
 
 impl Payload for MemoryForgotten {
     const TYPE: &'static str = FORGOTTEN;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 1;
 }
 
 impl Payload for MemoryRestored {
@@ -221,8 +163,7 @@ pub(crate) fn decode_saved(
     data: &RawValue,
 ) -> Option<serde_json::Result<MemorySaved>> {
     match version {
-        1 => Some(parse::<MemorySavedV1>(data).map(MemorySaved::from)),
-        2 => Some(parse(data)),
+        1 => Some(parse(data)),
         _ => None,
     }
 }
@@ -239,8 +180,7 @@ pub(crate) fn decode_forgotten(
     data: &RawValue,
 ) -> Option<serde_json::Result<MemoryForgotten>> {
     match version {
-        1 => Some(parse::<MemoryForgottenV1>(data).map(MemoryForgotten::from)),
-        2 => Some(parse(data)),
+        1 => Some(parse(data)),
         _ => None,
     }
 }
@@ -272,21 +212,4 @@ pub fn sealed_under_memory(event: &RawEvent) -> Option<MemoryId> {
     serde_json::from_str::<Named>(event.data.get())
         .ok()
         .map(|named| named.memory)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_memory_saved_to_a_space_reads_as_saved_to_its_project() {
-        let data = r#"{"memory":"0192f5c3-0000-7000-8000-000000000001","scope":"space","text":"t","by":{"kind":"person","id":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c11"}}"#;
-        let raw = RawValue::from_string(data.to_owned()).unwrap();
-        let saved = decode_saved(1, &raw).unwrap().unwrap();
-        assert_eq!(saved.scope, MemoryScope::Project);
-        assert!(
-            decode_saved(2, &raw).unwrap().is_err(),
-            "version 2 says project"
-        );
-    }
 }

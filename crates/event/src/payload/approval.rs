@@ -22,11 +22,11 @@ pub struct ApprovalRequested {
     /// Whether the call would show the model a file that usually holds secrets.
     pub secret: bool,
     /// Why the call needs the person whatever the mode, when a caution says so, in sentences
-    /// the person reads: "It deletes /home/ana/notes, outside the project." Since version 2.
+    /// the person reads: "It deletes /home/ana/notes, outside the project."
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caution: Option<String>,
     /// The command would run outside the sandbox the turn's commands run in, as the model
-    /// asked. Such a request asks every time, and is allowed only once. Since version 3.
+    /// asked. Such a request asks every time, and is allowed only once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outside_sandbox: Option<OutsideSandbox>,
 }
@@ -40,30 +40,6 @@ pub struct OutsideSandbox {
     pub reason: Option<String>,
 }
 
-/// Version 1, before the caution had a field of its own: it was folded into `summary`.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ApprovalRequestedV1 {
-    call_id: CallId,
-    tool: String,
-    summary: String,
-    secret: bool,
-}
-
-impl From<ApprovalRequestedV1> for ApprovalRequested {
-    /// Its summary keeps the caution it may end with, in brackets, as it was written.
-    fn from(old: ApprovalRequestedV1) -> Self {
-        Self {
-            call_id: old.call_id,
-            tool: old.tool,
-            summary: old.summary,
-            secret: old.secret,
-            caution: None,
-            outside_sandbox: None,
-        }
-    }
-}
-
 /// The answer to an approval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -71,31 +47,9 @@ pub struct ApprovalDecided {
     pub call_id: CallId,
     pub decision: Verdict,
     /// Who decided. Absent: the thread's `for`. Automatic outcomes (`no_one_there`,
-    /// `cancelled`) are decided by glave. Since version 2.
+    /// `cancelled`) are decided by glave.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
-}
-
-/// Version 1, before a decision named who made it.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ApprovalDecidedV1 {
-    call_id: CallId,
-    decision: Verdict,
-}
-
-impl From<ApprovalDecidedV1> for ApprovalDecided {
-    fn from(old: ApprovalDecidedV1) -> Self {
-        let by = match old.decision {
-            Verdict::NoOneThere | Verdict::Cancelled => Some(Principal::glave()),
-            Verdict::AllowOnce | Verdict::AllowForThread | Verdict::Deny => None,
-        };
-        Self {
-            call_id: old.call_id,
-            decision: old.decision,
-            by,
-        }
-    }
 }
 
 /// How an approval was answered.
@@ -115,12 +69,12 @@ pub enum Verdict {
 
 impl Payload for ApprovalRequested {
     const TYPE: &'static str = REQUESTED;
-    const VERSION: u32 = 3;
+    const VERSION: u32 = 1;
 }
 
 impl Payload for ApprovalDecided {
     const TYPE: &'static str = DECIDED;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 1;
 }
 
 pub(crate) fn decode_requested(
@@ -128,9 +82,7 @@ pub(crate) fn decode_requested(
     data: &RawValue,
 ) -> Option<serde_json::Result<ApprovalRequested>> {
     match version {
-        1 => Some(parse::<ApprovalRequestedV1>(data).map(ApprovalRequested::from)),
-        // Version 3 only adds `outside_sandbox`, which version 2 never wrote.
-        2 | 3 => Some(parse(data)),
+        1 => Some(parse(data)),
         _ => None,
     }
 }
@@ -140,8 +92,7 @@ pub(crate) fn decode_decided(
     data: &RawValue,
 ) -> Option<serde_json::Result<ApprovalDecided>> {
     match version {
-        1 => Some(parse::<ApprovalDecidedV1>(data).map(ApprovalDecided::from)),
-        2 => Some(parse(data)),
+        1 => Some(parse(data)),
         _ => None,
     }
 }
@@ -150,36 +101,11 @@ pub(crate) fn decode_decided(
 mod tests {
     use super::*;
 
-    const V1: &str = r#"{"call_id":"call_9","tool":"bash","summary":"bash: git clean -fdx (it deletes untracked files)","secret":false}"#;
-
-    #[test]
-    fn version_1_reads_with_its_summary_as_written_and_no_caution_of_its_own() {
-        let raw = RawValue::from_string(V1.to_owned()).unwrap();
-        let upgraded = decode_requested(1, &raw).unwrap().unwrap();
-        assert_eq!(
-            upgraded.summary,
-            "bash: git clean -fdx (it deletes untracked files)"
-        );
-        assert_eq!(upgraded.caution, None);
-        let with_caution = V1.replacen('{', r#"{"caution":"It deletes untracked files.","#, 1);
-        let raw = RawValue::from_string(with_caution).unwrap();
-        assert!(
-            decode_requested(1, &raw).unwrap().is_err(),
-            "version 1 had no caution"
-        );
-        let upgraded = decode_requested(2, &raw).unwrap().unwrap();
-        assert_eq!(
-            upgraded.caution.as_deref(),
-            Some("It deletes untracked files.")
-        );
-        assert_eq!(upgraded.outside_sandbox, None);
-    }
-
     #[test]
     fn a_request_to_run_outside_the_sandbox_keeps_the_model_s_reason_apart() {
         let read = |data: &str| {
             let raw = RawValue::from_string(data.to_owned()).unwrap();
-            decode_requested(3, &raw).unwrap().unwrap()
+            decode_requested(1, &raw).unwrap().unwrap()
         };
         let asked = read(
             r#"{"call_id":"call_4","tool":"bash","summary":"bash: cargo add serde","secret":false,"caution":"It runs outside the sandbox.","outside_sandbox":{"reason":"cargo add writes ~/.cargo/registry"}}"#,

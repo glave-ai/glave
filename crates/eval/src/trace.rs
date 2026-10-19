@@ -136,19 +136,11 @@ mod tests {
     use super::*;
 
     /// The golden events: one thread, one turn, one tool call.
-    const GOLDEN: [&str; 7] = [
-        include_str!("../../event/fixtures/thread.started/v1.json"),
-        include_str!("../../event/fixtures/turn.started/v1.json"),
-        include_str!("../../event/fixtures/message.added/v1.json"),
-        include_str!("../../event/fixtures/tool.call.requested/v1.json"),
-        include_str!("../../event/fixtures/tool.call.completed/v1.json"),
-        include_str!("../../event/fixtures/model.responded/v1.json"),
-        include_str!("../../event/fixtures/turn.ended/v1.json"),
-    ];
+    const GOLDEN: &str = include_str!("../fixtures/golden.jsonl");
 
     #[test]
     fn the_golden_thread_reads_as_one_completed_turn() {
-        let trace = parse(&GOLDEN.join("\n")).unwrap();
+        let trace = parse(GOLDEN).unwrap();
         assert_eq!(
             trace,
             Trace {
@@ -171,7 +163,8 @@ mod tests {
 
     #[test]
     fn a_bad_line_names_its_number() {
-        let error = parse(&format!("{}\nnot json\n", GOLDEN[0].trim())).unwrap_err();
+        let first = GOLDEN.lines().next().unwrap();
+        let error = parse(&format!("{first}\nnot json\n")).unwrap_err();
         assert!(error.starts_with("event line 2:"), "{error}");
     }
 }

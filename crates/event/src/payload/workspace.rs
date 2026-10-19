@@ -57,7 +57,7 @@ pub enum Opened {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         at: Option<String>,
     },
-    /// A folder of the thread's own, for a thread with no project (version 2).
+    /// A folder of the thread's own, for a thread with no project.
     Scratch { path: String },
 }
 
@@ -75,7 +75,7 @@ pub struct WorkspaceRemoved {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trash: Option<String>,
     /// For a released worker whose work could not be checked or saved before it was
-    /// destroyed: why. Anything it had not pushed is gone. (Version 2.)
+    /// destroyed: why. Anything it had not pushed is gone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lost: Option<String>,
 }
@@ -99,19 +99,18 @@ pub enum RemovedReason {
 
 impl Payload for WorkspaceBound {
     const TYPE: &'static str = BOUND;
-    /// 2 added the `scratch` kind of `opened`. Version 1 reads as it is: it never has one.
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 1;
 }
 
 impl Payload for WorkspaceRemoved {
     const TYPE: &'static str = REMOVED;
     /// 2 added `lost`.
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 1;
 }
 
 pub(crate) fn decode(version: u32, data: &RawValue) -> Option<serde_json::Result<WorkspaceBound>> {
     match version {
-        1 | 2 => Some(parse(data)),
+        1 => Some(parse(data)),
         _ => None,
     }
 }
@@ -121,32 +120,7 @@ pub(crate) fn decode_removed(
     data: &RawValue,
 ) -> Option<serde_json::Result<WorkspaceRemoved>> {
     match version {
-        1 => Some(parse::<WorkspaceRemovedV1>(data).map(WorkspaceRemoved::from)),
-        2 => Some(parse(data)),
+        1 => Some(parse(data)),
         _ => None,
-    }
-}
-
-/// `workspace.removed` version 1: before `lost`.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct WorkspaceRemovedV1 {
-    root: String,
-    #[serde(default)]
-    branch: Option<String>,
-    reason: RemovedReason,
-    #[serde(default)]
-    trash: Option<String>,
-}
-
-impl From<WorkspaceRemovedV1> for WorkspaceRemoved {
-    fn from(old: WorkspaceRemovedV1) -> Self {
-        Self {
-            root: old.root,
-            branch: old.branch,
-            reason: old.reason,
-            trash: old.trash,
-            lost: None,
-        }
     }
 }

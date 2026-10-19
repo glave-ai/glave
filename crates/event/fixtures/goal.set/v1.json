@@ -1,1 +1,1 @@
-{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000002","thread":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c13","seq":2,"at":"2026-10-10T10:00:00.000Z","type":"goal.set","v":1,"data":{"objective":"make cargo test pass","check":"cargo test","token_budget":1000000}}
+{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000002","thread":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c13","seq":2,"at":"2026-10-10T10:00:00.000Z","type":"goal.set","v":1,"data":{"objective":"make cargo test pass: run it to check","token_budget":1000000}}

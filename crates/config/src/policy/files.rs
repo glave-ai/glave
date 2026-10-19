@@ -52,9 +52,7 @@ pub struct ConfigFile {
     pub gateway: Option<GatewayFile>,
     /// Whether glave reads and writes memory for this person. Only the person's own file sets it.
     pub memory: Option<MemoryChoice>,
-    /// This project's memory: shared with the person's, isolated, or off. Read under its name
-    /// from before spaces were projects too.
-    #[serde(alias = "space_memory")]
+    /// This project's memory: shared with the person's, isolated, or off.
     pub project_memory: Option<ProjectChoice>,
     /// Where spans and metrics go. Only the person's or the server's own file sets it.
     pub telemetry: Option<TelemetryFile>,

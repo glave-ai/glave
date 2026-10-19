@@ -45,8 +45,7 @@ pub struct MemoryRules {
     pub enabled: Option<bool>,
     /// `false`: no personal memory; projects may only be `isolated` or `off`.
     pub personal: Option<bool>,
-    /// The project settings allowed. Read under its name from before spaces were projects too.
-    #[serde(alias = "spaces")]
+    /// The project settings allowed.
     pub projects: Option<Vec<ProjectChoice>>,
     /// Memories not saved or edited for this many days are forgotten by glave.
     pub retention_days: Option<u32>,
@@ -201,12 +200,5 @@ mod tests {
             settle(&chosen(""), &only_off).unwrap().project,
             ProjectMemory::Off
         );
-    }
-
-    #[test]
-    fn files_from_before_spaces_were_projects_read_the_same() {
-        let only_isolated = constraints("version = 1\n[memory]\nspaces = [\"isolated\"]");
-        let settled = settle(&chosen("space_memory = \"isolated\""), &only_isolated).unwrap();
-        assert_eq!(settled.project, ProjectMemory::Isolated);
     }
 }

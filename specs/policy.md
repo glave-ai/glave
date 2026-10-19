@@ -46,8 +46,8 @@ Hooks (issue #46; `approvals.md`, "Hooks"):
 
 Memory (issue #93; `memory.md`):
 
-- `memory = "on"` or `"off"` in `config.toml` (default `on`, `memory.md`) is the person's own choice: a project's file cannot set it. `project_memory` (`shared`, the default, `isolated` or `off`) (read as `space_memory` too, and `[memory]`'s `projects` as `spaces`, from before spaces were projects) is the project's setting, which a project's file may choose without trust, since it can only narrow.
-- `[memory]` in a policy (`enabled`, `personal`, `projects`, `retention_days`) only narrows: `enabled = false` turns memory off (an explicit `memory = "on"` is then an error naming the rule), `personal = false` leaves projects only `isolated` or `off` (glave's default `shared` gives way to `isolated`), `spaces` lists the settings allowed, and the smallest `retention_days` holds. `glave policy explain` shows `memory` and `project_memory` with their sources.
+- `memory = "on"` or `"off"` in `config.toml` (default `on`, `memory.md`) is the person's own choice: a project's file cannot set it. `project_memory` (`shared`, the default, `isolated` or `off`) is the project's setting, which a project's file may choose without trust, since it can only narrow.
+- `[memory]` in a policy (`enabled`, `personal`, `projects`, `retention_days`) only narrows: `enabled = false` turns memory off (an explicit `memory = "on"` is then an error naming the rule), `personal = false` leaves projects only `isolated` or `off` (glave's default `shared` gives way to `isolated`), `projects` lists the settings allowed, and the smallest `retention_days` holds. `glave policy explain` shows `memory` and `project_memory` with their sources.
 
 Not built yet: a command to change a decision; signed bundles from an organization's server, macOS managed preferences and Group Policy; a project's own policy; recording policy changes as events (the admin console); and recording the policy version in each turn's configuration.
 

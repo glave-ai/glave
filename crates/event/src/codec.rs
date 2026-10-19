@@ -32,53 +32,37 @@ pub trait Payload: Serialize + DeserializeOwned {
 /// example in `fixtures/<type>/v<version>.json`; the fixture tests fail if one is missing.
 pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (thread::TYPE, 1),
-    (thread::TYPE, 2),
-    (thread::TYPE, 3),
     (thread::COMPACTED, 1),
     (standing::ARCHIVED, 1),
     (standing::UNARCHIVED, 1),
     (standing::DELETED, 1),
     (standing::RENAMED, 1),
     (turn::STARTED, 1),
-    (turn::STARTED, 2),
     (message::TYPE, 1),
-    (message::TYPE, 2),
     (tool::REQUESTED, 1),
     (tool::COMPLETED, 1),
-    (tool::COMPLETED, 2),
     (model::TYPE, 1),
-    (model::TYPE, 2),
     (chosen::TYPE, 1),
     (chosen::APPROVAL, 1),
     (turn::ENDED, 1),
     (approval::REQUESTED, 1),
-    (approval::REQUESTED, 2),
-    (approval::REQUESTED, 3),
     (approval::DECIDED, 1),
-    (approval::DECIDED, 2),
     (goal::SET, 1),
-    (goal::SET, 2),
     (goal::ENDED, 1),
-    (goal::ENDED, 2),
     (goal::RESUMED, 1),
     (workspace::BOUND, 1),
-    (workspace::BOUND, 2),
     (workspace::REMOVED, 1),
-    (workspace::REMOVED, 2),
     (command::STARTED, 1),
     (command::ENDED, 1),
     (hook::TYPE, 1),
     (task::STARTED, 1),
     (task::ENDED, 1),
     (task::CREATED, 1),
-    (task::CREATED, 2),
     (task::DELETED, 1),
     (gateway::TOOL_CALLED, 1),
     (memory::SAVED, 1),
-    (memory::SAVED, 2),
     (memory::EDITED, 1),
     (memory::FORGOTTEN, 1),
-    (memory::FORGOTTEN, 2),
     (memory::RESTORED, 1),
     (memory::TIDIED, 1),
     (provider::CONNECTED, 1),
@@ -87,19 +71,10 @@ pub const KNOWN_VERSIONS: &[(&str, u32)] = &[
     (credential::REMOVED, 1),
     (project::FOLDER_SET, 1),
     (project::REMOVED, 1),
-    (project::FOLDER_SET_BEFORE, 1),
-    (project::REMOVED_BEFORE, 1),
     (trust::DECIDED, 1),
     (browser::SIGNED_IN, 1),
     (browser::USED, 1),
     (browser::SIGNED_OUT, 1),
-];
-
-/// The types read under an old name and written under a new one, as (old, new): their events
-/// in a log decode as the new type, and encode again under its name.
-pub const RENAMED_TYPES: &[(&str, &str)] = &[
-    (project::FOLDER_SET_BEFORE, project::FOLDER_SET),
-    (project::REMOVED_BEFORE, project::REMOVED),
 ];
 
 /// A decoded event: its header and its payload at the latest version.
@@ -375,10 +350,10 @@ fn decode_others(kind: &str, version: u32, data: &RawValue) -> Option<serde_json
         credential::REMOVED => {
             credential::decode_removed(version, data).map(|r| r.map(Body::CredentialRemoved))
         }
-        project::FOLDER_SET | project::FOLDER_SET_BEFORE => {
+        project::FOLDER_SET => {
             project::decode_folder_set(version, data).map(|r| r.map(Body::ProjectFolderSet))
         }
-        project::REMOVED | project::REMOVED_BEFORE => {
+        project::REMOVED => {
             project::decode_removed(version, data).map(|r| r.map(Body::ProjectRemoved))
         }
         trust::DECIDED => trust::decode_decided(version, data).map(|r| r.map(Body::TrustDecided)),
