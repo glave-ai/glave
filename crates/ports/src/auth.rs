@@ -242,6 +242,32 @@ pub fn signs_in(url: &str) -> bool {
         .is_some_and(|authority| authority.contains('@'))
 }
 
+/// The shortest secret redacted: shorter strings are too common to be secrets, and a
+/// scheme's name such as `Bearer` stays readable.
+const SHORTEST_SECRET: usize = 8;
+
+/// `text` with each of `secrets` at least 8 characters long replaced by `[redacted]`.
+pub fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {
+    let mut text = text.to_owned();
+    for secret in secrets {
+        if secret.len() >= SHORTEST_SECRET && text.contains(secret) {
+            text = text.replace(secret, "[redacted]");
+        }
+    }
+    text
+}
+
+/// `text` with the credentials of `sent` redacted: each header's whole value, and each word
+/// of it, such as the token after `Bearer`. For a provider's error, since some repeat the key
+/// they were sent.
+pub fn redact_credentials(text: &str, sent: &[Header]) -> String {
+    let values = sent.iter().map(|header| header.value.expose());
+    redact(
+        text,
+        values.flat_map(|value| std::iter::once(value).chain(value.split_whitespace())),
+    )
+}
+
 impl From<AuthError> for ProviderError {
     fn from(error: AuthError) -> Self {
         if error.transient {
@@ -336,6 +362,25 @@ mod tests {
             format!("{:?}", Auth::Changing(Arc::new(Signer))),
             "Auth::Changing(a test signer)"
         );
+    }
+
+    #[test]
+    fn credentials_a_server_repeats_are_redacted() {
+        let sent = block_on!(Auth::bearer(Some(FAKE_SECRET.into())).headers(&REQUEST)).unwrap();
+        let said = format!("Incorrect API key provided: {FAKE_SECRET}. Bearer tokens only.");
+        assert_eq!(
+            redact_credentials(&said, &sent),
+            "Incorrect API key provided: [redacted]. Bearer tokens only."
+        );
+        let signed = vec![Header {
+            name: "authorization".into(),
+            value: Secret::new("AWS4-HMAC-SHA256 Signature=0123456789abcdef"),
+        }];
+        assert_eq!(
+            redact_credentials("bad Signature=0123456789abcdef", &signed),
+            "bad [redacted]"
+        );
+        assert_eq!(redact("short key", ["short"]), "short key");
     }
 
     #[test]

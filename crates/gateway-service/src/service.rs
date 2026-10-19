@@ -65,23 +65,15 @@ pub(crate) struct Verified {
     pub(crate) person: PrincipalId,
 }
 
-/// Secrets shorter than this are not looked for in messages: they would match by chance.
-const SHORTEST_SECRET: usize = 8;
-
 impl<L: EventLog> Service<L> {
     pub fn new(wiring: Wiring<L>) -> Arc<Self> {
-        let secrets = wiring
-            .secrets
-            .into_iter()
-            .filter(|secret| secret.len() >= SHORTEST_SECRET)
-            .collect();
         Arc::new(Self {
             gateway: wiring.gateway,
             policy: wiring.policy,
             signin: wiring.signin,
             meter: Meter::new(wiring.log, wiring.scope, wiring.clock, wiring.entropy),
             catalog: wiring.catalog,
-            secrets,
+            secrets: wiring.secrets,
             notices: wiring.notices,
         })
     }
@@ -97,13 +89,7 @@ impl<L: EventLog> Service<L> {
 
     /// `text` with every secret replaced.
     pub(crate) fn redact(&self, text: &str) -> String {
-        let mut text = text.to_owned();
-        for secret in &self.secrets {
-            if text.contains(secret.as_str()) {
-                text = text.replace(secret.as_str(), "[redacted]");
-            }
-        }
-        text
+        glave_ports::auth::redact(text, self.secrets.iter().map(String::as_str))
     }
 
     pub(crate) fn notice(&self, message: &str) {

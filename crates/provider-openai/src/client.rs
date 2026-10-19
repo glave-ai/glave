@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use glave_ports::auth::{Auth, Outgoing};
+use glave_ports::auth::{Auth, Outgoing, redact_credentials};
 use glave_ports::{Completion, Delta, ModelProvider, ModelRequest, ProviderError};
 use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 
@@ -134,7 +134,8 @@ impl ModelProvider for OpenAiCompatible {
             .http
             .post(&self.endpoint)
             .header(CONTENT_TYPE, "application/json");
-        for header in self.auth.headers(&outgoing).await? {
+        let sent = self.auth.headers(&outgoing).await?;
+        for header in &sent {
             let (name, value) = header_pair(&header.name, header.value.expose())?;
             call = call.header(name, value);
         }
@@ -144,7 +145,7 @@ impl ModelProvider for OpenAiCompatible {
             let body = response.text().await.unwrap_or_default();
             return Err(ProviderError::Http {
                 status: status.as_u16(),
-                body: message_of(&body),
+                body: message_of(&redact_credentials(&body, &sent)),
             });
         }
         let mut decoder = SseDecoder::default();
@@ -177,7 +178,8 @@ impl OpenAiCompatible {
             body: &[],
         };
         let mut call = self.http.get(&url);
-        for header in self.auth.headers(&outgoing).await? {
+        let sent = self.auth.headers(&outgoing).await?;
+        for header in &sent {
             let (name, value) = header_pair(&header.name, header.value.expose())?;
             call = call.header(name, value);
         }
@@ -195,7 +197,7 @@ impl OpenAiCompatible {
         if !status.is_success() {
             return Err(ProviderError::Http {
                 status: status.as_u16(),
-                body: message_of(&String::from_utf8_lossy(&body)),
+                body: message_of(&redact_credentials(&String::from_utf8_lossy(&body), &sent)),
             });
         }
         serde_json::from_slice(&body)
