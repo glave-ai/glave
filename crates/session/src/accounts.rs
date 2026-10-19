@@ -1,0 +1,377 @@
+//! Where a person's accounts are kept: the accounts ledger in their personal project, glave's
+//! own stream under a reserved id, holding their model accounts and git hosts. Each
+//! `provider.connected` and `credential.connected` is sealed under a key of its own; removing
+//! an account records its removal and erases it ([`Eraser::erase`]), so neither the store nor
+//! a backup can read it again. A removed account whose key still opens, as after a crash
+//! between the two, is erased the next time the ledger is read.
+
+use std::sync::Arc;
+
+use glave_event::{
+    At, Body, CredentialConnected, CredentialId, CredentialRemoved, EncodeError, EventId, Header,
+    InvalidValue, Principal, PrincipalId, ProviderConnected, ProviderId, ProviderRemoved, RawEvent,
+    Seq, ThreadId, decode, encode,
+};
+use glave_ports::stream::{Reserved, StreamError, append_retrying, catch_up};
+use glave_ports::{Clock, Entropy, EntropyError, Erasable, EraseError, Eraser, EventLog, Scope};
+use thiserror::Error;
+use uuid::Uuid;
+
+use crate::protocol::{ApiError, code};
+
+/// The renewals remembered, so a client naming a credential since renewed still names it.
+const RENAMED: usize = 64;
+
+/// Why the accounts could not be read or kept.
+#[derive(Debug, Error)]
+pub enum AccountsError {
+    /// The ledger could not be read or written.
+    #[error("could not read or keep your accounts: {0}")]
+    Stream(#[from] StreamError),
+    /// A removed account's key could not be destroyed.
+    #[error("could not erase a removed account: {0}")]
+    Erase(#[from] EraseError),
+    #[error(transparent)]
+    Entropy(#[from] EntropyError),
+    /// An event could not be made: the ledger is full, or a value would not encode.
+    #[error("could not record the account: {0}")]
+    Event(String),
+}
+
+impl From<InvalidValue> for AccountsError {
+    fn from(error: InvalidValue) -> Self {
+        Self::Event(error.to_string())
+    }
+}
+
+impl From<EncodeError> for AccountsError {
+    fn from(error: EncodeError) -> Self {
+        Self::Event(error.to_string())
+    }
+}
+
+impl From<AccountsError> for ApiError {
+    fn from(error: AccountsError) -> Self {
+        Self::new(code::INTERNAL, error.to_string())
+    }
+}
+
+/// A person's accounts, in the store.
+#[derive(Clone)]
+pub struct AccountLedger<L> {
+    log: L,
+    eraser: Arc<dyn Eraser>,
+    scope: Scope,
+    person: PrincipalId,
+    clock: Arc<dyn Clock>,
+    entropy: Arc<dyn Entropy>,
+}
+
+/// The accounts kept, oldest first.
+#[derive(Debug, Default)]
+pub struct Accounts {
+    pub providers: Vec<ProviderConnected>,
+    pub credentials: Vec<CredentialConnected>,
+    /// Credentials renewed, each with the kept one it became, the latest last.
+    renamed: Vec<(CredentialId, CredentialId)>,
+}
+
+impl Accounts {
+    /// The git host kept as `credential`, or as the one it was renewed into.
+    pub fn credential(&self, credential: CredentialId) -> Option<&CredentialConnected> {
+        let current = self
+            .renamed
+            .iter()
+            .find(|(old, _)| *old == credential)
+            .map_or(credential, |(_, new)| *new);
+        self.credentials
+            .iter()
+            .find(|kept| kept.credential == current)
+    }
+
+    /// Takes the removal of `old`: names that named it name what `renewed` it, and `old` names
+    /// it too; with nothing renewing it, they name nothing.
+    fn renamed(&mut self, old: CredentialId, renewed: Option<CredentialId>) {
+        let Some(new) = renewed else {
+            self.renamed.retain(|(_, named)| *named != old);
+            return;
+        };
+        for (_, named) in &mut self.renamed {
+            if *named == old {
+                *named = new;
+            }
+        }
+        self.renamed.push((old, new));
+        let over = self.renamed.len().saturating_sub(RENAMED);
+        self.renamed.drain(..over);
+    }
+}
+
+/// The accounts the ledger holds, the `seq` its next event takes, and the accounts removed
+/// whose keys still open.
+struct Read {
+    accounts: Accounts,
+    next: u64,
+    unerased: Vec<Uuid>,
+}
+
+impl<L: EventLog> AccountLedger<L> {
+    /// The ledger of `person`, kept in `log` in their personal project `scope`, erased through
+    /// `eraser`.
+    pub fn new(
+        log: L,
+        eraser: Arc<dyn Eraser>,
+        scope: Scope,
+        person: PrincipalId,
+        clock: Arc<dyn Clock>,
+        entropy: Arc<dyn Entropy>,
+    ) -> Self {
+        Self {
+            log,
+            eraser,
+            scope,
+            person,
+            clock,
+            entropy,
+        }
+    }
+
+    /// The person whose accounts these are.
+    pub fn person(&self) -> PrincipalId {
+        self.person
+    }
+
+    /// The accounts kept, oldest first, once any removed ones are erased.
+    pub async fn accounts(&self) -> Result<Accounts, AccountsError> {
+        let read = self.read().await?;
+        for account in read.unerased {
+            self.eraser
+                .erase(self.scope, Erasable::Account(account))
+                .await?;
+        }
+        Ok(read.accounts)
+    }
+
+    /// Keeps the model account `account`, replacing any it stands in for, the same service at
+    /// the same URL, which is erased when the accounts are next read.
+    pub async fn keep_provider(&self, account: &ProviderConnected) -> Result<(), AccountsError> {
+        self.append(|accounts| {
+            let mut events = vec![Event::ProviderConnected(account.clone())];
+            events.extend(
+                accounts
+                    .providers
+                    .iter()
+                    .filter(|kept| kept.kind == account.kind && kept.url == account.url)
+                    .map(|kept| Event::ProviderRemoved(kept.provider)),
+            );
+            Some((events, ()))
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// Keeps the git host `credential`, replacing any kept for the same host, which is erased
+    /// when the accounts are next read.
+    pub async fn keep_credential(
+        &self,
+        credential: &CredentialConnected,
+    ) -> Result<(), AccountsError> {
+        self.append(|accounts| {
+            let mut events = vec![Event::CredentialConnected(credential.clone())];
+            events.extend(
+                accounts
+                    .credentials
+                    .iter()
+                    .filter(|kept| kept.url == credential.url)
+                    .map(|kept| Event::CredentialRemoved(kept.credential, None)),
+            );
+            Some((events, ()))
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// Removes the model account `provider`; it is erased when the accounts are next read.
+    /// False when no such account is kept.
+    pub async fn remove_provider(&self, provider: ProviderId) -> Result<bool, AccountsError> {
+        let removed = self
+            .append(|accounts| {
+                accounts
+                    .providers
+                    .iter()
+                    .any(|kept| kept.provider == provider)
+                    .then(|| (vec![Event::ProviderRemoved(provider)], ()))
+            })
+            .await?;
+        Ok(removed.is_some())
+    }
+
+    /// Keeps `fresh`, the renewal of the git host `old`, in its place, only while `old` is
+    /// still kept: false, keeping nothing, when it was removed or replaced meanwhile.
+    pub async fn renew_credential(
+        &self,
+        old: CredentialId,
+        fresh: &CredentialConnected,
+    ) -> Result<bool, AccountsError> {
+        let renewed = self
+            .append(|accounts| {
+                let kept = accounts
+                    .credentials
+                    .iter()
+                    .any(|kept| kept.credential == old);
+                kept.then(|| {
+                    let events = vec![
+                        Event::CredentialConnected(fresh.clone()),
+                        Event::CredentialRemoved(old, Some(fresh.credential)),
+                    ];
+                    (events, ())
+                })
+            })
+            .await?;
+        Ok(renewed.is_some())
+    }
+
+    /// Removes the git host `credential`, or the one it was renewed into; it is erased when the
+    /// accounts are next read. False when no such host is kept.
+    pub async fn remove_credential(&self, credential: CredentialId) -> Result<bool, AccountsError> {
+        let removed = self
+            .append(|accounts| {
+                accounts
+                    .credential(credential)
+                    .map(|kept| (vec![Event::CredentialRemoved(kept.credential, None)], ()))
+            })
+            .await?;
+        Ok(removed.is_some())
+    }
+
+    /// Appends what `change` makes of the accounts kept, read again and tried again when
+    /// another process wrote first; nothing when it makes nothing.
+    async fn append<T>(
+        &self,
+        change: impl Fn(&Accounts) -> Option<(Vec<Event>, T)>,
+    ) -> Result<Option<T>, AccountsError> {
+        let ledger = Reserved::Accounts.id();
+        let (this, change) = (self, &change);
+        let appended = append_retrying(&self.log, &self.scope, ledger, move || async move {
+            let read = this.read().await?;
+            let Some((events, made)) = change(&read.accounts) else {
+                return Ok::<_, AccountsError>(None);
+            };
+            let mut raw = Vec::with_capacity(events.len());
+            let mut seq = Seq::new(read.next)?;
+            for event in events {
+                raw.push(this.raw(event, ledger, seq)?);
+                seq = seq
+                    .next()
+                    .ok_or_else(|| AccountsError::Event("the accounts ledger is full".into()))?;
+            }
+            Ok(Some((raw, made)))
+        })
+        .await?;
+        Ok(appended.map(|(_, made)| made))
+    }
+
+    /// Reads the whole ledger. An account whose key was destroyed reads as erased and is left
+    /// out with its removal.
+    async fn read(&self) -> Result<Read, AccountsError> {
+        let mut read = Read {
+            accounts: Accounts::default(),
+            next: 1,
+            unerased: Vec::new(),
+        };
+        catch_up(
+            &self.log,
+            &self.scope,
+            Reserved::Accounts.id(),
+            None,
+            |page| {
+                for raw in page {
+                    read.next = raw.seq.get().saturating_add(1);
+                    if let Ok(event) = decode(raw) {
+                        read.take(event.body);
+                    }
+                }
+            },
+        )
+        .await?;
+        Ok(read)
+    }
+
+    /// `event` as the ledger's event at `seq`.
+    fn raw(&self, event: Event, ledger: ThreadId, seq: Seq) -> Result<RawEvent, AccountsError> {
+        let now = self.clock.now();
+        let header = Header {
+            id: EventId::new(now, self.entropy.bytes()?)?,
+            thread: ledger,
+            seq,
+            at: At::from(now),
+        };
+        let by = Principal::person(self.person);
+        Ok(match event {
+            Event::ProviderConnected(connected) => encode(header, &connected)?,
+            Event::ProviderRemoved(provider) => encode(header, &ProviderRemoved { provider, by })?,
+            Event::CredentialConnected(connected) => encode(header, &connected)?,
+            Event::CredentialRemoved(credential, renewed) => {
+                let removed = CredentialRemoved {
+                    credential,
+                    renewed,
+                    by,
+                };
+                encode(header, &removed)?
+            }
+        })
+    }
+}
+
+impl Read {
+    /// Takes one ledger event into the accounts.
+    fn take(&mut self, body: Body) {
+        let accounts = &mut self.accounts;
+        match body {
+            Body::ProviderConnected(connected) => {
+                accounts
+                    .providers
+                    .retain(|kept| kept.provider != connected.provider);
+                accounts.providers.push(connected);
+            }
+            Body::ProviderRemoved(removed) => {
+                let before = accounts.providers.len();
+                accounts
+                    .providers
+                    .retain(|kept| kept.provider != removed.provider);
+                if accounts.providers.len() < before {
+                    self.unerased.push(removed.provider.as_uuid());
+                }
+            }
+            Body::CredentialConnected(connected) => {
+                accounts
+                    .credentials
+                    .retain(|kept| kept.credential != connected.credential);
+                accounts.credentials.push(connected);
+            }
+            Body::CredentialRemoved(removed) => {
+                let before = accounts.credentials.len();
+                accounts
+                    .credentials
+                    .retain(|kept| kept.credential != removed.credential);
+                accounts.renamed(removed.credential, removed.renewed);
+                if accounts.credentials.len() < before {
+                    self.unerased.push(removed.credential.as_uuid());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// One event to append to the ledger.
+enum Event {
+    ProviderConnected(ProviderConnected),
+    ProviderRemoved(ProviderId),
+    CredentialConnected(CredentialConnected),
+    /// A git host removed, and the one that renewed it in its place.
+    CredentialRemoved(CredentialId, Option<CredentialId>),
+}
+
+#[cfg(test)]
+mod tests;

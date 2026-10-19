@@ -69,7 +69,7 @@ fn block_on<T>(future: impl Future<Output = T>) -> T {
 fn asks_beside_each_other_share_one_renewal_and_a_renewed_token_is_not_renewed_again() {
     let (second, renewed) = renewal_answer();
     let fake = FakeHttp::start(vec![(200, renewed)]).unwrap();
-    let ledger = block_on(Ledger::in_memory()).unwrap();
+    let ledger = block_on(crate::accounts::in_memory()).unwrap();
     let first = signed_in(&fake.url);
     let spent = format!(
         "refresh_token={}",
@@ -109,7 +109,7 @@ fn asks_beside_each_other_share_one_renewal_and_a_renewed_token_is_not_renewed_a
 fn a_renewal_github_refused_is_tried_again_only_after_a_while() {
     let refused = json!({"error": "bad_refresh_token", "error_description": "no\nlonger"});
     let fake = FakeHttp::start(vec![(200, refused.to_string())]).unwrap();
-    let ledger = block_on(Ledger::in_memory()).unwrap();
+    let ledger = block_on(crate::accounts::in_memory()).unwrap();
     let first = signed_in(&fake.url);
     let renewals = Renewals::default();
     block_on(async {
@@ -130,7 +130,7 @@ fn a_renewal_github_refused_is_tried_again_only_after_a_while() {
 fn a_host_removed_before_its_renewal_is_not_renewed() {
     let (_, renewed) = renewal_answer();
     let fake = FakeHttp::start(vec![(200, renewed)]).unwrap();
-    let ledger = block_on(Ledger::in_memory()).unwrap();
+    let ledger = block_on(crate::accounts::in_memory()).unwrap();
     let first = signed_in(&fake.url);
     let renewals = Renewals::default();
     block_on(async {

@@ -40,7 +40,7 @@ Glave is the open-source user agent for AI: one binary that runs anywhere (a lap
 Cargo.toml          workspace: lints, profiles, shared dependencies
 xtask/              developer automation (`cargo xtask`)
 crates/event/       glave-event: the versioned event format (envelope, payloads, upgrade-on-read)
-crates/ports/       glave-ports: event log, blob store, model provider (and how one is reached: a key, or credentials that change), tool source, computer and memory ports, glave's own streams beside threads (the ledgers' reserved ids, reads caught up, appends retried), the caller, the clock and entropy, in-memory versions, conformance suites and the test doubles every crate shares
+crates/ports/       glave-ports: event log, blob store, key erasure, model provider (and how one is reached: a key, or credentials that change), tool source, computer and memory ports, glave's own streams beside threads (the ledgers' reserved ids, reads caught up, appends retried), the caller, the clock and entropy, in-memory versions, conformance suites and the test doubles every crate shares
 crates/identity/    glave-identity: who is calling: OIDC and local sign-in that verify the caller, browsers signed in by one-time links to sessions kept as hashes, the person an issuer's subject is
 crates/config/      glave-config: config and policy (specs/policy.md): choices nearest-wins, constraints that only narrow, project trust, `policy explain`; shared by the CLI and the servers
 crates/provider-openai/  glave-provider-openai: OpenAI-compatible streaming provider
@@ -61,7 +61,7 @@ crates/web/         glave-web: web_fetch as a tool source: private addresses ref
 crates/harness/     glave-harness: the agent loop, its seven tools (search, glob, read, write, edit, bash, command_output for commands kept running in the background) run on a computer through the port, approvals, resume, AGENTS.md, skills (agentskills.io), custom commands, hooks
 crates/computer/    glave-computer: computers (specs/computers.md): this machine as one (in the sandbox by default), environments from devcontainer.json or environment.toml, workers on Docker or Kubernetes (the `kubernetes` feature), served (`glave computer serve`, TLS across machines) and reached over JSON-RPC
 crates/process/     glave-process: every operating-system process glave owns, started in one place (`cargo xtask spawns`), in a process group of its own, recorded in a ledger while it runs, and stopped at the next start when its glave is gone
-crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC or local sign-in (glave-identity), and its JSON Schema (specs/session.schema.json, generated); every surface, the CLI first, runs threads through it
+crates/session/     glave-session: the session API (specs/session.md) in-process, over stdio, and over HTTP with OIDC or local sign-in (glave-identity), and its JSON Schema (specs/session.schema.json, generated), and the accounts ledger a host keeps a person's model accounts and git hosts in; every surface, the CLI first, runs threads through it
 crates/eval/        glave-eval: the eval factory, the harness run in-process on evals/tasks against real models
 crates/cli/         glave: the command-line binary; with the `web` feature, as releases build it, the web app inside (build.rs)
 web/client/         the session API's TypeScript client: types generated from the schema (`cargo xtask schema`), a small typed client, no framework

@@ -53,7 +53,7 @@ impl Hosts {
         if others_sign_in {
             return Ok(None);
         }
-        let ledger = Ledger::open(store, person).await?;
+        let ledger = crate::accounts::open(store, person).await?;
         Self::open(ledger, github).await.map(Some)
     }
 
@@ -87,10 +87,7 @@ impl Hosts {
 
     /// Keeps `credential`, replacing any for the same host, and offers it to commands.
     async fn keep(&self, credential: CredentialConnected) -> Result<CredentialInfo, ApiError> {
-        self.ledger
-            .keep_credential(&credential)
-            .await
-            .map_err(|e| failed(&e))?;
+        self.ledger.keep_credential(&credential).await?;
         self.kept().await.map_err(|e| failed(&e))?;
         Ok(self.described(&credential).await)
     }
@@ -197,8 +194,7 @@ impl GitHosts for Hosts {
 
     fn remove(&self, credential: CredentialId) -> BoxFuture<'_, Result<(), ApiError>> {
         Box::pin(async move {
-            let removed = self.ledger.remove_credential(credential).await;
-            if !removed.map_err(|e| failed(&e))? {
+            if !self.ledger.remove_credential(credential).await? {
                 return Err(ApiError::new(
                     code::NO_CREDENTIAL,
                     format!("no git host {credential} here"),

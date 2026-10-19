@@ -8,7 +8,7 @@ use glave_event::{
     Seq, ThreadId, TurnEnded, encode,
 };
 use glave_ports::testing::FAKE_SECRET;
-use glave_ports::{OrgId, ProjectId, Scope};
+use glave_ports::{Erasable, Eraser, OrgId, ProjectId, Scope};
 use uuid::{Builder, Uuid};
 
 use crate::error::KeyError;
@@ -99,7 +99,8 @@ async fn memory_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
         one.key_id != two.key_id && plain.key_id.ends_with("/2026-10/1"),
         "each memory has its own key, apart from the month's",
     )?;
-    keys.destroy_memory_key(&here, uuid_v7(7_001))
+    let memory = MemoryId::try_from(uuid_v7(7_001)).map_err(|e| e.to_string())?;
+    Eraser::destroy(keys, here, Erasable::Memory(memory))
         .await
         .map_err(text)?;
     ensure(
@@ -184,7 +185,7 @@ async fn account_keys<S: KeyStorage>(keys: &Keys<S>) -> Verdict {
                 .any(|w| w == FAKE_SECRET.as_bytes()),
             "the key or token is sealed, not stored as written",
         )?;
-        keys.destroy_account_key(&here, uuid_v7(n))
+        Eraser::destroy(keys, here, Erasable::Account(uuid_v7(n)))
             .await
             .map_err(text)?;
         let opened = open(keys, &here, &account, &sealed).await;

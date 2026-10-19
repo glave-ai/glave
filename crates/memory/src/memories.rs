@@ -13,11 +13,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 use glave_event::{At, EventId, Header, MemoryId, MemoryScope, Payload, PrincipalId, Seq, encode};
 use glave_ports::memories::{MemoryContext, MemoryError, Remembered, Shown};
 use glave_ports::stream::{Reserved, append_retrying, catch_up};
-use glave_ports::{Clock, Entropy, EventLog, ProjectId, Scope};
+use glave_ports::{Clock, Entropy, Eraser, EventLog, ProjectId, Scope};
 
 use crate::book::{Book, Entry};
 use crate::rules::{Personal, ProjectMemory, Rules};
-use crate::shred::Shredder;
 
 pub use housekeep::Housekept;
 pub(crate) use recall::DEFAULT_HITS;
@@ -43,7 +42,7 @@ impl<L> Clone for Memories<L> {
 
 struct Inner<L> {
     log: L,
-    shredder: Arc<dyn Shredder>,
+    eraser: Arc<dyn Eraser>,
     rules: RwLock<Rules>,
     clock: Box<dyn Clock>,
     entropy: Box<dyn Entropy>,
@@ -51,10 +50,10 @@ struct Inner<L> {
 }
 
 impl<L: EventLog + 'static> Memories<L> {
-    /// Memory kept in `log`, erased through `shredder`, by `rules`.
+    /// Memory kept in `log`, erased through `eraser`, by `rules`.
     pub fn new(
         log: L,
-        shredder: Arc<dyn Shredder>,
+        eraser: Arc<dyn Eraser>,
         rules: Rules,
         clock: Box<dyn Clock>,
         entropy: Box<dyn Entropy>,
@@ -62,7 +61,7 @@ impl<L: EventLog + 'static> Memories<L> {
         Self {
             inner: Arc::new(Inner {
                 log,
-                shredder,
+                eraser,
                 rules: RwLock::new(rules),
                 clock,
                 entropy,

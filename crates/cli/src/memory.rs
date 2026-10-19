@@ -100,7 +100,7 @@ pub async fn start(
     };
     let memories = Memories::new(
         store.log(),
-        store.shredder(),
+        store.eraser(),
         rules,
         Box::new(SystemClock),
         Box::new(OsEntropy),
