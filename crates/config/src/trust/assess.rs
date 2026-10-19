@@ -8,7 +8,7 @@ use glave_harness::Hook;
 
 use crate::policy::{ConfigFile, Constraints};
 use crate::trust::project::{Item, Plain, Project, SETTINGS};
-use crate::trust::record::{Decision, FILE, Record};
+use crate::trust::record::{Decision, Record, decision};
 
 /// Why an item has not been decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,7 +193,7 @@ impl Assessment {
                 _ => None,
             };
             if let Some(trusted) = kept {
-                decisions.insert(item.id.clone(), Decision::about(item, trusted));
+                decisions.insert(item.id.clone(), decision(item, trusted));
             }
         }
         let answered = matches!(answer, Answer::Yes | Answer::No) && !self.undecided().is_empty();
@@ -231,7 +231,7 @@ impl Assessment {
 /// off, why.
 fn verdict(item: &Item, standing: &Standing, answer: Answer) -> (bool, String, String) {
     let kind = if item.is_hook() { "hooks" } else { "servers" };
-    let record = format!("recorded in {FILE}");
+    let record = "your answer";
     match (standing, answer) {
         (Standing::Trusted, _) => (true, format!("trusted ({record})"), String::new()),
         (Standing::Declined, _) => (

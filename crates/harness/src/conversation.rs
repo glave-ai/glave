@@ -87,6 +87,7 @@ pub(crate) fn follow(messages: &mut Vec<Message>, event: &Event) {
         | Body::CredentialRemoved(_)
         | Body::SpaceFolderSet(_)
         | Body::SpaceRemoved(_)
+        | Body::TrustDecided(_)
         | Body::Unknown(_) => {}
     }
 }

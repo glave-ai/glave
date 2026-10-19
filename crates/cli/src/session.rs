@@ -39,6 +39,8 @@ use crate::{home, identity};
 use glave_config::policy::{self, Choices};
 use glave_config::trust::Asking;
 
+use crate::trust::Trust;
+
 /// A command's own entry: it reads the words after its name.
 type Subcommand = fn(&[String]) -> ExitCode;
 
@@ -162,11 +164,6 @@ async fn mcp_servers(
 async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Result<Wired> {
     let folder = std::env::current_dir()?;
     let mut setup = Setup::load(args, &folder).await?;
-    // The terminal asks about the folder's project before glave starts; an app asks later.
-    let told = match asking {
-        Asking::Later => Vec::new(),
-        asking => setup::ask_here(&folder, &setup, asking).await?,
-    };
     let telemetry = crate::telemetry::start_for(args.log.as_deref(), &setup.choices)?;
     let database = home::database().await?;
     let processes = home::reaped().await?;
@@ -176,6 +173,12 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let (remote, configured) = crate::providers::endpoint(choices)?;
     let store = store(&setup).await?;
     let identity = identity::load_or_make(&home::folder()?, &store).await?;
+    let trust = Trust::open(&store, identity.person, &home::folder()?).await?;
+    // The terminal asks about the folder's project before glave starts; an app asks later.
+    let told = match asking {
+        Asking::Later => Vec::new(),
+        asking => setup::ask_here(&folder, &setup, asking, &trust).await?,
+    };
     let lineup = Lineup::new(&setup, configured);
     let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
     let (workspace, hosts) = with_hosts(args, &store, identity.person, choices, workspace).await?;
@@ -191,7 +194,14 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder).await?;
     let scope = crate::spaces::here(&store, &root, identity.person).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
-    let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asking)?;
+    let projects = projects_for(
+        &setup,
+        &servers,
+        &lined.switch,
+        memory.as_ref(),
+        asking,
+        trust,
+    )?;
     for line in [told, projects.set_aside(&folder).await].concat() {
         eprintln!("glave: {line}");
     }
@@ -282,6 +292,7 @@ fn projects_for(
     models: &GatewaySwitch,
     memory: Option<&crate::memory::Running>,
     asking: Asking,
+    trust: Trust,
 ) -> anyhow::Result<Arc<Projects>> {
     let own = crate::projects::Own {
         loaded: setup.loaded.clone(),
@@ -291,6 +302,7 @@ fn projects_for(
         memory: memory.map(|memory| Arc::clone(&memory.memory)),
         clock: Box::new(SystemClock),
         processes: servers.processes().clone(),
+        trust,
     };
     let later = asking == Asking::Later;
     let projects = Arc::new(Projects::new(home::folder()?, own, later));

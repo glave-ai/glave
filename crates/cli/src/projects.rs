@@ -4,7 +4,7 @@
 //! that stays off, and why); what its project chooses for it at the start of each turn
 //! (`settle.rs`); what it turns on for it once you trust it (its servers, started in its
 //! folder, its hooks, and settings that loosen its commands); and, for an app, what it asks
-//! you to trust, with your yes kept in `trust.toml` exactly as the terminal keeps it. No
+//! you to trust, with your yes kept in the trust ledger exactly as the terminal keeps it. No
 //! project is the server's own: the folder glave started in is one project among the others.
 
 mod servers;
@@ -31,6 +31,7 @@ use tokio::task::JoinHandle;
 use crate::data::DataLog;
 use crate::gateway::GatewaySwitch;
 use crate::setup::off_note;
+use crate::trust::Trust;
 use servers::Running;
 
 pub use settle::web_offered;
@@ -60,6 +61,8 @@ pub struct Own {
     pub clock: Box<dyn Clock>,
     /// Where a project's servers start, each owned by its project.
     pub processes: Processes,
+    /// What the person decided about each project.
+    pub trust: Trust,
 }
 
 /// The levels glave's own choices came from, the constraints, and those choices: what each
@@ -71,8 +74,10 @@ struct Base {
 
 /// Every project as this glave reads it: see the module's documentation.
 pub struct Projects {
-    /// glave's folder: the person's AGENTS.md and the trust record.
+    /// glave's folder: the person's AGENTS.md.
     home: PathBuf,
+    /// What the person decided about each project.
+    trust: Trust,
     base: RwLock<Arc<Base>>,
     /// The names of the person's own servers, as they run now.
     taken: RwLock<Vec<String>>,
@@ -100,6 +105,7 @@ impl Projects {
     pub fn new(home: PathBuf, own: Own, later: bool) -> Self {
         Self {
             home,
+            trust: own.trust,
             base: RwLock::new(Arc::new(Base {
                 loaded: own.loaded,
                 choices: own.choices,
@@ -256,13 +262,18 @@ impl Projects {
     }
 
     /// Where each item of the project at `root` stands now.
-    async fn assessed(&self, root: &Path) -> glave_config::Result<trust::Assessment> {
+    async fn assessed(&self, root: &Path) -> anyhow::Result<trust::Assessment> {
         let project = Project::read(root, &crate::mcp::environment()).await?;
-        trust::assessed(&self.home, project, &self.base().loaded.constraints).await
+        let record = self.trust.record().await?;
+        Ok(trust::assess(
+            project,
+            &record,
+            &self.base().loaded.constraints,
+        ))
     }
 
     /// What the project at `root` runs now, and what stays off and why.
-    async fn outcome(&self, root: &Path) -> glave_config::Result<Outcome> {
+    async fn outcome(&self, root: &Path) -> anyhow::Result<Outcome> {
         Ok(self.assessed(root).await?.apply(self.answer))
     }
 
@@ -306,7 +317,7 @@ impl Projects {
 
     /// What the project at `root`, the space `space`'s, chooses and turns on now beyond what
     /// glave runs for the person's threads everywhere.
-    async fn bring(&self, root: &Path, space: SpaceId) -> glave_config::Result<Brought> {
+    async fn bring(&self, root: &Path, space: SpaceId) -> anyhow::Result<Brought> {
         let outcome = self.outcome(root).await?;
         let read = self.settle(root, &outcome);
         let base = self.base();
@@ -366,7 +377,7 @@ fn project_root(home: &Path, folder: &Path) -> PathBuf {
 
 /// A failure reading a project, as the session API reports it: in plain words, the files it
 /// names kept to the server's log.
-fn failed(error: &glave_config::Error) -> ApiError {
+fn failed(error: &dyn std::fmt::Display) -> ApiError {
     tracing::warn!(%error, "a project or the trust record could not be read");
     ApiError::new(
         code::INTERNAL,
@@ -433,9 +444,8 @@ impl ProjectTrust for Projects {
                 return Ok(None);
             };
             let constraints = &self.base().loaded.constraints;
-            let assessment = trust::assessed(&self.home, project, constraints)
-                .await
-                .map_err(|error| failed(&error))?;
+            let record = self.trust.record().await.map_err(|error| failed(&error))?;
+            let assessment = trust::assess(project, &record, constraints);
             if assessment.undecided().is_empty() {
                 return Ok(None);
             }
@@ -465,9 +475,16 @@ impl ProjectTrust for Projects {
             let project = Project::read(&root, &crate::mcp::environment())
                 .await
                 .map_err(|error| failed(&error))?;
-            trust::trust_asked(&self.home, project, &self.base().loaded.constraints, ask)
+            let record = self.trust.record().await.map_err(|error| failed(&error))?;
+            let constraints = &self.base().loaded.constraints;
+            let Some(entry) = trust::trust_asked(&record, project, constraints, ask) else {
+                return Ok(false);
+            };
+            self.trust
+                .keep(entry)
                 .await
-                .map_err(|error| failed(&error))
+                .map_err(|error| failed(&error))?;
+            Ok(true)
         })
     }
 }

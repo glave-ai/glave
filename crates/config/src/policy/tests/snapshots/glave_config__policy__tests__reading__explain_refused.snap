@@ -21,7 +21,7 @@ Config files
   /home/ada/.glave/config.toml
 
 Project /code/app
-  MCP server docs (docs-mcp --fast)  trusted (recorded in trust.toml)
+  MCP server docs (docs-mcp --fast)  trusted (your answer)
   settings (approval = "auto")       off until trusted: glave will ask once
 
 Constraints (they only narrow, and a deny always wins)

@@ -11,6 +11,8 @@ publish.workspace = true
 [dependencies]
 # The settings config and policy choose and constrain are the domain crates' own types.
 glave-computer.workspace = true
+# Project trust is kept as the trust ledger's events.
+glave-event.workspace = true
 glave-harness.workspace = true
 # A project's `.mcp.json`, read the way glave's MCP client reads it.
 glave-mcp.workspace = true

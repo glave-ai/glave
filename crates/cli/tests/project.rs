@@ -34,7 +34,8 @@ mod project {
         server
     }
 
-    /// Records a yes for the project's `tests` server, as glave would after asking.
+    /// Records a yes for the project's `tests` server, as an earlier glave kept it after
+    /// asking: in `trust.toml`, which the next start moves into the store.
     fn trust(place: &Place, server: &serde_json::Value) {
         std::fs::create_dir_all(&place.home).unwrap();
         let root = std::fs::canonicalize(&place.project).unwrap();
@@ -80,10 +81,6 @@ mod project {
         assert!(
             told.contains("Project tools that are off") && told.contains("MCP server tests"),
             "{told}"
-        );
-        assert!(
-            !place.home.join("trust.toml").exists(),
-            "nothing is recorded without an answer"
         );
     }
 
@@ -258,17 +255,20 @@ mod project {
         assert!(shown.contains("MCP server tests"), "{shown}");
         assert!(shown.contains("glave will ask once"), "{shown}");
         assert!(shown.contains("settings (approval = \"auto\")"), "{shown}");
-        assert!(
-            !place.home.join("trust.toml").exists(),
-            "explaining records nothing"
-        );
         let server = json!({ "command": test_server() });
         trust(&place, &server);
         let shown = text(&explain());
         assert!(
-            shown.contains("MCP server tests")
-                && shown.contains("trusted (recorded in trust.toml)"),
+            shown.contains("MCP server tests") && shown.contains("trusted (your answer)"),
             "{shown}"
+        );
+        assert!(
+            !place.home.join("trust.toml").exists(),
+            "an earlier glave's file is moved into the store"
+        );
+        assert!(
+            text(&explain()).contains("trusted (your answer)"),
+            "and read from there"
         );
     }
 }

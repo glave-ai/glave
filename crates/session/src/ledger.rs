@@ -45,6 +45,13 @@ pub fn space_ledger() -> Option<ThreadId> {
     reserved(3)
 }
 
+/// The trust ledger's reserved id, `00000000-0000-7000-8000-000000000004`: what a person
+/// decided about the projects that ask to be trusted (`trust.decided`), in their personal
+/// space.
+pub fn trust_ledger() -> Option<ThreadId> {
+    reserved(4)
+}
+
 /// The reserved id ending in `last`: a UUID v7 at time zero, nothing random but its last byte.
 fn reserved(last: u8) -> Option<ThreadId> {
     let mut random = [0u8; 10];
@@ -54,14 +61,15 @@ fn reserved(last: u8) -> Option<ThreadId> {
     ThreadId::new(Timestamp::UNIX_EPOCH, random).ok()
 }
 
-/// Whether `thread` is one of the space's ledgers (tasks, memory, accounts, or the space's
-/// own) rather than a thread.
+/// Whether `thread` is one of the space's ledgers (tasks, memory, accounts, trust, or the
+/// space's own) rather than a thread.
 pub fn is_ledger(thread: ThreadId) -> bool {
     [
         ledger_id(),
         glave_ports::memories::memory_ledger(),
         accounts_ledger(),
         space_ledger(),
+        trust_ledger(),
     ]
     .contains(&Some(thread))
 }

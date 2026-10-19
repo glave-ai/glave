@@ -41,7 +41,7 @@ pub use approvals::Answering;
 pub use credentials::{GitHosts, NewCredential};
 pub use dispatch::Answered;
 pub use glave_identity::signin;
-pub use ledger::{accounts_ledger, is_ledger, space_ledger};
+pub use ledger::{accounts_ledger, is_ledger, space_ledger, trust_ledger};
 pub use providers::{Models, NewProvider, Providers};
 pub use reread::{Apply, Changed, Rereads, Runs};
 pub use server::{OnWorkers, Server, Wiring};

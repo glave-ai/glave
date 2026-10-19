@@ -135,14 +135,12 @@ fn asked_once_then_remembered_until_the_servers_change() {
     assert_eq!(undecided(&project, &record, &rules), 1);
     let outcome = assess(project.clone(), &record, &rules).apply(Answer::Yes);
     assert_eq!(outcome.servers.keys().collect::<Vec<_>>(), ["docs"]);
-    record.remember(&project, outcome.decisions.unwrap());
-    // Remembered across runs: written, read back, and not asked again.
-    block_on!(record.save(&dir)).unwrap();
-    let record = block_on!(Record::load(&dir)).unwrap();
+    record.take(Record::deciding(&project, outcome.decisions.unwrap()));
+    // Remembered: not asked again.
     assert_eq!(undecided(&project, &record, &rules), 0);
     let again = assess(project, &record, &rules).apply(Answer::NoOne);
     assert_eq!(again.servers.len(), 1, "trusted with no one to ask");
-    assert!(again.decisions.is_none(), "nothing new to write");
+    assert!(again.decisions.is_none(), "nothing new to keep");
     // The repository changes the server's command, and adds another: asked again.
     let changed =
         r#""docs": {"command": "docs-mcp", "args": ["--slow"]}, "extra": {"command": "x"}"#;
@@ -173,7 +171,7 @@ fn a_no_is_remembered_too_and_with_no_one_there_servers_stay_off() {
     );
     let no = assess(project.clone(), &record, &rules).apply(Answer::No);
     assert!(no.servers.is_empty());
-    record.remember(&project, no.decisions.unwrap());
+    record.take(Record::deciding(&project, no.decisions.unwrap()));
     let items = assess(project, &record, &rules).items;
     assert_eq!(items[0].1, Standing::Declined, "not asked again");
 }
@@ -230,7 +228,7 @@ fn on_another_person_s_thread_every_server_and_setting_is_off_however_trusted() 
     let project = repository(&dir, DOCS, Some(&format!("approval = \"auto\"\n{GUARD}")));
     let mut record = Record::default();
     let yes = assess(project.clone(), &record, &rules).apply(Answer::Yes);
-    record.remember(&project, yes.decisions.unwrap());
+    record.take(Record::deciding(&project, yes.decisions.unwrap()));
     let off = assess(project, &record, &rules).all_off("not theirs");
     assert_eq!(
         off,
@@ -258,10 +256,10 @@ fn no_name_or_definition_makes_two_different_asks_read_the_same() {
 #[test]
 fn trusting_what_was_shown_is_kept_as_a_yes_and_a_change_since_trusts_nothing() {
     let dir = scratch("asked");
-    let home = dir.join("home");
     let rules = Constraints::default();
     let project = repository(&dir.join("repo"), DOCS, Some(GUARD));
-    let shown = block_on!(assessed(&home, project.clone(), &rules)).unwrap();
+    let mut record = Record::default();
+    let shown = assess(project.clone(), &record, &rules);
     let asked = shown.ask_id();
     assert_eq!(asked.len(), 64);
     // The repository changes a server after the person was shown it: nothing is trusted.
@@ -270,24 +268,22 @@ fn trusting_what_was_shown_is_kept_as_a_yes_and_a_change_since_trusts_nothing() 
         r#""docs": {"command": "evil"}"#,
         Some(GUARD),
     );
-    let trusted = block_on!(trust_asked(&home, changed.clone(), &rules, &asked)).unwrap();
-    assert!(!trusted);
-    assert!(!home.join("trust.toml").exists());
+    assert_eq!(trust_asked(&record, changed.clone(), &rules, &asked), None);
     // What was shown, trusted: kept exactly as the terminal keeps a yes.
-    let trusted = block_on!(trust_asked(&home, project.clone(), &rules, &asked)).unwrap();
-    assert!(trusted);
+    let kept = trust_asked(&record, project.clone(), &rules, &asked).unwrap();
+    record.take(kept);
     let mut by_terminal = Record::default();
     let yes = assess(project.clone(), &Record::default(), &rules).apply(Answer::Yes);
-    by_terminal.remember(&project, yes.decisions.unwrap());
-    assert_eq!(block_on!(Record::load(&home)).unwrap(), by_terminal);
-    let now = block_on!(assessed(&home, project.clone(), &rules)).unwrap();
+    by_terminal.take(Record::deciding(&project, yes.decisions.unwrap()));
+    assert_eq!(record, by_terminal);
+    let now = assess(project.clone(), &record, &rules);
     assert_eq!(now.undecided().len(), 0);
     let on = now.apply(Answer::Later);
     assert_eq!((on.servers.len(), on.hooks.len()), (1, 1));
     // Answered already: the same ask trusts nothing more.
-    assert!(!block_on!(trust_asked(&home, project, &rules, &asked)).unwrap());
+    assert_eq!(trust_asked(&record, project, &rules, &asked), None);
     // Only what changed is asked about next, under a new name.
-    let next = block_on!(assessed(&home, changed, &rules)).unwrap();
+    let next = assess(changed, &record, &rules);
     assert_eq!(next.undecided().len(), 1);
     assert_ne!(next.ask_id(), asked);
 }
@@ -342,7 +338,7 @@ fn a_moved_clone_is_recognised_by_its_remote() {
     );
     let mut record = Record::default();
     let outcome = assess(project.clone(), &record, &rules).apply(Answer::Yes);
-    record.remember(&project, outcome.decisions.unwrap());
+    record.take(Record::deciding(&project, outcome.decisions.unwrap()));
     let moved = repository(&second, DOCS, None);
     assert_eq!(
         undecided(&moved, &record, &rules),
@@ -358,35 +354,65 @@ fn a_moved_clone_is_recognised_by_its_remote() {
 }
 
 #[test]
-fn resolve_writes_nothing_when_no_one_is_asked() {
+fn resolve_keeps_nothing_when_no_one_is_asked() {
     let dir = scratch("resolve");
-    let home = dir.join("home");
     let project = repository(&dir.join("repo"), DOCS, None);
     let rules = Constraints::default();
+    let record = Record::default();
     for asking in [Asking::NoOne, Asking::Explaining] {
-        let outcome = block_on!(resolve(&home, project.clone(), &rules, asking, no_one)).unwrap();
+        let outcome = block_on!(resolve(&record, project.clone(), &rules, asking, no_one)).unwrap();
         assert!(outcome.servers.is_empty());
-        assert!(!home.join("trust.toml").exists());
+        assert!(outcome.decisions.is_none());
     }
-    let explained = block_on!(resolve(&home, project, &rules, Asking::Explaining, no_one)).unwrap();
+    let explained = block_on!(resolve(
+        &record,
+        project,
+        &rules,
+        Asking::Explaining,
+        no_one
+    ))
+    .unwrap();
     assert!(explained.rows[0][1].contains("glave will ask once"));
 }
 
 #[test]
-fn the_record_is_plain_toml_a_person_can_read() {
-    let dir = scratch("format");
-    let project = repository(&dir.join("repo"), DOCS, None);
+fn a_moved_clone_s_new_decisions_replace_the_ones_its_remote_found() {
     let mut record = Record::default();
-    let outcome = assess(project.clone(), &record, &Constraints::default()).apply(Answer::Yes);
-    record.remember(&project, outcome.decisions.unwrap());
-    block_on!(record.save(&dir)).unwrap();
-    let text = std::fs::read_to_string(dir.join("trust.toml")).unwrap();
-    insta::assert_snapshot!(
-        "record",
-        text.replace(&project.root.display().to_string(), "/code/app")
-    );
-    std::fs::write(dir.join("trust.toml"), "version = 2\n").unwrap();
-    let error = block_on!(Record::load(&dir)).unwrap_err().to_string();
+    let decided = |path: &str, trusted| Entry {
+        path: path.to_owned(),
+        remote: Some("git@example.com:acme/app.git".to_owned()),
+        items: BTreeMap::from([(
+            "mcp:docs".to_owned(),
+            Decision {
+                definition: "{}".to_owned(),
+                trusted,
+            },
+        )]),
+        by: None,
+    };
+    record.take(decided("/code/app", true));
+    record.take(decided("/moved/app", false));
+    assert_eq!(record.entries(), [decided("/moved/app", false)]);
+    // No items: the project is forgotten.
+    let mut forgotten = decided("/moved/app", true);
+    forgotten.items.clear();
+    record.take(forgotten);
+    assert!(record.entries().is_empty());
+}
+
+#[test]
+fn an_earlier_trust_file_reads_as_it_was_written_and_another_version_is_refused() {
+    let path = Path::new("/home/ada/.glave/trust.toml");
+    let text = "version = 1\n\n[[project]]\npath = \"/code/app\"\n\n\
+                [project.items.\"mcp:docs\"]\ndefinition = '{\"command\":\"docs-mcp\"}'\n\
+                trusted = true\n";
+    let entries = Record::earlier(text, path).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].path, "/code/app");
+    assert!(entries[0].items["mcp:docs"].trusted);
+    let error = Record::earlier("version = 2\n", path)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("version = 2"), "{error}");
     let _ = ConfigFile::default();
 }
@@ -447,7 +473,7 @@ fn a_trusted_hook_is_asked_about_again_when_it_changes() {
     let project = repository(&dir, "", Some(GUARD));
     let mut record = Record::default();
     let outcome = assess(project.clone(), &record, &rules).apply(Answer::Yes);
-    record.remember(&project, outcome.decisions.unwrap());
+    record.take(Record::deciding(&project, outcome.decisions.unwrap()));
     assert_eq!(undecided(&project, &record, &rules), 0, "asked once");
     let again = assess(project, &record, &rules).apply(Answer::NoOne);
     assert_eq!(again.hooks.len(), 1);
