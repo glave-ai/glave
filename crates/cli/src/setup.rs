@@ -130,7 +130,7 @@ pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
     let constraints = policy::Constraints::of(&policies);
     let store = Data::here().await?;
     let person = crate::identity::load_or_make(&store).await?.person;
-    let trust = Trust::open(&store, person, &home).await?;
+    let trust = Trust::open(&store, person).await?;
     let outcome = resolve(&folder, &constraints, Asking::Explaining, &trust).await?;
     let mut loaded = read(args, &folder, Some(&outcome)).await?;
     if !glave_computer::sandbox_available() {

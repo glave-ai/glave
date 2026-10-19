@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 pub use assess::{Answer, Assessment, Outcome, assess};
 pub use project::{Plain, Project, remote};
 pub use protect::protections;
-pub use record::{Decision, Entry, FILE, Record};
+pub use record::{Decision, Entry, Record};
 
 use crate::policy::Constraints;
 

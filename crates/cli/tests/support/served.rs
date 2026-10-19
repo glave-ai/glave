@@ -23,11 +23,22 @@ pub struct Served {
 
 impl Served {
     pub fn start(place: &Place, server: &FakeServer, args: &[&str]) -> Self {
+        Self::start_with(place, server, args, &[])
+    }
+
+    /// As [`Served::start`], with the variables `env` too.
+    pub fn start_with(
+        place: &Place,
+        server: &FakeServer,
+        args: &[&str],
+        env: &[(&str, &str)],
+    ) -> Self {
         // Logged in full, into the home a test looks through for what must never be written.
         let log = place.home.join("glave.log");
         let log = log.to_str().unwrap();
         let args = [&["serve", "--stdio", "--log", log], args].concat();
-        let mut child = start_with(place, server, &args, &[("GLAVE_LOG", "trace")]);
+        let env = [&[("GLAVE_LOG", "trace")], env].concat();
+        let mut child = start_with(place, server, &args, &env);
         let input = child.stdin.take().unwrap();
         let output = BufReader::new(child.stdout.take().unwrap()).lines();
         Self {
@@ -115,6 +126,28 @@ impl Served {
         assert!(output.status.success(), "{}", text(&output));
         format!("{}{}", self.seen, text(&output))
     }
+}
+
+/// Trusts everything the project folder of `place` brings, as the person does in the app: a
+/// thread in that folder's project, and their yes to what it asks. With the variables `env`.
+pub fn trust_project(place: &Place, env: &[(&str, &str)]) {
+    let model = FakeServer::start(Vec::new()).unwrap();
+    let mut served = Served::start_with(place, &model, &[], env);
+    let folder = std::fs::canonicalize(&place.project).unwrap();
+    let name = folder.file_name().unwrap().to_string_lossy().into_owned();
+    let params = json!({"name": name, "folder": {"kind": "path", "path": folder}});
+    let made = served.call("project/create", &params);
+    let project = made["result"]["project"]["id"].clone();
+    assert!(project.is_string(), "{made}");
+    let started = served.call("thread/start", &json!({ "project": project }));
+    let thread = started["result"]["thread"].clone();
+    let ask = thread["trust"]["ask"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{started}"));
+    let answer = json!({"thread": thread["id"], "ask": ask, "answer": "trust"});
+    let answered = served.call("trust/answer", &answer);
+    assert!(answered["result"]["thread"].is_object(), "{answered}");
+    served.end();
 }
 
 /// Whether any file in `folder` holds `needle` as written.
