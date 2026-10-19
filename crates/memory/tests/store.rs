@@ -4,7 +4,7 @@
 
 use glave_event::{MemoryScope, Principal, decode};
 use glave_memory::{ProjectMemory, Remembering, Writer};
-use glave_ports::memories::{MemoryContext, MemoryError, memory_ledger};
+use glave_ports::memories::{MemoryContext, MemoryError};
 use glave_ports::testing::fake_secret;
 use glave_ports::{EventLog, Scope};
 
@@ -136,7 +136,12 @@ fn credentials_are_refused_and_never_stored() {
         let ledger = kit
             .store
             .log()
-            .read(&shared(), memory_ledger().unwrap(), None, 100)
+            .read(
+                &shared(),
+                glave_ports::stream::Reserved::Memory.id(),
+                None,
+                100,
+            )
             .await
             .unwrap();
         assert!(ledger.is_empty());
@@ -274,7 +279,7 @@ fn forgetting_destroys_the_key_so_no_version_can_be_opened() {
             .await
             .unwrap();
         memories.forget(&mine, gone.memory).await.unwrap();
-        let ledger = memory_ledger().unwrap();
+        let ledger = glave_ports::stream::Reserved::Memory.id();
         let raw = kit
             .store
             .log()

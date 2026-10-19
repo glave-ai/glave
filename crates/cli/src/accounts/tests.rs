@@ -86,7 +86,7 @@ fn a_renewal_takes_its_place_and_the_old_id_still_names_it() {
         let named = accounts.credential(first.credential).unwrap();
         assert_eq!(named.token.expose(), three);
         // The renewed tokens' keys are destroyed: their events read as erased.
-        let ledger_id = super::ledger().unwrap();
+        let ledger_id = glave_ports::stream::Reserved::Accounts.id();
         let raw = ledger.log.read(&ledger.scope, ledger_id, None, 100).await;
         let data: Vec<String> = raw
             .unwrap()

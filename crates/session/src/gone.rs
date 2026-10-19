@@ -242,7 +242,7 @@ where
                 views
                     .into_iter()
                     .map(|view| view.thread)
-                    .filter(|thread| !crate::ledger::is_ledger(*thread)),
+                    .filter(|thread| glave_ports::stream::Reserved::of(*thread).is_none()),
             );
             if !full {
                 return Ok(threads);

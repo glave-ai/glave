@@ -22,13 +22,6 @@ pub const FORGET: &str = "mcp__memory__forget";
 /// The tool that searches memories and past conversations by keyword.
 pub const RECALL: &str = "mcp__memory__recall";
 
-/// The memory ledger's reserved thread id: the UUID v7 at time zero whose random bits are 1,
-/// `00000000-0000-7000-8000-000000000001`, beside the task ledger's `…0000`. No thread can
-/// have it.
-pub fn memory_ledger() -> Option<ThreadId> {
-    crate::reserved_ledger(1)
-}
-
 /// Who and where a memory request is for: always from the session or the thread, never from
 /// the model. A memory server receives it in each request's `_meta`, flat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +131,12 @@ pub enum MemoryError {
     Storage(String),
 }
 
+impl From<crate::stream::StreamError> for MemoryError {
+    fn from(error: crate::stream::StreamError) -> Self {
+        Self::Storage(error.to_string())
+    }
+}
+
 /// The person's own controls, from any client (`specs/memory.md`, "Seeing, editing and
 /// forgetting"). They are the person's actions, not the model's: no tool call, no judge.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -227,17 +226,4 @@ pub trait Memory: Send + Sync {
         by: &'a Access,
         control: Control,
     ) -> BoxFuture<'a, Result<Vec<Remembered>, MemoryError>>;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_memory_ledger_has_its_reserved_id() {
-        assert_eq!(
-            memory_ledger().map(|id| id.to_string()).as_deref(),
-            Some("00000000-0000-7000-8000-000000000001")
-        );
-    }
 }

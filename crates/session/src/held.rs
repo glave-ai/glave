@@ -49,7 +49,7 @@ where
     /// now: refused with `-32029` when that isn't there anymore. A deleted thread is not
     /// there.
     pub(crate) async fn load(&self, thread: ThreadId) -> Result<(), ApiError> {
-        if crate::ledger::is_ledger(thread) {
+        if glave_ports::stream::Reserved::of(thread).is_some() {
             return Err(no_thread(thread));
         }
         let now = self.inner.harness.clock().now();

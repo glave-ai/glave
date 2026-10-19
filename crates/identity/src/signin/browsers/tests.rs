@@ -34,7 +34,12 @@ fn later(clock: &ManualClock, by: SignedDuration) {
 /// Every event the ledger holds, as written.
 async fn written(log: &SqliteLog) -> String {
     let events = log
-        .read(&scope(), browsers_ledger().unwrap(), None, 1_000)
+        .read(
+            &scope(),
+            glave_ports::stream::Reserved::Browsers.id(),
+            None,
+            1_000,
+        )
         .await
         .unwrap();
     events

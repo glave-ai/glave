@@ -14,20 +14,15 @@ use glave_event::{
 };
 use glave_harness::Looked;
 use glave_ports::computer::{ComputerError, CredentialHost, Forge};
+use glave_ports::stream::{Reserved, append_retrying, catch_up};
 use glave_ports::{
-    BlobStore, Caller, EventLog, FolderKey, LogError, ModelProvider, Project, ProjectId,
-    ProjectKind, Scope,
+    BlobStore, Caller, EventLog, FolderKey, ModelProvider, Project, ProjectId, ProjectKind, Scope,
 };
 
-use crate::ledger::project_ledger;
 use crate::protocol::{ApiError, NewFolder, ProjectFolder, Reply, code};
 use crate::providers::local;
 use crate::server::Server;
 
-/// Ledger events read per page.
-const PAGE: usize = 500;
-/// Appends tried before giving up on a ledger other writers keep moving.
-const ATTEMPTS: usize = 8;
 /// The longest name glave gives a new project's folder.
 const FOLDER_NAME: usize = 64;
 
@@ -133,19 +128,11 @@ where
     /// What the project's ledger says: its first folder's latest record, whether the project was
     /// removed since, and the `seq` of the ledger's last event.
     async fn read_project_ledger(&self, project: ProjectId) -> Result<ProjectLedger, ApiError> {
-        let ledger = project_ledger().ok_or_else(|| internal(&"the project ledger has no id"))?;
         // Glave's own: the project's ledger of folders.
         let scope = Scope::glaves_own(self.inner.home.org(), project);
         let mut read = ProjectLedger::default();
-        loop {
-            let page = self
-                .inner
-                .harness
-                .log()
-                .read(&scope, ledger, read.last, PAGE)
-                .await
-                .map_err(|error| internal(&error))?;
-            let full = page.len() == PAGE;
+        let log = self.inner.harness.log();
+        catch_up(log, &scope, Reserved::Project.id(), None, |page| {
             for raw in page {
                 read.last = Some(raw.seq);
                 match decode(raw).map(|event| event.body) {
@@ -162,10 +149,9 @@ where
                     _ => {}
                 }
             }
-            if !full {
-                return Ok(read);
-            }
-        }
+        })
+        .await?;
+        Ok(read)
     }
 
     /// Appends to the project's ledger what `next` makes of it as it stands, unless it makes
@@ -175,17 +161,19 @@ where
         project: ProjectId,
         next: impl Fn(&ProjectLedger) -> Result<Option<T>, ApiError>,
     ) -> Result<(), ApiError> {
-        let ledger = project_ledger().ok_or_else(|| internal(&"the project ledger has no id"))?;
+        let ledger = Reserved::Project.id();
         // Glave's own: the project's ledger of folders.
         let scope = Scope::glaves_own(self.inner.home.org(), project);
-        for _ in 0..ATTEMPTS {
-            let current = self.read_project_ledger(project).await?;
+        let (this, next) = (self, &next);
+        let log = self.inner.harness.log();
+        append_retrying(log, &scope, ledger, move || async move {
+            let current = this.read_project_ledger(project).await?;
             let Some(payload) = next(&current)? else {
-                return Ok(());
+                return Ok(None);
             };
-            let now = self.inner.harness.clock().now();
+            let now = this.inner.harness.clock().now();
             let header = Header {
-                id: EventId::new(now, self.inner.harness.entropy().bytes()?)
+                id: EventId::new(now, this.inner.harness.entropy().bytes()?)
                     .map_err(|error| internal(&error))?,
                 thread: ledger,
                 seq: current
@@ -195,19 +183,10 @@ where
                 at: At::from(now),
             };
             let raw = encode(header, &payload).map_err(|error| internal(&error))?;
-            match self
-                .inner
-                .harness
-                .log()
-                .append(&scope, std::slice::from_ref(&raw))
-                .await
-            {
-                Ok(()) => return Ok(()),
-                Err(LogError::Conflict { .. } | LogError::Gap { .. }) => {}
-                Err(error) => return Err(internal(&error)),
-            }
-        }
-        Err(internal(&"the project's settings kept changing; try again"))
+            Ok::<_, ApiError>(Some((vec![raw], ())))
+        })
+        .await?;
+        Ok(())
     }
 
     /// Records the project's folder as coming from `source` and checked out at `path` on this

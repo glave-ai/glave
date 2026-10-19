@@ -21,9 +21,7 @@ use glave_ports::{
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
-use glave_session::{
-    Answering, GitHosts, ProjectTrust, Providers, Server, TaskLimits, Wiring, project_ledger,
-};
+use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Server, TaskLimits, Wiring};
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
 
@@ -247,7 +245,7 @@ async fn keep_folder<L: EventLog>(log: &L, home: Scope, info: &WorkspaceInfo) {
     let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
     let header = Header {
         id: EventId::new(at.timestamp(), [9; 10]).unwrap(),
-        thread: project_ledger().unwrap(),
+        thread: glave_ports::stream::Reserved::Project.id(),
         seq: Seq::FIRST,
         at,
     };

@@ -176,7 +176,7 @@ async fn in_the_log(command: Command) -> anyhow::Result<()> {
                 after: None,
             };
             for view in log.thread_views(&scope, &query).await? {
-                if !glave_session::is_ledger(view.thread) {
+                if glave_ports::stream::Reserved::of(view.thread).is_none() {
                     println!("{}", view.thread);
                 }
             }

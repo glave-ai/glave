@@ -26,7 +26,7 @@ use crate::credentials::GitHosts;
 use crate::held::{Slot, finished};
 use crate::hub::{Hub, Observed};
 use crate::keyed::Keyed;
-use crate::ledger::{Ledgers, is_ledger};
+use crate::ledger::Ledgers;
 use crate::modes::Choice;
 use crate::projects::Places;
 use crate::protocol::{ApiError, ApprovalMode, ErrorData, ModelInfo, Notification, Reply, code};
@@ -34,6 +34,7 @@ use crate::providers::Providers;
 use crate::reread::Rereads;
 use crate::tasks::{TaskLimits, Tasks};
 use crate::trust::{Asks, ProjectTrust};
+use glave_ports::stream::Reserved;
 
 /// The most events or threads one page returns.
 pub(crate) const MAX_PAGE: usize = 5_000;
@@ -396,7 +397,7 @@ where
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
         let limit = limit.unwrap_or(500).clamp(1, MAX_PAGE);
-        if is_ledger(thread) {
+        if Reserved::of(thread).is_some() {
             return Err(no_thread(thread));
         }
         self.ensure_not_deleted(thread).await?;

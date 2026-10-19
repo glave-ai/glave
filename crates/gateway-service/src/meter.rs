@@ -16,15 +16,12 @@ use glave_event::{
     encode,
 };
 use glave_gateway::{Budget, Caller, Gateway, Limit};
+use glave_ports::stream::{StreamError, append_retrying, catch_up};
 use glave_ports::{Clock, Entropy};
-use glave_ports::{EventLog, LogError, Scope};
+use glave_ports::{EventLog, Scope};
 
 use crate::errors::{Kind, Refusal};
 
-/// Events read per page.
-const PAGE: usize = 500;
-/// Appends tried before giving up on a stream other writers keep moving.
-const ATTEMPTS: usize = 8;
 /// Callers whose streams are followed at once. Past this, one is forgotten and read again
 /// when it comes back; its budget for the day may then count twice, never too little.
 const MOST_CALLERS: usize = 100_000;
@@ -170,20 +167,12 @@ impl<L: EventLog> Meter<L> {
     /// Reads whatever was added to `person`'s stream since this process last looked.
     async fn catch_up(&self, person: PrincipalId) -> Result<(), String> {
         let thread = stream_id(person)?;
-        loop {
-            let next = self.stream(person).next_seq();
-            let after = Seq::new(next.saturating_sub(1)).ok();
-            let page = self
-                .log
-                .read(&self.scope, thread, after, PAGE)
-                .await
-                .map_err(|error| error.to_string())?;
-            let full = page.len() == PAGE;
+        let after = Seq::new(self.stream(person).next_seq().saturating_sub(1)).ok();
+        catch_up(&self.log, &self.scope, thread, after, |page| {
             self.take_in(person, page);
-            if !full {
-                return Ok(());
-            }
-        }
+        })
+        .await
+        .map_err(|error| error.to_string())
     }
 
     /// Before `person`'s first call of `day` here: counts what their stream says they spent
@@ -222,34 +211,42 @@ impl<L: EventLog> Meter<L> {
         payload: &T,
     ) -> Result<(), String> {
         let thread = stream_id(person)?;
-        for _ in 0..ATTEMPTS {
-            self.catch_up(person).await?;
-            let now = self.clock.now();
-            let seq = Seq::new(self.stream(person).next_seq()).map_err(|e| e.to_string())?;
+        let this = self;
+        let appended = append_retrying(&self.log, &self.scope, thread, move || async move {
+            this.catch_up(person).await?;
+            let now = this.clock.now();
+            let seq = Seq::new(this.stream(person).next_seq()).map_err(|e| e.to_string())?;
             let header = Header {
-                id: EventId::new(now, self.entropy.bytes().map_err(|e| e.to_string())?)
+                id: EventId::new(now, this.entropy.bytes().map_err(|e| e.to_string())?)
                     .map_err(|e| e.to_string())?,
                 thread,
                 seq,
                 at: At::from(now),
             };
             let raw = encode(header, payload).map_err(|e| e.to_string())?;
-            match self
-                .log
-                .append(&self.scope, std::slice::from_ref(&raw))
-                .await
-            {
-                Ok(()) => {
-                    self.take_in(person, vec![raw]);
-                    return Ok(());
-                }
-                Err(LogError::Conflict { .. } | LogError::Gap { .. }) => {}
-                Err(error) => return Err(error.to_string()),
-            }
+            Ok::<_, Unrecorded>(Some((vec![raw], ())))
+        })
+        .await
+        .map_err(|Unrecorded(why)| format!("the call was not recorded: {why}"))?;
+        if let Some((events, ())) = appended {
+            self.take_in(person, events);
         }
-        Err(format!(
-            "the gateway stream of {person} kept changing; the call was not recorded"
-        ))
+        Ok(())
+    }
+}
+
+/// Why a call could not be recorded.
+struct Unrecorded(String);
+
+impl From<String> for Unrecorded {
+    fn from(why: String) -> Self {
+        Self(why)
+    }
+}
+
+impl From<StreamError> for Unrecorded {
+    fn from(error: StreamError) -> Self {
+        Self(error.to_string())
     }
 }
 

@@ -143,6 +143,17 @@ impl ThreadId {
         build_v7("thread id", at, random).map(Self)
     }
 
+    /// The id at time zero whose random bits are all zero but the last byte, `last`, such as
+    /// `00000000-0000-7000-8000-000000000002`: an id no thread can have, since a thread's id
+    /// carries the time it started, kept for glave's own streams.
+    pub fn reserved(last: u8) -> Self {
+        let mut random = [0u8; 10];
+        if let Some(end) = random.last_mut() {
+            *end = last;
+        }
+        Self(Builder::from_unix_timestamp_millis(0, &random).into_uuid())
+    }
+
     pub fn as_uuid(self) -> Uuid {
         self.0
     }

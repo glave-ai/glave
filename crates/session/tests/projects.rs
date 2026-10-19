@@ -519,7 +519,7 @@ fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
         let at = At::try_from("2026-10-02T00:00:00.000Z".to_owned()).unwrap();
         let header = Header {
             id: EventId::new(at.timestamp(), [8; 10]).unwrap(),
-            thread: glave_session::project_ledger().unwrap(),
+            thread: glave_ports::stream::Reserved::Project.id(),
             seq: Seq::FIRST,
             at,
         };

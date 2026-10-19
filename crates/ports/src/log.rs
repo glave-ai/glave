@@ -9,17 +9,6 @@ use crate::scope::{Located, Scope};
 use crate::search::Found;
 use crate::view::{ThreadQuery, ThreadView};
 
-/// The reserved id of one of glave's own ledgers, the streams it keeps beside threads: the
-/// UUID v7 at time zero whose random bits are all zero but the last byte, `last`. No thread can
-/// have it: a thread's id carries the time it started.
-pub fn reserved_ledger(last: u8) -> Option<ThreadId> {
-    let mut random = [0u8; 10];
-    if let Some(end) = random.last_mut() {
-        *end = last;
-    }
-    ThreadId::new(jiff::Timestamp::UNIX_EPOCH, random).ok()
-}
-
 /// The append-only log every event is written to.
 ///
 /// Implementations must store each append all-or-nothing and enforce, in the same

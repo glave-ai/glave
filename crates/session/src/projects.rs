@@ -209,7 +209,7 @@ where
     /// The project `thread` is in, in this server's organization: remembered, or found in the
     /// log. Where it is, not who may read it.
     async fn located(&self, thread: ThreadId) -> Result<ProjectId, ApiError> {
-        if crate::ledger::is_ledger(thread) {
+        if glave_ports::stream::Reserved::of(thread).is_some() {
             return Err(no_thread(thread));
         }
         if let Some(project) = self.places().get(thread) {

@@ -7,17 +7,12 @@ use glave_config::trust::{Entry, Record};
 use glave_event::{
     At, Body, EventId, Header, Principal, PrincipalId, RawEvent, Seq, decode, encode,
 };
-use glave_ports::{EventLog, LogError, Scope};
-use glave_session::trust_ledger;
+use glave_ports::Scope;
+use glave_ports::stream::{Reserved, append_retrying, catch_up};
 use jiff::Timestamp;
 
 use crate::accounts::random;
 use crate::data::{Data, DataLog};
-
-/// Ledger events read per page.
-const PAGE: usize = 500;
-/// Appends tried before giving up on a ledger another process keeps moving.
-const ATTEMPTS: usize = 8;
 
 /// The person's trust ledger, in the store.
 #[derive(Clone)]
@@ -47,47 +42,38 @@ impl Trust {
     /// ledger's last event, read again and tried again when another process wrote first.
     pub async fn keep(&self, mut entry: Entry) -> anyhow::Result<()> {
         entry.by = Some(Principal::person(self.person));
-        for _ in 0..ATTEMPTS {
-            let (_, next) = self.read().await?;
-            let raw = event(&entry, next)?;
-            match self
-                .log
-                .append(&self.scope, std::slice::from_ref(&raw))
-                .await
-            {
-                Ok(()) => return Ok(()),
-                Err(LogError::Conflict { .. }) => {}
-                Err(error) => return Err(error).context("could not keep the project's trust"),
-            }
-        }
-        anyhow::bail!("project trust kept changing while glave wrote to it: try again")
+        let (this, entry) = (self, &entry);
+        append_retrying(
+            &self.log,
+            &self.scope,
+            Reserved::Trust.id(),
+            move || async move {
+                let (_, next) = this.read().await?;
+                anyhow::Ok(Some((vec![event(entry, next)?], ())))
+            },
+        )
+        .await
+        .context("could not keep the project's trust")?;
+        Ok(())
     }
 
     /// Reads the whole ledger: the record, and the `seq` its next event takes.
     async fn read(&self) -> anyhow::Result<(Record, u64)> {
-        let ledger = ledger()?;
         let mut record = Record::default();
         let mut next = 1;
-        let mut after = None;
-        loop {
-            let page = self
-                .log
-                .read(&self.scope, ledger, after, PAGE)
-                .await
-                .context("could not read project trust")?;
-            for raw in &page {
+        catch_up(&self.log, &self.scope, Reserved::Trust.id(), None, |page| {
+            for raw in page {
                 next = raw.seq.get().saturating_add(1);
-                if let Ok(event) = decode(raw.clone())
+                if let Ok(event) = decode(raw)
                     && let Body::TrustDecided(decided) = event.body
                 {
                     record.take(decided);
                 }
             }
-            if page.len() < PAGE {
-                return Ok((record, next));
-            }
-            after = page.last().map(|event| event.seq);
-        }
+        })
+        .await
+        .context("could not read project trust")?;
+        Ok((record, next))
     }
 }
 
@@ -96,16 +82,11 @@ fn event(entry: &Entry, seq: u64) -> anyhow::Result<RawEvent> {
     let now = Timestamp::now();
     let header = Header {
         id: EventId::new(now, random()?)?,
-        thread: ledger()?,
+        thread: Reserved::Trust.id(),
         seq: Seq::new(seq)?,
         at: At::from(now),
     };
     Ok(encode(header, entry)?)
-}
-
-/// The ledger's reserved id.
-fn ledger() -> anyhow::Result<glave_event::ThreadId> {
-    trust_ledger().context("the trust ledger has no id")
 }
 
 #[cfg(test)]

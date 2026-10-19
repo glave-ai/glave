@@ -14,14 +14,15 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use glave_event::{
     At, Body, BrowserSignedIn, BrowserSignedOut, BrowserUsed, EventId, Header, RawEvent, Secret,
-    Seq, ThreadId, decode, encode,
+    Seq, decode, encode,
 };
-use glave_ports::{Clock, EventLog, LogError, Scope, reserved_ledger};
+use glave_ports::stream::{Reserved, StreamError};
+use glave_ports::{BoxFuture, Clock, EventLog, Scope};
 use jiff::{SignedDuration, Timestamp};
 use thiserror::Error;
 use uuid::Uuid;
 
-use self::ledger::{Ledger, Stream};
+use self::ledger::{Ledger, Made, Stream};
 use super::local::{digest, hex, same};
 
 /// What every browser session's token starts with.
@@ -46,15 +47,6 @@ const MOST_SESSIONS: usize = 64;
 /// Random bytes in a code or a session's token.
 const SECRET_BYTES: usize = 32;
 
-/// Appends tried before giving up on a ledger other servers keep moving.
-const ATTEMPTS: usize = 8;
-
-/// The browsers ledger's reserved id, `00000000-0000-7000-8000-000000000005`: the browser
-/// sessions of the person on their own server, in their personal project.
-pub fn browsers_ledger() -> Option<ThreadId> {
-    reserved_ledger(5)
-}
-
 /// Why a browser could not sign in, or its sessions could not be kept.
 #[derive(Debug, Error)]
 pub enum BrowserError {
@@ -66,6 +58,12 @@ pub enum BrowserError {
     Keep(String),
     #[error("could not get random bytes for a sign-in: {0}")]
     Random(String),
+}
+
+impl From<StreamError> for BrowserError {
+    fn from(error: StreamError) -> Self {
+        Self::Keep(error.to_string())
+    }
 }
 
 /// A session just begun: the token the browser keeps, and the id that names the session in
@@ -112,7 +110,7 @@ impl Browsers {
         server: String,
         clock: Box<dyn Clock>,
     ) -> Result<Self, BrowserError> {
-        let thread = ledger_id()?;
+        let thread = Reserved::Browsers.id();
         let browsers = Self {
             ledger: Box::new(Stream { log, scope, thread }),
             server,
@@ -248,15 +246,17 @@ impl Browsers {
     /// trying again when one wrote first; nothing when it makes nothing.
     async fn change(
         &self,
-        make: impl Fn(&State, Timestamp) -> Vec<Change>,
+        make: impl Fn(&State, Timestamp) -> Vec<Change> + Sync,
     ) -> Result<(), BrowserError> {
-        for _ in 0..ATTEMPTS {
-            let events = {
-                let state = self.state();
-                let now = self.clock.now();
+        let (this, make) = (self, &make);
+        let mut attempt = move || -> BoxFuture<'_, Made> {
+            Box::pin(async move {
+                this.catch_up().await?;
+                let state = this.state();
+                let now = this.clock.now();
                 let changes = make(&state, now);
                 if changes.is_empty() {
-                    return Ok(());
+                    return Ok(None);
                 }
                 let mut events = Vec::with_capacity(changes.len());
                 for (n, change) in changes.into_iter().enumerate() {
@@ -265,46 +265,27 @@ impl Browsers {
                         .saturating_add(u64::try_from(n).unwrap_or(u64::MAX));
                     events.push(change.event(seq, now)?);
                 }
-                events
-            };
-            match self.ledger.append(&events).await {
-                Ok(()) => {
-                    let mut state = self.state();
-                    for raw in events {
-                        state.take(raw);
-                    }
-                    return Ok(());
-                }
-                Err(LogError::Conflict { .. }) => self.catch_up().await?,
-                Err(error) => return Err(BrowserError::Keep(error.to_string())),
-            }
+                Ok(Some((events, ())))
+            })
+        };
+        let appended = self.ledger.append_retrying(&mut attempt).await?;
+        let mut state = self.state();
+        for raw in appended.into_iter().flat_map(|(events, ())| events) {
+            state.take(raw);
         }
-        Err(BrowserError::Keep(
-            "they kept changing while this server wrote to them".into(),
-        ))
+        Ok(())
     }
 
     /// Reads what the ledger holds past what is known.
     async fn catch_up(&self) -> Result<(), BrowserError> {
-        loop {
-            let after = {
-                let next = self.state().next;
-                Seq::new(next.saturating_sub(1)).ok()
-            };
-            let page = self
-                .ledger
-                .read(after)
-                .await
-                .map_err(|error| BrowserError::Keep(error.to_string()))?;
-            let full = page.len() >= ledger::PAGE;
+        let after = Seq::new(self.state().next.saturating_sub(1)).ok();
+        let mut take = |page: Vec<RawEvent>| {
             let mut state = self.state();
             for raw in page {
                 state.take(raw);
             }
-            if !full {
-                return Ok(());
-            }
-        }
+        };
+        Ok(self.ledger.catch_up(after, &mut take).await?)
     }
 }
 
@@ -361,7 +342,7 @@ impl Change {
         let failed = |error: &dyn std::fmt::Display| BrowserError::Keep(error.to_string());
         let header = Header {
             id: EventId::try_from(new_id(now)?).map_err(|e| failed(&e))?,
-            thread: ledger_id()?,
+            thread: Reserved::Browsers.id(),
             seq: Seq::new(seq).map_err(|e| failed(&e))?,
             at: At::from(now),
         };
@@ -372,11 +353,6 @@ impl Change {
         }
         .map_err(|e| failed(&e))
     }
-}
-
-/// The ledger's reserved id.
-fn ledger_id() -> Result<ThreadId, BrowserError> {
-    browsers_ledger().ok_or_else(|| BrowserError::Keep("the browsers ledger has no id".into()))
 }
 
 /// A UUID v7 at `now`.
