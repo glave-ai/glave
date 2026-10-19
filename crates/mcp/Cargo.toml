@@ -7,26 +7,17 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
+# The tests are one program, tests/main.rs, not one per file.
+autotests = false
+
+[[test]]
+name = "mcp"
+path = "tests/main.rs"
+required-features = ["test-server"]
 
 [[bin]]
 name = "glave-mcp-test-server"
 path = "src/bin/test_server.rs"
-required-features = ["test-server"]
-
-[[test]]
-name = "server"
-required-features = ["test-server"]
-
-[[test]]
-name = "http"
-required-features = ["test-server"]
-
-[[test]]
-name = "changes"
-required-features = ["test-server"]
-
-[[test]]
-name = "resources"
 required-features = ["test-server"]
 
 [dependencies]

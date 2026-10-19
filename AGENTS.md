@@ -170,7 +170,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 ## Testing
 
 - Unit tests sit beside the code in `#[cfg(test)] mod tests`; when they grow large, move them to a sibling `tests.rs`.
-- Integration tests live in each crate's `tests/`.
+- Integration tests live in each crate's `tests/`, as one program: `tests/main.rs` declares each file as a module (`autotests = false`), so the dependency tree is linked once per crate, not once per file. nextest still runs each test in a process of its own.
 - Property tests (`proptest`) for parsers and state machines. Snapshot tests (`insta`) for stable formats such as receipts and events.
 - Tests are deterministic: no sleeps, no real clocks (inject a clock), no network in unit tests.
 - Run tests with `cargo nextest`. Measure coverage; don't chase a percentage.

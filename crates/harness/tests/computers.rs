@@ -1,18 +1,12 @@
 //! The same turn on this machine and on a computer across the wire: a remote computer served
 //! over TCP on 127.0.0.1 must give the model exactly what a local one does, tool for tool.
 
-#[cfg(test)]
-#[path = "support/script.rs"]
-#[expect(dead_code, reason = "shared helpers; this file uses some of them")]
-mod support;
-
-#[cfg(test)]
 mod golden {
     use std::path::Path;
     use std::sync::Arc;
     use std::time::{Duration, SystemTime};
 
-    use super::support::*;
+    use crate::support::*;
     use glave_computer::{LocalComputers, RemoteComputers, serve_tcp};
     use glave_event::{Event, StopReason};
     use glave_harness::{AllowAll, Cancel, Workspace};
@@ -158,11 +152,10 @@ mod golden {
     }
 }
 
-#[cfg(test)]
 mod credentials {
     use std::sync::Arc;
 
-    use super::support::*;
+    use crate::support::*;
     use glave_event::{Body, StopReason};
     use glave_harness::{AllowAll, Cancel};
     use glave_ports::InMemoryLog;

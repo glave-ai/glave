@@ -5,24 +5,13 @@
 //! and `--web`'s folder rather than it; without the feature and a folder, no app, as before.
 //! And a server a test started is gone when the test ends, by failing too.
 
-#[cfg(test)]
-#[path = "support/binary.rs"]
-#[expect(dead_code, reason = "shared helpers; this file uses some of them")]
-mod support;
-
-#[cfg(test)]
-#[path = "support/http.rs"]
-#[expect(dead_code, reason = "shared helpers; this file uses some of them")]
-mod http;
-
-#[cfg(test)]
 mod serving {
     use std::io::{BufRead as _, BufReader, Write as _};
 
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::{Value, json};
 
-    use super::support::*;
+    use crate::support::*;
 
     #[test]
     fn another_program_runs_a_turn_over_stdio() {
@@ -74,13 +63,12 @@ mod serving {
     }
 }
 
-#[cfg(test)]
 mod web {
     use glave_ports::block_on;
     use glave_provider_openai::fake::FakeServer;
 
-    use super::http::serve_http;
-    use super::support::*;
+    use crate::http::serve_http;
+    use crate::support::*;
 
     /// The nonce a Content-Security-Policy admits styles with.
     fn nonce_of(policy: &str) -> String {
@@ -198,15 +186,14 @@ mod web {
     }
 }
 
-#[cfg(test)]
 mod stopped {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::process::Command;
 
     use glave_provider_openai::fake::FakeServer;
 
-    use super::http::serve_http;
-    use super::support::*;
+    use crate::http::serve_http;
+    use crate::support::*;
 
     /// Whether the process `id` is still there.
     fn there(id: u32) -> bool {
