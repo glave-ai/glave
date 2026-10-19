@@ -31,7 +31,7 @@ pub(crate) const DRAIN: Duration = Duration::from_millis(500);
 /// Package managers' caches, kept in the home folder by default, where sandboxed commands
 /// cannot write. In the sandbox each goes in a folder of its own in glave's sandbox cache
 /// folder (`~/.glave/sandbox-cache`), kept between runs so installs stay fast, or, without
-/// glave's folder, in the sandbox's temp folder. Only sandboxed commands use it: nothing a
+/// glave's folder, in the command's own temp folder. Only sandboxed commands use it: nothing a
 /// command leaves there reaches a command outside the sandbox, though it does reach later
 /// sandboxed ones. Cargo's home is left alone: it holds the person's settings and installed
 /// tools beside the registry, so it cannot move, and its registry cannot be shared writable,
@@ -84,8 +84,8 @@ pub(crate) struct Spawned {
     pub(crate) started: Instant,
 }
 
-/// What a running command holds: the sandbox it was prepared in, whose temp folder it uses,
-/// and what launching it left in the workspace, removed once it ends.
+/// What a running command holds: the sandbox it was prepared in, and its own temp folder and
+/// what launching it left in the workspace, both removed once it ends.
 #[derive(Debug)]
 pub(crate) struct Held {
     _launch: Option<Launch>,
@@ -246,21 +246,23 @@ fn bash(
         None => Program::new("bash"),
     };
     let input = sandbox.is_some_and(|(launch, _)| launch.input.is_some());
+    let caches = sandbox.map(|(launch, prepared)| prepared.caches(launch));
     command
         .arg("-c")
         .arg(format!("exec 2>&1\n{script}"))
         .current_dir(&opened.root)
         .env_clear()
         .envs(opened.environment.iter().map(|(name, value)| (name, value)))
-        .envs(sandbox.map(|(_, prepared)| ("TMPDIR", prepared.temp().to_path_buf())))
-        .envs(sandbox.into_iter().flat_map(|(_, prepared)| {
+        .envs(sandbox.map(|(launch, _)| ("TMPDIR", launch.temp.path().to_path_buf())))
+        .envs(caches.iter().flat_map(|caches| {
             CACHES
                 .iter()
-                .map(move |(name, folder)| (*name, prepared.caches().join(folder)))
+                .map(move |(name, folder)| (*name, caches.join(folder)))
         }))
         .envs(
-            sandbox
-                .and_then(|(_, prepared)| maven_opts(&opened.environment, prepared.caches()))
+            caches
+                .as_deref()
+                .and_then(|caches| maven_opts(&opened.environment, caches))
                 .map(|opts| ("MAVEN_OPTS", opts)),
         )
         .envs(offered.into_iter().flat_map(|offered| {

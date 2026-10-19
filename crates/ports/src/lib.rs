@@ -22,6 +22,7 @@ mod log;
 pub mod memories;
 mod model;
 mod projects;
+mod remove;
 mod scope;
 pub mod search;
 pub mod secrets;
@@ -44,6 +45,7 @@ pub use model::{
 pub use projects::{
     FolderKey, MAX_NAME, Project, ProjectError, ProjectKind, Projects, origin_remote,
 };
+pub use remove::remove_tree;
 pub use scope::{Located, OrgId, ProjectId, Scope};
 pub use sse::{SseDecoder, SseError};
 pub use tools::{

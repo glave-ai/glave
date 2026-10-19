@@ -1,12 +1,14 @@
-//! The sandbox on macOS: `sandbox-exec` with a Seatbelt profile written once per workspace.
+//! The sandbox on macOS: `sandbox-exec` with a Seatbelt profile written once per workspace,
+//! and each command's own temp folder given with it.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use glave_ports::computer::{ComputerError, Sandbox};
 
-use super::profile::{Places, home_secrets, profile};
-use super::{Launch, failed, own_git_folder, resolved};
+use super::profile::{Places, TEMP_PARAM, home_secrets, profile};
+use super::run_temp::RunTemp;
+use super::{Launch, Temps, failed, own_git_folder, resolved};
 
 /// The only `sandbox-exec` trusted: an earlier one in `PATH` could be planted.
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
@@ -22,32 +24,29 @@ pub(super) fn helper(_args: &[OsString]) -> String {
     "the sandbox helper runs only on Linux".into()
 }
 
-/// The profile's arguments, and the temp folder it grants.
+/// The profile's arguments, but for each command's own temp folder.
 #[derive(Debug)]
 pub(super) struct Enforcer {
     args: Vec<OsString>,
-    temp: PathBuf,
 }
 
 impl Enforcer {
     /// Resolves every path the profile names (macOS matches real paths) and writes the
-    /// profile once, for every command run in `root` under `sandbox`.
+    /// profile once, for every command run in `root` under `sandbox`. Commands' temp folders
+    /// go in the system's, resolved.
     pub(super) async fn prepare(
         sandbox: &Sandbox,
         root: &Path,
         git_common: Option<&Path>,
         _helper: Option<&Path>,
         cache: Option<&Path>,
-    ) -> Result<(Self, PathBuf), ComputerError> {
+    ) -> Result<(Self, Temps), ComputerError> {
         if !available() {
             return Err(ComputerError::Unsupported(format!(
                 "the sandbox is not available on this computer: {SANDBOX_EXEC} is missing"
             )));
         }
         let system_temp = tokio::fs::canonicalize(std::env::temp_dir())
-            .await
-            .map_err(|error| failed(&error))?;
-        let temp = run_temp(&system_temp)
             .await
             .map_err(|error| failed(&error))?;
         let git_common = resolved(git_common).await;
@@ -67,7 +66,6 @@ impl Enforcer {
         };
         let places = Places {
             root: root.to_owned(),
-            temp: temp.clone(),
             glave_home: resolved(sandbox.glave_home.as_deref()).await,
             hidden,
             cache: cache.map(Path::to_path_buf),
@@ -76,38 +74,38 @@ impl Enforcer {
         };
         let profile = profile(&places, sandbox.level, sandbox.network);
         let mut args: Vec<OsString> = vec!["-p".into(), profile.text.into()];
-        for (name, path) in profile.params {
-            let mut arg = OsString::from(format!("-D{name}="));
-            arg.push(path);
-            args.push(arg);
-        }
-        args.push("--".into());
-        Ok((
-            Self {
-                args,
-                temp: temp.clone(),
-            },
-            temp,
-        ))
+        args.extend(profile.params.iter().map(|(name, path)| param(name, path)));
+        let temps = Temps {
+            parent: system_temp,
+            prefix: "glave-sandbox-",
+        };
+        Ok((Self { args }, temps))
     }
 
     /// A future, as on Linux, which surveys the workspace before each command.
-    pub(super) fn launch(&self) -> std::future::Ready<Result<Launch, ComputerError>> {
+    pub(super) fn launch(
+        &self,
+        temp: RunTemp,
+    ) -> std::future::Ready<Result<Launch, ComputerError>> {
+        let mut args = self.args.clone();
+        args.push(param(TEMP_PARAM, temp.path()));
+        args.push("--".into());
         std::future::ready(Ok(Launch {
             program: PathBuf::from(SANDBOX_EXEC),
-            args: self.args.clone(),
+            args,
             input: None,
             own_session: false,
+            temp,
             _held: (),
         }))
     }
 }
 
-impl Drop for Enforcer {
-    fn drop(&mut self) {
-        // Best effort: the folder is in the system's temp folder, which is cleaned anyway.
-        let _ = std::fs::remove_dir_all(&self.temp);
-    }
+/// `-D<name>=<path>`: one of a profile's parameters.
+fn param(name: &str, path: &Path) -> OsString {
+    let mut arg = OsString::from(format!("-D{name}="));
+    arg.push(path);
+    arg
 }
 
 /// The home folder's credential stores, each as named and, when a link leads elsewhere, where
@@ -124,22 +122,4 @@ async fn hidden(home: &Path) -> Vec<PathBuf> {
         hidden.push(path);
     }
     hidden
-}
-
-/// A temp folder of the sandbox's own inside the system's, so commands cannot write other
-/// programs' temp files.
-async fn run_temp(system_temp: &Path) -> std::io::Result<PathBuf> {
-    let pid = std::process::id();
-    for attempt in 0_u32..1_000 {
-        let dir = system_temp.join(format!("glave-sandbox-{pid}-{attempt}"));
-        match tokio::fs::create_dir(&dir).await {
-            Ok(()) => return Ok(dir),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(e),
-        }
-    }
-    Err(std::io::Error::new(
-        std::io::ErrorKind::AlreadyExists,
-        "could not make a temp folder for the sandbox",
-    ))
 }
