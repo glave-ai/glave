@@ -363,3 +363,70 @@ fn a_folder_outside_a_repository_is_refused_clearly() {
         assert!(matches!(unsupported, Err(ComputerError::Unsupported(_))));
     });
 }
+
+/// A record torn by a crash is read as none (the worktree is still found by its git link), and
+/// the next write puts a whole one in its place; a record from before records had a version
+/// reads as version 1.
+#[test]
+fn a_torn_record_is_read_as_none_and_written_whole_again() {
+    let (repo, base) = repository("torn");
+    let computers = computers(&base);
+    let env = environment();
+    block_on!(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let sources = worktree(&repo, "glave/torn", Some("thread-1"));
+        computers.open(made.id, &sources).await.unwrap();
+        let kept = list(&base, &env).await.unwrap();
+        let record = record_path(&kept[0].path);
+        let whole = std::fs::read(&record).unwrap();
+        let text = String::from_utf8_lossy(&whole).into_owned();
+        assert!(text.contains("\"version\": 1"), "{text}");
+
+        std::fs::write(&record, &whole[..whole.len() / 2]).unwrap();
+        let torn = list(&base, &env).await.unwrap();
+        assert_eq!(torn.len(), 1, "still found");
+        assert_eq!(torn[0].owner, None);
+        computers.open(made.id, &sources).await.unwrap();
+        assert_eq!(
+            std::fs::read(&record).unwrap(),
+            whole,
+            "written whole again"
+        );
+
+        let unversioned = text.replace("\"version\": 1,", "");
+        std::fs::write(&record, unversioned).unwrap();
+        let kept = list(&base, &env).await.unwrap();
+        assert_eq!(kept[0].owner.as_deref(), Some("thread-1"));
+    });
+}
+
+/// A record a newer glave wrote is refused plainly, by a listing and by a write, and left as it
+/// is.
+#[test]
+fn a_record_of_a_newer_version_is_refused_plainly() {
+    let (repo, base) = repository("newer");
+    let computers = computers(&base);
+    let env = environment();
+    block_on!(async {
+        let made = computers.create(&Environment::host()).await.unwrap();
+        let sources = worktree(&repo, "glave/newer", None);
+        computers.open(made.id, &sources).await.unwrap();
+        let record = record_path(&list(&base, &env).await.unwrap()[0].path);
+        let newer = r#"{"version": 2, "repository": "/elsewhere", "branch": "b"}"#;
+        std::fs::write(&record, newer).unwrap();
+
+        let refused = list(&base, &env).await.unwrap_err();
+        assert!(
+            matches!(&refused, ComputerError::Refused(message)
+                if message.contains("newer version of glave")),
+            "{refused:?}"
+        );
+        let refused = computers.open(made.id, &sources).await.unwrap_err();
+        assert!(matches!(refused, ComputerError::Refused(_)), "{refused:?}");
+        assert_eq!(
+            std::fs::read_to_string(&record).unwrap(),
+            newer,
+            "left as is"
+        );
+    });
+}
