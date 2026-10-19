@@ -147,8 +147,16 @@ async fn through(server: &mut Reached, command: Command) -> anyhow::Result<()> {
 /// Releases the worktrees of `thread`, just archived or deleted: what became of each.
 async fn released(thread: ThreadId) -> anyhow::Result<Vec<String>> {
     let store = crate::data::Data::here().await?;
+    let person = crate::identity::load_or_make(&store).await?.person;
     let log = store.log();
-    match log.locate(thread).await? {
+    let Some(located) = log.locate(thread).await? else {
+        return Ok(Vec::new());
+    };
+    let Some(project) = store.projects().get(located.org, located.project).await? else {
+        return Ok(Vec::new());
+    };
+    // Only a thread of a project the person here works in.
+    match Scope::of_member(located.org, &project, person) {
         Some(scope) => worktrees::release_archived(&log, scope, thread).await,
         None => Ok(Vec::new()),
     }

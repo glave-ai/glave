@@ -123,7 +123,7 @@ async fn first_run(client: &mut impl Client) {
     assert!(ids(&none).is_empty(), "nothing is set up: {none}");
     let started = client
         .call(Request::ThreadStart {
-            project: Some(scope().project),
+            project: Some(scope().project()),
             worktree: None,
             background: false,
             computer: None,

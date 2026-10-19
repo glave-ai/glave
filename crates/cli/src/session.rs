@@ -222,12 +222,12 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         browsers: crate::serving::browsers(args, &store, identity.person).await?,
     };
     let server = Server::new(wiring, settings, scope, answering);
-    keep_here(&server, scope.project, &root).await?;
+    keep_here(&server, scope.project(), &root).await?;
     Ok(Wired {
         server,
         servers,
         endpoint: lined.built.endpoint,
-        project: scope.project,
+        project: scope.project(),
         root,
         files: instructions.map(|loaded| loaded.files).unwrap_or_default(),
         choices: setup.choices,

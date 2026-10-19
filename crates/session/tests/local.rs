@@ -31,7 +31,7 @@ fn a_browser_here_signs_in_with_the_local_token_as_the_local_person() {
         let mut web = Web::new(&served, Some(token.reveal().to_owned()));
         let started = web
             .call(&Request::ThreadStart {
-                project: Some(scope().project),
+                project: Some(scope().project()),
                 worktree: None,
                 background: false,
                 computer: None,

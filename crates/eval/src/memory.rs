@@ -42,18 +42,12 @@ pub fn project(name: Option<&str>) -> Scope {
             sum.wrapping_mul(31).wrapping_add(u128::from(byte))
         }),
     };
-    Scope {
-        org: org(),
-        project: ProjectId::from_uuid(uuid::Uuid::from_u128(project)),
-    }
+    Scope::glaves_own(org(), ProjectId::from_uuid(uuid::Uuid::from_u128(project)))
 }
 
 /// The person's own project, where their personal memory lives.
 fn personal() -> Scope {
-    Scope {
-        org: org(),
-        project: ProjectId::from_uuid(uuid::Uuid::from_u128(100)),
-    }
+    Scope::glaves_own(org(), ProjectId::from_uuid(uuid::Uuid::from_u128(100)))
 }
 
 fn setting(name: Option<&str>) -> ProjectMemory {
@@ -100,7 +94,7 @@ impl Remembering {
             ..Rules::default()
         };
         rules.projects.insert(
-            project(None).project,
+            project(None).project(),
             setting(task.project_memory.as_deref()),
         );
         let mut scopes = vec![personal(), project(None)];
@@ -109,7 +103,7 @@ impl Remembering {
             if thread.project.is_some() {
                 rules
                     .projects
-                    .insert(here.project, setting(thread.project_memory.as_deref()));
+                    .insert(here.project(), setting(thread.project_memory.as_deref()));
             }
             if !scopes.contains(&here) {
                 scopes.push(here);
@@ -308,7 +302,7 @@ mod tests {
     #[test]
     fn projects_are_named_apart_and_the_first_is_the_usual_one() {
         assert_eq!(
-            project(None).project,
+            project(None).project(),
             ProjectId::from_uuid(uuid::Uuid::from_u128(2))
         );
         assert_ne!(project(Some("client")), project(Some("other")));

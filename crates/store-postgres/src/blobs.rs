@@ -42,7 +42,7 @@ impl BlobStore for PostgresBlobs {
                 .seal_blob(&scope, &sha256, &bytes)
                 .await
                 .map_err(|e| BlobError::Storage(format!("could not seal a blob: {e}")))?;
-            let (org, project) = (scope.org.as_uuid(), scope.project.as_uuid());
+            let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
             let mut client = connection(&this.pool)
                 .await
                 .map_err(|e| BlobError::Storage(e.to_string()))?;
@@ -110,7 +110,7 @@ impl BlobStore for PostgresBlobs {
             let Some(name) = name else {
                 return Ok(None);
             };
-            let (org, project) = (scope.org.as_uuid(), scope.project.as_uuid());
+            let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
             let row = client
                 .query_opt(
                     "SELECT bytes, key_id FROM blobs WHERE org = $1 AND project = $2 AND name = $3",

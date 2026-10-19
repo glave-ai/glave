@@ -27,10 +27,10 @@ pub fn uuid(n: u128) -> uuid::Uuid {
 }
 
 pub fn scope(org: u128, project: u128) -> Scope {
-    Scope {
-        org: OrgId::from_uuid(uuid(org)),
-        project: ProjectId::from_uuid(uuid(project)),
-    }
+    Scope::glaves_own(
+        OrgId::from_uuid(uuid(org)),
+        ProjectId::from_uuid(uuid(project)),
+    )
 }
 
 pub fn person() -> PrincipalId {
@@ -67,8 +67,8 @@ pub fn rules() -> Rules {
     };
     rules
         .projects
-        .insert(isolated().project, ProjectMemory::Isolated);
-    rules.projects.insert(off().project, ProjectMemory::Off);
+        .insert(isolated().project(), ProjectMemory::Isolated);
+    rules.projects.insert(off().project(), ProjectMemory::Off);
     rules
 }
 

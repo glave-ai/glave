@@ -11,10 +11,10 @@ use uuid::{Builder, Uuid};
 use crate::support::{Scratch, block_on};
 
 fn scope() -> Scope {
-    Scope {
-        org: OrgId::from_uuid(Uuid::from_u128(1)),
-        project: ProjectId::from_uuid(Uuid::from_u128(2)),
-    }
+    Scope::glaves_own(
+        OrgId::from_uuid(Uuid::from_u128(1)),
+        ProjectId::from_uuid(Uuid::from_u128(2)),
+    )
 }
 
 fn thread() -> ThreadId {

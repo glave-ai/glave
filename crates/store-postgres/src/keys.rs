@@ -84,7 +84,7 @@ impl KeyStorage for PostgresKeys {
             let row = client
                 .query_opt(
                     "SELECT revision, record FROM project_keys WHERE org = $1 AND project = $2",
-                    &[&scope.org.as_uuid(), &scope.project.as_uuid()],
+                    &[&scope.org().as_uuid(), &scope.project().as_uuid()],
                 )
                 .await
                 .map_err(database(KeyError::Storage))?;
@@ -108,7 +108,7 @@ impl KeyStorage for PostgresKeys {
         let scope = *scope;
         let pool = self.pool.clone();
         async move {
-            let (org, project) = (scope.org.as_uuid(), scope.project.as_uuid());
+            let (org, project) = (scope.org().as_uuid(), scope.project().as_uuid());
             let client = connection(&pool).await.map_err(storage)?;
             let changed = match expected {
                 None => client

@@ -50,7 +50,7 @@ A project is a record, not a folder: an id (UUID v7), a kind, a name, an owner, 
 - **A thread's project never changes.** Nothing stored is ever moved or rewritten in place.
 - **Promoting a one-off chat into a project copies, then archives.** The chat's history is written as a new thread in the project's project, sealed under the project's keys, by the same path that writes any new thread. Its first event records where it came from. The original in the personal project is then archived as "moved to the project" and deleted (its keys destroyed) 30 days later, so a mistaken promotion can still be undone. Archived originals never appear in search, thread lists or memory; only the project's copy does.
 - **One-off chats live in each person's personal project** (Chats, as clients call it), made the first time they need it. Every thread has a project from birth.
-- **A thread id is resolved to its scope by one small index:** `(thread) → (organization, project)`, kept by the data store and written when a thread starts. It is the only lookup that takes a bare thread id. It answers only "which scope", and every read that follows is scoped as usual and checked against the caller.
+- **A thread id is resolved to its scope by one small index:** `(thread) → (organization, project)`, kept by the data store and written when a thread starts. It is the only lookup that takes a bare thread id. It answers only where (a `Located`, never a `Scope`), and nothing is read until the caller's membership of that project is checked, which makes the scope every read that follows uses (`invariants.md`, 17).
 - **Exports carry their scope** in a header line, and an import names the scope it goes into. An import never takes the scope from the file.
 
 ## Keys

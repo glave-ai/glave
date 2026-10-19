@@ -374,7 +374,11 @@ fn a_request_that_names_no_project_acts_in_the_person_s_chats_whatever_folder_th
         let Reply::Thread { thread } = started else {
             panic!("a thread");
         };
-        assert_ne!(thread.project, scope().project, "not the folder's project");
+        assert_ne!(
+            thread.project,
+            scope().project(),
+            "not the folder's project"
+        );
         let got = server.request(Request::ProjectGet {
             project: thread.project,
         });
@@ -391,7 +395,7 @@ fn a_request_that_names_no_project_acts_in_the_person_s_chats_whatever_folder_th
         let chats = server.request(listing(None)).await.unwrap();
         assert_eq!(ids(chats), [thread.id]);
         let project = server
-            .request(listing(Some(scope().project)))
+            .request(listing(Some(scope().project())))
             .await
             .unwrap();
         assert_eq!(ids(project), Vec::new());

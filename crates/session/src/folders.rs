@@ -134,7 +134,8 @@ where
     /// removed since, and the `seq` of the ledger's last event.
     async fn read_project_ledger(&self, project: ProjectId) -> Result<ProjectLedger, ApiError> {
         let ledger = project_ledger().ok_or_else(|| internal(&"the project ledger has no id"))?;
-        let scope = self.scope_in(project);
+        // Glave's own: the project's ledger of folders.
+        let scope = Scope::glaves_own(self.inner.home.org(), project);
         let mut read = ProjectLedger::default();
         loop {
             let page = self
@@ -175,7 +176,8 @@ where
         next: impl Fn(&ProjectLedger) -> Result<Option<T>, ApiError>,
     ) -> Result<(), ApiError> {
         let ledger = project_ledger().ok_or_else(|| internal(&"the project ledger has no id"))?;
-        let scope = self.scope_in(project);
+        // Glave's own: the project's ledger of folders.
+        let scope = Scope::glaves_own(self.inner.home.org(), project);
         for _ in 0..ATTEMPTS {
             let current = self.read_project_ledger(project).await?;
             let Some(payload) = next(&current)? else {
@@ -277,7 +279,7 @@ where
         let project = self
             .inner
             .projects
-            .folder(self.inner.home.org, &keys, &new)
+            .folder(self.inner.home.org(), &keys, &new)
             .await
             .map_err(|error| crate::projects::failed(&error))?;
         if project.kind != ProjectKind::Project || !project.admits(&person) {
@@ -375,14 +377,6 @@ where
             parent,
             folders: inside.folders,
         })
-    }
-
-    /// The scope of `project` in this server's organization.
-    pub(crate) fn scope_in(&self, project: ProjectId) -> Scope {
-        Scope {
-            org: self.inner.home.org,
-            project,
-        }
     }
 }
 

@@ -70,7 +70,7 @@ impl Rules {
     fn personal_for(&self, person: Option<PrincipalId>, scope: Scope) -> Option<Scope> {
         let personal = self.personal?;
         let theirs = person.is_none_or(|person| person == personal.person);
-        (theirs && personal.scope.org == scope.org).then_some(personal.scope)
+        (theirs && personal.scope.org() == scope.org()).then_some(personal.scope)
     }
 
     /// The memories a thread in `scope` reads, each with the ledger that holds it: the
@@ -81,7 +81,7 @@ impl Rules {
         scope: Scope,
     ) -> Vec<(MemoryScope, Scope)> {
         let mut readable = Vec::new();
-        match self.setting(scope.project) {
+        match self.setting(scope.project()) {
             ProjectMemory::Off => {}
             ProjectMemory::Isolated => readable.push((MemoryScope::Project, scope)),
             ProjectMemory::Shared => {
@@ -102,7 +102,7 @@ impl Rules {
         scope: Scope,
         which: MemoryScope,
     ) -> Result<Scope, MemoryError> {
-        let setting = self.setting(scope.project);
+        let setting = self.setting(scope.project());
         match (which, setting) {
             (_, ProjectMemory::Off) => {
                 Err(MemoryError::Off("memory is off in this project".to_owned()))
@@ -134,10 +134,10 @@ mod tests {
     use super::*;
 
     fn scope(org: u128, project: u128) -> Scope {
-        Scope {
-            org: OrgId::from_uuid(Uuid::from_u128(org)),
-            project: ProjectId::from_uuid(Uuid::from_u128(project)),
-        }
+        Scope::glaves_own(
+            OrgId::from_uuid(Uuid::from_u128(org)),
+            ProjectId::from_uuid(Uuid::from_u128(project)),
+        )
     }
 
     fn person(n: u128) -> PrincipalId {
@@ -157,10 +157,10 @@ mod tests {
         };
         rules
             .projects
-            .insert(scope(1, 3).project, ProjectMemory::Isolated);
+            .insert(scope(1, 3).project(), ProjectMemory::Isolated);
         rules
             .projects
-            .insert(scope(1, 4).project, ProjectMemory::Off);
+            .insert(scope(1, 4).project(), ProjectMemory::Off);
         rules
     }
 

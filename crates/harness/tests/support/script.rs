@@ -91,10 +91,10 @@ pub fn folder(name: &str) -> PathBuf {
 }
 
 pub fn scope() -> Scope {
-    Scope {
-        org: OrgId::from_uuid(uuid_like(1)),
-        project: ProjectId::from_uuid(uuid_like(2)),
-    }
+    Scope::glaves_own(
+        OrgId::from_uuid(uuid_like(1)),
+        ProjectId::from_uuid(uuid_like(2)),
+    )
 }
 
 pub fn uuid_like(n: u8) -> uuid::Uuid {

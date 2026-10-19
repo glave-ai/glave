@@ -14,7 +14,7 @@ use glave_mcp::{Limits, McpServer, ServerConfig};
 use glave_ports::Caller;
 pub use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, FAKE_SECRET};
-use glave_ports::{EventLog, InMemoryLog, LogError, OrgId, ProjectId, Purpose, Scope};
+use glave_ports::{EventLog, InMemoryLog, Located, LogError, OrgId, ProjectId, Purpose, Scope};
 use glave_provider_openai::fake::{FakeServer, Reply};
 use glave_provider_openai::{Config, OpenAiCompatible};
 use tokio::sync::oneshot;
@@ -53,7 +53,7 @@ impl EventLog for SharedLog {
         self.0.search(scope, query, limit).await
     }
 
-    async fn locate(&self, thread: ThreadId) -> Result<Option<Scope>, LogError> {
+    async fn locate(&self, thread: ThreadId) -> Result<Option<Located>, LogError> {
         self.0.locate(thread).await
     }
 
@@ -163,10 +163,7 @@ impl World {
         let signer = Signer::es256("k1");
         issuer.publish(&signer);
         let upstream = FakeServer::start(replies).unwrap();
-        let scope = Scope {
-            org: OrgId::from_uuid(uuid(1)),
-            project: ProjectId::from_uuid(uuid(2)),
-        };
+        let scope = Scope::glaves_own(OrgId::from_uuid(uuid(1)), ProjectId::from_uuid(uuid(2)));
         let mut world = Self {
             url: String::new(),
             issuer,

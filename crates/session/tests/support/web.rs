@@ -32,7 +32,11 @@ pub async fn serve_http<L: EventLog + 'static>(server: Tested<L>, issuer: &Issue
     let mut home = server.home_project().await.unwrap();
     let ada = glave_session::signin::person(&issuer.url, "ada").unwrap();
     home.members.push(glave_event::Principal::person(ada));
-    server.projects().update(scope().org, &home).await.unwrap();
+    server
+        .projects()
+        .update(scope().org(), &home)
+        .await
+        .unwrap();
     let trust = Trust {
         issuers: vec![issuer.url.clone()],
         audience: AUDIENCE.into(),

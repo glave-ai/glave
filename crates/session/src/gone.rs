@@ -9,7 +9,7 @@ use glave_event::{Principal, ProjectRemoved, ThreadId};
 use glave_harness::{Change, change_standing};
 use glave_ports::{
     BlobStore, Caller, EventLog, FolderKey, ModelProvider, Project, ProjectError, ProjectId,
-    ProjectKind, Standing, ThreadQuery,
+    ProjectKind, Scope, Standing, ThreadQuery,
 };
 
 use crate::folders::only_here;
@@ -101,7 +101,7 @@ where
         match self
             .inner
             .projects
-            .folder(self.inner.home.org, &keys, &found)
+            .folder(self.inner.home.org(), &keys, &found)
             .await
         {
             Ok(led) if led.id != project => {
@@ -143,7 +143,8 @@ where
             ));
         }
         self.let_go_in(project);
-        let scope = self.scope_in(project);
+        // Glave's own: archiving the threads of a project its owner removes.
+        let scope = Scope::glaves_own(self.inner.home.org(), project);
         for thread in threads {
             let now = self.inner.harness.clock().now();
             let random = self.inner.harness.entropy().bytes()?;
@@ -219,7 +220,8 @@ where
 
     /// Every thread of `project` that is neither archived nor deleted.
     async fn active_threads(&self, project: ProjectId) -> Result<Vec<ThreadId>, ApiError> {
-        let scope = self.scope_in(project);
+        // Glave's own: listing a project's threads, for the server to act on.
+        let scope = Scope::glaves_own(self.inner.home.org(), project);
         let (mut threads, mut after) = (Vec::new(), None);
         loop {
             let query = ThreadQuery {
@@ -252,7 +254,7 @@ where
     /// opened where its project's folder is now, the next time it is used.
     fn let_go_in(&self, project: ProjectId) {
         self.lock().retain(|_, slot| match slot {
-            Slot::Idle { thread: held, .. } => held.scope.project != project,
+            Slot::Idle { thread: held, .. } => held.scope.project() != project,
             Slot::Busy { .. } => true,
         });
     }

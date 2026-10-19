@@ -8,7 +8,7 @@ use glave_event::{At, EventId, PayloadVersion, RawEvent, Seq, ThreadId, TypeName
 use glave_keys::{EventFields, Sealed, erased_payload};
 use glave_ports::search::{Found, indexed, query_terms};
 use glave_ports::{
-    EventLog, LogError, OrgId, ProjectId, Scope, ThreadQuery, ThreadView, check_append,
+    EventLog, Located, LogError, OrgId, ProjectId, Scope, ThreadQuery, ThreadView, check_append,
 };
 use rusqlite::{Connection, ErrorCode, OptionalExtension as _, TransactionBehavior, params};
 use serde_json::value::RawValue;
@@ -104,8 +104,8 @@ impl EventLog for SqliteLog {
                 )?;
                 let rows = statement.query_map(
                     params![
-                        scope.org.to_string(),
-                        scope.project.to_string(),
+                        scope.org().to_string(),
+                        scope.project().to_string(),
                         thread.to_string(),
                         after,
                         limit
@@ -157,8 +157,8 @@ impl EventLog for SqliteLog {
                 )?;
                 let rows = statement.query_map(
                     params![
-                        scope.org.to_string(),
-                        scope.project.to_string(),
+                        scope.org().to_string(),
+                        scope.project().to_string(),
                         thread.to_string(),
                         kinds
                     ],
@@ -224,8 +224,8 @@ impl EventLog for SqliteLog {
                 let rows = statement.query_map(
                     params![
                         expression,
-                        scope.org.to_string(),
-                        scope.project.to_string(),
+                        scope.org().to_string(),
+                        scope.project().to_string(),
                         limit
                     ],
                     |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
@@ -277,7 +277,7 @@ impl EventLog for SqliteLog {
     fn locate(
         &self,
         thread: ThreadId,
-    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+    ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
         let connection = self.connection.clone();
         async move {
             let found = run(&connection, move |connection| {
@@ -294,7 +294,7 @@ impl EventLog for SqliteLog {
             .map_err(|e| LogError::Storage(e.to_string()))?;
             found
                 .map(|(org, project)| {
-                    Ok(Scope {
+                    Ok(Located {
                         org: OrgId::from_uuid(parse_uuid(&org)?),
                         project: ProjectId::from_uuid(parse_uuid(&project)?),
                     })
@@ -332,8 +332,8 @@ fn append_now(
         return Ok(());
     };
     let (org, project, thread) = (
-        scope.org.to_string(),
-        scope.project.to_string(),
+        scope.org().to_string(),
+        scope.project().to_string(),
         first.thread.to_string(),
     );
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;

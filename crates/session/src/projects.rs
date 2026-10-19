@@ -27,20 +27,21 @@ const MOST_PROJECTS: usize = 1_000;
 /// What a personal project is called until its person renames it.
 pub const PERSONAL_NAME: &str = "Chats";
 
-/// The scopes of threads a server has looked up. A thread's project never changes.
+/// The projects of threads a server has looked up, in its organization. A thread's project
+/// never changes.
 #[derive(Debug, Default)]
-pub(crate) struct Places(HashMap<ThreadId, Scope>);
+pub(crate) struct Places(HashMap<ThreadId, ProjectId>);
 
 impl Places {
-    fn get(&self, thread: ThreadId) -> Option<Scope> {
+    fn get(&self, thread: ThreadId) -> Option<ProjectId> {
         self.0.get(&thread).copied()
     }
 
-    pub(crate) fn insert(&mut self, thread: ThreadId, scope: Scope) {
+    pub(crate) fn insert(&mut self, thread: ThreadId, project: ProjectId) {
         if self.0.len() >= PLACES {
             self.0.clear();
         }
-        self.0.insert(thread, scope);
+        self.0.insert(thread, project);
     }
 }
 
@@ -79,7 +80,7 @@ where
         if let Some(project) = self
             .inner
             .projects
-            .get(home.org, home.project)
+            .get(home.org(), home.project())
             .await
             .map_err(|e| failed(&e))?
         {
@@ -87,7 +88,7 @@ where
         }
         let now = At::from(self.inner.harness.clock().now());
         let project = Project {
-            id: home.project,
+            id: home.project(),
             kind: ProjectKind::Project,
             name: "this folder".to_owned(),
             owner: Principal::person(self.person_of(&Caller::default())?),
@@ -95,50 +96,63 @@ where
             created_at: now,
             updated_at: now,
         };
-        match self.inner.projects.create(home.org, &project).await {
+        match self.inner.projects.create(home.org(), &project).await {
             Ok(kept) => Ok(kept),
             // Another process kept it first.
             Err(ProjectError::Conflict(_)) => self
                 .inner
                 .projects
-                .get(home.org, home.project)
+                .get(home.org(), home.project())
                 .await
                 .map_err(|e| failed(&e))?
-                .ok_or_else(|| no_project(home.project)),
+                .ok_or_else(|| no_project(home.project())),
             Err(error) => Err(failed(&error)),
         }
     }
 
     /// The project `project` of this server's organization.
     async fn project(&self, project: ProjectId) -> Result<Project, ApiError> {
-        if project == self.inner.home.project {
+        if project == self.inner.home.project() {
             return self.home_project().await;
         }
         self.inner
             .projects
-            .get(self.inner.home.org, project)
+            .get(self.inner.home.org(), project)
             .await
             .map_err(|e| failed(&e))?
             .ok_or_else(|| no_project(project))
     }
 
-    /// The project `project`, when `caller` works in it; otherwise "no project", as for one
-    /// that does not exist.
+    /// The one check of who may use a project's scope: `project`, read from this server's
+    /// organization, and the scope `caller` may read and write it with, when they own it or are
+    /// one of its members; otherwise "no project", as for one that does not exist
+    /// (`specs/invariants.md`, 17).
+    pub(crate) async fn authorized(
+        &self,
+        caller: &Caller,
+        project: ProjectId,
+    ) -> Result<(Project, Scope), ApiError> {
+        let found = self.project(project).await?;
+        let person = self.person_of(caller)?;
+        let scope = Scope::of_member(self.inner.home.org(), &found, person)
+            .ok_or_else(|| no_project(project))?;
+        Ok((found, scope))
+    }
+
+    /// The project `project`, when `caller` works in it; see [`Server::authorized`].
     pub(crate) async fn member_of(
         &self,
         caller: &Caller,
         project: ProjectId,
     ) -> Result<Project, ApiError> {
-        let found = self.project(project).await?;
-        if found.admits_person(self.person_of(caller)?) {
-            Ok(found)
-        } else {
-            Err(no_project(project))
-        }
+        Ok(self.authorized(caller, project).await?.0)
     }
 
-    /// The caller's personal project, made the first time.
-    pub(crate) async fn personal_project(&self, caller: &Caller) -> Result<Project, ApiError> {
+    /// The caller's personal project, made the first time, and its scope.
+    pub(crate) async fn personal_project(
+        &self,
+        caller: &Caller,
+    ) -> Result<(Project, Scope), ApiError> {
         let now = self.inner.harness.clock().now();
         let id = ThreadId::new(now, self.inner.harness.entropy().bytes()?)
             .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?;
@@ -151,22 +165,28 @@ where
             created_at: At::from(now),
             updated_at: At::from(now),
         };
-        self.inner
+        let kept = self
+            .inner
             .projects
-            .personal(self.inner.home.org, &new)
+            .personal(self.inner.home.org(), &new)
             .await
-            .map_err(|e| failed(&e))
+            .map_err(|e| failed(&e))?;
+        let person = self.person_of(caller)?;
+        let scope = Scope::of_member(self.inner.home.org(), &kept, person)
+            .ok_or_else(|| no_project(kept.id))?;
+        Ok((kept, scope))
     }
 
-    /// The project a request acts in: `asked`, when the caller works in it; with none, their
-    /// personal project, their Chats, whatever folder the server started in.
+    /// The project a request acts in, and the caller's scope in it: `asked`, when the caller
+    /// works in it; with none, their personal project, their Chats, whatever folder the server
+    /// started in.
     pub(crate) async fn project_for(
         &self,
         caller: &Caller,
         asked: Option<ProjectId>,
-    ) -> Result<Project, ApiError> {
+    ) -> Result<(Project, Scope), ApiError> {
         match asked {
-            Some(project) => self.member_of(caller, project).await,
+            Some(project) => self.authorized(caller, project).await,
             None => self.personal_project(caller).await,
         }
     }
@@ -180,34 +200,43 @@ where
         let projects = self
             .inner
             .projects
-            .list(self.inner.home.org, &person, MOST_PROJECTS)
+            .list(self.inner.home.org(), &person, MOST_PROJECTS)
             .await
             .map_err(|e| failed(&e))?;
         Ok(projects.into_iter().map(|project| project.id).collect())
     }
 
-    /// The scope `thread` is stored in: remembered, or found in the log.
-    pub(crate) async fn scope_of(&self, thread: ThreadId) -> Result<Scope, ApiError> {
+    /// The project `thread` is in, in this server's organization: remembered, or found in the
+    /// log. Where it is, not who may read it.
+    async fn located(&self, thread: ThreadId) -> Result<ProjectId, ApiError> {
         if crate::ledger::is_ledger(thread) {
             return Err(no_thread(thread));
         }
-        if let Some(scope) = self.places().get(thread) {
-            return Ok(scope);
+        if let Some(project) = self.places().get(thread) {
+            return Ok(project);
         }
         if let Some(Slot::Idle { thread: held, .. }) = self.lock().get(&thread) {
-            return Ok(held.scope);
+            return Ok(held.scope.project());
         }
-        let scope = self
+        let located = self
             .inner
             .harness
             .log()
             .locate(thread)
             .await
             .map_err(|e| ApiError::new(code::INTERNAL, e.to_string()))?
-            .filter(|scope| scope.org == self.inner.home.org)
+            .filter(|located| located.org == self.inner.home.org())
             .ok_or_else(|| no_thread(thread))?;
-        self.places().insert(thread, scope);
-        Ok(scope)
+        self.places().insert(thread, located.project);
+        Ok(located.project)
+    }
+
+    /// The scope `thread` is stored in, for work on it after the request was let through by
+    /// [`Server::allow`], which checked the caller against the thread's project, or for glave's
+    /// own work on it (tasks, schedules, titles, recovery).
+    pub(crate) async fn scope_of(&self, thread: ThreadId) -> Result<Scope, ApiError> {
+        let project = self.located(thread).await?;
+        Ok(Scope::glaves_own(self.inner.home.org(), project))
     }
 
     /// The scope of `thread`, when `caller` works in its project; otherwise "no such thread",
@@ -217,8 +246,9 @@ where
         caller: &Caller,
         thread: ThreadId,
     ) -> Result<Scope, ApiError> {
-        let scope = self.scope_of(thread).await?;
-        self.member_of(caller, scope.project)
+        let project = self.located(thread).await?;
+        let (_, scope) = self
+            .authorized(caller, project)
             .await
             .map_err(|refused| match refused.code {
                 code::NO_PROJECT => no_thread(thread),
@@ -232,7 +262,7 @@ where
     pub(crate) async fn allow(&self, caller: &Caller, request: &Request) -> Result<(), ApiError> {
         if let Some(thread) = request.thread() {
             self.authorize(caller, thread).await?;
-        } else if let Some(project) = request.memory_project(self.inner.home.project) {
+        } else if let Some(project) = request.memory_project(self.inner.home.project()) {
             self.member_of(caller, project).await?;
         }
         Ok(())
@@ -252,7 +282,7 @@ where
         let projects = self
             .inner
             .projects
-            .list(self.inner.home.org, &person, limit)
+            .list(self.inner.home.org(), &person, limit)
             .await
             .map_err(|e| failed(&e))?;
         let (projects, gone) = self.listed(projects).await?;
@@ -287,7 +317,7 @@ where
         let project = self
             .inner
             .projects
-            .create(self.inner.home.org, &project)
+            .create(self.inner.home.org(), &project)
             .await
             .map_err(|e| failed(&e))?;
         Ok(Reply::Project {
@@ -325,7 +355,7 @@ where
         found.updated_at = At::from(self.inner.harness.clock().now());
         self.inner
             .projects
-            .update(self.inner.home.org, &found)
+            .update(self.inner.home.org(), &found)
             .await
             .map_err(|e| failed(&e))?;
         let folder = self.folder_of(project).await?;
@@ -344,6 +374,6 @@ where
 
     /// Remembers that `thread` is in `scope`.
     pub(crate) fn place(&self, thread: ThreadId, scope: Scope) {
-        self.places().insert(thread, scope);
+        self.places().insert(thread, scope.project());
     }
 }

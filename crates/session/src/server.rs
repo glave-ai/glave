@@ -16,8 +16,7 @@ use glave_identity::signin::Browsers;
 use glave_ports::computer::{ComputerError, Environment};
 use glave_ports::memories::Memory;
 use glave_ports::{
-    BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, ProjectId, Projects, Scope,
-    ToolSource,
+    BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, Projects, Scope, ToolSource,
 };
 use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
@@ -300,7 +299,7 @@ where
     pub(crate) async fn new_thread(
         &self,
         caller: &Caller,
-        project: ProjectId,
+        scope: Scope,
         worktree: Option<bool>,
         background: bool,
         choice: &Choice,
@@ -313,7 +312,8 @@ where
         if let Some(mode) = choice.approval {
             self.allowed_mode(mode)?;
         }
-        let home = project == self.inner.home.project;
+        let project = scope.project();
+        let home = project == self.inner.home.project();
         let own = self.inner.worktree.load(Ordering::Relaxed);
         let folder = self.folder_found(project).await?;
         // The project's own choice, for the person here, is nearer than the server's.
@@ -343,7 +343,6 @@ where
             (Some(folder), _, _) => Place::Folder(folder),
         };
         let copy = background && matches!(place, Place::Worktree(_));
-        let scope = self.scope_in(project);
         let mut thread = self
             .inner
             .harness

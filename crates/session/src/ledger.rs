@@ -11,7 +11,7 @@ use glave_event::{
     TaskStarted, ThreadId, decode, encode,
 };
 use glave_ports::{
-    BlobStore, Caller, EventLog, LogError, ModelProvider, ProjectId, reserved_ledger,
+    BlobStore, Caller, EventLog, LogError, ModelProvider, ProjectId, Scope, reserved_ledger,
 };
 
 use crate::protocol::{ApiError, code};
@@ -171,7 +171,8 @@ where
     /// Reads whatever was added to `project`'s ledger since this server last looked.
     pub(crate) async fn catch_up(&self, project: ProjectId) -> Result<(), ApiError> {
         let ledger = ledger_id().ok_or_else(|| internal("the ledger has no id"))?;
-        let scope = self.scope_in(project);
+        // Glave's own: the project's task ledger.
+        let scope = Scope::glaves_own(self.inner.home.org(), project);
         loop {
             let next = self.ledgers().get(&project).map_or(1, Ledger::next_seq);
             let after = Seq::new(next.saturating_sub(1)).ok();
@@ -201,7 +202,8 @@ where
         payload: &T,
     ) -> Result<(), ApiError> {
         let ledger = ledger_id().ok_or_else(|| internal("the ledger has no id"))?;
-        let scope = self.scope_in(project);
+        // Glave's own: the project's task ledger.
+        let scope = Scope::glaves_own(self.inner.home.org(), project);
         for _ in 0..ATTEMPTS {
             self.catch_up(project).await?;
             let now = self.inner.harness.clock().now();
@@ -241,7 +243,7 @@ where
             None => Vec::new(),
         };
         let known: Vec<ProjectId> = self.ledgers().keys().copied().collect();
-        for project in std::iter::once(self.inner.home.project).chain(known) {
+        for project in std::iter::once(self.inner.home.project()).chain(known) {
             if !projects.contains(&project) {
                 projects.push(project);
             }

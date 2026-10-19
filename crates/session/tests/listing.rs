@@ -16,7 +16,7 @@ async fn page(
     cursor: Option<String>,
 ) -> (Vec<ThreadSummary>, Option<String>) {
     let request = Request::ThreadList {
-        project: Some(scope().project),
+        project: Some(scope().project()),
         limit: Some(limit),
         show: None,
         cursor,
@@ -64,7 +64,7 @@ fn lists_come_a_page_at_a_time_with_titles_and_usage() {
         assert_eq!((fresh.title.as_deref(), fresh.turns), (None, 0));
 
         let bad = Request::ThreadList {
-            project: Some(scope().project),
+            project: Some(scope().project()),
             limit: None,
             show: None,
             cursor: Some("not a cursor".into()),

@@ -48,7 +48,7 @@ impl BlobStore for SqliteBlobs {
                 .await
                 .map_err(|e| BlobError::Storage(format!("could not seal a blob: {e}")))?;
             run(&this.connection, move |connection| {
-                let (org, project) = (scope.org.to_string(), scope.project.to_string());
+                let (org, project) = (scope.org().to_string(), scope.project().to_string());
                 let transaction = connection.transaction()?;
                 // Storing it again re-seals it under this month's key.
                 transaction.execute(
@@ -96,7 +96,7 @@ impl BlobStore for SqliteBlobs {
                     .query_row(
                         "SELECT bytes, key_id FROM blobs
                          WHERE org = ?1 AND project = ?2 AND name = ?3",
-                        params![scope.org.to_string(), scope.project.to_string(), lookup],
+                        params![scope.org().to_string(), scope.project().to_string(), lookup],
                         |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .optional()

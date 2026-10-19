@@ -22,10 +22,10 @@ fn person() -> PrincipalId {
 }
 
 fn personal() -> Scope {
-    Scope {
-        org: OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        project: ProjectId::from_uuid(uuid::Uuid::from_u128(100)),
-    }
+    Scope::glaves_own(
+        OrgId::from_uuid(uuid::Uuid::from_u128(1)),
+        ProjectId::from_uuid(uuid::Uuid::from_u128(100)),
+    )
 }
 
 async fn served(name: &str) -> (Tested<SqliteLog>, Store) {

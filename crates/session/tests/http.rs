@@ -96,7 +96,7 @@ fn requests_without_a_valid_sign_in_are_refused() {
         let mut web = Web::new(&served, Some(late));
         let listed = web
             .call(&Request::ThreadList {
-                project: Some(scope().project),
+                project: Some(scope().project()),
                 limit: None,
                 show: None,
                 cursor: None,
@@ -229,7 +229,7 @@ fn the_signed_in_caller_is_recorded_and_the_token_never_is() {
         let mut web = Web::new(&served, Some(token.clone()));
         let started = web
             .call(&Request::ThreadStart {
-                project: Some(scope().project),
+                project: Some(scope().project()),
                 background: false,
                 worktree: None,
                 computer: None,
@@ -295,7 +295,7 @@ fn the_method_header_must_agree_and_only_post_to_the_root_is_served() {
         let served = serve_http(server(&dir, Vec::new(), Answering::Clients).await, &issuer).await;
         let mut web = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
         let (message, _) = web.message(&Request::ThreadStart {
-            project: Some(scope().project),
+            project: Some(scope().project()),
             background: false,
             worktree: None,
             computer: None,
@@ -330,7 +330,7 @@ fn a_retried_turn_start_returns_the_turn_already_started() {
         let mut web = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
         let started = web
             .call(&Request::ThreadStart {
-                project: Some(scope().project),
+                project: Some(scope().project()),
                 background: false,
                 worktree: None,
                 computer: None,

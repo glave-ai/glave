@@ -85,10 +85,14 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
         let grace = person("https://id.example.com", "grace").unwrap();
         let mut home = server.home_project().await.unwrap();
         home.members.push(Principal::person(grace));
-        server.projects().update(scope().org, &home).await.unwrap();
+        server
+            .projects()
+            .update(scope().org(), &home)
+            .await
+            .unwrap();
 
         let here = Caller::default();
-        let ours = start_as(&server, &here, scope().project).await;
+        let ours = start_as(&server, &here, scope().project()).await;
         let (place, _) = opened(&server, ours).await;
         assert!(
             matches!(place, Opened::Worktree { .. }),
@@ -101,7 +105,7 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
             person: Some(grace),
             ..Caller::default()
         };
-        let theirs = start_as(&server, &elsewhere, scope().project).await;
+        let theirs = start_as(&server, &elsewhere, scope().project()).await;
         let (place, _) = opened(&server, theirs).await;
         assert!(
             matches!(place, Opened::Folder { .. }),

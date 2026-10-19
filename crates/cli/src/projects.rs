@@ -47,10 +47,8 @@ pub async fn here(store: &Data, folder: &Path, person: PrincipalId) -> anyhow::R
     );
     let new = new_project(ProjectKind::Project, name, owner);
     let project = store.projects().folder(org, &keys, &new).await?;
-    Ok(Scope {
-        org,
-        project: project.id,
-    })
+    // Glave's own: the host opens the project of the folder it runs in, for its person.
+    Ok(Scope::glaves_own(org, project.id))
 }
 
 /// The scope of `person`'s personal project, made the first time.
@@ -62,10 +60,8 @@ pub async fn personal(store: &Data, person: PrincipalId) -> anyhow::Result<Scope
         Principal::person(person),
     );
     let project = store.projects().personal(org, &new).await?;
-    Ok(Scope {
-        org,
-        project: project.id,
-    })
+    // Glave's own: the host keeps its person's own project.
+    Ok(Scope::glaves_own(org, project.id))
 }
 
 /// The scope glave keeps a record of its own under `name`, such as the gateway's, which no
@@ -75,8 +71,6 @@ pub async fn named(store: &Data, name: &str) -> anyhow::Result<Scope> {
     let new = new_project(ProjectKind::Project, name.to_owned(), Principal::glave());
     let keys = [FolderKey::Path(name.to_owned())];
     let project = store.projects().folder(org, &keys, &new).await?;
-    Ok(Scope {
-        org,
-        project: project.id,
-    })
+    // Glave's own: a record no person works in.
+    Ok(Scope::glaves_own(org, project.id))
 }

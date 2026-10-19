@@ -16,8 +16,8 @@ use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
 use glave_ports::memories::Memory;
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
-    Completion, EventLog, InMemoryBlobs, InMemoryLog, InMemoryProjects, LogError, OrgId, Project,
-    ProjectId, ProjectKind, Projects, Scope,
+    Completion, EventLog, InMemoryBlobs, InMemoryLog, InMemoryProjects, Located, LogError, OrgId,
+    Project, ProjectId, ProjectKind, Projects, Scope,
 };
 use glave_session::protocol::ModelInfo;
 use glave_session::signin::Browsers;
@@ -51,10 +51,10 @@ pub async fn sqlite(database: &Path) -> Store {
 
 /// The organization and project every test server serves.
 pub fn scope() -> Scope {
-    Scope {
-        org: OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        project: ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
-    }
+    Scope::glaves_own(
+        OrgId::from_uuid(uuid::Uuid::from_u128(1)),
+        ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
+    )
 }
 
 /// What a test server is built from.
@@ -209,7 +209,7 @@ impl Setup {
         // the clock, so nothing a test checks depends on when it was first asked for.
         let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
         let project = Project {
-            id: home.project,
+            id: home.project(),
             kind: ProjectKind::Project,
             name: "test".into(),
             owner: Principal::person(server.person().unwrap()),
@@ -220,12 +220,16 @@ impl Setup {
         // A second server on another's projects finds it there already.
         if server
             .projects()
-            .get(home.org, project.id)
+            .get(home.org(), project.id)
             .await
             .unwrap()
             .is_none()
         {
-            server.projects().create(home.org, &project).await.unwrap();
+            server
+                .projects()
+                .create(home.org(), &project)
+                .await
+                .unwrap();
         }
         (server, seen)
     }
@@ -294,7 +298,7 @@ impl EventLog for Shared {
     fn locate(
         &self,
         thread: ThreadId,
-    ) -> impl Future<Output = Result<Option<Scope>, LogError>> + Send {
+    ) -> impl Future<Output = Result<Option<Located>, LogError>> + Send {
         self.0.locate(thread)
     }
 

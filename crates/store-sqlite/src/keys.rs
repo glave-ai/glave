@@ -83,7 +83,7 @@ impl KeyStorage for SqliteKeys {
                 connection
                     .query_row(
                         "SELECT revision, record FROM project_keys WHERE org = ?1 AND project = ?2",
-                        params![scope.org.to_string(), scope.project.to_string()],
+                        params![scope.org().to_string(), scope.project().to_string()],
                         |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .optional()
@@ -112,7 +112,7 @@ impl KeyStorage for SqliteKeys {
             let expected = expected
                 .map(|revision| i64::try_from(revision).map_err(storage))
                 .transpose()?;
-            let (org, project) = (scope.org.to_string(), scope.project.to_string());
+            let (org, project) = (scope.org().to_string(), scope.project().to_string());
             let changed = run(&connection, move |connection| match expected {
                 None => connection.execute(
                     "INSERT OR IGNORE INTO project_keys (org, project, revision, record)

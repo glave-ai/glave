@@ -36,14 +36,10 @@ where
         background: bool,
         choice: &Choice,
     ) -> Result<Reply, ApiError> {
-        let project = self.project_for(caller, project).await?.id;
+        let (_, scope) = self.project_for(caller, project).await?;
         let thread = self
-            .new_thread(caller, project, worktree, background, choice)
+            .new_thread(caller, scope, worktree, background, choice)
             .await?;
-        let scope = Scope {
-            org: self.inner.home.org,
-            project,
-        };
         self.opened(caller, scope, thread).await
     }
 
@@ -73,7 +69,7 @@ where
         thread: ThreadId,
     ) -> Result<Reply, ApiError> {
         let summary = self.summary(scope, thread).await?;
-        let ask = self.trust_in(caller, scope.project).await;
+        let ask = self.trust_in(caller, scope.project()).await;
         Ok(Reply::Thread {
             thread: self.asking(summary, ask.as_ref(), true),
         })
@@ -142,7 +138,7 @@ where
         let scope = self.scope_of(thread).await?;
         let summary = self.summary(scope, thread).await?;
         let ask = self
-            .trust_on_page(caller, scope.project, std::iter::once(thread))
+            .trust_on_page(caller, scope.project(), std::iter::once(thread))
             .await;
         Ok(Reply::Thread {
             thread: self.asking(summary, ask.as_ref(), false),
@@ -160,11 +156,8 @@ where
         show: Option<Show>,
         cursor: Option<String>,
     ) -> Result<Reply, ApiError> {
-        let project = self.project_for(caller, project).await?.id;
-        let scope = Scope {
-            org: self.inner.home.org,
-            project,
-        };
+        let (_, scope) = self.project_for(caller, project).await?;
+        let project = scope.project();
         let limit = limit.unwrap_or(20).clamp(1, MAX_PAGE);
         let after = cursor
             .map(|cursor| cursor.parse::<ThreadCursor>())
@@ -228,7 +221,7 @@ where
                 .map_err(|e| failed(&e))?
                 .ok_or_else(|| no_thread(thread))?,
         };
-        let protections = self.project_settled(scope.project).await.protections;
+        let protections = self.project_settled(scope.project()).await.protections;
         self.summarize(scope, view, protections).await
     }
 
@@ -263,7 +256,7 @@ where
         };
         Ok(ThreadSummary {
             id: view.thread,
-            project: scope.project,
+            project: scope.project(),
             status: self.status(view.thread),
             standing: view.standing,
             title,

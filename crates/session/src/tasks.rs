@@ -140,7 +140,7 @@ where
         budget: Option<u64>,
         schedule: Option<Fired>,
     ) -> Result<TaskInfo, ApiError> {
-        let project = self.may_start_task(caller, thread).await?.project;
+        let project = self.may_start_task(caller, thread).await?.project();
         let (title, goal) = match &work {
             Work::Turn(prompt, _) => (title_from(prompt).unwrap_or_default(), false),
             Work::Goal(Some(goal)) => (title_from(&goal.objective).unwrap_or_default(), true),
