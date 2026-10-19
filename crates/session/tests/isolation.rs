@@ -124,7 +124,7 @@ fn on_sqlite_no_one_reaches_anothers_data() {
         let parts = Parts {
             log: store.log(),
             projects: Arc::new(store.projects()),
-            shredder: store.keyring(),
+            eraser: store.keyring(),
         };
         isolated("isolation-sqlite", parts).await;
     });
@@ -156,7 +156,7 @@ fn on_postgres_no_one_reaches_anothers_data() {
         let parts = Parts {
             log: store.log(),
             projects: Arc::new(store.projects()),
-            shredder: store.keyring(),
+            eraser: store.keyring(),
         };
         isolated("isolation-postgres", parts).await;
         admin

@@ -131,6 +131,12 @@ pub enum MemoryError {
     Storage(String),
 }
 
+impl From<crate::EraseError> for MemoryError {
+    fn from(error: crate::EraseError) -> Self {
+        Self::Storage(error.0)
+    }
+}
+
 impl From<crate::stream::StreamError> for MemoryError {
     fn from(error: crate::stream::StreamError) -> Self {
         Self::Storage(error.to_string())

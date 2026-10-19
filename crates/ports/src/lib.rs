@@ -15,6 +15,7 @@ pub mod computer;
 #[cfg(any(test, feature = "conformance"))]
 pub mod conformance;
 mod env;
+mod erase;
 mod failure;
 pub mod file;
 pub mod host;
@@ -37,6 +38,7 @@ mod view;
 pub use blob::{BlobError, BlobStore, digest};
 pub use caller::Caller;
 pub use env::{Clock, Entropy, EntropyError, OsEntropy, SystemClock};
+pub use erase::{Erasable, EraseError, Eraser};
 pub use failure::Failure;
 pub use in_memory::{InMemoryBlobs, InMemoryLog, InMemoryProjects, InMemoryTools};
 pub use log::{EventLog, LogError, check_append};
