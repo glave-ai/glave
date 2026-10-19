@@ -27,6 +27,9 @@ const EVENTS: usize = 10_000;
 const EVENTS_PER_TURN: usize = 8;
 const STARTS: usize = 30;
 const RESUMES: usize = 10;
+/// The release binary's budget in MB (AGENTS.md), the one place it is set: pull requests,
+/// the merge queue and `main` all run this benchmark (`budgets.yml`).
+const BINARY_MB: f64 = 40.0;
 
 fn main() -> anyhow::Result<()> {
     let dir = std::env::temp_dir().join(format!("glave-budgets-{}", std::process::id()));
@@ -44,12 +47,13 @@ fn measure(dir: &Path) -> anyhow::Result<()> {
         .enable_all()
         .build()?;
     let (recorded, resume) = runtime.block_on(threads(dir))?;
+    let binary_budget = format!("< {BINARY_MB} MB");
     let rows = [
         (
             "release binary",
-            "< 30 MB",
+            binary_budget.as_str(),
             format!("{:.1} MB", mb(size)),
-            mb(size) < 30.0,
+            mb(size) < BINARY_MB,
         ),
         (
             "cold start to prompt",

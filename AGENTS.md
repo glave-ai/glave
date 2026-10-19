@@ -125,7 +125,7 @@ The bar is code a careful reader admires: every line earns its place, and each i
 - **One space shows no spaces.** With a single space, the UI shows no space grouping, members or moving between projects.
 - **Plain words.** No user-visible text names a file, flag, command or error code unless the person typed it. Every error a client can show has a message a person can act on.
 - **The consumer journey test** (`web/e2e/consumer.e2e.ts`, planned in #251) runs against a real server with a fresh home: add a model, chat, approve a command, connect GitHub. It fails if an admin word appears (policy, organization, member, group, admin, SSO, `config.toml`).
-- **Startup and size are measured** after every merge to `main` (`budgets.yml`), and per pull request once #251 lands. A cloud or server dependency that breaks a budget moves behind a Cargo feature, never into the consumer's path.
+- **Startup and size are measured** on every pull request, in the merge queue and after every merge to `main` (`budgets.yml`). A cloud or server dependency moves behind a Cargo feature only for a real reason (a security or licence problem, or a size that hurts people), not to meet a number: one build serves every deployment.
 
 ## Rust
 
@@ -184,10 +184,12 @@ The bar is code a careful reader admires: every line earns its place, and each i
 | Budget | Target |
 | --- | --- |
 | `glave` cold start to prompt | < 50 ms |
-| Release CLI binary (stripped) | < 30 MB |
+| Release CLI binary (stripped) | < 40 MB |
 | Gateway overhead per request, in-process | < 1 ms p99 |
 | Session resume, 10k events | < 100 ms |
 | Knowledge search, 16 queries batched | < 100 ms |
+
+One exception: the owner raised the release binary from 30 to 40 MB on 2026-10-19, since splitting builds costs more than a few MB, and cold start stays about 26 ms. The budget is set in one place, `crates/cli/benches/budgets.rs`.
 
 - Hot paths get microbenchmarks (event append and replay, stream parsing, gateway overhead, cache lookups).
 - Benchmarks run only through `cargo xtask bench`. It takes a machine-wide exclusive lock that test runs share, so benchmarks never run beside tests or each other.
