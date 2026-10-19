@@ -175,7 +175,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let choices = &setup.choices;
     let (remote, configured) = crate::providers::endpoint(choices)?;
     let store = store(&setup).await?;
-    let identity = identity::load_or_make(&home::folder()?).await?;
+    let identity = identity::load_or_make(&home::folder()?, &store).await?;
     let lineup = Lineup::new(&setup, configured);
     let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
     let (workspace, hosts) = with_hosts(args, &store, identity.person, choices, workspace).await?;

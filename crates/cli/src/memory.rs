@@ -292,7 +292,7 @@ async fn in_the_store(command: Command) -> anyhow::Result<()> {
         glave_config::policy::memory_settings(&setup.choices, &setup.loaded.constraints)?;
     let home = home::folder()?;
     let store = Data::chosen(&setup.choices).await?;
-    let person = identity::load_or_make(&home).await?.person;
+    let person = identity::load_or_make(&home, &store).await?.person;
     let scope = crate::spaces::here(&store, &folder, person).await?;
     let on = MemorySettings {
         on: true,

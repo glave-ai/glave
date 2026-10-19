@@ -158,7 +158,7 @@ async fn released(thread: ThreadId) -> anyhow::Result<Vec<String>> {
 async fn in_the_log(command: Command) -> anyhow::Result<()> {
     let home = home::folder()?;
     let store = crate::data::Data::here().await?;
-    let person = crate::identity::load_or_make(&home).await?.person;
+    let person = crate::identity::load_or_make(&home, &store).await?.person;
     let scope = crate::spaces::here(&store, &std::env::current_dir()?, person).await?;
     let log = store.log();
     match command {

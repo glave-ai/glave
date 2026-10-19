@@ -22,7 +22,7 @@ Every invariant below follows this rule (decided 2026-10-18).
 Tests are named by file and function. A conformance suite is a function in `crates/ports/src/conformance.rs` (or `conformance/`) that every adapter's own test runs, so it binds the in-memory store, SQLite and Postgres alike.
 
 1. **The log is the truth, and everything in memory is a cache of it**: views, thread slots, ledgers, memory books, meter streams.
-   - *Partly.* Within one process it holds. State with no log behind it remains: idempotency keys and in-process gateway budgets (#410), pending approvals and questions (PR 5 of `one-server.md`, #294), queued messages (#335), the context window a refusal stated for each model, and the person's identity and project trust in files (#411).
+   - *Partly.* Within one process it holds. State with no log behind it remains: idempotency keys and in-process gateway budgets (#410), pending approvals and questions (PR 5 of `one-server.md`, #294), queued messages (#335), the context window a refusal stated for each model, and project trust in a file (#411). The local person's and their agent's ids are kept in the store (`crates/store-postgres/tests/postgres.rs` `servers_on_one_database_racing_to_make_the_identity_all_get_the_first`).
    - *Proved by:* `conformance::thread_views` ("a rebuilt view must be stored"); `crates/session/tests/server.rs` `a_fresh_server_continues_a_thread_from_the_log_alone`; `crates/harness/tests/turn.rs` `a_resumed_thread_continues_where_it_left_off`; `crates/memory/tests/loading.rs` `returning_after_changes_gets_a_note_and_resuming_rebuilds_the_same_requests`; `crates/gateway-service/tests/surfaces.rs` `each_caller_has_their_own_budget_and_a_restart_does_not_reset_it`; `crates/store-sqlite/src/tests.rs` `views_rebuilt_from_the_log_equal_the_kept_ones`.
 2. **One writer per thread, enforced by the store**: a thread's `seq` is gap-free and unique, checked in the append's transaction.
    - *Holds* at the store. Racing writers are tested on Postgres only (#405 moves the case into the shared suite).
@@ -64,7 +64,7 @@ Tests are named by file and function. A conformance suite is a function in `crat
     - *Holds* for every `tokio::spawn` read in the pass, and for every process, which starts only through glave-process.
     - *Proved by:* `cargo xtask spawns` for processes; nothing checks tasks.
 15. **Everything persisted or sent carries a version.**
-    - *Partly:* events, the session protocol, the computer protocol, the process ledger, `browsers.json` and `trust.toml` do; the `identity` file and worktree records do not, and move into the store (#411). The `computer` file is one id, created once, with no version.
+    - *Partly:* events, the session protocol, the computer protocol, the process ledger, `browsers.json` and `trust.toml` do; worktree records do not, and move into the store (#411). The `computer` file is one id, created once, with no version.
     - *Proved by:* `crates/event/tests/fixtures.rs` `every_known_version_has_a_fixture_that_decodes`, `latest_versions_encode_to_exactly_the_saved_bytes`, `every_fixture_is_a_known_version`; `crates/store-sqlite/src/tests.rs` `a_newer_schema_is_refused`. No test for the files.
 16. **Time and randomness are injected.**
     - *Partly:* library code in glave-computer and glave-process still reads the real clock (a lint in #366). Randomness that fails is an error, never a weaker id.

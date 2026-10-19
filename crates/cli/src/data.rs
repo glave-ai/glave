@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use glave_event::{BlobRef, Principal, RawEvent, Seq, Sha256, ThreadId};
+use glave_event::{BlobRef, Principal, PrincipalId, RawEvent, Seq, Sha256, ThreadId};
 use glave_memory::Shredder;
 use glave_ports::search::Found;
 use glave_ports::{
@@ -122,6 +122,17 @@ impl Data {
         Ok(match self {
             Self::Sqlite(store) => store.org(random_uuid()).await?,
             Self::Postgres(store) => store.org(random_uuid()).await?,
+        })
+    }
+
+    /// The local person and their agent, kept as `new` the first time.
+    pub async fn identity(
+        &self,
+        new: (PrincipalId, PrincipalId),
+    ) -> anyhow::Result<(PrincipalId, PrincipalId)> {
+        Ok(match self {
+            Self::Sqlite(store) => store.identity(new).await?,
+            Self::Postgres(store) => store.identity(new).await?,
         })
     }
 
