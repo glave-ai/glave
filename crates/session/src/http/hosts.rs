@@ -7,7 +7,7 @@
 
 use std::net::SocketAddr;
 
-use glave_identity::signin::is_loopback;
+use glave_ports::host::is_loopback;
 use hyper::header::{self, HeaderMap};
 
 /// The names a loopback listener answers to.

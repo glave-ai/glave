@@ -226,9 +226,7 @@ pub fn safe_to_send(url: &str, plain_hosts: &[&str]) -> bool {
     };
     match scheme {
         "https" => !host.is_empty(),
-        "http" => {
-            ["localhost", "127.0.0.1", "[::1]"].contains(&host) || plain_hosts.contains(&host)
-        }
+        "http" => crate::host::is_this_computer(host) || plain_hosts.contains(&host),
         _ => false,
     }
 }

@@ -47,7 +47,7 @@ impl CredentialHost {
         let ported = port.is_none_or(|port| {
             !port.is_empty() && port.len() <= 5 && port.chars().all(|c| c.is_ascii_digit())
         });
-        let local = matches!(name, "localhost" | "127.0.0.1" | "[::1]");
+        let local = crate::host::is_this_computer(name);
         let allowed = scheme == "https" || (scheme == "http" && local);
         (named && ported && allowed).then_some((scheme, host))
     }

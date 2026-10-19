@@ -15,7 +15,7 @@ use glave_event::{
     At, Body, Currency, EventId, Header, Payload, PrincipalId, RawEvent, Seq, ThreadId, decode,
     encode,
 };
-use glave_gateway::{Budget, Caller, Gateway, Limit};
+use glave_gateway::{Budget, BudgetKey, Gateway, Limit};
 use glave_ports::stream::{StreamError, append_retrying, catch_up};
 use glave_ports::{Clock, Entropy};
 use glave_ports::{EventLog, Scope};
@@ -195,7 +195,7 @@ impl<L: EventLog> Meter<L> {
         // Another call may have seeded it meanwhile; only one counts it.
         if stream.seeded != Some(day) {
             stream.seeded = Some(day);
-            let caller = Caller {
+            let caller = BudgetKey {
                 person,
                 period: day,
             };

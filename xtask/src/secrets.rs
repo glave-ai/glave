@@ -6,6 +6,8 @@
 
 use std::io::ErrorKind;
 
+use glave_ports::secrets::TOKEN_PREFIXES;
+
 use crate::{cmd, workspace};
 
 /// Tracked files that may hold a secret's shape, and why.
@@ -14,45 +16,6 @@ const ALLOWED: &[(&str, &str)] = &[(
     "the example RSA key RFC 7515 publishes (appendix A.2), whose RS256 signature the tests \
      check byte for byte",
 )];
-
-/// Prefixes providers put on keys and tokens, and how many token characters after one make a
-/// secret's shape: any at all for the families tests fake, gitleaks' lengths for the rest.
-const PREFIXES: &[(&str, usize)] = &[
-    // OpenAI, Anthropic and OpenRouter.
-    ("sk-", 1),
-    ("sk-ant-", 1),
-    ("sk-proj-", 1),
-    ("sk-or-", 1),
-    // GitHub and GitLab.
-    ("ghp_", 1),
-    ("gho_", 1),
-    ("ghu_", 1),
-    ("ghs_", 1),
-    ("ghr_", 1),
-    ("github_pat_", 1),
-    ("glpat-", 1),
-    // Slack.
-    ("xoxa-", 1),
-    ("xoxb-", 1),
-    ("xoxp-", 1),
-    ("xoxr-", 1),
-    ("xoxs-", 1),
-    ("xapp-", 1),
-    // Stripe.
-    ("sk_live_", 1),
-    ("sk_test_", 1),
-    ("rk_live_", 1),
-    ("rk_test_", 1),
-    // AWS key ids, then Google API keys, Hugging Face, npm, SendGrid, Shopify, DigitalOcean.
-    ("AKIA", 16),
-    ("ASIA", 16),
-    ("AIza", 35),
-    ("hf_", 34),
-    ("npm_", 36),
-    ("SG.", 22),
-    ("shpat_", 32),
-    ("dop_v1_", 64),
-];
 
 /// The first line of a PEM private key, around the kind of key (`RSA `, `OPENSSH `, none).
 const KEY_OPENS: &str = "-----BEGIN ";
@@ -160,15 +123,15 @@ fn starts_word(line: &str, at: usize) -> bool {
 
 /// The prefix `rest` starts with, the longest one, when enough token characters follow it.
 fn provider_token(rest: &str) -> Option<&'static str> {
-    let (prefix, least) = PREFIXES
+    let known = TOKEN_PREFIXES
         .iter()
-        .filter(|(prefix, _)| rest.starts_with(prefix))
-        .max_by_key(|(prefix, _)| prefix.len())?;
+        .filter(|known| rest.starts_with(known.prefix))
+        .max_by_key(|known| known.prefix.len())?;
     let body = rest
-        .get(prefix.len()..)?
+        .get(known.prefix.len()..)?
         .chars()
         .take_while(|c| is_token(*c));
-    (body.count() >= *least).then_some(*prefix)
+    (body.count() >= known.in_source).then_some(known.prefix)
 }
 
 /// Two parts of base64url JSON (`eyJ`), each followed by a dot.
@@ -219,8 +182,9 @@ mod tests {
 
     #[test]
     fn every_family_is_found_once_it_has_its_length() {
-        for (prefix, least) in PREFIXES {
-            let found = findings(&literal(prefix, *least));
+        for known in TOKEN_PREFIXES {
+            let (prefix, least) = (known.prefix, known.in_source);
+            let found = findings(&literal(prefix, least));
             assert_eq!(found.len(), 1, "{prefix} with {least}: {found:?}");
             assert!(findings(&literal(prefix, least - 1)).is_empty(), "{prefix}");
         }

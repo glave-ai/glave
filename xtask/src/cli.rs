@@ -7,8 +7,8 @@ usage: cargo xtask <command>
 
 commands:
   ci                the full local gate: format, secrets, the dependency rule, one spawn path,
-                    lint, tests, dependency audit, file sizes, and the web checks, which need
-                    Node 22.22.3+ (GLAVE_SKIP_WEB=1 skips them)
+                    lint, tests and what they leave behind, dependency audit, file sizes, and
+                    the web checks, which need Node 22.22.3+ (GLAVE_SKIP_WEB=1 skips them)
   deps              check the dependency rule: each crate depends only on the layers its own
                     may use (the layers are in xtask/src/deps.rs)
   file-sizes        enforce the source-file line limits

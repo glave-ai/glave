@@ -22,7 +22,7 @@ mod routes;
 mod target;
 mod telemetry;
 
-pub use budget::{Budget, Budgets, Caller, Limit, OverBudget};
+pub use budget::{Budget, BudgetKey, Budgets, Limit, OverBudget};
 pub use gateway::Gateway;
 pub use price::Price;
 pub use routes::{RouteError, Routes};

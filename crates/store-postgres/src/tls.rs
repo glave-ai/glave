@@ -31,7 +31,7 @@ pub(crate) fn connector() -> Result<MakeRustlsConnect, StoreError> {
 /// looser than the default (`prefer`, which would fall back to the clear).
 pub(crate) fn require_off_this_computer(config: &mut Config) {
     let remote = config.get_hosts().iter().any(|host| match host {
-        Host::Tcp(name) => !matches!(name.as_str(), "localhost" | "127.0.0.1" | "::1" | "[::1]"),
+        Host::Tcp(name) => !glave_ports::host::is_this_computer(name),
         #[cfg(unix)]
         Host::Unix(_) => false,
     });

@@ -1,7 +1,7 @@
 //! `cargo xtask ci`: the full local gate, identical to what CI runs: the Rust checks, that no
 //! tracked file holds a secret-shaped literal, that crates keep the dependency rule and start
-//! processes only through glave-process, then the web checks (`web.rs`), which need Node
-//! unless `GLAVE_SKIP_WEB=1` skips them.
+//! processes only through glave-process, that the tests leave nothing behind (`leftovers.rs`),
+//! then the web checks (`web.rs`), which need Node unless `GLAVE_SKIP_WEB=1` skips them.
 
 use serde_json::Value;
 
@@ -35,8 +35,9 @@ pub fn run() -> Result<(), String> {
             ],
         )
     })?;
-    step("tests", || {
-        cmd::run(
+    let run = crate::leftovers::Run::start()?;
+    let tests = step("tests", || {
+        cmd::run_with(
             "cargo",
             &[
                 "nextest",
@@ -46,8 +47,13 @@ pub fn run() -> Result<(), String> {
                 &features,
                 "--no-tests=pass",
             ],
+            &run.env(),
         )
-    })?;
+    });
+    // Checked whether or not the tests passed, so a failed run stops what it left running.
+    let leftovers = step("leftovers", || run.check());
+    tests?;
+    leftovers?;
     step("dependencies", || cmd::run("cargo", &["deny", "check"]))?;
     // Called directly: run as `cargo machete` under `cargo xtask`, it takes `machete` for a path.
     step("unused dependencies", || cmd::run("cargo-machete", &[]))?;

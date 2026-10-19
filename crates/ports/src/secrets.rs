@@ -8,7 +8,7 @@ use std::path::Path;
 
 mod credential;
 
-pub use credential::looks_like_credential;
+pub use credential::{TOKEN_PREFIXES, TokenPrefix, looks_like_credential};
 
 /// Words that mark an environment variable as secret anywhere in its name, ignoring case:
 /// `OPENROUTER_API_KEY`, `GITHUB_TOKEN`, `DB_PASSWORD`.
