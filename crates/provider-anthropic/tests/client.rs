@@ -52,6 +52,29 @@ mod over_http {
     }
 
     #[test]
+    fn a_key_the_server_repeats_never_shows_in_the_error() {
+        let key = fake_secret("sk-ant-");
+        let said = format!(
+            r#"{{"type":"error","error":{{"type":"authentication_error","message":"invalid x-api-key: {key}"}}}}"#
+        );
+        let server = FakeServer::start(vec![
+            Reply::Status(401, said.clone()),
+            Reply::Status(401, said),
+        ])
+        .unwrap();
+        let provider = provider(server.url(), Some(&key));
+        let asked = ask(&provider).0.unwrap_err();
+        let listed = block_on!(provider.get("models")).unwrap_err();
+        for error in [asked, listed] {
+            assert!(!format!("{error} {error:?}").contains(&key), "{error:?}");
+            assert!(
+                error.to_string().contains("invalid x-api-key: [redacted]"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
     fn vertex_is_asked_at_stream_raw_predict_with_its_version_in_the_body() {
         let server = FakeServer::start(vec![Reply::text("hi from vertex")]).unwrap();
         let vertex = Anthropic::new(Config {

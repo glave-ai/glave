@@ -274,6 +274,29 @@ mod over_http {
     }
 
     #[test]
+    fn a_key_the_server_repeats_never_shows_in_the_error() {
+        let key = fake_secret("sk-");
+        let said = format!(r#"{{"error":{{"message":"Incorrect API key provided: {key}."}}}}"#);
+        let server = FakeServer::start(vec![
+            Reply::Status(401, said.clone()),
+            Reply::Status(401, said),
+        ])
+        .unwrap();
+        let provider = provider(server.url(), Some(&key));
+        let asked = ask(&provider).0.unwrap_err();
+        let listed = block_on!(provider.get("models")).unwrap_err();
+        for error in [asked, listed] {
+            assert!(!format!("{error} {error:?}").contains(&key), "{error:?}");
+            assert!(
+                error
+                    .to_string()
+                    .contains("Incorrect API key provided: [redacted]."),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
     fn an_unreachable_provider_is_a_transport_error() {
         // Bind and release a port, so nothing is listening there.
         let port = std::net::TcpListener::bind("127.0.0.1:0")
