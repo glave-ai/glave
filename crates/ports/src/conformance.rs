@@ -2,6 +2,7 @@
 //! enable the `conformance` feature and run these against their own implementation.
 //! Each suite returns the first violation it finds as an error message.
 
+mod at_rest;
 mod computers;
 mod memory;
 mod model;
@@ -10,6 +11,7 @@ mod racing;
 mod search;
 mod threads;
 
+pub use at_rest::{AtRest, KeptBlob, KeptPayload, at_rest};
 pub use computers::{
     Confinement, computers, confinement_case, confinement_escapes, confinement_fixture,
     confinement_paths, confinement_targets, confinement_untouched,
