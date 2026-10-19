@@ -53,6 +53,16 @@ A project is a record, not a folder: an id (UUID v7), a kind, a name, an owner, 
 - **A thread id is resolved to its scope by one small index:** `(thread) → (organization, project)`, kept by the data store and written when a thread starts. It is the only lookup that takes a bare thread id. It answers only where (a `Located`, never a `Scope`), and nothing is read until the caller's membership of that project is checked, which makes the scope every read that follows uses (`invariants.md`, 17).
 - **Exports carry their scope** in a header line, and an import names the scope it goes into. An import never takes the scope from the file.
 
+## Row-level security (designed; built with many organizations in one database, #423)
+
+On Postgres, the database itself keeps each organization's rows apart as well, as defense in depth: even if glave has a bug, a query still cannot return or write another organization's rows. It is built in the same change that lets one database hold many organizations (#423). Until then, a database holds one organization (`glave_settings`), so a policy keyed by organization would allow exactly what no policy allows.
+
+- **One policy per table, keyed by organization.** Every table with an `org` column gets `ENABLE` and `FORCE ROW LEVEL SECURITY` and one policy, `glave_org`, `USING (org = current_setting('glave.org', true)::uuid)` with the same `WITH CHECK`. That covers `events`, `blobs`, `blob_threads`, `org_keys`, `project_keys`, `project_records`, `project_members`, `project_folders`, `threads` and `event_search`. `FORCE` is needed because glave connects as the tables' owner. The role must be neither a superuser nor `BYPASSRLS`, and the store refuses to open with one that is. `glave_settings` and `glave_migrations` hold no organization's data and have no policy.
+- **Set per transaction, never per connection.** Every statement the store runs goes in a transaction whose first statement is `SELECT set_config('glave.org', $1, true)` (`SET LOCAL`). The organization comes from the call's `Scope`, or from its `OrgId` for projects and keys, so a pooled connection never carries one organization's setting into another's work. With nothing set, `current_setting('glave.org', true)` is null: every read returns no rows and every write fails its check.
+- **The only lookups across organizations change shape.** `EventLog::locate` takes the caller's organization, from their sign-in (#423), and answers only threads in it. Sweeps that read every scope (rebuilding views, recovering tasks) run once per organization. They list organizations through one `SECURITY DEFINER` function, `glave_orgs()`, which answers ids and nothing else.
+- **Its cost is measured, not assumed.** The extra statement is pipelined with the transaction's first query, so it adds no round trip. Session resume (10k events, under 100 ms) and the append benchmark are measured before and after.
+- **Proved by** a Postgres test with two organizations' rows in one database. A query on each table with `glave.org` unset returns nothing. With one organization set, it returns only that organization's rows. An insert naming the other organization fails. The isolation suite (`crates/session/tests/isolation.rs`) then runs with one server serving both organizations.
+
 ## Keys
 
 | Level | Holds | Kept |
