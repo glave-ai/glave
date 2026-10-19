@@ -5,19 +5,23 @@ import { expectAccessible } from '@glave/glaze/testing';
 
 import { CHATS_LIST, PROJECTS_LIST } from '../../lib/nav';
 import { NavListsService } from '../../services/nav-lists.service';
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { space, thread } from '../../testing/fixtures';
-import { SpacesNavComponent } from './spaces-nav.component';
+import { record, thread } from '../../testing/fixtures';
+import { ProjectsNavComponent } from './projects-nav.component';
 
-const SPACES = [space('p1', 'glave'), space('p2', 'Garden'), space('me', 'Personal', 'personal')];
+const PROJECTS = [
+  record('p1', 'glave'),
+  record('p2', 'Garden'),
+  record('me', 'Personal', 'personal'),
+];
 
 /** A time on the fixtures' day, at 10:`minute`. */
 function at(minute: number): string {
   return `2026-10-11T10:${String(minute).padStart(2, '0')}:00.000Z`;
 }
 
-/** The fake's threads by space: glave's newest, one waiting and one its first one started. */
+/** The fake's threads by project: glave's newest, one waiting and one its first one started. */
 const THREADS: Readonly<Record<string, unknown>> = {
   p1: [
     thread('t1', 'Plan the launch', { updated_at: at(9) }),
@@ -30,23 +34,27 @@ const THREADS: Readonly<Record<string, unknown>> = {
 
 interface Rendered {
   readonly root: HTMLElement;
-  readonly fixture: ReturnType<typeof TestBed.createComponent<SpacesNavComponent>>;
+  readonly fixture: ReturnType<typeof TestBed.createComponent<ProjectsNavComponent>>;
   readonly fake: FakeSession;
 }
 
-async function render(query = '', spaces = SPACES, fake = new FakeSession()): Promise<Rendered> {
+async function render(
+  query = '',
+  projects = PROJECTS,
+  fake = new FakeSession(),
+): Promise<Rendered> {
   fake
-    .answer('space/list', { spaces })
+    .answer('project/list', { projects })
     .answer('folder/list', { path: '/Users/ana', parent: '/Users', folders: [] })
     .answer('credential/list', { credentials: [], device: false })
     .answer('thread/list', (params) => ({
-      threads: THREADS[(params as { space: string }).space] ?? [],
+      threads: THREADS[(params as { project: string }).project] ?? [],
     }));
   TestBed.configureTestingModule({
     providers: [provideRouter([{ path: '**', children: [] }]), ...provideFakeSession(fake)],
   });
-  await TestBed.inject(SpacesService).refresh();
-  const fixture = TestBed.createComponent(SpacesNavComponent);
+  await TestBed.inject(ProjectsService).refresh();
+  const fixture = TestBed.createComponent(ProjectsNavComponent);
   fixture.componentRef.setInput('current', 't1');
   fixture.componentRef.setInput('query', query);
   await fixture.whenStable();
@@ -89,7 +97,7 @@ async function pick(rendered: Rendered, testId: string, part: string, text: stri
   await settle(rendered);
 }
 
-describe('SpacesNavComponent', () => {
+describe('ProjectsNavComponent', () => {
   beforeEach(() => {
     localStorage.clear();
   });
@@ -110,7 +118,7 @@ describe('SpacesNavComponent', () => {
     expect(texts(root, 'nav-projects-toggle')).toEqual(['Projects']);
     expect(texts(root, 'nav-chats-toggle')).toEqual(['Chats']);
     // Garden has no threads, and counts from when it was made, before glave's latest.
-    expect(texts(root, 'nav-space-toggle')).toEqual(['glave', 'Garden']);
+    expect(texts(root, 'nav-project-toggle')).toEqual(['glave', 'Garden']);
     expect(texts(root, 'nav-thread')).toEqual([
       'New chat needs you',
       'Plan the launch',
@@ -124,15 +132,15 @@ describe('SpacesNavComponent', () => {
     expect(threads[0]?.querySelector('glz-badge')?.classList).toContain('glz-badge--dot');
     expect(threads[4]?.querySelector('glz-badge')?.classList).toContain('glz-badge--plain');
     // No folder beside a project's name, and an empty project shows no filler.
-    expect(find(root, 'nav-space-toggle').querySelectorAll('glz-icon')).toHaveLength(1);
+    expect(find(root, 'nav-project-toggle').querySelectorAll('glz-icon')).toHaveLength(1);
     expect(root.textContent).not.toContain('No threads');
-    const add = root.querySelectorAll<HTMLAnchorElement>('[data-testid="nav-space-new"]');
+    const add = root.querySelectorAll<HTMLAnchorElement>('[data-testid="nav-project-new"]');
     expect(add[0]?.getAttribute('aria-label')).toBe('New thread in glave');
-    expect(add[0]?.getAttribute('href')).toBe('/?space=p1');
-    expect(add[1]?.getAttribute('href')).toBe('/?space=p2');
+    expect(add[0]?.getAttribute('href')).toBe('/?project=p1');
+    expect(add[1]?.getAttribute('href')).toBe('/?project=p2');
     expect(find(root, 'nav-chats-new').getAttribute('href')).toBe('/');
     expect(find(root, 'nav-chats-new').getAttribute('aria-label')).toBe('New chat');
-    expect(find(root, 'nav-space-more-trigger').getAttribute('aria-label')).toBe(
+    expect(find(root, 'nav-project-more-trigger').getAttribute('aria-label')).toBe(
       'Options for glave',
     );
     await expectAccessible(root);
@@ -151,11 +159,11 @@ describe('SpacesNavComponent', () => {
   it('closes and opens each heading from its row, and remembers it', async () => {
     const { root, fixture } = await render();
     const lists = TestBed.inject(NavListsService);
-    const toggle = find<HTMLButtonElement>(root, 'nav-space-toggle');
+    const toggle = find<HTMLButtonElement>(root, 'nav-project-toggle');
     toggle.click();
     await fixture.whenStable();
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(find(root, 'nav-space-items').hidden).toBe(true);
+    expect(find(root, 'nav-project-items').hidden).toBe(true);
     expect([...lists.collapsed()]).toEqual(['p1']);
     // Closed, glave still says something in it needs the person.
     const end = root.ownerDocument.getElementById(toggle.getAttribute('aria-describedby') ?? '');
@@ -173,7 +181,7 @@ describe('SpacesNavComponent', () => {
 
   it('sorts a project’s threads by name from its ⋯, and remembers it', async () => {
     const rendered = await render();
-    await pick(rendered, 'nav-space-more', 'choice', 'Name');
+    await pick(rendered, 'nav-project-more', 'choice', 'Name');
     expect(texts(rendered.root, 'nav-thread').slice(0, 4)).toEqual([
       'New chat needs you',
       'Audit the dependencies',
@@ -183,19 +191,19 @@ describe('SpacesNavComponent', () => {
     expect([...TestBed.inject(NavListsService).byName()]).toEqual(['p1']);
     // By name, glave still comes first: something in it waits.
     await pick(rendered, 'nav-projects-more', 'choice', 'Name');
-    expect(texts(rendered.root, 'nav-space-toggle')).toEqual(['glave', 'Garden']);
+    expect(texts(rendered.root, 'nav-project-toggle')).toEqual(['glave', 'Garden']);
     expect([...TestBed.inject(NavListsService).byName()]).toEqual(['p1', PROJECTS_LIST]);
   });
 
   it('renames a project from its ⋯', async () => {
     let name = 'glave';
-    const fake = new FakeSession().answer('space/rename', (params) => {
+    const fake = new FakeSession().answer('project/rename', (params) => {
       name = (params as { name: string }).name;
-      return { space: space('p1', name) };
+      return { project: record('p1', name) };
     });
-    const rendered = await render('', SPACES, fake);
-    fake.answer('space/list', () => ({ spaces: [space('p1', name), ...SPACES.slice(1)] }));
-    await pick(rendered, 'nav-space-more', 'action', 'Rename');
+    const rendered = await render('', PROJECTS, fake);
+    fake.answer('project/list', () => ({ projects: [record('p1', name), ...PROJECTS.slice(1)] }));
+    await pick(rendered, 'nav-project-more', 'action', 'Rename');
     const input = find<HTMLInputElement>(rendered.root, 'rename-input');
     expect(input.value).toBe('glave');
     input.value = 'glave app';
@@ -203,18 +211,18 @@ describe('SpacesNavComponent', () => {
     await rendered.fixture.whenStable();
     find<HTMLButtonElement>(rendered.root, 'rename-save').click();
     await settle(rendered);
-    expect(fake.paramsOf('space/rename')).toEqual([{ space: 'p1', name: 'glave app' }]);
-    expect(texts(rendered.root, 'nav-space-toggle')).toContain('glave app');
+    expect(fake.paramsOf('project/rename')).toEqual([{ project: 'p1', name: 'glave app' }]);
+    expect(texts(rendered.root, 'nav-project-toggle')).toContain('glave app');
     expect(rendered.root.querySelector('[data-testid="nav-error"]')).toBeNull();
   });
 
   it('says why a rename failed', async () => {
     const fake = new FakeSession().answer(
-      'space/rename',
+      'project/rename',
       new ApiError({ code: ErrorCode.NOT_ALLOWED, message: 'only its owner renames it' }),
     );
-    const rendered = await render('', SPACES, fake);
-    await pick(rendered, 'nav-space-more', 'action', 'Rename');
+    const rendered = await render('', PROJECTS, fake);
+    await pick(rendered, 'nav-project-more', 'action', 'Rename');
     const input = find<HTMLInputElement>(rendered.root, 'rename-input');
     input.value = 'Mine now';
     input.dispatchEvent(new Event('input'));
@@ -230,7 +238,7 @@ describe('SpacesNavComponent', () => {
     const { root, fixture } = await render('launch');
     expect(texts(root, 'nav-thread')).toEqual(['Plan the launch']);
     expect(root.querySelector('[data-testid="nav-chats"]')).toBeNull();
-    expect(root.querySelectorAll('[data-testid="nav-space"]')).toHaveLength(1);
+    expect(root.querySelectorAll('[data-testid="nav-project"]')).toHaveLength(1);
     fixture.componentRef.setInput('query', 'zebra');
     await fixture.whenStable();
     expect(texts(root, 'nav-thread')).toEqual([]);
@@ -254,7 +262,7 @@ describe('SpacesNavComponent', () => {
   });
 
   it('with no projects yet, offers one quiet row to start one instead of a heading', async () => {
-    const { root, fixture } = await render('', [space('me', 'Personal', 'personal')]);
+    const { root, fixture } = await render('', [record('me', 'Personal', 'personal')]);
     expect(root.querySelector('[data-testid="nav-projects"]')).toBeNull();
     expect(texts(root, 'nav-chats-toggle')).toEqual(['Chats']);
     const offer = find<HTMLButtonElement>(root, 'nav-start-project');
@@ -272,18 +280,21 @@ describe('SpacesNavComponent', () => {
   it('says on a project whose folder is gone what the server says, and what can be done', async () => {
     const gone = "This project's folder isn't there anymore.";
     const rendered = await render();
-    rendered.fake.answer('space/list', { spaces: SPACES, gone: [{ space: 'p2', message: gone }] });
-    await TestBed.inject(SpacesService).refresh();
+    rendered.fake.answer('project/list', {
+      projects: PROJECTS,
+      gone: [{ project: 'p2', message: gone }],
+    });
+    await TestBed.inject(ProjectsService).refresh();
     await settle(rendered);
     const { root } = rendered;
     expect(texts(root, 'nav-gone-message')).toEqual([gone]);
     expect(texts(root, 'nav-gone-find')).toEqual(['Find it']);
     expect(texts(root, 'nav-gone-remove')).toEqual(['Remove the project']);
-    const garden = Array.from(root.querySelectorAll('[data-testid="nav-space"]')).find((each) =>
+    const garden = Array.from(root.querySelectorAll('[data-testid="nav-project"]')).find((each) =>
       each.textContent.includes('Garden'),
     );
     expect(garden?.querySelector('[data-testid="nav-gone"]')).not.toBeNull();
-    expect(garden?.querySelector('[data-testid="nav-space-end"]')?.textContent).toContain(gone);
+    expect(garden?.querySelector('[data-testid="nav-project-end"]')?.textContent).toContain(gone);
     await expectAccessible(root);
   });
 
@@ -294,7 +305,7 @@ describe('SpacesNavComponent', () => {
         ...provideFakeSession(new FakeSession()),
       ],
     });
-    const fixture = TestBed.createComponent(SpacesNavComponent);
+    const fixture = TestBed.createComponent(ProjectsNavComponent);
     await fixture.whenStable();
     const root = fixture.nativeElement as HTMLElement;
     expect(root.querySelector('[data-testid="nav-start-project"]')).toBeNull();

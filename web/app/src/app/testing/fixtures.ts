@@ -3,7 +3,7 @@ import type {
   RawEvent,
   RunningCommand,
   ScheduleInfo,
-  Space,
+  Project,
   TaskInfo,
   ThreadSummary,
   TokenCounts,
@@ -19,7 +19,7 @@ export const TOKENS: TokenCounts = {
   reasoning: 0,
 };
 
-export function space(id: string, name: string, kind: Space['kind'] = 'project'): Space {
+export function record(id: string, name: string, kind: Project['kind'] = 'project'): Project {
   return {
     id,
     kind,
@@ -38,7 +38,7 @@ export function thread(
 ): ThreadSummary {
   return {
     id,
-    space: 'space-1',
+    project: 'project-1',
     status: 'idle',
     standing: 'active',
     title,
@@ -73,7 +73,7 @@ export function event(
 export function task(threadId: string, title: string, overrides: Partial<TaskInfo> = {}): TaskInfo {
   return {
     thread: threadId,
-    space: 'space-1',
+    project: 'project-1',
     kind: 'agent',
     title,
     model: 'hope',

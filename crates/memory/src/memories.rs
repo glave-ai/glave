@@ -1,6 +1,6 @@
-//! The memory store: each space's memory ledger in the event log (`specs/memory.md`, "Events"),
-//! read into a view per space and appended to by any glave process. Every read and write takes
-//! the caller and the space, and goes only to the ledgers the rules allow them.
+//! The memory store: each project's memory ledger in the event log (`specs/memory.md`, "Events"),
+//! read into a view per project and appended to by any glave process. Every read and write takes
+//! the caller and the project, and goes only to the ledgers the rules allow them.
 
 mod housekeep;
 mod recall;
@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
 use glave_event::{At, EventId, Header, MemoryId, MemoryScope, Payload, PrincipalId, Seq, encode};
 use glave_ports::memories::{MemoryContext, MemoryError, Remembered, Shown, memory_ledger};
-use glave_ports::{Clock, Entropy, EventLog, LogError, Scope, SpaceId};
+use glave_ports::{Clock, Entropy, EventLog, LogError, ProjectId, Scope};
 
 use crate::book::{Book, Entry};
 use crate::rules::{Personal, Rules, SpaceMemory};
@@ -28,7 +28,7 @@ pub use write::{Remembering, Writer};
 const PAGE: usize = 500;
 /// Appends tried before giving up on a ledger other writers keep moving.
 const ATTEMPTS: usize = 8;
-/// Spaces whose views are kept in memory at once.
+/// Projects whose views are kept in memory at once.
 const MOST_BOOKS: usize = 64;
 
 /// glave's memory over one data store.
@@ -83,22 +83,22 @@ impl<L: EventLog + 'static> Memories<L> {
             .clone()
     }
 
-    /// Sets `space`'s memory to `setting` from now on, as its project's settings choose it.
-    pub fn set_space(&self, space: SpaceId, setting: SpaceMemory) {
+    /// Sets `project`'s memory to `setting` from now on, as its project's settings choose it.
+    pub fn set_project(&self, project: ProjectId, setting: SpaceMemory) {
         let mut rules = self
             .inner
             .rules
             .write()
             .unwrap_or_else(PoisonError::into_inner);
         if setting == rules.default {
-            rules.spaces.remove(&space);
+            rules.projects.remove(&project);
         } else {
-            rules.spaces.insert(space, setting);
+            rules.projects.insert(project, setting);
         }
     }
 
     /// Runs by what the person's settings choose now, from the next read or write: whether
-    /// their own memory is read (`personal`), every space's setting where its project chooses
+    /// their own memory is read (`personal`), every project's setting where its project chooses
     /// none (`default`), and how long memories are kept.
     pub fn set_person(
         &self,
@@ -114,7 +114,7 @@ impl<L: EventLog + 'static> Memories<L> {
         rules.personal = personal;
         rules.default = default;
         rules.retention_days = retention_days;
-        rules.spaces.retain(|_, setting| *setting != default);
+        rules.projects.retain(|_, setting| *setting != default);
     }
 
     pub(crate) fn now(&self) -> At {
@@ -212,7 +212,7 @@ impl<L: EventLog + 'static> Memories<L> {
         ))
     }
 
-    /// The memories a thread of `on` reads now: the person's, then the space's, oldest first.
+    /// The memories a thread of `on` reads now: the person's, then the project's, oldest first.
     pub async fn list(&self, on: &MemoryContext) -> Result<Vec<Remembered>, MemoryError> {
         self.list_as(on.person, on.scope, None).await
     }

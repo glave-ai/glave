@@ -1,4 +1,4 @@
-import type { GoneFolder, Space, ThreadSummary } from '@glave/client';
+import type { GoneFolder, Project, ThreadSummary } from '@glave/client';
 
 import { Refusal, event } from './fake-records';
 
@@ -7,7 +7,7 @@ import { Refusal, event } from './fake-records';
  * `gone`): the server says so on the list, refuses a turn, and lists nothing running, until
  * the person finds the folder or removes the project.
  */
-export const PLAYGROUND: Space = {
+export const PLAYGROUND: Project = {
   id: '01900000-0000-7000-8000-000000000004',
   kind: 'project',
   name: 'playground',
@@ -65,7 +65,7 @@ export function folderGone(): Gone {
 function lost(gone: Gone): ThreadSummary {
   return {
     id: LOST,
-    space: PLAYGROUND.id,
+    project: PLAYGROUND.id,
     status: 'idle',
     standing: gone.removed ? 'archived' : 'active',
     title: 'Sketch a bouncing ball',
@@ -78,15 +78,15 @@ function lost(gone: Gone): ThreadSummary {
   };
 }
 
-/** Playground as `space/list` shows it: listed until removed, and gone while its folder is. */
+/** Playground as `project/list` shows it: listed until removed, and gone while its folder is. */
 export function listedGone(gone: Gone | null): {
-  readonly spaces: readonly Space[];
+  readonly projects: readonly Project[];
   readonly gone: readonly GoneFolder[];
 } {
   const listed = gone !== null && !gone.removed;
   return {
-    spaces: listed ? [PLAYGROUND] : [],
-    gone: listed && gone.missing ? [{ space: PLAYGROUND.id, message: GONE_MESSAGE }] : [],
+    projects: listed ? [PLAYGROUND] : [],
+    gone: listed && gone.missing ? [{ project: PLAYGROUND.id, message: GONE_MESSAGE }] : [],
   };
 }
 
@@ -99,7 +99,7 @@ export function refusedTurn(params: Record<string, unknown>, gone: Gone | null):
 
 /** The answer to a call about playground or its thread, else `undefined`. */
 export function aboutGone(method: string, params: Record<string, unknown>, gone: Gone): unknown {
-  const inPlayground = params['space'] === PLAYGROUND.id;
+  const inPlayground = params['project'] === PLAYGROUND.id;
   switch (method) {
     case 'thread/list':
       return inPlayground ? { threads: gone.removed ? [] : [lost(gone)] } : undefined;
@@ -107,14 +107,14 @@ export function aboutGone(method: string, params: Record<string, unknown>, gone:
       return params['thread'] === LOST ? { thread: lost(gone) } : undefined;
     case 'command/list':
       return params['thread'] === LOST ? { commands: [] } : undefined;
-    case 'space/folder/set':
+    case 'project/folder/set':
       if (!inPlayground || !gone.missing) {
         return new Refusal(-32602, 'this project’s folder is still where it was');
       }
       gone.missing = false;
       gone.foundAt = String(params['path']);
-      return { space: PLAYGROUND };
-    case 'space/remove':
+      return { project: PLAYGROUND };
+    case 'project/remove':
       gone.removed = true;
       return {};
     default:

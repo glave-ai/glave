@@ -1,5 +1,5 @@
-//! Each space's task ledger: glave's own stream in the event log, under a reserved thread id,
-//! holding the space's tasks (`task.started`, `task.ended`) and schedules (`schedule.created`,
+//! Each project's task ledger: glave's own stream in the event log, under a reserved thread id,
+//! holding the project's tasks (`task.started`, `task.ended`) and schedules (`schedule.created`,
 //! `schedule.deleted`). It is never a conversation: lists and reads of threads leave it out.
 //! Any glave process of the deployment may append to it; an append that meets another's
 //! `(thread, seq)` conflict reads what was written and tries again after it.
@@ -10,14 +10,16 @@ use glave_event::{
     At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, TaskEnded,
     TaskStarted, ThreadId, decode, encode,
 };
-use glave_ports::{BlobStore, Caller, EventLog, LogError, ModelProvider, SpaceId, reserved_ledger};
+use glave_ports::{
+    BlobStore, Caller, EventLog, LogError, ModelProvider, ProjectId, reserved_ledger,
+};
 
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
 
-/// Finished tasks kept in memory for `tasks/list`, newest last, in each space.
+/// Finished tasks kept in memory for `tasks/list`, newest last, in each project.
 const FINISHED: usize = 100;
-/// Spaces whose ledgers a server keeps in memory at once.
+/// Projects whose ledgers a server keeps in memory at once.
 const LEDGERS: usize = 1_024;
 /// Ledger events read per page.
 const PAGE: usize = 500;
@@ -33,32 +35,32 @@ pub(crate) fn ledger_id() -> Option<ThreadId> {
 
 /// The accounts ledger's reserved id, `00000000-0000-7000-8000-000000000002`: the model
 /// accounts (`provider.connected`, `provider.removed`) and git hosts (`credential.connected`,
-/// `credential.removed`) a person connected, in their personal space.
+/// `credential.removed`) a person connected, in their personal project.
 pub fn accounts_ledger() -> Option<ThreadId> {
     reserved_ledger(2)
 }
 
-/// The space ledger's reserved id, `00000000-0000-7000-8000-000000000003`: a space's own
-/// settings, today a project's folder (`space.folder.set`).
-pub fn space_ledger() -> Option<ThreadId> {
+/// The project ledger's reserved id, `00000000-0000-7000-8000-000000000003`: a project's own
+/// settings, today a project's folder (`project.folder.set`).
+pub fn project_ledger() -> Option<ThreadId> {
     reserved_ledger(3)
 }
 
 /// The trust ledger's reserved id, `00000000-0000-7000-8000-000000000004`: what a person
 /// decided about the projects that ask to be trusted (`trust.decided`), in their personal
-/// space.
+/// project.
 pub fn trust_ledger() -> Option<ThreadId> {
     reserved_ledger(4)
 }
 
-/// Whether `thread` is one of the space's ledgers (tasks, memory, accounts, trust, browsers,
-/// or the space's own) rather than a thread.
+/// Whether `thread` is one of the project's ledgers (tasks, memory, accounts, trust, browsers,
+/// or the project's own) rather than a thread.
 pub fn is_ledger(thread: ThreadId) -> bool {
     [
         ledger_id(),
         glave_ports::memories::memory_ledger(),
         accounts_ledger(),
-        space_ledger(),
+        project_ledger(),
         trust_ledger(),
         glave_identity::signin::browsers_ledger(),
     ]
@@ -148,16 +150,16 @@ impl Ledger {
     }
 }
 
-/// What each space's ledger says, as far as this server has read it.
-pub(crate) type Ledgers = HashMap<SpaceId, Ledger>;
+/// What each project's ledger says, as far as this server has read it.
+pub(crate) type Ledgers = HashMap<ProjectId, Ledger>;
 
-/// `space`'s ledger in `ledgers`, empty until it is read. Past [`LEDGERS`] spaces, the others
+/// `project`'s ledger in `ledgers`, empty until it is read. Past [`LEDGERS`] projects, the others
 /// are forgotten and read again when next asked for.
-fn kept(ledgers: &mut Ledgers, space: SpaceId) -> &mut Ledger {
-    if ledgers.len() >= LEDGERS && !ledgers.contains_key(&space) {
+fn kept(ledgers: &mut Ledgers, project: ProjectId) -> &mut Ledger {
+    if ledgers.len() >= LEDGERS && !ledgers.contains_key(&project) {
         ledgers.clear();
     }
-    ledgers.entry(space).or_default()
+    ledgers.entry(project).or_default()
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -166,12 +168,12 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Reads whatever was added to `space`'s ledger since this server last looked.
-    pub(crate) async fn catch_up(&self, space: SpaceId) -> Result<(), ApiError> {
+    /// Reads whatever was added to `project`'s ledger since this server last looked.
+    pub(crate) async fn catch_up(&self, project: ProjectId) -> Result<(), ApiError> {
         let ledger = ledger_id().ok_or_else(|| internal("the ledger has no id"))?;
-        let scope = self.scope_in(space);
+        let scope = self.scope_in(project);
         loop {
-            let next = self.ledgers().get(&space).map_or(1, Ledger::next_seq);
+            let next = self.ledgers().get(&project).map_or(1, Ledger::next_seq);
             let after = Seq::new(next.saturating_sub(1)).ok();
             let page = self
                 .inner
@@ -182,7 +184,7 @@ where
                 .map_err(|error| internal(&error.to_string()))?;
             let full = page.len() == PAGE;
             let mut held = self.ledgers();
-            let read = kept(&mut held, space);
+            let read = kept(&mut held, project);
             for raw in page {
                 read.apply(raw);
             }
@@ -192,18 +194,18 @@ where
         }
     }
 
-    /// Appends `payload` to `space`'s ledger, after anything others wrote meanwhile.
+    /// Appends `payload` to `project`'s ledger, after anything others wrote meanwhile.
     pub(crate) async fn record_in_ledger<T: Payload>(
         &self,
-        space: SpaceId,
+        project: ProjectId,
         payload: &T,
     ) -> Result<(), ApiError> {
         let ledger = ledger_id().ok_or_else(|| internal("the ledger has no id"))?;
-        let scope = self.scope_in(space);
+        let scope = self.scope_in(project);
         for _ in 0..ATTEMPTS {
-            self.catch_up(space).await?;
+            self.catch_up(project).await?;
             let now = self.inner.harness.clock().now();
-            let next = self.ledgers().get(&space).map_or(1, Ledger::next_seq);
+            let next = self.ledgers().get(&project).map_or(1, Ledger::next_seq);
             let seq = Seq::new(next).map_err(|e| internal(&e.to_string()))?;
             let header = Header {
                 id: EventId::new(now, self.inner.harness.entropy().bytes()?)
@@ -221,7 +223,7 @@ where
                 .await
             {
                 Ok(()) => {
-                    kept(&mut self.ledgers(), space).apply(raw);
+                    kept(&mut self.ledgers(), project).apply(raw);
                     return Ok(());
                 }
                 Err(LogError::Conflict { .. } | LogError::Gap { .. }) => {}
@@ -231,20 +233,20 @@ where
         Err(internal("the task ledger kept changing; try again"))
     }
 
-    /// The spaces whose tasks and schedules this server runs: its own, every space its person
+    /// The projects whose tasks and schedules this server runs: its own, every project its person
     /// works in, and any other whose ledger it has read for a caller.
-    pub(crate) async fn task_spaces(&self) -> Result<Vec<SpaceId>, ApiError> {
-        let mut spaces = match self.inner.harness.person() {
-            Some(_) => self.spaces_of(&Caller::default()).await?,
+    pub(crate) async fn task_projects(&self) -> Result<Vec<ProjectId>, ApiError> {
+        let mut projects = match self.inner.harness.person() {
+            Some(_) => self.projects_of(&Caller::default()).await?,
             None => Vec::new(),
         };
-        let known: Vec<SpaceId> = self.ledgers().keys().copied().collect();
-        for space in std::iter::once(self.inner.home.space).chain(known) {
-            if !spaces.contains(&space) {
-                spaces.push(space);
+        let known: Vec<ProjectId> = self.ledgers().keys().copied().collect();
+        for project in std::iter::once(self.inner.home.project).chain(known) {
+            if !projects.contains(&project) {
+                projects.push(project);
             }
         }
-        Ok(spaces)
+        Ok(projects)
     }
 
     pub(crate) fn ledgers(&self) -> std::sync::MutexGuard<'_, Ledgers> {

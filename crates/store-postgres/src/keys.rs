@@ -1,10 +1,10 @@
-//! Wrapped keys in the database: each organization's key, and each space's record of keys,
+//! Wrapped keys in the database: each organization's key, and each project's record of keys,
 //! replaced whole by compare-and-swap on its revision.
 
 use std::future::Future;
 
 use deadpool_postgres::Pool;
-use glave_keys::{KeyError, KeyStorage, StoredSpace};
+use glave_keys::{KeyError, KeyStorage, StoredProject};
 use glave_ports::{OrgId, Scope};
 
 use crate::store::{connection, database};
@@ -73,18 +73,18 @@ impl KeyStorage for PostgresKeys {
         }
     }
 
-    fn space(
+    fn project(
         &self,
         scope: &Scope,
-    ) -> impl Future<Output = Result<Option<StoredSpace>, KeyError>> + Send {
+    ) -> impl Future<Output = Result<Option<StoredProject>, KeyError>> + Send {
         let scope = *scope;
         let pool = self.pool.clone();
         async move {
             let client = connection(&pool).await.map_err(storage)?;
             let row = client
                 .query_opt(
-                    "SELECT revision, record FROM space_keys WHERE org = $1 AND space = $2",
-                    &[&scope.org.as_uuid(), &scope.space.as_uuid()],
+                    "SELECT revision, record FROM project_keys WHERE org = $1 AND project = $2",
+                    &[&scope.org.as_uuid(), &scope.project.as_uuid()],
                 )
                 .await
                 .map_err(database(KeyError::Storage))?;
@@ -92,14 +92,14 @@ impl KeyStorage for PostgresKeys {
                 return Ok(None);
             };
             let revision: i64 = row.try_get(0).map_err(database(KeyError::Storage))?;
-            Ok(Some(StoredSpace {
+            Ok(Some(StoredProject {
                 revision: u64::try_from(revision).map_err(storage)?,
                 record: row.try_get(1).map_err(database(KeyError::Storage))?,
             }))
         }
     }
 
-    fn save_space(
+    fn save_project(
         &self,
         scope: &Scope,
         expected: Option<u64>,
@@ -108,14 +108,14 @@ impl KeyStorage for PostgresKeys {
         let scope = *scope;
         let pool = self.pool.clone();
         async move {
-            let (org, space) = (scope.org.as_uuid(), scope.space.as_uuid());
+            let (org, project) = (scope.org.as_uuid(), scope.project.as_uuid());
             let client = connection(&pool).await.map_err(storage)?;
             let changed = match expected {
                 None => client
                     .execute(
-                        "INSERT INTO space_keys (org, space, revision, record)
+                        "INSERT INTO project_keys (org, project, revision, record)
                          VALUES ($1, $2, 1, $3) ON CONFLICT DO NOTHING",
-                        &[&org, &space, &record],
+                        &[&org, &project, &record],
                     )
                     .await
                     .map_err(database(KeyError::Storage))?,
@@ -123,9 +123,9 @@ impl KeyStorage for PostgresKeys {
                     let revision = i64::try_from(revision).map_err(storage)?;
                     client
                         .execute(
-                            "UPDATE space_keys SET record = $4, revision = revision + 1
-                             WHERE org = $1 AND space = $2 AND revision = $3",
-                            &[&org, &space, &revision, &record],
+                            "UPDATE project_keys SET record = $4, revision = revision + 1
+                             WHERE org = $1 AND project = $2 AND revision = $3",
+                            &[&org, &project, &revision, &record],
                         )
                         .await
                         .map_err(database(KeyError::Storage))?

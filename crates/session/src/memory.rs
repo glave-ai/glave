@@ -1,10 +1,10 @@
 //! The person's controls over memory (`specs/memory.md`, "Seeing, editing and forgetting"):
-//! `memory/list`, `save`, `edit`, `move`, `forget` and `restore`, in the space a request names
-//! or the server's own. The caller decides what may be seen and changed: a space's members may
+//! `memory/list`, `save`, `edit`, `move`, `forget` and `restore`, in the project a request names
+//! or the server's own. The caller decides what may be seen and changed: a project's members may
 //! change its memory, and only the person their own.
 
 use glave_ports::memories::{Access, Control, MemoryError};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, SpaceId};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
 
 use crate::protocol::{ApiError, Reply, code};
 use crate::server::Server;
@@ -15,12 +15,12 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Answers a `memory/*` request for `caller`: `control` on the memory of `space` (the
+    /// Answers a `memory/*` request for `caller`: `control` on the memory of `project` (the
     /// server's own when it names none) and the caller's own.
     pub(crate) async fn remember(
         &self,
         caller: &Caller,
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
         control: Control,
     ) -> Result<Reply, ApiError> {
         let memory = self
@@ -33,7 +33,7 @@ where
             person: caller.person,
             scope: Scope {
                 org: home.org,
-                space: space.unwrap_or(home.space),
+                project: project.unwrap_or(home.project),
             },
         };
         match memory.control(&access, control).await {

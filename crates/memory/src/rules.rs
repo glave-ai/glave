@@ -1,20 +1,20 @@
-//! Who reads and writes which memories (`specs/memory.md`, "Scopes"): a space's own, and the
-//! person's own in a space that shares it. Decided from the caller and the thread's space,
+//! Who reads and writes which memories (`specs/memory.md`, "Scopes"): a project's own, and the
+//! person's own in a project that shares it. Decided from the caller and the thread's project,
 //! never from the model, and applied by the store to every read and write.
 
 use std::collections::BTreeMap;
 
 use glave_event::{MemoryScope, PrincipalId};
 use glave_ports::memories::MemoryError;
-use glave_ports::{Scope, SpaceId};
+use glave_ports::{ProjectId, Scope};
 
-/// What a space allows (`specs/memory.md`): its own memory, the person's too, or none.
+/// What a project allows (`specs/memory.md`): its own memory, the person's too, or none.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SpaceMemory {
-    /// Threads read and write the person's memory and the space's.
+    /// Threads read and write the person's memory and the project's.
     #[default]
     Shared,
-    /// Threads read and write the space's memory only; the person's never enters.
+    /// Threads read and write the project's memory only; the person's never enters.
     Isolated,
     /// Threads neither read nor write memory.
     Off,
@@ -39,8 +39,8 @@ impl SpaceMemory {
     }
 }
 
-/// Where a person's own memory lives: the personal space the host provides for them, in their
-/// organization (the CLI: `spaces::personal`).
+/// Where a person's own memory lives: the personal project the host provides for them, in their
+/// organization (the CLI: `projects::personal`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Personal {
     pub scope: Scope,
@@ -52,17 +52,17 @@ pub struct Personal {
 pub struct Rules {
     /// The person's memory; `None` when personal memory is off (by choice or by policy).
     pub personal: Option<Personal>,
-    /// Each space's setting, where it differs from `default`.
-    pub spaces: BTreeMap<SpaceId, SpaceMemory>,
+    /// Each project's setting, where it differs from `default`.
+    pub projects: BTreeMap<ProjectId, SpaceMemory>,
     pub default: SpaceMemory,
     /// Memories not saved or edited for this many days are forgotten by glave.
     pub retention_days: Option<u32>,
 }
 
 impl Rules {
-    /// The setting of `space`.
-    pub fn setting(&self, space: SpaceId) -> SpaceMemory {
-        self.spaces.get(&space).copied().unwrap_or(self.default)
+    /// The setting of `project`.
+    pub fn setting(&self, project: ProjectId) -> SpaceMemory {
+        self.projects.get(&project).copied().unwrap_or(self.default)
     }
 
     /// The person's memory, when `person` may use it from `scope`: never across organizations,
@@ -74,14 +74,14 @@ impl Rules {
     }
 
     /// The memories a thread in `scope` reads, each with the ledger that holds it: the
-    /// person's first, in a shared space, then the space's.
+    /// person's first, in a shared project, then the project's.
     pub(crate) fn readable(
         &self,
         person: Option<PrincipalId>,
         scope: Scope,
     ) -> Vec<(MemoryScope, Scope)> {
         let mut readable = Vec::new();
-        match self.setting(scope.space) {
+        match self.setting(scope.project) {
             SpaceMemory::Off => {}
             SpaceMemory::Isolated => readable.push((MemoryScope::Space, scope)),
             SpaceMemory::Shared => {
@@ -94,7 +94,7 @@ impl Rules {
         readable
     }
 
-    /// The ledger a memory of `which` lives in, for a caller in `scope`; refused when the space
+    /// The ledger a memory of `which` lives in, for a caller in `scope`; refused when the project
     /// does not allow it.
     pub(crate) fn place(
         &self,
@@ -102,7 +102,7 @@ impl Rules {
         scope: Scope,
         which: MemoryScope,
     ) -> Result<Scope, MemoryError> {
-        let setting = self.setting(scope.space);
+        let setting = self.setting(scope.project);
         match (which, setting) {
             (_, SpaceMemory::Off) => {
                 Err(MemoryError::Off("memory is off in this space".to_owned()))
@@ -133,10 +133,10 @@ mod tests {
 
     use super::*;
 
-    fn scope(org: u128, space: u128) -> Scope {
+    fn scope(org: u128, project: u128) -> Scope {
         Scope {
             org: OrgId::from_uuid(Uuid::from_u128(org)),
-            space: SpaceId::from_uuid(Uuid::from_u128(space)),
+            project: ProjectId::from_uuid(Uuid::from_u128(project)),
         }
     }
 
@@ -156,14 +156,14 @@ mod tests {
             ..Rules::default()
         };
         rules
-            .spaces
-            .insert(scope(1, 3).space, SpaceMemory::Isolated);
-        rules.spaces.insert(scope(1, 4).space, SpaceMemory::Off);
+            .projects
+            .insert(scope(1, 3).project, SpaceMemory::Isolated);
+        rules.projects.insert(scope(1, 4).project, SpaceMemory::Off);
         rules
     }
 
     #[test]
-    fn a_shared_space_reads_the_persons_memory_and_its_own() {
+    fn a_shared_project_reads_the_persons_memory_and_its_own() {
         let rules = rules();
         assert_eq!(
             rules.readable(Some(person(1)), scope(1, 2)),
@@ -179,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn an_isolated_space_never_reads_or_writes_personal_memory() {
+    fn an_isolated_project_never_reads_or_writes_personal_memory() {
         let rules = rules();
         assert_eq!(
             rules.readable(Some(person(1)), scope(1, 3)),

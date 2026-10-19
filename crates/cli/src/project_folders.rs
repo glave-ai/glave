@@ -22,7 +22,7 @@ use glave_config::policy::{Choices, Loaded, Locations};
 use glave_config::trust::{self, Answer, Outcome, Project};
 use glave_harness::{AGENTS_MD, Brought, Hooks, Settled, agents_md};
 use glave_memory::{GlaveMemory, Personal, SpaceMemory};
-use glave_ports::{BoxFuture, Clock, SpaceId, ToolSource};
+use glave_ports::{BoxFuture, Clock, ProjectId, ToolSource};
 use glave_process::Processes;
 use glave_session::ProjectTrust;
 use glave_session::protocol::{ApiError, TrustAsk, TrustItem, code};
@@ -55,7 +55,7 @@ pub struct Own {
     pub taken: Vec<String>,
     /// The models a thread may be sent to now.
     pub models: GatewaySwitch,
-    /// Memory, when it is on: each project's settings choose its space's.
+    /// Memory, when it is on: each project's settings choose its project's.
     pub memory: Option<Arc<GlaveMemory<DataLog>>>,
     /// What tells how long a project's servers have gone unused.
     pub clock: Box<dyn Clock>,
@@ -83,7 +83,7 @@ pub struct ProjectFolders {
     taken: RwLock<Vec<String>>,
     models: GatewaySwitch,
     memory: Option<Arc<GlaveMemory<DataLog>>>,
-    /// The person's own memory as memory started: read in shared spaces while the settings
+    /// The person's own memory as memory started: read in shared projects while the settings
     /// allow it.
     personal: Option<Personal>,
     clock: Box<dyn Clock>,
@@ -315,9 +315,9 @@ impl ProjectFolders {
         sources
     }
 
-    /// What the project at `root`, the space `space`'s, chooses and turns on now beyond what
+    /// What the project at `root`, the project `project`'s, chooses and turns on now beyond what
     /// glave runs for the person's threads everywhere.
-    async fn bring(&self, root: &Path, space: SpaceId) -> anyhow::Result<Brought> {
+    async fn bring(&self, root: &Path, project: ProjectId) -> anyhow::Result<Brought> {
         let outcome = self.outcome(root).await?;
         let read = self.settle(root, &outcome);
         let base = self.base();
@@ -334,7 +334,7 @@ impl ProjectFolders {
             tracing::warn!(%error, "a project's trusted hooks could not be used");
             Hooks::default()
         });
-        self.remember_in(space, read.choices.as_ref());
+        self.remember_in(project, read.choices.as_ref());
         Ok(Brought {
             web: read.web(root),
             settled: read.settled,
@@ -343,15 +343,15 @@ impl ProjectFolders {
         })
     }
 
-    /// Gives `space`'s memory the setting its project's `choices` choose, or the person's when
+    /// Gives `project`'s memory the setting its project's `choices` choose, or the person's when
     /// they could not be read.
-    fn remember_in(&self, space: SpaceId, choices: Option<&Choices>) {
+    fn remember_in(&self, project: ProjectId, choices: Option<&Choices>) {
         let Some(memory) = &self.memory else {
             return;
         };
         let memories = memory.memories();
         let constraints = &self.base().loaded.constraints;
-        // Memory the person turned off stays off in every space.
+        // Memory the person turned off stays off in every project.
         let setting = choices
             .and_then(|choices| memory_settings(choices, constraints).ok())
             .map_or_else(
@@ -364,7 +364,7 @@ impl ProjectFolders {
                     }
                 },
             );
-        memories.set_space(space, setting);
+        memories.set_project(project, setting);
     }
 }
 
@@ -424,10 +424,10 @@ impl glave_harness::ProjectFolders for ProjectFolders {
         })
     }
 
-    fn brought<'a>(&'a self, project: &'a Path, space: SpaceId) -> BoxFuture<'a, Brought> {
+    fn brought<'a>(&'a self, project: &'a Path, id: ProjectId) -> BoxFuture<'a, Brought> {
         Box::pin(async move {
             let root = self.root(project).await;
-            self.bring(&root, space).await.unwrap_or_else(|error| {
+            self.bring(&root, id).await.unwrap_or_else(|error| {
                 tracing::warn!(%error, "what a project brings could not be read");
                 Brought::default()
             })

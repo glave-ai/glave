@@ -11,7 +11,7 @@ mod sealing {
     use glave_event::RawEvent;
     use glave_keys::KeyId;
     use glave_keys::conformance::event;
-    use glave_ports::{BlobStore, EventLog, LogError, OrgId, Scope, SpaceId, digest};
+    use glave_ports::{BlobStore, EventLog, LogError, OrgId, ProjectId, Scope, digest};
     use glave_store_postgres::Store;
     use uuid::Uuid;
 
@@ -20,7 +20,7 @@ mod sealing {
     fn scope(n: u128) -> Scope {
         Scope {
             org: OrgId::from_uuid(Uuid::from_u128(1)),
-            space: SpaceId::from_uuid(Uuid::from_u128(100 + n)),
+            project: ProjectId::from_uuid(Uuid::from_u128(100 + n)),
         }
     }
 
@@ -49,11 +49,11 @@ mod sealing {
             .admin
             .query_one(
                 &format!(
-                    "SELECT data, key_id FROM {}.events WHERE space = $1 AND thread = $2 AND seq = $3",
+                    "SELECT data, key_id FROM {}.events WHERE project = $1 AND thread = $2 AND seq = $3",
                     scratch.schema
                 ),
                 &[
-                    &scope.space.as_uuid(),
+                    &scope.project.as_uuid(),
                     &event.thread.as_uuid(),
                     &i64::try_from(event.seq.get()).unwrap(),
                 ],
@@ -74,13 +74,13 @@ mod sealing {
             .execute(
                 &format!(
                     "UPDATE {}.events SET data = $1, key_id = $2
-                     WHERE space = $3 AND thread = $4 AND seq = $5",
+                     WHERE project = $3 AND thread = $4 AND seq = $5",
                     scratch.schema
                 ),
                 &[
                     &row.0,
                     &row.1,
-                    &scope.space.as_uuid(),
+                    &scope.project.as_uuid(),
                     &event.thread.as_uuid(),
                     &i64::try_from(event.seq.get()).unwrap(),
                 ],
@@ -154,13 +154,13 @@ mod sealing {
                 .admin
                 .execute(
                     &format!(
-                        "INSERT INTO {}.events (org, space, thread, seq, id, at, type, v, glave, data)
+                        "INSERT INTO {}.events (org, project, thread, seq, id, at, type, v, glave, data)
                          VALUES ($1, $2, $3, 1, $4, $5, $6, $7, $8, $9)",
                         scratch.schema
                     ),
                     &[
                         &here.org.as_uuid(),
-                        &here.space.as_uuid(),
+                        &here.project.as_uuid(),
                         &old.thread.as_uuid(),
                         &old.id.as_uuid(),
                         &old.at.timestamp(),
@@ -177,13 +177,13 @@ mod sealing {
                 .admin
                 .execute(
                     &format!(
-                        "INSERT INTO {}.blobs (org, space, name, media_type, bytes)
+                        "INSERT INTO {}.blobs (org, project, name, media_type, bytes)
                          VALUES ($1, $2, $3, 'text/plain', $4)",
                         scratch.schema
                     ),
                     &[
                         &here.org.as_uuid(),
-                        &here.space.as_uuid(),
+                        &here.project.as_uuid(),
                         &sha.as_str(),
                         &b"old blob".as_slice(),
                     ],
@@ -245,14 +245,14 @@ mod sealing {
                 .read(&other, written[0].thread, Some(written[0].seq), 10)
                 .await
                 .map(|events| lines(&events));
-            store.keys().erase_space(&here).await.unwrap();
-            let space_gone = read_all(&store, &here, &written[0]).await.is_err();
+            store.keys().erase_project(&here).await.unwrap();
+            let project_gone = read_all(&store, &here, &written[0]).await.is_err();
             let blob_gone = !matches!(store.blobs().get(&here, &blob.sha256).await, Ok(Some(_)));
             drop(store);
             scratch.drop_schema().await;
             assert!(month_gone, "a destroyed month does not open");
             assert_eq!(november.unwrap(), lines(&written[1..]));
-            assert!(space_gone && blob_gone, "an erased space does not open");
+            assert!(project_gone && blob_gone, "an erased project does not open");
         });
     }
 }

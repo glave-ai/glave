@@ -60,13 +60,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expectAccessible(page);
     await byTestId(page, 'folder-picker-use').click();
     await expect
-      .poll(() => api.calls.filter((call) => call === 'space/folder/set'))
+      .poll(() => api.calls.filter((call) => call === 'project/folder/set'))
       .toHaveLength(1);
     expect(
       api.requests
-        .filter((request) => request.method === 'space/folder/set')
+        .filter((request) => request.method === 'project/folder/set')
         .map((request) => request.params),
-    ).toEqual([{ space: PLAYGROUND.id, path: '/Users/ana/code/notes' }]);
+    ).toEqual([{ project: PLAYGROUND.id, path: '/Users/ana/code/notes' }]);
     await expect(byTestId(page, 'thread-gone')).toHaveCount(0);
     await expect(byTestId(page, 'nav-gone')).toHaveCount(0);
     const composer = byTestId(page, 'thread-composer-input');
@@ -84,7 +84,7 @@ test('Remove the project puts its threads in the archive, once the person confir
   const problems = watchForProblems(page);
   const api = await fakeApi(page, { gone: true });
   await openLost(page);
-  const project = byTestId(page, 'nav-space').filter({ hasText: PLAYGROUND.name });
+  const project = byTestId(page, 'nav-project').filter({ hasText: PLAYGROUND.name });
   await expect(project).toHaveCount(1);
   const thread = byTestId(page, 'nav-thread').filter({ hasText: 'Sketch a bouncing ball' });
   await expect(thread).toHaveCount(1);
@@ -95,16 +95,16 @@ test('Remove the project puts its threads in the archive, once the person confir
   await expect(confirm).toContainText('Its threads go to the archive, with their history.');
   await expectAccessible(page);
   await byTestId(page, 'nav-gone-confirm-cancel').click();
-  expect(api.calls).not.toContain('space/remove');
+  expect(api.calls).not.toContain('project/remove');
 
   await byTestId(page, 'nav-gone-remove').click();
   await byTestId(page, 'nav-gone-confirm-ok').click();
   await expect(project).toHaveCount(0);
   expect(
     api.requests
-      .filter((request) => request.method === 'space/remove')
+      .filter((request) => request.method === 'project/remove')
       .map((request) => request.params),
-  ).toEqual([{ space: PLAYGROUND.id }]);
+  ).toEqual([{ project: PLAYGROUND.id }]);
   // Its thread went to the archive with it: the side nav lists it no more.
   await expect(thread).toHaveCount(0);
   await expectPlainWords(page);

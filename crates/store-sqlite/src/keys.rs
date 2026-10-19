@@ -1,9 +1,9 @@
-//! Wrapped keys in the local database: each organization's key, and each space's record of
+//! Wrapped keys in the local database: each organization's key, and each project's record of
 //! keys, replaced whole by compare-and-swap on its revision.
 
 use std::future::Future;
 
-use glave_keys::{KeyError, KeyStorage, StoredSpace};
+use glave_keys::{KeyError, KeyStorage, StoredProject};
 use glave_ports::{OrgId, Scope};
 use rusqlite::{OptionalExtension as _, params};
 
@@ -72,18 +72,18 @@ impl KeyStorage for SqliteKeys {
         }
     }
 
-    fn space(
+    fn project(
         &self,
         scope: &Scope,
-    ) -> impl Future<Output = Result<Option<StoredSpace>, KeyError>> + Send {
+    ) -> impl Future<Output = Result<Option<StoredProject>, KeyError>> + Send {
         let scope = *scope;
         let connection = self.connection.clone();
         async move {
             let row: Option<(i64, Vec<u8>)> = run(&connection, move |connection| {
                 connection
                     .query_row(
-                        "SELECT revision, record FROM space_keys WHERE org = ?1 AND space = ?2",
-                        params![scope.org.to_string(), scope.space.to_string()],
+                        "SELECT revision, record FROM project_keys WHERE org = ?1 AND project = ?2",
+                        params![scope.org.to_string(), scope.project.to_string()],
                         |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .optional()
@@ -91,7 +91,7 @@ impl KeyStorage for SqliteKeys {
             .await
             .map_err(storage)?;
             row.map(|(revision, record)| {
-                Ok(StoredSpace {
+                Ok(StoredProject {
                     revision: u64::try_from(revision).map_err(storage)?,
                     record,
                 })
@@ -100,7 +100,7 @@ impl KeyStorage for SqliteKeys {
         }
     }
 
-    fn save_space(
+    fn save_project(
         &self,
         scope: &Scope,
         expected: Option<u64>,
@@ -112,17 +112,17 @@ impl KeyStorage for SqliteKeys {
             let expected = expected
                 .map(|revision| i64::try_from(revision).map_err(storage))
                 .transpose()?;
-            let (org, space) = (scope.org.to_string(), scope.space.to_string());
+            let (org, project) = (scope.org.to_string(), scope.project.to_string());
             let changed = run(&connection, move |connection| match expected {
                 None => connection.execute(
-                    "INSERT OR IGNORE INTO space_keys (org, space, revision, record)
+                    "INSERT OR IGNORE INTO project_keys (org, project, revision, record)
                      VALUES (?1, ?2, 1, ?3)",
-                    params![org, space, record],
+                    params![org, project, record],
                 ),
                 Some(revision) => connection.execute(
-                    "UPDATE space_keys SET record = ?4, revision = revision + 1
-                     WHERE org = ?1 AND space = ?2 AND revision = ?3",
-                    params![org, space, revision, record],
+                    "UPDATE project_keys SET record = ?4, revision = revision + 1
+                     WHERE org = ?1 AND project = ?2 AND revision = ?3",
+                    params![org, project, revision, record],
                 ),
             })
             .await

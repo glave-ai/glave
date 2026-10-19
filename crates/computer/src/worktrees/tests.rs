@@ -221,7 +221,7 @@ fn scratch_folders_reopen_as_left_and_go_empty_away_or_full_to_the_trash() {
     let env = environment();
     let scratch = |name: &str| Sources::Scratch {
         name: name.to_owned(),
-        owner: Some(format!("org/space/{name}")),
+        owner: Some(format!("org/project/{name}")),
     };
     block_on!(async {
         let made = computers.create(&Environment::host()).await.unwrap();
@@ -252,7 +252,7 @@ fn scratch_folders_reopen_as_left_and_go_empty_away_or_full_to_the_trash() {
                 Condition::Scratch { empty: false }
             ]
         );
-        assert_eq!(kept[0].owner.as_deref(), Some("org/space/empty"));
+        assert_eq!(kept[0].owner.as_deref(), Some("org/project/empty"));
         assert_eq!(kept[0].at_risk(), None);
         assert_eq!(
             release(&kept[0], &env, "idle", None).await.unwrap(),

@@ -5,7 +5,7 @@
 use deadpool_postgres::{Pool, Transaction};
 use glave_event::{RawEvent, Seq, ThreadId};
 use glave_ports::{
-    LogError, OrgId, Scope, SpaceId, THREAD_VIEW_VERSION, ThreadQuery, ThreadView, fold_from_log,
+    LogError, OrgId, ProjectId, Scope, THREAD_VIEW_VERSION, ThreadQuery, ThreadView, fold_from_log,
 };
 use tokio_postgres::GenericClient;
 use uuid::Uuid;
@@ -68,17 +68,17 @@ async fn stored<C: GenericClient + Sync>(
     lock: bool,
 ) -> Result<Option<ThreadView>, LogError> {
     let sql = if lock {
-        "SELECT view, position FROM threads WHERE org = $1 AND space = $2 AND thread = $3
+        "SELECT view, position FROM threads WHERE org = $1 AND project = $2 AND thread = $3
          FOR UPDATE"
     } else {
-        "SELECT view, position FROM threads WHERE org = $1 AND space = $2 AND thread = $3"
+        "SELECT view, position FROM threads WHERE org = $1 AND project = $2 AND thread = $3"
     };
     let row = client
         .query_opt(
             sql,
             &[
                 &scope.org.as_uuid(),
-                &scope.space.as_uuid(),
+                &scope.project.as_uuid(),
                 &thread.as_uuid(),
             ],
         )
@@ -96,14 +96,14 @@ async fn write<C: GenericClient + Sync>(
     let json = serde_json::to_string(view).map_err(corrupt)?;
     client
         .execute(
-            "INSERT INTO threads (org, space, thread, standing, position, view)
+            "INSERT INTO threads (org, project, thread, standing, position, view)
              VALUES ($1, $2, $3, $4, $5, $6)
-             ON CONFLICT (org, space, thread) DO UPDATE SET
+             ON CONFLICT (org, project, thread) DO UPDATE SET
                  standing = excluded.standing, position = excluded.position,
                  view = excluded.view",
             &[
                 &scope.org.as_uuid(),
-                &scope.space.as_uuid(),
+                &scope.project.as_uuid(),
                 &view.thread.as_uuid(),
                 &view.standing.as_str(),
                 &view.position,
@@ -127,7 +127,7 @@ pub(crate) async fn page(
     let statement = client
         .prepare_cached(
             "SELECT view, position FROM threads
-             WHERE org = $1 AND space = $2 AND standing = $3
+             WHERE org = $1 AND project = $2 AND standing = $3
                AND ($4::bigint IS NULL OR position < $4::bigint)
              ORDER BY position DESC LIMIT $5",
         )
@@ -138,7 +138,7 @@ pub(crate) async fn page(
             &statement,
             &[
                 &scope.org.as_uuid(),
-                &scope.space.as_uuid(),
+                &scope.project.as_uuid(),
                 &query.standing.as_str(),
                 &query.after.map(|after| after.0),
                 &i64::try_from(query.limit).unwrap_or(i64::MAX),
@@ -182,10 +182,10 @@ pub(crate) async fn rebuild(
         let row = transaction
             .query_one(
                 "SELECT MAX(seq), MAX(pos) FROM events
-                 WHERE org = $1 AND space = $2 AND thread = $3",
+                 WHERE org = $1 AND project = $2 AND thread = $3",
                 &[
                     &scope.org.as_uuid(),
-                    &scope.space.as_uuid(),
+                    &scope.project.as_uuid(),
                     &thread.as_uuid(),
                 ],
             )
@@ -208,10 +208,10 @@ pub(crate) async fn rebuild(
             None => {
                 transaction
                     .execute(
-                        "DELETE FROM threads WHERE org = $1 AND space = $2 AND thread = $3",
+                        "DELETE FROM threads WHERE org = $1 AND project = $2 AND thread = $3",
                         &[
                             &scope.org.as_uuid(),
-                            &scope.space.as_uuid(),
+                            &scope.project.as_uuid(),
                             &thread.as_uuid(),
                         ],
                     )
@@ -233,7 +233,7 @@ pub(crate) async fn rebuild_all(log: &PostgresLog, pool: &Pool) -> Result<(), St
     let client = connection(pool).await?;
     let rows = client
         .query(
-            "SELECT org, space, thread FROM events WHERE seq = 1 AND type = 'thread.started'",
+            "SELECT org, project, thread FROM events WHERE seq = 1 AND type = 'thread.started'",
             &[],
         )
         .await
@@ -242,11 +242,11 @@ pub(crate) async fn rebuild_all(log: &PostgresLog, pool: &Pool) -> Result<(), St
     for row in rows {
         let found = (|| {
             let org: Uuid = row.try_get(0).ok()?;
-            let space: Uuid = row.try_get(1).ok()?;
+            let project: Uuid = row.try_get(1).ok()?;
             let thread: Uuid = row.try_get(2).ok()?;
             let scope = Scope {
                 org: OrgId::from_uuid(org),
-                space: SpaceId::from_uuid(space),
+                project: ProjectId::from_uuid(project),
             };
             Some((scope, ThreadId::try_from(thread).ok()?))
         })();

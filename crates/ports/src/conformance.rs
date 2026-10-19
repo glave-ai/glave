@@ -3,16 +3,16 @@
 //! Each suite returns the first violation it finds as an error message.
 
 mod computers;
+mod projects;
 mod search;
-mod spaces;
 mod threads;
 
 pub use computers::{
     Confinement, computers, confinement_case, confinement_escapes, confinement_fixture,
     confinement_paths, confinement_targets, confinement_untouched,
 };
+pub use projects::projects;
 pub use search::search;
-pub use spaces::spaces;
 pub use threads::thread_views;
 
 use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
@@ -20,7 +20,7 @@ use uuid::{Builder, Uuid};
 
 use crate::blob::{BlobStore, digest};
 use crate::log::{EventLog, LogError};
-use crate::scope::{OrgId, Scope, SpaceId};
+use crate::scope::{OrgId, ProjectId, Scope};
 use crate::tools::NeverCancelled;
 
 type Verdict = Result<(), String>;
@@ -44,7 +44,7 @@ fn uuid_v7(n: u64) -> Uuid {
 fn scope(n: u64) -> Scope {
     Scope {
         org: OrgId::from_uuid(uuid_v7(1_000 + n)),
-        space: SpaceId::from_uuid(uuid_v7(2_000 + n)),
+        project: ProjectId::from_uuid(uuid_v7(2_000 + n)),
     }
 }
 

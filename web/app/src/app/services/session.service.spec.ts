@@ -48,12 +48,12 @@ describe('SessionService', () => {
 
   it('signs out when the server refuses the sign-in', async () => {
     const fake = new FakeSession().answer(
-      'space/list',
+      'project/list',
       new ApiError({ code: ErrorCode.NO_SIGN_IN, message: 'no' }),
     );
     TestBed.configureTestingModule({ providers: provideFakeSession(fake) });
     const session = TestBed.inject(SessionService);
-    await expect(session.call('space/list', {})).rejects.toBeInstanceOf(ApiError);
+    await expect(session.call('project/list', {})).rejects.toBeInstanceOf(ApiError);
     expect(session.signedIn()).toBe(false);
     expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull();
   });

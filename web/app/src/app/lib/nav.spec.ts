@@ -1,13 +1,13 @@
-import type { Space, ThreadSummary } from '@glave/client';
+import type { Project, ThreadSummary } from '@glave/client';
 
-import { space, thread } from '../testing/fixtures';
+import { record, thread } from '../testing/fixtures';
 import {
   CHATS_LIST,
   type NavSections,
   type NavThread,
   type NavView,
   PROJECTS_LIST,
-  type SpaceWithThreads,
+  type ProjectWithThreads,
   matchesQuery,
   navSections,
   waitingThreads,
@@ -18,8 +18,8 @@ function at(minute: number): string {
   return `2026-10-11T10:${String(minute).padStart(2, '0')}:00.000Z`;
 }
 
-function made(id: string, name: string, minute: number): Space {
-  return { ...space(id, name), created_at: at(minute) };
+function made(id: string, name: string, minute: number): Project {
+  return { ...record(id, name), created_at: at(minute) };
 }
 
 function line(
@@ -45,15 +45,15 @@ function projectNames(sections: NavSections): readonly string[] {
   return sections.projects.list.map((project) => project.name);
 }
 
-const SPACES: readonly SpaceWithThreads[] = [
+const PROJECTS: readonly ProjectWithThreads[] = [
   {
-    space: made('p1', 'glave', 0),
+    project: made('p1', 'glave', 0),
     threads: [line('t1', 'Plan the launch', 5), line('t2', 'Fix the build', 7)],
   },
-  { space: made('p2', 'Garden', 0), threads: [line('t3', 'Plant the beans', 9)] },
-  { space: made('p3', 'Notes', 8), threads: [] },
-  { space: space('me', 'Personal', 'personal'), threads: [line('t4', 'Café ideas', 0)] },
-  { space: space('me2', 'Shared with me', 'personal'), threads: [line('t6', null, 8)] },
+  { project: made('p2', 'Garden', 0), threads: [line('t3', 'Plant the beans', 9)] },
+  { project: made('p3', 'Notes', 8), threads: [] },
+  { project: record('me', 'Personal', 'personal'), threads: [line('t4', 'Café ideas', 0)] },
+  { project: record('me2', 'Shared with me', 'personal'), threads: [line('t6', null, 8)] },
 ];
 
 describe('nav', () => {
@@ -64,7 +64,7 @@ describe('nav', () => {
   });
 
   it('lists the projects by their latest thread, each one’s threads and the chats newest first', () => {
-    const sections = navSections(SPACES, { ...VIEW, current: 't1' });
+    const sections = navSections(PROJECTS, { ...VIEW, current: 't1' });
     // Notes has no thread yet: it counts from when it was made.
     expect(projectNames(sections)).toEqual(['Garden', 'Notes', 'glave']);
     const glave = sections.projects.list[2];
@@ -76,10 +76,10 @@ describe('nav', () => {
   });
 
   it('puts what waits for the person first, whatever the sort', () => {
-    const spaces: readonly SpaceWithThreads[] = [
-      { space: made('p1', 'Alpha', 0), threads: [line('a1', 'Ship it', 20)] },
+    const projects: readonly ProjectWithThreads[] = [
+      { project: made('p1', 'Alpha', 0), threads: [line('a1', 'Ship it', 20)] },
       {
-        space: made('p2', 'Beta', 0),
+        project: made('p2', 'Beta', 0),
         threads: [
           line('b1', 'Plan the launch', 5, { status: 'running' }),
           line('b2', 'Write the notes', 1, { status: 'waiting' }),
@@ -87,7 +87,7 @@ describe('nav', () => {
         ],
       },
     ];
-    const recent = navSections(spaces, VIEW);
+    const recent = navSections(projects, VIEW);
     expect(projectNames(recent)).toEqual(['Beta', 'Alpha']);
     expect(titles(recent.projects.list[0]?.threads ?? [])).toEqual([
       'Write the notes',
@@ -95,7 +95,7 @@ describe('nav', () => {
       'Audit the dependencies',
     ]);
     expect(recent.projects.list[0]?.threads[0]?.mark?.variant).toBe('dot');
-    const byName = navSections(spaces, { ...VIEW, byName: new Set(['p2']) });
+    const byName = navSections(projects, { ...VIEW, byName: new Set(['p2']) });
     expect(byName.projects.list[0]?.sort).toBe('name');
     expect(titles(byName.projects.list[0]?.threads ?? [])).toEqual([
       'Write the notes',
@@ -105,17 +105,17 @@ describe('nav', () => {
   });
 
   it('sorts a list by name as people read names, when the person asks', () => {
-    const spaces: readonly SpaceWithThreads[] = [
-      { space: made('p1', 'plan 10', 9), threads: [] },
-      { space: made('p2', 'Plan 2', 1), threads: [] },
-      { space: made('p3', 'garden', 5), threads: [] },
+    const projects: readonly ProjectWithThreads[] = [
+      { project: made('p1', 'plan 10', 9), threads: [] },
+      { project: made('p2', 'Plan 2', 1), threads: [] },
+      { project: made('p3', 'garden', 5), threads: [] },
       {
-        space: space('me', 'Personal', 'personal'),
+        project: record('me', 'Personal', 'personal'),
         threads: [line('t1', 'Zebra facts', 9), line('t2', 'apples', 1)],
       },
     ];
-    expect(projectNames(navSections(spaces, VIEW))).toEqual(['plan 10', 'garden', 'Plan 2']);
-    const byName = navSections(spaces, { ...VIEW, byName: new Set([PROJECTS_LIST, CHATS_LIST]) });
+    expect(projectNames(navSections(projects, VIEW))).toEqual(['plan 10', 'garden', 'Plan 2']);
+    const byName = navSections(projects, { ...VIEW, byName: new Set([PROJECTS_LIST, CHATS_LIST]) });
     expect(byName.projects.sort).toBe('name');
     expect(projectNames(byName)).toEqual(['garden', 'Plan 2', 'plan 10']);
     expect(titles(byName.chats.list)).toEqual(['apples', 'Zebra facts']);
@@ -129,7 +129,7 @@ describe('nav', () => {
       line('t4', 'Read the logs', 2, { parent: 't3', status: 'waiting' }),
       line('t5', 'Started by one not listed', 1, { parent: 'gone' }),
     ];
-    const { projects } = navSections([{ space: made('p1', 'glave', 0), threads }], VIEW);
+    const { projects } = navSections([{ project: made('p1', 'glave', 0), threads }], VIEW);
     const tree = projects.list[0]?.threads ?? [];
     expect(titles(tree)).toEqual([
       'Plan the launch',
@@ -142,13 +142,13 @@ describe('nav', () => {
   });
 
   it('keeps each list closed as the person left it, marked while something in it waits', () => {
-    const spaces: readonly SpaceWithThreads[] = [
-      { space: made('p1', 'glave', 0), threads: [line('t1', 'Fix', 1, { status: 'waiting' })] },
-      { space: made('p2', 'Garden', 0), threads: [line('t2', 'Plant', 2)] },
-      { space: space('me', 'Personal', 'personal'), threads: [line('t3', 'Trip', 3)] },
+    const lists: readonly ProjectWithThreads[] = [
+      { project: made('p1', 'glave', 0), threads: [line('t1', 'Fix', 1, { status: 'waiting' })] },
+      { project: made('p2', 'Garden', 0), threads: [line('t2', 'Plant', 2)] },
+      { project: record('me', 'Personal', 'personal'), threads: [line('t3', 'Trip', 3)] },
     ];
     const collapsed = new Set(['p1', 'p2', PROJECTS_LIST, CHATS_LIST]);
-    const { projects, chats } = navSections(spaces, { ...VIEW, collapsed });
+    const { projects, chats } = navSections(lists, { ...VIEW, collapsed });
     expect(projects.expanded).toBe(false);
     expect(projects.mark).toMatchObject({ text: 'needs you', variant: 'dot' });
     expect(projects.list.map((each) => [each.name, each.expanded, each.mark?.text])).toEqual([
@@ -157,21 +157,21 @@ describe('nav', () => {
     ]);
     expect(chats).toMatchObject({ expanded: false, mark: null });
     // Open, a list shows its threads' own marks instead.
-    expect(navSections(spaces, VIEW).projects.list[0]?.mark).toBeNull();
+    expect(navSections(lists, VIEW).projects.list[0]?.mark).toBeNull();
   });
 
   it('marks a project whose folder is gone in the server’s words, open or closed', () => {
     const gone = "This project's folder isn't there anymore.";
-    const spaces: readonly SpaceWithThreads[] = [
+    const projects: readonly ProjectWithThreads[] = [
       {
-        space: made('p1', 'playground', 0),
+        project: made('p1', 'playground', 0),
         threads: [line('t1', 'Sketch', 1, { status: 'waiting' })],
         gone,
       },
-      { space: made('p2', 'Garden', 0), threads: [line('t2', 'Plant', 2)] },
+      { project: made('p2', 'Garden', 0), threads: [line('t2', 'Plant', 2)] },
     ];
     for (const collapsed of [new Set<string>(), new Set(['p1'])]) {
-      const [playground, garden] = navSections(spaces, { ...VIEW, collapsed }).projects.list;
+      const [playground, garden] = navSections(projects, { ...VIEW, collapsed }).projects.list;
       expect(playground?.gone).toBe(gone);
       expect(playground?.mark).toEqual({ text: gone, tone: 'warning', variant: 'dot' });
       expect(garden?.gone).toBeNull();
@@ -179,11 +179,11 @@ describe('nav', () => {
   });
 
   it('keeps only the matching threads and their projects, open, while searching', () => {
-    const cafe = navSections(SPACES, { ...VIEW, query: 'CAFE' });
+    const cafe = navSections(PROJECTS, { ...VIEW, query: 'CAFE' });
     expect(titles(cafe.chats.list)).toEqual(['Café ideas']);
     expect(cafe.projects.list).toEqual([]);
     const collapsed = new Set(['p1', PROJECTS_LIST]);
-    const build = navSections(SPACES, { ...VIEW, query: 'build', collapsed });
+    const build = navSections(PROJECTS, { ...VIEW, query: 'build', collapsed });
     expect(build.chats.list).toEqual([]);
     expect(build.projects.expanded).toBe(true);
     expect(build.projects.list.map((project) => [project.id, project.expanded])).toEqual([
@@ -191,7 +191,7 @@ describe('nav', () => {
     ]);
     // A matching thread another started shows on its own when that one does not match.
     const child = [line('t1', 'Plan', 5), line('t2', 'Fix the build', 7, { parent: 't1' })];
-    const found = navSections([{ space: made('p1', 'glave', 0), threads: child }], {
+    const found = navSections([{ project: made('p1', 'glave', 0), threads: child }], {
       ...VIEW,
       query: 'build',
     });
@@ -199,20 +199,20 @@ describe('nav', () => {
   });
 
   it('lists every thread that needs the person, newest first, with its place', () => {
-    const spaces: readonly SpaceWithThreads[] = [
+    const projects: readonly ProjectWithThreads[] = [
       {
-        space: space('p1', 'glave'),
+        project: record('p1', 'glave'),
         threads: [
-          line('t1', 'Plan', 5, { space: 'p1' }),
-          line('t2', 'Fix the build', 7, { space: 'p1', status: 'waiting' }),
+          line('t1', 'Plan', 5, { project: 'p1' }),
+          line('t2', 'Fix the build', 7, { project: 'p1', status: 'waiting' }),
         ],
       },
       {
-        space: space('me', 'Personal', 'personal'),
-        threads: [line('t3', 'Café ideas', 1, { space: 'me', status: 'waiting' })],
+        project: record('me', 'Personal', 'personal'),
+        threads: [line('t3', 'Café ideas', 1, { project: 'me', status: 'waiting' })],
       },
     ];
-    expect(waitingThreads(spaces)).toEqual([
+    expect(waitingThreads(projects)).toEqual([
       { id: 't2', link: ['/t', 't2'], title: 'Fix the build', place: 'glave' },
       { id: 't3', link: ['/t', 't3'], title: 'Café ideas', place: 'Chats' },
     ]);

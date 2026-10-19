@@ -113,8 +113,8 @@ async fn timed(
     ProjectFolders::new(home.to_owned(), own, true)
 }
 
-fn space() -> SpaceId {
-    SpaceId::from_uuid(uuid::Uuid::from_u128(2))
+fn project_id() -> ProjectId {
+    ProjectId::from_uuid(uuid::Uuid::from_u128(2))
 }
 
 fn plain(ask: &TrustAsk) -> Vec<(&str, Option<&str>)> {
@@ -159,7 +159,7 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
                 ("Runs a hook before each command", Some("./guard.sh")),
             ]
         );
-        let before = projects.brought(&project, space()).await;
+        let before = projects.brought(&project, project_id()).await;
         assert!(
             before.tools.is_empty() && before.hooks.is_empty(),
             "off until trusted"
@@ -196,10 +196,10 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
                 && theirs.contains("never for anyone else's threads"),
             "trusted, and still off on another person's thread: {theirs}"
         );
-        let after = projects.brought(&project, space()).await;
+        let after = projects.brought(&project, project_id()).await;
         assert_eq!(after.tools.len(), 2, "the server, then its resources");
         assert_eq!(after.hooks.all().count(), 1);
-        let again = projects.brought(&project, space()).await;
+        let again = projects.brought(&project, project_id()).await;
         assert!(
             Arc::ptr_eq(&after.tools[0], &again.tools[0]),
             "the same server, still running"
@@ -221,7 +221,7 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
             !projects.trust(&project, &ask.ask).await.unwrap(),
             "not what was shown"
         );
-        let meanwhile = projects.brought(&project, space()).await;
+        let meanwhile = projects.brought(&project, project_id()).await;
         assert!(meanwhile.tools.is_empty());
         assert_eq!(meanwhile.hooks.all().count(), 1, "the hook did not change");
         projects.close().await;
@@ -273,7 +273,7 @@ fn each_project_s_settings_reach_its_own_threads_alone() {
                 Some(true)
             )
         );
-        let brought = projects.brought(&alpha, space()).await;
+        let brought = projects.brought(&alpha, project_id()).await;
         let web = brought.web.expect("its own web_fetch");
         assert!(web.tools().await.unwrap().is_empty(), "turned off");
 
@@ -284,7 +284,7 @@ fn each_project_s_settings_reach_its_own_threads_alone() {
             (Protections::default(), None, None, None),
             "none of alpha's"
         );
-        assert!(projects.brought(&beta, space()).await.web.is_none());
+        assert!(projects.brought(&beta, project_id()).await.web.is_none());
         assert_eq!(projects.set_aside(&beta).await, Vec::<String>::new());
     });
 }
@@ -311,7 +311,7 @@ fn a_project_s_server_gives_way_to_the_person_s_own_of_the_same_name() {
         let projects = projects(&home, vec!["docs".into()], &[]).await;
         let ask = projects.ask(&project).await.unwrap().unwrap();
         assert!(projects.trust(&project, &ask.ask).await.unwrap());
-        let brought = projects.brought(&project, space()).await;
+        let brought = projects.brought(&project, project_id()).await;
         assert!(brought.tools.is_empty(), "the person's own runs instead");
         let told = projects
             .for_folder(&project, Some(&project), true)
@@ -331,7 +331,7 @@ fn an_idle_project_s_servers_close_and_start_again_when_needed() {
         let projects = timed(&home, Vec::new(), &[], clock.clone()).await;
         let ask = projects.ask(&project).await.unwrap().unwrap();
         assert!(projects.trust(&project, &ask.ask).await.unwrap());
-        let held = projects.brought(&project, space()).await.tools;
+        let held = projects.brought(&project, project_id()).await.tools;
         let minutes = |n: i64| clock.advance_millis(n * 60_000);
         let running = |projects: &ProjectFolders| projects.lock().kept.len();
         minutes(60);
@@ -344,7 +344,7 @@ fn an_idle_project_s_servers_close_and_start_again_when_needed() {
         minutes(2);
         projects.sweep().await;
         assert_eq!(running(&projects), 0, "closed after 30 minutes unused");
-        let again = projects.brought(&project, space()).await;
+        let again = projects.brought(&project, project_id()).await;
         assert_eq!(again.tools.len(), 2, "started again for the next turn");
         assert_eq!(running(&projects), 1);
         projects.close().await;

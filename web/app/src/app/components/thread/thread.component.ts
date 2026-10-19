@@ -25,7 +25,7 @@ import { type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
 import type { Turn } from '../../lib/turns';
 import { CommandsService } from '../../services/commands.service';
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { ThreadService } from '../../services/thread.service';
 import { ToolsPanelService } from '../../services/tools-panel.service';
 import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
@@ -111,7 +111,7 @@ export class ThreadComponent {
 
   protected readonly copy = COPY;
   protected readonly service = inject(ThreadService);
-  private readonly spaces = inject(SpacesService);
+  private readonly projects = inject(ProjectsService);
   private readonly panel = inject(ToolsPanelService);
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
   /** The composer's draft, which a message the model never read comes back to. */
@@ -137,7 +137,7 @@ export class ThreadComponent {
       turnResults(turn, index === last ? live : null, index === last && this.service.busy()),
     );
   });
-  protected readonly summary = computed(() => this.spaces.thread(this.thread()));
+  protected readonly summary = computed(() => this.projects.thread(this.thread()));
   protected readonly title = computed(() => {
     const summary = this.summary();
     return summary === undefined ? '' : threadTitle(summary);
@@ -146,15 +146,15 @@ export class ThreadComponent {
   protected readonly mode = computed(() => this.summary()?.approval ?? null);
   /** The project the thread is in, by name; `null` for a chat. */
   protected readonly project = computed(() => {
-    const space = this.spaces.spaceOf(this.thread());
-    return space?.kind === 'project' ? space.name : null;
+    const project = this.projects.projectOf(this.thread());
+    return project?.kind === 'project' ? project.name : null;
   });
   protected readonly changes = computed(() => this.service.files().length);
   /** When the thread's project folder isn't there anymore: the project, and what the server says. */
   protected readonly gone = computed(() => {
-    const space = this.spaces.spaceOf(this.thread());
-    const message = space === undefined ? null : this.spaces.gone(space.id);
-    return space === undefined || message === null ? null : { space: space.id, message };
+    const project = this.projects.projectOf(this.thread());
+    const message = project === undefined ? null : this.projects.gone(project.id);
+    return project === undefined || message === null ? null : { project: project.id, message };
   });
   protected readonly folderGone = computed(() => this.gone() !== null);
 

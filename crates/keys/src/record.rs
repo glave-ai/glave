@@ -1,4 +1,4 @@
-//! The stored record of one space's keys: every space-key version and every data key, each
+//! The stored record of one project's keys: every project-key version and every data key, each
 //! wrapped, or emptied once destroyed. Emptied entries stay so numbering never repeats.
 
 use serde::{Deserialize, Serialize};
@@ -12,20 +12,20 @@ use crate::key_id::{Month, Period};
 const FORMAT: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SpaceRecord {
+pub(crate) struct ProjectRecord {
     glave_keys: u32,
-    pub(crate) versions: Vec<SpaceVersion>,
+    pub(crate) versions: Vec<ProjectVersion>,
     pub(crate) data: Vec<DataKey>,
 }
 
-/// One version of the space key, wrapped by the organization key. `None` once destroyed.
+/// One version of the project key, wrapped by the organization key. `None` once destroyed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SpaceVersion {
+pub(crate) struct ProjectVersion {
     pub(crate) version: u32,
     pub(crate) wrapped: Option<Vec<u8>>,
 }
 
-/// One data key, wrapped by version `space_version` of the space key. `None` once destroyed.
+/// One data key, wrapped by version `project_version` of the project key. `None` once destroyed.
 /// A memory's own key has `memory` set, an account's (a model account's or a git host's)
 /// `provider`; its `month` is only when it was made.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,7 +36,9 @@ pub(crate) struct DataKey {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) provider: Option<Uuid>,
     pub(crate) n: u32,
-    pub(crate) space_version: u32,
+    /// Kept under its name from before spaces were projects: records are sealed as written.
+    #[serde(rename = "space_version")]
+    pub(crate) project_version: u32,
     pub(crate) wrapped: Option<Vec<u8>>,
 }
 
@@ -51,7 +53,7 @@ impl DataKey {
     }
 }
 
-impl Default for SpaceRecord {
+impl Default for ProjectRecord {
     fn default() -> Self {
         Self {
             glave_keys: FORMAT,
@@ -61,7 +63,7 @@ impl Default for SpaceRecord {
     }
 }
 
-impl SpaceRecord {
+impl ProjectRecord {
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, KeyError> {
         let record: Self =
             serde_json::from_slice(bytes).map_err(|e| KeyError::Corrupt(e.to_string()))?;
@@ -78,19 +80,19 @@ impl SpaceRecord {
         serde_json::to_vec(self).map_err(|e| KeyError::Corrupt(e.to_string()))
     }
 
-    /// The space key in use: the newest version not destroyed.
-    pub(crate) fn live(&self) -> Option<&SpaceVersion> {
+    /// The project key in use: the newest version not destroyed.
+    pub(crate) fn live(&self) -> Option<&ProjectVersion> {
         self.versions
             .iter()
             .filter(|version| version.wrapped.is_some())
             .max_by_key(|version| version.version)
     }
 
-    pub(crate) fn version(&self, version: u32) -> Option<&SpaceVersion> {
+    pub(crate) fn version(&self, version: u32) -> Option<&ProjectVersion> {
         self.versions.iter().find(|entry| entry.version == version)
     }
 
-    /// The number the next space-key version takes.
+    /// The number the next project-key version takes.
     pub(crate) fn next_version(&self) -> u32 {
         next(self.versions.iter().map(|entry| entry.version))
     }
@@ -119,15 +121,15 @@ impl SpaceRecord {
         )
     }
 
-    /// Whether a data key was destroyed under the space key in use: backups that hold this
-    /// version can still unwrap it, until the space key is rotated (`specs/storage.md`).
+    /// Whether a data key was destroyed under the project key in use: backups that hold this
+    /// version can still unwrap it, until the project key is rotated (`specs/storage.md`).
     pub(crate) fn rotation_due(&self) -> bool {
         let Some(live) = self.live() else {
             return false;
         };
         self.data
             .iter()
-            .any(|key| key.wrapped.is_none() && key.space_version == live.version)
+            .any(|key| key.wrapped.is_none() && key.project_version == live.version)
     }
 }
 
@@ -145,8 +147,8 @@ mod tests {
 
     #[test]
     fn destroyed_keys_keep_their_numbers_taken() {
-        let mut record = SpaceRecord::default();
-        record.versions.push(SpaceVersion {
+        let mut record = ProjectRecord::default();
+        record.versions.push(ProjectVersion {
             version: 1,
             wrapped: None,
         });
@@ -155,7 +157,7 @@ mod tests {
             memory: None,
             provider: None,
             n: 1,
-            space_version: 1,
+            project_version: 1,
             wrapped: None,
         });
         let october = Period::Month(month("2026-10"));
@@ -164,14 +166,14 @@ mod tests {
         assert!(record.sealing(october).is_none());
         assert_eq!(record.next_n(october), 2);
         assert_eq!(record.next_n(Period::Month(month("2026-11"))), 1);
-        let decoded = SpaceRecord::decode(&record.encode().unwrap()).unwrap();
+        let decoded = ProjectRecord::decode(&record.encode().unwrap()).unwrap();
         assert_eq!(decoded.next_n(october), 2);
     }
 
     #[test]
     fn a_memory_key_is_its_own_period_and_old_records_read_as_month_keys() {
-        let mut record = SpaceRecord::default();
-        record.versions.push(SpaceVersion {
+        let mut record = ProjectRecord::default();
+        record.versions.push(ProjectVersion {
             version: 1,
             wrapped: Some(vec![1]),
         });
@@ -181,7 +183,7 @@ mod tests {
             memory: Some(memory),
             provider: None,
             n: 1,
-            space_version: 1,
+            project_version: 1,
             wrapped: Some(vec![2]),
         });
         assert!(record.sealing(Period::Month(month("2026-10"))).is_none());
@@ -190,9 +192,12 @@ mod tests {
         if let Some(key) = record.data.first_mut() {
             key.wrapped = None;
         }
-        assert!(record.rotation_due(), "destroyed under the live space key");
+        assert!(
+            record.rotation_due(),
+            "destroyed under the live project key"
+        );
         let old = br#"{"glave_keys":1,"versions":[],"data":[{"month":"2026-09","n":1,"space_version":1,"wrapped":null}]}"#;
-        let decoded = SpaceRecord::decode(old).unwrap();
+        let decoded = ProjectRecord::decode(old).unwrap();
         assert!(
             decoded
                 .data_key(Period::Month(month("2026-09")), 1)
@@ -202,6 +207,6 @@ mod tests {
 
     #[test]
     fn an_unknown_format_is_refused() {
-        assert!(SpaceRecord::decode(br#"{"glave_keys":2,"versions":[],"data":[]}"#).is_err());
+        assert!(ProjectRecord::decode(br#"{"glave_keys":2,"versions":[],"data":[]}"#).is_err());
     }
 }

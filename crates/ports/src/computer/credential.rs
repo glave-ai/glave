@@ -32,7 +32,7 @@ impl CredentialHost {
 
     /// Its scheme and its host with any port, when `url` is an origin glave hands a credential
     /// for: `https://` and a host of letters, digits, `.` and `-` with any port, or `http://` to
-    /// this computer, and nothing more: no path, user name, query or space.
+    /// this computer, and nothing more: no path, user name, query or project.
     pub fn origin(&self) -> Option<(&str, &str)> {
         let (scheme, host) = self.url.split_once("://")?;
         let (name, port) = match host.rsplit_once(':') {

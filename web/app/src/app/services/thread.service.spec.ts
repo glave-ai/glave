@@ -209,14 +209,14 @@ describe('ThreadService', () => {
     });
     const fake = new FakeSession()
       .answer('thread/events', { events: [] })
-      .answer('space/list', { spaces: [] })
+      .answer('project/list', { projects: [] })
       .turn(gone);
     const service = make(fake);
     await service.open('thread-1');
     await service.send('go');
     await settled();
     expect(service.error()).toBeNull();
-    expect(fake.paramsOf('space/list')).toHaveLength(1);
+    expect(fake.paramsOf('project/list')).toHaveLength(1);
   });
 
   it('sends what was waiting, together, once the person stops the turn', async () => {
@@ -360,14 +360,14 @@ describe('ThreadService', () => {
   it('renames the thread and reads the lists again, or says why it could not', async () => {
     const fake = new FakeSession()
       .answer('thread/events', { events: [] })
-      .answer('space/list', { spaces: [] });
+      .answer('project/list', { projects: [] });
     const service = make(fake);
     await service.rename('Nothing open');
     expect(fake.paramsOf('thread/rename')).toEqual([]);
     await service.open('thread-1');
     await service.rename('Launch plan');
     expect(fake.paramsOf('thread/rename')).toEqual([{ thread: 'thread-1', title: 'Launch plan' }]);
-    expect(fake.paramsOf('space/list')).toHaveLength(1);
+    expect(fake.paramsOf('project/list')).toHaveLength(1);
     fake.answer(
       'thread/rename',
       new ApiError({ code: ErrorCode.TURN_RUNNING, message: 'a turn is running' }),

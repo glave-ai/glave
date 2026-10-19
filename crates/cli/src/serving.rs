@@ -137,7 +137,7 @@ fn site(args: &Args) -> anyhow::Result<Option<Site>> {
 }
 
 /// The browsers a server signs in, when it serves over HTTP: kept in the store, in the
-/// browsers ledger of `person`'s personal space, so a browser's session outlives a restart.
+/// browsers ledger of `person`'s personal project, so a browser's session outlives a restart.
 /// What an earlier glave kept in `browsers.json` is moved in first, its server's id with it,
 /// and the file deleted.
 pub async fn browsers(
@@ -162,7 +162,7 @@ async fn open_browsers(store: &Data, person: PrincipalId, path: &Path) -> anyhow
         .and_then(|earlier| uuid::Uuid::parse_str(&earlier.server).ok())
         .unwrap_or_else(random_uuid);
     let server = store.server(offered).await?.to_string();
-    let scope = crate::spaces::personal(store, person).await?;
+    let scope = crate::projects::personal(store, person).await?;
     let browsers = Browsers::open(store.log(), scope, server, Box::new(SystemClock)).await?;
     if let Some(earlier) = earlier {
         browsers.take_in(&earlier).await?;

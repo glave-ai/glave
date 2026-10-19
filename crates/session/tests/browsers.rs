@@ -50,8 +50,8 @@ fn redeem(code: &str) -> Request {
     }
 }
 
-fn spaces() -> Request {
-    Request::SpaceList { limit: None }
+fn projects() -> Request {
+    Request::ProjectList { limit: None }
 }
 
 #[test]
@@ -73,14 +73,14 @@ fn a_link_signs_one_browser_in_once_for_a_session_that_outlives_a_restart() {
         let again = anyone.call(&redeem(&code)).await;
         assert_eq!(again["error"]["code"], json!(code::NO_SIGN_IN), "once");
         assert_eq!(
-            anyone.call(&spaces()).await["error"]["code"],
+            anyone.call(&projects()).await["error"]["code"],
             json!(code::NO_SIGN_IN),
             "nothing else without a sign-in"
         );
 
         let mut browser = Web::new(&served, Some(session.clone()));
-        let listed = browser.call(&spaces()).await;
-        assert!(listed["result"]["spaces"].is_array(), "{listed}");
+        let listed = browser.call(&projects()).await;
+        assert!(listed["result"]["projects"].is_array(), "{listed}");
         let refused = browser.call(&Request::SigninLink {}).await;
         assert_eq!(
             refused["error"]["code"],
@@ -95,10 +95,10 @@ fn a_link_signs_one_browser_in_once_for_a_session_that_outlives_a_restart() {
         let rediscovered = Web::new(&served, None).call(&Request::Discover {}).await;
         assert_eq!(rediscovered["result"]["id"], id);
         let mut browser = Web::new(&served, Some(session.clone()));
-        assert!(browser.call(&spaces()).await["result"].is_object());
+        assert!(browser.call(&projects()).await["result"].is_object());
         let ended = browser.call(&Request::SigninEnd {}).await;
         assert_eq!(ended["result"], json!({}), "{ended}");
-        let after = browser.call(&spaces()).await;
+        let after = browser.call(&projects()).await;
         assert_eq!(
             after["error"]["code"],
             json!(code::NO_SIGN_IN),
@@ -131,9 +131,9 @@ fn signing_other_browsers_out_keeps_this_one() {
         let mut other = Web::new(&served, Some(sessions[1].clone()));
         let done = this.call(&Request::SigninEndOthers {}).await;
         assert_eq!(done["result"], json!({}), "{done}");
-        assert!(this.call(&spaces()).await["result"].is_object());
+        assert!(this.call(&projects()).await["result"].is_object());
         assert_eq!(
-            other.call(&spaces()).await["error"]["code"],
+            other.call(&projects()).await["error"]["code"],
             json!(code::NO_SIGN_IN)
         );
         served.close().await;
@@ -161,7 +161,7 @@ fn a_session_is_one_servers_and_this_computers_alone() {
             "each glave folder is a server of its own"
         );
         let elsewhere = Web::new(&other, Some(session.clone()))
-            .call(&spaces())
+            .call(&projects())
             .await;
         assert_eq!(elsewhere["error"]["code"], json!(code::NO_SIGN_IN));
 
@@ -243,7 +243,7 @@ fn nobody_a_provider_signs_in_gets_a_session_so_theirs_ends_with_the_provider() 
         let served = serve_with(built, signin, None).await;
         // The provider signs ada in for ten minutes at a time.
         let mut ada = Web::new(&served, Some(signer.sign(&issuer.claims("ada"))));
-        assert!(ada.call(&spaces()).await["result"].is_object());
+        assert!(ada.call(&projects()).await["result"].is_object());
         let refused: Value = ada.call(&Request::SigninLink {}).await;
         assert_eq!(
             refused["error"]["code"],
@@ -258,7 +258,7 @@ fn nobody_a_provider_signs_in_gets_a_session_so_theirs_ends_with_the_provider() 
 
         // The provider refuses her from now on: it renews nothing, and what it gave her ends.
         clock.set_millis((NOW + 600 + 61) * 1_000);
-        let ended = ada.call(&spaces()).await;
+        let ended = ada.call(&projects()).await;
         assert_eq!(ended["error"]["code"], json!(code::NO_SIGN_IN), "{ended}");
         served.close().await;
     });

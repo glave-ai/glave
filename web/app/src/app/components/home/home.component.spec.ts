@@ -5,9 +5,9 @@ import { ApiError, ErrorCode } from '@glave/client';
 import { expectAccessible } from '@glave/glaze/testing';
 import { of } from 'rxjs';
 
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { ELSEWHERE, FakeSession, provideFakeSession } from '../../testing/fake-session';
-import { MODELS, SERVER, space, thread } from '../../testing/fixtures';
+import { MODELS, SERVER, record, thread } from '../../testing/fixtures';
 import { HomeComponent } from './home.component';
 
 async function send(root: HTMLElement, text: string): Promise<void> {
@@ -22,8 +22,12 @@ async function send(root: HTMLElement, text: string): Promise<void> {
 
 function session(): FakeSession {
   return new FakeSession()
-    .answer('space/list', {
-      spaces: [space('p1', 'glave'), space('p2', 'Garden'), space('me', 'Personal', 'personal')],
+    .answer('project/list', {
+      projects: [
+        record('p1', 'glave'),
+        record('p2', 'Garden'),
+        record('me', 'Personal', 'personal'),
+      ],
     })
     .answer('thread/list', { threads: [] })
     .answer('thread/start', { thread: thread('t9', null) })
@@ -36,7 +40,7 @@ function where(root: HTMLElement): string {
   return trigger?.textContent.replace(/\s+/gu, ' ').trim() ?? '';
 }
 
-async function render(fake: FakeSession, spaceId?: string, narrow = false): Promise<HTMLElement> {
+async function render(fake: FakeSession, projectId?: string, narrow = false): Promise<HTMLElement> {
   const breakpoints = { observe: () => of({ matches: narrow, breakpoints: {} }) };
   TestBed.configureTestingModule({
     providers: [
@@ -45,10 +49,10 @@ async function render(fake: FakeSession, spaceId?: string, narrow = false): Prom
       { provide: BreakpointObserver, useValue: breakpoints },
     ],
   });
-  await TestBed.inject(SpacesService).refresh();
+  await TestBed.inject(ProjectsService).refresh();
   const fixture = TestBed.createComponent(HomeComponent);
-  if (spaceId !== undefined) {
-    fixture.componentRef.setInput('space', spaceId);
+  if (projectId !== undefined) {
+    fixture.componentRef.setInput('project', projectId);
   }
   await fixture.whenStable();
   await new Promise((resolve) => setTimeout(resolve));
@@ -61,7 +65,7 @@ describe('HomeComponent', () => {
     document.body.click();
   });
 
-  it('starts a thread in the personal space and opens it with the prompt in navigation state', async () => {
+  it('starts a thread in the personal project and opens it with the prompt in navigation state', async () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake);
@@ -88,17 +92,17 @@ describe('HomeComponent', () => {
     await expectAccessible(root);
     await send(root, 'Plan the launch');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(fake.paramsOf('thread/start')).toEqual([{ space: 'me' }]);
+    expect(fake.paramsOf('thread/start')).toEqual([{ project: 'me' }]);
     expect(navigate).toHaveBeenCalledWith(['/t', 't9'], { state: { prompt: 'Plan the launch' } });
     navigate.mockRestore();
   });
 
-  it('starts in the space the link names, on the model and in the mode picked', async () => {
+  it('starts in the project the link names, on the model and in the mode picked', async () => {
     const fake = session();
     const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
     const root = await render(fake, 'p2');
     expect(where(root)).toBe('Where: Garden');
-    // Opened for a space, the cursor is in the composer, to write the first message.
+    // Opened for a project, the cursor is in the composer, to write the first message.
     expect(document.activeElement).toBe(root.querySelector('[data-testid="home-composer-input"]'));
     root.querySelector<HTMLButtonElement>('[data-testid="model-picker-trigger"]')?.click();
     await new Promise((resolve) => setTimeout(resolve));
@@ -109,7 +113,7 @@ describe('HomeComponent', () => {
     await send(root, 'Plant tomatoes');
     await new Promise((resolve) => setTimeout(resolve));
     expect(fake.paramsOf('thread/start')).toEqual([
-      { space: 'p2', model: 'hope-12b', approval: 'ask' },
+      { project: 'p2', model: 'hope-12b', approval: 'ask' },
     ]);
     navigate.mockRestore();
   });
@@ -130,7 +134,7 @@ describe('HomeComponent', () => {
     expect(where(root)).toBe('Where: glave');
     await send(root, 'Fix the flaky test');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(fake.paramsOf('thread/start')).toEqual([{ space: 'p1' }]);
+    expect(fake.paramsOf('thread/start')).toEqual([{ project: 'p1' }]);
     navigate.mockRestore();
   });
 

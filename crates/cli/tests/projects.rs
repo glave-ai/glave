@@ -53,17 +53,17 @@ mod projects {
     }
 
     /// The project whose folder is `folder`, made as the app's New project makes it.
-    fn space_of(served: &mut Served, folder: &Path) -> Value {
+    fn project_of(served: &mut Served, folder: &Path) -> Value {
         let name = folder.file_name().unwrap().to_string_lossy();
         let path = folder.to_string_lossy();
         let params = json!({"name": name, "folder": {"kind": "path", "path": path}});
-        served.call("space/create", &params)["result"]["space"]["id"].clone()
+        served.call("project/create", &params)["result"]["project"]["id"].clone()
     }
 
-    /// A thread in `space`, or in the person's Chats with none, its project trusted as the
+    /// A thread in `project`, or in the person's Chats with none, its project trusted as the
     /// person trusts it in the app, and one turn in it.
-    fn turn_in(served: &mut Served, space: Option<&Value>) -> Value {
-        let params = space.map_or_else(|| json!({}), |space| json!({ "space": space }));
+    fn turn_in(served: &mut Served, project: Option<&Value>) -> Value {
+        let params = project.map_or_else(|| json!({}), |project| json!({ "project": project }));
         let started = served.call("thread/start", &params);
         let thread = started["result"]["thread"].clone();
         if let Some(ask) = thread["trust"]["ask"].as_str() {
@@ -123,7 +123,10 @@ mod projects {
         let answers = (0..3).map(|_| Reply::text("Done.")).collect();
         let model = FakeServer::start(answers).unwrap();
         let mut served = Served::start(&place, &model, &["--sandbox", "off", "--approval", "auto"]);
-        let (alpha, beta) = (space_of(&mut served, &alpha), space_of(&mut served, &beta));
+        let (alpha, beta) = (
+            project_of(&mut served, &alpha),
+            project_of(&mut served, &beta),
+        );
         let in_alpha = turn_in(&mut served, Some(&alpha));
         turn_in(&mut served, Some(&beta));
         let chat = turn_in(&mut served, None);

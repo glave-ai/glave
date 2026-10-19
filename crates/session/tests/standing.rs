@@ -12,7 +12,7 @@ use crate::support::*;
 
 async fn listed<L: EventLog + 'static>(server: &Tested<L>, show: Show) -> Vec<ThreadId> {
     let request = Request::ThreadList {
-        space: Some(scope().space),
+        project: Some(scope().project),
         limit: None,
         show: Some(show),
         cursor: None,

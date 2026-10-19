@@ -72,8 +72,8 @@ mod loading {
             assert!(texts[0].starts_with("# AGENTS.md"), "{texts:?}");
             assert!(texts[1].starts_with("# Memory"), "{texts:?}");
             let personal = texts[1].find("Ada prefers short answers").unwrap();
-            let space = texts[1].find("Tests need make db first").unwrap();
-            assert!(personal < space, "{}", texts[1]);
+            let project = texts[1].find("Tests need make db first").unwrap();
+            assert!(personal < project, "{}", texts[1]);
             assert!(
                 texts[1].contains("(personal, saved 2026-10-03)"),
                 "{}",
@@ -288,7 +288,7 @@ mod loading {
     }
 
     #[test]
-    fn the_model_cannot_save_personal_memory_from_an_isolated_space() {
+    fn the_model_cannot_save_personal_memory_from_an_isolated_project() {
         block_on!(async {
             let kit = Kit::new();
             let memory = kit.memory(rules(), 1).await;

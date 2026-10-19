@@ -1,9 +1,9 @@
-//! Naming data keys: `v1/<space>/<YYYY-MM>/<n>`, the `key_id` stored beside sealed content.
+//! Naming data keys: `v1/<project>/<YYYY-MM>/<n>`, the `key_id` stored beside sealed content.
 
 use std::fmt;
 use std::str::FromStr;
 
-use glave_ports::SpaceId;
+use glave_ports::ProjectId;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
@@ -68,7 +68,7 @@ impl From<Month> for String {
     }
 }
 
-/// What one data key seals: a month of the space's content, or one item with a key of its own
+/// What one data key seals: a month of the project's content, or one item with a key of its own
 /// (`specs/memory.md`: each memory, so forgetting it erases every version at once; and each
 /// account a person connects, a model account or a git host, so removing it erases its key).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -89,11 +89,11 @@ impl fmt::Display for Period {
     }
 }
 
-/// Names one data key: the space it belongs to, what it seals, and which of that period's keys
+/// Names one data key: the project it belongs to, what it seals, and which of that period's keys
 /// it is (a month gets a new key after its key is destroyed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct KeyId {
-    pub space: SpaceId,
+    pub project: ProjectId,
     pub period: Period,
     pub n: u32,
 }
@@ -104,39 +104,39 @@ const VERSION: &str = "v1";
 
 impl fmt::Display for KeyId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{VERSION}/{}/{}/{}", self.space, self.period, self.n)
+        write!(f, "{VERSION}/{}/{}/{}", self.project, self.period, self.n)
     }
 }
 
 impl FromStr for KeyId {
     type Err = KeyError;
 
-    /// `v1/<space>/<YYYY-MM>/<n>`, `v1/<space>/memory/<memory>/<n>` or
-    /// `v1/<space>/provider/<account>/<n>`.
+    /// `v1/<project>/<YYYY-MM>/<n>`, `v1/<project>/memory/<memory>/<n>` or
+    /// `v1/<project>/provider/<account>/<n>`.
     fn from_str(text: &str) -> Result<Self, KeyError> {
         let invalid = || KeyError::InvalidKeyId(text.to_owned());
         let parts: Vec<&str> = text.split('/').collect();
-        let (space, period, n) = match parts.as_slice() {
-            [VERSION, space, month, n] => (*space, Period::Month(month.parse()?), *n),
-            [VERSION, space, "memory", memory, n] => (
-                *space,
+        let (project, period, n) = match parts.as_slice() {
+            [VERSION, project, month, n] => (*project, Period::Month(month.parse()?), *n),
+            [VERSION, project, "memory", memory, n] => (
+                *project,
                 Period::Memory(Uuid::parse_str(memory).map_err(|_| invalid())?),
                 *n,
             ),
-            [VERSION, space, "provider", account, n] => (
-                *space,
+            [VERSION, project, "provider", account, n] => (
+                *project,
                 Period::Account(Uuid::parse_str(account).map_err(|_| invalid())?),
                 *n,
             ),
             _ => return Err(invalid()),
         };
-        let space = Uuid::parse_str(space).map_err(|_| invalid())?;
+        let project = Uuid::parse_str(project).map_err(|_| invalid())?;
         let n: u32 = n.parse().map_err(|_| invalid())?;
         if n == 0 {
             return Err(invalid());
         }
         Ok(Self {
-            space: SpaceId::from_uuid(space),
+            project: ProjectId::from_uuid(project),
             period,
             n,
         })
@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn a_key_id_round_trips_through_its_text() {
         let id = KeyId {
-            space: SpaceId::from_uuid(Uuid::from_u128(5)),
+            project: ProjectId::from_uuid(Uuid::from_u128(5)),
             period: Period::Month("2026-10".parse().unwrap()),
             n: 2,
         };

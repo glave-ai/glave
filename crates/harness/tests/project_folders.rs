@@ -25,7 +25,7 @@ mod projects {
     use glave_ports::Caller;
     use glave_ports::computer::{Sandbox, SandboxLevel};
     use glave_ports::{
-        BoxFuture, Effect, InMemoryLog, InMemoryTools, Purpose, SpaceId, ToolInfo, ToolOutput,
+        BoxFuture, Effect, InMemoryLog, InMemoryTools, ProjectId, Purpose, ToolInfo, ToolOutput,
         ToolSpec,
     };
     use serde_json::json;
@@ -79,7 +79,7 @@ mod projects {
             })
         }
 
-        fn brought<'a>(&'a self, project: &'a Path, _space: SpaceId) -> BoxFuture<'a, Brought> {
+        fn brought<'a>(&'a self, project: &'a Path, _id: ProjectId) -> BoxFuture<'a, Brought> {
             if !self.on() {
                 return Box::pin(async { Brought::default() });
             }
@@ -297,7 +297,7 @@ mod projects {
             Box::pin(async { None })
         }
 
-        fn brought<'a>(&'a self, _project: &'a Path, _space: SpaceId) -> BoxFuture<'a, Brought> {
+        fn brought<'a>(&'a self, _project: &'a Path, _id: ProjectId) -> BoxFuture<'a, Brought> {
             Box::pin(async {
                 Brought {
                     settled: Settled {

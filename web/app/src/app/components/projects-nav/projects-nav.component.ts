@@ -26,7 +26,7 @@ import {
   navSections,
 } from '../../lib/nav';
 import { NavListsService } from '../../services/nav-lists.service';
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { FolderGoneComponent } from '../folder-gone/folder-gone.component';
 import { NavListMenuComponent } from '../nav-list-menu/nav-list-menu.component';
 import { NavThreadComponent } from '../nav-thread/nav-thread.component';
@@ -65,7 +65,7 @@ const PROJECT_ACTIONS: readonly GlzOption[] = [{ value: RENAME, label: 'Rename' 
  * row offers to start one, as the + beside Projects does once there are some.
  */
 @Component({
-  selector: 'app-spaces-nav',
+  selector: 'app-projects-nav',
   imports: [
     RouterLink,
     FolderGoneComponent,
@@ -79,11 +79,11 @@ const PROJECT_ACTIONS: readonly GlzOption[] = [{ value: RENAME, label: 'Rename' 
     NewProjectComponent,
     RenameDialogComponent,
   ],
-  templateUrl: './spaces-nav.component.html',
-  styleUrl: './spaces-nav.component.scss',
+  templateUrl: './projects-nav.component.html',
+  styleUrl: './projects-nav.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class SpacesNavComponent {
+export class ProjectsNavComponent {
   /** The thread shown now, to mark it current. */
   readonly current = input<string | null>(null);
   /** What to search the thread titles for. */
@@ -96,11 +96,11 @@ export class SpacesNavComponent {
   protected readonly newLink = '/';
   protected readonly lists = { projects: PROJECTS_LIST, chats: CHATS_LIST } as const;
   protected readonly projectActions = PROJECT_ACTIONS;
-  private readonly spaces = inject(SpacesService);
+  private readonly service = inject(ProjectsService);
   private readonly navLists = inject(NavListsService);
 
   private readonly sections = computed(() =>
-    navSections(this.spaces.spaces(), {
+    navSections(this.service.projects(), {
       query: this.query(),
       current: this.current(),
       collapsed: this.navLists.collapsed(),
@@ -112,7 +112,7 @@ export class SpacesNavComponent {
     this.projects().list.map((project) => ({
       ...project,
       newLabel: `${COPY.newIn} ${project.name}`,
-      newQuery: { space: project.id },
+      newQuery: { project: project.id },
       optionsLabel: `${COPY.optionsFor} ${project.name}`,
     })),
   );
@@ -124,10 +124,10 @@ export class SpacesNavComponent {
   /** Once the lists are read, with no project in them and no search, a row offers one. */
   protected readonly offerProject = computed(
     () =>
-      this.spaces.loaded() &&
-      this.spaces.error() === null &&
+      this.service.loaded() &&
+      this.service.error() === null &&
       this.query().trim() === '' &&
-      !this.spaces.spaces().some(({ space }) => space.kind === 'project'),
+      !this.service.projects().some(({ project }) => project.kind === 'project'),
   );
   protected readonly noMatch = computed(
     () => this.query().trim() !== '' && !this.hasChats() && !this.hasProjects(),
@@ -160,7 +160,7 @@ export class SpacesNavComponent {
       return;
     }
     try {
-      await this.spaces.rename(project.id, name);
+      await this.service.rename(project.id, name);
       this.renameError.set(null);
     } catch (error: unknown) {
       this.renameError.set(error instanceof Error ? error.message : String(error));

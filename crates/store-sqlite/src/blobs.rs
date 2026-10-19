@@ -48,21 +48,21 @@ impl BlobStore for SqliteBlobs {
                 .await
                 .map_err(|e| BlobError::Storage(format!("could not seal a blob: {e}")))?;
             run(&this.connection, move |connection| {
-                let (org, space) = (scope.org.to_string(), scope.space.to_string());
+                let (org, project) = (scope.org.to_string(), scope.project.to_string());
                 let transaction = connection.transaction()?;
                 // Storing it again re-seals it under this month's key.
                 transaction.execute(
-                    "INSERT INTO blobs (org, space, name, media_type, bytes, key_id)
+                    "INSERT INTO blobs (org, project, name, media_type, bytes, key_id)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-                     ON CONFLICT (org, space, name) DO UPDATE
+                     ON CONFLICT (org, project, name) DO UPDATE
                      SET media_type = excluded.media_type, bytes = excluded.bytes,
                          key_id = excluded.key_id",
-                    params![org, space, name, media_type, sealed.bytes, sealed.key_id],
+                    params![org, project, name, media_type, sealed.bytes, sealed.key_id],
                 )?;
                 transaction.execute(
-                    "INSERT OR IGNORE INTO blob_threads (org, space, name, thread)
+                    "INSERT OR IGNORE INTO blob_threads (org, project, name, thread)
                      VALUES (?1, ?2, ?3, ?4)",
-                    params![org, space, name, thread.to_string()],
+                    params![org, project, name, thread.to_string()],
                 )?;
                 transaction.commit()
             })
@@ -88,13 +88,13 @@ impl BlobStore for SqliteBlobs {
                 .map_err(|e| BlobError::Storage(e.to_string()))?;
             let lookup = name.clone();
             let row: Option<(Vec<u8>, Option<String>)> = run(&this.connection, move |connection| {
-                let (org, space) = (scope.org.to_string(), scope.space.to_string());
+                let (org, project) = (scope.org.to_string(), scope.project.to_string());
                 let sealed = match lookup {
                     Some(name) => connection
                         .query_row(
                             "SELECT bytes, key_id FROM blobs
-                             WHERE org = ?1 AND space = ?2 AND name = ?3 AND key_id IS NOT NULL",
-                            params![org, space, name],
+                             WHERE org = ?1 AND project = ?2 AND name = ?3 AND key_id IS NOT NULL",
+                            params![org, project, name],
                             |row| Ok((row.get(0)?, row.get(1)?)),
                         )
                         .optional()?,
@@ -107,8 +107,8 @@ impl BlobStore for SqliteBlobs {
                 connection
                     .query_row(
                         "SELECT bytes, NULL FROM blobs
-                         WHERE org = ?1 AND space = ?2 AND name = ?3 AND key_id IS NULL",
-                        params![org, space, sha256.as_str()],
+                         WHERE org = ?1 AND project = ?2 AND name = ?3 AND key_id IS NULL",
+                        params![org, project, sha256.as_str()],
                         |row| Ok((row.get(0)?, row.get(1)?)),
                     )
                     .optional()
@@ -125,7 +125,7 @@ impl BlobStore for SqliteBlobs {
                     .map(Some)
                     .map_err(|e| BlobError::Storage(format!("a blob could not be opened: {e}"))),
                 (Some(_), None) => Err(BlobError::Storage(
-                    "a sealed blob was found without its space key".into(),
+                    "a sealed blob was found without its project key".into(),
                 )),
             }
         }

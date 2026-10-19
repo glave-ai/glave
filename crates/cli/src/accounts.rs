@@ -1,7 +1,7 @@
-//! Where a person's accounts are kept: the accounts ledger in their personal space, glave's
+//! Where a person's accounts are kept: the accounts ledger in their personal project, glave's
 //! own stream under a reserved id, holding their model accounts and git hosts. Each
 //! `provider.connected` and `credential.connected` is sealed under a key of its own; removing
-//! an account records its removal and destroys that key, then rotates the space key, so
+//! an account records its removal and destroys that key, then rotates the project key, so
 //! neither the store nor a backup can read it again. A removed account whose key still opens,
 //! as after a crash between the two, has its key destroyed the next time the ledger is read.
 
@@ -83,9 +83,9 @@ struct Read {
 }
 
 impl Ledger {
-    /// The ledger of `person`, in their personal space in `store`.
+    /// The ledger of `person`, in their personal project in `store`.
     pub async fn open(store: &Data, person: PrincipalId) -> anyhow::Result<Self> {
-        let scope = crate::spaces::personal(store, person).await?;
+        let scope = crate::projects::personal(store, person).await?;
         Ok(Self {
             store: store.clone(),
             log: store.log(),

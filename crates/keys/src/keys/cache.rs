@@ -8,14 +8,14 @@ use glave_ports::{OrgId, Scope};
 use crate::key_id::{KeyId, Period};
 use crate::material::KeyMaterial;
 
-use super::hierarchy::SpaceKey;
+use super::hierarchy::ProjectKey;
 
 /// What an entry is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Slot {
     Org(OrgId),
-    Space(Scope, u32),
-    /// The space-key version in use.
+    Project(Scope, u32),
+    /// The project-key version in use.
     Live(Scope),
     Data(Scope, KeyId),
     /// The data key that seals a period's new content.
@@ -26,7 +26,7 @@ impl Slot {
     fn scope(&self) -> Option<Scope> {
         match self {
             Self::Org(_) => None,
-            Self::Space(scope, _)
+            Self::Project(scope, _)
             | Self::Live(scope)
             | Self::Data(scope, _)
             | Self::Sealing(scope, _) => Some(*scope),
@@ -37,7 +37,7 @@ impl Slot {
 #[derive(Debug, Clone)]
 pub(crate) enum Value {
     Key(KeyMaterial),
-    Space(SpaceKey),
+    Project(ProjectKey),
     Version(u32),
     Id(KeyId),
 }

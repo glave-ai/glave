@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use anyhow::bail;
-use glave_ports::SpaceId;
+use glave_ports::ProjectId;
 use glave_session::protocol::{NewFolder, Reply, Request};
 
 use crate::session::Wired;
@@ -53,21 +53,21 @@ impl Reached {
 
     /// The project `folder` leads to, made the first time, with `folder` as its folder: where
     /// its tasks and schedules' runs make their copies.
-    pub async fn project(&mut self, folder: &Path) -> anyhow::Result<SpaceId> {
+    pub async fn project(&mut self, folder: &Path) -> anyhow::Result<ProjectId> {
         let name = folder.file_name().map_or_else(
             || folder.to_string_lossy().into_owned(),
             |name| name.to_string_lossy().into_owned(),
         );
         let path = folder.to_string_lossy().into_owned();
-        let created = Request::SpaceCreate {
+        let created = Request::ProjectCreate {
             name,
             members: Vec::new(),
             folder: Some(NewFolder::Path { path }),
         };
-        let Reply::Space { space, .. } = self.request(created).await? else {
-            bail!("glave answered space/create with something else");
+        let Reply::Project { project, .. } = self.request(created).await? else {
+            bail!("glave answered project/create with something else");
         };
-        Ok(space.id)
+        Ok(project.id)
     }
 
     /// Lets go of a server in this process; a connection to the person's server just closes.

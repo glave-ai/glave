@@ -1,5 +1,5 @@
 //! Memory for one attempt (`specs/memory.md`, "Evals"): a sealed store of the attempt's own, the
-//! spaces its threads work in, glave's memory server over them when memory is on, the memories
+//! projects its threads work in, glave's memory server over them when memory is on, the memories
 //! seeded before the first thread, the past conversations `recall` searches, tidy-up when the
 //! task asks for it, and afterwards what the memory ledgers hold, for the checks.
 
@@ -14,7 +14,7 @@ use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory, Tidier, Writer};
 use glave_ports::memories::memory_ledger;
 use glave_ports::{
-    Clock as _, Entropy as _, EventLog, ModelProvider, OrgId, OsEntropy, Scope, SpaceId,
+    Clock as _, Entropy as _, EventLog, ModelProvider, OrgId, OsEntropy, ProjectId, Scope,
     SystemClock,
 };
 use glave_store_sqlite::{SqliteLog, Store};
@@ -34,9 +34,9 @@ fn org() -> OrgId {
     OrgId::from_uuid(uuid::Uuid::from_u128(1))
 }
 
-/// The space named `name`: the first thread's (`None`) is the one attempts always used.
-pub fn space(name: Option<&str>) -> Scope {
-    let space = match name {
+/// The project named `name`: the first thread's (`None`) is the one attempts always used.
+pub fn project(name: Option<&str>) -> Scope {
+    let project = match name {
         None => 2,
         Some(name) => name.bytes().fold(0x0100_u128, |sum, byte| {
             sum.wrapping_mul(31).wrapping_add(u128::from(byte))
@@ -44,15 +44,15 @@ pub fn space(name: Option<&str>) -> Scope {
     };
     Scope {
         org: org(),
-        space: SpaceId::from_uuid(uuid::Uuid::from_u128(space)),
+        project: ProjectId::from_uuid(uuid::Uuid::from_u128(project)),
     }
 }
 
-/// The person's own space, where their personal memory lives.
+/// The person's own project, where their personal memory lives.
 fn personal() -> Scope {
     Scope {
         org: org(),
-        space: SpaceId::from_uuid(uuid::Uuid::from_u128(100)),
+        project: ProjectId::from_uuid(uuid::Uuid::from_u128(100)),
     }
 }
 
@@ -65,14 +65,14 @@ fn setting(name: Option<&str>) -> SpaceMemory {
 pub struct Remembering {
     pub store: Store,
     pub memory: Option<Arc<GlaveMemory<SqliteLog>>>,
-    /// Every space the attempt uses, the person's own first.
+    /// Every project the attempt uses, the person's own first.
     scopes: Vec<Scope>,
 }
 
 /// What the memory ledgers hold once an attempt is over.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MemoryReport {
-    /// The text of every memory in force, in every space.
+    /// The text of every memory in force, in every project.
     pub live: Vec<String>,
     /// The text of every personal memory in force.
     pub personal: Vec<String>,
@@ -100,15 +100,15 @@ impl Remembering {
             ..Rules::default()
         };
         rules
-            .spaces
-            .insert(space(None).space, setting(task.space_memory.as_deref()));
-        let mut scopes = vec![personal(), space(None)];
+            .projects
+            .insert(project(None).project, setting(task.space_memory.as_deref()));
+        let mut scopes = vec![personal(), project(None)];
         for thread in &task.threads {
-            let here = space(thread.space.as_deref());
+            let here = project(thread.space.as_deref());
             if thread.space.is_some() {
                 rules
-                    .spaces
-                    .insert(here.space, setting(thread.space_memory.as_deref()));
+                    .projects
+                    .insert(here.project, setting(thread.space_memory.as_deref()));
             }
             if !scopes.contains(&here) {
                 scopes.push(here);
@@ -125,7 +125,7 @@ impl Remembering {
         };
         seed(&store, &rules, person, &task.memories).await?;
         for past in &task.past {
-            write_past(&store, space(past.space.as_deref()), &past.messages).await?;
+            write_past(&store, project(past.space.as_deref()), &past.messages).await?;
         }
         let memory = if on {
             Some(Arc::new(
@@ -141,7 +141,7 @@ impl Remembering {
         })
     }
 
-    /// Tidies every space's memory now, on `model`, whether or not it is due. What each run
+    /// Tidies every project's memory now, on `model`, whether or not it is due. What each run
     /// did, for the transcript.
     pub async fn tidy<P: ModelProvider>(
         &self,
@@ -248,7 +248,7 @@ async fn seed(
         );
         let writer = Writer {
             person: Some(person),
-            scope: space(None),
+            scope: project(None),
             by: Principal::person(person),
             source: None,
             untrusted_read: seed.untrusted,
@@ -305,13 +305,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn spaces_are_named_apart_and_the_first_is_the_usual_one() {
+    fn projects_are_named_apart_and_the_first_is_the_usual_one() {
         assert_eq!(
-            space(None).space,
-            SpaceId::from_uuid(uuid::Uuid::from_u128(2))
+            project(None).project,
+            ProjectId::from_uuid(uuid::Uuid::from_u128(2))
         );
-        assert_ne!(space(Some("client")), space(Some("other")));
-        assert_eq!(space(Some("client")), space(Some("client")));
-        assert_ne!(space(Some("client")), personal());
+        assert_ne!(project(Some("client")), project(Some("other")));
+        assert_eq!(project(Some("client")), project(Some("client")));
+        assert_ne!(project(Some("client")), personal());
     }
 }

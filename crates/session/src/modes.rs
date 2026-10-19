@@ -5,7 +5,7 @@
 
 use glave_event::{Body, ThreadId};
 use glave_harness::{HarnessError, Protections, Settled, Thread};
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, SpaceId};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
 
 use crate::protocol::{ApiError, ApprovalMode, code};
 use crate::server::{Glave, Server};
@@ -116,10 +116,10 @@ where
             .clone()
     }
 
-    /// What the project of `space` chooses for its threads: for the person on this
+    /// What the project of `project` chooses for its threads: for the person on this
     /// computer's threads.
-    pub(crate) async fn project_settled(&self, space: SpaceId) -> Settled {
-        match self.folder_here(space).await {
+    pub(crate) async fn project_settled(&self, project: ProjectId) -> Settled {
+        match self.folder_here(project).await {
             Ok(Some(folder)) => {
                 let folder = std::path::Path::new(&folder);
                 self.inner.harness.settled(folder).await

@@ -3,7 +3,7 @@ import type {
   ModelInfo,
   RawEvent,
   Remembered,
-  Space,
+  Project,
   TaskInfo,
   ThreadSummary,
   TrustAsk,
@@ -32,7 +32,7 @@ import { Refusal, THREAD, bound, call, done, event } from './fake-records';
 import { FAKE_SERVER, signIn } from './fake-signin';
 
 /**
- * What the fake server knows: a project and the person's own space with their threads, one
+ * What the fake server knows: a project and the person's own project with their threads, one
  * thread's history (a turn on this computer that ran a command, edited a file and wrote a new
  * one, and replied from the default model, which the picker shows; how long it took and what
  * it cost), another waiting for the person to allow a push, the models, the tasks, one
@@ -42,7 +42,7 @@ import { FAKE_SERVER, signIn } from './fake-signin';
  */
 const OWNER = { kind: 'person', id: '01900000-0000-7000-8000-0000000000aa' } as const;
 
-function space(id: string, name: string, kind: Space['kind']): Space {
+function record(id: string, name: string, kind: Project['kind']): Project {
   return {
     id,
     kind,
@@ -54,8 +54,8 @@ function space(id: string, name: string, kind: Space['kind']): Space {
   };
 }
 
-export const PROJECT = space('01900000-0000-7000-8000-000000000001', 'glave', 'project');
-export const PERSONAL = space('01900000-0000-7000-8000-000000000002', 'Personal', 'personal');
+export const PROJECT = record('01900000-0000-7000-8000-000000000001', 'glave', 'project');
+export const PERSONAL = record('01900000-0000-7000-8000-000000000002', 'Personal', 'personal');
 
 const TOKENS = { input: 1200, output: 300, cache_read: 0, cache_write: 0, reasoning: 0 };
 
@@ -63,12 +63,12 @@ function thread(
   id: string,
   title: string,
   status: ThreadSummary['status'] = 'idle',
-  inSpace = PROJECT,
+  inProject = PROJECT,
   more: Partial<ThreadSummary> = {},
 ): ThreadSummary {
   return {
     id,
-    space: inSpace.id,
+    project: inProject.id,
     status,
     standing: 'active',
     title,
@@ -215,7 +215,7 @@ const WAITING_HISTORY = [
  * A project whose folder brings its own tools and settings, not trusted yet, and its thread,
  * which asks the person to trust them (`fakeApi`'s `trust`).
  */
-const ACME = space('01900000-0000-7000-8000-000000000003', 'acme', 'project');
+const ACME = record('01900000-0000-7000-8000-000000000003', 'acme', 'project');
 export const TRUSTING = '01900000-0000-7000-8000-000000000107';
 
 /** What acme asks to be trusted, in the plain words the server sends. */
@@ -280,7 +280,7 @@ const HISTORIES: Readonly<Record<string, readonly RawEvent[]>> = {
 const TASKS: readonly TaskInfo[] = [
   {
     thread: '01900000-0000-7000-8000-000000000104',
-    space: PROJECT.id,
+    project: PROJECT.id,
     kind: 'agent',
     title: 'Nightly dependency audit',
     model: 'hope-12b',
@@ -292,7 +292,7 @@ const TASKS: readonly TaskInfo[] = [
   },
   {
     thread: '01900000-0000-7000-8000-000000000106',
-    space: PROJECT.id,
+    project: PROJECT.id,
     kind: 'agent',
     title: 'Summarize open issues',
     model: DEFAULT_MODEL,
@@ -332,10 +332,10 @@ export const MISSING_REPOSITORY = 'https://github.com/acme/missing';
 const CLONE_MS = 400;
 
 /**
- * Makes a project as `space/create` does: a name taken among the person's projects gets the
+ * Makes a project as `project/create` does: a name taken among the person's projects gets the
  * next free one, and a repository the host does not have is refused with what git said.
  */
-function makeProject(params: Record<string, unknown>, made: Space[]): unknown {
+function makeProject(params: Record<string, unknown>, made: Project[]): unknown {
   const folder = params['folder'] as { kind: string; url?: string } | null | undefined;
   const url = folder?.url ?? '';
   if (folder?.kind === 'repository' && !/^https:\/\/[^/@]+\/./u.test(url)) {
@@ -357,9 +357,9 @@ function makeProject(params: Record<string, unknown>, made: Space[]): unknown {
     name = `${asked} ${String(next)}`;
   }
   const id = `01900000-0000-7000-8000-${String(900 + made.length).padStart(12, '0')}`;
-  const project = { ...space(id, name, 'project'), created_at: LATER };
+  const project = { ...record(id, name, 'project'), created_at: LATER };
   made.push(project);
-  return { space: project };
+  return { project: project };
 }
 
 /** A request the fake answered: its method and params. */
@@ -612,7 +612,7 @@ interface Known {
   /** The threads started so far. */
   readonly started: ThreadSummary[];
   /** The projects made so far. */
-  readonly made: Space[];
+  readonly made: Project[];
   /** Acme's ask, when the test has acme. */
   readonly trust: Trust | null;
   /** The serving thread's commands, when the test has it. */
@@ -641,20 +641,20 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     return ran;
   }
   switch (method) {
-    case 'space/list': {
+    case 'project/list': {
       const lost = listedGone(gone);
-      return { spaces: [...made, ...lost.spaces, PROJECT, PERSONAL], gone: lost.gone };
+      return { projects: [...made, ...lost.projects, PROJECT, PERSONAL], gone: lost.gone };
     }
-    case 'space/create':
+    case 'project/create':
       return makeProject(params, made);
     case 'folder/list':
       return listFolders(typeof params['path'] === 'string' ? params['path'] : HOME);
     case 'thread/list': {
-      const space = String(params['space']);
-      const fresh = started.filter((each) => each.space === space);
+      const project = String(params['project']);
+      const fresh = started.filter((each) => each.project === project);
       const serving =
-        commands !== null && space === PROJECT.id ? [thread(SERVING, 'Preview the docs')] : [];
-      const threads = [...fresh, ...serving, ...(THREADS[space] ?? [])];
+        commands !== null && project === PROJECT.id ? [thread(SERVING, 'Preview the docs')] : [];
+      const threads = [...fresh, ...serving, ...(THREADS[project] ?? [])];
       return {
         threads: threads.map((each) =>
           touched.has(each.id) ? { ...each, updated_at: LATER } : each,
@@ -666,8 +666,8 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
     case 'thread/events':
       return { events: HISTORIES[String(params['thread'])] ?? [] };
     case 'thread/start': {
-      const inSpace = params['space'] === PERSONAL.id ? PERSONAL : PROJECT;
-      const fresh = thread(NEW_THREAD, '', 'idle', inSpace);
+      const inProject = params['project'] === PERSONAL.id ? PERSONAL : PROJECT;
+      const fresh = thread(NEW_THREAD, '', 'idle', inProject);
       started.push(fresh);
       return { thread: fresh };
     }
@@ -709,10 +709,10 @@ function answer(method: string, params: Record<string, unknown>, known: Known): 
 /** The answer to a call about acme, the project that asks to be trusted; else `undefined`. */
 function trusted(method: string, params: Record<string, unknown>, trust: Trust): unknown {
   switch (method) {
-    case 'space/list':
-      return { spaces: [ACME, PROJECT, PERSONAL] };
+    case 'project/list':
+      return { projects: [ACME, PROJECT, PERSONAL] };
     case 'thread/list':
-      return params['space'] === ACME.id ? { threads: [trusting(trust)] } : undefined;
+      return params['project'] === ACME.id ? { threads: [trusting(trust)] } : undefined;
     case 'thread/get':
       return params['thread'] === TRUSTING ? { thread: trusting(trust) } : undefined;
     case 'trust/answer':
@@ -778,7 +778,7 @@ export async function fakeApi(
       return;
     }
     const folder = message.params['folder'] as { kind: string } | null | undefined;
-    if (message.method === 'space/create' && folder?.kind === 'repository') {
+    if (message.method === 'project/create' && folder?.kind === 'repository') {
       await new Promise((resolve) => setTimeout(resolve, CLONE_MS));
     }
     if (message.method === 'command/stop') {

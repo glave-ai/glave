@@ -8,7 +8,7 @@ import { SessionService } from './session.service';
 export const TASKS_REFRESH_MS = 5_000;
 
 /**
- * The tasks of the server's own space: running here first, then elsewhere, then finished; and
+ * The tasks of the server's own project: running here first, then elsewhere, then finished; and
  * whether a schedule will start more. The one source for the Tasks page, the thread's tools
  * panel and the side nav's Tasks row; while any of them shows, they are read again every few
  * seconds, so cost and time stay current.

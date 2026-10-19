@@ -14,18 +14,18 @@ import { filter, map } from 'rxjs';
 import { pageFromUrl, threadFromUrl } from '../../lib/threads';
 import { NavService } from '../../services/nav.service';
 import { SessionService } from '../../services/session.service';
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { SideNavComponent } from '../side-nav/side-nav.component';
 
 const COPY = {
-  sideNav: 'Spaces and threads',
+  sideNav: 'Projects and threads',
   skip: 'Skip to content',
   resize: 'Resize the side bar',
   hint: 'Drag or use the arrow keys to resize; Enter collapses. Show or hide:',
 } as const;
 
 /**
- * The signed-in frame, in three panes: the side nav (threads by space, the pages, the person),
+ * The signed-in frame, in three panes: the side nav (threads by project, the pages, the person),
  * the page, and, in a thread, its tools. Each page has its own top bar. The side nav's edge
  * resizes and collapses it, and ⌘B or Ctrl+B shows or hides it anywhere.
  */
@@ -58,7 +58,7 @@ export class WorkspaceComponent {
   protected readonly currentPage = computed(() => pageFromUrl(this.url()));
 
   constructor() {
-    void inject(SpacesService).refresh();
+    void inject(ProjectsService).refresh();
     // A refused sign-in (or signing out) ends the session: back to the sign-in page.
     const session = inject(SessionService);
     effect(() => {

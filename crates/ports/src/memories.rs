@@ -39,7 +39,7 @@ pub struct MemoryContext {
     /// The agent that runs the thread: who a memory the model saves is `by`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<PrincipalId>,
-    /// The thread's organization and space.
+    /// The thread's organization and project.
     #[serde(flatten)]
     pub scope: Scope,
     /// The thread asking, and the `seq` a save in it is recorded at.
@@ -124,7 +124,7 @@ pub enum MemoryError {
     /// No such memory in the scopes the caller may read.
     #[error("{0}")]
     NotFound(String),
-    /// The caller may not do this: another person's memory, or a scope the space does not allow.
+    /// The caller may not do this: another person's memory, or a scope the project does not allow.
     #[error("{0}")]
     Refused(String),
     /// The request itself is wrong: too long, a credential, over the budget.
@@ -142,7 +142,7 @@ pub enum MemoryError {
 /// forgetting"). They are the person's actions, not the model's: no tool call, no judge.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
-    /// The memories of `scope`, or of both scopes the space allows.
+    /// The memories of `scope`, or of both scopes the project allows.
     List {
         scope: Option<MemoryScope>,
     },
@@ -172,7 +172,7 @@ pub enum Control {
     },
 }
 
-/// Who asks for a control, and in which space: the verified caller, never a parameter.
+/// Who asks for a control, and in which project: the verified caller, never a parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Access {
     pub person: Option<PrincipalId>,
@@ -181,9 +181,9 @@ pub struct Access {
 
 /// Memory, as the harness and the session API use it. glave's own is an in-process MCP server
 /// over the data store (`glave-memory`); any implementation must enforce scope itself, since
-/// the model's arguments never name a space.
+/// the model's arguments never name a project.
 pub trait Memory: Send + Sync {
-    /// Whether memory is read and written at all in threads of `on`: the space's setting.
+    /// Whether memory is read and written at all in threads of `on`: the project's setting.
     /// When it is not, the model is sent exactly what it would be without memory.
     fn active(&self, on: &MemoryContext) -> bool;
 

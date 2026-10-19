@@ -6,7 +6,7 @@
 use glave_event::{Seq, ThreadId};
 use glave_harness::{Change, Protections, standing_of};
 use glave_ports::{
-    BlobStore, Caller, EventLog, ModelProvider, Scope, SpaceId, Standing, ThreadCursor,
+    BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, Standing, ThreadCursor,
     ThreadQuery, ThreadView, title_of,
 };
 use tokio::sync::watch;
@@ -26,23 +26,23 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Answers `thread/start`: a thread for `caller` in `space`, as [`Server::new_thread`]
+    /// Answers `thread/start`: a thread for `caller` in `project`, as [`Server::new_thread`]
     /// places it.
     pub(crate) async fn start_thread(
         &self,
         caller: &Caller,
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
         worktree: Option<bool>,
         background: bool,
         choice: &Choice,
     ) -> Result<Reply, ApiError> {
-        let space = self.space_for(caller, space).await?.id;
+        let project = self.project_for(caller, project).await?.id;
         let thread = self
-            .new_thread(caller, space, worktree, background, choice)
+            .new_thread(caller, project, worktree, background, choice)
             .await?;
         let scope = Scope {
             org: self.inner.home.org,
-            space,
+            project,
         };
         self.opened(caller, scope, thread).await
     }
@@ -73,7 +73,7 @@ where
         thread: ThreadId,
     ) -> Result<Reply, ApiError> {
         let summary = self.summary(scope, thread).await?;
-        let ask = self.trust_in(caller, scope.space).await;
+        let ask = self.trust_in(caller, scope.project).await;
         Ok(Reply::Thread {
             thread: self.asking(summary, ask.as_ref(), true),
         })
@@ -142,28 +142,28 @@ where
         let scope = self.scope_of(thread).await?;
         let summary = self.summary(scope, thread).await?;
         let ask = self
-            .trust_on_page(caller, scope.space, std::iter::once(thread))
+            .trust_on_page(caller, scope.project, std::iter::once(thread))
             .await;
         Ok(Reply::Thread {
             thread: self.asking(summary, ask.as_ref(), false),
         })
     }
 
-    /// Answers `thread/list`: a page of the threads of `show` in `space`, as `thread/start`
+    /// Answers `thread/list`: a page of the threads of `show` in `project`, as `thread/start`
     /// picks it, most recently updated first, from the threads view: its cost is the page's,
-    /// however many threads the space has.
+    /// however many threads the project has.
     pub(crate) async fn list_threads(
         &self,
         caller: &Caller,
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
         limit: Option<usize>,
         show: Option<Show>,
         cursor: Option<String>,
     ) -> Result<Reply, ApiError> {
-        let space = self.space_for(caller, space).await?.id;
+        let project = self.project_for(caller, project).await?.id;
         let scope = Scope {
             org: self.inner.home.org,
-            space,
+            project,
         };
         let limit = limit.unwrap_or(20).clamp(1, MAX_PAGE);
         let after = cursor
@@ -193,9 +193,9 @@ where
                 views.last().map(|view| view.cursor().to_string())
             })
             .flatten();
-        let project = self.project_settled(space).await.protections;
+        let protections = self.project_settled(project).await.protections;
         let ask = self
-            .trust_on_page(caller, space, views.iter().map(|view| view.thread))
+            .trust_on_page(caller, project, views.iter().map(|view| view.thread))
             .await;
         let mut threads = Vec::with_capacity(views.len());
         for view in views {
@@ -203,7 +203,7 @@ where
                 continue;
             }
             self.place(view.thread, scope);
-            let summary = self.summarize(scope, view, project).await?;
+            let summary = self.summarize(scope, view, protections).await?;
             threads.push(self.asking(summary, ask.as_ref(), false));
         }
         Ok(Reply::Threads { threads, next })
@@ -228,22 +228,22 @@ where
                 .map_err(|e| failed(&e))?
                 .ok_or_else(|| no_thread(thread))?,
         };
-        let project = self.project_settled(scope.space).await.protections;
-        self.summarize(scope, view, project).await
+        let protections = self.project_settled(scope.project).await.protections;
+        self.summarize(scope, view, protections).await
     }
 
     /// A view as the API shows it: what the thread is doing now, its title, read from the one
-    /// event that gives it, and the mode it runs in, as its project changes it (`project`)
+    /// event that gives it, and the mode it runs in, as its project changes it (`protections`)
     /// when it is the person on this computer's.
     async fn summarize(
         &self,
         scope: Scope,
         view: ThreadView,
-        project: Protections,
+        protections: Protections,
     ) -> Result<ThreadSummary, ApiError> {
         let theirs = view.for_.as_ref().and_then(|whose| whose.id);
-        let project = if theirs.is_none_or(|person| Some(person) == self.person()) {
-            project
+        let protections = if theirs.is_none_or(|person| Some(person) == self.person()) {
+            protections
         } else {
             Protections::default()
         };
@@ -263,11 +263,11 @@ where
         };
         Ok(ThreadSummary {
             id: view.thread,
-            space: scope.space,
+            project: scope.project,
             status: self.status(view.thread),
             standing: view.standing,
             title,
-            approval: self.approval_now(&scope, view.thread, project).await?,
+            approval: self.approval_now(&scope, view.thread, protections).await?,
             trust: None,
             for_: view.for_,
             origin: view.origin,

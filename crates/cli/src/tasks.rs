@@ -9,7 +9,7 @@ use std::process::ExitCode;
 use anyhow::{Context as _, bail};
 use glave_event::{At, ScheduleId, ThreadId, When};
 use glave_harness::DEFAULT_BUDGET;
-use glave_ports::SpaceId;
+use glave_ports::ProjectId;
 use glave_session::protocol::{Reply, Request};
 use jiff::Timestamp;
 use uuid::Uuid;
@@ -152,9 +152,9 @@ pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
         );
     };
     let mut server = Reached::Server(server);
-    let space = server.project(&folder).await?;
+    let project = server.project(&folder).await?;
     let started = Request::ThreadStart {
-        space: Some(space),
+        project: Some(project),
         worktree: None,
         background: true,
         computer: None,
@@ -192,8 +192,8 @@ pub async fn background(args: &Args) -> anyhow::Result<ExitCode> {
 
 /// Adds the schedule `request` asks for in this folder's project.
 async fn add_schedule(server: &mut Reached, mut request: Request) -> anyhow::Result<()> {
-    if let Request::ScheduleCreate { space, .. } = &mut request {
-        *space = Some(server.project(&std::env::current_dir()?).await?);
+    if let Request::ScheduleCreate { project, .. } = &mut request {
+        *project = Some(server.project(&std::env::current_dir()?).await?);
     }
     let Reply::Schedule { schedule } = server.request(request).await? else {
         bail!("glave answered schedule/create with something else");
@@ -221,8 +221,8 @@ async fn remove_schedule(server: &mut Reached, schedule: ScheduleId) -> anyhow::
     Ok(())
 }
 
-/// `schedule/create` in `space` from the words after `glave schedule add`.
-fn schedule_request(words: &[String], space: Option<SpaceId>) -> anyhow::Result<Request> {
+/// `schedule/create` in `project` from the words after `glave schedule add`.
+fn schedule_request(words: &[String], project: Option<ProjectId>) -> anyhow::Result<Request> {
     let mut when = None;
     let mut goal = false;
     let mut budget = DEFAULT_BUDGET;
@@ -259,7 +259,7 @@ fn schedule_request(words: &[String], space: Option<SpaceId>) -> anyhow::Result<
         bail!("glave schedule add needs a prompt");
     }
     Ok(Request::ScheduleCreate {
-        space,
+        project,
         when,
         prompt,
         goal,

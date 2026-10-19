@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use glave_keys::{InMemoryRoot, KeyFileRoot, KeySettings};
-use glave_ports::{EventLog, Spaces as _, Standing, ThreadQuery, block_on, conformance};
+use glave_ports::{EventLog, Projects as _, Standing, ThreadQuery, block_on, conformance};
 use uuid::Uuid;
 
 use super::*;
@@ -72,12 +72,12 @@ fn the_blobs_pass_the_blob_store_conformance_suite() {
     assert_eq!(block_on!(conformance::blob_store(&store.blobs())), Ok(()));
 }
 
-/// A project space for `path`'s folder, with ids from `n`.
-fn project(n: u128, owner: &glave_event::Principal) -> glave_ports::Space {
+/// A project for `path`'s folder, with ids from `n`.
+fn record(n: u128, owner: &glave_event::Principal) -> glave_ports::Project {
     let at = glave_event::At::try_from("2026-10-11T09:00:00.000Z".to_owned()).unwrap();
-    glave_ports::Space {
-        id: glave_ports::SpaceId::from_uuid(Uuid::from_u128(n)),
-        kind: glave_ports::SpaceKind::Project,
+    glave_ports::Project {
+        id: glave_ports::ProjectId::from_uuid(Uuid::from_u128(n)),
+        kind: glave_ports::ProjectKind::Project,
         name: "app".into(),
         owner: owner.clone(),
         members: Vec::new(),
@@ -127,39 +127,39 @@ fn the_identity_is_kept_the_first_time_and_survives_reopening() {
 }
 
 #[test]
-fn events_and_spaces_survive_closing_and_reopening() {
+fn events_and_projects_survive_closing_and_reopening() {
     let path = temp_db("reopen");
     block_on!(async {
         let store = Store::open(&path, file_keys(&path)).await.unwrap();
         assert_eq!(conformance::event_log(&store.log()).await, Ok(()));
         let org = store.org(Uuid::from_u128(1)).await.unwrap();
         let key = [glave_ports::FolderKey::Path("/work/app".into())];
-        let space = store
-            .spaces()
-            .folder(org, &key, &project(2, &ada()))
+        let project = store
+            .projects()
+            .folder(org, &key, &record(2, &ada()))
             .await
             .unwrap();
         drop(store);
         let reopened = Store::open(&path, file_keys(&path)).await.unwrap();
         assert_eq!(reopened.org(Uuid::max()).await.unwrap(), org);
         let again = reopened
-            .spaces()
-            .folder(org, &key, &project(3, &ada()))
+            .projects()
+            .folder(org, &key, &record(3, &ada()))
             .await
             .unwrap();
-        assert_eq!(space, again, "the folder keeps its space across runs");
+        assert_eq!(project, again, "the folder keeps its project across runs");
     });
 }
 
 #[test]
-fn the_spaces_pass_the_spaces_conformance_suite() {
+fn the_projects_pass_the_projects_conformance_suite() {
     let store = Store::open_in_memory(keys()).unwrap();
-    assert_eq!(block_on!(conformance::spaces(&store.spaces())), Ok(()));
+    assert_eq!(block_on!(conformance::projects(&store.projects())), Ok(()));
 }
 
 #[test]
-fn spaces_from_before_records_become_records_and_are_claimed() {
-    let path = temp_db("spaces-migration");
+fn projects_from_before_records_become_records_and_are_claimed() {
+    let path = temp_db("projects-migration");
     let person = "0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10";
     {
         let mut connection = rusqlite::Connection::open(&path).unwrap();
@@ -181,30 +181,30 @@ fn spaces_from_before_records_become_records_and_are_claimed() {
     block_on!(async {
         let store = Store::open(&path, keys()).await.unwrap();
         let org = store.org(Uuid::max()).await.unwrap();
-        let spaces = store.spaces();
-        let app = glave_ports::SpaceId::from_uuid(Uuid::from_u128(2));
-        let before = spaces.get(org, app).await.unwrap().unwrap();
+        let projects = store.projects();
+        let app = glave_ports::ProjectId::from_uuid(Uuid::from_u128(2));
+        let before = projects.get(org, app).await.unwrap().unwrap();
         assert_eq!(before.name, "app");
-        assert_eq!(before.kind, glave_ports::SpaceKind::Project);
+        assert_eq!(before.kind, glave_ports::ProjectKind::Project);
         assert!(!before.admits(&ada()), "no one's until claimed");
-        assert_eq!(store.claim_spaces(&ada()).await.unwrap(), 1);
-        let found = spaces
+        assert_eq!(store.claim_projects(&ada()).await.unwrap(), 1);
+        let found = projects
             .folder(
                 org,
                 &[glave_ports::FolderKey::Path("/work/app".into())],
-                &project(9, &ada()),
+                &record(9, &ada()),
             )
             .await
             .unwrap();
-        assert_eq!(found.id, app, "the folder still leads to its space");
+        assert_eq!(found.id, app, "the folder still leads to its project");
         assert!(found.admits(&ada()));
-        let mut inbox = project(10, &ada());
-        inbox.kind = glave_ports::SpaceKind::Personal;
-        let personal = spaces.personal(org, &inbox).await.unwrap();
+        let mut inbox = record(10, &ada());
+        inbox.kind = glave_ports::ProjectKind::Personal;
+        let personal = projects.personal(org, &inbox).await.unwrap();
         assert_eq!(
             personal.id,
-            glave_ports::SpaceId::from_uuid(Uuid::from_u128(3)),
-            "the stand-in personal space is the person's personal space, memories and all"
+            glave_ports::ProjectId::from_uuid(Uuid::from_u128(3)),
+            "the stand-in personal project is the person's personal project, memories and all"
         );
         assert_eq!(personal.name, "Chats");
     });
@@ -231,7 +231,57 @@ fn a_database_at_schema_4_gains_the_search_index_and_searches_new_events() {
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
     assert_eq!(version, schema::current());
-    assert_eq!(version, 5, "the search index is migration 5");
+}
+
+/// What a database at schema 5 kept under spaces' names reads the same under projects': its
+/// records, members and folders through the store, and its search index row for row.
+#[test]
+fn a_database_at_schema_5_keeps_its_rows_under_projects_names() {
+    let path = temp_db("projects-rename");
+    let owner = projects::principal_text(&ada()).unwrap();
+    let org = "00000000-0000-0000-0000-000000000001";
+    let app = "00000000-0000-0000-0000-000000000002";
+    {
+        let mut connection = rusqlite::Connection::open(&path).unwrap();
+        let transaction = connection.transaction().unwrap();
+        for sql in schema::MIGRATIONS.iter().take(5) {
+            transaction.execute_batch(sql).unwrap();
+        }
+        transaction.pragma_update(None, "user_version", 5).unwrap();
+        transaction
+            .execute_batch(&format!(
+                "INSERT INTO settings (key, value) VALUES ('org', '{org}');
+                 INSERT INTO space_records VALUES
+                     ('{org}', '{app}', 'project', 'app', '{owner}', '2026-10-01T00:00:00.000Z',
+                      '2026-10-01T00:00:00.000Z');
+                 INSERT INTO space_members VALUES ('{org}', '{app}', 0, '{owner}');
+                 INSERT INTO space_folders VALUES ('{org}', 'path:/work/app', '{app}');
+                 INSERT INTO event_search (terms, org, space, thread, seq)
+                     VALUES ('f00d', '{org}', '{app}', 't', 1);"
+            ))
+            .unwrap();
+        transaction.commit().unwrap();
+    }
+    block_on!(async {
+        let store = Store::open(&path, keys()).await.unwrap();
+        let org = store.org(Uuid::max()).await.unwrap();
+        let id = glave_ports::ProjectId::from_uuid(Uuid::from_u128(2));
+        let kept = store.projects().get(org, id).await.unwrap().unwrap();
+        assert_eq!((kept.name.as_str(), kept.members.len()), ("app", 1));
+        let key = [glave_ports::FolderKey::Path("/work/app".into())];
+        let projects = store.projects();
+        let found = projects.folder(org, &key, &record(9, &ada())).await;
+        assert_eq!(found.unwrap().id, id, "the folder still leads to it");
+    });
+    let raw = rusqlite::Connection::open(&path).unwrap();
+    let searched: String = raw
+        .query_row(
+            "SELECT project FROM event_search WHERE event_search MATCH 'f00d'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(searched, app, "the search index kept its rows");
 }
 
 #[test]
@@ -246,29 +296,29 @@ fn a_newer_schema_is_refused() {
 }
 
 #[test]
-fn folders_get_their_own_spaces_in_one_organization() {
+fn folders_get_their_own_projects_in_one_organization() {
     let store = Store::open_in_memory(keys()).unwrap();
     block_on!(async {
         let org = store.org(Uuid::from_u128(1)).await.unwrap();
-        let spaces = store.spaces();
+        let projects = store.projects();
         let path = |p: &str| [glave_ports::FolderKey::Path(p.into())];
-        let a = spaces
-            .folder(org, &path("/work/a"), &project(2, &ada()))
+        let a = projects
+            .folder(org, &path("/work/a"), &record(2, &ada()))
             .await
             .unwrap();
-        let b = spaces
-            .folder(org, &path("/work/b"), &project(4, &ada()))
+        let b = projects
+            .folder(org, &path("/work/b"), &record(4, &ada()))
             .await
             .unwrap();
-        assert_ne!(a.id, b.id, "each folder is its own space");
-        let scope = glave_ports::Scope { org, space: a.id };
+        assert_ne!(a.id, b.id, "each folder is its own project");
+        let scope = glave_ports::Scope { org, project: a.id };
         let query = ThreadQuery {
             standing: Standing::Active,
             limit: 10,
             after: None,
         };
         let threads = store.log().thread_views(&scope, &query).await.unwrap();
-        assert!(threads.is_empty(), "a new space has no threads");
+        assert!(threads.is_empty(), "a new project has no threads");
     });
 }
 
@@ -282,7 +332,7 @@ fn the_log_passes_the_threads_view_conformance_suite() {
 fn views(path: &std::path::Path) -> Vec<(String, String, String, String)> {
     let connection = rusqlite::Connection::open(path).unwrap();
     let mut statement = connection
-        .prepare("SELECT org, space, thread, view FROM threads ORDER BY org, space, thread")
+        .prepare("SELECT org, project, thread, view FROM threads ORDER BY org, project, thread")
         .unwrap();
     statement
         .query_map([], |row| {

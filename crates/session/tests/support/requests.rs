@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use glave_event::{Body, Opened, RawEvent, ThreadId, decode};
-use glave_ports::{Caller, EventLog, SpaceId};
+use glave_ports::{Caller, EventLog, ProjectId};
 use glave_session::TurnStream;
 use glave_session::protocol::{
     ApiError, IdempotencyKey, Meta, NewFolder, Reply, Request, TaskInfo, TaskStatus,
@@ -13,12 +13,12 @@ use glave_session::protocol::{
 use super::setup::{Tested, scope};
 
 /// A project called `name` whose folder is `path`, on this computer.
-pub async fn project<L: EventLog + 'static>(
+pub async fn make_project<L: EventLog + 'static>(
     server: &Tested<L>,
     name: &str,
     path: &Path,
-) -> SpaceId {
-    let made = Request::SpaceCreate {
+) -> ProjectId {
+    let made = Request::ProjectCreate {
         name: name.into(),
         members: Vec::new(),
         folder: Some(NewFolder::Path {
@@ -26,19 +26,19 @@ pub async fn project<L: EventLog + 'static>(
         }),
     };
     match server.request(made).await.unwrap() {
-        Reply::Space { space, .. } => space.id,
-        other => panic!("a space, not {other:?}"),
+        Reply::Project { project, .. } => project.id,
+        other => panic!("a project, not {other:?}"),
     }
 }
 
-/// Starts a thread to run tasks in, in `space` (by default the server's own): on a copy of
+/// Starts a thread to run tasks in, in `project` (by default the server's own): on a copy of
 /// its own.
 pub async fn start_for_tasks<L: EventLog + 'static>(
     server: &Tested<L>,
-    space: Option<SpaceId>,
+    project: Option<ProjectId>,
 ) -> Result<ThreadId, ApiError> {
     let started = Request::ThreadStart {
-        space: space.or(Some(scope().space)),
+        project: project.or(Some(scope().project)),
         background: true,
         worktree: None,
         computer: None,
@@ -69,7 +69,7 @@ pub async fn opened<L: EventLog + 'static>(
 /// Starts a thread, in a worktree of its own when `worktree`.
 pub async fn start<L: EventLog + 'static>(server: &Tested<L>, worktree: bool) -> ThreadId {
     let started = Request::ThreadStart {
-        space: Some(scope().space),
+        project: Some(scope().project),
         background: false,
         worktree: worktree.then_some(true),
         computer: None,

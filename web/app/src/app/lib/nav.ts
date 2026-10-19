@@ -1,20 +1,20 @@
-import type { Space, ThreadSummary } from '@glave/client';
+import type { Project, ThreadSummary } from '@glave/client';
 
 import { type ThreadMark, threadMark, threadTitle } from './threads';
 
-/** What the side nav calls the person's own chats (their personal spaces' threads). */
+/** What the side nav calls the person's own chats (their personal projects' threads). */
 const CHATS = 'Chats';
 
-/** The side nav's own lists, whose state is kept beside each project's (its space's id). */
+/** The side nav's own lists, whose state is kept beside each project's (its project's id). */
 export const PROJECTS_LIST = 'projects';
 export const CHATS_LIST = 'chats';
 
 /** How a list in the side nav is sorted: by its latest activity (the default), or by name. */
 export type NavSort = 'recent' | 'name';
 
-/** A space with its threads, as the spaces service reads them. */
-export interface SpaceWithThreads {
-  readonly space: Space;
+/** A project with its threads, as the projects service reads them. */
+export interface ProjectWithThreads {
+  readonly project: Project;
   readonly threads: readonly ThreadSummary[];
   /** What the server says when the project's folder isn't there anymore. */
   readonly gone?: string;
@@ -41,7 +41,7 @@ interface NavHeading {
 
 /** A project in the side nav, with its threads. */
 export interface NavProject extends NavHeading {
-  /** The project's space, where a new thread from its + starts. */
+  /** The project's project, where a new thread from its + starts. */
   readonly id: string;
   readonly name: string;
   readonly threads: readonly NavThread[];
@@ -52,7 +52,7 @@ export interface NavProject extends NavHeading {
 /** What the side nav lists: each project with its threads, then the person's own chats. */
 export interface NavSections {
   readonly projects: NavHeading & { readonly list: readonly NavProject[] };
-  /** Every personal space's threads together. */
+  /** Every personal project's threads together. */
   readonly chats: NavHeading & { readonly list: readonly NavThread[] };
 }
 
@@ -98,19 +98,19 @@ export function matchesQuery(title: string, query: string): boolean {
 
 /**
  * The side nav's lists: each project with its threads, then the person's own chats (every
- * personal space's threads together). Each list is sorted as the person chose, by its latest
+ * personal project's threads together). Each list is sorted as the person chose, by its latest
  * activity unless by name, and whatever waits for the person comes first: a project with its
  * threads, a thread with the threads it started, which sit under it. A project's activity is
  * its latest thread's (its making, before it has one). A search keeps only the threads whose
  * title matches, and the projects that have one, all shown open; without one, every project
  * shows, each list closed as the person left it.
  */
-export function navSections(spaces: readonly SpaceWithThreads[], view: NavView): NavSections {
-  const projects = spaces
-    .filter(({ space }) => space.kind === 'project')
-    .map(({ space, threads, gone }) => rankedProject(space, threads, view, gone ?? null))
+export function navSections(lists: readonly ProjectWithThreads[], view: NavView): NavSections {
+  const projects = lists
+    .filter(({ project }) => project.kind === 'project')
+    .map(({ project, threads, gone }) => rankedProject(project, threads, view, gone ?? null))
     .filter(({ item }) => !searching(view) || item.threads.length > 0);
-  const chats = threadTree(personalThreads(spaces), view, view.byName.has(CHATS_LIST));
+  const chats = threadTree(personalThreads(lists), view, view.byName.has(CHATS_LIST));
   return {
     projects: {
       ...heading(
@@ -125,17 +125,17 @@ export function navSections(spaces: readonly SpaceWithThreads[], view: NavView):
 }
 
 /** Every thread that needs the person (an approval or a question), newest first, with its place. */
-export function waitingThreads(spaces: readonly SpaceWithThreads[]): readonly WaitingThread[] {
+export function waitingThreads(projects: readonly ProjectWithThreads[]): readonly WaitingThread[] {
   const places = new Map(
-    spaces.map(({ space }) => [space.id, space.kind === 'project' ? space.name : CHATS]),
+    projects.map(({ project }) => [project.id, project.kind === 'project' ? project.name : CHATS]),
   );
-  return newestFirst(spaces.flatMap(({ threads }) => threads))
+  return newestFirst(projects.flatMap(({ threads }) => threads))
     .filter((thread) => thread.status === 'waiting')
     .map((thread) => ({
       id: thread.id,
       link: ['/t', thread.id],
       title: threadTitle(thread),
-      place: places.get(thread.space) ?? CHATS,
+      place: places.get(thread.project) ?? CHATS,
     }));
 }
 
@@ -154,26 +154,26 @@ function heading(list: string, waiting: boolean, view: NavView): NavHeading {
 }
 
 function rankedProject(
-  space: Space,
+  project: Project,
   threads: readonly ThreadSummary[],
   view: NavView,
   gone: string | null,
 ): Ranked<NavProject> {
-  const tree = threadTree(threads, view, view.byName.has(space.id));
-  const shown = heading(space.id, tree.waiting, view);
+  const tree = threadTree(threads, view, view.byName.has(project.id));
+  const shown = heading(project.id, tree.waiting, view);
   return {
     item: {
       ...shown,
       // A folder that went is marked open or closed: nothing runs there until it is found.
       mark: gone === null ? shown.mark : { text: gone, tone: 'warning', variant: 'dot' },
-      id: space.id,
-      name: space.name,
+      id: project.id,
+      name: project.name,
       threads: tree.list,
       gone,
     },
     waiting: tree.waiting,
-    latest: [space.created_at, ...threads.map((thread) => thread.updated_at)].reduce(later),
-    name: space.name,
+    latest: [project.created_at, ...threads.map((thread) => thread.updated_at)].reduce(later),
+    name: project.name,
   };
 }
 
@@ -236,8 +236,10 @@ function later(a: string, b: string): string {
   return a.localeCompare(b) >= 0 ? a : b;
 }
 
-function personalThreads(spaces: readonly SpaceWithThreads[]): readonly ThreadSummary[] {
-  return spaces.filter(({ space }) => space.kind === 'personal').flatMap(({ threads }) => threads);
+function personalThreads(projects: readonly ProjectWithThreads[]): readonly ThreadSummary[] {
+  return projects
+    .filter(({ project }) => project.kind === 'personal')
+    .flatMap(({ threads }) => threads);
 }
 
 function newestFirst(threads: readonly ThreadSummary[]): readonly ThreadSummary[] {

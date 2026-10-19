@@ -35,7 +35,7 @@ import {
 } from '../../lib/projects';
 import { CredentialsService } from '../../services/credentials.service';
 import { SessionService } from '../../services/session.service';
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { FolderPickerComponent } from '../folder-picker/folder-picker.component';
 
 const COPY = {
@@ -122,7 +122,7 @@ export class NewProjectComponent {
   protected readonly folderLabelId = injectId('new-project-folder');
   protected readonly cloningId = injectId('new-project-cloning');
   private readonly session = inject(SessionService);
-  private readonly spaces = inject(SpacesService);
+  private readonly projects = inject(ProjectsService);
   private readonly credentials = inject(CredentialsService);
   private readonly router = inject(Router);
   private readonly announcer = inject(LiveAnnouncer);
@@ -238,14 +238,14 @@ export class NewProjectComponent {
       void this.announcer.announce(COPY.cloning);
     }
     try {
-      const space = await this.spaces.create(params);
+      const project = await this.projects.create(params);
       this.keep = false;
-      void this.announcer.announce(`${COPY.created} ${space.name}`);
+      void this.announcer.announce(`${COPY.created} ${project.name}`);
       if (this.open()) {
         // A drawer closes first, so the composer can take focus once the page is shown.
         this.open.set(false);
         this.navigated.emit();
-        await this.router.navigate(['/'], { queryParams: { space: space.id } });
+        await this.router.navigate(['/'], { queryParams: { project: project.id } });
       }
     } catch (error: unknown) {
       this.keep = true;

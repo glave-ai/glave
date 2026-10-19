@@ -10,9 +10,9 @@ const NOT_SAID = /\bspaces?\b|workspace|policy|organization|member|admin|config\
 /** The projects the fake makes, by id, in order. */
 const FIRST = '01900000-0000-7000-8000-000000000900';
 
-/** What `space/create` was asked. */
+/** What `project/create` was asked. */
 function created(requests: readonly Request[]): readonly Record<string, unknown>[] {
-  return requests.filter(({ method }) => method === 'space/create').map(({ params }) => params);
+  return requests.filter(({ method }) => method === 'project/create').map(({ params }) => params);
 }
 
 /** Checks the page with axe in light and in dark. */
@@ -62,12 +62,12 @@ test('a project made from a folder picked on this computer, then its first threa
   await byTestId(page, 'new-project-create').click();
   // The person already has a glave, so the server calls this one glave 2, as the app does.
   await expect(dialog).toBeHidden();
-  await expect(page).toHaveURL(new RegExp(`/\\?space=${FIRST}$`, 'u'));
+  await expect(page).toHaveURL(new RegExp(`/\\?project=${FIRST}$`, 'u'));
   // The cursor waits in the composer for the project's first message.
   await expect(byTestId(page, 'home-composer-input')).toBeFocused();
   await expect(byTestId(page, 'home-where-trigger')).toContainText('glave 2');
   // glave, where a thread waits for the person, stays first; then the project just made.
-  await expect(byTestId(page, 'nav-space-toggle')).toHaveText(['glave', 'glave 2']);
+  await expect(byTestId(page, 'nav-project-toggle')).toHaveText(['glave', 'glave 2']);
   expect(created(api.requests)).toEqual([
     { name: 'glave', folder: { kind: 'path', path: '/Users/ana/code/glave' } },
   ]);
@@ -77,7 +77,7 @@ test('a project made from a folder picked on this computer, then its first threa
   await byTestId(page, 'home-composer-input').press('Enter');
   await expect(page).toHaveURL(/\/t\//u);
   const started = api.requests.filter(({ method }) => method === 'thread/start');
-  expect(started.at(-1)?.params['space']).toBe(FIRST);
+  expect(started.at(-1)?.params['project']).toBe(FIRST);
   expect(problems()).toEqual([]);
 });
 
@@ -115,7 +115,7 @@ test('a repository clones while it shows, and a refusal is told in the server’
   await byTestId(page, 'new-project-url').fill('https://github.com/acme/site.git');
   await byTestId(page, 'new-project-url').press('Enter');
   await expect(byTestId(page, 'new-project')).toBeHidden();
-  await expect(page).toHaveURL(/\?space=/u);
+  await expect(page).toHaveURL(/\?project=/u);
   await expect(byTestId(page, 'home-where-trigger')).toContainText('site');
   expect(created(api.requests)).toEqual([
     { name: 'site', folder: { kind: 'repository', url: 'git@github.com:acme/site.git' } },
@@ -157,7 +157,7 @@ test('an empty project needs a name, then glave makes its folder', async ({ page
   await expect(byTestId(page, 'new-project-create')).toBeDisabled();
   await byTestId(page, 'new-project-name').fill('Ideas');
   await byTestId(page, 'new-project-name').press('Enter');
-  await expect(page).toHaveURL(new RegExp(`/\\?space=${FIRST}$`, 'u'));
+  await expect(page).toHaveURL(new RegExp(`/\\?project=${FIRST}$`, 'u'));
   await expect(byTestId(page, 'home-where-trigger')).toContainText('Ideas');
   expect(created(api.requests)).toEqual([{ name: 'Ideas', folder: { kind: 'empty' } }]);
 });

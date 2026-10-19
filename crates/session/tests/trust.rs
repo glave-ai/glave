@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use glave_event::{Auth, AuthMethod, Principal, ThreadId};
 use glave_harness::{Brought, ProjectFolders};
 use glave_ports::{
-    BoxFuture, Caller, Effect, InMemoryTools, SpaceId, ToolInfo, ToolOutput, ToolSpec,
+    BoxFuture, Caller, Effect, InMemoryTools, ProjectId, ToolInfo, ToolOutput, ToolSpec,
 };
 use glave_session::protocol::{
     ApiError, NewFolder, Reply, Request, Status, ThreadSummary, TrustAsk, TrustChoice, TrustItem,
@@ -83,7 +83,7 @@ impl ProjectFolders for Repository {
         Box::pin(async { None })
     }
 
-    fn brought<'a>(&'a self, _project: &'a Path, _space: SpaceId) -> BoxFuture<'a, Brought> {
+    fn brought<'a>(&'a self, _project: &'a Path, _id: ProjectId) -> BoxFuture<'a, Brought> {
         if !self.is_trusted() {
             return Box::pin(async { Brought::default() });
         }
@@ -120,9 +120,9 @@ async fn serving(
     setup.build(dir).await
 }
 
-fn thread_start(space: SpaceId) -> Request {
+fn thread_start(project: ProjectId) -> Request {
     Request::ThreadStart {
-        space: Some(space),
+        project: Some(project),
         worktree: None,
         background: false,
         computer: None,
@@ -166,7 +166,7 @@ fn a_thread_in_an_untrusted_project_asks_the_person_here_and_waits_until_they_an
     block_on!(async {
         let repository = Arc::new(Repository::default());
         let (server, seen) = serving(&dir, &repository, 2, Answering::Clients).await;
-        let started = summary(server.request(thread_start(scope().space)).await.unwrap());
+        let started = summary(server.request(thread_start(scope().project)).await.unwrap());
         let ask = started.trust.clone().expect("it asks");
         let renamed = server
             .request(Request::ThreadRename {
@@ -180,7 +180,7 @@ fn a_thread_in_an_untrusted_project_asks_the_person_here_and_waits_until_they_an
         assert_eq!(started.status, Status::Waiting, "so Needs you lists it");
         let listed = server
             .request(Request::ThreadList {
-                space: Some(scope().space),
+                project: Some(scope().project),
                 limit: None,
                 show: None,
                 cursor: None,
@@ -211,7 +211,7 @@ fn a_thread_in_an_untrusted_project_asks_the_person_here_and_waits_until_they_an
         assert!(repository.is_trusted());
         turn(&server, started.id, "search acme").await.unwrap();
         assert!(offered(&seen, 1), "the project's tool, from the next turn");
-        let another = summary(server.request(thread_start(scope().space)).await.unwrap());
+        let another = summary(server.request(thread_start(scope().project)).await.unwrap());
         assert_eq!(another.trust, None);
         let again = server
             .request(answering(started.id, &ask.ask, TrustChoice::Trust))
@@ -227,7 +227,7 @@ fn an_ask_the_project_no_longer_makes_trusts_nothing_and_what_changed_asks_again
     block_on!(async {
         let repository = Arc::new(Repository::default());
         let (server, _) = serving(&dir, &repository, 0, Answering::Clients).await;
-        let started = summary(server.request(thread_start(scope().space)).await.unwrap());
+        let started = summary(server.request(thread_start(scope().project)).await.unwrap());
         let shown = started.trust.unwrap();
         repository.change();
         let refused = server
@@ -251,7 +251,7 @@ fn not_now_keeps_it_off_and_stops_asking_in_that_thread_alone() {
     block_on!(async {
         let repository = Arc::new(Repository::default());
         let (server, seen) = serving(&dir, &repository, 1, Answering::Clients).await;
-        let first = summary(server.request(thread_start(scope().space)).await.unwrap());
+        let first = summary(server.request(thread_start(scope().project)).await.unwrap());
         let ask = first.trust.unwrap();
         let declined = server
             .request(answering(first.id, &ask.ask, TrustChoice::NotNow))
@@ -266,7 +266,7 @@ fn not_now_keeps_it_off_and_stops_asking_in_that_thread_alone() {
         turn(&server, first.id, "search acme").await.unwrap();
         assert!(!offered(&seen, 0), "still off");
         assert!(!repository.is_trusted(), "and nothing kept");
-        let next = summary(server.request(thread_start(scope().space)).await.unwrap());
+        let next = summary(server.request(thread_start(scope().project)).await.unwrap());
         assert_eq!(next.trust, Some(ask), "a new thread asks again");
     });
 }
@@ -277,7 +277,7 @@ fn with_no_one_to_answer_nothing_is_asked() {
     block_on!(async {
         let repository = Arc::new(Repository::default());
         let (server, _) = serving(&dir, &repository, 0, Answering::NoOne).await;
-        let started = summary(server.request(thread_start(scope().space)).await.unwrap());
+        let started = summary(server.request(thread_start(scope().project)).await.unwrap());
         assert_eq!((started.trust, started.status), (None, Status::Idle));
         let answered = server
             .request(answering(started.id, "v0", TrustChoice::Trust))
@@ -308,7 +308,7 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
             trace: None,
         };
         let created = server
-            .request(Request::SpaceCreate {
+            .request(Request::ProjectCreate {
                 name: "Shared".into(),
                 members: vec![Principal::person(grace)],
                 folder: Some(NewFolder::Path {
@@ -317,11 +317,11 @@ fn a_caller_signed_in_elsewhere_is_never_asked_and_cannot_answer() {
             })
             .await
             .unwrap();
-        let Reply::Space { space, .. } = created else {
-            panic!("a space")
+        let Reply::Project { project, .. } = created else {
+            panic!("a project")
         };
         let started = server
-            .request_as(&elsewhere, thread_start(space.id))
+            .request_as(&elsewhere, thread_start(project.id))
             .await
             .unwrap();
         let started = summary(started);

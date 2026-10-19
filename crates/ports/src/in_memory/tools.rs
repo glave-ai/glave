@@ -86,7 +86,7 @@ mod tests {
     fn the_tool_source_suite_catches_bad_sources() {
         let twice = InMemoryTools::new(vec![tool("lookup"), tool("lookup")]);
         assert!(block_on!(conformance::tool_source(&twice)).is_err());
-        let spaced = InMemoryTools::new(vec![tool("look up")]);
-        assert!(block_on!(conformance::tool_source(&spaced)).is_err());
+        let projectd = InMemoryTools::new(vec![tool("look up")]);
+        assert!(block_on!(conformance::tool_source(&projectd)).is_err());
     }
 }

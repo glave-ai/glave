@@ -1,9 +1,9 @@
-//! Tasks: a turn, or a goal's turns, run in a thread with no one attached, in any space its
+//! Tasks: a turn, or a goal's turns, run in a thread with no one attached, in any project its
 //! caller works in, always on a copy of the project's folder (a worktree, a worker or a scratch
 //! folder), never in the folder itself. The server starts the work as it would for a client,
 //! answers its approvals "no one there" (in auto mode the judge still clears what the person
 //! asked for), keeps a running tally of its tokens and cost from the `model.responded` events
-//! it records, stops a turn at its budget, and records the task's start and end in its space's
+//! it records, stops a turn at its budget, and records the task's start and end in its project's
 //! ledger. `tasks/list` and `tasks/stop` show and stop them; `task/finished` tells the thread's
 //! watchers when one ends.
 
@@ -14,7 +14,7 @@ use glave_event::{
     TaskStarted, ThreadId, TokenCounts, WorkspaceBound, decode,
 };
 use glave_harness::Goal;
-use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, Scope, SpaceId, title_from};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope, title_from};
 
 use crate::held::{Slot, busy};
 use crate::ledger::Recorded;
@@ -45,8 +45,8 @@ pub(crate) enum Work {
 /// A task running in this server.
 #[derive(Debug, Clone)]
 pub(crate) struct Running {
-    /// The space whose ledger records it.
-    space: SpaceId,
+    /// The project whose ledger records it.
+    project: ProjectId,
     started: TaskStarted,
     at: At,
     goal: bool,
@@ -140,7 +140,7 @@ where
         budget: Option<u64>,
         schedule: Option<Fired>,
     ) -> Result<TaskInfo, ApiError> {
-        let space = self.may_start_task(caller, thread).await?.space;
+        let project = self.may_start_task(caller, thread).await?.project;
         let (title, goal) = match &work {
             Work::Turn(prompt, _) => (title_from(prompt).unwrap_or_default(), false),
             Work::Goal(Some(goal)) => (title_from(&goal.objective).unwrap_or_default(), true),
@@ -179,7 +179,7 @@ where
             by: self.other_than_person(caller.person),
         };
         let running = Running {
-            space,
+            project,
             started: started.clone(),
             at: At::from(self.inner.harness.clock().now()),
             goal,
@@ -195,7 +195,7 @@ where
         };
         let info = self.running_info(&running);
         self.tasks().insert(thread, running);
-        if let Err(error) = self.record_in_ledger(space, &started).await {
+        if let Err(error) = self.record_in_ledger(project, &started).await {
             self.cancel_busy(thread);
             self.follow_task(thread, stream).await;
             return Err(error);
@@ -223,14 +223,14 @@ where
         };
         let ended = settle(&running, &ended, self.is_stopping());
         // Recorded on a best effort: the thread's own events hold the work either way.
-        let _ = self.record_in_ledger(running.space, &ended).await;
+        let _ = self.record_in_ledger(running.project, &ended).await;
         let now = At::from(self.inner.harness.clock().now());
         let recorded = Recorded {
             started: running.started,
             at: running.at,
             ended: Some((ended, now)),
         };
-        let task = self.recorded_info(running.space, &recorded, TaskStatus::Finished);
+        let task = self.recorded_info(running.project, &recorded, TaskStatus::Finished);
         self.inner
             .hub
             .publish(thread, Notification::TaskFinished { thread, task });
@@ -309,16 +309,16 @@ where
         }
     }
 
-    /// The tasks of every space `caller` works in: running here, then running elsewhere, then
+    /// The tasks of every project `caller` works in: running here, then running elsewhere, then
     /// recently finished, each newest first.
     pub(crate) async fn list_tasks(
         &self,
         caller: &Caller,
         limit: Option<usize>,
     ) -> Result<Reply, ApiError> {
-        let spaces = self.spaces_of(caller).await?;
-        for space in &spaces {
-            self.catch_up(*space).await?;
+        let projects = self.projects_of(caller).await?;
+        for project in &projects {
+            self.catch_up(*project).await?;
         }
         let limit = limit.unwrap_or(20).clamp(1, 500);
         let (mut running, mut elsewhere, mut finished) = {
@@ -326,25 +326,28 @@ where
             let here = self.tasks();
             let running: Vec<TaskInfo> = here
                 .values()
-                .filter(|task| spaces.contains(&task.space))
+                .filter(|task| projects.contains(&task.project))
                 .map(|task| self.running_info(task))
                 .collect();
-            let theirs: Vec<_> = spaces
+            let theirs: Vec<_> = projects
                 .iter()
-                .filter_map(|space| ledgers.get(space).map(|ledger| (*space, ledger)))
+                .filter_map(|project| ledgers.get(project).map(|ledger| (*project, ledger)))
                 .collect();
             let elsewhere: Vec<TaskInfo> = theirs
                 .iter()
-                .flat_map(|(space, ledger)| ledger.open.values().map(|task| (*space, task)))
+                .flat_map(|(project, ledger)| ledger.open.values().map(|task| (*project, task)))
                 .filter(|(_, task)| !here.contains_key(&task.started.thread))
-                .map(|(space, task)| self.recorded_info(space, task, TaskStatus::Elsewhere))
+                .map(|(project, task)| self.recorded_info(project, task, TaskStatus::Elsewhere))
                 .collect();
             let finished: Vec<(Option<At>, TaskInfo)> = theirs
                 .iter()
-                .flat_map(|(space, ledger)| ledger.finished.iter().map(|task| (*space, task)))
-                .map(|(space, task)| {
+                .flat_map(|(project, ledger)| ledger.finished.iter().map(|task| (*project, task)))
+                .map(|(project, task)| {
                     let ended = task.ended.as_ref().map(|(_, at)| *at);
-                    (ended, self.recorded_info(space, task, TaskStatus::Finished))
+                    (
+                        ended,
+                        self.recorded_info(project, task, TaskStatus::Finished),
+                    )
                 })
                 .collect();
             (running, elsewhere, finished)
@@ -359,15 +362,15 @@ where
     }
 
     /// Records as interrupted every task a ledger has open that this server does not run, in
-    /// every space whose tasks it runs: for the one server that runs them, when it starts.
+    /// every project whose tasks it runs: for the one server that runs them, when it starts.
     pub async fn recover_tasks(&self) -> Result<usize, ApiError> {
         let mut recovered = 0;
-        for space in self.task_spaces().await? {
-            self.catch_up(space).await?;
+        for project in self.task_projects().await? {
+            self.catch_up(project).await?;
             let stale: Vec<ThreadId> = {
                 let ledgers = self.ledgers();
                 let here = self.tasks();
-                ledgers.get(&space).map_or_else(Vec::new, |ledger| {
+                ledgers.get(&project).map_or_else(Vec::new, |ledger| {
                     ledger
                         .open
                         .keys()
@@ -384,7 +387,7 @@ where
                     cost: None,
                     by: None,
                 };
-                self.record_in_ledger(space, &ended).await?;
+                self.record_in_ledger(project, &ended).await?;
                 recovered += 1;
             }
         }
@@ -398,7 +401,7 @@ where
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// `person` as a task records them: absent for the space's own person.
+    /// `person` as a task records them: absent for the project's own person.
     fn other_than_person(&self, person: Option<PrincipalId>) -> Option<Principal> {
         person
             .filter(|person| Some(*person) != self.inner.person)
@@ -428,7 +431,7 @@ where
     fn running_info(&self, task: &Running) -> TaskInfo {
         TaskInfo {
             thread: task.started.thread,
-            space: task.space,
+            project: task.project,
             kind: TaskKind::Agent,
             title: task.started.title.clone(),
             model: task.started.model.clone(),
@@ -443,12 +446,12 @@ where
         }
     }
 
-    /// `task` of `space`'s ledger, as lists show it.
-    fn recorded_info(&self, space: SpaceId, task: &Recorded, status: TaskStatus) -> TaskInfo {
+    /// `task` of `project`'s ledger, as lists show it.
+    fn recorded_info(&self, project: ProjectId, task: &Recorded, status: TaskStatus) -> TaskInfo {
         let ended = task.ended.as_ref();
         TaskInfo {
             thread: task.started.thread,
-            space,
+            project,
             kind: TaskKind::Agent,
             title: task.started.title.clone(),
             model: task.started.model.clone(),

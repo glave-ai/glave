@@ -201,14 +201,14 @@ mod tidy {
         block_on!(async {
             let kit = Kit::new();
             let tabs = seed(&kit, "Ada likes tabs", false).await;
-            let spaces = seed(&kit, "Ada likes spaces in Go", false).await;
+            let projects = seed(&kit, "Ada likes spaces in Go", false).await;
             let memories = kit.memories(rules(), 1);
             assert!(memories.tidy_due(shared()).await.unwrap(), "never tidied");
             let script = Scripted::new(r#"{"conflict": [{"memories": [1, 2], "clear": false}]}"#);
             let tidied = memories.tidy(shared(), &script).await.unwrap();
             assert_eq!(tidied.questions, 1);
             assert_eq!(live(&kit).await.len(), 2, "both kept");
-            assert_eq!(memories.questions(&on()).await.unwrap(), [[tabs, spaces]]);
+            assert_eq!(memories.questions(&on()).await.unwrap(), [[tabs, projects]]);
             assert!(!memories.tidy_due(shared()).await.unwrap(), "just tidied");
 
             // The next run never offers the pair again while it waits.
@@ -336,7 +336,7 @@ mod tidy {
         block_on!(async {
             let kit = Kit::new();
             let tabs = seed(&kit, "Ada likes tabs", false).await;
-            let spaces = seed(&kit, "Ada likes spaces in Go", false).await;
+            let projects = seed(&kit, "Ada likes spaces in Go", false).await;
             let memories = kit.memories(rules(), 1);
             let script = Scripted::new(r#"{"conflict": [{"memories": [1, 2], "clear": false}]}"#);
             memories.tidy(shared(), &script).await.unwrap();
@@ -355,7 +355,7 @@ mod tidy {
             let block = &start[1];
             assert!(block.contains("Unsure:"), "{block}");
             assert!(
-                block.contains(&format!("[{tabs}] or [{spaces}]")),
+                block.contains(&format!("[{tabs}] or [{projects}]")),
                 "{block}"
             );
 

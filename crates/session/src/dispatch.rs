@@ -37,7 +37,7 @@ where
 {
     /// Answers `request` from `caller`, the person the transport verified. A request on a
     /// thread, or on the server's memory, is refused with `-32012` unless the caller works in
-    /// that space; tasks and schedules are those of the spaces they work in.
+    /// that project; tasks and schedules are those of the projects they work in.
     pub async fn call(&self, caller: &Caller, request: Request) -> Answered {
         let span = crate::trace::span(&request);
         tracing::Instrument::instrument(self.answer(caller, request), span).await
@@ -124,7 +124,7 @@ where
                 ),
             )),
             Request::ThreadStart {
-                space,
+                project,
                 worktree,
                 background,
                 computer: None,
@@ -132,15 +132,18 @@ where
                 approval,
             } => {
                 let choice = Choice { model, approval };
-                self.start_thread(caller, space, worktree, background, &choice)
+                self.start_thread(caller, project, worktree, background, &choice)
                     .await
             }
             Request::ThreadList {
-                space,
+                project,
                 limit,
                 show,
                 cursor,
-            } => self.list_threads(caller, space, limit, show, cursor).await,
+            } => {
+                self.list_threads(caller, project, limit, show, cursor)
+                    .await
+            }
             Request::ThreadGet { thread } => self.get_thread(caller, thread).await,
             Request::ThreadRename { thread, title } => self.rename(caller, thread, title).await,
             Request::ThreadArchive { thread } => self.change(caller, thread, Change::Archive).await,
@@ -249,14 +252,14 @@ where
                 self.stop_command(caller, thread, command).await
             }
             Request::ScheduleCreate {
-                space,
+                project,
                 when,
                 prompt,
                 goal,
                 budget,
             } => {
                 let new = NewSchedule {
-                    space,
+                    project,
                     when,
                     prompt,
                     goal,
@@ -266,51 +269,60 @@ where
             }
             Request::ScheduleList {} => self.list_schedules(caller).await,
             Request::ScheduleDelete { schedule } => self.delete_schedule(caller, schedule).await,
-            Request::SpaceList { limit } => self.list_spaces(caller, limit).await,
-            Request::SpaceGet { space } => self.get_space(caller, space).await,
-            Request::SpaceCreate {
+            Request::ProjectList { limit } => self.list_projects(caller, limit).await,
+            Request::ProjectGet { project } => self.get_project(caller, project).await,
+            Request::ProjectCreate {
                 name,
                 members,
                 folder,
-            } => self.create_space(caller, name, members, folder).await,
-            Request::SpaceRename { space, name } => self.rename_space(caller, space, name).await,
-            Request::SpaceFolderSet { space, path } => self.move_folder(caller, space, path).await,
-            Request::SpaceRemove { space } => self.remove_space(caller, space).await,
-            Request::FolderList { path } => self.list_folders(caller, path).await,
-            Request::MemoryList { scope, space } => {
-                self.remember(caller, space, Control::List { scope }).await
+            } => self.create_project(caller, name, members, folder).await,
+            Request::ProjectRename { project, name } => {
+                self.rename_project(caller, project, name).await
             }
-            Request::MemorySave { text, scope, space } => {
-                self.remember(caller, space, Control::Save { text, scope })
+            Request::ProjectFolderSet { project, path } => {
+                self.move_folder(caller, project, path).await
+            }
+            Request::ProjectRemove { project } => self.remove_project(caller, project).await,
+            Request::FolderList { path } => self.list_folders(caller, path).await,
+            Request::MemoryList { scope, project } => {
+                self.remember(caller, project, Control::List { scope })
+                    .await
+            }
+            Request::MemorySave {
+                text,
+                scope,
+                project,
+            } => {
+                self.remember(caller, project, Control::Save { text, scope })
                     .await
             }
             Request::MemoryEdit {
                 memory,
                 text,
-                space,
+                project,
             } => {
-                self.remember(caller, space, Control::Edit { memory, text })
+                self.remember(caller, project, Control::Edit { memory, text })
                     .await
             }
             Request::MemoryMove {
                 memory,
                 scope,
-                space,
+                project,
             } => {
-                self.remember(caller, space, Control::Move { memory, scope })
+                self.remember(caller, project, Control::Move { memory, scope })
                     .await
             }
             Request::MemoryForget {
                 memory,
                 all,
                 scope,
-                space,
+                project,
             } => match crate::memory::forget(memory, all, scope) {
-                Ok(control) => self.remember(caller, space, control).await,
+                Ok(control) => self.remember(caller, project, control).await,
                 Err(refused) => Err(refused),
             },
-            Request::MemoryRestore { memory, space } => {
-                self.remember(caller, space, Control::Restore { memory })
+            Request::MemoryRestore { memory, project } => {
+                self.remember(caller, project, Control::Restore { memory })
                     .await
             }
             Request::ProviderConnect { kind, key, url } => {

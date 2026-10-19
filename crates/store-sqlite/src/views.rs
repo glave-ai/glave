@@ -4,7 +4,7 @@
 
 use glave_event::{RawEvent, Seq, ThreadId};
 use glave_ports::{
-    LogError, OrgId, Scope, SpaceId, THREAD_VIEW_VERSION, ThreadQuery, ThreadView, fold_from_log,
+    LogError, OrgId, ProjectId, Scope, THREAD_VIEW_VERSION, ThreadQuery, ThreadView, fold_from_log,
 };
 use rusqlite::{Connection, OptionalExtension as _, Transaction, params};
 use uuid::Uuid;
@@ -57,12 +57,12 @@ fn stored(
 ) -> rusqlite::Result<Option<ThreadView>> {
     let row: Option<(String, i64)> = connection
         .prepare_cached(
-            "SELECT view, position FROM threads WHERE org = ?1 AND space = ?2 AND thread = ?3",
+            "SELECT view, position FROM threads WHERE org = ?1 AND project = ?2 AND thread = ?3",
         )?
         .query_row(
             params![
                 scope.org.to_string(),
-                scope.space.to_string(),
+                scope.project.to_string(),
                 thread.to_string()
             ],
             |row| Ok((row.get(0)?, row.get(1)?)),
@@ -77,15 +77,15 @@ fn write(connection: &Connection, scope: &Scope, view: &ThreadView) -> rusqlite:
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     connection
         .prepare_cached(
-            "INSERT INTO threads (org, space, thread, standing, position, view)
+            "INSERT INTO threads (org, project, thread, standing, position, view)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT (org, space, thread) DO UPDATE SET
+             ON CONFLICT (org, project, thread) DO UPDATE SET
                  standing = excluded.standing, position = excluded.position,
                  view = excluded.view",
         )?
         .execute(params![
             scope.org.to_string(),
-            scope.space.to_string(),
+            scope.project.to_string(),
             view.thread.to_string(),
             view.standing.as_str(),
             view.position,
@@ -104,13 +104,13 @@ pub(crate) async fn page(
     let rows = run(connection, move |connection| {
         let mut statement = connection.prepare_cached(
             "SELECT view, position FROM threads
-             WHERE org = ?1 AND space = ?2 AND standing = ?3 AND (?4 IS NULL OR position < ?4)
+             WHERE org = ?1 AND project = ?2 AND standing = ?3 AND (?4 IS NULL OR position < ?4)
              ORDER BY position DESC LIMIT ?5",
         )?;
         let rows = statement.query_map(
             params![
                 scope.org.to_string(),
-                scope.space.to_string(),
+                scope.project.to_string(),
                 query.standing.as_str(),
                 query.after.map(|after| after.0),
                 i64::try_from(query.limit).unwrap_or(i64::MAX),
@@ -159,10 +159,10 @@ pub(crate) async fn rebuild(
             let transaction = connection.transaction()?;
             let (last, position): (Option<i64>, Option<i64>) = transaction.query_row(
                 "SELECT MAX(seq), MAX(rowid) FROM events
-                 WHERE org = ?1 AND space = ?2 AND thread = ?3",
+                 WHERE org = ?1 AND project = ?2 AND thread = ?3",
                 params![
                     scope.org.to_string(),
-                    scope.space.to_string(),
+                    scope.project.to_string(),
                     thread.to_string()
                 ],
                 |row| Ok((row.get(0)?, row.get(1)?)),
@@ -181,10 +181,10 @@ pub(crate) async fn rebuild(
                 Some(view) => write(&transaction, &scope, view)?,
                 None => {
                     transaction.execute(
-                        "DELETE FROM threads WHERE org = ?1 AND space = ?2 AND thread = ?3",
+                        "DELETE FROM threads WHERE org = ?1 AND project = ?2 AND thread = ?3",
                         params![
                             scope.org.to_string(),
-                            scope.space.to_string(),
+                            scope.project.to_string(),
                             thread.to_string()
                         ],
                     )?;
@@ -209,7 +209,7 @@ pub(crate) async fn rebuild(
 pub(crate) async fn rebuild_all(log: &SqliteLog, connection: &Shared) -> Result<(), StoreError> {
     let threads = run(connection, |connection| {
         let mut statement = connection.prepare(
-            "SELECT org, space, thread FROM events WHERE seq = 1 AND type = 'thread.started'",
+            "SELECT org, project, thread FROM events WHERE seq = 1 AND type = 'thread.started'",
         )?;
         let rows = statement.query_map([], |row| {
             Ok((
@@ -221,11 +221,11 @@ pub(crate) async fn rebuild_all(log: &SqliteLog, connection: &Shared) -> Result<
         rows.collect::<rusqlite::Result<Vec<_>>>()
     })
     .await?;
-    for (org, space, thread) in threads {
+    for (org, project, thread) in threads {
         let parsed = (|| {
             let scope = Scope {
                 org: OrgId::from_uuid(Uuid::parse_str(&org).ok()?),
-                space: SpaceId::from_uuid(Uuid::parse_str(&space).ok()?),
+                project: ProjectId::from_uuid(Uuid::parse_str(&project).ok()?),
             };
             let thread = ThreadId::try_from(Uuid::parse_str(&thread).ok()?).ok()?;
             Some((scope, thread))

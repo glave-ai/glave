@@ -20,7 +20,7 @@ import { ListChecks, PenLine, Search } from 'lucide';
 import { TasksService } from '../../services/tasks.service';
 import { NeedsYouComponent } from '../needs-you/needs-you.component';
 import { PersonComponent } from '../person/person.component';
-import { SpacesNavComponent } from '../spaces-nav/spaces-nav.component';
+import { ProjectsNavComponent } from '../projects-nav/projects-nav.component';
 
 const COPY = {
   name: 'glave',
@@ -46,7 +46,7 @@ const COPY = {
     GlzNavItemComponent,
     NeedsYouComponent,
     PersonComponent,
-    SpacesNavComponent,
+    ProjectsNavComponent,
   ],
   templateUrl: './side-nav.component.html',
   styleUrl: './side-nav.component.scss',

@@ -13,8 +13,8 @@ use tokio_postgres::Config;
 use crate::blobs::PostgresBlobs;
 use crate::keys::PostgresKeys;
 use crate::log::PostgresLog;
+use crate::projects::PostgresProjects;
 use crate::schema;
-use crate::spaces::PostgresSpaces;
 use uuid::Uuid;
 
 /// Why the store could not open or answer.
@@ -87,9 +87,9 @@ impl Store {
         PostgresBlobs::new(self.pool.clone(), Arc::clone(&self.keys))
     }
 
-    /// The spaces: their records, members, and the folders that lead to them.
-    pub fn spaces(&self) -> PostgresSpaces {
-        PostgresSpaces::new(self.pool.clone())
+    /// The projects: their records, members, and the folders that lead to them.
+    pub fn projects(&self) -> PostgresProjects {
+        PostgresProjects::new(self.pool.clone())
     }
 
     /// The keys content is sealed under, and erased by destroying.

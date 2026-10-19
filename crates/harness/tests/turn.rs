@@ -11,7 +11,7 @@ mod scripted {
     use super::support::*;
     use glave_event::{Body, Outcome, Part, RawEvent, StopReason};
     use glave_harness::{AllowAll, Cancel, Live, conversation};
-    use glave_ports::{EventLog, InMemoryLog, OrgId, Scope, SpaceId};
+    use glave_ports::{EventLog, InMemoryLog, OrgId, ProjectId, Scope};
     use serde_json::json;
 
     #[test]
@@ -388,7 +388,7 @@ mod scripted {
             let thread = harness.start_thread(scope()).await.unwrap();
             let elsewhere = Scope {
                 org: OrgId::from_uuid(uuid_like(9)),
-                space: SpaceId::from_uuid(uuid_like(9)),
+                project: ProjectId::from_uuid(uuid_like(9)),
             };
             assert!(harness.resume_thread(elsewhere, thread.id).await.is_err());
         });

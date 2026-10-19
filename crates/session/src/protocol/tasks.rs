@@ -2,7 +2,7 @@
 //! as the tasks panel shows it, and a schedule.
 
 use glave_event::{At, Money, Outcome, ScheduleId, ThreadId, TokenCounts, When};
-use glave_ports::SpaceId;
+use glave_ports::ProjectId;
 use serde::{Deserialize, Serialize};
 
 /// What kind of work a task is. Background commands the model starts arrive later.
@@ -27,8 +27,8 @@ pub enum TaskStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TaskInfo {
     pub thread: ThreadId,
-    /// The space its thread is in.
-    pub space: SpaceId,
+    /// The project its thread is in.
+    pub project: ProjectId,
     pub kind: TaskKind,
     /// The prompt or objective, shortened.
     pub title: String,

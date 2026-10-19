@@ -21,7 +21,7 @@ import { Folder, Lock, MessageCircle } from 'lucide';
 
 import { NavService } from '../../services/nav.service';
 import { SessionService } from '../../services/session.service';
-import { SpacesService } from '../../services/spaces.service';
+import { ProjectsService } from '../../services/projects.service';
 import { ApprovalModeComponent } from '../approval-mode/approval-mode.component';
 import { ModelPickerComponent } from '../model-picker/model-picker.component';
 import { PageHeaderComponent } from '../page-header/page-header.component';
@@ -45,7 +45,7 @@ export interface FirstPrompt {
  * chat, or a project) in its box, and the approval mode and the model in the quiet line under
  * it. Sending starts the thread there,
  * on the model and in the approval mode picked, and opens it. When glave runs on this
- * computer, a line under it says what stays private. Opened for a space, the composer takes
+ * computer, a line under it says what stays private. Opened for a project, the composer takes
  * focus.
  */
 @Component({
@@ -63,8 +63,8 @@ export interface FirstPrompt {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class HomeComponent {
-  /** The space to start in, from the link's `?space=` (a project's +). */
-  readonly space = input<string | undefined>(undefined);
+  /** The project to start in, from the link's `?project=` (a project's +). */
+  readonly project = input<string | undefined>(undefined);
 
   protected readonly copy = COPY;
   protected readonly lock = Lock;
@@ -76,22 +76,22 @@ export class HomeComponent {
   /** The approval mode the person picked, or `null` for the server's. */
   protected readonly pickedMode = signal<ApprovalMode | null>(null);
   private readonly session = inject(SessionService);
-  private readonly spaces = inject(SpacesService);
+  private readonly projects = inject(ProjectsService);
   private readonly router = inject(Router);
   /** Whether glave runs on this computer, so what is sent stays here but for the model. */
   protected readonly local = this.session.local;
-  /** Where the thread starts: the space the link names, else a chat; the person may pick. */
+  /** Where the thread starts: the project the link names, else a chat; the person may pick. */
   protected readonly where = linkedSignal<string | null>(
-    () => this.space() ?? this.spaces.home() ?? null,
+    () => this.project() ?? this.projects.home() ?? null,
   );
   /** The places a thread can start: a chat, or each project. */
   protected readonly places = computed<readonly GlzMenuOption[]>(() => {
-    const home = this.spaces.home();
+    const home = this.projects.home();
     const chat = home === undefined ? [] : [{ value: home, label: COPY.chat, icon: MessageCircle }];
-    const projects = this.spaces
-      .spaces()
-      .filter(({ space }) => space.kind === 'project')
-      .map(({ space }) => ({ value: space.id, label: space.name, icon: Folder }));
+    const projects = this.projects
+      .projects()
+      .filter(({ project }) => project.kind === 'project')
+      .map(({ project }) => ({ value: project.id, label: project.name, icon: Folder }));
     return [...chat, ...projects];
   });
   private readonly narrow = inject(NavService).narrow;
@@ -104,10 +104,10 @@ export class HomeComponent {
   private readonly composer = viewChild.required(GlzComposerComponent);
 
   constructor() {
-    // A link that names a space (a project just made, a project's +) is there to start a
+    // A link that names a project (a project just made, a project's +) is there to start a
     // thread in it: the cursor goes to the composer.
     afterRenderEffect(() => {
-      if (this.space() !== undefined) {
+      if (this.project() !== undefined) {
         this.composer().focus();
       }
     });
@@ -117,18 +117,18 @@ export class HomeComponent {
     this.starting.set(true);
     this.error.set(null);
     try {
-      const space = this.where();
+      const project = this.where();
       const model = this.picked();
       const approval = this.pickedMode();
       const params: ThreadStartParams = {
-        ...(space === null ? {} : { space }),
+        ...(project === null ? {} : { project }),
         ...(model === null ? {} : { model }),
         ...(approval === null ? {} : { approval }),
       };
       const { thread } = await this.session.call('thread/start', params);
       const state: FirstPrompt = { prompt };
       await this.router.navigate(['/t', thread.id], { state });
-      void this.spaces.refresh();
+      void this.projects.refresh();
     } catch (error: unknown) {
       this.draft.set(prompt);
       this.error.set(error instanceof Error ? error.message : String(error));

@@ -1,10 +1,10 @@
 //! Tasks through the session API against a scripted model: a turn or goal started with
 //! `background` runs with no one attached, on a worktree of its own, and can be read
-//! afterwards; tasks run in every space, each on a copy of its own project's folder, and a
+//! afterwards; tasks run in every project, each on a copy of its own project's folder, and a
 //! folder that is not a repository, or a thread that works in its folder, is refused;
 //! `tasks/list` shows their tokens and cost from the events; `tasks/stop` and archiving stop
 //! them; a turn stops at its budget; policy limits refuse loudly; `recover_tasks` covers every
-//! space; and the model is sent exactly what it is sent when someone follows the turn.
+//! project; and the model is sent exactly what it is sent when someone follows the turn.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -24,7 +24,7 @@ async fn in_repository(name: &str, setup: Setup) -> (Tested, Seen, std::path::Pa
     setup.build_in_repository(name, InMemoryLog::new()).await
 }
 
-/// A thread of `server`'s own space that tasks run in, on a copy of its own.
+/// A thread of `server`'s own project that tasks run in, on a copy of its own.
 async fn task_thread(server: &Tested) -> glave_event::ThreadId {
     start_for_tasks(server, None).await.unwrap()
 }
@@ -112,7 +112,7 @@ fn a_background_turn_runs_on_a_worktree_with_no_one_attached_and_can_be_read_aft
 }
 
 #[test]
-fn a_task_in_each_of_two_spaces_works_on_a_worktree_of_its_own_project() {
+fn a_task_in_each_of_two_projects_works_on_a_worktree_of_its_own_project() {
     block_on!(async {
         let write = |name: &str| {
             answer(
@@ -126,26 +126,26 @@ fn a_task_in_each_of_two_spaces_works_on_a_worktree_of_its_own_project() {
             write("two"),
             answer(Some("Two."), None),
         ]);
-        let (server, _, repo) = in_repository("task-spaces", setup).await;
+        let (server, _, repo) = in_repository("task-projects", setup).await;
         let others = repo.with_extension("others");
         let mut ran = Vec::new();
         for name in ["one", "two"] {
             let folder = repository(&others, name);
-            let space = project(&server, name, &folder).await;
-            let thread = start_for_tasks(&server, Some(space)).await.unwrap();
+            let project = make_project(&server, name, &folder).await;
+            let thread = start_for_tasks(&server, Some(project)).await.unwrap();
             background(&server, thread, None).await;
             settle(&server).await;
-            ran.push((thread, space, folder, name));
+            ran.push((thread, project, folder, name));
         }
         let listed = tasks(&server).await;
         assert_eq!(listed.len(), 2, "{listed:?}");
-        for (thread, space, folder, name) in &ran {
+        for (thread, project, folder, name) in &ran {
             let root = worktree_of(&server, *thread, folder).await;
             let written = std::fs::read_to_string(Path::new(&root).join("done.md")).unwrap();
             assert_eq!(written, *name);
             assert!(!folder.join("done.md").exists());
             let task = listed.iter().find(|task| task.thread == *thread).unwrap();
-            assert_eq!(task.space, *space);
+            assert_eq!(task.project, *project);
             assert_eq!(task.outcome, Some(Outcome::Completed));
         }
     });
@@ -177,7 +177,7 @@ fn a_task_never_works_in_a_folder_itself() {
         assert!(refused.message.contains("make it one"), "{refused}");
         let listed = server
             .request(Request::ThreadList {
-                space: Some(scope().space),
+                project: Some(scope().project),
                 limit: None,
                 show: None,
                 cursor: None,
@@ -191,7 +191,7 @@ fn a_task_never_works_in_a_folder_itself() {
         // Asked for in the folder itself, or on a thread that works there, it is refused.
         let in_place = server
             .request(Request::ThreadStart {
-                space: Some(scope().space),
+                project: Some(scope().project),
                 background: true,
                 worktree: Some(false),
                 computer: None,
@@ -446,28 +446,28 @@ fn a_background_goal_runs_to_its_end() {
 }
 
 #[test]
-fn recovering_tasks_covers_every_space() {
+fn recovering_tasks_covers_every_project() {
     block_on!(async {
         let log = Shared::default();
-        // A server that runs a task in its own space and one in another, then is gone
+        // A server that runs a task in its own project and one in another, then is gone
         // without ending them.
         let mut first = Setup::new(vec![answer(Some("a"), None), answer(Some("b"), None)]);
         first.gate = Some(Arc::new(Notify::new()));
         let (gone, _, repo) = first.build_in_repository("task-recover", log.clone()).await;
-        let other = project(
+        let other = make_project(
             &gone,
             "other",
             &repository(&repo.with_extension("others"), "b"),
         )
         .await;
-        for space in [None, Some(other)] {
-            let thread = start_for_tasks(&gone, space).await.unwrap();
+        for project in [None, Some(other)] {
+            let thread = start_for_tasks(&gone, project).await.unwrap();
             background(&gone, thread, None).await;
         }
         // The next server on the same store finds both open, and records them interrupted.
         let mut next = Setup::new(Vec::new());
         next.seed = 2;
-        next.spaces = Some(Arc::clone(gone.spaces()));
+        next.projects = Some(Arc::clone(gone.projects()));
         next.settings.person = gone.person();
         let (server, _) = next.build_on(&repo, log).await;
         assert_eq!(server.recover_tasks().await.unwrap(), 2);

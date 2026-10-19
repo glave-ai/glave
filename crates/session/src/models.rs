@@ -127,7 +127,7 @@ where
         if whose.is_some_and(|person| Some(person) != self.person()) {
             return Ok(None);
         }
-        Ok(self.project_settled(scope.space).await.model)
+        Ok(self.project_settled(scope.project).await.model)
     }
 
     /// The model last chosen for `thread`, from its log.

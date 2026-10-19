@@ -11,7 +11,7 @@ use anyhow::Context as _;
 use glave_event::{MemoryId, MemoryScope, PrincipalId};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, Tidier};
 use glave_ports::memories::{Access, Control, Memory, Remembered};
-use glave_ports::{ModelProvider, OsEntropy, Scope, SpaceId, SystemClock};
+use glave_ports::{ModelProvider, OsEntropy, ProjectId, Scope, SystemClock};
 use glave_session::protocol::{ApiError, Reply, Request, code};
 
 use crate::args::Args;
@@ -35,7 +35,7 @@ Usage:
 Memory is on when `memory = \"on\"` is in your config.toml (glave policy explain shows it).
 In a session, /memory lists them.";
 
-/// Memory as running here: the server, and the spaces it keeps.
+/// Memory as running here: the server, and the projects it keeps.
 pub struct Running {
     pub memory: Arc<GlaveMemory<DataLog>>,
     pub scopes: Vec<Scope>,
@@ -47,7 +47,7 @@ impl Running {
         Arc::clone(&self.memory) as Arc<dyn Memory>
     }
 
-    /// Tidies this person's and this space's memory in the background with `tidier` (the
+    /// Tidies this person's and this project's memory in the background with `tidier` (the
     /// gateway's `summary` route): now, when due, and after saves that bring a scope near its
     /// budget.
     pub fn tidy_with<P: ModelProvider + 'static>(&self, tidier: Tidier<P>) {
@@ -55,7 +55,7 @@ impl Running {
         self.memory.tidy_soon(&self.scopes);
     }
 
-    /// Housekeeping: retention, erasure that is due, and rotating space keys once keys were
+    /// Housekeeping: retention, erasure that is due, and rotating project keys once keys were
     /// destroyed. Failures are reported, never fatal.
     pub async fn housekeep(&self) {
         if let Err(error) = self.memory.memories().housekeep(&self.scopes).await {
@@ -77,7 +77,7 @@ pub async fn start_for(
 }
 
 /// Starts memory for `person`, tidied in `scope` and their own, when `settings` turn it on:
-/// each space with the setting `settings` choose, until its project's settings choose another
+/// each project with the setting `settings` choose, until its project's settings choose another
 /// (`project_folders.rs`).
 pub async fn start(
     store: &Data,
@@ -88,7 +88,7 @@ pub async fn start(
     if !settings.on {
         return Ok(None);
     }
-    let personal = crate::spaces::personal(store, person).await?;
+    let personal = crate::projects::personal(store, person).await?;
     let rules = Rules {
         personal: settings.personal.then_some(Personal {
             scope: personal,
@@ -214,11 +214,14 @@ fn is_off(error: &anyhow::Error) -> bool {
 
 /// `command` through the person's server, in this folder's project.
 async fn through(server: &mut Reached, command: &Command) -> anyhow::Result<()> {
-    let space = Some(server.project(&std::env::current_dir()?).await?);
+    let project = Some(server.project(&std::env::current_dir()?).await?);
     let Command::Run(controls) = command else {
         let memories = changed(
             server
-                .request(Request::MemoryList { scope: None, space })
+                .request(Request::MemoryList {
+                    scope: None,
+                    project,
+                })
                 .await?,
         )?;
         if memories.is_empty() {
@@ -231,7 +234,7 @@ async fn through(server: &mut Reached, command: &Command) -> anyhow::Result<()> 
     };
     for control in controls {
         let verb = verb(control);
-        for memory in changed(server.request(asked(control.clone(), space)?).await?)? {
+        for memory in changed(server.request(asked(control.clone(), project)?).await?)? {
             println!("{verb} {}", line(&memory));
         }
     }
@@ -246,30 +249,30 @@ fn changed(reply: Reply) -> anyhow::Result<Vec<Remembered>> {
     }
 }
 
-/// The request that makes `control` in `space`.
-fn asked(control: Control, space: Option<SpaceId>) -> anyhow::Result<Request> {
+/// The request that makes `control` in `project`.
+fn asked(control: Control, project: Option<ProjectId>) -> anyhow::Result<Request> {
     Ok(match control {
         Control::Edit { memory, text } => Request::MemoryEdit {
             memory,
             text,
-            space,
+            project,
         },
         Control::Move { memory, scope } => Request::MemoryMove {
             memory,
             scope,
-            space,
+            project,
         },
         Control::Forget { memory } => Request::MemoryForget {
             memory: Some(memory),
             all: false,
             scope: None,
-            space,
+            project,
         },
         Control::ForgetAll { scope } => Request::MemoryForget {
             memory: None,
             all: true,
             scope: Some(scope),
-            space,
+            project,
         },
         other => anyhow::bail!("glave memory does not make {other:?}"),
     })
@@ -293,7 +296,7 @@ async fn in_the_store(command: Command) -> anyhow::Result<()> {
     let home = home::folder()?;
     let store = Data::chosen(&setup.choices).await?;
     let person = identity::load_or_make(&home, &store).await?.person;
-    let scope = crate::spaces::here(&store, &folder, person).await?;
+    let scope = crate::projects::here(&store, &folder, person).await?;
     let on = MemorySettings {
         on: true,
         ..settings

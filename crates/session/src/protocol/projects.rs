@@ -1,8 +1,8 @@
-//! What `space/*` take and answer with besides the space itself: where a project's work
+//! What `project/*` take and answer with besides the project itself: where a project's work
 //! lives.
 
 use glave_event::{Checkout, FolderSource};
-use glave_ports::SpaceId;
+use glave_ports::ProjectId;
 use serde::{Deserialize, Serialize};
 
 /// A new project's folder, on the computer glave runs on.
@@ -22,7 +22,7 @@ pub enum NewFolder {
 /// sentence that says so.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GoneFolder {
-    pub space: SpaceId,
+    pub project: ProjectId,
     pub message: String,
 }
 

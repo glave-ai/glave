@@ -168,6 +168,44 @@ pub(crate) const MIGRATIONS: &[&str] = &[
         tokenize = 'ascii'
     );
     ",
+    // 6: spaces are projects (#435): every `space` column is `project`, and the tables and
+    // indexes named for spaces are named for projects. Keyword search is made again under the
+    // new column name, its rows copied, since a full-text table's columns cannot be renamed.
+    "
+    ALTER TABLE events RENAME COLUMN space TO project;
+    ALTER TABLE blobs RENAME COLUMN space TO project;
+    ALTER TABLE blob_threads RENAME COLUMN space TO project;
+    ALTER TABLE threads RENAME COLUMN space TO project;
+
+    ALTER TABLE space_keys RENAME COLUMN space TO project;
+    ALTER TABLE space_keys RENAME TO project_keys;
+
+    ALTER TABLE space_records RENAME TO project_records;
+    DROP INDEX one_personal_space;
+    CREATE UNIQUE INDEX one_personal_project ON project_records (org, owner)
+        WHERE kind = 'personal';
+
+    ALTER TABLE space_members RENAME COLUMN space TO project;
+    ALTER TABLE space_members RENAME TO project_members;
+    DROP INDEX space_members_by_member;
+    CREATE INDEX project_members_by_member ON project_members (org, member);
+
+    ALTER TABLE space_folders RENAME COLUMN space TO project;
+    ALTER TABLE space_folders RENAME TO project_folders;
+
+    CREATE VIRTUAL TABLE event_search_projects USING fts5(
+        terms,
+        org UNINDEXED,
+        project UNINDEXED,
+        thread UNINDEXED,
+        seq UNINDEXED,
+        tokenize = 'ascii'
+    );
+    INSERT INTO event_search_projects (terms, org, project, thread, seq)
+        SELECT terms, org, space, thread, seq FROM event_search;
+    DROP TABLE event_search;
+    ALTER TABLE event_search_projects RENAME TO event_search;
+    ",
 ];
 
 /// The schema version this build writes.

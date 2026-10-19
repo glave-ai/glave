@@ -99,7 +99,7 @@ impl<S: KeyStorage> Keys<S> {
         &self.storage
     }
 
-    /// Seals `event`'s payload under its space's data key for the month it happened in, or,
+    /// Seals `event`'s payload under its project's data key for the month it happened in, or,
     /// for an event holding a memory's text or an account (a model account or a git host),
     /// under that item's own key.
     pub async fn seal_event(&self, scope: &Scope, event: &RawEvent) -> Result<Sealed, KeyError> {
@@ -127,24 +127,24 @@ impl<S: KeyStorage> Keys<S> {
         open(&key, &event_aad(scope, fields, key_id), sealed, key_id)
     }
 
-    /// The name a blob is stored under in `scope`: HMAC-SHA-256 of its hash under the space
-    /// key, so the store does not reveal which known files it holds. `None` when the space
+    /// The name a blob is stored under in `scope`: HMAC-SHA-256 of its hash under the project
+    /// key, so the store does not reveal which known files it holds. `None` when the project
     /// has no key yet (or it was erased), so nothing sealed can be found.
     pub async fn blob_name(
         &self,
         scope: &Scope,
         sha256: &Sha256,
     ) -> Result<Option<String>, KeyError> {
-        let Some(space) = self.live_space_key(scope).await? else {
+        let Some(project) = self.live_project_key(scope).await? else {
             return Ok(None);
         };
-        Ok(Some(space.name_blob(sha256)?))
+        Ok(Some(project.name_blob(sha256)?))
     }
 
     /// The words `terms` as `scope`'s full-text index holds them (`glave_ports::search`):
-    /// each a keyed hash under the space key's naming half, so the index reveals no word, the
-    /// same query finds the same words until the space is erased, and no other space's words
-    /// match. `None` when the space has no key yet (or it was erased): nothing can be found.
+    /// each a keyed hash under the project key's naming half, so the index reveals no word, the
+    /// same query finds the same words until the project is erased, and no other project's words
+    /// match. `None` when the project has no key yet (or it was erased): nothing can be found.
     pub async fn search_terms(
         &self,
         scope: &Scope,
@@ -153,17 +153,17 @@ impl<S: KeyStorage> Keys<S> {
         if terms.is_empty() {
             return Ok(Some(Vec::new()));
         }
-        let Some(space) = self.live_space_key(scope).await? else {
+        let Some(project) = self.live_project_key(scope).await? else {
             return Ok(None);
         };
         terms
             .iter()
-            .map(|term| space.name_term(term))
+            .map(|term| project.name_term(term))
             .collect::<Result<Vec<_>, _>>()
             .map(Some)
     }
 
-    /// Seals a blob under the space's data key for this month. Returns the name to store it
+    /// Seals a blob under the project's data key for this month. Returns the name to store it
     /// under and the sealed bytes.
     pub async fn seal_blob(
         &self,
@@ -214,13 +214,13 @@ pub fn erased_payload(key_id: &str, error: &KeyError) -> Option<Vec<u8>> {
     (destroyed && item).then(|| b"{}".to_vec())
 }
 
-/// What binds a sealed payload to its row: the envelope version, organization, space,
+/// What binds a sealed payload to its row: the envelope version, organization, project,
 /// thread, `seq`, `type`, `v` and `key_id`, in that order (`specs/storage.md`).
 fn event_aad(scope: &Scope, fields: &EventFields<'_>, key_id: &str) -> Vec<u8> {
     associated(&[
         fields.glave.to_string().as_bytes(),
         scope.org.to_string().as_bytes(),
-        scope.space.to_string().as_bytes(),
+        scope.project.to_string().as_bytes(),
         fields.thread.to_string().as_bytes(),
         fields.seq.get().to_string().as_bytes(),
         fields.kind.as_bytes(),
@@ -234,15 +234,15 @@ fn blob_aad(scope: &Scope, name: &str, key_id: &str) -> Vec<u8> {
     associated(&[
         b"glave/blob/v1",
         scope.org.to_string().as_bytes(),
-        scope.space.to_string().as_bytes(),
+        scope.project.to_string().as_bytes(),
         name.as_bytes(),
         key_id.as_bytes(),
     ])
 }
 
-/// A data key named for another space never opens content in this one.
-pub(crate) fn check_space(scope: &Scope, id: &KeyId) -> Result<(), KeyError> {
-    if id.space == scope.space {
+/// A data key named for another project never opens content in this one.
+pub(crate) fn check_project(scope: &Scope, id: &KeyId) -> Result<(), KeyError> {
+    if id.project == scope.project {
         Ok(())
     } else {
         Err(KeyError::Tampered(id.to_string()))

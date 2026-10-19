@@ -22,7 +22,7 @@ describe('isProjectStart', () => {
     for (const start of ['folder', 'repository', 'empty']) {
       expect(isProjectStart(start)).toBe(true);
     }
-    expect(isProjectStart('space')).toBe(false);
+    expect(isProjectStart('project')).toBe(false);
     expect(isProjectStart(null)).toBe(false);
   });
 });

@@ -1,12 +1,12 @@
-//! What every [`Spaces`] must do: keep whole records apart by organization, refuse a taken id
-//! or a second personal space, keep each owner's project names apart, list a person's spaces
-//! in id order, change only what may change, and lead every folder key to one space.
+//! What every [`Projects`] must do: keep whole records apart by organization, refuse a taken id
+//! or a second personal project, keep each owner's project names apart, list a person's projects
+//! in id order, change only what may change, and lead every folder key to one project.
 
 use glave_event::{At, Principal, PrincipalId};
 
 use super::{Verdict, ensure, uuid_v7};
-use crate::scope::{OrgId, SpaceId};
-use crate::spaces::{FolderKey, Space, SpaceError, SpaceKind, Spaces};
+use crate::projects::{FolderKey, Project, ProjectError, ProjectKind, Projects};
+use crate::scope::{OrgId, ProjectId};
 
 fn person(n: u64) -> Result<Principal, String> {
     PrincipalId::try_from(uuid_v7(4_000 + n))
@@ -18,12 +18,12 @@ fn at(text: &str) -> Result<At, String> {
     At::try_from(text.to_owned()).map_err(|e| e.to_string())
 }
 
-fn space(n: u64, kind: SpaceKind, owner: &Principal) -> Result<Space, String> {
+fn record(n: u64, kind: ProjectKind, owner: &Principal) -> Result<Project, String> {
     let created = at("2026-10-11T09:00:00.000Z")?;
-    Ok(Space {
-        id: SpaceId::from_uuid(uuid_v7(5_000 + n)),
+    Ok(Project {
+        id: ProjectId::from_uuid(uuid_v7(5_000 + n)),
         kind,
-        name: format!("space {n}"),
+        name: format!("project {n}"),
         owner: owner.clone(),
         members: Vec::new(),
         created_at: created,
@@ -35,43 +35,43 @@ fn space(n: u64, kind: SpaceKind, owner: &Principal) -> Result<Space, String> {
     clippy::needless_pass_by_value,
     reason = "taken by value to pass straight to map_err"
 )]
-fn failed(error: SpaceError) -> String {
+fn failed(error: ProjectError) -> String {
     error.to_string()
 }
 
-/// The spaces suite.
-pub async fn spaces(store: &dyn Spaces) -> Verdict {
+/// The projects suite.
+pub async fn projects(store: &dyn Projects) -> Verdict {
     let org = OrgId::from_uuid(uuid_v7(1_101));
     let other_org = OrgId::from_uuid(uuid_v7(1_102));
     let (ada, grace, linus) = (person(1)?, person(2)?, person(3)?);
 
-    let mut project = space(1, SpaceKind::Project, &ada)?;
+    let mut project = record(1, ProjectKind::Project, &ada)?;
     project.members = vec![grace.clone()];
     ensure(
         store.get(org, project.id).await.map_err(failed)?.is_none(),
-        "a space never kept must read as none",
+        "a project never kept must read as none",
     )?;
     ensure(
         store.create(org, &project).await.map_err(failed)? == project,
-        "a space with a name of its own is kept as it is",
+        "a project with a name of its own is kept as it is",
     )?;
     ensure(
         store.get(org, project.id).await.map_err(failed)? == Some(project.clone()),
-        "a space must read back exactly as kept",
+        "a project must read back exactly as kept",
     )?;
     ensure(
         matches!(
             store.create(org, &project).await,
-            Err(SpaceError::Conflict(_))
+            Err(ProjectError::Conflict(_))
         ),
         "a taken id must be refused",
     )?;
-    let mut nameless = space(2, SpaceKind::Project, &ada)?;
+    let mut nameless = record(2, ProjectKind::Project, &ada)?;
     nameless.name = "  ".into();
     ensure(
         matches!(
             store.create(org, &nameless).await,
-            Err(SpaceError::Invalid(_))
+            Err(ProjectError::Invalid(_))
         ),
         "a name of only spaces must be refused",
     )?;
@@ -81,7 +81,7 @@ pub async fn spaces(store: &dyn Spaces) -> Verdict {
             .await
             .map_err(failed)?
             .is_none(),
-        "another organization must not see the space",
+        "another organization must not see the project",
     )?;
     listing(store, org, other_org, &project, [&ada, &grace, &linus]).await?;
     updating(store, org, &project, &linus).await?;
@@ -92,9 +92,9 @@ pub async fn spaces(store: &dyn Spaces) -> Verdict {
 
 /// One owner's projects never share a name, ignoring case: a new one takes the next free
 /// name, a rename to a taken one is refused. Another owner's may share it.
-async fn names(store: &dyn Spaces, org: OrgId, [ada, grace]: [&Principal; 2]) -> Verdict {
+async fn names(store: &dyn Projects, org: OrgId, [ada, grace]: [&Principal; 2]) -> Verdict {
     let named = |n: u64, name: &str, owner: &Principal| {
-        space(n, SpaceKind::Project, owner).map(|mut made| {
+        record(n, ProjectKind::Project, owner).map(|mut made| {
             made.name = name.into();
             made
         })
@@ -139,7 +139,7 @@ async fn names(store: &dyn Spaces, org: OrgId, [ada, grace]: [&Principal; 2]) ->
     ensure(
         matches!(
             store.update(org, &taken).await,
-            Err(SpaceError::Conflict(_))
+            Err(ProjectError::Conflict(_))
         ),
         "renaming a project to a name its owner has taken must be refused",
     )?;
@@ -153,18 +153,18 @@ async fn names(store: &dyn Spaces, org: OrgId, [ada, grace]: [&Principal; 2]) ->
 }
 
 async fn listing(
-    store: &dyn Spaces,
+    store: &dyn Projects,
     org: OrgId,
     other_org: OrgId,
-    project: &Space,
+    project: &Project,
     [ada, grace, linus]: [&Principal; 3],
 ) -> Verdict {
-    let later = space(3, SpaceKind::Project, ada)?;
+    let later = record(3, ProjectKind::Project, ada)?;
     store.create(org, &later).await.map_err(failed)?;
-    let ids = |spaces: Vec<Space>| spaces.into_iter().map(|s| s.id).collect::<Vec<_>>();
+    let ids = |projects: Vec<Project>| projects.into_iter().map(|s| s.id).collect::<Vec<_>>();
     ensure(
         ids(store.list(org, ada, 10).await.map_err(failed)?) == [project.id, later.id],
-        "the owner's spaces must list in id order",
+        "the owner's projects must list in id order",
     )?;
     ensure(
         ids(store.list(org, ada, 1).await.map_err(failed)?) == [project.id],
@@ -172,11 +172,11 @@ async fn listing(
     )?;
     ensure(
         ids(store.list(org, grace, 10).await.map_err(failed)?) == [project.id],
-        "a member must see the spaces they are a member of",
+        "a member must see the projects they are a member of",
     )?;
     ensure(
         store.list(org, linus, 10).await.map_err(failed)?.is_empty(),
-        "someone neither owner nor member must see no space",
+        "someone neither owner nor member must see no project",
     )?;
     ensure(
         store
@@ -188,13 +188,18 @@ async fn listing(
     )
 }
 
-async fn updating(store: &dyn Spaces, org: OrgId, project: &Space, linus: &Principal) -> Verdict {
+async fn updating(
+    store: &dyn Projects,
+    org: OrgId,
+    project: &Project,
+    linus: &Principal,
+) -> Verdict {
     let mut changed = project.clone();
     changed.name = "renamed".into();
     changed.members = vec![linus.clone(), project.owner.clone()];
     changed.updated_at = at("2026-10-12T09:00:00.000Z")?;
     let mut tampered = changed.clone();
-    tampered.kind = SpaceKind::Personal;
+    tampered.kind = ProjectKind::Personal;
     tampered.owner = linus.clone();
     tampered.created_at = changed.updated_at;
     store.update(org, &tampered).await.map_err(failed)?;
@@ -208,56 +213,56 @@ async fn updating(store: &dyn Spaces, org: OrgId, project: &Space, linus: &Princ
             .await
             .map_err(failed)?
             .iter()
-            .any(|space| space.id == project.id),
-        "a member added by an update must see the space",
+            .any(|listed| listed.id == project.id),
+        "a member added by an update must see the project",
     )?;
-    let missing = space(9, SpaceKind::Project, linus)?;
+    let missing = record(9, ProjectKind::Project, linus)?;
     ensure(
         matches!(
             store.update(org, &missing).await,
-            Err(SpaceError::NotFound(_))
+            Err(ProjectError::NotFound(_))
         ),
-        "updating a space never kept must be refused",
+        "updating a project never kept must be refused",
     )
 }
 
-async fn personal(store: &dyn Spaces, org: OrgId, other_org: OrgId, ada: &Principal) -> Verdict {
-    let first = space(10, SpaceKind::Personal, ada)?;
+async fn personal(store: &dyn Projects, org: OrgId, other_org: OrgId, ada: &Principal) -> Verdict {
+    let first = record(10, ProjectKind::Personal, ada)?;
     let kept = store.personal(org, &first).await.map_err(failed)?;
     ensure(
         kept == first,
-        "a person's first personal space must be kept",
+        "a person's first personal project must be kept",
     )?;
-    let second = space(11, SpaceKind::Personal, ada)?;
+    let second = record(11, ProjectKind::Personal, ada)?;
     ensure(
         store.personal(org, &second).await.map_err(failed)? == first,
-        "a person must keep exactly one personal space",
+        "a person must keep exactly one personal project",
     )?;
     ensure(
         matches!(
             store.create(org, &second).await,
-            Err(SpaceError::Conflict(_))
+            Err(ProjectError::Conflict(_))
         ),
-        "a second personal space must be refused",
+        "a second personal project must be refused",
     )?;
     ensure(
         store.personal(other_org, &second).await.map_err(failed)? == second,
-        "each organization must give a person a personal space of its own",
+        "each organization must give a person a personal project of its own",
     )
 }
 
-async fn folders(store: &dyn Spaces, org: OrgId, other_org: OrgId, ada: &Principal) -> Verdict {
+async fn folders(store: &dyn Projects, org: OrgId, other_org: OrgId, ada: &Principal) -> Verdict {
     let path = |p: &str| FolderKey::Path(p.into());
     let remote = FolderKey::Remote("git@example.com:glave/app.git".into());
-    let first = space(20, SpaceKind::Project, ada)?;
-    let unused = space(21, SpaceKind::Project, ada)?;
+    let first = record(20, ProjectKind::Project, ada)?;
+    let unused = record(21, ProjectKind::Project, ada)?;
     let found = store
         .folder(org, &[path("/code/app"), remote.clone()], &first)
         .await
         .map_err(failed)?;
     ensure(
         found == first,
-        "a folder no key leads to must get the new space",
+        "a folder no key leads to must get the new project",
     )?;
     let clone = store
         .folder(org, &[path("/elsewhere/app"), remote.clone()], &unused)
@@ -265,7 +270,7 @@ async fn folders(store: &dyn Spaces, org: OrgId, other_org: OrgId, ada: &Princip
         .map_err(failed)?;
     ensure(
         clone.id == first.id,
-        "another checkout of the same remote must find the same space",
+        "another checkout of the same remote must find the same project",
     )?;
     let moved = store
         .folder(org, &[path("/elsewhere/app")], &unused)
@@ -273,18 +278,21 @@ async fn folders(store: &dyn Spaces, org: OrgId, other_org: OrgId, ada: &Princip
         .map_err(failed)?;
     ensure(
         moved.id == first.id,
-        "a path met through its remote must lead to the space from then on",
+        "a path met through its remote must lead to the project from then on",
     )?;
     ensure(
         store.get(org, unused.id).await.map_err(failed)?.is_none(),
-        "a space not needed must not be kept",
+        "a project not needed must not be kept",
     )?;
     let fresh = store
         .folder(org, &[path("/code/other")], &unused)
         .await
         .map_err(failed)?;
-    ensure(fresh == unused, "an unknown folder must get the new space")?;
-    let other = space(22, SpaceKind::Project, ada)?;
+    ensure(
+        fresh == unused,
+        "an unknown folder must get the new project",
+    )?;
+    let other = record(22, ProjectKind::Project, ada)?;
     let there = store
         .folder(other_org, &[path("/code/app")], &other)
         .await

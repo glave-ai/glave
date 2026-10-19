@@ -6,8 +6,8 @@ pub mod code;
 mod credentials;
 mod live;
 mod models;
+mod projects;
 mod providers;
-mod spaces;
 mod tasks;
 mod trust;
 
@@ -18,7 +18,7 @@ use glave_event::{
 use glave_harness::{GoalProgress, RunningCommand, TurnSummary};
 use glave_ports::computer::{CommandId, ComputerId};
 use glave_ports::memories::Remembered;
-use glave_ports::{Failure, Space, SpaceId, Standing};
+use glave_ports::{Failure, Project, ProjectId, Standing};
 use serde::{Deserialize, Serialize};
 
 pub use credentials::{Ability, CredentialInfo, DeviceCode};
@@ -26,8 +26,8 @@ pub use glave_event::ApprovalMode;
 pub use glave_event::{Forge, ProviderKind};
 pub use live::Update;
 pub use models::ModelInfo;
+pub use projects::{GoneFolder, NewFolder, ProjectFolder};
 pub use providers::{ProviderInfo, hint};
-pub use spaces::{GoneFolder, NewFolder, ProjectFolder};
 pub use tasks::{ScheduleInfo, TaskInfo, TaskKind, TaskStatus};
 pub use trust::{TrustAsk, TrustChoice, TrustItem};
 
@@ -89,10 +89,10 @@ methods! {
     /// The models this server can run: the default first.
     "model/list" => ModelList {} -> [Models],
     "thread/start" => ThreadStart {
-        /// The space the thread is in: by default the server's own, for a caller who works in
-        /// it, else the caller's personal space.
+        /// The project the thread is in: by default the server's own, for a caller who works in
+        /// it, else the caller's personal project.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
         /// Whether the thread works in a worktree of its own rather than in the folder itself;
         /// the server's default (`worktree` in `config.toml`) when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -116,9 +116,9 @@ methods! {
         approval: Option<ApprovalMode>,
     } -> [Thread],
     "thread/list" => ThreadList {
-        /// The space whose threads to list, by default as `thread/start` picks one.
+        /// The project whose threads to list, by default as `thread/start` picks one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
         /// Which threads: the active ones by default.
@@ -208,7 +208,7 @@ methods! {
     "goal/stop" => GoalStop { thread: ThreadId } -> [Done],
     /// The thread's latest goal and how far it has come.
     "goal/get" => GoalGet { thread: ThreadId } -> [Goal],
-    /// Tasks running and recently finished in every space the caller works in, running first,
+    /// Tasks running and recently finished in every project the caller works in, running first,
     /// then newest first.
     "tasks/list" => TasksList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -223,9 +223,9 @@ methods! {
     /// Runs a prompt, or works toward a goal, as a task at set times, each run in a new thread
     /// working on a copy of its own.
     "schedule/create" => ScheduleCreate {
-        /// The space its runs are in, by default as `thread/start` picks one.
+        /// The project its runs are in, by default as `thread/start` picks one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
         when: When,
         prompt: String,
         #[serde(default, skip_serializing_if = "is_false")]
@@ -233,40 +233,40 @@ methods! {
         /// Tokens each run may use. Required: no schedule runs unbounded.
         budget: u64,
     } -> [Schedule],
-    /// The schedules of every space the caller works in.
+    /// The schedules of every project the caller works in.
     "schedule/list" => ScheduleList {} -> [Schedules],
     "schedule/delete" => ScheduleDelete { schedule: ScheduleId } -> [Done],
-    /// The spaces the caller works in: owns, or is a member of.
-    "space/list" => SpaceList {
+    /// The projects the caller works in: owns, or is a member of.
+    "project/list" => ProjectList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
-    } -> [Spaces],
-    "space/get" => SpaceGet { space: SpaceId } -> [Space],
-    /// A new project space, owned by the caller, with `members` working in it too, and its
+    } -> [Projects],
+    "project/get" => ProjectGet { project: ProjectId } -> [Project],
+    /// A new project, owned by the caller, with `members` working in it too, and its
     /// folder, if it has one: its threads work there. A folder that already leads to a
     /// project answers that project, its name and members as they were. Only the person on
     /// this computer gives a folder.
-    "space/create" => SpaceCreate {
+    "project/create" => ProjectCreate {
         name: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         members: Vec<glave_event::Principal>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         folder: Option<NewFolder>,
-    } -> [Space],
-    /// Renames a space: its owner only.
-    "space/rename" => SpaceRename { space: SpaceId, name: String } -> [Space],
+    } -> [Project],
+    /// Renames a project: its owner only.
+    "project/rename" => ProjectRename { project: ProjectId, name: String } -> [Project],
     /// Gives a project the folder already on this computer at `path`, as its folder's new
     /// place: its threads work there from now on. Its owner only, and only the person on this
     /// computer.
-    "space/folder/set" => SpaceFolderSet {
-        space: SpaceId,
+    "project/folder/set" => ProjectFolderSet {
+        project: ProjectId,
         /// The folder's full path.
         path: String,
-    } -> [Space],
+    } -> [Project],
     /// Removes a project: its threads go to the archive, their history kept, and it is listed
     /// no more until it is given a folder again. Its owner only, and only the person on this
     /// computer.
-    "space/remove" => SpaceRemove { space: SpaceId } -> [Done],
+    "project/remove" => ProjectRemove { project: ProjectId } -> [Done],
     /// The folders inside a folder on this computer, by name, to choose a project's folder
     /// from: the home folder when `path` is absent. Only the person on this computer.
     "folder/list" => FolderList {
@@ -274,35 +274,35 @@ methods! {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<String>,
     } -> [Folders],
-    /// The memories here: the person's and the space's, or one `scope`.
+    /// The memories here: the person's and the project's, or one `scope`.
     "memory/list" => MemoryList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<MemoryScope>,
-        /// The space whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the server's own when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
     } -> [Memories],
     "memory/save" => MemorySave {
         text: String,
         scope: MemoryScope,
-        /// The space whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the server's own when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
     } -> [Memories],
     "memory/edit" => MemoryEdit {
         memory: MemoryId,
         text: String,
-        /// The space whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the server's own when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
     } -> [Memories],
     /// Saved in the new scope, forgotten in the old.
     "memory/move" => MemoryMove {
         memory: MemoryId,
         scope: MemoryScope,
-        /// The space whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the server's own when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
     } -> [Memories],
     /// Forgets one memory, or with `all`, every memory of `scope`.
     "memory/forget" => MemoryForget {
@@ -312,16 +312,16 @@ methods! {
         all: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scope: Option<MemoryScope>,
-        /// The space whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the server's own when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
     } -> [Memories],
     /// Undoes glave's latest change to a memory, within 30 days.
     "memory/restore" => MemoryRestore {
         memory: MemoryId,
-        /// The space whose memory, beside the person's own: the server's own when absent.
+        /// The project whose memory, beside the person's own: the server's own when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        space: Option<SpaceId>,
+        project: Option<ProjectId>,
     } -> [Memories],
     /// Connects a model account: the key is checked with the service, then kept sealed, and
     /// the account's models join `model/list`. Connecting the same service (and URL) again
@@ -373,7 +373,7 @@ fn is_false(value: &bool) -> bool {
 }
 
 impl Request {
-    /// The thread a request acts on, when it names one: whose space decides whether the
+    /// The thread a request acts on, when it names one: whose project decides whether the
     /// caller may make it.
     pub fn thread(&self) -> Option<ThreadId> {
         match self {
@@ -399,16 +399,16 @@ impl Request {
         }
     }
 
-    /// For a request on a space's memory, the space it acts in: the one it names, else
+    /// For a request on a project's memory, the project it acts in: the one it names, else
     /// `home`, the server's own.
-    pub(crate) fn memory_space(&self, home: SpaceId) -> Option<SpaceId> {
+    pub(crate) fn memory_project(&self, home: ProjectId) -> Option<ProjectId> {
         match self {
-            Self::MemoryList { space, .. }
-            | Self::MemorySave { space, .. }
-            | Self::MemoryEdit { space, .. }
-            | Self::MemoryMove { space, .. }
-            | Self::MemoryForget { space, .. }
-            | Self::MemoryRestore { space, .. } => Some(space.unwrap_or(home)),
+            Self::MemoryList { project, .. }
+            | Self::MemorySave { project, .. }
+            | Self::MemoryEdit { project, .. }
+            | Self::MemoryMove { project, .. }
+            | Self::MemoryForget { project, .. }
+            | Self::MemoryRestore { project, .. } => Some(project.unwrap_or(home)),
             _ => None,
         }
     }
@@ -515,7 +515,7 @@ pub struct ServerInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ThreadSummary {
     pub id: ThreadId,
-    pub space: SpaceId,
+    pub project: ProjectId,
     pub status: Status,
     pub standing: Standing,
     /// The title the person gave it, else the first line of their first message.
@@ -638,17 +638,17 @@ pub enum Reply {
     Schedule { schedule: ScheduleInfo },
     #[schemars(title = "Schedules")]
     Schedules { schedules: Vec<ScheduleInfo> },
-    /// A space: one asked for, made or renamed, with its folder when it has one.
-    #[schemars(title = "Space")]
-    Space {
-        space: Space,
+    /// A project: one asked for, made or renamed, with its folder when it has one.
+    #[schemars(title = "Project")]
+    Project {
+        project: Project,
         /// Where its threads work.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         folder: Option<ProjectFolder>,
     },
-    #[schemars(title = "Spaces")]
-    Spaces {
-        spaces: Vec<Space>,
+    #[schemars(title = "Projects")]
+    Projects {
+        projects: Vec<Project>,
         /// The projects among them whose folder isn't there anymore.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         gone: Vec<GoneFolder>,

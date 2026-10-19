@@ -8,7 +8,7 @@ use glave_event::{
 use glave_ports::block_on;
 use glave_ports::computer::{Computers, Environment, Sources};
 use glave_ports::testing::CountingEntropy;
-use glave_ports::{InMemoryLog, OrgId, SpaceId};
+use glave_ports::{InMemoryLog, OrgId, ProjectId};
 
 use super::*;
 use crate::worktrees::{FOLDER, SWEPT, check_if_due};
@@ -50,7 +50,7 @@ fn place(name: &str) -> (PathBuf, PathBuf) {
 fn scope() -> Scope {
     Scope {
         org: OrgId::from_uuid(uuid::Uuid::from_u128(1)),
-        space: SpaceId::from_uuid(uuid::Uuid::from_u128(2)),
+        project: ProjectId::from_uuid(uuid::Uuid::from_u128(2)),
     }
 }
 

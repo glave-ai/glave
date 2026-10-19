@@ -6,7 +6,7 @@ import { SessionService } from './session.service';
 /** What the memory page knows: the memories, or that memory is off for this server. */
 type MemoryState = 'loading' | 'ready' | 'off';
 
-/** The person's and this space's memories, and the person's controls over them. */
+/** The person's and this project's memories, and the person's controls over them. */
 @Service()
 export class MemoryService {
   private readonly session = inject(SessionService);

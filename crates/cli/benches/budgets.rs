@@ -133,7 +133,7 @@ async fn threads(dir: &Path) -> anyhow::Result<(Duration, Duration)> {
     let store = Store::open(&database, keys()?).await?;
     let scope = glave_ports::Scope {
         org: store.org(uuid(1)).await?,
-        space: glave_ports::SpaceId::from_uuid(uuid(2)),
+        project: glave_ports::ProjectId::from_uuid(uuid(2)),
     };
     let harness = harness_on(&store, &project).await?;
     let mut thread = harness.start_thread(scope).await?;

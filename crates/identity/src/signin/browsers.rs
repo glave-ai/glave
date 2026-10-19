@@ -3,7 +3,7 @@
 //! and for five minutes, is traded for a browser session: a bearer token the tab keeps and
 //! sends as a header, never a cookie, accepted only from loopback as the local person, and
 //! good for 30 days from its last use. Codes are kept in memory, as their SHA-256 alone.
-//! Sessions are kept in the store, in the browsers ledger of the person's personal space
+//! Sessions are kept in the store, in the browsers ledger of the person's personal project
 //! (glave's own stream under a reserved id), as the SHA-256 of each token alone, so nothing
 //! kept signs anyone in; every server on one store signs in the same browsers. The server's
 //! id, which a browser checks before it presents its session, is the caller's to keep.
@@ -53,7 +53,7 @@ const SECRET_BYTES: usize = 32;
 const ATTEMPTS: usize = 8;
 
 /// The browsers ledger's reserved id, `00000000-0000-7000-8000-000000000005`: the browser
-/// sessions of the person on their own server, in their personal space.
+/// sessions of the person on their own server, in their personal project.
 pub fn browsers_ledger() -> Option<ThreadId> {
     reserved_ledger(5)
 }

@@ -3,10 +3,10 @@
 
 mod blobs;
 mod log;
-mod spaces;
+mod projects;
 mod tools;
 
 pub use blobs::InMemoryBlobs;
 pub use log::InMemoryLog;
-pub use spaces::InMemorySpaces;
+pub use projects::InMemoryProjects;
 pub use tools::InMemoryTools;

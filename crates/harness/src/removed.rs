@@ -3,7 +3,7 @@
 //! `workspace.removed` on the thread.
 
 use glave_event::{EventId, Header, Payload, RawEvent, Seq, ThreadId, WorkspaceRemoved, encode};
-use glave_ports::{EventLog, OrgId, Scope, SpaceId};
+use glave_ports::{EventLog, OrgId, ProjectId, Scope};
 use jiff::Timestamp;
 use uuid::Uuid;
 
@@ -12,12 +12,12 @@ use crate::harness::HarnessError;
 /// Events read per page while looking for a thread's last one.
 const PAGE: usize = 1_000;
 
-/// The label a thread's worktree is kept with: `<org>/<space>/<thread>`.
+/// The label a thread's worktree is kept with: `<org>/<project>/<thread>`.
 pub fn owner_label(scope: Scope, thread: ThreadId) -> String {
     format!(
         "{}/{}/{}",
         scope.org.as_uuid(),
-        scope.space.as_uuid(),
+        scope.project.as_uuid(),
         thread.as_uuid()
     )
 }
@@ -25,14 +25,14 @@ pub fn owner_label(scope: Scope, thread: ThreadId) -> String {
 /// The thread an owner label names, if it is one.
 pub fn owner_of(label: &str) -> Option<(Scope, ThreadId)> {
     let mut parts = label.split('/').map(Uuid::parse_str);
-    let (Some(Ok(org)), Some(Ok(space)), Some(Ok(thread)), None) =
+    let (Some(Ok(org)), Some(Ok(project)), Some(Ok(thread)), None) =
         (parts.next(), parts.next(), parts.next(), parts.next())
     else {
         return None;
     };
     let scope = Scope {
         org: OrgId::from_uuid(org),
-        space: SpaceId::from_uuid(space),
+        project: ProjectId::from_uuid(project),
     };
     Some((scope, ThreadId::try_from(thread).ok()?))
 }
