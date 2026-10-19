@@ -63,6 +63,14 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
+      # mold links several times faster than GNU ld, and linking the test programs is much of
+      # a build. It replaces the system's ld, so the cache key and every command stay the same.
+      - name: Link with mold
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends mold
+          sudo ln -sf "$(command -v mold)" "$(realpath /usr/bin/ld)"
+          ld --version
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -110,6 +118,15 @@ jobs:
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
         working-directory: .
+      # mold links several times faster than GNU ld, and linking the test programs is much of
+      # a build. It replaces the system's ld, so the cache key and every command stay the same.
+      - name: Link with mold
+        working-directory: .
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends mold
+          sudo ln -sf "$(command -v mold)" "$(realpath /usr/bin/ld)"
+          ld --version
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -180,6 +197,14 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
+      # mold links several times faster than GNU ld, and linking the test programs is much of
+      # a build. It replaces the system's ld, so the cache key and every command stay the same.
+      - name: Link with mold
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends mold
+          sudo ln -sf "$(command -v mold)" "$(realpath /usr/bin/ld)"
+          ld --version
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -232,6 +257,14 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install the pinned toolchain (rust-toolchain.toml)
         run: rustup toolchain install
+      # mold links several times faster than GNU ld, and linking the test programs is much of
+      # a build. It replaces the system's ld, so the cache key and every command stay the same.
+      - name: Link with mold
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends mold
+          sudo ln -sf "$(command -v mold)" "$(realpath /usr/bin/ld)"
+          ld --version
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
