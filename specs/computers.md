@@ -19,16 +19,16 @@ Worktrees per thread (#29): a thread works in its project's folder in place by d
 | Noun | Is | Lives |
 | --- | --- | --- |
 | **Computer** | a machine: a laptop, a microVM, a server, a pod | created, slept, woken and destroyed; disposable |
-| **Environment** | the recipe a computer is made from | versioned; belongs to a space |
-| **Workspace** | a working copy of a space's sources on a computer, where one thread's tools act | as long as its thread is open |
+| **Environment** | the recipe a computer is made from | versioned; belongs to a project |
+| **Workspace** | a working copy of a project's sources on a computer, where one thread's tools act | as long as its thread is open |
 
-- One computer holds many workspaces. In the cloud it is usually one per person, holding that person's workspaces for one space at a time per sealed policy.
+- One computer holds many workspaces. In the cloud it is usually one per person, holding that person's workspaces for one project at a time per sealed policy.
 - A workspace lives on exactly one computer at a time, and has its own id: threads reference it, so a subagent shares its parent's.
-- A computer never holds two organizations' work, and a sealed space's work only on computers dedicated to it.
+- A computer never holds two organizations' work, and a sealed project's work only on computers dedicated to it.
 
 ## The rules
 
-1. **The harness never runs where untrusted code runs, and never picks a machine.** It asks the computer port for "a workspace for this thread, in this space, from this environment"; placement happens behind the port, under policy (`policy.md`).
+1. **The harness never runs where untrusted code runs, and never picks a machine.** It asks the computer port for "a workspace for this thread, in this project, from this environment"; placement happens behind the port, under policy (`policy.md`).
 2. **Tools run on the computer, next to the files.** The same tool code runs in-process on a local computer and inside `glave computer serve` (the same binary) on a remote one, so tools behave identically everywhere. One conformance suite checks every computer adapter.
 3. **Work moves between computers only through git:** a `glave/<thread>` branch pushed and fetched. A plain folder lives on one computer and is worked in place; glave keeps no history of its own in it. There is no other transfer mechanism.
 4. **Every binding is an event.** `workspace.bound` (thread, workspace, computer, root, sources) when a thread first acts somewhere; `workspace.moved` (from, to) when it moves. The workspace root is recorded once; tool output and glave's own fields use paths relative to it.
@@ -48,7 +48,7 @@ A computer adapter answers, over the same JSON-RPC as the session API (in-proces
 | `computer/sleep`, `computer/wake` | frees compute and keeps the disk; brings it back |
 | `computer/resize` | changes CPU and memory within policy (in place, or by sleeping and waking on a bigger host) |
 | `computer/destroy` | removes it and its disk |
-| `workspace/open` | checks out a space's sources (at a ref) as a new workspace; returns its id and root |
+| `workspace/open` | checks out a project's sources (at a ref) as a new workspace; returns its id and root |
 | `workspace/close` | removes a workspace |
 | `tool/run` | runs one tool call in a workspace, streaming a command's output; the sandbox is a property of the call |
 | `credentials/request` | the computer's credential helper asking the harness for a credential, which may refuse |
@@ -82,11 +82,11 @@ Built so far, beside `computer/create`, `computer/status`, `computer/destroy`, `
 
 A repository opens as a clone under `~/.glave/workspaces/<computer>/<workspace>`, removed on close; a folder opens in place and is kept.
 
-`workspace/open` also takes `{"kind": "project", "name"}`: a new project's folder, made empty where the computer keeps projects (this machine: `~/glave`, `storage.md` "Spaces"), named `name` or the first of `name-2`, `name-3` and on that is free, never a folder that was there, and kept as the project's. A name that is not one folder's plain name is refused; a computer that makes no projects' folders answers unsupported. glave then makes it a git repository, or clones the project's repository into it, as a command of its own outside the sandbox (git writes its own files there, which the sandbox protects), signing in with the credential helper as any command's git does ("Credentials"); a clone that fails takes the folder with it.
+`workspace/open` also takes `{"kind": "project", "name"}`: a new project's folder, made empty where the computer keeps projects (this machine: `~/glave`, `storage.md` "Projects"), named `name` or the first of `name-2`, `name-3` and on that is free, never a folder that was there, and kept as the project's. A name that is not one folder's plain name is refused; a computer that makes no projects' folders answers unsupported. glave then makes it a git repository, or clones the project's repository into it, as a command of its own outside the sandbox (git writes its own files there, which the sandbox protects), signing in with the credential helper as any command's git does ("Credentials"); a clone that fails takes the folder with it.
 
 `workspace/open` also takes `{"kind": "worktree", "path", "branch"}`: a git worktree of the repository around `path`, on `branch`, made from the folder's current commit when the branch is new (`git worktree add -b`), or checked out again when the branch exists. It lives at `~/.glave/worktrees/<repository>-<digest>/<branch, / as ->`, never inside the repository; the digest is of the repository's shared git folder, so two repositories with one name never share a folder. Opening the same branch again reopens the same worktree, and closing one keeps it. Worktrees of one repository are made one at a time by every glave process on the machine, by an OS lock on `glave-worktree.lock` in its shared git folder (a machine resource, which `invariants.md` allows): git does not make two `git worktree add`s on one repository at once safe (one can read the other's half-made `.git/worktrees/<name>`), so threads started together wait their turn, milliseconds each, rather than retry. A folder outside a repository, or a repository with no commit, is refused with a sentence saying so; a computer that keeps no worktrees answers unsupported. Glave names a thread's branch `glave/` and the last 12 hex digits of the thread's id (its random part, so threads started in the same moment never share one), and starts the thread's tools there; the model is sent the same prompt and tools as in place, with paths relative to the worktree.
 
-**Cleanup is deterministic.** Each worktree has a record beside it (`<folder>.json`: its version, its repository's shared git folder, branch, owning thread as `<org>/<space>/<thread>`, and any hold), kept on the computer that holds the worktree, replaced whole, and refused when a newer glave wrote it (`invariants.md`). A worktree is **safe** to remove when `git status --porcelain` is empty and `git rev-list HEAD --not --remotes` prints nothing: every commit is on some remote, so a squash-merged branch that was pushed counts. Removing one never deletes its branch, so resuming its thread checks it out again (and clears any hold). Every removal is recorded on the owning thread as `workspace.removed` (`events.md`) with its reason. The triggers:
+**Cleanup is deterministic.** Each worktree has a record beside it (`<folder>.json`: its version, its repository's shared git folder, branch, owning thread as `<org>/<project>/<thread>`, and any hold), kept on the computer that holds the worktree, replaced whole, and refused when a newer glave wrote it (`invariants.md`). A worktree is **safe** to remove when `git status --porcelain` is empty and `git rev-list HEAD --not --remotes` prints nothing: every commit is on some remote, so a squash-merged branch that was pushed counts. Removing one never deletes its branch, so resuming its thread checks it out again (and clears any hold). Every removal is recorded on the owning thread as `workspace.removed` (`events.md`) with its reason. The triggers:
 
 - **Thread archived or deleted** (`archived`): safe → removed; otherwise kept and held. `glave threads archive|delete` calls it. Cleanup runs in the command and appends `workspace.removed` straight to the log; a glave holding the thread takes the record in before its next event (`session.md`, "Records from outside").
 - **Idle 30 days** (`idle`): the thread's last event is 30 days old or more. glave checks once a day as it starts (the time of the last check is in `~/.glave/worktrees-checked`): safe → removed; otherwise kept and held, and said once.
@@ -167,7 +167,7 @@ How rule 8 is kept for git and the forges' own tools: a command run with credent
 
 ## Environments
 
-An environment is a file in the space, `.glave/environment.toml`, or the repository's `.devcontainer/devcontainer.json` when present (standards first):
+An environment is a file in the project, `.glave/environment.toml`, or the repository's `.devcontainer/devcontainer.json` when present (standards first):
 
 ```toml
 image = "ghcr.io/acme/rust:1.99"     # an OCI image; "host" for the local machine
@@ -186,5 +186,5 @@ Sizes and counts are choices within policy ceilings (`policy.md`): the largest s
 ## Placement defaults
 
 - **On a laptop:** the computer is the laptop. A thread works in its project's folder itself unless `worktree = true` gives it a worktree under `~/.glave/worktrees/`; a chat in a scratch folder. Tasks (`session.md`) and schedules' runs always work on a copy, never in the folder itself: a worktree of their own, whatever `worktree` says, so a folder that is not a git repository with a commit refuses them; on a worker only when workers are chosen (`on = "cloud"`, which puts every thread there), never merely because `[workers]` names a backend, so the person's own computer comes first. Later, a copy-on-write clone where the filesystem supports it, so a folder that is no repository can have tasks too.
-- **In the cloud:** one persistent computer per person by default, sleeping when idle; a space can be pinned to a computer of its own; short-lived burst computers start from a snapshot of the person's computer for parallel work, later.
+- **In the cloud:** one persistent computer per person by default, sleeping when idle; a project can be pinned to a computer of its own; short-lived burst computers start from a snapshot of the person's computer for parallel work, later.
 - **Removal:** a worktree is removed when its thread is archived, idle for 30 days or pruned, and only when nothing would be lost (above); reopening the thread checks its branch out again.
