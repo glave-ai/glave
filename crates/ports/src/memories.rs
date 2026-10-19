@@ -22,6 +22,37 @@ pub const FORGET: &str = "mcp__memory__forget";
 /// The tool that searches memories and past conversations by keyword.
 pub const RECALL: &str = "mcp__memory__recall";
 
+/// What a project allows (`specs/memory.md`): its own memory, the person's too, or none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ProjectMemory {
+    /// Threads read and write the person's memory and the project's.
+    #[default]
+    Shared,
+    /// Threads read and write the project's memory only; the person's never enters.
+    Isolated,
+    /// Threads neither read nor write memory.
+    Off,
+}
+
+impl ProjectMemory {
+    pub fn named(name: &str) -> Option<Self> {
+        match name.trim() {
+            "shared" => Some(Self::Shared),
+            "isolated" => Some(Self::Isolated),
+            "off" => Some(Self::Off),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Shared => "shared",
+            Self::Isolated => "isolated",
+            Self::Off => "off",
+        }
+    }
+}
+
 /// Who and where a memory request is for: always from the session or the thread, never from
 /// the model. A memory server receives it in each request's `_meta`, flat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

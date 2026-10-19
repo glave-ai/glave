@@ -12,8 +12,9 @@ use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
 
-use glave_config::policy::{self, Choices, Chosen, Constraints, Judge, Locations, Source};
-use glave_harness::{ApprovalMode, Defaults, Hooks};
+use glave_config::policy::{self, Choices, Chosen, Constraints, Locations, Source};
+use glave_harness::{ApprovalMode, Defaults};
+use glave_ports::settings::{Hooks, Judge};
 use glave_ports::{BoxFuture, ToolSource};
 use glave_session::{Apply, Changed, Models, Rereads, Runs};
 

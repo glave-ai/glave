@@ -9,12 +9,13 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
 use glave_harness::{
-    Harness, HarnessError, Hooks, Parts, Place, ProjectFolders, ReleasedWorker, Settings,
-    TurnSummary, Workers, Workspace,
+    Harness, HarnessError, Parts, Place, ProjectFolders, ReleasedWorker, Settings, TurnSummary,
+    Workers, Workspace,
 };
 use glave_identity::signin::Browsers;
 use glave_ports::computer::{ComputerError, Environment};
 use glave_ports::memories::Memory;
+use glave_ports::settings::Hooks;
 use glave_ports::{
     BlobStore, Caller, Clock, Entropy, EventLog, ModelProvider, Projects, Scope, ToolSource,
 };

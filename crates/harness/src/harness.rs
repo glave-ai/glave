@@ -11,10 +11,12 @@ use glave_event::{
 };
 use glave_ports::computer::ComputerError;
 use glave_ports::memories::Memory;
+use glave_ports::settings::{Hooks, Judge};
 use glave_ports::{
     BlobError, BlobStore, Caller, EventLog, LogError, Message, ModelProvider, ProviderError, Scope,
     ToolSource,
 };
+use glave_ports::{Clock, Entropy, EntropyError, Standing};
 use thiserror::Error;
 
 use crate::approval::Approver;
@@ -26,9 +28,7 @@ use crate::commands::Command;
 use crate::compaction::{Compaction, Measured};
 use crate::defaults::Defaults;
 use crate::goal::{GoalProgress, Pursuit};
-use crate::hooks::Hooks;
 use crate::inbox::Inbox;
-use crate::judge::Judge;
 use crate::memory::MemoryState;
 use crate::project_folders::{Brought, ProjectFolders};
 use crate::prompt::system_prompt;
@@ -37,7 +37,6 @@ use crate::room::LearnedWindows;
 use crate::tools::workspace::Workspace;
 use crate::toolset::ToolSet;
 use crate::worker::Workers;
-use glave_ports::{Clock, Entropy, EntropyError, Standing};
 
 /// How the harness runs.
 #[derive(Debug, Clone, PartialEq, Eq)]

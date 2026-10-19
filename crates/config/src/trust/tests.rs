@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use glave_harness::ApprovalMode;
+use glave_event::ApprovalMode;
 use glave_ports::block_on;
 use glave_ports::testing::TempDir;
 

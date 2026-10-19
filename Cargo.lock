@@ -1408,13 +1408,8 @@ dependencies = [
 name = "glave-config"
 version = "0.0.0"
 dependencies = [
- "glave-computer",
  "glave-event",
- "glave-harness",
- "glave-mcp",
- "glave-memory",
  "glave-ports",
- "glave-web",
  "globset",
  "insta",
  "proptest",
@@ -1530,7 +1525,6 @@ dependencies = [
  "glave-shell",
  "jiff",
  "proptest",
- "regex",
  "schemars",
  "serde",
  "serde_json",
@@ -1591,7 +1585,6 @@ dependencies = [
  "hyper-util",
  "reqwest",
  "rmcp",
- "serde",
  "serde_json",
  "thiserror",
  "tokio",
@@ -1625,6 +1618,7 @@ dependencies = [
  "glave-event",
  "jiff",
  "proptest",
+ "regex",
  "schemars",
  "serde",
  "serde_json",

@@ -5,9 +5,10 @@
 
 use std::sync::Arc;
 
-use glave_config::policy::{Choices, Constraints, Judge, ModelEntry, Source, check_model};
+use glave_config::policy::{Choices, Constraints, ModelEntry, Source, check_model};
 use glave_event::ProviderConnected;
 use glave_gateway::{Gateway, Target};
+use glave_ports::settings::Judge;
 use glave_session::Models;
 
 use crate::config::Endpoint;

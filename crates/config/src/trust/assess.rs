@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use glave_harness::Hook;
+use glave_ports::settings::Hook;
 
 use crate::policy::{ConfigFile, Constraints};
 use crate::trust::project::{Item, Plain, Project, SETTINGS};

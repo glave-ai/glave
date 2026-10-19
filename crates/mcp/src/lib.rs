@@ -3,7 +3,6 @@
 //! through the harness, which asks the person by what the tool says it does.
 
 mod client;
-mod config;
 mod connection;
 mod error;
 mod names;
@@ -12,7 +11,6 @@ mod reason;
 mod resources;
 mod server;
 
-pub use config::{ServerConfig, marks, parse};
 pub use error::McpError;
 pub use names::{catalog, exposed};
 pub use output::output as tool_output;

@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use glave_event::Arguments;
+use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{
     BoxFuture, Cancellation, ToolError, ToolInfo, ToolOutput, ToolSource, unless_cancelled,
 };
@@ -20,7 +21,6 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::McpError;
-use crate::config::ServerConfig;
 use crate::connection::{CANCELLED, Connection};
 
 /// Variables a server's process starts with, beyond its own configured ones. Nothing else from

@@ -13,7 +13,8 @@ use std::sync::Arc;
 use anyhow::{Context as _, bail};
 use glave_gateway::{Budgets, Limit};
 use glave_gateway_service::{Policy, Service, Wiring};
-use glave_mcp::{Limits, McpServer, ServerConfig};
+use glave_mcp::{Limits, McpServer};
+use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{Caller, OsEntropy, SystemClock};
 use glave_session::signin::{SignIn, Trust};
 use tokio::net::TcpListener;
@@ -247,7 +248,8 @@ async fn catalog(
     let mut configs = if text.is_empty() {
         std::collections::BTreeMap::default()
     } else {
-        glave_mcp::parse(&text, &environment).with_context(|| format!("in {}", path.display()))?
+        glave_ports::settings::mcp::parse(&text, &environment)
+            .with_context(|| format!("in {}", path.display()))?
     };
     if let Some((names, rule)) = constraints.mcp_catalog() {
         let missing: Vec<&str> = names

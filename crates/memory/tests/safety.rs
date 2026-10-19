@@ -124,7 +124,7 @@ fn after_untrusted_content_the_judge_lets_a_save_through_only_on_the_persons_wor
             said(r#"{"decision": "run", "reason": "the person asked to remember it"}"#),
         );
         let mut judged = settings();
-        judged.judge = glave_harness::Judge::Main;
+        judged.judge = glave_ports::settings::Judge::Main;
         let (harness, seen) = kit
             .harness(&dir, answers, NoOneToAsk, Some(memory), judged)
             .await;

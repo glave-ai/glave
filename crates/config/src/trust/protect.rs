@@ -8,8 +8,9 @@
 //! is always set, so a thread's own choice of auto, made behind the sandbox, never carries over
 //! (`Protections::mode`).
 
-use glave_harness::{ApprovalMode, Protections};
+use glave_event::ApprovalMode;
 use glave_ports::computer::SandboxLevel;
+use glave_ports::settings::Protections;
 
 use crate::policy::{Choices, Constraints, SandboxChoice, Source};
 use crate::trust::Outcome;

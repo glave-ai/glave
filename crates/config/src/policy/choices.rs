@@ -4,16 +4,16 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use glave_harness::ApprovalMode;
-pub use glave_harness::Judge;
+use glave_event::ApprovalMode;
 use glave_ports::computer::SandboxLevel;
+use glave_ports::memories::ProjectMemory;
+use glave_ports::settings::Judge;
 
 use crate::policy::files::{ConfigFile, GithubFile, ModelEntry, SandboxChoice};
 use crate::policy::memory::{MemoryChoice, ProjectChoice};
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkersFile};
-use glave_memory::ProjectMemory;
 
 /// Where a value came from.
 #[derive(Debug, Clone, PartialEq, Eq)]

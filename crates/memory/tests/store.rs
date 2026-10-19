@@ -3,8 +3,8 @@
 //! changes, and housekeeping that rotates the project key.
 
 use glave_event::{MemoryScope, Principal, decode};
-use glave_memory::{ProjectMemory, Remembering, Writer};
-use glave_ports::memories::{MemoryContext, MemoryError};
+use glave_memory::{Remembering, Writer};
+use glave_ports::memories::{MemoryContext, MemoryError, ProjectMemory};
 use glave_ports::testing::fake_secret;
 use glave_ports::{EventLog, Scope};
 

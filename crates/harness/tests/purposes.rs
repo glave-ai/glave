@@ -144,7 +144,7 @@ fn the_judges_call_is_recorded_and_counted_in_the_thread_it_judged() {
             answer(Some("Pushed."), vec![], StopReason::EndTurn),
         ];
         let mut settings = settings();
-        settings.judge = glave_harness::Judge::Main;
+        settings.judge = glave_ports::settings::Judge::Main;
         let (harness, seen) =
             harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();

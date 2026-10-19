@@ -11,7 +11,8 @@ use glave_event::{
     Seq, ThreadId, decode, encode,
 };
 use glave_keys::{InMemoryRoot, KeySettings};
-use glave_memory::{GlaveMemory, Memories, Personal, ProjectMemory, Rules, Tidier, Writer};
+use glave_memory::{GlaveMemory, Memories, Personal, Rules, Tidier, Writer};
+use glave_ports::memories::ProjectMemory;
 use glave_ports::stream::Reserved;
 use glave_ports::{
     Clock as _, Entropy as _, EventLog, ModelProvider, OrgId, OsEntropy, ProjectId, Scope,

@@ -5,7 +5,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Arguments, Part};
-use glave_mcp::{Limits, McpServer, Resources, ServerConfig};
+use glave_mcp::{Limits, McpServer, Resources};
+use glave_ports::settings::mcp::ServerConfig;
 use glave_ports::{Effect, NeverCancelled, ToolOutput, ToolSource as _, block_on, conformance};
 use serde_json::json;
 

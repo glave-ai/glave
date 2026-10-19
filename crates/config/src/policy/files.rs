@@ -4,10 +4,10 @@
 use std::path::Path;
 
 use crate::error::invalid;
-use glave_event::Money;
-use glave_harness::{ApprovalMode, Hook, HookPoint, Hooks};
+use glave_event::{ApprovalMode, HookPoint, Money};
 use glave_ports::auth::safe_to_send;
 use glave_ports::computer::{CredentialHost, Forge, SandboxLevel};
+use glave_ports::settings::{Hook, Hooks};
 use globset::Glob;
 
 use crate::policy::memory::{MemoryChoice, MemoryRules, ProjectChoice};

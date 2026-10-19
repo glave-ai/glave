@@ -7,7 +7,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 
-use glave_harness::Hook;
+use glave_ports::settings::Hook;
 
 use crate::args::Args;
 use crate::{config, home, mcp};

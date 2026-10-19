@@ -6,10 +6,10 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use glave_ports::settings::WebPolicy;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 
 use crate::address::is_public;
-use crate::policy::WebPolicy;
 
 /// A host that leads only to addresses the policy refuses.
 #[derive(Debug, Clone, PartialEq, Eq)]

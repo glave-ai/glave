@@ -5,39 +5,8 @@
 use std::collections::BTreeMap;
 
 use glave_event::{MemoryScope, PrincipalId};
-use glave_ports::memories::MemoryError;
+use glave_ports::memories::{MemoryError, ProjectMemory};
 use glave_ports::{ProjectId, Scope};
-
-/// What a project allows (`specs/memory.md`): its own memory, the person's too, or none.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ProjectMemory {
-    /// Threads read and write the person's memory and the project's.
-    #[default]
-    Shared,
-    /// Threads read and write the project's memory only; the person's never enters.
-    Isolated,
-    /// Threads neither read nor write memory.
-    Off,
-}
-
-impl ProjectMemory {
-    pub fn named(name: &str) -> Option<Self> {
-        match name.trim() {
-            "shared" => Some(Self::Shared),
-            "isolated" => Some(Self::Isolated),
-            "off" => Some(Self::Off),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Shared => "shared",
-            Self::Isolated => "isolated",
-            Self::Off => "off",
-        }
-    }
-}
 
 /// Where a person's own memory lives: the personal project the host provides for them, in their
 /// organization (the CLI: `projects::personal`).

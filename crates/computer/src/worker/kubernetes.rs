@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use glave_ports::BoxFuture;
-use glave_ports::computer::ComputerError;
+use glave_ports::computer::{ComputerError, Isolation};
 use k8s_openapi::api::core::v1::Pod;
 use k8s_openapi::api::networking::v1::NetworkPolicy;
 use kube::api::{AttachParams, DeleteParams, LogParams, PostParams};
@@ -24,7 +24,6 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 use super::backend::{Backend, Link, Spec, Started};
 use super::docker::elf_machine;
-use super::limits::Isolation;
 use crate::token::Token;
 use objects::{Progress, Shape};
 

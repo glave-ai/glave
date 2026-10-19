@@ -1,7 +1,7 @@
 //! `[web]` in `config.toml`: whether `web_fetch` is on, which hosts it may reach, and whether
 //! it may reach private addresses. The table is one choice: the nearest file that has one wins.
 
-use glave_web::{Domain, WebPolicy};
+use glave_ports::settings::{Domain, WebPolicy};
 use serde::Deserialize;
 
 /// `[web]` as written. Every key is optional.

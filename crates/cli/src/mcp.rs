@@ -18,8 +18,9 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
 use glave_config::policy::{Chosen, Constraints};
-use glave_mcp::{Limits, McpServer, Resources, ServerConfig};
+use glave_mcp::{Limits, McpServer, Resources};
 use glave_ports::ToolSource;
+use glave_ports::settings::mcp::ServerConfig;
 use glave_process::{Owner, Processes};
 
 pub use own::{Servers, wanted};
@@ -65,9 +66,9 @@ pub fn start_project(
     let processes = processes.owned_by(Owner::Project(root.to_string_lossy().into_owned()));
     let text = glave_config::trust::mcp_json(servers);
     let environment = environment();
-    let configs = glave_mcp::parse(&text, &environment)
+    let configs = glave_ports::settings::mcp::parse(&text, &environment)
         .context("in the project's trusted .mcp.json servers")?;
-    let marks = glave_mcp::marks(&text)?;
+    let marks = glave_ports::settings::mcp::marks(&text)?;
     Ok(configs
         .iter()
         .map(|(name, config)| {
@@ -164,11 +165,11 @@ mod tests {
             "repo": {"command": "repo-mcp"},
             "claims": {"command": "claims-mcp", "untrusted": false}
         }}"#;
-        let mine = glave_mcp::parse(mine_text, &env).unwrap();
-        let theirs = glave_mcp::parse(project_text, &env).unwrap();
+        let mine = glave_ports::settings::mcp::parse(mine_text, &env).unwrap();
+        let theirs = glave_ports::settings::mcp::parse(project_text, &env).unwrap();
         let (mine_marks, their_marks) = (
-            glave_mcp::marks(mine_text).unwrap(),
-            glave_mcp::marks(project_text).unwrap(),
+            glave_ports::settings::mcp::marks(mine_text).unwrap(),
+            glave_ports::settings::mcp::marks(project_text).unwrap(),
         );
         let untrusted = |rules: &Constraints| -> Vec<&str> {
             let own = mine.iter().filter(|(name, config)| {

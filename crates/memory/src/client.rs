@@ -11,6 +11,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use glave_event::{Arguments, MemoryId, Principal};
 use glave_mcp::{Limits, McpServer, tool_output};
+use glave_ports::memories::ProjectMemory;
 use glave_ports::memories::{
     Access, Control, MEMORY_SERVER, Memory, MemoryChange, MemoryContext, MemoryError, MemoryOutput,
     Remembered, Shown,
@@ -25,7 +26,6 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::memories::{Memories, Remembering, Tidier, Writer};
-use crate::rules::ProjectMemory;
 use crate::server::{MemoryServer, RESOURCE, meta};
 
 /// Bytes the in-process connection buffers each way.

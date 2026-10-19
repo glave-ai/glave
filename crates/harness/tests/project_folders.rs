@@ -12,11 +12,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use glave_event::{Body, HookPoint, StopReason};
 use glave_harness::{
-    AllowAll, ApprovalMode, Brought, Cancel, Hook, Hooks, Judge, NoOneToAsk, Place, ProjectFolders,
-    Protections, Settled,
+    AllowAll, ApprovalMode, Brought, Cancel, NoOneToAsk, Place, ProjectFolders, Settled,
 };
 use glave_ports::Caller;
 use glave_ports::computer::{Sandbox, SandboxLevel};
+use glave_ports::settings::{Hook, Hooks, Judge, Protections};
 use glave_ports::{
     BoxFuture, Effect, InMemoryLog, InMemoryTools, ProjectId, Purpose, ToolInfo, ToolOutput,
     ToolSpec,

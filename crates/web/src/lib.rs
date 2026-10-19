@@ -8,11 +8,9 @@ mod cache;
 mod fetch;
 #[cfg(feature = "pages")]
 pub mod pages;
-mod policy;
 mod resolve;
 mod source;
 mod text;
 
 pub use fetch::{FetchError, Fetcher, Limits, Page};
-pub use policy::{BadDomain, Domain, HostRule, WebPolicy};
 pub use source::{WEB_FETCH, Web, WebSettings};
