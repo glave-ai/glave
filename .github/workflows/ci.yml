@@ -134,7 +134,7 @@ jobs:
       - run: npm run build
       # The glave this builds serves the end-to-end tests too.
       - name: Build glave with the app inside, and test that it serves it
-        run: cargo nextest run -p glave --features web --test serve
+        run: cargo nextest run -p glave --features web --test cli -E 'test(/^serve::/)'
         working-directory: .
       - run: npm run build:showcase
       - run: npm run e2e

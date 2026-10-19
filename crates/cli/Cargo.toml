@@ -8,6 +8,12 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 publish.workspace = true
+# The tests are one program, tests/main.rs, not one per file.
+autotests = false
+
+[[test]]
+name = "cli"
+path = "tests/main.rs"
 
 [[bin]]
 name = "glave"

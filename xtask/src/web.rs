@@ -50,7 +50,9 @@ pub fn check() -> Result<(), String> {
             "--features",
             feature,
             "--test",
-            "serve",
+            "cli",
+            "-E",
+            "test(/^serve::/)",
         ],
     )?;
     let glave = target_directory()?.join("debug/glave");

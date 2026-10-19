@@ -7,6 +7,12 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
+# The tests are one program, tests/main.rs, not one per file.
+autotests = false
+
+[[test]]
+name = "computer"
+path = "tests/main.rs"
 
 [dependencies]
 # Request and response bodies for the Docker Engine API (already in the tree via reqwest).
