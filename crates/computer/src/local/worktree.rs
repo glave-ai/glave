@@ -23,8 +23,12 @@ pub(crate) struct Made {
     pub(crate) common: PathBuf,
 }
 
+/// The version of a record's format. A record written before records had one is version 1.
+const VERSION: u32 = 1;
+
 /// What glave keeps beside each worktree, as `<folder>.json`: whose it is, and whether a
-/// cleanup kept it because removing it would lose work.
+/// cleanup kept it because removing it would lose work. It is this computer's own state, about
+/// its own disk, so it stays beside the worktree rather than in the store (`specs/invariants.md`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Record {
     /// The repository's shared git folder.
@@ -37,6 +41,27 @@ pub(crate) struct Record {
     pub(crate) held: Option<String>,
 }
 
+/// A record as written: its version beside it.
+#[derive(Serialize)]
+struct Written<'a> {
+    version: u32,
+    #[serde(flatten)]
+    record: &'a Record,
+}
+
+/// A record as read: version 1 when it names none.
+#[derive(Deserialize)]
+struct Stored {
+    #[serde(default = "first")]
+    version: u32,
+    #[serde(flatten)]
+    record: Record,
+}
+
+const fn first() -> u32 {
+    1
+}
+
 /// Where the record for the worktree at `dest` is kept: beside it, never inside it.
 pub(crate) fn record_path(dest: &Path) -> PathBuf {
     let mut name = dest.file_name().unwrap_or_default().to_os_string();
@@ -44,19 +69,46 @@ pub(crate) fn record_path(dest: &Path) -> PathBuf {
     dest.with_file_name(name)
 }
 
-/// The record beside the worktree at `dest`, if there is one glave can read.
-pub(crate) async fn read_record(dest: &Path) -> Option<Record> {
-    let text = tokio::fs::read(record_path(dest)).await.ok()?;
-    serde_json::from_slice(&text).ok()
+/// The record beside the worktree at `dest`; `None` when there is none, or only one glave
+/// cannot read, such as one torn by a crash (it is written whole the next time). Refuses one a
+/// newer glave wrote, rather than misreading it.
+pub(crate) async fn read_record(dest: &Path) -> Result<Option<Record>, ComputerError> {
+    let path = record_path(dest);
+    let Ok(text) = tokio::fs::read(&path).await else {
+        return Ok(None);
+    };
+    let Ok(stored) = serde_json::from_slice::<Stored>(&text) else {
+        return Ok(None);
+    };
+    if stored.version != VERSION {
+        return Err(ComputerError::Refused(format!(
+            "{} was written by a newer version of glave (record version {}); update glave to \
+             use it",
+            path.display(),
+            stored.version
+        )));
+    }
+    Ok(Some(stored.record))
 }
 
+/// Writes the record beside the worktree at `dest`, whole or not at all; refuses to replace
+/// one a newer glave wrote.
 pub(crate) async fn write_record(dest: &Path, record: &Record) -> Result<(), ComputerError> {
+    read_record(dest).await?;
     let path = record_path(dest);
-    let text = serde_json::to_vec_pretty(record)
+    let written = Written {
+        version: VERSION,
+        record,
+    };
+    let text = serde_json::to_vec_pretty(&written)
         .map_err(|error| ComputerError::Failed(format!("{}: {error}", path.display())))?;
-    tokio::fs::write(&path, text).await.map_err(|error| {
-        ComputerError::Failed(format!("could not write {}: {error}", path.display()))
-    })
+    let at = path.clone();
+    tokio::task::spawn_blocking(move || glave_ports::file::replace(&at, &text))
+        .await
+        .map_err(|error| ComputerError::Failed(format!("{}: {error}", path.display())))?
+        .map_err(|error| {
+            ComputerError::Failed(format!("could not write {}: {error}", path.display()))
+        })
 }
 
 /// Where the worktree for `branch` of the repository around `path` lives under `base`,

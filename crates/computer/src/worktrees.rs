@@ -103,7 +103,7 @@ pub async fn list(
             if found.len() >= MAX_LISTED {
                 break;
             }
-            if let Some(kept) = describe(&path, environment).await {
+            if let Some(kept) = describe(&path, environment).await? {
                 found.push(kept);
             }
         }
@@ -117,7 +117,7 @@ pub async fn list(
 pub async fn list_scratch(base: &Path) -> Result<Vec<Kept>, ComputerError> {
     let mut found = Vec::new();
     for path in folders(base).await? {
-        let Some(record) = read_record(&path).await else {
+        let Some(record) = read_record(&path).await? else {
             continue;
         };
         let Ok(path) = tokio::fs::canonicalize(&path).await else {
@@ -198,7 +198,7 @@ pub async fn remove(
 
 /// Marks the worktree held for `why`, in its record.
 async fn hold(kept: &Kept, why: &str) -> Result<(), ComputerError> {
-    let mut record = read_record(&kept.path).await.unwrap_or_else(|| Record {
+    let mut record = read_record(&kept.path).await?.unwrap_or_else(|| Record {
         repository: kept.repository.clone(),
         branch: kept.branch.clone().unwrap_or_default(),
         ..Record::default()
@@ -208,13 +208,21 @@ async fn hold(kept: &Kept, why: &str) -> Result<(), ComputerError> {
 }
 
 /// What the worktree at `path` is, or `None` when it is neither a worktree nor recorded.
-async fn describe(path: &Path, environment: &[(OsString, OsString)]) -> Option<Kept> {
-    let record = read_record(path).await;
+async fn describe(
+    path: &Path,
+    environment: &[(OsString, OsString)],
+) -> Result<Option<Kept>, ComputerError> {
+    let record = read_record(path).await?;
     let repository = match &record {
         Some(record) => record.repository.clone(),
-        None => common_from_link(path).await?,
+        None => match common_from_link(path).await {
+            Some(common) => common,
+            None => return Ok(None),
+        },
     };
-    let path = tokio::fs::canonicalize(path).await.ok()?;
+    let Ok(path) = tokio::fs::canonicalize(path).await else {
+        return Ok(None);
+    };
     let mut kept = Kept {
         repository,
         branch: record
@@ -230,7 +238,7 @@ async fn describe(path: &Path, environment: &[(OsString, OsString)]) -> Option<K
         .await
         .unwrap_or(false)
     {
-        return Some(kept);
+        return Ok(Some(kept));
     }
     let git = Git::at(environment, &kept.path);
     if let Ok(branch) = git.run(&["symbolic-ref", "--short", "-q", "HEAD"]).await {
@@ -252,7 +260,7 @@ async fn describe(path: &Path, environment: &[(OsString, OsString)]) -> Option<K
     } else {
         Condition::Unsafe { changed, unpushed }
     };
-    Some(kept)
+    Ok(Some(kept))
 }
 
 /// The shared git folder a worktree's `.git` file points into: `gitdir: <common>/worktrees/<n>`.
