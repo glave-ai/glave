@@ -56,7 +56,7 @@ where
         let project = bound
             .as_ref()
             .filter(|_| workspace.is_some())
-            .and_then(|bound| crate::projects::project_of(&bound.opened));
+            .and_then(|bound| crate::project_folders::project_of(&bound.opened));
         let computers = workspace.as_ref().unwrap_or(&self.workspace).computers();
         let commands = crate::background::Commands::rebuilt(&events, computers);
         let mut thread = Thread {

@@ -17,7 +17,7 @@ use super::servers::Kept;
 use super::*;
 use crate::gateway::{Allowed, gateway};
 use crate::model::Model;
-use glave_harness::Projects as _;
+use glave_harness::ProjectFolders as _;
 
 /// A home folder and a project in it whose `.mcp.json` has `servers` and whose config is
 /// `config`, both fresh for the test `name`.
@@ -85,7 +85,7 @@ fn offering(models: &[&str]) -> GatewaySwitch {
 
 /// The projects of a glave in `home` already running the person's own servers `taken`,
 /// offering the models `models` besides its main one.
-async fn projects(home: &Path, taken: Vec<String>, models: &[&str]) -> Projects {
+async fn projects(home: &Path, taken: Vec<String>, models: &[&str]) -> ProjectFolders {
     timed(home, taken, models, ManualClock::at_millis(NOW)).await
 }
 
@@ -93,7 +93,12 @@ async fn projects(home: &Path, taken: Vec<String>, models: &[&str]) -> Projects 
 const NOW: i64 = 1_791_000_000_000;
 
 /// `projects` on `clock`.
-async fn timed(home: &Path, taken: Vec<String>, models: &[&str], clock: ManualClock) -> Projects {
+async fn timed(
+    home: &Path,
+    taken: Vec<String>,
+    models: &[&str],
+    clock: ManualClock,
+) -> ProjectFolders {
     let loaded = loaded(home).await;
     let own = Own {
         choices: loaded.settle().unwrap(),
@@ -105,7 +110,7 @@ async fn timed(home: &Path, taken: Vec<String>, models: &[&str], clock: ManualCl
         processes: glave_process::Processes::unrecorded(),
         trust: Trust::in_memory(home).await.unwrap().1,
     };
-    Projects::new(home.to_owned(), own, true)
+    ProjectFolders::new(home.to_owned(), own, true)
 }
 
 fn space() -> SpaceId {
@@ -328,7 +333,7 @@ fn an_idle_project_s_servers_close_and_start_again_when_needed() {
         assert!(projects.trust(&project, &ask.ask).await.unwrap());
         let held = projects.brought(&project, space()).await.tools;
         let minutes = |n: i64| clock.advance_millis(n * 60_000);
-        let running = |projects: &Projects| projects.lock().kept.len();
+        let running = |projects: &ProjectFolders| projects.lock().kept.len();
         minutes(60);
         projects.sweep().await;
         assert_eq!(running(&projects), 1, "a turn holds them: in use");

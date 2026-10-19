@@ -30,7 +30,7 @@ use crate::hooks::Hooks;
 use crate::inbox::Inbox;
 use crate::judge::Judge;
 use crate::memory::MemoryState;
-use crate::projects::{Brought, Projects};
+use crate::project_folders::{Brought, ProjectFolders};
 use crate::prompt::system_prompt;
 use crate::retry::Retries;
 use crate::room::LearnedWindows;
@@ -158,7 +158,7 @@ pub struct Harness<P, L, B, A> {
     /// Where threads in a folder of their own read their opening instructions, and what their
     /// project turns on; none by default, so every thread opens with the settings' own and
     /// gets only the harness's tools and hooks.
-    pub(crate) projects: Option<Arc<dyn Projects>>,
+    pub(crate) project_folders: Option<Arc<dyn ProjectFolders>>,
 }
 
 /// One thread: where it is stored, where it continues, and the conversation so far.
@@ -218,7 +218,7 @@ pub struct Thread {
     /// The folder of the project the thread works in, when it works in one here: its own
     /// folder, or the one its worktree was made from. A subagent's thread has its parent's.
     pub(crate) project: Option<PathBuf>,
-    /// What its project turned on at the start of the latest turn (`projects.rs`). A
+    /// What its project turned on at the start of the latest turn (`project_folders.rs`). A
     /// subagent's thread has its parent's.
     pub(crate) brought: Arc<Brought>,
     /// The harness's defaults as the latest turn started (`defaults.rs`). A subagent's thread
@@ -370,7 +370,7 @@ where
             learned_windows: LearnedWindows::default(),
             workers: None,
             memory: None,
-            projects: None,
+            project_folders: None,
         }
     }
 
@@ -378,8 +378,11 @@ where
     /// folder, rather than the settings' instructions, and gives it what its project turns on
     /// at the start of each turn.
     #[must_use]
-    pub fn with_projects(mut self, projects: Option<Arc<dyn Projects>>) -> Self {
-        self.projects = projects;
+    pub fn with_project_folders(
+        mut self,
+        project_folders: Option<Arc<dyn ProjectFolders>>,
+    ) -> Self {
+        self.project_folders = project_folders;
         self
     }
 
@@ -564,7 +567,7 @@ where
             .await;
         let project = bound
             .as_ref()
-            .and_then(|bound| crate::projects::project_of(&bound.opened));
+            .and_then(|bound| crate::project_folders::project_of(&bound.opened));
         let mut thread = Thread {
             scope,
             id,

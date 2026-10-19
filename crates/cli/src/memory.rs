@@ -78,7 +78,7 @@ pub async fn start_for(
 
 /// Starts memory for `person`, tidied in `scope` and their own, when `settings` turn it on:
 /// each space with the setting `settings` choose, until its project's settings choose another
-/// (`projects.rs`).
+/// (`project_folders.rs`).
 pub async fn start(
     store: &Data,
     settings: &MemorySettings,

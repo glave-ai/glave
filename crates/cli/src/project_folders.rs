@@ -73,7 +73,7 @@ struct Base {
 }
 
 /// Every project as this glave reads it: see the module's documentation.
-pub struct Projects {
+pub struct ProjectFolders {
     /// glave's folder: the person's AGENTS.md.
     home: PathBuf,
     /// What the person decided about each project.
@@ -93,13 +93,13 @@ pub struct Projects {
     /// Projects' servers, most recently used last; and those that were replaced or put away
     /// while a turn could still be using them, closed once none is.
     running: Mutex<Running>,
-    /// What closes idle servers every [`TIDY_EVERY`], once [`Projects::tidy`] starts it.
+    /// What closes idle servers every [`TIDY_EVERY`], once [`ProjectFolders::tidy`] starts it.
     tidying: Mutex<Option<JoinHandle<()>>>,
     /// Held while a yes is kept, so two answers at once never lose one.
     keeping: tokio::sync::Mutex<()>,
 }
 
-impl Projects {
+impl ProjectFolders {
     /// The projects of a glave in `home` that runs with `own`. `later`: the person can answer
     /// what a project asks from an app; else no one can.
     pub fn new(home: PathBuf, own: Own, later: bool) -> Self {
@@ -127,7 +127,7 @@ impl Projects {
     }
 
     /// Closes the servers of `projects` no turn has used for 30 minutes, every
-    /// [`TIDY_EVERY`], until [`Projects::close`].
+    /// [`TIDY_EVERY`], until [`ProjectFolders::close`].
     pub fn tidy(projects: &Arc<Self>) {
         let weak = Arc::downgrade(projects);
         let task = tokio::spawn(async move {
@@ -386,7 +386,7 @@ fn failed(error: &dyn std::fmt::Display) -> ApiError {
     )
 }
 
-impl glave_harness::Projects for Projects {
+impl glave_harness::ProjectFolders for ProjectFolders {
     fn for_folder<'a>(
         &'a self,
         root: &'a Path,
@@ -435,7 +435,7 @@ impl glave_harness::Projects for Projects {
     }
 }
 
-impl ProjectTrust for Projects {
+impl ProjectTrust for ProjectFolders {
     fn ask<'a>(&'a self, folder: &'a Path) -> BoxFuture<'a, Result<Option<TrustAsk>, ApiError>> {
         Box::pin(async move {
             let root = self.root(folder).await;

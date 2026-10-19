@@ -236,7 +236,8 @@ where
         bound: Option<&WorkspaceBound>,
         person: Option<glave_event::PrincipalId>,
     ) -> Option<String> {
-        let (Some(reader), Some(workspace), Some(bound)) = (&self.projects, workspace, bound)
+        let (Some(reader), Some(workspace), Some(bound)) =
+            (&self.project_folders, workspace, bound)
         else {
             return self.settings.instructions.clone();
         };

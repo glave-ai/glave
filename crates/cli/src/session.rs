@@ -10,7 +10,7 @@ use anyhow::Context as _;
 use glave_computer::WorkerComputers;
 use glave_event::ThreadId;
 use glave_harness::{
-    AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, Projects as _, Protections,
+    AGENTS_MD, ApprovalMode, Cancel, DEFAULT_BUDGET, Goal, Hooks, ProjectFolders as _, Protections,
     Settings, Workspace, agents_md,
 };
 use glave_memory::Tidier;
@@ -30,7 +30,7 @@ use crate::gateway::GatewaySwitch;
 use crate::gateway::remote::Remote;
 use crate::input::{CtrlC, Input};
 use crate::mcp::Servers;
-use crate::projects::Projects;
+use crate::project_folders::ProjectFolders;
 use crate::providers::{Built, Lineup, ModelAccounts};
 use crate::reread::Rereading;
 use crate::setup::{self, Setup};
@@ -131,7 +131,7 @@ pub struct Wired {
     /// The store's log, for the daily work of the person's server.
     log: crate::data::DataLog,
     /// Each project's own servers, hooks and settings, and what it asks to be trusted.
-    projects: Arc<Projects>,
+    projects: Arc<ProjectFolders>,
     /// Logs and telemetry, stopped last.
     _telemetry: crate::telemetry::Telemetry,
 }
@@ -207,7 +207,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         clock: Box::new(SystemClock),
         entropy: Box::new(OsEntropy),
         workspace,
-        web: crate::projects::web_offered(&choices.web.value)?,
+        web: crate::project_folders::web_offered(&choices.web.value)?,
         tools: crate::skills::offered(&root).await?,
         // The person's own servers, for their threads alone.
         own: servers.sources(),
@@ -217,7 +217,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         tasks: task_limits(&setup.loaded.constraints),
         memory: memory.as_ref().map(crate::memory::Running::handle),
         spaces: store.spaces(),
-        projects: Some(Arc::clone(&projects) as Arc<dyn glave_harness::Projects>),
+        project_folders: Some(Arc::clone(&projects) as Arc<dyn glave_harness::ProjectFolders>),
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
         browsers: crate::serving::browsers(args, &store, identity.person).await?,
     };
@@ -256,7 +256,7 @@ async fn rereading(
     start: &Choices,
     lined: &Lined,
     servers: &Arc<Servers>,
-    projects: &Arc<Projects>,
+    projects: &Arc<ProjectFolders>,
 ) -> anyhow::Result<Arc<dyn Rereads>> {
     let rereading = Rereading::new(crate::reread::Parts {
         args: args.clone(),
@@ -305,8 +305,8 @@ fn projects_for(
     models: &GatewaySwitch,
     memory: Option<&crate::memory::Running>,
     asked: Asked,
-) -> anyhow::Result<Arc<Projects>> {
-    let own = crate::projects::Own {
+) -> anyhow::Result<Arc<ProjectFolders>> {
+    let own = crate::project_folders::Own {
         loaded: setup.loaded.clone(),
         choices: setup.choices.clone(),
         taken: servers.names(),
@@ -316,8 +316,8 @@ fn projects_for(
         processes: servers.processes().clone(),
         trust: asked.trust,
     };
-    let projects = Arc::new(Projects::new(home::folder()?, own, asked.later));
-    Projects::tidy(&projects);
+    let projects = Arc::new(ProjectFolders::new(home::folder()?, own, asked.later));
+    ProjectFolders::tidy(&projects);
     Ok(projects)
 }
 

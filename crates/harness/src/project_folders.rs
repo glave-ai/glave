@@ -23,7 +23,7 @@ use crate::judge::Judge;
 /// What a thread working in a folder of its own opens with, and what its project chooses and
 /// turns on, as the host reads them. Without one, every thread opens with the settings'
 /// instructions and gets only the harness's own settings, tools and hooks.
-pub trait Projects: Send + Sync {
+pub trait ProjectFolders: Send + Sync {
     /// The instructions for a thread working at `root`, in the project whose folder is
     /// `project`: the person's own instructions, the folder's AGENTS.md, and what the project
     /// brings that stays off and why. `None` for `project` when the folder is a scratch folder
@@ -147,7 +147,7 @@ where
     /// trusted the project: no settings, no tools, no hooks.
     pub(crate) async fn bring(&self, thread: &mut Thread) -> Result<(), HarnessError> {
         thread.defaults = self.defaults();
-        let brought = match (&self.projects, &thread.project) {
+        let brought = match (&self.project_folders, &thread.project) {
             (Some(host), Some(project)) if self.trusting(thread.for_) => {
                 host.brought(project, thread.scope.space).await
             }
@@ -178,7 +178,7 @@ where
     /// What `project` chooses for the threads of the person the harness works for, as the
     /// host reads it now; nothing without a host.
     pub async fn settled(&self, project: &Path) -> Settled {
-        match &self.projects {
+        match &self.project_folders {
             Some(host) => host.settled(project).await,
             None => Settled::default(),
         }

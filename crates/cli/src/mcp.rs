@@ -2,7 +2,7 @@
 //! their threads everywhere, started once in their home folder in the background with the
 //! session, waited for before the first turn, reconciled when the settings change, and closed
 //! when glave ends (`own.rs`); and how a trusted
-//! project's `.mcp.json` servers start in its folder (`projects.rs`). A `config.toml` may turn
+//! project's `.mcp.json` servers start in its folder (`project_folders.rs`). A `config.toml` may turn
 //! on only some of them, and a policy may forbid them.
 //!
 //! The organization's catalog (`[mcp] catalog`) comes from its gateway when `[gateway] url` is

@@ -10,7 +10,7 @@ use glave_event::{
     At, Checkout, EventId, FolderSource, Header, Principal, RawEvent, Seq, SpaceFolderSet,
     ThreadId, encode,
 };
-use glave_harness::{ApprovalMode, Projects, Settings, Workspace};
+use glave_harness::{ApprovalMode, ProjectFolders, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
 use glave_ports::memories::Memory;
@@ -85,7 +85,7 @@ pub struct Setup {
     pub projects: Option<PathBuf>,
     /// Where threads in a folder of their own read their opening instructions, and what their
     /// project turns on.
-    pub project_host: Option<Arc<dyn Projects>>,
+    pub project_folders: Option<Arc<dyn ProjectFolders>>,
     /// Where what a project asks to be trusted is read and kept.
     pub trust: Option<Arc<dyn ProjectTrust>>,
     /// Where commands' git, and a new project's clone, ask for credentials.
@@ -114,7 +114,7 @@ impl Setup {
             providers: None,
             hosts: None,
             projects: None,
-            project_host: None,
+            project_folders: None,
             trust: None,
             credentials: None,
             spaces: None,
@@ -196,7 +196,7 @@ impl Setup {
             providers: self.providers,
             rereads: None,
             git_hosts: self.hosts,
-            projects: self.project_host,
+            project_folders: self.project_folders,
             trust: self.trust,
             browsers: self.browsers,
         };

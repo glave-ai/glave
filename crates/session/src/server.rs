@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use glave_event::{Body, PrincipalId, Seq, ThreadId, decode};
 use glave_harness::{
-    Harness, HarnessError, Hooks, Parts, Place, Projects, ReleasedWorker, Settings, TurnSummary,
-    Workers, Workspace,
+    Harness, HarnessError, Hooks, Parts, Place, ProjectFolders, ReleasedWorker, Settings,
+    TurnSummary, Workers, Workspace,
 };
 use glave_identity::signin::Browsers;
 use glave_ports::computer::{ComputerError, Environment};
@@ -87,7 +87,7 @@ pub struct Wiring<P, L, B> {
     /// project's AGENTS.md and what its folder brings that stays off), and what its project
     /// turns on at each turn. None: every thread opens with the settings' instructions, with
     /// the server's tools and hooks alone.
-    pub projects: Option<Arc<dyn Projects>>,
+    pub project_folders: Option<Arc<dyn ProjectFolders>>,
     /// Where what a project asks to be trusted is read, and the person's yes kept; none where
     /// no one may trust a project from a client.
     pub trust: Option<Arc<dyn ProjectTrust>>,
@@ -206,7 +206,7 @@ where
                 .with_own_tools(wiring.own)
                 .with_hooks(wiring.hooks)
                 .with_memory_if(wiring.memory)
-                .with_projects(wiring.projects),
+                .with_project_folders(wiring.project_folders),
                 worker: wiring.workers.map(|on| on.environment),
                 models: RwLock::new(catalog),
                 providers: wiring.providers,
