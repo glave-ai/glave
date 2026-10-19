@@ -14,7 +14,7 @@ use glave_harness::{Judge, Settled};
 use glave_ports::ToolSource;
 use glave_web::{Web, WebSettings};
 
-use super::Projects;
+use super::ProjectFolders;
 
 /// What one project chooses, as read at the start of a turn.
 pub(super) struct Read {
@@ -64,7 +64,7 @@ fn config_of(root: &Path) -> std::path::PathBuf {
     root.join(".glave").join(policy::CONFIG)
 }
 
-impl Projects {
+impl ProjectFolders {
     /// What the project at `root`, as `outcome` applies its files, chooses for its threads.
     pub(super) fn settle(&self, root: &Path, outcome: &Outcome) -> Read {
         let base = self.base();

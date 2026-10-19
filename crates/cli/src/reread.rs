@@ -20,7 +20,7 @@ use glave_session::{Apply, Changed, Models, Rereads, Runs};
 use crate::args::Args;
 use crate::gateway::GatewaySwitch;
 use crate::mcp::{self, Servers};
-use crate::projects::Projects;
+use crate::project_folders::ProjectFolders;
 use crate::providers::{Lineup, ModelAccounts};
 use crate::setup::{NO_SANDBOX, Setup};
 
@@ -44,7 +44,7 @@ pub struct Rereading {
     accounts: Option<Arc<ModelAccounts>>,
     switch: GatewaySwitch,
     servers: Arc<Servers>,
-    projects: Arc<Projects>,
+    projects: Arc<ProjectFolders>,
 }
 
 /// What a [`Rereading`] is made with.
@@ -56,7 +56,7 @@ pub struct Parts {
     pub accounts: Option<Arc<ModelAccounts>>,
     pub switch: GatewaySwitch,
     pub servers: Arc<Servers>,
-    pub projects: Arc<Projects>,
+    pub projects: Arc<ProjectFolders>,
 }
 
 impl Rereading {
@@ -247,7 +247,7 @@ fn runs(setup: &Setup, glave_home: &Path) -> anyhow::Result<Runs> {
             titles: choices.titles.value,
             sandbox: crate::sandboxing::sandbox_of(choices, Some(glave_home)),
             hooks: Hooks::new(setup.hooks.clone())?,
-            web: crate::projects::web_offered(&choices.web.value)?,
+            web: crate::project_folders::web_offered(&choices.web.value)?,
         },
         modes: policy::thread_modes(choices, &setup.loaded.constraints),
         worktree: choices.worktree.value,

@@ -19,8 +19,8 @@ mod projects {
 
     use glave_event::{Body, HookPoint, StopReason};
     use glave_harness::{
-        AllowAll, ApprovalMode, Brought, Cancel, Hook, Hooks, Judge, NoOneToAsk, Place, Projects,
-        Protections, Settled,
+        AllowAll, ApprovalMode, Brought, Cancel, Hook, Hooks, Judge, NoOneToAsk, Place,
+        ProjectFolders, Protections, Settled,
     };
     use glave_ports::Caller;
     use glave_ports::computer::{Sandbox, SandboxLevel};
@@ -55,7 +55,7 @@ mod projects {
         }
     }
 
-    impl Projects for Project {
+    impl ProjectFolders for Project {
         fn for_folder<'a>(
             &'a self,
             _root: &'a Path,
@@ -150,7 +150,8 @@ mod projects {
             ];
             let (harness, seen) =
                 harness_seeing(&dir, answers, Refuse, InMemoryLog::new(), 1, asking()).await;
-            let harness = harness.with_projects(Some(project.clone() as Arc<dyn Projects>));
+            let harness =
+                harness.with_project_folders(Some(project.clone() as Arc<dyn ProjectFolders>));
             let place = Place::Folder(project_dir.to_string_lossy().into_owned());
             let mut thread = harness
                 .start_thread_in(scope(), &Caller::default(), place)
@@ -162,10 +163,8 @@ mod projects {
                 .await
                 .unwrap();
             assert!(!tool_names(&seen, 0).contains(&"mcp__docs__search".to_owned()));
-            assert!(
-                !project_dir.join("before.txt").exists(),
-                "ask mode refused it"
-            );
+            let refused = !project_dir.join("before.txt").exists();
+            assert!(refused, "ask mode refused it");
             let before = events(harness.log(), thread.id).await.len();
 
             project.trust();
@@ -233,7 +232,7 @@ mod projects {
             // The harness's own hooks and tools are the person's, run with their sign-ins: not
             // for grace.
             let harness = harness
-                .with_projects(Some(project.clone() as Arc<dyn Projects>))
+                .with_project_folders(Some(project.clone() as Arc<dyn ProjectFolders>))
                 .with_hooks(Hooks::new(vec![prompt_hook()]).unwrap())
                 .with_own_tools(vec![Arc::new(tool("mcp__mine__search", "Mine."))]);
             let someone = glave_event::PrincipalId::new(jiff::Timestamp::UNIX_EPOCH, [9; 10]);
@@ -288,7 +287,7 @@ mod projects {
     /// `web_fetch`, all at once, needing no trust in this test.
     struct Choosing;
 
-    impl Projects for Choosing {
+    impl ProjectFolders for Choosing {
         fn for_folder<'a>(
             &'a self,
             _root: &'a Path,
@@ -350,7 +349,7 @@ mod projects {
             let (harness, seen) =
                 harness_seeing(&dir, answers, NoOneToAsk, InMemoryLog::new(), 1, settings).await;
             let harness = harness
-                .with_projects(Some(Arc::new(Choosing) as Arc<dyn Projects>))
+                .with_project_folders(Some(Arc::new(Choosing) as Arc<dyn ProjectFolders>))
                 .with_web(Some(Arc::new(tool("web_fetch", "the harness's web"))));
             let place = Place::Folder(project_dir.to_string_lossy().into_owned());
             let mut thread = harness
@@ -454,7 +453,8 @@ mod projects {
                 1,
                 settings(),
             );
-            let harness = harness.with_projects(Some(project.clone() as Arc<dyn Projects>));
+            let harness =
+                harness.with_project_folders(Some(project.clone() as Arc<dyn ProjectFolders>));
             let place = Place::Folder(project_dir.to_string_lossy().into_owned());
             let mut thread = harness
                 .start_thread_in(scope(), &Caller::default(), place)

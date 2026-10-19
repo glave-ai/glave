@@ -1,7 +1,7 @@
 //! The settings a run uses: its flags and the environment over the person's `config.toml`,
 //! kept within the policy (`specs/policy.md`); what the folder it runs in asks the person here
 //! to trust; and `glave policy explain`, which shows them. A project's own settings are its
-//! threads' alone (`projects.rs`), never the server's.
+//! threads' alone (`project_folders.rs`), never the server's.
 
 use std::io::Write as _;
 use std::path::Path;
@@ -28,7 +28,7 @@ pub struct Setup {
     pub loaded: Loaded,
     pub choices: Choices,
     /// The hooks that run for the person's threads everywhere: their own. A project's trusted
-    /// hooks run for its own threads alone, in its own folder (`projects.rs`).
+    /// hooks run for its own threads alone, in its own folder (`project_folders.rs`).
     pub hooks: Vec<Hook>,
 }
 

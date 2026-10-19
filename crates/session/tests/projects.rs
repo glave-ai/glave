@@ -11,7 +11,7 @@ use glave_event::{
     At, Auth, AuthMethod, Body, Checkout, EventId, FolderSource, Header, Opened, Seq,
     SpaceFolderSet, ThreadId, decode, encode,
 };
-use glave_harness::Projects;
+use glave_harness::ProjectFolders;
 use glave_ports::computer::{CredentialHost, Forge, GitCredential};
 use glave_ports::testing::{FakeGitHost, FixedGitCredentials, fake_secret};
 use glave_ports::{BoxFuture, Caller, EventLog, SpaceId};
@@ -281,7 +281,7 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
 /// Instructions that say which folder a thread reads them for.
 struct Told;
 
-impl Projects for Told {
+impl ProjectFolders for Told {
     fn for_folder<'a>(
         &'a self,
         root: &'a Path,
@@ -304,7 +304,7 @@ fn a_thread_opens_with_its_own_folder_s_instructions_and_a_chat_with_the_person_
     block_on!(async {
         let answers = vec![answer(Some("Yes."), None), answer(Some("Hi."), None)];
         let mut setup = Setup::new(answers);
-        setup.project_host = Some(Arc::new(Told));
+        setup.project_folders = Some(Arc::new(Told));
         let (server, seen) = setup.build(&dir).await;
         let path = other.to_string_lossy().into_owned();
         let (space, _) = made(

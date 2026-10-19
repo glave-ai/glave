@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use glave_event::{Auth, AuthMethod, Principal, ThreadId};
-use glave_harness::{Brought, Projects};
+use glave_harness::{Brought, ProjectFolders};
 use glave_ports::{
     BoxFuture, Caller, Effect, InMemoryTools, SpaceId, ToolInfo, ToolOutput, ToolSpec,
 };
@@ -73,7 +73,7 @@ impl ProjectTrust for Repository {
     }
 }
 
-impl Projects for Repository {
+impl ProjectFolders for Repository {
     fn for_folder<'a>(
         &'a self,
         _root: &'a Path,
@@ -115,7 +115,7 @@ async fn serving(
     let answers = (0..answers).map(|_| answer(Some("Done."), None)).collect();
     let mut setup = Setup::new(answers);
     setup.answering = answering;
-    setup.project_host = Some(Arc::clone(repository) as Arc<dyn Projects>);
+    setup.project_folders = Some(Arc::clone(repository) as Arc<dyn ProjectFolders>);
     setup.trust = Some(Arc::clone(repository) as Arc<dyn ProjectTrust>);
     setup.build(dir).await
 }

@@ -22,7 +22,7 @@ mod keys;
 mod mcp;
 mod memory;
 mod model;
-mod projects;
+mod project_folders;
 mod providers;
 mod reach;
 mod remote;

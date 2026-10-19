@@ -13,7 +13,7 @@ mod instructions {
     use std::sync::Arc;
 
     use glave_event::{Part, StopReason};
-    use glave_harness::{AllowAll, Cancel, Compaction, Place, Projects, Settings, agents_md};
+    use glave_harness::{AllowAll, Cancel, Compaction, Place, ProjectFolders, Settings, agents_md};
     use glave_ports::Caller;
     use glave_ports::{BoxFuture, InMemoryLog, Message, ModelRequest};
     use serde_json::json;
@@ -186,7 +186,7 @@ mod instructions {
     /// Instructions that name the folder a thread reads them for.
     struct Told;
 
-    impl Projects for Told {
+    impl ProjectFolders for Told {
         fn for_folder<'a>(
             &'a self,
             root: &'a Path,
@@ -210,7 +210,7 @@ mod instructions {
             ];
             let (harness, seen) =
                 harness_seeing(&dir, answers, AllowAll, InMemoryLog::new(), 1, with_rules()).await;
-            let harness = harness.with_projects(Some(Arc::new(Told)));
+            let harness = harness.with_project_folders(Some(Arc::new(Told)));
             let place = Place::Folder(other.to_string_lossy().into_owned());
             let mut thread = harness
                 .start_thread_in(scope(), &Caller::default(), place)

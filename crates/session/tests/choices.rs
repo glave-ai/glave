@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Opened, Principal, ThreadId};
-use glave_harness::{Brought, Projects, Settled};
+use glave_harness::{Brought, ProjectFolders, Settled};
 use glave_ports::{BoxFuture, Caller, InMemoryLog, SpaceId};
 use glave_session::protocol::{ModelInfo, Reply, Request};
 use glave_session::signin::person;
@@ -26,7 +26,7 @@ impl Chooses {
     }
 }
 
-impl Projects for Chooses {
+impl ProjectFolders for Chooses {
     fn for_folder<'a>(
         &'a self,
         _root: &'a Path,
@@ -77,7 +77,7 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
     block_on!(async {
         let answers = (0..2).map(|_| answer(Some("Hi."), None)).collect();
         let mut setup = Setup::new(answers);
-        setup.project_host = Some(Arc::new(Chooses));
+        setup.project_folders = Some(Arc::new(Chooses));
         setup.models = vec![ModelInfo::new("project-model")];
         let (server, seen, _) = setup
             .build_in_repository("choices-project", InMemoryLog::new())
