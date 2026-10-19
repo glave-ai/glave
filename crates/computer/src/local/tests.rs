@@ -27,7 +27,11 @@ fn this_machine_passes_the_computers_suite() {
     let computers = LocalComputers::new(&copies, safe_environment())
         .with_worktrees(copies.with_file_name("worktrees"))
         .with_projects(copies.with_file_name("projects"));
-    let verdict = block_on!(conformance::computers(&computers, &work.to_string_lossy()));
+    let verdict = block_on!(conformance::computers(
+        &computers,
+        &Environment::host(),
+        &work.to_string_lossy()
+    ));
     assert_eq!(verdict, Ok(()));
     let left = std::fs::read_dir(&copies).map_or(0, Iterator::count);
     assert_eq!(left, 0, "destroying the computer removes its copies");

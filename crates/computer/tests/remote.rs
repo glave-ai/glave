@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use glave_computer::{
     Identity, LocalComputers, RemoteComputers, Token, connect_tls, serve, serve_tcp, serve_tls,
 };
-use glave_ports::computer::{ComputerError, ComputerId, Computers};
+use glave_ports::computer::{ComputerError, ComputerId, Computers, Environment};
 use glave_ports::{block_on, conformance};
 use tokio::io::BufReader;
 use tokio::net::{TcpListener, TcpStream};
@@ -46,7 +46,8 @@ fn a_computer_across_a_pipe_passes_the_suite() {
         let (client_read, client_write) = tokio::io::split(client);
         let remote = RemoteComputers::connect(client_read, client_write);
         remote.check_protocol().await.unwrap();
-        let verdict = conformance::computers(&remote, &work.to_string_lossy()).await;
+        let verdict =
+            conformance::computers(&remote, &Environment::host(), &work.to_string_lossy()).await;
         assert_eq!(verdict, Ok(()));
         drop(remote);
         serving.await.unwrap().unwrap();
@@ -113,7 +114,8 @@ fn a_computer_over_tcp_passes_the_suite_once_signed_in() {
         let remote = RemoteComputers::connect(read, write);
         remote.authenticate("s3cret").await.unwrap();
         remote.check_protocol().await.unwrap();
-        let verdict = conformance::computers(&remote, &work.to_string_lossy()).await;
+        let verdict =
+            conformance::computers(&remote, &Environment::host(), &work.to_string_lossy()).await;
         assert_eq!(verdict, Ok(()));
         serving.abort();
     });
@@ -235,7 +237,8 @@ fn a_computer_over_tls_passes_the_suite_with_its_certificate_pinned() {
         let remote = connect_tls(address, &identity.fingerprint, token.secret())
             .await
             .unwrap();
-        let verdict = conformance::computers(&remote, &work.to_string_lossy()).await;
+        let verdict =
+            conformance::computers(&remote, &Environment::host(), &work.to_string_lossy()).await;
         assert_eq!(verdict, Ok(()));
 
         let stranger = Identity::mint().unwrap();
