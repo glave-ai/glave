@@ -177,32 +177,22 @@ impl Setup {
             Some(credentials) => workspace.with_credentials(credentials),
             None => workspace,
         };
+        let projects = self
+            .projects
+            .unwrap_or_else(|| Arc::new(InMemoryProjects::new()) as Arc<dyn Projects>);
         let wiring = Wiring {
-            provider,
-            log,
-            blobs: InMemoryBlobs::new(),
             clock: Box::new(self.clock),
             entropy: Box::new(CountingEntropy::starting_at(self.seed << 32)),
-            workspace,
-            web: None,
-            tools: Vec::new(),
-            own: Vec::new(),
-            worktree: false,
-            hooks: glave_ports::settings::Hooks::default(),
-            workers: None,
             tasks: self.limits,
             memory: self.memory,
-            projects: self
-                .projects
-                .unwrap_or_else(|| Arc::new(InMemoryProjects::new()) as Arc<dyn Projects>),
             models: self.models,
             modes: self.modes,
             providers: self.providers,
-            rereads: None,
             git_hosts: self.hosts,
             project_folders: self.project_folders,
             trust: self.trust,
             browsers: self.browsers,
+            ..Wiring::new(provider, log, InMemoryBlobs::new(), workspace, projects)
         };
         let server = Server::new(wiring, self.settings, home, self.answering);
         // The server's own project, kept as its person's project at a fixed time without reading

@@ -12,7 +12,7 @@ use glave_harness::{AGENTS_MD, Settings, Workspace, agents_md};
 use glave_memory::Tidier;
 use glave_ports::computer::GitCredentials;
 use glave_ports::settings::Hooks;
-use glave_ports::{OsEntropy, ProjectId, SystemClock};
+use glave_ports::{ProjectId, SystemClock};
 use glave_process::Processes;
 use glave_session::{Answering, GitHosts, ProjectTrust, Providers, Rereads, Server, Wiring};
 
@@ -122,15 +122,9 @@ pub(crate) async fn wire(
     let wiring = Wiring {
         models: lined.built.models.offered,
         modes: policy::thread_modes(choices, &setup.loaded.constraints),
-        provider: lined.switch,
         providers: lined.accounts.map(|kept| kept as Arc<dyn Providers>),
         rereads: Some(rereads),
         git_hosts: hosts.map(|hosts| hosts as Arc<dyn GitHosts>),
-        log: store.log(),
-        blobs: store.blobs(),
-        clock: Box::new(SystemClock),
-        entropy: Box::new(OsEntropy),
-        workspace,
         web: crate::project_folders::web_offered(&choices.web.value)?,
         tools: crate::skills::offered(&root).await?,
         // The person's own servers, for their threads alone.
@@ -140,10 +134,16 @@ pub(crate) async fn wire(
         workers: on_workers,
         tasks: task_limits(&setup.loaded.constraints),
         memory: memory.as_ref().map(crate::memory::Running::handle),
-        projects: store.projects(),
         project_folders: Some(Arc::clone(&projects) as Arc<dyn glave_harness::ProjectFolders>),
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
         browsers: crate::serving::browsers(args, &store, identity.person).await?,
+        ..Wiring::new(
+            lined.switch,
+            store.log(),
+            store.blobs(),
+            workspace,
+            store.projects(),
+        )
     };
     let server = Server::new(wiring, settings, scope, answering);
     keep_here(&server, scope.project(), &root).await?;
