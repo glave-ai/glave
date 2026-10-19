@@ -355,11 +355,9 @@ pub fn load_all(root: &Path) -> Result<Vec<Task>, EvalError> {
 mod tests {
     use super::*;
 
-    fn folder(name: &str, toml: &str, instruction: &str) -> PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("glave-eval-task-{}", std::process::id()))
-            .join(name);
-        std::fs::create_dir_all(&dir).unwrap();
+    /// A task folder called `name`, removed when it drops.
+    fn folder(name: &str, toml: &str, instruction: &str) -> glave_ports::testing::TempDir {
+        let dir = glave_ports::testing::TempDir::new(name).unwrap();
         std::fs::write(dir.join("task.toml"), toml).unwrap();
         std::fs::write(dir.join("instruction.md"), instruction).unwrap();
         dir

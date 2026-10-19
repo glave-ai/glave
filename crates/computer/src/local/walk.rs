@@ -89,9 +89,8 @@ mod tests {
     use super::*;
     use crate::local::paths::relative;
 
-    pub(crate) fn project(name: &str, files: &[(&str, &str)]) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("glave-walk-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+    pub(crate) fn project(name: &str, files: &[(&str, &str)]) -> glave_ports::testing::TempDir {
+        let dir = glave_ports::testing::TempDir::new(&format!("walk-{name}")).unwrap();
         for (path, contents) in files {
             let path = dir.join(path);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();

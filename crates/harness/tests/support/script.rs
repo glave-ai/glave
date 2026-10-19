@@ -2,14 +2,13 @@
 //! to the scripted model, a ticking clock and counting entropy over a real temporary folder.
 
 use std::future::{Future, ready};
-use std::path::PathBuf;
 
 use glave_event::{
     Arguments, Body, Event, ModelRef, Part, RawEvent, StopReason, TokenCounts, Usage, decode,
 };
 use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
 pub use glave_ports::block_on;
-use glave_ports::testing::{CountingEntropy, ManualClock};
+use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 pub use glave_ports::testing::{ScriptedModel, Seen};
 use glave_ports::{
     Completion, EventLog, InMemoryBlobs, InMemoryLog, OrgId, ProjectId, RequestedCall, Scope,
@@ -60,11 +59,8 @@ pub fn answer(
     }
 }
 
-pub fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-turn-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+pub fn folder(name: &str) -> TempDir {
+    TempDir::new(&format!("turn-{name}")).unwrap()
 }
 
 pub fn scope() -> Scope {

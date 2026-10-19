@@ -7,7 +7,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use glave_ports::auth::Auth;
 use glave_ports::block_on;
-use glave_ports::testing::{FakeHttp, ManualClock, Received, fake_secret};
+use glave_ports::testing::{FakeHttp, ManualClock, Received, TempDir, fake_secret};
 
 use super::*;
 
@@ -39,15 +39,13 @@ fn form(received: &Received) -> HashMap<String, String> {
 
 /// A folder of credential files, and a clock.
 struct Pod {
-    folder: PathBuf,
+    folder: TempDir,
     clock: ManualClock,
 }
 
 impl Pod {
     fn new(name: &str) -> Self {
-        let folder =
-            std::env::temp_dir().join(format!("glave-google-{name}-{}", std::process::id()));
-        std::fs::create_dir_all(&folder).unwrap();
+        let folder = TempDir::new(&format!("google-{name}")).unwrap();
         Self {
             folder,
             clock: ManualClock::at_second(1_000_000),

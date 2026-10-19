@@ -25,11 +25,11 @@ fn runtime() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-fn scratch(name: &str) -> (PathBuf, PathBuf) {
-    let dir = std::env::temp_dir().join(format!("glave-confine-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+fn scratch(name: &str) -> (glave_ports::testing::TempDir, PathBuf, PathBuf) {
+    let dir = glave_ports::testing::TempDir::new(&format!("confine-{name}")).unwrap();
     std::fs::create_dir_all(dir.join("work")).unwrap();
-    (dir.join("work"), dir.join("copies"))
+    let (work, copies) = (dir.join("work"), dir.join("copies"));
+    (dir, work, copies)
 }
 
 fn plain_environment() -> Vec<(OsString, OsString)> {
@@ -68,8 +68,9 @@ async fn fixture(
     ComputerId,
     WorkspaceId,
     Confinement,
+    glave_ports::testing::TempDir,
 ) {
-    let (work, copies) = scratch(name);
+    let (dir, work, copies) = scratch(name);
     let computers = LocalComputers::new(&copies, plain_environment());
     let made = computers.create(&Environment::host()).await.unwrap();
     let path = work.to_string_lossy().into_owned();
@@ -80,7 +81,7 @@ async fn fixture(
     let confinement = confinement_fixture(&computers, made.id, here.id, &path)
         .await
         .unwrap();
-    (computers, work, made.id, here.id, confinement)
+    (computers, work, made.id, here.id, confinement, dir)
 }
 
 /// A path as models and attackers spell them: pieces that make trouble, and any text.
@@ -104,7 +105,7 @@ fn spelling() -> impl Strategy<Value = String> {
 #[test]
 fn no_spelling_of_a_path_gets_outside_the_workspace() {
     let rt = runtime();
-    let (computers, _work, _, _, confinement) = rt.block_on(fixture("property"));
+    let (computers, _work, _, _, confinement, _dir) = rt.block_on(fixture("property"));
     let config = ProptestConfig {
         cases: 48,
         failure_persistence: None,
@@ -119,7 +120,7 @@ fn no_spelling_of_a_path_gets_outside_the_workspace() {
 #[test]
 fn links_planted_by_commands_and_hard_links_cannot_reach_outside() {
     let rt = runtime();
-    let (computers, _work, _, _, confinement) = rt.block_on(fixture("escapes"));
+    let (computers, _work, _, _, confinement, _dir) = rt.block_on(fixture("escapes"));
     assert_eq!(
         rt.block_on(confinement_escapes(&computers, &confinement)),
         Ok(())
@@ -200,7 +201,7 @@ fn leaks(computers: &LocalComputers, at: WorkspaceId, rt: &tokio::runtime::Runti
 #[test]
 fn a_link_swapped_while_files_are_worked_on_never_reaches_outside() {
     let rt = runtime();
-    let (computers, work, _, _, confinement) = rt.block_on(fixture("race"));
+    let (computers, work, _, _, confinement, _dir) = rt.block_on(fixture("race"));
     let inside = work.join("confine/inside");
     std::fs::create_dir_all(inside.join("in_dir")).unwrap();
     std::fs::write(inside.join("in_dir/sentinel.txt"), "inside").unwrap();
@@ -248,7 +249,7 @@ fn a_link_swapped_while_files_are_worked_on_never_reaches_outside() {
 #[test]
 fn a_link_swapped_into_protected_paths_never_lets_a_protected_write_through() {
     let rt = runtime();
-    let (work, copies) = scratch("protected-race");
+    let (_dir, work, copies) = scratch("protected-race");
     std::fs::create_dir_all(work.join(".git/hooks")).unwrap();
     std::fs::create_dir_all(work.join(".glave")).unwrap();
     std::fs::write(work.join(".glave/settings.json"), "{}\n").unwrap();
@@ -326,7 +327,7 @@ fn confinement_workspace(
 #[test]
 fn the_outside_check_sees_any_change() {
     let rt = runtime();
-    let (computers, work, _, _, confinement) = rt.block_on(fixture("check"));
+    let (computers, work, _, _, confinement, _dir) = rt.block_on(fixture("check"));
     let check = || rt.block_on(confinement_untouched(&computers, &confinement));
     assert_eq!(check(), Ok(()));
     let sentinel = work.join("confine/outside/sentinel.txt");
@@ -347,7 +348,7 @@ fn the_outside_check_sees_any_change() {
 #[test]
 fn a_hard_linked_file_can_be_edited_and_the_other_name_is_unchanged() {
     let rt = runtime();
-    let (work, copies) = scratch("hardlink");
+    let (_dir, work, copies) = scratch("hardlink");
     let store = work.with_file_name("store");
     std::fs::create_dir_all(&store).unwrap();
     std::fs::write(store.join("index.js"), "store\n").unwrap();
@@ -395,7 +396,7 @@ fn commands_never_see_secret_variables() {
         environment.push((name.into(), "hunter2".into()));
     }
     environment.push(("HARMLESS_SETTING".into(), "visible".into()));
-    let (work, copies) = scratch("secrets");
+    let (_dir, work, copies) = scratch("secrets");
     let computers = LocalComputers::new(&copies, environment);
     let rt = runtime();
     let seen = rt.block_on(async {

@@ -114,5 +114,4 @@ fn a_killed_glave_s_commands_and_servers_are_stopped_at_the_next_start() {
         "the next start stops everything the killed glave left: {left:?}"
     );
     assert!(recorded(&place.home).is_empty(), "and forgets it");
-    let _ = std::fs::remove_dir_all(place.home.parent().unwrap());
 }

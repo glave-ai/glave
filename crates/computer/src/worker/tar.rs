@@ -117,9 +117,7 @@ mod tests {
 
     #[test]
     fn the_system_tar_reads_back_what_was_archived() {
-        let dir = std::env::temp_dir().join(format!("glave-tar-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = glave_ports::testing::TempDir::new("tar").unwrap();
         let big = vec![b'x'; 1500];
         let bytes = archive(&[
             Entry::Folder {
@@ -145,7 +143,7 @@ mod tests {
             .arg("-xf")
             .arg(&file)
             .arg("-C")
-            .arg(&dir)
+            .arg(dir.path())
             .status()
             .unwrap();
         assert!(status.success());

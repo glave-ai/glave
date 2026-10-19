@@ -1,5 +1,6 @@
 use glave_event::{Arguments, CallId, CommandEnding};
 use glave_ports::block_on;
+use glave_ports::testing::TempDir;
 use serde_json::json;
 
 use crate::background::Commands;
@@ -7,11 +8,8 @@ use crate::cancel::Cancel;
 use crate::tools::workspace::Workspace;
 use crate::tools::{Tool, ToolOutcome};
 
-fn folder(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-bg-tool-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn folder(name: &str) -> TempDir {
+    TempDir::new(&format!("bg-tool-{name}")).unwrap()
 }
 
 async fn call(

@@ -14,7 +14,7 @@ use glave_harness::{ApprovalMode, ProjectFolders, Settings, Workspace};
 use glave_keys::{KeyFileRoot, KeySettings};
 use glave_ports::computer::{ComputerId, GitCredentials, WorkspaceInfo};
 use glave_ports::memories::Memory;
-use glave_ports::testing::{CountingEntropy, ManualClock};
+use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 use glave_ports::{
     Completion, EventLog, InMemoryBlobs, InMemoryLog, InMemoryProjects, Located, LogError, OrgId,
     Project, ProjectId, ProjectKind, Projects, Scope,
@@ -32,12 +32,9 @@ use super::script::{ScriptedModel, Seen};
 /// A test server on the log `L`.
 pub type Tested<L = InMemoryLog> = Server<ScriptedModel, L, InMemoryBlobs>;
 
-/// A fresh folder for the test called `name`.
-pub fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-session-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+/// A fresh folder for the test called `name`, removed when it drops.
+pub fn folder(name: &str) -> TempDir {
+    TempDir::new(&format!("session-{name}")).unwrap()
 }
 
 /// The SQLite store at `database`, sealed under a key file beside it, so opening it again
@@ -140,17 +137,17 @@ impl Setup {
 
     /// The server on `log`, its own project a project whose folder is a repository made in the
     /// fresh folder `name`, with worktrees kept beside it, so its tasks work on copies of it;
-    /// and that repository.
+    /// that repository; and the folder, removed when it drops.
     pub async fn build_in_repository<L: EventLog + 'static>(
         mut self,
         name: &str,
         log: L,
-    ) -> (Tested<L>, Seen, PathBuf) {
+    ) -> (Tested<L>, Seen, PathBuf, TempDir) {
         let dir = folder(name);
         let repo = super::git::repository(&dir, "app");
         self.worktrees = Some(dir.join("worktrees"));
         let (server, seen) = self.build_on(&repo, log).await;
-        (server, seen, repo)
+        (server, seen, repo, dir)
     }
 
     /// The server on `log`, its own project a project whose folder is `dir`, and every request

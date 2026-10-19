@@ -4,14 +4,12 @@ use std::path::PathBuf;
 
 use glave_harness::ApprovalMode;
 use glave_ports::block_on;
+use glave_ports::testing::TempDir;
 
 use super::*;
 
-pub(super) fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-policy-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+pub(super) fn scratch(name: &str) -> TempDir {
+    TempDir::new(&format!("policy-{name}")).unwrap()
 }
 
 /// Reads the policy files at `locations`, then everything else with `project` as the

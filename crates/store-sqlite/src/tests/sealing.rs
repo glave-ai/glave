@@ -3,6 +3,7 @@
 use glave_event::RawEvent;
 use glave_keys::KeyId;
 use glave_keys::conformance::event;
+use glave_ports::testing::TempDir;
 use glave_ports::{BlobStore, LogError, OrgId, ProjectId, Scope};
 use rusqlite::{Connection, params};
 
@@ -15,12 +16,13 @@ fn scope(n: u128) -> Scope {
     )
 }
 
-/// A store on a fresh file, and a second, raw connection to the same file.
-fn on_disk(name: &str) -> (PathBuf, Store, Connection) {
-    let path = temp_db(name);
+/// A store on a fresh file, a second, raw connection to the same file, and its folder,
+/// removed when that drops.
+fn on_disk(name: &str) -> (PathBuf, Store, Connection, TempDir) {
+    let (dir, path) = temp_db(name);
     let store = block_on!(Store::open(&path, file_keys(&path))).unwrap();
     let raw = Connection::open(&path).unwrap();
-    (path, store, raw)
+    (path, store, raw, dir)
 }
 
 fn events(thread: u64, seqs: &[(u64, &str)]) -> Vec<RawEvent> {
@@ -80,7 +82,7 @@ fn the_keys_pass_the_key_conformance_suite() {
 
 #[test]
 fn payloads_are_sealed_in_the_file_and_read_back_as_written() {
-    let (path, store, raw) = on_disk("sealed");
+    let (path, store, raw, _dir) = on_disk("sealed");
     let here = scope(1);
     let written = events(1, &[(1, "2026-10"), (2, "2026-10")]);
     block_on!(store.log().append(&here, &written)).unwrap();
@@ -101,7 +103,7 @@ fn payloads_are_sealed_in_the_file_and_read_back_as_written() {
 
 #[test]
 fn a_sealed_payload_moved_to_another_row_thread_or_project_does_not_open() {
-    let (_, store, raw) = on_disk("moved");
+    let (_, store, raw, _dir) = on_disk("moved");
     let (here, there) = (scope(1), scope(2));
     let a = events(1, &[(1, "2026-10"), (2, "2026-10")]);
     let b = events(2, &[(1, "2026-10")]);
@@ -121,7 +123,7 @@ fn a_sealed_payload_moved_to_another_row_thread_or_project_does_not_open() {
 
 #[test]
 fn erasing_a_project_makes_its_events_and_blobs_unreadable() {
-    let (_, store, _raw) = on_disk("erase-project");
+    let (_, store, _raw, _dir) = on_disk("erase-project");
     let (here, other) = (scope(1), scope(2));
     let written = events(1, &[(1, "2026-10")]);
     block_on!(store.log().append(&here, &written)).unwrap();
@@ -148,7 +150,7 @@ fn erasing_a_project_makes_its_events_and_blobs_unreadable() {
 
 #[test]
 fn destroying_a_month_key_erases_that_month_and_keeps_the_rest() {
-    let (_, store, raw) = on_disk("erase-month");
+    let (_, store, raw, _dir) = on_disk("erase-month");
     let here = scope(1);
     let written = events(1, &[(1, "2026-10"), (2, "2026-11")]);
     block_on!(store.log().append(&here, &written)).unwrap();
@@ -165,7 +167,7 @@ fn destroying_a_month_key_erases_that_month_and_keeps_the_rest() {
 
 #[test]
 fn blobs_are_stored_under_a_keyed_name_with_the_threads_that_use_them() {
-    let (_, store, raw) = on_disk("blob-names");
+    let (_, store, raw, _dir) = on_disk("blob-names");
     let here = scope(1);
     let [a, b] = [
         event(1, 1, "2026-10").unwrap(),
@@ -204,7 +206,7 @@ fn blobs_are_stored_under_a_keyed_name_with_the_threads_that_use_them() {
 
 #[test]
 fn another_root_cannot_read_the_file() {
-    let (path, store, _raw) = on_disk("other-root");
+    let (path, store, _raw, _dir) = on_disk("other-root");
     let here = scope(1);
     let written = events(1, &[(1, "2026-10")]);
     block_on!(store.log().append(&here, &written)).unwrap();

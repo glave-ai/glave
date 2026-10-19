@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use glave_keys::{InMemoryRoot, KeyFileRoot, KeySettings};
+use glave_ports::testing::TempDir;
 use glave_ports::{EventLog, Projects as _, Standing, ThreadQuery, block_on, conformance};
 use uuid::Uuid;
 
@@ -20,11 +21,11 @@ fn file_keys(database: &std::path::Path) -> KeySettings {
     KeySettings::new(Arc::new(root))
 }
 
-fn temp_db(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-sqlite-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir.join("glave.db")
+/// A database path in a fresh folder, removed when the first drops.
+fn temp_db(name: &str) -> (TempDir, PathBuf) {
+    let dir = TempDir::new(&format!("sqlite-{name}")).unwrap();
+    let path = dir.join("glave.db");
+    (dir, path)
 }
 
 #[test]
@@ -41,7 +42,7 @@ fn the_log_passes_the_search_conformance_suite() {
 
 #[test]
 fn the_search_index_holds_no_word_in_the_clear() {
-    let path = temp_db("search");
+    let (_dir, path) = temp_db("search");
     block_on!(async {
         let store = Store::open(&path, file_keys(&path)).await.unwrap();
         assert_eq!(conformance::search(&store.log()).await, Ok(()));
@@ -104,7 +105,7 @@ fn principal(n: u8) -> glave_event::PrincipalId {
 
 #[test]
 fn the_identity_is_kept_the_first_time_and_survives_reopening() {
-    let path = temp_db("identity");
+    let (_dir, path) = temp_db("identity");
     block_on!(async {
         let store = Store::open(&path, file_keys(&path)).await.unwrap();
         let first = (principal(1), principal(2));
@@ -128,7 +129,7 @@ fn the_identity_is_kept_the_first_time_and_survives_reopening() {
 
 #[test]
 fn events_and_projects_survive_closing_and_reopening() {
-    let path = temp_db("reopen");
+    let (_dir, path) = temp_db("reopen");
     block_on!(async {
         let store = Store::open(&path, file_keys(&path)).await.unwrap();
         assert_eq!(conformance::event_log(&store.log()).await, Ok(()));
@@ -162,7 +163,7 @@ fn the_projects_pass_the_projects_conformance_suite() {
 #[test]
 fn a_file_of_another_schema_is_refused_and_left_as_it_was() {
     for found in [6, schema::VERSION + 1] {
-        let path = temp_db(&format!("schema-{found}"));
+        let (_dir, path) = temp_db(&format!("schema-{found}"));
         {
             let connection = rusqlite::Connection::open(&path).unwrap();
             connection
@@ -186,7 +187,7 @@ fn a_file_of_another_schema_is_refused_and_left_as_it_was() {
 
 #[test]
 fn a_new_file_gets_the_schema_and_opens_again() {
-    let path = temp_db("fresh");
+    let (_dir, path) = temp_db("fresh");
     block_on!(async {
         drop(Store::open(&path, file_keys(&path)).await.unwrap());
         let again = Store::open(&path, file_keys(&path)).await.unwrap();
@@ -249,7 +250,7 @@ fn views(path: &std::path::Path) -> Vec<(String, String, String, String)> {
 
 #[test]
 fn views_rebuilt_from_the_log_equal_the_kept_ones() {
-    let path = temp_db("views");
+    let (_dir, path) = temp_db("views");
     block_on!(async {
         let store = Store::open(&path, file_keys(&path)).await.unwrap();
         assert_eq!(conformance::thread_views(&store.log()).await, Ok(()));

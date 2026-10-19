@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use glave_event::{At, Opened, ScheduleId, When};
-use glave_ports::testing::ManualClock;
+use glave_ports::testing::{ManualClock, TempDir};
 use glave_ports::{EventLog, InMemoryLog, ProjectId};
 use glave_session::protocol::{Reply, Request, ScheduleInfo, code};
 use jiff::Timestamp;
@@ -32,11 +32,11 @@ fn setup() -> Setup {
 
 /// `setup()` on a repository of its own in the fresh folder `name`: the server, its clock and
 /// the repository.
-async fn on_repository(name: &str) -> (Tested, ManualClock, PathBuf) {
+async fn on_repository(name: &str) -> (Tested, ManualClock, PathBuf, TempDir) {
     let setup = setup();
     let now = setup.clock.clone();
-    let (server, _, repo) = setup.build_in_repository(name, InMemoryLog::new()).await;
-    (server, now, repo)
+    let (server, _, repo, dir) = setup.build_in_repository(name, InMemoryLog::new()).await;
+    (server, now, repo, dir)
 }
 
 async fn create<L: EventLog + 'static>(
@@ -87,7 +87,7 @@ fn cron(text: &str) -> When {
 #[test]
 fn a_cron_schedule_fires_when_due_once_each_time_and_missed_runs_fire_once() {
     block_on!(async {
-        let (server, now, _) = on_repository("schedule-cron").await;
+        let (server, now, _, _dir) = on_repository("schedule-cron").await;
         let made = create(&server, cron("*/10 * * * *"), 10_000).await.unwrap();
         assert_eq!(
             made.next,
@@ -141,7 +141,7 @@ fn a_cron_schedule_fires_when_due_once_each_time_and_missed_runs_fire_once() {
 #[test]
 fn a_one_off_schedule_fires_once_at_its_time() {
     block_on!(async {
-        let (server, now, _) = on_repository("schedule-once").await;
+        let (server, now, _, _dir) = on_repository("schedule-once").await;
         let when = When::At(At::from(
             "2026-10-10T11:00:00Z".parse::<Timestamp>().unwrap(),
         ));
@@ -161,7 +161,7 @@ fn a_one_off_schedule_fires_once_at_its_time() {
 #[test]
 fn schedules_in_two_projects_fire_on_worktrees_and_one_with_no_copy_to_work_on_is_skipped() {
     block_on!(async {
-        let (server, now, repo) = on_repository("schedule-projects").await;
+        let (server, now, repo, _dir) = on_repository("schedule-projects").await;
         let others = repo.with_extension("others");
         let one = make_project(&server, "one", &repository(&others, "one")).await;
         let two = make_project(&server, "two", &repository(&others, "two")).await;
@@ -209,7 +209,7 @@ fn a_fresh_server_runs_what_was_missed_while_none_ran_once() {
         let log = Shared::default();
         let first = setup();
         let now = first.clock.clone();
-        let (server, _, repo) = first
+        let (server, _, repo, _dir) = first
             .build_in_repository("schedule-restart", log.clone())
             .await;
         create(&server, cron("0 * * * *"), 10_000).await.unwrap();

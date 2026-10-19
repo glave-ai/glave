@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn a_kept_file_may_grow_but_not_change() {
-        let dir = std::env::temp_dir().join(format!("glave-eval-kept-{}", std::process::id()));
+        let dir = glave_ports::testing::TempDir::new("eval-kept").unwrap();
         let (original, workspace) = (dir.join("original"), dir.join("workspace"));
         std::fs::create_dir_all(&original).unwrap();
         std::fs::create_dir_all(&workspace).unwrap();

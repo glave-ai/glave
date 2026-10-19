@@ -79,7 +79,7 @@ fn a_project_s_choices_reach_the_person_s_threads_in_it_never_another_s() {
         let mut setup = Setup::new(answers);
         setup.project_folders = Some(Arc::new(Chooses));
         setup.models = vec![ModelInfo::new("project-model")];
-        let (server, seen, _) = setup
+        let (server, seen, _, _dir) = setup
             .build_in_repository("choices-project", InMemoryLog::new())
             .await;
         let grace = person("https://id.example.com", "grace").unwrap();

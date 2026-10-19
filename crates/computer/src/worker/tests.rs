@@ -9,6 +9,7 @@ use std::time::UNIX_EPOCH;
 
 use glave_ports::block_on;
 use glave_ports::computer::{Bytes, Glob, Image, Network, Save};
+use glave_ports::testing::TempDir;
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
 
@@ -20,11 +21,8 @@ mod reconnect;
 const IMAGE: &str =
     "alpine@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507";
 
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-worker-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn scratch(name: &str) -> TempDir {
+    TempDir::new(&format!("worker-{name}")).unwrap()
 }
 
 /// Workers served in-process: what a container would run, without the container. A worker

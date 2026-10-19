@@ -149,8 +149,7 @@ mod tests {
 
     #[test]
     fn the_built_in_tools_pass_the_tool_source_conformance_suite() {
-        let dir = std::env::temp_dir().join(format!("glave-builtins-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = glave_ports::testing::TempDir::new("builtins").unwrap();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -170,8 +169,7 @@ mod tests {
 
     #[test]
     fn what_a_forge_tool_prints_is_untrusted() {
-        let dir = std::env::temp_dir().join(format!("glave-builtins-gh-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = glave_ports::testing::TempDir::new("builtins-gh").unwrap();
         let run = |command: &str| {
             let arguments = Arguments::Json(
                 [("command".to_owned(), serde_json::Value::from(command))]

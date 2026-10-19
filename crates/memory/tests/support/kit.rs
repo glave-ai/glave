@@ -2,7 +2,6 @@
 //! given rules, scripted answers, and a harness wired to both and the scripted model.
 
 use std::future::{Future, ready};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use glave_event::{Arguments, ModelRef, Part, PrincipalId, StopReason, TokenCounts, Usage};
@@ -10,7 +9,7 @@ use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Setting
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, ProjectMemory, Rules};
 pub use glave_ports::block_on;
-use glave_ports::testing::{CountingEntropy, ManualClock};
+use glave_ports::testing::{CountingEntropy, ManualClock, TempDir};
 pub use glave_ports::testing::{ScriptedModel, Seen};
 use glave_ports::{Completion, OrgId, ProjectId, RequestedCall, Scope};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
@@ -187,11 +186,8 @@ pub fn said(text: &str) -> Completion {
     answer(Some(text), Vec::new())
 }
 
-pub fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-memory-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+pub fn folder(name: &str) -> TempDir {
+    TempDir::new(&format!("memory-{name}")).unwrap()
 }
 
 /// Every text part of a user message, in order.

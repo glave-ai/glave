@@ -8,11 +8,11 @@ use super::process::Utf8;
 use super::*;
 
 /// An empty folder for one test, and another for the copies it makes.
-fn scratch(name: &str) -> (PathBuf, PathBuf) {
-    let dir = std::env::temp_dir().join(format!("glave-local-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+fn scratch(name: &str) -> (glave_ports::testing::TempDir, PathBuf, PathBuf) {
+    let dir = glave_ports::testing::TempDir::new(&format!("local-{name}")).unwrap();
     std::fs::create_dir_all(dir.join("work")).unwrap();
-    (dir.join("work"), dir.join("copies"))
+    let (work, copies) = (dir.join("work"), dir.join("copies"));
+    (dir, work, copies)
 }
 
 fn safe_environment() -> Vec<(OsString, OsString)> {
@@ -23,7 +23,7 @@ fn safe_environment() -> Vec<(OsString, OsString)> {
 
 #[test]
 fn this_machine_passes_the_computers_suite() {
-    let (work, copies) = scratch("suite");
+    let (_dir, work, copies) = scratch("suite");
     let computers = LocalComputers::new(&copies, safe_environment())
         .with_worktrees(copies.with_file_name("worktrees"))
         .with_projects(copies.with_file_name("projects"));
@@ -35,7 +35,7 @@ fn this_machine_passes_the_computers_suite() {
 
 #[test]
 fn commands_see_this_machine_and_the_computer_but_nothing_else() {
-    let (work, copies) = scratch("env");
+    let (_dir, work, copies) = scratch("env");
     let computers = LocalComputers::new(&copies, safe_environment());
     let mut environment = Environment::host();
     environment
@@ -89,7 +89,7 @@ impl Output for CancelsWhenUp {
 #[cfg(unix)]
 #[test]
 fn a_cancelled_command_returns_only_once_everything_it_started_has_gone() {
-    let (work, copies) = scratch("cancel-group");
+    let (_dir, work, copies) = scratch("cancel-group");
     let computers = LocalComputers::new(&copies, safe_environment());
     block_on!(async {
         let made = computers.create(&Environment::host()).await.unwrap();
@@ -122,7 +122,7 @@ fn a_cancelled_command_returns_only_once_everything_it_started_has_gone() {
 
 #[test]
 fn what_the_host_cannot_honour_is_refused() {
-    let (_, copies) = scratch("refuse");
+    let (_dir, _, copies) = scratch("refuse");
     let computers = LocalComputers::new(&copies, safe_environment());
     for environment in [
         Environment {
@@ -201,7 +201,7 @@ async fn asks_for_a_password(listener: tokio::net::TcpListener) -> Vec<String> {
 
 #[test]
 fn a_credential_reaches_git_through_its_helper_and_never_a_disk() {
-    let (work, copies) = scratch("credential");
+    let (_dir, work, copies) = scratch("credential");
     let secret = fake_secret("");
     let credential = GitCredential::new("glave-user", &secret).unwrap();
     let basic = serde_json::to_value(Bytes::new(format!("glave-user:{secret}"))).unwrap();

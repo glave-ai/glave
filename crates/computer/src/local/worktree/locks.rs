@@ -113,18 +113,13 @@ fn locking(path: &Path, error: &std::io::Error) -> ComputerError {
 #[cfg(test)]
 mod tests {
     use glave_ports::block_on;
+    use glave_ports::testing::TempDir;
 
     use super::*;
 
     /// A shared git folder of its own for `name`, empty.
-    fn common(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "glave-worktree-locks-{name}-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn common(name: &str) -> TempDir {
+        TempDir::new(&format!("worktree-locks-{name}")).unwrap()
     }
 
     /// Whether `lock` is taken when first asked, rather than waiting in this process.
@@ -167,7 +162,7 @@ mod tests {
                 "another process finds the file locked"
             );
             let waiting = tokio::spawn({
-                let app = app.clone();
+                let app = app.to_path_buf();
                 async move { second.lock(&app).await.map(|_| ()) }
             });
             drop(held);
