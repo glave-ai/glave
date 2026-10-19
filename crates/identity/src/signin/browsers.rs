@@ -188,14 +188,12 @@ impl Browsers {
     /// The id of the session `token` is, renewed for [`SESSION_LIFETIME`] from now.
     pub async fn verify(&self, token: &str) -> Result<String, BrowserError> {
         let presented = hex(&digest(token));
-        let found = match self.find(&presented) {
-            Some(found) => Some(found),
+        let mut found = self.find(&presented);
+        if found.is_none() {
             // Signed in on another server on this store since this one last looked.
-            None => {
-                self.catch_up().await?;
-                self.find(&presented)
-            }
-        };
+            self.catch_up().await?;
+            found = self.find(&presented);
+        }
         let (id, used) = found.ok_or(BrowserError::Ended)?;
         if self.clock.now().duration_since(used) >= RECORD_USE {
             // A use not recorded is recorded with the next one: the session goes on.
@@ -228,7 +226,7 @@ impl Browsers {
                 .filter(|id| Some(*id) != keep)
                 .collect();
             (!others.is_empty())
-                .then(|| Change::SignedOut(others))
+                .then_some(Change::SignedOut(others))
                 .into_iter()
                 .collect()
         })
