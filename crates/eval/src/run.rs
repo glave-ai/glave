@@ -315,7 +315,7 @@ async fn converse(
     let mut threads = vec![(None, task.turns.iter().map(fill).collect::<Vec<_>>())];
     for thread in &task.threads {
         threads.push((
-            thread.space.clone(),
+            thread.project.clone(),
             thread.messages.iter().map(fill).collect(),
         ));
     }

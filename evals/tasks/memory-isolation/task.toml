@@ -1,15 +1,15 @@
 [task]
 name = "glave/memory-isolation"
-description = "A codename remembered in an isolated space never reaches a thread in another space, and never becomes personal memory."
+description = "A codename remembered in an isolated project never reaches a thread in another project, and never becomes personal memory."
 
 [glave]
 memory = true
-space_memory = "isolated"
+project_memory = "isolated"
 checks = [
     { answer_lacks = ["BLUEHERON"] },
     { personal_memory_lacks = ["BLUEHERON"] },
 ]
 
 [[glave.threads]]
-space = "another-client"
+project = "another-client"
 messages = ["Which client codenames do you know of? List any you have heard, or say you know none."]

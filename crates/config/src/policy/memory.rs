@@ -1,10 +1,10 @@
 //! Memory's settings (`specs/memory.md`, "Defaults and policy"): the person's choice
-//! (`memory = "on"` or `"off"` in their own `config.toml`), the space's setting
-//! (`space_memory`, which a project's file may choose), and an organization's `[memory]`
+//! (`memory = "on"` or `"off"` in their own `config.toml`), the project's setting
+//! (`project_memory`, which a project's file may choose), and an organization's `[memory]`
 //! constraints, which only narrow.
 
 use crate::error::refuse;
-use glave_memory::SpaceMemory;
+use glave_memory::ProjectMemory;
 use serde::Deserialize;
 
 use crate::policy::choices::{Choices, Source};
@@ -18,21 +18,21 @@ pub enum MemoryChoice {
     Off,
 }
 
-/// A space's memory setting as written.
+/// A project's memory setting as written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum SpaceChoice {
+pub enum ProjectChoice {
     Shared,
     Isolated,
     Off,
 }
 
-impl SpaceChoice {
-    pub fn setting(self) -> SpaceMemory {
+impl ProjectChoice {
+    pub fn setting(self) -> ProjectMemory {
         match self {
-            Self::Shared => SpaceMemory::Shared,
-            Self::Isolated => SpaceMemory::Isolated,
-            Self::Off => SpaceMemory::Off,
+            Self::Shared => ProjectMemory::Shared,
+            Self::Isolated => ProjectMemory::Isolated,
+            Self::Off => ProjectMemory::Off,
         }
     }
 }
@@ -43,10 +43,11 @@ impl SpaceChoice {
 pub struct MemoryRules {
     /// `false`: no memory anywhere in the organization.
     pub enabled: Option<bool>,
-    /// `false`: no personal memory; spaces may only be `isolated` or `off`.
+    /// `false`: no personal memory; projects may only be `isolated` or `off`.
     pub personal: Option<bool>,
-    /// The space settings allowed.
-    pub spaces: Option<Vec<SpaceChoice>>,
+    /// The project settings allowed. Read under its name from before spaces were projects too.
+    #[serde(alias = "spaces")]
+    pub projects: Option<Vec<ProjectChoice>>,
     /// Memories not saved or edited for this many days are forgotten by glave.
     pub retention_days: Option<u32>,
 }
@@ -65,12 +66,12 @@ impl MemoryRules {
         if let Some(personal) = self.personal {
             parts.push(format!("personal = {personal}"));
         }
-        if let Some(spaces) = &self.spaces {
-            let names: Vec<String> = spaces
+        if let Some(projects) = &self.projects {
+            let names: Vec<String> = projects
                 .iter()
                 .map(|s| format!("{:?}", s.setting().as_str()))
                 .collect();
-            parts.push(format!("spaces = [{}]", names.join(", ")));
+            parts.push(format!("projects = [{}]", names.join(", ")));
         }
         if let Some(days) = self.retention_days {
             parts.push(format!("retention_days = {days}"));
@@ -86,8 +87,8 @@ pub struct MemorySettings {
     pub on: bool,
     /// Whether personal memory is allowed.
     pub personal: bool,
-    /// This space's setting.
-    pub space: SpaceMemory,
+    /// This project's setting.
+    pub project: ProjectMemory,
     pub retention_days: Option<u32>,
 }
 
@@ -112,26 +113,30 @@ pub fn settle(choices: &Choices, constraints: &Constraints) -> crate::Result<Mem
         on = false;
     }
     let personal_rule = rules.iter().find(|(_, m)| m.personal == Some(false));
-    let allowed: Vec<SpaceMemory> = [SpaceMemory::Shared, SpaceMemory::Isolated, SpaceMemory::Off]
-        .into_iter()
-        .filter(|space| *space != SpaceMemory::Shared || personal_rule.is_none())
-        .filter(|space| {
-            rules.iter().all(|(_, m)| {
-                m.spaces
-                    .as_ref()
-                    .is_none_or(|spaces| spaces.iter().any(|s| s.setting() == *space))
-            })
+    let allowed: Vec<ProjectMemory> = [
+        ProjectMemory::Shared,
+        ProjectMemory::Isolated,
+        ProjectMemory::Off,
+    ]
+    .into_iter()
+    .filter(|project| *project != ProjectMemory::Shared || personal_rule.is_none())
+    .filter(|project| {
+        rules.iter().all(|(_, m)| {
+            m.projects
+                .as_ref()
+                .is_none_or(|projects| projects.iter().any(|s| s.setting() == *project))
         })
-        .collect();
-    let chosen = &choices.space_memory;
-    let space = if allowed.contains(&chosen.value) {
+    })
+    .collect();
+    let chosen = &choices.project_memory;
+    let project = if allowed.contains(&chosen.value) {
         chosen.value
     } else if chosen.from == Source::Default {
-        allowed.first().copied().unwrap_or(SpaceMemory::Off)
+        allowed.first().copied().unwrap_or(ProjectMemory::Off)
     } else {
         let rules: Vec<String> = rules.iter().map(|(rule, _)| rule.to_string()).collect();
         refuse!(
-            "space_memory = {:?} (from {}) is not allowed by {}",
+            "project_memory = {:?} (from {}) is not allowed by {}",
             chosen.value.as_str(),
             chosen.from,
             rules.join(", and ")
@@ -140,7 +145,7 @@ pub fn settle(choices: &Choices, constraints: &Constraints) -> crate::Result<Mem
     Ok(MemorySettings {
         on,
         personal: personal_rule.is_none(),
-        space,
+        project,
         retention_days: rules.iter().filter_map(|(_, m)| m.retention_days).min(),
     })
 }
@@ -167,7 +172,7 @@ mod tests {
         let none = constraints("version = 1");
         let on = settle(&chosen(""), &none).unwrap();
         assert!(on.on);
-        assert_eq!(on.space, SpaceMemory::Shared);
+        assert_eq!(on.project, ProjectMemory::Shared);
         assert!(!settle(&chosen("memory = \"off\""), &none).unwrap().on);
     }
 
@@ -178,12 +183,12 @@ mod tests {
         let settled = settle(&chosen("memory = \"on\""), &no_personal).unwrap();
         assert!(!settled.personal);
         assert_eq!(
-            settled.space,
-            SpaceMemory::Isolated,
+            settled.project,
+            ProjectMemory::Isolated,
             "the default gives way"
         );
         assert_eq!(settled.retention_days, Some(90));
-        let shared = settle(&chosen("space_memory = \"shared\""), &no_personal);
+        let shared = settle(&chosen("project_memory = \"shared\""), &no_personal);
         assert!(
             shared.is_err(),
             "a choice outside the policy is an error naming it"
@@ -191,10 +196,17 @@ mod tests {
         let disabled = constraints("version = 1\n[memory]\nenabled = false");
         assert!(settle(&chosen("memory = \"on\""), &disabled).is_err());
         assert!(!settle(&chosen(""), &disabled).unwrap().on);
-        let only_off = constraints("version = 1\n[memory]\nspaces = [\"off\"]");
+        let only_off = constraints("version = 1\n[memory]\nprojects = [\"off\"]");
         assert_eq!(
-            settle(&chosen(""), &only_off).unwrap().space,
-            SpaceMemory::Off
+            settle(&chosen(""), &only_off).unwrap().project,
+            ProjectMemory::Off
         );
+    }
+
+    #[test]
+    fn files_from_before_spaces_were_projects_read_the_same() {
+        let only_isolated = constraints("version = 1\n[memory]\nspaces = [\"isolated\"]");
+        let settled = settle(&chosen("space_memory = \"isolated\""), &only_isolated).unwrap();
+        assert_eq!(settled.project, ProjectMemory::Isolated);
     }
 }

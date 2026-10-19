@@ -11,7 +11,7 @@ use glave_event::{
     Seq, ThreadId, decode, encode,
 };
 use glave_keys::{InMemoryRoot, KeySettings};
-use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory, Tidier, Writer};
+use glave_memory::{GlaveMemory, Memories, Personal, ProjectMemory, Rules, Tidier, Writer};
 use glave_ports::memories::memory_ledger;
 use glave_ports::{
     Clock as _, Entropy as _, EventLog, ModelProvider, OrgId, OsEntropy, ProjectId, Scope,
@@ -56,9 +56,9 @@ fn personal() -> Scope {
     }
 }
 
-fn setting(name: Option<&str>) -> SpaceMemory {
-    name.and_then(SpaceMemory::named)
-        .unwrap_or(SpaceMemory::Shared)
+fn setting(name: Option<&str>) -> ProjectMemory {
+    name.and_then(ProjectMemory::named)
+        .unwrap_or(ProjectMemory::Shared)
 }
 
 /// An attempt's store, and its memory when memory is on.
@@ -99,16 +99,17 @@ impl Remembering {
             }),
             ..Rules::default()
         };
-        rules
-            .projects
-            .insert(project(None).project, setting(task.space_memory.as_deref()));
+        rules.projects.insert(
+            project(None).project,
+            setting(task.project_memory.as_deref()),
+        );
         let mut scopes = vec![personal(), project(None)];
         for thread in &task.threads {
-            let here = project(thread.space.as_deref());
-            if thread.space.is_some() {
+            let here = project(thread.project.as_deref());
+            if thread.project.is_some() {
                 rules
                     .projects
-                    .insert(here.project, setting(thread.space_memory.as_deref()));
+                    .insert(here.project, setting(thread.project_memory.as_deref()));
             }
             if !scopes.contains(&here) {
                 scopes.push(here);
@@ -125,7 +126,7 @@ impl Remembering {
         };
         seed(&store, &rules, person, &task.memories).await?;
         for past in &task.past {
-            write_past(&store, project(past.space.as_deref()), &past.messages).await?;
+            write_past(&store, project(past.project.as_deref()), &past.messages).await?;
         }
         let memory = if on {
             Some(Arc::new(

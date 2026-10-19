@@ -15,7 +15,7 @@ use glave_ports::memories::{MemoryContext, MemoryError, Remembered, Shown, memor
 use glave_ports::{Clock, Entropy, EventLog, LogError, ProjectId, Scope};
 
 use crate::book::{Book, Entry};
-use crate::rules::{Personal, Rules, SpaceMemory};
+use crate::rules::{Personal, ProjectMemory, Rules};
 use crate::shred::Shredder;
 
 pub use housekeep::Housekept;
@@ -84,7 +84,7 @@ impl<L: EventLog + 'static> Memories<L> {
     }
 
     /// Sets `project`'s memory to `setting` from now on, as its project's settings choose it.
-    pub fn set_project(&self, project: ProjectId, setting: SpaceMemory) {
+    pub fn set_project(&self, project: ProjectId, setting: ProjectMemory) {
         let mut rules = self
             .inner
             .rules
@@ -103,7 +103,7 @@ impl<L: EventLog + 'static> Memories<L> {
     pub fn set_person(
         &self,
         personal: Option<Personal>,
-        default: SpaceMemory,
+        default: ProjectMemory,
         retention_days: Option<u32>,
     ) {
         let mut rules = self
