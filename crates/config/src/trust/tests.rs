@@ -397,7 +397,7 @@ fn a_moved_clone_s_new_decisions_replace_the_ones_its_remote_found() {
     let mut forgotten = decided("/moved/app", true);
     forgotten.items.clear();
     record.take(forgotten);
-    assert!(record.entries().is_empty());
+    assert_eq!(record.entries(), []);
 }
 
 #[test]

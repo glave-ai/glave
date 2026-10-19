@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use glave_config::trust::Decision;
@@ -33,10 +34,11 @@ fn entry(path: &str, trusted: bool) -> Entry {
 fn earlier_file(entries: &[(&str, bool)]) -> String {
     let mut text = "version = 1\n".to_owned();
     for (path, trusted) in entries {
-        text.push_str(&format!(
+        let _ = write!(
+            text,
             "\n[[project]]\npath = {path:?}\n\n[project.items.\"mcp:docs\"]\n\
              definition = '{{\"command\":\"docs-mcp\"}}'\ntrusted = {trusted}\n"
-        ));
+        );
     }
     text
 }

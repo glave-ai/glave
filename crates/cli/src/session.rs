@@ -173,12 +173,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
     let (remote, configured) = crate::providers::endpoint(choices)?;
     let store = store(&setup).await?;
     let identity = identity::load_or_make(&home::folder()?, &store).await?;
-    let trust = Trust::open(&store, identity.person, &home::folder()?).await?;
-    // The terminal asks about the folder's project before glave starts; an app asks later.
-    let told = match asking {
-        Asking::Later => Vec::new(),
-        asking => setup::ask_here(&folder, &setup, asking, &trust).await?,
-    };
+    let (asked, told) = asked_here(&folder, &setup, &store, identity.person, asking).await?;
     let lineup = Lineup::new(&setup, configured);
     let lined = line_up(args, lineup, &store, identity.person, remote.is_some()).await?;
     let (workspace, hosts) = with_hosts(args, &store, identity.person, choices, workspace).await?;
@@ -194,14 +189,7 @@ async fn wire(args: &Args, answering: Answering, asking: Asking) -> anyhow::Resu
         crate::cloud::workers(choices, &setup.loaded.constraints, &folder).await?;
     let scope = crate::spaces::here(&store, &root, identity.person).await?;
     let memory = crate::memory::start_for(&store, &setup, identity.person, scope).await?;
-    let projects = projects_for(
-        &setup,
-        &servers,
-        &lined.switch,
-        memory.as_ref(),
-        asking,
-        trust,
-    )?;
+    let projects = projects_for(&setup, &servers, &lined.switch, memory.as_ref(), asked)?;
     for line in [told, projects.set_aside(&folder).await].concat() {
         eprintln!("glave: {line}");
     }
@@ -283,16 +271,40 @@ async fn rereading(
     Ok(Arc::new(rereading.await))
 }
 
+/// What the person decided about each project, and whether they answer what a project asks
+/// later, from an app.
+struct Asked {
+    trust: Trust,
+    later: bool,
+}
+
+/// What the person decided about projects, in `store`, and what to tell them of the project
+/// around `folder`: the terminal asks about it before glave starts, as `asking` lets; an app
+/// asks later.
+async fn asked_here(
+    folder: &Path,
+    setup: &Setup,
+    store: &Data,
+    person: glave_event::PrincipalId,
+    asking: Asking,
+) -> anyhow::Result<(Asked, Vec<String>)> {
+    let trust = Trust::open(store, person, &home::folder()?).await?;
+    let told = match asking {
+        Asking::Later => Vec::new(),
+        asking => setup::ask_here(folder, setup, asking, &trust).await?,
+    };
+    let later = asking == Asking::Later;
+    Ok((Asked { trust, later }, told))
+}
+
 /// Each project as this glave reads it, beside the `servers` it runs for the person's threads
-/// everywhere, offering the models of `models`, with `memory`; asked about from an app when
-/// `asking` says the person answers later.
+/// everywhere, offering the models of `models`, with `memory`, under what the person `asked`.
 fn projects_for(
     setup: &Setup,
     servers: &Servers,
     models: &GatewaySwitch,
     memory: Option<&crate::memory::Running>,
-    asking: Asking,
-    trust: Trust,
+    asked: Asked,
 ) -> anyhow::Result<Arc<Projects>> {
     let own = crate::projects::Own {
         loaded: setup.loaded.clone(),
@@ -302,10 +314,9 @@ fn projects_for(
         memory: memory.map(|memory| Arc::clone(&memory.memory)),
         clock: Box::new(SystemClock),
         processes: servers.processes().clone(),
-        trust,
+        trust: asked.trust,
     };
-    let later = asking == Asking::Later;
-    let projects = Arc::new(Projects::new(home::folder()?, own, later));
+    let projects = Arc::new(Projects::new(home::folder()?, own, asked.later));
     Projects::tidy(&projects);
     Ok(projects)
 }
