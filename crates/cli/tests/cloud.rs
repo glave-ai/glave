@@ -62,16 +62,18 @@ fn host() -> String {
 }
 
 /// `git daemon` serving `base` on all addresses, pushes allowed, once it answers; stopped
-/// when dropped.
+/// when dropped. Started as `git-daemon` itself: `git daemon` runs it as a child of its own,
+/// which stopping `git` would leave running.
 fn daemon(base: &Path) -> (Running, u16) {
     let port = std::net::TcpListener::bind("0.0.0.0:0")
         .unwrap()
         .local_addr()
         .unwrap()
         .port();
-    let child = Command::new("git")
+    let exec_path = Command::new("git").arg("--exec-path").output().unwrap();
+    let exec_path = String::from_utf8(exec_path.stdout).unwrap();
+    let child = Command::new(Path::new(exec_path.trim()).join("git-daemon"))
         .args([
-            "daemon",
             "--export-all",
             "--enable=receive-pack",
             "--reuseaddr",
