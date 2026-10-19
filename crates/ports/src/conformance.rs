@@ -3,6 +3,7 @@
 //! Each suite returns the first violation it finds as an error message.
 
 mod computers;
+mod memory;
 mod projects;
 mod search;
 mod threads;
@@ -11,6 +12,7 @@ pub use computers::{
     Confinement, computers, confinement_case, confinement_escapes, confinement_fixture,
     confinement_paths, confinement_targets, confinement_untouched,
 };
+pub use memory::{MemoryPlaces, memory_scopes};
 pub use projects::projects;
 pub use search::search;
 pub use threads::thread_views;
