@@ -54,13 +54,7 @@ mod postgres {
             eprintln!("skipped: set GLAVE_TEST_POSTGRES_URL to run the Postgres tests");
             return;
         };
-        let schema = format!("glave_test_cli_{}", std::process::id());
-        execute(
-            &url,
-            &format!("DROP SCHEMA IF EXISTS {schema} CASCADE; CREATE SCHEMA {schema};"),
-        );
-        let separator = if url.contains('?') { '&' } else { '?' };
-        let store = format!("{url}{separator}options=-c%20search_path%3D{schema}");
+        let (schema, store) = scratch(&url, "history");
         let place = place("postgres");
         let server = FakeServer::start(vec![Reply::text("Stored far away.")]).unwrap();
         let child = start_with(
@@ -92,6 +86,73 @@ mod postgres {
         execute(&url, &format!("DROP SCHEMA {schema} CASCADE;"));
     }
 
+    /// A schema of its own in the test database, and the store URL that names it.
+    fn scratch(url: &str, name: &str) -> (String, String) {
+        let schema = format!("glave_test_cli_{name}_{}", std::process::id());
+        execute(
+            url,
+            &format!("DROP SCHEMA IF EXISTS {schema} CASCADE; CREATE SCHEMA {schema};"),
+        );
+        let separator = if url.contains('?') { '&' } else { '?' };
+        let store = format!("{url}{separator}options=-c%20search_path%3D{schema}");
+        (schema, store)
+    }
+
+    #[test]
+    fn two_homes_on_one_database_read_one_trust_record() {
+        let Ok(url) = std::env::var("GLAVE_TEST_POSTGRES_URL") else {
+            eprintln!("skipped: set GLAVE_TEST_POSTGRES_URL to run the Postgres tests");
+            return;
+        };
+        let (schema, store) = scratch(&url, "trust");
+        let first = place("postgres-trust-first");
+        std::fs::write(
+            first.project.join(".mcp.json"),
+            r#"{"mcpServers": {"docs": {"command": "docs-mcp"}}}"#,
+        )
+        .unwrap();
+        // The first home has the yes an earlier glave kept in its folder.
+        std::fs::create_dir_all(&first.home).unwrap();
+        let root = std::fs::canonicalize(&first.project).unwrap();
+        let record = format!(
+            "version = 1\n\n[[project]]\npath = {:?}\n\n[project.items.\"mcp:docs\"]\n\
+             definition = '{{\"command\":\"docs-mcp\"}}'\ntrusted = true\n",
+            root.display().to_string()
+        );
+        std::fs::write(first.home.join("trust.toml"), record).unwrap();
+        // The second home works in the same folder, with nothing of its own.
+        let second = Place {
+            project: first.project.clone(),
+            home: first.home.with_file_name("second-home"),
+        };
+        let explain = |place: &Place| {
+            let output = Command::new(env!("CARGO_BIN_EXE_glave"))
+                .args(["policy", "explain"])
+                .current_dir(&place.project)
+                .env("GLAVE_HOME", &place.home)
+                .env("GLAVE_STORE_URL", &store)
+                .env("GLAVE_MODEL", "gemma4:12b")
+                .env_remove("GLAVE_JUDGE_MODEL")
+                .output()
+                .unwrap();
+            text(&output)
+        };
+        let shown = explain(&first);
+        assert!(shown.contains("trusted (your answer)"), "{shown}");
+        assert!(
+            !first.home.join("trust.toml").exists(),
+            "moved into the store"
+        );
+        // Servers on one database share its root, as they would a KMS.
+        std::fs::create_dir_all(&second.home).unwrap();
+        let key = second.home.join("root.key");
+        std::fs::copy(first.home.join("root.key"), &key).unwrap();
+        set_private(&key);
+        let shown = explain(&second);
+        execute(&url, &format!("DROP SCHEMA {schema} CASCADE;"));
+        assert!(shown.contains("trusted (your answer)"), "{shown}");
+    }
+
     /// Leaves `path` readable only by its owner, as a key file must be.
     fn set_private(path: &std::path::Path) {
         use std::os::unix::fs::PermissionsExt as _;
@@ -104,13 +165,7 @@ mod postgres {
             eprintln!("skipped: set GLAVE_TEST_POSTGRES_URL to run the Postgres tests");
             return;
         };
-        let schema = format!("glave_test_cli_identity_{}", std::process::id());
-        execute(
-            &url,
-            &format!("DROP SCHEMA IF EXISTS {schema} CASCADE; CREATE SCHEMA {schema};"),
-        );
-        let separator = if url.contains('?') { '&' } else { '?' };
-        let store = format!("{url}{separator}options=-c%20search_path%3D{schema}");
+        let (schema, store) = scratch(&url, "identity");
         // The first home has the file an earlier glave kept; the second has none.
         let first_home = place("postgres-identity-first");
         let person = "01890a5d-ac96-774b-bcce-b302099a8057";

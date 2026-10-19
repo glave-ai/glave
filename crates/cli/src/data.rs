@@ -28,12 +28,12 @@ pub enum Data {
 impl Data {
     /// The store `url` names, or the local SQLite file when it names none.
     pub async fn open(url: Option<&str>) -> anyhow::Result<Self> {
+        // Made first when it is not there yet: the key file may be kept in it.
+        let database = home::database().await?;
         let folder = home::folder()?;
         let keys = keys::settings(&folder, home::relocated()).await?;
         match url {
-            None => Ok(Self::Sqlite(
-                sqlite::Store::open(home::database().await?, keys).await?,
-            )),
+            None => Ok(Self::Sqlite(sqlite::Store::open(database, keys).await?)),
             Some(url) => {
                 let shown = glave_config::policy::redacted(url);
                 let store = postgres::Store::connect(url, keys)

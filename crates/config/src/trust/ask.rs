@@ -3,7 +3,6 @@
 use std::fmt::Write as _;
 
 use crate::trust::assess::{Assessment, Why};
-use crate::trust::record::FILE;
 
 /// The question for the items of `assessment` not yet decided.
 pub fn question(assessment: &Assessment) -> String {
@@ -20,7 +19,7 @@ pub fn question(assessment: &Assessment) -> String {
     }
     let _ = write!(
         text,
-        "Trust them? glave asks once, and remembers the answer in {FILE}. [y/N] "
+        "Trust them? glave asks once, and remembers the answer. [y/N] "
     );
     text
 }

@@ -40,6 +40,7 @@ mod tasks;
 mod telemetry;
 mod terminal;
 mod threads;
+mod trust;
 mod waiting;
 mod worktrees;
 

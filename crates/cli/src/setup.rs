@@ -14,7 +14,10 @@ use crate::{config, home, mcp};
 use glave_config::policy::{
     self, Choices, ConfigFile, Loaded, Locations, ProjectTrust, ServerFile, StoreFile,
 };
-use glave_config::trust::{self, Asking, Outcome, Project};
+use glave_config::trust::{self, Asking, Outcome, Project, Record};
+
+use crate::data::Data;
+use crate::trust::Trust;
 
 /// Why the sandbox cannot run, as `glave policy explain` says it without trying.
 pub const NO_SANDBOX: &str = "this computer has no sandbox glave can use (macOS's Seatbelt, or \
@@ -91,8 +94,13 @@ impl Setup {
 /// Asks the person about the project around `folder` once, if `asking` allows and there is a
 /// question, keeping the answer where every server reads it; then what it brings that stays
 /// off, and why, to tell the person.
-pub async fn ask_here(folder: &Path, setup: &Setup, asking: Asking) -> anyhow::Result<Vec<String>> {
-    let outcome = resolve(folder, &setup.loaded.constraints, asking).await?;
+pub async fn ask_here(
+    folder: &Path,
+    setup: &Setup,
+    asking: Asking,
+    trust: &Trust,
+) -> anyhow::Result<Vec<String>> {
+    let outcome = resolve(folder, &setup.loaded.constraints, asking, trust).await?;
     Ok([outcome.withheld, outcome.hooks_off].concat())
 }
 
@@ -120,7 +128,10 @@ pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
     let home = home::folder()?;
     let policies = policy::policies(&Locations::here(&home, &folder)).await?;
     let constraints = policy::Constraints::of(&policies);
-    let outcome = resolve(&folder, &constraints, Asking::Explaining).await?;
+    let store = Data::here().await?;
+    let person = crate::identity::load_or_make(&home, &store).await?.person;
+    let trust = Trust::open(&store, person, &home).await?;
+    let outcome = resolve(&folder, &constraints, Asking::Explaining, &trust).await?;
     let mut loaded = read(args, &folder, Some(&outcome)).await?;
     if !glave_computer::sandbox_available() {
         loaded.no_sandbox_here = Some(NO_SANDBOX.to_owned());
@@ -146,16 +157,24 @@ pub async fn explain(args: &Args) -> anyhow::Result<ExitCode> {
 }
 
 /// What the project around `folder` runs, asking the person when `asking` lets and keeping
-/// their answer.
+/// their answer in `trust`.
 async fn resolve(
     folder: &Path,
     constraints: &policy::Constraints,
     asking: Asking,
+    trust: &Trust,
 ) -> anyhow::Result<Outcome> {
     let home = home::folder()?;
     let root = Locations::here(&home, folder).root;
     let project = Project::read(&root, &mcp::environment()).await?;
-    Ok(trust::resolve(&home, project, constraints, asking, ask).await?)
+    let record = trust.record().await?;
+    let outcome = trust::resolve(&record, project.clone(), constraints, asking, ask).await?;
+    if let Some(decisions) = &outcome.decisions {
+        trust
+            .keep(Record::deciding(&project, decisions.clone()))
+            .await?;
+    }
+    Ok(outcome)
 }
 
 /// The files for a run in `folder`, with the project's settings as `project` applies them,

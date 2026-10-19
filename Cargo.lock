@@ -1409,6 +1409,7 @@ name = "glave-config"
 version = "0.0.0"
 dependencies = [
  "glave-computer",
+ "glave-event",
  "glave-harness",
  "glave-mcp",
  "glave-memory",

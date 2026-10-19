@@ -8,7 +8,6 @@
 use std::path::{Path, PathBuf};
 
 use glave_config::policy::{self, ConfigFile, Constraints, ModelEntry, Source};
-use glave_config::trust::Record;
 use glave_harness::{ApprovalMode, Judge, Protections};
 use glave_ports::block_on;
 use glave_ports::computer::SandboxLevel;
@@ -104,6 +103,7 @@ async fn timed(home: &Path, taken: Vec<String>, models: &[&str], clock: ManualCl
         memory: None,
         clock: Box::new(clock),
         processes: glave_process::Processes::unrecorded(),
+        trust: Trust::in_memory(home).await.unwrap().1,
     };
     Projects::new(home.to_owned(), own, true)
 }
@@ -170,7 +170,7 @@ fn a_project_is_asked_about_in_plain_words_and_on_once_trusted_and_only_then() {
         );
 
         assert!(projects.trust(&project, &ask.ask).await.unwrap());
-        let record = Record::load(&home).await.unwrap();
+        let record = projects.trust.record().await.unwrap();
         let read = Project::read(&project, &crate::mcp::environment())
             .await
             .unwrap();

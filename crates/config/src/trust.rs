@@ -1,8 +1,8 @@
 //! Project trust (`specs/policy.md`, issue #83). A repository can bring things that run
 //! commands: MCP servers in its `.mcp.json`, and settings that loosen approvals or the sandbox.
 //! glave asks once per project, only when there is something to ask about, in the terminal or
-//! in an app (issue #250), remembers the answer in `trust.toml` in its folder, and asks again
-//! only about what changes. Policy can trust projects without a question or forbid their
+//! in an app (issue #250), remembers the answer in the store's trust ledger (kept by the caller
+//! from what [`Outcome::decisions`] says), and asks again only about what changes. Policy can trust projects without a question or forbid their
 //! servers. Until someone answers, they stay off.
 
 mod ask;
@@ -14,12 +14,11 @@ mod record;
 mod tests;
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
 pub use assess::{Answer, Assessment, Outcome, assess};
 pub use project::{Plain, Project, remote};
 pub use protect::protections;
-pub use record::Record;
+pub use record::{Decision, Entry, FILE, Record};
 
 use crate::policy::Constraints;
 
@@ -36,18 +35,18 @@ pub enum Asking {
     Explaining,
 }
 
-/// What `project` does under the record in `home`, asking the person if that is needed and
-/// possible, and keeping the answer. `ask` shows the question and returns the line typed, or
-/// nothing when input ends without one, which counts as no one being there.
+/// What `project` does under `record`, asking the person if that is needed and possible. The
+/// answer to keep, when there is one, is the outcome's `decisions`. `ask` shows the question
+/// and returns the line typed, or nothing when input ends without one, which counts as no one
+/// being there.
 pub async fn resolve(
-    home: &Path,
+    record: &Record,
     project: Project,
     constraints: &Constraints,
     asking: Asking,
     ask: impl AsyncFnOnce(String) -> std::io::Result<Option<String>>,
 ) -> crate::Result<Outcome> {
-    let mut record = Record::load(home).await?;
-    let assessment = assess(project, &record, constraints);
+    let assessment = assess(project, record, constraints);
     let answer = match asking {
         Asking::Explaining => Answer::Explaining,
         Asking::NoOne => Answer::NoOne,
@@ -62,13 +61,7 @@ pub async fn resolve(
             None => Answer::NoOne,
         },
     };
-    let project = assessment.project.clone();
-    let outcome = assessment.apply(answer);
-    if let Some(decisions) = &outcome.decisions {
-        record.remember(&project, decisions.clone());
-        record.save(home).await?;
-    }
-    Ok(outcome)
+    Ok(assessment.apply(answer))
 }
 
 /// The trusted project servers as one `.mcp.json`, ready to read like the person's own.
@@ -83,36 +76,21 @@ pub fn mcp_json(servers: &BTreeMap<String, String>) -> String {
     serde_json::json!({ "mcpServers": servers }).to_string()
 }
 
-/// Where each item of `project` stands under the record in `home`. Nothing is asked or saved.
-pub async fn assessed(
-    home: &Path,
-    project: Project,
-    constraints: &Constraints,
-) -> crate::Result<Assessment> {
-    let record = Record::load(home).await?;
-    Ok(assess(project, &record, constraints))
-}
-
 /// Trusts what `project` asks to be trusted, as the person's answer to the ask named `asked`
-/// ([`Assessment::ask_id`]), and keeps the answer in the record in `home` exactly as the
-/// terminal keeps a yes. Nothing is trusted, and `false` comes back, when the project no
-/// longer asks exactly that: it changed since the person was shown it, or was answered already.
-pub async fn trust_asked(
-    home: &Path,
+/// ([`Assessment::ask_id`]), under `record`: the entry to keep, exactly as the terminal keeps
+/// a yes. None, trusting nothing, when the project no longer asks exactly that: it changed
+/// since the person was shown it, or was answered already.
+pub fn trust_asked(
+    record: &Record,
     project: Project,
     constraints: &Constraints,
     asked: &str,
-) -> crate::Result<bool> {
-    let mut record = Record::load(home).await?;
-    let assessment = assess(project, &record, constraints);
+) -> Option<Entry> {
+    let assessment = assess(project, record, constraints);
     if assessment.undecided().is_empty() || assessment.ask_id() != asked {
-        return Ok(false);
+        return None;
     }
     let project = assessment.project.clone();
-    let Some(decisions) = assessment.apply(Answer::Yes).decisions else {
-        return Ok(false);
-    };
-    record.remember(&project, decisions);
-    record.save(home).await?;
-    Ok(true)
+    let decisions = assessment.apply(Answer::Yes).decisions?;
+    Some(Record::deciding(&project, decisions))
 }

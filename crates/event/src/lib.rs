@@ -42,4 +42,5 @@ pub use payload::{
     CredentialConnected, CredentialRemoved, Forge, ProviderConnected, ProviderKind,
     ProviderRemoved, Renewal, SpaceFolderSet, SpaceRemoved, sealed_under_account,
 };
+pub use payload::{Decision, TrustDecided};
 pub use secret::{Secret, serialize_exposed};

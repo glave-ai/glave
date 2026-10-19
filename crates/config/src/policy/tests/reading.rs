@@ -142,7 +142,7 @@ fn explain_shows_every_setting_and_rule_with_its_source() {
         rows: vec![
             [
                 "MCP server docs (docs-mcp --fast)".to_owned(),
-                "trusted (recorded in trust.toml)".to_owned(),
+                "trusted (your answer)".to_owned(),
             ],
             [
                 "settings (approval = \"auto\")".to_owned(),
