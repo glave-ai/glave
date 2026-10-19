@@ -19,31 +19,12 @@ pub(crate) const ENDED: &str = "turn.ended";
 pub struct TurnStarted {
     pub model: ModelRef,
     pub config: BlobRef,
-    /// The W3C trace the turn belongs to, linking it to OpenTelemetry spans. Since version 2.
+    /// The W3C trace the turn belongs to, linking it to OpenTelemetry spans.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trace: Option<TraceId>,
-    /// How the caller who started the turn signed in. Never a token. Since version 2.
+    /// How the caller who started the turn signed in. Never a token.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<Auth>,
-}
-
-/// Version 1, before a turn recorded its trace and its caller's sign-in.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TurnStartedV1 {
-    model: ModelRef,
-    config: BlobRef,
-}
-
-impl From<TurnStartedV1> for TurnStarted {
-    fn from(old: TurnStartedV1) -> Self {
-        Self {
-            model: old.model,
-            config: old.config,
-            trace: None,
-            auth: None,
-        }
-    }
 }
 
 /// A W3C trace id: 32 lowercase hex digits, not all zero.
@@ -113,7 +94,7 @@ open_kind! {
 
 impl Payload for TurnStarted {
     const TYPE: &'static str = STARTED;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 1;
 }
 
 pub(crate) fn decode_started(
@@ -121,8 +102,7 @@ pub(crate) fn decode_started(
     data: &RawValue,
 ) -> Option<serde_json::Result<TurnStarted>> {
     match version {
-        1 => Some(parse::<TurnStartedV1>(data).map(TurnStarted::from)),
-        2 => Some(parse(data)),
+        1 => Some(parse(data)),
         _ => None,
     }
 }

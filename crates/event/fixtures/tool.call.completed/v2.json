@@ -1,1 +1,0 @@
-{"glave":1,"id":"0192f5c2-7000-7000-8000-000000000009","thread":"0192f5c0-11aa-7e21-8c3d-5f9b2e4a6c10","seq":9,"at":"2026-10-11T10:02:03.400Z","type":"tool.call.completed","v":2,"data":{"call_id":"call_9","is_error":false,"output":[{"type":"text","text":"https://example.com/\n\n# Example Domain"}],"untrusted":true}}

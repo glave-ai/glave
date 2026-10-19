@@ -7,7 +7,7 @@ use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use glave_event::{Body, KNOWN_VERSIONS, RENAMED_TYPES, RawEvent, decode};
+use glave_event::{Body, KNOWN_VERSIONS, RawEvent, decode};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
@@ -19,11 +19,10 @@ fn fixture_path(kind: &str, version: u32) -> PathBuf {
     fixtures_dir().join(kind).join(format!("v{version}.json"))
 }
 
-/// The latest version of each type written today: an old name of a renamed type is only read.
+/// The latest version of each type, the one written today.
 fn latest_versions() -> BTreeMap<&'static str, u32> {
     let mut latest = BTreeMap::new();
-    let old = |kind: &str| RENAMED_TYPES.iter().any(|(before, _)| *before == kind);
-    for (kind, version) in KNOWN_VERSIONS.iter().filter(|(kind, _)| !old(kind)) {
+    for (kind, version) in KNOWN_VERSIONS {
         let entry = latest.entry(*kind).or_insert(*version);
         *entry = (*entry).max(*version);
     }
@@ -86,24 +85,6 @@ fn every_fixture_is_a_known_version() -> TestResult {
                 "fixture {kind}/{name} is not listed in KNOWN_VERSIONS"
             );
         }
-    }
-    Ok(())
-}
-
-/// An event a log kept under a type's old name decodes as the type it became, and encodes under
-/// the new name to exactly the new name's saved bytes.
-#[test]
-fn renamed_types_read_as_their_new_name_and_write_under_it() -> TestResult {
-    for (before, after) in RENAMED_TYPES {
-        let old = fs::read_to_string(fixture_path(before, 1))?;
-        let new = fs::read_to_string(fixture_path(after, 1))?;
-        let written = decode(RawEvent::from_json(old.trim_end())?)?.to_raw()?;
-        assert_eq!(written.kind.as_str(), *after, "{before}");
-        assert_eq!(
-            written.to_json()?,
-            new.trim_end(),
-            "{before} reads as {after}"
-        );
     }
     Ok(())
 }

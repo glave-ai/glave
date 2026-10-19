@@ -26,37 +26,6 @@ pub struct GoalSet {
     pub by: Option<Principal>,
 }
 
-/// Version 1, which could name a check command glave ran after each turn.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct GoalSetV1 {
-    objective: String,
-    #[serde(default)]
-    check: Option<String>,
-    token_budget: u64,
-    #[serde(default)]
-    by: Option<Principal>,
-}
-
-impl From<GoalSetV1> for GoalSet {
-    /// A check becomes words in the objective, which is where a person now says how the goal
-    /// is verified: the model, resuming an old goal, still knows what "met" meant.
-    fn from(old: GoalSetV1) -> Self {
-        let objective = match old.check {
-            Some(check) => format!(
-                "{}\n\nThe goal is met when `{check}` passes.",
-                old.objective
-            ),
-            None => old.objective,
-        };
-        Self {
-            objective,
-            token_budget: old.token_budget,
-            by: old.by,
-        }
-    }
-}
-
 /// The thread's goal ended.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -68,8 +37,7 @@ pub struct GoalEnded {
     /// every other reason.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
-    /// With `paused`, the model's words to the person: what it needs from them. Since
-    /// version 2.
+    /// With `paused`, the model's words to the person: what it needs from them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
@@ -98,43 +66,6 @@ impl GoalReason {
     }
 }
 
-/// Version 1, when a goal could be met by its check or by the model's word.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct GoalEndedV1 {
-    reason: GoalReasonV1,
-    tokens: u64,
-    #[serde(default)]
-    by: Option<Principal>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum GoalReasonV1 {
-    MetByCheck,
-    MetPerModel,
-    Stopped,
-    Budget,
-    Stalled,
-}
-
-impl From<GoalEndedV1> for GoalEnded {
-    fn from(old: GoalEndedV1) -> Self {
-        let reason = match old.reason {
-            GoalReasonV1::MetByCheck | GoalReasonV1::MetPerModel => GoalReason::Met,
-            GoalReasonV1::Stopped => GoalReason::Stopped,
-            GoalReasonV1::Budget => GoalReason::Budget,
-            GoalReasonV1::Stalled => GoalReason::Stalled,
-        };
-        Self {
-            reason,
-            tokens: old.tokens,
-            by: old.by,
-            note: None,
-        }
-    }
-}
-
 /// The person resumed a paused goal: it is active again, its tokens counting on from where it
 /// paused.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -147,12 +78,12 @@ pub struct GoalResumed {
 
 impl Payload for GoalSet {
     const TYPE: &'static str = SET;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 1;
 }
 
 impl Payload for GoalEnded {
     const TYPE: &'static str = ENDED;
-    const VERSION: u32 = 2;
+    const VERSION: u32 = 1;
 }
 
 impl Payload for GoalResumed {
@@ -162,16 +93,14 @@ impl Payload for GoalResumed {
 
 pub(crate) fn decode_set(version: u32, data: &RawValue) -> Option<serde_json::Result<GoalSet>> {
     match version {
-        1 => Some(parse::<GoalSetV1>(data).map(GoalSet::from)),
-        2 => Some(parse(data)),
+        1 => Some(parse(data)),
         _ => None,
     }
 }
 
 pub(crate) fn decode_ended(version: u32, data: &RawValue) -> Option<serde_json::Result<GoalEnded>> {
     match version {
-        1 => Some(parse::<GoalEndedV1>(data).map(GoalEnded::from)),
-        2 => Some(parse(data)),
+        1 => Some(parse(data)),
         _ => None,
     }
 }
@@ -183,55 +112,5 @@ pub(crate) fn decode_resumed(
     match version {
         1 => Some(parse(data)),
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn raw(json: &str) -> Box<RawValue> {
-        RawValue::from_string(json.to_owned()).unwrap()
-    }
-
-    #[test]
-    fn a_v1_check_becomes_words_in_the_objective() {
-        let set = decode_set(
-            1,
-            &raw(r#"{"objective":"fix it","check":"cargo test","token_budget":9}"#),
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(
-            set.objective,
-            "fix it\n\nThe goal is met when `cargo test` passes."
-        );
-        assert_eq!(set.token_budget, 9);
-        let plain = decode_set(1, &raw(r#"{"objective":"fix it","token_budget":9}"#))
-            .unwrap()
-            .unwrap();
-        assert_eq!(plain.objective, "fix it");
-    }
-
-    #[test]
-    fn both_v1_ways_of_meeting_a_goal_become_met() {
-        for old in ["met_by_check", "met_per_model"] {
-            let json = format!(r#"{{"reason":"{old}","tokens":5}}"#);
-            let ended = decode_ended(1, &raw(&json)).unwrap().unwrap();
-            assert_eq!(ended.reason, GoalReason::Met);
-            assert_eq!(ended.note, None);
-        }
-        let stalled = decode_ended(1, &raw(r#"{"reason":"stalled","tokens":5}"#))
-            .unwrap()
-            .unwrap();
-        assert_eq!(stalled.reason, GoalReason::Stalled);
-    }
-
-    #[test]
-    fn v2_has_no_check_and_no_v1_reasons() {
-        let check = r#"{"objective":"x","check":"true","token_budget":1}"#;
-        assert!(decode_set(2, &raw(check)).unwrap().is_err());
-        let old = r#"{"reason":"met_by_check","tokens":1}"#;
-        assert!(decode_ended(2, &raw(old)).unwrap().is_err());
     }
 }

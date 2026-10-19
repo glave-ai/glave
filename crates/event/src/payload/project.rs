@@ -3,8 +3,7 @@
 //! folder's files come from is kept apart from where they are checked out, so the project can
 //! be checked out again, on another computer or after one is reset, from its source alone.
 //! `project.removed`: the project was put away, its threads archived; a folder set after it
-//! brings it back. Both were written as `space.folder.set` and `space.removed` before spaces
-//! were projects (#435); those are read as these, and written again under the new names.
+//! brings it back.
 
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -15,10 +14,6 @@ use crate::payload::principal::Principal;
 
 pub(crate) const FOLDER_SET: &str = "project.folder.set";
 pub(crate) const REMOVED: &str = "project.removed";
-
-/// What each type was called before spaces were projects, and is still read as.
-pub(crate) const FOLDER_SET_BEFORE: &str = "space.folder.set";
-pub(crate) const REMOVED_BEFORE: &str = "space.removed";
 
 /// A project's folder was set: added, or its source or checkout changed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
