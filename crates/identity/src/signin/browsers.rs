@@ -37,8 +37,8 @@ pub(crate) const CODE_LIFETIME: SignedDuration = SignedDuration::from_mins(5);
 pub(crate) const SESSION_LIFETIME: SignedDuration = SignedDuration::from_hours(30 * 24);
 
 /// How stale a session's last use may be before a use is recorded again, so a busy tab does
-/// not write at every request.
-const RECORD_USE: SignedDuration = SignedDuration::from_hours(1);
+/// not write at every request and the ledger grows by a few events a day at most.
+const RECORD_USE: SignedDuration = SignedDuration::from_hours(24);
 
 /// Codes waiting at once; a new one past this forgets the oldest.
 const MOST_CODES: usize = 16;
