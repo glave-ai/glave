@@ -288,7 +288,7 @@ async fn asked_here(
     person: glave_event::PrincipalId,
     asking: Asking,
 ) -> anyhow::Result<(Asked, Vec<String>)> {
-    let trust = Trust::open(store, person, &home::folder()?).await?;
+    let trust = Trust::open(store, person).await?;
     let told = match asking {
         Asking::Later => Vec::new(),
         asking => setup::ask_here(folder, setup, asking, &trust).await?,

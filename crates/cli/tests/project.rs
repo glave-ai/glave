@@ -7,6 +7,11 @@
 mod support;
 
 #[cfg(test)]
+#[path = "support/served.rs"]
+#[expect(dead_code, reason = "shared helpers; this file uses some of them")]
+mod served;
+
+#[cfg(test)]
 mod project {
     use std::path::{Path, PathBuf};
     use std::process::Command;
@@ -14,6 +19,7 @@ mod project {
     use glave_provider_openai::fake::{FakeServer, Reply};
     use serde_json::json;
 
+    use super::served::trust_project;
     use super::support::*;
 
     /// The test server, built beside `glave` by `cargo xtask ci`.
@@ -32,20 +38,6 @@ mod project {
         let file = json!({ "mcpServers": { "tests": server } });
         std::fs::write(place.project.join(".mcp.json"), file.to_string()).unwrap();
         server
-    }
-
-    /// Records a yes for the project's `tests` server, as an earlier glave kept it after
-    /// asking: in `trust.toml`, which the next start moves into the store.
-    fn trust(place: &Place, server: &serde_json::Value) {
-        std::fs::create_dir_all(&place.home).unwrap();
-        let root = std::fs::canonicalize(&place.project).unwrap();
-        let record = format!(
-            "version = 1\n\n[[project]]\npath = {:?}\n\n[project.items.\"mcp:tests\"]\n\
-             definition = {:?}\ntrusted = true\n",
-            root.display().to_string(),
-            server.to_string()
-        );
-        std::fs::write(place.home.join("trust.toml"), record).unwrap();
     }
 
     fn offered(body: &serde_json::Value) -> Vec<String> {
@@ -87,8 +79,8 @@ mod project {
     #[test]
     fn a_trusted_projects_servers_start_and_nothing_is_said() {
         let place = place("project-trusted");
-        let server = bring_server(&place);
-        trust(&place, &server);
+        bring_server(&place);
+        trust_project(&place, &[]);
         let model = FakeServer::start(vec![
             Reply::tool_call("call_1", "mcp__tests__echo", &json!({"text": "hi"})),
             Reply::text("It said hi."),
@@ -124,8 +116,8 @@ mod project {
         let place = place("project-changed");
         std::fs::create_dir_all(&place.home).unwrap();
         std::fs::write(place.home.join("config.toml"), "memory = \"off\"\n").unwrap();
-        let server = bring_server(&place);
-        trust(&place, &server);
+        bring_server(&place);
+        trust_project(&place, &[]);
         let other = json!({ "command": test_server(), "args": ["--different"] });
         let file = json!({ "mcpServers": { "tests": other } });
         std::fs::write(place.project.join(".mcp.json"), file.to_string()).unwrap();
@@ -255,20 +247,11 @@ mod project {
         assert!(shown.contains("MCP server tests"), "{shown}");
         assert!(shown.contains("glave will ask once"), "{shown}");
         assert!(shown.contains("settings (approval = \"auto\")"), "{shown}");
-        let server = json!({ "command": test_server() });
-        trust(&place, &server);
+        trust_project(&place, &[]);
         let shown = text(&explain());
         assert!(
             shown.contains("MCP server tests") && shown.contains("trusted (your answer)"),
             "{shown}"
-        );
-        assert!(
-            !place.home.join("trust.toml").exists(),
-            "an earlier glave's file is moved into the store"
-        );
-        assert!(
-            text(&explain()).contains("trusted (your answer)"),
-            "and read from there"
         );
     }
 }

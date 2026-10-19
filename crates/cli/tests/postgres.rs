@@ -8,6 +8,11 @@
 mod support;
 
 #[cfg(test)]
+#[path = "support/served.rs"]
+#[expect(dead_code, reason = "shared helpers; this file uses some of them")]
+mod served;
+
+#[cfg(test)]
 mod postgres {
     use std::process::Command;
 
@@ -15,6 +20,7 @@ mod postgres {
     use glave_provider_openai::fake::{FakeServer, Reply};
     use tokio_postgres::NoTls;
 
+    use super::served::trust_project;
     use super::support::*;
 
     /// Runs `query` on the test database, returning the first column of the first row.
@@ -111,15 +117,8 @@ mod postgres {
             r#"{"mcpServers": {"docs": {"command": "docs-mcp"}}}"#,
         )
         .unwrap();
-        // The first home has the yes an earlier glave kept in its folder.
-        std::fs::create_dir_all(&first.home).unwrap();
-        let root = std::fs::canonicalize(&first.project).unwrap();
-        let record = format!(
-            "version = 1\n\n[[project]]\npath = {:?}\n\n[project.items.\"mcp:docs\"]\n\
-             definition = '{{\"command\":\"docs-mcp\"}}'\ntrusted = true\n",
-            root.display().to_string()
-        );
-        std::fs::write(first.home.join("trust.toml"), record).unwrap();
+        // The person said yes from the first home.
+        trust_project(&first, &[("GLAVE_STORE_URL", &store)]);
         // The second home works in the same folder, with nothing of its own.
         let second = Place {
             project: first.project.clone(),
@@ -139,10 +138,6 @@ mod postgres {
         };
         let shown = explain(&first);
         assert!(shown.contains("trusted (your answer)"), "{shown}");
-        assert!(
-            !first.home.join("trust.toml").exists(),
-            "moved into the store"
-        );
         // Servers on one database share its root, as they would a KMS.
         std::fs::create_dir_all(&second.home).unwrap();
         let key = second.home.join("root.key");

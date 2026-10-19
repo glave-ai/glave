@@ -8,7 +8,6 @@ use glave_harness::ApprovalMode;
 use glave_ports::block_on;
 
 use super::*;
-use crate::policy::ConfigFile;
 use crate::policy::tests::constraints;
 use crate::trust::assess::Standing;
 use crate::trust::project::MCP_FILE;
@@ -398,23 +397,6 @@ fn a_moved_clone_s_new_decisions_replace_the_ones_its_remote_found() {
     forgotten.items.clear();
     record.take(forgotten);
     assert_eq!(record.entries(), []);
-}
-
-#[test]
-fn an_earlier_trust_file_reads_as_it_was_written_and_another_version_is_refused() {
-    let path = Path::new("/home/ada/.glave/trust.toml");
-    let text = "version = 1\n\n[[project]]\npath = \"/code/app\"\n\n\
-                [project.items.\"mcp:docs\"]\ndefinition = '{\"command\":\"docs-mcp\"}'\n\
-                trusted = true\n";
-    let entries = Record::earlier(text, path).unwrap();
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].path, "/code/app");
-    assert!(entries[0].items["mcp:docs"].trusted);
-    let error = Record::earlier("version = 2\n", path)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("version = 2"), "{error}");
-    let _ = ConfigFile::default();
 }
 
 #[test]

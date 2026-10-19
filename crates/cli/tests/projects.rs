@@ -105,14 +105,7 @@ mod projects {
         std::fs::create_dir_all(&place.home).unwrap();
         // The folder glave starts in brings a server it trusted, which lends nothing to others.
         std::fs::write(place.project.join(".mcp.json"), bringing("start")).unwrap();
-        let root = std::fs::canonicalize(&place.project).unwrap();
-        let start = json!({ "command": test_server() }).to_string();
-        let trusted = format!(
-            "version = 1\n\n[[project]]\npath = {:?}\n\n[project.items.\"mcp:start\"]\n\
-             definition = {start:?}\ntrusted = true\n",
-            root.display().to_string(),
-        );
-        std::fs::write(place.home.join("trust.toml"), trusted).unwrap();
+        trust_project(&place, &[]);
         // The person's own server, and the models they offer.
         std::fs::write(place.home.join("mcp.json"), bringing("mine")).unwrap();
         let mine = "model = \"m\"\nmemory = \"off\"\ntitles = false\n\

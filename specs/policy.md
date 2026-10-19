@@ -233,7 +233,7 @@ A laptop's own config can never loosen a constraint, because the constraint arri
                           "trusted": true}}}
   ```
 
-  `trusted: false` is declined, and not asked again until it changes. A `trust.toml` an earlier glave kept in its folder is moved into the ledger the first time glave opens it, all in one append, then deleted; a project the ledger already has a decision about keeps it.
+  `trusted: false` is declined, and not asked again until it changes.
 - A project's `network = false` applies at once; its `network = true` is ignored, so a project can take the network from sandboxed commands but never give it back.
 - What needs trust: each server in the project's `.mcp.json`, each hook in its `config.toml` (item `hook:<Point>:<n>`, its definition the hook's point, command, matcher and timeout as JSON), and `approval = "auto"` or `sandbox = "off"` in its `config.toml`, `[web] private_addresses = true` or a `[web] allow` list (a host it names exactly may be private), and a `judge_model` other than `"off"` (a repository must not choose who judges its own actions; `off` only makes glave ask more and applies at once). Nothing else asks. Servers in `~/.glave/mcp.json` are the person's own and always trusted to start; on a name clash the person's wins. Trusting a project lets its servers start; what they return is still labelled untrusted unless vouched for (above).
 - An organization's policy can pre-trust projects (`[projects] trusted`), or forbid project MCP servers (`[mcp] own = false`) or hooks (`[hooks] own = false`) entirely. A forbid wins over a pre-trust and over the person's yes.

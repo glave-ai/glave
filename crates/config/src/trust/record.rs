@@ -4,34 +4,14 @@
 //! What is trusted is the content (each server's definition), not just a name, so a repository
 //! that changes a server's command asks again.
 
-use std::collections::BTreeMap;
-use std::path::Path;
-
-use serde::Deserialize;
-
 pub use glave_event::{Decision, TrustDecided as Entry};
+use std::collections::BTreeMap;
 
 use crate::trust::project::{Item, Project};
-
-/// The file an earlier glave kept decisions in, in its folder: read once to move them into the
-/// store, then deleted.
-pub const FILE: &str = "trust.toml";
-
-/// The only version of that file there was.
-const VERSION: u32 = 1;
 
 /// Every decision, each project's latest.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Record {
-    project: Vec<Entry>,
-}
-
-/// The file an earlier glave kept.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Earlier {
-    version: u32,
-    #[serde(default)]
     project: Vec<Entry>,
 }
 
@@ -44,20 +24,6 @@ pub fn decision(item: &Item, trusted: bool) -> Decision {
 }
 
 impl Record {
-    /// The decisions in `text`, the file at `path` an earlier glave kept.
-    pub fn earlier(text: &str, path: &Path) -> crate::Result<Vec<Entry>> {
-        let earlier: Earlier = toml::from_str(text)
-            .map_err(|error| crate::Error::Invalid(format!("{}: {error}", path.display())))?;
-        if earlier.version != VERSION {
-            crate::error::invalid!(
-                "{}: version = {} is not one this glave knows: use version = {VERSION}",
-                path.display(),
-                earlier.version
-            );
-        }
-        Ok(earlier.project)
-    }
-
     /// Every project's latest decisions.
     pub fn entries(&self) -> &[Entry] {
         &self.project
