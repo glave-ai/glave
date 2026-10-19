@@ -81,8 +81,7 @@ async fn follow(stream: &mut TurnStream) -> (Vec<EventId>, Vec<EventId>, Result<
 
 /// The text of the person's messages the model was sent in its `call`th request.
 fn person_said(seen: &Seen, call: usize) -> Vec<String> {
-    let seen = seen.lock().unwrap();
-    let request: serde_json::Value = serde_json::from_str(&seen[call]).unwrap();
+    let request: serde_json::Value = serde_json::from_str(&json(seen)[call]).unwrap();
     request["messages"]
         .as_array()
         .unwrap()

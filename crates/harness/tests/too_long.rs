@@ -3,39 +3,16 @@
 //! and a step still too long after that fails with the refusal. The window a refusal states is
 //! believed for that model alone.
 
-use std::collections::VecDeque;
-use std::future::{Future, ready};
-use std::sync::{Arc, Mutex};
-
 use glave_event::{Outcome, Part, StopReason};
 use glave_harness::{AllowAll, Cancel, Harness, HarnessError, Parts};
 use glave_ports::Caller;
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
-    Completion, Delta, Failure, InMemoryBlobs, InMemoryLog, Message, ModelProvider, ModelRequest,
-    ProviderError,
+    Completion, Failure, InMemoryBlobs, InMemoryLog, Message, ModelRequest, ProviderError,
 };
 use serde_json::json;
 
 use crate::support::*;
-
-/// Answers with each scripted result in turn, keeping every request.
-struct Cramped {
-    answers: Mutex<VecDeque<Result<Completion, ProviderError>>>,
-    seen: Arc<Mutex<Vec<ModelRequest>>>,
-}
-
-impl ModelProvider for Cramped {
-    fn complete(
-        &self,
-        request: &ModelRequest,
-        _on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
-        self.seen.lock().unwrap().push(request.clone());
-        let next = self.answers.lock().unwrap().pop_front();
-        ready(next.unwrap_or_else(|| Err(ProviderError::Protocol("script exhausted".into()))))
-    }
-}
 
 fn too_long() -> Result<Completion, ProviderError> {
     Err(ProviderError::Http {
@@ -67,17 +44,15 @@ async fn harness(
     name: &str,
     answers: Vec<Result<Completion, ProviderError>>,
 ) -> (
-    Harness<Cramped, InMemoryLog, InMemoryBlobs, AllowAll>,
-    Arc<Mutex<Vec<ModelRequest>>>,
+    Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, AllowAll>,
+    Seen,
 ) {
     let dir = folder(name);
     std::fs::write(dir.join("big.txt"), "word ".repeat(4_000)).unwrap();
-    let seen = Arc::new(Mutex::new(Vec::new()));
+    let provider = ScriptedModel::answering(answers);
+    let seen = provider.seen();
     let parts = Parts {
-        provider: Cramped {
-            answers: Mutex::new(answers.into()),
-            seen: Arc::clone(&seen),
-        },
+        provider,
         log: InMemoryLog::new(),
         blobs: InMemoryBlobs::new(),
         approver: AllowAll,

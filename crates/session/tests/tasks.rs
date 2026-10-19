@@ -265,10 +265,8 @@ fn approvals_in_a_task_are_answered_no_one_there_and_the_model_is_sent_the_same(
             })
             .await
             .unwrap();
-        let strip = |requests: &Arc<std::sync::Mutex<Vec<String>>>| -> Vec<serde_json::Value> {
-            requests
-                .lock()
-                .unwrap()
+        let strip = |requests: &Seen| -> Vec<serde_json::Value> {
+            json(requests)
                 .iter()
                 .map(|json| {
                     let mut value: serde_json::Value = serde_json::from_str(json).unwrap();

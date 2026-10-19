@@ -1,10 +1,9 @@
 //! Shared helpers for memory's tests: a sealed SQLite store in memory, memory over it with
-//! given rules, a scripted model, and a harness wired to both.
+//! given rules, scripted answers, and a harness wired to both and the scripted model.
 
-use std::collections::VecDeque;
 use std::future::{Future, ready};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use glave_event::{Arguments, ModelRef, Part, PrincipalId, StopReason, TokenCounts, Usage};
 use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
@@ -12,10 +11,8 @@ use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, ProjectMemory, Rules};
 pub use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, ManualClock};
-use glave_ports::{
-    Completion, Delta, ModelProvider, ModelRequest, OrgId, ProjectId, ProviderError, RequestedCall,
-    Scope,
-};
+pub use glave_ports::testing::{ScriptedModel, Seen};
+use glave_ports::{Completion, OrgId, ProjectId, RequestedCall, Scope};
 use glave_store_sqlite::{SqliteBlobs, SqliteLog, Store};
 use jiff::Timestamp;
 
@@ -116,16 +113,14 @@ impl Kit {
         approver: A,
         memory: Option<Arc<GlaveMemory<SqliteLog>>>,
         settings: Settings,
-    ) -> (Harness<Script, SqliteLog, SqliteBlobs, A>, Seen) {
+    ) -> (Harness<ScriptedModel, SqliteLog, SqliteBlobs, A>, Seen) {
         let (computers, info) = glave_computer::LocalComputers::here(dir, std::env::vars_os())
             .await
             .unwrap();
-        let seen: Seen = Arc::new(Mutex::new(Vec::new()));
+        let provider = ScriptedModel::new(answers);
+        let seen = provider.seen();
         let parts = Parts {
-            provider: Script {
-                answers: Mutex::new(answers.into()),
-                seen: Arc::clone(&seen),
-            },
+            provider,
             log: self.store.log(),
             blobs: self.store.blobs(),
             approver,
@@ -147,25 +142,6 @@ pub fn settings() -> Settings {
     settings.agent = Some(agent());
     settings.instructions = Some("# AGENTS.md\n\nUse tabs.".into());
     settings
-}
-
-pub type Seen = Arc<Mutex<Vec<ModelRequest>>>;
-
-pub struct Script {
-    pub answers: Mutex<VecDeque<Completion>>,
-    pub seen: Seen,
-}
-
-impl ModelProvider for Script {
-    fn complete(
-        &self,
-        request: &ModelRequest,
-        _on_delta: &mut (dyn FnMut(Delta) + Send),
-    ) -> impl Future<Output = Result<Completion, ProviderError>> + Send {
-        self.seen.lock().unwrap().push(request.clone());
-        let next = self.answers.lock().unwrap().pop_front();
-        ready(next.ok_or_else(|| ProviderError::Protocol("script exhausted".into())))
-    }
 }
 
 pub fn answer(text: Option<&str>, calls: Vec<(&str, serde_json::Value)>) -> Completion {

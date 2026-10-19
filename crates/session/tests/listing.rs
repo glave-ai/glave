@@ -160,7 +160,7 @@ fn renaming_changes_nothing_the_model_is_sent() {
                     server.request(request).await.unwrap();
                 }
                 turn(&server, thread, "go").await.unwrap();
-                seen.lock().unwrap().clone()
+                json(&seen)
             }
         };
         let plain = run(false).await;

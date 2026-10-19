@@ -27,10 +27,10 @@ use glave_session::{
 use glave_store_sqlite::Store;
 use tokio::sync::Notify;
 
-use super::script::{Script, Seen};
+use super::script::{ScriptedModel, Seen};
 
 /// A test server on the log `L`.
-pub type Tested<L = InMemoryLog> = Server<Script, L, InMemoryBlobs>;
+pub type Tested<L = InMemoryLog> = Server<ScriptedModel, L, InMemoryBlobs>;
 
 /// A fresh folder for the test called `name`.
 pub fn folder(name: &str) -> PathBuf {
@@ -156,7 +156,12 @@ impl Setup {
     /// The server on `log`, its own project a project whose folder is `dir`, and every request
     /// its model receives. Threads in projects with no folder get scratch folders beside `dir`.
     pub async fn build_on<L: EventLog + 'static>(self, dir: &Path, log: L) -> (Tested<L>, Seen) {
-        let (provider, seen) = Script::new(self.answers, self.gate);
+        let provider = ScriptedModel::new(self.answers);
+        let provider = match self.gate {
+            Some(gate) => provider.gated(gate),
+            None => provider,
+        };
+        let seen = provider.seen();
         let computers = LocalComputers::for_here(std::env::vars_os())
             .with_scratch(dir.with_extension("scratch"));
         let computers = match &self.worktrees {

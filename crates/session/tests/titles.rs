@@ -54,9 +54,8 @@ async fn renames<L: EventLog + 'static>(
 }
 
 /// The purpose of each request the model received.
-fn purposes(seen: &std::sync::Mutex<Vec<String>>) -> Vec<String> {
-    seen.lock()
-        .unwrap()
+fn purposes(seen: &Seen) -> Vec<String> {
+    json(seen)
         .iter()
         .map(|json| {
             let request: Value = serde_json::from_str(json).unwrap();
@@ -74,7 +73,7 @@ fn a_title_is_recorded_after_the_first_reply_and_its_call_counts() {
         turn(&server, thread, ASKED).await.unwrap();
         server.shutdown().await;
         assert_eq!(purposes(&seen), ["main", "title"]);
-        let titling = seen.lock().unwrap()[1].clone();
+        let titling = json(&seen)[1].clone();
         assert!(titling.contains(ASKED), "{titling}");
         assert!(titling.contains("Install it with Homebrew."), "{titling}");
         let kinds = kinds(&server, thread).await;

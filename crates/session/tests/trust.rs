@@ -157,7 +157,7 @@ fn answering(thread: ThreadId, ask: &str, answer: TrustChoice) -> Request {
 
 /// Whether the model was offered the project's tool in request `index`.
 fn offered(seen: &Seen, index: usize) -> bool {
-    seen.lock().unwrap()[index].contains(TOOL)
+    json(seen)[index].contains(TOOL)
 }
 
 #[test]

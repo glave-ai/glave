@@ -32,9 +32,7 @@ fn an_ordinary_local_turn_sends_the_model_exactly_what_it_did_before_projects() 
         let thread = start(&server, false).await;
         turn(&server, thread, "go").await.unwrap();
         let folder = dir.to_string_lossy().into_owned();
-        let sent: Vec<String> = seen
-            .lock()
-            .unwrap()
+        let sent: Vec<String> = json(&seen)
             .iter()
             .map(|request| request.replace(&folder, "<folder>"))
             .collect();

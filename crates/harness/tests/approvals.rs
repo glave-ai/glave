@@ -115,7 +115,7 @@ fn each_question_and_its_answer_are_recorded_before_the_result() {
 }
 
 fn harness_asked<L: glave_ports::EventLog>(
-    harness: &glave_harness::Harness<Script, L, glave_ports::InMemoryBlobs, Answers>,
+    harness: &glave_harness::Harness<ScriptedModel, L, glave_ports::InMemoryBlobs, Answers>,
 ) -> Vec<ApprovalRequest> {
     harness.approver().asked.lock().unwrap().clone()
 }

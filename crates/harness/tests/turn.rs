@@ -12,10 +12,7 @@ fn a_random_source_that_fails_makes_no_thread() {
     let dir = folder("no-entropy");
     block_on!(async {
         let parts = glave_harness::Parts {
-            provider: Script {
-                answers: std::sync::Mutex::default(),
-                seen: std::sync::Arc::default(),
-            },
+            provider: ScriptedModel::new(Vec::new()),
             log: InMemoryLog::new(),
             blobs: glave_ports::InMemoryBlobs::new(),
             approver: AllowAll,

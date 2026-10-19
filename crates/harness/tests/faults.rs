@@ -283,7 +283,7 @@ async fn worked(
     origin: &Path,
     faulty: &Arc<Faulty>,
 ) -> (
-    glave_harness::Harness<Script, InMemoryLog, glave_ports::InMemoryBlobs, AllowAll>,
+    glave_harness::Harness<ScriptedModel, InMemoryLog, glave_ports::InMemoryBlobs, AllowAll>,
     glave_harness::Thread,
 ) {
     let answers = vec![
