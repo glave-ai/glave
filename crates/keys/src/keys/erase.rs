@@ -1,7 +1,6 @@
 //! Erasure: destroying a project key, or a data key followed by rotating the project key.
 
-use glave_ports::Scope;
-use uuid::Uuid;
+use glave_ports::{BoxFuture, Erasable, EraseError, Eraser, Scope};
 
 use crate::error::KeyError;
 use crate::key_id::{KeyId, Period};
@@ -11,6 +10,31 @@ use crate::storage::KeyStorage;
 
 use super::hierarchy::{ATTEMPTS, ProjectKey, key_id, unwrap_data, wrap_data, wrap_project};
 use super::{Keys, check_project};
+
+/// A memory's keys, or an account's, destroyed at once: every version of it is unreadable in the
+/// store from now on, and backups lose it when the project key rotates (`specs/memory.md`:
+/// within a day, batching the day's forgets).
+impl<S: KeyStorage> Eraser for Keys<S> {
+    fn destroy(&self, scope: Scope, item: Erasable) -> BoxFuture<'_, Result<(), EraseError>> {
+        let period = match item {
+            Erasable::Memory(memory) => Period::Memory(memory.as_uuid()),
+            Erasable::Account(account) => Period::Account(account),
+        };
+        Box::pin(async move {
+            self.destroy_own_key(&scope, period)
+                .await
+                .map_err(|error| EraseError(error.to_string()))
+        })
+    }
+
+    fn rotate(&self, scope: Scope) -> BoxFuture<'_, Result<bool, EraseError>> {
+        Box::pin(async move {
+            self.rotate_project_key(&scope)
+                .await
+                .map_err(|error| EraseError(error.to_string()))
+        })
+    }
+}
 
 impl<S: KeyStorage> Keys<S> {
     /// Erases a project: destroys every version of its project key, and with them every data key
@@ -72,21 +96,6 @@ impl<S: KeyStorage> Keys<S> {
             }
         }
         Err(KeyError::Contended(scope.to_string()))
-    }
-
-    /// Destroys every key of one memory at once, so every version of it is unreadable in the
-    /// store from now on. Backups still hold it wrapped under the project key in use until
-    /// [`Keys::rotate_project_key`] runs (`specs/memory.md`: within a day, batching the day's
-    /// forgets). A memory that never had a key has nothing to destroy.
-    pub async fn destroy_memory_key(&self, scope: &Scope, memory: Uuid) -> Result<(), KeyError> {
-        self.destroy_own_key(scope, Period::Memory(memory)).await
-    }
-
-    /// Destroys the key an account (a model account or a git host) was kept under, so the
-    /// account and its key or token are unreadable in the store from now on;
-    /// [`Keys::rotate_project_key`] then reaches backups.
-    pub async fn destroy_account_key(&self, scope: &Scope, account: Uuid) -> Result<(), KeyError> {
-        self.destroy_own_key(scope, Period::Account(account)).await
     }
 
     /// Destroys every key of the item `period` names.

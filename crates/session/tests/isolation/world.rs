@@ -9,9 +9,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glave_event::{Auth, AuthMethod, PrincipalId, ThreadId};
-use glave_memory::{GlaveMemory, Memories, Personal, Rules, Shredder};
+use glave_memory::{GlaveMemory, Memories, Personal, Rules};
 use glave_ports::testing::{CountingEntropy, FAKE_SECRET, ManualClock, TempDir};
-use glave_ports::{Caller, EventLog, OrgId, ProjectId, Projects, Scope};
+use glave_ports::{Caller, Eraser, EventLog, OrgId, ProjectId, Projects, Scope};
 use glave_session::protocol::{Notification, Reply, Request, TaskStatus, Update};
 use glave_session::signin::{Browsers, person};
 use glave_session::{Answering, TurnItem, TurnStream};
@@ -29,7 +29,7 @@ const ISSUER: &str = "https://id.example.com";
 pub struct Parts<L> {
     pub log: L,
     pub projects: Arc<dyn Projects>,
-    pub shredder: Arc<dyn Shredder>,
+    pub eraser: Arc<dyn Eraser>,
 }
 
 /// One organization: its server, and the browsers it signs in.
@@ -108,7 +108,7 @@ async fn serve<L: EventLog + Clone + 'static>(n: u128, parts: &Parts<L>, dir: &P
     };
     let memories = Memories::new(
         parts.log.clone(),
-        Arc::clone(&parts.shredder),
+        Arc::clone(&parts.eraser),
         rules,
         Box::new(clock.clone()),
         Box::new(CountingEntropy::starting_at(

@@ -2,6 +2,7 @@
 //! server keeps the methods and notifications of `specs/session.md`; each transport, from
 //! in-process to the network, carries the same messages. Network transports need a sign-in.
 
+mod accounts;
 mod approvals;
 mod background;
 mod browsers;
@@ -38,6 +39,7 @@ mod trace;
 mod trust;
 mod turn;
 
+pub use accounts::{AccountLedger, Accounts, AccountsError};
 pub use approvals::Answering;
 pub use credentials::{GitHosts, NewCredential};
 pub use dispatch::Answered;

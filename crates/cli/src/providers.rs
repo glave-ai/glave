@@ -68,11 +68,7 @@ impl ModelAccounts {
 
     /// Builds the models of the accounts kept now, and sends calls to them.
     async fn rebuilt(&self) -> Result<Models, ApiError> {
-        let accounts = self
-            .ledger
-            .accounts()
-            .await
-            .map_err(|e| ApiError::internal(&e))?;
+        let accounts = self.ledger.accounts().await?;
         let built = self
             .lineup()
             .build(&accounts.providers)
@@ -109,12 +105,7 @@ impl ModelAccounts {
         }
         account.models = models;
         // Every account glave keeps must line up with the rest, so a start never fails on one.
-        let mut accounts = self
-            .ledger
-            .accounts()
-            .await
-            .map_err(|e| ApiError::internal(&e))?
-            .providers;
+        let mut accounts = self.ledger.accounts().await?.providers;
         accounts.push(account.clone());
         self.lineup().build(&accounts).map_err(|e| {
             ApiError::new(
@@ -122,10 +113,7 @@ impl ModelAccounts {
                 format!("glave cannot run this account's models here: {e:#}"),
             )
         })?;
-        self.ledger
-            .keep_provider(&account)
-            .await
-            .map_err(|e| ApiError::internal(&e))?;
+        self.ledger.keep_provider(&account).await?;
         Ok((info(&account), self.rebuilt().await?))
     }
 }
@@ -137,19 +125,14 @@ impl Providers for ModelAccounts {
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<ProviderInfo>, ApiError>> {
         Box::pin(async move {
-            let accounts = self
-                .ledger
-                .accounts()
-                .await
-                .map_err(|e| ApiError::internal(&e))?;
+            let accounts = self.ledger.accounts().await?;
             Ok(accounts.providers.iter().map(info).collect())
         })
     }
 
     fn remove(&self, provider: ProviderId) -> BoxFuture<'_, Result<Models, ApiError>> {
         Box::pin(async move {
-            let removed = self.ledger.remove_provider(provider).await;
-            if !removed.map_err(|e| ApiError::internal(&e))? {
+            if !self.ledger.remove_provider(provider).await? {
                 return Err(ApiError::new(
                     code::NO_PROVIDER,
                     format!("no model account {provider} here"),

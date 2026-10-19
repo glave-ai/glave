@@ -6,9 +6,9 @@ use glave_event::{
     At, MemoryEdited, MemoryForgotten, MemoryId, MemoryRestored, MemorySaved, MemoryScope,
     MemorySource, Principal, PrincipalId,
 };
-use glave_ports::Scope;
 use glave_ports::memories::{MemoryError, Remembered};
 use glave_ports::secrets::looks_like_credential;
+use glave_ports::{Erasable, Scope};
 use jiff::{SignedDuration, Timestamp};
 
 use super::Memories;
@@ -210,10 +210,9 @@ impl<L: glave_ports::EventLog + 'static> Memories<L> {
         self.append(ledger, &forgotten).await?;
         if erase_at.is_none() {
             self.inner
-                .shredder
-                .destroy(ledger, memory)
-                .await
-                .map_err(MemoryError::Storage)?;
+                .eraser
+                .destroy(ledger, Erasable::Memory(memory))
+                .await?;
         }
         Ok(())
     }

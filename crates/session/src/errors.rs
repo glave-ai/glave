@@ -11,6 +11,7 @@ use glave_ports::memories::MemoryError;
 use glave_ports::stream::StreamError;
 use glave_ports::{EntropyError, LogError, ProjectError};
 
+use crate::accounts::AccountsError;
 use crate::protocol::{ApiError, ErrorData, code};
 use crate::server::no_thread;
 
@@ -73,6 +74,16 @@ impl From<DecodeError> for ApiError {
 impl From<EntropyError> for ApiError {
     fn from(error: EntropyError) -> Self {
         Self::new(code::INTERNAL, error.to_string())
+    }
+}
+
+impl From<AccountsError> for ApiError {
+    fn from(error: AccountsError) -> Self {
+        match error {
+            AccountsError::Stream(error) => error.into(),
+            AccountsError::Entropy(error) => error.into(),
+            AccountsError::Erase(_) | AccountsError::Event(_) => Self::internal(&error),
+        }
     }
 }
 

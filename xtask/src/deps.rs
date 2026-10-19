@@ -98,11 +98,6 @@ const ALLOWED: &[(&str, &str, &str)] = &[
     ),
     (
         "glave-memory",
-        "glave-keys",
-        "each memory is sealed under its own key, so forgetting it destroys the key",
-    ),
-    (
-        "glave-memory",
         "glave-mcp",
         "the memory server is reached as any MCP server is, through glave's own client",
     ),

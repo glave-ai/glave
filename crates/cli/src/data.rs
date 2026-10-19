@@ -7,10 +7,9 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use glave_event::{BlobRef, PrincipalId, RawEvent, Seq, Sha256, ThreadId};
-use glave_memory::Shredder;
 use glave_ports::search::Found;
 use glave_ports::{
-    BlobError, BlobStore, EventLog, Located, LogError, OrgId, Projects, Scope, ThreadQuery,
+    BlobError, BlobStore, Eraser, EventLog, Located, LogError, OrgId, Projects, Scope, ThreadQuery,
     ThreadView,
 };
 use glave_store_postgres as postgres;
@@ -92,30 +91,11 @@ impl Data {
     }
 
     /// The keys, for what erases by destroying one.
-    pub fn shredder(&self) -> Arc<dyn Shredder> {
+    pub fn eraser(&self) -> Arc<dyn Eraser> {
         match self {
             Self::Sqlite(store) => store.keyring(),
             Self::Postgres(store) => store.keyring(),
         }
-    }
-
-    /// Erases the account `account` kept in `scope`, a model account or a git host: destroys
-    /// the key it was sealed under, then rotates the project key, so no backup can unwrap it
-    /// either.
-    pub async fn erase_account(&self, scope: &Scope, account: uuid::Uuid) -> anyhow::Result<()> {
-        match self {
-            Self::Sqlite(store) => {
-                let keys = store.keyring();
-                keys.destroy_account_key(scope, account).await?;
-                keys.rotate_project_key(scope).await?;
-            }
-            Self::Postgres(store) => {
-                let keys = store.keyring();
-                keys.destroy_account_key(scope, account).await?;
-                keys.rotate_project_key(scope).await?;
-            }
-        }
-        Ok(())
     }
 
     /// The one organization this store holds, made the first time.
