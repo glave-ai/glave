@@ -9,8 +9,8 @@ use anyhow::bail;
 use glave_ports::ProjectId;
 use glave_session::protocol::{NewFolder, Reply, Request};
 
-use crate::session::Wired;
 use crate::socket::Connection;
+use crate::wiring::Wired;
 
 /// The server a command's requests go to.
 pub enum Reached {
@@ -37,7 +37,7 @@ impl Reached {
     pub async fn open() -> anyhow::Result<Self> {
         Ok(match crate::server::connect_or_start().await? {
             Some(server) => Self::Server(server),
-            None => Self::Here(Box::new(crate::session::here().await?)),
+            None => Self::Here(Box::new(crate::wiring::here().await?)),
         })
     }
 

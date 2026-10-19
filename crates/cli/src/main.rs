@@ -42,6 +42,7 @@ mod terminal;
 mod threads;
 mod trust;
 mod waiting;
+mod wiring;
 mod worktrees;
 
 fn main() -> std::process::ExitCode {
