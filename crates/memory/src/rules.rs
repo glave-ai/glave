@@ -10,7 +10,7 @@ use glave_ports::{ProjectId, Scope};
 
 /// What a project allows (`specs/memory.md`): its own memory, the person's too, or none.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SpaceMemory {
+pub enum ProjectMemory {
     /// Threads read and write the person's memory and the project's.
     #[default]
     Shared,
@@ -20,7 +20,7 @@ pub enum SpaceMemory {
     Off,
 }
 
-impl SpaceMemory {
+impl ProjectMemory {
     pub fn named(name: &str) -> Option<Self> {
         match name.trim() {
             "shared" => Some(Self::Shared),
@@ -53,15 +53,15 @@ pub struct Rules {
     /// The person's memory; `None` when personal memory is off (by choice or by policy).
     pub personal: Option<Personal>,
     /// Each project's setting, where it differs from `default`.
-    pub projects: BTreeMap<ProjectId, SpaceMemory>,
-    pub default: SpaceMemory,
+    pub projects: BTreeMap<ProjectId, ProjectMemory>,
+    pub default: ProjectMemory,
     /// Memories not saved or edited for this many days are forgotten by glave.
     pub retention_days: Option<u32>,
 }
 
 impl Rules {
     /// The setting of `project`.
-    pub fn setting(&self, project: ProjectId) -> SpaceMemory {
+    pub fn setting(&self, project: ProjectId) -> ProjectMemory {
         self.projects.get(&project).copied().unwrap_or(self.default)
     }
 
@@ -82,9 +82,9 @@ impl Rules {
     ) -> Vec<(MemoryScope, Scope)> {
         let mut readable = Vec::new();
         match self.setting(scope.project) {
-            SpaceMemory::Off => {}
-            SpaceMemory::Isolated => readable.push((MemoryScope::Space, scope)),
-            SpaceMemory::Shared => {
+            ProjectMemory::Off => {}
+            ProjectMemory::Isolated => readable.push((MemoryScope::Space, scope)),
+            ProjectMemory::Shared => {
                 if let Some(personal) = self.personal_for(person, scope) {
                     readable.push((MemoryScope::Personal, personal));
                 }
@@ -104,16 +104,16 @@ impl Rules {
     ) -> Result<Scope, MemoryError> {
         let setting = self.setting(scope.project);
         match (which, setting) {
-            (_, SpaceMemory::Off) => {
+            (_, ProjectMemory::Off) => {
                 Err(MemoryError::Off("memory is off in this space".to_owned()))
             }
             (MemoryScope::Space, _) => Ok(scope),
-            (MemoryScope::Personal, SpaceMemory::Isolated) => Err(MemoryError::Refused(
+            (MemoryScope::Personal, ProjectMemory::Isolated) => Err(MemoryError::Refused(
                 "this space is isolated: personal memory is neither read nor written here; \
                  save it to the space instead"
                     .to_owned(),
             )),
-            (MemoryScope::Personal, SpaceMemory::Shared) => {
+            (MemoryScope::Personal, ProjectMemory::Shared) => {
                 self.personal_for(person, scope).ok_or_else(|| {
                     MemoryError::Refused(
                         "personal memory is off, or belongs to someone else, here; save it to \
@@ -157,8 +157,10 @@ mod tests {
         };
         rules
             .projects
-            .insert(scope(1, 3).project, SpaceMemory::Isolated);
-        rules.projects.insert(scope(1, 4).project, SpaceMemory::Off);
+            .insert(scope(1, 3).project, ProjectMemory::Isolated);
+        rules
+            .projects
+            .insert(scope(1, 4).project, ProjectMemory::Off);
         rules
     }
 

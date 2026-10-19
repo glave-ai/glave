@@ -9,7 +9,7 @@ use glave_ports::auth::safe_to_send;
 use glave_ports::computer::{CredentialHost, Forge, SandboxLevel};
 use globset::Glob;
 
-use crate::policy::memory::{MemoryChoice, MemoryRules, SpaceChoice};
+use crate::policy::memory::{MemoryChoice, MemoryRules, ProjectChoice};
 use crate::policy::placement::PlacementRules;
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
@@ -52,8 +52,10 @@ pub struct ConfigFile {
     pub gateway: Option<GatewayFile>,
     /// Whether glave reads and writes memory for this person. Only the person's own file sets it.
     pub memory: Option<MemoryChoice>,
-    /// This space's memory: shared with the person's, isolated, or off.
-    pub space_memory: Option<SpaceChoice>,
+    /// This project's memory: shared with the person's, isolated, or off. Read under its name
+    /// from before spaces were projects too.
+    #[serde(alias = "space_memory")]
+    pub project_memory: Option<ProjectChoice>,
     /// Where spans and metrics go. Only the person's or the server's own file sets it.
     pub telemetry: Option<TelemetryFile>,
     /// The data store. Only the person's or the server's own file sets it.

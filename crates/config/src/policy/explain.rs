@@ -138,9 +138,9 @@ fn settings(choices: &Choices) -> Vec<[String; 3]> {
         row("web", choices.web.value.describe(), &choices.web.from),
         switch("memory", &choices.memory),
         row(
-            "space_memory",
-            choices.space_memory.value.as_str().to_owned(),
-            &choices.space_memory.from,
+            "project_memory",
+            choices.project_memory.value.as_str().to_owned(),
+            &choices.project_memory.from,
         ),
     ];
     if let Some(gateway) = &choices.gateway {

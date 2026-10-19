@@ -9,11 +9,11 @@ pub use glave_harness::Judge;
 use glave_ports::computer::SandboxLevel;
 
 use crate::policy::files::{ConfigFile, GithubFile, ModelEntry, SandboxChoice};
-use crate::policy::memory::{MemoryChoice, SpaceChoice};
+use crate::policy::memory::{MemoryChoice, ProjectChoice};
 use crate::policy::provider::ProviderFile;
 use crate::policy::web::WebFile;
 use crate::policy::workers::{On, WorkersFile};
-use glave_memory::SpaceMemory;
+use glave_memory::ProjectMemory;
 
 /// Where a value came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,8 +81,8 @@ pub struct Choices {
     pub web: Chosen<WebFile>,
     /// Whether glave reads and writes memory for this person: on by default.
     pub memory: Chosen<bool>,
-    /// This space's memory setting: shared by default.
-    pub space_memory: Chosen<SpaceMemory>,
+    /// This project's memory setting: shared by default.
+    pub project_memory: Chosen<ProjectMemory>,
     /// The OpenTelemetry collector spans and metrics go to, if any: its OTLP/HTTP URL.
     pub telemetry: Option<Chosen<String>>,
     /// The Postgres database that is the data store, if any; the local SQLite file if not.
@@ -192,11 +192,11 @@ pub fn resolve(layers: &[Layer]) -> Choices {
             }),
             true,
         ),
-        space_memory: defaulted(
-            nearest(layers, "space_memory", |file| {
-                file.space_memory.map(SpaceChoice::setting)
+        project_memory: defaulted(
+            nearest(layers, "project_memory", |file| {
+                file.project_memory.map(ProjectChoice::setting)
             }),
-            SpaceMemory::Shared,
+            ProjectMemory::Shared,
         ),
     }
 }

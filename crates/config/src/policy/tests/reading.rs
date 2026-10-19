@@ -135,7 +135,7 @@ fn explain_shows_every_setting_and_rule_with_its_source() {
              [approval]\nmodes = [\"ask\", \"auto\"]\njudge = \"required\"\n\
              [sandbox]\nrequired = true\n[mcp]\nown = true\n",
         ),
-        policy_at(SPACE, "version = 1\n[approval]\nmodes = [\"ask\"]\n"),
+        policy_at(PROJECT, "version = 1\n[approval]\nmodes = [\"ask\"]\n"),
     ];
     let trust = ProjectTrust {
         root: PathBuf::from("/code/app"),

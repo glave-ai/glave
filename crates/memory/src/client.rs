@@ -25,7 +25,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::memories::{Memories, Remembering, Tidier, Writer};
-use crate::rules::SpaceMemory;
+use crate::rules::ProjectMemory;
 use crate::server::{MemoryServer, RESOURCE, meta};
 
 /// Bytes the in-process connection buffers each way.
@@ -290,7 +290,7 @@ fn change(tool: &str, structured: &serde_json::Value) -> Option<MemoryChange> {
 
 impl<L: EventLog + 'static> Memory for GlaveMemory<L> {
     fn active(&self, on: &MemoryContext) -> bool {
-        self.memories.rules().setting(on.scope.project) != SpaceMemory::Off
+        self.memories.rules().setting(on.scope.project) != ProjectMemory::Off
     }
 
     fn tools(&self) -> BoxFuture<'_, Result<Vec<ToolInfo>, ToolError>> {

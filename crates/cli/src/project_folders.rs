@@ -21,7 +21,7 @@ use glave_config::policy::memory_settings;
 use glave_config::policy::{Choices, Loaded, Locations};
 use glave_config::trust::{self, Answer, Outcome, Project};
 use glave_harness::{AGENTS_MD, Brought, Hooks, Settled, agents_md};
-use glave_memory::{GlaveMemory, Personal, SpaceMemory};
+use glave_memory::{GlaveMemory, Personal, ProjectMemory};
 use glave_ports::{BoxFuture, Clock, ProjectId, ToolSource};
 use glave_process::Processes;
 use glave_session::ProjectTrust;
@@ -212,7 +212,11 @@ impl ProjectFolders {
             return;
         };
         let on = settings.on;
-        let default = if on { settings.space } else { SpaceMemory::Off };
+        let default = if on {
+            settings.project
+        } else {
+            ProjectMemory::Off
+        };
         let personal = self.personal.filter(|_| on && settings.personal);
         let memories = memory.memories();
         memories.set_person(personal, default, settings.retention_days);
@@ -358,9 +362,9 @@ impl ProjectFolders {
                 || memories.rules().default,
                 |settings| {
                     if settings.on {
-                        settings.space
+                        settings.project
                     } else {
-                        SpaceMemory::Off
+                        ProjectMemory::Off
                     }
                 },
             );

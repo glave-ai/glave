@@ -10,7 +10,7 @@ use crate::policy::choices::Judge;
 use crate::policy::files::{PolicyFile, SandboxChoice};
 
 const ORG: &str = "/etc/glave/policy.toml";
-const SPACE: &str = "/srv/space/policy.toml";
+const PROJECT_POLICY: &str = "/srv/project/policy.toml";
 const PERSON: &str = "/home/ada/.glave/config.toml";
 const PROJECT: &str = "/code/app/.glave/config.toml";
 
@@ -229,21 +229,21 @@ fn model_allow_lists_intersect_and_a_deny_always_wins() {
             "version = 1\n[models]\nallow = [\"acme/*\", \"bedrock/*\"]\n",
         ),
         policy_at(
-            SPACE,
+            PROJECT_POLICY,
             "version = 1\n[models]\nallow = [\"acme/*\"]\ndeny = [\"acme/old-*\"]\n",
         ),
     ]);
     assert_eq!(rules.refuses_model("acme/new"), None);
-    let space = rules.refuses_model("bedrock/claude").unwrap();
+    let project = rules.refuses_model("bedrock/claude").unwrap();
     assert_eq!(
-        space.from,
-        Path::new(SPACE),
-        "the space narrowed the organization's list"
+        project.from,
+        Path::new(PROJECT_POLICY),
+        "the project narrowed the organization's list"
     );
     let denied = rules.refuses_model("acme/old-1").unwrap();
     assert_eq!(
         denied.to_string(),
-        format!("[models] deny = [\"acme/old-*\"] in {SPACE}")
+        format!("[models] deny = [\"acme/old-*\"] in {PROJECT_POLICY}")
     );
     let open = Constraints::of(&[policy_at(ORG, "version = 1\n[models]\ndeny = [\"x/*\"]\n")]);
     assert!(open.refuses_model("anything/else").is_none());
@@ -257,28 +257,34 @@ fn approval_modes_intersect_and_none_left_is_an_error() {
             ORG,
             "version = 1\n[approval]\nmodes = [\"ask\", \"auto\"]\n",
         ),
-        policy_at(SPACE, "version = 1\n[approval]\nmodes = [\"ask\"]\n"),
+        policy_at(
+            PROJECT_POLICY,
+            "version = 1\n[approval]\nmodes = [\"ask\"]\n",
+        ),
     ]);
     assert_eq!(rules.approval_modes().0, [ApprovalMode::Ask]);
     let empty = Constraints::of(&[
         policy_at(ORG, "version = 1\n[approval]\nmodes = [\"auto\"]\n"),
-        policy_at(SPACE, "version = 1\n[approval]\nmodes = [\"ask\"]\n"),
+        policy_at(
+            PROJECT_POLICY,
+            "version = 1\n[approval]\nmodes = [\"ask\"]\n",
+        ),
     ]);
     let error = effective::settle(no_choices(), &empty)
         .unwrap_err()
         .to_string();
     assert!(
-        error.contains("no approval mode is left") && error.contains(SPACE),
+        error.contains("no approval mode is left") && error.contains(PROJECT_POLICY),
         "{error}"
     );
 }
 
 #[test]
 fn the_strictest_judge_sandbox_and_mcp_rules_win() {
-    let both = |org: &str, space: &str| {
+    let both = |org: &str, project: &str| {
         Constraints::of(&[
             policy_at(ORG, &format!("version = 1\n{org}")),
-            policy_at(SPACE, &format!("version = 1\n{space}")),
+            policy_at(PROJECT_POLICY, &format!("version = 1\n{project}")),
         ])
     };
     let judge = both(
@@ -304,9 +310,15 @@ fn the_strictest_judge_sandbox_and_mcp_rules_win() {
         "[sandbox]\nrequired = false\n",
         "[sandbox]\nrequired = true\n",
     );
-    assert_eq!(sandbox.sandbox_required().unwrap().from, Path::new(SPACE));
+    assert_eq!(
+        sandbox.sandbox_required().unwrap().from,
+        Path::new(PROJECT_POLICY)
+    );
     let own = both("[mcp]\nown = true\n", "[mcp]\nown = false\n");
-    assert_eq!(own.own_mcp_forbidden().unwrap().from, Path::new(SPACE));
+    assert_eq!(
+        own.own_mcp_forbidden().unwrap().from,
+        Path::new(PROJECT_POLICY)
+    );
     assert!(
         both("[mcp]\nown = true\n", "")
             .own_mcp_forbidden()
@@ -318,9 +330,15 @@ fn the_strictest_judge_sandbox_and_mcp_rules_win() {
 fn limits_take_the_smallest_and_unenforced_rules_refuse_to_run() {
     let rules = Constraints::of(&[
         policy_at(ORG, "version = 1\n[budget]\nperson_per_day_usd = 20\n"),
-        policy_at(SPACE, "version = 1\n[budget]\nperson_per_day_usd = 5.5\n"),
+        policy_at(
+            PROJECT_POLICY,
+            "version = 1\n[budget]\nperson_per_day_usd = 5.5\n",
+        ),
     ]);
-    assert_eq!(rules.person_per_day_usd().unwrap().from, Path::new(SPACE));
+    assert_eq!(
+        rules.person_per_day_usd().unwrap().from,
+        Path::new(PROJECT_POLICY)
+    );
     let refused = effective::settle(no_choices(), &rules)
         .unwrap_err()
         .to_string();
@@ -341,7 +359,7 @@ fn catalogs_are_enforced_and_narrow_one_another() {
             "version = 1\n[mcp]\ncatalog = [\"github\", \"jira\"]\n",
         ),
         policy_at(
-            SPACE,
+            PROJECT_POLICY,
             "version = 1\n[mcp]\ncatalog = [\"jira\", \"docs\"]\n",
         ),
     ]);
@@ -360,7 +378,7 @@ fn worker_limits_narrow_and_an_allow_list_refuses_to_run() {
             "version = 1\n[workers]\ncpu = 4\nmemory_gb = 8\nper_person = 3\n",
         ),
         policy_at(
-            SPACE,
+            PROJECT_POLICY,
             "version = 1\n[workers]\ncpu = 2\nmax_minutes = 90\nnetwork = \"off\"\n",
         ),
     ]);

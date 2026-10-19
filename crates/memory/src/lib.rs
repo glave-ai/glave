@@ -18,5 +18,5 @@ pub use client::GlaveMemory;
 pub use memories::{
     Housekept, MOST_HITS, Memories, Recalled, Remembering, Source, Tidied, Tidier, Writer,
 };
-pub use rules::{Personal, Rules, SpaceMemory};
+pub use rules::{Personal, ProjectMemory, Rules};
 pub use shred::Shredder;

@@ -10,7 +10,7 @@ mod support;
 #[cfg(test)]
 mod store {
     use glave_event::{MemoryScope, Principal, decode};
-    use glave_memory::{Remembering, SpaceMemory, Writer};
+    use glave_memory::{ProjectMemory, Remembering, Writer};
     use glave_ports::memories::{MemoryContext, MemoryError, memory_ledger};
     use glave_ports::testing::fake_secret;
     use glave_ports::{EventLog, Scope};
@@ -392,9 +392,9 @@ mod store {
             let memories = kit.memories(rules(), 1);
             let mine = writer(shared());
             let save = || memories.remember(&mine, "A fact", MemoryScope::Space, None, false);
-            memories.set_project(shared().project, SpaceMemory::Off);
+            memories.set_project(shared().project, ProjectMemory::Off);
             assert!(matches!(save().await, Err(MemoryError::Off(_))));
-            memories.set_project(shared().project, SpaceMemory::Shared);
+            memories.set_project(shared().project, ProjectMemory::Shared);
             assert!(
                 !memories.rules().projects.contains_key(&shared().project),
                 "the default again"

@@ -94,7 +94,7 @@ pub async fn start(
             scope: personal,
             person,
         }),
-        default: settings.space,
+        default: settings.project,
         retention_days: settings.retention_days,
         ..Rules::default()
     };

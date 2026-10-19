@@ -5,7 +5,7 @@ description = "Tidy-up over seeded memories near their budget: duplicates merged
 [glave]
 memory = true
 tidy = true
-# The space's memories pass 90% of their budget, so tidy-up also compacts.
+# The project's memories pass 90% of their budget, so tidy-up also compacts.
 checks = [
     { memory_once = ["tabs", "marigold"] },
     { memory_superseded = { old = "Fly", new = "Render" } },

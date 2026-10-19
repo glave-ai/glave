@@ -51,7 +51,7 @@ pub fn give_way(
     if let Err(refused) = crate::policy::memory::settle(&choices, constraints) {
         aside.push(refused.to_string());
         choices.memory.from = Source::Default;
-        choices.space_memory.from = Source::Default;
+        choices.project_memory.from = Source::Default;
     }
     Ok((settle(choices, constraints)?, aside))
 }

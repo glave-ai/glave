@@ -1,6 +1,6 @@
 [task]
 name = "glave/memory-recall"
-description = "A fact stated in an old thread, never remembered, is found with recall in a new one; a fact from another space's thread never is."
+description = "A fact stated in an old thread, never remembered, is found with recall in a new one; a fact from another project's thread never is."
 
 [glave]
 memory = true
@@ -14,5 +14,5 @@ checks = [
 messages = ["For the record: our staging database server is kestrel-42. Nothing to do now."]
 
 [[glave.past]]
-space = "another-client"
+project = "another-client"
 messages = ["For the record: this client's staging database server is heron-9. Nothing to do now."]

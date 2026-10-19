@@ -3,19 +3,19 @@ source: crates/config/src/policy/tests/reading.rs
 expression: text
 ---
 Settings (the nearest wins: flags, environment, project, person, default)
-  model         acme-large          from GLAVE_MODEL
-  judge_model   acme-small          from /home/ada/.glave/config.toml
-  approval      ask                 from --approval
-  sandbox       project             from default, narrowed by /etc/glave/policy.toml
-  network       on                  from default
-  mcp           ["github"]          from /home/ada/.glave/config.toml
-  models        none besides model  from default
-  worktree      off                 from default
-  titles        on                  from default
-  on            here                from default
-  web           fetch on            from default
-  memory        on                  from default
-  space_memory  shared              from default
+  model           acme-large          from GLAVE_MODEL
+  judge_model     acme-small          from /home/ada/.glave/config.toml
+  approval        ask                 from --approval
+  sandbox         project             from default, narrowed by /etc/glave/policy.toml
+  network         on                  from default
+  mcp             ["github"]          from /home/ada/.glave/config.toml
+  models          none besides model  from default
+  worktree        off                 from default
+  titles          on                  from default
+  on              here                from default
+  web             fetch on            from default
+  memory          on                  from default
+  project_memory  shared              from default
 
 Config files
   /home/ada/.glave/config.toml
@@ -30,4 +30,4 @@ Constraints (they only narrow, and a deny always wins)
   [approval] modes = ["ask", "auto"]  from /etc/glave/policy.toml
   [approval] judge = "required"       from /etc/glave/policy.toml
   [sandbox] required = true           from /etc/glave/policy.toml
-  [approval] modes = ["ask"]          from /srv/space/policy.toml
+  [approval] modes = ["ask"]          from /code/app/.glave/config.toml

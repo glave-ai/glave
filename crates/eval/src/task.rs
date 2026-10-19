@@ -74,15 +74,15 @@ pub struct Task {
     pub steer: Option<Steer>,
     /// Whether memory is on for the task (`specs/memory.md`); `--memory` overrides it.
     pub memory: bool,
-    /// The first thread's space setting: `shared` (default), `isolated` or `off`.
-    pub space_memory: Option<String>,
+    /// The first thread's project setting: `shared` (default), `isolated` or `off`.
+    pub project_memory: Option<String>,
     /// Threads after the first, each new, run in order in the same store.
     pub threads: Vec<TaskThread>,
     /// Memories saved before the first thread.
     pub memories: Vec<Seeded>,
     /// Past conversations, written to the store before the first thread, for `recall`.
     pub past: Vec<PastThread>,
-    /// Whether tidy-up runs over every space's memory once the threads are done, on the model
+    /// Whether tidy-up runs over every project's memory once the threads are done, on the model
     /// under test (`specs/memory.md`, "Tidy-up"): `[glave] tidy = true`.
     pub tidy: Tidying,
 }
@@ -101,8 +101,8 @@ pub enum Tidying {
 #[serde(deny_unknown_fields)]
 pub struct PastThread {
     pub messages: Vec<String>,
-    /// The space it was in, by name; the first thread's when absent.
-    pub space: Option<String>,
+    /// The project it was in, by name; the first thread's when absent.
+    pub project: Option<String>,
 }
 
 /// A thread after the first: `[[glave.threads]]`.
@@ -111,10 +111,10 @@ pub struct PastThread {
 pub struct TaskThread {
     /// Its messages, in order; each after the first resumes it from its log.
     pub messages: Vec<String>,
-    /// The space it works in, by name; the first thread's when absent.
-    pub space: Option<String>,
-    /// That space's setting, when it is a space of its own.
-    pub space_memory: Option<String>,
+    /// The project it works in, by name; the first thread's when absent.
+    pub project: Option<String>,
+    /// That project's setting, when it is a project of its own.
+    pub project_memory: Option<String>,
 }
 
 /// A memory seeded before the first thread: `[[glave.memories]]`.
@@ -122,7 +122,7 @@ pub struct TaskThread {
 #[serde(deny_unknown_fields)]
 pub struct Seeded {
     pub text: String,
-    /// `personal` or `space` (the first thread's).
+    /// `personal` or `project` (the first thread's).
     pub scope: String,
     /// Saved in a thread that had read untrusted content.
     #[serde(default)]
@@ -216,7 +216,7 @@ struct Glave {
     steer: Option<Steer>,
     #[serde(default)]
     memory: bool,
-    space_memory: Option<String>,
+    project_memory: Option<String>,
     #[serde(default)]
     threads: Vec<TaskThread>,
     #[serde(default)]
@@ -297,7 +297,7 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
         goal: glave.goal,
         steer: glave.steer,
         memory: glave.memory,
-        space_memory: glave.space_memory,
+        project_memory: glave.project_memory,
         threads: glave.threads,
         memories: glave.memories,
         past: glave.past,
@@ -311,16 +311,16 @@ pub fn load(dir: &Path) -> Result<Task, EvalError> {
 
 /// Whether the memory settings and seeded memories of `glave` name things that exist.
 fn memory_named(glave: &Glave) -> Result<(), String> {
-    let settings = glave.space_memory.iter().chain(
+    let settings = glave.project_memory.iter().chain(
         glave
             .threads
             .iter()
-            .filter_map(|thread| thread.space_memory.as_ref()),
+            .filter_map(|thread| thread.project_memory.as_ref()),
     );
     for name in settings {
-        if glave_memory::SpaceMemory::named(name).is_none() {
+        if glave_memory::ProjectMemory::named(name).is_none() {
             return Err(format!(
-                "space_memory is shared, isolated or off, not {name:?}"
+                "project_memory is shared, isolated or off, not {name:?}"
             ));
         }
     }
@@ -330,7 +330,7 @@ fn memory_named(glave: &Glave) -> Result<(), String> {
         .find(|seed| glave_event::MemoryScope::named(&seed.scope).is_none())
     {
         Some(seed) => Err(format!(
-            "a seeded memory's scope is personal or space, not {:?}",
+            "a seeded memory's scope is personal or project, not {:?}",
             seed.scope
         )),
         None => Ok(()),

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use glave_event::{Arguments, ModelRef, Part, PrincipalId, StopReason, TokenCounts, Usage};
 use glave_harness::{ApprovalRequest, Approver, Decision, Harness, Parts, Settings, Workspace};
 use glave_keys::{InMemoryRoot, KeySettings};
-use glave_memory::{GlaveMemory, Memories, Personal, Rules, SpaceMemory};
+use glave_memory::{GlaveMemory, Memories, Personal, ProjectMemory, Rules};
 pub use glave_ports::block_on;
 use glave_ports::testing::{CountingEntropy, ManualClock};
 use glave_ports::{
@@ -67,8 +67,8 @@ pub fn rules() -> Rules {
     };
     rules
         .projects
-        .insert(isolated().project, SpaceMemory::Isolated);
-    rules.projects.insert(off().project, SpaceMemory::Off);
+        .insert(isolated().project, ProjectMemory::Isolated);
+    rules.projects.insert(off().project, ProjectMemory::Off);
     rules
 }
 
