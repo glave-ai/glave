@@ -7,7 +7,7 @@ use glave_event::{
 };
 use glave_ports::block_on;
 use glave_ports::computer::{Computers, Environment, Sources};
-use glave_ports::testing::CountingEntropy;
+use glave_ports::testing::{CountingEntropy, TempDir};
 use glave_ports::{InMemoryLog, OrgId, ProjectId};
 
 use super::*;
@@ -32,10 +32,10 @@ fn sh(at: &Path, script: &str) -> String {
 const COMMIT: &str = "echo b > b.txt && git add b.txt && \
     git -c user.name=t -c user.email=t@example.com commit -q -m two";
 
-/// A home folder, and a repository in it with one commit pushed to a remote.
-fn place(name: &str) -> (PathBuf, PathBuf) {
-    let dir = std::env::temp_dir().join(format!("glave-cleanup-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+/// A folder removed when it drops, a home folder in it, and a repository in it with one
+/// commit pushed to a remote.
+fn place(name: &str) -> (TempDir, PathBuf, PathBuf) {
+    let dir = TempDir::new(&format!("cleanup-{name}")).unwrap();
     std::fs::create_dir_all(dir.join("home")).unwrap();
     sh(
         &dir,
@@ -44,7 +44,8 @@ fn place(name: &str) -> (PathBuf, PathBuf) {
          git -c user.name=t -c user.email=t@example.com commit -q -m one && \
          git remote add origin \"$(cd .. && pwd)/origin.git\" && git push -q origin main",
     );
-    (dir.join("home"), dir.join("app"))
+    let (home, app) = (dir.join("home"), dir.join("app"));
+    (dir, home, app)
 }
 
 fn scope() -> Scope {
@@ -122,7 +123,7 @@ fn branches(repo: &Path) -> String {
 
 #[test]
 fn idle_threads_lose_their_worktrees_only_when_nothing_is_lost() {
-    let (home, repo) = place("idle");
+    let (_dir, home, repo) = place("idle");
     let log = InMemoryLog::new();
     let env = environment();
     block_on!(async {
@@ -170,7 +171,7 @@ fn idle_threads_lose_their_worktrees_only_when_nothing_is_lost() {
 
 #[test]
 fn the_check_runs_at_most_once_a_day() {
-    let (home, repo) = place("daily");
+    let (_dir, home, repo) = place("daily");
     let log = InMemoryLog::new();
     let env = environment();
     block_on!(async {
@@ -203,7 +204,7 @@ fn the_check_runs_at_most_once_a_day() {
 
 #[test]
 fn a_torn_check_stamp_is_checked_again_and_written_whole() {
-    let (home, _repo) = place("torn-stamp");
+    let (_dir, home, _repo) = place("torn-stamp");
     std::fs::create_dir_all(home.join(FOLDER)).unwrap();
     let log = InMemoryLog::new();
     let env = environment();
@@ -231,7 +232,7 @@ fn a_torn_check_stamp_is_checked_again_and_written_whole() {
 
 #[test]
 fn a_gone_repositorys_worktree_goes_to_the_trash_and_is_recorded() {
-    let (home, repo) = place("gone");
+    let (_dir, home, repo) = place("gone");
     let log = InMemoryLog::new();
     let env = environment();
     block_on!(async {
@@ -272,7 +273,7 @@ fn a_gone_repositorys_worktree_goes_to_the_trash_and_is_recorded() {
 
 #[test]
 fn prune_removes_the_safe_explains_the_rest_and_forces_only_by_name() {
-    let (home, repo) = place("prune");
+    let (_dir, home, repo) = place("prune");
     let log = InMemoryLog::new();
     let env = environment();
     block_on!(async {
@@ -312,7 +313,7 @@ fn prune_removes_the_safe_explains_the_rest_and_forces_only_by_name() {
 
 #[test]
 fn archiving_a_thread_releases_only_its_worktrees() {
-    let (home, repo) = place("archive");
+    let (_dir, home, repo) = place("archive");
     let log = InMemoryLog::new();
     let env = environment();
     block_on!(async {

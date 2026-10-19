@@ -129,8 +129,7 @@ fn what_glave_cannot_honour_is_refused_by_name() {
 
 #[test]
 fn devcontainer_json_wins_over_environment_toml() {
-    let project = std::env::temp_dir().join(format!("glave-env-read-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&project);
+    let project = glave_ports::testing::TempDir::new("env-read").unwrap();
     std::fs::create_dir_all(project.join(".glave")).unwrap();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

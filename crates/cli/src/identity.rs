@@ -95,9 +95,7 @@ mod tests {
     #[test]
     fn a_computer_id_whose_creation_stopped_at_any_step_is_read_or_made_whole() {
         use glave_ports::file::{Stop, create_until};
-        let home = std::env::temp_dir().join(format!("glave-computer-id-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&home);
-        std::fs::create_dir_all(&home).unwrap();
+        let home = glave_ports::testing::TempDir::new("computer-id").unwrap();
         let planted = make().unwrap().as_uuid();
         let path = home.join(COMPUTER);
         glave_ports::block_on!(async {

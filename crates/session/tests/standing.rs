@@ -129,7 +129,7 @@ fn archiving_changes_nothing_the_model_is_sent() {
             ]
         };
         let run = |archive: bool| {
-            let dir = dir.clone();
+            let dir = dir.to_path_buf();
             let answers = script();
             async move {
                 let (server, seen) = Setup::asking(answers, Answering::NoOne).build(&dir).await;

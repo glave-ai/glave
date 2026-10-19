@@ -2,6 +2,7 @@
 //! again and the person sees each retry; failures that will not pass end the turn at once; and
 //! a cancel during the wait between tries ends it cleanly.
 
+use std::path::Path;
 use std::time::Duration;
 
 use glave_event::{Outcome, StopReason};
@@ -19,6 +20,7 @@ fn unavailable() -> ProviderError {
 }
 
 async fn harness(
+    dir: &Path,
     failures: Vec<ProviderError>,
     first_wait: Duration,
 ) -> Harness<ScriptedModel, InMemoryLog, InMemoryBlobs, AllowAll> {
@@ -41,7 +43,7 @@ async fn harness(
         approver: AllowAll,
         clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
         entropy: Box::new(CountingEntropy::starting_at(1)),
-        workspace: workspace(&folder("retry")).await,
+        workspace: workspace(dir).await,
     };
     Harness::new(parts, settings)
 }
@@ -64,7 +66,8 @@ fn failures_that_may_pass_are_tried_again_and_shown() {
             ProviderError::Timeout { seconds: 300 },
             ProviderError::Transport("connection reset".into()),
         ];
-        let harness = harness(failures, Duration::ZERO).await;
+        let dir = folder("retry");
+        let harness = harness(&dir, failures, Duration::ZERO).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let mut shown = Vec::new();
         let summary = harness
@@ -106,7 +109,8 @@ fn empty_error() -> ProviderError {
 #[test]
 fn a_response_that_errors_before_any_output_is_tried_again() {
     block_on!(async {
-        let harness = harness(vec![empty_error()], Duration::ZERO).await;
+        let dir = folder("retry");
+        let harness = harness(&dir, vec![empty_error()], Duration::ZERO).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let mut shown = Vec::new();
         let summary = harness
@@ -123,7 +127,8 @@ fn a_response_that_errors_before_any_output_is_tried_again() {
 #[test]
 fn a_response_that_errors_before_any_output_every_time_fails_after_the_limit() {
     block_on!(async {
-        let harness = harness(vec![empty_error(); 5], Duration::ZERO).await;
+        let dir = folder("retry");
+        let harness = harness(&dir, vec![empty_error(); 5], Duration::ZERO).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let mut shown = Vec::new();
         let result = harness
@@ -138,6 +143,7 @@ fn a_response_that_errors_before_any_output_every_time_fails_after_the_limit() {
 
 #[test]
 fn a_response_that_errors_after_output_is_not_tried_again() {
+    let dir = folder("retry-broken");
     block_on!(async {
         let mut settings = settings();
         settings.retries = Retries {
@@ -156,7 +162,7 @@ fn a_response_that_errors_after_output_is_not_tried_again() {
             approver: AllowAll,
             clock: Box::new(ManualClock::ticking(1_791_000_000_000)),
             entropy: Box::new(CountingEntropy::starting_at(1)),
-            workspace: workspace(&folder("retry-broken")).await,
+            workspace: workspace(&dir).await,
         };
         let harness = Harness::new(parts, settings);
         let mut thread = harness.start_thread(scope()).await.unwrap();
@@ -179,7 +185,8 @@ fn a_failure_that_will_not_pass_ends_the_turn_at_once() {
             status: 401,
             body: "bad key".into(),
         };
-        let harness = harness(vec![refused.clone()], Duration::ZERO).await;
+        let dir = folder("retry");
+        let harness = harness(&dir, vec![refused.clone()], Duration::ZERO).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let mut shown = Vec::new();
         let error = harness
@@ -196,7 +203,8 @@ fn a_failure_that_will_not_pass_ends_the_turn_at_once() {
 #[test]
 fn after_four_retries_the_turn_fails() {
     block_on!(async {
-        let harness = harness(vec![unavailable(); 5], Duration::ZERO).await;
+        let dir = folder("retry");
+        let harness = harness(&dir, vec![unavailable(); 5], Duration::ZERO).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let mut shown = Vec::new();
         let result = harness
@@ -214,7 +222,8 @@ fn after_four_retries_the_turn_fails() {
 #[test]
 fn a_cancel_during_the_wait_ends_the_turn_cleanly() {
     block_on!(async {
-        let harness = harness(vec![unavailable()], Duration::from_secs(600)).await;
+        let dir = folder("retry");
+        let harness = harness(&dir, vec![unavailable()], Duration::from_secs(600)).await;
         let mut thread = harness.start_thread(scope()).await.unwrap();
         let cancel = Cancel::new();
         let canceller = cancel.clone();

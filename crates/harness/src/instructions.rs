@@ -107,14 +107,10 @@ pub(crate) fn within(text: &str, limit: usize) -> (&str, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use glave_ports::testing::TempDir;
 
-    fn folder(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("glave-agents-md-{}", std::process::id()))
-            .join(name);
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::canonicalize(dir).unwrap()
+    fn folder(name: &str) -> TempDir {
+        TempDir::new(&format!("agents-md-{name}")).unwrap()
     }
 
     fn load(root: &Path, user_file: Option<&Path>) -> Option<Instructions> {
@@ -134,7 +130,8 @@ mod tests {
         std::fs::write(top.join(AGENTS_MD), "Use tabs.\n").unwrap();
         std::fs::write(top.join("crates").join(AGENTS_MD), "  \n").unwrap();
         std::fs::write(inner.join(AGENTS_MD), "Run make test.\n").unwrap();
-        let mine = folder("home").join(AGENTS_MD);
+        let home = folder("home");
+        let mine = home.join(AGENTS_MD);
         std::fs::write(&mine, "Be brief.").unwrap();
         let loaded = load(&inner, Some(&mine)).unwrap();
         assert_eq!(

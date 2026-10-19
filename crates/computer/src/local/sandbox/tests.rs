@@ -27,13 +27,10 @@ fn enforced() -> bool {
 }
 
 /// A folder outside the system temp folder, which the sandbox lets every command write.
-fn scratch(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/sandbox-tests")
-        .join(format!("{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+fn scratch(name: &str) -> glave_ports::testing::TempDir {
+    let dir = glave_ports::testing::TempDir::outside_temp(name).unwrap();
     std::fs::create_dir_all(dir.join("app")).unwrap();
-    std::fs::canonicalize(dir).unwrap()
+    dir
 }
 
 #[derive(Default)]

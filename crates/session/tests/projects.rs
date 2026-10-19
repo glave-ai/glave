@@ -255,7 +255,8 @@ fn a_project_from_a_repository_is_cloned_signing_in_with_its_git_host() {
         let mut setup = Setup::new(Vec::new());
         setup.project_base = Some(projects.clone());
         setup.credentials = Some(fixed.clone());
-        let server = setup.build(&folder("projects-clone-again")).await.0;
+        let again = folder("projects-clone-again");
+        let server = setup.build(&again).await.0;
         let asked = NewFolder::Repository { url: url.clone() };
         let (project, folder) = made(server.request(create("App", Some(asked))).await.unwrap());
         let folder = folder.unwrap();

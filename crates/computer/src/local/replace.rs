@@ -111,9 +111,7 @@ mod tests {
 
     #[test]
     fn a_full_disk_leaves_the_file_as_it_was_and_says_so() {
-        let dir = std::env::temp_dir().join(format!("glave-full-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = glave_ports::testing::TempDir::new("full").unwrap();
         std::fs::write(dir.join("a.txt"), "the original\n").unwrap();
         let folder = std::fs::File::open(&dir).unwrap();
         let new = b"a much longer replacement that never fits on the disk\n";

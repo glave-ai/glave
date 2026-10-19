@@ -170,8 +170,7 @@ mod tests {
 
     #[test]
     fn commands_never_see_secrets() {
-        let dir = std::env::temp_dir().join(format!("glave-bash-env-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = glave_ports::testing::TempDir::new("bash-env").unwrap();
         let mut environment: Vec<_> = std::env::vars_os()
             .filter(|(name, _)| name == "PATH")
             .collect();

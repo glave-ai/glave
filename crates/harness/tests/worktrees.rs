@@ -12,6 +12,7 @@ use glave_event::{Body, Event, Opened, StopReason, WorkspaceBound};
 use glave_harness::{AllowAll, Cancel, HarnessError, Place, Workspace, branch_for};
 use glave_ports::Caller;
 use glave_ports::computer::{Computers, Environment, Sources};
+use glave_ports::testing::TempDir;
 use glave_ports::{Completion, EventLog, InMemoryLog, Standing, ThreadQuery};
 use serde_json::json;
 
@@ -21,8 +22,9 @@ fn environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
         .collect()
 }
 
-/// A repository with one commit, and the folder its worktrees go in, beside it.
-fn repository(name: &str) -> (PathBuf, PathBuf) {
+/// A repository with one commit, and the folder its worktrees go in, beside it, in a folder
+/// removed when the first drops.
+fn repository(name: &str) -> (TempDir, PathBuf, PathBuf) {
     let dir = folder(name);
     let repo = dir.join("app");
     std::fs::create_dir_all(&repo).unwrap();
@@ -34,7 +36,8 @@ fn repository(name: &str) -> (PathBuf, PathBuf) {
         .status()
         .unwrap();
     assert!(made.success());
-    (repo, dir.join("worktrees"))
+    let worktrees = dir.join("worktrees");
+    (dir, repo, worktrees)
 }
 
 /// `repo` on this machine, keeping worktrees under `base`, as the CLI opens it.
@@ -135,8 +138,8 @@ fn by_default_the_model_is_sent_exactly_what_it_was_before() {
 
 #[test]
 fn a_worktree_thread_works_on_its_own_branch_and_resumes_there() {
-    let (repo, base) = repository("worktrees-own");
-    let (elsewhere, _) = repository("worktrees-in-place");
+    let (_dir, repo, base) = repository("worktrees-own");
+    let (_elsewhere_dir, elsewhere, _) = repository("worktrees-in-place");
     block_on!(async {
         // The same turn in another copy of the project, worked on in place.
         let (here, seen_here) = harness_with(
@@ -218,7 +221,7 @@ fn a_worktree_thread_works_on_its_own_branch_and_resumes_there() {
 
 #[test]
 fn a_scratch_thread_works_in_its_own_folder_and_resumes_there_never_in_the_project() {
-    let (repo, base) = repository("worktrees-scratch");
+    let (_dir, repo, base) = repository("worktrees-scratch");
     let scratch = base.with_file_name("scratch");
     block_on!(async {
         let (computers, info) = LocalComputers::for_here(environment())
@@ -269,7 +272,7 @@ fn a_scratch_thread_works_in_its_own_folder_and_resumes_there_never_in_the_proje
 
 #[test]
 fn threads_started_together_get_their_own_worktrees() {
-    let (repo, base) = repository("worktrees-together");
+    let (_dir, repo, base) = repository("worktrees-together");
     block_on!(async {
         let (harness, _) = harness_with(
             workspace_keeping(&repo, &base).await,
@@ -328,7 +331,7 @@ fn a_worktree_outside_a_repository_fails_the_start_and_records_nothing() {
 
 #[test]
 fn a_computer_across_the_wire_makes_the_worktree_through_the_port() {
-    let (repo, base) = repository("worktrees-remote");
+    let (_dir, repo, base) = repository("worktrees-remote");
     block_on!(async {
         let computers = Arc::new(
             LocalComputers::new(base.with_extension("copies"), environment()).with_worktrees(&base),

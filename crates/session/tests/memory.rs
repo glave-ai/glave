@@ -7,6 +7,7 @@ use std::sync::Arc;
 use glave_event::{MemoryScope, PrincipalId};
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules};
+use glave_ports::testing::TempDir;
 use glave_ports::{Caller, OrgId, ProjectId, Scope};
 use glave_session::Answering;
 use glave_session::protocol::{Reply, Request, code};
@@ -28,7 +29,7 @@ fn personal() -> Scope {
     )
 }
 
-async fn served(name: &str) -> (Tested<SqliteLog>, Store) {
+async fn served(name: &str) -> (Tested<SqliteLog>, Store, TempDir) {
     let store =
         Store::open_in_memory(KeySettings::new(Arc::new(InMemoryRoot::new().unwrap()))).unwrap();
     let rules = Rules {
@@ -49,8 +50,9 @@ async fn served(name: &str) -> (Tested<SqliteLog>, Store) {
     setup.answering = Answering::NoOne;
     setup.settings.person = Some(person());
     setup.memory = Some(Arc::new(GlaveMemory::start(memories).await.unwrap()));
-    let (server, _) = setup.build_on(&folder(name), store.log()).await;
-    (server, store)
+    let dir = folder(name);
+    let (server, _) = setup.build_on(&dir, store.log()).await;
+    (server, store, dir)
 }
 
 fn listed(reply: Reply) -> Vec<glave_ports::memories::Remembered> {
@@ -63,7 +65,7 @@ fn listed(reply: Reply) -> Vec<glave_ports::memories::Remembered> {
 #[test]
 fn the_person_lists_saves_edits_moves_and_forgets_their_memory() {
     block_on!(async {
-        let (server, _store) = served("memory-controls").await;
+        let (server, _store, _dir) = served("memory-controls").await;
         // Over JSON, as any transport carries it.
         let save: Request = serde_json::from_value(serde_json::json!({
             "method": "memory/save",
@@ -134,7 +136,7 @@ fn the_person_lists_saves_edits_moves_and_forgets_their_memory() {
 #[test]
 fn a_request_that_names_a_project_acts_in_that_project_s_memory() {
     block_on!(async {
-        let (server, _store) = served("memory-projects").await;
+        let (server, _store, _dir) = served("memory-projects").await;
         let created = Request::ProjectCreate {
             name: "other".into(),
             members: Vec::new(),
@@ -164,7 +166,7 @@ fn a_request_that_names_a_project_acts_in_that_project_s_memory() {
 #[test]
 fn another_person_may_not_change_the_persons_own_memory() {
     block_on!(async {
-        let (server, _store) = served("memory-others").await;
+        let (server, _store, _dir) = served("memory-others").await;
         let someone = Caller {
             person: Some(
                 PrincipalId::try_from(uuid::Uuid::from_u128(

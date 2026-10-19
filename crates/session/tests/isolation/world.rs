@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use glave_event::{Auth, AuthMethod, PrincipalId, ThreadId};
 use glave_memory::{GlaveMemory, Memories, Personal, Rules, Shredder};
-use glave_ports::testing::{CountingEntropy, FAKE_SECRET, ManualClock};
+use glave_ports::testing::{CountingEntropy, FAKE_SECRET, ManualClock, TempDir};
 use glave_ports::{Caller, EventLog, OrgId, ProjectId, Projects, Scope};
 use glave_session::protocol::{Notification, Reply, Request, TaskStatus, Update};
 use glave_session::signin::{Browsers, person};
@@ -64,6 +64,8 @@ pub struct World<L: EventLog + 'static> {
     pub people: Vec<Person>,
     /// Turns waiting for the person, by organization and thread, followed until the end.
     pub held: Vec<(usize, ThreadId, TurnStream)>,
+    /// The organizations' folders, removed with the world.
+    _folders: Vec<TempDir>,
 }
 
 /// The organization, server project and the person on the computer of organization `n`.
@@ -217,9 +219,11 @@ async fn make<L: EventLog + 'static>(org: &Org<L>, person: &mut Person, local: b
 impl<L: EventLog + Clone + 'static> World<L> {
     /// Two organizations on `parts`, in folders under `name`, each person's things made.
     pub async fn build(name: &str, parts: &Parts<L>) -> Self {
-        let mut orgs = Vec::new();
+        let (mut orgs, mut folders) = (Vec::new(), Vec::new());
         for n in 1..=2 {
-            orgs.push(serve(n, parts, &folder(&format!("{name}-{n}"))).await);
+            let dir = folder(&format!("{name}-{n}"));
+            orgs.push(serve(n, parts, &dir).await);
+            folders.push(dir);
         }
         let mut people = vec![
             Person::new("ada", 0, Caller::default()),
@@ -235,6 +239,7 @@ impl<L: EventLog + Clone + 'static> World<L> {
             orgs,
             people,
             held: Vec::new(),
+            _folders: folders,
         };
         world.tasks_ended().await;
         world

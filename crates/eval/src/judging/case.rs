@@ -177,10 +177,8 @@ pub(crate) fn load(dir: &Path) -> Result<Vec<Case>, EvalError> {
 mod tests {
     use super::*;
 
-    fn folder(name: &str, files: &[(&str, &str)]) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("glave-judge-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    fn folder(name: &str, files: &[(&str, &str)]) -> glave_ports::testing::TempDir {
+        let dir = glave_ports::testing::TempDir::new(&format!("judge-{name}")).unwrap();
         for (file, text) in files {
             std::fs::write(dir.join(file), text).unwrap();
         }

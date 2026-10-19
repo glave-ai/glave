@@ -5,7 +5,7 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 
-use glave_ports::testing::{FAKE_SECRET, Running};
+use glave_ports::testing::{FAKE_SECRET, Running, TempDir};
 use glave_provider_openai::fake::FakeServer;
 use serde_json::Value;
 
@@ -13,17 +13,21 @@ use serde_json::Value;
 pub struct Place {
     pub project: PathBuf,
     pub home: PathBuf,
+    /// The folder both are in, removed when the place drops; none for a place made of
+    /// another's folders.
+    pub _folder: Option<TempDir>,
 }
 
 pub fn place(name: &str) -> Place {
-    let dir = std::env::temp_dir().join(format!("glave-e2e-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    // Named without a prefix: a longer path would be too long for its server's socket.
+    let dir = TempDir::new(name).unwrap();
     let project = dir.join("project");
     std::fs::create_dir_all(&project).unwrap();
     std::fs::write(project.join("README.md"), "# demo\n").unwrap();
     Place {
         project,
         home: dir.join("home"),
+        _folder: Some(dir),
     }
 }
 

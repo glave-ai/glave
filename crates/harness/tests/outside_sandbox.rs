@@ -4,7 +4,7 @@
 //! commands run without a sandbox, the request changes nothing.
 
 use std::future::{Future, ready};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use glave_event::{Body, Event, Part, Principal, StopReason, ThreadId, Verdict};
@@ -58,7 +58,7 @@ fn judged() -> Settings {
 
 /// A folder with a project in it, outside the system temp folder (which the sandbox lets
 /// commands write); `None` where this computer has no sandbox.
-fn sandboxed(name: &str) -> Option<PathBuf> {
+fn sandboxed(name: &str) -> Option<glave_ports::testing::TempDir> {
     if !glave_computer::sandbox_available() {
         assert!(
             std::env::var_os("GLAVE_REQUIRE_SANDBOX").is_none(),
@@ -66,12 +66,9 @@ fn sandboxed(name: &str) -> Option<PathBuf> {
         );
         return None;
     }
-    let base = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/sandbox-tests")
-        .join(format!("outside-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&base);
+    let base = glave_ports::testing::TempDir::outside_temp(&format!("outside-{name}")).unwrap();
     std::fs::create_dir_all(base.join("project")).unwrap();
-    Some(std::fs::canonicalize(base).unwrap())
+    Some(base)
 }
 
 async fn in_sandbox(base: &Path) -> glave_harness::Workspace {

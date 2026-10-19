@@ -99,8 +99,7 @@ fn a_wrapper_sets_its_token_alone_and_puts_back_what_could_run_a_program() {
 /// The gh wrapper asks for the token only when gh is not pointed at another host.
 #[test]
 fn gh_pointed_at_another_host_runs_without_the_token() {
-    let dir = std::env::temp_dir().join(format!("glave-wrapper-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = glave_ports::testing::TempDir::new("wrapper").unwrap();
     std::fs::create_dir_all(dir.join("bin")).unwrap();
     std::fs::create_dir_all(dir.join("real")).unwrap();
     let helper = dir.join("git-credential-glave");
@@ -204,13 +203,8 @@ impl Output for Collect {
 }
 
 /// A folder outside the system temp folder, which the sandbox lets every command write.
-fn scratch(name: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/sandbox-tests")
-        .join(format!("{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::canonicalize(dir).unwrap()
+fn scratch(name: &str) -> glave_ports::testing::TempDir {
+    glave_ports::testing::TempDir::outside_temp(name).unwrap()
 }
 
 /// In the sandbox, with the network on, git still reaches the helper on this computer and

@@ -248,8 +248,7 @@ mod tests {
 
     #[test]
     fn a_policy_that_forbids_people_s_own_servers_stops_them_starting() {
-        let home = std::env::temp_dir().join(format!("glave-mcp-policy-{}", std::process::id()));
-        std::fs::create_dir_all(&home).unwrap();
+        let home = glave_ports::testing::TempDir::new("mcp-policy").unwrap();
         let servers = r#"{"mcpServers": {"mine": {"command": "/nonexistent/server"}}}"#;
         std::fs::write(home.join(FILE), servers).unwrap();
         let forbidden = constraints("version = 1\n[mcp]\nown = false\n");

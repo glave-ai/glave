@@ -201,8 +201,7 @@ mod tests {
     #[test]
     fn on_cloud_without_a_backend_or_an_environment_says_what_is_missing() {
         use glave_config::policy::{Layer, Level, assemble};
-        let dir = std::env::temp_dir().join(format!("glave-cloud-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = glave_ports::testing::TempDir::new("cloud").unwrap();
         let chosen = |text: &str| {
             let layer = Layer {
                 level: Level::File(dir.join("config.toml")),

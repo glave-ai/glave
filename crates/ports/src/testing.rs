@@ -1,13 +1,15 @@
 //! The test doubles every crate's tests share (AGENTS.md, "Testing"): the runtime they run
 //! on, a clock they move, randomness that counts, a cancellation already fired, a fake HTTP
-//! server, fake secrets, a scripted model, and programs they start, stopped when they end.
-//! Behind the `conformance` feature, so no production build carries them.
+//! server, fake secrets, a scripted model, programs they start, stopped when they end, and
+//! folders of their own, removed when they are done. Behind the `conformance` feature, so no
+//! production build carries them.
 
 mod git;
 mod http;
 mod model;
 mod process;
 mod secret;
+mod temp;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
@@ -22,6 +24,7 @@ pub use http::{FakeHttp, Received};
 pub use model::{Answer, ScriptedModel, Seen};
 pub use process::Running;
 pub use secret::{FAKE_SECRET, fake_secret};
+pub use temp::TempDir;
 
 /// Runs a future to its end on a fresh current-thread runtime with every driver enabled.
 ///

@@ -24,11 +24,10 @@ fn sh(at: &Path, script: &str) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_owned()
 }
 
-/// A repository with one commit pushed to a remote, and where its worktrees go.
-fn repository(name: &str) -> (PathBuf, PathBuf) {
-    let dir = std::env::temp_dir().join(format!("glave-worktrees-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+/// A folder removed when it drops, a repository in it with one commit pushed to a remote,
+/// and where its worktrees go.
+fn repository(name: &str) -> (glave_ports::testing::TempDir, PathBuf, PathBuf) {
+    let dir = glave_ports::testing::TempDir::new(&format!("worktrees-{name}")).unwrap();
     sh(
         &dir,
         "git init -q --bare --initial-branch=main origin.git && \
@@ -36,7 +35,8 @@ fn repository(name: &str) -> (PathBuf, PathBuf) {
          git -c user.name=t -c user.email=t@example.com commit -q -m one && \
          git remote add origin \"$(cd .. && pwd)/origin.git\" && git push -q origin main",
     );
-    (dir.join("app"), dir.join("worktrees"))
+    let (app, worktrees) = (dir.join("app"), dir.join("worktrees"));
+    (dir, app, worktrees)
 }
 
 fn worktree(repo: &Path, branch: &str, owner: Option<&str>) -> Sources {
@@ -66,7 +66,7 @@ fn branches(repo: &Path) -> String {
 /// one reads the other's half-made worktree.
 #[test]
 fn worktrees_opened_at_once_do_not_collide() {
-    let (repo, base) = repository("parallel");
+    let (_dir, repo, base) = repository("parallel");
     let computers = Arc::new(computers(&base));
     block_on!(async {
         let made = computers.create(&Environment::host()).await.unwrap();
@@ -107,7 +107,7 @@ fn worktrees_opened_at_once_do_not_collide() {
 
 #[test]
 fn safe_means_nothing_uncommitted_and_every_commit_on_a_remote() {
-    let (repo, base) = repository("safety");
+    let (_dir, repo, base) = repository("safety");
     let computers = computers(&base);
     let env = environment();
     block_on!(async {
@@ -164,7 +164,7 @@ fn safe_means_nothing_uncommitted_and_every_commit_on_a_remote() {
 
 #[test]
 fn a_release_removes_what_is_safe_and_holds_the_rest_keeping_every_branch() {
-    let (repo, base) = repository("release");
+    let (_dir, repo, base) = repository("release");
     let computers = computers(&base);
     let env = environment();
     block_on!(async {
@@ -214,8 +214,7 @@ fn a_release_removes_what_is_safe_and_holds_the_rest_keeping_every_branch() {
 
 #[test]
 fn scratch_folders_reopen_as_left_and_go_empty_away_or_full_to_the_trash() {
-    let base = std::env::temp_dir().join(format!("glave-scratch-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&base);
+    let base = glave_ports::testing::TempDir::new("scratch").unwrap();
     let computers =
         LocalComputers::new(base.join("copies"), environment()).with_scratch(base.join("scratch"));
     let env = environment();
@@ -278,7 +277,7 @@ fn scratch_folders_reopen_as_left_and_go_empty_away_or_full_to_the_trash() {
 
 #[test]
 fn a_worktree_whose_repository_is_gone_goes_to_the_trash_never_away() {
-    let (repo, base) = repository("gone");
+    let (_dir, repo, base) = repository("gone");
     let computers = computers(&base);
     let env = environment();
     let trash = base.with_file_name("Trash");
@@ -340,7 +339,7 @@ fn a_worktree_whose_repository_is_gone_goes_to_the_trash_never_away() {
 
 #[test]
 fn a_folder_outside_a_repository_is_refused_clearly() {
-    let (repo, base) = repository("plain");
+    let (_dir, repo, base) = repository("plain");
     let plain = repo.with_file_name("plain");
     std::fs::create_dir_all(&plain).unwrap();
     let computers = computers(&base);
@@ -368,7 +367,7 @@ fn a_folder_outside_a_repository_is_refused_clearly() {
 /// the next write puts a whole one in its place; so is a record with no version.
 #[test]
 fn a_torn_record_is_read_as_none_and_written_whole_again() {
-    let (repo, base) = repository("torn");
+    let (_dir, repo, base) = repository("torn");
     let computers = computers(&base);
     let env = environment();
     block_on!(async {
@@ -403,7 +402,7 @@ fn a_torn_record_is_read_as_none_and_written_whole_again() {
 /// is.
 #[test]
 fn a_record_of_a_newer_version_is_refused_plainly() {
-    let (repo, base) = repository("newer");
+    let (_dir, repo, base) = repository("newer");
     let computers = computers(&base);
     let env = environment();
     block_on!(async {

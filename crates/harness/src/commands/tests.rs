@@ -1,4 +1,5 @@
 use glave_ports::block_on;
+use glave_ports::testing::TempDir;
 
 use super::*;
 
@@ -12,11 +13,8 @@ fn command(body: &str) -> Command {
     }
 }
 
-fn folder(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("glave-commands-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn folder(name: &str) -> TempDir {
+    TempDir::new(&format!("commands-{name}")).unwrap()
 }
 
 #[test]

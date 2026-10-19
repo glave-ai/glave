@@ -58,13 +58,23 @@ fn in_terminal(place: &Place, args: &[&str]) -> Running {
     Running::new(child)
 }
 
-/// The person's server in `place`, stopped when this drops, however the test ends.
+/// The person's server in `place`, stopped when this drops, however the test ends: asked to
+/// stop, and if that fails, whatever still holds its lock killed. Never panics, so a failed
+/// test still reports its own failure.
 struct Stopped<'a>(&'a Place);
 
 impl Drop for Stopped<'_> {
     fn drop(&mut self) {
-        let stopped = run(self.0, &["server", "stop"]);
-        assert!(stopped.status.success(), "{}", text(&stopped));
+        if run(self.0, &["server", "stop"]).status.success() {
+            return;
+        }
+        let lock = self.0.home.join("run/server.lock");
+        let Ok(holders) = Command::new("lsof").arg("-t").arg(&lock).output() else {
+            return;
+        };
+        for pid in String::from_utf8_lossy(&holders.stdout).split_whitespace() {
+            let _ = Command::new("kill").args(["-KILL", pid]).status();
+        }
     }
 }
 
@@ -87,10 +97,6 @@ fn serve(place: &Place) -> Running {
     // Whatever it says later is still read, so it never blocks.
     std::thread::spawn(move || for _ in lines.map_while(Result::ok) {});
     served
-}
-
-fn cleaned(place: &Place) {
-    let _ = std::fs::remove_dir_all(place.home.parent().unwrap());
 }
 
 #[test]
@@ -117,7 +123,6 @@ fn two_starts_at_once_make_one_server_which_outlives_their_terminals_and_stops()
     assert!(log.contains("glave: stopping"), "a graceful stop: {log}");
     assert!(!place.home.join("run/server.sock").exists(), "{log}");
     drop(stopped_at_end);
-    cleaned(&place);
 }
 
 #[test]
@@ -133,12 +138,12 @@ fn no_command_without_a_terminal_starts_one() {
     assert_eq!(status(&place).0, Some(3));
     assert!(!place.home.join("run/server.sock").exists());
     assert!(!place.home.join("run/server.log").exists());
-    cleaned(&place);
 }
 
 #[test]
 fn a_stale_socket_is_replaced_only_by_the_lock_s_holder() {
-    let place = place("stale");
+    // A short name: the socket's path must stay short enough for a socket.
+    let place = place("st");
     let socket = place.home.join("run/server.sock");
     assert!(socket.as_os_str().len() <= 100, "{}", socket.display());
     std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
@@ -164,13 +169,13 @@ fn a_stale_socket_is_replaced_only_by_the_lock_s_holder() {
     let next = serve(&place);
     assert_eq!(status(&place).0, Some(0), "the next holder replaced it");
     drop(next);
-    cleaned(&place);
 }
 
 #[test]
 fn a_socket_in_a_folder_others_may_open_is_refused() {
     use std::os::unix::fs::PermissionsExt as _;
-    let place = place("open");
+    // A short name: the socket's path must stay short enough for a socket.
+    let place = place("op");
     let run_folder = place.home.join("run");
     let served = serve(&place);
     let open = std::fs::Permissions::from_mode(0o755);
@@ -186,7 +191,6 @@ fn a_socket_in_a_folder_others_may_open_is_refused() {
         "{}",
         text(&refused)
     );
-    cleaned(&place);
 }
 
 /// What a command the model runs in `place` with `sandbox` printed, through the in-process
@@ -230,7 +234,6 @@ fn a_sandboxed_command_reaches_neither_the_socket_nor_the_token_or_keys() {
         place.home.display()
     );
     let Some(confined) = ran(&place, "project", &script) else {
-        cleaned(&place);
         return;
     };
     assert!(confined.contains("ran"), "{confined}");
@@ -243,5 +246,4 @@ fn a_sandboxed_command_reaches_neither_the_socket_nor_the_token_or_keys() {
         assert!(open.contains(reached), "{reached}: {open}");
     }
     drop(served);
-    cleaned(&place);
 }

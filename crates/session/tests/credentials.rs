@@ -4,6 +4,7 @@
 //! do this: a caller signed in with OIDC is refused, and a server whose accounts someone else
 //! sets up refuses everyone.
 
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use glave_event::{CredentialId, Forge, Secret};
@@ -116,10 +117,10 @@ impl GitHosts for Hosts {
 }
 
 /// A server whose git hosts the fake host keeps.
-async fn fresh(name: &str) -> Tested {
+async fn fresh(dir: &Path) -> Tested {
     let mut setup = Setup::new(Vec::new());
     setup.hosts = Some(Arc::new(Hosts::default()));
-    setup.build(&folder(name)).await.0
+    setup.build(dir).await.0
 }
 
 fn connect(url: &str, token: &str) -> Request {
@@ -194,21 +195,25 @@ async fn connect_and_remove(client: &mut impl Client) {
 #[test]
 fn the_person_here_connects_and_removes_a_git_host_over_each_local_transport() {
     block_on!(async {
-        let tested = fresh("hosts-in-process").await;
+        let dir = folder("hosts-in-process");
+        let tested = fresh(&dir).await;
         connect_and_remove(&mut InProcess(tested.clone())).await;
         tested.shutdown().await;
 
-        let mut client = OverJsonRpc::new(fresh("hosts-json-rpc").await);
+        let dir = folder("hosts-json-rpc");
+        let mut client = OverJsonRpc::new(fresh(&dir).await);
         connect_and_remove(&mut client).await;
         client.close().await;
 
-        let mut client = OverJsonRpc::on_socket(fresh("hosts-socket").await, "hosts").await;
+        let dir = folder("hosts-socket");
+        let mut client = OverJsonRpc::on_socket(fresh(&dir).await, "hosts").await;
         connect_and_remove(&mut client).await;
         client.close().await;
 
         let token = LocalToken::new([6; 32]);
         let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
-        let served = serve_with(fresh("hosts-http-local").await, signin, None).await;
+        let dir = folder("hosts-http-local");
+        let served = serve_with(fresh(&dir).await, signin, None).await;
         let mut web = Web::new(&served, Some(token.reveal().to_owned()));
         let answered = web.call(&connect("https://gitlab.example.com", GOOD)).await;
         assert_eq!(
@@ -223,7 +228,8 @@ fn the_person_here_connects_and_removes_a_git_host_over_each_local_transport() {
 #[test]
 fn a_caller_signed_in_elsewhere_may_not_connect_a_git_host() {
     block_on!(async {
-        let mut client = OverHttp::new(fresh("hosts-oidc").await).await;
+        let dir = folder("hosts-oidc");
+        let mut client = OverHttp::new(fresh(&dir).await).await;
         for request in [
             connect("https://github.com", GOOD),
             Request::CredentialList {},
@@ -239,7 +245,8 @@ fn a_caller_signed_in_elsewhere_may_not_connect_a_git_host() {
 #[test]
 fn a_server_whose_accounts_are_set_up_for_it_refuses_git_hosts() {
     block_on!(async {
-        let tested = server(&folder("hosts-none"), Vec::new(), Answering::Clients).await;
+        let dir = folder("hosts-none");
+        let tested = server(&dir, Vec::new(), Answering::Clients).await;
         let refused = tested
             .request(connect("https://github.com", GOOD))
             .await

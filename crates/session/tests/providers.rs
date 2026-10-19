@@ -4,6 +4,7 @@
 //! person on this computer may do this: a caller signed in with OIDC is refused, and a server
 //! whose models someone else sets up refuses everyone.
 
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use glave_event::{ProviderId, ProviderKind, Secret};
@@ -87,11 +88,11 @@ impl Providers for Accounts {
 }
 
 /// A server with no model set up, whose accounts the fake host keeps.
-async fn fresh(name: &str) -> Tested {
+async fn fresh(dir: &Path) -> Tested {
     let mut setup = Setup::asking(Vec::new(), Answering::Clients);
     setup.settings = Settings::new("", "");
     setup.providers = Some(Arc::new(Accounts::default()));
-    setup.build(&folder(name)).await.0
+    setup.build(dir).await.0
 }
 
 #[test]
@@ -197,21 +198,25 @@ async fn first_run(client: &mut impl Client) {
 #[test]
 fn the_person_here_connects_and_removes_a_model_account_over_each_local_transport() {
     block_on!(async {
-        let tested = fresh("providers-in-process").await;
+        let dir = folder("providers-in-process");
+        let tested = fresh(&dir).await;
         first_run(&mut InProcess(tested.clone())).await;
         tested.shutdown().await;
 
-        let mut client = OverJsonRpc::new(fresh("providers-json-rpc").await);
+        let dir = folder("providers-json-rpc");
+        let mut client = OverJsonRpc::new(fresh(&dir).await);
         first_run(&mut client).await;
         client.close().await;
 
-        let mut client = OverJsonRpc::on_socket(fresh("providers-socket").await, "providers").await;
+        let dir = folder("providers-socket");
+        let mut client = OverJsonRpc::on_socket(fresh(&dir).await, "providers").await;
         first_run(&mut client).await;
         client.close().await;
 
         let token = LocalToken::new([5; 32]);
         let signin = SignIn::local(token.clone(), Box::new(fixed_clock()));
-        let served = serve_with(fresh("providers-http-local").await, signin, None).await;
+        let dir = folder("providers-http-local");
+        let served = serve_with(fresh(&dir).await, signin, None).await;
         let mut web = Web::new(&served, Some(token.reveal().to_owned()));
         let answered = web.call(&connect(ProviderKind::Anthropic, GOOD)).await;
         assert_eq!(
@@ -227,7 +232,8 @@ fn the_person_here_connects_and_removes_a_model_account_over_each_local_transpor
 #[test]
 fn a_caller_signed_in_elsewhere_may_not_connect_a_model_account() {
     block_on!(async {
-        let mut client = OverHttp::new(fresh("providers-oidc").await).await;
+        let dir = folder("providers-oidc");
+        let mut client = OverHttp::new(fresh(&dir).await).await;
         for request in [
             connect(ProviderKind::Openai, GOOD),
             Request::ProviderList {},
@@ -244,7 +250,8 @@ fn a_caller_signed_in_elsewhere_may_not_connect_a_model_account() {
 #[test]
 fn a_server_whose_models_are_set_up_for_it_refuses_model_accounts() {
     block_on!(async {
-        let tested = server(&folder("providers-none"), Vec::new(), Answering::Clients).await;
+        let dir = folder("providers-none");
+        let tested = server(&dir, Vec::new(), Answering::Clients).await;
         let refused = tested
             .request(connect(ProviderKind::Openrouter, GOOD))
             .await
