@@ -10,6 +10,7 @@ mod linux;
 mod macos;
 #[cfg(any(target_os = "macos", test))]
 mod profile;
+mod run_temp;
 #[cfg(any(target_os = "macos", target_os = "linux", test))]
 mod secrets;
 #[cfg(test)]
@@ -28,6 +29,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use glave_ports::computer::{ComputerError, Sandbox};
+
+use run_temp::RunTemp;
 
 /// The first argument that makes glave the Linux sandbox's helper (see [`sandbox_helper`]).
 pub(crate) const SANDBOX_HELPER_ARG: &str = "__glave-sandbox";
@@ -52,14 +55,22 @@ pub fn sandbox_helper(args: &[OsString]) -> Option<String> {
     Some(platform::helper(args.get(2..).unwrap_or_default()))
 }
 
-/// A sandbox ready to wrap commands in one workspace. Dropping it removes its temp folder.
+/// A sandbox ready to wrap commands in one workspace.
 #[derive(Debug)]
 pub(crate) struct Prepared {
     /// What it was prepared from, so a command asking for another sandbox gets its own.
     pub(crate) sandbox: Sandbox,
-    temp: PathBuf,
-    caches: PathBuf,
+    temps: Temps,
+    /// glave's sandbox cache folder, when there is glave's own folder.
+    cache: Option<PathBuf>,
     enforcer: platform::Enforcer,
+}
+
+/// Where each command's own temp folder is made, and what its name starts with.
+#[derive(Debug)]
+struct Temps {
+    parent: PathBuf,
+    prefix: &'static str,
 }
 
 /// How to start one command in the sandbox: a program and the arguments before the command.
@@ -72,6 +83,8 @@ pub(crate) struct Launch {
     /// The wrapper starts a session of its own, so the command must not get a process group
     /// first (a group leader cannot start a session).
     pub(crate) own_session: bool,
+    /// The command's own temp folder, its `TMPDIR`, removed once the command has ended.
+    pub(crate) temp: RunTemp,
     /// What launching left in the workspace, removed once the command has ended.
     pub(crate) _held: platform::Held,
 }
@@ -87,32 +100,34 @@ impl Prepared {
         helper: Option<&Path>,
     ) -> Result<Self, ComputerError> {
         let cache = cache_home(sandbox.glave_home.as_deref()).await;
-        let (enforcer, temp) =
+        let (enforcer, temps) =
             platform::Enforcer::prepare(sandbox, root, git_common, helper, cache.as_deref())
                 .await?;
-        let caches = cache.unwrap_or_else(|| temp.join("caches"));
         Ok(Self {
             sandbox: sandbox.clone(),
-            temp,
-            caches,
+            temps,
+            cache,
             enforcer,
         })
     }
 
-    /// The sandbox's own temp folder, which commands see as `TMPDIR`.
-    pub(crate) fn temp(&self) -> &Path {
-        &self.temp
+    /// Where package managers keep their caches for `launch`'s command: glave's sandbox
+    /// cache folder, kept between runs, or without glave's folder one in its temp folder.
+    pub(crate) fn caches(&self, launch: &Launch) -> PathBuf {
+        self.cache
+            .clone()
+            .unwrap_or_else(|| launch.temp.path().join("caches"))
     }
 
-    /// Where package managers keep their caches in the sandbox: glave's sandbox cache folder,
-    /// kept between runs, or without glave's folder one in the sandbox's temp folder.
-    pub(crate) fn caches(&self) -> &Path {
-        &self.caches
-    }
-
-    /// How to start the next command, from the workspace as it is now.
+    /// How to start the next command, from the workspace as it is now, in a temp folder of
+    /// its own.
     pub(crate) async fn launch(&self) -> Result<Launch, ComputerError> {
-        self.enforcer.launch().await
+        let temp = RunTemp::new(&self.temps.parent, self.temps.prefix)
+            .await
+            .map_err(|error| {
+                ComputerError::Failed(format!("could not make the command's temp folder: {error}"))
+            })?;
+        self.enforcer.launch(temp).await
     }
 }
 

@@ -51,7 +51,6 @@ const NETWORK_RULES: &str = r#"; network: allowed
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Places {
     pub root: PathBuf,
-    pub temp: PathBuf,
     pub glave_home: Option<PathBuf>,
     /// Credential stores, hidden: the home folder's, and where links among them lead.
     pub hidden: Vec<PathBuf>,
@@ -62,6 +61,9 @@ pub(crate) struct Places {
     /// For a worktree: its own folder in the shared one (`worktrees/<name>`).
     pub git_own: Option<PathBuf>,
 }
+
+/// The parameter naming a command's own temp folder, made for it when it starts.
+pub(crate) const TEMP_PARAM: &str = "TEMP";
 
 /// A profile and the paths it names, passed as `sandbox-exec -p <text> -D<name>=<path>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,7 +151,7 @@ fn reads(profile: &mut Profile, places: &Places) {
 
 fn writes(profile: &mut Profile, places: &Places, level: SandboxLevel) {
     profile.params.push(("ROOT".into(), places.root.clone()));
-    profile.params.push(("TEMP".into(), places.temp.clone()));
+    // `TEMP`, each command's own temp folder, is passed with each command (`TEMP_PARAM`).
     // Temp folders never grant the project itself: a project that lives inside one keeps its
     // protections, and at `read-only` stays unwritable.
     profile.text.push_str(
@@ -290,7 +292,6 @@ mod tests {
     fn places() -> Places {
         Places {
             root: PathBuf::from("/Users/me/my.project"),
-            temp: PathBuf::from("/private/var/folders/x/T"),
             glave_home: Some(PathBuf::from("/Users/me/.glave")),
             hidden: home_secrets(Path::new("/Users/me")).collect(),
             cache: Some(PathBuf::from("/Users/me/.glave/sandbox-cache")),
@@ -341,10 +342,12 @@ mod tests {
                 .text
                 .contains(r#"(require-not (subpath (param "ROOT")))"#)
         );
-        assert_eq!(
-            param(&profile, "TEMP"),
-            Some(Path::new("/private/var/folders/x/T"))
+        assert!(
+            profile
+                .text
+                .contains(&format!(r#"(subpath (param "{TEMP_PARAM}"))"#))
         );
+        assert_eq!(param(&profile, TEMP_PARAM), None, "given with each command");
     }
 
     #[test]

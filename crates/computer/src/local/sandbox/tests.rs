@@ -393,3 +393,89 @@ fn other_spellings_of_protected_paths_are_protected_too() {
         }
     });
 }
+
+/// Output that cancels its command as soon as anything arrives.
+struct CancelOnOutput {
+    said: Collect,
+    switch: CancelSwitch,
+}
+
+impl Output for CancelOnOutput {
+    fn write<'a>(&'a self, text: &'a str) -> glave_ports::BoxFuture<'a, ()> {
+        self.switch.cancel();
+        self.said.write(text)
+    }
+}
+
+/// The temp folder a command printed, which it checked was there while it ran.
+fn printed_temp(said: &str) -> PathBuf {
+    let line = said.lines().find_map(|line| line.strip_prefix("temp="));
+    let temp = PathBuf::from(line.unwrap_or_else(|| panic!("no temp folder in {said:?}")));
+    assert!(temp.is_absolute(), "{said}");
+    temp
+}
+
+/// Each command gets a temp folder of its own, gone once the command ends however it ends,
+/// with read-only folders left in it (as Go's module cache makes).
+#[test]
+fn every_command_s_temp_folder_is_removed_when_it_ends() {
+    if !enforced() {
+        return;
+    }
+    let dir = scratch("run-temp");
+    let (computers, sandbox) = computers(&dir);
+    let prints = "test -d \"$TMPDIR\" && echo \"temp=$TMPDIR\"";
+    block_on!(async {
+        let computer = computers.create(&Environment::host()).await.unwrap();
+        let path = dir.join("app").to_string_lossy().into_owned();
+        let here = computers
+            .open(computer.id, &Sources::Folder { path })
+            .await
+            .unwrap();
+        let read_only = format!(
+            "{prints} && mkdir -p \"$TMPDIR/mod/a\" && touch \"$TMPDIR/mod/a/f\" && \
+             chmod -R a-w \"$TMPDIR/mod\""
+        );
+        let mut temps = Vec::new();
+        for (script, ending) in [
+            (read_only, Ending::Exited { code: 0 }),
+            (format!("{prints}; exit 3"), Ending::Exited { code: 3 }),
+        ] {
+            let (ended, said) = run(&computers, here.id, &sandbox, &script).await;
+            assert_eq!(ended, ending, "{said}");
+            temps.push(printed_temp(&said));
+        }
+        // A one-second limit: the shortest a command can be given.
+        let mut timed = Command::new(format!("{prints}; exec sleep 30"));
+        timed.sandbox = Some(sandbox.clone());
+        timed.timeout_secs = Some(1);
+        let said = Collect::default();
+        let finished = computers
+            .run(here.id, &timed, &said, &CancelSwitch::default())
+            .await
+            .unwrap();
+        let said = said.0.lock().unwrap().clone();
+        assert_eq!(
+            finished.ending,
+            Ending::TimedOut { after_secs: 1 },
+            "{said}"
+        );
+        temps.push(printed_temp(&said));
+        let mut cancelled = Command::new(format!("{prints}; exec sleep 30"));
+        cancelled.sandbox = Some(sandbox.clone());
+        let output = CancelOnOutput {
+            said: Collect::default(),
+            switch: CancelSwitch::default(),
+        };
+        let finished = computers
+            .run(here.id, &cancelled, &output, &output.switch)
+            .await
+            .unwrap();
+        let said = output.said.0.lock().unwrap().clone();
+        assert_eq!(finished.ending, Ending::Cancelled, "{said}");
+        temps.push(printed_temp(&said));
+        let left: Vec<&PathBuf> = temps.iter().filter(|temp| temp.exists()).collect();
+        assert!(left.is_empty(), "left behind: {left:?}");
+    });
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -1,7 +1,7 @@
 //! The sandbox's folder in the system temp folder: one private folder per user that every
-//! glave sandbox keeps read-only, and in it one folder per prepared sandbox, holding the temp
-//! folder its commands write (`TMPDIR`) and the empty, unreadable file and folder bubblewrap
-//! lays over what commands may not see. No sandboxed command can change those, so none can
+//! glave sandbox keeps read-only, and in it one folder per prepared sandbox, holding each
+//! command's own temp folder while it runs (`TMPDIR`) and the empty, unreadable file and
+//! folder bubblewrap lays over what commands may not see. No sandboxed command can change those, so none can
 //! make another's hiding show something else.
 
 use std::fs::{DirBuilder, File, Permissions};
@@ -29,7 +29,6 @@ impl RunFolder {
             .find(|run| DirBuilder::new().mode(0o700).create(run).is_ok())
             .ok_or_else(|| Error::other("could not make a folder for the sandbox"))?;
         let folder = Self { base, run };
-        DirBuilder::new().mode(0o700).create(folder.temp())?;
         File::create(folder.empty_file())?;
         std::fs::set_permissions(folder.empty_file(), Permissions::from_mode(0o000))?;
         DirBuilder::new()
@@ -43,9 +42,9 @@ impl RunFolder {
         &self.base
     }
 
-    /// The temp folder its commands write.
-    pub(super) fn temp(&self) -> PathBuf {
-        self.run.join("tmp")
+    /// Where its commands' own temp folders go.
+    pub(super) fn run(&self) -> &Path {
+        &self.run
     }
 
     /// An empty file nobody may read or write, laid over hidden files.
@@ -61,9 +60,8 @@ impl RunFolder {
 
 impl Drop for RunFolder {
     fn drop(&mut self) {
-        // Best effort: the folder is in the system's temp folder, which is cleaned anyway.
-        let _ = std::fs::set_permissions(self.empty_folder(), Permissions::from_mode(0o700));
-        let _ = std::fs::remove_dir_all(&self.run);
+        // Best effort; the unreadable empty folder is made writable first, as everything is.
+        let _ = glave_ports::remove_tree(&self.run);
     }
 }
 

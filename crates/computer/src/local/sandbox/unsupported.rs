@@ -1,11 +1,12 @@
 //! Where glave has no sandbox (Windows, for now): a sandboxed command is refused.
 
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use glave_ports::computer::{ComputerError, Sandbox};
 
-use super::Launch;
+use super::run_temp::RunTemp;
+use super::{Launch, Temps};
 
 pub(super) type Held = ();
 
@@ -27,13 +28,16 @@ impl Enforcer {
         _git_common: Option<&Path>,
         _helper: Option<&Path>,
         _cache: Option<&Path>,
-    ) -> std::future::Ready<Result<(Self, PathBuf), ComputerError>> {
+    ) -> std::future::Ready<Result<(Self, Temps), ComputerError>> {
         std::future::ready(Err(ComputerError::Unsupported(
             "the sandbox is not available on this computer (macOS and Linux only for now)".into(),
         )))
     }
 
-    pub(super) fn launch(&self) -> std::future::Ready<Result<Launch, ComputerError>> {
+    pub(super) fn launch(
+        &self,
+        _temp: RunTemp,
+    ) -> std::future::Ready<Result<Launch, ComputerError>> {
         match *self {}
     }
 }

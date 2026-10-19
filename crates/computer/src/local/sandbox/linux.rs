@@ -21,7 +21,8 @@ use std::sync::{Arc, Mutex};
 
 use glave_ports::computer::{ComputerError, Sandbox, SandboxLevel};
 
-use super::{Launch, SANDBOX_HELPER_ARG, failed, resolved};
+use super::run_temp::RunTemp;
+use super::{Launch, SANDBOX_HELPER_ARG, Temps, failed, resolved};
 use mounts::{Layout, StandIns};
 use names::SecretNames;
 use temp::RunFolder;
@@ -68,7 +69,7 @@ impl Enforcer {
         git_common: Option<&Path>,
         helper: Option<&Path>,
         cache: Option<&Path>,
-    ) -> Result<(Self, PathBuf), ComputerError> {
+    ) -> Result<(Self, Temps), ComputerError> {
         let git_common = resolved(git_common).await;
         let how = choose(sandbox, root, git_common.as_deref(), helper).await?;
         let folder = tokio::task::spawn_blocking(RunFolder::new)
@@ -80,7 +81,6 @@ impl Enforcer {
             root: root.to_owned(),
             level: sandbox.level,
             network: sandbox.network,
-            temp: folder.temp(),
             base: folder.base().to_owned(),
             empty_file: folder.empty_file(),
             empty_folder: folder.empty_folder(),
@@ -92,23 +92,27 @@ impl Enforcer {
             git_common,
             names,
         };
-        let temp = layout.temp.clone();
+        let temps = Temps {
+            parent: folder.run().to_owned(),
+            prefix: "tmp-",
+        };
         let enforcer = Self {
             how,
             layout: Arc::new(layout),
             stand_ins: Arc::new(Mutex::new(HashMap::new())),
             _folder: folder,
         };
-        Ok((enforcer, temp))
+        Ok((enforcer, temps))
     }
 
-    pub(super) async fn launch(&self) -> Result<Launch, ComputerError> {
+    pub(super) async fn launch(&self, temp: RunTemp) -> Result<Launch, ComputerError> {
         let layout = Arc::clone(&self.layout);
+        let path = temp.path().to_owned();
         match &self.how {
             How::Bubblewrap { bwrap, filter } => {
                 let stand_ins = Arc::clone(&self.stand_ins);
                 let (mounts, held) =
-                    tokio::task::spawn_blocking(move || mounts::plan(&layout, &stand_ins))
+                    tokio::task::spawn_blocking(move || mounts::plan(&layout, &path, &stand_ins))
                         .await
                         .map_err(|error| ComputerError::Failed(error.to_string()))?
                         .map_err(ComputerError::Refused)?;
@@ -117,11 +121,12 @@ impl Enforcer {
                     args: bubblewrap::args(bwrap, &self.layout, &mounts),
                     input: Some(filter.clone()),
                     own_session: false,
+                    temp,
                     _held: Some(held),
                 })
             }
             How::Landlock { helper } => {
-                let plan = tokio::task::spawn_blocking(move || landlock_plan(&layout))
+                let plan = tokio::task::spawn_blocking(move || landlock_plan(&layout, &path))
                     .await
                     .map_err(|error| ComputerError::Failed(error.to_string()))?
                     .map_err(ComputerError::Refused)?;
@@ -132,6 +137,7 @@ impl Enforcer {
                     args: vec![SANDBOX_HELPER_ARG.into(), plan.into(), OsString::from("--")],
                     input: None,
                     own_session: true,
+                    temp,
                     _held: None,
                 })
             }
@@ -202,8 +208,9 @@ async fn choose(
     )))
 }
 
-/// What the Landlock helper restricts itself to, from the workspace as it is now. Blocking.
-fn landlock_plan(layout: &Layout) -> Result<landlocked::Plan, String> {
+/// What the Landlock helper restricts itself to, from the workspace as it is now, for a
+/// command whose temp folder is `temp`. Blocking.
+fn landlock_plan(layout: &Layout, temp: &Path) -> Result<landlocked::Plan, String> {
     let mut unreadable: Vec<PathBuf> = mounts::hidden(layout)?;
     unreadable.extend(layout.glave_home.iter().cloned());
     let rereadable = layout
@@ -220,9 +227,10 @@ fn landlock_plan(layout: &Layout) -> Result<landlocked::Plan, String> {
         writable: layout
             .shared_tmp
             .iter()
-            .chain([&layout.temp])
-            .chain(&layout.cache)
-            .cloned()
+            .map(PathBuf::as_path)
+            .chain([temp])
+            .chain(layout.cache.as_deref())
+            .map(Path::to_path_buf)
             .collect(),
         // Not glave's sandbox folder: it guards bubblewrap's stand-ins, which a machine
         // without bubblewrap has none of, and excepting it would cost new files in `/tmp`.

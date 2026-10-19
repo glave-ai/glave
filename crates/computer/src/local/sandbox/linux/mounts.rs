@@ -44,8 +44,6 @@ pub(super) struct Layout {
     pub(super) root: PathBuf,
     pub(super) level: SandboxLevel,
     pub(super) network: bool,
-    /// The run's temp folder (`TMPDIR`), inside `base`.
-    pub(super) temp: PathBuf,
     /// The folder every glave sandbox keeps read-only.
     pub(super) base: PathBuf,
     pub(super) empty_file: PathBuf,
@@ -106,7 +104,11 @@ impl Drop for Held {
 
 /// The mounts for the next command, and the stand-ins it holds. Blocking: it reads the
 /// workspace, the home folder and glave's own folder.
-pub(super) fn plan(layout: &Layout, stand_ins: &StandIns) -> Result<(Vec<Mount>, Held), String> {
+pub(super) fn plan(
+    layout: &Layout,
+    temp: &Path,
+    stand_ins: &StandIns,
+) -> Result<(Vec<Mount>, Held), String> {
     let secret_files = secret_files(&layout.root, &layout.names)
         .map_err(|error| format!("could not read {}: {error}", layout.root.display()))?;
     let mut mounts: Vec<Mount> = layout
@@ -115,7 +117,7 @@ pub(super) fn plan(layout: &Layout, stand_ins: &StandIns) -> Result<(Vec<Mount>,
         .map(|tmp| Mount::Writable(tmp.clone()))
         .collect();
     mounts.push(Mount::ReadOnly(layout.base.clone()));
-    mounts.push(Mount::Writable(layout.temp.clone()));
+    mounts.push(Mount::Writable(temp.to_owned()));
     let mut held = Held {
         paths: Vec::new(),
         stand_ins: Arc::clone(stand_ins),
