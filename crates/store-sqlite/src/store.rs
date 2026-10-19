@@ -114,19 +114,29 @@ impl Store {
 
     /// The one organization on this computer, made with the id `new` the first time.
     pub async fn org(&self, new: Uuid) -> Result<OrgId, StoreError> {
-        let org: String = run(&self.connection, move |connection| {
+        self.kept_once("org", new).await.map(OrgId::from_uuid)
+    }
+
+    /// The person's server's id, which browsers check before they present a session, made
+    /// with the id `new` the first time.
+    pub async fn server(&self, new: Uuid) -> Result<Uuid, StoreError> {
+        self.kept_once("server", new).await
+    }
+
+    /// The id kept under `key`, kept as `new` the first time.
+    async fn kept_once(&self, key: &'static str, new: Uuid) -> Result<Uuid, StoreError> {
+        let kept: String = run(&self.connection, move |connection| {
             connection.execute(
-                "INSERT OR IGNORE INTO settings (key, value) VALUES ('org', ?1)",
-                params![new.to_string()],
+                "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, ?2)",
+                params![key, new.to_string()],
             )?;
-            connection.query_row("SELECT value FROM settings WHERE key = 'org'", [], |row| {
+            connection.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
                 row.get(0)
             })
         })
         .await?;
-        Uuid::parse_str(&org)
-            .map(OrgId::from_uuid)
-            .map_err(|e| StoreError::Storage(format!("bad organization id {org:?}: {e}")))
+        Uuid::parse_str(&kept)
+            .map_err(|e| StoreError::Storage(format!("bad {key} id {kept:?}: {e}")))
     }
 
     /// The local person and their agent, `(person, agent)`, kept as `new` the first time, both

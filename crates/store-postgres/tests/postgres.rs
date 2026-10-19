@@ -9,6 +9,7 @@ mod support;
 #[cfg(test)]
 mod postgres {
     use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
+    use glave_identity::signin::Browsers;
     use glave_ports::{BlobStore, EventLog, OrgId, Scope, SpaceId, conformance, digest};
     use glave_store_postgres::{Store, StoreError};
     use uuid::{Builder, Uuid};
@@ -276,6 +277,37 @@ mod postgres {
                 "the person and the agent are kept as a pair"
             );
             assert_eq!(rows, 2, "one person and one agent");
+        });
+    }
+
+    #[test]
+    fn a_browser_signed_in_on_one_server_is_signed_in_on_another_on_the_database() {
+        block_on!(async {
+            let Some(scratch) = Scratch::new("browsers").await else {
+                return;
+            };
+            let (first, second) = (
+                scratch.store().await.unwrap(),
+                scratch.store().await.unwrap(),
+            );
+            let server = first.server(Uuid::from_u128(7)).await.unwrap();
+            assert_eq!(second.server(Uuid::from_u128(8)).await.unwrap(), server);
+            let clock = || Box::new(glave_ports::testing::ManualClock::at_second(1_791_590_400));
+            let open =
+                |store: &Store| Browsers::open(store.log(), scope(), server.to_string(), clock());
+            let (one, two) = (open(&first).await.unwrap(), open(&second).await.unwrap());
+            let session = one.redeem(one.link().unwrap().expose()).await.unwrap();
+            let verified = two.verify(session.token.expose()).await;
+            two.end(&session.id).await.unwrap();
+            let ended = open(&first)
+                .await
+                .unwrap()
+                .verify(session.token.expose())
+                .await;
+            drop((one, two, first, second));
+            scratch.drop_schema().await;
+            assert_eq!(verified.unwrap(), session.id);
+            assert!(ended.is_err(), "signed out on the other server");
         });
     }
 

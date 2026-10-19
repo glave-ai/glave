@@ -242,6 +242,9 @@ pub fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::SpaceFolderSet(_) => "space.folder.set",
             Body::SpaceRemoved(_) => "space.removed",
             Body::TrustDecided(_) => "trust.decided",
+            Body::BrowserSignedIn(_) => "browser.signed_in",
+            Body::BrowserUsed(_) => "browser.used",
+            Body::BrowserSignedOut(_) => "browser.signed_out",
             Body::Unknown(_) => "unknown",
         })
         .collect()

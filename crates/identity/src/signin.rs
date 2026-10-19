@@ -22,7 +22,7 @@ use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
 use self::browsers::SESSION_PREFIX;
-pub use self::browsers::{BrowserError, Browsers, Session};
+pub use self::browsers::{BrowserError, Browsers, Earlier, Session, browsers_ledger};
 use self::keys::Keys;
 pub use self::local::{LOCAL_BYTES, LOCAL_PREFIX, LocalToken, is_loopback};
 

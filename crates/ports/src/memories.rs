@@ -5,7 +5,6 @@
 //! enforces it on every read.
 
 use glave_event::{Arguments, At, MemoryId, MemoryScope, MemorySource, PrincipalId, Seq, ThreadId};
-use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -27,11 +26,7 @@ pub const RECALL: &str = "mcp__memory__recall";
 /// `00000000-0000-7000-8000-000000000001`, beside the task ledger's `…0000`. No thread can
 /// have it.
 pub fn memory_ledger() -> Option<ThreadId> {
-    let mut random = [0u8; 10];
-    if let Some(last) = random.last_mut() {
-        *last = 1;
-    }
-    ThreadId::new(Timestamp::UNIX_EPOCH, random).ok()
+    crate::reserved_ledger(1)
 }
 
 /// Who and where a memory request is for: always from the session or the thread, never from

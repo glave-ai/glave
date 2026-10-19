@@ -33,6 +33,7 @@ pub use payload::{
     ThreadRenamed, ThreadStarted, ThreadUnarchived, TokenCounts, ToolCallCompleted,
     ToolCallRequested, TraceId, TurnEnded, TurnStarted, Usage, Verdict,
 };
+pub use payload::{BrowserSignedIn, BrowserSignedOut, BrowserUsed, Decision, TrustDecided};
 pub use payload::{Checkout, CommandEnded, CommandEnding, CommandStarted, FolderSource};
 pub use payload::{
     ComputerKind, ComputerRef, Fired, Opened, RemovedReason, ScheduleCreated, ScheduleDeleted,
@@ -42,5 +43,4 @@ pub use payload::{
     CredentialConnected, CredentialRemoved, Forge, ProviderConnected, ProviderKind,
     ProviderRemoved, Renewal, SpaceFolderSet, SpaceRemoved, sealed_under_account,
 };
-pub use payload::{Decision, TrustDecided};
 pub use secret::{Secret, serialize_exposed};
