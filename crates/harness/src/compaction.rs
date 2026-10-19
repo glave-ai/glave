@@ -5,7 +5,6 @@
 use std::fmt::Write as _;
 
 use glave_event::{Arguments, ModelResponded, Part, Seq, ThreadCompacted};
-use std::sync::atomic::Ordering;
 
 use glave_ports::{
     BlobStore, Completion, EventLog, Failure, Message, ModelProvider, ModelRequest, ProviderError,
@@ -164,7 +163,7 @@ where
         live: &mut (dyn FnMut(Live) + Send),
     ) -> Result<Option<Completion>, HarnessError> {
         let at_percent = self.settings.compaction.at_percent;
-        let window_tokens = self.window_tokens();
+        let window_tokens = self.window_tokens(&self.model_for(thread));
         let tokens = next_request_tokens(thread, offer);
         let full =
             tokens.saturating_mul(100) >= window_tokens.saturating_mul(u64::from(at_percent));
@@ -183,27 +182,27 @@ where
         }
     }
 
-    /// The context window compaction aims for: the configured one, or the model's real one if a
-    /// refusal has stated a smaller one.
-    fn window_tokens(&self) -> u64 {
+    /// The context window compaction aims for with `model`: the configured one, or the
+    /// model's real one if a refusal has stated a smaller one.
+    fn window_tokens(&self, model: &str) -> u64 {
         let configured = self.settings.compaction.window_tokens;
-        match self.learned_window.load(Ordering::Relaxed) {
-            0 => configured,
-            learned => configured.min(learned),
-        }
+        self.learned_windows
+            .of(model)
+            .map_or(configured, |learned| configured.min(learned))
     }
 
-    /// The longest summary to ask for: at most a quarter of the window, since servers count
-    /// the answer's room against the window too.
-    fn summary_tokens(&self) -> u32 {
-        let quarter = u32::try_from(self.window_tokens() / 4).unwrap_or(u32::MAX);
+    /// The longest summary to ask `model` for: at most a quarter of its window, since servers
+    /// count the answer's room against the window too.
+    fn summary_tokens(&self, model: &str) -> u32 {
+        let quarter = u32::try_from(self.window_tokens(model) / 4).unwrap_or(u32::MAX);
         SUMMARY_TOKENS.min(quarter)
     }
 
-    /// Believes the window a too-long refusal states, for the rest of the session.
-    pub(crate) fn learn_window(&self, refusal: &ProviderError) {
+    /// Believes the window a too-long refusal from `model` states, for the rest of the
+    /// session.
+    pub(crate) fn learn_window(&self, model: &str, refusal: &ProviderError) {
         if let Some(tokens) = stated_window(&refusal.to_string()) {
-            self.learned_window.store(tokens, Ordering::Relaxed);
+            self.learned_windows.learn(model, tokens);
         }
     }
 
@@ -235,13 +234,14 @@ where
         });
         // The tools stay listed: some providers refuse a conversation with tool calls but no
         // tools. The instruction asks for text only, and any call is ignored.
+        let model = self.model_for(thread);
         let request = ModelRequest {
-            model: self.model_for(thread),
+            max_output_tokens: Some(self.summary_tokens(&model)),
+            model,
             system: offer.system.clone(),
             messages,
             tools: offer.specs.clone(),
             tool_choice: ToolChoice::None,
-            max_output_tokens: Some(self.summary_tokens()),
             purpose: Purpose::Summary,
             threads: thread.lineage(),
         };
@@ -318,7 +318,7 @@ where
                 .ok_or(HarnessError::Cancelled)?;
             match asked {
                 Err(error) if error.failure() == Failure::TooLong => {
-                    self.learn_window(&error);
+                    self.learn_window(&request.model, &error);
                     if !trim_oldest(&mut request.messages) {
                         return Err(error.into());
                     }
