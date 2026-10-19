@@ -22,7 +22,9 @@ pub use projects::projects;
 pub use search::search;
 pub use threads::thread_views;
 
-use glave_event::{At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, TurnEnded, encode};
+use glave_event::{
+    At, EventId, Header, Outcome, RawEvent, Seq, ThreadId, ThreadRenamed, TurnEnded, encode,
+};
 use uuid::{Builder, Uuid};
 
 use crate::blob::{BlobStore, digest};
@@ -168,7 +170,8 @@ pub async fn event_log<L: EventLog>(log: &L) -> Verdict {
     racing::racing_appends(log).await
 }
 
-/// `latest_of` finds a thread's last event of the given types, and nothing when there is none.
+/// `latest_of` finds a thread's last event of the given types, past later events of other
+/// types, and nothing when there is none or the thread is another scope's.
 async fn latest_of_types<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verdict {
     let last = log
         .latest_of(&here, t, &["turn.started", "turn.ended"])
@@ -186,7 +189,47 @@ async fn latest_of_types<L: EventLog>(log: &L, here: Scope, t: ThreadId) -> Verd
         none.is_none(),
         "latest_of must find nothing when no event has a given type",
     )?;
-    Ok(())
+
+    let mixed = thread(4)?;
+    let renamed = |seq: u64, title: &str| -> Result<RawEvent, String> {
+        let header = Header {
+            id: EventId::try_from(uuid_v7(8_000 + seq)).map_err(|e| e.to_string())?,
+            thread: mixed,
+            seq: Seq::new(seq).map_err(|e| e.to_string())?,
+            at: At::try_from("2026-10-07T21:14:03.512Z".to_owned()).map_err(|e| e.to_string())?,
+        };
+        let title = title.to_owned();
+        encode(header, &ThreadRenamed { title, by: None }).map_err(|e| e.to_string())
+    };
+    let written = [
+        renamed(1, "first")?,
+        event(mixed, 2)?,
+        renamed(3, "second")?,
+        event(mixed, 4)?,
+    ];
+    log.append(&here, &written)
+        .await
+        .map_err(|e| e.to_string())?;
+    let title = log
+        .latest_of(&here, mixed, &["thread.renamed"])
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        title.is_some_and(|event| {
+            event.seq.get() == 3
+                && event.kind.as_str() == "thread.renamed"
+                && event.data.get().contains("second")
+        }),
+        "latest_of must find the last event of a type, past later events of other types",
+    )?;
+    let unseen = log
+        .latest_of(&scope(4), mixed, &["thread.renamed"])
+        .await
+        .map_err(|e| e.to_string())?;
+    ensure(
+        unseen.is_none(),
+        "latest_of must not find another scope's events",
+    )
 }
 
 /// `locate` names the scope a thread is stored in, and nothing for a thread never written.

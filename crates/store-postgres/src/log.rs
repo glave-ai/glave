@@ -54,6 +54,17 @@ const SEARCH: &str = "
     ORDER BY ts_rank(terms, $3::text::tsquery) DESC, pos DESC
     LIMIT $4";
 
+/// The thread's latest event of any of the types: one index lookup per type, from the newest
+/// (`events_by_type`), then the newest of those, so no other event is read or opened.
+const LATEST_OF: &str = "
+    SELECT latest.* FROM UNNEST($4::text[]) AS wanted (type)
+    CROSS JOIN LATERAL (
+        SELECT glave, id, thread, seq, at, type, v, data, key_id FROM events
+        WHERE org = $1 AND project = $2 AND thread = $3 AND type = wanted.type
+        ORDER BY seq DESC LIMIT 1
+    ) AS latest
+    ORDER BY latest.seq DESC LIMIT 1";
+
 impl EventLog for PostgresLog {
     fn append(
         &self,
@@ -257,6 +268,38 @@ impl EventLog for PostgresLog {
                 events.push(event(&keys, &scope, row).await?);
             }
             Ok(events)
+        }
+    }
+
+    fn latest_of(
+        &self,
+        scope: &Scope,
+        thread: ThreadId,
+        kinds: &[&str],
+    ) -> impl Future<Output = Result<Option<RawEvent>, LogError>> + Send {
+        let scope = *scope;
+        let kinds: Vec<String> = kinds.iter().map(|&kind| kind.to_owned()).collect();
+        let pool = self.pool.clone();
+        let keys = Arc::clone(&self.keys);
+        async move {
+            let client = connection(&pool).await.map_err(storage)?;
+            let statement = client.prepare_cached(LATEST_OF).await.map_err(database)?;
+            let row = client
+                .query_opt(
+                    &statement,
+                    &[
+                        &scope.org().as_uuid(),
+                        &scope.project().as_uuid(),
+                        &thread.as_uuid(),
+                        &kinds,
+                    ],
+                )
+                .await
+                .map_err(database)?;
+            match row {
+                Some(row) => Ok(Some(event(&keys, &scope, &row).await?)),
+                None => Ok(None),
+            }
         }
     }
 
