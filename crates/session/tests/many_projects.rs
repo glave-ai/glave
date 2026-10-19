@@ -141,14 +141,14 @@ fn one_person_can_neither_read_nor_answer_anothers_threads() {
             let answer = grace.call(attempt).await;
             assert_eq!(
                 refused(&answer),
-                Some(code::NOT_ALLOWED),
+                Some(code::NO_THREAD),
                 "{}: {answer}",
                 attempt.method()
             );
         }
         let home = ProjectId::from_uuid(uuid::Uuid::from_u128(2));
         let listed = grace.call(&listing(Some(home))).await;
-        assert_eq!(refused(&listed), Some(code::NOT_ALLOWED), "{listed}");
+        assert_eq!(refused(&listed), Some(code::NO_PROJECT), "{listed}");
         // Her own listing is of her own project, without ada's thread.
         let hers = grace.call(&listing(None)).await;
         assert_eq!(hers["result"]["threads"], json!([]), "{hers}");
@@ -254,7 +254,7 @@ fn a_one_off_chat_lands_in_the_callers_personal_project_with_a_scratch_folder() 
         );
         // ada works in the server's own project, not in grace's.
         let peek = ada.call(&Request::ThreadGet { thread }).await;
-        assert_eq!(refused(&peek), Some(code::NOT_ALLOWED), "{peek}");
+        assert_eq!(refused(&peek), Some(code::NO_THREAD), "{peek}");
         served.close().await;
     });
 }
@@ -340,7 +340,7 @@ fn projects_are_made_shared_and_renamed_only_by_their_owner() {
                 project: project.id,
             })
             .await;
-        assert_eq!(local.unwrap_err().code, code::NOT_ALLOWED);
+        assert_eq!(local.unwrap_err().code, code::NO_PROJECT);
         let memory = server
             .request_as(
                 &grace,
@@ -350,7 +350,7 @@ fn projects_are_made_shared_and_renamed_only_by_their_owner() {
                 },
             )
             .await;
-        assert_eq!(memory.unwrap_err().code, code::NOT_ALLOWED);
+        assert_eq!(memory.unwrap_err().code, code::NO_PROJECT);
     });
 }
 

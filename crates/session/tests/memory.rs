@@ -186,7 +186,8 @@ fn another_person_may_not_change_the_persons_own_memory() {
             )
             .await
             .unwrap_err();
-        assert_eq!(refused.code, code::NOT_ALLOWED);
+        // They do not work in the server's project, so to them it is not there.
+        assert_eq!(refused.code, code::NO_PROJECT);
     });
 }
 

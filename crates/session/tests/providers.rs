@@ -27,7 +27,7 @@ const GOOD: &str = FAKE_SECRET;
 
 /// A host that keeps accounts in memory, as a service that offers two models.
 #[derive(Default)]
-struct Accounts(Mutex<Vec<ProviderInfo>>);
+pub(crate) struct Accounts(Mutex<Vec<ProviderInfo>>);
 
 impl Accounts {
     fn models(&self) -> Models {
