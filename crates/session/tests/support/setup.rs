@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use glave_computer::LocalComputers;
 use glave_event::{
-    At, Checkout, EventId, FolderSource, Header, Principal, RawEvent, Seq, SpaceFolderSet,
+    At, Checkout, EventId, FolderSource, Header, Principal, ProjectFolderSet, RawEvent, Seq,
     ThreadId, encode,
 };
 use glave_harness::{ApprovalMode, ProjectFolders, Settings, Workspace};
@@ -238,7 +238,7 @@ async fn keep_folder<L: EventLog>(log: &L, info: &WorkspaceInfo) {
         seq: Seq::FIRST,
         at,
     };
-    let set = SpaceFolderSet {
+    let set = ProjectFolderSet {
         folder: uuid::Uuid::from_u128(3),
         source: FolderSource::Local,
         checkout: Checkout {

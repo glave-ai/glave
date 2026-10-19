@@ -1,7 +1,7 @@
 //! `provider.connected` and `provider.removed`: the model accounts a person connects, so glave
 //! reaches their models with their own key (`specs/session.md`, "Model accounts"). They are
 //! kept in the person's provider ledger, glave's own stream under a reserved id in their
-//! personal space, never in a conversation. A connected account is sealed under a data key of
+//! personal project, never in a conversation. A connected account is sealed under a data key of
 //! its own, so removing it destroys the key, and the account with it.
 
 use serde::{Deserialize, Serialize};

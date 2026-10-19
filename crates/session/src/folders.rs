@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use glave_event::{
-    At, Body, Checkout, EventId, FolderSource, Header, Payload, Principal, Seq, SpaceFolderSet,
+    At, Body, Checkout, EventId, FolderSource, Header, Payload, Principal, ProjectFolderSet, Seq,
     ThreadId, decode, encode,
 };
 use glave_harness::Looked;
@@ -35,7 +35,7 @@ const FOLDER_NAME: usize = 64;
 #[derive(Debug, Default)]
 pub(crate) struct ProjectLedger {
     /// The latest record of the project's first folder.
-    folder: Option<SpaceFolderSet>,
+    folder: Option<ProjectFolderSet>,
     /// Whether the project was removed, and given no folder since.
     pub(crate) removed: bool,
     /// The `seq` of the ledger's last event.
@@ -148,7 +148,7 @@ where
             for raw in page {
                 read.last = Some(raw.seq);
                 match decode(raw).map(|event| event.body) {
-                    Ok(Body::SpaceFolderSet(set))
+                    Ok(Body::ProjectFolderSet(set))
                         if read
                             .folder
                             .as_ref()
@@ -157,7 +157,7 @@ where
                         read.folder = Some(set);
                         read.removed = false;
                     }
-                    Ok(Body::SpaceRemoved(_)) => read.removed = true,
+                    Ok(Body::ProjectRemoved(_)) => read.removed = true,
                     _ => {}
                 }
             }
@@ -243,7 +243,7 @@ where
                 .map_err(|error| internal(&error))?
                 .as_uuid(),
             };
-            Ok(Some(SpaceFolderSet {
+            Ok(Some(ProjectFolderSet {
                 folder,
                 source: kept.source.clone(),
                 checkout: kept.checkout.clone(),

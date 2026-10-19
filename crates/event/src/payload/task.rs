@@ -1,6 +1,6 @@
-//! `task.started`, `task.ended`, `schedule.created` and `schedule.deleted`: a space's tasks
+//! `task.started`, `task.ended`, `schedule.created` and `schedule.deleted`: a project's tasks
 //! (threads that run with no one attached) and the schedules that start them. They are kept in
-//! the space's task ledger, glave's own stream under a reserved id (`specs/events.md`), never
+//! the project's task ledger, glave's own stream under a reserved id (`specs/events.md`), never
 //! in a conversation.
 
 use serde::{Deserialize, Serialize};
@@ -34,7 +34,7 @@ pub struct TaskStarted {
     /// The schedule that started it, and the time it was due.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<Fired>,
-    /// Who started it. Absent: the space's person.
+    /// Who started it. Absent: the project's person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
 }
@@ -89,7 +89,7 @@ pub struct ScheduleCreated {
     /// Tokens, in and out, each run may use, subagents' included. Required: no schedule runs
     /// unbounded.
     pub budget: u64,
-    /// Who made it. Absent: the space's person.
+    /// Who made it. Absent: the project's person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
 }
@@ -129,7 +129,7 @@ impl From<ScheduleCreatedV1> for ScheduleCreated {
 #[serde(deny_unknown_fields)]
 pub struct ScheduleDeleted {
     pub schedule: ScheduleId,
-    /// Who deleted it. Absent: the space's person.
+    /// Who deleted it. Absent: the project's person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
 }

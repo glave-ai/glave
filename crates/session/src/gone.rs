@@ -5,7 +5,7 @@
 //! computer mends it: `project/folder/set` gives the project its folder's new place, where its
 //! threads work from then on; `project/remove` archives its threads and lists it no more.
 
-use glave_event::{Principal, SpaceRemoved, ThreadId};
+use glave_event::{Principal, ProjectRemoved, ThreadId};
 use glave_harness::{Change, change_standing};
 use glave_ports::{
     BlobStore, Caller, EventLog, FolderKey, ModelProvider, Project, ProjectError, ProjectId,
@@ -154,7 +154,7 @@ where
         }
         let by = Some(Principal::person(self.person_of(caller)?));
         self.write_project_ledger(project, |current| {
-            Ok((!current.removed).then(|| SpaceRemoved { by: by.clone() }))
+            Ok((!current.removed).then(|| ProjectRemoved { by: by.clone() }))
         })
         .await?;
         Ok(Reply::Done {})

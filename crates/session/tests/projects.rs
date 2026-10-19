@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glave_event::{
-    At, Auth, AuthMethod, Body, Checkout, EventId, FolderSource, Header, Opened, Seq,
-    SpaceFolderSet, ThreadId, decode, encode,
+    At, Auth, AuthMethod, Body, Checkout, EventId, FolderSource, Header, Opened, ProjectFolderSet,
+    RawEvent, Seq, ThreadId, decode, encode,
 };
 use glave_harness::ProjectFolders;
 use glave_ports::computer::{CredentialHost, Forge, GitCredential};
@@ -510,7 +510,7 @@ fn the_folder_glave_runs_in_becomes_its_project_s_folder_from_its_repository() {
 }
 
 #[test]
-fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
+fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here_even_as_a_space_kept_it() {
     let dir = folder("projects-elsewhere");
     block_on!(async {
         let log = Shared::default();
@@ -523,7 +523,7 @@ fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
             seq: Seq::FIRST,
             at,
         };
-        let set = SpaceFolderSet {
+        let set = ProjectFolderSet {
             folder: uuid::Uuid::from_u128(4),
             source: FolderSource::Local,
             checkout: Checkout {
@@ -536,9 +536,11 @@ fn a_project_whose_folder_is_on_another_computer_starts_no_thread_here() {
             org: scope().org,
             project: project.id,
         };
-        log.append(&scope, &[encode(header, &set).unwrap()])
-            .await
-            .unwrap();
+        // Kept as a glave from before projects wrote it, which reads the same.
+        let json = encode(header, &set).unwrap().to_json().unwrap();
+        let before = json.replace("\"project.folder.set\"", "\"space.folder.set\"");
+        let raw = RawEvent::from_json(&before).unwrap();
+        log.append(&scope, &[raw]).await.unwrap();
         let refused = server
             .request(Request::ThreadStart {
                 project: Some(project.id),

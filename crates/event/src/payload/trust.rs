@@ -26,7 +26,7 @@ pub struct TrustDecided {
     /// Each item by name. Empty: every decision about the project is forgotten.
     #[serde(default)]
     pub items: BTreeMap<String, Decision>,
-    /// Who decided. Absent: the space's person.
+    /// Who decided. Absent: the project's person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<Principal>,
 }
