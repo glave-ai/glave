@@ -192,7 +192,7 @@ where
             .await;
         let mut threads = Vec::with_capacity(views.len());
         for view in views {
-            if crate::ledger::is_ledger(view.thread) {
+            if glave_ports::stream::Reserved::of(view.thread).is_some() {
                 continue;
             }
             self.place(view.thread, scope);

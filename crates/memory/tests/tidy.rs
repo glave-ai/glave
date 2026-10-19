@@ -8,7 +8,7 @@ use std::sync::Arc;
 use glave_event::{Body, MemoryId, MemoryScope, Principal, PrincipalKind, decode};
 use glave_harness::{AllowAll, Cancel};
 use glave_memory::{Remembering, Tidied, Tidier, Writer};
-use glave_ports::memories::{MemoryContext, memory_ledger};
+use glave_ports::memories::MemoryContext;
 use glave_ports::testing::ScriptedModel;
 use glave_ports::{EventLog, Purpose, Scope, ToolChoice};
 
@@ -83,7 +83,12 @@ async fn live(kit: &Kit) -> Vec<(MemoryId, u32, String)> {
 async fn ledger(kit: &Kit, scope: Scope) -> Vec<Body> {
     kit.store
         .log()
-        .read(&scope, memory_ledger().unwrap(), None, usize::MAX)
+        .read(
+            &scope,
+            glave_ports::stream::Reserved::Memory.id(),
+            None,
+            usize::MAX,
+        )
         .await
         .unwrap()
         .into_iter()

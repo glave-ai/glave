@@ -1,19 +1,30 @@
-//! The browsers ledger in whichever store a server runs on: its one stream, read a page at a
-//! time and appended to, behind one object so a server's sign-in need not name its store.
+//! The browsers ledger in whichever store a server runs on: its one stream, caught up with and
+//! appended to through `glave_ports::stream`, behind one object so a server's sign-in need not
+//! name its store.
 
 use glave_event::{RawEvent, Seq, ThreadId};
-use glave_ports::{BoxFuture, EventLog, LogError, Scope};
+use glave_ports::stream::{StreamError, append_retrying, catch_up};
+use glave_ports::{BoxFuture, EventLog, Scope};
 
-/// Ledger events read per page.
-pub(super) const PAGE: usize = 500;
+use super::BrowserError;
+
+/// What one try of an append makes: the events, or nothing to write.
+pub(super) type Made = Result<Option<(Vec<RawEvent>, ())>, BrowserError>;
 
 /// One stream of an event log.
 pub(super) trait Ledger: Send + Sync {
-    /// Up to [`PAGE`] events after `after`, in order.
-    fn read(&self, after: Option<Seq>) -> BoxFuture<'_, Result<Vec<RawEvent>, LogError>>;
+    /// Hands the events after `after` to `take`, a page at a time, to the stream's end.
+    fn catch_up<'a>(
+        &'a self,
+        after: Option<Seq>,
+        take: &'a mut (dyn FnMut(Vec<RawEvent>) + Send),
+    ) -> BoxFuture<'a, Result<(), StreamError>>;
 
-    /// Appends `events`, which continue the stream's numbering.
-    fn append<'a>(&'a self, events: &'a [RawEvent]) -> BoxFuture<'a, Result<(), LogError>>;
+    /// Appends what `attempt` makes, asking again when another server wrote first.
+    fn append_retrying<'a>(
+        &'a self,
+        attempt: &'a mut (dyn FnMut() -> BoxFuture<'a, Made> + Send),
+    ) -> BoxFuture<'a, Made>;
 }
 
 /// The stream `thread` in `scope` of `log`.
@@ -24,11 +35,23 @@ pub(super) struct Stream<L> {
 }
 
 impl<L: EventLog> Ledger for Stream<L> {
-    fn read(&self, after: Option<Seq>) -> BoxFuture<'_, Result<Vec<RawEvent>, LogError>> {
-        Box::pin(self.log.read(&self.scope, self.thread, after, PAGE))
+    fn catch_up<'a>(
+        &'a self,
+        after: Option<Seq>,
+        take: &'a mut (dyn FnMut(Vec<RawEvent>) + Send),
+    ) -> BoxFuture<'a, Result<(), StreamError>> {
+        Box::pin(catch_up(&self.log, &self.scope, self.thread, after, take))
     }
 
-    fn append<'a>(&'a self, events: &'a [RawEvent]) -> BoxFuture<'a, Result<(), LogError>> {
-        Box::pin(self.log.append(&self.scope, events))
+    fn append_retrying<'a>(
+        &'a self,
+        attempt: &'a mut (dyn FnMut() -> BoxFuture<'a, Made> + Send),
+    ) -> BoxFuture<'a, Made> {
+        Box::pin(append_retrying(
+            &self.log,
+            &self.scope,
+            self.thread,
+            attempt,
+        ))
     }
 }

@@ -12,7 +12,7 @@ use glave_event::{
 };
 use glave_keys::{InMemoryRoot, KeySettings};
 use glave_memory::{GlaveMemory, Memories, Personal, ProjectMemory, Rules, Tidier, Writer};
-use glave_ports::memories::memory_ledger;
+use glave_ports::stream::Reserved;
 use glave_ports::{
     Clock as _, Entropy as _, EventLog, ModelProvider, OrgId, OsEntropy, ProjectId, Scope,
     SystemClock,
@@ -163,7 +163,7 @@ impl Remembering {
     /// What the memory ledgers hold now.
     pub async fn report(&self) -> Result<MemoryReport, EvalError> {
         let fail = |error: &dyn std::fmt::Display| EvalError::Setup(format!("memory: {error}"));
-        let ledger = memory_ledger().ok_or_else(|| fail(&"no ledger id"))?;
+        let ledger = Reserved::Memory.id();
         let mut report = MemoryReport::default();
         for scope in &self.scopes {
             let raw = self

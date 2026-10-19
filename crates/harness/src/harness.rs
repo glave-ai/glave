@@ -322,6 +322,15 @@ impl From<InvalidValue> for HarnessError {
     }
 }
 
+impl From<glave_ports::stream::StreamError> for HarnessError {
+    fn from(error: glave_ports::stream::StreamError) -> Self {
+        match error {
+            glave_ports::stream::StreamError::Log(error) => Self::Log(error),
+            busy @ glave_ports::stream::StreamError::Busy { .. } => Self::Event(busy.to_string()),
+        }
+    }
+}
+
 impl<P, L, B, A> Harness<P, L, B, A>
 where
     P: ModelProvider,

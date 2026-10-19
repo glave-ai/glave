@@ -11,17 +11,13 @@ use glave_event::{
     PrincipalId, ProviderConnected, ProviderId, ProviderRemoved, RawEvent, Seq, ThreadId, decode,
     encode,
 };
-use glave_ports::{EventLog, LogError, Scope};
-use glave_session::accounts_ledger;
+use glave_ports::Scope;
+use glave_ports::stream::{Reserved, append_retrying, catch_up};
 use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::data::{Data, DataLog};
 
-/// Ledger events read per page.
-const PAGE: usize = 500;
-/// Appends tried before giving up on a ledger another process keeps moving.
-const ATTEMPTS: usize = 8;
 /// The renewals remembered, so a client naming a credential since renewed still names it.
 const RENAMED: usize = 64;
 
@@ -203,53 +199,50 @@ impl Ledger {
         &self,
         change: impl Fn(&Accounts) -> Option<(Vec<Event>, T)>,
     ) -> anyhow::Result<Option<T>> {
-        let ledger = ledger()?;
-        for _ in 0..ATTEMPTS {
-            let read = self.read().await?;
+        let ledger = Reserved::Accounts.id();
+        let (this, change) = (self, &change);
+        let appended = append_retrying(&self.log, &self.scope, ledger, move || async move {
+            let read = this.read().await?;
             let Some((events, made)) = change(&read.accounts) else {
-                return Ok(None);
+                return anyhow::Ok(None);
             };
             let mut raw = Vec::with_capacity(events.len());
             for (n, event) in events.into_iter().enumerate() {
                 let seq = read.next.saturating_add(u64::try_from(n)?);
-                raw.push(event.raw(ledger, seq, Principal::person(self.person))?);
+                raw.push(event.raw(ledger, seq, Principal::person(this.person))?);
             }
-            match self.log.append(&self.scope, &raw).await {
-                Ok(()) => return Ok(Some(made)),
-                Err(LogError::Conflict { .. }) => {}
-                Err(error) => return Err(error).context("could not keep the account"),
-            }
-        }
-        anyhow::bail!("the accounts kept changing while glave wrote to them: try again")
+            Ok(Some((raw, made)))
+        })
+        .await
+        .context("could not keep the account")?;
+        Ok(appended.map(|(_, made)| made))
     }
 
     /// Reads the whole ledger. An account whose key was destroyed reads as erased and is left
     /// out with its removal.
     async fn read(&self) -> anyhow::Result<Read> {
-        let ledger = ledger()?;
         let mut read = Read {
             accounts: Accounts::default(),
             next: 1,
             unerased: Vec::new(),
         };
-        let mut after = None;
-        loop {
-            let page = self
-                .log
-                .read(&self.scope, ledger, after, PAGE)
-                .await
-                .context("could not read the accounts")?;
-            for raw in &page {
-                read.next = raw.seq.get().saturating_add(1);
-                if let Ok(event) = decode(raw.clone()) {
-                    read.take(event.body);
+        catch_up(
+            &self.log,
+            &self.scope,
+            Reserved::Accounts.id(),
+            None,
+            |page| {
+                for raw in page {
+                    read.next = raw.seq.get().saturating_add(1);
+                    if let Ok(event) = decode(raw) {
+                        read.take(event.body);
+                    }
                 }
-            }
-            if page.len() < PAGE {
-                return Ok(read);
-            }
-            after = page.last().map(|event| event.seq);
-        }
+            },
+        )
+        .await
+        .context("could not read the accounts")?;
+        Ok(read)
     }
 }
 
@@ -326,11 +319,6 @@ impl Event {
             }
         })
     }
-}
-
-/// The ledger's reserved id.
-fn ledger() -> anyhow::Result<ThreadId> {
-    accounts_ledger().context("the accounts ledger has no id")
 }
 
 /// Random bytes for a new id, from the operating system.

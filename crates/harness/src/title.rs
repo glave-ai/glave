@@ -7,9 +7,10 @@
 use glave_event::{
     At, EventId, Header, Part, Payload, Principal, RawEvent, Seq, ThreadId, ThreadRenamed, encode,
 };
+use glave_ports::stream::append_retrying;
 use glave_ports::{
-    BlobStore, Completion, EventLog, LogError, Message, ModelProvider, ModelRequest, Purpose,
-    Scope, Standing, ToolChoice, title_from,
+    BlobStore, Completion, EventLog, Message, ModelProvider, ModelRequest, Purpose, Scope,
+    Standing, ToolChoice, title_from,
 };
 
 use crate::approval::Approver;
@@ -25,8 +26,6 @@ const MOST_ASKED: usize = 1_200;
 const MOST_REPLY: usize = 800;
 /// The longest answer: a title is a few words, with room for models that reason first.
 const MOST_OUTPUT_TOKENS: u32 = 512;
-/// How many times recording a title starts over when another write lands first.
-const TRIES: usize = 8;
 
 const PROMPT: &str = "\
 You name conversations so a person can find them again later. You are shown the person's \
@@ -146,22 +145,22 @@ where
         thread: ThreadId,
         titled: &Titled,
     ) -> Result<(), HarnessError> {
-        let mut tries = 1;
-        loop {
-            match self.append_title(scope, thread, titled).await {
-                Err(HarnessError::Log(LogError::Conflict { .. })) if tries < TRIES => tries += 1,
-                done => return done,
-            }
-        }
+        let this = self;
+        append_retrying(&self.log, scope, thread, move || async move {
+            let events = this.title_events(scope, thread, titled).await?;
+            Ok::<_, HarnessError>(Some((events, ())))
+        })
+        .await?;
+        Ok(())
     }
 
-    /// One try of [`Harness::record_title`].
-    async fn append_title(
+    /// What [`Harness::record_title`] appends to `thread` as it stands.
+    async fn title_events(
         &self,
         scope: &Scope,
         thread: ThreadId,
         titled: &Titled,
-    ) -> Result<(), HarnessError> {
+    ) -> Result<Vec<RawEvent>, HarnessError> {
         let last = last_event(&self.log, scope, thread)
             .await?
             .ok_or(HarnessError::NotFound(thread))?;
@@ -183,8 +182,7 @@ where
             seq = after(thread, seq)?;
             events.push(self.encoded(thread, seq, &renamed)?);
         }
-        self.log.append(scope, &events).await?;
-        Ok(())
+        Ok(events)
     }
 
     /// `payload` as event `seq` of `thread`, made now.

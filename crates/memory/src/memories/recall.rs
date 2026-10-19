@@ -7,8 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use glave_event::{At, Body, MemoryId, MemoryScope, MemorySource, Role, Seq, ThreadId, decode};
-use glave_ports::memories::{MemoryContext, MemoryError, memory_ledger};
+use glave_ports::memories::{MemoryContext, MemoryError};
 use glave_ports::search::{Found, query_terms, searchable_body, terms};
+use glave_ports::stream::Reserved;
 use glave_ports::{EventLog, Scope};
 
 use super::{Memories, storage};
@@ -124,7 +125,7 @@ impl<L: EventLog + 'static> Memories<L> {
                 break;
             }
             if found.thread == asking
-                || Some(found.thread) == memory_ledger()
+                || found.thread == Reserved::Memory.id()
                 || hidden.hides(&self.inner.log, ledger, found).await
             {
                 continue;

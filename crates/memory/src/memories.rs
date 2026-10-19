@@ -11,8 +11,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
 use glave_event::{At, EventId, Header, MemoryId, MemoryScope, Payload, PrincipalId, Seq, encode};
-use glave_ports::memories::{MemoryContext, MemoryError, Remembered, Shown, memory_ledger};
-use glave_ports::{Clock, Entropy, EventLog, LogError, ProjectId, Scope};
+use glave_ports::memories::{MemoryContext, MemoryError, Remembered, Shown};
+use glave_ports::stream::{Reserved, append_retrying, catch_up};
+use glave_ports::{Clock, Entropy, EventLog, ProjectId, Scope};
 
 use crate::book::{Book, Entry};
 use crate::rules::{Personal, ProjectMemory, Rules};
@@ -24,10 +25,6 @@ pub use recall::{MOST_HITS, Recalled, Source};
 pub use tidy::{Tidied, Tidier};
 pub use write::{Remembering, Writer};
 
-/// Ledger events read per page.
-const PAGE: usize = 500;
-/// Appends tried before giving up on a ledger other writers keep moving.
-const ATTEMPTS: usize = 8;
 /// Projects whose views are kept in memory at once.
 const MOST_BOOKS: usize = 64;
 
@@ -147,32 +144,29 @@ impl<L: EventLog + 'static> Memories<L> {
 
     /// Reads whatever was added to `scope`'s ledger since this process last looked.
     async fn catch_up(&self, scope: Scope) -> Result<(), MemoryError> {
-        let ledger = ledger()?;
-        loop {
-            let next = {
-                let mut books = self.books();
-                if !books.contains_key(&scope) && books.len() >= MOST_BOOKS {
-                    books.clear();
-                }
-                books.entry(scope).or_default().next_seq()
-            };
-            let after = Seq::new(next.saturating_sub(1)).ok();
-            let page = self
-                .inner
-                .log
-                .read(&scope, ledger, after, PAGE)
-                .await
-                .map_err(storage)?;
-            let full = page.len() == PAGE;
+        let next = {
             let mut books = self.books();
-            let book = books.entry(scope).or_default();
-            for raw in page {
-                book.apply(raw);
+            if !books.contains_key(&scope) && books.len() >= MOST_BOOKS {
+                books.clear();
             }
-            if !full {
-                return Ok(());
-            }
-        }
+            books.entry(scope).or_default().next_seq()
+        };
+        let after = Seq::new(next.saturating_sub(1)).ok();
+        catch_up(
+            &self.inner.log,
+            &scope,
+            Reserved::Memory.id(),
+            after,
+            |page| {
+                let mut books = self.books();
+                let book = books.entry(scope).or_default();
+                for raw in page {
+                    book.apply(raw);
+                }
+            },
+        )
+        .await?;
+        Ok(())
     }
 
     /// Appends `payload` to `scope`'s ledger, after anything others wrote meanwhile.
@@ -181,35 +175,28 @@ impl<L: EventLog + 'static> Memories<L> {
         scope: Scope,
         payload: &T,
     ) -> Result<(), MemoryError> {
-        let ledger = ledger()?;
-        for _ in 0..ATTEMPTS {
-            let next = self.with_book(scope, Book::next_seq).await?;
-            let now = self.inner.clock.now();
+        let ledger = Reserved::Memory.id();
+        let this = self;
+        let appended = append_retrying(&self.inner.log, &scope, ledger, move || async move {
+            let next = this.with_book(scope, Book::next_seq).await?;
+            let now = this.inner.clock.now();
             let header = Header {
-                id: EventId::new(now, self.inner.entropy.bytes().map_err(invalid)?)
+                id: EventId::new(now, this.inner.entropy.bytes().map_err(invalid)?)
                     .map_err(invalid)?,
                 thread: ledger,
                 seq: Seq::new(next).map_err(invalid)?,
                 at: At::from(now),
             };
             let raw = encode(header, payload).map_err(invalid)?;
-            match self
-                .inner
-                .log
-                .append(&scope, std::slice::from_ref(&raw))
-                .await
-            {
-                Ok(()) => {
-                    self.books().entry(scope).or_default().apply(raw);
-                    return Ok(());
-                }
-                Err(LogError::Conflict { .. } | LogError::Gap { .. }) => {}
-                Err(error) => return Err(storage(error)),
-            }
+            Ok::<_, MemoryError>(Some((vec![raw], ())))
+        })
+        .await?;
+        let mut books = self.books();
+        let book = books.entry(scope).or_default();
+        for raw in appended.into_iter().flat_map(|(events, ())| events) {
+            book.apply(raw);
         }
-        Err(MemoryError::Storage(
-            "the memory ledger kept changing; try again".into(),
-        ))
+        Ok(())
     }
 
     /// The memories a thread of `on` reads now: the person's, then the project's, oldest first.
@@ -290,10 +277,6 @@ impl<L: EventLog + 'static> Memories<L> {
             "there is no memory {memory} here; list the memories to see their ids"
         )))
     }
-}
-
-fn ledger() -> Result<glave_event::ThreadId, MemoryError> {
-    memory_ledger().ok_or_else(|| MemoryError::Storage("the memory ledger has no id".into()))
 }
 
 fn storage(error: impl std::fmt::Display) -> MemoryError {

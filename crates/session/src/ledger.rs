@@ -10,9 +10,8 @@ use glave_event::{
     At, Body, EventId, Header, Payload, RawEvent, ScheduleCreated, ScheduleId, Seq, TaskEnded,
     TaskStarted, ThreadId, decode, encode,
 };
-use glave_ports::{
-    BlobStore, Caller, EventLog, LogError, ModelProvider, ProjectId, Scope, reserved_ledger,
-};
+use glave_ports::stream::{Reserved, StreamError, append_retrying, catch_up};
+use glave_ports::{BlobStore, Caller, EventLog, ModelProvider, ProjectId, Scope};
 
 use crate::protocol::{ApiError, code};
 use crate::server::Server;
@@ -21,51 +20,6 @@ use crate::server::Server;
 const FINISHED: usize = 100;
 /// Projects whose ledgers a server keeps in memory at once.
 const LEDGERS: usize = 1_024;
-/// Ledger events read per page.
-const PAGE: usize = 500;
-/// Appends tried before giving up on a ledger other writers keep moving.
-const ATTEMPTS: usize = 8;
-
-/// The ledger's reserved id: the UUID v7 at time zero with nothing random,
-/// `00000000-0000-7000-8000-000000000000`. No thread can have it: a thread's id carries the
-/// time it started.
-pub(crate) fn ledger_id() -> Option<ThreadId> {
-    reserved_ledger(0)
-}
-
-/// The accounts ledger's reserved id, `00000000-0000-7000-8000-000000000002`: the model
-/// accounts (`provider.connected`, `provider.removed`) and git hosts (`credential.connected`,
-/// `credential.removed`) a person connected, in their personal project.
-pub fn accounts_ledger() -> Option<ThreadId> {
-    reserved_ledger(2)
-}
-
-/// The project ledger's reserved id, `00000000-0000-7000-8000-000000000003`: a project's own
-/// settings, today a project's folder (`project.folder.set`).
-pub fn project_ledger() -> Option<ThreadId> {
-    reserved_ledger(3)
-}
-
-/// The trust ledger's reserved id, `00000000-0000-7000-8000-000000000004`: what a person
-/// decided about the projects that ask to be trusted (`trust.decided`), in their personal
-/// project.
-pub fn trust_ledger() -> Option<ThreadId> {
-    reserved_ledger(4)
-}
-
-/// Whether `thread` is one of the project's ledgers (tasks, memory, accounts, trust, browsers,
-/// or the project's own) rather than a thread.
-pub fn is_ledger(thread: ThreadId) -> bool {
-    [
-        ledger_id(),
-        glave_ports::memories::memory_ledger(),
-        accounts_ledger(),
-        project_ledger(),
-        trust_ledger(),
-        glave_identity::signin::browsers_ledger(),
-    ]
-    .contains(&Some(thread))
-}
 
 /// A schedule that has not been deleted.
 #[derive(Debug, Clone)]
@@ -170,29 +124,20 @@ where
 {
     /// Reads whatever was added to `project`'s ledger since this server last looked.
     pub(crate) async fn catch_up(&self, project: ProjectId) -> Result<(), ApiError> {
-        let ledger = ledger_id().ok_or_else(|| internal("the ledger has no id"))?;
         // Glave's own: the project's task ledger.
         let scope = Scope::glaves_own(self.inner.home.org(), project);
-        loop {
-            let next = self.ledgers().get(&project).map_or(1, Ledger::next_seq);
-            let after = Seq::new(next.saturating_sub(1)).ok();
-            let page = self
-                .inner
-                .harness
-                .log()
-                .read(&scope, ledger, after, PAGE)
-                .await
-                .map_err(|error| internal(&error.to_string()))?;
-            let full = page.len() == PAGE;
+        let next = self.ledgers().get(&project).map_or(1, Ledger::next_seq);
+        let after = Seq::new(next.saturating_sub(1)).ok();
+        let log = self.inner.harness.log();
+        catch_up(log, &scope, Reserved::Tasks.id(), after, |page| {
             let mut held = self.ledgers();
             let read = kept(&mut held, project);
             for raw in page {
                 read.apply(raw);
             }
-            if !full {
-                return Ok(());
-            }
-        }
+        })
+        .await?;
+        Ok(())
     }
 
     /// Appends `payload` to `project`'s ledger, after anything others wrote meanwhile.
@@ -201,38 +146,32 @@ where
         project: ProjectId,
         payload: &T,
     ) -> Result<(), ApiError> {
-        let ledger = ledger_id().ok_or_else(|| internal("the ledger has no id"))?;
+        let ledger = Reserved::Tasks.id();
         // Glave's own: the project's task ledger.
         let scope = Scope::glaves_own(self.inner.home.org(), project);
-        for _ in 0..ATTEMPTS {
-            self.catch_up(project).await?;
-            let now = self.inner.harness.clock().now();
-            let next = self.ledgers().get(&project).map_or(1, Ledger::next_seq);
-            let seq = Seq::new(next).map_err(|e| internal(&e.to_string()))?;
+        let this = self;
+        let log = self.inner.harness.log();
+        let appended = append_retrying(log, &scope, ledger, move || async move {
+            this.catch_up(project).await?;
+            let now = this.inner.harness.clock().now();
+            let next = this.ledgers().get(&project).map_or(1, Ledger::next_seq);
             let header = Header {
-                id: EventId::new(now, self.inner.harness.entropy().bytes()?)
+                id: EventId::new(now, this.inner.harness.entropy().bytes()?)
                     .map_err(|e| internal(&e.to_string()))?,
                 thread: ledger,
-                seq,
+                seq: Seq::new(next).map_err(|e| internal(&e.to_string()))?,
                 at: At::from(now),
             };
             let raw = encode(header, payload).map_err(|e| internal(&e.to_string()))?;
-            match self
-                .inner
-                .harness
-                .log()
-                .append(&scope, std::slice::from_ref(&raw))
-                .await
-            {
-                Ok(()) => {
-                    kept(&mut self.ledgers(), project).apply(raw);
-                    return Ok(());
-                }
-                Err(LogError::Conflict { .. } | LogError::Gap { .. }) => {}
-                Err(error) => return Err(internal(&error.to_string())),
-            }
+            Ok::<_, ApiError>(Some((vec![raw], ())))
+        })
+        .await?;
+        let mut held = self.ledgers();
+        let read = kept(&mut held, project);
+        for raw in appended.into_iter().flat_map(|(events, ())| events) {
+            read.apply(raw);
         }
-        Err(internal("the task ledger kept changing; try again"))
+        Ok(())
     }
 
     /// The projects whose tasks and schedules this server runs: its own, every project its person
@@ -261,4 +200,10 @@ where
 
 fn internal(message: &str) -> ApiError {
     ApiError::new(code::INTERNAL, message)
+}
+
+impl From<StreamError> for ApiError {
+    fn from(error: StreamError) -> Self {
+        internal(&error.to_string())
+    }
 }
