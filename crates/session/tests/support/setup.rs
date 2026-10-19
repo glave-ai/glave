@@ -94,6 +94,8 @@ pub struct Setup {
     pub projects: Option<Arc<dyn Projects>>,
     /// The browsers it signs in; with none, it signs in none.
     pub browsers: Option<Arc<Browsers>>,
+    /// Its organization and its own project: `scope()` unless a test serves another.
+    pub home: Scope,
 }
 
 impl Setup {
@@ -119,6 +121,7 @@ impl Setup {
             credentials: None,
             projects: None,
             browsers: None,
+            home: scope(),
         }
     }
 
@@ -167,7 +170,8 @@ impl Setup {
         // One computer for every test server, as this machine's own id is kept across runs.
         let computers = computers.known_as(ComputerId::from_uuid(uuid::Uuid::from_u128(7)));
         let (computers, info) = computers.open_here(dir).await.unwrap();
-        keep_folder(&log, &info).await;
+        let home = self.home;
+        keep_folder(&log, home, &info).await;
         let workspace = Workspace::new(computers, info);
         let workspace = match self.credentials {
             Some(credentials) => workspace.with_credentials(credentials),
@@ -200,12 +204,12 @@ impl Setup {
             trust: self.trust,
             browsers: self.browsers,
         };
-        let server = Server::new(wiring, self.settings, scope(), self.answering);
+        let server = Server::new(wiring, self.settings, home, self.answering);
         // The server's own project, kept as its person's project at a fixed time without reading
         // the clock, so nothing a test checks depends on when it was first asked for.
         let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
-        let home = Project {
-            id: scope().project,
+        let project = Project {
+            id: home.project,
             kind: ProjectKind::Project,
             name: "test".into(),
             owner: Principal::person(server.person().unwrap()),
@@ -216,12 +220,12 @@ impl Setup {
         // A second server on another's projects finds it there already.
         if server
             .projects()
-            .get(scope().org, home.id)
+            .get(home.org, project.id)
             .await
             .unwrap()
             .is_none()
         {
-            server.projects().create(scope().org, &home).await.unwrap();
+            server.projects().create(home.org, &project).await.unwrap();
         }
         (server, seen)
     }
@@ -230,7 +234,7 @@ impl Setup {
 /// Keeps the folder `info` opened as the server's own project's, as glave keeps the folder it
 /// runs in: at a fixed time with fixed ids, for the same reason as the project itself. A second
 /// server on a shared log finds it there already.
-async fn keep_folder<L: EventLog>(log: &L, info: &WorkspaceInfo) {
+async fn keep_folder<L: EventLog>(log: &L, home: Scope, info: &WorkspaceInfo) {
     let at = At::try_from("2026-10-01T00:00:00.000Z".to_owned()).unwrap();
     let header = Header {
         id: EventId::new(at.timestamp(), [9; 10]).unwrap(),
@@ -247,7 +251,7 @@ async fn keep_folder<L: EventLog>(log: &L, info: &WorkspaceInfo) {
         },
         by: None,
     };
-    let _ = log.append(&scope(), &[encode(header, &set).unwrap()]).await;
+    let _ = log.append(&home, &[encode(header, &set).unwrap()]).await;
 }
 
 /// The server of `Setup::asking`.

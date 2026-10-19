@@ -15,6 +15,7 @@ mod credentials;
 mod goals;
 mod gone;
 mod http;
+mod isolation;
 mod listing;
 mod local;
 mod many_projects;

@@ -3,8 +3,9 @@
 //! callers work in, and each caller's Chats, where requests that name none act. Every request
 //! that acts on a thread, or
 //! on the server's own project as a whole, is checked against the caller: they must own the
-//! thread's project or be one of its members, or it is refused with `-32012` before anything is
-//! read or recorded.
+//! thread's project or be one of its members, or it is answered before anything is read or
+//! recorded exactly as a thread or project that does not exist is, so whether it exists never
+//! leaks.
 
 use std::collections::HashMap;
 
@@ -55,10 +56,6 @@ pub(crate) fn failed(error: &ProjectError) -> ApiError {
 
 fn no_project(project: ProjectId) -> ApiError {
     ApiError::new(code::NO_PROJECT, format!("no project {project} here"))
-}
-
-fn not_allowed(what: &str) -> ApiError {
-    ApiError::new(code::NOT_ALLOWED, format!("you do not work in {what}"))
 }
 
 impl<P, L, B> Server<P, L, B>
@@ -125,7 +122,8 @@ where
             .ok_or_else(|| no_project(project))
     }
 
-    /// The project `project`, when `caller` works in it; refused with `-32012` otherwise.
+    /// The project `project`, when `caller` works in it; otherwise "no project", as for one
+    /// that does not exist.
     pub(crate) async fn member_of(
         &self,
         caller: &Caller,
@@ -135,7 +133,7 @@ where
         if found.admits_person(self.person_of(caller)?) {
             Ok(found)
         } else {
-            Err(not_allowed(&format!("project {project}")))
+            Err(no_project(project))
         }
     }
 
@@ -212,8 +210,8 @@ where
         Ok(scope)
     }
 
-    /// The scope of `thread`, when `caller` works in its project; refused with `-32012`
-    /// otherwise, and with "no such thread" when there is none.
+    /// The scope of `thread`, when `caller` works in its project; otherwise "no such thread",
+    /// as for one that does not exist.
     pub(crate) async fn authorize(
         &self,
         caller: &Caller,
@@ -223,7 +221,7 @@ where
         self.member_of(caller, scope.project)
             .await
             .map_err(|refused| match refused.code {
-                code::NOT_ALLOWED => not_allowed(&format!("the project of thread {thread}")),
+                code::NO_PROJECT => no_thread(thread),
                 _ => refused,
             })?;
         Ok(scope)

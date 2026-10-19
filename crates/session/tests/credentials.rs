@@ -27,7 +27,7 @@ const GOOD: &str = FAKE_SECRET;
 /// A host that keeps accounts in memory; its sign-in in the browser is approved on the
 /// second poll.
 #[derive(Default)]
-struct Hosts {
+pub(crate) struct Hosts {
     kept: Mutex<Vec<CredentialInfo>>,
     polls: Mutex<u32>,
 }

@@ -79,7 +79,7 @@ After a thread's first exchange, the person's first message and the first reply,
 
 ## Projects and who may do what
 
-Every request that acts on a thread (`thread/get`, `thread/events`, `thread/archive`, `thread/unarchive`, `thread/delete`, `thread/compact`, `turn/start`, `turn/cancel`, `approval/decide`, `question/answer`, `trust/answer`, `goal/*`, `tasks/stop`), on a project (`thread/start` and `thread/list` with a `project`, `project/get`, `project/rename`), on a project's memory (`memory/*`, in the project it names or the server's own), or on the server's own project as a whole (`tasks/list`, `schedule/*`) is checked against the caller before anything is read or recorded: they must be the project's owner or one of its members. Anyone else is refused with `-32012`, whether or not the thread exists; a thread no project here holds is `-32001`. The thread's project comes from the data store's one lookup by bare thread id (`storage.md`, "Scope"), remembered by the server, since a thread's project never changes.
+Every request that acts on a thread (`thread/get`, `thread/events`, `thread/archive`, `thread/unarchive`, `thread/delete`, `thread/compact`, `turn/start`, `turn/cancel`, `approval/decide`, `question/answer`, `trust/answer`, `goal/*`, `tasks/stop`), on a project (`thread/start` and `thread/list` with a `project`, `project/get`, `project/rename`), on a project's memory (`memory/*`, in the project it names or the server's own), or on the server's own project as a whole (`tasks/list`, `schedule/*`) is checked against the caller before anything is read or recorded: they must be the project's owner or one of its members. Anyone else is answered exactly as for a thread or project that does not exist (`-32001`, `-32019`), with the same message, so they learn nothing of what is in projects they do not work in, not even that it exists; a thread no project here holds is `-32001` too. `-32012` is kept for what a caller may see but not do, such as a member renaming a project only its owner renames. The isolation suite (`crates/session/tests/isolation.rs`) calls every method with every other person's ids, across two organizations on one store, and holds each answer to this. The thread's project comes from the data store's one lookup by bare thread id (`storage.md`, "Scope"), remembered by the server, since a thread's project never changes.
 
 - **Local transports** (in-process, stdio, the Unix socket) act as the local person, who owns the projects of the folders they open.
 - **Network transports** act as the signed-in person. A thread they start is for them: `thread.started.for` is that person, so `author`, `by` and `origin.by` name someone only when it is not them (`events.md`, "Who acted").
@@ -210,7 +210,7 @@ A person steers the agent while it works: what they send while a turn runs reach
 Standard codes, `-32700` to `-32603`, for malformed messages; a method the server does not have is `-32601`. glave's own are in the schema with their meanings. Decisions about them:
 
 - A refusal is answered before anything is recorded, so a refused request leaves no trace in the log.
-- `-32012` (not allowed) is answered whether or not the thread exists, so a caller learns nothing of threads in projects they do not work in.
+- Something in a project the caller does not work in is answered as if it did not exist (`-32001`, `-32019`, and the like), never `-32012`, so a caller learns nothing of threads or projects they do not work in.
 - `-32020`, the model provider failed: `data` has `failure`, its kind (`Failure` in `glave-ports`), so a client can say what to fix; the CLI turns it into a fix for the person's own endpoint.
 - `-32011`, a turn running elsewhere, is reserved for leases ("Turns that outlive a server") and not answered yet.
 
@@ -253,7 +253,7 @@ What changes when a client is on another machine: who is calling, how a server t
 ### Several clients
 
 - Any number of clients may watch the same thread; each sees every event once, in `seq` order.
-- Who may do what (start a turn, answer an approval, read a thread) is checked against the caller on every request, from the project's owner and members ("Projects and who may do what"), and later the organization's policy. A request from someone who may not make it is refused with error `-32012` and never recorded; a network request without a valid sign-in is refused with `-32013`.
+- Who may do what (start a turn, answer an approval, read a thread) is checked against the caller on every request, from the project's owner and members ("Projects and who may do what"), and later the organization's policy. A request from someone who may not make it is refused and never recorded: as if what it names did not exist when they do not work in its project, else with `-32012`; a network request without a valid sign-in is refused with `-32013`.
 
 ## Status
 
