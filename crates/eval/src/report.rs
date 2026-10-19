@@ -4,6 +4,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
+use glave_event::{Currency, Money};
 use serde::{Deserialize, Serialize};
 
 use crate::run::Attempt;
@@ -155,16 +156,19 @@ fn cell(now: Option<Rate>, before: Option<Rate>) -> String {
     }
 }
 
-/// Micros as dollars to a hundredth of a cent, or a dash when a cost was not reported.
+/// Micros as dollars to the nearest hundredth of a cent, or a dash when a cost was not
+/// reported.
 pub fn dollars(micros: Option<i64>) -> String {
-    match micros {
-        Some(micros) => format!(
-            "${}.{:04}",
-            micros / 1_000_000,
-            (micros % 1_000_000).unsigned_abs() / 100
-        ),
-        None => "-".to_owned(),
-    }
+    micros.map_or_else(
+        || "-".to_owned(),
+        |micros| {
+            let cost = Money {
+                micros,
+                currency: Currency::USD,
+            };
+            format!("{cost:.4}")
+        },
+    )
 }
 
 fn thousands(n: u64) -> String {

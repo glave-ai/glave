@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use glave_event::Money;
 use glave_provider_openai::Config;
 use jiff::Timestamp;
 
@@ -297,20 +298,13 @@ fn positive(text: &str, name: &str) -> Result<u32, String> {
         .ok_or_else(|| format!("{name} needs a whole number above 0"))
 }
 
-/// Dollars as micros: `2` or `0.50`.
+/// Dollars, `2` or `0.50`, as micros; never fewer than none.
 fn micros(text: &str) -> Result<i64, String> {
-    let bad = || format!("--max-cost is dollars, such as 2 or 0.50, not {text:?}");
-    let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
-    if fraction.len() > 6 || !fraction.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(bad());
-    }
-    let whole: i64 = whole.parse().map_err(|_| bad())?;
-    let fraction: i64 = format!("{fraction:0<6}").parse().map_err(|_| bad())?;
-    whole
-        .checked_mul(1_000_000)
-        .and_then(|micros| micros.checked_add(fraction))
+    Money::parse_dollars(text)
+        .ok()
+        .map(|money| money.micros)
         .filter(|micros| *micros >= 0)
-        .ok_or_else(bad)
+        .ok_or_else(|| format!("--max-cost is dollars, such as 2 or 0.50, not {text:?}"))
 }
 
 #[cfg(test)]
@@ -407,7 +401,7 @@ mod tests {
         assert!(parse(&["--model"]).is_err());
         assert!(parse(&["--colour"]).is_err());
         assert!(parse(&["--max-cost", "-1"]).is_err());
-        assert!(parse(&["--max-cost", "1.2345678"]).is_err());
+        assert!(parse(&["--max-cost", "-0.5"]).is_err());
         assert!(parse(&["--max-cost", "1.x"]).is_err());
         assert_eq!(micros("2"), Ok(2_000_000));
         assert_eq!(micros("0.05"), Ok(50_000));

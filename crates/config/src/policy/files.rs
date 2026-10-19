@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use crate::error::invalid;
+use glave_event::Money;
 use glave_harness::{ApprovalMode, Hook, HookPoint, Hooks};
 use glave_ports::auth::safe_to_send;
 use glave_ports::computer::{CredentialHost, Forge, SandboxLevel};
@@ -381,7 +382,28 @@ pub struct McpRules {
 #[derive(Debug, Default, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BudgetRules {
-    pub person_per_day_usd: Option<f64>,
+    #[serde(default, deserialize_with = "dollars")]
+    pub person_per_day_usd: Option<Money>,
+}
+
+/// US dollars, none or more, as the number was written: `20`, or `5.5`, which TOML reads as
+/// a float, whose shortest form is the decimal written. No arithmetic is done on the float.
+fn dollars<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Money>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Number {
+        Whole(i64),
+        Float(f64),
+    }
+    let text = match Number::deserialize(deserializer)? {
+        Number::Whole(whole) => whole.to_string(),
+        Number::Float(float) => float.to_string(),
+    };
+    Money::parse_dollars(&text)
+        .ok()
+        .filter(|money| money.micros >= 0)
+        .map(Some)
+        .ok_or_else(|| serde::de::Error::custom(format!("{text} is not an amount of dollars")))
 }
 
 /// `config.toml` at `path`, from its `text`.
@@ -475,14 +497,6 @@ pub fn policy(text: &str, path: &Path) -> crate::Result<PolicyFile> {
                 path.display()
             );
         }
-    }
-    if let Some(usd) = file.budget.person_per_day_usd
-        && !(usd.is_finite() && usd >= 0.0)
-    {
-        invalid!(
-            "{}: [budget] person_per_day_usd = {usd} is not an amount of dollars",
-            path.display()
-        );
     }
     Ok(file)
 }

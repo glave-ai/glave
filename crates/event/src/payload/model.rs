@@ -78,6 +78,27 @@ pub struct TokenCounts {
     pub reasoning: u64,
 }
 
+/// Counts added field by field, saturating rather than wrapping.
+impl std::ops::Add for TokenCounts {
+    type Output = Self;
+
+    fn add(self, more: Self) -> Self {
+        Self {
+            input: self.input.saturating_add(more.input),
+            cache_read: self.cache_read.saturating_add(more.cache_read),
+            cache_write: self.cache_write.saturating_add(more.cache_write),
+            output: self.output.saturating_add(more.output),
+            reasoning: self.reasoning.saturating_add(more.reasoning),
+        }
+    }
+}
+
+impl std::ops::AddAssign for TokenCounts {
+    fn add_assign(&mut self, more: Self) {
+        *self = *self + more;
+    }
+}
+
 /// Validated usage for one response. `estimated` is true when a stream ended before the
 /// provider reported usage; `raw` keeps the provider's own usage object.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -228,5 +249,21 @@ mod tests {
     fn invalid_usage_is_rejected_when_read() {
         let bad = r#"{"input":10,"cache_read":20,"cache_write":0,"output":0,"reasoning":0,"estimated":false}"#;
         assert!(serde_json::from_str::<Usage>(bad).is_err());
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn counts_add_field_by_field_and_saturate(
+            a in proptest::array::uniform5(proptest::num::u64::ANY),
+            b in proptest::array::uniform5(proptest::num::u64::ANY),
+        ) {
+            let of = |[i, r, w, o, t]: [u64; 5]| counts(i, r, w, o, t);
+            let mut sum = of(a);
+            sum += of(b);
+            let fields = |c: TokenCounts| [c.input, c.cache_read, c.cache_write, c.output, c.reasoning];
+            let expected: Vec<u64> = a.iter().zip(b).map(|(x, y)| x.saturating_add(y)).collect();
+            proptest::prop_assert_eq!(fields(sum).to_vec(), expected);
+            proptest::prop_assert_eq!(of(a) + of(b), of(b) + of(a));
+        }
     }
 }

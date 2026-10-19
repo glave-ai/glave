@@ -22,7 +22,7 @@ pub use error::{DecodeError, EncodeError, InvalidValue};
 pub use id::{
     CallId, CredentialId, EventId, MemoryId, PrincipalId, ProviderId, ScheduleId, ThreadId,
 };
-pub use money::{Currency, Money};
+pub use money::{Currency, Decimal, Money};
 pub use payload::{
     ApprovalDecided, ApprovalMode, ApprovalModeChosen, ApprovalRequested, Arguments, Auth,
     AuthMethod, Cost, ForkPoint, GatewayToolCalled, GoalEnded, GoalReason, GoalResumed, GoalSet,

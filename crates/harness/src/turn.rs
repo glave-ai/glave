@@ -663,38 +663,21 @@ pub(crate) fn absorb(summary: &mut TurnSummary, child: &TurnSummary) {
     summary.outside_sandbox = summary
         .outside_sandbox
         .saturating_add(child.outside_sandbox);
-    let (total, more) = (&mut summary.tokens, &child.tokens);
-    total.input = total.input.saturating_add(more.input);
-    total.cache_read = total.cache_read.saturating_add(more.cache_read);
-    total.cache_write = total.cache_write.saturating_add(more.cache_write);
-    total.output = total.output.saturating_add(more.output);
-    total.reasoning = total.reasoning.saturating_add(more.reasoning);
+    summary.tokens += child.tokens;
     summary.estimated |= child.estimated;
-    summary.cost = match (summary.cost, child.cost) {
-        (Some(sum), Some(cost)) if sum.currency == cost.currency => Some(Money {
-            micros: sum.micros.saturating_add(cost.micros),
-            currency: sum.currency,
-        }),
-        _ => None,
-    };
+    summary.cost = summary
+        .cost
+        .zip(child.cost)
+        .and_then(|(sum, cost)| sum.checked_add(cost));
 }
 
 pub(crate) fn tally(summary: &mut TurnSummary, completion: &Completion) {
-    let counts = completion.usage.counts();
-    let total = &mut summary.tokens;
-    total.input = total.input.saturating_add(counts.input);
-    total.cache_read = total.cache_read.saturating_add(counts.cache_read);
-    total.cache_write = total.cache_write.saturating_add(counts.cache_write);
-    total.output = total.output.saturating_add(counts.output);
-    total.reasoning = total.reasoning.saturating_add(counts.reasoning);
+    summary.tokens += completion.usage.counts();
     summary.estimated |= completion.usage.estimated();
-    summary.cost = match (summary.cost, &completion.cost) {
-        (Some(sum), Some(cost)) if sum.currency == cost.amount.currency => Some(Money {
-            micros: sum.micros.saturating_add(cost.amount.micros),
-            currency: sum.currency,
-        }),
-        _ => None,
-    };
+    summary.cost = summary
+        .cost
+        .zip(completion.cost.as_ref())
+        .and_then(|(sum, cost)| sum.checked_add(cost.amount));
 }
 
 /// Remembers the size the provider reported, for estimating the next request.

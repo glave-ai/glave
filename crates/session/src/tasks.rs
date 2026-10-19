@@ -256,14 +256,11 @@ where
             let Some(running) = tasks.get_mut(&thread) else {
                 return;
             };
-            add(&mut running.tokens, &responded.usage.counts());
-            running.cost = match (running.cost, &responded.cost) {
-                (Some(sum), Some(cost)) if sum.currency == cost.amount.currency => Some(Money {
-                    micros: sum.micros.saturating_add(cost.amount.micros),
-                    currency: sum.currency,
-                }),
-                _ => None,
-            };
+            running.tokens += responded.usage.counts();
+            running.cost = running
+                .cost
+                .zip(responded.cost)
+                .and_then(|(sum, cost)| sum.checked_add(cost.amount));
             let spent = running.tokens.input.saturating_add(running.tokens.output);
             let over = !running.goal
                 && !running.over_budget
@@ -506,14 +503,6 @@ fn settle(running: &Running, ended: &Result<TurnResult, ApiError>, stopping: boo
                 .map_or_else(Principal::glave, Principal::person)
         }),
     }
-}
-
-fn add(total: &mut TokenCounts, counts: &TokenCounts) {
-    total.input = total.input.saturating_add(counts.input);
-    total.cache_read = total.cache_read.saturating_add(counts.cache_read);
-    total.cache_write = total.cache_write.saturating_add(counts.cache_write);
-    total.output = total.output.saturating_add(counts.output);
-    total.reasoning = total.reasoning.saturating_add(counts.reasoning);
 }
 
 impl<P, L, B> Server<P, L, B> {

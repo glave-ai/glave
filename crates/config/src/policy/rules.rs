@@ -5,6 +5,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use glave_event::Money;
 use glave_harness::ApprovalMode;
 use globset::Glob;
 
@@ -41,7 +42,8 @@ pub enum Kind {
     McpUntrusted(Vec<String>),
     /// These MCP servers are vouched for, though remote or a project's.
     McpTrusted(Vec<String>),
-    PersonPerDayUsd(f64),
+    /// Each person's budget per UTC day, in US dollars.
+    PersonPerDayUsd(Money),
     /// Projects at these paths (globs) are trusted without asking.
     ProjectsTrusted(Vec<String>),
     /// People and projects may not run hooks of their own.
@@ -75,7 +77,9 @@ impl fmt::Display for Kind {
             Self::McpOwnForbidden => f.write_str("[mcp] own = false"),
             Self::McpUntrusted(names) => write!(f, "[mcp] untrusted = {}", quoted(names)),
             Self::McpTrusted(names) => write!(f, "[mcp] trusted = {}", quoted(names)),
-            Self::PersonPerDayUsd(usd) => write!(f, "[budget] person_per_day_usd = {usd}"),
+            Self::PersonPerDayUsd(usd) => {
+                write!(f, "[budget] person_per_day_usd = {}", usd.decimal())
+            }
             Self::ProjectsTrusted(globs) => write!(f, "[projects] trusted = {}", quoted(globs)),
             Self::HooksOwnForbidden => f.write_str("[hooks] own = false"),
             Self::Workers(rules) => f.write_str(&rules.describe()),
@@ -280,23 +284,14 @@ impl Constraints {
                 Kind::PersonPerDayUsd(usd) => Some((usd, rule)),
                 _ => None,
             })
-            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .min_by_key(|(usd, _)| usd.micros)
             .map(|(_, rule)| rule)
     }
 
-    /// The smallest daily budget per person in millionths of a US dollar, rounded down.
-    pub fn person_per_day_micros(&self) -> Option<u64> {
+    /// The smallest daily budget per person.
+    pub fn person_per_day(&self) -> Option<Money> {
         self.person_per_day_usd().and_then(|rule| match rule.kind {
-            Kind::PersonPerDayUsd(usd) => {
-                // Checked finite and not negative when read; at most a few billion dollars.
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "a finite, non-negative amount of dollars, as checked when read"
-                )]
-                let micros = (usd * 1_000_000.0).floor() as u64;
-                Some(micros)
-            }
+            Kind::PersonPerDayUsd(usd) => Some(usd),
             _ => None,
         })
     }

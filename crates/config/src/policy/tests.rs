@@ -344,11 +344,33 @@ fn limits_take_the_smallest_and_unenforced_rules_refuse_to_run() {
         .to_string();
     assert!(refused.contains("not enforced yet"), "{refused}");
     assert!(refused.contains("person_per_day_usd = 5.5"), "{refused}");
-    assert_eq!(rules.person_per_day_micros(), Some(5_500_000));
+    assert_eq!(
+        rules.person_per_day().map(|usd| usd.micros),
+        Some(5_500_000)
+    );
     assert!(
         rules.not_enforced_by_the_gateway().is_empty(),
         "a gateway serving many keeps daily budgets"
     );
+}
+
+#[test]
+fn budgets_are_the_dollars_written() {
+    let budget = |amount: &str| {
+        files::policy(
+            &format!("version = 1\n[budget]\nperson_per_day_usd = {amount}\n"),
+            Path::new(ORG),
+        )
+        .map(|file| file.budget.person_per_day_usd.map(|usd| usd.micros))
+    };
+    // As floats, 4.1 and 0.29 fall a hair short of their millionths.
+    assert_eq!(budget("4.1").unwrap(), Some(4_100_000));
+    assert_eq!(budget("0.29").unwrap(), Some(290_000));
+    assert_eq!(budget("20").unwrap(), Some(20_000_000));
+    for bad in ["-1", "-0.5", "nan", "inf", "1e300", "\"5\""] {
+        let refused = format!("{:#}", budget(bad).unwrap_err());
+        assert!(refused.contains("person_per_day_usd"), "{bad}: {refused}");
+    }
 }
 
 #[test]
