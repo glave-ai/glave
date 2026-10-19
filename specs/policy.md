@@ -24,7 +24,7 @@ First cut built, in the `glave-config` library (`crates/config/src/policy`), whi
 Project trust (issue #83), in `crates/config/src/trust`:
 
 - A repository's `.mcp.json` servers and the loosening parts of its `.glave/config.toml` (`approval = "auto"`, `sandbox = "off"`, a `judge_model` other than `"off"`) run only after the person trusts the project. glave asks once, in the terminal or in an app (issue #250, below), and only when the repository brings such things; a repository without them never asks, and the rest of its `config.toml` (a model, a tighter approval or sandbox) applies at once.
-- The answer is kept in `trust.toml` in glave's folder (below). What is trusted is each server's definition, so a repository that changes a server, or adds one, is asked about again, and only that.
+- The answer is kept in the store, in the person's trust ledger (below). What is trusted is each server's definition, so a repository that changes a server, or adds one, is asked about again, and only that.
 - `[projects] trusted` pre-trusts projects by path glob, with no question. `[mcp] own = false` forbids a project's servers whatever anyone says; the person's own servers in `mcp.json` stay refused loudly as before.
 - With no one to ask (a pipe, a script), untrusted servers stay off, glave says so, and the model is told which tools are off and why. A session server (`glave serve`, `glave app`) asks the person on this computer in an app instead (`session.md`, "Project trust"); until they answer, the same holds, and the model is told the person has not trusted the project yet.
 - In a session server, every project's trusted servers and hooks run for the threads that work in it, and only for them, the folder the server started in as much as a project made in the browser: no project lends its servers, hooks or settings to the whole server, whose own are the person's. A hook runs the project's own files, so it never runs in another project's folder. Threads that work on workers run the person's own hooks alone. What is trusted is read again at the start of each turn, so a yes is on from the next one. A project's servers start in its folder the first time one of its turns needs them, and stay up for its later turns until 30 minutes pass with no turn of the project using them, for 16 projects at once (the one used least recently is closed first); a closed one starts again when it is next needed. The person's own servers start once, in their home folder, for their threads everywhere and never a thread of anyone signed in from elsewhere. A project's server whose name one of the person's own servers has stays off: the person's wins, and the model and the person are told.
@@ -49,7 +49,7 @@ Memory (issue #93; `memory.md`):
 - `memory = "on"` or `"off"` in `config.toml` (default `on`, `memory.md`) is the person's own choice: a project's file cannot set it. `space_memory` (`shared`, the default, `isolated` or `off`) is the space's setting, which a project's file may choose without trust, since it can only narrow.
 - `[memory]` in a policy (`enabled`, `personal`, `spaces`, `retention_days`) only narrows: `enabled = false` turns memory off (an explicit `memory = "on"` is then an error naming the rule), `personal = false` leaves spaces only `isolated` or `off` (glave's default `shared` gives way to `isolated`), `spaces` lists the settings allowed, and the smallest `retention_days` holds. `glave policy explain` shows `memory` and `space_memory` with their sources.
 
-Not built yet: a command to change a decision (edit `trust.toml`); signed bundles from an organization's server, macOS managed preferences and Group Policy; a space's own policy; recording policy changes as events (the admin console); and recording the policy version in each turn's configuration.
+Not built yet: a command to change a decision; signed bundles from an organization's server, macOS managed preferences and Group Policy; a space's own policy; recording policy changes as events (the admin console); and recording the policy version in each turn's configuration.
 
 ## Two kinds of setting, two rules
 
@@ -225,19 +225,15 @@ A laptop's own config can never loosen a constraint, because the constraint arri
 ## Project trust
 
 - A project's `.glave/config.toml` and its `.mcp.json` can run commands (MCP servers and hooks). So they are honoured only after the person trusts the project once. glave asks at most once per project, and only when the project brings something that runs commands.
-- Trust decisions are kept in `trust.toml` in `~/.glave` (or `GLAVE_HOME`), one `[[project]]` per repository, keyed by its canonical root path. A clone that moved is recognised by its `origin` remote, read from the repository's config file without running anything. Each item records the exact definition that was answered, so trust is of the content:
+- Trust decisions are kept in the store, in the trust ledger in the person's personal space (`events.md`, "The trust ledger"), one `trust.decided` per decision about a project, keyed by its canonical root path; the latest about a project holds, so every server on one store reads the same. A clone that moved is recognised by its `origin` remote, read from the repository's config file without running anything. Each item records the exact definition that was answered, so trust is of the content:
 
-  ```toml
-  version = 1
-
-  [[project]]
-  path = "/Users/ada/code/app"
-  remote = "git@example.com:acme/app.git"
-
-  [project.items."mcp:docs"]
-  definition = '{"args":["--fast"],"command":"docs-mcp"}'
-  trusted = true          # false: declined, and not asked again until it changes
+  ```json
+  {"path": "/Users/ada/code/app", "remote": "git@example.com:acme/app.git",
+   "items": {"mcp:docs": {"definition": "{\"args\":[\"--fast\"],\"command\":\"docs-mcp\"}",
+                          "trusted": true}}}
   ```
+
+  `trusted: false` is declined, and not asked again until it changes. A `trust.toml` an earlier glave kept in its folder is moved into the ledger the first time glave opens it, all in one append, then deleted; a project the ledger already has a decision about keeps it.
 - A project's `network = false` applies at once; its `network = true` is ignored, so a project can take the network from sandboxed commands but never give it back.
 - What needs trust: each server in the project's `.mcp.json`, each hook in its `config.toml` (item `hook:<Point>:<n>`, its definition the hook's point, command, matcher and timeout as JSON), and `approval = "auto"` or `sandbox = "off"` in its `config.toml`, `[web] private_addresses = true` or a `[web] allow` list (a host it names exactly may be private), and a `judge_model` other than `"off"` (a repository must not choose who judges its own actions; `off` only makes glave ask more and applies at once). Nothing else asks. Servers in `~/.glave/mcp.json` are the person's own and always trusted to start; on a name clash the person's wins. Trusting a project lets its servers start; what they return is still labelled untrusted unless vouched for (above).
 - An organization's policy can pre-trust projects (`[projects] trusted`), or forbid project MCP servers (`[mcp] own = false`) or hooks (`[hooks] own = false`) entirely. A forbid wins over a pre-trust and over the person's yes.
