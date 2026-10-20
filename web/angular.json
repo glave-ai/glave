@@ -86,6 +86,7 @@
           "options": {
             "tsConfig": "app/tsconfig.spec.json",
             "setupFiles": ["glaze/src/testing/platform.ts"],
+            "runnerConfig": "vitest.config.mjs",
             "coverage": true,
             "coverageReporters": ["text-summary"]
           }
@@ -140,6 +141,7 @@
           "options": {
             "tsConfig": "glaze/tsconfig.spec.json",
             "setupFiles": ["glaze/src/testing/platform.ts"],
+            "runnerConfig": "vitest.config.mjs",
             "coverage": true,
             "coverageReporters": ["text-summary"],
             "include": ["**/*.spec.ts", "../showcase/**/*.spec.ts"]

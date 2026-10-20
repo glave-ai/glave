@@ -1,8 +1,10 @@
-# A test that hangs fails instead of holding CI forever: warned after 30 s, stopped after 2 min.
+# A test that hangs fails instead of holding CI forever, but a slow one on a busy laptop is not
+# a hang: warned after 60 s, stopped after 5 min. Tests guard their own waits more tightly
+# (glave_ports::testing::HUNG), so a hang there fails sooner and says why.
 [profile.default]
-slow-timeout = { period = "30s", terminate-after = 4 }
+slow-timeout = { period = "60s", terminate-after = 5 }
 
-# The offline cargo build inside the sandbox can run past 2 min on a busy machine: allow ~6 min.
+# The offline cargo build inside the sandbox can run long on a busy machine: allow 10 min.
 [[profile.default.overrides]]
 filter = 'test(builds_with_dependencies_work_offline_in_the_sandbox)'
-slow-timeout = { period = "60s", terminate-after = 6 }
+slow-timeout = { period = "60s", terminate-after = 10 }
