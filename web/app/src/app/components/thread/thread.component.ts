@@ -12,6 +12,7 @@ import {
 import { Router } from '@angular/router';
 import type { ApprovalMode } from '@glave/client';
 import {
+  GlzAttachmentComponent,
   GlzButtonComponent,
   GlzComposerComponent,
   GlzMessageComponent,
@@ -24,6 +25,7 @@ import {
 import { type TurnResults, turnResults } from '../../lib/results';
 import { threadTitle } from '../../lib/threads';
 import type { Turn } from '../../lib/turns';
+import { AttachmentsService } from '../../services/attachments.service';
 import { CommandsService } from '../../services/commands.service';
 import { ProjectsService } from '../../services/projects.service';
 import { ThreadService } from '../../services/thread.service';
@@ -40,6 +42,7 @@ import { TurnComponent } from '../turn/turn.component';
 
 const COPY = {
   latest: 'Jump to latest',
+  attach: 'Add files or photos',
   failed: 'Something went wrong:',
   placeholder: 'Reply',
   conversation: 'Conversation',
@@ -87,6 +90,7 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
   imports: [
     ApprovalModeComponent,
     FolderGoneComponent,
+    GlzAttachmentComponent,
     GlzButtonComponent,
     GlzComposerComponent,
     GlzMessageComponent,
@@ -100,7 +104,7 @@ function isFirstPrompt(state: unknown): state is FirstPrompt {
     ToolsPanelComponent,
     TurnComponent,
   ],
-  providers: [ThreadService, CommandsService],
+  providers: [ThreadService, CommandsService, AttachmentsService],
   templateUrl: './thread.component.html',
   styleUrl: './thread.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -112,6 +116,8 @@ export class ThreadComponent {
 
   protected readonly copy = COPY;
   protected readonly service = inject(ThreadService);
+  /** The files added to the message being written, kept in the thread's project. */
+  protected readonly attachments = inject(AttachmentsService);
   private readonly projects = inject(ProjectsService);
   private readonly panel = inject(ToolsPanelService);
   private readonly stick = viewChild.required(GlzStickToBottomDirective);
@@ -162,7 +168,7 @@ export class ThreadComponent {
   constructor() {
     const navigation = inject(Router).currentNavigation();
     const state: unknown = navigation?.extras.state;
-    let first = isFirstPrompt(state) ? state.prompt : null;
+    let first = isFirstPrompt(state) ? state : null;
     effect(() => {
       const thread = this.thread();
       untracked(() => {
@@ -170,9 +176,20 @@ export class ThreadComponent {
         first = null;
         this.picked.set(null);
         this.pickedMode.set(null);
+        this.attachments.clear();
         void this.service
           .open(thread)
-          .then(() => (prompt === null ? undefined : this.service.send(prompt)));
+          .then(() =>
+            prompt === null
+              ? undefined
+              : this.service.send(prompt.prompt, null, null, prompt.files ?? []),
+          );
+      });
+    });
+    effect(() => {
+      const project = this.projects.projectOf(this.thread())?.id ?? null;
+      untracked(() => {
+        this.attachments.keepIn(project);
       });
     });
   }
@@ -183,7 +200,8 @@ export class ThreadComponent {
     const model = picked !== null && picked !== this.service.chosen() ? picked : null;
     const pickedMode = this.pickedMode();
     const mode = pickedMode !== null && pickedMode !== this.mode() ? pickedMode : null;
-    void this.service.send(text, model, mode);
+    void this.service.send(text, model, mode, this.attachments.attached());
+    this.attachments.clear();
   }
 
   protected stop(): void {

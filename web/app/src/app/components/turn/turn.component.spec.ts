@@ -11,6 +11,7 @@ const RESULTS: TurnResults = {
   key: 't',
   prompt: {
     kind: 'message',
+    files: [],
     key: 'm1',
     seq: 1,
     from: 'person',
@@ -21,6 +22,7 @@ const RESULTS: TurnResults = {
   before: [],
   reply: {
     kind: 'message',
+    files: [],
     key: 'm9',
     seq: 9,
     from: 'model',

@@ -25,6 +25,7 @@ describe('ThreadItemComponent', () => {
   it('shows a reply as markdown, named for screen readers, with a copy button', async () => {
     const { root } = await render({
       kind: 'message',
+      files: [],
       key: 'm',
       seq: 1,
       from: 'model',
@@ -43,6 +44,7 @@ describe('ThreadItemComponent', () => {
   it('gives the person’s own message no copy button', async () => {
     const { root } = await render({
       kind: 'message',
+      files: [],
       key: 'm',
       seq: 1,
       from: 'person',
@@ -56,6 +58,7 @@ describe('ThreadItemComponent', () => {
   it('says the model read a message the person sent while it worked', async () => {
     const message = {
       kind: 'message',
+      files: [],
       key: 'm',
       seq: 4,
       from: 'person',
@@ -74,6 +77,7 @@ describe('ThreadItemComponent', () => {
   it('gives a message with nothing to copy no copy button', async () => {
     const { root } = await render({
       kind: 'message',
+      files: [],
       key: 'm',
       seq: 1,
       from: 'model',

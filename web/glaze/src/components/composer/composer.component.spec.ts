@@ -156,3 +156,92 @@ describe('GlzComposerComponent', () => {
     expect(document.activeElement).toBe(find(root, 'composer-input'));
   });
 });
+
+@Component({
+  imports: [GlzComposerComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <glz-composer
+      testId="composer"
+      attachLabel="Add files or photos"
+      [(value)]="draft"
+      [attached]="attached()"
+      [waiting]="waiting()"
+      (send)="sent.push($event)"
+      (attach)="added.push($event)"
+    >
+      <span glzComposerAttachments data-testid="file">shot.png</span>
+    </glz-composer>
+  `,
+})
+class AttachingComponent {
+  readonly draft = signal('');
+  readonly attached = signal(0);
+  readonly waiting = signal(false);
+  readonly sent: string[] = [];
+  readonly added: (readonly File[])[] = [];
+}
+
+/** An event carrying `files`, as a paste or a drop does. */
+function carrying<T extends Event>(
+  event: T,
+  key: 'clipboardData' | 'dataTransfer',
+  files: File[],
+): T {
+  Object.defineProperty(event, key, {
+    value: { files, types: ['Files'] },
+  });
+  return event;
+}
+
+describe('GlzComposerComponent with files', () => {
+  const shot = new File(['png'], 'shot.png', { type: 'image/png' });
+
+  it('adds files by its button, by pasting and by dropping them', async () => {
+    const fixture = TestBed.createComponent(AttachingComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const host = fixture.componentInstance;
+    const attach = find<HTMLButtonElement>(root, 'composer-attach');
+    expect(attach.getAttribute('aria-label')).toBe('Add files or photos');
+    const picker = find<HTMLInputElement>(root, 'composer-picker');
+    const opened = vi.spyOn(picker, 'click').mockImplementation(() => undefined);
+    attach.click();
+    expect(opened).toHaveBeenCalledOnce();
+    // What sits in the attachments slot is inside the box, above the text.
+    expect(root.querySelector('.box [data-testid="file"]')).not.toBeNull();
+
+    const input = find<HTMLTextAreaElement>(root, 'composer-input');
+    const paste = carrying(new Event('paste', { cancelable: true }), 'clipboardData', [shot]);
+    input.dispatchEvent(paste);
+    expect(paste.defaultPrevented).toBe(true);
+    const composer = root.querySelector<HTMLElement>('glz-composer');
+    const over = carrying(new Event('dragover', { cancelable: true }), 'dataTransfer', [shot]);
+    composer?.dispatchEvent(over);
+    await fixture.whenStable();
+    expect(over.defaultPrevented).toBe(true);
+    expect(composer?.classList).toContain('glz-composer--dragging');
+    const drop = carrying(new Event('drop', { cancelable: true }), 'dataTransfer', [shot]);
+    composer?.dispatchEvent(drop);
+    await fixture.whenStable();
+    expect(composer?.classList).not.toContain('glz-composer--dragging');
+    expect(host.added).toEqual([[shot], [shot]]);
+    await expectAccessible(root);
+  });
+
+  it('sends files with no text, and waits while one is on its way', async () => {
+    const fixture = TestBed.createComponent(AttachingComponent);
+    const host = fixture.componentInstance;
+    host.attached.set(1);
+    host.waiting.set(true);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const send = find<HTMLButtonElement>(root, 'composer-send');
+    expect(send.disabled).toBe(true);
+    host.waiting.set(false);
+    await fixture.whenStable();
+    expect(send.disabled).toBe(false);
+    send.click();
+    expect(host.sent).toEqual(['']);
+  });
+});

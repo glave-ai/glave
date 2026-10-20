@@ -10,9 +10,26 @@
     size="lg"
     [placeholder]="copy.placeholder"
     [disabled]="starting()"
+    [attachLabel]="copy.attach"
+    [attached]="attachments.count()"
+    [waiting]="attachments.waiting()"
     [(value)]="draft"
     (send)="send($event)"
+    (attach)="attachments.add($event)"
   >
+    @for (chip of attachments.chips(); track chip.key) {
+      <glz-attachment
+        glzComposerAttachments
+        testId="home-composer-file"
+        [name]="chip.name"
+        [detail]="chip.detail"
+        [preview]="chip.preview"
+        [busy]="chip.busy"
+        [failed]="chip.failed"
+        [removeLabel]="chip.removeLabel"
+        (remove)="attachments.remove(chip.key)"
+      />
+    }
     @if (whereInBox()) {
       <glz-menu-select
         glzComposerStart

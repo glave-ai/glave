@@ -1,0 +1,72 @@
+:host {
+  display: inline-flex;
+  gap: var(--glz-space-2);
+  align-items: center;
+  max-inline-size: 16rem;
+  padding: var(--glz-space-half);
+  padding-inline-end: var(--glz-space-1);
+  border: var(--glz-border-width) solid var(--glz-color-border);
+  border-radius: var(--glz-radius-control);
+  background: var(--glz-surface-card);
+  color: var(--glz-color-text);
+}
+
+:host([aria-busy='true']) .thumb,
+:host([aria-busy='true']) .mark {
+  opacity: 0.5;
+}
+
+.thumb,
+.mark {
+  flex: none;
+  inline-size: var(--glz-control-height-md);
+  block-size: var(--glz-control-height-md);
+  border-radius: var(--glz-radius-mark);
+}
+
+.thumb {
+  object-fit: cover;
+}
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glz-surface-sunken);
+  color: var(--glz-color-text-muted);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.name,
+.detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name {
+  font-size: var(--glz-text-sm);
+}
+
+.detail {
+  font-size: var(--glz-text-xs);
+  color: var(--glz-color-text-muted);
+}
+
+:host(.glz-attachment--failed) {
+  border-color: var(--glz-color-danger);
+}
+
+:host(.glz-attachment--failed) .detail {
+  color: var(--glz-color-danger);
+}
+
+.remove {
+  flex: none;
+  color: var(--glz-color-text-muted);
+}

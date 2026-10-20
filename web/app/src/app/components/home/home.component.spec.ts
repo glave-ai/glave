@@ -182,3 +182,36 @@ describe('HomeComponent', () => {
     ).toBe('Hello');
   });
 });
+
+describe('HomeComponent with files', () => {
+  it('keeps a file where the thread starts and opens the thread with it', async () => {
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:1' });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => undefined });
+    const sha = 'b'.repeat(64);
+    const fake = session().answer('file/upload', {
+      file: { sha256: sha, name: 'notes.txt', media_type: 'text/plain', bytes: 2 },
+    });
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    const root = await render(fake);
+    const picker = root.querySelector<HTMLInputElement>('[data-testid="home-composer-picker"]');
+    const file = new File(['hi'], 'notes.txt', { type: 'text/plain' });
+    Object.defineProperty(picker, 'files', { configurable: true, value: [file] });
+    picker?.dispatchEvent(new Event('change'));
+    await vi.waitFor(() => {
+      expect(fake.paramsOf('file/upload')).toEqual([
+        { project: 'me', name: 'notes.txt', media_type: 'text/plain', data: 'aGk=' },
+      ]);
+    });
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(root.querySelector('[data-testid="home-composer-file"]')?.textContent).toContain(
+      'notes.txt',
+    );
+    await expectAccessible(root);
+    await send(root, 'Summarize this');
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(navigate).toHaveBeenCalledWith(['/t', 't9'], {
+      state: { prompt: 'Summarize this', files: [{ sha256: sha, name: 'notes.txt' }] },
+    });
+    navigate.mockRestore();
+  });
+});

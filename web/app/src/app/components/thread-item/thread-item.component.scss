@@ -14,3 +14,8 @@
   overflow: auto;
   white-space: pre-wrap;
 }
+
+// The files a message was sent with, under its text; nothing when it had none.
+.files:empty {
+  display: none;
+}

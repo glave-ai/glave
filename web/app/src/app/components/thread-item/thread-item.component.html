@@ -6,6 +6,11 @@
         <glz-reasoning>{{ item.reasoning }}</glz-reasoning>
       }
       <app-message-text [text]="item.text" [markdown]="item.markdown" />
+      <div class="files glz-row glz-gap-2">
+        @for (file of item.files; track $index) {
+          <glz-attachment testId="thread-message-file" [name]="file.name" [detail]="file.size" />
+        }
+      </div>
       @if (item.steered) {
         <p class="caption" data-testid="thread-message-read">{{ copy.read }}</p>
       }

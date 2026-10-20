@@ -7,9 +7,10 @@ import {
   input,
   model,
   output,
+  signal,
   viewChild,
 } from '@angular/core';
-import { ArrowUp, SlidersHorizontal, Square } from 'lucide';
+import { ArrowUp, Plus, SlidersHorizontal, Square } from 'lucide';
 
 import { injectId } from '../../tokens/ids';
 import { isApple } from '../../lib/shortcuts';
@@ -19,6 +20,8 @@ import { testIds } from '../../lib/test-ids';
 
 /** The parts end-to-end tests reach, as `<testId>-<part>`. */
 const PARTS = {
+  attach: 'attach',
+  picker: 'picker',
   input: 'input',
   stop: 'stop',
   send: 'send',
@@ -46,6 +49,11 @@ export type GlzComposerSize = 'md' | 'lg';
  * it works. A `lg` composer starts a thread: two lines to write in, in larger type, more room
  * round them, rounder corners, and a shadow under it.
  *
+ * With an `attachLabel`, a + at the box's start opens the system's file picker, and files
+ * pasted into the box or dropped on the composer are added too: `attach` emits them, and the app
+ * shows each as a chip in `[glzComposerAttachments]`, a row above the text. `attached` lets a
+ * message with files and no text be sent; `waiting` holds Send while one is on its way.
+ *
  * ```html
  * <glz-composer [(value)]="draft" [busy]="running()" (send)="start($event)" (stop)="cancel()">
  *   <glz-menu-select glzComposerStatus label="Model" quiet [options]="models" [(value)]="model" />
@@ -61,6 +69,11 @@ export type GlzComposerSize = 'md' | 'lg';
   host: {
     '[attr.data-testid]': 'testId()',
     '[class.glz-composer--lg]': 'large()',
+    '[class.glz-composer--attach]': 'attachable()',
+    '[class.glz-composer--dragging]': 'dragging()',
+    '(dragover)': 'dragover($event)',
+    '(dragleave)': 'dragleave()',
+    '(drop)': 'drop($event)',
   },
 })
 export class GlzComposerComponent {
@@ -81,16 +94,39 @@ export class GlzComposerComponent {
   /** Names the button that opens the status line on a phone, and the line itself. */
   readonly optionsLabel = input('Options');
   readonly hint = input('Enter to send, Shift+Enter for a new line');
+  /**
+   * Names the button at the box's start that adds files; with it, files pasted into the box
+   * or dropped on the composer are added too (`attach`). With none, files are not taken.
+   */
+  readonly attachLabel = input<string | null>(null);
+  /** How many files go with the message: with one, it may be sent with no text. */
+  readonly attached = input(0);
+  /** Whether a file is still on its way: Send waits for it. */
+  readonly waiting = input(false, { transform: booleanAttribute });
   readonly send = output<string>();
   readonly stop = output();
+  /** Files the person added, by the button, pasting or dropping them. */
+  readonly attach = output<readonly File[]>();
 
   protected readonly hintId = injectId('glz-composer-hint');
   protected readonly statusId = injectId('glz-composer-status');
   protected readonly large = computed(() => this.size() === 'lg');
-  protected readonly icons = { send: ArrowUp, stop: Square, options: SlidersHorizontal };
+  protected readonly icons = {
+    send: ArrowUp,
+    stop: Square,
+    options: SlidersHorizontal,
+    attach: Plus,
+  };
   private readonly textarea = viewChild.required<ElementRef<HTMLTextAreaElement>>('textarea');
+  private readonly picker = viewChild<ElementRef<HTMLInputElement>>('picker');
 
-  protected readonly canSend = computed(() => !this.disabled() && this.value().trim() !== '');
+  protected readonly attachable = computed(() => this.attachLabel() !== null);
+  /** Whether files are being dragged over the composer. */
+  protected readonly dragging = signal(false);
+  protected readonly canSend = computed(
+    () =>
+      !this.disabled() && !this.waiting() && (this.value().trim() !== '' || this.attached() > 0),
+  );
   protected readonly sendDisabled = computed(() => !this.canSend());
   /** Whether Send shows beside Stop: while busy, once there is something to send. */
   protected readonly sendBesideStop = computed(() => this.busy() && this.canSend());
@@ -135,4 +171,61 @@ export class GlzComposerComponent {
   protected stopped(): void {
     this.stop.emit();
   }
+
+  /** Opens the system's file picker. */
+  protected pick(): void {
+    this.picker()?.nativeElement.click();
+  }
+
+  protected picked(event: Event): void {
+    if (!(event.target instanceof HTMLInputElement)) {
+      return;
+    }
+    this.added(event.target.files);
+    // Picking the same file again adds it again.
+    event.target.value = '';
+  }
+
+  /** A paste that holds files adds them; text pastes as ever. */
+  protected pasted(event: ClipboardEvent): void {
+    const files = event.clipboardData?.files;
+    if (!this.attachable() || files === undefined || files.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    this.added(files);
+  }
+
+  protected dragover(event: DragEvent): void {
+    if (!this.attachable() || !carriesFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    this.dragging.set(true);
+  }
+
+  protected dragleave(): void {
+    this.dragging.set(false);
+  }
+
+  protected drop(event: DragEvent): void {
+    this.dragging.set(false);
+    const files = event.dataTransfer?.files;
+    if (!this.attachable() || files === undefined || files.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    this.added(files);
+  }
+
+  private added(files: FileList | null): void {
+    if (files !== null && files.length > 0) {
+      this.attach.emit(Array.from(files));
+    }
+  }
+}
+
+/** Whether what is dragged holds files, rather than text or a link. */
+function carriesFiles(event: DragEvent): boolean {
+  return event.dataTransfer?.types.includes('Files') ?? false;
 }

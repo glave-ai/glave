@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import {
   GlzApprovalCardComponent,
+  GlzAttachmentComponent,
   GlzCopyButtonComponent,
   type GlzDecision,
   type GlzIconData,
@@ -80,6 +81,7 @@ function shown(item: ThreadItem): ShownItem {
   selector: 'app-thread-item',
   imports: [
     GlzApprovalCardComponent,
+    GlzAttachmentComponent,
     GlzCopyButtonComponent,
     GlzMessageComponent,
     GlzQuestionCardComponent,

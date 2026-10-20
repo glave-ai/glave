@@ -1,4 +1,26 @@
 <div class="box">
+  <div class="files"><ng-content select="[glzComposerAttachments]" /></div>
+  @if (attachLabel(); as label) {
+    <button
+      glzIconButton
+      type="button"
+      class="attach"
+      [attr.data-testid]="ids().attach"
+      [label]="label"
+      (click)="pick()"
+    >
+      <glz-icon [icon]="icons.attach" />
+    </button>
+    <input
+      #picker
+      type="file"
+      multiple
+      hidden
+      tabindex="-1"
+      [attr.data-testid]="ids().picker"
+      (change)="picked($event)"
+    />
+  }
   <button
     glzIconButton
     type="button"
@@ -21,6 +43,7 @@
     [value]="value()"
     (input)="typed($event)"
     (keydown)="keydown($event)"
+    (paste)="pasted($event)"
   ></textarea>
   <div class="start"><ng-content select="[glzComposerStart]" /></div>
   <div class="acts">
