@@ -24,6 +24,7 @@ use crate::args::Args;
 use crate::client::Glave;
 use crate::data::{DataBlobs, DataLog};
 use crate::memory::Running;
+use glave_ports::host::PublicOrigin;
 use glave_ports::{BlobStore as _, OrgId};
 
 /// How often the server looks at its log's size, and whether the daily work is due.
@@ -91,11 +92,13 @@ impl Daily<'_> {
     }
 }
 
-/// Serves `server` as the person's server, holding its lock, until it is told to stop: first
+/// Serves `server` as the person's server, holding its lock, reached from elsewhere at
+/// `origin` if anywhere, until it is told to stop: first
 /// recording the tasks a server before it left running as interrupted, then firing every
 /// project's schedules and doing the `daily` work while it runs.
 pub(crate) async fn run(
     args: &Args,
+    origin: Option<&PublicOrigin>,
     server: &Glave,
     daily: &Daily<'_>,
     _held: &Lock,
@@ -103,7 +106,7 @@ pub(crate) async fn run(
     let address = args.http.context("the person's server listens over HTTP")?;
     // Bound, and its address written, before the socket answers, so a client of the socket
     // finds it.
-    let http = crate::serving::open(args, address).await?;
+    let http = crate::serving::open(args, address, origin).await?;
     let path = socket_path()?;
     // Only the lock's holder removes a socket a server before it left.
     let listener = crate::socket::listen(&path).await?;

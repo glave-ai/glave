@@ -14,6 +14,7 @@ use glave_harness::{
 };
 use glave_identity::signin::Browsers;
 use glave_ports::computer::{ComputerError, Environment};
+use glave_ports::host::PublicOrigin;
 use glave_ports::memories::Memory;
 use glave_ports::settings::Hooks;
 use glave_ports::{
@@ -98,6 +99,9 @@ pub struct Wiring<P, L, B> {
     /// The browsers signed in on this computer, by links' one-time codes; none where no
     /// browser is signed in that way, as over stdio.
     pub browsers: Option<Arc<Browsers>>,
+    /// Where people reach the server from elsewhere, through what serves HTTPS for it; none
+    /// where it answers only on its own computer.
+    pub origin: Option<PublicOrigin>,
 }
 
 impl<P, L, B> Wiring<P, L, B> {
@@ -106,7 +110,8 @@ impl<P, L, B> Wiring<P, L, B> {
     /// starts off or empty: the system clock and the operating system's randomness; no
     /// `web_fetch`, other tools, hooks, workers, memory, model accounts, git hosts, rereading,
     /// project folders, trust or browsers; no limit on tasks; only the settings' own model and
-    /// mode; threads in their project's folder rather than a worktree. An embedder names only
+    /// mode; threads in their project's folder rather than a worktree; reached only on its own
+    /// computer. An embedder names only
     /// what it changes: `Wiring { hooks, ..Wiring::new(...) }`.
     pub fn new(
         provider: P,
@@ -139,6 +144,7 @@ impl<P, L, B> Wiring<P, L, B> {
             project_folders: None,
             trust: None,
             browsers: None,
+            origin: None,
         }
     }
 }
@@ -210,6 +216,8 @@ pub(crate) struct Inner<P, L, B> {
     pub(crate) trust: Option<Arc<dyn ProjectTrust>>,
     /// The browsers signed in on this computer, when it signs them in.
     pub(crate) browsers: Option<Arc<Browsers>>,
+    /// Where people reach the server from elsewhere, if they do.
+    pub(crate) origin: Option<PublicOrigin>,
     /// What the threads opened or started here did with their projects' asks.
     pub(crate) asks: Mutex<Asks>,
     /// Set once the server stops: it starts no new work (`stopping.rs`).
@@ -280,6 +288,7 @@ where
                 trust: wiring.trust,
                 asks: Mutex::new(Asks::default()),
                 browsers: wiring.browsers,
+                origin: wiring.origin,
                 stopping: AtomicBool::new(false),
             }),
         }

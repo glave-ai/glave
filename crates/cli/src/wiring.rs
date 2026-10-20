@@ -139,6 +139,7 @@ pub(crate) async fn wire(
         project_folders: Some(Arc::clone(&projects) as Arc<dyn glave_harness::ProjectFolders>),
         trust: Some(Arc::clone(&projects) as Arc<dyn ProjectTrust>),
         browsers: crate::serving::browsers(args, &store, identity.person).await?,
+        origin: choices.origin.as_ref().map(|origin| origin.value.clone()),
         ..Wiring::new(
             lined.switch,
             store.log(),

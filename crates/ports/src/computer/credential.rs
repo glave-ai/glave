@@ -34,22 +34,7 @@ impl CredentialHost {
     /// for: `https://` and a host of letters, digits, `.` and `-` with any port, or `http://` to
     /// this computer, and nothing more: no path, user name, query or project.
     pub fn origin(&self) -> Option<(&str, &str)> {
-        let (scheme, host) = self.url.split_once("://")?;
-        let (name, port) = match host.rsplit_once(':') {
-            Some((name, port)) if !name.ends_with(':') => (name, Some(port)),
-            _ => (host, None),
-        };
-        let named = name == "[::1]"
-            || (!name.is_empty()
-                && name
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-'));
-        let ported = port.is_none_or(|port| {
-            !port.is_empty() && port.len() <= 5 && port.chars().all(|c| c.is_ascii_digit())
-        });
-        let local = crate::host::is_this_computer(name);
-        let allowed = scheme == "https" || (scheme == "http" && local);
-        (named && ported && allowed).then_some((scheme, host))
+        crate::host::origin(&self.url)
     }
 
     /// Whether `ask` is for this host: its scheme exactly, its host and port in any case.

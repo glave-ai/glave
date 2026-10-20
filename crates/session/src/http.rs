@@ -6,7 +6,8 @@
 //! Every request needs a valid sign-in, but `server/discover` and, from this computer,
 //! `signin/redeem`: without one the answer is HTTP 401 with error `-32013`. Served with a
 //! [`Site`], any `GET` is the web app instead (`site`), with no sign-in: the app signs in to
-//! the API itself. On a loopback listener, a foreign `Host` or `Origin` is refused (`hosts`).
+//! the API itself. A foreign `Host` on a loopback listener, or a page of another origin, is
+//! refused (`hosts`).
 
 mod body;
 mod hosts;
@@ -77,7 +78,10 @@ where
         None => signin,
     });
     let site = Arc::new(site);
-    let hosts = Arc::new(ListenerNames::of(listener.local_addr()?));
+    let hosts = Arc::new(ListenerNames::of(
+        listener.local_addr()?,
+        server.inner.origin.as_ref(),
+    ));
     let mut connections = JoinSet::new();
     let mut stop = pin!(stop);
     loop {

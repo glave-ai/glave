@@ -189,11 +189,13 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         || start.store != now.store
         || start.telemetry != now.telemetry
         || start.workers != now.workers
-        || start.github != now.github;
+        || start.github != now.github
+        || start.origin != now.origin;
     if waits {
         tracing::warn!(
             "glave's settings changed where only a restart applies them (the store, the \
-             gateway, the provider, telemetry, workers or GitHub); restart glave for them"
+             gateway, the provider, telemetry, workers, GitHub or where people reach glave); \
+             restart glave for them"
         );
     }
     Choices {
@@ -203,6 +205,7 @@ fn as_started(start: &Choices, now: Choices) -> Choices {
         telemetry: start.telemetry.clone(),
         workers: start.workers.clone(),
         github: start.github.clone(),
+        origin: start.origin.clone(),
         ..now
     }
 }

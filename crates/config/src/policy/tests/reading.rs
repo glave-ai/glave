@@ -332,6 +332,38 @@ fn the_store_is_the_person_s_choice_and_its_password_never_shown() {
 }
 
 #[test]
+fn where_people_reach_glave_is_the_person_s_to_say_and_only_an_https_origin() {
+    let dir = scratch("origin");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let mut locations = Locations::here(&home, &dir);
+    locations.policies = vec![];
+    let text = "[serve]\norigin = \"https://Glave.Example.com/\"\n";
+    let project = files::config(text, &locations.project).unwrap();
+    let loaded = load_all(&locations, Some(project)).unwrap();
+    assert_eq!(loaded.choices.origin, None, "a project's is ignored");
+    std::fs::write(home.join("config.toml"), text).unwrap();
+    let loaded = load_all(&locations, None).unwrap();
+    let chosen = loaded.choices.origin.as_ref().unwrap();
+    assert_eq!(chosen.value.as_str(), "https://glave.example.com");
+    assert_eq!(chosen.from, Source::File(home.join("config.toml")));
+    let (shown, _) = explain(&loaded, None);
+    assert!(shown.contains("https://glave.example.com"), "{shown}");
+    for wrong in [
+        "glave.example.com",
+        "http://glave.example.com",
+        "https://glave.example.com/app",
+        "https://localhost:4180",
+    ] {
+        let text = format!("[serve]\norigin = \"{wrong}\"\n");
+        let refused = files::config(&text, &locations.person)
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("[serve] origin"), "{refused}");
+    }
+}
+
+#[test]
 fn the_bucket_is_the_person_s_choice_and_only_an_s3_one() {
     let dir = scratch("bucket");
     let home = dir.join("home");
