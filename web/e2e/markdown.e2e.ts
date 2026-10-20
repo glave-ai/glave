@@ -106,7 +106,11 @@ test('a code block’s copy button copies its code', async ({ page, context, bro
   const composer = byTestId(page, 'thread-composer-input');
   await composer.fill(MARKDOWN_PROMPT);
   await composer.press('Enter');
-  const copy = byTestId(page, 'thread-message').last().getByTestId('thread-markdown-copy');
+  const reply = byTestId(page, 'thread-message').last();
+  // Highlighting, which loads after the block first shows, draws the block again and gives it
+  // a new copy button: the one clicked is the one that stays.
+  await expect(reply.locator('.hljs-built_in')).toHaveText('test');
+  const copy = reply.getByTestId('thread-markdown-copy');
   await copy.click();
   await expect(copy).toHaveAccessibleName('Copied');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('cargo test --workspace');
