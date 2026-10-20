@@ -302,6 +302,7 @@ pub(super) fn table() -> Vec<(&'static str, Vec<Value>)> {
             vec![json!({"kind": "openai", "key": "a-key-it-refuses"})],
         ),
         ("provider/list", vec![json!({})]),
+        ("provider/refresh", vec![json!({})]),
         ("provider/remove", vec![json!({"provider": "@provider"})]),
         (
             "credential/connect",

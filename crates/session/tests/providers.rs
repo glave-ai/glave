@@ -5,6 +5,7 @@
 //! whose models someone else sets up refuses everyone.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use glave_event::{ProviderId, ProviderKind, Secret};
@@ -13,7 +14,7 @@ use glave_ports::testing::FAKE_SECRET;
 use glave_ports::{BoxFuture, Clock as _, Failure, SystemClock};
 use glave_session::protocol::{ApiError, ErrorData, ModelInfo, ProviderInfo, Request, code, hint};
 use glave_session::signin::{LocalToken, SignIn};
-use glave_session::{Answering, Models, NewProvider, Providers};
+use glave_session::{Answering, Models, NewProvider, Providers, Refreshed};
 use serde_json::Value;
 
 use crate::conformance::{Client, InProcess, OverHttp, OverJsonRpc};
@@ -26,18 +27,27 @@ const BAD: &str = "a-key-it-refuses";
 /// A key it takes.
 const GOOD: &str = FAKE_SECRET;
 
-/// A host that keeps accounts in memory, as a service that offers two models.
+/// A host that keeps accounts in memory, as a service that offers two models, and a third
+/// once its catalog is refreshed; its daily refresh is due when `due` says.
 #[derive(Default)]
-pub(crate) struct Accounts(Mutex<Vec<ProviderInfo>>);
+pub(crate) struct Accounts {
+    kept: Mutex<Vec<ProviderInfo>>,
+    refreshed: AtomicBool,
+    due: AtomicBool,
+}
 
 impl Accounts {
     fn models(&self) -> Models {
-        let kept = self.0.lock().unwrap();
+        let kept = self.kept.lock().unwrap();
+        let mut offered = vec![ModelInfo::new("fake-small")];
+        if self.refreshed.load(Ordering::SeqCst) {
+            offered.push(ModelInfo::new("fake-new"));
+        }
         match kept.first() {
             None => Models::default(),
             Some(_) => Models {
                 default: Some(("fake-big".into(), "fake".into())),
-                offered: vec![ModelInfo::new("fake-small")],
+                offered,
             },
         }
     }
@@ -55,7 +65,7 @@ impl Providers for Accounts {
                     }),
                 });
             }
-            let n = u8::try_from(self.0.lock().unwrap().len()).unwrap();
+            let n = u8::try_from(self.kept.lock().unwrap().len()).unwrap();
             let info = ProviderInfo {
                 id: ProviderId::new(SystemClock.now(), [n + 1; 10]).unwrap(),
                 kind: new.kind,
@@ -63,19 +73,19 @@ impl Providers for Accounts {
                 hint: hint(new.key.expose()),
                 models: vec!["fake-big".into(), "fake-small".into()],
             };
-            self.0.lock().unwrap().push(info.clone());
+            self.kept.lock().unwrap().push(info.clone());
             Ok((info, self.models()))
         })
     }
 
     fn list(&self) -> BoxFuture<'_, Result<Vec<ProviderInfo>, ApiError>> {
-        Box::pin(async move { Ok(self.0.lock().unwrap().clone()) })
+        Box::pin(async move { Ok(self.kept.lock().unwrap().clone()) })
     }
 
     fn remove(&self, provider: ProviderId) -> BoxFuture<'_, Result<Models, ApiError>> {
         Box::pin(async move {
             {
-                let mut kept = self.0.lock().unwrap();
+                let mut kept = self.kept.lock().unwrap();
                 let before = kept.len();
                 kept.retain(|info| info.id != provider);
                 if kept.len() == before {
@@ -85,13 +95,38 @@ impl Providers for Accounts {
             Ok(self.models())
         })
     }
+
+    fn due(&self) -> bool {
+        self.due.swap(false, Ordering::SeqCst)
+    }
+
+    fn refresh(&self, all: bool) -> BoxFuture<'_, Result<Refreshed, ApiError>> {
+        Box::pin(async move {
+            let changed = !self.refreshed.swap(true, Ordering::SeqCst);
+            let failed =
+                all.then(|| ApiError::new(code::PROVIDER, "a service could not be reached"));
+            Ok(Refreshed {
+                changed,
+                failed: failed.filter(|_| !changed),
+            })
+        })
+    }
+
+    fn models(&self) -> BoxFuture<'_, Result<Models, ApiError>> {
+        Box::pin(async move { Ok(Self::models(self)) })
+    }
 }
 
 /// A server with no model set up, whose accounts the fake host keeps.
 async fn fresh(dir: &Path) -> Tested {
+    with_accounts(dir, Arc::new(Accounts::default())).await
+}
+
+/// A server with no model set up, whose accounts `accounts` keeps.
+async fn with_accounts(dir: &Path, accounts: Arc<Accounts>) -> Tested {
     let mut setup = Setup::asking(Vec::new(), Answering::Clients);
     setup.settings = Settings::new("", "");
-    setup.providers = Some(Arc::new(Accounts::default()));
+    setup.providers = Some(accounts);
     setup.build(dir).await.0
 }
 
@@ -258,6 +293,64 @@ fn a_server_whose_models_are_set_up_for_it_refuses_model_accounts() {
             .await
             .unwrap_err();
         assert_eq!(refused.code, code::NOT_AVAILABLE);
+        tested.shutdown().await;
+    });
+}
+
+#[test]
+fn the_person_refreshes_the_catalogs_and_the_models_follow() {
+    block_on!(async {
+        let dir = folder("providers-refresh");
+        let tested = fresh(&dir).await;
+        let mut client = InProcess(tested.clone());
+        client
+            .call(connect(ProviderKind::Openrouter, GOOD))
+            .await
+            .unwrap();
+        let listed = client.call(Request::ProviderRefresh {}).await.unwrap();
+        assert_eq!(listed["providers"][0]["kind"], "openrouter", "{listed}");
+        let models = client.call(Request::ModelList {}).await.unwrap();
+        assert_eq!(ids(&models), ["fake-big", "fake-small", "fake-new"]);
+        let failed = client.call(Request::ProviderRefresh {}).await.unwrap_err();
+        assert_eq!(failed.code, code::PROVIDER, "a service that fails says so");
+        tested.shutdown().await;
+
+        let dir = folder("providers-refresh-oidc");
+        let mut client = OverHttp::new(fresh(&dir).await).await;
+        let refused = client.call(Request::ProviderRefresh {}).await.unwrap_err();
+        assert_eq!(refused.code, code::NOT_ALLOWED, "{refused}");
+        client.close().await;
+    });
+}
+
+#[test]
+fn catalogs_due_their_daily_refresh_are_refreshed_without_anyone_waiting() {
+    block_on!(async {
+        let dir = folder("providers-daily");
+        let accounts = Arc::new(Accounts::default());
+        let tested = with_accounts(&dir, Arc::clone(&accounts)).await;
+        let mut client = InProcess(tested.clone());
+        client
+            .call(connect(ProviderKind::Openrouter, GOOD))
+            .await
+            .unwrap();
+        accounts.due.store(true, Ordering::SeqCst);
+        let before = client.call(Request::ModelList {}).await.unwrap();
+        assert_eq!(
+            ids(&before),
+            ["fake-big", "fake-small"],
+            "no one waits for it"
+        );
+        let mut after = Vec::new();
+        for _ in 0..1_000 {
+            tokio::task::yield_now().await;
+            after = ids(&client.call(Request::ModelList {}).await.unwrap());
+            if after.len() == 3 {
+                break;
+            }
+        }
+        assert_eq!(after, ["fake-big", "fake-small", "fake-new"]);
+        assert!(!accounts.due.load(Ordering::SeqCst), "claimed once");
         tested.shutdown().await;
     });
 }

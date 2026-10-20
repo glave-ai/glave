@@ -2,21 +2,27 @@
 //! their key for OpenAI, Anthropic, OpenRouter or another OpenAI-compatible server from a
 //! client, with no settings to write. glave checks the key with the service, keeps it sealed in
 //! the store under a key of its own, and runs the account's models from then on, beside any
-//! the settings choose, which stay first.
+//! the settings choose, which stay first. Each service's catalog, its models as its own list
+//! describes them, is kept in the store too, and listed again daily and on demand
+//! (`refresh.rs`).
 
+mod card;
 mod check;
 mod lineup;
+mod refresh;
 
 use std::sync::{Mutex, PoisonError};
+use std::time::Instant;
 
-use glave_event::{Principal, ProviderConnected, ProviderId, ProviderKind, Secret};
+use glave_event::{At, Catalog, Principal, ProviderConnected, ProviderId, ProviderKind, Secret};
 use glave_ports::auth::safe_to_send;
 use glave_ports::{BoxFuture, Clock as _, Failure, ProviderError, SystemClock};
 use glave_provider_openai::Config;
 use glave_session::protocol::{ApiError, ErrorData, ProviderInfo, code, hint};
-use glave_session::{Models, NewProvider, Providers};
+use glave_session::{Models, NewProvider, Providers, Refreshed};
 
 use crate::accounts::{Ledger, random};
+use crate::catalogs::Catalogs;
 use crate::config::Endpoint;
 use crate::gateway::GatewaySwitch;
 use crate::model;
@@ -32,20 +38,30 @@ const KEY_FROM: &str = "the key of the model account you connected";
 /// What says where an account's models are, for `config::fix`.
 const AT: &str = "the model account you connected";
 
-/// The person's model accounts, and the gateway their models run on.
+/// The person's model accounts, their services' catalogs, and the gateway their models run on.
 pub(crate) struct ModelAccounts {
     ledger: Ledger,
+    catalogs: Catalogs,
     /// What the models are built from: replaced when the person's settings change.
     lineup: Mutex<Lineup>,
     switch: GatewaySwitch,
+    /// When the catalogs are next due a refresh; at once after a start.
+    due: Mutex<Option<Instant>>,
 }
 
 impl ModelAccounts {
-    pub(crate) fn new(ledger: Ledger, lineup: Lineup, switch: GatewaySwitch) -> Self {
+    pub(crate) fn new(
+        ledger: Ledger,
+        catalogs: Catalogs,
+        lineup: Lineup,
+        switch: GatewaySwitch,
+    ) -> Self {
         Self {
             ledger,
+            catalogs,
             lineup: Mutex::new(lineup),
             switch,
+            due: Mutex::new(None),
         }
     }
 
@@ -61,18 +77,19 @@ impl ModelAccounts {
     /// to them.
     pub(crate) async fn relined(&self, lineup: Lineup) -> anyhow::Result<Models> {
         let accounts = self.ledger.accounts().await?;
-        let built = lineup.build(&accounts.providers)?;
+        let built = lineup.build(&accounts.providers, &self.catalogs.latest().await?)?;
         *self.lineup.lock().unwrap_or_else(PoisonError::into_inner) = lineup;
         self.switch.set(built.gateway);
         Ok(built.models)
     }
 
-    /// Builds the models of the accounts kept now, and sends calls to them.
+    /// Builds the models of the accounts and catalogs kept now, and sends calls to them.
     async fn rebuilt(&self) -> Result<Models, ApiError> {
         let accounts = self.ledger.accounts().await?;
+        let catalogs = self.kept_catalogs().await?;
         let built = self
             .lineup()
-            .build(&accounts.providers)
+            .build(&accounts.providers, &catalogs)
             .map_err(|e| ApiError::internal(&e))?;
         self.switch.set(built.gateway);
         Ok(built.models)
@@ -95,6 +112,7 @@ impl ModelAccounts {
         let models = check::models(new.kind, &endpoint)
             .await
             .map_err(|error| refused(&account, &error))?;
+        let listed = At::from(SystemClock.now());
         if models.is_empty() {
             return Err(provider_failed(
                 Failure::UnknownModel,
@@ -104,18 +122,38 @@ impl ModelAccounts {
                 ),
             ));
         }
-        account.models = models;
+        account.models = models.iter().map(|model| model.id.clone()).collect();
+        let catalog = Catalog {
+            kind: account.kind,
+            url: account.url.clone(),
+            listed,
+            models,
+        };
         // Every account glave keeps must line up with the rest, so a start never fails on one.
         let mut accounts = self.ledger.accounts().await?.providers;
         accounts.push(account.clone());
-        self.lineup().build(&accounts).map_err(|e| {
+        let catalogs = refresh::with(self.kept_catalogs().await?, catalog);
+        self.lineup().build(&accounts, &catalogs).map_err(|e| {
             ApiError::new(
                 code::NOT_ALLOWED,
                 format!("glave cannot run this account's models here: {e:#}"),
             )
         })?;
         self.ledger.keep_provider(&account).await?;
-        Ok((info(&account), self.rebuilt().await?))
+        self.catalogs
+            .keep(catalogs)
+            .await
+            .map_err(|e| ApiError::internal(&e))?;
+        let connected = info(&account, &self.kept_catalogs().await?);
+        Ok((connected, self.rebuilt().await?))
+    }
+
+    /// The catalogs kept now.
+    async fn kept_catalogs(&self) -> Result<Vec<Catalog>, ApiError> {
+        self.catalogs
+            .latest()
+            .await
+            .map_err(|e| ApiError::internal(&e))
     }
 }
 
@@ -127,7 +165,12 @@ impl Providers for ModelAccounts {
     fn list(&self) -> BoxFuture<'_, Result<Vec<ProviderInfo>, ApiError>> {
         Box::pin(async move {
             let accounts = self.ledger.accounts().await?;
-            Ok(accounts.providers.iter().map(info).collect())
+            let catalogs = self.kept_catalogs().await?;
+            Ok(accounts
+                .providers
+                .iter()
+                .map(|account| info(account, &catalogs))
+                .collect())
         })
     }
 
@@ -141,6 +184,18 @@ impl Providers for ModelAccounts {
             }
             self.rebuilt().await
         })
+    }
+
+    fn due(&self) -> bool {
+        refresh::claim(&self.due)
+    }
+
+    fn refresh(&self, all: bool) -> BoxFuture<'_, Result<Refreshed, ApiError>> {
+        Box::pin(Self::refresh(self, all))
+    }
+
+    fn models(&self) -> BoxFuture<'_, Result<Models, ApiError>> {
+        Box::pin(self.rebuilt())
     }
 }
 
@@ -175,14 +230,37 @@ pub(crate) fn endpoint_of(account: &ProviderConnected, model: &str) -> Option<En
     })
 }
 
-/// The account as a client may see it: never its key.
-fn info(account: &ProviderConnected) -> ProviderInfo {
+/// The account as a client may see it, with its models as `catalogs` list them: never its key.
+fn info(account: &ProviderConnected, catalogs: &[Catalog]) -> ProviderInfo {
     ProviderInfo {
         id: account.provider,
         kind: account.kind,
         url: account.url.clone(),
         hint: hint(account.key.expose()),
-        models: account.models.clone(),
+        models: offered_by(account, catalogs)
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    }
+}
+
+/// The catalog of `account`'s service, if one is kept.
+fn catalog_of<'a>(account: &ProviderConnected, catalogs: &'a [Catalog]) -> Option<&'a Catalog> {
+    catalogs
+        .iter()
+        .find(|catalog| catalog.kind == account.kind && catalog.url == account.url)
+}
+
+/// The models `account` offers: its service's catalog's, or those it offered when it was
+/// connected, before any catalog was kept.
+fn offered_by<'a>(account: &'a ProviderConnected, catalogs: &'a [Catalog]) -> Vec<&'a str> {
+    match catalog_of(account, catalogs) {
+        Some(catalog) => catalog
+            .models
+            .iter()
+            .map(|model| model.id.as_str())
+            .collect(),
+        None => account.models.iter().map(String::as_str).collect(),
     }
 }
 

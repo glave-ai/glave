@@ -338,6 +338,7 @@ where
                 self.connect_provider(caller, new).await
             }
             Request::ProviderList {} => self.list_providers(caller).await,
+            Request::ProviderRefresh {} => self.refresh_providers(caller).await,
             Request::ProviderRemove { provider } => self.remove_provider(caller, provider).await,
             Request::CredentialConnect {
                 url,

@@ -39,17 +39,21 @@ pub enum Reserved {
     /// `…0005`: the browser sessions of the person on their own server, in their personal
     /// project.
     Browsers,
+    /// `…0006`: the catalogs of the services whose model accounts a person connected
+    /// (`catalog.refreshed`), in their personal project.
+    Catalogs,
 }
 
 impl Reserved {
     /// Every ledger, by number.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Tasks,
         Self::Memory,
         Self::Accounts,
         Self::Project,
         Self::Trust,
         Self::Browsers,
+        Self::Catalogs,
     ];
 
     /// The ledger's id, the same in every project.
@@ -61,6 +65,7 @@ impl Reserved {
             Self::Project => 3,
             Self::Trust => 4,
             Self::Browsers => 5,
+            Self::Catalogs => 6,
         };
         ThreadId::reserved(number)
     }

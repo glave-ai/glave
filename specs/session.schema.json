@@ -3048,6 +3048,26 @@
       },
       "streams": false
     },
+    "provider/refresh": {
+      "params": {
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/$defs/ProviderInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "providers"
+        ],
+        "type": "object"
+      },
+      "streams": false
+    },
     "provider/remove": {
       "params": {
         "properties": {

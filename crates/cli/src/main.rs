@@ -11,6 +11,7 @@ mod accounts;
 mod app;
 mod args;
 mod asking;
+mod catalogs;
 mod client;
 mod cloud;
 mod commands;

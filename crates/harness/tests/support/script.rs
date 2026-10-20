@@ -212,6 +212,7 @@ pub(crate) fn kinds(events: &[Event]) -> Vec<&'static str> {
             Body::BrowserSignedIn(_) => "browser.signed_in",
             Body::BrowserUsed(_) => "browser.used",
             Body::BrowserSignedOut(_) => "browser.signed_out",
+            Body::CatalogRefreshed(_) => "catalog.refreshed",
             Body::Unknown(_) => "unknown",
         })
         .collect()

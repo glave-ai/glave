@@ -150,7 +150,7 @@ impl Rereading {
         if let Some(accounts) = &self.accounts {
             return accounts.relined(lineup).await;
         }
-        let built = lineup.build(&[])?;
+        let built = lineup.build(&[], &[])?;
         self.switch.set(built.gateway);
         Ok(built.models)
     }

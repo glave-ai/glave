@@ -54,8 +54,10 @@ where
     L: EventLog + 'static,
     B: BlobStore + 'static,
 {
-    /// Reads the host's settings again, if it has any to read, and runs what changed.
+    /// Reads the host's settings again, if it has any to read, and runs what changed; and
+    /// refreshes the models' catalogs when they are due.
     pub(crate) async fn reread(&self) {
+        self.refresh_when_due();
         let Some(rereads) = self.inner.rereads.as_deref() else {
             return;
         };
