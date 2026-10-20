@@ -63,7 +63,10 @@ export interface FirstPrompt {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class HomeComponent {
-  /** The project to start in, from the link's `?project=` (a project's +). */
+  /**
+   * The project to start in: the project page's (`/p/:project`, where glave run in a folder
+   * opens), or the link's `?project=` (a project's +).
+   */
   readonly project = input<string | undefined>(undefined);
 
   protected readonly copy = COPY;

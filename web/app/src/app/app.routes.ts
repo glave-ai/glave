@@ -5,7 +5,7 @@ import { hasModelGuard } from './guards/has-model.guard';
 import { signedInGuard } from './guards/signed-in.guard';
 
 /**
- * The app's pages: the workspace (chat, a thread, tasks, memory, settings) for a signed-in
+ * The app's pages: the workspace (chat, a project, a thread, tasks, memory, settings) for a signed-in
  * person with a model set up, the page that adds one, and the sign-in page.
  */
 export const routes: Routes = [
@@ -18,6 +18,13 @@ export const routes: Routes = [
         path: '',
         pathMatch: 'full',
         title: 'glave',
+        loadComponent: () =>
+          import('./components/home/home.component').then((m) => m.HomeComponent),
+      },
+      {
+        // A project's page, where glave run in its folder opens: a new thread starts in it.
+        path: 'p/:project',
+        title: 'Project · glave',
         loadComponent: () =>
           import('./components/home/home.component').then((m) => m.HomeComponent),
       },
